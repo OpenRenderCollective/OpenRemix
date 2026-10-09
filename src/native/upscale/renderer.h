@@ -61,12 +61,14 @@ public:
   void initialize(VkPhysicalDevice physical, VkDevice device, uint32_t queueFamily, VkExtent2D render,
                   VkExtent2D display, Backend backend = Backend::Fsr31, std::shared_ptr<Ngx> ngx = {},
                   uint32_t quality = 1, uint32_t rrPreset = 0);
-  void configureComposite(VkRenderPass pass, VkImageView stableDepth);
+  void configureComposite(VkRenderPass pass, VkImageView stableDepth, VkRenderPass tonemapPass = VK_NULL_HANDLE);
   void selectFrame(uint32_t slot);
   // display: displayColor's (pathtrace/shaders/display.glsl).
   void composite(VkCommandBuffer command, const scene::DisplayOutput &display, VkDescriptorSet post);
   Input output() const;
   FrameGenerationInputs frameGenerationInputs() const;
+  Input preparedDepth() const;
+  Input preparedMotion() const;
   void record(VkCommandBuffer command, Input color, Input depth, Input motion, Input transmission,
               const scene::Matrix &projection, const float *jitter, float milliseconds, float sharpness,
               bool reset, const ReconstructionGuides &guides = {}, const scene::Matrix &view = {});

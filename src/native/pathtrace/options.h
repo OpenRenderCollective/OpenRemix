@@ -296,6 +296,20 @@ namespace remix {
     bool combinedTlas = true;
     // Boolean shadow and local-light rays stop at their first blocker.
     bool shadowEarlyOut = true;
+    // DLSS 5 Neural Uplift (DLSS-NR)
+    bool neuralUplift = false;
+    uint32_t neuralUpliftPasses = 1;
+    uint32_t neuralUpliftPreset = 0;
+    uint32_t neuralUpliftStyle = 0;
+    float neuralUpliftIntensity = 1.0f;
+    float neuralUpliftStyleStrength = 1.0f;
+    float neuralUpliftLocalStructureStrength = 1.0f;
+    float neuralUpliftSkinStructureStrength = -1.0f;
+    bool neuralUpliftAutoMask = true;
+    bool neuralUpliftDepthInverted = false;
+    float neuralUpliftMotionVectorScale = 1.0f;
+    uint32_t neuralUpliftFeatureId = 18;
+    bool neuralUpliftBypassCallerCheck = true;
     bool operator==(const TraceOptions &) const = default;
   };
   // Options as the tracer applies them: ReSTIR DI runs in the combined

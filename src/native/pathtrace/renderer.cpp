@@ -5,6 +5,7 @@
 #include "pathtrace/shader_code.h"
 #include "runtime/pipelines.h"
 #include "upscale/ngx.h"
+#include "upscale/shaders/blit_frag.h"
 
 namespace remix {
   using namespace scene;
@@ -265,7 +266,236 @@ namespace remix {
     return out;
   }
 
+  std::unique_ptr<Image> PathTracer::Gpu::depthImage(VkFormat format, VkExtent2D size) {
+    if (!size.width) size = displayExtent;
+    auto out = std::make_unique<Image>();
+    out->device = device;
+    VkImageCreateInfo info = {.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+                              .imageType = VK_IMAGE_TYPE_2D,
+                              .format = format,
+                              .extent = {size.width, size.height, 1},
+                              .mipLevels = 1,
+                              .arrayLayers = 1,
+                              .samples = VK_SAMPLE_COUNT_1_BIT,
+                              .tiling = VK_IMAGE_TILING_OPTIMAL,
+                              .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                              .sharingMode = VK_SHARING_MODE_EXCLUSIVE};
+    check(vkCreateImage(device, &info, nullptr, &out->handle));
+    VkMemoryRequirements requirements;
+    vkGetImageMemoryRequirements(device, out->handle, &requirements);
+    VkMemoryAllocateInfo allocate = {
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = requirements.size,
+        .memoryTypeIndex = memoryType(requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
+    check(vkAllocateMemory(device, &allocate, nullptr, &out->memory));
+    check(vkBindImageMemory(device, out->handle, out->memory, 0));
+    VkImageViewCreateInfo view = {.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                                  .image = out->handle,
+                                  .viewType = VK_IMAGE_VIEW_TYPE_2D,
+                                  .format = info.format,
+                                  .subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1}};
+    check(vkCreateImageView(device, &view, nullptr, &out->view));
+    return out;
+  }
+
+  void PathTracer::Gpu::destroyTonemapAndBlit() {
+    if (blitPipeline)
+      pipeline::destroyPipeline(device, blitPipeline, nullptr);
+    blitPipeline = VK_NULL_HANDLE;
+    if (blitLayout)
+      pipeline::destroyPipelineLayout(device, blitLayout, nullptr);
+    blitLayout = VK_NULL_HANDLE;
+    if (blitFragModule)
+      pipeline::destroyShaderModule(device, blitFragModule, nullptr);
+    blitFragModule = VK_NULL_HANDLE;
+    if (blitPool)
+      vkDestroyDescriptorPool(device, blitPool, nullptr);
+    blitPool = VK_NULL_HANDLE;
+    if (blitSetLayout)
+      pipeline::destroyDescriptorSetLayout(device, blitSetLayout, nullptr);
+    blitSetLayout = VK_NULL_HANDLE;
+    for (auto &p : tonemapComposite) {
+      if (p)
+        pipeline::destroyPipeline(device, p, nullptr);
+      p = VK_NULL_HANDLE;
+    }
+    if (tonemapFramebuffer)
+      vkDestroyFramebuffer(device, tonemapFramebuffer, nullptr);
+    tonemapFramebuffer = VK_NULL_HANDLE;
+    if (tonemapPass)
+      pipeline::destroyRenderPass(device, tonemapPass, nullptr);
+    tonemapPass = VK_NULL_HANDLE;
+    tonemapTarget.reset();
+    tonemapDepth.reset();
+    neuralUpliftRan = false;
+    neuralUpliftValid = false;
+  }
+
+  void PathTracer::Gpu::createTonemapAndBlit(VkRenderPass pass, VkFormat depthFormat) {
+    destroyTonemapAndBlit();
+    tonemapTarget = image(true, VK_FORMAT_R16G16B16A16_SFLOAT, displayExtent);
+    tonemapDepth = depthImage(depthFormat, displayExtent);
+
+    VkAttachmentDescription attachments[] = {
+        {.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+         .samples = VK_SAMPLE_COUNT_1_BIT,
+         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+         .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+         .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+         .finalLayout = VK_IMAGE_LAYOUT_GENERAL},
+        {.format = depthFormat,
+         .samples = VK_SAMPLE_COUNT_1_BIT,
+         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+         .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+         .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+         .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+         .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}};
+    VkAttachmentReference color{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
+        depthRef{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+    VkSubpassDescription subpass{.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                 .colorAttachmentCount = 1,
+                                 .pColorAttachments = &color,
+                                 .pDepthStencilAttachment = &depthRef};
+    VkSubpassDependency dependencies[] = {
+        {.srcSubpass = VK_SUBPASS_EXTERNAL,
+         .dstSubpass = 0,
+         .srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+         .dstStageMask =
+             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+         .srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+         .dstAccessMask =
+             VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT},
+        {.srcSubpass = 0,
+         .dstSubpass = VK_SUBPASS_EXTERNAL,
+         .srcStageMask =
+             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+         .dstStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+         .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+         .dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT}};
+    VkRenderPassCreateInfo rp{.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+                              .attachmentCount = 2,
+                              .pAttachments = attachments,
+                              .subpassCount = 1,
+                              .pSubpasses = &subpass,
+                              .dependencyCount = 2,
+                              .pDependencies = dependencies};
+    check(pipeline::createRenderPass(device, &rp, nullptr, &tonemapPass));
+
+    VkImageView views[] = {tonemapTarget->view, tonemapDepth->view};
+    VkFramebufferCreateInfo fb{.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+                               .renderPass = tonemapPass,
+                               .attachmentCount = 2,
+                               .pAttachments = views,
+                               .width = displayExtent.width,
+                               .height = displayExtent.height,
+                               .layers = 1};
+    check(vkCreateFramebuffer(device, &fb, nullptr, &tonemapFramebuffer));
+
+    VkDescriptorSetLayoutBinding blitBindings[] = {
+        {0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+        {1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+        {2, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}};
+    VkDescriptorSetLayoutCreateInfo bsi{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                        .bindingCount = 3,
+                                        .pBindings = blitBindings};
+    check(pipeline::createDescriptorSetLayout(device, &bsi, nullptr, &blitSetLayout));
+
+    VkDescriptorPoolSize blitPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 3};
+    VkDescriptorPoolCreateInfo bpi{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+                                   .maxSets = 1,
+                                   .poolSizeCount = 1,
+                                   .pPoolSizes = &blitPoolSize};
+    check(vkCreateDescriptorPool(device, &bpi, nullptr, &blitPool));
+
+    VkDescriptorSetAllocateInfo bai{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                    .descriptorPool = blitPool,
+                                    .descriptorSetCount = 1,
+                                    .pSetLayouts = &blitSetLayout};
+    check(vkAllocateDescriptorSets(device, &bai, &blitSet));
+
+    VkDescriptorImageInfo blitImages[] = {
+        {VK_NULL_HANDLE, tonemapTarget->view, VK_IMAGE_LAYOUT_GENERAL},
+        {VK_NULL_HANDLE, primary[4]->view, VK_IMAGE_LAYOUT_GENERAL},
+        {VK_NULL_HANDLE, world->view, VK_IMAGE_LAYOUT_GENERAL}};
+    VkWriteDescriptorSet blitWrites[3]{};
+    for (unsigned i = 0; i < 3; ++i)
+      blitWrites[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                       .dstSet = blitSet,
+                       .dstBinding = i,
+                       .descriptorCount = 1,
+                       .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                       .pImageInfo = &blitImages[i]};
+    vkUpdateDescriptorSets(device, 3, blitWrites, 0, nullptr);
+
+    VkPushConstantRange blitPushRange{VK_SHADER_STAGE_FRAGMENT_BIT, 0, 8};
+    VkPipelineLayoutCreateInfo bli{.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                   .setLayoutCount = 1,
+                                   .pSetLayouts = &blitSetLayout,
+                                   .pushConstantRangeCount = 1,
+                                   .pPushConstantRanges = &blitPushRange};
+    check(pipeline::createPipelineLayout(device, &bli, nullptr, &blitLayout));
+
+    VkShaderModuleCreateInfo mi{.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+                                .codeSize = sizeof(upscale::blitFragShader),
+                                .pCode = upscale::blitFragShader};
+    check(pipeline::createShaderModule(device, &mi, nullptr, &blitFragModule));
+
+    VkPipelineShaderStageCreateInfo blitStages[] = {
+        {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+         .stage = VK_SHADER_STAGE_VERTEX_BIT,
+         .module = shaders[1],
+         .pName = "main"},
+        {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+         .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+         .module = blitFragModule,
+         .pName = "main"}};
+
+    VkPipelineVertexInputStateCreateInfo vertex{.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+    VkPipelineInputAssemblyStateCreateInfo assembly{.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+                                                    .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST};
+    VkPipelineViewportStateCreateInfo viewport{.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+                                               .viewportCount = 1,
+                                               .scissorCount = 1};
+    VkPipelineRasterizationStateCreateInfo raster{.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+                                                  .polygonMode = VK_POLYGON_MODE_FILL,
+                                                  .cullMode = VK_CULL_MODE_NONE,
+                                                  .lineWidth = 1};
+    VkPipelineMultisampleStateCreateInfo samples{.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+                                                 .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT};
+    VkPipelineDepthStencilStateCreateInfo depth{.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+                                                .depthTestEnable = VK_TRUE,
+                                                .depthWriteEnable = VK_TRUE,
+                                                .depthCompareOp = VK_COMPARE_OP_ALWAYS,
+                                                .maxDepthBounds = 1};
+    VkPipelineColorBlendAttachmentState attachment{.colorWriteMask = 15};
+    VkPipelineColorBlendStateCreateInfo blend{.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+                                              .attachmentCount = 1,
+                                              .pAttachments = &attachment};
+    VkDynamicState states[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo dynamic{.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+                                             .dynamicStateCount = 2,
+                                             .pDynamicStates = states};
+    VkGraphicsPipelineCreateInfo bci{.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+                                     .stageCount = 2,
+                                     .pStages = blitStages,
+                                     .pVertexInputState = &vertex,
+                                     .pInputAssemblyState = &assembly,
+                                     .pViewportState = &viewport,
+                                     .pRasterizationState = &raster,
+                                     .pMultisampleState = &samples,
+                                     .pDepthStencilState = &depth,
+                                     .pColorBlendState = &blend,
+                                     .pDynamicState = &dynamic,
+                                     .layout = blitLayout,
+                                     .renderPass = pass};
+    check(pipeline::createGraphicsPipelines(device, VK_NULL_HANDLE, 1, &bci, nullptr, &blitPipeline));
+  }
+
   void PathTracer::Gpu::destroyTarget() {
+    destroyTonemapAndBlit();
     for (auto &buffer : pbrReuse.history) buffer.reset();
     pbrReuse.valid = pbrReuse.active = pbrReuse.failed = false;
     if (upscaler) {
@@ -273,6 +503,10 @@ namespace remix {
       reconstructionResets += upscaler->statistics().resets;
     }
     upscaler.reset();
+    if (neuralUplift) {
+      neuralUplift->release();
+      neuralUplift.reset();
+    }
     reconstructionWarmFrames = 0;
     lightGuiding.valid = false;
     destroyPost();
@@ -496,9 +730,10 @@ namespace remix {
     g.transmission = g.image(false, VK_FORMAT_R32G32B32A32_UINT);
     g.sky = g.image(true);
     g.createPrimary(depthFormat, depthView);
+    g.createTonemapAndBlit(pass, depthFormat);
     if (g.upscaler) {
       std::string failure;
-      try { g.upscaler->configureComposite(pass, g.primary[4]->view); }
+      try { g.upscaler->configureComposite(pass, g.primary[4]->view, g.tonemapPass); }
       catch (VkResult result) {
         if (preparing)
           throw;
@@ -638,6 +873,11 @@ namespace remix {
                                                .renderPass = pass};
       check(pipeline::createGraphicsPipelines(
           g.device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &g.composite[i]));
+      if (g.tonemapPass) {
+        pipeline.renderPass = g.tonemapPass;
+        check(pipeline::createGraphicsPipelines(
+            g.device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &g.tonemapComposite[i]));
+      }
     }
   }
 
@@ -649,7 +889,7 @@ namespace remix {
   remixapi_TracingStatisticsEXT PathTracer::statistics() const {
     auto result = m_gpu->stats;
     result.redrawRequested = result.accumulationEnabled ||
-        (m_gpu->upscaler && m_gpu->reconstructionWarmFrames < 128) ||
+        ((m_gpu->upscaler || m_gpu->currentTraceOptions.neuralUplift) && m_gpu->reconstructionWarmFrames < 128) ||
         (m_gpu->sharc.stats.active && m_gpu->sharc.hasReceivers && m_gpu->sharc.warmFrames < m_gpu->sharc.warmTarget);
     return result;
   }

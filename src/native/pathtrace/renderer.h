@@ -7,6 +7,7 @@
 #include "raster/renderer.h"
 #include "scene/display.h"
 #include "scene/trace_frame.h"
+#include "upscale/neural_uplift.h"
 #include <remix/remix_native_ext.h>
 #include "pathtrace/block_costs.h"
 #include <vulkan/vulkan.h>
@@ -117,6 +118,7 @@ namespace remix {
     };
     OverlayLighting overlayLighting() const;
     upscale::Statistics upscalingStatistics() const;
+    upscale::NeuralUpliftStatistics neuralUpliftStatistics() const;
     // What frame generation needs of the frame just prepared: the upscaler's
     // depth and motion and the cameras of this and the previous frame
     // (unjittered). Not valid without an upscaler.

@@ -21,6 +21,7 @@ namespace remix::ui {
   }
   REMIX_FIELD(Combo)
   REMIX_FIELD(SliderInt)
+  REMIX_FIELD(DragInt)
   REMIX_FIELD(SliderFloat)
   REMIX_FIELD(SliderFloat3)
   REMIX_FIELD(DragFloat)

@@ -314,6 +314,34 @@ namespace remix::config {
         TRACE(hardwareFaceCulling, 0, 1);
         TRACE(combinedTlas, 0, 1);
         TRACE(shadowEarlyOut, 0, 1);
+        TRACE(neuralUplift, 0, 1);
+        TRACE(neuralUpliftPasses, 1, 7);
+        TRACE(neuralUpliftPreset, 0, 7);
+        TRACE(neuralUpliftStyle, 0, 2);
+        TRACE(neuralUpliftIntensity, 0, 1);
+        TRACE(neuralUpliftStyleStrength, 0, 1);
+        TRACE(neuralUpliftLocalStructureStrength, 0, 2);
+        result.push_back(scalar("rtx.native.pathtrace.neuralUpliftSkinStructureStrength",
+                                FIELD(trace.neuralUpliftSkinStructureStrength), 0, 2, 0, true));
+        TRACE(neuralUpliftAutoMask, 0, 1);
+        TRACE(neuralUpliftDepthInverted, 0, 1);
+        TRACE(neuralUpliftMotionVectorScale, 0.01, 10);
+        TRACE(neuralUpliftFeatureId, 0, 63);
+        TRACE(neuralUpliftBypassCallerCheck, 0, 1);
+        // Compatibility aliases for rtx.neuralUplift.*
+        result.push_back(scalar("rtx.neuralUplift.enable", FIELD(trace.neuralUplift), 0, 1));
+        result.push_back(scalar("rtx.neuralUplift.passes", FIELD(trace.neuralUpliftPasses), 1, 7));
+        result.push_back(scalar("rtx.neuralUplift.preset", FIELD(trace.neuralUpliftPreset), 0, 7));
+        result.push_back(scalar("rtx.neuralUplift.style", FIELD(trace.neuralUpliftStyle), 0, 2));
+        result.push_back(scalar("rtx.neuralUplift.intensity", FIELD(trace.neuralUpliftIntensity), 0, 1));
+        result.push_back(scalar("rtx.neuralUplift.styleStrength", FIELD(trace.neuralUpliftStyleStrength), 0, 1));
+        result.push_back(scalar("rtx.neuralUplift.localStructureStrength", FIELD(trace.neuralUpliftLocalStructureStrength), 0, 2));
+        result.push_back(scalar("rtx.neuralUplift.skinStructureStrength", FIELD(trace.neuralUpliftSkinStructureStrength), 0, 2, 0, true));
+        result.push_back(scalar("rtx.neuralUplift.autoMask", FIELD(trace.neuralUpliftAutoMask), 0, 1));
+        result.push_back(scalar("rtx.neuralUplift.depthInverted", FIELD(trace.neuralUpliftDepthInverted), 0, 1));
+        result.push_back(scalar("rtx.neuralUplift.motionVectorScale", FIELD(trace.neuralUpliftMotionVectorScale), 0.01, 10));
+        result.push_back(scalar("rtx.neuralUplift.featureId", FIELD(trace.neuralUpliftFeatureId), 0, 63));
+        result.push_back(scalar("rtx.neuralUplift.bypassCallerCheck", FIELD(trace.neuralUpliftBypassCallerCheck), 0, 1));
         for (size_t i = 0; i < 3; ++i) {
           result.push_back(scalar(
               "rtx.native.pathtrace.lightDirection." + std::string(1, "xyz"[i]),

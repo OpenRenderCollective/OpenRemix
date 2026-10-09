@@ -5,6 +5,7 @@
 #include "pathtrace/sharc_policy.h"
 #include "scene/emission.h"
 #include <algorithm>
+#include "upscale/ngx.h"
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -842,6 +843,21 @@ namespace remix {
     append(&options.emissiveSolidAngleSampling, sizeof(options.emissiveSolidAngleSampling));
     append(&emissionMode, sizeof(emissionMode));
     append(&options.fsrSharpness, sizeof(options.fsrSharpness));
+    append(&options.prism, sizeof(options.prism));
+    append(&options.gamma22, sizeof(options.gamma22));
+    append(&options.neuralUplift, sizeof(options.neuralUplift));
+    append(&options.neuralUpliftPasses, sizeof(options.neuralUpliftPasses));
+    append(&options.neuralUpliftPreset, sizeof(options.neuralUpliftPreset));
+    append(&options.neuralUpliftStyle, sizeof(options.neuralUpliftStyle));
+    append(&options.neuralUpliftIntensity, sizeof(options.neuralUpliftIntensity));
+    append(&options.neuralUpliftStyleStrength, sizeof(options.neuralUpliftStyleStrength));
+    append(&options.neuralUpliftLocalStructureStrength, sizeof(options.neuralUpliftLocalStructureStrength));
+    append(&options.neuralUpliftSkinStructureStrength, sizeof(options.neuralUpliftSkinStructureStrength));
+    append(&options.neuralUpliftAutoMask, sizeof(options.neuralUpliftAutoMask));
+    append(&options.neuralUpliftDepthInverted, sizeof(options.neuralUpliftDepthInverted));
+    append(&options.neuralUpliftMotionVectorScale, sizeof(options.neuralUpliftMotionVectorScale));
+    append(&options.neuralUpliftFeatureId, sizeof(options.neuralUpliftFeatureId));
+    currentTraceOptions = options;
     const uint64_t cacheSettings[] = {
         options.sharcReset,     options.sharcCapacityLog2,       options.sharcSceneScale,
         options.sharcDownscale, options.sharcAccumulationFrames, options.sharcStaleFrames,
@@ -864,7 +880,7 @@ namespace remix {
     // An unchanged world can reuse its cached output once both histories are warm.
     if (!sceneChanged && !profileEveryFrame && !std::getenv("REMIX_PATH_LINEAR_CAPTURE") &&
         !options.accumulate && !debugView && !postProcessing->needsGuide() && denoiser && !denoiser->statistics().redrawRequested &&
-        !history.reset() && !(upscaler && reconstructionWarmFrames < 128) &&
+        !history.reset() && !((upscaler || options.neuralUplift) && reconstructionWarmFrames < 128) &&
         !(sharc.stats.active && sharc.hasReceivers && sharc.warmFrames < 2 * options.sharcAccumulationFrames))
       return;
     if (sceneChanged) {
@@ -1904,10 +1920,123 @@ namespace remix {
     const auto hdr = g.upscaler && !g.debugView ? g.upscaler->output() : upscale::Input{g.world->handle, g.world->view};
     g.postProcessing->record(command, hdr, options, resources.temporalEpoch(), g.rendered,
       (g.postProcessing == g.postFallback.get() && !g.retainPostExposure) || options.debugView || options.shadowDebug || options.sharcDebug || options.validation, -1, g.stats.sceneGeneration);
+
+    const bool neuralUpliftActive = options.neuralUplift && g.tonemapPass && g.tonemapTarget;
+    if (neuralUpliftActive) {
+      if (g.rendered || !g.neuralUpliftValid) {
+        VkClearValue clear[2] = {};
+        clear[1].depthStencil.depth = 1.0f;
+        VkRenderPassBeginInfo rpInfo{
+            .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            .renderPass = g.tonemapPass,
+            .framebuffer = g.tonemapFramebuffer,
+            .renderArea = {{0, 0}, g.displayExtent},
+            .clearValueCount = 2,
+            .pClearValues = clear};
+        vkCmdBeginRenderPass(command, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+        // g.tonemapTarget is a linear R16G16B16A16_SFLOAT attachment, not _SRGB.
+        // Force software display encoding (sRGB or gamma 2.2) so DLSS-NR receives
+        // display-encoded LDR colors, and cancel hardware sRGB later in blit.frag.
+        const bool tonemapEncodeOutput = g.encodeOutput || g.hardwareSrgb;
+        if (g.upscaler && !g.debugView) {
+          g.upscaler->composite(command, tonemapEncodeOutput, g.prism, g.gamma22, false,
+                                g.postProcessing->bindings(), true);
+        } else {
+          VkViewport viewport = {0, 0, float(g.displayExtent.width), float(g.displayExtent.height), 0, 1};
+          VkRect2D scissor = {{0, 0}, g.displayExtent};
+          vkCmdSetViewport(command, 0, 1, &viewport);
+          vkCmdSetScissor(command, 0, 1, &scissor);
+          vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.layout, 0, 1, &g.set, 0, nullptr);
+          const auto postSet = g.postProcessing->bindings();
+          vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.layout, 1, 1, &postSet, 0, nullptr);
+          for (uint32_t i = 0; i < 2; ++i) {
+            const uint32_t push[] = {i,
+                                     uint32_t(tonemapEncodeOutput),
+                                     uint32_t(g.prism),
+                                     uint32_t(g.gamma22),
+                                     0u,
+                                     g.displayExtent.width,
+                                     g.displayExtent.height};
+            vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.tonemapComposite[i]);
+            vkCmdPushConstants(command, g.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), push);
+            vkCmdDraw(command, 3, 1, 0, 0);
+          }
+        }
+        vkCmdEndRenderPass(command);
+
+        VkImageMemoryBarrier barrier{
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+            .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+            .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+            .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = g.tonemapTarget->handle,
+            .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}};
+        vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                             VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+        if (!g.neuralUplift) {
+          g.neuralUplift = std::make_unique<upscale::NeuralUplift>();
+        }
+        upscale::NeuralUpliftSettings nuSettings;
+        nuSettings.enable = options.neuralUplift;
+        nuSettings.passes = options.neuralUpliftPasses;
+        nuSettings.preset = options.neuralUpliftPreset;
+        nuSettings.style = options.neuralUpliftStyle;
+        nuSettings.intensity = options.neuralUpliftIntensity;
+        nuSettings.styleStrength = options.neuralUpliftStyleStrength;
+        nuSettings.localStructureStrength = options.neuralUpliftLocalStructureStrength;
+        nuSettings.skinStructureStrength = options.neuralUpliftSkinStructureStrength;
+        nuSettings.autoMask = options.neuralUpliftAutoMask;
+        nuSettings.depthInverted = options.neuralUpliftDepthInverted;
+        nuSettings.motionVectorScale = options.neuralUpliftMotionVectorScale;
+        nuSettings.featureId = options.neuralUpliftFeatureId;
+        nuSettings.bypassCallerCheck = options.neuralUpliftBypassCallerCheck;
+
+        auto d = g.denoiser ? g.denoiser->image(denoise::Depth) : upscale::Input{};
+        auto m = g.denoiser ? g.denoiser->image(denoise::Motion) : upscale::Input{};
+
+        if (g.ngx)
+          g.ngx->initializeDevice();
+        g.neuralUplift->initialize(g.ngx ? g.ngx->instanceHandle() : VK_NULL_HANDLE,
+                                   g.physical, g.device, g.queueFamily, g.displayExtent, nuSettings);
+
+        const bool resetHistory = !g.neuralUpliftValid || g.temporalFrame.flags[0] != 0;
+        g.neuralUplift->record(command, g.tonemapTarget->handle, g.tonemapTarget->view,
+                               d.image, d.view, m.image, m.view, g.extent, g.pendingProjection.data(),
+                               nuSettings, resetHistory);
+
+        barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+        g.neuralUpliftValid = true;
+      }
+      g.neuralUpliftRan = true;
+    } else {
+      g.neuralUpliftRan = false;
+      g.neuralUpliftValid = false;
+    }
   }
 
   void PathTracer::record(VkCommandBuffer command) {
     auto &g = *m_gpu;
+    if (g.neuralUpliftRan && g.blitPipeline) {
+      VkViewport viewport = {0, 0, float(g.displayExtent.width), float(g.displayExtent.height), 0, 1};
+      VkRect2D scissor = {{0, 0}, g.displayExtent};
+      vkCmdSetViewport(command, 0, 1, &viewport);
+      vkCmdSetScissor(command, 0, 1, &scissor);
+      vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.blitPipeline);
+      vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.blitLayout, 0, 1, &g.blitSet, 0, nullptr);
+      const uint32_t push[] = {uint32_t(g.hardwareSrgb), uint32_t(!g.upscaler || g.debugView)};
+      vkCmdPushConstants(command, g.blitLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), push);
+      vkCmdDraw(command, 3, 1, 0, 0);
+      g.neuralUpliftRan = false;
+      return;
+    }
     if (g.upscaler && !g.debugView) {
       g.upscaler->composite(command, g.display, g.postProcessing->bindings());
       return;

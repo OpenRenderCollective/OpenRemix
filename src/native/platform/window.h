@@ -122,10 +122,13 @@ namespace remix {
     void queueInput(const remixapi_InputEvent &event);
     void processInput(const SDL_Event &event);
 
+    static bool SDLCALL eventFilter(void *userdata, SDL_Event *event);
+
     SDL_Window *m_window = nullptr;
     std::thread::id m_ownerThread;
     bool m_ownsVideoSubsystem = false;
     bool m_embedded = false;
+    bool m_adoptedWindow = false;
     bool m_appInBackground = false;
     mutable void *m_surfaceWindow = nullptr;
 #if REMIX_METAL

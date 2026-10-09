@@ -49,8 +49,22 @@ namespace remix {
     // taking them from the host's own loop. Without its loop, SDL only drains
     // the events its window procedure already queued.
     if (info.hwnd) {
-      SDL_SetHint(SDL_HINT_WINDOWS_ENABLE_MESSAGELOOP, "0");
       m_embedded = true;
+      int count = 0;
+      if (SDL_Window **windows = SDL_GetWindows(&count)) {
+        for (int i = 0; i < count; ++i) {
+          HWND existing = static_cast<HWND>(
+              SDL_GetPointerProperty(SDL_GetWindowProperties(windows[i]), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
+          if (existing == info.hwnd) {
+            m_window = windows[i];
+            m_adoptedWindow = true;
+            break;
+          }
+        }
+      }
+      if (!m_window) {
+        SDL_SetHint(SDL_HINT_WINDOWS_ENABLE_MESSAGELOOP, "0");
+      }
     }
 #endif
     if ((SDL_WasInit(SDL_INIT_VIDEO) & SDL_INIT_VIDEO) == 0) {
@@ -63,13 +77,15 @@ namespace remix {
 
 #if defined(_WIN32)
     if (info.hwnd) {
-      SDL_PropertiesID props = SDL_CreateProperties();
-      if (props) {
-        if (SDL_SetPointerProperty(props, SDL_PROP_WINDOW_CREATE_WIN32_HWND_POINTER, info.hwnd) &&
-            SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_VULKAN_BOOLEAN, true)) {
-          m_window = SDL_CreateWindowWithProperties(props);
+      if (!m_window) {
+        SDL_PropertiesID props = SDL_CreateProperties();
+        if (props) {
+          if (SDL_SetPointerProperty(props, SDL_PROP_WINDOW_CREATE_WIN32_HWND_POINTER, info.hwnd) &&
+              SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_VULKAN_BOOLEAN, true)) {
+            m_window = SDL_CreateWindowWithProperties(props);
+          }
+          SDL_DestroyProperties(props);
         }
-        SDL_DestroyProperties(props);
       }
     } else {
       m_window = SDL_CreateWindow("Remix Shell", 1280, 720,
@@ -114,7 +130,12 @@ namespace remix {
     }
 #endif
     if (m_window != nullptr) {
-      SDL_DestroyWindow(m_window);
+      if (m_eventHandler != nullptr) {
+        SDL_RemoveEventWatch(eventFilter, this);
+      }
+      if (!m_adoptedWindow) {
+        SDL_DestroyWindow(m_window);
+      }
       m_window = nullptr;
     }
 
@@ -125,6 +146,7 @@ namespace remix {
 
     m_ownerThread = std::thread::id{};
     m_embedded = false;
+    m_adoptedWindow = false;
     m_eventHandler = nullptr;
     m_eventUserData = nullptr;
     m_surfaceWindow = nullptr;

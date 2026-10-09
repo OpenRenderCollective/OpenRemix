@@ -185,7 +185,7 @@ namespace remix {
           : "Insufficient descriptors for separate torch/emissive histories; combined local lighting active";
     if ((options.denoiser && !caps.reblurShSupported) || (options.taa && !caps.taaSupported))
       postFailure = caps.unavailableReason;
-    if ((!reblur && !taa && !sigma && !upscaler) || postAttempted)
+    if ((!reblur && !taa && !sigma && !upscaler && !options.neuralUplift) || postAttempted)
       return;
     postSigma = sigma;
     postLocal = local;
@@ -425,6 +425,15 @@ namespace remix {
     if (result.failure.empty()) result.failure = g.fsrFailure;
     return result;
   }
+  upscale::NeuralUpliftStatistics PathTracer::neuralUpliftStatistics() const {
+    const auto &g = *m_gpu;
+    if (g.neuralUplift)
+      return g.neuralUplift->statistics();
+    upscale::NeuralUpliftStatistics stats{};
+    stats.supported = upscale::NeuralUplift::isSupported();
+    stats.statusReason = stats.supported ? "inactive" : upscale::NeuralUplift::notSupportedReason();
+    return stats;
+  }
   VkRenderPass PathTracer::skyPass() const { return m_gpu->skyPass; }
   void PathTracer::submitted() {
     auto &g = *m_gpu;
@@ -447,7 +456,7 @@ namespace remix {
     g.history.commit();
     // The static set's history: this prepared frame is now the committed one.
     g.statics.committed(g.prepareSerial, g.retiredStates);
-    if (g.upscaler && g.reconstructionWarmFrames < 128)
+    if ((g.upscaler || g.currentTraceOptions.neuralUplift) && g.reconstructionWarmFrames < 128)
       ++g.reconstructionWarmFrames;
     if (g.sharc.stats.active && g.sharc.hasReceivers) {
       ++g.sharc.stats.renderedFrames;

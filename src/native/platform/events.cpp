@@ -35,6 +35,10 @@ namespace remix {
       return threadStatus;
     }
 
+    if (m_adoptedWindow) {
+      return REMIXAPI_ERROR_CODE_SUCCESS;
+    }
+
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
       if (menuShortcut(event))
@@ -68,7 +72,46 @@ namespace remix {
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
 
+  bool SDLCALL RemixSdlWindow::eventFilter(void *userdata, SDL_Event *event) {
+    auto *self = static_cast<RemixSdlWindow *>(userdata);
+    if (!self || !event) {
+      return true;
+    }
+    if (self->menuShortcut(*event)) {
+      return false;
+    }
+
+    if (event->type == SDL_EVENT_QUIT || (event->type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
+                                          event->window.windowID == SDL_GetWindowID(self->m_window))) {
+      self->m_closeRequested = true;
+    } else if (event->type == SDL_EVENT_MOUSE_MOTION && event->motion.windowID == SDL_GetWindowID(self->m_window)) {
+      self->m_relativeX += event->motion.xrel;
+      self->m_relativeY += event->motion.yrel;
+    } else if (event->type == SDL_EVENT_MOUSE_WHEEL && event->wheel.windowID == SDL_GetWindowID(self->m_window)) {
+      self->m_wheelX += event->wheel.x;
+      self->m_wheelY += event->wheel.y;
+    }
+
+    bool handled = false;
+    if (self->m_eventHandler != nullptr) {
+      handled = self->m_eventHandler(event, self->m_eventUserData);
+    }
+    self->processInput(*event);
+
+    if (self->m_adoptedWindow && handled && (self->m_guiWantsMouse || self->m_guiWantsKeyboard)) {
+      return false;
+    }
+    return true;
+  }
+
   void RemixSdlWindow::setEventHandler(EventHandler handler, void *userData) {
+    if (m_adoptedWindow) {
+      if (m_eventHandler == nullptr && handler != nullptr) {
+        SDL_AddEventWatch(eventFilter, this);
+      } else if (m_eventHandler != nullptr && handler == nullptr) {
+        SDL_RemoveEventWatch(eventFilter, this);
+      }
+    }
     m_eventHandler = handler;
     m_eventUserData = userData;
   }

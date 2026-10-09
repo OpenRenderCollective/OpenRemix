@@ -290,6 +290,80 @@ namespace remix {
         if (ngx.initializationComplete && !ngx.fg)
           ImGui::TextWrapped("DLSS Frame Generation unavailable: %s", ngx.fgReason.c_str());
       }
+#if REMIX_HAS_DLSS5
+      ImGui::Separator();
+      ui::Checkbox("Enable Neural Uplift (DLSS-NR)", &options.neuralUplift);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("DLSS 5 Neural Uplift (Feature 18) runs as a post-process on the tonemapped,\n"
+                          "display-encoded LDR frame, enhancing structure, details and tone.");
+      const auto nuStats = m_pathTracer ? m_pathTracer->neuralUpliftStatistics() : upscale::NeuralUpliftStatistics{};
+      if (!nuStats.supported) {
+        ImGui::TextDisabled("Neural Uplift: unavailable - %s",
+                            nuStats.notLoadedReason.empty() ? "nvngx_dlssnr.dll not found" : nuStats.notLoadedReason.c_str());
+      } else {
+        ImGui::Text("Neural Uplift: %s (feature id %u, preset %u, inits %u)",
+                    nuStats.statusReason.empty() ? "idle" : nuStats.statusReason.c_str(),
+                    options.neuralUpliftFeatureId, options.neuralUpliftPreset, nuStats.initCount);
+        if (options.neuralUplift && !(nuStats.lastHadDepth && nuStats.lastHadMotionVectors)) {
+          ImGui::TextWrapped("Inputs: %s, %s - running spatially only. Presets that rely on temporal "
+                             "reprojection cannot be judged in this state.",
+                             nuStats.lastHadDepth ? "depth" : "NO depth",
+                             nuStats.lastHadMotionVectors ? "motion vectors" : "NO motion vectors");
+        }
+      }
+      if (options.neuralUplift) {
+        ImGui::Indent();
+        int passes = int(options.neuralUpliftPasses);
+        if (ui::SliderInt("Passes", &passes, 1, 7))
+          options.neuralUpliftPasses = uint32_t(passes);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Number of sequential DLSS 5 passes executed over the image (1 to 7).\n"
+                            "Higher passes apply iterative neural enhancement.");
+        int style = int(options.neuralUpliftStyle);
+        if (ui::SliderInt("Style", &style, 0, 2))
+          options.neuralUpliftStyle = uint32_t(style);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("0 is neutral; 1 and 2 apply different baked structure/tone biases.\n"
+                            "The snippet only ships these three - higher values are clamped to 2.");
+        ui::SliderFloat("Style Strength", &options.neuralUpliftStyleStrength, 0.0f, 1.0f, "%.2f");
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("How far the selected style is blended in from neutral. 0 makes it a no-op.\n"
+                            "This is the parameter NVIDIA named DLSSNR.LocalToneStrength, which is a style\n"
+                            "blend weight rather than the tone control its name suggests.");
+        ui::SliderFloat("Intensity", &options.neuralUpliftIntensity, 0.0f, 1.0f, "%.2f");
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Blend of the enhanced image against the original. Below 1 the snippet keeps\n"
+                            "an extra copy of the input to blend against, so it also costs slightly more.");
+        ui::Checkbox("Auto Mask", &options.neuralUpliftAutoMask);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Lets the snippet decide per pixel where to apply the effect. The two structure\n"
+                            "strengths below are applied through this mask, so turning it off disables them.");
+        ImGui::BeginDisabled(!options.neuralUpliftAutoMask);
+        ui::SliderFloat("Local Structure Strength", &options.neuralUpliftLocalStructureStrength, 0.0f, 2.0f, "%.2f");
+        ui::SliderFloat("Skin Structure Strength", &options.neuralUpliftSkinStructureStrength, -1.0f, 2.0f, "%.2f");
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("-1 means: use Local Structure Strength for skin too. That is the default, and is\n"
+                            "not the same as 0, which explicitly disables structure enhancement on skin.");
+        ImGui::EndDisabled();
+
+        if (ImGui::TreeNode("Inputs / Bring-up")) {
+          int preset = int(options.neuralUpliftPreset);
+          if (ui::SliderInt("Model Preset", &preset, 0, 7))
+            options.neuralUpliftPreset = uint32_t(preset);
+          if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Selects weights hint for the model. Changing it recreates the feature and\n"
+                              "resets temporal history.");
+          ui::Checkbox("Depth Inverted", &options.neuralUpliftDepthInverted);
+          ui::SliderFloat("Motion Vector Scale", &options.neuralUpliftMotionVectorScale, 0.01f, 10.0f, "%.2f");
+          int featId = int(options.neuralUpliftFeatureId);
+          if (ui::DragInt("NGX Feature ID", &featId, 1.0f, 0, 63))
+            options.neuralUpliftFeatureId = uint32_t(featId);
+          ui::Checkbox("Bypass Snippet Caller Check", &options.neuralUpliftBypassCallerCheck);
+          ImGui::TreePop();
+        }
+        ImGui::Unindent();
+      }
+#endif // REMIX_HAS_DLSS5
     }
     if (ImGui::CollapsingHeader("Memory")) {
       ui::Checkbox("Keep BC textures compressed", &settings.compressedTextures);
