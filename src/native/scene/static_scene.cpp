@@ -99,9 +99,9 @@ namespace remix::scene {
       m_emittingDirty |= !unit.emitters.empty();
       unit.emitters.clear();
       for (uint32_t s = 0; s < surfaces; ++s) {
-        const auto &draw = records[s];
-        if (resources && resources->isDrawHidden(draw))
-          continue;
+        auto draw = records[s];
+        if (resources)
+          resources->applyDrawHidden(draw);
         TraceFrame::Surface surface{draw};
         // As prepareTraceFrame: paint only where blending is on.
         surface.draw.decal = draw.decal && draw.blend.enabled && !draw.material->transmission;
@@ -116,7 +116,7 @@ namespace remix::scene {
         unit.surfaces.push_back(std::move(surface));
         // Emitters, as prepareTraceFrame makes them (none for a singular unit).
         const auto &prepared = unit.surfaces.back();
-        if (unit.singular || material.suppressEmissionLight ||
+        if (unit.singular || material.suppressEmissionLight || (draw.alphaOverride && draw.compare == 0) ||
             (material.emission[0] <= 0 && material.emission[1] <= 0 && material.emission[2] <= 0))
           continue;
         const auto reduction = emission.reduce(prepared.draw, prepared.uv);

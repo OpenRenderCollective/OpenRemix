@@ -403,9 +403,9 @@ namespace remix {
       if (m_hiddenTextures.empty()) {
         m_draws.insert(m_draws.end(), e.records.begin(), e.records.end());
       } else {
-        for (const auto &rec : e.records) {
-          if (!isDrawHidden(rec))
-            m_draws.push_back(rec);
+        for (auto rec : e.records) {
+          applyDrawHidden(rec);
+          m_draws.push_back(std::move(rec));
         }
       }
       if (rebase)
@@ -476,9 +476,9 @@ namespace remix {
       if (m_hiddenTextures.empty()) {
         merged.insert(merged.end(), records.begin(), records.end());
       } else {
-        for (const auto &r : records) {
-          if (!isDrawHidden(r))
-            merged.push_back(r);
+        for (auto r : records) {
+          applyDrawHidden(r);
+          merged.push_back(std::move(r));
         }
       }
     }

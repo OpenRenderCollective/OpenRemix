@@ -59,16 +59,23 @@ namespace remix {
     void addModMaterial(uint64_t hash, remixapi_MaterialHandle handle) {
       if (!handle)
         return;
-      m_modMaterials[hash] = m_materials.at(uint64_t(reinterpret_cast<uintptr_t>(handle)));
-      m_modMerged.clear();
-      ++m_modGeneration;
+      auto it = m_materials.find(uint64_t(reinterpret_cast<uintptr_t>(handle)));
+      if (it != m_materials.end()) {
+        m_modMaterials[hash] = it->second;
+        m_modMerged.clear();
+        ++m_modGeneration;
+      }
     }
     std::vector<uint64_t> takeModMaterialRequests() { return std::exchange(m_modRequests, {}); }
     void replaceModMaterials(const std::map<uint64_t, remixapi_MaterialHandle> &handles) {
       std::unordered_map<uint64_t, std::shared_ptr<scene::Material>> next;
-      for (auto [hash, handle] : handles)
-        if (handle)
-          next[hash] = m_materials.at(uint64_t(reinterpret_cast<uintptr_t>(handle)));
+      for (auto [hash, handle] : handles) {
+        if (handle) {
+          auto it = m_materials.find(uint64_t(reinterpret_cast<uintptr_t>(handle)));
+          if (it != m_materials.end())
+            next[hash] = it->second;
+        }
+      }
       m_modMaterials = std::move(next);
       m_modMerged.clear();
       ++m_modGeneration;
@@ -79,8 +86,11 @@ namespace remix {
     }
     void createMaterial(const remixapi_MaterialInfo &info, remixapi_MaterialHandle &handle);
     void setMaterialSourceHash(remixapi_MaterialHandle handle, uint64_t hash) {
-      m_materials.at(uint64_t(reinterpret_cast<uintptr_t>(handle)))->sourceHash = hash;
-      ++m_modGeneration;
+      auto it = m_materials.find(uint64_t(reinterpret_cast<uintptr_t>(handle)));
+      if (it != m_materials.end()) {
+        it->second->sourceHash = hash;
+        ++m_modGeneration;
+      }
     }
     void destroyMaterial(remixapi_MaterialHandle handle);
     void createMesh(const remixapi_MeshInfo &info, remixapi_MeshHandle &handle);
@@ -104,6 +114,14 @@ namespace remix {
       if (draw.material->sourceHash && isTextureHidden(draw.material->sourceHash))
         return true;
       return false;
+    }
+    void applyDrawHidden(scene::Draw &draw) const {
+      if (isDrawHidden(draw)) {
+        draw.rasterVisible = false;
+        draw.alphaOverride = true;
+        draw.compare = 0; // VK_COMPARE_OP_NEVER: ray tracing any-hit discards the hit
+        draw.ignoreAlpha = false;
+      }
     }
     void setTextureHidden(uint64_t hash, bool hidden);
     void clearHiddenTextures();

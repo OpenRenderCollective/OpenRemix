@@ -78,7 +78,7 @@ TraceFrame prepareTraceFrame(const std::vector<Draw> &draws, double seconds, boo
       surface.uv = {1.f / material.columns, 1.f / material.rows,
                     float(animation % material.columns) / material.columns,
                     float(animation / material.columns) / material.rows};
-      if (material.suppressEmissionLight ||
+      if (material.suppressEmissionLight || (draw.alphaOverride && draw.compare == 0) ||
           (material.emission[0] <= 0 && material.emission[1] <= 0 && material.emission[2] <= 0))
         continue;
       const auto reduction = emissionCache.reduce(draw, surface.uv);
