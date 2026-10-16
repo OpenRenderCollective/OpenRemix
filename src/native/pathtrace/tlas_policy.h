@@ -45,9 +45,9 @@ namespace remix::trace {
     bool changed(const std::vector<InstanceInput> &inputs) const;
     void commit(const std::vector<InstanceInput> &inputs, uint32_t reason);
   };
-  // Instance masks: the separate static and dynamic TLASes keep 0xff; the
-  // combined one tags its parts so a query could select either (every query
-  // uses 0xff, so it sees both, as the two traversals did).
+  // Instance masks: the separate static and dynamic TLASes keep every bit but
+  // the view models'; the combined one tags its parts so a query could select
+  // either (every query includes both, as the two traversals did).
   // View models: only camera rays (and rays of paths that start on one)
   // include this bit; no other instance carries it.
   constexpr uint8_t viewModelInstanceMask = 8;

@@ -69,6 +69,8 @@ int main(int argc, char **argv) {
   config("localLights", "0");
   config("bloom", "0");
   ok(api.SetConfigVariable("rtx.native.backend", "pathtrace"));
+  // Captures are read right after the frame that writes them.
+  ok(api.SetConfigVariable("rtx.native.asyncPresent", "0"));
   auto &runtime = remix::api::g_runtime;
   remixapi_CameraTemporalEXT epoch{};
   epoch.sType = REMIXAPI_STRUCT_TYPE_CAMERA_TEMPORAL_EXT;

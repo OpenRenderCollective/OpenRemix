@@ -5,7 +5,12 @@
 #include <fstream>
 #include <iostream>
 #include <thread>
+#ifdef _WIN32
+#include <process.h>
+#define getpid _getpid
+#else
 #include <unistd.h>
+#endif
 using namespace remix;
 void require(bool value, const char *message) {
   if (!value)
@@ -45,7 +50,7 @@ int main(int argc, char **argv) {
     write("#usda 1.0\ndef Xform \"RootNode\" { def Scope \"meshes\" { def Xform \"mesh_0123456789ABCDEF\" "
           "{\n custom int preserveOriginalDrawCall = 0\n }\n }\n }\n");
     usd::startMods(true);
-    require(usd::configureMods(dir.c_str(), 1, 1, true) == REMIXAPI_ERROR_CODE_SUCCESS, "configure mods");
+    require(usd::configureMods(dir.string().c_str(), 1, 1, true) == REMIXAPI_ERROR_CODE_SUCCESS, "configure mods");
     for (int i = 0; i < 30; ++i) {
       usd::modBoundary(resources);
       std::this_thread::sleep_for(std::chrono::milliseconds(20));

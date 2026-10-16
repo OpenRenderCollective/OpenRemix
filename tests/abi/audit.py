@@ -16,7 +16,13 @@ for manifest, base in [(root / 'tests/abi/headers.sha256', root),
                        (root / 'third_party/xz-embedded/sources.sha256', root / 'third_party/xz-embedded')]:
     for line in manifest.read_text().splitlines():
         checksum, filename = line.split('  ', 1)
-        assert hashlib.sha256((base / filename).read_bytes()).hexdigest() == checksum, filename
+        content = (base / filename).read_bytes()
+        digest = hashlib.sha256(content).hexdigest()
+        # Git can check LF text sources out with CRLF on Windows. Preserve
+        # exact matches and binary pins before trying canonical text endings.
+        if digest != checksum and b'\0' not in content:
+            digest = hashlib.sha256(content.replace(b'\r\n', b'\n')).hexdigest()
+        assert digest == checksum, filename
 required_exports = (root / 'tests/abi/exports.txt').read_text().splitlines()
 required_exports += ['remixapi_GetReconstructionDiagnosticsEXT', 'remixapi_GetBackendCapabilitiesEXT', 'remixapi_GetTracingStatisticsEXT', 'remixapi_GetFramePerformanceEXT', 'remixapi_GetFrameBreakdownEXT', 'remixapi_GetGpuPassTimingsEXT',
              'remixapi_GetLocalLightGuidingStatisticsEXT', 'remixapi_GetLocalLightStatisticsEXT',

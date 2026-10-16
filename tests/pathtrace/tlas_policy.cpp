@@ -53,6 +53,7 @@ namespace {
     // motion refits, dynamic membership rebuilds, a known generation skips
     // the static comparison.
     require(instanceMask(false, false) == allInstancesMask && instanceMask(false, true) == allInstancesMask &&
+                !(allInstancesMask & viewModelInstanceMask) &&
                 instanceMask(true, false) == staticInstanceMask && instanceMask(true, true) == dynamicInstanceMask &&
                 (staticInstanceMask & dynamicInstanceMask) == 0,
             "Instance masks");

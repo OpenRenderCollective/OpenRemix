@@ -1,0 +1,74 @@
+--- a/cmake/defaults/CXXDefaults.cmake	2025-10-24 11:21:56.000000000 -0500
++++ b/cmake/defaults/CXXDefaults.cmake	2026-09-29 16:17:24.185535456 -0500
+@@ -15,10 +15,11 @@
+ 
+ if (CMAKE_COMPILER_IS_GNUCXX)
+     include(gccdefaults)
+-elseif ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
+-    include(clangdefaults)
+ elseif(MSVC)
++    # clang-cl reports a Clang compiler id but takes MSVC-style options.
+     include(msvcdefaults)
++elseif ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
++    include(clangdefaults)
+ endif()
+ 
+ _add_define(GL_GLEXT_PROTOTYPES)
+--- a/pxr/base/arch/defines.h	2025-10-24 11:21:56.000000000 -0500
++++ b/pxr/base/arch/defines.h	2026-09-29 16:18:16.085489835 -0500
+@@ -58,7 +58,11 @@
+ // Compiler
+ //
+ 
+-#if defined(__clang__)
++#if defined(_MSC_VER)
++// Includes clang-cl, which follows the MSVC ABI and headers.
++#define ARCH_COMPILER_MSVC
++#define ARCH_COMPILER_MSVC_VERSION _MSC_VER
++#elif defined(__clang__)
+ #define ARCH_COMPILER_CLANG
+ #define ARCH_COMPILER_CLANG_MAJOR __clang_major__
+ #define ARCH_COMPILER_CLANG_MINOR __clang_minor__
+@@ -95,7 +99,7 @@
+ // custom versions of macros.
+ // See here for more detail about MSVC's preprocessors:
+ // https://learn.microsoft.com/en-us/cpp/preprocessor/preprocessor-experimental-overview
+-#if defined(ARCH_COMPILER_MSVC)
++#if defined(ARCH_COMPILER_MSVC) && !defined(__clang__)
+     #if !defined(_MSVC_TRADITIONAL) || _MSVC_TRADITIONAL
+     #define ARCH_PREPROCESSOR_MSVC_TRADITIONAL
+     #endif
+--- a/pxr/base/arch/attributes.h	2025-10-24 11:21:56.000000000 -0500
++++ b/pxr/base/arch/attributes.h	2026-09-29 16:41:05.974655516 -0500
+@@ -269,6 +269,13 @@
+ #   pragma section(".pxrctor", read)
+ #   pragma section(".pxrdtor", read)
+ 
++// clang-cl drops unreferenced internal constants that MSVC keeps.
++#   if defined(__clang__)
++#       define _ARCH_CTOR_ENTRY_USED __attribute__((used))
++#   else
++#       define _ARCH_CTOR_ENTRY_USED
++#   endif
++
+ // Objects of this type run the ARCH_CONSTRUCTOR and ARCH_DESTRUCTOR functions
+ // for the library containing the object in the c'tor and d'tor, respectively.
+ // Each HMODULE is handled at most once.
+@@ -284,7 +291,7 @@
+ #   define ARCH_CONSTRUCTOR(_name, _priority)                                  \
+     static void _name();                                                       \
+     namespace {                                                                \
+-    __declspec(allocate(".pxrctor"))                                           \
++    __declspec(allocate(".pxrctor")) _ARCH_CTOR_ENTRY_USED                     \
+     extern const Arch_ConstructorEntry                                         \
+     _ARCH_CAT_NOEXPAND(arch_ctor_, _name) = {                                  \
+         reinterpret_cast<Arch_ConstructorEntry::Type>(&_name),                 \
+@@ -299,7 +306,7 @@
+ #   define ARCH_DESTRUCTOR(_name, _priority)                                   \
+     static void _name();                                                       \
+     namespace {                                                                \
+-    __declspec(allocate(".pxrdtor"))                                           \
++    __declspec(allocate(".pxrdtor")) _ARCH_CTOR_ENTRY_USED                     \
+     extern const Arch_ConstructorEntry                                         \
+     _ARCH_CAT_NOEXPAND(arch_dtor_, _name) = {                                  \
+         reinterpret_cast<Arch_ConstructorEntry::Type>(&_name),                 \

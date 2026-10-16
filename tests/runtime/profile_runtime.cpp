@@ -36,6 +36,7 @@ int main(int argc, char **argv) {
   tracing.clearColor = {.3f, .05f, .07f, 1};
   require(profiles.edit(tracing) && profiles.duplicate("A pathtrace"), "Path profile fixture");
   auto raster = config::Settings{};
+  raster.backend = 0;
   raster.vsync = true;
   raster.clearColor = {.05f, .2f, .3f, 1};
   require(profiles.edit(raster) && profiles.duplicate("B raster"), "Raster profile fixture");

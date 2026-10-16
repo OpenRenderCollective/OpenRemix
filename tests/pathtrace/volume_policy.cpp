@@ -10,7 +10,9 @@ namespace {
 int main() {
   using namespace remix;
   using namespace remix::trace;
-  TraceOptions options;
+  TraceOptions options; // the game's fog: the defaults are volumetrics off, the override on
+  options.volumetrics = true;
+  options.volumetricOverride = false;
   GameFog fog;
   // No fog from the game and no override: no medium.
   require(!volumeMedium(options, fog).active, "No fog, no medium");
@@ -59,13 +61,13 @@ int main() {
   options.volumetricCells = 1000;
   options.volumetricLevels = 0;
   require(volumeCells(options) == 96 && volumeLevels(options) == 1, "Grid size limits");
-  // The defaults are the High quality and Balanced response presets.
+  // The defaults are the Ultra quality and Immediate response presets.
   const TraceOptions defaults;
-  require(defaults.volumetricCellSize == volumeQualities[2].cellSize && defaults.volumetricCells == volumeQualities[2].cells &&
-              defaults.volumetricLevels == volumeQualities[2].levels && defaults.volumetricSteps == volumeQualities[2].steps,
-          "Default quality is the High preset");
-  require(defaults.volumetricUpdateInterval == volumeResponses[1].interval &&
-              defaults.volumetricHistory == volumeResponses[1].history,
-          "Default response is the Balanced preset");
+  require(defaults.volumetricCellSize == volumeQualities[3].cellSize && defaults.volumetricCells == volumeQualities[3].cells &&
+              defaults.volumetricLevels == volumeQualities[3].levels && defaults.volumetricSteps == volumeQualities[3].steps,
+          "Default quality is the Ultra preset");
+  require(defaults.volumetricUpdateInterval == volumeResponses[3].interval &&
+              defaults.volumetricHistory == volumeResponses[3].history,
+          "Default response is the Immediate preset");
   return 0;
 }

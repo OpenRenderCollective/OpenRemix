@@ -33,6 +33,10 @@ int main() {
 #endif
   std::fprintf(stderr, "Forward+ lifecycle: startup\n");
   checked(api.Startup(&startup));
+  // Target replacement checks observe each completed frame. Exercise async
+  // publication explicitly below rather than inheriting the host's defaults.
+  checked(api.SetConfigVariable("rtx.native.asyncPresent", "0"));
+  checked(api.SetConfigVariable("rtx.native.lowLatency", "0"));
   remixapi_BakeSceneInfoEXT loading{};
   loading.structSize = sizeof(loading);
   loading.version = REMIXAPI_BAKE_SCENE_VERSION_EXT;

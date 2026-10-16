@@ -44,7 +44,11 @@ remixapi_MaterialHandle material(remixapi_Interface &api, uint64_t hash, float r
   info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
   info.pNext = &opaque;
   info.hash = hash;
+#ifdef _WIN32
+  info.albedoTexture = L"";
+#else
   info.albedoTexture = "";
+#endif
   remixapi_MaterialHandle handle = nullptr;
   ok(api.CreateMaterial(&info, &handle));
   return handle;
@@ -268,14 +272,6 @@ int main(int argc, char **argv) {
     config("primaryVisibility", async ? "raster" : visibility);
     ok(api.SetConfigVariable("rtx.native.asyncPresent", async ? "1" : "0"));
     const std::string prefix = visibility;
-    // Cuts first: a world instance's cut is not applied after frames with
-    // view-model-camera draws (also with path-traced view models off, and
-    // before them: a separate, older issue).
-    scene = 3;
-    viewModel = false;
-    const auto worldCut = capture(prefix + "-cut-world");
-    viewModel = true;
-    const auto modelCut = capture(prefix + "-cut-viewmodel");
     scene = 0;
     viewModel = false;
     const auto worldShadow = capture(prefix + "-shadow-world");
@@ -291,6 +287,13 @@ int main(int argc, char **argv) {
     const auto worldNear = capture(prefix + "-near-world");
     viewModel = true;
     const auto modelNear = capture(prefix + "-near-viewmodel");
+    // After view-model frames, with the mask pipelines first requested now:
+    // a compiled pipeline is used without waiting for the cache to be saved.
+    scene = 3;
+    viewModel = false;
+    const auto worldCut = capture(prefix + "-cut-world");
+    viewModel = true;
+    const auto modelCut = capture(prefix + "-cut-viewmodel");
     scene = 4;
     std::vector<float> centroids;
     for (float x : {0.f, 7321.37f, 15873.61f, 30517.9f}) {

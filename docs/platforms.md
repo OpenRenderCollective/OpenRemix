@@ -29,20 +29,30 @@ SDL3, the sample, SDK headers, pin and license notices. No Vulkan driver is bund
 
 ### Cross-build from Linux
 
-Linux hosts can use Clang with the x86_64 MinGW-w64 headers, libraries and runtime,
-plus Python, CMake, Meson, Ninja, pkg-config, LLVM binutils and Wine:
+Linux hosts build with clang-cl against the MSVC CRT and Windows SDK, which
+[xwin](https://github.com/Jake-Shadle/xwin) downloads from Microsoft, plus Python,
+CMake, Meson, Ninja, pkg-config, LLVM (lld-link, llvm-lib, llvm-rc, llvm-mt), patch
+and, for the tests, Wine:
+
+Arch Linux specific packages: `sudo pacman -S --needed clang llvm lld meson ninja cmake pkgconf python patch wine git`
 
 ```sh
-python3 scripts/linux/build-windows-remix.py
-python3 scripts/common/package-remix.py --target windows --build _work/build/windows-cross \
-  --deps _work/deps/windows --output _work/packages/windows-cross
+python3 scripts/linux/build-windows-remix.py --accept-msvc-license   # the first run
+python3 scripts/linux/build-windows-remix.py --output /path/to/game/bin/win64/openremix
 ```
 
-Use `--cmake /path/to/cmake` if CMake is outside PATH. The cross-build entry point
-builds the pinned SDL3, generates a Windows import library from the verified Vulkan
-1.4.309 export definition, and runs CPU tests in an isolated Wine prefix under
-`_work/deps/windows`. Windows or Proton supplies the Vulkan loader and GPU driver.
-The cross-built package includes the MinGW runtime DLLs alongside SDL3 and remix.dll.
+The build has OpenUSD and DLSS (both need the MSVC ABI) and FSR. On its first run
+the script splats the CRT and SDK (accepting Microsoft's license is up to you, hence
+the flag), then builds the pinned SDL3, oneTBB 2021.13.0 and OpenUSD 25.11 (patched
+for clang-cl, `scripts/linux/openusd-25.11-clang-cl.patch`) into `_work/deps/xwin`;
+later runs reuse them. It collects the runtime in `--output` (default
+`_work/dist/windows/openremix`) as a game loads it: `remix.dll` and its PDB, SDL3,
+TBB and the `usd_*.dll` side by side, OpenUSD's plugins in `usd/`, DLSS in
+`dlss/310.9.1/`. Files already in the folder that the build does not make (profiles,
+caches, logs) are kept. `--tests` runs the CPU tests in an isolated Wine prefix.
+Use `--cmake /path/to/cmake` if CMake is outside PATH. Windows or Proton supplies the
+Vulkan loader, the GPU driver and the Visual C++ runtime (`vcruntime140.dll`,
+`msvcp140.dll`).
 
 ### Build on Windows
 

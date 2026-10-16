@@ -47,6 +47,9 @@ namespace {
 }
 
 int main() {
+  // Headless, in code: Wine does not pass SDL_VIDEODRIVER to the process, and
+  // a real window's global mouse state replaces the test's events.
+  SDL_SetHintWithPriority(SDL_HINT_VIDEO_DRIVER, "dummy", SDL_HINT_OVERRIDE);
   if (!SDL_Init(SDL_INIT_VIDEO)) {
     std::cerr << "SDL video initialization failed: " << SDL_GetError() << '\n';
     return 1;

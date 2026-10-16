@@ -11,8 +11,14 @@ int main() {
   using namespace remix;
   using namespace remix::trace;
   constexpr uint64_t reference = 2227ull * 1238;
-  TraceOptions options;
-  // The defaults are the Ultra preset: its rate as is at the reference resolution.
+  // The Ultra preset at neutral quality (the defaults are the Low preset's
+  // rate and exponent at a lower quality): its rate as is at the reference
+  // resolution.
+  TraceOptions ultra;
+  ultra.sparseSamplingRate = sparsePresets[0].samplingRate;
+  ultra.sparseResolutionExponent = sparsePresets[0].resolutionExponent;
+  ultra.sparseQuality = .5f;
+  TraceOptions options = ultra;
   require(near(sparseSamplingRate(options, reference), .357f), "Reference resolution keeps the preset rate");
   // Lower render resolutions take a higher rate, up to every pixel.
   require(near(sparseSamplingRate(options, 1920 * 1080), .434f), "1080p Ultra rate");
@@ -31,7 +37,7 @@ int main() {
   options.sparseResolutionExponent = sparsePresets[3].resolutionExponent;
   require(near(sparseSamplingRate(options, 960 * 540), .458f), "540p Low rate");
   // Quality moves the scaled rate between the bounds; 0.5 leaves it.
-  options = {};
+  options = ultra;
   const float scaled = sparseSamplingRate(options, 1920 * 1080);
   options.sparseQuality = 1;
   require(near(sparseSamplingRate(options, 1920 * 1080), 1), "Full quality lights every pixel");
@@ -40,7 +46,7 @@ int main() {
   options.sparseQuality = .75f;
   require(near(sparseSamplingRate(options, 1920 * 1080), std::sqrt(scaled)), "Quality interpolates in log space");
   // Without scaling the rate is the setting at every resolution.
-  options = {};
+  options = ultra;
   options.sparseAdaptiveRate = false;
   options.sparseSamplingRate = .25f;
   require(sparseSamplingRate(options, 640 * 360) == .25f && sparseSamplingRate(options, reference) == .25f,

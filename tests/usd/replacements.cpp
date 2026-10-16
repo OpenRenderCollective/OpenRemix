@@ -4,7 +4,12 @@
 #include <fstream>
 #include <iostream>
 #include <thread>
+#ifdef _WIN32
+#include <process.h>
+#define getpid _getpid
+#else
 #include <unistd.h>
+#endif
 using namespace remix;
 void require(bool v, const char *m) {
   if (!v)
@@ -115,7 +120,7 @@ custom int preserveOriginalDrawCall = 0
     } stop{resources};
     usd::Submission scene(resources, captured, 1);
     usd::startMods(true);
-    require(!usd::configureMods(dir.c_str(), 1, 1, true), "configure mods");
+    require(!usd::configureMods(dir.string().c_str(), 1, 1, true), "configure mods");
     settle(resources);
     require(!*usd::modDiagnostic(), usd::modDiagnostic());
     scene.draw(false, 1);

@@ -40,6 +40,8 @@ int main(int argc, char **argv) {
   ok(remixapi_GetDenoisingCapabilitiesEXT(&caps));
   if (!caps.reblurShSupported) { ok(api.Shutdown()); return 77; }
   ok(api.SetConfigVariable("rtx.native.backend", "pathtrace"));
+  // Captures are read right after the frame that writes them.
+  ok(api.SetConfigVariable("rtx.native.asyncPresent", "0"));
   ok(api.SetConfigVariable("rtx.native.vsync", "0"));
   auto config = [&](const char *key, const char *value) {
     ok(api.SetConfigVariable((std::string("rtx.native.pathtrace.") + key).c_str(), value));

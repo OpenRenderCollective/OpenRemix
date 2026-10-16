@@ -27,22 +27,22 @@ int main(int argc, char **argv) {
   const fs::path root = argv[1];
   fs::create_directories(root);
   config::Settings changed;
-  changed.backend = 1;
+  changed.backend = 0;
   changed.vsync = true;
   changed.clearColor = {.1f, .2f, .3f, .4f};
   auto &t = changed.trace;
   t.samples = 7;
   t.bounces = 4;
-  t.russianRoulette = true;
+  t.russianRoulette = false;
   t.rouletteMinBounces = 3;
   t.accumulate = true;
   t.forceRebuild = true;
   t.denoiser = false;
   t.taa = false;
   t.validation = true;
-  t.upscaler = upscale::Mode::Dlss;
+  t.upscaler = upscale::Mode::Fsr31;
   t.dlssRayReconstruction = false;
-  t.dlssQuality = 3;
+  t.dlssQuality = 2;
   t.autoExposure = false; t.bloom = false;
   t.exposure = 2.3f; t.autoExposureTarget = .13f; t.autoExposureSpeed = 3.7f;
   t.autoExposureCentre = .62f; t.autoExposureMinEv = -10; t.autoExposureMaxEv = 5;
@@ -59,7 +59,7 @@ int main(int argc, char **argv) {
   t.torchLights = false;
   t.emissiveLights = false;
   t.emissiveCandidates = 6;
-  t.adaptiveLocalSampling = false;
+  t.adaptiveLocalSampling = true;
   t.stabilizeEmissiveLighting = true;
   t.emissiveSolidAngleSampling = true;
   t.freezeEmissiveRadiance = true;
@@ -69,7 +69,7 @@ int main(int argc, char **argv) {
   t.localRange = .01f;
   t.localDirectClamp = 13.4f;
   t.indirectClamp = 0.01f;
-  t.localFireflyFilter = true;
+  t.localFireflyFilter = false;
   t.localGuiding = false;
   t.shadowDebug = 2;
   t.debugView = 11;
@@ -77,8 +77,8 @@ int main(int argc, char **argv) {
   t.rasterPrimary = false;
   t.waterIndirectReuse = false;
   t.translucencyDenoiser = false;
-  t.translucencyReuse = true;
-  t.pbrLocalReuse = true;
+  t.translucencyReuse = false;
+  t.pbrLocalReuse = false;
   t.sky = false;
   t.sharc = false;
   t.sharcDebug = true;
@@ -116,8 +116,8 @@ int main(int argc, char **argv) {
   config::Settings partial;
   partial.trace.samples = 5;
   require(parsed == partial, "Omitted keys leaked previous values");
-  require(parsed.trace.translucencyDenoiser && !parsed.trace.translucencyReuse,
-          "Translucent denoising must default on and opaque reuse must be opt-in");
+  require(parsed.trace.translucencyDenoiser && parsed.trace.translucencyReuse,
+          "Translucent denoising and opaque reuse must default on");
   require(unknown.at("future.setting") == "alpha = beta" && warnings.size() == 1,
           "Unknown key was not retained/warned");
   require(config::serialize(parsed, unknown).find("future.setting = alpha = beta") != std::string::npos,

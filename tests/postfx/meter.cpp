@@ -71,9 +71,9 @@ int main() {
   }
   config::Settings defaults, parsed;
   require(defaults.trace.autoExposure && defaults.trace.bloom &&
-              defaults.trace.autoExposureMaxEv == 2 &&
-              defaults.trace.exposure == 1 &&
-              defaults.trace.bloomIntensity == .1f &&
+              defaults.trace.autoExposureMaxEv == 3.1f &&
+              defaults.trace.exposure == .98f &&
+              defaults.trace.bloomIntensity == .01f &&
               defaults.trace.bloomRadius == .85f,
           "New defaults");
   config::UnknownSettings unknown;

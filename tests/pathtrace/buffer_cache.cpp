@@ -75,9 +75,8 @@ int main() {
     assert(!destroyed.count(handle));
     owner.reset();
     assert(destroyed.count(handle));
-    // vkFreeMemory implicitly releases any mapping; an explicit unmap is not required.
-    remix::MemoryRelease::drain();
-    assert(freed.count(memory));
+    remix::MemoryRelease::drain(); // memory is freed on its own thread; the mapping ends with it
+    assert(freed.count(memory) && !unmapped.count(memory));
   }
   {
     auto cache = std::make_shared<BufferCache>();

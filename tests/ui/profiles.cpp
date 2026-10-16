@@ -20,6 +20,9 @@ int main(int argc, char **argv) {
   profiles.startup(argv[1]);
   require(profiles.save(), "Save fixture");
   ui::ProfileUi ui;
+  // Headless, in code: Wine does not pass SDL_VIDEODRIVER to the process, and
+  // a real window's global mouse state replaces the test's events.
+  SDL_SetHintWithPriority(SDL_HINT_VIDEO_DRIVER, "dummy", SDL_HINT_OVERRIDE);
   require(SDL_Init(SDL_INIT_VIDEO), SDL_GetError());
   SDL_Window *window = SDL_CreateWindow("Profile UI test", 640, 480, 0);
   require(window, SDL_GetError());

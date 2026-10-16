@@ -194,6 +194,9 @@ struct Service::Impl {
   struct Pipeline {
     VkPipeline handle{};
     PreparationQueue::Ticket job;
+    // Set once the handle is created: the job then still saves the cache
+    // (about 150 ms for 100 MiB), which a frame does not wait for.
+    std::atomic<bool> compiled{false};
   };
   std::map<std::string, std::shared_ptr<Pipeline>> pipelines;
   // Dev report (guarded by mutex): compiles and saves, milliseconds since
@@ -305,7 +308,7 @@ struct Service::Impl {
       auto found = pipelines.find(key);
       if (found != pipelines.end()) {
         result = found->second;
-        if (result->job->state == PreparationQueue::State::Complete)
+        if (result->compiled)
           ++stats.reused;
         else
           ++stats.deduplicated;
@@ -336,9 +339,11 @@ struct Service::Impl {
             stats.milliseconds += std::chrono::duration<double, std::milli>(
                                       std::chrono::steady_clock::now() - start)
                                       .count();
-            if (status == VK_SUCCESS)
+            // With the count, so a caller that sees it completed can use it.
+            if (status == VK_SUCCESS) {
               ++stats.created;
-            else
+              result->compiled = true;
+            } else
               ++stats.failed;
             auto &entry = records[record];
             entry.finished = since();
@@ -369,6 +374,10 @@ struct Service::Impl {
     *out = {};
     if (queue.onWorker())
       queue.finishOnWorker(result->job);
+    if (result->compiled) {
+      *out = result->handle;
+      return VK_SUCCESS;
+    }
     if (!result->job->ready())
       return VK_NOT_READY;
     try {

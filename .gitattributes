@@ -1,0 +1,3 @@
+# The retained SDK audit hashes these headers byte for byte.
+public/include/remix/remix_c.h text eol=lf
+public/include/remix/remix.h text eol=lf
