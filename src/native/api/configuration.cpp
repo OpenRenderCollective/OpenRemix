@@ -37,6 +37,8 @@ namespace remix::api {
       return g_runtime.selectBackend(value);
     if (std::strncmp(key, "rtx.native.pathtrace.", 21) == 0)
       return g_runtime.configureTracing(key + 21, value);
+    if (std::strncmp(key, "rtx.native.forward.", 19) == 0)
+      return g_runtime.configureSetting(key, value);
     const bool clearColor = std::strlen(key) == 23 && std::strncmp(key, "rtx.native.clearColor.", 22) == 0 &&
                             std::strchr("rgba", key[22]);
     if (std::strcmp(key, "rtx.native.vsync") == 0 || clearColor ||

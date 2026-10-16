@@ -10,7 +10,7 @@ test_cpp_args = cpp.get_supported_arguments('-Wno-missing-field-initializers')
 runtime_test_dep = declare_dependency(
   objects : remix.extract_all_objects(recursive : false),
   link_with : usd_libraries + [shell_platform, imgui_vulkan, scene_library,
-    raster_library, pathtrace_library, denoise_library, upscale_library],
+    raster_library, forward_library, pathtrace_library, denoise_library, upscale_library],
   dependencies : shell_deps,
   compile_args : ['-DREMIX_LIBRARY_EXPORTS=1'] + test_cpp_args)
 subdir('abi')
@@ -20,6 +20,7 @@ subdir('ui')
 subdir('platform')
 subdir('runtime')
 subdir('raster')
+subdir('forward')
 subdir('pathtrace')
 subdir('denoise')
 subdir('postfx')

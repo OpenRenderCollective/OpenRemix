@@ -1,0 +1,40 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#define CLUSTER_BUILD
+#include "bindings.glsl"
+layout(local_size_x = 64) in;
+vec3 viewPoint(vec2 ndc, float depth) {
+  vec4 a = frame.inverseProjection * vec4(ndc, 0, 1), b = frame.inverseProjection * vec4(ndc, .9999, 1);
+  vec3 pa = a.xyz / a.w, pb = b.xyz / b.w;
+  return mix(pa, pb, (depth * frame.depth.w - pa.z) / (pb.z - pa.z));
+}
+void main() {
+  uint index = gl_GlobalInvocationID.x;
+  if (index >= frame.grid.w)
+    return;
+  uvec3 cell = uvec3(index % frame.grid.x, (index / frame.grid.x) % frame.grid.y,
+                     index / (frame.grid.x * frame.grid.y));
+  vec2 low = vec2(cell.xy) / vec2(frame.grid.xy) * 2 - 1;
+  vec2 high = vec2(cell.xy + 1u) / vec2(frame.grid.xy) * 2 - 1;
+  vec3 minimum = vec3(1e30), maximum = vec3(-1e30);
+  for (int z = 0; z < 2; ++z)
+    for (int y = 0; y < 2; ++y)
+      for (int x = 0; x < 2; ++x) {
+        vec3 p =
+            viewPoint(vec2(x == 0 ? low.x : high.x, y == 0 ? low.y : high.y), sliceDepth(cell.z + uint(z)));
+        minimum = min(minimum, p);
+        maximum = max(maximum, p);
+      }
+  uint count = 0u, base = index * ClusterStride;
+  for (uint i = 0u; i < frame.target.z; ++i) {
+    vec3 center = (frame.view * vec4(lights[i].positionRadius.xyz, 1)).xyz;
+    vec3 delta = center - clamp(center, minimum, maximum);
+    float radius = lights[i].shaping.z;
+    if (dot(delta, delta) <= radius * radius) {
+      if (count < ClusterCapacity)
+        clusters[base + 1u + count] = i;
+      ++count;
+    }
+  }
+  clusters[base] = count;
+}

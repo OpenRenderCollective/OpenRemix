@@ -1,0 +1,82 @@
+// Smooth, measured dielectric boundaries. Ripple normals remain a live effect.
+struct Medium {
+  vec3 extinction;
+  float index;
+};
+Medium airMedium() { return Medium(vec3(0), 1); }
+Medium materialMedium(RayMaterial material) { return Medium(material.optics.rgb, material.optics.w); }
+bool dielectric(RayMaterial material) { return (material.flags.w & 4u) != 0u; }
+vec3 attenuation(Medium medium, float distance) { return exp(-medium.extinction * max(distance, 0)); }
+float fresnelBoundary(float cosine, float incident, float transmitted) {
+  cosine = clamp(cosine, 0, 1);
+  float eta = incident / transmitted;
+  float sineSquared = eta * eta * max(0, 1 - cosine * cosine);
+  if (sineSquared >= 1)
+    return 1;
+  float other = sqrt(max(0, 1 - sineSquared));
+  float parallel =
+      (transmitted * cosine - incident * other) / max(transmitted * cosine + incident * other, 1e-8);
+  float perpendicular =
+      (incident * cosine - transmitted * other) / max(incident * cosine + transmitted * other, 1e-8);
+  return clamp(.5 * (parallel * parallel + perpendicular * perpendicular), 0, 1);
+}
+// Locate a containing boundary once per shading point, rather than per sample.
+// A first-hit exit in any axis is evidence of being inside. Opaque geometry
+// blocks that axis, preventing an open pool from extending below its floor.
+// Disjoint bodies are supported; overlapping/nested media need a volume stack.
+Medium initialMedium(vec3 position, inout uint seed) {
+  Medium result = airMedium();
+  if (rayFrame.control.w == 0u)
+    return result;
+  float nearest = rayFrame.trace.x;
+  for (uint axis = 0; axis < 6u; ++axis) {
+    vec3 direction = vec3(0);
+    direction[axis / 2u] = (axis & 1u) == 0u ? 1 : -1;
+    Hit hit;
+    if (!traceRay(position, direction, rayFrame.trace.x, seed, hit))
+      continue;
+    RayMaterial material = rayMaterials[rayTriangles[hit.primitive].w];
+    if (!dielectric(material) || hit.distance >= nearest)
+      continue;
+    vec2 uv;
+    vec4 color;
+    vec3 normal, geometric;
+    attributes(hit.primitive, hit.bary, uv, color, normal, geometric);
+    if (dot(normal, direction) > 0) {
+      result = materialMedium(material);
+      nearest = hit.distance;
+    }
+  }
+  return result;
+}
+// Straight shadow connections retain Beer-Lambert and interface Fresnel loss.
+// They omit refractive caustic focusing; continuation rays below use Snell's law.
+vec3 visibility(vec3 origin, vec3 direction, float maximum, inout uint seed, Medium medium) {
+  if (maximum <= rayFrame.trace.y)
+    return vec3(0);
+  vec3 weight = vec3(1);
+  for (uint boundary = 0; boundary < 32u; ++boundary) {
+    Hit hit;
+    bool found = traceRay(origin, direction, maximum, seed, hit);
+    weight *= attenuation(medium, hit.distance);
+    if (!found)
+      return weight;
+    RayMaterial material = rayMaterials[rayTriangles[hit.primitive].w];
+    if (!dielectric(material))
+      return vec3(0);
+    vec2 uv;
+    vec4 color;
+    vec3 normal, geometric;
+    attributes(hit.primitive, hit.bary, uv, color, normal, geometric);
+    bool entering = dot(normal, direction) < 0;
+    Medium next = entering ? materialMedium(material) : airMedium();
+    weight *= 1 - fresnelBoundary(abs(dot(normal, direction)), medium.index, next.index);
+    medium = next;
+    float advance = hit.distance + rayFrame.trace.y;
+    maximum -= advance;
+    if (maximum <= 0)
+      return weight;
+    origin += direction * advance;
+  }
+  return vec3(0); // bounded work for coincident or pathological boundaries
+}

@@ -226,6 +226,13 @@ namespace remix {
     m_screenshot.reset(m_device);
     shutdownUi();
     m_pathTracer.reset();
+    m_forward.reset();
+    m_forwardPreparation.reset();
+    m_obsoleteForward.clear();
+    m_forwardBaking.reset();
+    m_forwardFailure.clear();
+    m_forwardSupported = false;
+    m_forwardRaySupported=false;
     m_postProcessing.reset();
     m_exposureState.reset();
     m_postFailure.clear();

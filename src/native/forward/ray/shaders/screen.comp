@@ -1,0 +1,83 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x = 64) in;
+layout(set = 0, binding = 0, std140) uniform ScreenFrame {
+  mat4 inverseCamera, view;
+  vec4 eye, trace;
+  uvec4 target, config;
+}
+frame;
+layout(push_constant) uniform Batch {
+  uint begin, count;
+}
+batch;
+layout(set = 0, binding = 1) uniform sampler2D normals;
+layout(set = 0, binding = 2) uniform sampler2D depth;
+layout(set = 0, binding = 3, rgba16f) uniform image2D radiance;
+struct Point {
+  vec4 position, normal;
+};
+struct Result {
+  vec4 irradiance[9];
+  vec4 moments[6];
+  vec4 statistics;
+};
+#ifdef RAY_LAUNCH
+layout(set = 0, binding = 4, std430) writeonly buffer Points {
+  Point points[];
+};
+#else
+layout(set = 0, binding = 4, std430) readonly buffer Points {
+  Point points[];
+};
+#endif
+layout(set = 0, binding = 5, std430) readonly buffer Results {
+  Result results[];
+};
+
+ivec2 rayPixel(uint index) {
+  return ivec2(index % frame.target.z, index / frame.target.z);
+}
+#ifdef RAY_LAUNCH
+#include "../../shaders/reflection_math.glsl"
+void main() {
+  uint index = gl_GlobalInvocationID.x;
+  if (index >= frame.config.y)
+    return;
+  points[index] = Point(vec4(0), vec4(0, 0, 0, -1));
+  if (index >= batch.count)
+    return;
+  ivec2 pixel = rayPixel(batch.begin + index);
+  if (imageLoad(radiance, pixel).a >= .999)
+    return;
+  ivec2 surface = min(pixel * int(frame.config.x) + int(frame.config.x) / 2, ivec2(frame.target.xy) - 1);
+  vec4 guide = texelFetch(normals, surface, 0);
+  float z = texelFetch(depth, surface, 0).r;
+  if (z >= 1 || dot(guide.xyz, guide.xyz) < .1 || guide.w >= frame.trace.z)
+    return;
+  vec2 uv = (vec2(surface) + .5) / vec2(frame.target.xy);
+  vec4 world = reflectionTransform(frame.inverseCamera, vec4(uv * 2 - 1, z, 1));
+  precise vec3 position = world.xyz / world.w;
+  vec3 incident = reflectionUnit(position - frame.eye.xyz), normal = reflectionUnit(guide.xyz);
+  if (reflectionDot(normal, -incident) <= 0)
+    return;
+  points[index] = Point(vec4(fma(normal, vec3(frame.trace.y), position), 1),
+                         vec4(reflectionDirection(incident, normal), 0));
+}
+#else
+void main() {
+  uint index = gl_GlobalInvocationID.x;
+  if (index >= batch.count)
+    return;
+  Result hit = results[index];
+  if (hit.statistics.z < .5 || hit.statistics.y > .5)
+    return;
+  vec3 value = hit.irradiance[0].rgb;
+  if (any(isnan(value)) || any(isinf(value)))
+    return;
+  ivec2 pixel = rayPixel(batch.begin + index);
+  vec4 screen = imageLoad(radiance, pixel);
+  float remaining = 1 - clamp(screen.a, 0, 1);
+  imageStore(radiance, pixel, vec4(screen.rgb + max(value, vec3(0)) * remaining, 1));
+}
+#endif

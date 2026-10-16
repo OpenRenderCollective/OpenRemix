@@ -19,6 +19,7 @@ if get_option('usd')
   subdir('usd')
 endif
 subdir('raster')
+subdir('forward')
 subdir('denoise')
 subdir('postfx')
 subdir('upscale')
@@ -45,7 +46,7 @@ endif
 remix = shared_library('remix',
   api_sources + runtime_sources + ui_sources,
   name_prefix : system == 'windows' ? '' : 'lib',
-  link_with : usd_libraries + [shell_platform, imgui_vulkan, scene_library, raster_library, pathtrace_library, denoise_library, upscale_library], dependencies : shell_deps,
+  link_with : usd_libraries + [shell_platform, imgui_vulkan, scene_library, raster_library, forward_library, pathtrace_library, denoise_library, upscale_library], dependencies : shell_deps,
   include_directories : [remix_public_include, native_include, image_include], cpp_args : shell_args,
   link_args : shell_link_args, link_depends : 'api/remix.map',
   gnu_symbol_visibility : 'hidden',

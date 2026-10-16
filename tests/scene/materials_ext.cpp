@@ -1,15 +1,15 @@
 // The per-instance material (remixapi_InstanceInfoMaterialEXT) and dynamic
 // textures.
-#include "scene/fixtures.h"
 #include "scene/emission.h"
+#include "scene/fixtures.h"
 #include "scene/opacity.h"
 #include "scene/temporal.h"
 #include <chrono>
-#include <thread>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
 #include <limits>
+#include <thread>
 
 using namespace remix::test;
 namespace scene = remix::scene;
@@ -63,8 +63,7 @@ namespace {
     r.destroyMaterial(other);
     r.finishFrame();
     r.drawInstance(info);
-    require(r.draws().size() == 2 && r.draws()[0].material == ownMaterial,
-            "Dead override not ignored");
+    require(r.draws().size() == 2 && r.draws()[0].material == ownMaterial, "Dead override not ignored");
     // A handle that was never a material is ignored the same way.
     override.material = reinterpret_cast<remixapi_MaterialHandle>(uintptr_t(0x1234));
     r.finishFrame();
@@ -80,7 +79,8 @@ namespace {
   // and what was made from it stay; only the pixels change.
   void dynamicTexture() {
     remix::NativeResources r;
-    const uint8_t red[4][4] = {{0, 0, 255, 255}, {0, 0, 255, 255}, {0, 0, 255, 255}, {0, 0, 255, 255}}; // B8G8R8A8
+    const uint8_t red[4][4] = {
+        {0, 0, 255, 255}, {0, 0, 255, 255}, {0, 0, 255, 255}, {0, 0, 255, 255}}; // B8G8R8A8
     remixapi_TextureInfoDynamicEXT dynamic{};
     dynamic.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_DYNAMIC_EXT;
     dynamic.dynamic = 1;
@@ -120,7 +120,8 @@ namespace {
       remixapi_MaterialHandle mh{};
       r.createMaterial(m, mh);
       const auto t = drawn(r, quad(r, 0x57, mh))->texture;
-      require(t->dynamic && t->pixels.mips.size() == 2 && t->pixels.mips[1][0] == 255, "Dynamic texture with mips");
+      require(t->dynamic && t->pixels.mips.size() == 2 && t->pixels.mips[1][0] == 255,
+              "Dynamic texture with mips");
       const uint8_t green[16] = {0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255};
       r.updateTexture(mipped, 0, 0, 2, 2, REMIXAPI_FORMAT_R8G8B8A8_UNORM, green, 8);
       std::lock_guard lock(t->updates->lock);
@@ -172,7 +173,8 @@ namespace {
     require(texture->dynamic && texture->updates && texture->pixels.mips.size() == 1 &&
                 texture->pixels.mips[0][0] == 255 && texture->pixels.mips[0][2] == 0,
             "Dynamic texture creation");
-    const uint64_t fingerprint = texture->fingerprint(), signature = scene::TemporalHistory::materialSignature(draw);
+    const uint64_t fingerprint = texture->fingerprint(),
+                   signature = scene::TemporalHistory::materialSignature(draw);
 
     // Estimates of the first image.
     scene::SurfaceEmissionCache emission;
@@ -195,7 +197,8 @@ namespace {
     rejected([&] { r.updateTexture(handle, 0, 0, 2, 2, REMIXAPI_FORMAT_B8G8R8A8_SRGB, red, 4); });
 
     // The bottom row turns green (R8G8B8A8 this time, with a row pitch).
-    const uint8_t rows[2][12] = {{255, 0, 0, 255, 255, 0, 0, 255, 9, 9, 9, 9}, {0, 255, 0, 255, 0, 255, 0, 255, 9, 9, 9, 9}};
+    const uint8_t rows[2][12] = {{255, 0, 0, 255, 255, 0, 0, 255, 9, 9, 9, 9},
+                                 {0, 255, 0, 255, 0, 255, 0, 255, 9, 9, 9, 9}};
     r.updateTexture(handle, 0, 0, 2, 2, REMIXAPI_FORMAT_R8G8B8A8_UNORM, rows, 12);
     {
       std::lock_guard lock(texture->updates->lock);
@@ -211,7 +214,8 @@ namespace {
     r.drawInstance(info2);
     require(r.draws().back().material == draw.material && r.draws().back().material->texture == texture &&
                 texture->fingerprint() == fingerprint &&
-                scene::TemporalHistory::materialSignature(r.draws().back()) == signature && texture->pixels.srgb,
+                scene::TemporalHistory::materialSignature(r.draws().back()) == signature &&
+                texture->pixels.srgb,
             "An update changed the texture's identity");
     // The emissive estimate is the first image's until it is old enough, for
     // this surface and for a new one of the same material.
@@ -219,15 +223,18 @@ namespace {
     scene::Draw other = draw;
     other.surface = std::make_shared<scene::Surface>(*draw.surface);
     const auto fresh = emission.reduce(other, uv);
-    require(fresh->size() == 2 && (*fresh)[0].radiance == (*first)[0].radiance && (*fresh)[1].radiance == (*first)[1].radiance,
+    require(fresh->size() == 2 && (*fresh)[0].radiance == (*first)[0].radiance &&
+                (*fresh)[1].radiance == (*first)[1].radiance,
             "A new surface did not keep the material's estimate");
-    std::this_thread::sleep_for(std::chrono::milliseconds(int(REMIXAPI_DYNAMIC_TEXTURE_EMISSION_SECONDS_EXT * 1000) + 50));
+    std::this_thread::sleep_for(
+        std::chrono::milliseconds(int(REMIXAPI_DYNAMIC_TEXTURE_EMISSION_SECONDS_EXT * 1000) + 50));
     const auto second = emission.reduce(draw, uv);
     float sum[3] = {};
     for (const auto &triangle : *second)
       for (int c = 0; c < 3; ++c)
         sum[c] += triangle.radiance[c];
-    require(second != first && sum[0] > .5f && sum[1] > .5f && sum[2] == 0, "Emission did not follow the new image");
+    require(second != first && sum[0] > .5f && sum[1] > .5f && sum[2] == 0,
+            "Emission did not follow the new image");
     require(emission.reduce(draw, uv) == second, "Emission of an unchanged image was estimated again");
     // A direct estimate reads the current pixels.
     r.updateTexture(handle, 0, 0, 2, 2, REMIXAPI_FORMAT_B8G8R8A8_SRGB, red, 8);
@@ -240,12 +247,14 @@ namespace {
     r.createTexture(info, handle);
     r.finishFrame();
     r.drawInstance(info2);
-    require(r.draws().back().material->texture == texture, "CreateTexture replaced a material's dynamic texture");
+    require(r.draws().back().material->texture == texture,
+            "CreateTexture replaced a material's dynamic texture");
   }
 
   // remixapi_MaterialPbrRemapEXT and the SSBump normal encoding.
   void pbrRemap() {
     remix::NativeResources r;
+    const auto texturePath = std::filesystem::path("0x61").native();
     const uint8_t texel[4] = {0, 0, 255, 128};
     remixapi_TextureInfo texture{};
     texture.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_INFO;
@@ -270,7 +279,7 @@ namespace {
     opaque.albedoConstant = {1, 1, 1};
     opaque.opacityConstant = 1;
     opaque.alphaTestType = 7;
-    opaque.roughnessTexture = "0x61";
+    opaque.roughnessTexture = texturePath.c_str();
     remixapi_MaterialInfo info{};
     info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
     info.pNext = &opaque;
@@ -303,7 +312,7 @@ namespace {
     encoding.encoding = 5;
     rejected([&] { r.createMaterial(info, handle); }); // a roughness map
     opaque.roughnessTexture = nullptr;
-    info.normalTexture = "0x61";
+    info.normalTexture = texturePath.c_str();
     info.hash = 0x63;
     r.createMaterial(info, handle);
     const auto water = drawn(r, quad(r, 0x64, handle));
@@ -336,7 +345,31 @@ namespace {
     bodyInfo.hash = 0x67;
     r.createMaterial(bodyInfo, handle);
     const auto sheet = drawn(r, quad(r, 0x68, handle));
-    require(sheet->transmission && !sheet->pbr && sheet->transmittanceDistance == 0, "Thin translucent sheet");
+    require(sheet->transmission && !sheet->pbr && sheet->transmittanceDistance == 0,
+            "Thin translucent sheet");
+    remixapi_MaterialBakeBoundaryEXT boundary{};
+    boundary.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_BAKE_BOUNDARY_EXT;
+    boundary.pNext = &body;
+    boundary.smoothBoundary = 1;
+    bodyInfo.pNext = &boundary;
+    rejected([&] { r.createMaterial(bodyInfo, handle); }); // no measured body
+    body.thinWallThickness_hasvalue = 0;
+    bodyInfo.hash = 0x69;
+    r.createMaterial(bodyInfo, handle);
+    const auto mean = drawn(r, quad(r, 0x70, handle));
+    require(mean->bakeSmoothBoundary && !water2->bakeSmoothBoundary,
+            "Mean-interface baking is explicit and leaves older material definitions intact");
+    body.refractiveIndex = 5;
+    rejected([&] { r.createMaterial(bodyInfo, handle); });
+    body.refractiveIndex = 1.333f;
+    body.transmittanceMeasurementDistance = 1e-20f;
+    rejected([&] { r.createMaterial(bodyInfo, handle); });
+    body.transmittanceMeasurementDistance = 300;
+    body.transmittanceColor.x = -1;
+    rejected([&] { r.createMaterial(bodyInfo, handle); });
+    body.transmittanceColor.x = .1f;
+    boundary.smoothBoundary = 2;
+    rejected([&] { r.createMaterial(bodyInfo, handle); });
   }
 } // namespace
 

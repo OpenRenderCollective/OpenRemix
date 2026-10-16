@@ -18,6 +18,11 @@ ROOT = Path(__file__).resolve().parents[2]
 # driver compiles them about twice as fast; the runtime decompresses on use.
 OPTIMIZED = {'pathtrace'}
 BACKENDS = {
+    'live_gi': ('forward::ray::gi', 'vulkan1.2', ('frag', 'guides')),
+    'live_ray': ('forward::ray', 'vulkan1.2', ('launch', 'merge')),
+    'bake': ('forward::bake', 'vulkan1.2', ('atlas', 'transport', 'parallel')),
+    'forward_test': ('forward::test', 'vulkan1.2', ('comp', 'probes')),
+    'forward': ('forward', 'vulkan1.1', ('vert', 'lightmapVert', 'frag', 'cluster', 'shadowVert', 'shadowFrag', 'localShadowVert', 'localShadowFrag', 'compositeVert', 'compositeFrag', 'compositeSingle', 'ssrFrag', 'ssrResolve', 'ssrResolveSingle', 'ssrReduce', 'ssrTrace', 'ssrFilter')),
     'postfx': ('postfx', 'vulkan1.2', ('meter', 'resolve', 'down', 'up')),
     'upscale': ('upscale', 'vulkan1.2', ('comp', 'vert', 'frag')),
     'raster': ('raster', 'vulkan1.1', ('vert', 'frag', 'haloMask', 'haloVert', 'haloBlur', 'haloComposite', 'maskWithin', 'maskOverlay', 'spriteVert', 'spriteFrag')),
@@ -26,9 +31,21 @@ BACKENDS = {
 }
 
 
+def shader_directory(backend):
+    if backend == 'live_gi':
+        return ROOT / 'src/native/forward/ray/gi_shaders'
+    if backend == 'live_ray':
+        return ROOT / 'src/native/forward/ray/shaders'
+    if backend == 'bake':
+        return ROOT / 'src/native/forward/bake/shaders'
+    if backend == 'forward_test':
+        return ROOT / 'tests/forward/shaders'
+    return ROOT / 'src/native' / backend / 'shaders'
+
+
 def defines_for(backend, stage, stages):
     """Preprocessor defines and source file of one embedded stage."""
-    directory = ROOT / 'src/native' / backend / 'shaders'
+    directory = shader_directory(backend)
     defines = ['-DTEMPORAL=1'] if stage in ('temporal', 'temporalTransparency', 'confidence') else []
     if stage in ('sigma', 'sigmaTemporal', 'sharcSigmaTemporal'): defines += ['-DSIGMA_PASS=1']
     if stage in ('sigmaTemporal', 'sharcSigmaTemporal'): defines += ['-DTEMPORAL=1']
@@ -65,6 +82,37 @@ def defines_for(backend, stage, stages):
     if stage == 'sharcUpdate': defines += ['-DSHARC_UPDATE_PASS=1']
     source_stage = 'comp' if defines else stage
     source = directory / (backend + '.' + source_stage)
+    if backend == 'live_gi':
+        source = ROOT / 'src/native/forward/shaders/forward.frag'
+        defines = ['-DLIVE_GI=1'] + (['-DREFLECTION_GUIDES=1'] if stage == 'guides' else [])
+    if backend == 'live_ray':
+        source = directory / 'screen.comp'
+        defines = ['-DRAY_LAUNCH=1'] if stage == 'launch' else []
+    if backend == 'bake':
+        source = directory / ('transport.comp' if stage == 'parallel' else stage + '.comp')
+        if stage == 'parallel': defines = ['-DPARALLEL_BAKE=1']
+    if backend == 'forward_test': source = directory / ('ray-scene.comp' if stage == 'comp' else 'probes.comp')
+    if backend == 'forward':
+        source = directory / {
+            'vert': 'forward.vert', 'lightmapVert': 'forward.vert', 'frag': 'forward.frag', 'cluster': 'cluster.comp',
+            'shadowVert': 'forward.vert', 'shadowFrag': 'forward.frag',
+            'localShadowVert': 'forward.vert', 'localShadowFrag': 'forward.frag',
+            'compositeVert': 'composite.vert', 'compositeFrag': 'composite.frag',
+            'compositeSingle': 'composite.frag',
+            'ssrFrag': 'forward.frag', 'ssrResolve': 'reflections.comp',
+            'ssrResolveSingle': 'reflections.comp', 'ssrReduce': 'reflections.comp',
+            'ssrTrace': 'reflections.comp', 'ssrFilter': 'reflections.comp',
+        }[stage]
+        if stage == 'lightmapVert': defines = ['-DSURFACE_LIGHTMAP=1']
+        if stage in ('shadowVert', 'shadowFrag'): defines = ['-DSHADOW_PASS=1']
+        if stage in ('localShadowVert', 'localShadowFrag'): defines = ['-DSHADOW_PASS=1', '-DLOCAL_SHADOW_PASS=1']
+        if stage == 'compositeSingle': defines = ['-DSINGLE_SAMPLE=1']
+        if stage == 'ssrFrag': defines = ['-DREFLECTION_GUIDES=1']
+        if stage in ('ssrResolve', 'ssrResolveSingle'): defines = ['-DSSR_RESOLVE=1']
+        if stage == 'ssrResolveSingle': defines += ['-DSINGLE_SAMPLE=1']
+        if stage == 'ssrReduce': defines = ['-DSSR_REDUCE=1']
+        if stage == 'ssrTrace': defines = ['-DSSR_TRACE=1']
+        if stage == 'ssrFilter': defines = ['-DSSR_FILTER=1']
     if backend == 'postfx':
         source = directory / 'postfx.comp'
         defines += ['-DPOST_PASS=' + str(stages.index(stage))]
@@ -122,7 +170,7 @@ def compress(data):
 
 def decompressed_stages(backend):
     """SPIR-V of every stage from a compressed backend's embedded.h and embedded.bin."""
-    directory = ROOT / 'src/native' / backend / 'shaders'
+    directory = shader_directory(backend)
     blob = (directory / 'embedded.bin').read_bytes()
     entries = re.findall(r'\{(\d+)u, (\d+)u, (\d+)u\}, // (\w+)', (directory / 'embedded.h').read_text())
     stages = {}
@@ -136,7 +184,7 @@ def decompressed_stages(backend):
 
 def validate_stage(backend, stage, text, temporary):
     _, environment, _ = BACKENDS[backend]
-    target = ROOT / 'src/native' / backend / 'shaders/embedded.h'
+    target = shader_directory(backend) / 'embedded.h'
     binary = Path(temporary) / (backend + '-' + stage + '.spv')
     if backend in OPTIMIZED:
         data = text.get(stage)
@@ -178,7 +226,7 @@ def process(backends, check, validate):
             ThreadPoolExecutor(max_workers=os.cpu_count() or 1) as pool:
         if validate:
             texts = {b: decompressed_stages(b) if b in OPTIMIZED else
-                     (ROOT / 'src/native' / b / 'shaders/embedded.h').read_text() for b in backends}
+                     (shader_directory(b) / 'embedded.h').read_text() for b in backends}
             tasks = [pool.submit(validate_stage, b, stage, texts[b], temporary)
                      for b in backends for stage in BACKENDS[b][2]]
             for task in tasks:
@@ -188,7 +236,7 @@ def process(backends, check, validate):
                  for b in backends for stage in BACKENDS[b][2]}
         for backend in backends:
             namespace, _, stages = BACKENDS[backend]
-            target = ROOT / 'src/native' / backend / 'shaders/embedded.h'
+            target = shader_directory(backend) / 'embedded.h'
             if backend in OPTIMIZED:
                 header, blob = compressed_output(backend, stages, {s: tasks[backend, s].result() for s in stages})
                 if check:
@@ -216,7 +264,7 @@ def process(backends, check, validate):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('backend', choices=['postfx', 'upscale', 'raster', 'pathtrace', 'denoise', 'nrd', 'fsr31', 'all'])
+    parser.add_argument('backend', choices=[*BACKENDS, 'nrd', 'fsr31', 'all'])
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--check', action='store_true', help='Compare generated output without modifying files')
     mode.add_argument('--validate', action='store_true', help='Validate checked-in SPIR-V using only spirv-val')

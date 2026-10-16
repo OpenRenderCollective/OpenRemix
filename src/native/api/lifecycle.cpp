@@ -79,6 +79,7 @@ namespace {
 // profile directory (REMIX_CONFIG_DIR, else ./openremix):
 //   config.request     "key = value" lines applied as SetConfigVariable
 //   screenshot.request presented frame to screenshot.png
+//   probes.request     published reflection boxes/positions to probes.json
 //   timings.request    GPU pass timings (rtx.native.gpuPassTimers) to timings.txt
 //   pipelines.request  every pipeline compile and cache save to pipelines.txt
 //   sequence.request   N (default 60) consecutive captures to sequence/NNN.png,
@@ -200,6 +201,14 @@ void serviceDevRequests() {
       text = g_runtime.pipelineReport();
     }
     std::ofstream(directory / "pipelines.txt") << text;
+  }
+  if (take("probes.request", nullptr)) {
+    std::string text;
+    {
+      std::lock_guard lock(g_apiMutex);
+      text = g_runtime.reflectionProbeReport();
+    }
+    std::ofstream(directory / "probes.json") << text;
   }
   if (take("timings.request", nullptr)) {
     std::string text;

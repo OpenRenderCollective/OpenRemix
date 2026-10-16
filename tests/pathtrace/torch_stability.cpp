@@ -280,7 +280,7 @@ int main(int argc, char **argv) {
                                  mean / image.size(), truth / image.size(),
                                  excess[size_t(.999 * (excess.size() - 1))]};
   };
-  auto csv = std::fopen((directory / "metrics.csv").c_str(), "w");
+  auto csv = std::fopen((directory / "metrics.csv").string().c_str(), "w");
   require(csv, "Cannot open metrics");
   std::fputs(
       "primary,signal,mode,pose,rmse,mean,reference,p999_excess,gpu_trace_ms,blue_noise,sequence\n",

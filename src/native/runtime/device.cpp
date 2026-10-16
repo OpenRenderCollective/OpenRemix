@@ -193,6 +193,20 @@ namespace remix {
     vkGetPhysicalDeviceQueueFamilyProperties(selection.physicalDevice, &queueCount, nullptr);
     std::vector<VkQueueFamilyProperties> queues(queueCount);
     vkGetPhysicalDeviceQueueFamilyProperties(selection.physicalDevice, &queueCount, queues.data());
+    {
+      VkFormatProperties color{}, depth{};
+      vkGetPhysicalDeviceFormatProperties(selection.physicalDevice, VK_FORMAT_R16G16B16A16_SFLOAT, &color);
+      vkGetPhysicalDeviceFormatProperties(selection.physicalDevice, VK_FORMAT_D32_SFLOAT, &depth);
+      const auto colorFeatures = VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+      const auto depthFeatures = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+      m_forwardSupported = (queues[selection.family].queueFlags & VK_QUEUE_COMPUTE_BIT) &&
+        (color.optimalTilingFeatures & colorFeatures) == colorFeatures &&
+        (depth.optimalTilingFeatures & depthFeatures) == depthFeatures &&
+        properties.limits.maxPerStageDescriptorStorageBuffers >= 4 &&
+        properties.limits.maxDescriptorSetStorageBuffers >= 4 &&
+        properties.limits.maxComputeWorkGroupSize[0] >= 64 &&
+        properties.limits.maxComputeWorkGroupInvocations >= 64;
+    }
     missing((queues[selection.family].queueFlags & VK_QUEUE_COMPUTE_BIT) != 0,
             "graphics/compute/present queue");
     if (version12 && extensionsSupported) {
@@ -245,6 +259,8 @@ namespace remix {
               "RGBA32F sky attachment blending");
     }
     m_traceSupported = m_traceUnavailable.empty();
+    m_forwardRaySupported = m_forwardSupported && version12 && extensionsSupported &&
+      acceleration.accelerationStructure && ray.rayQuery && vulkan12.bufferDeviceAddress;
     m_denoiseCapabilities = denoise::capabilities(selection.physicalDevice);
     const bool sharcSupported = REMIX_HAS_SHARC && m_traceSupported && vulkan11.storageBuffer16BitAccess &&
                                 vulkan12.shaderFloat16 && vulkan12.shaderBufferInt64Atomics;
@@ -254,12 +270,14 @@ namespace remix {
     acceleration = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
                     .pNext = &ray};
     ray = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR};
-    if (m_traceSupported) {
+    if (m_traceSupported || m_forwardRaySupported) {
       extensions.insert(extensions.end(), std::begin(traceExtensions), std::end(traceExtensions));
-      features.features.shaderInt64 = VK_TRUE;
       vulkan12.bufferDeviceAddress = VK_TRUE;
-      vulkan12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
       acceleration.accelerationStructure = ray.rayQuery = VK_TRUE;
+      if (m_traceSupported) {
+        features.features.shaderInt64 = VK_TRUE;
+        vulkan12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+      }
       if (sharcSupported) {
         vulkan11.storageBuffer16BitAccess = VK_TRUE;
         vulkan12.shaderFloat16 = vulkan12.shaderBufferInt64Atomics = VK_TRUE;

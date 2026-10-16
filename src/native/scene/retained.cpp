@@ -85,6 +85,7 @@ namespace remix {
   // update); otherwise the caller catches and the entry draws nothing.
   void NativeResources::resolveRetained(RetainedInstance &e, bool report) {
     ++e.revision;
+    e.resolvedModGeneration = m_modGeneration;
     e.staticEligible = e.staticEmissive = false;
     e.records.clear();
     e.resolved.clear();

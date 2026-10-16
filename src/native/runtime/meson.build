@@ -1,5 +1,6 @@
 runtime_sources = files(
   'configuration.cpp',
+  'forward.cpp',
   'post_processing.cpp',
   'shared_frame.cpp',
   'settings.cpp',

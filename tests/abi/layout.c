@@ -1,4 +1,5 @@
 #include <remix/remix_native_ext.h>
+#include <remix/remix_bake_ext.h>
 #include <remix/remix_editor_ext.h>
 #include <remix/remix_usd_ext.h>
 #if defined(_WIN32)
@@ -7,6 +8,15 @@
 #include "posix_layout.h"
 #endif
 _Static_assert(REMIXAPI_VERSION_MINOR == 1003, "ABI line");
+_Static_assert(sizeof(remixapi_BakeSceneInfoEXT) == 56, "Bake scene extension ABI");
+_Static_assert(sizeof(remixapi_BakeSceneBoundsInfoEXT) == 80, "Bake scene bounds extension ABI");
+_Static_assert(offsetof(remixapi_BakeSceneBoundsInfoEXT, minimum) == 56, "Bake scene bounds alignment");
+_Static_assert(sizeof(remixapi_BakeSurfaceChartEXT) == 40, "Bake surface chart extension ABI");
+_Static_assert(offsetof(remixapi_BakeSurfaceChartEXT, texcoords) == 32, "Bake chart coordinate alignment");
+_Static_assert(sizeof(remixapi_BakeSceneSurfacesInfoEXT) == 104, "Bake surfaces descriptor ABI");
+_Static_assert(offsetof(remixapi_BakeSceneSurfacesInfoEXT, charts) == 96, "Bake chart array alignment");
+_Static_assert(sizeof(remixapi_BakeStatisticsEXT) == 256, "Bake statistics extension ABI");
+_Static_assert(offsetof(remixapi_BakeSceneInfoEXT, instances) == 40, "Bake scene array alignment");
 _Static_assert(sizeof(remixapi_MaterialInfoEmissionEXT) == 24, "Material emission extension ABI");
 _Static_assert(offsetof(remixapi_MaterialInfoEmissionEXT, suppressLightGeneration) == 16,
                "Material emission policy alignment");
@@ -45,4 +55,6 @@ _Static_assert(sizeof(remixapi_HostPassEXT) == 272, "Host pass ABI");
 _Static_assert(sizeof(remixapi_HostPassListEXT) == 32, "Host pass list ABI");
 _Static_assert(sizeof(remixapi_HostPassStatisticsEXT) == 72, "Host pass statistics ABI");
 _Static_assert(sizeof(remixapi_InstanceInfoWireframeEXT) == 24, "Wireframe instance ABI");
+_Static_assert(sizeof(remixapi_MaterialBakeBoundaryEXT) == 24, "Smooth bake boundary ABI");
+_Static_assert(sizeof(remixapi_BakeSceneReflectionsInfoEXT) == 128, "Reflection seed descriptor ABI");
 int main(void) { return 0; }

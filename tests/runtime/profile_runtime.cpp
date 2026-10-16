@@ -63,6 +63,15 @@ int main(int argc, char **argv) {
     startup.windowHeight = cycle ? 240 : 480;
 #endif
     ok(api.Startup(&startup));
+#if defined(_WIN32)
+    // Windows Startup's retained ABI has no dimensions. Match the viewport
+    // used by this test's UI coordinates through SDL instead.
+    int windowCount = 0;
+    auto windows = SDL_GetWindows(&windowCount);
+    require(windowCount == 1, "Expected one runtime window");
+    SDL_SetWindowSize(windows[0], cycle ? 320 : 640, cycle ? 240 : 480);
+    SDL_free(windows);
+#endif
     require(api.GetUIState() == REMIXAPI_UI_STATE_NONE, "Startup restored menu visibility");
     remixapi_BackendCapabilitiesEXT caps{};
     caps.structSize = sizeof(caps);
@@ -134,6 +143,9 @@ int main(int argc, char **argv) {
         }
       };
       auto click = [&](float x, float y) {
+        // ImGui's SDL backend also polls the real pointer on Windows; a
+        // synthetic motion event alone is overwritten on the next frame.
+        SDL_WarpMouseInWindow(SDL_GetWindowFromID(id), x, y);
         SDL_Event focus{};
         focus.type = SDL_EVENT_WINDOW_FOCUS_GAINED;
         focus.window.windowID = id;

@@ -392,6 +392,7 @@ namespace remix {
     m_framebuffers.clear();
     m_imageViews.clear();
     m_renderFinished.clear();
+    retireForward(true);
     if (m_pathTracer)
       retireTracer(std::move(m_pathTracer), renderer().depthLifetime());
     m_activePreparationKey.clear();

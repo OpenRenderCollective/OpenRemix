@@ -67,8 +67,10 @@ int main(int argc, char **argv) {
   ok(remixapi_InitializeLibrary(&init, &api));
   remixapi_StartupInfo startup{};
   startup.sType = REMIXAPI_STRUCT_TYPE_STARTUP_INFO;
+#if !defined(_WIN32)
   startup.windowWidth = 95;
   startup.windowHeight = 79;
+#endif
   ok(api.Startup(&startup));
   remixapi_BackendCapabilitiesEXT caps{};
   caps.structSize = sizeof(caps);

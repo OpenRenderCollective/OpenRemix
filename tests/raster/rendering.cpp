@@ -1,4 +1,7 @@
 #include "raster/renderer.h"
+#include "forward/renderer.h"
+#include "forward/bake/controller.h"
+#include "forward/ray_scene.h"
 #include "runtime/pipelines.h"
 #include "scene/fixtures.h"
 #include <algorithm>
@@ -30,6 +33,11 @@ namespace {
 
   struct Target {
     RasterRenderer raster;
+    VkExtent2D extent;
+    std::unique_ptr<remix::forward::Renderer> forward;
+    uint32_t frameIndex = 0, forwardGeneration = 0;
+    uint32_t queueFamily = VK_QUEUE_FAMILY_IGNORED;
+    bool hardwareRay = false;
     std::unique_ptr<remix::pipeline::Service> pipelines;
     VkInstance instanceHandle = VK_NULL_HANDLE;
     VkDebugUtilsMessengerEXT messenger = VK_NULL_HANDLE;
@@ -56,7 +64,7 @@ namespace {
       require(false, "Memory type");
       return 0;
     }
-    Target() {
+    Target(uint32_t width = 64, uint32_t height = 64, bool ray = false) : extent{width,height}, hardwareRay(ray) {
       const bool validation = std::getenv("REMIX_VULKAN_VALIDATION");
       const char *layer = "VK_LAYER_KHRONOS_validation";
       const char *extensions[] = {
@@ -67,7 +75,7 @@ namespace {
       };
       const VkApplicationInfo app = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
                                      .pApplicationName = "Remix raster readback",
-                                     .apiVersion = VK_API_VERSION_1_1};
+                                     .apiVersion = ray ? VK_API_VERSION_1_2 : VK_API_VERSION_1_1};
       const VkInstanceCreateInfo create = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
 #if defined(__APPLE__)
                                            .flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR,
@@ -92,6 +100,10 @@ namespace {
       std::vector<VkPhysicalDevice> devices(count);
       vk(vkEnumeratePhysicalDevices(instanceHandle, &count, devices.data()));
       physical = devices[0];
+      if (ray && !remix::forward::RayScene::supported(physical)) {
+        std::puts("SKIP: hardware ray-query baking unavailable");
+        std::exit(77);
+      }
       vkGetPhysicalDeviceQueueFamilyProperties(physical, &count, nullptr);
       std::vector<VkQueueFamilyProperties> families(count);
       vkGetPhysicalDeviceQueueFamilyProperties(physical, &count, families.data());
@@ -100,6 +112,7 @@ namespace {
         ++family;
       }
       require(family < count, "Graphics family");
+      queueFamily = family;
       const float priority = 1;
       const VkDeviceQueueCreateInfo q = {.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
                                          .queueFamilyIndex = family,
@@ -108,7 +121,18 @@ namespace {
 #if defined(__APPLE__)
       const char *portability = "VK_KHR_portability_subset";
 #endif
-      const VkDeviceCreateInfo d = {
+      VkPhysicalDeviceRayQueryFeaturesKHR query{
+          .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR, .rayQuery = VK_TRUE};
+      VkPhysicalDeviceAccelerationStructureFeaturesKHR acceleration{
+          .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
+          .pNext = &query, .accelerationStructure = VK_TRUE};
+      VkPhysicalDeviceVulkan12Features features{
+          .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+          .pNext = &acceleration, .bufferDeviceAddress = VK_TRUE};
+      const char *rayExtensions[] = {VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+                                     VK_KHR_RAY_QUERY_EXTENSION_NAME,
+                                     VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME};
+      VkDeviceCreateInfo d = {
           .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
           .queueCreateInfoCount = 1,
           .pQueueCreateInfos = &q,
@@ -117,6 +141,11 @@ namespace {
           .ppEnabledExtensionNames = &portability,
 #endif
       };
+      if (ray) {
+        d.pNext = &features;
+        d.enabledExtensionCount = uint32_t(std::size(rayExtensions));
+        d.ppEnabledExtensionNames = rayExtensions;
+      }
       vk(vkCreateDevice(physical, &d, nullptr, &device));
       vkGetDeviceQueue(device, family, 0, &queue);
       VkPhysicalDeviceProperties properties{};
@@ -127,7 +156,7 @@ namespace {
       const VkImageCreateInfo image = {.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
                                        .imageType = VK_IMAGE_TYPE_2D,
                                        .format = VK_FORMAT_R8G8B8A8_UNORM,
-                                       .extent = {64, 64, 1},
+                                       .extent = {extent.width, extent.height, 1},
                                        .mipLevels = 1,
                                        .arrayLayers = 1,
                                        .samples = VK_SAMPLE_COUNT_1_BIT,
@@ -201,18 +230,18 @@ namespace {
         resumed.pAttachments = kept;
         vk(remix::pipeline::createRenderPass(device, &resumed, nullptr, &resumePass));
       }
-      raster.configureTarget(pass, {64, 64});
+      raster.configureTarget(pass, extent);
       const VkImageView views[] = {view, raster.depthView()};
       const VkFramebufferCreateInfo fb = {.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
                                           .renderPass = pass,
                                           .attachmentCount = 2,
                                           .pAttachments = views,
-                                          .width = 64,
-                                          .height = 64,
+                                          .width = extent.width,
+                                          .height = extent.height,
                                           .layers = 1};
       vk(vkCreateFramebuffer(device, &fb, nullptr, &framebuffer));
       const VkBufferCreateInfo buffer = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-                                         .size = 64 * 64 * 4,
+                                         .size = extent.width * extent.height * 4,
                                          .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT};
       vk(vkCreateBuffer(device, &buffer, nullptr, &readBuffer));
       vkGetBufferMemoryRequirements(device, readBuffer, &mem);
@@ -234,6 +263,7 @@ namespace {
     }
     ~Target() {
       vkDeviceWaitIdle(device);
+      forward.reset();
       vkDestroyFramebuffer(device, framebuffer, nullptr);
       raster.shutdownGpu();
       remix::pipeline::destroyRenderPass(device, pass, nullptr);
@@ -254,36 +284,54 @@ namespace {
     void outputEncoding(bool enabled) {
       vk(vkDeviceWaitIdle(device));
       vkDestroyFramebuffer(device, framebuffer, nullptr);
-      raster.configureTarget(pass, {64, 64}, enabled);
+      raster.configureTarget(pass, extent, enabled);
       const VkImageView views[] = {view, raster.depthView()};
       const VkFramebufferCreateInfo fb = {.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
                                           .renderPass = pass,
                                           .attachmentCount = 2,
                                           .pAttachments = views,
-                                          .width = 64,
-                                          .height = 64,
+                                          .width = extent.width,
+                                          .height = extent.height,
                                           .layers = 1};
       vk(vkCreateFramebuffer(device, &fb, nullptr, &framebuffer));
+    }
+    void enableForward(remix::forward::Options options, bool preserveBaking = false) {
+      vk(vkDeviceWaitIdle(device));
+      const auto baking = preserveBaking && forward ? forward->bakeController() : nullptr;
+      auto next = std::make_unique<remix::forward::Renderer>();
+      auto job = pipelines->prepare("forward-test-" + std::to_string(++forwardGeneration), [&] {
+        next->initialize(physical,device,pass,extent,options,false,pipelines.get(),hardwareRay,baking,queueFamily);
+      });
+      while (!job->ready()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      job->check();
+      forward = std::move(next);
     }
     // captureDepth: as a traced frame does for soft sprites, the scene's depth
     // (here: what the first pass drew) is captured and the frame drawn again.
     std::vector<uint8_t> render(bool captureDepth = false) {
+      if (forward) forward->selectFrame(frameIndex++ % remix::gpuFrameCount);
       vk(vkResetCommandBuffer(command, 0));
       const VkCommandBufferBeginInfo begin = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
       vk(vkBeginCommandBuffer(command, &begin));
-      while (!raster.preparePipelines(false))
+      while (!raster.preparePipelines(false, bool(forward)))
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
-      raster.prepare(command);
+      raster.prepare(command,false,bool(forward));
+      if (forward) forward->prepare(command,raster);
       VkClearValue clear[2] = {};
       clear[1].depthStencil.depth = 1;
       const VkRenderPassBeginInfo rp = {.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
                                         .renderPass = pass,
                                         .framebuffer = framebuffer,
-                                        .renderArea = {{0, 0}, {64, 64}},
+                                        .renderArea = {{0, 0}, extent},
                                         .clearValueCount = 2,
                                         .pClearValues = clear};
       vkCmdBeginRenderPass(command, &rp, VK_SUBPASS_CONTENTS_INLINE);
-      raster.record(command);
+      if (forward) {
+        forward->background(command);
+        raster.record(command,true);
+        forward->composite(command);
+        raster.record(command,false,true);
+      } else raster.record(command);
       vkCmdEndRenderPass(command);
       if (captureDepth) {
         require(raster.wantsSceneDepth(), "Soft sprite asks for the scene depth");
@@ -306,7 +354,7 @@ namespace {
         vkCmdEndRenderPass(command);
       }
       const VkBufferImageCopy copy = {.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
-                                      .imageExtent = {64, 64, 1}};
+                                      .imageExtent = {extent.width, extent.height, 1}};
       vkCmdCopyImageToBuffer(command, color, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readBuffer, 1, &copy);
       const VkMemoryBarrier barrier = {.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
                                        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
@@ -324,7 +372,7 @@ namespace {
       const VkMappedMemoryRange range = {
           .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, .memory = readMemory, .size = VK_WHOLE_SIZE};
       vk(vkInvalidateMappedMemoryRanges(device, 1, &range));
-      std::vector<uint8_t> pixels(64 * 64 * 4);
+      std::vector<uint8_t> pixels(extent.width * extent.height * 4);
       std::memcpy(pixels.data(), mapped, pixels.size());
       vkUnmapMemory(device, readMemory);
       raster.finishFrame();
@@ -535,6 +583,1957 @@ namespace {
           "Mod2x sprite faded out, display target");
     target.outputEncoding(false);
     std::puts("Sprite overlays: frames, green/alpha, sequences, soft depth and modulation passed");
+  }
+  void liveGITests() {
+    for (bool reflections : {false, true})
+      for (uint32_t samples : {1u, 2u, 4u}) {
+        Target target(64, 64, true);
+        auto &r = target.raster;
+        remix::forward::Options options;
+        options.samples = samples;
+        options.rtGI = true;
+        options.rtGISamples = 16;
+        options.rtGIBounces = 1;
+        options.rtGIDistance = 10;
+        options.rtReflections = reflections;
+        options.rtReflectionDistance = .1f;
+        options.rtReflectionBounces = 3;
+        options.ssr = false;
+        options.localShadowLights = 0;
+        options.shadows = false;
+        options.shadowResolution = 64;
+        options.ambient = .9f;
+        options.baking.reflectionProbes = 0;
+        options.baking.maxProbes = 64;
+        options.baking.samples = 64;
+        options.baking.bounces = 1;
+        options.baking.batch = 64;
+        options.baking.lightmapPageSize = 64;
+        options.baking.lightmapTexels = 4096;
+        target.enableForward(options);
+        const auto receiverMesh = quad(r, 9500, material(r, 9501, 1, 1, 1));
+        remixapi_InstanceIdentityEXT identity{};
+        identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+        identity.instanceId = 9502;
+        identity.classification = REMIXAPI_INSTANCE_STATIC_EXT;
+        identity.rasterVisible = 1;
+        auto receiver = instance(receiverMesh);
+        receiver.pNext = &identity;
+        const auto retained = r.createRetained(receiver);
+        auto dome = [&](uint64_t hash, remixapi_Float3D radiance) {
+          remixapi_LightInfoDomeEXT shape{};
+          shape.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT;
+          for (uint32_t c = 0; c < 3; ++c)
+            shape.transform.matrix[c][c] = 1;
+          remixapi_LightInfo info{};
+          info.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+          info.hash = hash;
+          info.pNext = &shape;
+          info.radiance = radiance;
+          remixapi_LightHandle light;
+          r.createLight(info, light);
+          return light;
+        };
+        const auto bakedRed = dome(9503, {1, 0, 0}), liveGreen = dome(9504, {0, 1, 0});
+        remixapi_LightInfoDistantEXT distant{};
+        distant.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT;
+        distant.direction = {0, 0, 1};
+        remixapi_LightInfo sunInfo{};
+        sunInfo.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+        sunInfo.hash = 9510;
+        sunInfo.pNext = &distant;
+        sunInfo.radiance = {0, 0, 2};
+        remixapi_LightHandle blueSun;
+        r.createLight(sunInfo, blueSun);
+        const float uv[] = {0, 0, 8, 8, 8, 0, 0, 0, 0, 8, 8, 8};
+        const remixapi_BakeSurfaceChartEXT chart{retained, 0, 0, 0, 6, 9, 9, uv};
+        remixapi_BakeSceneSurfacesInfoEXT request{};
+        auto &base = request.bounds.scene;
+        base = {sizeof(request),
+                REMIXAPI_BAKE_SCENE_SURFACES_VERSION_EXT,
+                95,
+                1,
+                1,
+                REMIXAPI_BAKE_SCENE_READY_EXT,
+                1,
+                1,
+                &retained,
+                &bakedRed};
+        for (uint32_t c = 0; c < 3; ++c) {
+          request.bounds.minimum[c] = 10;
+          request.bounds.maximum[c] = 11;
+        }
+        request.chartRevision = request.chartCount = 1;
+        request.charts = &chart;
+        r.setBakeScene(&base);
+        const auto blackMesh = quad(r, 9505, material(r, 9506, 0, 0, 0));
+        remixapi_MaterialInfoOpaqueEXT opaque{};
+        opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+        opaque.opacityConstant = 1;
+        opaque.alphaTestType = 7;
+        remixapi_MaterialInfo glow{};
+        glow.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+        glow.pNext = &opaque;
+        glow.hash = 9507;
+        glow.emissiveIntensity = 1;
+        glow.emissiveColorConstant = {0, 0, 1};
+        remixapi_MaterialHandle blueMaterial;
+        r.createMaterial(glow, blueMaterial);
+        const auto blueMesh = quad(r, 9508, blueMaterial);
+        auto panel = instance(blackMesh, -.7f);
+        panel.doubleSided = 1;
+        panel.transform.matrix[0][0] = panel.transform.matrix[1][1] = 100;
+        identity.instanceId = 9509;
+        identity.classification = REMIXAPI_INSTANCE_DYNAMIC_EXT;
+        identity.rasterVisible = 0;
+        panel.pNext = &identity;
+        auto render = [&](int source = 0, bool direct = false) {
+          camera(r);
+          r.drawRetained(nullptr);
+          r.drawLight(liveGreen);
+          if (direct)
+            r.drawLight(blueSun);
+          if (source) {
+            panel.mesh = source == 1 ? blackMesh : blueMesh;
+            r.drawInstance(panel);
+          }
+          return target.render();
+        };
+        auto ready = [&]() {
+          const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+          std::vector<uint8_t> image;
+          do {
+            image = render();
+            if (target.forward->statistics().baking.active)
+              return image;
+            require(target.forward->statistics().baking.state != REMIXAPI_BAKE_FAILED_EXT,
+                    "GI fixture surface bake succeeded");
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+          } while (std::chrono::steady_clock::now() < deadline);
+          require(false, "GI fixture surface lighting published");
+          return image;
+        };
+        auto image = ready();
+        const size_t at = (32 * 64 + 32) * 4;
+        std::printf("Live GI %ux, reflections %u: RGB %u %u %u\n", samples, unsigned(reflections),
+                    unsigned(image[at]), unsigned(image[at + 1]), unsigned(image[at + 2]));
+        require(target.forward->statistics().rayGI.active && image[at] < 3 && image[at + 1] > 150 &&
+                    image[at + 2] < 3,
+                "Live green GI replaces an active red surface lightmap instead of adding to it");
+        render();
+        require(target.forward->statistics().rayGI.sceneBuilds == 0, "Unchanged GI reuses live acceleration");
+        image = render(1);
+        require(image[at] < 3 && image[at + 1] < 3 && image[at + 2] < 3,
+                "Valid black live GI suppresses old baked and ambient fallback lighting");
+        image = render(1, true);
+        require(
+            image[at] < 3 && image[at + 1] < 3 && image[at + 2] > 20 &&
+                target.forward->statistics().rayGI.sceneBuilds == 0,
+            "Replacing indirect illumination preserves independent direct sunlight without an AS rebuild");
+        image = render(2);
+        require(image[at] < 3 && image[at + 1] < 3 && image[at + 2] > 150,
+                "An offscreen moving emissive actor supplies live diffuse illumination");
+        image = render();
+        require(image[at] < 3 && image[at + 1] > 150 && image[at + 2] < 3,
+                "Removing a live GI occluder/emitter leaves no stale illumination");
+        render();
+        options.rtGISamples = 32;
+        options.rtGIBounces = 2;
+        target.forward->updateLighting(options);
+        image = render();
+        require(image[at + 1] > 150 && target.forward->statistics().rayGI.sceneBuilds == 0,
+                "GI sampling budgets update completed slots without rebuilding the live scene");
+        options.rtGISamples = 16;
+        options.rtGIBounces = 1;
+        target.forward->updateLighting(options);
+        render(1);
+        options.rtGIDistance = .1f;
+        target.forward->updateLighting(options);
+        image = render(1);
+        require(image[at + 1] > 150 && target.forward->statistics().rayGI.sceneBuilds == 0,
+                "GI range edits stream separately from geometry and reflection uniforms");
+        options.rtGIDistance = 10;
+        target.forward->updateLighting(options);
+        image = render(1);
+        require(image[at + 1] < 3, "Restoring GI range restores current occlusion");
+        options.rtGI = false;
+        target.enableForward(options);
+        image = ready();
+        require(image[at] > 150 && image[at + 1] < 3,
+                "Disabling GI restores the captured red surface lightmap");
+        require(errors.load() == 0, "Live fragment GI is Vulkan validation clean");
+      }
+    Target ordinary;
+    remix::forward::Options options;
+    options.rtGI = true;
+    options.ssr = false;
+    options.baking.enabled = false;
+    options.baking.reflectionProbes = 0;
+    options.ambient = 1;
+    options.localShadowLights = 0;
+    options.shadowResolution = 64;
+    ordinary.enableForward(options);
+    camera(ordinary.raster);
+    ordinary.raster.drawInstance(
+        instance(quad(ordinary.raster, 9590, material(ordinary.raster, 9591, 1, 1, 1))));
+    const auto image = ordinary.render();
+    require(image[(32 * 64 + 32) * 4] > 150 && !ordinary.forward->statistics().rayGI.available &&
+                !ordinary.forward->statistics().rayGI.active,
+            "Requesting GI without hardware features preserves the ordinary baked/ambient fallback");
+  }
+  void mixedLightingTests(bool localShadows = false, bool directDiffuse = false) {
+    for (uint32_t samples : {1u, 2u, 4u}) {
+      Target target(64, 64, true);
+      auto &r = target.raster;
+      remix::forward::Options options;
+      options.samples = samples;
+      options.ambient = 0;
+      options.shadows = false;
+      options.ssr = samples == 2;
+      options.shadowResolution = 128;
+      options.localShadows = localShadows;
+      options.localShadowLights = localShadows ? 1 : 0;
+      options.localShadowResolution = 512;
+      options.baking.maxProbes = 64;
+      options.baking.spacing = 2;
+      options.baking.samples = 256;
+      options.baking.bounces = 1;
+      options.baking.batch = 16;
+      options.baking.reflectionProbes = 0;
+      options.baking.lightmapPageSize = 64;
+      options.baking.lightmapTexels = 4096;
+      target.enableForward(options);
+      remixapi_MaterialInfoOpaqueEXT metal{};
+      metal.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+      metal.albedoConstant = {1, 1, 1};
+      metal.opacityConstant = 1;
+      metal.roughnessConstant = .45f;
+      metal.metallicConstant = directDiffuse ? 0 : 1;
+      metal.alphaTestType = 7;
+      remixapi_MaterialInfo materialInfo{};
+      materialInfo.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+      materialInfo.pNext = &metal;
+      materialInfo.hash = 9700;
+      remixapi_MaterialHandle materialHandle;
+      r.createMaterial(materialInfo, materialHandle);
+      const auto mesh = quad(r, 9701, materialHandle);
+      remixapi_InstanceIdentityEXT identity{};
+      identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+      identity.instanceId = 9702;
+      identity.classification = REMIXAPI_INSTANCE_STATIC_EXT;
+      identity.rasterVisible = 1;
+      auto receiver = instance(mesh);
+      receiver.pNext = &identity;
+      const auto retained = r.createRetained(receiver);
+      const auto black = quad(r, 9703, material(r, 9704, 0, 0, 0));
+      auto blocker = instance(black, -.4f);
+      blocker.doubleSided = 1;
+      blocker.transform.matrix[0][0] = .5f;
+      blocker.transform.matrix[0][3] = -.4f;
+      blocker.transform.matrix[1][1] = 3;
+      identity.instanceId = 9705;
+      identity.rasterVisible = 0;
+      blocker.pNext = &identity;
+      const uint64_t instances[] = {retained, r.createRetained(blocker)};
+      remixapi_LightInfoSphereEXT sphere{};
+      sphere.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT;
+      sphere.position = {0, 0, -.8f};
+      sphere.radius = .3f;
+      remixapi_LightInfo info{};
+      info.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+      info.pNext = &sphere;
+      info.hash = 9706;
+      info.radiance = {directDiffuse ? 8.f : 100.f, 0, 0};
+      remixapi_LightHandle red;
+      r.createLight(info, red);
+      info.hash = 9707;
+      info.isDynamic = 1;
+      info.radiance = {0, directDiffuse ? 3.f : 40.f, 0};
+      remixapi_LightHandle green;
+      r.createLight(info, green);
+      const float uv[] = {0, 0, 8, 8, 8, 0, 0, 0, 0, 8, 8, 8};
+      const remixapi_BakeSurfaceChartEXT chart{retained, 0, 0, 0, 6, 9, 9, uv};
+      remixapi_BakeSceneSurfacesInfoEXT request{};
+      auto &base = request.bounds.scene;
+      base = {sizeof(request),
+              REMIXAPI_BAKE_SCENE_SURFACES_VERSION_EXT,
+              97,
+              1,
+              1,
+              REMIXAPI_BAKE_SCENE_READY_EXT,
+              2,
+              1,
+              instances,
+              &red};
+      for (uint32_t c = 0; c < 3; ++c) {
+        request.bounds.minimum[c] = 10;
+        request.bounds.maximum[c] = 11;
+      }
+      request.chartRevision = request.chartCount = 1;
+      request.charts = &chart;
+      r.setBakeScene(&base);
+      auto render = [&](bool dynamic) {
+        camera(r);
+        r.drawRetained(nullptr);
+        r.drawLight(red);
+        if (dynamic)
+          r.drawLight(green);
+        return target.render();
+      };
+      auto until = [&](const char *phase, bool ready) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        std::vector<uint8_t> pixels;
+        do {
+          pixels = render(false);
+          const auto &stats = target.forward->statistics().baking;
+          if ((ready && stats.state == REMIXAPI_BAKE_READY_EXT) ||
+              (!ready && std::strstr(stats.status, phase)))
+            return pixels;
+          if (stats.state == REMIXAPI_BAKE_FAILED_EXT)
+            std::fprintf(stderr, "%s\n", stats.status);
+          require(stats.state != REMIXAPI_BAKE_FAILED_EXT, "Mixed visibility bake succeeded");
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        } while (std::chrono::steady_clock::now() < deadline);
+        require(false, "Mixed visibility bake reached the requested phase");
+        return pixels;
+      };
+      // Cancel this newly introduced dispatch mode while its GPU work is in flight.
+      until("Baking per-light static visibility", false);
+      r.setBakeScene(nullptr);
+      for (uint32_t i = 0; i < remix::gpuFrameCount + 2; ++i)
+        render(false);
+      require(!target.forward->statistics().baking.active,
+              "Cancelled direct-mask work cannot publish a stale volume");
+      ++base.revision;
+      r.setBakeScene(&base);
+      auto pixels = until("", true);
+      const size_t left = (32 * 64 + 16) * 4, right = (32 * 64 + 48) * 4;
+      std::printf("Mixed mask %ux initial: left red %u, right red %u\n", samples, unsigned(pixels[left]),
+                  unsigned(pixels[right]));
+      require(
+          pixels[left] < 3 && pixels[right] > 80,
+          "Baked static visibility shadows direct metallic specular without a diffuse lightmap contribution");
+      if (directDiffuse) {
+        const auto baked = pixels[right];
+        options.baking.directDiffuse = false;
+        target.forward->updateLighting(options);
+        pixels = until("", true);
+        std::printf("Baked direct %ux: baked %u, analytic %u\n", samples, unsigned(baked),
+                    unsigned(pixels[right]));
+        require(pixels[left] < 3 && std::abs(int(pixels[right]) - int(baked)) < 15,
+                "Baked direct diffuse replaces the analytic diffuse lobe without doubling the light");
+        options.baking.directDiffuse = true;
+        target.forward->updateLighting(options);
+        pixels = until("", true);
+        const auto hash = target.forward->statistics().baking.activeHash;
+        info.hash = 9706;
+        info.isDynamic = 0;
+        info.radiance = {0, 0, 8};
+        r.updateLight(red, info);
+        pixels = render(false);
+        require(pixels[right] < 3 && pixels[right + 2] > 80 && pixels[left + 2] < 3 &&
+                    target.forward->statistics().baking.activeHash == hash,
+                "Unit direct coefficients use current colour while preserving per-light static provenance");
+        info.radiance = {8, 0, 0};
+        r.updateLight(red, info);
+        pixels = render(false);
+      }
+      if (localShadows) {
+        const auto lit = pixels[right];
+        require(target.forward->statistics().staticShadowUpdates == 0,
+                "Repeated frames reuse cached static maps");
+        // An actor can settle into STATIC classification without belonging to
+        // the authored bake. It still needs a moving-caster shadow map.
+        auto moving = instance(black, -.4f);
+        moving.doubleSided = 1;
+        moving.transform.matrix[0][0] = .15f;
+        moving.transform.matrix[0][3] = .35f;
+        moving.transform.matrix[1][1] = .04f;
+        identity.instanceId = 9790;
+        moving.pNext = &identity;
+        const auto actor = r.createRetained(moving);
+        pixels = render(false);
+        const size_t adjacent = (27 * 64 + 48) * 4;
+        std::printf("Local shadow %ux: lit %u, moving %u, adjacent %u\n", samples, unsigned(lit),
+                    unsigned(pixels[right]), unsigned(pixels[adjacent]));
+        require(pixels[right] < lit / 3 && pixels[adjacent] > lit / 2 && pixels[left] < 3,
+                "A narrow dynamic shadow cuts its own direct light independently of the coarse lightmap");
+        pixels = render(true);
+        require(pixels[right] < lit / 3 && pixels[right + 1] > 20 &&
+                    target.forward->statistics().shadowOverflow == 1,
+                "A shadowed light cannot attenuate an unrelated light beyond the local-map budget");
+        require(target.forward->statistics().staticShadowUpdates == 0,
+                "Moving casters do not rebuild static maps");
+        moving.transform.matrix[1][3] = .4f;
+        r.updateRetained(actor, moving);
+        pixels = render(false);
+        require(std::abs(int(pixels[right]) - int(lit)) < 4,
+                "Caster motion restores the old pixel without shadow trails");
+        r.destroyRetained(&actor, 1);
+        pixels = render(false);
+        require(std::abs(int(pixels[right]) - int(lit)) < 4,
+                "Caster removal clears its shadow on the next frame");
+        moving.transform.matrix[1][3] = 0;
+        moving.mesh = quad(r, 9791, material(r, 9792, 0, 0, 0, 1, nullptr, 0));
+        identity.instanceId = 9793;
+        const auto cutout = r.createRetained(moving);
+        pixels = render(false);
+        require(std::abs(int(pixels[right]) - int(lit)) < 4 && target.forward->statistics().draws == 3,
+                "Alpha-rejected caster fragments leave the local depth map clear");
+        r.destroyRetained(&cutout, 1);
+        // Disable baking to exercise an uncharted receiver, then remove the
+        // live caster. The complete frozen geometry must still shadow it.
+        options.baking.enabled = false;
+        target.forward->updateLighting(options);
+        r.destroyRetained(&instances[1], 1);
+        pixels = render(false);
+        require(pixels[left] < 3 && pixels[right] > 80,
+                "Uncharted receivers use complete cached static geometry");
+        options.localShadows = false;
+        target.forward->updateLighting(options);
+        pixels = render(false);
+        require(pixels[left] > 20, "Disabling local maps selects the direct-light fallback");
+        options.localShadows = true;
+        target.forward->updateLighting(options);
+        pixels = render(false);
+        require(pixels[left] < 3 && target.forward->statistics().staticShadowUpdates == 0,
+                "Re-enabling shadows safely reuses unchanged static depth maps");
+        sphere.position.x = .1f;
+        info.hash = 9706;
+        info.isDynamic = 0;
+        info.radiance = {100, 0, 0};
+        r.updateLight(red, info);
+        render(false);
+        require(target.forward->statistics().staticShadowUpdates == 1,
+                "Emitter motion refreshes static depth maps");
+        r.setBakeScene(nullptr);
+        pixels = render(false);
+        require(pixels[left] > 20 && target.forward->statistics().staticShadowUpdates == 1,
+                "Map unload removes cached static occluders immediately");
+        require(errors.load() == 0, "Local shadow rendering is Vulkan validation clean");
+        continue;
+      }
+      pixels = render(true);
+      require(pixels[left] < 3 && pixels[right] > 80 && pixels[left + 1] > 20 && pixels[right + 1] > 20,
+              "One light's static mask cannot darken an unrelated dynamic light");
+      const auto hash = target.forward->statistics().baking.activeHash;
+      info.hash = 9706;
+      info.isDynamic = 0;
+      info.radiance = {0, 0, 100};
+      r.updateLight(red, info);
+      pixels = render(false);
+      require(pixels[left + 2] < 3 && pixels[right + 2] > 80 && pixels[right] < 3 &&
+                  target.forward->statistics().baking.activeHash == hash &&
+                  target.forward->statistics().baking.state == REMIXAPI_BAKE_READY_EXT,
+              "Current light colour updates live specular while retaining the matching static penumbra");
+      std::vector<remixapi_LightHandle> captured{red};
+      for (uint32_t i = 0; i < 4; ++i) {
+        info.hash = 9710 + i;
+        info.radiance = {0, 40, 0};
+        remixapi_LightHandle extra;
+        r.createLight(info, extra);
+        captured.push_back(extra);
+      }
+      base.lightCount = uint32_t(captured.size());
+      base.lights = captured.data();
+      ++base.revision;
+      r.setBakeScene(&base);
+      const auto source = r.bakeScene();
+      const auto overflow = std::max_element(source->lights.begin() + 1, source->lights.end(),
+                                             [](const auto &a, const auto &b) { return a.id < b.id; });
+      const auto fallback = captured[size_t(overflow - source->lights.begin())];
+      until("", true);
+      require(std::strstr(target.forward->statistics().baking.status, "1 direct links"),
+              "Chart overlap overflow is visible in bake diagnostics");
+      camera(r);
+      r.drawRetained(nullptr);
+      r.drawLight(fallback);
+      pixels = target.render();
+      require(pixels[left + 1] > 20 && pixels[right + 1] > 20,
+              "An overflow light remains rendered through the ordinary direct-light fallback");
+      info.hash = 9706;
+      info.radiance = {0, 0, 100};
+      sphere.position.x = .05f;
+      r.updateLight(red, info);
+      pixels = render(false);
+      require(pixels[left + 2] > 20,
+              "Moving a light rejects its old mask instead of applying stale occlusion");
+      options.baking.enabled = false;
+      target.forward->updateLighting(options);
+      pixels = render(false);
+      require(pixels[left + 2] > 20 && !target.forward->statistics().baking.active,
+              "Direct lights survive the ordinary fallback when static baking is disabled");
+      r.setBakeScene(nullptr);
+      for (uint32_t i = 0; i < remix::gpuFrameCount + 1; ++i)
+        target.render();
+    }
+  }
+  void surfaceLightmapTests() {
+    for (bool ssr : {false, true})
+      for (uint32_t samples : {1u, 2u, 4u}) {
+        Target target(64, 64, true);
+        auto &r = target.raster;
+        remix::forward::Options options;
+        options.samples = samples;
+        options.ambient = 0;
+        options.shadows = false;
+        options.ssr = ssr;
+        options.shadowResolution = 128;
+        options.baking.maxProbes = 64;
+        options.baking.spacing = 2;
+        options.baking.samples = 256;
+        options.baking.bounces = 1;
+        options.baking.batch = 16;
+        options.baking.reflectionProbes = 0;
+        options.baking.lightmapPageSize = 64;
+        options.baking.lightmapTexels = 4096;
+        target.enableForward(options);
+        const auto white = material(r, 9500, 1, 1, 1);
+        const auto black = material(r, 9501, 0, 0, 0);
+        const auto receiverMesh = quad(r, 9502, white);
+        const auto blockerMesh = quad(r, 9503, black);
+        remixapi_InstanceIdentityEXT identity{};
+        identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+        identity.instanceId = 9504;
+        identity.classification = REMIXAPI_INSTANCE_STATIC_EXT;
+        identity.rasterVisible = 1;
+        auto receiver = instance(receiverMesh);
+        receiver.pNext = &identity;
+        const auto retained = r.createRetained(receiver);
+        auto blocker = instance(blockerMesh, -.2f);
+        blocker.doubleSided = 1; // its back face must occlude rays from the receiver
+        blocker.transform.matrix[0][0] = .5f;
+        blocker.transform.matrix[0][3] = -.4f;
+        blocker.transform.matrix[1][1] = 3;
+        identity.instanceId = 9505;
+        identity.rasterVisible = 0; // transport only: never hides the tested receiver from the camera
+        blocker.pNext = &identity;
+        const uint64_t authored[] = {retained, r.createRetained(blocker)};
+        remixapi_LightInfoDomeEXT dome{};
+        dome.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT;
+        for (uint32_t c = 0; c < 3; ++c) dome.transform.matrix[c][c] = 1;
+        remixapi_LightInfo light{};
+        light.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+        light.pNext = &dome;
+        light.hash = 9506;
+        light.radiance = {0, 1, 0};
+        remixapi_LightHandle environment;
+        r.createLight(light, environment);
+        const uint32_t extent = samples == 4 ? 256 : 8;
+        const float edge = float(extent);
+        const float uv[] = {0, 0, edge, edge, edge, 0, 0, 0, 0, edge, edge, edge};
+        const remixapi_BakeSurfaceChartEXT chart{retained, 0, 0, 0, 6, extent + 1, extent + 1, uv};
+        remixapi_BakeSceneSurfacesInfoEXT request{};
+        auto &info = request.bounds.scene;
+        info = {sizeof(request), REMIXAPI_BAKE_SCENE_SURFACES_VERSION_EXT, 95, 1, 1,
+                REMIXAPI_BAKE_SCENE_READY_EXT, 2, 1, authored, &environment};
+        for (uint32_t c = 0; c < 3; ++c) {
+          // Surface lightmaps must work even where irradiance probes cannot be sampled.
+          request.bounds.minimum[c] = 10;
+          request.bounds.maximum[c] = 11;
+        }
+        request.chartRevision = request.chartCount = 1;
+        request.charts = &chart;
+        r.setBakeScene(&info);
+        auto until = [&](uint32_t state) {
+          const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+          std::vector<uint8_t> pixels;
+          do {
+            camera(r);
+            r.drawRetained(nullptr);
+            pixels = target.render();
+            const auto &bake = target.forward->statistics().baking;
+            if (bake.state == state) return pixels;
+            if (bake.state == REMIXAPI_BAKE_FAILED_EXT) std::fprintf(stderr, "%s\n", bake.status);
+            require(bake.state != REMIXAPI_BAKE_FAILED_EXT, "Surface lightmap baking succeeded");
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+          } while (std::chrono::steady_clock::now() < deadline);
+          require(false, "Surface lightmap reached its requested state");
+          return pixels;
+        };
+        const auto first = until(REMIXAPI_BAKE_READY_EXT);
+        const auto content = target.forward->statistics().bakeContent;
+        require(content.grid && content.reflections && content.surfaces,
+                "Published lighting diagnostics fingerprint the packed bake payloads");
+        if (samples == 4)
+          require(std::strstr(target.forward->statistics().baking.status, "1089 surface texels"),
+                  "Oversized charts coarsen to the atlas budget while preserving complete surface coverage");
+        const size_t left = (32 * 64 + 16) * 4, right = (32 * 64 + 48) * 4;
+        require(first[right + 1] > 80 && first[left + 1] < first[right + 1] * .3f,
+                "Surface atlas resolves static shadows while probes lie outside the receiver volume");
+        const auto published = target.forward->bakeController()->volume();
+        auto replacement = options;
+        replacement.samples = samples == 4 ? 1 : 4;
+        replacement.ssr = !ssr;
+        target.enableForward(replacement, true);
+        camera(r);
+        r.drawRetained(nullptr);
+        const auto preserved = target.render();
+        require(target.forward->bakeController()->volume() == published &&
+                    target.forward->statistics().bakeContent == content &&
+                    target.forward->statistics().baking.state == REMIXAPI_BAKE_READY_EXT &&
+                    preserved[right + 1] > 80 && preserved[left + 1] < preserved[right + 1] * .3f,
+                "Replacement targets reuse the surface atlas and its static shadows on their first frame");
+        target.enableForward(options, true);
+        camera(r);
+        r.drawInstance(instance(receiverMesh));
+        pixel(target.render(), 48, 32, 0, 0, 0,
+                "Uncharted instances cannot borrow a different retained instance's surface atlas");
+        options.ambient = .5f;
+        target.forward->updateLighting(options);
+        camera(r);
+        r.drawRetained(nullptr);
+        auto pixels = target.render();
+        require(target.forward->statistics().bakeContent == content,
+                "Live ambient changes retain the published bake content fingerprints");
+        require(pixels[left] < 3 && pixels[left + 2] < 3 &&
+                    std::abs(int(pixels[left + 1]) - int(first[left + 1])) < 3,
+                "Dark surface texels replace ambient fill rather than falling through to probes");
+        options.ambient = 0;
+        target.forward->updateLighting(options);
+        light.radiance = {0, 0, 1};
+        r.updateLight(environment, light);
+        ++info.revision;
+        r.setBakeScene(&info);
+        until(REMIXAPI_BAKE_TRACING_EXT);
+        pixels = until(REMIXAPI_BAKE_READY_EXT);
+        require(target.forward->statistics().bakeContent.surfaces != content.surfaces,
+                "Rebaking different environment lighting changes the surface payload fingerprint");
+        require(pixels[right + 2] > 80 && pixels[right + 1] < 3 && pixels[left + 2] < pixels[right + 2] * .3f,
+                "Replacement surface atlas publishes only the matching completed bake generation");
+        light.radiance = {0, 1, 0};
+        r.updateLight(environment, light);
+        ++info.revision;
+        r.setBakeScene(&info);
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        bool surfaceBatch = false;
+        do {
+          camera(r);
+          r.drawRetained(nullptr);
+          target.render();
+          const auto &bake = target.forward->statistics().baking;
+          require(bake.state != REMIXAPI_BAKE_FAILED_EXT, "Replacement surface preparation succeeded");
+          surfaceBatch = std::strstr(bake.status, "Baking surface lightmaps") != nullptr;
+          if (!surfaceBatch) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        } while (!surfaceBatch && std::chrono::steady_clock::now() < deadline);
+        require(surfaceBatch, "Map unload fixture reached in-flight surface tracing");
+        r.setBakeScene(nullptr);
+        for (uint32_t i = 0; i < remix::gpuFrameCount + 2; ++i) {
+          camera(r);
+          r.drawRetained(nullptr);
+          pixel(target.render(), 48, 32, 0, 0, 0, "Unloaded surface jobs cannot reactivate an obsolete atlas");
+        }
+        require(target.forward->statistics().baking.state == REMIXAPI_BAKE_WAITING_EXT,
+                "Cancelled surface batches release their owners after their fences");
+        require(target.forward->statistics().bakeContent == remix::forward::bake::ContentHashes{},
+                "Unloaded bake content fingerprints clear with the published volume");
+        light.radiance = {0, 0, 1};
+        r.updateLight(environment, light);
+        ++info.revision;
+        r.setBakeScene(&info);
+        until(REMIXAPI_BAKE_READY_EXT);
+        options.baking.enabled = false;
+        target.forward->updateLighting(options);
+        camera(r);
+        r.drawRetained(nullptr);
+        pixel(target.render(), 48, 32, 0, 0, 0, "Disabling an active surface atlas removes its lighting immediately");
+        require(!target.forward->statistics().baking.active, "Disabled surface volume is no longer active");
+        options.baking.enabled = true;
+        target.forward->updateLighting(options);
+        until(REMIXAPI_BAKE_READY_EXT);
+        auto moved = receiver;
+        identity.instanceId = 9504;
+        identity.rasterVisible = 1;
+        moved.transform.matrix[0][3] = .1f;
+        r.updateRetained(retained, moved);
+        camera(r);
+        r.drawRetained(nullptr);
+        pixel(target.render(), 48, 32, 0, 0, 0, "Moved geometry rejects stale surface chart bindings");
+        r.setBakeScene(nullptr);
+        for (uint32_t i = 0; i < remix::gpuFrameCount + 1; ++i) target.render();
+        std::printf("Surface lightmap %ux MSAA, SSR %s: shaded green %u, exposed green %u; replacement, cancellation and stale bindings passed\n",
+                      samples, ssr ? "on" : "off", unsigned(first[left + 1]), unsigned(first[right + 1]));
+      }
+  }
+  void compactOcclusionTests() {
+    for (uint32_t samples : {1u, 2u, 4u}) {
+      Target target(64, 64, true);
+      auto &r = target.raster;
+      remix::forward::Options options;
+      options.samples = samples;
+      options.ambient = 0;
+      options.shadows = options.localShadows = options.ssr = false;
+      options.baking.maxProbes = 64;
+      options.baking.samples = 64;
+      options.baking.bounces = 1;
+      options.baking.batch = 128;
+      options.baking.reflectionProbes = 0;
+      options.baking.lightmapPageSize = 32;
+      target.enableForward(options);
+      const auto receiverMesh = quad(r, 9700, material(r, 9701, 1, 1, 1));
+      const auto blockerMaterial = material(r, 9703, 0, 0, 0);
+      remixapi_HardcodedVertex blockerVertices[3]{};
+      const float blockerPositions[3][3] = {{-.7f, -.55f, .5f}, {.55f, .7f, .5f}, {.55f, -.55f, .5f}};
+      for (uint32_t i = 0; i < 3; ++i) {
+        std::copy_n(blockerPositions[i], 3, blockerVertices[i].position);
+        blockerVertices[i].color = 0xffffffff;
+      }
+      const uint32_t blockerIndices[] = {0, 1, 2};
+      remixapi_MeshInfoSurfaceTriangles blockerSurface{};
+      blockerSurface.vertices_values = blockerVertices;
+      blockerSurface.vertices_count = 3;
+      blockerSurface.indices_values = blockerIndices;
+      blockerSurface.indices_count = 3;
+      blockerSurface.material = blockerMaterial;
+      remixapi_MeshInfo blockerInfo{};
+      blockerInfo.sType = REMIXAPI_STRUCT_TYPE_MESH_INFO;
+      blockerInfo.hash = 9702;
+      blockerInfo.surfaces_values = &blockerSurface;
+      blockerInfo.surfaces_count = 1;
+      remixapi_MeshHandle blockerMesh;
+      r.createMesh(blockerInfo, blockerMesh);
+      remixapi_InstanceIdentityEXT identity{};
+      identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+      identity.instanceId = 9704;
+      identity.classification = REMIXAPI_INSTANCE_STATIC_EXT;
+      identity.rasterVisible = 1;
+      auto receiver = instance(receiverMesh);
+      receiver.pNext = &identity;
+      const auto receiverHandle = r.createRetained(receiver);
+      identity.instanceId = 9705;
+      identity.rasterVisible = 0;
+      auto blocker = instance(blockerMesh, -.45f);
+      blocker.pNext = &identity;
+      blocker.doubleSided = 1;
+      const uint64_t instances[] = {receiverHandle, r.createRetained(blocker)};
+      // More than32 blocked lights exercises every RGBA byte and a bitset word
+      // seam. No realtime shadow map can hide a broken static-occlusion lookup.
+      std::vector<remixapi_LightHandle> lights;
+      remixapi_LightInfoSphereEXT sphere{};
+      sphere.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT;
+      sphere.position = {0, 0, -.4f};
+      sphere.radius = .1f;
+      remixapi_LightInfo light{};
+      light.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+      light.pNext = &sphere;
+      light.radiance = {200, 0, 0};
+      for (uint32_t i = 0; i < 36; ++i) {
+        light.hash = 9710 + i;
+        if (i == 35) {
+          sphere.position.x = 2.2f;
+          // Keep the whole emitter outside the blocker silhouette at the
+          // chart's far corner; equal area*radiance preserves its brightness.
+          sphere.radius = .05f;
+          light.radiance = {0, 800, 0};
+        }
+        remixapi_LightHandle handle;
+        r.createLight(light, handle);
+        lights.push_back(handle);
+      }
+      const float uv[] = {0, 0, 8, 8, 8, 0, 0, 0, 0, 8, 8, 8};
+      const remixapi_BakeSurfaceChartEXT charts[] = {
+          {receiverHandle, 0, 0, 0, 3, 9, 9, uv}, {receiverHandle, 0, 0, 3, 3, 9, 9, uv + 6}};
+      remixapi_BakeSceneSurfacesInfoEXT request{};
+      request.bounds.scene = {sizeof(request), REMIXAPI_BAKE_SCENE_SURFACES_VERSION_EXT, 97, 1, 1,
+                              REMIXAPI_BAKE_SCENE_READY_EXT, 2, uint32_t(lights.size()), instances, lights.data()};
+      for (uint32_t c = 0; c < 3; ++c) {
+        request.bounds.minimum[c] = 10;
+        request.bounds.maximum[c] = 11;
+      }
+      request.chartRevision = 1;
+      request.chartCount = 2;
+      request.charts = charts;
+      r.setBakeScene(&request.bounds.scene);
+      auto render = [&](bool charted = true) {
+        camera(r);
+        for (auto lamp : lights) r.drawLight(lamp);
+        if (charted) r.drawRetained(nullptr);
+        else r.drawInstance(instance(receiverMesh));
+        return target.render();
+      };
+      std::vector<uint8_t> pixels;
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+      do {
+        pixels = render();
+        const auto &bake = target.forward->statistics().baking;
+        require(bake.state != REMIXAPI_BAKE_FAILED_EXT, "Compact static occlusion bake succeeds");
+        if (bake.active) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      } while (std::chrono::steady_clock::now() < deadline);
+      require(target.forward->statistics().baking.active, "Compact static occlusion publishes");
+      const size_t center = (48 * 64 + 48) * 4;
+      const size_t neighbouringChart = (16 * 64 + 16) * 4;
+      std::printf("Compact occlusion %ux MSAA: RGB %u %u %u; %s\n", samples,
+                  unsigned(pixels[center]), unsigned(pixels[center + 1]), unsigned(pixels[center + 2]),
+                  target.forward->statistics().baking.status);
+      require(pixels[center] < 3 && pixels[center + 1] > 30 && pixels[center + 2] < 3 &&
+                  std::strstr(target.forward->statistics().baking.status, "35 fully blocked") &&
+                  std::strstr(target.forward->statistics().baking.status, "1 fully clear"),
+              "Blocked overflow lights stay dark while promoted clear visibility uses compact metadata");
+      pixel(pixels, 48, 48, 0, 79, 0,
+            "Compacting a clear light preserves its original baked unit direct diffuse irradiance");
+      require(pixels[neighbouringChart] > 30,
+              "A partially lit neighbouring chart cannot inherit another chart's compact occlusion");
+      light.hash = 9710;
+      light.radiance = {0, 0, 200};
+      sphere.radius = .1f;
+      sphere.position = {0, 0, -.4f};
+      r.updateLight(lights[0], light);
+      pixels = render();
+      require(pixels[center] < 3 && pixels[center + 2] < 3 && pixels[center + 1] > 30,
+              "A colour edit cannot remove valid static occlusion");
+      sphere.position.x = 2.2f;
+      r.updateLight(lights[0], light);
+      pixels = render();
+      require(pixels[center + 2] > 30, "A moved light rejects its old compact occlusion");
+      pixels = render(false);
+      require(pixels[center] > 30, "Uncharted instances cannot borrow another chart's negative visibility");
+      r.setBakeScene(nullptr);
+      for (uint32_t i = 0; i < remix::gpuFrameCount + 1; ++i) pixels = render();
+      require(!target.forward->statistics().baking.active && pixels[center] > 30,
+              "Unload clears compact occlusion with the rest of the published volume");
+    }
+  }
+  void clearVisibilityTests() {
+    for (uint32_t samples : {1u, 2u, 4u}) {
+      Target target(64, 64, true);
+      auto &r = target.raster;
+      remix::forward::Options options;
+      options.samples = samples;
+      options.ambient = 0;
+      options.shadows = options.ssr = false;
+      options.localShadows = true;
+      options.localShadowLights = 1;
+      options.localShadowResolution = 512;
+      options.baking.samples = 256;
+      options.baking.bounces = 1;
+      options.baking.batch = 128;
+      options.baking.maxProbes = 64;
+      options.baking.reflectionProbes = 0;
+      options.baking.lightmapPageSize = 32;
+      target.enableForward(options);
+      const auto mesh = quad(r, 9800, material(r, 9801, 1, 1, 1));
+      remixapi_InstanceIdentityEXT identity{};
+      identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+      identity.instanceId = 9802;
+      identity.classification = REMIXAPI_INSTANCE_STATIC_EXT;
+      identity.rasterVisible = 1;
+      auto receiver = instance(mesh);
+      receiver.pNext = &identity;
+      const auto retained = r.createRetained(receiver);
+      remixapi_LightInfoSphereEXT sphere{};
+      sphere.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT;
+      sphere.position = {0, 0, -.8f};
+      sphere.radius = .3f;
+      remixapi_LightInfo light{};
+      light.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+      light.pNext = &sphere;
+      light.hash = 9803;
+      light.radiance = {8, 0, 0};
+      remixapi_LightHandle lamp;
+      r.createLight(light, lamp);
+      const float uv[] = {0, 0, 8, 8, 8, 0, 0, 0, 0, 8, 8, 8};
+      const remixapi_BakeSurfaceChartEXT chart{retained, 0, 0, 0, 6, 9, 9, uv};
+      remixapi_BakeSceneSurfacesInfoEXT request{};
+      request.bounds.scene = {sizeof(request), REMIXAPI_BAKE_SCENE_SURFACES_VERSION_EXT, 98, 1, 1,
+                              REMIXAPI_BAKE_SCENE_READY_EXT, 1, 1, &retained, &lamp};
+      for (uint32_t c = 0; c < 3; ++c) {
+        request.bounds.minimum[c] = 10;
+        request.bounds.maximum[c] = 11;
+      }
+      request.chartRevision = request.chartCount = 1;
+      request.charts = &chart;
+      r.setBakeScene(&request.bounds.scene);
+      auto render = [&] {
+        camera(r);
+        r.drawRetained(nullptr);
+        r.drawLight(lamp);
+        return target.render();
+      };
+      std::vector<uint8_t> pixels;
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+      do {
+        pixels = render();
+        const auto &bake = target.forward->statistics().baking;
+        require(bake.state != REMIXAPI_BAKE_FAILED_EXT, "Clear visibility bake succeeds");
+        if (bake.active) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      } while (std::chrono::steady_clock::now() < deadline);
+      const auto &bake = target.forward->statistics().baking;
+      require(bake.active && std::strstr(bake.status, "1 fully clear"),
+              "A wholly visible emitter publishes compact clear visibility");
+      const auto hash = bake.activeHash;
+      const size_t center = (32 * 64 + 48) * 4, adjacent = (27 * 64 + 48) * 4;
+      const auto lit = pixels[center];
+      require(lit > 80, "A clear light retains its baked direct illumination");
+      auto moving = instance(quad(r, 9804, material(r, 9805, 0, 0, 0)), -.4f);
+      moving.doubleSided = 1;
+      moving.transform.matrix[0][0] = .15f;
+      moving.transform.matrix[0][3] = .35f;
+      moving.transform.matrix[1][1] = .04f;
+      identity.instanceId = 9806;
+      moving.pNext = &identity;
+      const auto actor = r.createRetained(moving);
+      pixels = render();
+      std::printf("Compact clear %ux MSAA: lit %u, moving %u, adjacent %u\n", samples,
+                  unsigned(lit), unsigned(pixels[center]), unsigned(pixels[adjacent]));
+      require(pixels[center] < lit / 3 && pixels[adjacent] > lit / 2 &&
+                  target.forward->statistics().baking.activeHash == hash,
+              "A realtime caster cuts a narrow shadow into compact clear baked lighting without rebaking");
+      light.radiance = {0, 0, 8};
+      r.updateLight(lamp, light);
+      pixels = render();
+      require(pixels[center + 2] < lit / 3 && pixels[adjacent] < 3 && pixels[adjacent + 2] > lit / 2,
+              "Live colour edits preserve the clear light's baked ownership and dynamic shadow");
+      moving.transform.matrix[1][3] = .4f;
+      r.updateRetained(actor, moving);
+      pixels = render();
+      require(std::abs(int(pixels[center + 2]) - int(lit)) < 4 &&
+                  target.forward->statistics().staticShadowUpdates == 0,
+              "Moving the caster restores compact clear lighting without rebuilding static maps");
+      r.destroyRetained(&actor, 1);
+      require(errors.load() == 0, "Compact clear visibility and realtime shadows are validation clean");
+    }
+  }
+  void sunLightingTests() {
+    for (uint32_t samples : {1u, 2u, 4u}) {
+      Target target(64, 64, true);
+      auto &r = target.raster;
+      remix::forward::Options options;
+      options.samples = samples;
+      options.rtGI = samples == 2;
+      options.rtGISamples = options.rtGIBounces = 1;
+      options.ambient = 0;
+      options.ssr = options.localShadows = false;
+      options.shadowResolution = 512;
+      options.shadowDistance = 3;
+      options.baking.samples = 256;
+      options.baking.bounces = 1;
+      options.baking.batch = 128;
+      options.baking.maxProbes = 64;
+      options.baking.reflectionProbes = 0;
+      options.baking.lightmapPageSize = 32;
+      target.enableForward(options);
+      const auto receiverMesh = quad(r, 9900, material(r, 9901, 1, 1, 1));
+      const auto blockerMesh = quad(r, 9902, material(r, 9903, 0, 0, 0));
+      remixapi_InstanceIdentityEXT identity{};
+      identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+      identity.instanceId = 9904;
+      identity.classification = REMIXAPI_INSTANCE_STATIC_EXT;
+      identity.rasterVisible = 1;
+      auto receiver = instance(receiverMesh);
+      receiver.pNext = &identity;
+      const auto receiverHandle = r.createRetained(receiver);
+      auto blocker = instance(blockerMesh, -.4f);
+      blocker.doubleSided = 1;
+      blocker.transform.matrix[0][0] = .5f;
+      blocker.transform.matrix[0][3] = -.4f;
+      blocker.transform.matrix[1][1] = 3;
+      identity.instanceId = 9905;
+      identity.rasterVisible = 0;
+      blocker.pNext = &identity;
+      const uint64_t instances[] = {receiverHandle, r.createRetained(blocker)};
+      remixapi_LightInfoDistantEXT distant{};
+      distant.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT;
+      distant.direction = {0, 0, 1};
+      distant.angularDiameterDegrees = 40;
+      remixapi_LightInfo light{};
+      light.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+      light.pNext = &distant;
+      light.hash = 9906;
+      light.radiance = {1, 0, 0};
+      remixapi_LightHandle sun;
+      r.createLight(light, sun);
+      const float uv[] = {0, 0, 8, 8, 8, 0, 0, 0, 0, 8, 8, 8};
+      const remixapi_BakeSurfaceChartEXT chart{receiverHandle, 0, 0, 0, 6, 9, 9, uv};
+      remixapi_BakeSceneSurfacesInfoEXT request{};
+      auto &base = request.bounds.scene;
+      base = {sizeof(request), REMIXAPI_BAKE_SCENE_SURFACES_VERSION_EXT, 99, 1, 1,
+              REMIXAPI_BAKE_SCENE_READY_EXT, 2, 1, instances, &sun};
+      for (uint32_t c = 0; c < 3; ++c) {
+        request.bounds.minimum[c] = 10;
+        request.bounds.maximum[c] = 11;
+      }
+      request.chartRevision = request.chartCount = 1;
+      request.charts = &chart;
+      r.setBakeScene(&base);
+      auto render = [&](bool charted = true) {
+        camera(r);
+        if (charted) r.drawRetained(nullptr);
+        else r.drawInstance(instance(receiverMesh));
+        r.drawLight(sun);
+        return target.render();
+      };
+      auto until = [&](bool ready) {
+        std::vector<uint8_t> pixels;
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        do {
+          pixels = render();
+          const auto &bake = target.forward->statistics().baking;
+          require(bake.state != REMIXAPI_BAKE_FAILED_EXT, "Mixed sunlight bake succeeds");
+          if ((ready && bake.active) || (!ready && std::strstr(bake.status, "Baking static sunlight")))
+            return pixels;
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        } while (std::chrono::steady_clock::now() < deadline);
+        require(false, "Mixed sunlight reaches the requested bake phase");
+        return pixels;
+      };
+      // Cancel the new dispatch mode while its owning frame submissions exist.
+      until(false);
+      r.setBakeScene(nullptr);
+      for (uint32_t i = 0; i < remix::gpuFrameCount + 2; ++i) render();
+      require(!target.forward->statistics().baking.active, "Cancelled sunlight cannot publish a stale volume");
+      ++base.revision;
+      r.setBakeScene(&base);
+      auto pixels = until(true);
+      const size_t left = (32 * 64 + 16) * 4, edge = (32 * 64 + 32) * 4,
+                   right = (32 * 64 + 48) * 4, adjacent = (27 * 64 + 48) * 4;
+      const auto lit = pixels[right];
+      std::printf("Mixed sun %ux: blocked %u, penumbra %u, lit %u\n", samples,
+                  unsigned(pixels[left]), unsigned(pixels[edge]), unsigned(lit));
+      require(pixels[left] < 3 && lit > 80 && pixels[edge] > 15 && pixels[edge] < lit - 10,
+              "A coarse sunlight atlas retains soft static penumbrae independently of static cascade depth");
+      const auto hash = target.forward->statistics().baking.activeHash;
+      auto moving = instance(blockerMesh, -.4f);
+      moving.doubleSided = 1;
+      moving.transform.matrix[0][0] = .15f;
+      moving.transform.matrix[0][3] = .4f;
+      moving.transform.matrix[1][1] = .04f;
+      identity.instanceId = 9910;
+      moving.pNext = &identity;
+      const auto actor = r.createRetained(moving);
+      pixels = render();
+      std::printf("Mixed sun moving %ux: covered %u, adjacent %u\n", samples,
+                  unsigned(pixels[right]), unsigned(pixels[adjacent]));
+      require(pixels[right] < lit / 3 && pixels[adjacent] > lit / 2 && pixels[left] < 3,
+              "A realtime sun caster cuts a narrow shadow into baked static lighting at independent resolution");
+      light.radiance = {0, 0, 1};
+      r.updateLight(sun, light);
+      pixels = render();
+      require(pixels[right + 2] < lit / 3 && pixels[adjacent] < 3 && pixels[adjacent + 2] > lit / 2 &&
+                  target.forward->statistics().baking.activeHash == hash,
+              "Current sun colour updates diffuse and specular without rebaking static visibility");
+      moving.transform.matrix[1][3] = .4f;
+      r.updateRetained(actor, moving);
+      pixels = render();
+      require(std::abs(int(pixels[right + 2]) - int(lit)) < 4,
+              "Moving the sun caster restores its old pixel without shadow trails");
+      r.destroyRetained(&actor, 1);
+      options.baking.directDiffuse = false;
+      target.forward->updateLighting(options);
+      pixels = until(true);
+      require(pixels[left + 2] < 3 && pixels[edge + 2] > 15 && pixels[edge + 2] < pixels[right + 2] - 10,
+              "Visibility-only sunlight still keeps the baked soft static mask");
+      const auto soft = pixels[edge + 2];
+      distant.angularDiameterDegrees = 0;
+      r.updateLight(sun, light);
+      pixels = render();
+      require(std::abs(int(pixels[edge + 2]) - int(soft)) > 10,
+              "Changing sun size rejects the baked penumbra and restores complete realtime shadows");
+      distant.angularDiameterDegrees = 40;
+      r.updateLight(sun, light);
+      pixels = render();
+      require(std::abs(int(pixels[edge + 2]) - int(soft)) < 4, "Restoring sun shape reuses its valid bake");
+      distant.direction = {-.8944272f, 0, .4472136f};
+      r.updateLight(sun, light);
+      pixels = render();
+      std::printf("Moved sun %ux: left %u, edge %u, right %u\n", samples,
+                  unsigned(pixels[left + 2]), unsigned(pixels[edge + 2]), unsigned(pixels[right + 2]));
+      require(pixels[left + 2] > 30,
+              "Moving the sun rejects its baked shadow and uses the current complete cascade geometry");
+      distant.direction = {0, 0, 1};
+      r.updateLight(sun, light);
+      pixels = render();
+      require(pixels[left + 2] < 3 && std::abs(int(pixels[edge + 2]) - int(soft)) < 4,
+              "Restoring sun direction recovers the matching soft lightmap without rebaking");
+      options.shadows = false;
+      target.forward->updateLighting(options);
+      pixels = render();
+      require(pixels[left + 2] > 80, "Disabling sun shadows also bypasses cached static sunlight occlusion");
+      options.shadows = true;
+      target.forward->updateLighting(options);
+      pixels = render();
+      require(pixels[left + 2] < 3, "Re-enabling sun shadows restores the matching baked mask");
+      r.destroyRetained(&instances[1], 1);
+      pixels = render(false);
+      require(pixels[left + 2] < 3 && pixels[right + 2] > 80,
+              "Uncharted sun receivers still see complete frozen casters outside live submissions");
+      r.setBakeScene(nullptr);
+      for (uint32_t i = 0; i < remix::gpuFrameCount + 1; ++i) pixels = render(false);
+      require(pixels[left + 2] > 80 && !target.forward->statistics().baking.active,
+              "Unload removes frozen sun masks and frozen depth casters immediately");
+      require(errors.load() == 0, "Mixed sunlight is Vulkan validation clean");
+    }
+  }
+  void bakingTests() {
+    Target target(64, 64, true);
+    auto &r = target.raster;
+    camera(r);
+    remix::forward::Options options;
+    options.ambient = 0;
+    options.shadows = false;
+    options.ssr = false;
+    options.shadowResolution = 128;
+    options.baking.maxProbes = 64;
+    options.baking.spacing = 2;
+    options.baking.samples = 256;
+    options.baking.bounces = 1;
+    options.baking.batch = 1;
+    options.baking.gpuBudgetMs = 0;
+    options.baking.reflectionResolution = 8;
+    target.enableForward(options);
+    const auto white = material(r, 9000, 1, 1, 1);
+    const auto mesh = quad(r, 9001, white);
+    r.drawInstance(instance(mesh));
+    pixel(target.render(), 32, 32, 0, 0, 0, "World is dark before static lighting is published");
+    remixapi_LightInfoDomeEXT dome{};
+    dome.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT;
+    for (uint32_t c = 0; c < 3; ++c) dome.transform.matrix[c][c] = 1;
+    remixapi_LightInfo light{};
+    light.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+    light.pNext = &dome;
+    light.hash = 9002;
+    light.radiance = {1, .05f, .05f};
+    remixapi_LightHandle lamp;
+    r.createLight(light, lamp);
+    remixapi_BakeSceneBoundsInfoEXT bounded{};
+    auto &info = bounded.scene;
+    info.structSize = sizeof(bounded);
+    info.version = REMIXAPI_BAKE_SCENE_BOUNDS_VERSION_EXT;
+    info.sceneId = info.revision = 1;
+    info.sceneScale = 1;
+    info.state = REMIXAPI_BAKE_SCENE_READY_EXT;
+    info.lightCount = 1;
+    info.lights = &lamp;
+    for (uint32_t c = 0; c < 3; ++c) {
+      bounded.minimum[c] = -1;
+      bounded.maximum[c] = 1;
+    }
+    r.setBakeScene(&info);
+    const auto oldHash = r.bakeScene()->contentHash;
+    auto until = [&](uint32_t state) {
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+      std::vector<uint8_t> pixels;
+      do {
+        camera(r);
+        r.drawInstance(instance(mesh));
+        pixels = target.render();
+        const auto &statistics = target.forward->statistics().baking;
+        if (statistics.state == state) return pixels;
+        if (statistics.state == REMIXAPI_BAKE_FAILED_EXT) std::fprintf(stderr, "%s\n", statistics.status);
+        require(statistics.state != REMIXAPI_BAKE_FAILED_EXT, "Static lighting preparation succeeded");
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      } while (std::chrono::steady_clock::now() < deadline);
+      require(false, "Static lighting reached its requested state before timeout");
+      return pixels;
+    };
+    until(REMIXAPI_BAKE_TRACING_EXT);
+    {
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+      while (!target.forward->statistics().baking.completed && std::chrono::steady_clock::now() < deadline) {
+        camera(r);
+        r.drawInstance(instance(mesh));
+        target.render();
+      }
+      const auto before = target.forward->statistics().baking;
+      require(before.completed > 0 && before.completed < before.probes && !before.active,
+              "Target replacement fixture has completed and pending bake batches");
+      const auto controller = target.forward->bakeController();
+      options.baking.batch = 2;
+      target.forward->updateLighting(options);
+      camera(r);
+      r.drawInstance(instance(mesh));
+      target.render();
+      const auto &rescheduled = target.forward->statistics().baking;
+      require(rescheduled.requestedHash == oldHash && rescheduled.completed >= before.completed &&
+                  rescheduled.state == REMIXAPI_BAKE_TRACING_EXT,
+              "Changing fixed work mid-bake preserves completed samples and the existing job");
+      options.samples = 1;
+      target.enableForward(options, true);
+      camera(r);
+      r.drawInstance(instance(mesh));
+      target.render();
+      const auto &after = target.forward->statistics().baking;
+      require(target.forward->bakeController() == controller && after.requestedHash == oldHash &&
+                  after.completed >= before.completed && after.state == REMIXAPI_BAKE_TRACING_EXT,
+              "Replacement targets consume retained fenced batches and continue the same unfinished bake");
+      const auto completedBeforeAutomatic = after.completed;
+      options.baking.gpuBudgetMs = 2;
+      target.forward->updateLighting(options);
+      camera(r);
+      r.drawInstance(instance(mesh));
+      target.render();
+      require(target.forward->bakeController() == controller &&
+                  target.forward->statistics().baking.completed >= completedBeforeAutomatic,
+              "Enabling measured work on an unfinished bake preserves its completed samples");
+    }
+    until(REMIXAPI_BAKE_READY_EXT);
+    require(target.forward->statistics().baking.activeHash == oldHash,
+            "The retained unfinished bake reaches publication after target replacement");
+    // Start another generation so the existing replacement test still cancels
+    // in-flight work rather than merely replacing a completed volume.
+    light.radiance = {.05f, .05f, 1};
+    r.updateLight(lamp, light);
+    r.setBakeScene(&info);
+    until(REMIXAPI_BAKE_TRACING_EXT);
+    light.radiance = {.05f, 1, .05f};
+    r.updateLight(lamp, light);
+    r.setBakeScene(&info);
+    const auto newHash = r.bakeScene()->contentHash;
+    require(newHash != oldHash, "Replaced environment has a new content identity");
+    auto pixels = until(REMIXAPI_BAKE_READY_EXT);
+    const auto &statistics = target.forward->statistics().baking;
+    require(statistics.active && statistics.activeHash == newHash && statistics.completed == statistics.probes,
+            "Only the completed replacement scene is activated");
+    const size_t center = (32 * 64 + 32) * 4;
+    std::printf("Baked surface RGB: %u %u %u; completed %u probes\n", unsigned(pixels[center]),
+                unsigned(pixels[center + 1]), unsigned(pixels[center + 2]), statistics.completed);
+    require(pixels[center + 1] > 80 && pixels[center + 1] > 3 * pixels[center],
+            "Baked environment irradiance reaches the Forward+ surface shader");
+    remixapi_MaterialInfoOpaqueEXT metallic{};
+    metallic.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+    metallic.albedoConstant = {1, 1, 1};
+    metallic.opacityConstant = 1;
+    metallic.metallicConstant = 1;
+    metallic.roughnessConstant = .8f;
+    metallic.alphaTestType = 7;
+    remixapi_MaterialInfo metalInfo{};
+    metalInfo.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+    metalInfo.hash = 9003;
+    metalInfo.pNext = &metallic;
+    remixapi_MaterialHandle metal;
+    r.createMaterial(metalInfo, metal);
+    const auto metalMesh = quad(r, 9004, metal);
+    camera(r);
+    r.drawInstance(instance(metalMesh));
+    pixels = target.render();
+    require(pixels[center + 1] > 80 && pixels[center + 1] > 3 * pixels[center],
+            "A rough metallic surface receives cubemap specular with SSR disabled and zero diffuse fill");
+    std::printf("Probe-only rough metal RGB: %u %u %u\n", unsigned(pixels[center]),
+                unsigned(pixels[center + 1]), unsigned(pixels[center + 2]));
+    const auto controller = target.forward->bakeController();
+    const auto published = controller->volume();
+    options.baking.batch = 512;
+    options.baking.gpuBudgetMs = 0;
+    target.forward->updateLighting(options);
+    for (uint32_t i = 0; i < remix::gpuFrameCount + 1; ++i) {
+      camera(r);
+      r.drawInstance(instance(metalMesh));
+      target.render();
+    }
+    require(controller->volume() == published && target.forward->statistics().baking.active,
+            "Execution-only edits preserve the published volume across completed frame slots");
+    for (uint32_t samples : {1u, 2u, 4u}) {
+      options.samples = samples;
+      options.ssr = !options.ssr;
+      target.enableForward(options, true);
+      camera(r);
+      r.drawInstance(instance(metalMesh));
+      const auto reused = target.render();
+      require(target.forward->bakeController() == controller && controller->volume() == published &&
+                  target.forward->statistics().baking.active &&
+                  target.forward->statistics().baking.state == REMIXAPI_BAKE_READY_EXT,
+              "MSAA/reflection target replacements retain the published map bake without retracing");
+      require(reused[center + 1] > 80 && reused[center + 1] > 3 * reused[center],
+              "Retained probe lighting reaches the first frame of each target replacement");
+    }
+    options.baking.enabled = false;
+    target.forward->updateLighting(options);
+    camera(r);
+    r.drawInstance(instance(mesh));
+    pixel(target.render(), 32, 32, 0, 0, 0, "Disabling baking removes its contribution immediately");
+    require(!target.forward->statistics().baking.active, "Disabled volume is no longer active");
+    options.baking.enabled = true;
+    target.forward->updateLighting(options);
+    until(REMIXAPI_BAKE_PREPARING_EXT);
+    r.setBakeScene(nullptr);
+    camera(r);
+    r.drawInstance(instance(mesh));
+    pixel(target.render(), 32, 32, 0, 0, 0, "Map unload cancels preparation and clears baked lighting");
+    for (uint32_t i = 0; i < remix::gpuFrameCount + 2; ++i) target.render();
+    require(target.forward->statistics().baking.state == REMIXAPI_BAKE_WAITING_EXT,
+            "Unloaded map waits for an explicit complete scene");
+    std::puts("Forward+ bake publication, replacement, pixel lighting, disable and unload passed");
+  }
+  void skyTests() {
+    for (uint32_t samples : {1u, 4u}) {
+      Target target;
+      auto &r = target.raster;
+      camera(r);
+      remix::forward::Options options;
+      options.samples = samples;
+      options.shadows = false;
+      options.ambient = 0;
+      options.baking.enabled = false;
+      target.enableForward(options);
+      remixapi_LightInfoDomeEXT dome{};
+      dome.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT;
+      for (uint32_t c = 0; c < 3; ++c) dome.transform.matrix[c][c] = 1;
+      remixapi_LightInfo light{};
+      light.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+      light.pNext = &dome;
+      light.hash = 0x900001;
+      light.radiance = {1, 0, 0};
+      remixapi_LightHandle lamp;
+      r.createLight(light, lamp);
+      auto submit = [&] { r.drawLight(lamp); };
+      submit();
+      pixel(target.render(), 32, 32, 205, 0, 0, "Forward+ displays a radiance dome without world geometry");
+      const auto green = quad(r, 0x900002, material(r, 0x900003, 0, 1, 0));
+      auto sky = instance(green);
+      sky.categoryFlags = REMIXAPI_INSTANCE_CATEGORY_BIT_SKY;
+      submit();
+      r.drawInstance(sky);
+      pixel(target.render(), 32, 32, 0, 255, 0, "Raster sky geometry covers the radiance background");
+      const auto black = quad(r, 0x900004, material(r, 0x900005, 0, 0, 0));
+      submit();
+      r.drawInstance(instance(black));
+      const auto image = target.render();
+      pixel(image, 32, 32, 0, 0, 0, "Opaque world covers the radiance background");
+      pixel(image, 0, 0, 205, 0, 0, "Uncovered world samples retain the radiance background");
+      if (target.forward->statistics().samples > 1) {
+        bool partial = false;
+        for (uint32_t x = 0; x < 64; ++x) {
+          const auto value = image[(32 * 64 + x) * 4];
+          partial |= value > 5 && value < 200;
+        }
+        require(partial, "MSAA world edges blend partial coverage over the sky background");
+      }
+      pixel(target.render(), 0, 0, 0, 0, 0, "Absent dome restores the host clear background");
+      // Opposite hemispheres expose direction, rotation and translation errors
+      // that a constant-colour environment would conceal.
+      std::array<uint8_t, 8 * 4 * 4> panorama{};
+      for (uint32_t y = 0; y < 4; ++y)
+        for (uint32_t x = 0; x < 8; ++x) {
+          panorama[(y * 8 + x) * 4 + (x < 4 ? 0 : 2)] = 255;
+          panorama[(y * 8 + x) * 4 + 3] = 255;
+        }
+      remixapi_TextureInfo texture{};
+      texture.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_INFO;
+      texture.hash = 0x900006;
+      texture.width = 8;
+      texture.height = 4;
+      texture.depth = texture.mipLevels = 1;
+      texture.format = REMIXAPI_FORMAT_R8G8B8A8_UNORM;
+      texture.data = panorama.data();
+      texture.dataSize = panorama.size();
+      remixapi_TextureHandle imageHandle;
+      r.createTexture(texture, imageHandle);
+#if defined(_WIN32)
+      dome.colorTexture = L"0x900006";
+#else
+      dome.colorTexture = "0x900006";
+#endif
+      light.radiance = {1, 1, 1};
+      r.createLight(light, lamp);
+      remixapi_CameraInfoParameterizedEXT params{};
+      params.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO_PARAMETERIZED_EXT;
+      params.position = {5, 7, -9};
+      params.forward = {0, 0, 1};
+      params.right = {1, 0, 0};
+      params.up = {0, 1, 0};
+      params.aspect = 1;
+      params.fovYInDegrees = 60;
+      params.nearPlane = .1f;
+      params.farPlane = 10;
+      remixapi_CameraInfo view{};
+      view.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO;
+      view.pNext = &params;
+      r.setupCamera(view);
+      submit();
+      pixel(target.render(), 32, 32, 0, 0, 205, "Dome panorama follows the world view direction");
+      params.position = {-200, 30, 80};
+      r.setupCamera(view);
+      submit();
+      pixel(target.render(), 32, 32, 0, 0, 205, "Camera translation does not move an infinite sky");
+      params.forward = {0, 0, -1};
+      params.right = {-1, 0, 0};
+      r.setupCamera(view);
+      submit();
+      pixel(target.render(), 32, 32, 205, 0, 0, "Camera rotation selects the opposite dome hemisphere");
+      dome.transform.matrix[0][0] = dome.transform.matrix[2][2] = -1;
+      r.createLight(light, lamp);
+      submit();
+      pixel(target.render(), 32, 32, 0, 0, 205, "Dome transform rotates the panoramic background");
+    }
+    std::puts("Forward+ sky, world/raster coverage, absence and MSAA passed");
+  }
+  void forwardTests(const std::filesystem::path &directory) {
+    Target target;
+    auto &r = target.raster;
+    camera(r);
+    remix::forward::Options options;
+    options.ambient = 0;
+    options.shadowResolution = 128;
+    options.shadows = false;
+    target.enableForward(options);
+    const auto white = material(r, 8000, 1, 1, 1);
+    const auto mesh = quad(r, 8001, white);
+    r.drawInstance(instance(mesh));
+    pixel(target.render(), 32, 32, 0, 0, 0, "Forward world has no fabricated direct light");
+
+    remixapi_MaterialInfoSelfIlluminationEXT self{};
+    self.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_SELF_ILLUMINATION_EXT;
+    self.maskScale = 1;
+    remixapi_MaterialInfoOpaqueEXT glowing{};
+    glowing.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+    glowing.pNext = &self;
+    glowing.albedoConstant = {.5f, .5f, .5f};
+    glowing.opacityConstant = 1;
+    glowing.alphaTestType = 7;
+    remixapi_MaterialInfo glowInfo{};
+    glowInfo.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+    glowInfo.pNext = &glowing;
+    glowInfo.hash = 8050;
+    glowInfo.emissiveIntensity = 2;
+    glowInfo.emissiveColorConstant = {1, 0, 0};
+    remixapi_MaterialHandle glow, referenceGlow;
+    r.createMaterial(glowInfo, glow);
+    glowing.pNext = nullptr;
+    glowing.albedoConstant = {0, 0, 0};
+    glowInfo.hash = 8051;
+    glowInfo.emissiveIntensity = 1;
+    r.createMaterial(glowInfo, referenceGlow);
+    const auto glowingMesh = quad(r, 8052, glow), referenceMesh = quad(r, 8053, referenceGlow);
+    r.drawInstance(instance(referenceMesh));
+    const auto referenceEmission = target.render();
+    r.drawInstance(instance(glowingMesh));
+    const auto selfEmission = target.render();
+    const size_t emissionPixel = 4 * (32 * 64 + 32);
+    for (uint32_t c = 0; c < 3; ++c)
+      require(std::abs(int(referenceEmission[emissionPixel + c]) - int(selfEmission[emissionPixel + c])) <= 1,
+              "Forward self illumination multiplies surface colour by emission strength");
+    options.ambient = 1;
+    target.forward->updateLighting(options);
+    r.drawInstance(instance(glowingMesh));
+    const auto ambientEmission = target.render();
+    for (uint32_t c = 0; c < 3; ++c)
+      require(std::abs(int(ambientEmission[emissionPixel + c]) - int(selfEmission[emissionPixel + c])) <= 1,
+              "Fully self-illuminated forward surfaces do not reflect diffuse ambient fill");
+    options.ambient = 0;
+    target.forward->updateLighting(options);
+
+    remixapi_LightInfoSphereEXT sphere{};
+    sphere.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT;
+    sphere.radius = .2f;
+    remixapi_LightInfo info{};
+    info.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+    info.hash = 8002;
+    info.pNext = &sphere;
+    info.radiance = {2, 0, 0};
+    remixapi_LightHandle light;
+    r.createLight(info, light);
+    r.drawLight(light);
+    r.drawInstance(instance(mesh));
+    auto pixels = target.render();
+    const auto center = 4 * (32 * 64 + 32);
+    require(pixels[center] > 20 && pixels[center + 1] < 2, "Clustered local light changes the shaded pixels");
+    require(target.forward->statistics().lights == 1, "Forward light upload");
+    r.drawLight(light);
+    r.drawInstance(instance(mesh));
+    ui(r, 0, 0xffff0000);
+    pixel(target.render(), 32, 32, 0, 0, 255, "Compatibility HUD remains above lit world");
+    std::vector<remixapi_LightHandle> crowdedLights;
+    for (uint32_t i = 0; i < 65; ++i) {
+      info.hash = 8100 + i;
+      info.radiance = i == 64 ? remixapi_Float3D{2, 0, 0} : remixapi_Float3D{0, 0, .002f};
+      remixapi_LightHandle member;
+      r.createLight(info, member);
+      r.drawLight(member);
+      crowdedLights.push_back(member);
+    }
+    r.drawInstance(instance(mesh));
+    pixels = target.render();
+    require(target.forward->statistics().lights == 65 && pixels[center] > 20,
+            "Cluster overflow retains the last light instead of truncating illumination");
+    // Keep 65 uploaded lights but only the last one inside the camera clusters.
+    // This exercises an index beyond the first 64 lights through the stored list,
+    // independently of the full-array overflow fallback above.
+    for (uint32_t i = 0; i < 65; ++i) {
+      info.hash = 8100 + i;
+      info.radiance = i == 64 ? remixapi_Float3D{2, 0, 0} : remixapi_Float3D{0, 0, .002f};
+      sphere.position = i == 64 ? remixapi_Float3D{} : remixapi_Float3D{100, 0, 0};
+      r.createLight(info, crowdedLights[i]);
+      r.drawLight(crowdedLights[i]);
+    }
+    r.drawInstance(instance(mesh));
+    pixels = target.render();
+    require(target.forward->statistics().lights == 65 && pixels[center] > 20 && pixels[center + 2] < 2,
+            "A sparse cluster retains an eligible light beyond the first 64 uploaded lights");
+    for (auto member : crowdedLights)
+      r.destroyLight(member);
+
+    remixapi_LightInfoDistantEXT distant{};
+    distant.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT;
+    distant.direction = {.624695f, 0, .780869f};
+    info.hash = 8003;
+    info.pNext = &distant;
+    info.radiance = {3, 3, 3};
+    remixapi_LightHandle sun;
+    r.createLight(info, sun);
+    auto receiver = instance(mesh, .3f);
+    auto occluder = instance(mesh, -.2f);
+    occluder.transform.matrix[0][0] = occluder.transform.matrix[1][1] = .2f;
+    occluder.transform.matrix[0][3] = -.2f;
+    auto shadowScene = [&] {
+      r.drawLight(sun);
+      r.drawInstance(receiver);
+      r.drawInstance(occluder);
+      return target.render();
+    };
+    const auto unshadowed = shadowScene();
+    options.shadows = true;
+    target.enableForward(options);
+    const auto shadowed = shadowScene();
+    const size_t shadowPixel = 4 * (32 * 64 + 38);
+    require(int(unshadowed[shadowPixel]) - int(shadowed[shadowPixel]) > 30,
+            "Sun shadow occludes a visible receiver behind the caster");
+    // Entirely outside the camera's XY and near plane, but still on the sun
+    // ray reaching the same receiver. Camera culling must not remove this
+    // object from the independently culled cascade submissions.
+    occluder.transform.matrix[0][3] = -1.3f;
+    occluder.transform.matrix[2][3] = -1.575f;
+    const auto offscreenShadow = shadowScene();
+    require(int(unshadowed[shadowPixel]) - int(offscreenShadow[shadowPixel]) > 30,
+            "A camera-culled offscreen caster still shadows a visible receiver");
+
+    remixapi_HardcodedVertex vertices[3]{};
+    const float positions[][3] = {{-.73f, -.8f, .5f}, {.81f, .77f, .5f}, {.81f, -.8f, .5f}};
+    for (int i = 0; i < 3; ++i) {
+      std::copy_n(positions[i], 3, vertices[i].position);
+      vertices[i].color = 0xffffffff;
+    }
+    const uint32_t indices[] = {0, 1, 2};
+    remixapi_MeshInfoSurfaceTriangles surface{};
+    surface.vertices_values = vertices;
+    surface.vertices_count = 3;
+    surface.indices_values = indices;
+    surface.indices_count = 3;
+    surface.material = white;
+    remixapi_MeshInfo triangleInfo{};
+    triangleInfo.sType = REMIXAPI_STRUCT_TYPE_MESH_INFO;
+    triangleInfo.hash = 8004;
+    triangleInfo.surfaces_values = &surface;
+    triangleInfo.surfaces_count = 1;
+    remixapi_MeshHandle triangle;
+    r.createMesh(triangleInfo, triangle);
+    options.shadows = false;
+    options.ambient = 1;
+    auto coverage = [&](uint32_t samples) {
+      options.samples = samples;
+      target.enableForward(options);
+      r.drawInstance(instance(triangle));
+      return target.render();
+    };
+    const auto single = coverage(1);
+    pixels = coverage(4);
+    auto partialPixels = [](const auto &image) {
+      size_t count = 0;
+      for (size_t i = 0; i < image.size(); i += 4)
+        count += image[i] > 2 && image[i] < 190;
+      return count;
+    };
+    if (target.forward->statistics().samples > 1)
+      require(partialPixels(pixels) > partialPixels(single) + 10,
+              "MSAA produces partial geometric edge coverage");
+    std::ofstream out(directory / "forward-msaa.ppm", std::ios::binary);
+    out << "P6\n64 64\n255\n";
+    for (size_t i = 0; i < pixels.size(); i += 4)
+      out.write(reinterpret_cast<const char *>(pixels.data() + i), 3);
+    std::puts(
+        "Forward+ GPU readback: local lights, sun shadows, MSAA, frame slots and compatibility HUD passed");
+  }
+  void reflectionTests(const std::filesystem::path &directory, bool baked = false, bool hardware = false,
+                       bool environment = false, uint32_t environmentSamples = 4) {
+    // Odd dimensions exercise hierarchy tails as well as half-resolution SSR.
+    Target target(hardware ? 191 : 95, hardware ? 127 : 79, baked || hardware);
+    auto &r = target.raster;
+    remixapi_LightHandle environmentLight = nullptr;
+    auto makeMaterial = [&](uint64_t hash, float roughness, float metallic, float emission,
+                            bool cutout = false) {
+      remixapi_MaterialInfoOpaqueEXT opaque{};
+      opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+      opaque.albedoConstant = {1, 1, 1};
+      // Isolate source replacement: a white emitter also receives blue baked
+      // diffuse light, which would correctly appear in the red SSR hit.
+      if (baked && emission > 0) opaque.albedoConstant = {0, 0, 0};
+      opaque.opacityConstant = cutout ? 0 : 1;
+      opaque.alphaTestType = cutout ? 4 : 7;
+      opaque.alphaReferenceValue = 128;
+      if (hardware && cutout) { opaque.opacityConstant = 1; opaque.alphaTestType = 0; }
+      opaque.roughnessConstant = roughness;
+      opaque.metallicConstant = metallic;
+      remixapi_MaterialInfo info{};
+      info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+      info.pNext = &opaque;
+      info.hash = hash;
+      info.emissiveIntensity = emission;
+      info.emissiveColorConstant = {1, 0, 0};
+      remixapi_MaterialHandle result;
+      r.createMaterial(info, result);
+      return result;
+    };
+    auto makeQuad = [&](uint64_t hash, remixapi_MaterialHandle material, const float positions[4][3],
+                        const float normal[3]) {
+      remixapi_HardcodedVertex vertices[4]{};
+      for (int i = 0; i < 4; ++i) {
+        std::copy_n(positions[i], 3, vertices[i].position);
+        std::copy_n(normal, 3, vertices[i].normal);
+        vertices[i].color = 0xffffffff;
+      }
+      const uint32_t indices[] = {0, 1, 2, 0, 2, 3};
+      remixapi_MeshInfoSurfaceTriangles surface{};
+      surface.vertices_values = vertices;
+      surface.vertices_count = 4;
+      surface.indices_values = indices;
+      surface.indices_count = 6;
+      surface.material = material;
+      remixapi_MeshInfo info{};
+      info.sType = REMIXAPI_STRUCT_TYPE_MESH_INFO;
+      info.hash = hash;
+      info.surfaces_values = &surface;
+      info.surfaces_count = 1;
+      remixapi_MeshHandle result;
+      r.createMesh(info, result);
+      return result;
+    };
+    const float floorPositions[][3] = {{-3, 0, 0}, {3, 0, 0}, {3, 0, 5}, {-3, 0, 5}},
+                floorNormal[] = {0, 1, 0};
+    const float wallPositions[][3] = {{-.8f, .15f, 3}, {.8f, .15f, 3}, {.8f, 1.8f, 3}, {-.8f, 1.8f, 3}},
+                wallNormal[] = {0, 0, -1};
+    const auto floorMaterial = makeMaterial(9000, .04f, 1, 0);
+    const auto roughMaterial = makeMaterial(9001, .95f, 1, 0);
+    const auto wallMaterial = makeMaterial(9002, .5f, 0, hardware ? .3f : 4);
+    const auto cutoutMaterial = makeMaterial(9003, .5f, 0, 4, true);
+    const auto floor = makeQuad(9010, floorMaterial, floorPositions, floorNormal);
+    const auto roughFloor = makeQuad(9011, roughMaterial, floorPositions, floorNormal);
+    const auto wall = makeQuad(9012, wallMaterial, wallPositions, wallNormal);
+    const auto cutoutWall = makeQuad(9013, cutoutMaterial, wallPositions, wallNormal);
+    auto drawScene = [&](bool rough = false, bool showWall = true, bool cutout = false,
+                         bool hidden = false, float offset = 0.f) {
+      remixapi_CameraInfoParameterizedEXT parameters{};
+      parameters.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO_PARAMETERIZED_EXT;
+      parameters.position = {0, 1.5f, -3};
+      parameters.forward = {0, -.2f, .9797959f};
+      parameters.up = {0, .9797959f, .2f};
+      parameters.right = {1, 0, 0};
+      parameters.aspect = float(target.extent.width) / target.extent.height;
+      parameters.fovYInDegrees = 60;
+      parameters.nearPlane = .05f;
+      parameters.farPlane = 30;
+      remixapi_CameraInfo camera{};
+      camera.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO;
+      camera.pNext = &parameters;
+      r.setupCamera(camera);
+      if (environmentLight)
+        r.drawLight(environmentLight);
+      r.drawInstance(instance(rough ? roughFloor : floor));
+      if (showWall) {
+        auto draw = instance(cutout ? cutoutWall : wall);
+        remixapi_InstanceIdentityEXT identity{};
+        identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+        identity.instanceId = 9400;
+        identity.classification = REMIXAPI_INSTANCE_DYNAMIC_EXT;
+        identity.rasterVisible = !hidden;
+        if (hardware) { draw.pNext = &identity; draw.doubleSided = 1; }
+        draw.transform.matrix[0][3] = offset;
+        r.drawInstance(draw);
+      }
+      return target.render();
+    };
+    auto save = [&](const char *name, const std::vector<uint8_t> &image) {
+      std::ofstream file(directory / name, std::ios::binary);
+      file << "P6\n" << target.extent.width << " " << target.extent.height << "\n255\n";
+      for (size_t i = 0; i < image.size(); i += 4)
+        file.write(reinterpret_cast<const char *>(image.data() + i), 3);
+    };
+    remix::forward::Options options;
+    options.ambient = 0;
+    options.shadows = false;
+    options.shadowResolution = 64;
+    options.ssr = false;
+    if (baked) {
+      options.baking.maxProbes = 512;
+      options.baking.samples = 64;
+      options.baking.bounces = 1;
+      options.baking.reflectionResolution = 8;
+      remixapi_LightInfoDomeEXT dome{};
+      dome.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT;
+      for (uint32_t c = 0; c < 3; ++c) dome.transform.matrix[c][c] = 1;
+      remixapi_LightInfo light{};
+      light.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+      light.hash = 9100;
+      light.pNext = &dome;
+      light.radiance = {0, 0, 1};
+      remixapi_LightHandle lamp;
+      r.createLight(light, lamp);
+      if (environment) {
+        environmentLight = lamp;
+        options.samples = environmentSamples;
+        options.baking.reflectionProbes = 0;
+        options.ssr = true;
+        options.ssrSteps = 0; // isolate fallback without screen hits
+      }
+      remixapi_BakeSceneBoundsInfoEXT bounds{};
+      bounds.scene.structSize = sizeof(bounds);
+      bounds.scene.version = REMIXAPI_BAKE_SCENE_BOUNDS_VERSION_EXT;
+      bounds.scene.sceneId = bounds.scene.revision = 2;
+      bounds.scene.sceneScale = 1;
+      bounds.scene.state = REMIXAPI_BAKE_SCENE_READY_EXT;
+      bounds.scene.lightCount = 1;
+      bounds.scene.lights = &lamp;
+      const float minimum[] = {-4, -1, -4}, maximum[] = {4, 3, 6};
+      std::copy_n(minimum, 3, bounds.minimum);
+      std::copy_n(maximum, 3, bounds.maximum);
+      r.setBakeScene(&bounds.scene);
+    }
+    target.enableForward(options);
+    const auto without = drawScene(false, !environment);
+    save("ssr-disabled.ppm", without);
+    if (environment) {
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+      while (!target.forward->statistics().baking.active && std::chrono::steady_clock::now() < deadline) {
+        drawScene(false, false);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
+      require(target.forward->statistics().baking.active, "Sky fallback waits for published visibility");
+      auto addedBlue = [&](const std::vector<uint8_t> &image) {
+        size_t count = 0;
+        for (size_t i = 0; i < image.size(); i += 4)
+          count += without[i + 2] < 8 && image[i + 2] > 40 && image[i] < 8;
+        return count;
+      };
+      const auto lit = drawScene(false, false);
+      save("sky-reflection.ppm", lit);
+      require(addedBlue(lit) > 50, "Uncovered metallic receivers reflect the visible live sky");
+      require(target.forward->statistics().reflectionProbes.parameters[0] == 0,
+              "Sky fallback works with no fitted reflection cubemaps");
+      require(addedBlue(drawScene(true, false)) > 50, "Rough receivers use filtered sky radiance");
+      std::array<uint8_t, 64 * 16 * 4> panorama{};
+      for (uint32_t y = 0; y < 16; ++y)
+        for (uint32_t x = 0; x < 64; ++x) {
+          const auto at = (y * 64 + x) * 4;
+          if (x >= 47 && x <= 49)
+            panorama[at] = panorama[at + 1] = panorama[at + 2] = 255;
+          panorama[at + 3] = 255;
+        }
+      remixapi_TextureInfo texture{};
+      texture.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_INFO;
+      texture.hash = 9101;
+      texture.width = 64; texture.height = 16;
+      texture.depth = texture.mipLevels = 1;
+      texture.format = REMIXAPI_FORMAT_R8G8B8A8_UNORM;
+      texture.data = panorama.data(); texture.dataSize = panorama.size();
+      remixapi_TextureHandle imageHandle;
+      r.createTexture(texture, imageHandle);
+      remixapi_LightInfoDomeEXT dome{};
+      dome.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT;
+      for (uint32_t c = 0; c < 3; ++c) dome.transform.matrix[c][c] = 1;
+#if defined(_WIN32)
+      dome.colorTexture = L"0x238d";
+#else
+      dome.colorTexture = "0x238d";
+#endif
+      remixapi_LightInfo light{};
+      light.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+      light.pNext = &dome; light.hash = 9100; light.radiance = {1, 1, 1};
+      r.createLight(light, environmentLight);
+      auto peak = [&](const std::vector<uint8_t> &image) {
+        uint8_t result = 0;
+        for (size_t i = 0; i < image.size(); i += 4)
+          if (without[i] < 8 && without[i + 2] < 8)
+            result = std::max(result, image[i]);
+        return result;
+      };
+      const auto sharp = peak(drawScene(false, false)), rough = peak(drawScene(true, false));
+      std::printf("Sky reflection %ux: narrow-source peak %u sharp, %u rough\n", environmentSamples, sharp, rough);
+      require(sharp > 100 && rough + 15 < sharp, "GGX sky filtering spreads a narrow bright source");
+      const auto previousEnvironment = environmentLight;
+      environmentLight = nullptr;
+      require(peak(drawScene(false, false)) < 3, "Removing the live dome leaves no stale sky reflection");
+      environmentLight = previousEnvironment;
+      require(peak(drawScene(false, false)) > 100, "Restoring the live dome recovers sky reflection immediately");
+      options.baking.enabled = false;
+      target.forward->updateLighting(options);
+      require(peak(drawScene(false, false)) < 3, "Missing visibility suppresses unverified sky reflections");
+      std::puts("Visibility-gated sky reflection fallback and roughness passed");
+      return;
+    }
+    auto reflectedPixels = [&](const auto &image) {
+      size_t count = 0;
+      for (uint32_t y = target.extent.height / 2; y < target.extent.height; ++y)
+        for (uint32_t x = 0; x < target.extent.width; ++x) {
+          const auto at = (y * target.extent.width + x) * 4;
+          count += image[at] > without[at] + 25 && image[at + 1] < 8;
+        }
+      return count;
+    };
+    if (hardware) {
+      options.rtReflections = true; options.ssr = false;
+      options.baking.enabled = false; options.baking.reflectionProbes = 0;
+      options.localShadows = false; options.localShadowLights = 0;
+      options.rtReflectionBounces = 1;
+      for (uint32_t samples : {1u, 2u, 4u})
+        for (uint32_t scale : {1u, 2u, 4u}) {
+          options.samples = samples; options.ssrScale = scale;
+          target.enableForward(options);
+          const auto reflected = drawScene(false, true, false, true);
+          std::printf("Hardware reflection %ux, scale %u: %zu offscreen pixels (%s)\n", samples, scale,
+                      reflectedPixels(reflected), target.forward->statistics().rayReflections.status);
+          require(target.forward->statistics().rayReflections.active && reflectedPixels(reflected) > 12,
+                  "Hardware rays reflect a hidden dynamic emitter with SSR and baking disabled");
+          drawScene(false, true, false, true);
+          require(target.forward->statistics().rayReflections.sceneBuilds == 0,
+                  "An unchanged live scene reuses its acceleration structures");
+          require(reflectedPixels(drawScene(true, true, false, true)) < 3,
+                  "Hardware reflection roughness cutoff rejects unsupported sharp transport");
+          require(reflectedPixels(drawScene(false, false)) < 3,
+                  "Removed dynamic geometry cannot leave stale hardware reflections");
+          require(reflectedPixels(drawScene(false, true, true, true)) < 3,
+                  "Hardware candidate traversal honors rejected material alpha");
+          require(reflectedPixels(drawScene(false, true, false, true, 50)) < 3,
+                  "Moving a hidden dynamic emitter updates its ray-query placement");
+          drawScene(false, true, false, true);
+          options.rtReflectionDistance = .1f; target.forward->updateLighting(options);
+          require(reflectedPixels(drawScene(false, true, false, true)) < 3,
+                  "Hardware rays obey a live distance edit");
+          require(target.forward->statistics().rayReflections.sceneBuilds == 0,
+                  "A ray distance edit does not rebuild unchanged acceleration structures");
+          options.rtReflectionDistance = 50; target.forward->updateLighting(options);
+          require(reflectedPixels(drawScene(false, true, false, true)) > 12,
+                  "Restored ray range recovers the current reflection without history");
+          save("hardware-offscreen.ppm", reflected);
+        }
+      options.ssr = true;
+      target.enableForward(options);
+      const auto combined = drawScene();
+      const auto hardwareOnly = drawScene(false, true, false, true);
+      size_t overbright = 0;
+      for (uint32_t y = target.extent.height / 2; y < target.extent.height; ++y)
+        for (uint32_t x = 0; x < target.extent.width; ++x) {
+          const size_t at = (y * target.extent.width + x) * 4;
+          overbright += combined[at] > 140;
+        }
+      require(reflectedPixels(combined) > 12 && reflectedPixels(hardwareOnly) > 12 && !overbright,
+              "SSR and hardware radiance share one reflection lobe without double brightness");
+      remixapi_LightInfoDomeEXT sky{};
+      sky.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT;
+      for (uint32_t c = 0; c < 3; ++c) sky.transform.matrix[c][c] = 1;
+      remixapi_LightInfo skyInfo{};
+      skyInfo.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO; skyInfo.pNext = &sky;
+      skyInfo.hash = 9480; skyInfo.radiance = {0, 0, 1};
+      remixapi_LightHandle skyLight; r.createLight(skyInfo, skyLight);
+      remixapi_BakeSceneBoundsInfoEXT authored{};
+      authored.scene = {sizeof(authored), REMIXAPI_BAKE_SCENE_BOUNDS_VERSION_EXT, 9481, 1, 1,
+                        REMIXAPI_BAKE_SCENE_READY_EXT, 0, 1, nullptr, &skyLight};
+      const float minimum[] = {-4, -1, -4}, maximum[] = {4, 3, 6};
+      std::copy_n(minimum, 3, authored.minimum); std::copy_n(maximum, 3, authored.maximum);
+      r.setBakeScene(&authored.scene);
+      options.baking.enabled = true; options.baking.maxProbes = 64; options.baking.samples = 64;
+      options.baking.bounces = 1; options.baking.batch = 64;
+      options.baking.reflectionProbes = 4; options.baking.reflectionResolution = 8;
+      options.ssr = false;
+      target.enableForward(options);
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+      std::vector<uint8_t> blended;
+      do {
+        blended = drawScene(false, true, false, true);
+        if (target.forward->statistics().baking.active) break;
+        require(target.forward->statistics().baking.state != REMIXAPI_BAKE_FAILED_EXT,
+                "Hardware/probe fixture bake succeeded");
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      } while (std::chrono::steady_clock::now() < deadline);
+      require(target.forward->statistics().baking.active, "Hardware/probe fallback published");
+      require(target.forward->statistics().bakeContent.captureRadiance != 0,
+              "Published cubemaps fingerprint raw RGB capture samples before filtering");
+      require(target.forward->statistics().bakeContent.captureInputs != 0,
+              "Published cubemaps fingerprint the submitted capture origins and ray directions");
+      size_t replaced = 0, fallbackPixels = 0;
+      for (uint32_t y = target.extent.height / 2; y < target.extent.height; ++y)
+        for (uint32_t x = 0; x < target.extent.width; ++x) {
+          const size_t at = (y * target.extent.width + x) * 4;
+          replaced += blended[at] > 40 && blended[at + 2] < 20;
+          fallbackPixels += blended[at] < 10 && blended[at + 2] > 100;
+        }
+      std::printf("Hardware/probe blend: %zu replaced, %zu fallback pixels\n", replaced, fallbackPixels);
+      require(replaced > 12 && fallbackPixels > 12,
+              "Hardware hits replace the blue cubemap while misses retain probe radiance");
+      remixapi_InstanceIdentityEXT wallIdentity{};
+      wallIdentity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+      wallIdentity.instanceId = 9482; wallIdentity.classification = REMIXAPI_INSTANCE_STATIC_EXT;
+      wallIdentity.rasterVisible = 0;
+      auto authoredWall = instance(wall); authoredWall.doubleSided = 1; authoredWall.pNext = &wallIdentity;
+      const auto authoredHandle = r.createRetained(authoredWall);
+      authored.scene.instanceCount = 1; authored.scene.instances = &authoredHandle; ++authored.scene.revision;
+      r.setBakeScene(&authored.scene);
+      options.baking.enabled = false; target.forward->updateLighting(options);
+      require(reflectedPixels(drawScene(false, false)) > 12,
+              "Complete authored geometry reflects even when absent from current draws");
+      r.setBakeScene(nullptr);
+      require(reflectedPixels(drawScene(false, false)) < 3,
+              "Unloading the authored scene removes its hardware reflection geometry");
+      {
+        Target fallback;
+        auto &ordinary = fallback.raster;
+        options.ambient = 1;
+        fallback.enableForward(options);
+        camera(ordinary);
+        ordinary.drawInstance(instance(quad(ordinary, 9490, material(ordinary, 9491, 1, 1, 1))));
+        const auto image = fallback.render();
+        require(image[(32 * 64 + 32) * 4] > 150 &&
+                    !fallback.forward->statistics().rayReflections.available &&
+                    !fallback.forward->statistics().rayReflections.active,
+                "Requesting optional rays on an ordinary device preserves the Forward+ fallback");
+      }
+      require(errors.load() == 0, "Hardware reflection passes are Vulkan validation clean");
+      return;
+    }
+    options.ssr = true;
+    for (uint32_t samples : {1u, 2u, 4u}) {
+      options.samples = samples;
+      for (uint32_t scale : {1u, 2u, 4u}) {
+        options.ssrScale = scale;
+        target.enableForward(options);
+        if (baked) {
+          const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+          do {
+            drawScene();
+            require(target.forward->statistics().baking.state != REMIXAPI_BAKE_FAILED_EXT,
+                    "Reflection blend bake succeeded");
+            if (target.forward->statistics().baking.active) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+          } while (std::chrono::steady_clock::now() < deadline);
+          require(target.forward->statistics().baking.active, "Reflection blend bake completed");
+        }
+        const auto reflected = drawScene();
+        if (baked) {
+          size_t replaced = 0, fallback = 0;
+          for (uint32_t y = target.extent.height / 2; y < target.extent.height; ++y)
+            for (uint32_t x = 0; x < target.extent.width; ++x) {
+              const size_t at = (y * target.extent.width + x) * 4;
+              replaced += reflected[at] > 200 && reflected[at + 2] < 60;
+              fallback += reflected[at] < 10 && reflected[at + 2] > 150;
+            }
+          std::printf("SSR/probe blend %ux, scale %u: %zu replaced, %zu fallback pixels\n",
+                      samples, scale, replaced, fallback);
+          save("probe-blended.ppm", reflected);
+          require(replaced > 4 && fallback > 4,
+                  "SSR replaces probe radiance on hits while misses retain the blue cubemap fallback");
+        }
+        if (scale == 2)
+          save(samples == 1 ? "ssr-1x.ppm" : samples == 2 ? "ssr-2x.ppm" : "ssr-4x.ppm", reflected);
+        std::printf("SSR %ux, scale %u: %zu reflected pixels\n", samples, scale, reflectedPixels(reflected));
+        require(reflectedPixels(reflected) > 12,
+                "SSR reflects the visible emissive wall in the metallic floor");
+        require(reflectedPixels(drawScene(true)) < 3, "Roughness cutoff removes sharp screen reflections");
+        require(reflectedPixels(drawScene(false, false)) < 3,
+                "Removed geometry leaves no stale reflection radiance");
+        require(reflectedPixels(drawScene(false, true, true)) < 3,
+                "Alpha-tested surfaces do not write false reflection hits");
+      }
+    }
+    std::puts("SSR GPU readback: reflected object, odd dimensions, roughness, MSAA, removal and alpha "
+              "coverage passed");
   }
   void gpuTests(const std::filesystem::path &directory) {
     Target target;
@@ -763,6 +2762,24 @@ int main(int argc, char **argv) {
   require(argc >= 2, "Supply scratch directory");
   const std::filesystem::path directory(argv[1]);
   std::filesystem::create_directories(directory);
-  gpuTests(directory);
+  if (argc>2 && std::strcmp(argv[2],"forward")==0) forwardTests(directory);
+  else if (argc>2 && std::strcmp(argv[2],"sky")==0) skyTests();
+  else if (argc>2 && std::strcmp(argv[2],"live-gi")==0) liveGITests();
+  else if (argc>2 && std::strcmp(argv[2],"hardware-reflections")==0) reflectionTests(directory, false, true);
+  else if (argc>2 && std::strcmp(argv[2],"reflections")==0) reflectionTests(directory);
+  else if (argc>2 && std::strcmp(argv[2],"baking")==0) bakingTests();
+  else if (argc>2 && std::strcmp(argv[2],"lightmaps")==0) surfaceLightmapTests();
+  else if (argc>2 && std::strcmp(argv[2],"local-shadows")==0) mixedLightingTests(true);
+  else if (argc>2 && std::strcmp(argv[2],"baked-direct")==0) mixedLightingTests(true, true);
+  else if (argc>2 && std::strcmp(argv[2],"mixed")==0) mixedLightingTests();
+  else if (argc>2 && std::strcmp(argv[2],"compact-occlusion")==0) compactOcclusionTests();
+  else if (argc>2 && std::strcmp(argv[2],"clear-visibility")==0) clearVisibilityTests();
+  else if (argc>2 && std::strcmp(argv[2],"mixed-sun")==0) sunLightingTests();
+  else if (argc>2 && std::strcmp(argv[2],"probe-blend")==0) reflectionTests(directory, true);
+  else if (argc>2 && std::strcmp(argv[2],"sky-reflections")==0) {
+    reflectionTests(directory, true, false, true, 1);
+    reflectionTests(directory, true, false, true, 4);
+  }
+  else gpuTests(directory);
   require(!errors.load(), "Vulkan validation errors");
 }

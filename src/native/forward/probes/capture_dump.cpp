@@ -1,0 +1,78 @@
+#include "forward/probes/capture_dump.h"
+#include <bit>
+#include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <stdexcept>
+#include <string>
+#include <unordered_set>
+
+namespace remix::forward::probes {
+  namespace {
+    void dumpData(const char *suffix, const void *data, size_t bytes, bool frameRequest) noexcept {
+      const char *prefix = std::getenv("REMIX_DEBUG_BAKE_CAPTURE_PREFIX");
+      if (!prefix || !*prefix)
+        return;
+      try {
+        static thread_local std::unordered_set<std::string> written;
+        if (written.contains(suffix))
+          return;
+        if (!std::filesystem::exists(std::string(prefix) + ".capture.bin"))
+          return;
+        if (frameRequest && !std::filesystem::exists(std::string(prefix) + ".frame.request"))
+          return;
+        written.insert(suffix);
+        const auto path = std::filesystem::path(std::string(prefix) + suffix);
+        if (std::filesystem::exists(path))
+          throw std::runtime_error("Frame data dump already exists; choose a fresh prefix");
+        std::ofstream output(path, std::ios::binary);
+        output.exceptions(std::ios::failbit | std::ios::badbit);
+        output.write(static_cast<const char *>(data), std::streamsize(bytes));
+        output.close();
+      } catch (const std::exception &error) {
+        std::fprintf(stderr, "Frame data dump unavailable: %s\n", error.what());
+      }
+    }
+  } // namespace
+  void dumpFrameData(const char *suffix, const void *data, size_t bytes) noexcept {
+    dumpData(suffix, data, bytes, true);
+  }
+  void dumpPublishedData(const char *suffix, const void *data, size_t bytes) noexcept {
+    dumpData(suffix, data, bytes, false);
+  }
+  void dumpCaptures(uint64_t sceneHash, std::span<const Capture> captures) noexcept {
+    const char *prefix = std::getenv("REMIX_DEBUG_BAKE_CAPTURE_PREFIX");
+    if (!prefix || !*prefix)
+      return;
+    try {
+      static_assert(std::endian::native == std::endian::little);
+      const auto path = std::filesystem::path(std::string(prefix) + ".capture.bin");
+      if (std::filesystem::exists(path))
+        throw std::runtime_error("Capture dump already exists; choose a fresh prefix");
+      std::ofstream output(path, std::ios::binary);
+      output.exceptions(std::ios::failbit | std::ios::badbit);
+      auto write = [&](const void *data, size_t bytes) {
+        output.write(static_cast<const char *>(data), std::streamsize(bytes));
+      };
+      // Private little-endian diagnostic format: magic, scene hash, count,
+      // followed by resolution, XYZ origin and six RGBA32F faces per probe.
+      // RGB stores radiance; A stores first-hit distance. No struct padding.
+      write("RMXCUB01", 8);
+      write(&sceneHash, sizeof(sceneHash));
+      const uint32_t count = uint32_t(captures.size());
+      write(&count, sizeof(count));
+      for (const auto &capture : captures) {
+        if (capture.radiance.size() != 6ull * capture.resolution * capture.resolution)
+          throw std::runtime_error("Incomplete cubemap capture dump");
+        write(&capture.resolution, sizeof(capture.resolution));
+        write(capture.position.data(), sizeof(capture.position));
+        write(capture.radiance.data(), capture.radiance.size() * sizeof(Vec4));
+      }
+      output.close();
+      std::fprintf(stderr, "Wrote raw cubemap captures: %s\n", path.string().c_str());
+    } catch (const std::exception &error) {
+      std::fprintf(stderr, "Raw cubemap capture dump unavailable: %s\n", error.what());
+    }
+  }
+} // namespace remix::forward::probes

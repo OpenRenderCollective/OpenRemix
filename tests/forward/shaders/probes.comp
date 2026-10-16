@@ -1,0 +1,25 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x = 64) in;
+#include "../../../src/native/forward/shaders/probes.glsl"
+#define IRRADIANCE_BINDING 2
+#include "../../../src/native/forward/shaders/irradiance.glsl"
+struct Query {
+  vec4 position, reflected;
+};
+layout(set = 0, binding = 0, std430) readonly buffer Queries { Query queries[]; };
+layout(set = 0, binding = 1, std430) writeonly buffer Results { vec4 results[]; };
+layout(push_constant) uniform Count { uint count; };
+void main() {
+  uint index = gl_GlobalInvocationID.x;
+  if (index >= count)
+    return;
+  Query q = queries[index];
+  if (q.position.w > 0) {
+    results[index] = vec4(bakedSkyVisibility(q.position.xyz, vec3(0, 1, 0), q.reflected.xyz));
+    return;
+  }
+  vec3 value;
+  bool found = probeRadiance(q.position.xyz, q.reflected.xyz, q.reflected.w, value);
+  results[index] = vec4(value, found ? 1 : 0);
+}

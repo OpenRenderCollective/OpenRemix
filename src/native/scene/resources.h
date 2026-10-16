@@ -1,5 +1,6 @@
 #pragma once
 #include "scene/id_set.h"
+#include "scene/bake_scene.h"
 #include "scene/light_visibility.h"
 #include "scene/retained.h"
 #include "scene/temporal.h"
@@ -15,6 +16,7 @@
 #include <memory>
 #include <remix/remix_c.h>
 #include <remix/remix_native_ext.h>
+#include <remix/remix_bake_ext.h>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -126,6 +128,8 @@ namespace remix {
     void updateRetained(const remixapi_SceneInstanceChangeEXT *changes, uint32_t count);
     void destroyRetained(const uint64_t *handles, uint32_t count);
     void drawRetained(const float *sceneOrigin);
+    void setBakeScene(const remixapi_BakeSceneInfoEXT *info);
+    const std::shared_ptr<const scene::BakeScene> &bakeScene() const { return m_bakeScene; }
     size_t retainedCount() const { return m_retained.size(); }
     const scene::RetainedStatistics &retainedStatistics() const { return m_retainedStats; }
     // DrawRetainedInstances calls after which a moved instance returns to static.
@@ -303,12 +307,18 @@ namespace remix {
       std::filesystem::path texture;
     };
     struct LightDefinition {
+      uint64_t revision = 0;
+      bool dynamic = false;
       LightSource source;
       scene::DistantLight distant;
       std::vector<scene::SphereLight> emitters;
       scene::DomeLight dome;
     };
     std::unordered_map<uint64_t, LightDefinition> m_lights;
+    uint64_t m_lightRevision = 0;
+    std::shared_ptr<const scene::BakeScene> m_bakeScene;
+    std::vector<std::pair<uint64_t, uint64_t>> m_bakeInstances, m_bakeLights;
+    bool bakeRequestCurrent(const remixapi_BakeSceneInfoEXT &info) const;
     std::unordered_set<uint64_t> m_frameLights;
     // A published frame's sphere lights, as sphereLights() returned them at
     // publication (m_frameLights then only tells whether there are any).

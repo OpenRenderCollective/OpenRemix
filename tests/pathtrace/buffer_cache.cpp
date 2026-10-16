@@ -75,7 +75,9 @@ int main() {
     assert(!destroyed.count(handle));
     owner.reset();
     assert(destroyed.count(handle));
-    assert(unmapped.count(memory));
+    // vkFreeMemory implicitly releases any mapping; an explicit unmap is not required.
+    remix::MemoryRelease::drain();
+    assert(freed.count(memory));
   }
   {
     auto cache = std::make_shared<BufferCache>();
@@ -115,6 +117,7 @@ int main() {
     overflow.reset();
     assert(destroyed.count(handle));
   }
+  remix::MemoryRelease::drain();
   assert(destroyed.size() == nextHandle - 1 && freed.size() == destroyed.size());
   {
     auto cache = std::make_shared<BufferCache>();
@@ -136,5 +139,6 @@ int main() {
     cache.reset();
     for (const auto &block : blocks) assert(block->liveRanges == 0 && block->free.size() == 1);
   }
+  remix::MemoryRelease::drain();
   std::puts("Upload buffer cache ownership, compatibility, limits and cleanup passed");
 }

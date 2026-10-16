@@ -5,6 +5,9 @@ test('Scene resources and image decoding', scene_test, args : [meson.current_bui
 retained_test = executable('remix-retained-test', 'retained.cpp',
   include_directories : test_includes, link_with : scene_library)
 test('Retained instance registration, replay and lifetimes', retained_test)
+bake_scene_test = executable('remix-bake-scene-test', 'bake_scene.cpp',
+  include_directories : test_includes, link_with : scene_library)
+test('Bake scene membership, content identity and snapshot ownership', bake_scene_test)
 publish_test = executable('remix-publish-test', 'publish.cpp',
   include_directories : test_includes, link_with : scene_library, dependencies : threads_dep)
 test('Published frames and resource lifetime', publish_test, timeout : 60)
@@ -37,3 +40,7 @@ compressed_test = executable('remix-compressed-texture-test', 'compressed.cpp',
 test('Compressed BC textures, coverage and aliasing', compressed_test)
 usd_lights_test = executable('remix-usd-lights-test', 'usd_lights.cpp', include_directories : test_includes, link_with : scene_library)
 test('USD light conversion and BC4 BC6H assets', usd_lights_test)
+
+bake_charts_test = executable('remix-bake-charts-test', 'bake_charts.cpp',
+  include_directories : test_includes, link_with : scene_library)
+test('Surface chart capture, content identity and ownership', bake_charts_test)

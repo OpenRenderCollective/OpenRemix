@@ -1,0 +1,48 @@
+#pragma once
+#include "forward/lighting.h"
+#include "scene/light_visibility.h"
+#include <memory>
+#include <optional>
+#include <stop_token>
+#include <vector>
+
+namespace remix::forward::probes {
+  // Conservative whole-volume occupancy, independent of PVS visibility. A
+  // box may span any number of empty leaves, but must intersect no solid or
+  // outside leaf. Invalid/cyclic partitions fail closed.
+  bool emptyRegion(const scene::VisibilityPartition &partition, const Bounds &bounds);
+  struct RegionTolerance {
+    // Maximum thickness of trim in two axes, in scene units. Zero is strict.
+    float detailDepth = 0;
+    float maxIgnoredFraction = .08f;
+  };
+  // Worker-local scratch reused for repeated occupancy tests. The immutable
+  // partition must outlive this query; separate workers own separate queries.
+  class RegionQuery {
+  public:
+    explicit RegionQuery(const scene::VisibilityPartition &partition, std::stop_token cancelled = {});
+    ~RegionQuery();
+    bool contains(const Bounds &bounds);
+
+  private:
+    struct State;
+    std::unique_ptr<State> m_state;
+  };
+  struct RegionSite {
+    Vec3 position{};
+    float clearance = 0;
+    uint32_t enclosedAxes = 0;
+  };
+  // Empty-leaf candidates independent of irradiance spacing. Conservative cell
+  // bounds are only a search aid: each origin is checked against actual space.
+  // Nearby opposite solid boundaries rank sheltered rooms before open areas.
+  std::vector<RegionSite> regionSites(const scene::VisibilityPartition &partition, const Bounds &limit,
+                                      float clearance, float enclosureRange, std::stop_token cancelled = {});
+  // Approximate a large axis-aligned box containing the capture site.
+  // Optional detail tolerance permits bounded trim/clutter inside the proxy.
+  // Several growth orders reduce the bias of greedy face expansion. This is
+  // not a globally maximal room decomposition, especially for rotated rooms.
+  std::optional<Bounds> fitRegion(const scene::VisibilityPartition &partition, const Bounds &limit, Vec3 site,
+                                  float margin, std::stop_token cancelled = {},
+                                  RegionTolerance tolerance = {});
+} // namespace remix::forward::probes

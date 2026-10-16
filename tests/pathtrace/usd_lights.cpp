@@ -79,8 +79,7 @@ int main(int argc, char **argv) {
     ok(api.CreateMaterial(&info, &handle));
     return handle;
   };
-  const auto white = material({1, 1, 1}, 1), black = material({0, 0, 0}, 1);
-  const auto cutout = material({1, 1, 1}, 0, true), tint = material({.1f, 1, .2f}, .5f);
+  const auto white = material({1, 1, 1}, 1);
   auto quad = [&](int axis, float plane, float a0, float a1, float b0, float b1,
                   remixapi_MaterialHandle mat) {
     remixapi_HardcodedVertex vertices[4]{};
@@ -190,13 +189,13 @@ int main(int argc, char **argv) {
   usd.pConeAngleRadians = nullptr;
   usd.lightType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_RECT_EXT;
   width = height = .1f;
-  auto small = capture("area-small");
+  auto smallArea = capture("area-small");
   width = height = .8f;
-  auto large = capture("area-large");
-  require(large[0] > small[0] + .03f, "Area dimensions must change illumination");
+  auto largeArea = capture("area-large");
+  require(largeArea[0] > smallArea[0] + .03f, "Area dimensions must change illumination");
 
   // A tiny RGBE image carries values greater than one to the sampled GPU image.
-  auto skyFile = (directory / "colored-hdr.hdr").string();
+  auto skyFile = directory / "colored-hdr.hdr";
   {
     std::ofstream file(skyFile, std::ios::binary);
     file << "#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 2 +X 4\n";
@@ -226,7 +225,7 @@ int main(int argc, char **argv) {
   geometry = true;
   usd.lightType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT;
   power = 1;
-  auto normalFile = (directory / "normal.dds").string();
+  auto normalFile = directory / "normal.dds";
   {
     uint32_t h[32] = {};
     h[0] = 0x20534444;

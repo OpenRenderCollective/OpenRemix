@@ -242,7 +242,7 @@ void RemixNativeRuntime::presented() {
     // Present) or merely enabled (the driver then holds vkQueuePresentKHR).
     // Garry's Mod, gm_voidplaces, raster: 19.6 ms a frame with the sleep,
     // 17.4 with the mode enabled and no sleep, 13.6 with it off.
-    return m_lowLatencyRequested && (m_frameGenerationRequested || m_backend == 1);
+    return m_lowLatencyRequested && (m_frameGenerationRequested || m_backend == config::Backend::PathTrace);
   }
 
   void RemixNativeRuntime::applyLatencyMode() {
@@ -534,7 +534,7 @@ void RemixNativeRuntime::presented() {
       prepareSettings();
       {
         const auto &settings = m_profiles.current();
-        const bool traceStatic = m_pathTracer && m_targetBackend && m_backend != 0 && !m_loading;
+        const bool traceStatic = m_pathTracer && m_targetBackend && m_backend == config::Backend::PathTrace && !m_loading;
         if (!traceStatic)
           frame.expandStatic();
         // From the next replay on; the tracer reads the setting this frame.
@@ -544,7 +544,7 @@ void RemixNativeRuntime::presented() {
           m_pathTracer->setStaticValidation(settings.persistentStatic && settings.persistentStaticValidation);
       }
       frame.setSkyTarget(m_pathTracer ? m_pathTracer->skyPass() : VK_NULL_HANDLE);
-      m_rasterPreparing = !frame.preparePipelines(m_backend != 0);
+      m_rasterPreparing = !frame.preparePipelines(m_backend == config::Backend::PathTrace, m_backend == config::Backend::ForwardPlus);
       m_loading |= m_rasterPreparing;
       if (m_loading && m_postProcessing) m_postProcessing->freeze();
       prepareFrameGeneration();
@@ -642,6 +642,7 @@ void RemixNativeRuntime::presented() {
       setupTime.start();
       m_frames[m_frameIndex].snapshot.reset();
       frame.selectFrame(m_frameIndex);
+      if (m_forward) m_forward->selectFrame(m_frameIndex);
       if (m_postProcessing) m_postProcessing->selectFrame(m_frameIndex);
       if (m_pathTracer)
         m_pathTracer->selectFrame(m_frameIndex);
@@ -811,7 +812,7 @@ void RemixNativeRuntime::presented() {
         // Any other consumer of this frame (raster rendering, a frame without
         // the tracer) takes the set into the draw list, as without it.
         const auto &settings = m_profiles.current();
-        const bool traceStatic = m_pathTracer && m_targetBackend && m_backend != 0 && !m_loading;
+        const bool traceStatic = m_pathTracer && m_targetBackend && m_backend == config::Backend::PathTrace && !m_loading;
         if (!traceStatic)
           m_raster.expandStatic();
         // From the next replay on.
@@ -821,7 +822,7 @@ void RemixNativeRuntime::presented() {
       }
       m_raster.setSkyTarget(m_pathTracer ? m_pathTracer->skyPass()
                                          : VK_NULL_HANDLE);
-      m_rasterPreparing = !m_raster.preparePipelines(m_backend != 0);
+      m_rasterPreparing = !m_raster.preparePipelines(m_backend == config::Backend::PathTrace, m_backend == config::Backend::ForwardPlus);
       m_loading |= m_rasterPreparing;
       if (m_loading && m_postProcessing) m_postProcessing->freeze();
       prepareFrameGeneration();
@@ -864,6 +865,7 @@ void RemixNativeRuntime::presented() {
       setupTime.start();
       m_frames[m_frameIndex].snapshot.reset();
       m_raster.selectFrame(m_frameIndex);
+      if (m_forward) m_forward->selectFrame(m_frameIndex);
       if (m_postProcessing) m_postProcessing->selectFrame(m_frameIndex);
       if (m_pathTracer)
         m_pathTracer->selectFrame(m_frameIndex);
@@ -1404,7 +1406,7 @@ void RemixNativeRuntime::presented() {
     raster.setSkyTarget(m_pathTracer ? m_pathTracer->skyPass() : VK_NULL_HANDLE);
     if (!m_loading) {
       gpu::GpuScope scope(buffer, "Raster uploads and skinning");
-      raster.prepare(buffer, m_backend != 0);
+      raster.prepare(buffer, m_backend == config::Backend::PathTrace, m_backend == config::Backend::ForwardPlus);
       breakdown.rasterPrepareMilliseconds = 1; // Replaced by the raster profile.
     }
     if (m_pathTracer && !m_loading) {
@@ -1425,6 +1427,10 @@ void RemixNativeRuntime::presented() {
       // leave out (barriers, small uploads and readbacks between passes).
       gpu::GpuScope scope(buffer, "Path tracer: barriers, copies, other");
       m_pathTracer->prepare(buffer, raster, m_traceOptions, *traceScene);
+    }
+    if (m_forward && !m_loading) {
+      gpu::GpuScope scope(buffer, "Forward+ lighting and shadows", m_swapchainExtent);
+      m_forward->prepare(buffer, raster);
     }
     VkClearValue clear[2] = {};
     std::copy(std::begin(m_clearColor), std::end(m_clearColor), clear[0].color.float32);
@@ -1498,7 +1504,7 @@ void RemixNativeRuntime::presented() {
       // view model included, between render passes before its UI layer.
       const bool hostPasses = !m_loading && m_snapshotSupported && m_hostPasses.pending();
       const int sceneLayers = split ? 1 : hostPasses ? 2 : 3;
-      const bool skipSky = m_pathTracer != nullptr;
+      const bool skipSky = m_pathTracer != nullptr || m_forward != nullptr;
       auto recordHostPasses = [&] {
         gpu::GpuScope hostTime(buffer, "Host passes", m_swapchainExtent);
         // The scene's depth stays in the target's depth attachment.
@@ -1523,6 +1529,17 @@ void RemixNativeRuntime::presented() {
           vkCmdBeginRenderPass(buffer, &pass, VK_SUBPASS_CONTENTS_INLINE);
         }
         gpu::GpuScope overlay(buffer, "Raster overlay (HUD, effects)", m_swapchainExtent);
+        raster.record(buffer, false, true, nullptr, {}, 0, sceneLayers, masks ? 1 : 0);
+      } else if (!m_loading && m_forward) {
+        m_forward->background(buffer);
+        raster.record(buffer, true);
+        m_forward->composite(buffer);
+        if (raster.wantsSceneDepth()) {
+          vkCmdEndRenderPass(buffer);
+          raster.captureSceneDepth(buffer);
+          pass.renderPass = m_resumePass;
+          vkCmdBeginRenderPass(buffer, &pass, VK_SUBPASS_CONTENTS_INLINE);
+        }
         raster.record(buffer, false, true, nullptr, {}, 0, sceneLayers, masks ? 1 : 0);
       } else if (!m_loading)
         raster.record(buffer, false, false, nullptr, {}, 0, sceneLayers, masks ? 1 : 0);

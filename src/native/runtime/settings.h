@@ -1,5 +1,7 @@
 #pragma once
 #include "pathtrace/options.h"
+#include "forward/options.h"
+#include "runtime/backend.h"
 #include <array>
 #include <map>
 #include <string>
@@ -9,7 +11,8 @@
 namespace remix::config {
   struct Settings {
     TraceOptions trace;
-    uint32_t backend = 0;
+    forward::Options forward;
+    uint32_t backend = Backend::Raster;
     bool vsync = false;
     std::array<float, 4> clearColor = {0.025f, 0.035f, 0.055f, 1.f};
     // Upload BC textures as GPU BC images instead of decoding them on the CPU.

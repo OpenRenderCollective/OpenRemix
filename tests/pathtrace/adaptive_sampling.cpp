@@ -224,7 +224,7 @@ int main(int argc, char **argv) {
   };
   auto emissive = material({0, 0, 0}, 1, .01f);
   auto farEmitter = quad(2, 191.f, 240.f, 241.f, 65.f, 66.f, emissive);
-  auto *csv = std::fopen((directory / "metrics.csv").c_str(), "w");
+  auto *csv = std::fopen((directory / "metrics.csv").string().c_str(), "w");
   require(csv, "Cannot open adaptive sampling metrics");
   std::fputs("primary,pose,sample_fraction,candidate_fraction\n", csv);
   for (const char *primary : {"raster", "ray"}) {

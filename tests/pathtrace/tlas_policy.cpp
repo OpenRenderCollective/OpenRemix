@@ -52,7 +52,7 @@ namespace {
     // Combined TLAS: masks tag the parts; static changes rebuild, dynamic
     // motion refits, dynamic membership rebuilds, a known generation skips
     // the static comparison.
-    require(instanceMask(false, false) == 0xff && instanceMask(false, true) == 0xff &&
+    require(instanceMask(false, false) == allInstancesMask && instanceMask(false, true) == allInstancesMask &&
                 instanceMask(true, false) == staticInstanceMask && instanceMask(true, true) == dynamicInstanceMask &&
                 (staticInstanceMask & dynamicInstanceMask) == 0,
             "Instance masks");

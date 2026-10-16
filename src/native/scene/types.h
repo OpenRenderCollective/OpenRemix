@@ -137,6 +137,7 @@ namespace remix {
       // A translucent body (remixapi_MaterialInfoTranslucentEXT without a thin
       // wall): its refractive index and measurement distance (0: a thin sheet).
       float refractiveIndex = 1.5f, transmittanceDistance = 0;
+      bool bakeSmoothBoundary = false; // explicit mean interface; live ripple normals are excluded
       float emission[3] = {};
       bool suppressEmissionLight = false;
       // remixapi_MaterialInfoSelfIlluminationEXT: 0 off, else the mask + 1

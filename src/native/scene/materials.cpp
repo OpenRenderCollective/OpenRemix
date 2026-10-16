@@ -1,7 +1,9 @@
 #include "scene/images.h"
+#include "scene/bake_material.h"
 #include "scene/resources.h"
 #include "scene/validation.h"
 #include <remix/remix_native_ext.h>
+#include <remix/remix_bake_ext.h>
 
 #include <algorithm>
 #include <cmath>
@@ -118,6 +120,13 @@ namespace remix {
         material->metallic = 0;
       }
     }
+    if (const auto *boundary = static_cast<const remixapi_MaterialBakeBoundaryEXT *>(
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_BAKE_BOUNDARY_EXT))) {
+      if (boundary->smoothBoundary > 1 ||
+          (boundary->smoothBoundary && !validSmoothBoundary(*material)))
+        throw invalid;
+      material->bakeSmoothBoundary = boundary->smoothBoundary != 0;
+    }
     finite(material->tint, 4);
     if (material->tint[3] < 0 || material->tint[3] > 1) {
       throw invalid;
@@ -201,7 +210,7 @@ namespace remix {
              a.normalEncoding == b.normalEncoding && a.roughness == b.roughness && a.metallic == b.metallic &&
              a.remap[0] == b.remap[0] && a.remap[1] == b.remap[1] && a.scrollLayers == b.scrollLayers &&
              std::equal(a.scroll, a.scroll + 6, b.scroll) && a.refractiveIndex == b.refractiveIndex &&
-             a.transmittanceDistance == b.transmittanceDistance &&
+             a.transmittanceDistance == b.transmittanceDistance && a.bakeSmoothBoundary == b.bakeSmoothBoundary &&
              a.pbr == b.pbr && std::equal(a.emission, a.emission + 3, b.emission) &&
              std::equal(a.tint, a.tint + 4, b.tint) && a.compare == b.compare && a.reference == b.reference &&
              a.drawAlpha == b.drawAlpha && a.translucent == b.translucent &&

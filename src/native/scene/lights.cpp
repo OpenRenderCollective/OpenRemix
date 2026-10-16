@@ -321,6 +321,8 @@ namespace remix {
     source.direction = shaped ? shaping.direction : remixapi_Float3D{z[0], z[1], z[2]};
     auto direction = unit(vec(source.direction));
     source.direction = {direction[0], direction[1], direction[2]};
+    definition.revision = ++m_lightRevision;
+    definition.dynamic = info.isDynamic != 0;
     m_lights[info.hash] = std::move(definition);
     handle = reinterpret_cast<remixapi_LightHandle>(uintptr_t(info.hash));
   }

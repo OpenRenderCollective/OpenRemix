@@ -19,7 +19,7 @@ namespace {
   void ok(remixapi_ErrorCode code) { require(!code, "Debug view API failure"); }
   using Color = std::array<float, 3>;
   using Image = std::vector<Color>;
-  void near(Color a, Color b, float tolerance, const char *message) {
+  void nearColor(Color a, Color b, float tolerance, const char *message) {
     for (unsigned c = 0; c < 3; ++c) require(std::abs(a[c] - b[c]) < tolerance, message);
   }
 }
@@ -186,7 +186,7 @@ int main(int argc, char **argv) {
         const auto local = localMean(capture(prefix + "-local", 6));
         if (showTorch) require(local[0] > .005f, "PBR torch lighting absent from raw local diagnostic");
         if (showEmitter) require(local[2] > .005f, "PBR emissive lighting absent from raw local diagnostic");
-        near(sample(capture(prefix + "-indirect", 7)), {0, 0, 0}, .001f, "PBR zero-bounce indirect debug not black");
+        nearColor(sample(capture(prefix + "-indirect", 7)), {0, 0, 0}, .001f, "PBR zero-bounce indirect debug not black");
         require(stats().historyResets == initial.historyResets, "PBR diagnostics reset lighting history");
         require(stats().activeDenoiser == initial.activeDenoiser, "PBR diagnostics changed active denoiser");
         std::printf("PBR local diagnostics verified: %s\n", prefix.c_str());
@@ -205,24 +205,24 @@ int main(int argc, char **argv) {
     const auto initial = stats();
     std::array<Image, 12> images;
     for (unsigned view = 1; view <= 11; ++view) images[view] = capture(prefix + std::to_string(view), view);
-    near(sample(images[1]), {.3f, .6f, .9f}, .012f, "Albedo debug altered by lighting/resolve");
-    near(sample(images[2]), {.5f, .5f, 0}, .01f, "Normal debug incorrect");
+    nearColor(sample(images[1]), {.3f, .6f, .9f}, .012f, "Albedo debug altered by lighting/resolve");
+    nearColor(sample(images[2]), {.5f, .5f, 0}, .01f, "Normal debug incorrect");
     auto ids = capture(prefix + "ids-repeat", 3);
     for (int y = 12; y < height - 12; ++y) for (int x = 12; x < width - 12; ++x)
       if (std::abs(x + y - width + 1) > 6)
-        near(ids[y * width + x], images[3][y * width + x], .001f, "Stationary triangle identity changed");
+        nearColor(ids[y * width + x], images[3][y * width + x], .001f, "Stationary triangle identity changed");
     if (!mode) {
       if (referenceIds.empty()) referenceIds = ids;
       else for (int y = 12; y < height - 12; ++y) for (int x = 12; x < width - 12; ++x)
         if (std::abs(x + y - width + 1) > 6)
-          near(ids[y * width + x], referenceIds[y * width + x], .001f, "Raster/ray triangle identities disagree");
+          nearColor(ids[y * width + x], referenceIds[y * width + x], .001f, "Raster/ray triangle identities disagree");
     }
-    near(sample(images[7]), {.2f, .4f, .6f}, .012f, "Raw indirect is filtered or albedo-modulated");
+    nearColor(sample(images[7]), {.2f, .4f, .6f}, .012f, "Raw indirect is filtered or albedo-modulated");
     auto local = sample(images[6]);
     require(local[0] > .03f && local[1] < .002f && local[2] < .002f, "Raw local signal mixed with other lighting");
     if (mode) {
-      near(sample(images[8]), {.5f, .5f, .5f}, .012f, "Stationary motion not zero");
-      near(sample(images[9]), {0, 1, 0}, .001f, "Stable correspondence invalid");
+      nearColor(sample(images[8]), {.5f, .5f, .5f}, .012f, "Stationary motion not zero");
+      nearColor(sample(images[9]), {0, 1, 0}, .001f, "Stable correspondence invalid");
       require(stats().historyResets == initial.historyResets, "Debug selection reset temporal history");
       require(stats().activeDenoiser == initial.activeDenoiser && stats().activeTaa == initial.activeTaa,
               "Debug selection changed active filters");
@@ -242,22 +242,22 @@ int main(int argc, char **argv) {
     }
     if (mode >= 2) require(sample(images[10])[0] > .8f, "Stable indirect confidence unexpectedly low");
     auto after = sample(capture(prefix + "final-after", 0));
-    near(before, after, .035f, "Diagnostic contaminated final lighting history");
+    nearColor(before, after, .035f, "Diagnostic contaminated final lighting history");
     config("prism", "1"); config("gamma22", "1");
-    near(sample(capture(prefix + "albedo-display", 1)), sample(images[1]), .001f,
+    nearColor(sample(capture(prefix + "albedo-display", 1)), sample(images[1]), .001f,
          "Display transform changed albedo diagnostic");
     config("prism", "0"); config("gamma22", "0");
     showGlass = true;
-    near(sample(capture(prefix + "glass-albedo", 1)), {.1f, 1, .2f}, .012f,
+    nearColor(sample(capture(prefix + "glass-albedo", 1)), {.1f, 1, .2f}, .012f,
          "Geometry debug does not show first transparent surface");
     showGlass = false;
     config("bounces", "0");
-    near(sample(capture(prefix + "zero-bounce", 7)), {0, 0, 0}, .001f, "Zero bounce indirect debug not black");
+    nearColor(sample(capture(prefix + "zero-bounce", 7)), {0, 0, 0}, .001f, "Zero bounce indirect debug not black");
     config("bounces", "1");
     if (mode >= 2) {
       config("separateLocalLighting", "1");
       auto split = sample(capture(prefix + "split-local", 6));
-      near(split, local, .02f, "Deferred split local lighting absent from diagnostic");
+      nearColor(split, local, .02f, "Deferred split local lighting absent from diagnostic");
       config("separateLocalLighting", "0");
     }
     std::printf("Debug views verified: %s mode %u\n", primary, mode);

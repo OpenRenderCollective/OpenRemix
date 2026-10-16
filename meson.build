@@ -43,7 +43,9 @@ else
   vulkan_dep = dependency('vulkan', version : '>=1.1')
 endif
 vulkan_dep = declare_dependency(dependencies : vulkan_dep,
-  include_directories : include_directories('include/vulkan/include', is_system : true))
+  # These headers are pinned by the runtime. A platform SDK supplies the loader,
+  # but its older headers must not take precedence over the pinned definitions.
+  include_directories : include_directories('include/vulkan/include'))
 subdir('third_party/imgui')
 subdir('third_party/nrd')
 subdir('third_party/fsr31')

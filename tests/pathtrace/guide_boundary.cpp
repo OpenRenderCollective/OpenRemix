@@ -222,7 +222,7 @@ int main(int argc, char **argv) {
   config("localSamples", "1");
   config("localGuiding", "1");
   config("accumulate", "0");
-  auto csv = std::fopen((directory / "metrics.csv").c_str(), "w");
+  auto csv = std::fopen((directory / "metrics.csv").string().c_str(), "w");
   require(csv, "Cannot open guide boundary metrics");
   std::fputs("primary,frame,z,mean\n", csv);
   for (const char *primary : {"raster", "ray"}) {

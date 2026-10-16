@@ -286,13 +286,13 @@ int main(int argc, char **argv) {
     distant.direction = {0, 0, 1}; distant.angularDiameterDegrees = 3;
     ok(api.UpdateLightDefinition(sun, &light));
     separation = 1; occluder = blocker; ++epoch.historyResetEpoch;
-    auto near = capture(std::string(primary) + "-near");
+    auto nearImage = capture(std::string(primary) + "-near");
     separation = 8; ++epoch.historyResetEpoch;
-    auto far = capture(std::string(primary) + "-far");
-    unsigned nearWidth = width(near), farWidth = width(far);
+    auto farImage = capture(std::string(primary) + "-far");
+    unsigned nearWidth = width(nearImage), farWidth = width(farImage);
     std::printf("%s penumbra 10-90%%: near=%u far=%u pixels\n", primary, nearWidth, farWidth);
     require(farWidth > nearWidth * 2 && farWidth > 10, "Penumbra did not grow with blocker distance");
-    require(average(far, 32, 64) < .01 && average(far, 192, 224) > .98,
+    require(average(farImage, 32, 64) < .01 && average(farImage, 192, 224) > .98,
             "SIGMA changed fully shadowed/lit regions");
     // Complete eight-sample cycles after warmup, including every temporal phase.
     continuous = true;
@@ -318,8 +318,8 @@ int main(int argc, char **argv) {
     continuous = false;
     configure("shadowDebug", "1");
     auto raw = capture(std::string(primary) + "-raw-visibility");
-    std::printf("%s analytic disk MSE: raw=%.6f SIGMA=%.6f\n", primary, mse(raw), mse(far));
-    require(mse(far) < mse(raw) * .5, "SIGMA did not reduce sampled penumbra noise");
+    std::printf("%s analytic disk MSE: raw=%.6f SIGMA=%.6f\n", primary, mse(raw), mse(farImage));
+    require(mse(farImage) < mse(raw) * .5, "SIGMA did not reduce sampled penumbra noise");
     configure("shadowDebug", "0"); configure("accumulate", "1");
     auto progressive = capture(std::string(primary) + "-progressive", 128);
     require(!shadows().active && mse(progressive) < .01, "Raw progressive sun sampling differs from disk reference");

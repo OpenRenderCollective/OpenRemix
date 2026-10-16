@@ -74,6 +74,7 @@ namespace remix::scene {
     // the last replay, from the records of memberRevision. logged: the handle
     // is in the consumer's change list.
     uint64_t revision = 0, memberRevision = 0;
+    uint64_t resolvedModGeneration = 0;
     bool staticEligible = false, member = false, logged = false;
     bool staticEmissive = false; // a traced record has emission (Settings' local-light detection)
     uint64_t freshRetire = ~0ull; // NativeResources' retire generation it was last found not stale at

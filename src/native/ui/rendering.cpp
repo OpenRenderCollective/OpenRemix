@@ -15,9 +15,10 @@ namespace remix {
     const bool rrActive =
         m_pathTracer && m_pathTracer->upscalingStatistics().backend == upscale::Backend::DlssRr;
     int backend = int(settings.backend);
-    if (ui::Combo("Requested backend", &backend, "Raster\0Path trace\0"))
+    if (ui::Combo("Requested backend", &backend, "Raster\0Path trace\0Forward+ (experimental)\0"))
       settings.backend = uint32_t(backend);
-    ImGui::TextWrapped("Active backend: %s", m_backend ? "Path trace" : "Raster");
+    ImGui::TextWrapped("Active backend: %s", config::Backend::name(m_backend));
+    if (!m_forwardFailure.empty()) ImGui::TextWrapped("%s", m_forwardFailure.c_str());
     if (!m_traceUnavailable.empty())
       ImGui::TextWrapped("Path tracing unavailable: %s", m_traceUnavailable.c_str());
     ui::Checkbox("VSync", &settings.vsync);
@@ -30,6 +31,90 @@ namespace remix {
                         "Applies at the next Present (the render thread is drained first).");
     if (settings.asyncPresent && m_headless)
       ImGui::TextDisabled("%s", "The headless editor always presents synchronously.");
+    if (settings.backend == config::Backend::ForwardPlus) {
+      const auto statistics = forwardStatistics();
+      ImGui::Text("Active MSAA: %ux | opaque draws: %u | lights: %u | clusters: %u",
+                  statistics.samples, statistics.draws, statistics.lights, statistics.clusters);
+      auto &forward = settings.forward;
+      int samples = forward.samples == 4 ? 2 : forward.samples == 2 ? 1 : 0;
+      if (ui::Combo("MSAA", &samples, "Off\0 2x\0 4x\0")) forward.samples = 1u << samples;
+      ui::Checkbox("Sun shadows", &forward.shadows);
+      ui::Checkbox("Local light shadows", &forward.localShadows);
+      int shadowLights = int(forward.localShadowLights);
+      if (ui::SliderInt("Shadowed local lights", &shadowLights, 0, 8))
+        forward.localShadowLights = uint32_t(shadowLights);
+      int shadowResolution = 0;
+      while ((64u << shadowResolution) < forward.localShadowResolution) ++shadowResolution;
+      if (ui::Combo("Local shadow face size", &shadowResolution, "64\0 128\0 256\0 512\0 1024\0"))
+        forward.localShadowResolution = 64u << shadowResolution;
+      ui::DragFloat("Local shadow distance (m)", &forward.localShadowDistance, 1, .1f, 10000);
+      ImGui::Text("Local shadows: %u | unshadowed fallback: %u | static map updates: %u",
+                  statistics.shadowedLights, statistics.shadowOverflow, statistics.staticShadowUpdates);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Each selected light has cached static geometry and a separate live caster map.\n"
+                          "Lights beyond the budget keep illuminating the scene without local shadow maps.");
+      ui::Checkbox("Screen-space reflections", &forward.ssr);
+      ui::Checkbox("Hardware ray-traced GI", &forward.rtGI);
+      if (forward.rtGI) {
+        if (!statistics.rayGI.available)
+          ImGui::TextWrapped("Fragment ray queries unavailable; using baked indirect lighting.");
+        else ImGui::TextWrapped("%s", statistics.rayGI.status);
+        int samples = int(forward.rtGISamples), bounces = int(forward.rtGIBounces);
+        if (ui::SliderInt("GI rays per shaded pixel", &samples, 1, 64)) forward.rtGISamples = uint32_t(samples);
+        if (ui::SliderInt("GI secondary bounces", &bounces, 1, 8)) forward.rtGIBounces = uint32_t(bounces);
+        ui::DragFloat("GI ray distance (m)", &forward.rtGIDistance, 1, .1f, 10000);
+      }
+      ui::Checkbox("Hardware ray-traced reflections", &forward.rtReflections);
+      if (forward.rtReflections) {
+        if (!statistics.rayReflections.available)
+          ImGui::TextWrapped("Hardware ray queries unavailable; using SSR and reflection probes.");
+        else if (statistics.rayReflections.status[0]) {
+          ImGui::TextWrapped("%s", statistics.rayReflections.status);
+          ImGui::Text("Reflection ray slots: %u | scene builds: %u", statistics.rayReflections.rays,
+                      statistics.rayReflections.sceneBuilds);
+        }
+        ui::DragFloat("Hardware reflection distance (m)", &forward.rtReflectionDistance, 1, .1f, 10000);
+        int bounces = int(forward.rtReflectionBounces);
+        if (ui::SliderInt("Hardware reflection bounces", &bounces, 1, 8))
+          forward.rtReflectionBounces = uint32_t(bounces);
+      }
+      ui::Checkbox("Bake static lighting on map load", &forward.baking.enabled);
+      ui::Checkbox("Bake per-light direct diffuse", &forward.baking.directDiffuse);
+      ui::DragFloat("Bake GPU budget (ms)", &forward.baking.gpuBudgetMs, .25f, 0, 16);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Adjusts batch size from completed GPU timings. Complex batches can exceed the target.\n"
+                          "Zero uses the fixed bakeBatch setting. Scheduling edits preserve baked lighting.");
+      ui::DragFloat("Bake probe spacing (m)", &forward.baking.spacing, .1f, .1f, 100);
+      int surfaceBudget = int(forward.baking.lightmapTexels / 1024);
+      if (ui::SliderInt("Surface lightmap budget (k texels)", &surfaceBudget, 64, 4096))
+        forward.baking.lightmapTexels = uint32_t(surfaceBudget) * 1024;
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("More texels preserve smaller baked lighting details. Charts coarsen when needed to fit the budget.");
+      int probeCount = int(forward.baking.reflectionProbes);
+      if (ui::SliderInt("Reflection probes", &probeCount, 0, 16))
+        forward.baking.reflectionProbes = uint32_t(probeCount);
+      ui::DragFloat("Reflection trim tolerance (m)", &forward.baking.reflectionDetailTolerance, .01f, 0, 2);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Allows small bevels and interior clutter in fitted reflection boxes. Zero uses strict empty space.\n"
+                          "Thin walls remain barriers; this is an approximate room fit.");
+      int probeResolution = 0;
+      while ((8u << probeResolution) < forward.baking.reflectionResolution) ++probeResolution;
+      if (ui::Combo("Cubemap face size", &probeResolution, "8\0 16\0 32\0 64\0 128\0"))
+        forward.baking.reflectionResolution = 8u << probeResolution;
+      ImGui::TextWrapped("%s", statistics.baking.status[0] ? statistics.baking.status : "Waiting for static map inputs");
+      if (statistics.baking.probes)
+        ImGui::Text("Bake probes: %u / %u", statistics.baking.completed, statistics.baking.probes);
+      int ssrScale = forward.ssrScale == 4 ? 2 : forward.ssrScale == 2 ? 1 : 0;
+      if (ui::Combo("SSR resolution", &ssrScale, "Full\0Half\0Quarter\0"))
+        forward.ssrScale = 1u << ssrScale;
+      ui::DragFloat("Shadow distance (m)", &forward.shadowDistance, 1, 1, 10000);
+      ui::DragFloat("Scene scale (m per unit)", &forward.sceneScale, .0005f, .0001f, 1000, "%.4f", ImGuiSliderFlags_Logarithmic);
+      ui::DragFloat("Ambient fill", &forward.ambient, .001f, 0, 100);
+      ui::DragFloat("Exposure", &forward.exposure, .01f, .0001f, 10000);
+      ImGui::TextWrapped("Experimental Forward+ renderer with mixed static and dynamic local shadows. Map baking supplies static indirect light, soft static shadows and "
+                         "box-projected reflections. Transparency and game effects use compatibility rasterization.");
+      return;
+    }
     // World units of the host: converts the tracer's meter-based defaults.
     ui::DragFloat("Scene scale (m per unit)", &options.sceneScale, .0005f, .0001f, 1000, "%.4f",
                   ImGuiSliderFlags_Logarithmic);

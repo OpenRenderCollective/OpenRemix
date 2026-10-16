@@ -1,4 +1,5 @@
 #include "raster/gpu.h"
+#include "forward/lighting.h"
 #include <remix/remix_native_ext.h>
 #include <deque>
 #include <limits>
@@ -7,7 +8,7 @@ namespace remix {
   using namespace scene;
   using namespace raster::detail;
 
-  void RasterRenderer::prepare(VkCommandBuffer command, bool tracing) {
+  void RasterRenderer::prepare(VkCommandBuffer command, bool tracing, bool forward) {
     auto &g = *m_gpu;
     m_profile = {};
     g.uploadBytes = 0;
@@ -120,7 +121,7 @@ namespace remix {
     ordered.reserve(m_draws.size() + m_overlay.size() + m_uiDraws.size() + 1);
     std::deque<Draw> adjusted;
     for (const auto &draw : m_draws) {
-      if (draw.rasterVisible && (!tracing || !draw.traced())) {
+      if (draw.rasterVisible && (!tracing || !draw.traced()) && (!forward || !forward::accepts(draw))) {
         const Draw *source = &draw;
         // Traced barycentric depth and raster interpolation can differ by ULPs.
         // Bias coplanar EQUAL feedback toward the camera while preserving occlusion.

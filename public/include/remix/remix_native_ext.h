@@ -523,7 +523,7 @@ typedef enum remixapi_RenderBackendEXT {
 // feature bits, denoising or upscaling are implied by this capability.
 typedef struct remixapi_BackendCapabilitiesEXT {
   uint32_t structSize;
-  uint32_t supportedBackends; // bit 0 raster, bit 1 pathtrace
+  uint32_t supportedBackends; // bit 0 raster, bit 1 pathtrace, bit 2 forwardplus
   uint32_t activeBackend;
   uint32_t requestedBackend;
   char unavailableReason[256];

@@ -23,6 +23,7 @@
 #pragma once
 
 #include "pathtrace/renderer.h"
+#include "forward/renderer.h"
 #include "platform/gpu_frames.h"
 #include "platform/gpu_timers.h"
 #include "platform/present_queue.h"
@@ -63,6 +64,12 @@ public:
     if (const auto *busy = busyState())
       return busy->post;
     return m_postProcessing ? m_postProcessing->statistics() : postfx::Statistics{};
+  }
+  std::string reflectionProbeReport() const;
+  remixapi_BakeStatisticsEXT bakingStatistics() const {
+    auto statistics = forwardStatistics().baking;
+    statistics.supported = m_forwardRaySupported;
+    return statistics;
   }
   const std::string &postProcessingFailure() const { return m_postFailure; }
   remixapi_ErrorCode present(const remixapi_PresentInfo *info);
@@ -228,6 +235,7 @@ private:
   // last completed frame's values, taken at the handoff. Written and read
   // under the API mutex only.
   struct Published {
+    forward::Statistics forward;
     remixapi_FramePerformanceEXT performance{};
     remixapi_FrameBreakdownEXT breakdown{};
     uint64_t presentations = 0, digest = 0;
@@ -246,6 +254,7 @@ private:
     gpu::FrameTimings gpuTimings;
   };
   void publishState();
+  forward::Statistics forwardStatistics() const;
   // Non-null while the render thread works on a frame. Only Present hands a
   // frame over, under the API mutex, so a caller holding the mutex that sees
   // null keeps the render thread idle until it releases the mutex.
@@ -364,6 +373,21 @@ private:
   scene::FreeCameraState m_freeCamera;
   std::shared_ptr<upscale::Ngx> m_ngx;
   std::unique_ptr<PathTracer> m_pathTracer;
+  std::unique_ptr<forward::Renderer> m_forward;
+  // Map bake ownership survives target recreation, but not backend exit or
+  // device destruction. Preparation workers only retain this shared owner.
+  std::shared_ptr<forward::bake::Controller> m_forwardBaking;
+  struct PreparedForward {
+    pipeline::PreparationQueue::Ticket job;
+    std::unique_ptr<forward::Renderer> renderer;
+    forward::Options options;
+  };
+  std::shared_ptr<PreparedForward> m_forwardPreparation;
+  std::vector<std::shared_ptr<PreparedForward>> m_obsoleteForward;
+  std::string m_forwardFailure;
+  forward::Options m_forwardAttempt;
+  bool prepareForwardSettings();
+  void retireForward(bool preserveBaking = false);
   std::shared_ptr<postfx::State> m_exposureState;
   std::unique_ptr<postfx::Renderer> m_postProcessing;
   struct PreparedPost {
@@ -415,6 +439,8 @@ private:
   uint32_t m_backend = 0, m_requestedBackend = 0,
            m_instanceApiVersion = VK_API_VERSION_1_1;
   bool m_traceSupported = false;
+  bool m_forwardSupported = false;
+  bool m_forwardRaySupported = false;
   bool m_textureCompression = false; // textureCompressionBC enabled on m_device.
   bool m_memoryBudget = false;       // VK_EXT_memory_budget queries available.
   remixapi_DenoisingCapabilitiesEXT m_denoiseCapabilities{

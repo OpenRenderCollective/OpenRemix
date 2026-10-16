@@ -148,6 +148,8 @@ namespace remix::config {
       std::istringstream lines(state);
       std::string line;
       while (std::getline(lines, line)) {
+        if (!line.empty() && line.back() == '\r')
+          line.pop_back();
         const auto equal = line.find(" = ");
         if (equal == line.npos)
           continue;
