@@ -126,6 +126,15 @@ int main(int argc, char **argv) {
               f::probes::serialize(restored->specular) == f::probes::serialize(data.specular) &&
               restored->surfaceSamples == 25 && restored->directDiffuse,
           "Atlas, reflection data and direct-light policy survive the cache round trip");
+  const float confidence = data.specular.header.probes[0].position[3];
+  data.specular.header.probes[0].position[3] = 0;
+  require(save(), "A legacy cache without projection confidence is saved");
+  const auto legacy = load();
+  require(legacy && legacy->specular.header.probes[0].position[3] == confidence &&
+              legacy->specular.texels == data.specular.texels && legacy->pixels == data.pixels,
+          "Cached raw captures refresh projection preference without changing baked lighting");
+  data.specular.header.probes[0].position[3] = confidence;
+  require(save(), "The current cache is restored for corruption checks");
   require(restored->mixed.lights.match(source->lights[0]) == 0 &&
               restored->mixed.occlusion.state(0, 0) == f::mixed::Visibility::Clear &&
               restored->mixed.occlusion.clearCount() == 1,

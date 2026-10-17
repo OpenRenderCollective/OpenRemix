@@ -188,6 +188,9 @@ namespace remix::forward::bake::cache {
                   record.position[c] == capture.position[c] &&
                   record.influenceMinimum[c] == influence.minimum[c] &&
                   record.influenceMaximum[c] == influence.maximum[c]);
+        // This preference is derived from retained raw captures, so older
+        // valid caches gain it without tracing or filtering their lighting again.
+        data.header.probes[i].position[3] = probes::projectionConfidence(capture);
       }
       for (const auto &texel : data.texels)
         finite(texel);

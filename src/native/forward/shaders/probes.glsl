@@ -73,7 +73,10 @@ bool probeRadiance(vec3 position, vec3 reflected, float roughness, out vec3 resu
     vec3 offset = position - record.position.xyz;
     float smallestHalf = min(min(halfSize.x, halfSize.y), halfSize.z);
     float coreSquared = max(.01 * smallestHalf * smallestHalf, 1e-20);
-    float weight = pow(max(.001, edge), 2) / max(dot(offset, offset), coreSquared);
+    // Prefer captures whose recorded geometry supports their projection box.
+    // Legacy/unknown metadata is neutral; normalization preserves a sole probe.
+    float confidence = record.position.w > 0 ? record.position.w : 1;
+    float weight = confidence * pow(max(.001, edge), 2) / max(dot(offset, offset), coreSquared);
     result +=
         mix(probeMip(probe, low, corrected), probeMip(probe, high, corrected), lod - float(low)) * weight;
     total += weight;

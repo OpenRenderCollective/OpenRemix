@@ -258,6 +258,16 @@ narrow columns while rejecting room-spanning sheets regardless of thickness. Fit
 inset; surface lookup biases into the lit side. Non-BSP props do not constrain this structural fit, but do
 appear in the captured radiance when included in the static bake scene.
 
+Overlapping captures also use a preference derived from their recorded first-hit distances. The baker
+measures the solid-angle fraction whose geometry lies no farther than the projection box, with a 5%
+relative margin for the inset and sampling error. A doorway's low corridor-like fit can therefore have
+less influence than a capture that better describes the surrounding room. Nearer interior props do not
+lower this preference; unknown distances remain neutral. Preference has a positive floor and participates
+in normalized blending, so a sole capture retains its radiance. The scalar occupies existing probe
+metadata and adds no texture reads or images. Valid disk caches refresh it from retained raw captures
+without retracing or changing their filtered lighting. This is an overlap heuristic, not a repair of the
+projection geometry: open portals, distance-cap misses and non-box rooms still need better proxies.
+
 `rtx.native.forward.reflectionDetailTolerance` controls trim depth in metres (default 0.5, range 0-2).
 Zero restores strict empty-space fitting. The tolerance is an approximation, not a proof that receivers
 share one room: complex connected trim can be over-rejected, and small or irregularly fragmented dividers can be misclassified. Oblique

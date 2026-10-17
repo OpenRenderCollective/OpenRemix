@@ -156,6 +156,40 @@ namespace remix::forward::probes {
       result += 6 * (resolution >> i) * (resolution >> i);
     return result;
   }
+  float projectionConfidence(const Capture &capture) {
+    const uint32_t size = capture.resolution;
+    if (!size || capture.radiance.size() != 6ull * size * size)
+      return 1;
+    double agreement = 0, total = 0;
+    for (uint32_t face = 0; face < 6; ++face)
+      for (uint32_t y = 0; y < size; ++y)
+        for (uint32_t x = 0; x < size; ++x) {
+          const float u = 2 * (float(x) + .5f) / size - 1;
+          const float v = 2 * (float(y) + .5f) / size - 1;
+          const auto ray = direction(face, u, v);
+          const double weight = std::pow(1. + double(u) * u + double(v) * v, -1.5);
+          float exit = std::numeric_limits<float>::max();
+          for (uint32_t axis = 0; axis < 3; ++axis)
+            if (std::abs(ray[axis]) > 1e-10f) {
+              const float plane = ray[axis] > 0 ? capture.bounds.maximum[axis]
+                                                : capture.bounds.minimum[axis];
+              exit = std::min(exit, (plane - capture.position[axis]) / ray[axis]);
+            }
+          const float distance = capture.radiance[(face * size + y) * size + x][3];
+          // The cube-map Jacobian avoids giving face corners disproportionate
+          // influence. A relative margin covers the inset proxy and sampling
+          // error without tying the result to metres or Source world units.
+          // Nearer props are expected inside a room; only beyond-box distances
+          // disagree. Missing depth in older/manual assets remains neutral.
+          const bool unknown = !std::isfinite(distance) || distance <= 0;
+          if (unknown || distance <= exit * 1.05f)
+            agreement += weight;
+          total += weight;
+        }
+    // A poorly approximated capture is still useful where it is the only one.
+    // Positive weights keep normalized blending and HDR energy well-defined.
+    return float(std::clamp(agreement / total, .05, 1.));
+  }
   Data filter(std::span<const Capture> captures, uint32_t samples, std::stop_token cancelled) {
     if (cancelled.stop_requested())
       throw std::runtime_error("Reflection filtering superseded");
@@ -180,6 +214,7 @@ namespace remix::forward::probes {
     for (uint32_t probe = 0; probe < captures.size(); ++probe) {
       const auto &capture = captures[probe];
       auto &record = result.header.probes[probe];
+      record.position[3] = projectionConfidence(capture);
       for (uint32_t c = 0; c < 3; ++c) {
         record.minimum[c] = capture.bounds.minimum[c];
         record.maximum[c] = capture.bounds.maximum[c];
@@ -262,7 +297,9 @@ namespace remix::forward::probes {
       for (uint32_t c = 0; c < 3; ++c)
         offset[c] = position[c] - record.position[c];
       const float coreSquared = std::max(.01f * smallestHalf * smallestHalf, 1e-20f);
-      const float weight = std::pow(std::max(.001f, edge), 2.f) / std::max(dot(offset, offset), coreSquared);
+      const float confidence = record.position[3] > 0 ? record.position[3] : 1;
+      const float weight = confidence * std::pow(std::max(.001f, edge), 2.f) /
+                           std::max(dot(offset, offset), coreSquared);
       for (uint32_t c = 0; c < 3; ++c)
         result[c] += weight * std::lerp(a[c], b[c], lod - low);
       total += weight;

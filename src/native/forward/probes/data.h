@@ -8,6 +8,8 @@
 namespace remix::forward::probes {
   constexpr uint32_t maxProbes = 32;
   struct Record {
+    // position.w: captured solid-angle agreement with the projection box.
+    // Zero is the legacy/unknown value and keeps the original blend weight.
     Vec4 minimum{}, maximum{}, influenceMinimum{}, influenceMaximum{}, position{};
   };
   struct Header {
@@ -47,6 +49,9 @@ namespace remix::forward::probes {
                              uint32_t resolution, std::stop_token cancelled = {}, float detailTolerance = .5f,
                              const std::vector<Vec3> *validatedSites = nullptr);
   uint32_t levelOffset(uint32_t resolution, uint32_t level);
+  // Interior props are allowed; geometry substantially beyond a proxy lowers
+  // its preference where another capture overlaps. Unknown distances are neutral.
+  float projectionConfidence(const Capture &capture);
   Data filter(std::span<const Capture> captures, uint32_t samples = 128, std::stop_token cancelled = {});
   std::vector<std::byte> serialize(const Data &data);
   // CPU reference for the shader's box projection, cross-face bilinear

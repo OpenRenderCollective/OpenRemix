@@ -1252,7 +1252,14 @@ namespace {
       pixel = {4, 0, 0, 0};
     for (auto &pixel : floorCaptures[1].radiance)
       pixel = {0, 2, 0, 0};
-    test::probeQueries(fixture, probes::filter(floorCaptures, 64));
+    auto floorData = probes::filter(floorCaptures, 64);
+    test::probeQueries(fixture, floorData);
+    floorData.header.probes[0].position[3] = 1;
+    floorData.header.probes[1].position[3] = .05f;
+    test::probeQueries(fixture, floorData);
+    floorData.header.probes[0].position[3] = 0;
+    floorData.header.probes[1].position[3] = 0;
+    test::probeQueries(fixture, floorData);
     std::vector<probes::Capture> allSlots(probes::maxProbes, capture);
     for (uint32_t i = 0; i < allSlots.size(); ++i) {
       auto &slot = allSlots[i];

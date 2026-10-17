@@ -1,4 +1,5 @@
 #include "forward/probes/data.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -126,6 +127,63 @@ int main() {
     std::printf("Floor roughness %.1f: left %.4f/%.4f, right %.4f/%.4f; continuous and scale invariant\n",
                 roughness, (*left)[0], (*left)[1], (*right)[0], (*right)[1]);
   }
+  auto supported = source;
+  const auto depthRays = p::rays(supported);
+  for (size_t i = 0; i < supported.radiance.size(); ++i) {
+    const auto &d = depthRays[i].normal;
+    supported.radiance[i][3] = 1 / std::max({std::abs(d[0]), std::abs(d[1]), std::abs(d[2])});
+  }
+  require(p::projectionConfidence(supported) == 1 && p::projectionConfidence(source) == 1,
+          "An exact room box and unknown legacy depth keep full reflection preference");
+  auto interiorProps = supported;
+  for (auto &pixel : interiorProps.radiance)
+    pixel[3] *= .3f;
+  require(p::projectionConfidence(interiorProps) == 1,
+          "Interior props do not disqualify an otherwise valid room projection");
+  auto doorway = supported;
+  for (auto &pixel : doorway.radiance)
+    pixel[3] *= 4;
+  require(std::abs(p::projectionConfidence(doorway) - .05f) < 1e-6f,
+          "A box far short of the captured geometry receives bounded low preference");
+  auto opening = supported;
+  for (size_t i = 0; i < 16 * 16; ++i)
+    opening.radiance[i][3] *= 4;
+  require(std::abs(p::projectionConfidence(opening) - 5.f / 6) < 1e-5f,
+          "One open cube face lowers preference in proportion to its solid angle");
+  auto scaledOpening = opening;
+  for (auto *coordinate : {&scaledOpening.bounds.minimum, &scaledOpening.bounds.maximum,
+                           &scaledOpening.position})
+    for (auto &axis : *coordinate)
+      axis *= 40;
+  for (auto &pixel : scaledOpening.radiance)
+    pixel[3] *= 40;
+  require(std::abs(p::projectionConfidence(scaledOpening) - p::projectionConfidence(opening)) < 1e-6f,
+          "Projection confidence is independent of world coordinate units");
+  p::Capture reliableBlend[] = {supported, doorway};
+  for (auto &pixel : reliableBlend[0].radiance)
+    pixel = {4, 0, 0, pixel[3]};
+  for (auto &pixel : reliableBlend[1].radiance)
+    pixel = {0, 2, 0, pixel[3]};
+  const auto preferred = p::filter(reliableBlend, 16);
+  const auto sole = p::filter({&reliableBlend[1], 1}, 16);
+  for (float roughness : {0.f, .3f, 1.f}) {
+    const auto value = p::sample(preferred, {0, 0, -1}, {0, 0, 1}, roughness);
+    const auto alone = p::sample(sole, {0, 0, -1}, {0, 0, 1}, roughness);
+    require(value && (*value)[0] > 3.5f && (*value)[1] < .25f &&
+                std::abs((*value)[0] / 4 + (*value)[1] / 2 - 1) < 1e-5f,
+            "Overlapping captures prefer supported room geometry without losing HDR energy");
+    require(alone && std::abs((*alone)[1] - 2) < 1e-5f,
+            "A sole poorly approximated capture retains its full radiance at every roughness");
+  }
+  auto legacy = preferred;
+  for (auto &record : legacy.header.probes)
+    record.position[3] = 0;
+  const auto neutral = p::sample(legacy, {0, 0, -1}, {0, 0, 1}, .3f);
+  require(neutral && std::abs((*neutral)[0] - 2) < 1e-5f && std::abs((*neutral)[1] - 1) < 1e-5f,
+          "Legacy zero metadata preserves the original normalized blend");
+  std::printf("Projection preference: supported %.3f, doorway %.3f, opening %.3f; sole probe energy retained\n",
+              p::projectionConfidence(supported), p::projectionConfidence(doorway),
+              p::projectionConfidence(opening));
   std::stop_source stop;
   stop.request_stop();
   bool cancelled = false;
