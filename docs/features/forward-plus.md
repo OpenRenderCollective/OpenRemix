@@ -204,6 +204,23 @@ Probes remain available with SSR disabled. Setting `reflectionProbes` to zero di
 both that value and `ssr` to zero avoids reflection guides and screen-resolution reflection targets.
 These are low-resolution static approximations, not per-frame ray tracing or a production lighting preset.
 
+## Water integration status
+
+Measured water and glass share CPU optical conversion in `scene/optics.h` and GPU interface
+math in `forward/shaders/dielectric.glsl`. Tint describes RGB transmission at the material's
+measurement distance, in scene units; extinction is per scene unit. Converting both distances
+to metres leaves transmission unchanged. Index of refraction supplies interface reflectance:
+water is about two percent at normal incidence rather than the opaque BRDF's four percent.
+The baker still selects an explicitly marked smooth mean interface. Live ripple normals are
+a separate surface-shading input and must not alter volume absorption or the frozen boundary.
+
+Primary Forward+ water rendering remains unfinished. Transmission draws currently use the
+compatibility raster path. The water pass must sample completed opaque HDR colour and depth,
+shade reflection/refraction and absorption in scene-linear HDR, preserve MSAA edge coverage,
+and participate in depth/composition without reading an attachment it is writing. Routing
+these draws through the opaque pass would lose the transmitted background. Its material inputs
+must come from the same resolved replacement material as the bake and optional ray transport.
+
 ## Settings
 
 | Key under `rtx.native.forward.` | Default | Meaning |

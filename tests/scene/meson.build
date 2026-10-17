@@ -29,6 +29,9 @@ test('CPU tracing preparation and snapshot ownership', trace_frame_test)
 pbr_test = executable('remix-pbr-resource-test', 'pbr.cpp',
   include_directories : test_includes, link_with : scene_library)
 test('PBR material validation and texture lifetime', pbr_test)
+optics_test = executable('remix-optics-test', 'optics.cpp',
+  include_directories : test_includes)
+test('Measured optical media, world units and boundary reflectance', optics_test)
 materials_ext_test = executable('remix-material-extensions-test', 'materials_ext.cpp',
   include_directories : test_includes, link_with : scene_library)
 test('Instance material and dynamic textures', materials_ext_test)

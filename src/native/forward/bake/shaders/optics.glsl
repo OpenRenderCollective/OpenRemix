@@ -1,4 +1,5 @@
 // Smooth, measured dielectric boundaries. Ripple normals remain a live effect.
+#include "../../shaders/dielectric.glsl"
 struct Medium {
   vec3 extinction;
   float index;
@@ -6,20 +7,7 @@ struct Medium {
 Medium airMedium() { return Medium(vec3(0), 1); }
 Medium materialMedium(RayMaterial material) { return Medium(material.optics.rgb, material.optics.w); }
 bool dielectric(RayMaterial material) { return (material.flags.w & 4u) != 0u; }
-vec3 attenuation(Medium medium, float distance) { return exp(-medium.extinction * max(distance, 0)); }
-float fresnelBoundary(float cosine, float incident, float transmitted) {
-  cosine = clamp(cosine, 0, 1);
-  float eta = incident / transmitted;
-  float sineSquared = eta * eta * max(0, 1 - cosine * cosine);
-  if (sineSquared >= 1)
-    return 1;
-  float other = sqrt(max(0, 1 - sineSquared));
-  float parallel =
-      (transmitted * cosine - incident * other) / max(transmitted * cosine + incident * other, 1e-8);
-  float perpendicular =
-      (incident * cosine - transmitted * other) / max(incident * cosine + transmitted * other, 1e-8);
-  return clamp(.5 * (parallel * parallel + perpendicular * perpendicular), 0, 1);
-}
+vec3 attenuation(Medium medium, float distance) { return beerLambert(medium.extinction, distance); }
 // Locate a containing boundary once per shading point, rather than per sample.
 // A first-hit exit in any axis is evidence of being inside. Opaque geometry
 // blocks that axis, preventing an open pool from extending below its floor.

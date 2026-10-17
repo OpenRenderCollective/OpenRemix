@@ -1,6 +1,6 @@
 #include "forward/bake/data.h"
 #include "forward/material.h"
-#include "scene/bake_material.h"
+#include "scene/optics.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -29,7 +29,8 @@ namespace remix::forward::bake {
       const auto &source = *draw.material;
       const auto &blend = draw.blend;
       const bool sourceOver = sourceOverCoverage(blend);
-      const bool dielectric = source.bakeSmoothBoundary && scene::validSmoothBoundary(source);
+      const auto medium = source.bakeSmoothBoundary ? scene::measuredMedium(source) : std::nullopt;
+      const bool dielectric = medium.has_value();
       if ((source.transmission && !dielectric) || (source.translucent && !sourceOver && !dielectric) ||
           (blend.enabled && !sourceOver))
         throw std::invalid_argument("Bake transport supports opaque, cutout and "
@@ -48,9 +49,8 @@ namespace remix::forward::bake {
                 (sourceOver ? sourceOverCoverageFlag : 0u) | (dielectric ? dielectricBoundaryFlag : 0u)}});
       if (dielectric) {
         auto &optics = result.materials.back().optics;
-        for (uint32_t c = 0; c < 3; ++c)
-          optics[c] = -std::log(std::clamp(source.tint[c], 1e-6f, 1.f)) / source.transmittanceDistance;
-        optics[3] = source.refractiveIndex;
+        std::copy(medium->extinction.begin(), medium->extinction.end(), optics.begin());
+        optics[3] = medium->refractiveIndex;
       }
       std::vector<Matrix> boneNormals;
       if (surface.bonesPerVertex) {
