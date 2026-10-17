@@ -17,7 +17,7 @@ reports. An implementation or synthetic test alone does not close an integration
 | World-metric surface charts, atlas budgets and irradiance probes | Implemented; live pool bake and cached reload exercised | Inspect connected-face continuity, seam donors and budget coarsening in representative map views |
 | Soft finite emitters, attributed direct diffuse and live specular | Implemented | Compare visible penumbrae and light separation in the live engine |
 | Dynamic-object shadows combined with baked static shadows | Implemented; captured static casters excluded; world-metric sun bias and one indoor live case exercised | Local-light receiver quality, characters and static membership after map changes |
-| Automatic parallax cubemap bounds with tolerance for room details | Implemented | Review room transitions, bevels, interior props and reflection leaks in map views |
+| Automatic parallax cubemap bounds with tolerance for room details | Implemented; published-box brush-section inspection tool available | Cross-map bake compatibility, room transitions, bevels, interior props and reflection leaks remain open |
 | Rough SSR, optional hardware reflections and live GI | Implemented | Refresh actual-engine toggles and shared-scene lifetime coverage; continue measured performance work where needed |
 | Shared USD/PBR material replacements | Implemented; plain Source roughness fallback corrected | Refresh late material arrival and broader material/BRDF parity in the current engine build |
 | Water optics, normals, HDR refraction, SSR/RT and underwater composition | Implemented and opt-in; above-water engine captures exercised | Underwater/lifecycle validation, noise and visual comparison with the path-traced material response |
