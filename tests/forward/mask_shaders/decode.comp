@@ -1,0 +1,18 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x = 64) in;
+struct Query { uvec4 identity; vec4 coordinate; };
+layout(set = 0, binding = 0, std430) readonly buffer Asset { uint words[]; };
+layout(set = 0, binding = 1, std430) readonly buffer Input { Query queries[]; };
+layout(set = 0, binding = 2, std430) writeonly buffer Output { vec4 results[]; };
+layout(push_constant) uniform Settings { uvec4 occlusion; uint count; } frame;
+uint occlusionWord(uint index) { return words[index]; }
+#include "../../../src/native/forward/shaders/overflow-mask.glsl"
+void main() {
+  uint index = gl_GlobalInvocationID.x;
+  if (index >= frame.count) return;
+  float visibility;
+  bool found = overflowLightVisibility(queries[index].identity.x, queries[index].identity.y,
+      queries[index].coordinate, vec4(0, 0, 1, 1), visibility);
+  results[index] = vec4(visibility, found ? 1 : 0, 0, 0);
+}

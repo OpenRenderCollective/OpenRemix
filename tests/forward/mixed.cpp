@@ -234,6 +234,12 @@ int main() {
     require(!scalar.add(0, 0, layout, fractions, 0) && scalar.entries().empty(),
             "Mask allocation respects the device texture budget before mutation");
     require(scalar.add(0, 0, layout, fractions), "Partial visibility retains an independent scalar mask");
+    m::Masks compactBudget;
+    require(compactBudget.add(0, 0, layout, fractions, 7) && compactBudget.words(1).size() == 7,
+            "Lossless constant tiles retain a mask when a raw R8 rectangle would exceed the device budget");
+    m::Masks tooSmall;
+    require(!tooSmall.add(0, 0, layout, fractions, 6) && tooSmall.entries().empty() && tooSmall.bytes().empty(),
+            "Insufficient encoded budget fails without publishing a partial mask");
     const auto packed = scalar.words(uint32_t(layout.charts.size()));
     require(!packed.empty() && std::find(scalar.bytes().begin(), scalar.bytes().end(), uint8_t(128)) != scalar.bytes().end(),
             "Half visibility is quantized to the nearest normalized byte");

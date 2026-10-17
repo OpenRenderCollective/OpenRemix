@@ -1097,7 +1097,15 @@ constant masks. Classification remains limited by spatial/sample resolution: tin
 or occluders can be missed, just as in the corresponding constant filtered chart. These states are
 not geometric proofs of visibility over every point on a surface.
 
-Sparse masks allocate only their chart rectangles, with no extra full-atlas layers. Chart-major tables
+Sparse masks allocate only their chart regions, with no extra full-atlas layers. An R8 mask chooses
+between raw bytes and lossless 8x8 tiles. Constant tiles store their actual byte, binary tiles store
+64 coverage bits, and other tiles retain all 64 original bytes. Compact storage is used only when
+smaller than the padded raw rectangle. Dimensions, luxel density, quantization and bilinear filtering
+remain unchanged. The decoder handles interpolation across tile boundaries; cache import validates
+tile tags, contiguous payload offsets and lengths before publication. CPU codec and shader decoder
+live in `mixed/mask_codec.*` and `shaders/overflow-mask.glsl` respectively.
+
+Chart-major tables
 sorted by captured-light index support binary search in the existing occlusion texture. Tables plus
 quantized masks have a 16 MiB encoded budget and must fit the device texture limit. Byte-valued half
 storage uses twice that size on the GPU, plus row padding. Preparation runs on a cancellable bake

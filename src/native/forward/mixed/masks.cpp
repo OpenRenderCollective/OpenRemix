@@ -1,4 +1,5 @@
 #include "forward/mixed/masks.h"
+#include "forward/mixed/mask_codec.h"
 #include <algorithm>
 #include <cmath>
 #include <numeric>
@@ -13,9 +14,11 @@ namespace remix::forward::mixed {
     const auto &a = layout.charts[chart];
     const uint64_t count = uint64_t(a.width) * a.height;
     const uint64_t padded = (count + 3) & ~3ull;
-    const uint64_t bytes = m_bytes.size() + padded;
-    const uint64_t words = layout.charts.size() * 2 + (m_entries.size() + 1) * 4 + bytes / 4;
-    if (!count || words * sizeof(uint32_t) > maximumBytes || words > wordBudget)
+    const uint64_t tableWords = layout.charts.size() * 2 + (m_entries.size() + 1) * 4;
+    const uint64_t minimumBytes = std::min(padded, ((uint64_t(a.width) + 7) / 8) *
+                                                  ((uint64_t(a.height) + 7) / 8) * 4);
+    const uint64_t minimumWords = tableWords + (m_bytes.size() + minimumBytes) / 4;
+    if (!count || minimumWords * sizeof(uint32_t) > maximumBytes || minimumWords > wordBudget)
       return false;
     if (m_identities.contains({chart, light}))
       throw std::invalid_argument("Duplicate overflow visibility mask");
@@ -37,8 +40,12 @@ namespace remix::forward::mixed {
         texels[size_t(y) * a.width + x] = uint8_t(std::lround(value * 255));
       }
     }
-    m_entries.push_back({chart, light, offset, a.width, a.height});
-    m_bytes.insert(m_bytes.end(), texels.begin(), texels.end());
+    const auto encoded = mask::encode(std::span(texels).first(size_t(count)), a.width, a.height, cancelled);
+    const uint64_t words = tableWords + (m_bytes.size() + encoded.bytes.size()) / 4;
+    if (words * sizeof(uint32_t) > maximumBytes || words > wordBudget)
+      return false;
+    m_entries.push_back({chart, light, offset, a.width, a.height, encoded.encoding});
+    m_bytes.insert(m_bytes.end(), encoded.bytes.begin(), encoded.bytes.end());
     m_identities.emplace(chart, light);
     return true;
   }
@@ -57,9 +64,9 @@ namespace remix::forward::mixed {
       const auto &a = layout.charts[entry.chart];
       if (!entry.width || !entry.height || entry.width != a.width || entry.height != a.height)
         throw std::invalid_argument("Invalid overflow visibility cache dimensions");
-      offset += (uint64_t(entry.width) * entry.height + 3) & ~3ull;
       if (offset > bytes.size())
         throw std::invalid_argument("Truncated overflow visibility cache");
+      offset += mask::validate(bytes.subspan(offset), entry.width, entry.height, entry.encoding);
     }
     if (offset != bytes.size())
       throw std::invalid_argument("Trailing overflow visibility cache bytes");
@@ -90,7 +97,7 @@ namespace remix::forward::mixed {
         result[e.chart * 2] = record;
       result[record] = e.light;
       result[record + 1] = uint32_t(data * 4 + e.offset);
-      result[record + 2] = e.width;
+      result[record + 2] = e.width | (e.encoding == mask::tiled ? 0x80000000u : 0u);
       result[record + 3] = e.height;
     }
     for (size_t i = 0; i < m_bytes.size(); ++i)

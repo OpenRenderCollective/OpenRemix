@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 # driver compiles them about twice as fast; the runtime decompresses on use.
 OPTIMIZED = {'pathtrace'}
 BACKENDS = {
+    'mask_test': ('forward::test::mask_input', 'vulkan1.1', ('decode',)),
     'water_ray': ('forward::water::hardware', 'vulkan1.2', ('frag',)),
     'water_test': ('forward::test::water_input', 'vulkan1.1', ('vert', 'frag', 'query')),
     'water': ('forward::water', 'vulkan1.1', ('snapshot', 'snapshotSingle', 'vert', 'frag', 'overlayVert', 'overlayFrag', 'compositeFrag', 'compositeSingle')),
@@ -35,6 +36,8 @@ BACKENDS = {
 
 
 def shader_directory(backend):
+    if backend == 'mask_test':
+        return ROOT / 'tests/forward/mask_shaders'
     if backend == 'water_ray':
         return ROOT / 'src/native/forward/water/ray_shaders'
     if backend == 'water_test':
@@ -102,6 +105,8 @@ def defines_for(backend, stage, stages):
     if stage == 'sharcUpdate': defines += ['-DSHARC_UPDATE_PASS=1']
     source_stage = 'comp' if defines else stage
     source = directory / (backend + '.' + source_stage)
+    if backend == 'mask_test':
+        source = directory / 'decode.comp'
     if backend == 'water_ray':
         source = ROOT / 'src/native/forward/shaders/forward.frag'
         defines = ['-DWATER_SURFACE=1', '-DWATER_RAY=1']

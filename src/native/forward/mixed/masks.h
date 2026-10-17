@@ -5,12 +5,14 @@
 
 namespace remix::forward::mixed {
   // Scalar visibility only for partial chart/light pairs beyond the four SH
-  // channels. Quantized to one byte per chart texel; no full-atlas layers.
+  // channels. R8 values use lossless tiled storage when it beats raw bytes;
+  // no full-atlas layers or reduced-resolution shadows.
   class Masks {
   public:
     static constexpr uint32_t maximumBytes = 16u << 20; // encoded tables + quantized values
     struct Entry {
       uint32_t chart, light, offset, width, height;
+      uint32_t encoding = 0;
     };
     bool add(uint32_t chart, uint32_t light, const lightmap::Layout &layout,
              std::span<const float> values, uint64_t wordBudget = ~0u, std::stop_token cancelled = {});

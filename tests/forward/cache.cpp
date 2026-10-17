@@ -94,8 +94,8 @@ int main(int argc, char **argv) {
   data.mixed.directCharts = data.mixed.charts;
   data.mixed.occlusion = f::mixed::Occlusion(1, 2);
   data.mixed.occlusion.mark(0, 0, f::mixed::Visibility::Clear);
-  const f::mixed::Masks::Entry sparse{0, 1, 0, 5, 5};
-  const std::vector<uint8_t> sparseBytes(28, 128);
+  const f::mixed::Masks::Entry sparse{0, 1, 0, 5, 5, 1};
+  const std::vector<uint8_t> sparseBytes{128, 0, 0, 0}; // One constant 8x8 tile, clipped to 5x5.
   data.mixed.masks = f::mixed::Masks::restore({&sparse, 1}, sparseBytes, data.layout, 2);
   f::probes::Capture capture;
   capture.bounds.include({-1, -1, -1});
