@@ -122,6 +122,11 @@ the fragment shader rather than silently omitting lights. Sphere and triangle em
 solid-angle direct lighting. The shared Forward+ emitter helper follows the path tracer's angular
 spotlight softness/focus and cancellation-resistant sphere solid angle. The baker samples actual emitter
 positions/directions for radial energy and soft visibility; it does not blur a hard shadow after baking.
+Analytic sphere connections end at the sampled emitting surface without subtracting the receiver's
+ray bias: these lights have no geometry to self-intersect, and shortening the connection can miss a
+wall immediately in front of the emitter. Triangle emitters retain an endpoint tolerance for their
+actual emitting geometry. Partly embedded lights illuminate through their exposed samples; opaque
+blockers are never exempted to recover a light whose centre lies inside a fixture.
 Sphere intersection chords use a perpendicular-distance calculation to avoid distant-light cancellation.
 These analytic
 approximations do not reproduce every path-traced area-light behavior.

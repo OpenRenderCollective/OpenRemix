@@ -572,6 +572,105 @@ namespace {
       require(value.irradiance[0][0] == 0,
               "Static sun queries cover complete geometry beyond the indirect transport distance");
   }
+  // Independent solid-angle reference for a sphere cut by the plane z=-1.
+  // The receiver is at the origin. Count only the nearest emitting surface,
+  // not the centre or the sphere's far side.
+  double spherePlaneVisibility(double distance, double radius) {
+    if (distance - radius >= 1)
+      return 0;
+    if (distance - radius * radius / distance <= 1)
+      return 1; // Even a centre behind the plane can have a fully exposed silhouette.
+    const double capRadiusSquared = radius * radius - (distance - 1) * (distance - 1);
+    const double capCosine = 1 / std::sqrt(1 + capRadiusSquared);
+    const double silhouetteCosine = std::sqrt(1 - radius * radius / (distance * distance));
+    return (1 - capCosine) / (1 - silhouetteCosine);
+  }
+  void embeddedEmitterVisibility(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
+    constexpr std::array<float, 6> distances{.5f, 1.02f, 1.125f, 1.2f, 1.3f, 1.2505f};
+    constexpr std::array<Vec3, 3> crossing{{{-.3f, -.3f, -1.2f}, {.3f, -.3f, -1.2f}, {0, .3f, -.8f}}};
+    // Uniform barycentric quadrature of cos(emitter)/distance^2. The plane
+    // intersects this triangle, so a centre-only test cannot describe it.
+    double visible = 0, total = 0;
+    constexpr uint32_t divisions = 512;
+    for (uint32_t i = 0; i < divisions; ++i)
+      for (uint32_t j = 0; i + j < divisions; ++j) {
+        const double u = (i + 1. / 3) / divisions, v = (j + 1. / 3) / divisions;
+        std::array<double, 3> p{};
+        for (uint32_t c = 0; c < 3; ++c)
+          p[c] = crossing[0][c] * (1 - u - v) + crossing[1][c] * u + crossing[2][c] * v;
+        const double squared = p[0] * p[0] + p[1] * p[1] + p[2] * p[2];
+        const double weight = 1 / std::pow(squared, 1.5); // Constant plane factor cancels in the ratio.
+        total += weight;
+        if (p[2] > -1)
+          visible += weight;
+      }
+    const double triangleReference = visible / total;
+    for (bool parallel : {false, true})
+      for (float units : {.001f, 1.f, 1000.f}) {
+        const auto blocker = world.wall(world.material({}), -units, 4 * units);
+        auto source = world.scene({blocker});
+        source->sceneScale = 1 / units; // Identical physical scene in three host unit systems.
+        for (float distance : distances) {
+          scene::SphereLight sphere;
+          sphere.id = ++world.hash;
+          sphere.position[2] = -distance * units;
+          sphere.radius = .25f * units;
+          sphere.radiance[0] = sphere.radiance[1] = sphere.radiance[2] = 1;
+          source->lights.push_back(sphere);
+        }
+        for (float shift : {.5f, 0.f, -1.f}) {
+          scene::SphereLight triangle;
+          triangle.id = ++world.hash;
+          triangle.triangle = 2; // Both sides emit; isolate geometric visibility.
+          triangle.radiance[0] = triangle.radiance[1] = triangle.radiance[2] = 1;
+          for (uint32_t c = 0; c < 3; ++c)
+            for (uint32_t axis = 0; axis < 3; ++axis)
+              triangle.corners[c][axis] = (crossing[c][axis] + (axis == 2 ? shift : 0)) * units;
+          source->lights.push_back(triangle);
+        }
+        bake::Transport transport;
+        bake::Options options;
+        options.parallel = parallel;
+        options.batchPoints = 9;
+        auto job = pipelines.prepare("embedded-emitter-" + std::to_string(++world.hash), [&] {
+          transport.initialize(fixture.physical, fixture.device, source, options);
+        });
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        while (!job->ready() && std::chrono::steady_clock::now() < deadline)
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        require(job->ready(), "Embedded emitter transport preparation completed");
+        job->check();
+        fixture.begin();
+        transport.recordPrepare(fixture.command, world.resources);
+        fixture.finish();
+        std::array<bake::VisibilityPoint, 9> points{};
+        for (uint32_t i = 0; i < points.size(); ++i)
+          points[i].light = i;
+        fixture.begin();
+        transport.recordVisibility(fixture.command, 0, points, 4096, true);
+        fixture.finish();
+        std::array<bake::Result, 9> results;
+        transport.read(0, results);
+        std::printf("Embedded emitters: parallel=%u units=%g visibility", uint32_t(parallel), units);
+        for (const auto &value : results)
+          std::printf(" %.5f", value.irradiance[0][0]);
+        std::puts("");
+        require(results[5].irradiance[0][0] == 0,
+                "A sphere fully enclosed just half a millimetre behind an opaque wall must not leak");
+        for (uint32_t i = 0; i < distances.size(); ++i)
+          require(std::abs(results[i].irradiance[0][0] - spherePlaneVisibility(distances[i], .25)) < .025,
+                  "Embedded sphere visibility follows exposed solid angle, independent of centre placement and host units");
+        require(results[0].irradiance[0][0] == 1 && results[4].irradiance[0][0] == 0 &&
+                    results[6].irradiance[0][0] == 1 && results[8].irradiance[0][0] == 0 &&
+                    std::abs(results[7].irradiance[0][0] - triangleReference) < .025,
+                "Exposed emitters stay clear, enclosed emitters stay blocked, and crossing triangles match area quadrature");
+        require(evaluate(results[0], {0, 0, -1}, 1) > 0 &&
+                    evaluate(results[4], {0, 0, -1}, 1) == 0 &&
+                    evaluate(results[5], {0, 0, -1}, 1) == 0 &&
+                    evaluate(results[8], {0, 0, -1}, 1) == 0,
+                "Direct irradiance uses the same embedded-emitter blockers as the mixed visibility mask");
+      }
+  }
   void emitterParity(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
     auto source = world.scene({});
     scene::SphereLight sphere;
@@ -1310,6 +1409,7 @@ int main() try {
     bakeSurface(fixture, pipelines, world);
     bakeVisibility(fixture, pipelines, world);
     overflowVisibility(fixture, pipelines, world);
+    embeddedEmitterVisibility(fixture, pipelines, world);
     emitterParity(fixture, pipelines, world);
     liveLighting(fixture, pipelines, world);
     std::printf("Bake readback: emitter %.4f, blocked %.4f, alpha holes %.4f, "

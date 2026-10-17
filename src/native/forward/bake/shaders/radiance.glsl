@@ -83,6 +83,13 @@ bool sampleEmitter(RayLight light, vec3 p, inout uint seed, out vec3 direction, 
                                light.shaping.x, light.shaping.y, -direction);
   return weight > 0;
 }
+float emitterShadowDistance(RayLight light, float distance) {
+  // Analytic spheres have no surface in the ray scene to self-intersect.
+  // Shortening their connections by the receiver bias lets a light behind a
+  // nearby wall shine through it. Triangle emitters still need an endpoint
+  // tolerance because their emitting geometry may be present in the scene.
+  return light.radiance.w > 0 ? distance - rayFrame.trace.y : distance;
+}
 vec3 directLight(vec3 p, vec3 n, inout uint seed, Medium medium) {
   vec3 irradiance = vec3(0);
   if (any(greaterThan(rayFrame.sunRadiance.rgb, vec3(0)))) {
@@ -102,7 +109,7 @@ vec3 directLight(vec3 p, vec3 n, inout uint seed, Medium medium) {
     float cosine = max(dot(n, direction), 0);
     if (cosine > 0)
       irradiance += rayLights[index].radiance.rgb * (weight * cosine * float(rayFrame.counts.y)) *
-                    visibility(p, direction, distance - rayFrame.trace.y, seed, medium);
+                    visibility(p, direction, emitterShadowDistance(rayLights[index], distance), seed, medium);
   }
   return irradiance;
 }

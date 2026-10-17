@@ -130,7 +130,7 @@ void main() {
       float distance, weight;
       if (sampleEmitter(rayLights[light], origin, seed, direction, distance, weight)) {
         totalWeight += weight;
-        vec3 passing = visibility(origin, direction, distance - rayFrame.trace.y, seed, medium);
+        vec3 passing = visibility(origin, direction, emitterShadowDistance(rayLights[light], distance), seed, medium);
         // Luminance reduction and weighted accumulation may round below one
         // even when every connection is clear. Preserve that exact endpoint
         // from RGB transport; never turn a small real attenuation into clear.
