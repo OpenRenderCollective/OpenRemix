@@ -71,6 +71,14 @@ void main() {
     return;
   }
 #endif
+#ifndef COMPACT_VISIBILITY
+  // Screen producers pad batches and skip covered/rough/empty receivers.
+  // Reject inactive rays before the six-axis containing-medium lookup.
+  if (rayFrame.control.z == 1u && point.normal.w < 0) {
+    storeResult(index, outputValue);
+    return;
+  }
+#endif
   Medium medium = pointMedium(origin, seed);
   if (rayFrame.control.z == 5u || rayFrame.control.z == 6u) {
     vec3 axis = normalize(-rayFrame.sunDirection.xyz);
@@ -162,10 +170,6 @@ void main() {
   }
 #ifndef COMPACT_VISIBILITY
   if (rayFrame.control.z == 1u) {
-    if (point.normal.w < 0) {
-      storeResult(index, outputValue);
-      return;
-    }
     // A cubemap stores outgoing radiance, rather than cosine-convolved
     // irradiance. Reuse exactly the same scene/material/visibility transport.
     // A ray keeps its sample stream when capture faces or live queries are

@@ -616,6 +616,7 @@ namespace {
     transport.recordPrepare(fixture.command, world.resources);
     fixture.finish();
     Vec3 observed[3]{};
+    bake::Result referenceRay{};
     for (uint32_t mode = 0; mode < 3; ++mode) {
       bake::Point ray;
       ray.position = {0, 0, mode == 1 ? 2.f : 0.f, 0};
@@ -626,6 +627,7 @@ namespace {
       fixture.finish();
       std::vector<bake::Result> results(512);
       transport.read(0, results);
+      if (mode == 0) referenceRay = results.front();
       for (const auto &value : results) {
         require(value.statistics[0] == 0, "A dielectric exit is not an invalid solid probe");
         for (uint32_t c = 0; c < 3; ++c) {
@@ -643,6 +645,23 @@ namespace {
             "Two interfaces preserve clear-channel energy and absorb over the full interior path");
     require(trapped[0] == 0 && trapped[1] == 0 && trapped[2] == 0,
             "Total internal reflection cannot leak energy through a dielectric boundary");
+    std::vector<bake::Point> padded(512);
+    for (auto &ray : padded) {
+      ray.position = {0, 0, 0, 0};
+      ray.normal = {0, 0, 1, -1};
+    }
+    padded.front().normal[3] = 0;
+    fixture.begin();
+    transport.recordRadiance(fixture.command, 0, padded, 1);
+    fixture.finish();
+    std::vector<bake::Result> paddedResults(512);
+    transport.read(0, paddedResults);
+    const bake::Result empty{};
+    require(std::memcmp(&referenceRay, &paddedResults.front(), sizeof(empty)) == 0,
+            "Skipping inactive dielectric rays leaves active radiance unchanged");
+    for (size_t i = 1; i < paddedResults.size(); ++i)
+      require(std::memcmp(&empty, &paddedResults[i], sizeof(empty)) == 0,
+              "Inactive rays inside a measured body produce empty results without transport");
     std::printf("Dielectric transport: inside %.3f %.3f %.3f; slab %.3f %.3f %.3f; TIR %.3f\n", inside[0],
                 inside[1], inside[2], outside[0], outside[1], outside[2], trapped[2]);
   }
