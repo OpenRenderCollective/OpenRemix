@@ -19,6 +19,7 @@ namespace remix::forward {
     uint32_t localShadowResolution = 512;
     float localShadowDistance = 100; // metres, independent of light influence
     float localShadowBias = .002f;   // metres, radial comparison bias
+    float localShadowFade = 2;      // seconds per selection fade; zero selects immediately
     bool ssr = true;
     bool rtReflections = false;
     bool rtGI = false;

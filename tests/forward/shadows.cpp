@@ -86,5 +86,52 @@ int main() {
   selected = planner.update(pair, {}, 2, .001f, 100, 1, {});
   require(selected.dirty[oldSlot] && !planner.captured(resources.retained(retained)->records[0]),
           "Unload clears captured membership and invalidates cached occluders");
+  {
+    s::Planner fading;
+    scene::SphereLight lights[] = {light, light};
+    lights[0].id = 101;
+    lights[1].id = 102;
+    lights[0].position[0] = 0;
+    lights[1].position[0] = 10;
+    auto at = [&](double time, bool second) {
+      return fading.update(lights, {second ? 10.f : 0.f, -3, 4}, 1, .001f, 100, 1, source, time, 2);
+    };
+    auto frame = at(0, false);
+    require(frame.slots[0] == 0 && frame.strength[0] == 0 && frame.dirty[0],
+            "A new selection prepares its map at zero shadow strength");
+    frame = at(1, false);
+    require(frame.strength[0] == .5f && !frame.dirty[0], "Fade follows elapsed seconds without redrawing static maps");
+    frame = at(2, false);
+    require(frame.strength[0] == 1, "Incoming shadow reaches full strength after two seconds");
+    frame = at(2, true);
+    require(frame.slots[0] == 0 && frame.slots[1] == UINT32_MAX && frame.strength[0] == 1,
+            "Priority changes preserve the outgoing map until it fades");
+    frame = at(3, true);
+    require(frame.strength[0] == .5f && frame.views[0].id == 101 && !frame.dirty[0],
+            "Outgoing shadow fades using its own cached map");
+    frame = at(3.5, false);
+    require(frame.strength[0] == .75f, "Priority reversal recovers smoothly from the current strength");
+    frame = at(3, false);
+    require(frame.strength[0] == .75f, "A backward clock cannot reverse or advance a fade");
+    frame = at(4, true);
+    require(frame.strength[0] == .5f, "Clock recovery counts only new elapsed time");
+    frame = at(5, true);
+    require(frame.slots[0] == UINT32_MAX && frame.slots[1] == 0 && frame.strength[0] == 0 && frame.dirty[0],
+            "Only a fully faded slot can be reused for a different light");
+    frame = at(6, true);
+    require(frame.strength[0] == .5f && frame.views[0].id == 102 && !frame.dirty[0],
+            "Replacement shadow fades in independently with a valid new map");
+    frame = at(7, true);
+    require(frame.strength[0] == 1, "Replacement finishes its own two-second fade");
+    std::swap(lights[0], lights[1]);
+    frame = at(7, true);
+    require(frame.slots[0] == 0 && frame.strength[0] == 1, "Submission reordering preserves transition identity");
+    frame = fading.update(lights, {}, 0, .001f, 100, 1, source, 8, 2);
+    require(!frame.active[0] && frame.slots[0] == UINT32_MAX, "Disabling shadows releases slots immediately");
+    frame = fading.update(lights, {10, -3, 4}, 1, .001f, 100, 1, source, 8, 0);
+    require(frame.slots[0] == 0 && frame.strength[0] == 1, "Zero fade duration retains immediate selection");
+    frame = fading.update({}, {}, 1, .001f, 100, 1, source, 9, 2);
+    require(!frame.active[0], "Removed or zero-influence lights cannot retain a stale shadow assignment");
+  }
   std::puts("Local shadow cube projections, cache ownership, selection and caster policy passed");
 }

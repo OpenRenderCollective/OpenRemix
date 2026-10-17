@@ -895,6 +895,7 @@ namespace {
       options.localShadows = localShadows;
       options.localShadowLights = localShadows ? 1 : 0;
       options.localShadowResolution = 512;
+      options.localShadowFade = 0; // Spatial fixtures use immediate selection; elapsed transitions are tested separately.
       options.baking.maxProbes = 64;
       options.baking.spacing = 2;
       options.baking.samples = 256;
@@ -1097,11 +1098,23 @@ namespace {
         target.forward->updateLighting(options);
         pixels = render(false);
         require(pixels[left] > 20, "Disabling local maps selects the direct-light fallback");
+        const auto unshadowed = pixels[left];
         options.localShadows = true;
+        options.localShadowFade = 2;
         target.forward->updateLighting(options);
         pixels = render(false);
+        require(std::abs(int(pixels[left]) - int(unshadowed)) < 3,
+                "New shadow selection starts at the unshadowed endpoint without changing light radiance");
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        pixels = render(false);
+        require(pixels[left] > 3 && pixels[left] < unshadowed - 2,
+                "Local visibility blends through intermediate GPU pixel values during a timed fade");
+        std::this_thread::sleep_for(std::chrono::milliseconds(1600));
+        pixels = render(false);
         require(pixels[left] < 3 && target.forward->statistics().staticShadowUpdates == 0,
-                "Re-enabling shadows safely reuses unchanged static depth maps");
+                "The completed fade reuses unchanged static depth maps at full shadow strength");
+        options.localShadowFade = 0;
+        target.forward->updateLighting(options);
         sphere.position.x = .1f;
         info.hash = 9706;
         info.isDynamic = 0;
@@ -1825,6 +1838,7 @@ namespace {
       options.localShadows = true;
       options.localShadowLights = 1;
       options.localShadowResolution = 512;
+      options.localShadowFade = 0; // Spatial fixtures use immediate selection; elapsed transitions are tested separately.
       options.baking.samples = 256;
       options.baking.bounces = 1;
       options.baking.batch = 128;

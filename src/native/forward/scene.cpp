@@ -83,13 +83,14 @@ namespace remix::forward {
     auto sources = resources.sphereLights();
     std::sort(sources.begin(), sources.end(), [](const auto &a, const auto &b) { return a.id < b.id; });
     const auto eye = transformPoint(scene::inverse(resources.view()), {0, 0, 0});
+    const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - epoch).count();
     shadowSelection = shadowPlanner.update(sources, eye, options.localShadows ? options.localShadowLights : 0,
                                            options.lightCutoff, options.localShadowDistance,
-                                           options.sceneScale, resources.bakeScene());
+                                           options.sceneScale, resources.bakeScene(), seconds,
+                                           options.localShadowFade);
     std::vector<DrawData> draws;
     std::vector<water::MaterialData> waterMaterials;
     Bounds casters;
-    const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - epoch).count();
     auto append = [&](const scene::Draw &draw, std::vector<Command> &commands, bool staticOnly, bool liquid = false) {
       if (!(liquid ? water::accepts(draw) : accepts(draw) || (!staticOnly && acceptsTerrainLayer(draw))))
         return;
@@ -184,8 +185,10 @@ namespace remix::forward {
       }
       for (int i = 0; i < 3; ++i)
         std::copy_n(source.corners[i], 3, light.corners[i].begin());
-      if (const auto slot = shadowSelection.slots[sourceIndex]; slot != UINT32_MAX)
+      if (const auto slot = shadowSelection.slots[sourceIndex]; slot != UINT32_MAX) {
         light.corners[0][3] = float(slot + 1);
+        light.corners[1][3] = 1 - shadowSelection.strength[slot];
+      }
       lights.push_back(light);
     }
     data.target = {extent.width, extent.height, uint32_t(lights.size()),

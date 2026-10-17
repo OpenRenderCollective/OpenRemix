@@ -26,5 +26,6 @@ float localShadowVisibility(Light light, vec3 position, bool includeStatic) {
       float fixedVisibility = includeStatic ? texture(staticLocalShadows, coordinate) : 1;
       visibility += min(moving, fixedVisibility);
     }
-  return visibility / 9;
+  // Selection fades shadowing, never the light's radiance or baked visibility.
+  return mix(visibility / 9, 1, clamp(light.corners[1].w, 0, 1));
 }

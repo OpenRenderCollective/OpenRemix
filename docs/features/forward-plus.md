@@ -1419,13 +1419,31 @@ outside the budget or configured shadow distance retain direct illumination with
 a valid baked channel can still shadow such a light statically. This fallback is visible and configurable,
 not a claim that every local light receives dynamic shadows. Distance is currently a hard cutoff.
 
+Selection changes fade local-map visibility over elapsed time. An outgoing light
+keeps its map until its strength reaches zero; only then can another light reuse
+that slot and fade in. Priority reversals continue from the current strength.
+This preserves the configured map budget: when all slots are occupied, fade-out
+and fade-in happen sequentially. The default is two seconds per leg, rather than
+a simultaneous crossfade. Baked visibility and light radiance remain unchanged.
+Removed lights, disabled shadows and scene replacement clear assignments immediately.
+
 Profile controls: `rtx.native.forward.localShadows`, `localShadowLights` (0..8),
 `localShadowResolution` (64..1024, power of two), `localShadowDistance` (metres), and
-`localShadowBias` (metres). Count/resolution changes prepare replacement targets; enable, range and bias
+`localShadowBias` (metres), plus `localShadowFade` (0..10 seconds per leg; default 2,
+zero selects immediately). Count/resolution changes prepare replacement targets; enable, range, fade and bias
 can update live. Two arrays cost approximately `2 * lights * 6 * resolution^2 * 4` bytes before device
 allocation overhead: 48 MiB at the default, plus cached frozen geometry. Budget zero uses initialized
 tiny descriptors. The current all-face raster approach and influence-only selection need real-map GPU
 profiling and may benefit from face culling, spot-specific maps, update budgets and selection hysteresis.
+
+The GMod wrapper currently excludes styled map lights from the immutable bake.
+Their runtime lightstyle scaling works, but they lack baked static visibility and
+fall back to the bounded local shadow maps. This can expose illumination through
+walls when such a light has no map slot. Correct switchable baking needs stable
+authored light identities and unit visibility/direct coefficients, with separately
+scaled indirect contributions on both surface lightmaps and dynamic-object probes.
+Adding current styled lights to the shared indirect bake would leave light behind
+when switched off; that is not a supported workaround.
 
 Static world surfaces should sample surface lightmaps, with irradiance probes retained for moving and
 uncharted objects. The GMod BSP already contains face lightmap vectors, extents and dimensions; preserve

@@ -25,7 +25,7 @@ namespace remix::forward {
   };
   struct LightData {
     Vec4 positionRadius{}, radiance{}, directionCone{}, shaping{};
-    std::array<Vec4, 3> corners{};
+    std::array<Vec4, 3> corners{}; // xyz triangle; [0].w shadow slot + 1, [1].w unshadowed blend
   };
   struct DrawData {
     Matrix model, normal;

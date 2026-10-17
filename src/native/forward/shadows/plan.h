@@ -20,19 +20,27 @@ namespace remix::forward::shadows {
   struct Selection {
     std::array<View, maximumLights> views{};
     std::array<bool, maximumLights> active{}, dirty{};
+    std::array<float, maximumLights> strength{};
     std::vector<uint32_t> slots; // input light index -> slot, or UINT32_MAX
     uint32_t overflow = 0;
   };
   class Planner {
   public:
+    // Monotonic seconds drive transitions independently of frame rate. A zero
+    // duration keeps immediate selection for callers that do not supply a clock.
     Selection update(std::span<const scene::SphereLight> lights, Vec3 eye, uint32_t budget, float cutoff,
-                     float distance, float sceneScale, std::shared_ptr<const scene::BakeScene> source);
+                     float distance, float sceneScale, std::shared_ptr<const scene::BakeScene> source,
+                     double seconds = 0, float fadeSeconds = 0);
     bool captured(const scene::Draw &draw) const;
     const std::shared_ptr<const scene::BakeScene> &source() const { return m_source; }
 
   private:
     std::array<View, maximumLights> m_views{};
     std::array<bool, maximumLights> m_valid{};
+    std::array<bool, maximumLights> m_assigned{};
+    std::array<float, maximumLights> m_strength{};
+    double m_seconds = 0;
+    bool m_clockStarted = false;
     std::shared_ptr<const scene::BakeScene> m_source;
     std::unordered_multimap<uint64_t, uint32_t> m_instances;
   };

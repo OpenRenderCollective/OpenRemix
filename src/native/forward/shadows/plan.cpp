@@ -44,7 +44,7 @@ namespace remix::forward::shadows {
   }
   Selection Planner::update(std::span<const scene::SphereLight> lights, Vec3 eye, uint32_t budget,
                             float cutoff, float distance, float sceneScale,
-                            std::shared_ptr<const scene::BakeScene> source) {
+                            std::shared_ptr<const scene::BakeScene> source, double seconds, float fadeSeconds) {
     if (source && !source->ready)
       source.reset();
     if (m_source != source) {
@@ -54,6 +54,8 @@ namespace remix::forward::shadows {
         for (uint32_t i = 0; i < m_source->draws.size(); ++i)
           m_instances.emplace(m_source->draws[i].instanceId, i);
       m_valid.fill(false);
+      m_assigned.fill(false);
+      m_strength.fill(0);
     }
     struct Candidate {
       uint32_t index;
@@ -80,29 +82,75 @@ namespace remix::forward::shadows {
     result.slots.resize(lights.size(), UINT32_MAX);
     budget = std::min(budget, maximumLights);
     result.overflow = uint32_t(candidates.size()) - std::min(uint32_t(candidates.size()), budget);
-    candidates.resize(std::min(size_t(budget), candidates.size()));
-    // Reserve surviving slots before assigning new lights, avoiding needless
-    // cache invalidation when a higher-priority newcomer appears.
-    for (const auto &candidate : candidates)
+    const size_t desiredCount = std::min(size_t(budget), candidates.size());
+    const auto desired = [&](uint64_t id) {
+      return std::any_of(candidates.begin(), candidates.begin() + desiredCount,
+                         [&](const Candidate &candidate) { return candidate.view.id == id; });
+    };
+    const bool fading = std::isfinite(fadeSeconds) && fadeSeconds > 0;
+    double elapsed = 0;
+    if (std::isfinite(seconds)) {
+      if (m_clockStarted) elapsed = std::max(0., seconds - m_seconds);
+      m_seconds = m_clockStarted ? std::max(m_seconds, seconds) : seconds;
+      m_clockStarted = true;
+    }
+    const float step = fading ? float(std::min(1., elapsed / fadeSeconds)) : 1.f;
+    // Keep outgoing maps assigned until their shadow has faded completely.
+    // Reusing a slot earlier would fade the new light with the old light's map.
+    for (uint32_t slot = 0; slot < maximumLights; ++slot) {
+      if (slot >= budget) {
+        m_assigned[slot] = false;
+        m_strength[slot] = 0;
+      }
+      if (!m_assigned[slot]) continue;
+      const auto present = std::find_if(candidates.begin(), candidates.end(),
+                                      [&](const Candidate &c) { return c.view.id == m_views[slot].id; });
+      if (present == candidates.end()) {
+        m_assigned[slot] = false;
+        m_strength[slot] = 0;
+        continue;
+      }
+      const bool wanted = desired(m_views[slot].id);
+      m_strength[slot] = std::clamp(m_strength[slot] + (wanted ? step : -step), 0.f, 1.f);
+      if (!wanted && m_strength[slot] == 0) m_assigned[slot] = false;
+    }
+    for (size_t i = 0; i < desiredCount; ++i) {
+      const auto id = candidates[i].view.id;
+      bool retained = false;
       for (uint32_t slot = 0; slot < budget; ++slot)
-        if (!result.active[slot] && m_valid[slot] && m_views[slot].id == candidate.view.id) {
-          result.slots[candidate.index] = slot;
-          result.active[slot] = true;
+        retained |= m_assigned[slot] && m_views[slot].id == id;
+      if (retained) continue;
+      uint32_t free = budget;
+      for (uint32_t slot = 0; slot < budget; ++slot)
+        if (!m_assigned[slot] && m_valid[slot] && m_views[slot].id == id) {
+          free = slot;
           break;
         }
+      if (free == budget)
+        free = uint32_t(std::find(m_assigned.begin(), m_assigned.begin() + budget, false) - m_assigned.begin());
+      if (free == budget) continue; // outgoing fades still own the budget
+      m_assigned[free] = true;
+      m_strength[free] = fading ? 0.f : 1.f;
+      // Publish the assignment below before replacing its cached identity.
+      result.slots[candidates[i].index] = free;
+    }
     for (const auto &candidate : candidates) {
       auto &slot = result.slots[candidate.index];
-      if (slot == UINT32_MAX) {
-        slot = uint32_t(std::find(result.active.begin(), result.active.begin() + budget, false) -
-                        result.active.begin());
-        result.active[slot] = true;
-      }
+      if (slot == UINT32_MAX)
+        for (uint32_t existing = 0; existing < budget; ++existing)
+          if (m_assigned[existing] && !result.active[existing] && m_views[existing].id == candidate.view.id) {
+            slot = existing;
+            break;
+          }
+      if (slot == UINT32_MAX) continue;
+      result.active[slot] = true;
+      result.strength[slot] = m_strength[slot];
       result.views[slot] = candidate.view;
       result.dirty[slot] = !m_valid[slot] || !sameView(m_views[slot], candidate.view);
       m_views[slot] = candidate.view;
       m_valid[slot] = true;
     }
-    // Retain inactive cached slots; their maps remain valid until overwritten.
+    // Inactive cached maps remain reusable until their slots are overwritten.
     return result;
   }
   bool Planner::captured(const scene::Draw &draw) const {

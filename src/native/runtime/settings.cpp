@@ -111,6 +111,7 @@ namespace remix::config {
         result.push_back(scalar("rtx.native.forward.localShadowLights", FIELD(forward.localShadowLights), 0, 8));
         result.push_back(scalar("rtx.native.forward.localShadowDistance", FIELD(forward.localShadowDistance), .1, 10000));
         result.push_back(scalar("rtx.native.forward.localShadowBias", FIELD(forward.localShadowBias), 0, .1));
+          result.push_back(scalar("rtx.native.forward.localShadowFade", FIELD(forward.localShadowFade), 0, 10));
         result.push_back({"rtx.native.forward.localShadowResolution", [](const Settings &s) { return number(s.forward.localShadowResolution); },
                           [](Settings &s, std::string_view text) {
                             unsigned value;

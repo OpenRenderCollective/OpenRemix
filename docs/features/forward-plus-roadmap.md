@@ -54,6 +54,12 @@ when baked lighting is active; a failed bake instead displays its failure messag
    connected chart seams, static/dynamic shadow composition, indoor/outdoor probe transitions and
    parallax bounds. Compare lower indirect sample counts separately from direct-shadow sampling.
    Keep changes tied to an observed artifact and a repeatable comparison.
+   Styled/toggleable BSP lights currently have runtime intensity but no baked static visibility.
+   Capture their authored identities independently of current style values; keep unit static visibility
+   and direct coefficients controllable, and store style-dependent indirect terms separately for both
+   surfaces and probes. Verify initially-off lights, flicker, on/off restoration, unchanged bake identity
+   during toggles, wall occlusion and mixed moving-caster shadows. Local-map selection now has timed
+   fades; this does not provide the missing styled-light bake data or fix unidentified ceiling artifacts.
 4. **Finish material and water parity.** Exercise authored/replaced normals, roughness, emission,
    transmission distance and IOR in the live engine. Document supported approximations and repair
    discrepancies that break compatibility with the shared material system.

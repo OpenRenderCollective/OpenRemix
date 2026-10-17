@@ -274,7 +274,14 @@ int main() {
           config::set(settings, "rtx.native.forward.localShadowLights", "2") == config::SetResult::Success &&
           config::set(settings, "rtx.native.forward.localShadowBias", "0.005") == config::SetResult::Success,
       "Local shadow controls participate in profile persistence");
+  require(config::set(settings, "rtx.native.forward.localShadowFade", "nan") == config::SetResult::Invalid &&
+          config::set(settings, "rtx.native.forward.localShadowFade", "-1") == config::SetResult::Invalid &&
+          config::set(settings, "rtx.native.forward.localShadowFade", "11") == config::SetResult::Invalid &&
+          config::set(settings, "rtx.native.forward.localShadowFade", "2") == config::SetResult::Success,
+          "Shadow fade duration is finite and bounded");
   changed = settings.forward;
+  changed.localShadowFade = 0;
+  require(changed.sameTargets(settings.forward), "Fade edits reuse shadow targets");
   changed.localShadowBias *= 2;
   require(changed.sameTargets(settings.forward), "Shadow bias updates reuse targets");
   changed.localShadowResolution *= 2;
