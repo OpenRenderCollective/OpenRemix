@@ -36,7 +36,9 @@ namespace remix::forward {
     Vec3 minimum{}, maximum{};
     bool valid = false;
     void include(const Vec3 &point);
+    void merge(const Bounds &bounds);
   };
+  Bounds transformBounds(const Bounds &bounds, const Matrix &model);
   struct Cascades {
     std::array<Matrix, cascadeCount> matrices;
     Vec4 splits{};

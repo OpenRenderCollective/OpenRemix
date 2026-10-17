@@ -9,6 +9,21 @@ using namespace remix::forward;
 using remix::test::require;
 
 int main() {
+  const Bounds localBox{{-1, -2, -3}, {2, 4, 5}, true};
+  auto model = scene::identity();
+  model[0] = -2; model[4] = .5f; model[12] = 10;
+  model[5] = 3; model[9] = -.25f; model[13] = -7;
+  model[10] = -1; model[14] = 1;
+  const auto worldBox = transformBounds(localBox, model);
+  require(worldBox.valid && worldBox.minimum == Vec3({5, -14.25f, -4}) &&
+              worldBox.maximum == Vec3({14, 5.75f, 4}),
+          "Transformed caster bounds include every corner under negative scale and shear");
+  Bounds combined;
+  combined.merge(worldBox);
+  combined.merge({});
+  require(combined.minimum == worldBox.minimum && combined.maximum == worldBox.maximum &&
+              !transformBounds({}, model).valid,
+          "Empty bounds cannot add an origin or become a fabricated frozen caster");
   shadows::SunCache sunCache;
   std::array<Matrix, cascadeCount> matrices;
   matrices.fill(scene::identity());

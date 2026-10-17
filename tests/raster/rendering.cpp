@@ -1708,6 +1708,7 @@ namespace {
       const auto lit = pixels[right];
       pixels = render();
       require(target.forward->statistics().staticSunUpdates == 0 &&
+                  target.forward->statistics().staticCasterPreparations == 0 &&
                   target.forward->statistics().capturedCasters == 2 &&
                   target.forward->statistics().liveCasters == 0,
               "Captured world geometry stays out of moving sun maps and unchanged static cascades are cached");
@@ -1731,6 +1732,8 @@ namespace {
               "A realtime sun caster cuts a narrow shadow into baked static lighting at independent resolution");
       require(target.forward->statistics().liveCasters == 1 && target.forward->statistics().capturedCasters == 2,
               "Only the new actor enters moving sun maps alongside the captured world");
+      require(target.forward->statistics().staticCasterPreparations == 0,
+              "A live actor inside the frozen scene bounds needs no frozen caster preparation");
       light.radiance = {0, 0, 1};
       r.updateLight(sun, light);
       pixels = render();

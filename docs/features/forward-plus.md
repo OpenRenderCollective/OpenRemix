@@ -35,6 +35,10 @@ Developer frame captures include `.shadow-policy.bin`: five little-endian
 `uint32_t` values for captured candidates, live candidates, static sun cascade
 updates, static local-map updates, and unmatched statically classified candidates.
 Candidate counts precede shadow-frustum clipping; they are not submitted draw-call counts.
+Frozen caster bounds are cached with the immutable scene. Per-frame frozen draw
+records and material descriptors are prepared only when a static sun cascade or
+local-light map needs rebuilding. `.shadow-preparation.bin` records that frame's
+prepared frozen draw count as one little-endian `uint32_t`.
 Transparency, water, viewmodels, decals and unsupported masking
 operations stay in compatibility rasterization. Those surfaces do not yet receive forward lighting.
 

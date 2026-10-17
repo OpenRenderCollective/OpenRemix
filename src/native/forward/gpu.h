@@ -49,6 +49,8 @@ namespace remix::forward {
     shadows::Planner shadowPlanner;
     shadows::Selection shadowSelection;
     shadows::SunCache sunCache;
+    std::weak_ptr<const scene::BakeScene> staticBoundsSource;
+    Bounds staticBounds;
     uint64_t baseTargetBytes = 0;
 
     struct Geometry {
@@ -92,6 +94,7 @@ namespace remix::forward {
     void prepareSky(VkCommandBuffer command, RasterRenderer &resources);
     void display(VkCommandBuffer command, bool background);
     std::shared_ptr<Geometry> geometry(const scene::Draw &draw);
+    const Bounds &frozenShadowBounds();
     VkDescriptorSet allocate(Frame &frame, VkDescriptorSetLayout layout);
     void ensure(std::unique_ptr<Buffer> &buffer, VkDeviceSize bytes, VkBufferUsageFlags usage,
                 Buffer::Memory memory = Buffer::Memory::Host);

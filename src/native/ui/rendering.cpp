@@ -60,6 +60,7 @@ namespace remix {
         ImGui::SetTooltip("Captured geometry is excluded from moving-caster maps.\n"
                           "Frozen depth maps are fallback shadows for receivers without a matching lightmap.\n"
                           "Static sun cascades are reused until their projection or frozen scene changes.");
+      ImGui::Text("Frozen caster draws prepared this frame: %u", statistics.staticCasterPreparations);
       ui::Checkbox("Screen-space reflections", &forward.ssr);
       ui::Checkbox("Hardware ray-traced GI", &forward.rtGI);
       if (forward.rtGI) {

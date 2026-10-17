@@ -66,6 +66,23 @@ namespace remix::forward {
     }
     valid = true;
   }
+  void Bounds::merge(const Bounds &bounds) {
+    if (bounds.valid) {
+      include(bounds.minimum);
+      include(bounds.maximum);
+    }
+  }
+  Bounds transformBounds(const Bounds &bounds, const Matrix &model) {
+    Bounds result;
+    if (bounds.valid)
+      for (uint32_t corner = 0; corner < 8; ++corner) {
+        Vec3 point;
+        for (uint32_t c = 0; c < 3; ++c)
+          point[c] = (corner & (1u << c)) ? bounds.maximum[c] : bounds.minimum[c];
+        result.include(transformPoint(model, point));
+      }
+    return result;
+  }
   bool intersectsClip(const Bounds &bounds, const Matrix &clip) {
     if (!bounds.valid)
       return true;

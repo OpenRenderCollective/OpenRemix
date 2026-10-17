@@ -54,6 +54,23 @@ namespace remix::forward {
       geometries[surface.get()] = result;
     return result;
   }
+  const Bounds &Renderer::Gpu::frozenShadowBounds() {
+    const auto &source = shadowPlanner.source();
+    if (!source) {
+      staticBounds = {};
+      staticBoundsSource.reset();
+    } else if (staticBoundsSource.lock() != source) {
+      Bounds next;
+      for (const auto &draw : source->draws) {
+        if (!accepts(draw) || (draw.indexCount == 0 && draw.surface->indices.empty()))
+          continue;
+        next.merge(transformBounds(geometry(draw)->bounds, draw.model));
+      }
+      staticBounds = next;
+      staticBoundsSource = source;
+    }
+    return staticBounds;
+  }
   void Renderer::Gpu::prepareFrame(VkCommandBuffer command, RasterRenderer &resources) {
     auto &frame = frames[slot];
     const auto sun = resources.light();
@@ -83,26 +100,17 @@ namespace remix::forward {
           out.lightmap = volume->surfaces->find(draw);
       out.index = uint32_t(draws.size());
       out.count = count;
-      const auto &bounds = out.geometry->bounds;
-      if (bounds.valid)
-        for (uint32_t corner = 0; corner < 8; ++corner) {
-          Vec3 p;
-          for (int c = 0; c < 3; ++c)
-            p[c] = (corner & (1u << c)) ? bounds.maximum[c] : bounds.minimum[c];
-          const auto world = transformPoint(draw.model, p);
-          out.worldBounds.include(world);
-          casters.include(world);
-        }
+      out.worldBounds = transformBounds(out.geometry->bounds, draw.model);
+      casters.merge(out.worldBounds);
       draws.push_back(materialData(draw, seconds));
       commands.push_back(std::move(out));
     };
     for (const auto &draw : resources.draws())
       append(draw, frame.commands, false);
-    const bool refreshStatic = std::any_of(shadowSelection.dirty.begin(), shadowSelection.dirty.end(),
-                                           [](bool dirty) { return dirty; });
-    if ((refreshStatic || (options.shadows && sun.isDistant)) && shadowPlanner.source())
-      for (const auto &draw : shadowPlanner.source()->draws)
-        append(draw, frame.staticCommands, true);
+    // Complete frozen bounds still fit the cascades even when no static draw
+    // descriptors or material records need preparing for this frame.
+    if (options.shadows && sun.isDistant)
+      casters.merge(frozenShadowBounds());
     auto &data = frame.data;
     data = {};
     if (baking->volume())
@@ -170,6 +178,13 @@ namespace remix::forward {
     data.target = {extent.width, extent.height, uint32_t(lights.size()),
                    uint32_t(options.shadows && sun.isDistant)};
     frame.staticSunDirty = sunCache.update(shadowPlanner.source(), data.target[3] != 0, data.shadows);
+    const bool refreshLocal = std::any_of(shadowSelection.dirty.begin(), shadowSelection.dirty.end(),
+                                         [](bool dirty) { return dirty; });
+    const bool refreshSun = data.target[3] && std::any_of(frame.staticSunDirty.begin(), frame.staticSunDirty.end(),
+                                                         [](bool dirty) { return dirty; });
+    if ((refreshLocal || refreshSun) && shadowPlanner.source())
+      for (const auto &draw : shadowPlanner.source()->draws)
+        append(draw, frame.staticCommands, true);
     const VkDeviceSize clusterBytes = VkDeviceSize(data.grid[3]) * (clusterCapacity + 1) * sizeof(uint32_t);
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physical, &properties);
@@ -308,6 +323,9 @@ namespace remix::forward {
     statistics.capturedCasters = uint32_t(std::count_if(frame.commands.begin(), frame.commands.end(),
         [](const auto &draw) { return draw.captured; }));
     statistics.liveCasters = uint32_t(frame.commands.size()) - statistics.capturedCasters;
+    statistics.staticCasterPreparations = uint32_t(frame.staticCommands.size());
+    probes::dumpFrameData(".shadow-preparation.bin", &statistics.staticCasterPreparations,
+                          sizeof(statistics.staticCasterPreparations));
     const uint32_t shadowPolicy[] = {
         statistics.capturedCasters, statistics.liveCasters, statistics.staticSunUpdates,
         statistics.staticShadowUpdates,
