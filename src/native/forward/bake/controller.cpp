@@ -303,15 +303,15 @@ namespace remix::forward::bake {
          : submission.sun                ? job.sunReceived
          : submission.surface            ? job.surfaceReceived
                                          : job.received) += submission.count;
-        if (!submission.radiance)
-          if (const auto elapsed = job.transport->elapsed(slot)) {
-            const auto work = submission.visibility || submission.overflowVisibility ? Work::Visibility
-                              : submission.sun                                      ? Work::Sun
-                              : submission.reflectionSite                           ? Work::Site
-                              : submission.surface                                  ? Work::Surface
-                                                                                    : Work::Irradiance;
-            job.budget.observe(work, submission.count, *elapsed, m_config.gpuBudgetMs);
-          }
+        if (const auto elapsed = job.transport->elapsed(slot)) {
+          const auto work = submission.visibility || submission.overflowVisibility ? Work::Visibility
+                            : submission.sun                                      ? Work::Sun
+                            : submission.reflectionSite                           ? Work::Site
+                            : submission.radiance                                 ? Work::Reflection
+                            : submission.surface                                  ? Work::Surface
+                                                                                  : Work::Irradiance;
+          job.budget.observe(work, submission.count, *elapsed, m_config.gpuBudgetMs);
+        }
         m_statistics.completed = job.received;
       }
     }
@@ -580,9 +580,11 @@ namespace remix::forward::bake {
       auto &submission = m_submissions[m_slot];
       if (submission.job)
         throw std::logic_error("Reflection slot reused before its fence");
-      const uint32_t count = std::min(1024u, uint32_t(job.captureRays.size() - job.captureNext));
+      const uint32_t count = job.count(Work::Reflection, config,
+                                       uint32_t(job.captureRays.size() - job.captureNext),
+                                       config.samples, config.bounces);
       job.transport->recordRadiance(
-          command, m_slot, std::span(job.captureRays).subspan(job.captureNext, count), config.bounces);
+          command, m_slot, std::span(job.captureRays).subspan(job.captureNext, count), config.bounces, config.samples);
       submission.job = m_job;
       submission.radiance = true;
       submission.first = job.captureNext;
@@ -590,8 +592,8 @@ namespace remix::forward::bake {
       job.captureNext += count;
     }
     char progress[128];
-    std::snprintf(progress, sizeof(progress), "Capturing reflection cubemaps (%u/%zu texels)",
-                  job.captureReceived, job.captureRays.size());
+    std::snprintf(progress, sizeof(progress), "Capturing reflection cubemaps (%u/%zu texels, %u samples)",
+                  job.captureReceived, job.captureRays.size(), config.samples);
     status(REMIXAPI_BAKE_TRACING_EXT, progress);
     return;
   }
@@ -763,7 +765,7 @@ namespace remix::forward::bake {
         profile && std::strcmp(profile, "1") == 0) {
       std::fprintf(stderr, "Bake CPU readback: total_ms=%.3f bytes=%llu\n", m_job->readbackMs,
                    static_cast<unsigned long long>(m_job->readbackBytes));
-      constexpr const char *names[] = {"grid", "surface", "visibility", "sun", "sites"};
+      constexpr const char *names[] = {"grid", "surface", "visibility", "sun", "sites", "reflections"};
       for (uint32_t i = 0; i < uint32_t(Work::Count); ++i) {
         const auto &timing = m_job->budget.statistics(Work(i));
         std::fprintf(stderr, "Bake GPU timing: %s points=%llu batches=%llu total_ms=%.3f "

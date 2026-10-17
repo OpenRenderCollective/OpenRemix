@@ -1130,6 +1130,62 @@ namespace {
         require(owner < results.size(), "Atlas padding addresses completed surface results");
     std::printf("Surface texel readback: occluded %.3f, exposed %.3f green irradiance\n", left, right);
   }
+  void captureNoise(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
+    const auto receiver = world.wall(world.material({.diffuse = .5f}), 1, 2);
+    auto scene = world.scene({receiver});
+    bake::Transport transport;
+    bake::Options options;
+    options.batchPoints = 512;
+    options.textureResolution = 16;
+    auto job = pipelines.prepare("bake-cube-noise-" + std::to_string(world.revision), [&] {
+      transport.initialize(fixture.physical, fixture.device, scene, options);
+    });
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (!job->ready() && std::chrono::steady_clock::now() < deadline)
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    require(job->ready(), "Cubemap variance fixture preparation completed");
+    job->check();
+    fixture.begin();
+    transport.recordPrepare(fixture.command, world.resources);
+    fixture.finish();
+    std::vector<LightData> lights(100);
+    for (auto &light : lights) {
+      light.positionRadius = {0, 0, 0, .4f};
+      light.directionCone[3] = -1;
+    }
+    lights[0].radiance = {5, 5, 5, 0};
+    transport.updateLighting(0, lights, scene->sun, scene->dome, 100);
+    std::vector<bake::Point> rays;
+    for (uint32_t y = 0; y < 16; ++y)
+      for (uint32_t x = 0; x < 32; ++x)
+        rays.push_back({{(float(x) + .5f) * .4f / 32 - .2f,
+                          (float(y) + .5f) * .4f / 16 - .2f, 0, 0}, {0, 0, 1, 0}});
+    std::vector<bake::Result> result(rays.size());
+    double error[2]{}, means[2]{}, expectedMean = 0;
+    for (uint32_t quality = 0; quality < 2; ++quality) {
+      fixture.begin();
+      transport.recordRadiance(fixture.command, 0, rays, 1, quality ? 256 : 1);
+      fixture.finish();
+      transport.read(0, result);
+      for (size_t i = 0; i < rays.size(); ++i) {
+        // A sphere wholly inside the receiver hemisphere has irradiance
+        // pi*r^2*cos(axis)/distance^2. Lambertian albedo/pi cancels pi.
+        const double z = 1 - options.bias;
+        const double distance2 = z * z + rays[i].position[0] * rays[i].position[0] +
+                                 rays[i].position[1] * rays[i].position[1];
+        const double expected = .5 * 5 * .4 * .4 * z / std::pow(distance2, 1.5);
+        error[quality] += std::pow(result[i].irradiance[0][0] - expected, 2);
+        means[quality] += result[i].irradiance[0][0];
+        if (!quality) expectedMean += expected;
+      }
+    }
+    require(error[1] < error[0] * .1, "Offline cubemap samples reduce error against analytic direct lighting");
+    require(std::abs(means[1] / expectedMean - 1) < .15,
+            "Cubemap averaging retains expected lighting energy, rather than suppressing noisy light");
+    std::printf("Cubemap RMSE %.5f -> %.5f; mean %.5f -> %.5f, analytic %.5f\n",
+                std::sqrt(error[0] / rays.size()), std::sqrt(error[1] / rays.size()),
+                means[0] / rays.size(), means[1] / rays.size(), expectedMean / rays.size());
+  }
   void captureProbe(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
     const auto emitter = world.wall(world.material({.diffuse = .5f, .emission = 3}), 1, 2);
     auto scene = world.scene({emitter});
@@ -1242,6 +1298,37 @@ namespace {
           require(std::abs(chunk[i].irradiance[0][c] - reference[first + i].irradiance[0][c]) < 1e-5f,
                   "Radiance sampling is independent of batch boundaries");
     }
+    for (uint32_t samples : {16u, 65u}) {
+      fixture.begin();
+      transport.recordRadiance(fixture.command, 0, rays, 2, samples);
+      fixture.finish();
+      transport.read(0, reference);
+      std::vector<Vec3> average(rays.size());
+      for (uint32_t ordinal = 0; ordinal < samples; ++ordinal) {
+        fixture.begin();
+        transport.recordRadiance(fixture.command, 0, rays, 2, 1, ordinal);
+        fixture.finish();
+        transport.read(0, results);
+        for (size_t ray = 0; ray < rays.size(); ++ray)
+          for (uint32_t c = 0; c < 3; ++c)
+            average[ray][c] += results[ray].irradiance[0][c] / float(samples);
+      }
+      for (size_t ray = 0; ray < rays.size(); ++ray) {
+        require(reference[ray].statistics[2] == float(samples), "Radiance reports its actual averaged lighting sample count");
+        for (uint32_t c = 0; c < 3; ++c)
+          require(std::abs(reference[ray].irradiance[0][c] - average[ray][c]) < 1e-5f,
+                  "Cubemap lighting averages independent stable sample identities instead of repeating one path");
+      }
+    }
+    auto inactive = rays.front();
+    inactive.normal[3] = -1;
+    fixture.begin();
+    transport.recordRadiance(fixture.command, 0, {&inactive, 1}, 2, 16);
+    fixture.finish();
+    bake::Result skipped;
+    transport.read(0, {&skipped, 1});
+    require(skipped.irradiance[0] == Vec4{} && skipped.statistics == Vec4{},
+            "Inactive radiance points retain zero output and metadata under parallel sampling");
     std::printf("Cubemap readback: +Z red %.3f at %.3f units, -Z blue %.3f; "
                 "CPU/GPU box projection agrees\n",
                 positiveZ[0], positiveZ[3], negativeZ[2]);
@@ -1402,6 +1489,7 @@ int main() try {
             "Hardware visibility shadows local-light indirect radiance without "
             "hiding the receiver patch");
     captureProbe(fixture, pipelines, world);
+    captureNoise(fixture, pipelines, world);
     siteValidation(fixture, pipelines, world);
     dielectricTransport(fixture, pipelines, world);
     blendedCoverage(fixture, pipelines, world);

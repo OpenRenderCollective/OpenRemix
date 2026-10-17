@@ -11,7 +11,7 @@ namespace remix::forward::bake {
   struct Options {
     uint32_t textureResolution = 256, batchPoints = 1024;
     uint32_t initialBatchPoints = 0, queueFamily = VK_QUEUE_FAMILY_IGNORED;
-    bool parallel = true; // sample-parallel diffuse/visibility; radiance and site queries stay serial
+    bool parallel = true; // sample-parallel offline transport; single radiance rays and site queries stay serial
     bool cpuReadback = true; // prefer CPU-cached results for baking
     bool deviceLocalBatches = false; // GPU-produced points/results; CPU batch/read APIs are unavailable
     uint32_t rayBudget = 1u << 20; // point * sample * bounce ceiling per dispatch
@@ -44,8 +44,10 @@ namespace remix::forward::bake {
     // Directional radiance for reflection capture. Point.normal.xyz is a ray
     // direction; no surface-normal bias is applied. Result.irradiance[0] holds
     // RGB radiance and first-hit distance, without SH/cosine convolution.
+    // Offline captures can average independent lighting samples at the same
+    // direction; distance/back/miss metadata belongs to the first sample.
     void recordRadiance(VkCommandBuffer command, uint32_t slot, std::span<const Point> rays,
-                        uint32_t bounces = 3);
+                        uint32_t bounces = 3, uint32_t samples = 1, uint32_t firstSample = 0);
     // GPU producers may fill this slot's points directly, then dispatch radiance
     // without a CPU copy. Producer writes must be visible to COMPUTE shader reads;
     // the returned results become visible to COMPUTE reads after the dispatch.

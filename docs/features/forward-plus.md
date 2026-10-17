@@ -224,6 +224,12 @@ usable visibility bake is published and disappears when that bake is invalidated
 ## Parallax cubemap probes
 
 After diffuse tracing, the same static transport module captures directional radiance into six cube faces.
+Offline captures use the configured bake sample count at each fixed primary direction, rather than one
+noisy lighting path per texel. Lighting samples are distributed across a 64-lane workgroup and reduced
+as RGB; the first sample retains hit-distance metadata. Live single-ray reflection queries retain their
+existing stream and cost. Capture dispatches have their own timestamp-guided work budget, bounded by
+the same point/sample/bounce ceiling as the rest of the baker. This adds capture work without increasing
+the cubemap resolution, storage or per-frame sampling cost.
 It reuses the prepared acceleration structures and texture atlas. The directional mode returns radiance
 and first-hit distance without the irradiance mode's cosine convolution. Geometry emission, analytic light
 visibility and diffuse continuation use the shared material rules. The capture currently models diffuse

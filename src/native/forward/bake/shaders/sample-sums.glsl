@@ -23,6 +23,28 @@ Medium pointMedium(vec3 origin, inout uint seed) {
 void storeResult(uint index, RayResult value) {
   uint lane = gl_LocalInvocationIndex;
 #ifndef COMPACT_VISIBILITY
+  if (rayFrame.control.z == 1u) {
+    // Offline radiance needs one RGB reduction, not the nine irradiance SH
+    // bands or visibility ratios. Only sample zero contributes hit metadata.
+    sumIrradiance[lane] = value.irradiance[0];
+    sumFirst[lane] = value.statistics.x;
+    sumSecond[lane] = value.statistics.y;
+    barrier();
+    for (uint stride = 32u; stride > 0u; stride >>= 1u) {
+      if (lane < stride) {
+        sumIrradiance[lane] += sumIrradiance[lane + stride];
+        sumFirst[lane] += sumFirst[lane + stride];
+        sumSecond[lane] += sumSecond[lane + stride];
+      }
+      barrier();
+    }
+    if (lane == 0u) {
+      value.irradiance[0] = sumIrradiance[0];
+      value.statistics.xy = vec2(sumFirst[0], sumSecond[0]);
+      rayResults[index] = value;
+    }
+    return;
+  }
   if (rayFrame.control.z != 0u)
 #endif
   {

@@ -78,6 +78,10 @@ void main() {
     storeResult(index, outputValue);
     return;
   }
+  // A radiance point has one containing medium even when its lighting samples
+  // are chunked. Keep classification independent of the requested sample range.
+  if (rayFrame.control.z == 1u)
+    seed ^= (rayFrame.control.y + 1u) * 2654435761u ^ 2654435761u;
 #endif
   Medium medium = pointMedium(origin, seed);
   if (rayFrame.control.z == 5u || rayFrame.control.z == 6u) {
@@ -178,11 +182,23 @@ void main() {
     vec3 direction = normalize(point.normal.xyz);
     uvec3 directionBits = floatBitsToUint(direction);
     seed ^= directionBits.x * 73856093u ^ directionBits.y * 19349663u ^ directionBits.z * 83492791u;
-    float distance;
-    bool back, miss;
-    vec3 value = radiance(origin, direction, medium, seed, distance, back, miss);
-    outputValue.irradiance[0] = vec4(value, distance);
-    outputValue.statistics = vec4(back ? 1 : 0, miss ? 1 : 0, 1, 0);
+    // Average lighting at this fixed primary direction. Independent sample
+    // identities preserve the result across point batches and sample chunks;
+    // sample zero also retains the original single-ray/live-reflection stream.
+    uint stream = seed ^ 2654435761u;
+    vec3 sum = vec3(0);
+    for (uint i = SAMPLE_START; i < rayFrame.counts.z; i += SAMPLE_STEP) {
+      uint sampleSeed = stream ^ (rayFrame.control.y + i + 1u) * 2654435761u;
+      float distance;
+      bool back, miss;
+      sum += radiance(origin, direction, medium, sampleSeed, distance, back, miss);
+      if (i == 0u) {
+        outputValue.irradiance[0].w = distance;
+        outputValue.statistics.xy = vec2(back ? 1 : 0, miss ? 1 : 0);
+      }
+    }
+    outputValue.irradiance[0].rgb = sum / float(rayFrame.counts.z);
+    outputValue.statistics.z = float(rayFrame.counts.z);
     storeResult(index, outputValue);
     return;
   }

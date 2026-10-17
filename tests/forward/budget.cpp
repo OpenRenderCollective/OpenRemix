@@ -41,6 +41,9 @@ int main() {
               timing.largest == Budget::maximumPoints,
           "Stage diagnostics retain actual GPU work and timestamp totals");
   Config a, b;
+  require(budget.count(Work::Reflection, 1024, 0, 8192, 8, 5000) == 16 &&
+              budget.count(Work::Reflection, 1024, 8, 8192, 8, 5000) <= 256,
+          "Reflection capture quality obeys the same manual and timed ray-work ceilings");
   b.batch = 1024;
   b.gpuBudgetMs = 0;
   b.diskCache = false;

@@ -207,8 +207,8 @@ namespace remix::forward::bake {
     record(command, index, points, samples, bounces, firstSample, Mode::Irradiance);
   }
   void Transport::recordRadiance(VkCommandBuffer command, uint32_t index, std::span<const Point> rays,
-                                 uint32_t bounces) {
-    record(command, index, rays, 1, bounces, 0, Mode::Radiance);
+                                 uint32_t bounces, uint32_t samples, uint32_t firstSample) {
+    record(command, index, rays, samples, bounces, firstSample, Mode::Radiance);
   }
   void Transport::recordSiteValidation(VkCommandBuffer command, uint32_t slot, std::span<const Point> points,
                                        uint32_t samples) {
@@ -386,7 +386,8 @@ namespace remix::forward::bake {
     slot.count = count;
     slot.samples = samples;
     g.timing->begin(command, index);
-    const bool parallel = g.options.parallel && mode != Mode::Radiance && mode != Mode::SiteValidation;
+    const bool parallel = g.options.parallel && mode != Mode::SiteValidation &&
+                          (mode != Mode::Radiance || samples > 1);
     slot.compactVisibility = parallel && g.options.cpuReadback &&
                              (mode == Mode::Visibility || mode == Mode::DirectVisibility ||
                               mode == Mode::SunVisibility || mode == Mode::SunDirectVisibility);
