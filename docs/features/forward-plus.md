@@ -889,15 +889,18 @@ change the requested metre-space texel density. Material UVs remain unchanged.
 
 `lightmap/curved` measures nonplanar charts on their actual displaced triangles. For a four-sided disk,
 `lightmap/harmonic` maps the boundary to a rectangle using surface arc lengths, then solves interior
-coordinates with a positive-weight Dirichlet Laplacian. Non-disk charts (including holes), larger meshes,
-and unsuccessful solves retain their authored topology. Both paths correct the average surface metric
+coordinates with a positive-weight Dirichlet Laplacian. When that mapping fails, `lightmap/fan` can
+unfold an open triangle fan around its shared vertex using actual edge lengths and triangle angles.
+This preserves boundary warps that collapse to a line in the authored UVs. It rejects disconnected,
+degenerate and overlapping fans. Other charts retain their authored topology. These paths correct the average surface metric
 and scale by the largest triangle stretch. A unit step in any chart direction therefore covers at most
 one metre on the piecewise-linear surface before the requested luxel spacing is applied. Developable
 patches can unfold nearly uniformly; general curvature can require oversampling to enforce this bound.
 This is not an assertion of distortion-free flattening. Positions and material UVs are never flattened.
 Collinear authored BSP fan triangles already own no atlas area. Rounding slivers in those fans are
 excluded from metric fitting only when their world altitude is within the 0.1 mm geometric tolerance;
-a collapsed mapping over larger geometry fails explicitly.
+a collapsed mapping over larger geometry must be unwrapped successfully or fails explicitly. A small
+relative density margin accommodates final float-coordinate rounding on narrow triangles.
 The positive-weight approach follows the convex-combination parameterization principles described by
 [Floater and Hormann](https://www.inf.usi.ch/hormann/papers/Floater.2002.POT.pdf).
 

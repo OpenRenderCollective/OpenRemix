@@ -47,13 +47,13 @@ if get_option('gpu_tests')
 endif
 
 forward_lightmaps_test = executable('remix-forward-lightmaps-test', 'lightmaps.cpp',
-  '../../src/native/forward/lightmap/layout.cpp', '../../src/native/forward/lightmap/packing.cpp', '../../src/native/forward/lightmap/fit.cpp', '../../src/native/forward/lightmap/parameterization.cpp', '../../src/native/forward/lightmap/curved.cpp', '../../src/native/forward/lightmap/harmonic.cpp', '../../src/native/forward/lightmap/seams.cpp', '../../src/native/forward/lightmap/curved_seams.cpp', '../../src/native/forward/lightmap/seam_mesh.cpp', '../../src/native/forward/lightmap/surface_walk.cpp', '../../src/native/forward/lightmap/coverage.cpp', '../../src/native/forward/lightmap/data.cpp', '../../src/native/forward/lighting.cpp',
+  '../../src/native/forward/lightmap/layout.cpp', '../../src/native/forward/lightmap/packing.cpp', '../../src/native/forward/lightmap/fit.cpp', '../../src/native/forward/lightmap/parameterization.cpp', '../../src/native/forward/lightmap/curved.cpp', '../../src/native/forward/lightmap/harmonic.cpp', '../../src/native/forward/lightmap/fan.cpp', '../../src/native/forward/lightmap/seams.cpp', '../../src/native/forward/lightmap/curved_seams.cpp', '../../src/native/forward/lightmap/seam_mesh.cpp', '../../src/native/forward/lightmap/surface_walk.cpp', '../../src/native/forward/lightmap/coverage.cpp', '../../src/native/forward/lightmap/data.cpp', '../../src/native/forward/lighting.cpp',
   '../../src/native/forward/material.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Surface lightmap atlas planning and world texel ownership', forward_lightmaps_test)
 
 forward_mixed_test = executable('remix-forward-mixed-test', 'mixed.cpp',
-  '../../src/native/forward/mixed/data.cpp', '../../src/native/forward/lightmap/layout.cpp', '../../src/native/forward/lightmap/packing.cpp', '../../src/native/forward/lightmap/fit.cpp', '../../src/native/forward/lightmap/parameterization.cpp', '../../src/native/forward/lightmap/curved.cpp', '../../src/native/forward/lightmap/harmonic.cpp', '../../src/native/forward/lightmap/seams.cpp', '../../src/native/forward/lightmap/curved_seams.cpp', '../../src/native/forward/lightmap/seam_mesh.cpp', '../../src/native/forward/lightmap/surface_walk.cpp', '../../src/native/forward/lightmap/coverage.cpp',
+  '../../src/native/forward/mixed/data.cpp', '../../src/native/forward/lightmap/layout.cpp', '../../src/native/forward/lightmap/packing.cpp', '../../src/native/forward/lightmap/fit.cpp', '../../src/native/forward/lightmap/parameterization.cpp', '../../src/native/forward/lightmap/curved.cpp', '../../src/native/forward/lightmap/harmonic.cpp', '../../src/native/forward/lightmap/fan.cpp', '../../src/native/forward/lightmap/seams.cpp', '../../src/native/forward/lightmap/curved_seams.cpp', '../../src/native/forward/lightmap/seam_mesh.cpp', '../../src/native/forward/lightmap/surface_walk.cpp', '../../src/native/forward/lightmap/coverage.cpp',
   '../../src/native/forward/mixed/refine.cpp', '../../src/native/forward/mixed/occlusion.cpp',
   '../../src/native/forward/ray/capture.cpp', '../../src/native/forward/bake/data.cpp',
   '../../src/native/forward/lightmap/data.cpp', '../../src/native/forward/material.cpp',
@@ -79,7 +79,7 @@ test('Bake cache identity, payload integrity and mixed light ownership', forward
   args : [meson.current_build_dir() / 'cache'])
 
 forward_world_grid_test = executable('remix-forward-world-grid-test', 'world_grid.cpp', 'curved.cpp', 'curved_join.cpp',
-  '../../src/native/forward/lightmap/layout.cpp', '../../src/native/forward/lightmap/packing.cpp', '../../src/native/forward/lightmap/fit.cpp', '../../src/native/forward/lightmap/parameterization.cpp', '../../src/native/forward/lightmap/curved.cpp', '../../src/native/forward/lightmap/harmonic.cpp',
+  '../../src/native/forward/lightmap/layout.cpp', '../../src/native/forward/lightmap/packing.cpp', '../../src/native/forward/lightmap/fit.cpp', '../../src/native/forward/lightmap/parameterization.cpp', '../../src/native/forward/lightmap/curved.cpp', '../../src/native/forward/lightmap/harmonic.cpp', '../../src/native/forward/lightmap/fan.cpp',
   '../../src/native/forward/lightmap/seams.cpp', '../../src/native/forward/lightmap/curved_seams.cpp', '../../src/native/forward/lightmap/seam_mesh.cpp', '../../src/native/forward/lightmap/surface_walk.cpp', '../../src/native/forward/lightmap/coverage.cpp', '../../src/native/forward/lightmap/data.cpp',
   '../../src/native/forward/material.cpp', '../../src/native/forward/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)

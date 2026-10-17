@@ -5,6 +5,7 @@
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <unordered_map>
 
 namespace remix::forward::bake {
@@ -33,8 +34,12 @@ namespace remix::forward::bake {
       const bool dielectric = medium.has_value();
       if ((source.transmission && !dielectric) || (source.translucent && !sourceOver && !dielectric) ||
           (blend.enabled && !sourceOver))
-        throw std::invalid_argument("Bake transport supports opaque, cutout and "
-                                    "source-over coverage only");
+        throw std::invalid_argument(
+            "Unsupported bake coverage: draw " + std::to_string(result.materials.size()) +
+            ", material " + std::to_string(source.sourceHash) + ", blend " +
+            std::to_string(blend.enabled) + "/" + std::to_string(blend.src) + "/" +
+            std::to_string(blend.dst) + ", transmission " + std::to_string(source.transmission) +
+            ", translucent " + std::to_string(source.translucent));
       if (result.vertices.size() + surface.vertices.size() > UINT32_MAX)
         throw std::length_error("Bake geometry exceeds 32-bit addressing");
       const uint32_t vertexBase = uint32_t(result.vertices.size());

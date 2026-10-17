@@ -11,6 +11,40 @@ using namespace remix;
 using namespace remix::test;
 namespace lm = forward::lightmap;
 namespace {
+  scene::BakeScene warpedBoundaryFan() {
+    // Reduced from a legacy BSP wall: inserted boundary vertices are 5.8 mm
+    // off its nominal plane. Its original UVs collapse two real fan triangles.
+    const lm::curved::Point positions[] = {
+        {0, 7.7216, .4064}, {0, 7.7216, 0}, {.0058353, 4.8844367, 0},
+        {.0058353, .00762124, 0}, {0, 0, 0}, {0, 0, .4064},
+        {.0058353, .00762124, .4064}, {.0058353, 4.8844367, .4064}};
+    const std::array<float, 2> authored[] = {
+        {19, 0}, {19, 1}, {12.01879f, 1}, {.01875f, 1},
+        {0, 1}, {0, 0}, {.01875f, 0}, {12.01879f, 0}};
+    auto surface = std::make_shared<scene::Surface>();
+    for (auto p : positions) {
+      scene::Vertex vertex{};
+      for (uint32_t c = 0; c < 3; ++c)
+        vertex.position[c] = float(p[c]);
+      vertex.normal[0] = -1;
+      surface->vertices.push_back(vertex);
+    }
+    scene::BakeSurfaceChart chart{0, 0, 20, 2, {}};
+    for (uint32_t i = 1; i < 7; ++i)
+      for (auto index : {0u, i, i + 1}) {
+        surface->indices.push_back(index);
+        chart.texcoords.push_back(authored[index]);
+      }
+    scene::Draw draw;
+    draw.surface = surface;
+    draw.material = std::make_shared<scene::Material>();
+    draw.model = scene::identity();
+    scene::BakeScene result;
+    result.ready = true;
+    result.draws.push_back(draw);
+    result.charts.push_back(chart);
+    return result;
+  }
   scene::BakeScene patch(bool wave = false, bool hole = false) {
     scene::BakeScene scene;
     scene.ready = true;
@@ -79,6 +113,8 @@ namespace {
       maximum = std::max(maximum, std::sqrt(.5 * (uu + vv + discriminant)));
       minimum = std::min(minimum, std::sqrt(std::max(0., .5 * (uu + vv - discriminant))));
     }
+    if (maximum > 1.00002)
+      std::fprintf(stderr, "Curved float-atlas stretch: %.12g (minimum %.12g)\n", maximum, minimum);
     require(maximum <= 1.00002, "Every curved triangle respects requested world-space luxel spacing");
     if (isometric)
       require(minimum > .9998, "A developable cylinder unfolds with nearly uniform intrinsic spacing");
@@ -149,6 +185,32 @@ void curvedLightmapTests() {
   require(lm::plan(planarFan, {32, 1, 2, 1024, 1, .1f}).mappings[0].worldGrid,
           "An initial rounding sliver cannot turn a planar BSP face into a curved chart");
   const lm::Options options{128, 8, 2, 131072, 1, .1f};
+  const auto warped = warpedBoundaryFan();
+  const auto warpedLayout = lm::plan(warped, options);
+  require(warpedLayout.mappings[0].intrinsic,
+          "A warped boundary fan gets a non-collapsed intrinsic mapping");
+  bound(warped, warpedLayout, false);
+  onSurface(warped, warpedLayout);
+  require(warpedLayout.mappings[0].width * warpedLayout.mappings[0].height < 2048,
+          "Unfolding a narrow wall does not inflate its atlas rectangle");
+  std::printf("Warped wall fan: %ux%u at %.3g m luxels, all six triangles retained\n",
+              warpedLayout.mappings[0].width, warpedLayout.mappings[0].height, warpedLayout.luxelMetres);
+  auto reorderedFan = warpedBoundaryFan();
+  auto &fanIndices = reorderedFan.draws[0].surface->indices;
+  auto &fanUvs = reorderedFan.charts[0].texcoords;
+  std::rotate(fanIndices.begin(), fanIndices.begin() + 6, fanIndices.end());
+  std::rotate(fanUvs.begin(), fanUvs.begin() + 6, fanUvs.end());
+  const auto reorderedFanLayout = lm::plan(reorderedFan, options);
+  require(reorderedFanLayout.mappings[0].intrinsic &&
+              reorderedFanLayout.mappings[0].width == warpedLayout.mappings[0].width &&
+              reorderedFanLayout.mappings[0].height == warpedLayout.mappings[0].height,
+          "Fan unfolding recovers boundary order independently of triangle submission order");
+  bound(reorderedFan, reorderedFanLayout, false);
+  lm::curved::Surface overlapping;
+  overlapping.positions = {{0, 0, 0}, {1, 0, 0}, {-1, 1, 0}, {0, -1, 0}, {1, 1, 0}};
+  overlapping.corners = {0, 1, 2, 0, 2, 3, 0, 3, 4};
+  require(!lm::curved::unfoldFan(overlapping, {}),
+          "An unfolded fan turning more than once cannot overlap itself in the atlas");
   auto cylinder = patch();
   const auto layout = lm::plan(cylinder, options);
   require(layout.mappings[0].curvedMetric && layout.mappings[0].intrinsic && !layout.mappings[0].worldGrid,

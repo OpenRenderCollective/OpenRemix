@@ -104,7 +104,9 @@ namespace remix::forward::lightmap {
           minimum[axis] = std::min(minimum[axis], uv[axis]);
       for (auto &uv : result)
         for (uint32_t axis = 0; axis < 2; ++axis)
-          uv[axis] = (uv[axis] - minimum[axis]) * stretch * (1 + 1e-6);
+          // Final atlas coordinates are floats. Reserve a small density margin
+          // for cancellation on long, thin fan triangles after that conversion.
+          uv[axis] = (uv[axis] - minimum[axis]) * stretch * (1 + 1e-4);
       return result;
     }
   } // namespace curved
@@ -138,6 +140,8 @@ namespace remix::forward::lightmap {
       surface.corners.push_back(found->second);
     }
     auto intrinsic = curved::harmonic(surface, cancelled);
+    if (!intrinsic)
+      intrinsic = curved::unfoldFan(surface, cancelled);
     const auto coordinates =
         intrinsic ? std::span<const curved::Uv>(*intrinsic) : std::span<const curved::Uv>(surface.authored);
     const auto corrected = curved::correctMetric(surface, coordinates, cancelled);

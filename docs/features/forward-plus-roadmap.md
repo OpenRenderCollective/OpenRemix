@@ -14,7 +14,7 @@ reports. An implementation or synthetic test alone does not close an integration
 | Requirement | Current state | Remaining proof or work |
 | --- | --- | --- |
 | Modular forward PBR, clustered lights and 1x/2x/4x MSAA | Implemented | Refresh current-build engine coverage through the integration milestone below |
-| World-metric surface charts, atlas budgets and irradiance probes | Implemented; live pool bake and cached reload exercised | Repair collapsed curved-chart mapping on legacy map geometry; inspect connected-face continuity, seam donors and budget coarsening |
+| World-metric surface charts, atlas budgets and irradiance probes | Implemented; warped boundary fans can unfold without dropping triangles | Modulating decal transport still blocks a legacy-map bake; inspect connected-face continuity, seam donors and budget coarsening |
 | Soft finite emitters, attributed direct diffuse and live specular | Implemented | Compare visible penumbrae and light separation in the live engine |
 | Dynamic-object shadows combined with baked static shadows | Implemented; captured static casters excluded; world-metric sun bias and one indoor live case exercised | Local-light receiver quality, characters and static membership after map changes |
 | Automatic parallax cubemap bounds with tolerance for room details | Implemented; published-box inspection available; bake bounds independent of 3D skybox | Broader map compatibility, room transitions, bevels, interior props and reflection leaks remain open |
