@@ -1,5 +1,7 @@
 #include "forward/water/pass.h"
+#include "forward/bake/transport.h"
 #include "forward/resources.h"
+#include "forward/water/ray_shaders/embedded.h"
 #include "forward/water/shaders/embedded.h"
 #include "platform/gpu_frames.h"
 #include "runtime/pipelines.h"
@@ -17,6 +19,9 @@ namespace remix::forward::water {
     VkDescriptorSetLayout inputs = VK_NULL_HANDLE;
     VkPipelineLayout layout = VK_NULL_HANDLE;
     VkPipeline surface = VK_NULL_HANDLE, overlay = VK_NULL_HANDLE;
+    VkDescriptorSetLayout raySceneLayout = VK_NULL_HANDLE;
+    VkPipelineLayout rayLayout = VK_NULL_HANDLE;
+    VkPipeline raySurface = VK_NULL_HANDLE;
     VkDescriptorPool pool = VK_NULL_HANDLE;
     struct Frame {
       VkDescriptorSet set = VK_NULL_HANDLE;
@@ -26,11 +31,15 @@ namespace remix::forward::water {
     ~Gpu() {
       if (pool)
         vkDestroyDescriptorPool(device, pool, nullptr);
-      for (auto handle : {surface, overlay})
+      for (auto handle : {surface, overlay, raySurface})
         if (handle)
           pipeline::destroyPipeline(device, handle, nullptr);
       if (layout)
         pipeline::destroyPipelineLayout(device, layout, nullptr);
+      if (rayLayout)
+        pipeline::destroyPipelineLayout(device, rayLayout, nullptr);
+      if (raySceneLayout)
+        pipeline::destroyDescriptorSetLayout(device, raySceneLayout, nullptr);
       if (inputs)
         pipeline::destroyDescriptorSetLayout(device, inputs, nullptr);
       if (target)
@@ -125,6 +134,8 @@ namespace remix::forward::water {
       } modules{device, {}};
       const auto vertex = modules.add(vertShader, sizeof(vertShader));
       const auto fragment = modules.add(fragShader, sizeof(fragShader));
+      const auto rayFragment =
+          rayLayout ? modules.add(hardware::fragShader, sizeof(hardware::fragShader)) : VK_NULL_HANDLE;
       const auto overlayVertex = modules.add(overlayVertShader, sizeof(overlayVertShader));
       const auto overlayFragment = modules.add(overlayFragShader, sizeof(overlayFragShader));
       const VkVertexInputBindingDescription binding{0, sizeof(scene::Vertex), VK_VERTEX_INPUT_RATE_VERTEX};
@@ -161,7 +172,7 @@ namespace remix::forward::water {
           .lineWidth = 1};
       const VkPipelineMultisampleStateCreateInfo multisample{
           .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO, .rasterizationSamples = samples};
-      auto create = [&](bool additive) {
+      auto create = [&](bool additive, bool rays = false) {
         const VkPipelineShaderStageCreateInfo stages[] = {
             {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
              .stage = VK_SHADER_STAGE_VERTEX_BIT,
@@ -169,7 +180,9 @@ namespace remix::forward::water {
              .pName = "main"},
             {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
              .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-             .module = additive ? overlayFragment : fragment,
+             .module = additive ? overlayFragment
+                       : rays   ? rayFragment
+                                : fragment,
              .pName = "main"}};
         const VkPipelineDepthStencilStateCreateInfo depth{
             .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
@@ -199,7 +212,7 @@ namespace remix::forward::water {
                                                 .pDepthStencilState = &depth,
                                                 .pColorBlendState = &blend,
                                                 .pDynamicState = &dynamic,
-                                                .layout = layout,
+                                                .layout = rays ? rayLayout : layout,
                                                 .renderPass = pass};
         VkPipeline result;
         check(pipeline::createGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &result));
@@ -207,13 +220,27 @@ namespace remix::forward::water {
       };
       surface = create(false);
       overlay = create(true);
+      if (rayLayout)
+        raySurface = create(false, true);
     }
   };
   Pass::Pass() = default;
   Pass::~Pass() = default;
+  bool Pass::supportsRayReflections(VkPhysicalDevice physical) {
+    VkPhysicalDeviceProperties properties;
+    vkGetPhysicalDeviceProperties(physical, &properties);
+    const auto &limits = properties.limits;
+    // Scene/material/water inputs plus one read-only transport scene set.
+    return limits.maxBoundDescriptorSets >= 4 && limits.maxPerStageResources >= 33 &&
+           limits.maxPerStageDescriptorUniformBuffers >= 4 && limits.maxDescriptorSetUniformBuffers >= 4 &&
+           limits.maxPerStageDescriptorStorageBuffers >= 10 &&
+           limits.maxDescriptorSetStorageBuffers >= 12 && limits.maxPerStageDescriptorSamplers >= 18 &&
+           limits.maxDescriptorSetSamplers >= 18 && limits.maxPerStageDescriptorSampledImages >= 18 &&
+           limits.maxDescriptorSetSampledImages >= 18;
+  }
   void Pass::initialize(VkPhysicalDevice physical, VkDevice device, VkExtent2D extent,
                         VkSampleCountFlagBits samples, VkDescriptorSetLayout scene,
-                        VkDescriptorSetLayout material, Targets targets) {
+                        VkDescriptorSetLayout material, Targets targets, bool rayReflections) {
     auto next = std::make_unique<Gpu>();
     auto &g = *next;
     g.physical = physical;
@@ -243,6 +270,14 @@ namespace remix::forward::water {
                                                 .pushConstantRangeCount = 1,
                                                 .pPushConstantRanges = &push};
     check(pipeline::createPipelineLayout(device, &layoutInfo, nullptr, &g.layout));
+    if (rayReflections) {
+      g.raySceneLayout = bake::Transport::createSceneLayout(device);
+      const VkDescriptorSetLayout rayLayouts[] = {scene, material, g.inputs, g.raySceneLayout};
+      auto rayInfo = layoutInfo;
+      rayInfo.setLayoutCount = 4;
+      rayInfo.pSetLayouts = rayLayouts;
+      check(pipeline::createPipelineLayout(device, &rayInfo, nullptr, &g.rayLayout));
+    }
     g.createTarget(samples, targets);
     g.createPipelines(samples);
     const VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 7 * gpuFrameCount},
@@ -307,7 +342,7 @@ namespace remix::forward::water {
     return m_gpu->frames.at(slot).parameters->descriptor();
   }
   void Pass::record(VkCommandBuffer command, uint32_t slot, Snapshot::Inputs inputs,
-                    const std::function<void(VkPipeline, VkPipelineLayout)> &draw) {
+                    const std::function<void(VkPipeline, VkPipelineLayout)> &draw, VkDescriptorSet rayScene) {
     auto &g = *m_gpu;
     g.snapshot.record(command, slot, inputs);
     const auto source = inputs.reflections.imageView ? inputs.reflections : g.snapshot.output().hdr;
@@ -333,7 +368,13 @@ namespace remix::forward::water {
       vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.overlay);
       vkCmdDraw(command, 3, 1, 0, 0);
     }
-    draw(g.surface, g.layout);
+    if (rayScene && g.raySurface) {
+      vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.rayLayout, 3, 1, &rayScene, 0,
+                              nullptr);
+      draw(g.raySurface, g.rayLayout);
+    } else {
+      draw(g.surface, g.layout);
+    }
     vkCmdEndRenderPass(command);
   }
   uint64_t Pass::targetBytes() const { return m_gpu ? m_gpu->snapshot.targetBytes() : 0; }

@@ -278,19 +278,20 @@ namespace remix::forward::bake {
     slot.lighting = frame;
   }
   VkDescriptorSet Transport::prepareFragment(uint32_t index, uint32_t samples, uint32_t bounces,
-                                             float distance) {
+                                             float distance, FragmentUse use) {
     auto &g = *m_gpu;
     if (!g.prepared || samples < 1 || samples > 64 || bounces < 1 || bounces > 8 ||
         !std::isfinite(distance) || distance <= g.options.bias * 2)
-      throw std::invalid_argument("Invalid fragment GI transport configuration");
+      throw std::invalid_argument("Invalid fragment transport configuration");
     auto &slot = g.slots.at(index);
-    if (!slot.fragmentConstants) {
-      slot.fragmentConstants = g.buffer(nullptr, sizeof(Frame), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+    auto &fragment = slot.fragments.at(size_t(use));
+    if (!fragment.constants) {
+      fragment.constants = g.buffer(nullptr, sizeof(Frame), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
       const VkDescriptorSetAllocateInfo allocate{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
                                                  .descriptorPool = g.pool,
                                                  .descriptorSetCount = 1,
                                                  .pSetLayouts = &g.setLayout};
-      check(vkAllocateDescriptorSets(g.device, &allocate, &slot.fragment));
+      check(vkAllocateDescriptorSets(g.device, &allocate, &fragment.set));
     }
     auto frame = slot.lighting.value_or(
         lightingFrame(g.source->sun, g.source->dome, distance, g.options.bias, g.source->sceneScale));
@@ -300,39 +301,39 @@ namespace remix::forward::bake {
     if (!slot.lighting)
       frame.counts[1] = uint32_t(g.source->lights.size());
     frame.control = {g.domeLayer, 0, 1, uint32_t(g.hasDielectrics)};
-    slot.fragmentConstants->write(&frame, sizeof(frame));
+    fragment.constants->write(&frame, sizeof(frame));
     const auto acceleration = g.rays.handle();
     const VkWriteDescriptorSetAccelerationStructureKHR rayInfo{
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
         .accelerationStructureCount = 1,
         .pAccelerationStructures = &acceleration};
     const VkDescriptorBufferInfo buffers[] = {
-        slot.fragmentConstants->descriptor(), g.vertices->descriptor(), g.triangles->descriptor(),
+        fragment.constants->descriptor(), g.vertices->descriptor(), g.triangles->descriptor(),
         g.materials->descriptor(), slot.liveLights ? slot.liveLights->descriptor() : g.lights->descriptor()};
     const VkDescriptorImageInfo atlas{g.sampler, g.atlas->view, VK_IMAGE_LAYOUT_GENERAL};
     VkWriteDescriptorSet writes[7]{};
     writes[0] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                  .pNext = &rayInfo,
-                 .dstSet = slot.fragment,
+                 .dstSet = fragment.set,
                  .dstBinding = 0,
                  .descriptorCount = 1,
                  .descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR};
     for (uint32_t i = 1; i <= 5; ++i)
       writes[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                   .dstSet = slot.fragment,
+                   .dstSet = fragment.set,
                    .dstBinding = i,
                    .descriptorCount = 1,
                    .descriptorType =
                        i == 1 ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                    .pBufferInfo = &buffers[i - 1]};
     writes[6] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                 .dstSet = slot.fragment,
+                 .dstSet = fragment.set,
                  .dstBinding = 8,
                  .descriptorCount = 1,
                  .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                  .pImageInfo = &atlas};
     vkUpdateDescriptorSets(g.device, 7, writes, 0, nullptr);
-    return slot.fragment;
+    return fragment.set;
   }
   void Transport::recordDeviceRadiance(VkCommandBuffer command, uint32_t index, uint32_t count,
                                        uint32_t bounces) {
@@ -448,8 +449,8 @@ namespace remix::forward::bake {
       bytes += slot.constants->allocationBytes + slot.points->allocationBytes + slot.results->allocationBytes;
       if (slot.liveLights)
         bytes += slot.liveLights->allocationBytes;
-      if (slot.fragmentConstants)
-        bytes += slot.fragmentConstants->allocationBytes;
+      for (const auto &fragment : slot.fragments)
+        if (fragment.constants) bytes += fragment.constants->allocationBytes;
     }
     for (const auto &upload : g.uploads)
       bytes += upload.source->allocationBytes;

@@ -43,6 +43,7 @@ namespace remix::forward {
     std::unique_ptr<ray::Reflections> rayReflections;
     std::unique_ptr<ray::LiveScene> liveScene;
     bool giSupported = false;
+    bool waterRaySupported = false;
     VkDescriptorSetLayout giSceneLayout = VK_NULL_HANDLE;
     VkPipelineLayout giLayout = VK_NULL_HANDLE;
     VkPipeline giOpaquePipeline = VK_NULL_HANDLE, giLightmapPipeline = VK_NULL_HANDLE;
@@ -75,6 +76,7 @@ namespace remix::forward {
       uint32_t poolCapacity = 0;
       VkDescriptorSet scene = VK_NULL_HANDLE, composite = VK_NULL_HANDLE;
       VkDescriptorSet giScene = VK_NULL_HANDLE;
+      VkDescriptorSet waterRayScene = VK_NULL_HANDLE;
       std::unique_ptr<Buffer> constants, lights, draws, clusters, skyConstants;
       bool skyEnabled = false;
       VkDescriptorImageInfo skyImage{};

@@ -56,7 +56,7 @@ then writes water into the existing one/two/four-sample colour and depth attachm
 replacement materials, PBR maps, clustered lights, mixed shadows and filtered parallax cubemaps.
 Source water normals retain their authored scroll rates. Camera-medium absorption happens before
 tone mapping. Water shares the opaque hierarchical SSR tracer and rough colour-pyramid filtering;
-hardware reflection queries for water remain pending. Existing opaque reflections are included once
+optional hardware rays fill unresolved water reflections. Existing opaque reflections are included once
 in the transmitted background. Nested transparent layers are unsupported.
 
 ## Ownership and modules
@@ -73,6 +73,7 @@ in the transmitted background. Nested transparent layers are unsupported.
 | `water/optics.glsl`, `water/screen.glsl` | Primary water boundary and bounded screen-depth tracing primitives |
 | `water/snapshot.h/.cpp`, `water/shaders/snapshot.comp` | Independent completed opaque HDR/depth inputs for water |
 | `water/pass.h/.cpp`, `water/shaders/surface.glsl` | Late MSAA water shading, attachment transitions and opaque specular composition |
+| `water/shaders/hardware.glsl`, `water/ray_shaders/embedded.h` | Optional fragment reflection continuation through the shared live ray scene |
 | `resources.h/.cpp` | Noncopyable Vulkan buffer/image ownership and allocation |
 | `targets.cpp` | HDR/MSAA/depth/shadow attachments and descriptor layouts |
 | `pipelines.cpp` | Forward, shadow, cluster and display pipeline creation |
@@ -275,10 +276,31 @@ The sampled opaque colour excludes its own reflection composition, avoiding recu
 
 The ordinary `ssr`, `ssrSteps`, `ssrDistance`, `ssrThickness` and `ssrRoughness` settings also control
 water tracing. It runs at water-fragment resolution; `ssrScale` controls the opaque reflection dispatch
-and does not reduce water fragment tracing. Water hardware reflection fallback remains pending.
+and does not reduce water fragment tracing.
 GPU tests cover a current opaque emitter, removal, cutoff edits and opaque specular accounting at
 1x/2x/4x MSAA and each opaque SSR scale. Resolved water roughness is also tested with a narrow emitter
 to verify highlight broadening and reduced peak intensity rather than only rejecting rough surfaces.
+
+With `rtReflections = 1`, supported hardware can continue missing water reflection confidence directly
+from the water fragment. This uses the live scene's material-aware radiance transport, including
+alpha coverage, current analytic lighting, emission and measured smooth dielectric boundaries. It
+shares geometry, textures and acceleration structures with opaque reflections and live GI; no extra
+guide render pass or full-screen reflection images are allocated. `rtReflectionDistance` and
+`rtReflectionBounces` control this continuation. Diffuse GI and water reflection constants occupy
+independent fenced descriptor sets, so their ranges and bounce budgets can differ in one submission.
+
+A valid ray hit replaces remaining probe/sky confidence, including a black result. Misses and invalid
+back faces preserve that fallback. SSR, hardware continuation and the fallback share one reflection
+lobe, with the water interface's Fresnel applied once. Like the existing opaque ray fallback, this is
+bounded sharp-direction transport below `ssrRoughness`, without a stochastic glossy-ray distribution
+or temporal denoising. Rough SSR hits still use the shared filtered colour footprint.
+
+The ray shader and fourth descriptor set are created only when ray features are enabled and the device
+can fit the combined fragment resources. Water falls back to SSR/probes on an ordinary device or an
+insufficient descriptor limit. The base water pipeline retains its Vulkan 1.1 feature requirements.
+GPU tests cover hidden and moving emitters, removal, alpha rejection, live range/cutoff edits, shared
+SSR/RT energy, valid black hits, probe fallback and simultaneous GI at 1x/2x/4x MSAA. Padded inactive
+opaque reflection rays return before the containing-medium lookup, avoiding its six-axis queries.
 
 The shared camera-medium API attenuates opaque geometry and visible water exits before tone mapping,
 using the nearest depth and measured distance in scene units. The exit sheet skips duplicate body

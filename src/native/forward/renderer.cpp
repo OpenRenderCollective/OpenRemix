@@ -61,6 +61,8 @@ namespace remix::forward {
     next->options = options;
     next->encodeOutput = encodeOutput;
     next->giSupported = options.rtGI && hardwareRay && ray::LiveScene::supportsFragmentGI(physical);
+    next->waterRaySupported = options.water && options.rtReflections && hardwareRay &&
+                              water::Pass::supportsRayReflections(physical);
     next->statistics.rayGI.available = hardwareRay && ray::LiveScene::supportsFragmentGI(physical);
     next->createLayouts();
     next->createTargets();
@@ -91,7 +93,7 @@ namespace remix::forward {
       next->waterPass->initialize(physical, device, extent, next->samples, next->sceneLayout,
                                   next->materialLayout,
                                   {next->color->view, next->depth->view,
-                                   next->resolved ? next->resolved->view : VK_NULL_HANDLE});
+                                   next->resolved ? next->resolved->view : VK_NULL_HANDLE}, next->waterRaySupported);
       next->statistics.targetBytes += next->waterPass->targetBytes();
     }
     next->baking =
@@ -134,12 +136,19 @@ namespace remix::forward {
     }
     auto &frame = m_gpu->frames[m_gpu->slot];
     frame.giScene = VK_NULL_HANDLE;
+    frame.waterRayScene = VK_NULL_HANDLE;
     if (m_gpu->giSupported)
       m_gpu->statistics.rayGI = m_gpu->liveScene->statistics();
     if (m_gpu->giSupported && m_gpu->liveScene->transport()) {
       const auto &options = m_gpu->options;
       frame.giScene = m_gpu->liveScene->transport()->prepareFragment(
           m_gpu->slot, options.rtGISamples, options.rtGIBounces, options.rtGIDistance);
+    }
+    if (m_gpu->waterRaySupported && m_gpu->liveScene->transport()) {
+      const auto &options = m_gpu->options;
+      frame.waterRayScene = m_gpu->liveScene->transport()->prepareFragment(
+          m_gpu->slot, 1, options.rtReflectionBounces, options.rtReflectionDistance,
+          bake::Transport::FragmentUse::Reflection);
     }
     gpu::GpuScope uploadTime(command, "Forward+ frame uploads");
     m_gpu->prepareFrame(command, resources);

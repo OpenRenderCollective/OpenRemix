@@ -38,8 +38,11 @@ namespace remix::forward::bake {
       std::unique_ptr<Buffer> constants, points, results;
       std::unique_ptr<Buffer> liveLights;
       std::optional<Frame> lighting;
-      std::unique_ptr<Buffer> fragmentConstants;
-      VkDescriptorSet fragment = VK_NULL_HANDLE;
+      struct Fragment {
+        std::unique_ptr<Buffer> constants;
+        VkDescriptorSet set = VK_NULL_HANDLE;
+      };
+      std::array<Fragment, size_t(FragmentUse::Count)> fragments;
       VkDescriptorSet set = VK_NULL_HANDLE;
       uint32_t count = 0, capacity = 0;
       uint32_t samples = 0;

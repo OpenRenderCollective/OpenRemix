@@ -1,3 +1,5 @@
+#ifndef FORWARD_DIELECTRIC_GLSL
+#define FORWARD_DIELECTRIC_GLSL
 // Shared smooth-interface optics for measured water and glass. Distances and
 // extinction must use the same scene units. Ripple normals are a caller policy.
 vec3 beerLambert(vec3 extinction, float distance) {
@@ -16,3 +18,4 @@ float fresnelBoundary(float cosine, float incident, float transmitted) {
       (incident * cosine - transmitted * other) / max(incident * cosine + transmitted * other, 1e-8);
   return clamp(.5 * (parallel * parallel + perpendicular * perpendicular), 0, 1);
 }
+#endif

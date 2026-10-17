@@ -73,7 +73,8 @@ namespace remix::forward::bake {
     check(pipeline::createSampler(device, &info, nullptr, &sampler));
   }
   void Transport::Gpu::createDescriptors() {
-    const uint32_t images = uint32_t(textures.size()), sets = gpuFrameCount * 2;
+    const uint32_t images = uint32_t(textures.size());
+    const uint32_t sets = gpuFrameCount * (1 + uint32_t(FragmentUse::Count));
     const VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, sets},
                                           {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, sets},
                                           {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, sets * 6},

@@ -171,7 +171,7 @@ namespace remix::forward {
             vkCmdBindIndexBuffer(command, draw.geometry->indices->handle, 0, VK_INDEX_TYPE_UINT32);
             vkCmdDrawIndexed(command, draw.count, 1, draw.source.firstIndex, draw.source.vertexOffset, 0);
           }
-        });
+        }, frame.waterRayScene);
     frame.waterComposed = true;
   }
   void Renderer::background(VkCommandBuffer command) {

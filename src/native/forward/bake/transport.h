@@ -56,9 +56,16 @@ namespace remix::forward::bake {
     DeviceBatch deviceBatch(uint32_t slot) const;
     // Reacquire deviceBatch after a CPU-recorded batch: growing that completed
     // slot may replace its buffers. GPU producers must obey its actual capacity.
-    // Separate fragment constants prevent later compute reflection dispatches
-    // from overwriting the GI configuration in the same submission.
-    VkDescriptorSet prepareFragment(uint32_t slot, uint32_t samples, uint32_t bounces, float distance);
+    // Each consumer keeps independent constants/descriptors for the submission.
+    // Compute batches cannot overwrite either fragment configuration.
+    // Prepare once per consumer after the selected slot's fence has completed.
+    enum class FragmentUse : uint32_t {
+      Diffuse,
+      Reflection,
+      Count
+    };
+    VkDescriptorSet prepareFragment(uint32_t slot, uint32_t samples, uint32_t bounces, float distance,
+                                    FragmentUse use = FragmentUse::Diffuse);
     // Stream current analytic lighting into a completed frame slot without
     // rebuilding geometry. Dome texture membership still belongs to the atlas.
     void updateLighting(uint32_t slot, std::span<const LightData> lights, const scene::DistantLight &sun,

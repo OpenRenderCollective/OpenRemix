@@ -18,6 +18,9 @@ layout(set = 2, binding = 10) uniform sampler2D opaqueColor;
 #include "../../shaders/reflection_math.glsl"
 #include "../../shaders/radiance-filter.glsl"
 #include "../../shaders/screen-reflection.glsl"
+#ifdef WATER_RAY
+#include "hardware.glsl"
+#endif
 #include "normal.glsl"
 float waterOpaqueDepth(ivec2 pixel) { return texelFetch(savedDepth, pixel, 0).r; }
 #include "../screen.glsl"
@@ -98,6 +101,9 @@ void main() {
       waterFrame.reflectionTrace, waterFrame.reflectionConfig, uvec2(extent));
   vec4 screenHit = traceScreenReflection(screen, worldPosition, n, boundary.reflected, -v,
                                          roughness, gl_FragCoord.xy / vec2(extent));
+#ifdef WATER_RAY
+  screenHit = waterHardwareReflection(worldPosition, n, boundary.reflected, roughness, screenHit);
+#endif
   reflected = screenHit.rgb + (1 - screenHit.a) * reflected;
   // Absorbed energy becomes the lit body colour, as in the primary path-traced
   // sheet. The interface's reflected energy uses its IOR and filtered probes.

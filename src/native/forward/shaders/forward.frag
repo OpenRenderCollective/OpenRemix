@@ -1,6 +1,6 @@
 #version 460
 #extension GL_GOOGLE_include_directive : require
-#ifdef LIVE_GI
+#if defined(LIVE_GI) || defined(WATER_RAY)
 #extension GL_EXT_ray_query : require
 #endif
 #include "bindings.glsl"

@@ -598,6 +598,7 @@ namespace {
         options.rtGIBounces = 1;
         options.rtGIDistance = 10;
         options.rtReflections = reflections;
+        options.water = reflections;
         options.rtReflectionDistance = .1f;
         options.rtReflectionBounces = 3;
         options.ssr = false;
@@ -614,6 +615,18 @@ namespace {
         options.baking.lightmapTexels = 4096;
         target.enableForward(options);
         const auto receiverMesh = quad(r, 9500, material(r, 9501, 1, 1, 1));
+        remixapi_MaterialInfoTranslucentEXT liquidOptics{};
+        liquidOptics.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_TRANSLUCENT_EXT;
+        liquidOptics.refractiveIndex = 1.333f;
+        liquidOptics.transmittanceColor = {1, 1, 1};
+        liquidOptics.transmittanceMeasurementDistance = 1;
+        remixapi_MaterialInfo liquidInfo{};
+        liquidInfo.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+        liquidInfo.hash = 9520;
+        liquidInfo.pNext = &liquidOptics;
+        remixapi_MaterialHandle liquidMaterial;
+        r.createMaterial(liquidInfo, liquidMaterial);
+        const auto liquidMesh = quad(r, 9521, liquidMaterial);
         remixapi_InstanceIdentityEXT identity{};
         identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
         identity.instanceId = 9502;
@@ -692,6 +705,13 @@ namespace {
         auto render = [&](int source = 0, bool direct = false) {
           camera(r);
           r.drawRetained(nullptr);
+          if (reflections) {
+            // Hidden by the receiver, but prepares the water fragment context.
+            // Its .1 m reflection range must not overwrite the 10 m GI range.
+            auto liquid = instance(liquidMesh, .2f);
+            liquid.transform.matrix[0][0] = liquid.transform.matrix[1][1] = .4f;
+            r.drawInstance(liquid);
+          }
           r.drawLight(liveGreen);
           if (direct)
             r.drawLight(blueSun);
@@ -2371,6 +2391,9 @@ namespace {
     waterInfo.hash = 9016;
     r.createMaterial(waterInfo, waterMaterial);
     const auto waterFloor = makeQuad(9017, waterMaterial, floorPositions, floorNormal);
+    const auto waterRayEmitter = makeQuad(9019, makeMaterial(9018, .5f, 0, 4), wallPositions, wallNormal);
+    const auto waterRayRejected = makeQuad(9021, makeMaterial(9020, .5f, 0, 4, true), wallPositions, wallNormal);
+    const auto waterRayBlack = makeQuad(9023, makeMaterial(9022, .5f, 0, 0), wallPositions, wallNormal);
     float waterRoughness = .04f;
     bool composeWater = false;
     remixapi_MeshHandle reflectionBackdrop = nullptr;
@@ -2581,6 +2604,61 @@ namespace {
                   "Restored ray range recovers the current reflection without history");
           save("hardware-offscreen.ppm", reflected);
         }
+      options.water = true;
+      options.rtGI = true;
+      options.rtGISamples = options.rtGIBounces = 1;
+      options.rtGIDistance = .1f;
+      for (uint32_t samples : {1u, 2u, 4u}) {
+        options.samples = samples;
+        target.enableForward(options);
+        auto waterRayPixels = [&](const auto &image) {
+          size_t hits = 0;
+          for (uint32_t y = target.extent.height / 2; y < target.extent.height; ++y)
+            for (uint32_t x = 0; x < target.extent.width; ++x) {
+              const auto at = (y * target.extent.width + x) * 4;
+              hits += image[at] > 8 && image[at + 1] < 5 && image[at + 2] < 5;
+            }
+          return hits;
+        };
+        const auto reflected = drawScene(false, true, false, true, 0, waterFloor, waterRayEmitter);
+        std::printf("Hardware water reflection %ux: %zu hidden-emitter pixels\n", samples, waterRayPixels(reflected));
+        require(waterRayPixels(reflected) > 12,
+                "Water hardware continuation reflects hidden current geometry with SSR disabled");
+        require(waterRayPixels(drawScene(false, true, false, true, 0, waterFloor, waterRayRejected)) < 3,
+                "Water hardware traversal rejects alpha-tested candidates");
+        options.ssr = true;
+        target.enableForward(options);
+        const auto combinedWater = drawScene(false, true, false, false, 0, waterFloor, waterRayEmitter);
+        bool overbright = false;
+        for (uint32_t y = target.extent.height / 2; y < target.extent.height; ++y)
+          for (uint32_t x = 0; x < target.extent.width; ++x) {
+            const auto at = (y * target.extent.width + x) * 4;
+            if (reflected[at] > 8) overbright |= combinedWater[at] > reflected[at] + 5;
+          }
+        require(waterRayPixels(combinedWater) > 12 && !overbright,
+                "Water SSR and hardware continuation share one reflection lobe without double brightness");
+        options.ssr = false;
+        target.enableForward(options);
+        require(waterRayPixels(drawScene(false, false, false, true, 0, waterFloor)) < 3,
+                "Removing current geometry clears its water hardware reflection");
+        require(waterRayPixels(drawScene(false, true, false, true, 50, waterFloor, waterRayEmitter)) < 3,
+                "Moving a hidden emitter updates water hardware reflection placement");
+        options.rtReflectionDistance = .1f;
+        target.forward->updateLighting(options);
+        require(waterRayPixels(drawScene(false, true, false, true, 0, waterFloor, waterRayEmitter)) < 3,
+                "Water hardware rays obey the reflection range independently of the GI range");
+        options.rtReflectionDistance = 50;
+        options.ssrRoughness = .03f;
+        target.forward->updateLighting(options);
+        require(waterRayPixels(drawScene(false, true, false, true, 0, waterFloor, waterRayEmitter)) < 3,
+                "Water hardware rays obey the shared roughness cutoff");
+        options.ssrRoughness = .6f;
+        target.forward->updateLighting(options);
+        require(waterRayPixels(drawScene(false, true, false, true, 0, waterFloor, waterRayEmitter)) > 12,
+                "Restored water ray settings recover reflections without temporal history");
+        save("hardware-water.ppm", reflected);
+      }
+      options.water = options.rtGI = false;
       options.ssr = true;
       target.enableForward(options);
       const auto combined = drawScene();
@@ -2635,6 +2713,35 @@ namespace {
       std::printf("Hardware/probe blend: %zu replaced, %zu fallback pixels\n", replaced, fallbackPixels);
       require(replaced > 12 && fallbackPixels > 12,
               "Hardware hits replace the blue cubemap while misses retain probe radiance");
+      options.water = true;
+      target.enableForward(options);
+      std::vector<uint8_t> waterBlend;
+      const auto waterDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+      do {
+        waterBlend = drawScene(false, true, false, true, 0, waterFloor, waterRayEmitter);
+        require(target.forward->statistics().baking.state != REMIXAPI_BAKE_FAILED_EXT,
+                "Water hardware/probe fixture bake succeeded");
+        if (target.forward->statistics().baking.active) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      } while (std::chrono::steady_clock::now() < waterDeadline);
+      require(target.forward->statistics().baking.active, "Water hardware reflection probes published");
+      const auto blackWater = drawScene(false, true, false, true, 0, waterFloor, waterRayBlack);
+      size_t waterReplaced = 0, waterFallback = 0, blackHits = 0;
+      for (uint32_t y = target.extent.height / 2; y < target.extent.height; ++y)
+        for (uint32_t x = 0; x < target.extent.width; ++x) {
+          const auto at = (y * target.extent.width + x) * 4;
+          const bool hit = waterBlend[at] > 20 && waterBlend[at + 2] < 8;
+          waterReplaced += hit;
+          waterFallback += waterBlend[at] < 3 && waterBlend[at + 2] > 8;
+          blackHits += hit && blackWater[at] < 3 && blackWater[at + 2] < 3;
+        }
+      std::printf("Hardware water/probe blend: %zu replaced, %zu fallback, %zu valid black pixels\n",
+                  waterReplaced, waterFallback, blackHits);
+      require(waterReplaced > 12 && waterFallback > 12 && blackHits == waterReplaced,
+              "Water ray hits replace probes, misses retain them, and valid black hits suppress fallback");
+      save("hardware-water-probes.ppm", waterBlend);
+      options.water = false;
+      target.enableForward(options);
       remixapi_InstanceIdentityEXT wallIdentity{};
       wallIdentity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
       wallIdentity.instanceId = 9482; wallIdentity.classification = REMIXAPI_INSTANCE_STATIC_EXT;
@@ -3074,6 +3181,7 @@ namespace {
       remix::forward::Options options;
       options.water = true;
       options.samples = samples;
+      options.rtReflections = true; // deliberately unavailable on this core device
       options.ambient = 1;
       options.shadows = options.localShadows = options.ssr = false;
       options.baking.enabled = false;
