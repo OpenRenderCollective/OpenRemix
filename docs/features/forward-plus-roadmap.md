@@ -16,13 +16,19 @@ reports. An implementation or synthetic test alone does not close an integration
 | Modular forward PBR, clustered lights and 1x/2x/4x MSAA | Implemented | Refresh current-build engine coverage through the integration milestone below |
 | World-metric surface charts, atlas budgets and irradiance probes | Implemented; warped boundary fans and modulating surface decals supported | Inspect connected-face continuity, seam donors, close decal receivers and budget coarsening |
 | Soft finite emitters, attributed direct diffuse and live specular | Implemented | Compare visible penumbrae and light separation in the live engine |
-| Dynamic-object shadows combined with baked static shadows | Implemented; captured static casters excluded; world-metric sun bias and one indoor live case exercised | Local-light receiver quality, characters and static membership after map changes |
+| Dynamic-object shadows combined with baked static shadows | Implemented; captured static casters excluded; world-metric sun bias and one indoor live case exercised | Investigate reported specular through walls, including overflow lights outside baked visibility and real-time shadow budgets; local-light receivers, characters and static membership after map changes |
 | Automatic parallax cubemap bounds with tolerance for room details | Coverage-based selection and optional 32-capture capacity; additional indoor maps publish captures | Limited budgets still leave rooms uncovered; review transitions, receiver surfaces and reflection leaks |
 | Rough SSR, optional hardware reflections and live GI | Implemented | Refresh actual-engine toggles and shared-scene lifetime coverage; continue measured performance work where needed |
 | Shared USD/PBR material replacements | Implemented; plain Source roughness fallback corrected | Refresh late material arrival and broader material/BRDF parity in the current engine build |
 | Water optics, normals, HDR refraction, SSR/RT and underwater composition | Implemented and opt-in; above-water engine captures exercised | Underwater/lifecycle validation, noise and visual comparison with the path-traced material response |
 | Optional OIDN indirect-lightmap filtering | Implemented and opt-in | Connected-seam review and lower-sample quality comparisons; distribution of optional dependencies |
 | Usable build and deployment | Feature branches/remotes retained; Windows runtime bundler available | Remaining platform/dependency coverage, lifecycle smoke tests and final delivery instructions |
+
+Forward+ displays a passive map-lighting indicator while preparing or baking, even
+when settings are closed. It shows the current stage's work counts when available
+and a spinner through stages without a known total, including finalization. Probe
+completion is not treated as overall bake completion. The indicator disappears
+when baked lighting is active; a failed bake instead displays its failure message.
 
 ## Next milestones, in order
 

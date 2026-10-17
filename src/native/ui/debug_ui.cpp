@@ -1,6 +1,7 @@
 #include <cstdio>
 #include "runtime/runtime.h"
 #include "ui/context.h"
+#include "ui/bake_progress.h"
 #include "api/imgui_compat.h"
 #include <algorithm>
 #include <cmath>
@@ -67,6 +68,8 @@ namespace remix {
       ImGui::TextUnformatted("F12: settings and diagnostics");
       ImGui::End();
     }
+    if (m_backend == config::Backend::ForwardPlus)
+      ui::drawBakeProgress(bakingStatistics());
     if (m_uiState != REMIXAPI_UI_STATE_NONE) {
       const bool open =
           ui::drawPanel(m_profiles, m_profileUi, this, [](void *user, int tab, config::Settings &settings) {

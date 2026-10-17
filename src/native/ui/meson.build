@@ -1,4 +1,5 @@
 ui_sources = files(
+  'bake_progress.cpp',
   'debug_ui.cpp',
   'panel.cpp',
   'rendering.cpp',
