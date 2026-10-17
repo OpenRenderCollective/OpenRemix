@@ -243,15 +243,24 @@ within an enclosure class; validated irradiance sites provide a fallback. When a
 a worker grows axis-aligned boxes across empty leaves, clipping conservative
 bounds down each BSP path. Artificial empty-leaf splits do not become room boundaries. Nearly duplicate
 fits share one capture. A bounded shortlist spreads fitting work across origins using distance weighted
-by clearance, capped at four metres. Selection then maximizes newly covered proxy volume, subtracting
-the union of earlier boxes as disjoint slabs. Thin ledges and overlapping fits cannot consume slots
-just because they appeared first. This is a greedy proxy-volume policy, not optimal room or receiver
-coverage. Capture origins always require strict empty-space clearance.
+by clearance, capped at four metres. Up to 128 primary fits and 32 grid fallback fits form a bounded
+candidate list. On closed BSP maps, geometry-only hardware queries assess six 8x8 directional faces per
+candidate before lighting is traced. They reuse the captured scene and material-aware traversal, report
+first-hit distance and explicit backface/miss flags, and skip lighting and medium classification. A miss
+does not count as a supporting wall merely because its distance reaches the trace cap.
 
-The transport also exposes geometry-only directional queries for evaluating candidate projections.
-They reuse the captured scene and material-aware traversal, report first-hit distance and explicit
-backface/miss flags, and skip lighting and containing-medium classification. This query infrastructure
-is tested independently; capture allocation does not yet consume candidate hit distances.
+Selection scores newly covered proxy volume by measured geometric agreement, subtracting the union of
+earlier boxes as disjoint slabs. Agreement measures the solid angle with a hit no farther than the proxy
+exit plus a 5% relative margin; nearer interior props remain allowed. A small positive floor preserves
+fallback allocation, and equivalent scores retain input/authored preference. Thin ledges and overlapping
+fits cannot consume slots just because they appeared first. Only selected captures receive the configured
+lighting samples. Geometry checks have a separate adaptive work budget and progress status. Without a
+closed partition, the existing coarse grid fallback remains available without this assessment.
+
+This remains a sampled, greedy policy, not optimal room or receiver coverage. It does not grow bounds
+through walls, fix a doorway's low projection box, or guarantee capture visibility at every receiver.
+Capture origins always require strict empty-space clearance. Optional `REMIX_DEBUG_PROBE_CANDIDATES`
+names a fresh JSON report of all fits, geometry agreement, miss/backface fractions and selected origins.
 
 The default fit tolerates small solid details rather than shrinking an entire face around a ceiling bevel.
 Touching solid fragments are merged when their union nearly fills its bounding box, reassembling

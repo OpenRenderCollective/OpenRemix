@@ -95,7 +95,7 @@ namespace remix::forward::probes {
     while (result.size() < std::min(size_t(count), regions.size())) {
       check(cancelled);
       size_t best = regions.size();
-      double bestVolume = 0;
+      double bestScore = 0;
       for (size_t i = 0; i < regions.size(); ++i) {
         double gain = 0;
         for (const auto &piece : uncovered[i])
@@ -104,11 +104,15 @@ namespace remix::forward::probes {
         // selected boxes. A large enclosing region can still add useful space.
         if (gain <= .05 * volume(regions[i].bounds))
           continue;
-        if (best == regions.size() ||
-            std::tuple{regions[i].site.enclosedAxes, gain} >
-                std::tuple{regions[best].site.enclosedAxes, bestVolume}) {
+        const double score = gain * std::clamp(regions[i].quality, .05f, 1.f);
+        // Equivalent fits can differ slightly after floating-point face growth.
+        // Keep input/authored preference unless the score meaningfully
+        // improves.
+        if (best == regions.size() || regions[i].site.enclosedAxes > regions[best].site.enclosedAxes ||
+            (regions[i].site.enclosedAxes == regions[best].site.enclosedAxes &&
+             score > bestScore * 1.00001)) {
           best = i;
-          bestVolume = gain;
+          bestScore = score;
         }
       }
       if (best == regions.size())

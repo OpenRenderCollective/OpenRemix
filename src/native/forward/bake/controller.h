@@ -64,7 +64,7 @@ namespace remix::forward::bake {
       std::shared_ptr<Volume> sampled;
       uint32_t first = 0, count = 0;
       bool preparation = false, radiance = false, surface = false, visibility = false, reflectionSite = false,
-           sun = false, overflowVisibility = false;
+           sun = false, overflowVisibility = false, reflectionGeometry = false;
     };
     VkPhysicalDevice m_physical;
     VkDevice m_device;

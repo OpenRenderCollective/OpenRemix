@@ -44,6 +44,16 @@ int main() {
   require(budget.count(Work::Reflection, 1024, 0, 8192, 8, 5000) == 16 &&
               budget.count(Work::Reflection, 1024, 8, 8192, 8, 5000) <= 256,
           "Reflection capture quality obeys the same manual and timed ray-work ceilings");
+  Budget geometry;
+  for (uint32_t iteration = 0; iteration < 12; ++iteration) {
+    const auto points = geometry.count(Work::Geometry, 64, 8, 1, 1, 61440);
+    require(points <= 61440 && points <= Budget::maximumPoints && points <= Budget::maximumWork,
+            "Candidate geometry obeys storage, remaining-work and ray-work bounds");
+    geometry.observe(Work::Geometry, points, .01, 8);
+  }
+  require(geometry.count(Work::Geometry, 64, 8, 1, 1, 61440) == 61440,
+          "Fast geometry queries can fill the bounded candidate set without "
+          "inheriting lighting sample cost");
   b.batch = 1024;
   b.gpuBudgetMs = 0;
   b.diskCache = false;

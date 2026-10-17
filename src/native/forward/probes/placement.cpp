@@ -1,4 +1,4 @@
-#include "forward/probes/data.h"
+#include "forward/probes/placement.h"
 #include "forward/probes/regions.h"
 #include "forward/probes/selection.h"
 #include <algorithm>
@@ -54,9 +54,9 @@ namespace remix::forward::probes {
       result.push_back(site.position);
     return result;
   }
-  std::vector<Capture> place(const scene::BakeScene &scene, const bake::Grid &grid, uint32_t count,
-                             uint32_t resolution, std::stop_token cancelled, float detailTolerance,
-                             const std::vector<Vec3> *validatedSites) {
+  std::vector<FittedRegion> fitCandidates(const scene::BakeScene &scene, const bake::Grid &grid,
+                                          uint32_t count, std::stop_token cancelled, float detailTolerance,
+                                          const std::vector<Vec3> *validatedSites) {
     if (count > maxProbes || !std::isfinite(detailTolerance) || detailTolerance < 0)
       throw std::invalid_argument("Too many reflection probes");
     if (!count)
@@ -82,32 +82,10 @@ namespace remix::forward::probes {
       second.minimum[axis] = middle;
       boxes.push_back(second);
     }
-    std::vector<Capture> captures;
+    std::vector<FittedRegion> regions;
     const bool fitted = scene.partition && scene.partition->closed;
-    auto duplicate = [&](const Bounds &region) {
-      for (const auto &capture : captures) {
-        double overlap = 1, a = 1, b = 1;
-        for (uint32_t c = 0; c < 3; ++c) {
-          overlap *= std::max(0., double(std::min(region.maximum[c], capture.bounds.maximum[c])) -
-                                      std::max(region.minimum[c], capture.bounds.minimum[c]));
-          a *= double(region.maximum[c]) - region.minimum[c];
-          b *= double(capture.bounds.maximum[c]) - capture.bounds.minimum[c];
-        }
-        if (overlap > .95 * std::min(a, b))
-          return true;
-      }
-      return false;
-    };
-    auto append = [&](Bounds box, Vec3 position) {
-      Capture capture{box, position, resolution, {}, box};
-      if (fitted)
-        capture.influence = receiverRegion(*scene.partition, box, .002f / scene.sceneScale, cancelled,
-                                            {detailTolerance / scene.sceneScale});
-      capture.radiance.resize(rays(capture).size());
-      captures.push_back(std::move(capture));
-    };
     auto covered = [&](Vec3 position) {
-      return std::any_of(captures.begin(), captures.end(), [&](const auto &capture) {
+      return std::any_of(regions.begin(), regions.end(), [&](const auto &capture) {
         for (uint32_t c = 0; c < 3; ++c)
           if (position[c] < capture.bounds.minimum[c] || position[c] > capture.bounds.maximum[c])
             return false;
@@ -131,7 +109,6 @@ namespace remix::forward::probes {
                                           64.f / scene.sceneScale, cancelled))
           assessed.push_back(*site);
       }
-      std::vector<FittedRegion> regions;
       for (auto index : spreadSites(assessed, budget, 4.f / scene.sceneScale, cancelled)) {
         const auto &site = assessed[index];
         const auto region = fitRegion(*scene.partition, bounds, site.position, .001f / scene.sceneScale,
@@ -139,11 +116,9 @@ namespace remix::forward::probes {
         if (region)
           regions.push_back({*region, site});
       }
-      for (auto index : selectRegions(regions, count, cancelled))
-        append(regions[index].bounds, regions[index].site.position);
     }
     for (auto box : boxes) {
-      if (captures.size() == count)
+      if (regions.size() == budget + count)
         break;
       Vec3 center;
       for (uint32_t c = 0; c < 3; ++c)
@@ -178,8 +153,6 @@ namespace remix::forward::probes {
                         {detailTolerance / scene.sceneScale});
           if (!region)
             continue;
-          if (duplicate(*region))
-            continue;
           box = *region;
         }
         selected = index;
@@ -195,8 +168,31 @@ namespace remix::forward::probes {
         box.maximum[c] = std::min(bounds.maximum[c], box.maximum[c] + padding);
       }
       const auto &p = grid.points[selected].position;
-      append(box, {p[0], p[1], p[2]});
+      regions.push_back({box, {{p[0], p[1], p[2]}, 0, 0}});
+    }
+    return regions;
+  }
+  std::vector<Capture> captureCandidates(const scene::BakeScene &scene, std::span<const FittedRegion> regions,
+                                         uint32_t count, uint32_t resolution, std::stop_token cancelled,
+                                         float detailTolerance) {
+    if (count > maxProbes || !std::isfinite(detailTolerance) || detailTolerance < 0)
+      throw std::invalid_argument("Invalid reflection capture budget");
+    std::vector<Capture> captures;
+    for (auto index : selectRegions(regions, count, cancelled)) {
+      const auto &region = regions[index];
+      Capture capture{region.bounds, region.site.position, resolution, {}, region.bounds};
+      if (scene.partition && scene.partition->closed)
+        capture.influence = receiverRegion(*scene.partition, region.bounds, .002f / scene.sceneScale,
+                                           cancelled, {detailTolerance / scene.sceneScale});
+      capture.radiance.resize(rays(capture).size());
+      captures.push_back(std::move(capture));
     }
     return captures;
+  }
+  std::vector<Capture> place(const scene::BakeScene &scene, const bake::Grid &grid, uint32_t count,
+                             uint32_t resolution, std::stop_token cancelled, float detailTolerance,
+                             const std::vector<Vec3> *validatedSites) {
+    const auto regions = fitCandidates(scene, grid, count, cancelled, detailTolerance, validatedSites);
+    return captureCandidates(scene, regions, count, resolution, cancelled, detailTolerance);
   }
 } // namespace remix::forward::probes

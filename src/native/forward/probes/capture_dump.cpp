@@ -1,4 +1,6 @@
 #include "forward/probes/capture_dump.h"
+#include "forward/probes/selection.h"
+#include <algorithm>
 #include <bit>
 #include <cstdio>
 #include <cstdlib>
@@ -9,6 +11,44 @@
 #include <unordered_set>
 
 namespace remix::forward::probes {
+  void dumpCandidates(uint64_t sceneHash, std::span<const FittedRegion> regions,
+                      std::span<const Capture> captures) noexcept {
+    const char *path = std::getenv("REMIX_DEBUG_PROBE_CANDIDATES");
+    if (!path || !*path)
+      return;
+    try {
+      if (std::filesystem::exists(path))
+        throw std::runtime_error("Candidate report exists; choose a fresh path");
+      std::ofstream output(path);
+      output.exceptions(std::ios::failbit | std::ios::badbit);
+      output.precision(9);
+      auto vector = [&](Vec3 value) {
+        output << '[' << value[0] << ',' << value[1] << ',' << value[2] << ']';
+      };
+      output << "{\"version\":1,\"sceneHash\":\"" << sceneHash << "\",\"candidates\":[\n";
+      for (size_t i = 0; i < regions.size(); ++i) {
+        const auto &region = regions[i];
+        const bool selected = std::any_of(captures.begin(), captures.end(), [&](const auto &capture) {
+          return capture.position == region.site.position &&
+                 capture.bounds.minimum == region.bounds.minimum &&
+                 capture.bounds.maximum == region.bounds.maximum;
+        });
+        output << (i ? ",\n" : "") << "{\"position\":";
+        vector(region.site.position);
+        output << ",\"minimum\":";
+        vector(region.bounds.minimum);
+        output << ",\"maximum\":";
+        vector(region.bounds.maximum);
+        output << ",\"evaluated\":" << (region.geometryEvaluated ? "true" : "false")
+               << ",\"agreement\":" << region.quality << ",\"missFraction\":" << region.missFraction
+               << ",\"backfaceFraction\":" << region.backfaceFraction
+               << ",\"selected\":" << (selected ? "true" : "false") << '}';
+      }
+      output << "\n]}\n";
+    } catch (const std::exception &error) {
+      std::fprintf(stderr, "Reflection candidate report unavailable: %s\n", error.what());
+    }
+  }
   namespace {
     void dumpData(const char *suffix, const void *data, size_t bytes, bool frameRequest) noexcept {
       const char *prefix = std::getenv("REMIX_DEBUG_BAKE_CAPTURE_PREFIX");

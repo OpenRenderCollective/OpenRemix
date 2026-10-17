@@ -2,11 +2,13 @@
 #include "forward/bake/budget.h"
 #include "forward/bake/cache.h"
 #include "forward/bake/transport.h"
-#include "forward/mixed/overflow.h"
-#include "forward/lightmap/denoise.h"
 #include "forward/image_dump.h"
+#include "forward/lightmap/denoise.h"
+#include "forward/mixed/overflow.h"
 #include "forward/probes/capture_dump.h"
 #include "forward/probes/data.h"
+#include "forward/probes/evaluation.h"
+#include "forward/probes/placement.h"
 #include "raster/renderer.h"
 #include <algorithm>
 #include <atomic>
@@ -59,6 +61,10 @@ namespace remix::forward::bake {
     std::vector<uint8_t> usableReflectionSites;
     uint32_t siteNext = 0, siteReceived = 0;
     bool sitesPlanned = false;
+    std::vector<probes::FittedRegion> candidateRegions;
+    std::unique_ptr<probes::ProjectionAudit> projectionAudit;
+    uint32_t geometryNext = 0, geometryReceived = 0;
+    bool candidatesPlanned = false;
     std::vector<probes::Capture> captures;
     std::vector<Point> captureRays;
     probes::Data specular;
@@ -262,32 +268,40 @@ namespace remix::forward::bake {
             job.readback.resize(submission.count);
           const auto results = std::span(job.readback).first(submission.count);
           job.transport->read(slot, results);
-          for (uint32_t i = 0; i < submission.count; ++i) {
-            auto &value = results[i];
-            bool finite = true;
-            for (const auto &coefficient : value.irradiance)
-              for (float channel : coefficient)
-                finite = finite && std::isfinite(channel);
-            if (!finite) {
+          if (submission.reflectionGeometry) {
+            if (!job.projectionAudit->observe(submission.first, results)) {
               job.failed = true;
-              status(REMIXAPI_BAKE_FAILED_EXT, "Bake produced non-finite irradiance");
+              status(REMIXAPI_BAKE_FAILED_EXT, "Invalid reflection projection geometry");
             }
-            if (submission.radiance) {
-              const uint32_t count = uint32_t(job.captures.front().radiance.size());
-              const uint32_t ray = submission.first + i;
-              auto color = value.irradiance[0];
-              for (uint32_t c = 0; c < 3; ++c)
-                color[c] = std::clamp(color[c], 0.f, 65000.f);
-              job.captures[ray / count].radiance[ray % count] = color;
-            } else if (submission.reflectionSite) {
-              job.usableReflectionSites[submission.first + i] =
-                  !job.failed && value.statistics[2] == reflectionSiteSamples &&
-                  std::isfinite(value.statistics[0]) && value.statistics[0] >= 0 && value.statistics[0] < .5f;
-            } else if (submission.surface) {
-              job.surfaces[submission.first + i] = value;
-            } else {
-              value.statistics[3] = !job.failed && value.statistics[0] < .5f ? 1.f : 0.f;
-              job.grid.probes[job.grid.tasks[submission.first + i]] = value;
+          } else {
+            for (uint32_t i = 0; i < submission.count; ++i) {
+              auto &value = results[i];
+              bool finite = true;
+              for (const auto &coefficient : value.irradiance)
+                for (float channel : coefficient)
+                  finite = finite && std::isfinite(channel);
+              if (!finite) {
+                job.failed = true;
+                status(REMIXAPI_BAKE_FAILED_EXT, "Bake produced non-finite irradiance");
+              }
+              if (submission.radiance) {
+                const uint32_t count = uint32_t(job.captures.front().radiance.size());
+                const uint32_t ray = submission.first + i;
+                auto color = value.irradiance[0];
+                for (uint32_t c = 0; c < 3; ++c)
+                  color[c] = std::clamp(color[c], 0.f, 65000.f);
+                job.captures[ray / count].radiance[ray % count] = color;
+              } else if (submission.reflectionSite) {
+                job.usableReflectionSites[submission.first + i] =
+                    !job.failed && value.statistics[2] == reflectionSiteSamples &&
+                    std::isfinite(value.statistics[0]) && value.statistics[0] >= 0 &&
+                    value.statistics[0] < .5f;
+              } else if (submission.surface) {
+                job.surfaces[submission.first + i] = value;
+              } else {
+                value.statistics[3] = !job.failed && value.statistics[0] < .5f ? 1.f : 0.f;
+                job.grid.probes[job.grid.tasks[submission.first + i]] = value;
+              }
             }
           }
         }
@@ -297,6 +311,7 @@ namespace remix::forward::bake {
                              (submission.visibility || submission.sun || submission.overflowVisibility
                                   ? sizeof(VisibilityResult) : sizeof(Result));
         (submission.radiance             ? job.captureReceived
+         : submission.reflectionGeometry ? job.geometryReceived
          : submission.reflectionSite     ? job.siteReceived
          : submission.visibility         ? job.visibilityReceived
          : submission.overflowVisibility ? job.overflowReceived
@@ -304,12 +319,13 @@ namespace remix::forward::bake {
          : submission.surface            ? job.surfaceReceived
                                          : job.received) += submission.count;
         if (const auto elapsed = job.transport->elapsed(slot)) {
-          const auto work = submission.visibility || submission.overflowVisibility ? Work::Visibility
-                            : submission.sun                                      ? Work::Sun
-                            : submission.reflectionSite                           ? Work::Site
-                            : submission.radiance                                 ? Work::Reflection
-                            : submission.surface                                  ? Work::Surface
-                                                                                  : Work::Irradiance;
+          const auto work = submission.reflectionGeometry                            ? Work::Geometry
+                            : submission.visibility || submission.overflowVisibility ? Work::Visibility
+                            : submission.sun                                         ? Work::Sun
+                            : submission.reflectionSite                              ? Work::Site
+                            : submission.radiance                                    ? Work::Reflection
+                            : submission.surface                                     ? Work::Surface
+                                                                                     : Work::Irradiance;
           job.budget.observe(work, submission.count, *elapsed, m_config.gpuBudgetMs);
         }
         m_statistics.completed = job.received;
@@ -502,8 +518,8 @@ namespace remix::forward::bake {
       status(REMIXAPI_BAKE_TRACING_EXT, progress);
       return;
     }
-    if (!job.capturePlanned) {
-      job.capturePlanned = true;
+    if (!job.candidatesPlanned) {
+      job.candidatesPlanned = true;
       const auto owner = m_job;
       job.ticket =
           m_pipelines->prepare("forward-probe-placement-" + std::to_string(++generation), [owner, config] {
@@ -513,15 +529,58 @@ namespace remix::forward::bake {
                 const auto &position = owner->reflectionSites[i].position;
                 validated.push_back({position[0], position[1], position[2]});
               }
-            owner->captures = probes::place(*owner->source, owner->grid, config.reflectionProbes,
-                                            config.reflectionResolution, owner->cancellation.get_token(),
-                                            config.reflectionDetailTolerance, &validated);
+            auto regions = probes::fitCandidates(*owner->source, owner->grid, config.reflectionProbes,
+                                                 owner->cancellation.get_token(),
+                                                 config.reflectionDetailTolerance, &validated);
+            if (owner->source->partition && owner->source->partition->closed && !regions.empty())
+              owner->projectionAudit = std::make_unique<probes::ProjectionAudit>(
+                  std::move(regions), owner->cancellation.get_token());
+            else
+              owner->candidateRegions = std::move(regions);
+          });
+      status(REMIXAPI_BAKE_PREPARING_EXT, "Fitting reflection candidates");
+      return;
+    }
+    if (job.projectionAudit && job.geometryReceived < job.projectionAudit->rays().size()) {
+      auto &submission = m_submissions[m_slot];
+      if (submission.job)
+        throw std::logic_error("Reflection geometry slot reused before its fence");
+      const auto rays = job.projectionAudit->rays();
+      if (job.geometryNext < rays.size()) {
+        const uint32_t count = job.count(Work::Geometry, config, uint32_t(rays.size() - job.geometryNext), 1);
+        job.transport->recordGeometry(command, m_slot, rays.subspan(job.geometryNext, count));
+        submission.job = m_job;
+        submission.reflectionGeometry = true;
+        submission.first = job.geometryNext;
+        submission.count = count;
+        job.geometryNext += count;
+      }
+      char progress[128];
+      std::snprintf(progress, sizeof(progress), "Checking reflection projection geometry (%u/%zu rays)",
+                    job.geometryReceived, rays.size());
+      status(REMIXAPI_BAKE_TRACING_EXT, progress);
+      return;
+    }
+    if (!job.capturePlanned) {
+      job.capturePlanned = true;
+      const auto owner = m_job;
+      job.ticket =
+          m_pipelines->prepare("forward-probe-selection-" + std::to_string(++generation), [owner, config] {
+            if (owner->projectionAudit) {
+              owner->candidateRegions = owner->projectionAudit->finish();
+              owner->projectionAudit.reset();
+            }
+            owner->captures = probes::captureCandidates(
+                *owner->source, owner->candidateRegions, config.reflectionProbes, config.reflectionResolution,
+                owner->cancellation.get_token(), config.reflectionDetailTolerance);
+            probes::dumpCandidates(owner->source->contentHash, owner->candidateRegions, owner->captures);
+            releaseStorage(owner->candidateRegions);
             for (const auto &capture : owner->captures) {
               auto rays = probes::rays(capture);
               owner->captureRays.insert(owner->captureRays.end(), rays.begin(), rays.end());
             }
           });
-      status(REMIXAPI_BAKE_PREPARING_EXT, "Fitting reflection volumes");
+      status(REMIXAPI_BAKE_PREPARING_EXT, "Selecting reflection captures");
       return;
     }
     if (job.captureReceived == job.captureRays.size()) {
@@ -765,7 +824,8 @@ namespace remix::forward::bake {
         profile && std::strcmp(profile, "1") == 0) {
       std::fprintf(stderr, "Bake CPU readback: total_ms=%.3f bytes=%llu\n", m_job->readbackMs,
                    static_cast<unsigned long long>(m_job->readbackBytes));
-      constexpr const char *names[] = {"grid", "surface", "visibility", "sun", "sites", "reflections"};
+      constexpr const char *names[] = {"grid",  "surface",     "visibility", "sun",
+                                       "sites", "reflections", "geometry"};
       for (uint32_t i = 0; i < uint32_t(Work::Count); ++i) {
         const auto &timing = m_job->budget.statistics(Work(i));
         std::fprintf(stderr, "Bake GPU timing: %s points=%llu batches=%llu total_ms=%.3f "
