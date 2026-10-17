@@ -214,6 +214,9 @@ namespace remix::forward::bake {
                                        uint32_t samples) {
     record(command, slot, points, samples, 1, 0, Mode::SiteValidation);
   }
+  void Transport::recordGeometry(VkCommandBuffer command, uint32_t slot, std::span<const Point> rays) {
+    record(command, slot, rays, 1, 1, 0, Mode::Geometry);
+  }
   void Transport::recordVisibility(VkCommandBuffer command, uint32_t slot,
                                    std::span<const VisibilityPoint> points, uint32_t samples,
                                    bool directDiffuse) {
@@ -250,11 +253,11 @@ namespace remix::forward::bake {
         for (float value : values)
           if (!std::isfinite(value))
             throw std::invalid_argument("Non-finite bake point");
-      if (mode == Mode::Radiance) {
+      if (mode == Mode::Radiance || mode == Mode::Geometry) {
         const Vec3 direction{point.normal[0], point.normal[1], point.normal[2]};
         const float lengthSquared = dot(direction, direction);
         if (!std::isfinite(lengthSquared) || lengthSquared < 1e-10f)
-          throw std::invalid_argument("Invalid reflection capture direction");
+          throw std::invalid_argument("Invalid directional bake ray");
       }
     }
     g.reserveSlot(index, uint32_t(points.size()));
@@ -386,7 +389,7 @@ namespace remix::forward::bake {
     slot.count = count;
     slot.samples = samples;
     g.timing->begin(command, index);
-    const bool parallel = g.options.parallel && mode != Mode::SiteValidation &&
+    const bool parallel = g.options.parallel && mode != Mode::SiteValidation && mode != Mode::Geometry &&
                           (mode != Mode::Radiance || samples > 1);
     slot.compactVisibility = parallel && g.options.cpuReadback &&
                              (mode == Mode::Visibility || mode == Mode::DirectVisibility ||

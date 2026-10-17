@@ -4,6 +4,10 @@ float random(inout uint state) {
   uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
   return float((word >> 22u) ^ word) * (1.0 / 4294967296.0);
 }
+uint directionSeed(vec3 direction, uint seed) {
+  uvec3 bits = floatBitsToUint(direction);
+  return seed ^ bits.x * 73856093u ^ bits.y * 19349663u ^ bits.z * 83492791u;
+}
 vec3 basisDirection(vec3 n, float cosine, float phi) {
   vec3 t = normalize(cross(abs(n.z) < .99 ? vec3(0, 0, 1) : vec3(1, 0, 0), n));
   return n * cosine + sqrt(max(0, 1 - cosine * cosine)) * (t * cos(phi) + cross(n, t) * sin(phi));

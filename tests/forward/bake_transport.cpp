@@ -1215,6 +1215,44 @@ namespace {
     std::vector<bake::Result> results(rays.size());
     transport.read(0, results);
     transport.releaseBuildInputs();
+    std::vector<bake::Result> geometry(rays.size());
+    const auto geometryBytes = transport.memoryBytes();
+    fixture.begin();
+    transport.recordGeometry(fixture.command, 0, rays);
+    fixture.finish();
+    transport.read(0, geometry);
+    for (size_t i = 0; i < rays.size(); ++i) {
+      require(std::abs(geometry[i].irradiance[0][3] - results[i].irradiance[0][3]) < 1e-5f &&
+                  geometry[i].statistics[0] == results[i].statistics[0] &&
+                  geometry[i].statistics[1] == results[i].statistics[1] && geometry[i].statistics[2] == 1,
+              "Geometry-only candidate rays match captured first-hit distance, backface and explicit miss flags");
+      require(geometry[i].irradiance[0][0] == 0 && geometry[i].irradiance[0][1] == 0 &&
+                  geometry[i].irradiance[0][2] == 0,
+              "Candidate geometry queries do not evaluate lighting");
+    }
+    require(transport.memoryBytes() == geometryBytes,
+            "Geometry-only candidate queries reuse the prepared transport buffers and acceleration structure");
+    const bake::Point axial[] = {{{0, 0, 0, 0}, {0, 0, 4, 0}},
+                                 {{0, 0, 0, 0}, {0, 0, -4, 0}}};
+    fixture.begin();
+    transport.recordGeometry(fixture.command, 0, axial);
+    fixture.finish();
+    bake::Result axialResults[2];
+    transport.read(0, axialResults);
+    require(std::abs(axialResults[0].irradiance[0][3] - 1) < 1e-6f &&
+                axialResults[0].statistics[1] == 0 && axialResults[1].statistics[1] == 1 &&
+                std::abs(axialResults[1].irradiance[0][3] - options.distance / scene->sceneScale) < 1e-5f,
+            "Geometry rays normalize directions without origin bias and distinguish a hit from a distance-cap miss");
+    bool geometryRefused = false;
+    const bake::Point zeroDirection{};
+    try {
+      transport.recordGeometry(fixture.command, 0, {&zeroDirection, 1});
+    } catch (const std::invalid_argument &) {
+      geometryRefused = true;
+    }
+    require(geometryRefused, "Geometry queries reject zero directions before recording commands");
+    std::printf("Candidate geometry: %zu first-hit distances/flags match radiance; explicit miss, "
+                "unit directions and prepared-buffer reuse passed\n", rays.size());
     for (const auto &result : results)
       capture.radiance.push_back(result.irradiance[0]);
     const auto &positiveZ = capture.radiance[4 * 64 + 36];

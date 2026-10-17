@@ -248,6 +248,11 @@ the union of earlier boxes as disjoint slabs. Thin ledges and overlapping fits c
 just because they appeared first. This is a greedy proxy-volume policy, not optimal room or receiver
 coverage. Capture origins always require strict empty-space clearance.
 
+The transport also exposes geometry-only directional queries for evaluating candidate projections.
+They reuse the captured scene and material-aware traversal, report first-hit distance and explicit
+backface/miss flags, and skip lighting and containing-medium classification. This query infrastructure
+is tested independently; capture allocation does not yet consume candidate hit distances.
+
 The default fit tolerates small solid details rather than shrinking an entire face around a ceiling bevel.
 Touching solid fragments are merged when their union nearly fills its bounding box, reassembling
 rectangular wall subdivisions. L-shaped trim keeps its separate bounds, so a ring of ceiling bevels does

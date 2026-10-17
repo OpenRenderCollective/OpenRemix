@@ -35,7 +35,7 @@ void main() {
     return;
   RayPoint point = rayPoints[index];
   vec3 origin = point.position.xyz;
-  if (rayFrame.control.z != 1u && dot(point.normal.xyz, point.normal.xyz) > 1e-10)
+  if (rayFrame.control.z != 1u && rayFrame.control.z != 7u && dot(point.normal.xyz, point.normal.xyz) > 1e-10)
     origin += normalize(point.normal.xyz) * rayFrame.trace.y;
   RayResult outputValue;
   for (uint i = 0; i < 9; ++i)
@@ -46,6 +46,20 @@ void main() {
   uint seed = floatBitsToUint(origin.x) * 73856093u ^ floatBitsToUint(origin.y) * 19349663u ^
               floatBitsToUint(origin.z) * 83492791u ^ (rayFrame.control.y + 1u) * 2654435761u;
 #ifndef COMPACT_VISIBILITY
+#ifndef PARALLEL_BAKE
+  if (rayFrame.control.z == 7u) {
+    // Evaluate the actual captured geometry before spending lighting samples
+    // on a candidate. No containing-medium queries, lighting or SH convolution.
+    Hit hit;
+    vec3 direction = normalize(point.normal.xyz);
+    seed = directionSeed(direction, seed);
+    bool found = traceRay(origin, direction, rayFrame.trace.x, seed, hit);
+    outputValue.irradiance[0].w = hit.distance;
+    outputValue.statistics = vec4(found && !hit.front ? 1 : 0, found ? 0 : 1, 1, 0);
+    storeResult(index, outputValue);
+    return;
+  }
+#endif
   if (rayFrame.control.z == 4u) {
     float rotation = random(seed) * 2 * RayPi;
     for (uint i = 0; i < rayFrame.counts.z; ++i) {
@@ -180,8 +194,7 @@ void main() {
     // split into different batches. Batch-local invocation IDs are scheduling
     // details, not part of a lighting sample's identity.
     vec3 direction = normalize(point.normal.xyz);
-    uvec3 directionBits = floatBitsToUint(direction);
-    seed ^= directionBits.x * 73856093u ^ directionBits.y * 19349663u ^ directionBits.z * 83492791u;
+    seed = directionSeed(direction, seed);
     // Average lighting at this fixed primary direction. Independent sample
     // identities preserve the result across point batches and sample chunks;
     // sample zero also retains the original single-ray/live-reflection stream.
