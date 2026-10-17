@@ -241,7 +241,8 @@ namespace remix::forward::lightmap {
     }
   } // namespace
   Layout plan(const scene::BakeScene &scene, Options options, std::stop_token cancelled) {
-    auto result = packCharts(scene, options, cancelled);
+    const auto shapes = prepareCharts(scene, options, cancelled);
+    auto result = packCharts(shapes, options, cancelled);
     return sampleCharts(scene, options, std::move(result), cancelled);
   }
   Layout sampleCharts(const scene::BakeScene &scene, const Options &options, Layout result,

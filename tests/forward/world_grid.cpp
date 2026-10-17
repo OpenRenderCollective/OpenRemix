@@ -113,7 +113,14 @@ namespace {
     return layout.points[layout.owners[(a.page * layout.pageSize + y) * layout.pageSize + x]];
   }
 } // namespace
+void curvedLightmapTests();
 int main() {
+  try {
+    curvedLightmapTests();
+  } catch (const std::exception &error) {
+    std::fprintf(stderr, "Curved chart exception: %s\n", error.what());
+    return 1;
+  }
   auto scene = adjacent(true);
   auto &rotated = scene.charts[1];
   const float oldWidth = float(rotated.width - 1);
@@ -196,8 +203,8 @@ int main() {
   displaced.draws[1].surface->vertices[2].position[2] = .1f;
   const auto curved = lm::plan(displaced, options);
   require(curved.mappings[0].worldGrid && !curved.mappings[1].worldGrid &&
-              curved.mappings[1].width == displaced.charts[1].width,
-          "Nonplanar geometry retains its authored unwrapping instead of flattening or folding");
+              curved.mappings[1].curvedMetric && curved.mappings[1].intrinsic,
+          "Nonplanar geometry receives an intrinsic world-metric chart");
   auto transformed = adjacent();
   transformed.sceneScale = .0254f;
   for (auto &draw : transformed.draws) {
@@ -249,5 +256,5 @@ int main() {
   }
   require(stopped, "Budget refinement propagates cancellation rather than treating it as a packing failure");
   std::puts("Metre-space density, global coarsening, connected seams, T-junctions, isolation and curved "
-            "fallback passed");
+            "surface metrics passed");
 }

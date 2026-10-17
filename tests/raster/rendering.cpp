@@ -1068,7 +1068,32 @@ namespace {
         target.render();
     }
   }
-  void surfaceLightmapTests() {
+  remixapi_MeshHandle curvedLightmapReceiver(remix::NativeResources &resources,
+                                           remixapi_MaterialHandle material) {
+    remixapi_HardcodedVertex vertices[4]{};
+    const float positions[4][3] = {
+        {-.8f, -.8f, .5f}, {.8f, -.8f, .5f}, {.8f, .8f, .65f}, {-.8f, .8f, .5f}};
+    for (uint32_t i = 0; i < 4; ++i) {
+      std::copy_n(positions[i], 3, vertices[i].position);
+      vertices[i].color = 0xffffffff;
+    }
+    const uint32_t indices[] = {0, 2, 1, 0, 3, 2};
+    remixapi_MeshInfoSurfaceTriangles surface{};
+    surface.vertices_values = vertices;
+    surface.vertices_count = 4;
+    surface.indices_values = indices;
+    surface.indices_count = 6;
+    surface.material = material;
+    remixapi_MeshInfo info{};
+    info.sType = REMIXAPI_STRUCT_TYPE_MESH_INFO;
+    info.hash = 9502;
+    info.surfaces_values = &surface;
+    info.surfaces_count = 1;
+    remixapi_MeshHandle mesh;
+    resources.createMesh(info, mesh);
+    return mesh;
+  }
+  void surfaceLightmapTests(bool curved = false) {
     for (bool ssr : {false, true})
       for (uint32_t samples : {1u, 2u, 4u}) {
         Target target(64, 64, true);
@@ -1087,13 +1112,14 @@ namespace {
         options.baking.reflectionProbes = 0;
         options.baking.lightmapPageSize = 64;
         options.baking.lightmapTexels = 4096;
+        if (curved) options.baking.lightmapLuxelSize = .1f;
         // The 4x case needs a three-centimetre grid to fit this page. Doubling
         // alone would stop at four; exercise the refined layout on the GPU.
-        if (samples == 4) options.baking.lightmapLuxelSize = .01f;
+        if (samples == 4 && !curved) options.baking.lightmapLuxelSize = .01f;
         target.enableForward(options);
         const auto white = material(r, 9500, 1, 1, 1);
         const auto black = material(r, 9501, 0, 0, 0);
-        const auto receiverMesh = quad(r, 9502, white);
+        const auto receiverMesh = curved ? curvedLightmapReceiver(r, white) : quad(r, 9502, white);
         const auto blockerMesh = quad(r, 9503, black);
         remixapi_InstanceIdentityEXT identity{};
         identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
@@ -1158,9 +1184,9 @@ namespace {
         const auto content = target.forward->statistics().bakeContent;
         require(content.grid && content.reflections && content.surfaces,
                 "Published lighting diagnostics fingerprint the packed bake payloads");
-        if (samples == 4)
+        if (samples == 4 && !curved)
           require(std::strstr(target.forward->statistics().baking.status, "3025 surface texels") &&
-                      std::strstr(target.forward->statistics().baking.status, "0.03 m planar luxels"),
+                      std::strstr(target.forward->statistics().baking.status, "0.03 m surface luxels"),
                   "The intermediate world density publishes complete surface lighting within the atlas budget");
         const size_t left = (32 * 64 + 16) * 4, right = (32 * 64 + 48) * 4;
         require(first[right + 1] > 80 && first[left + 1] < first[right + 1] * .3f,
@@ -1255,8 +1281,8 @@ namespace {
         pixel(target.render(), 48, 32, 0, 0, 0, "Moved geometry rejects stale surface chart bindings");
         r.setBakeScene(nullptr);
         for (uint32_t i = 0; i < remix::gpuFrameCount + 1; ++i) target.render();
-        std::printf("Surface lightmap %ux MSAA, SSR %s: shaded green %u, exposed green %u; replacement, cancellation and stale bindings passed\n",
-                      samples, ssr ? "on" : "off", unsigned(first[left + 1]), unsigned(first[right + 1]));
+        std::printf("%s surface lightmap %ux MSAA, SSR %s: shaded green %u, exposed green %u; replacement, cancellation and stale bindings passed\n",
+                      curved ? "Curved" : "Planar", samples, ssr ? "on" : "off", unsigned(first[left + 1]), unsigned(first[right + 1]));
       }
   }
   void compactOcclusionTests() {
@@ -2822,7 +2848,7 @@ int main(int argc, char **argv) {
   else if (argc>2 && std::strcmp(argv[2],"hardware-reflections")==0) reflectionTests(directory, false, true);
   else if (argc>2 && std::strcmp(argv[2],"reflections")==0) reflectionTests(directory);
   else if (argc>2 && std::strcmp(argv[2],"baking")==0) bakingTests();
-  else if (argc>2 && std::strcmp(argv[2],"lightmaps")==0) surfaceLightmapTests();
+  else if (argc>2 && std::strcmp(argv[2],"lightmaps")==0) { surfaceLightmapTests(); surfaceLightmapTests(true); }
   else if (argc>2 && std::strcmp(argv[2],"local-shadows")==0) mixedLightingTests(true);
   else if (argc>2 && std::strcmp(argv[2],"baked-direct")==0) mixedLightingTests(true, true);
   else if (argc>2 && std::strcmp(argv[2],"mixed")==0) mixedLightingTests();

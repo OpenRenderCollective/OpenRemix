@@ -620,17 +620,31 @@ additional mappings are available. Version-3 publication requires the matching n
 `forward/lightmap/parameterization` maps planar faces onto a world-space orthonormal grid. Its
 orientation is shared by faces with the same facing plane normal, and its phase is anchored in world
 coordinates. Authored face scale, chart rotation and nonuniform instance placement therefore cannot
-change the requested metre-space texel density. Material UVs remain unchanged. Nonplanar geometry,
-including curved displacement charts, retains its authored unwrapping; its density can still vary with
-the host mapping and surface distortion.
+change the requested metre-space texel density. Material UVs remain unchanged.
+
+`lightmap/curved` measures nonplanar charts on their actual displaced triangles. For a four-sided disk,
+`lightmap/harmonic` maps the boundary to a rectangle using surface arc lengths, then solves interior
+coordinates with a positive-weight Dirichlet Laplacian. Non-disk charts (including holes), larger meshes,
+and unsuccessful solves retain their authored topology. Both paths correct the average surface metric
+and scale by the largest triangle stretch. A unit step in any chart direction therefore covers at most
+one metre on the piecewise-linear surface before the requested luxel spacing is applied. Developable
+patches can unfold nearly uniformly; general curvature can require oversampling to enforce this bound.
+This is not an assertion of distortion-free flattening. Positions and material UVs are never flattened.
+Collinear authored BSP fan triangles already own no atlas area. Rounding slivers in those fans are
+excluded from metric fitting only when their world altitude is within the 0.1 mm geometric tolerance;
+a collapsed mapping over larger geometry fails explicitly.
+The positive-weight approach follows the convex-combination parameterization principles described by
+[Floater and Hormann](https://www.inf.usi.ch/hormann/papers/Floater.2002.POT.pdf).
 
 `forward/lightmap/packing` owns bounded shelf packing. `lightmap/fit` first brackets a fitting global
 spacing multiplier, then probes intermediate integer multipliers between the last failure and a known
 fit. It retains a verified fit throughout; shelf ordering means this is not a globally optimal packing
-search. Probes build only mappings and rectangle allocations. `lightmap/layout` rasterizes the selected
-layout and completes its seams once, with conservative coverage, barycentric surface samples and
+search. Density-independent geometry preparation, including the curved solve, runs once per plan.
+Budget probes reuse those shapes and build only mappings and rectangle allocations. `lightmap/layout`
+rasterizes the selected layout and completes its seams once, with conservative coverage, barycentric surface samples and
 inverse-transpose normals. Planar chart bounds round outward onto that grid instead of stretching their
-endpoints independently. Authored fallback charts retain their endpoints when coarsened. Tiny faces
+endpoints independently. Curved chart extents round outward in their measured metric. Legacy authored
+charts (zero metre spacing) retain their endpoints when coarsened. Tiny faces
 keep real covered-centroid samples. Invalid/folded charts or an exhausted minimum-size budget fail
 explicitly; no chart is silently dropped. Planning supports cancellation.
 
@@ -648,7 +662,7 @@ blocked/clear classification uses those receiving-face checks, so an illuminated
 turn every blocked light into overflow. Candidate bounds also include the extended footprint.
 Unused atlas space remains unowned; padding allocation never overlaps another chart's allocation.
 
-`rtx.native.forward.lightmapLuxelSize` requests planar spacing in metres (0.01-16, default 0.25).
+`rtx.native.forward.lightmapLuxelSize` requests surface spacing in metres (0.01-16, default 0.25).
 The UI exposes it, and the published bake status reports the effective spacing after budget coarsening.
 `rtx.native.forward.lightmapPageSize` selects a power-of-two page size (64-1024, default 256).
 `rtx.native.forward.lightmapTexels` bounds allocated atlas texels including padding and unused page space

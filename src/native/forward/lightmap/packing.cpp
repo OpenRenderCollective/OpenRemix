@@ -13,7 +13,8 @@ namespace remix::forward::lightmap {
         throw std::runtime_error("Surface packing superseded");
     }
   } // namespace
-  Layout packCharts(const scene::BakeScene &scene, const Options &options, std::stop_token cancelled) {
+  std::vector<ChartShape> prepareCharts(const scene::BakeScene &scene, const Options &options,
+                                        std::stop_token cancelled) {
     check(cancelled);
     if (!scene.ready || !std::isfinite(scene.sceneScale) || scene.sceneScale <= 0 || options.pageSize < 8 ||
         options.pageSize > 4096 || !std::has_single_bit(options.pageSize) || !options.maxPages ||
@@ -26,12 +27,16 @@ namespace remix::forward::lightmap {
     } catch (remixapi_ErrorCode) {
       throw std::invalid_argument("Invalid surface lightmap chart ownership or mapping");
     }
+    return prepareShapes(scene, options.luxelMetres > 0, cancelled);
+  }
+  Layout packCharts(std::span<const ChartShape> shapes, const Options &options, std::stop_token cancelled) {
+    check(cancelled);
     Layout result;
     result.pageSize = options.pageSize;
     result.luxelMetres = options.luxelMetres * options.texelStep;
-    result.mappings = parameterize(scene, options.luxelMetres, options.texelStep, cancelled);
-    result.charts.resize(scene.charts.size());
-    std::vector<uint32_t> order(scene.charts.size());
+    result.mappings = parameterize(shapes, options.luxelMetres, options.texelStep, cancelled);
+    result.charts.resize(shapes.size());
+    std::vector<uint32_t> order(shapes.size());
     std::iota(order.begin(), order.end(), 0u);
     std::stable_sort(order.begin(), order.end(), [&](uint32_t a, uint32_t b) {
       const auto &first = result.mappings[a], &second = result.mappings[b];

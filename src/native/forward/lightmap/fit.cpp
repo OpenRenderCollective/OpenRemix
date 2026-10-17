@@ -5,6 +5,7 @@
 
 namespace remix::forward::lightmap {
   Layout fit(const scene::BakeScene &scene, Options options, std::stop_token cancelled) {
+    const auto shapes = prepareCharts(scene, options, cancelled);
     constexpr uint32_t maximumStep = 4096;
     uint32_t failed = 0, selected = options.texelStep;
     Layout best;
@@ -13,7 +14,7 @@ namespace remix::forward::lightmap {
     for (;;) {
       options.texelStep = selected;
       try {
-        best = packCharts(scene, options, cancelled);
+        best = packCharts(shapes, options, cancelled);
         break;
       } catch (const std::length_error &) {
         if (selected == maximumStep)
@@ -29,7 +30,7 @@ namespace remix::forward::lightmap {
       const uint32_t candidate = failed + (selected - failed) / 2;
       options.texelStep = candidate;
       try {
-        auto packed = packCharts(scene, options, cancelled);
+        auto packed = packCharts(shapes, options, cancelled);
         best = std::move(packed);
         selected = candidate;
       } catch (const std::length_error &) {

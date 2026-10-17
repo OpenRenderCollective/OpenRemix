@@ -512,7 +512,7 @@ namespace remix::forward::bake {
       std::snprintf(message, sizeof(message), "Baked lighting active");
     else
       std::snprintf(message, sizeof(message),
-                    "Baked lighting active (%zu surface texels, %u atlas pages; %.3g m planar luxels, %u seam samples)",
+                    "Baked lighting active (%zu surface texels, %u atlas pages; %.3g m surface luxels, %u seam samples)",
                     m_job->surfaces.size(), m_job->surfaceLayout.pages, m_job->surfaceLayout.luxelMetres,
                     m_job->surfaceLayout.seamSamples);
     if (m_job->mixedLights->overflow) {

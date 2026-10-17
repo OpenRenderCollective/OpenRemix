@@ -9,14 +9,14 @@ namespace remix::forward::lightmap {
     uint32_t pageSize = 1024, maxPages = 16, padding = 2;
     uint64_t maxTexels = 4u << 20;
     uint32_t texelStep = 1; // global spacing multiplier; authored fallback retains chart endpoints
-    float luxelMetres = 0;  // zero preserves authored UVs; positive selects a uniform planar world grid
+    float luxelMetres = 0;  // zero preserves authored UVs; positive selects world-metric surface spacing
   };
   struct Allocation {
     uint32_t page = 0, x = 0, y = 0, width = 0, height = 0;
   };
   struct Layout {
     uint32_t pageSize = 0, pages = 0, seamSamples = 0;
-    float luxelMetres = 0; // effective planar spacing after global budget coarsening
+    float luxelMetres = 0; // effective surface spacing after global budget coarsening
     std::vector<Mapping> mappings;
     std::vector<Allocation> charts;    // indexed like BakeScene::charts
     std::vector<bake::Point> points;   // actual world-surface samples, never probe reconstruction
