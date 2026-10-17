@@ -308,7 +308,10 @@ Filtering runs on the existing preparation worker after transport readback and b
 atlas encoding and persistent cache storage. OIDN chooses its default supported device, including
 GPU backends where available. This is an offline stage with explicit transfers from the existing
 CPU readback; it does not share live Vulkan atlas memory. Cancellation is checked between charts
-and coefficients and supplied to OIDN's progress callback. Errors prevent publication.
+and coefficients. CPU filters and GPU images of at least one megapixel also use OIDN's internal
+progress callback for in-flight cancellation. Small GPU fields omit that callback because it adds
+significant synchronization overhead; their cancellation occurs between bounded fields instead.
+Errors prevent publication.
 
 Each chart is processed independently with its existing chart-local dilation donors. Packed atlas
 neighbours cannot influence one another. L0 uses HDR RTLightmap filtering; the eight signed SH bands
@@ -325,6 +328,14 @@ not a hard cap on total host/device allocation. Filtering nine coefficients sepa
 small charts can add substantial overhead. Chart boundaries are isolated rather than jointly
 denoised across connected faces; seam quality and sample-count savings need map-level visual review
 before enabling this by default. Denoising mode and compiled OIDN version participate in cache identity.
+
+HDR and directional filters retain separate committed models. Charts are grouped by image dimensions,
+and a model is rebound only when dimensions or the shared image buffer change. The image buffer is
+reserved once for the largest chart on its first nonconstant field. This reuse does not join chart
+images or let one chart influence another. Diagnostics report actual executions, preparations,
+constant-field bypasses, internally monitored executions, peak host-image bytes, reserved image-buffer
+bytes and transfer bytes; OIDN's internal allocations are additional. Bake status reports completed/total denoised charts
+through worker-owned atomic counters so a long offline stage remains visible without blocking frames.
 
 ## Optional hardware reflections
 

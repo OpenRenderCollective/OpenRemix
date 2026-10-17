@@ -61,6 +61,7 @@ namespace remix::forward::bake {
     std::stop_source cancellation;
     uint32_t captureNext = 0, captureReceived = 0;
     bool capturePlanned = false, filtering = false;
+    std::atomic<uint32_t> denoisedCharts{0}, denoiseChartCount{0};
     uint32_t next = 0, received = 0;
     bool initialized = false, prepared = false, failed = false;
     void prepareResources(VkPhysicalDevice physical, VkDevice device, const Config &config, float lightCutoff,
@@ -457,11 +458,23 @@ namespace remix::forward::bake {
           "forward-probe-filter-" + std::to_string(++generation), [owner, physical, device, config] {
             owner->specular = probes::filter(owner->captures, 128, owner->cancellation.get_token());
             if (config.denoiseLightmaps) {
+              auto progress = [owner](uint32_t completed, uint32_t total) {
+                owner->denoisedCharts.store(completed, std::memory_order_relaxed);
+                owner->denoiseChartCount.store(total, std::memory_order_relaxed);
+              };
               const auto filtered = lightmap::denoise(owner->surfaceLayout, owner->surfaces,
-                                                       owner->cancellation.get_token());
+                                                       owner->cancellation.get_token(), std::move(progress));
               std::fprintf(stderr, "Forward lightmap OIDN: %u charts, %llu texels, device type %d, %.3f s\n",
                            filtered.charts, static_cast<unsigned long long>(filtered.texels),
                            filtered.deviceType, filtered.seconds);
+              std::fprintf(stderr, "Forward lightmap OIDN work: %u executions, %u preparations, "
+                                   "%u constant fields, %u monitored; %llu host bytes, %llu image bytes, "
+                                   "%llu transfer bytes\n",
+                           filtered.executions, filtered.preparations, filtered.constantFields,
+                           filtered.monitoredExecutions,
+                           static_cast<unsigned long long>(filtered.peakHostBytes),
+                           static_cast<unsigned long long>(filtered.imageBufferBytes),
+                           static_cast<unsigned long long>(filtered.transferBytes));
             }
             owner->surfacePixels =
                 lightmap::pixels(owner->surfaceLayout, owner->surfaces, owner->cancellation.get_token(),
@@ -750,8 +763,16 @@ namespace remix::forward::bake {
           m_job = std::move(job);
           status(REMIXAPI_BAKE_PREPARING_EXT, "Preparing static bake resources");
         }
-        if (!m_job->ticket->ready())
+        if (!m_job->ticket->ready()) {
+          const auto total = m_job->denoiseChartCount.load(std::memory_order_relaxed);
+          if (total) {
+            char progress[96];
+            std::snprintf(progress, sizeof(progress), "Denoising surface lightmaps (%u/%u charts)",
+                          m_job->denoisedCharts.load(std::memory_order_relaxed), total);
+            status(REMIXAPI_BAKE_PREPARING_EXT, progress);
+          }
           return;
+        }
         m_job->ticket->check();
         m_job->initialized = true;
         if (m_job->failed)
