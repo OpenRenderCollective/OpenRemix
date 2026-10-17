@@ -37,6 +37,7 @@ int main() {
   Config a, b;
   b.batch = 1024;
   b.gpuBudgetMs = 0;
+  b.diskCache = false;
   require(a.sameLighting(b) && a != b, "Execution edits preserve the lighting identity");
   b.samples *= 2;
   require(!a.sameLighting(b), "Sample quality still invalidates the bake");

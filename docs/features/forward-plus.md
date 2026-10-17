@@ -67,6 +67,7 @@ operations stay in compatibility rasterization. Those surfaces do not yet receiv
 | `shadows/` | Local-light selection, exact caster membership and separate static/dynamic depth arrays |
 | `bake/` | Static scene packing, texture capture, bounded hardware transport, probe placement and publication |
 | `bake/budget.h`, `bake/timing.h` | CPU batch policy and private, fenced GPU timing for adaptive bake throughput |
+| `bake/cache.h/.cpp`, `bake/cache_io.h` | CPU-only finished-lighting cache, bounded wire decoding and atomic disk publication |
 | `bake/shaders/sample-sums.glsl` | Workgroup sample reduction and shared containing-medium classification |
 | `probes/` | Reflection capture placement, packed cube assets, seam-aware sampling and GGX mip filtering |
 | `mixed/refine.cpp`, `mixed/occlusion.*`, `mixed/map.*` | Visibility-driven channel reuse, CPU bitset encoding and private GPU occlusion-map ownership |
@@ -561,10 +562,11 @@ unload clears the volume. Leaving Forward+ releases this retained session, and d
 releases it before the pipeline service and Vulkan device. Swapchain rebuilding can
 still temporarily use the compatibility renderer while replacement targets prepare; the
 retained bake is available on the replacement Forward+ target's first rendered frame.
-There is no disk bake cache yet.
+Finished lighting is also cached on disk; a matching reload skips transport and surface sampling.
 
 ```ini
 rtx.native.forward.bake = 1
+rtx.native.forward.bakeCache = 1
 rtx.native.forward.bakeSpacing = 2
 rtx.native.forward.bakeProbes = 32768
 rtx.native.forward.bakeSamples = 256
@@ -625,8 +627,9 @@ Repeated requests compare dependency revisions and reuse unchanged snapshots. Re
 resource edits; replay retained instances after material/mod replacement first. Fingerprints cover actual
 geometry, transforms, material parameters, texture contents, explicit static lights, scene units and input
 schema. Runtime handles, submission order and the host's scheduling revision do not defeat content reuse.
-This fingerprint describes inputs; the eventual bake cache must also include bake settings and transport
-version. A disk bake cache is not implemented yet.
+The disk cache combines this input fingerprint with bake quality, light cutoff, transport shader bytes,
+GPU/driver identity, device allocation limits and a versioned CPU-algorithm revision. Batch size,
+GPU timing budget, cache preference and camera movement do not change its lighting identity.
 
 The in-process GMod wrapper publishes after its retained BSP scene is ready. It invalidates inputs at map
 changes and material/mesh rebuilds, excludes sky-camera polygons, and supplies unstyled map lights plus the
@@ -639,8 +642,32 @@ partial static prop decodes keep the scene pending. The native capture refuses s
 animated materials and dynamic textures. Maps with those unresolved transport inputs cannot bake yet;
 direct lighting remains available. The cross-process bridge does not forward this new contract yet.
 
-A disk bake cache remains future work. Selected chart lights also publish separable direct diffuse.
+Selected chart lights also publish separable direct diffuse.
 Finished lighting assets publish at a synchronized frame boundary, replacing only the matching scene generation.
+
+### Persistent bake data
+
+`rtx.native.forward.bakeCache` defaults on. Cache files live under
+`<configuration directory>/cache/forwardplus/`; `REMIX_BAKE_CACHE_DIR` can select a separate directory.
+Each file contains the completed irradiance grid, directional surface atlas, render chart UVs,
+mixed-light ownership/constant-visibility metadata, and raw plus filtered reflection captures.
+It stores no resource handles, GPU pointers or surface-sampling work lists. Reload reconstructs
+geometry against the current frozen source and uses the ordinary fenced volume upload/publication.
+The status begins `Cached lighting active` on a hit. Hardware ray-query support is still required
+by the current bake controller, even on a disk hit.
+
+Loading checks the version, identity, exact file length and payload checksum before using array counts.
+Counts, atlas rectangles, UVs, light indices and numeric values are validated before upload; file
+payloads are bounded to 4 GiB and atlas/probe allocations must fit the requested/device limits.
+Missing, corrupt or incompatible data triggers a fresh bake. I/O runs on the preparation worker;
+saving uses a fresh temporary file and commits it only after completion. Failed/cancelled writes
+preserve the previous committed file. Cache files are uncompressed and old keys are not automatically
+pruned. Removing files from this cache directory causes them to be regenerated on demand.
+
+Cache policy changes affect subsequent jobs and preserve active lighting. Raw surface-sample diagnostics
+explicitly bypass disk reuse so their GPU results remain available. Transport shader regeneration changes
+the cache key automatically; changes to CPU sampling, material conversion or cache semantics must bump
+`algorithmRevision` in `bake/cache.cpp`. The `RMXBAK01` wire version changes when the stored layout changes.
 
 Keep diffuse bake sampling separate from direct lighting. Reflection sources should share one
 confidence-bearing specular interface so probes, SSR and RT replace/blend the same term. Optional RT GI

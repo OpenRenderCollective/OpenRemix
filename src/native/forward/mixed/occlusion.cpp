@@ -14,6 +14,20 @@ namespace remix::forward::mixed {
   bool Occlusion::contains(uint32_t chart, uint32_t light) const {
     return state(chart, light) == Visibility::Blocked;
   }
+  Occlusion::Occlusion(uint32_t charts, uint32_t lights, std::span<const uint32_t> words)
+      : Occlusion(charts, lights) {
+    if (words.size() != m_words.size())
+      throw std::invalid_argument("Incomplete mixed-light occlusion words");
+    for (size_t i = 0; i < words.size(); ++i) {
+      const uint32_t word = words[i];
+      if ((word & (word >> 1) & 0x55555555u) ||
+          (lights % 16 && i % m_stride == m_stride - 1 && word >> ((lights % 16) * 2)))
+        throw std::invalid_argument("Invalid mixed-light occlusion state");
+      m_count += std::popcount(word & 0x55555555u);
+      m_clearCount += std::popcount(word & 0xaaaaaaaau);
+      m_words[i] = word;
+    }
+  }
   Visibility Occlusion::state(uint32_t chart, uint32_t light) const {
     if (chart >= m_charts || light >= m_lights)
       return Visibility::Unknown;

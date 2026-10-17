@@ -243,6 +243,9 @@ int main() {
   require(config::set(settings, "rtx.native.forward.bakeDirectDiffuse", "0") == config::SetResult::Success &&
               !settings.forward.baking.directDiffuse,
           "Baked direct-diffuse policy participates in independent profile persistence");
+  require(config::set(settings, "rtx.native.forward.bakeCache", "0") == config::SetResult::Success &&
+              !settings.forward.baking.diskCache,
+          "Disk bake cache preference participates in profile persistence");
   require(config::set(settings, "rtx.native.forward.rtGISamples", "0") == config::SetResult::Invalid &&
               config::set(settings, "rtx.native.forward.rtGISamples", "65") == config::SetResult::Invalid &&
               config::set(settings, "rtx.native.forward.rtGIBounces", "9") == config::SetResult::Invalid &&

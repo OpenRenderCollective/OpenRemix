@@ -1,0 +1,45 @@
+#pragma once
+#include "forward/bake/grid.h"
+#include "forward/mixed/data.h"
+#include "forward/probes/data.h"
+#include <filesystem>
+#include <optional>
+
+namespace remix::forward::bake::cache {
+  struct Device {
+    uint32_t vendor = 0, model = 0, driver = 0;
+    uint32_t imageSize = 0, imageLayers = 0, storageRange = 0;
+    std::array<uint8_t, 16> uuid{};
+  };
+  // Scheduling and cache controls are excluded. Shader bytes and an explicit
+  // CPU-algorithm revision participate, along with the frozen source content.
+  uint64_t key(uint64_t content, const Config &config, float cutoff, const Device &device);
+  std::filesystem::path path(uint64_t key);
+  struct View {
+    const Grid &grid;
+    const lightmap::Layout &layout;
+    const mixed::Plan &mixed;
+    std::span<const probes::Capture> captures;
+    const probes::Data &specular;
+    std::span<const uint16_t> pixels;
+    uint32_t surfaceSamples;
+    bool directDiffuse, sun;
+  };
+  struct Snapshot {
+    Grid grid;
+    lightmap::Layout layout; // render mappings only; no surface sampling work lists
+    mixed::Plan mixed;
+    std::vector<probes::Capture> captures;
+    probes::Data specular;
+    std::vector<uint16_t> pixels;
+    uint32_t surfaceSamples = 0;
+    bool directDiffuse = false, sun = false;
+  };
+  // Misses, corruption, incompatible versions and unavailable files fall back
+  // to tracing. Neither operation publishes resources or performs GPU work.
+  std::optional<Snapshot> read(const std::filesystem::path &file, uint64_t key,
+                               std::shared_ptr<const scene::BakeScene> source, const Config &config,
+                               const Device &device, std::stop_token cancelled = {});
+  bool write(const std::filesystem::path &file, uint64_t key, const View &view,
+             std::stop_token cancelled = {});
+} // namespace remix::forward::bake::cache

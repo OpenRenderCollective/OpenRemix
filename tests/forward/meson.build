@@ -56,6 +56,14 @@ test('Local shadow projection, selection and explicit caster membership', forwar
 forward_budget_test = executable('remix-forward-budget-test', 'budget.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Forward+ adaptive bake work and lighting identity', forward_budget_test)
+forward_cache_test = executable('remix-forward-cache-test', 'cache.cpp',
+  '../../src/native/forward/bake/cache.cpp', '../../src/native/forward/probes/data.cpp',
+  '../../src/native/forward/lightmap/data.cpp', '../../src/native/forward/mixed/data.cpp',
+  '../../src/native/forward/mixed/occlusion.cpp',
+  '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Bake cache identity, payload integrity and mixed light ownership', forward_cache_test,
+  args : [meson.current_build_dir() / 'cache'])
 
 forward_world_grid_test = executable('remix-forward-world-grid-test', 'world_grid.cpp', 'curved.cpp', 'curved_join.cpp',
   '../../src/native/forward/lightmap/layout.cpp', '../../src/native/forward/lightmap/packing.cpp', '../../src/native/forward/lightmap/fit.cpp', '../../src/native/forward/lightmap/parameterization.cpp', '../../src/native/forward/lightmap/curved.cpp', '../../src/native/forward/lightmap/harmonic.cpp',

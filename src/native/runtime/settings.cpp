@@ -143,6 +143,7 @@ namespace remix::config {
         result.push_back(scalar("rtx.native.forward.ssrThickness", FIELD(forward.ssrThickness), .001, 10));
         result.push_back(scalar("rtx.native.forward.ssrRoughness", FIELD(forward.ssrRoughness), .05, 1));
         result.push_back(scalar("rtx.native.forward.bake", FIELD(forward.baking.enabled), 0, 1));
+        result.push_back(scalar("rtx.native.forward.bakeCache", FIELD(forward.baking.diskCache), 0, 1));
         result.push_back(scalar("rtx.native.forward.bakeDirectDiffuse", FIELD(forward.baking.directDiffuse), 0, 1));
         result.push_back(scalar("rtx.native.forward.bakeSpacing", FIELD(forward.baking.spacing), .1, 100));
         result.push_back(scalar("rtx.native.forward.bakeProbes", FIELD(forward.baking.maxProbes), 64, 1048576));

@@ -87,6 +87,10 @@ namespace remix {
           forward.rtReflectionBounces = uint32_t(bounces);
       }
       ui::Checkbox("Bake static lighting on map load", &forward.baking.enabled);
+      ui::Checkbox("Cache baked lighting on disk", &forward.baking.diskCache);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Reuses finished lighting when map inputs, materials, quality and GPU match.\n"
+                          "Cache changes affect subsequent map loads; disabling keeps the active lighting.");
       ui::Checkbox("Bake per-light direct diffuse", &forward.baking.directDiffuse);
       ui::DragFloat("Bake GPU budget (ms)", &forward.baking.gpuBudgetMs, .25f, 0, 16);
       if (ImGui::IsItemHovered())

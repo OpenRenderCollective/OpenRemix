@@ -802,6 +802,7 @@ namespace {
       options.baking.reflectionProbes = 0;
       options.baking.lightmapPageSize = 64;
       options.baking.lightmapTexels = 4096;
+      options.baking.diskCache = false; // the initial cancellation must exercise real GPU work
       target.enableForward(options);
       remixapi_MaterialInfoOpaqueEXT metal{};
       metal.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
@@ -904,6 +905,8 @@ namespace {
         render(false);
       require(!target.forward->statistics().baking.active,
               "Cancelled direct-mask work cannot publish a stale volume");
+      options.baking.diskCache = true;
+      target.forward->updateLighting(options);
       ++base.revision;
       r.setBakeScene(&base);
       auto pixels = until("", true);
@@ -1251,6 +1254,10 @@ namespace {
         request.charts = charts;
         r.setBakeScene(&info);
         auto until = [&](uint32_t state) {
+          if (state == REMIXAPI_BAKE_TRACING_EXT) {
+            options.baking.diskCache = false; // explicit tracing/cancellation checks cannot use a hit
+            target.forward->updateLighting(options);
+          }
           const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
           std::vector<uint8_t> pixels;
           do {
@@ -1630,6 +1637,7 @@ namespace {
       options.baking.maxProbes = 64;
       options.baking.reflectionProbes = 0;
       options.baking.lightmapPageSize = 32;
+      options.baking.diskCache = false; // exercise cancellation in the sun dispatch itself
       target.enableForward(options);
       const auto receiverMesh = quad(r, 9900, material(r, 9901, 1, 1, 1));
       const auto blockerMesh = quad(r, 9902, material(r, 9903, 0, 0, 0));
@@ -1700,6 +1708,8 @@ namespace {
       r.setBakeScene(nullptr);
       for (uint32_t i = 0; i < remix::gpuFrameCount + 2; ++i) render();
       require(!target.forward->statistics().baking.active, "Cancelled sunlight cannot publish a stale volume");
+      options.baking.diskCache = true;
+      target.forward->updateLighting(options);
       ++base.revision;
       r.setBakeScene(&base);
       auto pixels = until(true);
@@ -1807,6 +1817,7 @@ namespace {
     options.baking.bounces = 1;
     options.baking.batch = 1;
     options.baking.gpuBudgetMs = 0;
+    options.baking.diskCache = false; // this fixture checks every preparation/tracing transition
     options.baking.reflectionResolution = 8;
     target.enableForward(options);
     const auto white = material(r, 9000, 1, 1, 1);

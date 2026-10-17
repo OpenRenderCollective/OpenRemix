@@ -4,6 +4,7 @@ namespace remix::forward::bake {
   struct Config {
     bool enabled = true;
     bool directDiffuse = true;
+    bool diskCache = true;
     float gpuBudgetMs = 2; // zero selects fixed batch size; otherwise a measured GPU-time target
     float spacing = 2;     // metres; coarsened if necessary to respect maxProbes
     uint32_t maxProbes = 32768, samples = 256, bounces = 3, batch = 64, textureResolution = 256;
@@ -22,6 +23,7 @@ namespace remix::forward::bake {
       auto a = *this, b = other;
       a.batch = b.batch = 0;
       a.gpuBudgetMs = b.gpuBudgetMs = 0;
+      a.diskCache = b.diskCache = false;
       return a == b;
     }
   };

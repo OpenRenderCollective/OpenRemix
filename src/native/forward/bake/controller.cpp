@@ -1,5 +1,6 @@
 #include "forward/bake/controller.h"
 #include "forward/bake/budget.h"
+#include "forward/bake/cache.h"
 #include "forward/bake/transport.h"
 #include "forward/image_dump.h"
 #include "forward/probes/capture_dump.h"
@@ -35,6 +36,9 @@ namespace remix::forward::bake {
     std::vector<lightmap::Direct> direct, directScratch;
     std::vector<lightmap::Sun> sun;
     bool hasDirectDiffuse = false, hasSun = false; // survive release of the completed CPU arrays
+    std::filesystem::path cacheFile;
+    uint64_t cacheKey = 0;
+    bool cacheHit = false;
     uint32_t sunNext = 0, sunReceived = 0;
     uint32_t visibilityNext = 0, visibilityReceived = 0;
     bool visibilityFinished = false;
@@ -65,6 +69,47 @@ namespace remix::forward::bake {
                                          float lightCutoff, uint32_t queueFamily) {
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physical, &properties);
+    const char *samples = std::getenv("REMIX_DEBUG_BAKE_SURFACE_SAMPLES");
+    if (config.diskCache && (!samples || std::strcmp(samples, "1") != 0)) {
+      cache::Device deviceIdentity{properties.vendorID, properties.deviceID, properties.driverVersion,
+                                     properties.limits.maxImageDimension2D,
+                                     properties.limits.maxImageArrayLayers,
+                                     properties.limits.maxStorageBufferRange,
+                                     {}};
+      std::copy_n(properties.pipelineCacheUUID, deviceIdentity.uuid.size(), deviceIdentity.uuid.begin());
+      cacheKey = cache::key(source->contentHash, config, lightCutoff, deviceIdentity);
+      try {
+        cacheFile = cache::path(cacheKey);
+      } catch (const std::exception &) {
+        cacheFile.clear();
+      }
+      if (!cacheFile.empty())
+        if (auto cached = cache::read(cacheFile, cacheKey, source, config, deviceIdentity,
+                                       cancellation.get_token())) {
+          grid = std::move(cached->grid);
+          surfaceLayout = std::move(cached->layout);
+          mixedLights = std::make_shared<mixed::Plan>(std::move(cached->mixed));
+          captures = std::move(cached->captures);
+          specular = std::move(cached->specular);
+          surfacePixels = std::move(cached->pixels);
+          surfaceReceived = cached->surfaceSamples;
+          hasDirectDiffuse = cached->directDiffuse;
+          hasSun = cached->sun;
+          received = uint32_t(grid.tasks.size());
+          for (const auto &capture : captures) {
+            const auto rays = probes::rays(capture);
+            captureRays.insert(captureRays.end(), rays.begin(), rays.end());
+          }
+          if (!source->charts.empty())
+            surfaceGeometry = std::make_shared<lightmap::Geometry>(
+                physical, device, source, surfaceLayout, cancellation.get_token(),
+                mixedLights->charts, mixedLights->directCharts);
+          cacheHit = filtering = true;
+          return;
+        }
+    }
+    if (cancellation.stop_requested())
+      throw std::runtime_error("Bake preparation superseded");
     auto placement = config;
     placement.maxProbes =
         std::min(placement.maxProbes,
@@ -386,6 +431,11 @@ namespace remix::forward::bake {
               owner->surfaceGeometry = std::make_shared<lightmap::Geometry>(
                   physical, device, owner->source, owner->surfaceLayout, owner->cancellation.get_token(),
                   owner->mixedLights->charts, owner->mixedLights->directCharts);
+            if (!owner->cacheFile.empty())
+              cache::write(owner->cacheFile, owner->cacheKey,
+                            {owner->grid, owner->surfaceLayout, *owner->mixedLights, owner->captures,
+                             owner->specular, owner->surfacePixels, owner->surfaceReceived,
+                             owner->hasDirectDiffuse, owner->hasSun}, owner->cancellation.get_token());
           });
       status(REMIXAPI_BAKE_PREPARING_EXT, "Finishing baked lighting assets");
       return;
@@ -539,12 +589,13 @@ namespace remix::forward::bake {
     m_volume = std::move(volume);
     m_submissions[m_slot].upload = m_volume;
     char message[sizeof(m_statistics.status)];
+    const char *label = m_job->cacheHit ? "Cached lighting active" : "Baked lighting active";
     if (m_job->surfaceReceived == 0)
-      std::snprintf(message, sizeof(message), "Baked lighting active");
+      std::snprintf(message, sizeof(message), "%s", label);
     else
       std::snprintf(message, sizeof(message),
-                    "Baked lighting active (%zu surface texels, %u atlas pages; %.3g m surface luxels, %u seam samples, %u curved)",
-                    size_t(m_job->surfaceReceived), m_job->surfaceLayout.pages, m_job->surfaceLayout.luxelMetres,
+                    "%s (%zu surface texels, %u atlas pages; %.3g m surface luxels, %u seam samples, %u curved)",
+                    label, size_t(m_job->surfaceReceived), m_job->surfaceLayout.pages, m_job->surfaceLayout.luxelMetres,
                     m_job->surfaceLayout.seamSamples, m_job->surfaceLayout.curvedSeamSamples);
     if (m_job->mixedLights->overflow) {
       const size_t used = std::strlen(message);
@@ -558,6 +609,10 @@ namespace remix::forward::bake {
     if (const auto clear = m_job->mixedLights->occlusion.clearCount()) {
       const size_t used = std::strlen(message);
       std::snprintf(message + used, sizeof(message) - used, "; %u fully clear links", clear);
+    }
+    if (m_job->cacheHit) {
+      const size_t used = std::strlen(message);
+      std::snprintf(message + used, sizeof(message) - used, "; disk cache");
     }
     m_job.reset();
     status(REMIXAPI_BAKE_READY_EXT, message);
@@ -642,6 +697,7 @@ namespace remix::forward::bake {
           return;
         auto &job = *m_job;
         m_statistics.probes = uint32_t(job.grid.tasks.size());
+        m_statistics.completed = job.received;
         if (job.filtering) {
           activate(command);
           return;
@@ -726,6 +782,8 @@ namespace remix::forward::bake {
       if (!job || !job->initialized || !jobs.insert(job.get()).second)
         return;
       addSurfaces(job->surfaceGeometry);
+      if (!job->transport)
+        return; // a disk hit needs only geometry and the published volume upload
       const auto &transport = *job->transport;
       result.acceleration += transport.accelerationBytes();
       result.images += transport.imageBytes();

@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <span>
 #include <vector>
 
 namespace remix::forward::mixed {
@@ -10,6 +11,8 @@ namespace remix::forward::mixed {
   public:
     Occlusion() = default;
     Occlusion(uint32_t charts, uint32_t lights);
+    Occlusion(uint32_t charts, uint32_t lights, std::span<const uint32_t> words);
+    std::span<const uint32_t> words() const { return m_words; }
     void mark(uint32_t chart, uint32_t light, Visibility value = Visibility::Blocked);
     Visibility state(uint32_t chart, uint32_t light) const;
     bool contains(uint32_t chart, uint32_t light) const;
