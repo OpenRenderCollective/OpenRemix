@@ -200,11 +200,11 @@ int main() {
               config::set(settings, "rtx.native.forward.bakeSamples", "512") == config::SetResult::Success,
           "Bake controls participate in runtime configuration");
   config::UnknownSettings unknown;
-  require(config::set(settings, "rtx.native.forward.reflectionProbes", "17") == config::SetResult::Invalid &&
+  require(config::set(settings, "rtx.native.forward.reflectionProbes", "33") == config::SetResult::Invalid &&
               config::set(settings, "rtx.native.forward.reflectionResolution", "48") ==
                   config::SetResult::Invalid,
           "Reflection probe limits and power-of-two dimensions are enforced");
-  require(config::set(settings, "rtx.native.forward.reflectionProbes", "8") == config::SetResult::Success &&
+  require(config::set(settings, "rtx.native.forward.reflectionProbes", "32") == config::SetResult::Success &&
               config::set(settings, "rtx.native.forward.reflectionResolution", "64") ==
                   config::SetResult::Success,
           "Reflection capture settings participate in profile persistence");

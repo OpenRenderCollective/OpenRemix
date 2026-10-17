@@ -12,14 +12,14 @@ forward_grid_test = executable('remix-forward-grid-test', 'grid.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Irradiance grid placement and visibility reconstruction', forward_grid_test)
 forward_probes_test = executable('remix-forward-probes-test', 'probes.cpp',
-  '../../src/native/forward/probes/data.cpp', '../../src/native/forward/probes/placement.cpp',
+  '../../src/native/forward/probes/data.cpp', '../../src/native/forward/probes/placement.cpp', '../../src/native/forward/probes/selection.cpp',
   '../../src/native/forward/probes/regions.cpp', '../../src/native/forward/probes/sites.cpp',
   '../../src/native/forward/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Reflection probe parallax, filtering and packed data', forward_probes_test)
 forward_regions_test = executable('remix-forward-regions-test', 'regions.cpp',
   '../../src/native/forward/probes/regions.cpp', '../../src/native/forward/probes/sites.cpp', '../../src/native/forward/lighting.cpp',
-  '../../src/native/forward/probes/data.cpp', '../../src/native/forward/probes/placement.cpp',
+  '../../src/native/forward/probes/data.cpp', '../../src/native/forward/probes/placement.cpp', '../../src/native/forward/probes/selection.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('BSP reflection region occupancy and room fitting', forward_regions_test)
 if get_option('gpu_tests')

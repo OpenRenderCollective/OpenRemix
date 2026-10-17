@@ -6,7 +6,7 @@
 #include <stop_token>
 
 namespace remix::forward::probes {
-  constexpr uint32_t maxProbes = 16;
+  constexpr uint32_t maxProbes = 32;
   struct Record {
     Vec4 minimum{}, maximum{}, influenceMinimum{}, influenceMaximum{}, position{};
   };
@@ -15,7 +15,7 @@ namespace remix::forward::probes {
     std::array<uint32_t, 4> parameters{};
     std::array<Record, maxProbes> probes{};
   };
-  static_assert(sizeof(Record) == 80 && sizeof(Header) == 1296);
+  static_assert(sizeof(Record) == 80 && sizeof(Header) == 2576);
   struct Capture {
     Bounds bounds;
     Vec3 position{};

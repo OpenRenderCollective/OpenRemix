@@ -129,6 +129,13 @@ int main(int argc, char **argv) {
           "A key mismatch cannot publish stale lighting");
   {
     std::fstream edit(file, std::ios::binary | std::ios::in | std::ios::out);
+    edit.seekp(7);
+    edit.put('1');
+  }
+  require(!load(), "The old 16-slot cache wire layout is rejected before decoding probe metadata");
+  require(save(), "A new probe layout can replace an older cache version");
+  {
+    std::fstream edit(file, std::ios::binary | std::ios::in | std::ios::out);
     edit.seekp(-1, std::ios::end);
     edit.put(0);
   }

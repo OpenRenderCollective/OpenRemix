@@ -11,7 +11,7 @@ struct ReflectionProbe {
 };
 layout(set = PROBE_SET, binding = PROBE_BINDING, std430) readonly buffer ReflectionProbes {
   uvec4 probeParameters;
-  ReflectionProbe probes[16];
+  ReflectionProbe probes[32];
   vec4 probeTexels[];
 };
 #include "cube.glsl"

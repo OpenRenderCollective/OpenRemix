@@ -14,7 +14,7 @@ namespace remix::forward::bake::cache::detail {
   static_assert(std::endian::native == std::endian::little);
   constexpr uint64_t maximumFileBytes = 4ull << 30;
   struct Header {
-    char magic[8] = {'R', 'M', 'X', 'B', 'A', 'K', '0', '1'};
+    char magic[8] = {'R', 'M', 'X', 'B', 'A', 'K', '0', '2'};
     uint64_t key = 0, bytes = 0, checksum = 0;
   };
   static_assert(sizeof(Header) == 32);

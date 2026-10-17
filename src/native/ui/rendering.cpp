@@ -117,7 +117,7 @@ namespace remix {
         ImGui::SetTooltip("Larger pages let large faces retain finer luxels. Pages shrink if one would exceed the texel budget.\n"
                           "Smaller pages allocate memory in smaller increments.");
       int probeCount = int(forward.baking.reflectionProbes);
-      if (ui::SliderInt("Reflection probes", &probeCount, 0, 16))
+      if (ui::SliderInt("Reflection probes", &probeCount, 0, int(remix::forward::probes::maxProbes)))
         forward.baking.reflectionProbes = uint32_t(probeCount);
       ui::DragFloat("Reflection trim tolerance (m)", &forward.baking.reflectionDetailTolerance, .01f, 0, 2);
       if (ImGui::IsItemHovered())

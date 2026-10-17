@@ -167,7 +167,7 @@ namespace remix::config {
               return true;
             }});
         result.push_back(scalar("rtx.native.forward.reflectionDetailTolerance", FIELD(forward.baking.reflectionDetailTolerance), 0, 2));
-        result.push_back(scalar("rtx.native.forward.reflectionProbes", FIELD(forward.baking.reflectionProbes), 0, 16));
+        result.push_back(scalar("rtx.native.forward.reflectionProbes", FIELD(forward.baking.reflectionProbes), 0, 32));
         result.push_back({"rtx.native.forward.reflectionResolution",
             [](const Settings &s) { return number(s.forward.baking.reflectionResolution); },
             [](Settings &s, std::string_view text) {

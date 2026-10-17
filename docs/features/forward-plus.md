@@ -194,11 +194,15 @@ Radiance sample streams use the ray origin and direction, so splitting captures 
 queries into different dispatch batches does not change their stochastic lighting samples.
 
 Capture origins rank authored cubemap hints and automatically searched empty-leaf sites by nearby axial
-enclosure, preferring sheltered rooms over open areas. Authored positions retain priority within each
-enclosure class; validated irradiance sites provide a fallback. When a closed BSP partition is available,
+enclosure, preferring sheltered rooms over open areas. Authored positions break equal-coverage ties
+within an enclosure class; validated irradiance sites provide a fallback. When a closed BSP partition is available,
 a worker grows axis-aligned boxes across empty leaves, clipping conservative
 bounds down each BSP path. Artificial empty-leaf splits do not become room boundaries. Nearly duplicate
-fits share one capture. Capture origins always require strict empty-space clearance.
+fits share one capture. A bounded shortlist spreads fitting work across origins using distance weighted
+by clearance, capped at four metres. Selection then maximizes newly covered proxy volume, subtracting
+the union of earlier boxes as disjoint slabs. Thin ledges and overlapping fits cannot consume slots
+just because they appeared first. This is a greedy proxy-volume policy, not optimal room or receiver
+coverage. Capture origins always require strict empty-space clearance.
 
 The default fit tolerates small solid details rather than shrinking an entire face around a ceiling bevel.
 Touching solid fragments are merged when their union nearly fills its bounding box, reassembling
@@ -327,7 +331,7 @@ water exits and disabled-pass compatibility at 1x, 2x and 4x with ray-tracing fe
 | `waterThickness` | 0.15 | Screen refraction hit tolerance in metres |
 | `lightCutoff` | 0.001 | Contribution threshold used to bound local-light influence |
 | `ssr` | 1 | Enable current-frame screen-space reflections |
-| `reflectionProbes` | 16 | Maximum baked box-projected cubemaps, 0 to 16 |
+| `reflectionProbes` | 16 | Maximum baked box-projected cubemaps, 0 to 32 |
 | `reflectionResolution` | 32 | Power-of-two cube face size, 8 to 128 |
 | `lightmapPageSize` | 1024 | Maximum power-of-two surface atlas page size, 64 to 4096 |
 | `lightmapTexels` | 4194304 | Surface atlas texel budget, including padding and unused page space |
@@ -582,8 +586,8 @@ prior hint membership when a client downgrades.
 Source's playable `env_cubemap` positions supply these hints. They seed the
 existing strict-origin/tolerant-box fitter; they cannot override walls or author
 arbitrary influence bounds. Duplicate rooms are merged, and unused capacity
-falls back to automatic placement. Authored order is priority under the existing
-4-default/16-maximum probe budget.
+falls back to automatic placement. Authored order resolves otherwise equal choices under the
+16-default/32-maximum probe budget.
 
 Automatic origins now come from clipped empty BSP leaves independently of the
 irradiance grid. Conservative cell bounds are a search aid: midpoint/quarter
@@ -592,7 +596,9 @@ queries rank nearby enclosure (opposite boundaries within 64 metres) before open
 areas, with a capped clearance preference and deterministic ties. This is a
 priority heuristic, not a semantic room classifier. Cyclic/invalid partitions fail
 closed. Worker-local occupancy scratch avoids allocating per-node state for every
-candidate test; candidate/cell and fitting-work limits bound map-load effort.
+candidate test; candidate/cell and fitting-work limits bound map-load effort. The primary shortlist
+allows 32 to 128 expensive fits; the existing irradiance fallback checks at most sixteen candidates
+per coarse region. Larger capture counts do not increase the primary fitting limit.
 
 Before fitting, the existing hardware transport validates authored and automatic
 sites with 64 spherical first-hit queries. The geometry-only mode evaluates alpha
@@ -601,7 +607,8 @@ static props, which empty BSP leaves alone cannot detect. Results are consumed
 only after their frame-slot fence; no hidden submits or waits are introduced.
 The fitter receives the validated list, then fills remaining capacity from
 already-tested irradiance probes. A low budget can still leave particular rooms
-uncovered; sixteen captures can improve coverage without changing grid density.
+uncovered; larger maps can use 32 captures without changing irradiance-grid density. This increases
+capture work, storage and per-pixel lookup cost; it does not make arbitrary concave rooms rectangular.
 
 For inspection, `probes.request` in the profile directory writes `probes.json`
 from the published frame's immutable metadata. It lists the active content hash,
@@ -860,7 +867,8 @@ pruned. Removing files from this cache directory causes them to be regenerated o
 Cache policy changes affect subsequent jobs and preserve active lighting. Raw surface-sample diagnostics
 explicitly bypass disk reuse so their GPU results remain available. Transport shader regeneration changes
 the cache key automatically; changes to CPU sampling, material conversion or cache semantics must bump
-`algorithmRevision` in `bake/cache.cpp`. The `RMXBAK01` wire version changes when the stored layout changes.
+`algorithmRevision` in `bake/cache.cpp`. The `RMXBAK02` wire layout includes 32 reflection metadata slots;
+the previous 16-slot wire layout is rejected before decoding and must be baked again.
 
 Keep diffuse bake sampling separate from direct lighting. Reflection sources should share one
 confidence-bearing specular interface so probes, SSR and RT replace/blend the same term. Optional RT GI

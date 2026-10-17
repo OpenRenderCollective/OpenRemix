@@ -1,5 +1,6 @@
 #include "forward/probes/regions.h"
 #include "forward/probes/data.h"
+#include "forward/probes/selection.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -45,6 +46,30 @@ namespace {
       planes(6, *obstacle, -1, -2);
     else
       result.nodes[6] = {{1, 0, 0, 0}, {-2, -3}, {0, 0}};
+    return result;
+  }
+  scene::BakeScene unequalRooms() {
+    const Bounds rooms[] = {box({-10, -1, 0}, {-8, 1, .4f}),
+                            box({-6, -1, 0}, {-4, 1, .4f}), box({0, -3, 0}, {8, 3, 3})};
+    auto space = std::make_shared<scene::VisibilityPartition>();
+    space->closed = true;
+    space->clusterCount = 3;
+    space->leafClusters = {-1, 0, 1, 2};
+    space->nodes.resize(18);
+    for (uint32_t room = 0; room < 3; ++room)
+      for (uint32_t face = 0; face < 6; ++face) {
+        auto &node = space->nodes[room * 6 + face];
+        const uint32_t axis = face / 2;
+        node.plane[axis] = face & 1u ? -1.f : 1.f;
+        node.plane[3] = face & 1u ? -rooms[room].maximum[axis] : rooms[room].minimum[axis];
+        node.children[0] = face == 5 ? -int32_t(room + 2) : int32_t(room * 6 + face + 1);
+        node.children[1] = room == 2 ? -1 : int32_t((room + 1) * 6);
+      }
+    scene::BakeScene result;
+    result.hasBounds = true;
+    result.minimum = {-10, -3, 0};
+    result.maximum = {8, 3, 3};
+    result.partition = space;
     return result;
   }
 } // namespace
@@ -161,6 +186,37 @@ int main() {
   const auto restricted = p::place(authored, sparse, 4, 8, {}, .5f, &onlyValidated);
   require(restricted.size() == 1 && restricted[0].position[0] == -2,
           "GPU-rejected candidates cannot re-enter through automatic fitting");
+  const auto unequal = unequalRooms();
+  const std::vector<Vec3> earlyLedges{{-9, 0, .2f}, {-5, 0, .2f}, {4, 0, 1.5f}};
+  const auto coverage = p::place(unequal, sparse, 2, 8, {}, 0, &earlyLedges);
+  require(coverage.size() == 2 &&
+              std::any_of(coverage.begin(), coverage.end(), [](const auto &capture) {
+                return capture.bounds.minimum[0] >= 0 && capture.bounds.maximum[0] > 7.9f;
+              }),
+          "Early thin regions cannot consume the budget before a later substantial room");
+  for (const auto &capture : coverage)
+    require(p::emptyRegion(*unequal.partition, capture.bounds),
+            "Coverage selection changes priority without weakening room boundaries");
+  std::vector<p::RegionSite> clustered;
+  for (uint32_t i = 0; i < 64; ++i)
+    clustered.push_back({{float(i) * .001f, 0, 0}, .1f, 3});
+  clustered.push_back({{10, 0, 0}, .1f, 3});
+  require(p::spreadSites(clustered, 2, 1) == std::vector<size_t>{0, 64},
+          "The fitting work budget reaches a distant region despite many nearby BSP fragments");
+  const p::RegionSite nearFloor[] = {{{0, 0, 0}, 1, 3}, {{10, 0, 0}, .05f, 3}, {{9, 0, 1}, 1, 3}};
+  require(p::spreadSites(nearFloor, 2, 1) == std::vector<size_t>{0, 2},
+          "A slightly farther boundary sliver cannot displace a well-cleared origin in the same room");
+  const p::FittedRegion adjoining[] = {
+      {box({-2, 0, 0}, {0, 2, 2}), {{-1, 1, 1}, .1f, 3}},
+      {box({0, 0, 0}, {2, 2, 2}), {{1, 1, 1}, .1f, 3}},
+      {box({-2, 0, 0}, {2, 2, 2}), {{0, 1, 1}, .1f, 2}}};
+  require(p::selectRegions(adjoining, 3) == std::vector<size_t>{0, 1},
+          "Union coverage refuses a redundant region even when no single prior box contains it");
+  const p::FittedRegion enclosing[] = {
+      {box({-1, -1, -1}, {1, 1, 1}), {{0, 0, 0}, .1f, 3}},
+      {box({-2, -2, -2}, {2, 2, 2}), {{0, 0, 0}, .1f, 2}}};
+  require(p::selectRegions(enclosing, 2) == std::vector<size_t>{0, 1},
+          "Containing an earlier small box cannot disqualify a region that adds substantial space");
   authored.reflectionHints = {{0, 0, 0}, {-2, 0, 0}, {-2, .2f, 0}, {2, 0, 0}};
   const auto seeded = p::place(authored, sparse, 4, 8);
   require(seeded.size() == 2 && seeded[0].position[0] == -2 && seeded[1].position[0] == 2,
@@ -222,6 +278,13 @@ int main() {
     sitesCancelled = true;
   }
   require(sitesCancelled, "Automatic site search supports cancellation before traversal");
+  bool selectionCancelled = false;
+  try {
+    p::selectRegions(adjoining, 3, stop.get_token());
+  } catch (const std::runtime_error &) {
+    selectionCancelled = true;
+  }
+  require(selectionCancelled, "Map changes cancel marginal coverage selection before allocating its work");
   require(cancelled, "Map changes can cancel region fitting before expensive work");
   std::puts("BSP room fitting: empty leaf merging, interior solids, thin walls, oblique planes and "
             "cancellation passed");

@@ -965,6 +965,21 @@ namespace {
     require(refused, "A zero reflection capture direction is refused before dispatch");
     const auto data = probes::filter({&capture, 1}, 256);
     test::probeQueries(fixture, data);
+    std::vector<probes::Capture> allSlots(probes::maxProbes, capture);
+    for (uint32_t i = 0; i < allSlots.size(); ++i) {
+      auto &slot = allSlots[i];
+      const float offset = i + 1 == allSlots.size() ? 0.f : 10.f * (i + 1);
+      slot.position[0] += offset;
+      slot.bounds.minimum[0] += offset;
+      slot.bounds.maximum[0] += offset;
+      for (auto &pixel : slot.radiance)
+        pixel = {float(i + 1), 0, 0, 0};
+    }
+    const auto lastSlot = probes::filter(allSlots, 64);
+    const auto lastValue = probes::sample(lastSlot, {0, 0, 0}, {0, 0, 1}, .5f);
+    require(lastValue && std::abs((*lastValue)[0] - probes::maxProbes) < .001f,
+            "The final supported cubemap slot keeps its independent metadata and texel offset");
+    test::probeQueries(fixture, lastSlot);
     capture.influence.include({-2, -2, -2});
     capture.influence.include({2, 2, 2});
     const auto extended = probes::filter({&capture, 1}, 64);

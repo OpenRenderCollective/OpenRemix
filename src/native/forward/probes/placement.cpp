@@ -1,9 +1,11 @@
 #include "forward/probes/data.h"
 #include "forward/probes/regions.h"
+#include "forward/probes/selection.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
 #include <numeric>
+#include <set>
 #include <stdexcept>
 
 namespace remix::forward::probes {
@@ -109,28 +111,33 @@ namespace remix::forward::probes {
         return true;
       });
     };
-    auto fit = [&](Vec3 position) {
-      const auto region = fitRegion(*scene.partition, bounds, position, .001f / scene.sceneScale, cancelled,
-                                    {detailTolerance / scene.sceneScale});
-      if (region && !duplicate(*region))
-        append(*region, position);
-    };
     // Production passes GPU-validated sites. Direct CPU callers can exercise
     // geometry fitting independently, with the same bounded candidate policy.
     const auto generated =
         validatedSites ? std::vector<Vec3>{} : candidateSites(scene, grid, count, cancelled);
     const auto &sites = validatedSites ? *validatedSites : generated;
-    uint32_t attempts = 0;
-    const uint32_t budget = std::max(32u, count * 8);
-    for (const auto &position : sites) {
-      if (!fitted || captures.size() == count || attempts == budget)
-        break;
-      if (cancelled.stop_requested())
-        throw std::runtime_error("Reflection placement superseded");
-      if (covered(position))
-        continue;
-      ++attempts;
-      fit(position);
+    // Keep expensive BSP fitting bounded even when a map uses more captures.
+    const uint32_t budget = std::clamp(count * 8, 32u, 128u);
+    if (fitted) {
+      std::vector<RegionSite> assessed;
+      std::set<Vec3> seen;
+      for (const auto &position : sites) {
+        if (!seen.insert(position).second)
+          continue;
+        if (const auto site = regionSite(*scene.partition, position, .05f / scene.sceneScale,
+                                          64.f / scene.sceneScale, cancelled))
+          assessed.push_back(*site);
+      }
+      std::vector<FittedRegion> regions;
+      for (auto index : spreadSites(assessed, budget, 4.f / scene.sceneScale, cancelled)) {
+        const auto &site = assessed[index];
+        const auto region = fitRegion(*scene.partition, bounds, site.position, .001f / scene.sceneScale,
+                                      cancelled, {detailTolerance / scene.sceneScale});
+        if (region)
+          regions.push_back({*region, site});
+      }
+      for (auto index : selectRegions(regions, count, cancelled))
+        append(regions[index].bounds, regions[index].site.position);
     }
     for (auto box : boxes) {
       if (captures.size() == count)
