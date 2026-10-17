@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <array>
 #include <span>
 #include <stop_token>
 #include <vector>
@@ -20,4 +21,17 @@ namespace remix::forward::mixed::mask {
   size_t validate(std::span<const uint8_t> bytes, uint32_t width, uint32_t height, uint32_t encoding);
   // CPU reference for the shader decoder. Call only on a validated chunk.
   uint8_t texel(std::span<const uint8_t> bytes, uint32_t width, uint32_t encoding, uint32_t x, uint32_t y);
+  // Optional diagnostic accounting, including candidates rejected by the mask
+  // budget. Low-bit costs are estimates for endpoint-preserving quantization,
+  // not formats accepted by the production decoder. All byte costs are padded.
+  struct Costs {
+    uint64_t candidates = 0, texels = 0, blocked = 0, clear = 0, soft = 0;
+    uint64_t rawBytes = 0, losslessBytes = 0, twoBitBytes = 0, fourBitBytes = 0;
+    uint64_t constantTiles = 0, binaryTiles = 0, softTiles = 0;
+    std::array<uint64_t, 65> tileCardinality{};
+    std::array<uint64_t, 32> maskSizeHistogram{}; // floor(log2(lossless payload bytes))
+    std::array<uint64_t, 2> absoluteError{}, squaredError{}, maximumError{}; // R8 units, 2/4 bits
+    void observe(std::span<const uint8_t> values, uint32_t width, uint32_t height,
+                 uint64_t encodedBytes, std::stop_token cancelled = {});
+  };
 } // namespace remix::forward::mixed::mask

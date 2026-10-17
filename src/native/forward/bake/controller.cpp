@@ -638,6 +638,9 @@ namespace remix::forward::bake {
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(m_physical, &properties);
     const auto masks = m_job->mixedLights->masks.words(uint32_t(m_job->surfaceLayout.charts.size()));
+    const auto &maskCosts = m_job->mixedLights->masks.candidateCosts();
+    if (maskCosts.candidates)
+      probes::dumpPublishedData(".overflow-mask-costs.bin", &maskCosts, sizeof(maskCosts));
     probes::dumpPublishedData(".overflow-mask-entries.bin", m_job->mixedLights->masks.entries().data(),
                               m_job->mixedLights->masks.entries().size_bytes());
     probes::dumpPublishedData(".overflow-mask-bytes.bin", m_job->mixedLights->masks.bytes().data(),

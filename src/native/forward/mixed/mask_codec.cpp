@@ -108,4 +108,72 @@ namespace remix::forward::mixed::mask {
       return (bytes[offset + index / 8] >> (index % 8) & 1) ? 255 : 0;
     return bytes[offset + index];
   }
+  void Costs::observe(std::span<const uint8_t> values, uint32_t width, uint32_t height,
+                      uint64_t encodedBytes, std::stop_token cancelled) {
+    const uint64_t count = uint64_t(width) * height;
+    if (!count || count != values.size())
+      throw std::invalid_argument("Invalid visibility cost image");
+    if (cancelled.stop_requested())
+      throw std::runtime_error("Visibility cost audit superseded");
+    auto quantize = [](uint32_t value, uint32_t levels) {
+      if (value == 0 || value == 255)
+        return value == 0 ? 0u : levels - 1;
+      return std::clamp((value * (levels - 1) + 127) / 255, 1u, levels - 2);
+    };
+    auto padded = [](uint64_t bytes) -> uint64_t { return (bytes + 3) & ~uint64_t(3); };
+    ++candidates;
+    texels += count;
+    rawBytes += padded(count);
+    losslessBytes += encodedBytes;
+    size_t sizeBin = 0;
+    for (auto bytes = encodedBytes; bytes > 1 && sizeBin < 31; bytes >>= 1)
+      ++sizeBin;
+    ++maskSizeHistogram[sizeBin];
+    for (uint8_t value : values) {
+      blocked += value == 0;
+      clear += value == 255;
+      soft += value != 0 && value != 255;
+      for (uint32_t mode = 0; mode < 2; ++mode) {
+        const uint32_t levels = mode == 0 ? 4 : 16;
+        const int error = int(quantize(value, levels) * (255 / (levels - 1))) - value;
+        const auto magnitude = uint64_t(error < 0 ? -error : error);
+        absoluteError[mode] += magnitude;
+        squaredError[mode] += magnitude * magnitude;
+        maximumError[mode] = std::max(maximumError[mode], magnitude);
+      }
+    }
+    std::array<uint64_t, 2> tiledBytes{tileCount(width, height) * 4, tileCount(width, height) * 4};
+    for (uint32_t ty = 0; ty < (height + 7) / 8; ++ty) {
+      if (cancelled.stop_requested())
+        throw std::runtime_error("Visibility cost audit superseded");
+      for (uint32_t tx = 0; tx < (width + 7) / 8; ++tx) {
+        std::array<bool, 256> present{};
+        std::array<bool, 2> constant{true, true};
+        std::array<uint32_t, 2> first{};
+        bool binary = true;
+        for (uint32_t y = 0; y < 8; ++y)
+          for (uint32_t x = 0; x < 8; ++x) {
+            const auto px = std::min(tx * 8 + x, width - 1), py = std::min(ty * 8 + y, height - 1);
+            const auto value = values[size_t(py) * width + px];
+            present[value] = true;
+            binary = binary && (value == 0 || value == 255);
+            for (uint32_t mode = 0; mode < 2; ++mode) {
+              const auto q = quantize(value, mode == 0 ? 4 : 16);
+              if (x == 0 && y == 0)
+                first[mode] = q;
+              constant[mode] = constant[mode] && q == first[mode];
+            }
+          }
+        const auto colors = size_t(std::count(present.begin(), present.end(), true));
+        ++tileCardinality[colors];
+        constantTiles += colors == 1;
+        binaryTiles += colors > 1 && binary;
+        softTiles += colors > 1 && !binary;
+        for (uint32_t mode = 0; mode < 2; ++mode)
+          tiledBytes[mode] += constant[mode] ? 0 : binary ? 8 : mode == 0 ? 16 : 32;
+      }
+    }
+    twoBitBytes += std::min(padded((count * 2 + 7) / 8), tiledBytes[0]);
+    fourBitBytes += std::min(padded((count * 4 + 7) / 8), tiledBytes[1]);
+  }
 } // namespace remix::forward::mixed::mask

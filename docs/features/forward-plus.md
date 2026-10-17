@@ -383,6 +383,14 @@ views prepares a specialized shader while retaining the active bake; normal shad
 diagnostic branches. Exposure/display mapping still applies. These views locate an artifact's lighting
 component; they do not diagnose its sampling cause on their own.
 
+For a fresh diagnostic bake, `REMIX_DEBUG_MASK_COSTS=1` together with
+`REMIX_DEBUG_BAKE_CAPTURE_PREFIX` writes `.overflow-mask-costs.bin`. It measures every partial
+overflow candidate before admission, including rejected masks: R8 texel populations, tile cardinality,
+payload-size histogram, lossless cost and estimated endpoint-preserving 2/4-bit costs and errors.
+These estimates do not enable a lower-bit rendering format. The audit adds CPU work only when
+requested, retains aggregate counters rather than every mask, and does not change the memory budget
+or allocation order. A cache hit has no candidate stream to measure; use a separate empty cache.
+
 Backend values are stable: raster 0, pathtrace 1, forwardplus 2. Native capability bits use the matching
 bit positions. Forward+ has independent preparation and settings; selecting it never implicitly selects
 path tracing. Rendering options apply at a preparation boundary, and the previous renderer remains usable

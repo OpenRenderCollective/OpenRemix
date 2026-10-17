@@ -240,6 +240,8 @@ int main() {
     m::Masks tooSmall;
     require(!tooSmall.add(0, 0, layout, fractions, 6) && tooSmall.entries().empty() && tooSmall.bytes().empty(),
             "Insufficient encoded budget fails without publishing a partial mask");
+    require(tooSmall.candidateCosts().candidates == uint64_t(std::getenv("REMIX_DEBUG_MASK_COSTS") != nullptr),
+            "Optional cost diagnostics include a candidate even when the device budget rejects it");
     const auto packed = scalar.words(uint32_t(layout.charts.size()));
     require(!packed.empty() && std::find(scalar.bytes().begin(), scalar.bytes().end(), uint8_t(128)) != scalar.bytes().end(),
             "Half visibility is quantized to the nearest normalized byte");

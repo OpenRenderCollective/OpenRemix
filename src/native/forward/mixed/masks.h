@@ -1,5 +1,6 @@
 #pragma once
 #include "forward/lightmap/layout.h"
+#include "forward/mixed/mask_codec.h"
 #include <span>
 #include <set>
 
@@ -18,6 +19,7 @@ namespace remix::forward::mixed {
              std::span<const float> values, uint64_t wordBudget = ~0u, std::stop_token cancelled = {});
     std::span<const Entry> entries() const { return m_entries; }
     std::span<const uint8_t> bytes() const { return m_bytes; }
+    const mask::Costs &candidateCosts() const { return m_candidateCosts; }
     // Validated cache import. Dimensions and identities must agree with the
     // published layout/source; offsets are contiguous, including word padding.
     static Masks restore(std::span<const Entry> entries, std::span<const uint8_t> bytes,
@@ -30,5 +32,6 @@ namespace remix::forward::mixed {
     std::vector<Entry> m_entries;
     std::vector<uint8_t> m_bytes;
     std::set<std::pair<uint32_t, uint32_t>> m_identities;
+    mask::Costs m_candidateCosts;
   };
 } // namespace remix::forward::mixed

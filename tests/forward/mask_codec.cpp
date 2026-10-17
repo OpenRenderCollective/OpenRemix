@@ -61,6 +61,35 @@ int main() {
   bits.bytes[0] ^= 4;
   refused(bits.bytes, 16, 16, mask::tiled);
   require(tiled > 20 && raw > 20, "Codec tests exercise both compact and raw fallbacks");
+  mask::Costs costs;
+  const std::vector<uint8_t> smallConstant(64, 73);
+  costs.observe(smallConstant, 8, 8, 4);
+  require(costs.candidates == 1 && costs.texels == 64 && costs.soft == 64 && costs.rawBytes == 64 &&
+              costs.losslessBytes == 4 && costs.twoBitBytes == 4 && costs.fourBitBytes == 4 &&
+              costs.tileCardinality[1] == 1 && costs.maximumError[0] == 12,
+          "Cost audit accounts for constant tiles and endpoint-preserving quantization error");
+  costs = {};
+  const std::span binaryTile(binary.data(), 64);
+  costs.observe(binaryTile, 8, 8, 12);
+  require(costs.blocked == 32 && costs.clear == 32 && costs.soft == 0 &&
+              costs.twoBitBytes == 12 && costs.fourBitBytes == 12 && costs.tileCardinality[2] == 1 &&
+              costs.absoluteError[0] == 0 && costs.absoluteError[1] == 0,
+          "Hard occlusion endpoints cost eight tile payload bytes without quantization error");
+  std::vector<uint8_t> ramp(256);
+  for (uint32_t i = 0; i < ramp.size(); ++i)
+    ramp[i] = uint8_t(i);
+  costs = {};
+  costs.observe(ramp, 16, 16, 256);
+  require(costs.blocked == 1 && costs.clear == 1 && costs.soft == 254 &&
+              costs.twoBitBytes == 48 && costs.fourBitBytes == 128 && costs.tileCardinality[64] == 4 &&
+              costs.maximumError[0] == 84 && costs.maximumError[1] == 16,
+          "Full-range cost estimates include raw packing and expose soft-shadow error instead of rounding endpoints away");
+  bool cancelled = false;
+  std::stop_source stop;
+  stop.request_stop();
+  try { costs.observe(ramp, 16, 16, 256, stop.get_token()); }
+  catch (const std::runtime_error &) { cancelled = true; }
+  require(cancelled, "Candidate-cost diagnostics honor bake cancellation");
   std::printf("Visibility codec: %u tiled / %u raw cases; exact R8 round-trips and malformed payload rejection passed\n",
               tiled, raw);
 }
