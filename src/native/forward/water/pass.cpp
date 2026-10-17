@@ -224,13 +224,15 @@ namespace remix::forward::water {
         VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
         VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,         VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER};
-    VkDescriptorSetLayoutBinding bindings[8]{};
-    for (uint32_t i = 0; i < 8; ++i)
+        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER};
+    VkDescriptorSetLayoutBinding bindings[11]{};
+    for (uint32_t i = 0; i < 11; ++i)
       bindings[i] = {i, types[i], 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
     const VkDescriptorSetLayoutCreateInfo setInfo{.sType =
                                                       VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-                                                  .bindingCount = 8,
+                                                  .bindingCount = 11,
                                                   .pBindings = bindings};
     check(pipeline::createDescriptorSetLayout(device, &setInfo, nullptr, &g.inputs));
     const VkDescriptorSetLayout layouts[] = {scene, material, g.inputs};
@@ -243,7 +245,7 @@ namespace remix::forward::water {
     check(pipeline::createPipelineLayout(device, &layoutInfo, nullptr, &g.layout));
     g.createTarget(samples, targets);
     g.createPipelines(samples);
-    const VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4 * gpuFrameCount},
+    const VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 7 * gpuFrameCount},
                                           {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2 * gpuFrameCount},
                                           {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2 * gpuFrameCount}};
     const VkDescriptorPoolCreateInfo poolInfo{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
@@ -287,6 +289,19 @@ namespace remix::forward::water {
                    .pBufferInfo = image ? nullptr : &buffers[i - 2]};
     }
     vkUpdateDescriptorSets(g.device, 7, writes, 0, nullptr);
+    const VkDescriptorImageInfo screen[] = {
+        lighting.reflectionDepth.imageView ? lighting.reflectionDepth : saved.depth,
+        lighting.reflectionNormals.imageView ? lighting.reflectionNormals : saved.hdr,
+        lighting.reflectionColor.imageView ? lighting.reflectionColor : saved.hdr};
+    VkWriteDescriptorSet screenWrites[3]{};
+    for (uint32_t i = 0; i < 3; ++i)
+      screenWrites[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                         .dstSet = frame.set,
+                         .dstBinding = 8 + i,
+                         .descriptorCount = 1,
+                         .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                         .pImageInfo = &screen[i]};
+    vkUpdateDescriptorSets(g.device, 3, screenWrites, 0, nullptr);
   }
   VkDescriptorBufferInfo Pass::parameters(uint32_t slot) const {
     return m_gpu->frames.at(slot).parameters->descriptor();

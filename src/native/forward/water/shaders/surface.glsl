@@ -12,6 +12,12 @@ layout(set = 2, binding = 5, std140) uniform WaterSky {
   vec4 radiance, target;
 } waterSky;
 layout(set = 2, binding = 6) uniform sampler2D waterDome;
+layout(set = 2, binding = 8) uniform sampler2D depthPyramid;
+layout(set = 2, binding = 9) uniform sampler2D normals;
+layout(set = 2, binding = 10) uniform sampler2D opaqueColor;
+#include "../../shaders/reflection_math.glsl"
+#include "../../shaders/radiance-filter.glsl"
+#include "../../shaders/screen-reflection.glsl"
 #include "normal.glsl"
 float waterOpaqueDepth(ivec2 pixel) { return texelFetch(savedDepth, pixel, 0).r; }
 #include "../screen.glsl"
@@ -88,6 +94,11 @@ void main() {
   if (!probeRadiance(worldPosition, boundary.reflected, roughness, reflected))
     reflected = waterSkyRadiance(boundary.reflected) *
                 bakedSkyVisibility(worldPosition, n, boundary.reflected);
+  ScreenReflectionView screen = ScreenReflectionView(frame.camera, waterFrame.inverseCamera, frame.view,
+      waterFrame.reflectionTrace, waterFrame.reflectionConfig, uvec2(extent));
+  vec4 screenHit = traceScreenReflection(screen, worldPosition, n, boundary.reflected, -v,
+                                         roughness, gl_FragCoord.xy / vec2(extent));
+  reflected = screenHit.rgb + (1 - screenHit.a) * reflected;
   // Absorbed energy becomes the lit body colour, as in the primary path-traced
   // sheet. The interface's reflected energy uses its IOR and filtered probes.
   vec3 color = through * background + max(0, surfaceWeight - boundary.reflectance) * diffuse +

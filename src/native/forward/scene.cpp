@@ -236,6 +236,7 @@ namespace remix::forward {
     if (waterPass) {
       water::Parameters parameters;
       parameters.projection = scene::inverse(data.inverseProjection);
+      parameters.inverseCamera = scene::inverse(data.camera);
       parameters.cameraMedium = resources.cameraMedium();
       frame.waterMedium = parameters.cameraMedium[3] > 0;
       parameters.target = {float(extent.width), float(extent.height), options.waterDistance / options.sceneScale,
@@ -246,8 +247,15 @@ namespace remix::forward {
       std::copy(up.begin(), up.end(), parameters.domeUp.begin());
       const float light = sun.isDistant ? std::max(-direction[2], 0.f) / 3.14159265359f : 0;
       for (uint32_t c = 0; c < 3; ++c) parameters.sunFog[c] = sun.radiance[c] * light;
+      const auto screen = reflections ? reflections->screenInputs() : Reflections::ScreenInputs{};
+      parameters.reflectionTrace = {options.ssrDistance / options.sceneScale,
+          options.ssrThickness / options.sceneScale, .002f / options.sceneScale, options.ssrRoughness};
+      parameters.reflectionConfig = {uint32_t(samples), options.ssrScale,
+          screen.depth.imageView ? options.ssrSteps : 0u,
+          uint32_t(std::bit_width(std::max(extent.width, extent.height)))};
       waterPass->prepare(slot, parameters, waterMaterials,
-                          {baking->reflectionDescriptor(), frame.skyConstants->descriptor(), frame.skyImage});
+                          {baking->reflectionDescriptor(), frame.skyConstants->descriptor(), frame.skyImage,
+                           screen.depth, screen.normals, screen.color});
       const auto medium = waterPass->parameters(slot);
       const VkWriteDescriptorSet write{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
           .dstSet = frame.composite, .dstBinding = 5, .descriptorCount = 1,

@@ -2367,6 +2367,11 @@ namespace {
     remixapi_MaterialHandle waterMaterial;
     r.createMaterial(waterInfo, waterMaterial);
     const auto occludedWater = makeQuad(9015, waterMaterial, wallPositions, wallNormal);
+    waterOptics.transmittanceColor = {0, 0, 0};
+    waterInfo.hash = 9016;
+    r.createMaterial(waterInfo, waterMaterial);
+    const auto waterFloor = makeQuad(9017, waterMaterial, floorPositions, floorNormal);
+    float waterRoughness = .04f;
     bool composeWater = false;
     remixapi_MeshHandle reflectionBackdrop = nullptr;
     auto drawScene = [&](bool rough = false, bool showWall = true, bool cutout = false,
@@ -2389,6 +2394,9 @@ namespace {
       if (environmentLight)
         r.drawLight(environmentLight);
       r.drawInstance(instance(receiver ? receiver : rough ? roughFloor : floor));
+      // Exercise the resolved material, where USD replacements can author
+      // roughness beyond the legacy translucent API's fixed smooth value.
+      if (receiver == waterFloor) r.draws().back().material->roughness = waterRoughness;
       if (composeWater) {
         auto liquid = instance(occludedWater, .01f);
         liquid.transform.matrix[0][0] = liquid.transform.matrix[1][1] = .5f;
@@ -2705,6 +2713,33 @@ namespace {
             require(std::abs(int(composed[at]) - int(reflected[at])) <= 2,
                     "Late water composition preserves opaque SSR energy and coverage exactly once");
           composeWater = false;
+          const auto waterReflection = drawScene(false, true, false, false, 0, waterFloor);
+          options.ssrSteps = 0;
+          target.forward->updateLighting(options);
+          const auto waterWithout = drawScene(false, true, false, false, 0, waterFloor);
+          auto waterHits = [&](const auto &image) {
+            size_t hits = 0;
+            for (uint32_t y = target.extent.height / 2; y < target.extent.height; ++y)
+              for (uint32_t x = 0; x < target.extent.width; ++x) {
+                const auto at = (y * target.extent.width + x) * 4;
+                hits += image[at] > waterWithout[at] + 8 && image[at + 1] < 8;
+              }
+            return hits;
+          };
+          std::printf("Water SSR %ux, scale %u: %zu reflected pixels\n", samples, scale,
+                      waterHits(waterReflection));
+          require(waterHits(waterReflection) > 12,
+                  "A measured water surface reflects a current opaque emitter through shared SSR");
+          options.ssrSteps = 128;
+          options.ssrRoughness = .03f;
+          target.forward->updateLighting(options);
+          require(waterHits(drawScene(false, true, false, false, 0, waterFloor)) < 3,
+                  "Water reflection tracing obeys the shared roughness cutoff");
+          options.ssrRoughness = .6f;
+          target.forward->updateLighting(options);
+          require(waterHits(drawScene(false, false, false, false, 0, waterFloor)) < 3,
+                  "Removed opaque geometry leaves no stale water reflection");
+          if (scale == 2) save("water-ssr.ppm", waterReflection);
           options.water = false;
           target.enableForward(options);
         }
@@ -2713,6 +2748,31 @@ namespace {
                 "Removed geometry leaves no stale reflection radiance");
         require(reflectedPixels(drawScene(false, true, true)) < 3,
                 "Alpha-tested surfaces do not write false reflection hits");
+        if (baked && samples == 4 && scale == 4) {
+          options.water = true;
+          target.enableForward(options);
+          const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+          std::vector<uint8_t> waterBlend;
+          do {
+            waterBlend = drawScene(false, true, false, false, 0, waterFloor);
+            require(target.forward->statistics().baking.state != REMIXAPI_BAKE_FAILED_EXT,
+                    "Water reflection fallback bake succeeded");
+            if (target.forward->statistics().baking.active) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+          } while (std::chrono::steady_clock::now() < deadline);
+          require(target.forward->statistics().baking.active, "Water reflection probes published");
+          size_t replaced = 0, fallback = 0;
+          for (uint32_t y = target.extent.height / 2; y < target.extent.height; ++y)
+            for (uint32_t x = 0; x < target.extent.width; ++x) {
+              const auto at = (y * target.extent.width + x) * 4;
+              replaced += waterBlend[at] > 20 && waterBlend[at + 2] < 8;
+              fallback += waterBlend[at] < 3 && waterBlend[at + 2] > 8;
+            }
+          std::printf("Water SSR/probe blend: %zu replaced, %zu fallback pixels\n", replaced, fallback);
+          require(replaced > 4 && fallback > 4,
+                  "Water screen hits replace probe radiance while misses retain the baked cubemap");
+          save("water-probe-blended.ppm", waterBlend);
+        }
       }
     }
     if (!baked) {
@@ -2722,6 +2782,7 @@ namespace {
                                           {.12f, 1.8f, 3}, {-.12f, 1.8f, 3}};
       const auto narrowMaterial = makeMaterial(9502, .5f, 0, .5f);
       const auto narrowWall = makeQuad(9503, narrowMaterial, narrowPositions, wallNormal);
+      const auto waterEmitter = makeQuad(9511, makeMaterial(9510, .5f, 0, 1), narrowPositions, wallNormal);
       const auto blackMaterial = makeMaterial(9504, .5f, 0, 0);
       const float backdropPositions[][3] = {{-.8f, .15f, 3.02f}, {.8f, .15f, 3.02f},
                                             {.8f, 1.8f, 3.02f}, {-.8f, 1.8f, 3.02f}};
@@ -2759,6 +2820,23 @@ namespace {
                 "Roughness spreads a narrow reflected emitter and lowers its peak without losing the reflection");
         save(samples == 1 ? "cone-sharp-1x.ppm" : samples == 2 ? "cone-sharp-2x.ppm" : "cone-sharp-4x.ppm", sharpImage);
         save(samples == 1 ? "cone-rough-1x.ppm" : samples == 2 ? "cone-rough-2x.ppm" : "cone-rough-4x.ppm", roughImage);
+        options.water = true;
+        target.enableForward(options);
+        waterRoughness = .04f;
+        const auto sharpWaterImage = drawScene(false, true, false, false, 0, waterFloor, waterEmitter);
+        waterRoughness = .45f;
+        const auto roughWaterImage = drawScene(false, true, false, false, 0, waterFloor, waterEmitter);
+        const auto sharpWater = highlight(sharpWaterImage), roughWater = highlight(roughWaterImage);
+        std::printf("Water SSR colour footprint %ux: peak %u/%u, width %.4f/%.4f, energy %.0f/%.0f sharp/rough\n",
+                    samples, sharpWater.peak, roughWater.peak, sharpWater.width, roughWater.width,
+                    sharpWater.energy, roughWater.energy);
+        require(sharpWater.energy > 100 && roughWater.energy > 100 && roughWater.peak + 3 < sharpWater.peak &&
+                    roughWater.width > sharpWater.width * 1.2,
+                "Resolved water roughness spreads a narrow reflected emitter and lowers its peak");
+        save("water-cone-sharp.ppm", sharpWaterImage);
+        save("water-cone-rough.ppm", roughWaterImage);
+        options.water = false;
+        target.enableForward(options);
       }
     }
     std::puts("SSR GPU readback: reflected object, odd dimensions, roughness, MSAA, removal and alpha "

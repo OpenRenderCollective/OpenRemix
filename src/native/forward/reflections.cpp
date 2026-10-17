@@ -392,9 +392,21 @@ namespace remix::forward {
     imageBarrier(command, g.filtered->handle, 1, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                  VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
                  VK_ACCESS_SHADER_READ_BIT);
+    if (options.water && g.screenSpace)
+      for (auto *image : {g.depth.get(), g.normals.get(), g.color.get()})
+        imageBarrier(command, image->handle, image == g.normals.get() ? 1u : g.levels,
+                     VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                     VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
   }
   VkDescriptorImageInfo Reflections::output() const {
     return {m_gpu->sampler, m_gpu->filtered->view, VK_IMAGE_LAYOUT_GENERAL};
+  }
+  Reflections::ScreenInputs Reflections::screenInputs() const {
+    const auto &g = *m_gpu;
+    if (!g.screenSpace) return {};
+    return {{g.sampler, g.depth->view, VK_IMAGE_LAYOUT_GENERAL},
+            {g.sampler, g.normals->view, VK_IMAGE_LAYOUT_GENERAL},
+            {g.colorSampler, g.color->view, VK_IMAGE_LAYOUT_GENERAL}};
   }
   void Reflections::selectFrame(uint32_t slot) {
     if (m_gpu->dump)

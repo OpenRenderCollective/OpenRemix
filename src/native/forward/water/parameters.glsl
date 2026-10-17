@@ -7,7 +7,8 @@
 #define WATER_PARAMETERS_BINDING 2
 #endif
 layout(set = WATER_PARAMETERS_SET, binding = WATER_PARAMETERS_BINDING, std140) uniform WaterFrame {
-  mat4 projection;
-  vec4 cameraMedium, target, settings, domeUp, sunFog;
+  mat4 projection, inverseCamera;
+  vec4 cameraMedium, target, settings, domeUp, sunFog, reflectionTrace;
+  uvec4 reflectionConfig;
 } waterFrame;
 #endif

@@ -23,6 +23,9 @@ namespace remix::forward {
       VkDescriptorBufferInfo sky, irradiance;
       VkDescriptorImageInfo radiance;
     };
+    struct ScreenInputs {
+      VkDescriptorImageInfo depth, normals, color;
+    };
     Reflections();
     ~Reflections();
     void initialize(VkPhysicalDevice physical, VkDevice device, VkExtent2D extent,
@@ -34,6 +37,9 @@ namespace remix::forward {
                 ray::Reflections *hardware = nullptr);
     void selectFrame(uint32_t slot); // prior slot fence completed
     VkDescriptorImageInfo output() const;
+    // Completed opaque hierarchy and guides, readable by late graphics passes.
+    // Borrowed through this fenced frame; empty when screen tracing is disabled.
+    ScreenInputs screenInputs() const;
     uint64_t targetBytes() const;
     uint64_t bufferBytes() const;
 

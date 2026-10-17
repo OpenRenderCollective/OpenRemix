@@ -6,10 +6,11 @@
 
 namespace remix::forward::water {
   struct Parameters {
-    Matrix projection;
-    Vec4 cameraMedium{}, target{}, settings{}, domeUp{}, sunFog{};
+    Matrix projection, inverseCamera;
+    Vec4 cameraMedium{}, target{}, settings{}, domeUp{}, sunFog{}, reflectionTrace{};
+    std::array<uint32_t, 4> reflectionConfig{};
   };
-  static_assert(sizeof(Parameters) == 144);
+  static_assert(sizeof(Parameters) == 240);
   // Owns only the late water pass and independent sampled snapshots. The
   // renderer keeps its existing MSAA colour/depth attachments and draw owners.
   class Pass {
@@ -20,6 +21,7 @@ namespace remix::forward::water {
     struct Lighting {
       VkDescriptorBufferInfo probes, sky;
       VkDescriptorImageInfo dome;
+      VkDescriptorImageInfo reflectionDepth{}, reflectionNormals{}, reflectionColor{};
     };
     Pass();
     ~Pass();

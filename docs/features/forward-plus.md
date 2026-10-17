@@ -55,8 +55,9 @@ The late pass samples independent snapshots of completed opaque HDR and nearest 
 then writes water into the existing one/two/four-sample colour and depth attachments. It uses shared
 replacement materials, PBR maps, clustered lights, mixed shadows and filtered parallax cubemaps.
 Source water normals retain their authored scroll rates. Camera-medium absorption happens before
-tone mapping. Water's own SSR and hardware reflection queries remain pending; existing opaque
-reflections are included once in the transmitted background. Nested transparent layers are unsupported.
+tone mapping. Water shares the opaque hierarchical SSR tracer and rough colour-pyramid filtering;
+hardware reflection queries for water remain pending. Existing opaque reflections are included once
+in the transmitted background. Nested transparent layers are unsupported.
 
 ## Ownership and modules
 
@@ -78,6 +79,7 @@ reflections are included once in the transmitted background. Nested transparent 
 | `scene.cpp` | Immutable geometry cache, skinning, light/material packing and per-frame descriptors |
 | `rendering.cpp` | Cluster dispatch, shadow/world recording and output composition |
 | `reflections.h/.cpp` | Current-frame SSR targets, guide resolve, depth hierarchy, tracing and reconstruction |
+| `shaders/screen-reflection.glsl` | Shared opaque/water depth-hierarchy traversal and confidence-weighted hit radiance |
 | `shaders/reflection_math.glsl` | Shared fused projection, normalization and reflection math for screen and hardware reflection rays |
 | `image_dump.h/.cpp` | Optional, fenced developer image/buffer readback |
 | `ray_scene.h/.cpp` | Optional triangle acceleration, independent of camera and material layouts |
@@ -260,8 +262,23 @@ descriptor slots. An additive overlay puts completed opaque specular into those 
 water shading; final composition skips its usual specular addition in that frame. Refraction reads
 only the snapshots. Missing bent rays can use a known straight-through opaque layer behind the
 surface; unknown background layers remain misses. Total internal reflection skips refraction queries.
-Probe misses use sky radiance gated by baked visibility. Water SSR, rough sky prefiltering and multiple
+Probe misses use sky radiance gated by baked visibility. Rough sky prefiltering and multiple
 transparent layers remain future work.
+
+Water SSR borrows the completed opaque depth hierarchy, nearest-sample normal guides and mipmapped
+opaque HDR colour. Compute writes become visible to the late fragment pass before it samples them;
+the borrowed targets stay alive through the frame fence. No additional reflection image set is allocated.
+The shared tracer rejects back-facing hits, uses roughness-dependent colour footprints adapted from
+s&box, and returns hit radiance weighted by screen confidence. Remaining confidence uses the filtered
+parallax cubemap or visibility-gated sky. The water interface applies its IOR Fresnel once to the result.
+The sampled opaque colour excludes its own reflection composition, avoiding recursive feedback.
+
+The ordinary `ssr`, `ssrSteps`, `ssrDistance`, `ssrThickness` and `ssrRoughness` settings also control
+water tracing. It runs at water-fragment resolution; `ssrScale` controls the opaque reflection dispatch
+and does not reduce water fragment tracing. Water hardware reflection fallback remains pending.
+GPU tests cover a current opaque emitter, removal, cutoff edits and opaque specular accounting at
+1x/2x/4x MSAA and each opaque SSR scale. Resolved water roughness is also tested with a narrow emitter
+to verify highlight broadening and reduced peak intensity rather than only rejecting rough surfaces.
 
 The shared camera-medium API attenuates opaque geometry and visible water exits before tone mapping,
 using the nearest depth and measured distance in scene units. The exit sheet skips duplicate body
