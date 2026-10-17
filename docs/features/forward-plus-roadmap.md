@@ -14,21 +14,22 @@ reports. An implementation or synthetic test alone does not close an integration
 | Requirement | Current state | Remaining proof or work |
 | --- | --- | --- |
 | Modular forward PBR, clustered lights and 1x/2x/4x MSAA | Implemented | Refresh current-build engine coverage through the integration milestone below |
-| World-metric surface charts, atlas budgets and irradiance probes | Implemented | Inspect connected-face continuity, seam donors and budget coarsening in representative map views |
+| World-metric surface charts, atlas budgets and irradiance probes | Implemented; live pool bake and cached reload exercised | Inspect connected-face continuity, seam donors and budget coarsening in representative map views |
 | Soft finite emitters, attributed direct diffuse and live specular | Implemented | Compare visible penumbrae and light separation in the live engine |
 | Dynamic-object shadows combined with baked static shadows | Implemented; captured static casters excluded from dynamic maps | Verify actual moving props and static membership after map changes |
 | Automatic parallax cubemap bounds with tolerance for room details | Implemented | Review room transitions, bevels, interior props and reflection leaks in map views |
 | Rough SSR, optional hardware reflections and live GI | Implemented | Refresh actual-engine toggles and shared-scene lifetime coverage; continue measured performance work where needed |
 | Shared USD/PBR material replacements | Implemented | Refresh late material arrival and replacement parity in the current engine build |
-| Water optics, normals, HDR refraction, SSR/RT and underwater composition | Implemented and opt-in | Current-build engine validation and visual comparison with the path-traced material response |
+| Water optics, normals, HDR refraction, SSR/RT and underwater composition | Implemented and opt-in; above-water engine captures exercised | Underwater/lifecycle validation, noise and visual comparison with the path-traced material response |
 | Optional OIDN indirect-lightmap filtering | Implemented and opt-in | Connected-seam review and lower-sample quality comparisons; distribution of optional dependencies |
-| Usable build and deployment | Feature branches and upstream remotes retained | Self-contained runtime dependencies, isolated-game smoke test and final delivery instructions |
+| Usable build and deployment | Feature branches/remotes retained; Windows runtime bundler available | Remaining platform/dependency coverage, lifecycle smoke tests and final delivery instructions |
 
 ## Next milestones, in order
 
-1. **Refresh live GMod integration.** Start with the latest runtime and wrapper in the existing isolated
-   test installation. Record binary hashes and dependencies. Validate a locked Construct pool view,
-   a moving prop, above/below-water views, renderer/RT switches and a map reload/change. Require actual
+1. **Complete live GMod integration.** Pool startup, a fresh bake, an exact cached reload and a moving
+   actor have been exercised in the isolated installation. Continue with a solid receiver for mixed
+   shadows, below-water views, renderer/RT switches and a map reload/change. Record binary hashes and
+   dependencies. Require actual
    engine logs, active baked lighting and captures; investigate crashes, input restarts, missing assets
    or new validation errors before extending coverage. Earlier live-game logs are historical evidence.
 2. **Close visible lighting-quality gaps.** Use fixed map views and a high-sample reference to inspect
