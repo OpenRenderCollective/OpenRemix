@@ -1,5 +1,7 @@
 # Experimental Forward+ backend
 
+See the [delivery roadmap](forward-plus-roadmap.md) for remaining integration and quality gates.
+
 Select `Forward+ (experimental)` in the Rendering tab, or set:
 
 ```ini
