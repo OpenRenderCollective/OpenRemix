@@ -3,8 +3,12 @@
 #include "forward/ray/shaders/embedded.h"
 #include "forward/resources.h"
 #include "platform/gpu_frames.h"
+#include "platform/gpu_timers.h"
 #include "runtime/pipelines.h"
 #include <algorithm>
+#include <cstdlib>
+#include <optional>
+#include <string_view>
 
 namespace remix::forward::ray {
   namespace {
@@ -31,6 +35,7 @@ namespace remix::forward::ray {
     VkDescriptorPool pool = VK_NULL_HANDLE;
     VkSampler sampler = VK_NULL_HANDLE;
     uint32_t slot = 0;
+    bool profileBatches = false;
     Statistics statistics;
     LiveScene *scene = nullptr;
     struct Frame {
@@ -61,6 +66,8 @@ namespace remix::forward::ray {
     next->device = device;
     next->statistics.available = true;
     next->scene = &scene;
+    if (const auto *profile = std::getenv("REMIX_DEBUG_REFLECTION_BATCH_TIMINGS"))
+      next->profileBatches = std::string_view(profile) == "1";
     next->createResources();
     m_gpu = std::move(next);
   }
@@ -184,13 +191,22 @@ namespace remix::forward::ray {
     };
     for (uint32_t begin = 0; begin < count;) {
       const auto size = std::min(batch.capacity, count - begin);
+      // Bound diagnostic queries so large targets retain room for other passes.
+      const bool profile = g.profileBatches && begin / batch.capacity < 32;
+      std::optional<gpu::GpuScope> phase;
       // Each dispatch sees the same slot constants after submission. Pad the
       // last batch with inactive rays instead of rewriting its uniform count.
+      if (profile) phase.emplace(command, "Forward+ ray batch launch");
       dispatch(g.launch, begin, size, batch.capacity);
       computeBarrier(command);
+      phase.reset();
+      if (profile) phase.emplace(command, "Forward+ ray batch transport");
       transport->recordDeviceRadiance(command, g.slot, batch.capacity, options.rtReflectionBounces);
+      phase.reset();
+      if (profile) phase.emplace(command, "Forward+ ray batch merge");
       dispatch(g.merge, begin, size, size);
       computeBarrier(command);
+      phase.reset();
       begin += size;
     }
   }

@@ -662,6 +662,62 @@ namespace {
     for (size_t i = 1; i < paddedResults.size(); ++i)
       require(std::memcmp(&empty, &paddedResults[i], sizeof(empty)) == 0,
               "Inactive rays inside a measured body produce empty results without transport");
+    // Match the CPU-upload/readback result through GPU-only batch buffers.
+    // Transfers here are test producers/consumers; live reflections never copy
+    // these points or results across the host boundary.
+    bake::Transport deviceTransport;
+    options.cpuReadback = false;
+    options.deviceLocalBatches = true;
+    auto deviceJob = pipelines.prepare("device-local-dielectric-transport", [&] {
+      deviceTransport.initialize(fixture.physical, fixture.device, scene, options);
+    });
+    const auto deviceDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (!deviceJob->ready() && std::chrono::steady_clock::now() < deviceDeadline)
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    require(deviceJob->ready(), "Device-local transport preparation completed");
+    deviceJob->check();
+    Buffer upload, readback;
+    upload.create(fixture.physical, fixture.device, padded.size() * sizeof(bake::Point),
+                  VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    upload.write(padded.data(), padded.size() * sizeof(bake::Point));
+    readback.create(fixture.physical, fixture.device, paddedResults.size() * sizeof(bake::Result),
+                    VK_BUFFER_USAGE_TRANSFER_DST_BIT, Buffer::Memory::Readback);
+    for (uint32_t frame = 0; frame < gpuFrameCount + 2; ++frame) {
+      const auto slot = frame % gpuFrameCount;
+      fixture.begin();
+      if (frame == 0) deviceTransport.recordPrepare(fixture.command, world.resources);
+      const auto batch = deviceTransport.deviceBatch(slot);
+      const VkBufferCopy inputCopy{0, 0, upload.capacity};
+      vkCmdCopyBuffer(fixture.command, upload.handle, batch.points.buffer, 1, &inputCopy);
+      VkMemoryBarrier barrier{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                               .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                               .dstAccessMask = VK_ACCESS_SHADER_READ_BIT};
+      vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                           VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &barrier, 0, nullptr, 0, nullptr);
+      deviceTransport.recordDeviceRadiance(fixture.command, slot, uint32_t(padded.size()), 1);
+      barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+      barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+      vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                           VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1, &barrier, 0, nullptr, 0, nullptr);
+      const VkBufferCopy outputCopy{0, 0, readback.capacity};
+      vkCmdCopyBuffer(fixture.command, batch.results.buffer, readback.handle, 1, &outputCopy);
+      barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+      barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+      vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                           VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &barrier, 0, nullptr, 0, nullptr);
+      fixture.finish();
+      std::vector<bake::Result> copied(paddedResults.size());
+      readback.read(copied.data(), copied.size() * sizeof(bake::Result));
+      require(std::memcmp(copied.data(), paddedResults.data(), copied.size() * sizeof(bake::Result)) == 0,
+              "Device-local batch transport matches host batches across reused frame slots");
+    }
+    bool refusedHostBatch = false, refusedHostRead = false;
+    try { deviceTransport.recordRadiance(VK_NULL_HANDLE, 0, padded, 1); }
+    catch (const std::logic_error &) { refusedHostBatch = true; }
+    try { deviceTransport.read(0, paddedResults); }
+    catch (const std::logic_error &) { refusedHostRead = true; }
+    require(refusedHostBatch && refusedHostRead,
+            "GPU-only transport rejects accidental CPU access before recording or mapping");
     std::printf("Dielectric transport: inside %.3f %.3f %.3f; slab %.3f %.3f %.3f; TIR %.3f\n", inside[0],
                 inside[1], inside[2], outside[0], outside[1], outside[2], trapped[2]);
   }

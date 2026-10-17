@@ -436,14 +436,22 @@ All inputs and radiance are current-frame data; changing or removing an actor le
 
 Ray work uses 16,384-point GPU batches, with inactive padded tails and compute dependencies between
 launch, trace and merge. Batches share fixed slot constants; push constants provide each pixel offset.
+Live transports set `deviceLocalBatches`: points written by the screen launcher and results consumed by
+the merge stay in device-local memory. This is independent of the CPU baker's mapped upload and cached
+readback buffers. GPU-only transports reject accidental CPU batch/read calls; explicit GPU copies are
+available for diagnostics. Slot ownership, batch capacity and dependencies are unchanged.
 The UI reports candidate ray slots and scene rebuilds, not an instrumented count of actual BVH queries.
 Full/half/quarter resolution and roughness cutoff currently share the SSR quality controls.
 
 Controls: `rtx.native.forward.rtReflectionDistance` (metres, default 50), `rtReflectionBounces` (1..8,
 default 2), and `rtTextureResolution` (16..1024 power of two, default 256). Ray range and bounce edits
 apply live. Texture capture uses a bounded 256 MiB atlas and may reduce resolution to fit. GPU point and
-result buffers use about 13.5 MiB per live scene before alignment (three frame slots), plus shading,
+result buffers use about 9 MiB per live scene before alignment (two frame slots), plus shading,
 texture and acceleration data. Retained older generations temporarily add to that memory.
+
+`REMIX_DEBUG_REFLECTION_BATCH_TIMINGS=1` adds launch/transport/merge GPU scopes for the first 32 batches
+per frame. The bound leaves timestamp space for other passes; larger targets report a diagnostic sample
+of their batches. Leave this disabled for final performance measurements.
 
 This initial cache repacks/hashes the current transport inputs each frame and rebuilds a monolithic
 world-space acceleration scene on geometry/material capture changes. Lighting-only and ray-range edits
@@ -745,7 +753,7 @@ and longest dispatch after activation. These are completed queue timestamps, rat
 or an estimate from frame rate. Cached jobs have no tracing timings.
 Bake results prefer CPU-cached host-visible memory (with invalidation on noncoherent heaps), and the
 controller reuses its CPU readback storage between completed slots. Live GPU reflection/GI consumers
-retain their previous allocation policy. Profiling also prints total CPU readback/validation/scatter time.
+use device-local point/result batches. Profiling also prints total CPU readback/validation/scatter time.
 It reports the actual number of bytes read back as well.
 
 Parallel CPU local/sun visibility uses a dedicated kernel and a 48-byte result: one visibility scalar,

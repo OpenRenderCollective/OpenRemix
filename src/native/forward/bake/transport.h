@@ -12,7 +12,8 @@ namespace remix::forward::bake {
     uint32_t textureResolution = 256, batchPoints = 1024;
     uint32_t initialBatchPoints = 0, queueFamily = VK_QUEUE_FAMILY_IGNORED;
     bool parallel = true; // sample-parallel diffuse/visibility; radiance and site queries stay serial
-    bool cpuReadback = true; // prefer CPU-cached results for baking; live GPU consumers keep host placement
+    bool cpuReadback = true; // prefer CPU-cached results for baking
+    bool deviceLocalBatches = false; // GPU-produced points/results; CPU batch/read APIs are unavailable
     uint32_t rayBudget = 1u << 20; // point * sample * bounce ceiling per dispatch
     uint64_t atlasBudget = 256ull << 20;
     float distance = 100, bias = .002f; // metres

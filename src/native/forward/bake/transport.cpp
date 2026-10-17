@@ -54,6 +54,18 @@ namespace remix::forward::bake {
       result->write(data, bytes);
     return result;
   }
+  std::unique_ptr<Buffer> Transport::Gpu::batchBuffer(size_t bytes, bool results) {
+    auto output = std::make_unique<Buffer>();
+    auto memory = results && options.cpuReadback ? Buffer::Memory::Readback : Buffer::Memory::Host;
+    VkBufferUsageFlags usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    // Explicit copies permit GPU producers/readbacks without mapping device memory.
+    if (options.deviceLocalBatches) {
+      memory = Buffer::Memory::Device;
+      usage |= VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    }
+    output->create(physical, device, bytes, usage, memory);
+    return output;
+  }
   void Transport::initialize(VkPhysicalDevice physical, VkDevice device,
                              std::shared_ptr<const scene::BakeScene> source, Options options) {
     if (!source)
@@ -223,6 +235,8 @@ namespace remix::forward::bake {
   void Transport::record(VkCommandBuffer command, uint32_t index, std::span<const Point> points,
                          uint32_t samples, uint32_t bounces, uint32_t firstSample, Mode mode) {
     auto &g = *m_gpu;
+    if (g.options.deviceLocalBatches)
+      throw std::logic_error("Device-local batches require GPU-produced points");
     if (!g.prepared)
       throw std::logic_error("Bake transport must be prepared before tracing");
     if (points.empty() || points.size() > g.options.batchPoints || samples < 1 || samples > 8192 ||
@@ -390,10 +404,8 @@ namespace remix::forward::bake {
     if (count <= slot.capacity)
       return;
     const uint32_t capacity = std::min(options.batchPoints, std::max(count, slot.capacity * 2));
-    auto points = buffer(nullptr, size_t(capacity) * sizeof(Point), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-    auto results = std::make_unique<Buffer>();
-    results->create(physical, device, size_t(capacity) * sizeof(Result), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                    options.cpuReadback ? Buffer::Memory::Readback : Buffer::Memory::Host);
+    auto points = batchBuffer(size_t(capacity) * sizeof(Point), false);
+    auto results = batchBuffer(size_t(capacity) * sizeof(Result), true);
     const VkDescriptorBufferInfo buffers[] = {points->descriptor(), results->descriptor()};
     VkWriteDescriptorSet writes[2]{};
     for (uint32_t i = 0; i < 2; ++i)
@@ -409,6 +421,8 @@ namespace remix::forward::bake {
     slot.capacity = capacity;
   }
   void Transport::read(uint32_t index, std::span<Result> results) const {
+    if (m_gpu->options.deviceLocalBatches)
+      throw std::logic_error("Device-local results require a GPU readback copy");
     const auto &slot = m_gpu->slots.at(index);
     if (results.size() > slot.count)
       throw std::invalid_argument("Bake readback exceeds the recorded batch");
