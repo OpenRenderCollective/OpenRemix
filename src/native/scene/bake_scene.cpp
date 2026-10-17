@@ -1,4 +1,5 @@
 #include "scene/bake_scene.h"
+#include "scene/bake_diagnostics.h"
 #include "scene/bake_material.h"
 #include "scene/resources.h"
 #include <algorithm>
@@ -174,6 +175,9 @@ namespace remix::scene {
       chartHashes[chart.draw].push_back(hash.value);
     }
     Freezer freezer;
+    const bool diagnostics = bakeDiagnosticsEnabled();
+    std::vector<BakeDrawFingerprint> fingerprints;
+    std::array<uint64_t, 6> prefixes{};
     scene.bindings.clear();
     std::vector<uint64_t> records;
     for (size_t drawIndex = 0; drawIndex < scene.draws.size(); ++drawIndex) {
@@ -194,6 +198,7 @@ namespace remix::scene {
       hash.add(uint64_t(charts.size()));
       for (auto chart : charts)
         hash.add(chart);
+      const auto chartHash = hash.value;
       hash.add(geometryHash);
       hash.add(materialHash);
       hash.add(draw.model);
@@ -222,6 +227,8 @@ namespace remix::scene {
       hash.add(blend.alpha2);
       hash.add(blend.factor);
       records.push_back(hash.value);
+      if (diagnostics)
+        fingerprints.push_back({geometryHash, materialHash, chartHash, hash.value});
     }
     for (const auto &light : scene.lights) {
       if (light.dynamic)
@@ -242,6 +249,7 @@ namespace remix::scene {
       hash.add(scene.minimum);
       hash.add(scene.maximum);
     }
+    prefixes[0] = hash.value;
     hash.add(bool(scene.partition));
     if (scene.partition) {
       hash.add(uint64_t(scene.partition->nodes.size()));
@@ -255,22 +263,30 @@ namespace remix::scene {
       for (auto cluster : scene.partition->leafClusters)
         hash.add(cluster);
     }
+    prefixes[1] = hash.value;
     hash.add(uint64_t(scene.reflectionHints.size()));
     for (const auto &position : scene.reflectionHints)
       hash.add(position);
+    prefixes[2] = hash.value;
     hash.add(uint64_t(scene.draws.size()));
     hash.add(uint64_t(scene.lights.size()));
     for (auto record : records)
       hash.add(record);
+    prefixes[3] = hash.value;
     hash.add(scene.sun.direction);
     hash.add(scene.sun.radiance);
     hash.add(scene.sun.angularDiameterDegrees);
     hash.add(scene.sun.isDistant);
+    prefixes[4] = hash.value;
     hash.add(scene.dome.enabled);
     hash.add(scene.dome.radiance);
     hash.add(scene.dome.worldToLocal);
-    hash.add(freezer.texture(scene.dome.texture));
+    const auto domeTextureHash = freezer.texture(scene.dome.texture);
+    hash.add(domeTextureHash);
+    prefixes[5] = hash.value;
     scene.contentHash = hash.value ? hash.value : 1;
+    if (diagnostics)
+      dumpBakeFingerprint(scene, fingerprints, prefixes, domeTextureHash);
   }
 } // namespace remix::scene
 

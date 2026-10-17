@@ -360,6 +360,13 @@ redistribution; `oidn_root` does not automatically package those files.
 On Windows, `scripts/windows/package-runtime.py` bundles the configured SDK's DLLs
 and notices alongside USD and the renderer; see [runtime packaging](../platforms.md#build-on-windows).
 
+For bake-cache investigations, `REMIX_DEBUG_BAKE_INPUT_PREFIX` writes a JSON report
+per frozen input hash. It records per-draw geometry/material/chart fingerprints
+and cumulative checkpoints for the scene header, BSP partition, reflection hints,
+members, sun and dome. An RGBA8 dome also writes its mip-zero pixels to a sibling
+`.dome.bin` file. Use a fresh report prefix for each process; these files diagnose
+input differences and do not change cache identity.
+
 Filtering runs on the existing preparation worker after transport readback and before half-float
 atlas encoding and persistent cache storage. OIDN chooses its default supported device, including
 GPU backends where available. This is an offline stage with explicit transfers from the existing
