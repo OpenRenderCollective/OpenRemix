@@ -1,5 +1,11 @@
 Remix native runtime third-party components
 
+s&box screen-space reflection footprint and bilateral reconstruction
+Copyright (c) 2025 Facepunch Studios Ltd
+MIT license; full notice: src/native/forward/shaders/SBOX-LICENSE.txt.
+Packages include sbox-SSR.txt. Adapted from game/core/shaders/screen_space_reflections_cs.shader
+in Facepunch/sbox-public, reference revision fe599012 (Screen Space Reflections 3, #5873).
+
 Dear ImGui v1.92.9b (core, SDL3 backend, Vulkan backend)
 Copyright (c) 2014-2026 Omar Cornut and Dear ImGui contributors
 MIT license; full notice: third_party/imgui/LICENSE.txt (included in packages).

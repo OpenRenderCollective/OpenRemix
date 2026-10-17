@@ -26,7 +26,7 @@ namespace remix::forward {
     Reflections();
     ~Reflections();
     void initialize(VkPhysicalDevice physical, VkDevice device, VkExtent2D extent,
-                    VkSampleCountFlagBits samples, uint32_t scale, Inputs inputs);
+                    VkSampleCountFlagBits samples, const Options &options, Inputs inputs);
     // Caller has waited for this frame slot's fence. Targets are shared on the
     // renderer's one queue; all cross-pass and cross-frame barriers live here.
     void record(VkCommandBuffer command, uint32_t slot, const FrameData &frame, const Options &options,

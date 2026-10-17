@@ -32,6 +32,7 @@ for name in ['remix.h', 'remix_c.h', 'remix_native_ext.h', 'remix_reconstruction
 shutil.copy2(root / 'third_party/imgui/LICENSE.txt', licenses / 'ImGui.txt')
 shutil.copy2(root / 'third_party/image/LICENSES.txt', licenses / 'ImageDecoders.txt')
 shutil.copy2(root / 'src/native/pathtrace/shaders/LICENSE-eon.txt', licenses / 'EON.txt')
+shutil.copy2(root / 'src/native/forward/shaders/SBOX-LICENSE.txt', licenses / 'sbox-SSR.txt')
 for source, name in [('LICENSE.txt','NRD.txt'), ('External/MathLib/LICENSE.txt','MathLib.txt'),
                      ('External/ShaderMake/LICENSE.txt','ShaderMake.txt'), ('External/sse2neon/LICENSE','sse2neon.txt')]:
     shutil.copy2(root / 'third_party/nrd' / source, licenses / name)

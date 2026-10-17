@@ -2209,8 +2209,10 @@ namespace {
     const auto roughFloor = makeQuad(9011, roughMaterial, floorPositions, floorNormal);
     const auto wall = makeQuad(9012, wallMaterial, wallPositions, wallNormal);
     const auto cutoutWall = makeQuad(9013, cutoutMaterial, wallPositions, wallNormal);
+    remixapi_MeshHandle reflectionBackdrop = nullptr;
     auto drawScene = [&](bool rough = false, bool showWall = true, bool cutout = false,
-                         bool hidden = false, float offset = 0.f) {
+                         bool hidden = false, float offset = 0.f, remixapi_MeshHandle receiver = nullptr,
+                         remixapi_MeshHandle emitter = nullptr) {
       remixapi_CameraInfoParameterizedEXT parameters{};
       parameters.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO_PARAMETERIZED_EXT;
       parameters.position = {0, 1.5f, -3};
@@ -2227,9 +2229,9 @@ namespace {
       r.setupCamera(camera);
       if (environmentLight)
         r.drawLight(environmentLight);
-      r.drawInstance(instance(rough ? roughFloor : floor));
+      r.drawInstance(instance(receiver ? receiver : rough ? roughFloor : floor));
       if (showWall) {
-        auto draw = instance(cutout ? cutoutWall : wall);
+        auto draw = instance(emitter ? emitter : cutout ? cutoutWall : wall);
         remixapi_InstanceIdentityEXT identity{};
         identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
         identity.instanceId = 9400;
@@ -2238,6 +2240,8 @@ namespace {
         if (hardware) { draw.pNext = &identity; draw.doubleSided = 1; }
         draw.transform.matrix[0][3] = offset;
         r.drawInstance(draw);
+        if (reflectionBackdrop)
+          r.drawInstance(instance(reflectionBackdrop));
       }
       return target.render();
     };
@@ -2530,6 +2534,52 @@ namespace {
                 "Removed geometry leaves no stale reflection radiance");
         require(reflectedPixels(drawScene(false, true, true)) < 3,
                 "Alpha-tested surfaces do not write false reflection hits");
+      }
+    }
+    if (!baked) {
+      const auto blurredMaterial = makeMaterial(9500, .45f, 1, 0);
+      const auto blurredFloor = makeQuad(9501, blurredMaterial, floorPositions, floorNormal);
+      const float narrowPositions[][3] = {{-.12f, .15f, 3}, {.12f, .15f, 3},
+                                          {.12f, 1.8f, 3}, {-.12f, 1.8f, 3}};
+      const auto narrowMaterial = makeMaterial(9502, .5f, 0, .5f);
+      const auto narrowWall = makeQuad(9503, narrowMaterial, narrowPositions, wallNormal);
+      const auto blackMaterial = makeMaterial(9504, .5f, 0, 0);
+      const float backdropPositions[][3] = {{-.8f, .15f, 3.02f}, {.8f, .15f, 3.02f},
+                                            {.8f, 1.8f, 3.02f}, {-.8f, 1.8f, 3.02f}};
+      reflectionBackdrop = makeQuad(9505, blackMaterial, backdropPositions, wallNormal);
+      struct Highlight {
+        double energy = 0, width = 0;
+        uint8_t peak = 0;
+      };
+      auto highlight = [&](const std::vector<uint8_t> &image) {
+        Highlight result;
+        for (uint32_t y = target.extent.height / 2; y < target.extent.height; ++y)
+          for (uint32_t x = 0; x < target.extent.width; ++x) {
+            const size_t at = (y * target.extent.width + x) * 4;
+            if (without[at] > 8) continue; // exclude the directly visible emitter
+            const auto red = image[at];
+            const double offset = double(x) - double(target.extent.width - 1) * .5;
+            result.energy += red;
+            result.width += red * offset * offset;
+            result.peak = std::max(result.peak, red);
+          }
+        result.width /= std::max(result.energy, 1.);
+        return result;
+      };
+      options.ssrScale = 1;
+      for (uint32_t samples : {1u, 2u, 4u}) {
+        options.samples = samples;
+        target.enableForward(options);
+        const auto sharpImage = drawScene(false, true, false, false, 0, floor, narrowWall);
+        const auto roughImage = drawScene(false, true, false, false, 0, blurredFloor, narrowWall);
+        const auto sharp = highlight(sharpImage), rough = highlight(roughImage);
+        std::printf("SSR colour footprint %ux: peak %u/%u, width %.4f/%.4f, energy %.0f/%.0f sharp/rough\n",
+                    samples, sharp.peak, rough.peak, sharp.width, rough.width, sharp.energy, rough.energy);
+        require(sharp.energy > 100 && rough.energy > 100 && rough.peak + 5 < sharp.peak &&
+                    rough.width > sharp.width * 1.2,
+                "Roughness spreads a narrow reflected emitter and lowers its peak without losing the reflection");
+        save(samples == 1 ? "cone-sharp-1x.ppm" : samples == 2 ? "cone-sharp-2x.ppm" : "cone-sharp-4x.ppm", sharpImage);
+        save(samples == 1 ? "cone-rough-1x.ppm" : samples == 2 ? "cone-rough-2x.ppm" : "cone-rough-4x.ppm", roughImage);
       }
     }
     std::puts("SSR GPU readback: reflected object, odd dimensions, roughness, MSAA, removal and alpha "

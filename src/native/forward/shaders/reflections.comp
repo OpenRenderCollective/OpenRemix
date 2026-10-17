@@ -28,10 +28,11 @@ layout(set = 0, binding = 7) uniform sampler2D depthPyramid;
 layout(set = 0, binding = 8, rgba16f) writeonly uniform image2D outNormals;
 layout(set = 0, binding = 9, rgba16f) writeonly uniform image2D outReflectance;
 layout(set = 0, binding = 10, r32f) writeonly uniform image2D outDepth;
-layout(set = 0, binding = 11, rgba16f) writeonly uniform image2D outReflection;
+layout(set = 0, binding = 11, rgba16f) writeonly uniform image2D outRadiance;
 layout(set = 0, binding = 12) uniform sampler2D rawRadiance;
 
 #include "reflection_math.glsl"
+#include "radiance-filter.glsl"
 vec3 worldPosition(vec2 uv, float depth) {
   vec4 world = reflectionTransform(frame.inverseCamera, vec4(uv * 2 - 1, depth, 1));
   precise vec3 position = world.xyz / world.w;
@@ -72,6 +73,10 @@ void main() {
   imageStore(outNormals, pixel, normal);
   imageStore(outReflectance, pixel, specular);
   imageStore(outDepth, pixel, vec4(closest, closest, 0, 0));
+  // The colour source is already MSAA-resolved with premultiplied coverage.
+  // Probe/RT-only targets bind a one-pixel dummy instead of a full pyramid.
+  if (all(lessThan(pixel, imageSize(outRadiance))))
+    imageStore(outRadiance, pixel, finiteRadiance(texelFetch(opaqueColor, pixel, 0)));
 }
 #endif
 
@@ -96,6 +101,7 @@ void main() {
       nearest = min(nearest, texelFetch(depthPyramid, ivec2(x, y), 0).r);
     }
   imageStore(outDepth, pixel, vec4(nearest, 0, 0, 0));
+  imageStore(outRadiance, pixel, reduceRadiance(opaqueColor, pixel, size));
 }
 #endif
 
@@ -186,7 +192,8 @@ vec4 traceReflection(ivec2 pixel) {
     vec3 hitNormal = texelFetch(normals, cell, 0).xyz;
     if (hitT <= exit + epsilon && behind >= -frame.trace.z && behind <= frame.trace.y &&
         reflectionDot(hitNormal, direction) < -.001) {
-      vec4 color = textureLod(opaqueColor, hit.xy, 0);
+      float colorMip = reflectionColorMip(guide.w, uv, hit.xy, vec2(frame.target.xy), nv);
+      vec4 color = finiteRadiance(textureLod(opaqueColor, hit.xy, colorMip));
       float edge = min(min(hit.x, hit.y), min(1 - hit.x, 1 - hit.y));
       float confidence = smoothstep(0, .05, edge) * (1 - smoothstep(.8, 1, hitT));
       confidence *= 1 - smoothstep(frame.trace.w * .75, frame.trace.w, guide.w);
@@ -202,7 +209,7 @@ void main() {
   ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
   if (any(greaterThanEqual(pixel, ivec2(frame.target.zw))))
     return;
-  imageStore(outReflection, pixel, traceReflection(surfacePixel(pixel)));
+  imageStore(outRadiance, pixel, traceReflection(surfacePixel(pixel)));
 }
 #endif
 
@@ -215,7 +222,7 @@ void main() {
   vec4 guide = texelFetch(normals, pixel, 0);
   float depth = texelFetch(depthPyramid, pixel, 0).r;
   if (depth >= 1 || dot(guide.xyz, guide.xyz) < .1) {
-    imageStore(outReflection, pixel, vec4(0));
+    imageStore(outRadiance, pixel, vec4(0));
     return;
   }
   vec2 uv = (vec2(pixel) + .5) / vec2(frame.target.xy);
@@ -224,11 +231,12 @@ void main() {
   ivec2 base = ivec2(floor(low));
   vec4 radiance = vec4(0);
   float total = 0;
-  // A small geometry-aware cone filter also performs half/quarter-resolution
-  // reconstruction. It cannot blur radiance through depth or normal boundaries.
-  int radius = guide.w > .2 ? 2 : 1;
-  for (int y = -radius; y <= radius; ++y)
-    for (int x = -radius; x <= radius; ++x) {
+  // Facepunch s&box's 2x2 bilateral upscale; see SBOX-LICENSE.txt.
+  // Roughness filtering happens at the hit in the colour mip chain. This pass
+  // reconstructs the receiving surface without blurring mirrors at full scale.
+  vec2 fractional = low - floor(low);
+  for (int y = 0; y <= 1; ++y)
+    for (int x = 0; x <= 1; ++x) {
       ivec2 samplePixel = clamp(base + ivec2(x, y), ivec2(0), ivec2(frame.target.zw) - 1);
       ivec2 surface = surfacePixel(samplePixel);
       vec4 sampleGuide = texelFetch(normals, surface, 0);
@@ -236,11 +244,11 @@ void main() {
       if (sampleDepth >= 1 || dot(sampleGuide.xyz, sampleGuide.xyz) < .1)
         continue;
       float distance = viewDepth((vec2(surface) + .5) / vec2(frame.target.xy), sampleDepth);
-      vec2 offset = vec2(samplePixel) - low;
-      float weight = exp(-dot(offset, offset) / (guide.w > .2 ? 3 : 1.2));
-      weight *= exp(-abs(distance - centerDepth) / max(frame.trace.z * 2, centerDepth * .01));
-      weight *= pow(max(reflectionDot(reflectionUnit(guide.xyz), reflectionUnit(sampleGuide.xyz)), 0), 32);
-      weight *= exp(-abs(guide.w - sampleGuide.w) * 16);
+      vec2 bilinear = mix(1 - fractional, fractional, vec2(x, y));
+      float weight = bilinear.x * bilinear.y;
+      weight *= exp(-abs(distance - centerDepth) / max(centerDepth, 1e-4) * 70);
+      weight *= pow(max(reflectionDot(reflectionUnit(guide.xyz), reflectionUnit(sampleGuide.xyz)), 0), 6);
+      weight *= exp(-abs(guide.w - sampleGuide.w) * 4);
       radiance += texelFetch(rawRadiance, samplePixel, 0) * weight;
       total += weight;
     }
@@ -255,6 +263,6 @@ void main() {
   if (!probeRadiance(fma(normal, vec3(frame.trace.z), position), reflected, guide.w, fallback))
     fallback = environmentReflection(position, normal, reflected, guide.w);
   radiance.rgb += fallback * (1 - clamp(radiance.a, 0, 1));
-  imageStore(outReflection, pixel, vec4(min(radiance.rgb * fresnel, vec3(65000)), radiance.a));
+  imageStore(outRadiance, pixel, vec4(min(radiance.rgb * fresnel, vec3(65000)), radiance.a));
 }
 #endif

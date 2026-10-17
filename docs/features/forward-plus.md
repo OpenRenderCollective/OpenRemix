@@ -102,10 +102,19 @@ a world-space thickness tolerance and the hit normal. Screen edges, distance and
 confidence. Off-screen static objects and the captured environment use the baked cubemap fallback.
 With hardware rays disabled, dynamic objects outside the screen have no reflection source. Transparent surfaces and viewmodels remain outside the reflected opaque scene.
 
-MSAA normals, roughness, reflectance and depth resolve from the same nearest covered sample. A
-geometry-aware filter reconstructs reduced-resolution radiance using depth, normal and roughness
-agreement. A Fresnel-weighted scene-linear specular contribution is added before exposure and tone
-mapping. This small filter is an approximation for moderate roughness, not a full environment prefilter.
+MSAA normals, roughness, reflectance and depth resolve from the same nearest covered sample. A linear
+HDR colour pyramid is built alongside the depth hierarchy. Each hit selects a trilinear colour mip from
+the receiver's squared roughness, screen-space hit distance and grazing-angle footprint. A 2x2 bilateral
+reconstruction uses depth, normal and roughness agreement at reduced resolution; full-resolution mirrors
+keep their original sample. The footprint and reconstruction are adapted from Facepunch's MIT-licensed
+s&box shader, with attribution in `src/native/forward/shaders/SBOX-LICENSE.txt`.
+
+Colour levels use area-weighted reduction for odd dimensions and retain premultiplied coverage. Finite
+HDR values are kept within half-float range. The chain adds approximately 84.4 MiB at 3840x2160 and is
+replaced by a one-pixel dummy when SSR is disabled. It uses the existing resolve/reduce dispatches and
+descriptor bindings. This is an isotropic footprint approximation: it softens valid screen hits, but does
+not trace a full GGX lobe or recover missed geometry. Cubemaps remain the fallback for those misses.
+A Fresnel-weighted scene-linear specular contribution is added before exposure and tone mapping.
 Rough surfaces above the configured cutoff receive no SSR; they can still use filtered cubemaps.
 
 Reflection reconstruction and ray projection use shared, explicit fused arithmetic.
@@ -424,10 +433,11 @@ queue submission or manual wait. BSP replay drains eight frames in this mode
 so the slot can complete before shutdown; its ordinary drain remains three.
 For comparisons that must include complete SSR trace inputs, additionally set
 `REMIX_DEBUG_FULL_REFLECTION_INPUTS=1`. This replaces the centre crops with full
-images and saves every reduced depth level as `depth-mip<N>.image.bin`. The
+images and saves every reduced depth and colour level as `depth-mip<N>.image.bin`
+and `color-mip<N>.image.bin`. The
 reported dimensions describe that mip. The full option requires the capture
 prefix and remains a one-frame capture, but uses substantially more memory and
-disk space (about 311 MiB for the default 4K half-resolution SSR targets).
+disk space (about 332 MiB for the default 4K half-resolution SSR targets).
 
 `<prefix>.<stage>.image.bin` begins with `RMXIMG01`, then seven little-endian
 32-bit integers: Vulkan format, full width/height, crop X/Y and crop width/height.
