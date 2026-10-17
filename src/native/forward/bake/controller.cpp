@@ -189,6 +189,12 @@ namespace remix::forward::bake {
     if (atlas.pageSize > properties.limits.maxImageDimension2D)
       throw std::invalid_argument("Surface lightmap page exceeds device limit");
     surfaceLayout = lightmap::fit(*source, atlas, cancellation.get_token());
+    if (config.relocateProbes) {
+      const auto relocated = relocate(grid, *source, surfaceLayout, cancellation.get_token());
+      if (std::getenv("REMIX_DEBUG_BAKE_RECEIVERS"))
+        std::fprintf(stderr, "Forward probe relocation: %u slots, %zu/%zu trace origins\n",
+                     relocated, grid.tasks.size(), grid.points.size());
+    }
     surfaces.resize(surfaceLayout.points.size());
     Options options;
     mixedLights = std::make_shared<mixed::Plan>(
@@ -316,7 +322,7 @@ namespace remix::forward::bake {
                 job.surfaces[submission.first + i] = value;
               } else {
                 value.statistics[3] = !job.failed && value.statistics[0] < .5f ? 1.f : 0.f;
-                job.grid.probes[job.grid.tasks[submission.first + i]] = value;
+                storeProbe(job.grid, job.grid.tasks[submission.first + i], value);
               }
             }
           }

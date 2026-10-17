@@ -60,6 +60,7 @@ int main(int argc, char **argv) {
   };
   qualityKey([](auto &c) { c.directDiffuse = !c.directDiffuse; });
   qualityKey([](auto &c) { c.denoiseLightmaps = !c.denoiseLightmaps; });
+  qualityKey([](auto &c) { c.relocateProbes = !c.relocateProbes; });
   qualityKey([](auto &c) { c.spacing += 1; });
   qualityKey([](auto &c) { c.maxProbes *= 2; });
   qualityKey([](auto &c) { c.bounces += 1; });
@@ -126,6 +127,34 @@ int main(int argc, char **argv) {
               f::probes::serialize(restored->specular) == f::probes::serialize(data.specular) &&
               restored->surfaceSamples == 25 && restored->directDiffuse,
           "Atlas, reflection data and direct-light policy survive the cache round trip");
+  {
+    auto relocated = data;
+    auto relocationConfig = config;
+    relocationConfig.relocateProbes = true;
+    const auto relocationKey = bc::key(source->contentHash, relocationConfig, .001f, device);
+    const auto relocationFile = file.parent_path() / "relocation.bake";
+    relocated.grid.header.settings[2] = 1;
+    relocated.grid.probes[0].irradiance[0][3] = .3f;
+    auto saveRelocated = [&] {
+      return bc::write(relocationFile, relocationKey,
+                       {relocated.grid, relocated.layout, relocated.mixed, relocated.captures,
+                        relocated.specular, relocated.pixels, relocated.surfaceSamples,
+                        relocated.directDiffuse, relocated.sun});
+    };
+    require(saveRelocated(), "Relocated probe payload can be saved independently");
+    const auto imported = bc::read(relocationFile, relocationKey, source, relocationConfig, device);
+    require(imported && imported->grid.header.settings[2] == 1 &&
+            imported->grid.probes[0].irradiance[0][3] == .3f && imported->grid.points.empty(),
+            "Trace offsets survive cached publication without transient point arrays");
+    auto disabledRelocation = config;
+    disabledRelocation.relocateProbes = false;
+    require(!bc::read(relocationFile, relocationKey, source, disabledRelocation, device),
+            "Relocated payloads require explicit enabled policy even when supplied the file key");
+    relocated.grid.probes[0].irradiance[0][3] = .6f;
+    require(!saveRelocated(), "Offsets outside the cell movement bound cannot replace a completed cache");
+    require(bool(bc::read(relocationFile, relocationKey, source, relocationConfig, device)),
+            "Failed relocation writes preserve the previously completed cache");
+  }
   const float confidence = data.specular.header.probes[0].position[3];
   data.specular.header.probes[0].position[3] = 0;
   require(save(), "A legacy cache without projection confidence is saved");

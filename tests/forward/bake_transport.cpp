@@ -1505,6 +1505,7 @@ namespace {
     const auto extended = probes::filter({&capture, 1}, 64);
     for (uint32_t skyCase = 1; skyCase <= 3; ++skyCase)
       test::probeQueries(fixture, extended, skyCase);
+    test::probeQueries(fixture, extended, 4); // bounded probe relocation
     LightData lamp;
     lamp.positionRadius = {0, 0, 0, .4f};
     lamp.radiance = {5, 5, 5, 0};

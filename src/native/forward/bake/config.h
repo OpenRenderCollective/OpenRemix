@@ -6,6 +6,7 @@ namespace remix::forward::bake {
     bool directDiffuse = true;
     bool diskCache = true;
     bool denoiseLightmaps = true; // OIDN RTLightmap where available; unsupported builds retain raw transport
+    bool relocateProbes = true; // bounded recovery of otherwise unused BSP-solid slots
     float gpuBudgetMs = 8; // zero selects fixed batch size; otherwise a measured GPU-time target
     float spacing = 2;     // metres; coarsened if necessary to respect maxProbes
     uint32_t maxProbes = 32768, samples = 256, bounces = 3, batch = 64, textureResolution = 256;

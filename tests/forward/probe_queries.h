@@ -19,7 +19,9 @@ namespace remix::forward::test {
         {{0, 0, 0, 0}, {1, 0, 0, .4f}}, {{1, 1, 1, 0}, {0, -1, 0, .05f}}, {{1.5f, 0, 0, 0}, {1, 0, 0, 0}},
         {{0, 0, 0, 1}, {0, 0, 1, 0}},   {{0, 0, 0, 1}, {0, 0, -1, 0}},    {{4, 0, 0, 1}, {0, 0, 1, 0}},
         {{0, 0, -1, 0}, {0, 0, 1, .2f}}, {{-1, 0, 0, 0}, {1, 0, 0, .4f}},
-        {{-.5f, 0, -1, 0}, {0, 0, 1, .3f}}, {{.5f, 0, -1, 0}, {0, 0, 1, .3f}}};
+        {{-.5f, 0, -1, 0}, {0, 0, 1, .3f}}, {{.5f, 0, -1, 0}, {0, 0, 1, .3f}},
+        {{0, 0, 0, 2}, {0, 0, 1, 0}}, {{.5f, 0, 0, 2}, {1, 0, 0, 0}},
+        {{-.5f, .2f, 0, 2}, {0, 1, 0, 0}}, {{4, 0, 0, 2}, {0, 0, 1, 0}}};
     struct Gpu {
       VkDevice device;
       Buffer asset, input, output, sky;
@@ -48,13 +50,25 @@ namespace remix::forward::test {
     sky.header.originSpacing = {-1, -1, -1, 2};
     sky.header.dimensions = {2, 2, 2, 8};
     sky.header.settings = {0, .0001f, 0, 0};
-    for (auto &probe : sky.probes) {
+    for (uint32_t i = 0; i < 8; ++i) {
+      auto &probe = sky.probes[i];
       probe.statistics[3] = skyCase == 2 ? 0.f : 1.f;
+      probe.irradiance[0] = {.2f + i * .1f, .5f, .8f - i * .05f, 0};
+      probe.irradiance[1] = {-.05f, .1f, .05f, 0};
+      if (skyCase == 4) {
+        sky.header.settings[2] = 1;
+        probe.irradiance[0][3] = i & 1 ? -.7f : .7f;
+        probe.irradiance[1][3] = i & 2 ? -.4f : .4f;
+        probe.irradiance[2][3] = i & 4 ? -.2f : .2f;
+      }
       for (auto &moment : probe.moments)
         moment = skyCase == 3 ? Vec4{0, 0, 0, 16} : Vec4{100, 10000, skyCase == 1 ? 1.f : 0.f, 16};
     }
     gpu.sky.create(fixture.physical, fixture.device, sizeof(sky), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     gpu.sky.write(&sky, sizeof(sky));
+    bake::Grid reference;
+    reference.header = sky.header;
+    reference.probes.assign(std::begin(sky.probes), std::end(sky.probes));
     gpu.input.create(fixture.physical, fixture.device, sizeof(queries), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     gpu.input.write(queries, sizeof(queries));
     gpu.output.create(fixture.physical, fixture.device, std::size(queries) * sizeof(Vec4),
@@ -132,8 +146,18 @@ namespace remix::forward::test {
     gpu.output.read(values, sizeof(values));
     for (uint32_t i = 0; i < count; ++i) {
       const auto &q = queries[i];
+      if (q.position[3] == 2) {
+        const auto expected = bake::sample(reference, {q.position[0], q.position[1], q.position[2]},
+                                           {q.reflected[0], q.reflected[1], q.reflected[2]});
+        require((values[i][3] > .5f) == bool(expected), "GPU relocated diffuse coverage matches CPU sampling");
+        if (expected)
+          for (uint32_t c = 0; c < 3; ++c)
+            require(std::abs(values[i][c] - (*expected)[c]) < 2e-5f,
+                    "GPU diffuse interpolation uses actual relocated trace origins");
+        continue;
+      }
       if (q.position[3] > 0) {
-        const float expected = skyCase == 0 && q.position[0] == 0 ? 1.f : 0.f;
+        const float expected = (skyCase == 0 || skyCase == 4) && q.position[0] == 0 ? 1.f : 0.f;
         require(std::abs(values[i][0] - expected) < 1e-5f,
                 "Sky visibility accepts open space and rejects closed, invalid, occluded and unknown space");
         continue;

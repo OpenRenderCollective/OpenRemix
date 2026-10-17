@@ -134,6 +134,8 @@ namespace remix::forward::bake {
       }
       const auto &probe =
           grid.probes[(coordinate[2] * h.dimensions[1] + coordinate[1]) * h.dimensions[0] + coordinate[0]];
+      if (h.settings[2] > .5f)
+        for (uint32_t c = 0; c < 3; ++c) delta[c] -= probe.irradiance[c][3];
       if (probe.statistics[3] < .5f || weight <= 0)
         continue;
       const float distance = std::sqrt(dot(delta, delta));

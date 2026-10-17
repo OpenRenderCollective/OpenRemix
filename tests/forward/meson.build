@@ -8,7 +8,8 @@ forward_denoise_test = executable('remix-forward-lightmap-denoise-test', 'lightm
 test('Offline lightmap denoising preserves directional SH and chart isolation', forward_denoise_test,
   timeout : 120)
 forward_grid_test = executable('remix-forward-grid-test', 'grid.cpp',
-  '../../src/native/forward/bake/grid.cpp', '../../src/native/forward/lighting.cpp',
+  '../../src/native/forward/bake/grid.cpp', '../../src/native/forward/bake/relocation.cpp',
+  '../../src/native/forward/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Irradiance grid placement and visibility reconstruction', forward_grid_test)
 

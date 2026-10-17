@@ -1,4 +1,5 @@
 #include "forward/bake/grid.h"
+#include "forward/lightmap/layout.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -99,6 +100,51 @@ int main() {
   require(grid.tasks.size() < grid.points.size(), "Solid BSP leaves consume no tracing work");
   for (const auto index : grid.tasks)
     require(grid.points[index].position[0] >= 0, "Every queued probe occupies a playable leaf");
+  {
+    // Two playable regions separated by a solid slab: a receiver can rescue
+    // an otherwise untraced lattice node without moving the existing probes.
+    bake::Grid moved;
+    moved.header.originSpacing = {-1, -1, -1, 2};
+    moved.header.dimensions = {2, 2, 2, 8};
+    moved.header.settings = {0, 1, 0, 0};
+    moved.points.resize(8);
+    moved.probes.resize(8);
+    for (uint32_t i = 0; i < 8; ++i)
+      moved.points[i].position = {i & 1 ? 1.f : -1.f, i & 2 ? 1.f : -1.f, i & 4 ? 1.f : -1.f, 0};
+    moved.tasks = {1, 3, 5, 7};
+    scene::BakeScene region;
+    region.sceneScale = 1;
+    auto split = std::make_shared<scene::VisibilityPartition>();
+    split->closed = true;
+    split->clusterCount = 1;
+    split->nodes.push_back({{1, 0, 0, -.5f}, {-1, -2}, {0, 0}});
+    split->leafClusters = {0, -1};
+    region.partition = split;
+    lightmap::Layout receivers;
+    receivers.points = {{{-.4f, -1, -1, 0}, {1, 0, 0, 0}},
+                        {{-.4f, 1, -1, 0}, {1, 0, 0, 0}},
+                        {{-.4f, -1, 1, 0}, {1, 0, 0, 0}},
+                        {{-.4f, 1, 1, 0}, {1, 0, 0, 0}}};
+    receivers.receiverSamples = {1, 1, 1, 0};
+    const auto original = moved.points;
+    require(bake::relocate(moved, region, receivers) == 3 && moved.tasks.size() == 7 && moved.points.size() == 8,
+            "Relocation reuses only unused slots within the existing allocation");
+    require(moved.points[1].position == original[1].position && moved.points[6].position == original[6].position,
+            "Existing usable probes and donor-only receivers are not moved");
+    for (auto index : moved.tasks) {
+      bake::Result value;
+      value.statistics[3] = 1;
+      value.irradiance[0] = {2.f / .2820947918f, 0, 0, 0};
+      for (auto &moment : value.moments) moment = {100, 10000, 0, 1};
+      bake::storeProbe(moved, index, value);
+    }
+    require(moved.header.settings[2] == 1 && std::abs(moved.probes[0].irradiance[0][3] - .8f) < 1e-6f,
+            "Actual trace displacement survives result publication in reserved grid alpha");
+    const auto light = bake::sample(moved, {-.3f, -.5f, -.5f}, {1, 0, 0});
+    require(light && std::abs((*light)[0] - 2) < 1e-5f,
+            "Relocated interpolation preserves constant irradiance");
+    require(bake::relocate(moved, region, receivers) == 0, "Repeated relocation does not move already queued probes");
+  }
   config.maxProbes = 64;
   require(bake::place(scene, config).points.size() <= 64, "Coarsening reaches the smallest supported budget");
   config.spacing = std::numeric_limits<float>::quiet_NaN();

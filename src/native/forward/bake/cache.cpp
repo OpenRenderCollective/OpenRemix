@@ -19,6 +19,12 @@ namespace remix::forward::bake::cache {
       if (!value)
         throw std::runtime_error("Invalid bake cache metadata");
     }
+    void probeOffsets(const GridHeader &header, const Result &probe) {
+      if (header.settings[2] > .5f)
+        for (uint32_t c = 0; c < 3; ++c)
+          require(std::isfinite(probe.irradiance[c][3]) &&
+                  std::abs(probe.irradiance[c][3]) <= header.originSpacing[3] * .4501f);
+    }
     template <typename Range> void finite(const Range &values) {
       for (auto value : values)
         require(std::isfinite(value));
@@ -43,6 +49,7 @@ namespace remix::forward::bake::cache {
       finite(grid.header.originSpacing);
       finite(grid.header.settings);
       require(grid.header.originSpacing[3] > 0 && device.storageRange >= sizeof(GridHeader));
+      require(grid.header.settings[2] == 0 || (grid.header.settings[2] == 1 && config.relocateProbes));
       const auto maximum =
           std::min(uint64_t(config.maxProbes), (device.storageRange - sizeof(GridHeader)) / sizeof(Result));
       uint64_t count = 1;
@@ -60,6 +67,7 @@ namespace remix::forward::bake::cache {
         for (const auto &moment : probe.moments)
           finite(moment);
         finite(probe.statistics);
+        probeOffsets(grid.header, probe);
       }
       grid.tasks = input.array<uint32_t>(count);
       std::vector<bool> used(size_t(count), false);
@@ -249,6 +257,10 @@ namespace remix::forward::bake::cache {
                                d.storageRange};
     const auto hash = scene::fastHash(fields, sizeof(fields), content ^ shaders);
     auto raw = scene::fastHash(d.uuid.data(), d.uuid.size(), hash);
+    if (c.relocateProbes) {
+      const uint32_t relocation[] = {0x524c4f43u, 1};
+      raw = scene::fastHash(relocation, sizeof(relocation), raw);
+    }
     if (!policy.lights.empty()) {
       const uint32_t policyVersion = 1;
       raw = scene::fastHash(&policyVersion, sizeof(policyVersion), raw);
@@ -330,6 +342,8 @@ namespace remix::forward::bake::cache {
     std::filesystem::path temporary;
     try {
       detail::check(cancelled);
+      require(view.grid.header.settings[2] == 0 || view.grid.header.settings[2] == 1);
+      for (const auto &probe : view.grid.probes) probeOffsets(view.grid.header, probe);
       require(view.surfaceSamples || std::any_of(view.grid.probes.begin(), view.grid.probes.end(),
                                                  [](const auto &p) { return p.statistics[3] > .5f; }));
       std::filesystem::create_directories(file.parent_path());

@@ -31,6 +31,9 @@ float bakeProbeWeight(vec3 position, vec3 normal, uvec3 coordinate, vec3 fractio
   if (bakeProbes[index].statistics.w < .5 || weight <= 0)
     return 0;
   vec3 delta = position - (bakeOriginSpacing.xyz + vec3(coordinate) * bakeOriginSpacing.w);
+  if (bakeSettings.z > .5)
+    delta -= vec3(bakeProbes[index].irradiance[0].w, bakeProbes[index].irradiance[1].w,
+                  bakeProbes[index].irradiance[2].w);
   float distance = length(delta);
   vec3 absolute = abs(delta);
   uint axis = absolute.x >= absolute.y && absolute.x >= absolute.z ? 0u

@@ -47,8 +47,10 @@ def probe_summary(prefix, metres_per_unit):
     if not np.isfinite(spacing) or spacing <= 0:
         raise ValueError("probe spacing must be finite and positive")
     valid = int(np.count_nonzero(data[:, 15, 3] >= .5))
+    relocated = int(np.count_nonzero(np.any(data[:, :3, 3] != 0, axis=1))) if header[10] > .5 else 0
     return dict(source=str(path), dimensions=dimensions[:3].tolist(), allocated_probes=count,
                 valid_probes=valid, invalid_or_untraced_probes=count - valid,
+                relocated_probes=relocated,
                 spacing_world_units=spacing,
                 spacing_metres=spacing * metres_per_unit if metres_per_unit else None,
                 limitations="Uniform grid spacing/validity alone does not measure surface/probe shading error")

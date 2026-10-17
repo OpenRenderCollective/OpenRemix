@@ -887,9 +887,24 @@ Version-2 scene descriptors may supply
 playable bounds independently of transport geometry. A closed BSP partition excludes solid/outside leaves
 from tracing. Backface coverage rejects unusable probes. The forward fragment shader reconstructs nine
 SH coefficients from eight neighbours with trilinear, normal-facing and distance-moment visibility weights.
-This replaces diffuse ambient fill where coverage is usable; direct lighting remains separate. Probe
-relocation and adaptive placement are not implemented, so thin walls and poorly sampled spaces still need
-map-level evaluation.
+This replaces diffuse ambient fill where coverage is usable; direct lighting remains separate.
+
+`rtx.native.forward.probeRelocation` defaults on and reuses untraced BSP-solid slots
+near actual chart receivers. Existing usable locations stay fixed. Receiver-only
+samples propose positions with bounded normal clearance; closed BSP classification
+must accept the candidate, and each axis moves at most 45% of a cell. Hardware
+backface validation still rejects unusable results. It can trace more of the
+already allocated slots without increasing the probe allocation limit.
+Hosts without a closed BSP partition keep ordinary placement. Set this option to
+zero to retain ordinary placement for comparisons.
+
+Relocated trace offsets occupy alpha in the first three grid SH vectors, selected
+by the grid header flag. Surface-lightmap and reflection alpha meanings remain
+separate. CPU/GPU interpolation evaluates distance moments and normal-facing
+weights from the actual trace origin while retaining logical lattice blend weights.
+Enabled relocation has its own versioned cache identity; disabled mode retains the
+ordinary cache identity. Adaptive local grids remain unfinished, so thin walls and
+poorly sampled spaces still need map-level evaluation.
 
 Only a completed bake matching current input content and settings is uploaded and activated. Submitted
 frames retain their previous jobs/volumes until their fences complete. Map changes, unload and disabling
@@ -1568,3 +1583,18 @@ coverage and surface/probe RGB irradiance. Summary errors weight sampled
 triangles equally rather than by area or screen importance. An existing output
 file is refused, and reporting failures do not invalidate the bake. The feature
 is disabled unless its environment variable is set.
+
+`scripts/experiments/probe_compare.py` compares two published grids against one
+receiver report, using the same surface reference for both. It requires NumPy
+and first checks that candidate coverage and irradiance reconstruct the native
+report. An optional baseline receiver report checks that scene identity and
+sampled geometry match. Inputs remain read-only; the output must be a new file:
+
+```text
+python scripts/experiments/probe_compare.py --receivers <candidate-receivers.json> --baseline-grid <baseline>.irradiance-published.bin --candidate-grid <candidate>.irradiance-published.bin --baseline-receivers <baseline-receivers.json> --output <new-report.json>
+```
+
+The comparison reports coverage separately from error on commonly covered
+receivers. BSP-empty classification is provenance, rather than a complete
+gameplay visibility test. These indirect-only measurements do not establish
+dynamic-actor, direct-light or screen-space agreement.

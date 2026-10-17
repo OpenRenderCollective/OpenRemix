@@ -48,7 +48,7 @@ namespace remix::forward::bake {
   struct Result {
     // Real SH order 0, y, z, x, xy, yz, (3z²-1), xz, (x²-y²), convolved for
     // cosine irradiance.
-    std::array<Vec4, 9> irradiance{};
+    std::array<Vec4, 9> irradiance{}; // grid publication may use alpha 0..2 for trace-origin offsets
     std::array<Vec4, 6> moments{}; // +/-X, +/-Y, +/-Z: mean d, mean d², hit fraction, ray count
     Vec4 statistics{};             // back-face fraction, miss fraction, sample count, reserved
   };
