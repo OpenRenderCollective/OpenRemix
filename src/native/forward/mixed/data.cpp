@@ -53,17 +53,24 @@ namespace remix::forward::mixed {
              a.coneCos == b.coneCos && a.softness == b.softness && a.focus == b.focus;
     }
   } // namespace
+  bool Bindings::bakedDiffuse(uint32_t captured) const {
+    return captured < directLighting.lights.size() &&
+           directLighting.lights[captured] == bake::DirectMode::Baked;
+  }
   uint32_t Bindings::match(const scene::SphereLight &light) const {
     if (!source || light.dynamic)
       return none;
     const auto [first, last] = identities.equal_range(light.id);
     for (auto entry = first; entry != last; ++entry)
-      if (sameShape(source->lights[entry->second], light))
+      if (sameShape(source->lights[entry->second], light) &&
+          (!bakedDiffuse(entry->second) ||
+           std::equal(std::begin(source->lights[entry->second].radiance),
+                      std::end(source->lights[entry->second].radiance), light.radiance)))
         return entry->second;
     return none;
   }
   Plan plan(std::shared_ptr<const scene::BakeScene> source, const lightmap::Layout &layout, float cutoff,
-            std::stop_token cancelled, float receiverBias) {
+            std::stop_token cancelled, float receiverBias, const bake::DirectPolicy &directLighting) {
     check(cancelled);
     if (!source || source->charts.size() != layout.charts.size() ||
         layout.points.size() != layout.pointCharts.size() || !std::isfinite(cutoff) || cutoff <= 0 ||
@@ -71,6 +78,8 @@ namespace remix::forward::mixed {
         source->lights.size() >= (1u << 24))
       throw std::invalid_argument("Invalid mixed light inputs");
     Plan result;
+    bake::validateDirectPolicy(*source, directLighting);
+    result.lights.directLighting = directLighting;
     result.lights.source = std::move(source);
     result.charts.resize(result.lights.source->charts.size(), {none, none, none, none});
     result.directCharts = result.charts;
@@ -91,7 +100,12 @@ namespace remix::forward::mixed {
     std::vector<bool> selected(result.lights.source->lights.size());
     for (uint32_t i = 0; i < result.lights.source->lights.size(); ++i) {
       const auto &light = result.lights.source->lights[i];
-      radii.push_back(light.dynamic ? 0 : influenceRadius(light, cutoff));
+      const bool aggregate = result.lights.bakedDiffuse(i);
+      radii.push_back(light.dynamic || aggregate ? 0 : influenceRadius(light, cutoff));
+      if (aggregate) {
+        selected[i] = true;
+        result.lights.identities.emplace(light.id, i);
+      }
     }
     for (uint32_t index = 0; index < result.charts.size(); ++index) {
       check(cancelled);

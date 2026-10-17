@@ -43,6 +43,31 @@ int main() {
             "Each visibility task retains its exact light and surface-channel "
             "provenance");
   {
+    const uint32_t baked[] = {0};
+    const auto policy = forward::bake::directPolicy(*source, baked);
+    const auto aggregate = m::plan(source, layout, .001f, {}, 0, policy);
+    require(aggregate.overflow == 0 && aggregate.remaining[0].empty() &&
+                aggregate.tasks.size() == layout.points.size() * 4 &&
+                aggregate.lights.bakedDiffuse(0) && aggregate.lights.match(source->lights[0]) == 0,
+            "An aggregated fifth light leaves overflow while retaining its captured runtime identity");
+    for (const auto &task : aggregate.tasks)
+      require(task.light != 0, "Fully baked diffuse receives no per-texel visibility tasks");
+    const uint32_t all[] = {0, 1, 2, 3, 4};
+    const auto fullyStatic = m::plan(source, layout, .001f, {}, 0,
+                                    forward::bake::directPolicy(*source, all));
+    require(fullyStatic.tasks.empty() && fullyStatic.overflow == 0 &&
+                fullyStatic.charts[0] == forward::bake::UInt4{m::none, m::none, m::none, m::none},
+            "A fully static chart schedules no mixed or overflow shadow work");
+    auto recoloured = source->lights[0];
+    recoloured.radiance[0] *= 2;
+    require(aggregate.lights.match(recoloured) == m::none,
+            "RGB aggregate ownership cannot match a changed light colour or intensity");
+    recoloured = source->lights[1];
+    recoloured.radiance[0] *= 2;
+    require(aggregate.lights.match(recoloured) == 1,
+            "Mixed unit-radiance data can still follow live colour changes");
+  }
+  {
     auto shaped = std::make_shared<scene::BakeScene>(*source);
     shaped->lights.resize(1);
     auto &light = shaped->lights[0];

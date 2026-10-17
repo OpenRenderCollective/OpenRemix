@@ -172,9 +172,13 @@ selected static direct emitters into the existing RGB irradiance SH using the al
 The direct estimator has an independent ordinal-based random stream; visibility/direct-SH,
 radiance captures and streamed live lighting retain their existing contracts. The ordinary map
 shaders exclude the aggregate estimator, and its separate pipeline is compiled only when needed.
-The ordinary map
-controller still uses the legacy policy. Automatic mixed-light selection, runtime diffuse
-suppression and cache/publication of aggregate ownership must be integrated before enabling it.
+The mixed planner omits aggregate lights from visibility tasks while retaining their identities.
+Caches store explicit ownership, reject aggregate/mixed owner conflicts and require the caller's
+expected policy; empty-policy entries keep the legacy layout and key. Aggregate matching also
+requires unchanged radiance, while mixed unit-radiance data can follow colour changes. A shared
+source identity cannot ambiguously span both ownership policies.
+The ordinary map controller still uses the legacy policy. Automatic mixed-light selection,
+runtime diffuse suppression and invalidation of stale aggregate RGB must be integrated before enabling it.
 Generated emissive geometry needs an explicit sampling/double-counting treatment as well.
 
 An enabled live dome is drawn as a display background, followed by the existing raster sky. The dome uses

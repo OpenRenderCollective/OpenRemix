@@ -1,5 +1,6 @@
 #pragma once
 #include "forward/lightmap/data.h"
+#include "forward/bake/policy.h"
 #include "forward/mixed/occlusion.h"
 #include "forward/mixed/masks.h"
 #include <span>
@@ -14,6 +15,8 @@ namespace remix::forward::mixed {
   struct Bindings {
     std::shared_ptr<const scene::BakeScene> source;
     std::unordered_multimap<uint64_t, uint32_t> identities;
+    bake::DirectPolicy directLighting;
+    bool bakedDiffuse(uint32_t captured) const;
     uint32_t match(const scene::SphereLight &light) const;
   };
   struct Plan {
@@ -30,7 +33,8 @@ namespace remix::forward::mixed {
   };
   // receiverBias is the transport's maximum origin displacement in host units.
   Plan plan(std::shared_ptr<const scene::BakeScene> source, const lightmap::Layout &layout,
-            float cutoff = .001f, std::stop_token cancelled = {}, float receiverBias = 0);
+            float cutoff = .001f, std::stop_token cancelled = {}, float receiverBias = 0,
+            const bake::DirectPolicy &directLighting = {});
   // Constant visibility uses compact metadata, freeing filtered shadow channels.
   // Positive lights can retain direct SH independently before scratch channels are reused.
   bool refine(Plan &plan, const lightmap::Layout &layout, std::span<const Vec4> visibility,

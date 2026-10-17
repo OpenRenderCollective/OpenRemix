@@ -13,7 +13,10 @@ namespace remix::forward::bake::cache {
   };
   // Scheduling and cache controls are excluded. Shader bytes and an explicit
   // CPU-algorithm revision participate, along with the frozen source content.
-  uint64_t key(uint64_t content, const Config &config, float cutoff, const Device &device);
+  // Explicit aggregate membership adds its estimator shaders and policy bytes;
+  // an empty policy preserves legacy cache identities and payload layout.
+  uint64_t key(uint64_t content, const Config &config, float cutoff, const Device &device,
+               const DirectPolicy &policy = {});
   std::filesystem::path path(uint64_t key);
   struct View {
     const Grid &grid;
@@ -37,9 +40,12 @@ namespace remix::forward::bake::cache {
   };
   // Misses, corruption, incompatible versions and unavailable files fall back
   // to tracing. Neither operation publishes resources or performs GPU work.
+  // Stored aggregate ownership must also match the expected policy, independently
+  // of the caller-supplied file key.
   std::optional<Snapshot> read(const std::filesystem::path &file, uint64_t key,
                                std::shared_ptr<const scene::BakeScene> source, const Config &config,
-                               const Device &device, std::stop_token cancelled = {});
+                               const Device &device, std::stop_token cancelled = {},
+                               const DirectPolicy &policy = {});
   bool write(const std::filesystem::path &file, uint64_t key, const View &view,
              std::stop_token cancelled = {});
 } // namespace remix::forward::bake::cache

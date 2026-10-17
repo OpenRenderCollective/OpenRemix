@@ -12,6 +12,7 @@ namespace remix::forward::bake {
   // Explicit membership first; automatic selection is a separate planning step.
   // Moving lights cannot contribute to immutable diffuse lightmaps.
   DirectPolicy directPolicy(const scene::BakeScene &source, std::span<const uint32_t> bakedLights);
+  bool validateDirectPolicy(const scene::BakeScene &source, const DirectPolicy &policy);
   // Validate the complete policy before changing any packed input. Returns true
   // when aggregate direct sampling is needed; never reorders captured lights.
   bool applyDirectPolicy(const scene::BakeScene &source, const DirectPolicy &policy,

@@ -211,6 +211,51 @@ int main(int argc, char **argv) {
                       false}) &&
               load(),
           "Unavailable cache storage preserves the existing completed data");
+  {
+    const uint32_t selected[] = {0}, other[] = {1};
+    const auto policy = f::bake::directPolicy(*source, selected);
+    const auto aggregateKey = bc::key(source->contentHash, config, .001f, device, policy);
+    require(aggregateKey != identity && aggregateKey != bc::key(source->contentHash, config, .001f,
+                                                               device, f::bake::directPolicy(*source, other)),
+            "Aggregate membership and estimator shaders participate in cache identity");
+    auto aggregate = data.mixed;
+    aggregate.lights.directLighting = policy;
+    aggregate.charts[0].fill(f::mixed::none);
+    aggregate.directCharts[0].fill(f::mixed::none);
+    const auto aggregateFile = root / "aggregate.bake";
+    const auto saveAggregate = [&] {
+      return bc::write(aggregateFile, aggregateKey,
+                       {data.grid, data.layout, aggregate, data.captures, data.specular, data.pixels,
+                        data.surfaceSamples, data.directDiffuse, data.sun});
+    };
+    const auto loadAggregate = [&] {
+      return bc::read(aggregateFile, aggregateKey, source, config, device, {}, policy);
+    };
+    require(saveAggregate(), "Aggregate ownership is serialized separately from mixed channel owners");
+    const auto reloaded = loadAggregate();
+    require(reloaded && reloaded->mixed.lights.directLighting.lights == policy.lights &&
+                reloaded->mixed.lights.bakedDiffuse(0) && !reloaded->mixed.lights.bakedDiffuse(1) &&
+                reloaded->mixed.lights.match(source->lights[0]) == 0 && reloaded->pixels == data.pixels,
+            "Cache reload preserves aggregate membership, live matching and atlas contents");
+    require(!bc::read(aggregateFile, identity, source, config, device),
+            "Legacy and aggregated diffuse caches cannot be exchanged");
+    require(!bc::read(aggregateFile, aggregateKey, source, config, device),
+            "Even a matching file key cannot override the caller's expected light policy");
+    aggregate.charts[0][0] = 0;
+    require(saveAggregate() && !loadAggregate(),
+            "An aggregate light cannot also own a mixed visibility channel on cache import");
+    aggregate.charts[0][0] = f::mixed::none;
+    require(saveAggregate(), "A valid aggregate snapshot replaces the invalid-owner fixture");
+    const auto identityRange = aggregate.lights.identities.equal_range(source->lights[0].id);
+    aggregate.lights.identities.erase(identityRange.first, identityRange.second);
+    require(saveAggregate() && !loadAggregate(),
+            "Missing aggregate identity cannot silently drop ownership during runtime matching");
+    aggregate.lights.identities.emplace(source->lights[0].id, 0);
+    require(saveAggregate(), "Complete aggregate ownership is restored before the writer failure fixture");
+    aggregate.lights.directLighting.lights[0] = f::bake::DirectMode::Dynamic;
+    require(!saveAggregate() && loadAggregate().has_value(),
+            "Invalid moving-light membership cannot replace a completed aggregate cache");
+  }
   std::puts("Bake cache: identity, complete payloads, chart UVs, mixed light bindings, corruption and "
             "cancellation passed");
 }

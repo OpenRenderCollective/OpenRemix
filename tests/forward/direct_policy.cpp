@@ -40,6 +40,13 @@ int main() try {
               invalid([&] { bake::directPolicy(source, duplicate); }) &&
               invalid([&] { bake::directPolicy(source, outside); }),
           "Moving, duplicate and unknown static-light memberships are rejected");
+  auto sharedIdentity = source;
+  sharedIdentity.lights[1].id = sharedIdentity.lights[0].id;
+  require(invalid([&] { bake::directPolicy(sharedIdentity, selected); }),
+          "One source identity cannot ambiguously own both aggregated and per-light diffuse");
+  const uint32_t shared[] = {0, 1};
+  require(bake::directPolicy(sharedIdentity, shared).lights[1] == bake::DirectMode::Baked,
+          "Several captured emitters can share an identity when their ownership policy agrees");
   auto malformed = policy;
   malformed.lights[3] = bake::DirectMode::Dynamic;
   require(invalid([&] { bake::applyDirectPolicy(source, malformed, packed); }) && packed[0].shaping[2] == 1,

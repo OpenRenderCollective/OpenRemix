@@ -105,13 +105,22 @@ namespace remix::forward::bake::cache {
       }
     }
     void readMixed(detail::Reader &input, Snapshot &result,
-                   const std::shared_ptr<const scene::BakeScene> &source) {
+                   const std::shared_ptr<const scene::BakeScene> &source, bool hasPolicy) {
       auto &plan = result.mixed;
       plan.lights.source = source;
       plan.charts = input.array<UInt4>(source->charts.size());
       plan.directCharts = input.array<UInt4>(source->charts.size());
       channels(plan.charts, source->charts.size(), source->lights.size());
       channels(plan.directCharts, source->charts.size(), source->lights.size());
+      if (hasPolicy) {
+        plan.lights.directLighting.lights = input.array<DirectMode>(source->lights.size());
+        require(plan.lights.directLighting.lights.size() == source->lights.size());
+        validateDirectPolicy(*source, plan.lights.directLighting);
+        for (const auto *owners : {&plan.charts, &plan.directCharts})
+          for (const auto &chart : *owners)
+            for (const auto light : chart)
+              require(light == mixed::none || !plan.lights.bakedDiffuse(light));
+      }
       auto identities = input.array<uint32_t>(source->lights.size());
       std::vector<bool> used(source->lights.size());
       for (auto identity : identities) {
@@ -119,6 +128,8 @@ namespace remix::forward::bake::cache {
         used[identity] = true;
         plan.lights.identities.emplace(source->lights[identity].id, identity);
       }
+      for (uint32_t light = 0; light < used.size(); ++light)
+        require(!plan.lights.bakedDiffuse(light) || used[light]);
       plan.overflow = input.pod<uint32_t>();
       const uint64_t count = source->charts.size() * ((source->lights.size() + 15) / 16);
       const auto words = input.array<uint32_t>(count);
@@ -205,7 +216,7 @@ namespace remix::forward::bake::cache {
 #endif
     }
   } // namespace
-  uint64_t key(uint64_t content, const Config &c, float cutoff, const Device &d) {
+  uint64_t key(uint64_t content, const Config &c, float cutoff, const Device &d, const DirectPolicy &policy) {
     static const uint64_t shaders = [] {
       auto hash = scene::fastHash(atlasShader, sizeof(atlasShader));
       hash = scene::fastHash(transportShader, sizeof(transportShader), hash);
@@ -237,7 +248,14 @@ namespace remix::forward::bake::cache {
                                d.imageLayers,
                                d.storageRange};
     const auto hash = scene::fastHash(fields, sizeof(fields), content ^ shaders);
-    const auto raw = scene::fastHash(d.uuid.data(), d.uuid.size(), hash);
+    auto raw = scene::fastHash(d.uuid.data(), d.uuid.size(), hash);
+    if (!policy.lights.empty()) {
+      const uint32_t policyVersion = 1;
+      raw = scene::fastHash(&policyVersion, sizeof(policyVersion), raw);
+      raw = scene::fastHash(policy.lights.data(), policy.lights.size() * sizeof(DirectMode), raw);
+      raw = scene::fastHash(aggregateShader, sizeof(aggregateShader), raw);
+      raw = scene::fastHash(aggregateParallelShader, sizeof(aggregateParallelShader), raw);
+    }
     if (!c.denoiseLightmaps)
       return raw; // preserve existing raw cache entries when this optional stage is disabled
     const uint32_t filter[] = {0x4f49444eu, 1, lightmap::denoiserVersion()};
@@ -257,7 +275,7 @@ namespace remix::forward::bake::cache {
   }
   std::optional<Snapshot> read(const std::filesystem::path &file, uint64_t identity,
                                std::shared_ptr<const scene::BakeScene> source, const Config &config,
-                               const Device &device, std::stop_token cancelled) {
+                               const Device &device, std::stop_token cancelled, const DirectPolicy &policy) {
     try {
       std::error_code error;
       if (!std::filesystem::is_regular_file(file, error))
@@ -266,20 +284,22 @@ namespace remix::forward::bake::cache {
       require(source && source->ready);
       Snapshot result;
       const auto flags = input.pod<uint32_t>();
-      require(flags <= 3 && (!(flags & 1) || config.directDiffuse) &&
+      require(flags <= 7 && (!(flags & 1) || config.directDiffuse) &&
               (!(flags & 2) || source->sun.isDistant));
       result.directDiffuse = (flags & 1) != 0;
       result.sun = (flags & 2) != 0;
       result.surfaceSamples = input.pod<uint32_t>();
       readGrid(input, result, config, device);
       readLayout(input, result, *source, config, device);
-      readMixed(input, result, source);
+      readMixed(input, result, source, (flags & 4) != 0);
+      require(result.mixed.lights.directLighting.lights == policy.lights);
       const auto &masks = result.mixed.masks;
       if (!masks.entries().empty()) {
         const uint64_t words = 2 + result.mixed.occlusion.words().size() +
                                source->charts.size() * 2 + masks.entries().size() * 4 + masks.bytes().size() / 4;
         require(words <= uint64_t(device.imageSize) * device.imageSize);
         for (const auto &entry : masks.entries()) {
+          require(!result.mixed.lights.bakedDiffuse(entry.light));
           require(result.mixed.occlusion.state(entry.chart, entry.light) == mixed::Visibility::Unknown);
           const auto &owners = result.mixed.charts[entry.chart];
           require(std::find(owners.begin(), owners.end(), entry.light) == owners.end());
@@ -319,7 +339,12 @@ namespace remix::forward::bake::cache {
       if (std::filesystem::exists(temporary))
         return false;
       detail::Writer output(temporary, identity, cancelled);
-      output.pod(uint32_t(view.directDiffuse) | uint32_t(view.sun) << 1);
+      const bool hasPolicy = !view.mixed.lights.directLighting.lights.empty();
+      if (hasPolicy) {
+        require(view.mixed.lights.source != nullptr);
+        validateDirectPolicy(*view.mixed.lights.source, view.mixed.lights.directLighting);
+      }
+      output.pod(uint32_t(view.directDiffuse) | uint32_t(view.sun) << 1 | uint32_t(hasPolicy) << 2);
       output.pod(view.surfaceSamples);
       output.pod(view.grid.header);
       output.array(view.grid.probes);
@@ -339,6 +364,8 @@ namespace remix::forward::bake::cache {
       }
       output.array(view.mixed.charts);
       output.array(view.mixed.directCharts);
+      if (hasPolicy)
+        output.array(view.mixed.lights.directLighting.lights);
       std::vector<uint32_t> identities;
       for (const auto &[id, index] : view.mixed.lights.identities)
         identities.push_back(index);
