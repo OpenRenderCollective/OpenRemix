@@ -71,6 +71,8 @@ namespace remix::forward::bake {
     std::stop_source cancellation;
     uint32_t captureNext = 0, captureReceived = 0;
     bool capturePlanned = false, filtering = false;
+    enum class FinishStage { None, Reflections, Denoising, Atlas, Geometry, Cache };
+    std::atomic<FinishStage> finishStage{FinishStage::None};
     std::atomic<uint32_t> denoisedCharts{0}, denoiseChartCount{0};
     uint32_t next = 0, received = 0;
     bool initialized = false, prepared = false, failed = false;
@@ -590,8 +592,10 @@ namespace remix::forward::bake {
       const auto device = m_device;
       job.ticket = m_pipelines->prepare(
           "forward-probe-filter-" + std::to_string(++generation), [owner, physical, device, config] {
+            owner->finishStage.store(Job::FinishStage::Reflections, std::memory_order_relaxed);
             owner->specular = probes::filter(owner->captures, 128, owner->cancellation.get_token());
             if (config.denoiseLightmaps && lightmap::denoiserVersion()) {
+              owner->finishStage.store(Job::FinishStage::Denoising, std::memory_order_relaxed);
               auto progress = [owner](uint32_t completed, uint32_t total) {
                 owner->denoisedCharts.store(completed, std::memory_order_relaxed);
                 owner->denoiseChartCount.store(total, std::memory_order_relaxed);
@@ -610,7 +614,13 @@ namespace remix::forward::bake {
                            static_cast<unsigned long long>(filtered.peakHostBytes),
                            static_cast<unsigned long long>(filtered.imageBufferBytes),
                            static_cast<unsigned long long>(filtered.transferBytes));
+              std::fprintf(stderr, "Forward lightmap OIDN host time: initialize %.3f s, prepare %.3f s, "
+                                   "upload %.3f s, execute %.3f s, readback %.3f s, wait %.3f s, chart %.3f s\n",
+                           filtered.initializationSeconds, filtered.preparationSeconds,
+                           filtered.uploadSeconds, filtered.executionSeconds, filtered.readbackSeconds,
+                           filtered.waitSeconds, filtered.chartSeconds);
             }
+            owner->finishStage.store(Job::FinishStage::Atlas, std::memory_order_relaxed);
             owner->surfacePixels =
                 lightmap::pixels(owner->surfaceLayout, owner->surfaces, owner->cancellation.get_token(),
                                  owner->visibility, owner->direct, owner->sun);
@@ -622,10 +632,12 @@ namespace remix::forward::bake {
             const char *samples = std::getenv("REMIX_DEBUG_BAKE_SURFACE_SAMPLES");
             if (!samples || std::strcmp(samples, "1") != 0)
               releaseStorage(owner->surfaces);
+            owner->finishStage.store(Job::FinishStage::Geometry, std::memory_order_relaxed);
             if (!owner->source->charts.empty())
               owner->surfaceGeometry = std::make_shared<lightmap::Geometry>(
                   physical, device, owner->source, owner->surfaceLayout, owner->cancellation.get_token(),
                   owner->mixedLights->charts, owner->mixedLights->directCharts);
+            owner->finishStage.store(Job::FinishStage::Cache, std::memory_order_relaxed);
             if (!owner->cacheFile.empty())
               cache::write(owner->cacheFile, owner->cacheKey,
                             {owner->grid, owner->surfaceLayout, *owner->mixedLights, owner->captures,
@@ -912,11 +924,24 @@ namespace remix::forward::bake {
         }
         if (!m_job->ticket->ready()) {
           const auto total = m_job->denoiseChartCount.load(std::memory_order_relaxed);
-          if (total) {
+          const auto stage = m_job->finishStage.load(std::memory_order_relaxed);
+          if (stage == Job::FinishStage::Denoising && total) {
             char progress[96];
             std::snprintf(progress, sizeof(progress), "Denoising surface lightmaps (%u/%u charts)",
                           m_job->denoisedCharts.load(std::memory_order_relaxed), total);
             status(REMIXAPI_BAKE_PREPARING_EXT, progress);
+          } else {
+            const char *message = nullptr;
+            switch (stage) {
+            case Job::FinishStage::Reflections: message = "Filtering reflection cubemaps"; break;
+            case Job::FinishStage::Denoising: message = "Denoising surface lightmaps"; break;
+            case Job::FinishStage::Atlas: message = "Encoding surface lightmaps"; break;
+            case Job::FinishStage::Geometry: message = "Preparing lightmapped geometry"; break;
+            case Job::FinishStage::Cache: message = "Saving baked lighting cache"; break;
+            case Job::FinishStage::None: break;
+            }
+            if (message)
+              status(REMIXAPI_BAKE_PREPARING_EXT, message);
           }
           return;
         }

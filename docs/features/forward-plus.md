@@ -508,8 +508,15 @@ Each chart also retains original and filtered L0. Those arrays count toward the 
 target; an oversized single chart can exceed it. Diagnostics report actual executions, preparations,
 upload/readback packets, device waits,
 constant-field bypasses, internally monitored executions, peak host-image bytes, reserved image-buffer
-bytes and transfer bytes; OIDN's internal allocations are additional. Bake status reports completed/total denoised charts
+bytes and transfer bytes; OIDN's internal allocations are additional. A separate host-time line
+measures device/filter initialization, changed filter preparation, asynchronous upload, filter
+execution submission, readback, explicit synchronization and chart encoding/reconstruction. These are disjoint wall intervals, not GPU
+timestamps: asynchronous submission can itself block in OIDN or the driver, while work can overlap
+chart processing. The remaining total includes ordering, constant-field scans and bookkeeping.
+Bake status reports completed/total denoised charts
 through worker-owned atomic counters so a long offline stage remains visible without blocking frames.
+After denoising, status advances through atlas encoding, geometry preparation and cache saving rather
+than continuing to display completed denoising. Reflection filtering also has its own status.
 
 ## Optional hardware reflections
 

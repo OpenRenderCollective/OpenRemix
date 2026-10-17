@@ -15,6 +15,12 @@ namespace remix::forward::lightmap {
     uint64_t peakHostBytes = 0, imageBufferBytes = 0, transferBytes = 0;
     int deviceType = 0; // OIDNDeviceType; no OIDN types escape this module
     double seconds = 0;
+    // Host wall intervals, not GPU timestamps. Submission may block in the
+    // driver; waits measure only explicit synchronization. These intervals do
+    // not include one another and leave orchestration as the unmeasured rest.
+    double initializationSeconds = 0, preparationSeconds = 0;
+    double uploadSeconds = 0, executionSeconds = 0, readbackSeconds = 0;
+    double waitSeconds = 0, chartSeconds = 0;
   };
   // Worker-only offline operation, after transport readback and before atlas encoding.
   // Filters indirect RGB SH within each chart. Signed bands are normalized by L0,
@@ -23,9 +29,8 @@ namespace remix::forward::lightmap {
   // Exceptions abort publication. OIDN 2.5 images share its native 16-pixel network
   // padding; signed -1 and HDR zero preserve zero tensor boundaries. Equal-shaped
   // images can queue independent host packets, bounded by 32 charts and an 8 MiB
-  // scratch target (one oversized chart
-  // remains valid). Cancellation is checked between batches and enqueues; queued
-  // work is drained before cleanup. CPU and large GPU images
+  // scratch target (one oversized chart remains valid). Cancellation is checked
+  // between batches and enqueues; queued work is drained before cleanup. CPU and large GPU images
   // additionally use OIDN's internal cancellation callback.
   DenoiseStatistics denoise(const Layout &layout, std::span<bake::Result> results,
                             std::stop_token cancelled = {},
