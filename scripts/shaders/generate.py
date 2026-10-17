@@ -20,7 +20,7 @@ OPTIMIZED = {'pathtrace'}
 BACKENDS = {
     'live_gi': ('forward::ray::gi', 'vulkan1.2', ('frag', 'guides')),
     'live_ray': ('forward::ray', 'vulkan1.2', ('launch', 'merge')),
-    'bake': ('forward::bake', 'vulkan1.2', ('atlas', 'transport', 'parallel')),
+    'bake': ('forward::bake', 'vulkan1.2', ('atlas', 'transport', 'parallel', 'visibility')),
     'forward_test': ('forward::test', 'vulkan1.2', ('comp', 'probes')),
     'forward': ('forward', 'vulkan1.1', ('vert', 'lightmapVert', 'frag', 'cluster', 'shadowVert', 'shadowFrag', 'localShadowVert', 'localShadowFrag', 'compositeVert', 'compositeFrag', 'compositeSingle', 'ssrFrag', 'ssrResolve', 'ssrResolveSingle', 'ssrReduce', 'ssrTrace', 'ssrFilter')),
     'postfx': ('postfx', 'vulkan1.2', ('meter', 'resolve', 'down', 'up')),
@@ -89,8 +89,9 @@ def defines_for(backend, stage, stages):
         source = directory / 'screen.comp'
         defines = ['-DRAY_LAUNCH=1'] if stage == 'launch' else []
     if backend == 'bake':
-        source = directory / ('transport.comp' if stage == 'parallel' else stage + '.comp')
-        if stage == 'parallel': defines = ['-DPARALLEL_BAKE=1']
+        source = directory / ('transport.comp' if stage in ('parallel', 'visibility') else stage + '.comp')
+        if stage in ('parallel', 'visibility'): defines = ['-DPARALLEL_BAKE=1']
+        if stage == 'visibility': defines += ['-DCOMPACT_VISIBILITY=1']
     if backend == 'forward_test': source = directory / ('ray-scene.comp' if stage == 'comp' else 'probes.comp')
     if backend == 'forward':
         source = directory / {

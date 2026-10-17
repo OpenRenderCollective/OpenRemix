@@ -29,7 +29,7 @@ namespace remix::forward::bake {
     VkDescriptorSetLayout setLayout = VK_NULL_HANDLE, atlasSetLayout = VK_NULL_HANDLE;
     VkPipelineLayout layout = VK_NULL_HANDLE, atlasLayout = VK_NULL_HANDLE;
     VkPipeline tracePipeline = VK_NULL_HANDLE, parallelPipeline = VK_NULL_HANDLE,
-               atlasPipeline = VK_NULL_HANDLE;
+               visibilityPipeline = VK_NULL_HANDLE, atlasPipeline = VK_NULL_HANDLE;
     VkDescriptorPool pool = VK_NULL_HANDLE;
     VkSampler sampler = VK_NULL_HANDLE;
     std::vector<VkDescriptorSet> atlasSets;
@@ -42,6 +42,8 @@ namespace remix::forward::bake {
       VkDescriptorSet fragment = VK_NULL_HANDLE;
       VkDescriptorSet set = VK_NULL_HANDLE;
       uint32_t count = 0, capacity = 0;
+      uint32_t samples = 0;
+      bool compactVisibility = false;
     };
     std::array<Slot, gpuFrameCount> slots;
     ~Gpu();

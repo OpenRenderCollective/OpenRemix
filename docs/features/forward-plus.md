@@ -608,6 +608,15 @@ or an estimate from frame rate. Cached jobs have no tracing timings.
 Bake results prefer CPU-cached host-visible memory (with invalidation on noncoherent heaps), and the
 controller reuses its CPU readback storage between completed slots. Live GPU reflection/GI consumers
 retain their previous allocation policy. Profiling also prints total CPU readback/validation/scatter time.
+It reports the actual number of bytes read back as well.
+
+Parallel CPU local/sun visibility uses a dedicated kernel and a 48-byte result: one visibility scalar,
+nine unit direct SH coefficients and two padding floats. This replaces the 256-byte RGB irradiance/moment
+transfer for those queries, without changing sample counts or quantizing lighting. The kernel omits
+diffuse/radiance work and reserves about 3 KiB of shared reduction storage instead of nearly 16 KiB.
+The controller consumes these compact results directly; the general transport read API reconstructs
+its original full result for callers that need it. Serial transport and live GPU consumers retain the
+full format. Finished lightmaps and the persistent cache keep their existing representation.
 
 Diffuse and local/sun visibility transport use one 64-lane workgroup per point. Lanes trace disjoint
 sample indices and reduce signed SH, visibility weights and distance moments in shared memory.

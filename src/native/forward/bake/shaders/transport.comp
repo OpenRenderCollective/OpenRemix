@@ -45,6 +45,7 @@ void main() {
   outputValue.statistics = vec4(0);
   uint seed = floatBitsToUint(origin.x) * 73856093u ^ floatBitsToUint(origin.y) * 19349663u ^
               floatBitsToUint(origin.z) * 83492791u ^ (rayFrame.control.y + 1u) * 2654435761u;
+#ifndef COMPACT_VISIBILITY
   if (rayFrame.control.z == 4u) {
     float rotation = random(seed) * 2 * RayPi;
     for (uint i = 0; i < rayFrame.counts.z; ++i) {
@@ -69,6 +70,7 @@ void main() {
     storeResult(index, outputValue);
     return;
   }
+#endif
   Medium medium = pointMedium(origin, seed);
   if (rayFrame.control.z == 5u || rayFrame.control.z == 6u) {
     vec3 axis = normalize(-rayFrame.sunDirection.xyz);
@@ -158,6 +160,7 @@ void main() {
     storeResult(index, outputValue);
     return;
   }
+#ifndef COMPACT_VISIBILITY
   if (rayFrame.control.z == 1u) {
     if (point.normal.w < 0) {
       storeResult(index, outputValue);
@@ -216,4 +219,5 @@ void main() {
 #endif
   outputValue.statistics.z = float(rayFrame.counts.z);
   storeResult(index, outputValue);
+#endif
 }

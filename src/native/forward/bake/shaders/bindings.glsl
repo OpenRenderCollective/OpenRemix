@@ -52,7 +52,11 @@ layout(set = RAY_SCENE_SET, binding = 6, std430) readonly buffer RayPointsBuffer
   RayPoint rayPoints[];
 };
 layout(set = RAY_SCENE_SET, binding = 7, std430) writeonly buffer RayResultsBuffer {
+#ifdef COMPACT_VISIBILITY
+  vec4 visibilityResults[]; // three vectors per point; mirrors VisibilityResult
+#else
   RayResult rayResults[];
+#endif
 };
 #endif
 layout(set = RAY_SCENE_SET, binding = 8) uniform sampler2DArray rayAtlas;

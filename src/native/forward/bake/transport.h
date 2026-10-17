@@ -82,6 +82,8 @@ namespace remix::forward::bake {
                    uint32_t samples = 256, bool directDiffuse = false);
     // The selected slot's submission fence has completed.
     void read(uint32_t slot, std::span<Result> results) const;
+    // Compact parallel CPU visibility/sun batches only; same completed-slot fence.
+    void readVisibility(uint32_t slot, std::span<VisibilityResult> results) const;
     bool timingSupported() const;
     std::optional<double> elapsed(uint32_t slot) const; // owning slot fence completed
     void releaseBuildInputs();                          // after the preparation fence

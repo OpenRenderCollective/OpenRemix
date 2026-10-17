@@ -202,7 +202,8 @@ namespace remix::forward::bake::cache {
     static const uint64_t shaders = [] {
       auto hash = scene::fastHash(atlasShader, sizeof(atlasShader));
       hash = scene::fastHash(transportShader, sizeof(transportShader), hash);
-      return scene::fastHash(parallelShader, sizeof(parallelShader), hash);
+      hash = scene::fastHash(parallelShader, sizeof(parallelShader), hash);
+      return scene::fastHash(visibilityShader, sizeof(visibilityShader), hash);
     }();
     const uint32_t fields[] = {algorithmRevision,
                                uint32_t(sizeof(GridHeader)),

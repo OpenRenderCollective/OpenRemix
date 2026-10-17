@@ -1,9 +1,13 @@
 // Parallel kernels assign one 64-lane workgroup to a point. The arrays use
 // less than 16 KiB, including the shared containing-medium classification.
 #ifdef PARALLEL_BAKE
+#ifdef COMPACT_VISIBILITY
+shared vec4 sumIrradiance[64 * 3];
+#else
 shared vec4 sumIrradiance[64 * 9];
 shared vec4 sumMoments[64 * 6];
 shared float sumFirst[64], sumSecond[64];
+#endif
 shared vec4 containingMedium;
 shared uint containingSeed;
 Medium pointMedium(vec3 origin, inout uint seed) {
@@ -18,7 +22,10 @@ Medium pointMedium(vec3 origin, inout uint seed) {
 }
 void storeResult(uint index, RayResult value) {
   uint lane = gl_LocalInvocationIndex;
-  if (rayFrame.control.z != 0u) {
+#ifndef COMPACT_VISIBILITY
+  if (rayFrame.control.z != 0u)
+#endif
+  {
     // Visibility needs nine scalar SH values and three reduction scalars.
     // Do not move/reduce the unused RGB coefficients, moments and statistics
     // of a full irradiance result for every chart/light connection.
@@ -37,6 +44,13 @@ void storeResult(uint index, RayResult value) {
     if (lane != 0u) return;
     vec4 first = sumIrradiance[0];
     float denominator = rayFrame.control.z >= 5u ? float(rayFrame.counts.z) : first.y;
+#ifdef COMPACT_VISIBILITY
+    float visible = first.z == 0 || denominator <= 0
+                        ? 1 : clamp(first.x / denominator, 0, uintBitsToFloat(0x3f7fffffu));
+    visibilityResults[index * 3u] = vec4(visible, first.w, sumIrradiance[1].xy);
+    visibilityResults[index * 3u + 1u] = vec4(sumIrradiance[1].zw, sumIrradiance[2].xy);
+    visibilityResults[index * 3u + 2u] = vec4(sumIrradiance[2].zw, 0, 0);
+#else
     value.irradiance[0] = vec4(first.z == 0 || denominator <= 0
                                  ? 1 : clamp(first.x / denominator, 0, uintBitsToFloat(0x3f7fffffu)),
                                first.w, 0, 0);
@@ -44,8 +58,10 @@ void storeResult(uint index, RayResult value) {
       value.irradiance[i] = vec4(0, sumIrradiance[1u + (i - 1u) / 4u][(i - 1u) % 4u], 0, 0);
     value.statistics = vec4(0, 0, float(rayFrame.counts.z), 0);
     rayResults[index] = value;
+#endif
     return;
   }
+#ifndef COMPACT_VISIBILITY
   for (uint i = 0u; i < 9u; ++i) sumIrradiance[lane * 9u + i] = value.irradiance[i];
   for (uint i = 0u; i < 6u; ++i) sumMoments[lane * 6u + i] = value.moments[i];
   sumFirst[lane] = value.statistics.x;
@@ -70,6 +86,7 @@ void storeResult(uint index, RayResult value) {
     if (value.moments[i].w > 0) value.moments[i].xyz /= value.moments[i].w;
   value.statistics.xy /= float(rayFrame.counts.z);
   rayResults[index] = value;
+#endif
 }
 #else
 Medium pointMedium(vec3 origin, inout uint seed) { return initialMedium(origin, seed); }

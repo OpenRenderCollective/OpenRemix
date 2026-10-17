@@ -33,7 +33,9 @@ namespace remix::forward::bake {
     lightmap::Layout surfaceLayout;
     std::vector<Result> surfaces;
     std::vector<Result> readback; // reused between completed frame slots; avoids clearing every batch
+    std::vector<VisibilityResult> visibilityReadback;
     double readbackMs = 0;
+    uint64_t readbackBytes = 0;
     std::shared_ptr<mixed::Plan> mixedLights;
     std::vector<Vec4> visibility;
     std::vector<lightmap::Direct> direct, directScratch;
@@ -62,12 +64,38 @@ namespace remix::forward::bake {
     bool initialized = false, prepared = false, failed = false;
     void prepareResources(VkPhysicalDevice physical, VkDevice device, const Config &config, float lightCutoff,
                           uint32_t queueFamily);
+    bool consumeVisibility(uint32_t slot, uint32_t first, uint32_t count, bool local);
     uint32_t count(Work work, const Config &config, uint32_t remaining, uint32_t samples,
                    uint32_t bounces = 1) {
       return budget.count(work, config.batch, transport->timingSupported() ? config.gpuBudgetMs : 0, samples,
                           bounces, remaining);
     }
   };
+  bool Controller::Job::consumeVisibility(uint32_t slot, uint32_t first, uint32_t count, bool local) {
+    if (visibilityReadback.size() < count)
+      visibilityReadback.resize(count);
+    const auto results = std::span(visibilityReadback).first(count);
+    transport->readVisibility(slot, results);
+    for (uint32_t i = 0; i < count; ++i) {
+      const auto &value = results[i];
+      if (!std::isfinite(value.visibility) ||
+          !std::all_of(value.irradiance.begin(), value.irradiance.end(),
+                       [](float coefficient) { return std::isfinite(coefficient); }))
+        return false;
+      if (local) {
+        const auto &task = mixedLights->tasks[first + i];
+        visibility[task.point][task.channel] = std::clamp(value.visibility, 0.f, 1.f);
+        if (!direct.empty())
+          for (uint32_t coefficient = 0; coefficient < lightmap::irradianceLayers; ++coefficient)
+            directScratch[task.point][coefficient][task.channel] = value.irradiance[coefficient];
+      } else {
+        auto &output = sun[first + i];
+        output.visibility = std::clamp(value.visibility, 0.f, 1.f);
+        output.direct = value.irradiance;
+      }
+    }
+    return true;
+  }
   void Controller::Job::prepareResources(VkPhysicalDevice physical, VkDevice device, const Config &config,
                                          float lightCutoff, uint32_t queueFamily) {
     VkPhysicalDeviceProperties properties;
@@ -203,59 +231,49 @@ namespace remix::forward::bake {
         job.transport->releaseBuildInputs();
       if (submission.count && submission.job == m_job && !job.failed) {
         const auto readBegin = std::chrono::steady_clock::now();
-        if (job.readback.size() < submission.count)
-          job.readback.resize(submission.count);
-        const auto results = std::span(job.readback).first(submission.count);
-        job.transport->read(slot, results);
-        for (uint32_t i = 0; i < submission.count; ++i) {
-          auto &value = results[i];
-          bool finite = true;
-          if (submission.visibility || submission.sun) {
-            // These modes consume scalar visibility and nine scalar unit SH
-            // coefficients, rather than the RGB irradiance/moment payload.
-            finite = std::isfinite(value.irradiance[0][0]);
-            for (const auto &coefficient : value.irradiance)
-              finite = finite && std::isfinite(coefficient[1]);
-          } else {
+        if (submission.visibility || submission.sun) {
+          if (!job.consumeVisibility(slot, submission.first, submission.count, submission.visibility)) {
+            job.failed = true;
+            status(REMIXAPI_BAKE_FAILED_EXT, "Bake produced non-finite visibility");
+          }
+        } else {
+          if (job.readback.size() < submission.count)
+            job.readback.resize(submission.count);
+          const auto results = std::span(job.readback).first(submission.count);
+          job.transport->read(slot, results);
+          for (uint32_t i = 0; i < submission.count; ++i) {
+            auto &value = results[i];
+            bool finite = true;
             for (const auto &coefficient : value.irradiance)
               for (float channel : coefficient)
                 finite = finite && std::isfinite(channel);
-          }
-          if (!finite) {
-            job.failed = true;
-            status(REMIXAPI_BAKE_FAILED_EXT, "Bake produced non-finite irradiance");
-          }
-          if (submission.radiance) {
-            const uint32_t count = uint32_t(job.captures.front().radiance.size());
-            const uint32_t ray = submission.first + i;
-            auto color = value.irradiance[0];
-            for (uint32_t c = 0; c < 3; ++c)
-              color[c] = std::clamp(color[c], 0.f, 65000.f);
-            job.captures[ray / count].radiance[ray % count] = color;
-          } else if (submission.reflectionSite) {
-            job.usableReflectionSites[submission.first + i] =
-                !job.failed && value.statistics[2] == reflectionSiteSamples &&
-                std::isfinite(value.statistics[0]) && value.statistics[0] >= 0 && value.statistics[0] < .5f;
-          } else if (submission.visibility) {
-            const auto &task = job.mixedLights->tasks[submission.first + i];
-            job.visibility[task.point][task.channel] = std::clamp(value.irradiance[0][0], 0.f, 1.f);
-            if (!job.direct.empty())
-              for (uint32_t coefficient = 0; coefficient < lightmap::irradianceLayers; ++coefficient)
-                job.directScratch[task.point][coefficient][task.channel] = value.irradiance[coefficient][1];
-          } else if (submission.sun) {
-            auto &sun = job.sun[submission.first + i];
-            sun.visibility = std::clamp(value.irradiance[0][0], 0.f, 1.f);
-            for (uint32_t coefficient = 0; coefficient < lightmap::irradianceLayers; ++coefficient)
-              sun.direct[coefficient] = value.irradiance[coefficient][1];
-          } else if (submission.surface) {
-            job.surfaces[submission.first + i] = value;
-          } else {
-            value.statistics[3] = !job.failed && value.statistics[0] < .5f ? 1.f : 0.f;
-            job.grid.probes[job.grid.tasks[submission.first + i]] = value;
+            if (!finite) {
+              job.failed = true;
+              status(REMIXAPI_BAKE_FAILED_EXT, "Bake produced non-finite irradiance");
+            }
+            if (submission.radiance) {
+              const uint32_t count = uint32_t(job.captures.front().radiance.size());
+              const uint32_t ray = submission.first + i;
+              auto color = value.irradiance[0];
+              for (uint32_t c = 0; c < 3; ++c)
+                color[c] = std::clamp(color[c], 0.f, 65000.f);
+              job.captures[ray / count].radiance[ray % count] = color;
+            } else if (submission.reflectionSite) {
+              job.usableReflectionSites[submission.first + i] =
+                  !job.failed && value.statistics[2] == reflectionSiteSamples &&
+                  std::isfinite(value.statistics[0]) && value.statistics[0] >= 0 && value.statistics[0] < .5f;
+            } else if (submission.surface) {
+              job.surfaces[submission.first + i] = value;
+            } else {
+              value.statistics[3] = !job.failed && value.statistics[0] < .5f ? 1.f : 0.f;
+              job.grid.probes[job.grid.tasks[submission.first + i]] = value;
+            }
           }
         }
         job.readbackMs +=
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - readBegin).count();
+        job.readbackBytes += uint64_t(submission.count) *
+                             (submission.visibility || submission.sun ? sizeof(VisibilityResult) : sizeof(Result));
         (submission.radiance         ? job.captureReceived
          : submission.reflectionSite ? job.siteReceived
          : submission.visibility     ? job.visibilityReceived
@@ -635,7 +653,8 @@ namespace remix::forward::bake {
     }
     if (const char *profile = std::getenv("REMIX_DEBUG_BAKE_TIMING");
         profile && std::strcmp(profile, "1") == 0) {
-      std::fprintf(stderr, "Bake CPU readback: total_ms=%.3f\n", m_job->readbackMs);
+      std::fprintf(stderr, "Bake CPU readback: total_ms=%.3f bytes=%llu\n", m_job->readbackMs,
+                   static_cast<unsigned long long>(m_job->readbackBytes));
       constexpr const char *names[] = {"grid", "surface", "visibility", "sun", "sites"};
       for (uint32_t i = 0; i < uint32_t(Work::Count); ++i) {
         const auto &timing = m_job->budget.statistics(Work(i));

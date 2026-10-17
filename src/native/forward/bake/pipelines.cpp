@@ -60,6 +60,8 @@ namespace remix::forward::bake {
     };
     tracePipeline = compute(transportShader, sizeof(transportShader), layout);
     parallelPipeline = compute(parallelShader, sizeof(parallelShader), layout);
+    if (options.cpuReadback && options.parallel)
+      visibilityPipeline = compute(visibilityShader, sizeof(visibilityShader), layout);
     atlasPipeline = compute(atlasShader, sizeof(atlasShader), atlasLayout);
     const VkSamplerCreateInfo info{.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
                                    .magFilter = VK_FILTER_NEAREST,

@@ -45,6 +45,14 @@ namespace remix::forward::bake {
     std::array<Vec4, 6> moments{}; // +/-X, +/-Y, +/-Z: mean d, mean d², hit fraction, ray count
     Vec4 statistics{};             // back-face fraction, miss fraction, sample count, reserved
   };
+  // GPU readback for local/sun visibility: scalar mask and nine unit direct
+  // SH coefficients. Three vec4s on the wire; no unused RGB/distance moments.
+  struct VisibilityResult {
+    float visibility = 0;
+    std::array<float, 9> irradiance{};
+    std::array<float, 2> padding{};
+  };
+  static_assert(sizeof(VisibilityResult) == 48);
   struct Frame {
     Matrix dome;
     Vec4 sunDirection{}, sunRadiance{}, domeRadiance{}, trace{};

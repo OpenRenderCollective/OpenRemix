@@ -33,7 +33,7 @@ namespace remix::forward::bake {
   Transport::Gpu::~Gpu() {
     if (pool)
       vkDestroyDescriptorPool(device, pool, nullptr);
-    for (auto handle : {tracePipeline, parallelPipeline, atlasPipeline})
+    for (auto handle : {tracePipeline, parallelPipeline, visibilityPipeline, atlasPipeline})
       if (handle)
         pipeline::destroyPipeline(device, handle, nullptr);
     for (auto handle : {layout, atlasLayout})
@@ -362,9 +362,14 @@ namespace remix::forward::bake {
     frame.control = {g.domeLayer, firstSample, uint32_t(mode), uint32_t(g.hasDielectrics)};
     slot.constants->write(&frame, sizeof(frame));
     slot.count = count;
+    slot.samples = samples;
     g.timing->begin(command, index);
     const bool parallel = g.options.parallel && mode != Mode::Radiance && mode != Mode::SiteValidation;
+    slot.compactVisibility = parallel && g.options.cpuReadback &&
+                             (mode == Mode::Visibility || mode == Mode::DirectVisibility ||
+                              mode == Mode::SunVisibility || mode == Mode::SunDirectVisibility);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE,
+                      slot.compactVisibility ? g.visibilityPipeline :
                       parallel ? g.parallelPipeline : g.tracePipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, g.layout, 0, 1, &slot.set, 0, nullptr);
     vkCmdDispatch(command, parallel ? slot.count : (slot.count + 63) / 64, 1, 1);
@@ -406,6 +411,27 @@ namespace remix::forward::bake {
     const auto &slot = m_gpu->slots.at(index);
     if (results.size() > slot.count)
       throw std::invalid_argument("Bake readback exceeds the recorded batch");
+    if (!slot.compactVisibility) {
+      slot.results->read(results.data(), results.size_bytes());
+      return;
+    }
+    // Preserve the general transport readback contract for diagnostics/tests.
+    // The controller consumes the compact data directly through readVisibility.
+    std::vector<VisibilityResult> compact(results.size());
+    readVisibility(index, compact);
+    for (size_t i = 0; i < results.size(); ++i) {
+      auto &value = results[i];
+      value = {};
+      value.irradiance[0][0] = compact[i].visibility;
+      for (uint32_t coefficient = 0; coefficient < 9; ++coefficient)
+        value.irradiance[coefficient][1] = compact[i].irradiance[coefficient];
+      value.statistics[2] = float(slot.samples);
+    }
+  }
+  void Transport::readVisibility(uint32_t index, std::span<VisibilityResult> results) const {
+    const auto &slot = m_gpu->slots.at(index);
+    if (!slot.compactVisibility || results.size() > slot.count)
+      throw std::invalid_argument("Readback requires a completed compact visibility batch");
     slot.results->read(results.data(), results.size_bytes());
   }
   void Transport::releaseBuildInputs() {

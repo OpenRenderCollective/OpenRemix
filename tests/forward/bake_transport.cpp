@@ -7,6 +7,7 @@
 #include "runtime/pipelines.h"
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <numbers>
 #include <thread>
 
@@ -313,6 +314,51 @@ namespace {
     require(results[1].statistics[2] == 1024, "Per-light visibility retains its independent sample budget");
     require(right == 1,
             "Fully unobstructed transport preserves an exact clear endpoint despite weighted reduction");
+    // Compare the compact wire format against the original full-result GPU
+    // kernel, including partial workgroups and both local/sun query modes.
+    bake::Transport legacy;
+    auto legacyOptions = options;
+    legacyOptions.cpuReadback = false;
+    auto legacyJob = pipelines.prepare("visibility-full-result-reference", [&] {
+      legacy.initialize(fixture.physical, fixture.device, source, legacyOptions);
+    });
+    const auto legacyDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (!legacyJob->ready() && std::chrono::steady_clock::now() < legacyDeadline)
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    require(legacyJob->ready(), "Full-result visibility reference preparation completed");
+    legacyJob->check();
+    fixture.begin();
+    legacy.recordPrepare(fixture.command, world.resources);
+    fixture.finish();
+    const bake::Point referenceSunPoints[] = {points[0].surface, points[1].surface, points[2].surface};
+    for (bool sun : {false, true})
+      for (bool directDiffuse : {false, true})
+        for (uint32_t samples : {1u, 63u, 65u, 1024u}) {
+          fixture.begin();
+          if (sun) {
+            transport.recordSun(fixture.command, 0, referenceSunPoints, samples, directDiffuse);
+            legacy.recordSun(fixture.command, 0, referenceSunPoints, samples, directDiffuse);
+          } else {
+            transport.recordVisibility(fixture.command, 0, points, samples, directDiffuse);
+            legacy.recordVisibility(fixture.command, 0, points, samples, directDiffuse);
+          }
+          fixture.finish();
+          std::array<bake::VisibilityResult, 3> compact;
+          std::array<bake::Result, 3> full;
+          transport.readVisibility(0, compact);
+          legacy.read(0, full);
+          transport.read(0, results);
+          require(std::memcmp(full.data(), results, sizeof(results)) == 0,
+                  "Compact visibility expands byte-identically to the original GPU result contract");
+          for (uint32_t i = 0; i < 3; ++i) {
+            require(compact[i].visibility == full[i].irradiance[0][0],
+                    "Compact local/sun visibility preserves exact blocked/clear endpoints");
+            for (uint32_t coefficient = 0; coefficient < 9; ++coefficient)
+              require(compact[i].irradiance[coefficient] == full[i].irradiance[coefficient][1],
+                      "Compact unit direct SH preserves every coefficient without quantization");
+          }
+        }
+    std::puts("Compact/full visibility: local/sun, scalar/direct SH and partial workgroups are byte-identical");
     for (uint32_t samples : {1u, 63u, 65u}) {
       fixture.begin();
       transport.recordVisibility(fixture.command, 0, points, samples, true);
