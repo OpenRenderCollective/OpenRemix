@@ -1,0 +1,36 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x = 64) in;
+#include "../../../src/native/forward/water/optics.glsl"
+#include "../../../src/native/forward/water/screen.glsl"
+struct Query {
+  vec4 origin, incident, normal, parameters, tint;
+  mat4 projection, inverseProjection;
+};
+struct Result { vec4 refracted, reflected, through, screen; };
+layout(set = 0, binding = 0, std430) readonly buffer Queries { Query queries[]; };
+layout(set = 0, binding = 1, std430) writeonly buffer Results { Result results[]; };
+layout(set = 0, binding = 2, std430) readonly buffer OpaqueDepth { float depths[]; };
+layout(push_constant) uniform Settings { uint count, width, height, samples; };
+float waterOpaqueDepth(ivec2 pixel) {
+  uint start = (uint(pixel.y) * width + uint(pixel.x)) * samples;
+  float nearest = 1;
+  for (uint i = 0u; i < samples; ++i) nearest = min(nearest, depths[start + i]);
+  return nearest;
+}
+void main() {
+  uint index = gl_GlobalInvocationID.x;
+  if (index >= count) return;
+  Query q = queries[index];
+  bool inside = q.parameters.z > 0;
+  WaterBoundary boundary = waterBoundary(q.incident.xyz, q.normal.xyz, q.parameters.x, inside);
+  WaterScreenHit hit = WaterScreenHit(vec2(-1), 0, false);
+  if (!boundary.totalInternal)
+    hit = traceWaterRefraction(q.origin.xyz, boundary.refracted, q.projection, q.inverseProjection,
+                                ivec2(width, height), q.parameters.w, q.origin.w, q.tint.w, q.incident.w);
+  float weight;
+  vec3 through = waterThrough(boundary, q.tint.rgb, q.parameters.y, hit.distance, hit.valid, inside, weight);
+  results[index] = Result(vec4(boundary.refracted, boundary.reflectance),
+                          vec4(boundary.reflected, boundary.totalInternal ? 1 : 0),
+                          vec4(through, weight), vec4(hit.uv, hit.distance, hit.valid ? 1 : 0));
+}

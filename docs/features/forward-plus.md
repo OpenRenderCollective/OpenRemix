@@ -42,6 +42,20 @@ prepared frozen draw count as one little-endian `uint32_t`.
 Transparency, water, viewmodels, decals and unsupported masking
 operations stay in compatibility rasterization. Those surfaces do not yet receive forward lighting.
 
+Water integration is in progress. `water/optics.glsl` provides the primary path tracer's Schlick/Snell
+boundary, total internal reflection, measured absorption and surface/through weights. This stays distinct
+from the exact-Fresnel smooth transport used by the light baker. `water/screen.glsl` supplies bounded
+opaque-depth refraction queries with orthographic/perspective reconstruction, either camera-Z sign,
+foreground rejection and a contact tolerance for shorelines. A caller supplies the nearest opaque depth
+sample in Vulkan zero-to-one depth coordinates; a depth of one means no opaque layer. Unknown/off-screen
+layers remain misses. The query brackets crossings even if a coarse step passes the camera's far plane.
+
+These helpers are GPU-tested building blocks, not an active water render pass. The test supplies
+one/two/four per-pixel depth values through a buffer; it does not prove MSAA attachment coverage or
+HDR composition. Remaining integration includes independent water targets and resource transitions,
+PBR normal/roughness replacements and Source scrolling normals, probe/SSR reflection composition,
+surface coverage/depth, and camera-medium absorption for opaque geometry seen underwater.
+
 ## Ownership and modules
 
 `src/native/forward` owns its GPU state and reads the shared CPU scene through the raster resource provider:
@@ -52,6 +66,7 @@ operations stay in compatibility rasterization. Those surfaces do not yet receiv
 | `lighting.h/.cpp` | CPU transforms, cluster-depth policy, draw eligibility and cascade fitting |
 | `bindings.h` | Explicit CPU/GPU buffer layout contracts |
 | `material.h/.cpp` | Shared draw/material packing and normal transforms |
+| `water/optics.glsl`, `water/screen.glsl` | Primary water boundary and bounded screen-depth tracing primitives; render integration pending |
 | `resources.h/.cpp` | Noncopyable Vulkan buffer/image ownership and allocation |
 | `targets.cpp` | HDR/MSAA/depth/shadow attachments and descriptor layouts |
 | `pipelines.cpp` | Forward, shadow, cluster and display pipeline creation |
