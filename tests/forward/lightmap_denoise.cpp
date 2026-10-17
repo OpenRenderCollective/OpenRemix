@@ -109,6 +109,73 @@ namespace {
     std::printf("OIDN large chart: %u executions in %u bounded batches, %.3f s\n", statistics.executions,
                 statistics.batches, statistics.seconds);
   }
+  void paddedCharts() {
+    lightmap::Layout layout;
+    layout.pageSize = 128;
+    layout.pages = 1;
+    layout.charts = {{0, 0, 0, 17, 31}, {0, 32, 0, 31, 17}, {0, 64, 0, 25, 29}};
+    layout.owners.resize(128 * 128, lightmap::unowned);
+    std::vector<bake::Result> values;
+    for (uint32_t chart = 0; chart < layout.charts.size(); ++chart) {
+      const auto &a = layout.charts[chart];
+      for (uint32_t y = 0; y < a.height; ++y)
+        for (uint32_t x = 0; x < a.width; ++x) {
+          const auto point = uint32_t(values.size()), address = (a.y + y) * 128 + a.x + x;
+          layout.points.push_back({});
+          layout.pointCharts.push_back(chart);
+          layout.addresses.push_back(address);
+          layout.owners[address] = point;
+          bake::Result value;
+          const float noise = float((x * 1664525u + y * 1013904223u) % 1009) / 1008.f - .5f;
+          for (uint32_t c = 0; c < 3; ++c)
+            for (uint32_t band = 0; band < 9; ++band) {
+              const float level = float(c + 1) * (band ? -.1f : 1.f);
+              value.irradiance[band][c] = chart == 2 ? level : level + noise * .05f;
+              value.irradiance[band][3] = 7;
+            }
+          value.statistics = {float(point), 2, 3, 4};
+          values.push_back(value);
+        }
+    }
+    const auto original = values;
+    std::vector<uint32_t> firstPoints(17 * 31);
+    std::iota(firstPoints.begin(), firstPoints.end(), 0u);
+    lightmap::denoising::Chart image(layout, 0, values, firstPoints, {}, 16);
+    const auto packet = image.pack(0, 9);
+    require(image.width() == 32 && image.height() == 32,
+            "Temporary denoising images pad independently of original chart bounds");
+    for (uint32_t band = 0; band < 9; ++band)
+      for (uint32_t y = 0; y < 32; ++y)
+        for (uint32_t x = 0; x < 32; ++x)
+          if (x >= 17 || y >= 31)
+            for (uint32_t c = 0; c < 3; ++c)
+              require(packet[(band * 32 * 32 + y * 32 + x) * 3 + c] == (band ? -1.f : 0.f),
+                      "Synthetic boundaries are zero after HDR and signed network transforms");
+    const auto statistics = lightmap::denoise(layout, values);
+    // The supported OIDN 2.5 network uses the same 32x32 tensor for all three
+    // shapes. A future unknown OIDN version deliberately keeps native shapes.
+    if (lightmap::denoiserVersion() >= 20500 && lightmap::denoiserVersion() < 20600)
+      require(statistics.preparations == 9 && statistics.synchronizations == 1,
+              "Unequal charts sharing network padding reuse bindings and one bounded queue");
+    require(statistics.executions == 18 && statistics.constantFields == 9,
+            "Padding never turns real constant lighting into a nonconstant field");
+    for (uint32_t point = 0; point < values.size(); ++point) {
+      require(values[point].statistics == original[point].statistics,
+              "Padded image reconstruction preserves transport metadata");
+      if (layout.pointCharts[point] == 2)
+        require(values[point].irradiance == original[point].irradiance,
+                "All constant RGB SH bands survive padding and cropping exactly");
+    }
+    require(lightmap::denoising::alignedExtent(17, 16) == 32,
+            "Image padding rounds up, independently of atlas placement");
+    bool rejected = false;
+    try {
+      lightmap::denoising::alignedExtent(std::numeric_limits<uint32_t>::max(), 16);
+    } catch (const std::invalid_argument &) {
+      rejected = true;
+    }
+    require(rejected, "Padded image dimensions cannot wrap");
+  }
   void queuedCharts(uint32_t side, uint32_t count) {
     lightmap::Layout layout;
     layout.pageSize = 512;
@@ -184,6 +251,7 @@ int main() try {
     return 0;
   }
   largeBatch();
+  paddedCharts();
   queuedCharts(16, 40); // chart-count bound, then a partial tail
   queuedCharts(64, 18); // byte bound, then a partial tail
   lightmap::Layout layout;

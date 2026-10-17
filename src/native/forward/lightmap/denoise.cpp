@@ -8,7 +8,7 @@
 #include <numeric>
 #include <stdexcept>
 #include <string>
-#include <tuple>
+#include <utility>
 #ifdef REMIX_OIDN
 #include <OpenImageDenoise/oidn.h>
 static_assert(OIDN_VERSION >= 20500, "Lightmap denoising requires Open Image Denoise 2.5 or newer");
@@ -24,6 +24,13 @@ namespace remix::forward::lightmap {
   }
 #ifdef REMIX_OIDN
   namespace {
+    // Match OIDN 2.5's 16-pixel U-Net input padding, allowing neighbouring chart
+    // sizes to share committed shapes. Unknown versions retain exact chart sizes.
+    constexpr uint32_t imageAlignment = OIDN_VERSION >= 20500 && OIDN_VERSION < 20600 ? 16 : 1;
+    auto imageShape(const Allocation &chart) {
+      return std::pair{denoising::alignedExtent(chart.width, imageAlignment),
+                        denoising::alignedExtent(chart.height, imageAlignment)};
+    }
     void checkCancellation(std::stop_token cancelled) {
       if (cancelled.stop_requested())
         throw std::runtime_error("Lightmap denoising superseded");
@@ -94,7 +101,8 @@ namespace remix::forward::lightmap {
           check();
         }
       }
-      void enqueue(std::span<float> images, uint32_t width, uint32_t height, uint32_t first) {
+      void enqueue(std::span<float> images, uint32_t width, uint32_t height, uint32_t first,
+                    uint32_t contentWidth, uint32_t contentHeight) {
         checkCancellation(cancellation);
         const size_t plane = size_t(width) * height * 3;
         const uint32_t count = uint32_t(images.size() / plane);
@@ -104,8 +112,12 @@ namespace remix::forward::lightmap {
           const auto image = images.subspan(size_t(slot) * plane, plane);
           // Preserve constant fields exactly, avoiding both neural bias and work.
           bool constant = true;
-          for (size_t i = 3; i < image.size() && constant; ++i)
-            constant = std::abs(image[i] - image[i % 3]) <= 1e-7f;
+          // Ignore synthetic network padding when deciding whether real lighting
+          // is constant. Such fields remain exact and never enter the network.
+          for (uint32_t y = 0; y < contentHeight && constant; ++y)
+            for (uint32_t x = 0; x < contentWidth && constant; ++x)
+              for (uint32_t c = 0; c < 3 && constant; ++c)
+                constant = std::abs(image[(size_t(y) * width + x) * 3 + c] - image[c]) <= 1e-7f;
           active[slot] = !constant;
           statistics.constantFields += uint32_t(constant);
           any |= !constant;
@@ -180,9 +192,10 @@ namespace remix::forward::lightmap {
           if (!std::isfinite(value))
             throw std::runtime_error("OIDN returned nonfinite lightmap data");
       }
-      void run(std::span<float> images, uint32_t width, uint32_t height, uint32_t first) {
+      void run(std::span<float> images, uint32_t width, uint32_t height, uint32_t first,
+                uint32_t contentWidth, uint32_t contentHeight) {
         try {
-          enqueue(images, width, height, first);
+          enqueue(images, width, height, first, contentWidth, contentHeight);
           finish();
           validate(images);
         } catch (...) {
@@ -214,14 +227,15 @@ namespace remix::forward::lightmap {
       if (!a.width || !a.height || a.page >= layout.pages || uint64_t(a.x) + a.width > layout.pageSize ||
           uint64_t(a.y) + a.height > layout.pageSize)
         throw std::invalid_argument("Invalid denoising allocation");
-      const size_t fieldBytes = size_t(a.width) * a.height * 3 * sizeof(float);
+      const auto [width, height] = imageShape(a);
+      const size_t fieldBytes = size_t(width) * height * 3 * sizeof(float);
       largestImage = std::max(largestImage, fieldBytes * denoising::batchFields(fieldBytes));
     }
     // Chart-local donors make charts independent. Group equal image shapes so
     // the same committed network can serve all of them without re-preparation.
     std::stable_sort(order.begin(), order.end(), [&](uint32_t a, uint32_t b) {
       const auto &first = layout.charts[a], &second = layout.charts[b];
-      return std::tie(first.width, first.height) > std::tie(second.width, second.height);
+      return imageShape(first) > imageShape(second);
     });
     struct PendingChart {
       std::unique_ptr<denoising::Chart> image;
@@ -264,23 +278,25 @@ namespace remix::forward::lightmap {
       if (chartPoints[chart].empty())
         continue;
       const auto &a = layout.charts[chart];
-      const auto fieldBytes = uint64_t(a.width) * a.height * 3 * sizeof(float);
+      const auto [width, height] = imageShape(a);
+      const auto fieldBytes = uint64_t(width) * height * 3 * sizeof(float);
       const auto batch = denoising::batchFields(size_t(fieldBytes));
       const auto chartBytes = fieldBytes * (2 + batch);
-      if (!pending.empty() && (a.width != pendingWidth || a.height != pendingHeight ||
+      if (!pending.empty() && (width != pendingWidth || height != pendingHeight ||
                                pendingBytes + chartBytes > denoising::queueBudgetBytes ||
                                pending.size() >= denoising::queuedChartLimit))
         flush();
-      auto image = std::make_unique<denoising::Chart>(layout, chart, results, chartPoints[chart], cancelled);
+      auto image = std::make_unique<denoising::Chart>(layout, chart, results, chartPoints[chart], cancelled,
+                                                    imageAlignment);
       statistics.texels += uint64_t(a.width) * a.height;
       statistics.peakHostBytes = std::max(statistics.peakHostBytes, pendingBytes + image->hostBytes());
       if (batch == denoising::coefficientCount) {
-        pendingWidth = a.width;
-        pendingHeight = a.height;
+        pendingWidth = width;
+        pendingHeight = height;
         auto fields = image->pack(0, batch);
         pendingBytes += image->hostBytes();
         pending.push_back({std::move(image), fields}); // retain arrays before any async copy
-        filter.enqueue(fields, a.width, a.height, 0);
+        filter.enqueue(fields, width, height, 0, a.width, a.height);
         continue;
       }
       flush();
@@ -288,7 +304,7 @@ namespace remix::forward::lightmap {
         checkCancellation(cancelled);
         const auto count = std::min(batch, denoising::coefficientCount - first);
         auto fields = image->pack(first, count);
-        filter.run(fields, a.width, a.height, first);
+        filter.run(fields, width, height, first, a.width, a.height);
         image->apply(first, count, fields);
       }
       image->finish();

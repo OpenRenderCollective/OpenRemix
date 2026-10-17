@@ -1,6 +1,7 @@
 #include "forward/lightmap/denoise_chart.h"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 namespace remix::forward::lightmap::denoising {
@@ -15,14 +16,23 @@ namespace remix::forward::lightmap::denoising {
     return uint32_t(
         std::clamp(batchBudgetBytes / std::max(size_t(1), fieldBytes), size_t(1), size_t(coefficientCount)));
   }
+  uint32_t alignedExtent(uint32_t extent, uint32_t alignment) {
+    if (!extent || !alignment || alignment > 16)
+      throw std::invalid_argument("Invalid denoising image alignment");
+    const auto padded = ((uint64_t(extent) + alignment - 1) / alignment) * alignment;
+    if (padded > std::numeric_limits<uint32_t>::max())
+      throw std::invalid_argument("Denoising image extent overflow");
+    return uint32_t(padded);
+  }
   Chart::Chart(const Layout &layout, uint32_t chart, std::span<bake::Result> results,
-               std::span<const uint32_t> points, std::stop_token cancelled)
+               std::span<const uint32_t> points, std::stop_token cancelled, uint32_t alignment)
       : m_layout(layout), m_allocation(layout.charts.at(chart)), m_chart(chart),
-        m_batch(batchFields(size_t(m_allocation.width) * m_allocation.height * 3 * sizeof(float))),
+        m_width(alignedExtent(m_allocation.width, alignment)),
+        m_height(alignedExtent(m_allocation.height, alignment)),
+        m_batch(batchFields(size_t(m_width) * m_height * 3 * sizeof(float))),
         m_origin((size_t(m_allocation.page) * layout.pageSize + m_allocation.y) * layout.pageSize +
                  m_allocation.x),
-        m_plane(size_t(m_allocation.width) * m_allocation.height * 3), m_results(results), m_points(points),
-        m_cancelled(cancelled) {
+        m_plane(size_t(m_width) * m_height * 3), m_results(results), m_points(points), m_cancelled(cancelled) {
     check(m_cancelled);
     m_original.resize(m_plane);
     m_l0.resize(m_plane);
@@ -35,7 +45,7 @@ namespace remix::forward::lightmap::denoising {
           const float value = m_results[donor].irradiance[0][c];
           if (!std::isfinite(value) || value < 0)
             throw std::invalid_argument("Invalid indirect L0");
-          m_original[(size_t(y) * m_allocation.width + x) * 3 + c] = value;
+          m_original[(size_t(y) * m_width + x) * 3 + c] = value;
         }
       }
     }
@@ -53,7 +63,7 @@ namespace remix::forward::lightmap::denoising {
     const auto offset = address - m_origin, x = offset % m_layout.pageSize, y = offset / m_layout.pageSize;
     if (x >= m_allocation.width || y >= m_allocation.height)
       return outside;
-    return (y * m_allocation.width + x) * 3;
+    return (y * m_width + x) * 3;
   }
   uint64_t Chart::hostBytes() const {
     return (m_original.size() + m_l0.size() + m_fields.size()) * sizeof(float);
@@ -65,12 +75,15 @@ namespace remix::forward::lightmap::denoising {
     for (uint32_t slot = 0; slot < count; ++slot) {
       check(m_cancelled);
       const uint32_t coefficient = first + slot;
+      // OIDN 2.5 pads its network input with zero AFTER transfer functions.
+      // HDR zero stays zero; signed directional -1 maps to that same zero.
+      std::fill_n(output.begin() + size_t(slot) * m_plane, m_plane, coefficient ? -1.f : 0.f);
       for (uint32_t y = 0; y < m_allocation.height; ++y) {
         check(m_cancelled);
         for (uint32_t x = 0; x < m_allocation.width; ++x) {
           const auto donor = owner(x, y);
           for (uint32_t c = 0; c < 3; ++c) {
-            const size_t k = (size_t(y) * m_allocation.width + x) * 3 + c;
+            const size_t k = (size_t(y) * m_width + x) * 3 + c;
             float value = m_results[donor].irradiance[coefficient][c];
             if (!std::isfinite(value))
               throw std::invalid_argument("Invalid indirect SH band");

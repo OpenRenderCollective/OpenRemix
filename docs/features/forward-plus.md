@@ -450,6 +450,11 @@ validation requirements. Denoising mode and compiled OIDN version participate in
 
 Each SH band retains a committed filter and a separate image binding. Charts are grouped by image
 dimensions, and a filter is rebound only when dimensions, offset or the shared image buffer change.
+With OIDN 2.5, each image explicitly matches the network's 16-pixel padding, so nearby chart sizes can
+share committed bindings. Padding is zero in HDR data and minus one in signed directional data;
+both become zero after the respective network input transforms. Only the original chart pixels are
+reconstructed, and constant-field detection ignores the synthetic padding. Unknown OIDN versions
+retain native chart dimensions. Padding is temporary denoiser scratch and consumes no atlas space.
 Up to nine bands are packed into one packet. Equal-shaped charts with all nine bands in a packet can
 queue ordered asynchronous uploads, filter executions and readbacks on one OIDN device. Their host
 arrays stay alive until `oidnSyncDevice` completes. Queues flush on a shape change, before changing a

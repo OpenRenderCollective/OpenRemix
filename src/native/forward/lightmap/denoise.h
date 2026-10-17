@@ -20,8 +20,10 @@ namespace remix::forward::lightmap {
   // Filters indirect RGB SH within each chart. Signed bands are normalized by L0,
   // filtered as directional data, then reconstructed with the filtered L0.
   // Alpha, visibility, direct-light attribution, probe data and moments are untouched.
-  // Exceptions abort publication. Equal-shaped charts can queue independent host
-  // packets, bounded by 32 charts and an 8 MiB scratch target (one oversized chart
+  // Exceptions abort publication. OIDN 2.5 images share its native 16-pixel network
+  // padding; signed -1 and HDR zero preserve zero tensor boundaries. Equal-shaped
+  // images can queue independent host packets, bounded by 32 charts and an 8 MiB
+  // scratch target (one oversized chart
   // remains valid). Cancellation is checked between batches and enqueues; queued
   // work is drained before cleanup. CPU and large GPU images
   // additionally use OIDN's internal cancellation callback.
