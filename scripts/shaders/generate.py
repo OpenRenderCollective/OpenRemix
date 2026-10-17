@@ -20,7 +20,7 @@ OPTIMIZED = {'pathtrace'}
 BACKENDS = {
     'mask_test': ('forward::test::mask_input', 'vulkan1.1', ('decode',)),
     'water_ray': ('forward::water::hardware', 'vulkan1.2', ('frag',)),
-    'water_test': ('forward::test::water_input', 'vulkan1.1', ('vert', 'frag', 'query')),
+    'water_test': ('forward::test::water_input', 'vulkan1.1', ('vert', 'frag', 'query', 'depth')),
     'water': ('forward::water', 'vulkan1.1', ('snapshot', 'snapshotSingle', 'vert', 'frag', 'overlayVert', 'overlayFrag', 'compositeFrag', 'compositeSingle')),
     'live_gi': ('forward::ray::gi', 'vulkan1.2', ('frag', 'guides')),
     'live_ray': ('forward::ray', 'vulkan1.2', ('launch', 'merge')),
@@ -60,7 +60,7 @@ def defines_for(backend, stage, stages):
     directory = shader_directory(backend)
     defines = ['-DTEMPORAL=1'] if stage in ('temporal', 'temporalTransparency', 'confidence') else []
     if backend == 'water_test':
-        return [], directory / ('query.comp' if stage == 'query' else 'input.' + stage)
+        return [], directory / (stage + '.comp' if stage in ('query', 'depth') else 'input.' + stage)
     if backend == 'water':
         forward = ROOT / 'src/native/forward/shaders'
         if stage == 'vert': return [], forward / 'forward.vert'

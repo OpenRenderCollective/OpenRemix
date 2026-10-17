@@ -15,6 +15,7 @@ namespace remix::forward::water {
     VkDevice device = VK_NULL_HANDLE;
     VkExtent2D extent{};
     VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
+    bool standardSamples = false;
     std::unique_ptr<Images> images;
     VkSampler sampler = VK_NULL_HANDLE;
     VkSampler colorSampler = VK_NULL_HANDLE;
@@ -53,6 +54,9 @@ namespace remix::forward::water {
     g.physical = physical;
     g.extent = extent;
     g.samples = samples;
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(physical, &properties);
+    g.standardSamples = properties.limits.standardSampleLocations;
     const VkSamplerCreateInfo samplerInfo{.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
                                           .magFilter = VK_FILTER_NEAREST,
                                           .minFilter = VK_FILTER_NEAREST,
@@ -183,7 +187,7 @@ namespace remix::forward::water {
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, g.pipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, g.layout, 0, 1, &set, 0, nullptr);
     const uint32_t push[] = {g.extent.width, g.extent.height, uint32_t(g.samples),
-                             uint32_t(bool(inputs.reflections.imageView))};
+                             uint32_t(bool(inputs.reflections.imageView)) | (g.standardSamples ? 2u : 0u)};
     vkCmdPushConstants(command, g.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), push);
     vkCmdDispatch(command, (g.extent.width + 7) / 8, (g.extent.height + 7) / 8, 1);
     for (auto &barrier : barriers) {

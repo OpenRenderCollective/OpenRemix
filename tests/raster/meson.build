@@ -17,6 +17,8 @@ if get_option('gpu_tests')
     args : [meson.current_build_dir() / 'water-readback', 'water'], timeout : 120)
   test('Forward+ water environment reflection and baked visibility', raster_test,
     args : [meson.current_build_dir() / 'water-environment-readback', 'water-environment'], timeout : 120)
+  test('Forward+ water shoreline coverage and refraction', raster_test,
+    args : [meson.current_build_dir() / 'water-shoreline-readback', 'water-shoreline'], timeout : 120)
   test('Forward+ live dome background and MSAA coverage', raster_test,
     args : [meson.current_build_dir() / 'sky-readback', 'sky'], timeout : 120)
   test('Forward+ live GI replacement, dynamic transport and MSAA', raster_test,

@@ -5,8 +5,10 @@
 
 namespace remix::forward::water {
   // An immutable view of the completed opaque frame for water refraction.
-  // Outputs are single-sample HDR and nearest opaque depth, independent of
+  // Outputs are single-sample HDR and opaque depth, independent of
   // the attachments that a later MSAA water pass will load and write.
+  // Standard MSAA samples on a coherent plane reconstruct pixel-centre depth;
+  // all unknown/discontinuous cases retain the conservative nearest depth.
   class Snapshot {
   public:
     struct Inputs {

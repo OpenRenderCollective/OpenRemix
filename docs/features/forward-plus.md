@@ -61,17 +61,22 @@ for the uniform environment or bypass the baked-visibility requirement for uncov
 boundary, total internal reflection, measured absorption and surface/through weights. This stays distinct
 from the exact-Fresnel smooth transport used by the light baker. `water/screen.glsl` supplies bounded
 opaque-depth refraction queries with orthographic/perspective reconstruction, either camera-Z sign,
-foreground rejection and a contact tolerance for shorelines. A caller supplies the nearest opaque depth
+foreground rejection and a contact tolerance for shorelines. A caller supplies resolved opaque depth
 sample in Vulkan zero-to-one depth coordinates; a depth of one means no opaque layer. Unknown/off-screen
 layers remain misses. The query brackets crossings even if a coarse step passes the camera's far plane.
 
-The late pass samples independent snapshots of completed opaque HDR and nearest opaque depth,
+The late pass samples independent snapshots of completed opaque HDR and opaque depth,
 then writes water into the existing one/two/four-sample colour and depth attachments. It uses shared
 replacement materials, PBR maps, clustered lights, mixed shadows and filtered parallax cubemaps.
 Source water normals retain their authored scroll rates. Camera-medium absorption happens before
 tone mapping. Water shares the opaque hierarchical SSR tracer and rough colour-pyramid filtering;
 optional hardware rays fill unresolved water reflections. Existing opaque reflections are included once
 in the transmitted background. Nested transparent layers are unsupported.
+For standard 2x/4x sample locations, the depth snapshot reconstructs pixel-centre depth only when
+the pixel and four neighbouring sample sets agree on one plane. This avoids a nearest-sample bias
+making a shallow shoreline look like a missing/deep layer. Discontinuities, missing coverage,
+image borders, numerically unresolved slopes and unknown sample patterns retain nearest depth.
+The test uses a fixed D32 tolerance; it does not increase the refraction wall-gap allowance or add images.
 
 ## Ownership and modules
 

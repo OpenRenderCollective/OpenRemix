@@ -303,6 +303,9 @@ int main() try {
       const auto output = snapshot.output();
       test::SnapshotQueries queries(fixture.device);
       queries.initialize(fixture, extent, output);
+      test::SnapshotQueries depthCases(fixture.device);
+      depthCases.initialize(fixture, extent, output, test::water_input::depthShader,
+                            sizeof(test::water_input::depthShader));
       require(output.hdr.imageView != inputs.hdr() && output.depth.imageView != inputs.depth.view,
               "Refraction snapshots never alias their opaque render attachments");
       bool feedbackRefused = false;
@@ -390,6 +393,12 @@ int main() try {
             }
           }
       }
+      fixture.begin();
+      depthCases.record(fixture.command);
+      fixture.finish();
+      for (const auto &value : depthCases.read())
+        require(std::abs(value[0] - value[1]) < 5e-7f,
+                "Depth resolve preserves discontinuities/unknown samples and reconstructs only coherent planes");
       // Exercise shared targets and distinct descriptor slots in one submission,
       // without a queue idle between their read/write uses.
       const VkDeviceSize frameBytes = extent.width * extent.height * 8;

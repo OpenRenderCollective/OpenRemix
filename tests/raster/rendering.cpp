@@ -3645,6 +3645,73 @@ namespace {
               "Disabling the water pass returns its draw to compatibility rendering");
     }
   }
+  void waterShorelineTests(const std::filesystem::path &directory) {
+    for (uint32_t samples : {1u, 2u, 4u}) {
+      Target target;
+      auto &r = target.raster;
+      remix::forward::Options options;
+      options.samples = samples;
+      options.ambient = 1;
+      options.shadows = options.localShadows = options.ssr = false;
+      options.baking.enabled = false;
+      target.enableForward(options);
+      remixapi_HardcodedVertex vertices[4]{};
+      // One red plane crosses the water at the centre of pixel 32. Its optical
+      // path is effectively zero there, even when only some MSAA samples are wet.
+      for (uint32_t i = 0; i < 4; ++i) {
+        const float x = i == 1 || i == 2 ? .8f : -.8f;
+        vertices[i].position[0] = x;
+        vertices[i].position[1] = i >= 2 ? .8f : -.8f;
+        vertices[i].position[2] = .3f + .2f * (x - 1.f / 64);
+        vertices[i].color = 0xffffffff;
+      }
+      const uint32_t indices[] = {0, 2, 1, 0, 3, 2};
+      remixapi_MeshInfoSurfaceTriangles surface{};
+      surface.vertices_values = vertices;
+      surface.vertices_count = 4;
+      surface.indices_values = indices;
+      surface.indices_count = 6;
+      surface.material = material(r, 0xe200, 1, .1f, .05f);
+      remixapi_MeshInfo mesh{};
+      mesh.sType = REMIXAPI_STRUCT_TYPE_MESH_INFO;
+      mesh.hash = 0xe201;
+      mesh.surfaces_values = &surface;
+      mesh.surfaces_count = 1;
+      remixapi_MeshHandle ground;
+      r.createMesh(mesh, ground);
+      remixapi_MaterialInfoTranslucentEXT optical{};
+      optical.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_TRANSLUCENT_EXT;
+      optical.refractiveIndex = 1;
+      optical.transmittanceColor = {.15f, .6f, .8f};
+      optical.transmittanceMeasurementDistance = 1;
+      remixapi_MaterialInfo info{};
+      info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+      info.hash = 0xe202;
+      info.pNext = &optical;
+      remixapi_MaterialHandle water;
+      r.createMaterial(info, water);
+      const auto liquid = quad(r, 0xe203, water);
+      camera(r);
+      r.drawInstance(instance(ground));
+      const auto dry = target.render();
+      camera(r);
+      r.drawInstance(instance(ground));
+      r.drawInstance(instance(liquid, -.2f));
+      const auto wet = target.render();
+      std::ofstream image(directory / ("shoreline-" + std::to_string(samples) + ".ppm"), std::ios::binary);
+      image << "P6\n64 64\n255\n";
+      for (size_t i = 0; i < wet.size(); i += 4) image.write(reinterpret_cast<const char *>(wet.data() + i), 3);
+      const auto centre = (32 * 64 + 32) * 4;
+      std::printf("Shoreline %ux: dry %u %u %u; wet %u %u %u\n", samples,
+                  dry[centre], dry[centre+1], dry[centre+2], wet[centre], wet[centre+1], wet[centre+2]);
+      VkPhysicalDeviceProperties properties{};
+      vkGetPhysicalDeviceProperties(target.physical, &properties);
+      if (samples == 1 || properties.limits.standardSampleLocations)
+        for (uint32_t c = 0; c < 3; ++c)
+          require(std::abs(int(wet[centre+c]) - int(dry[centre+c])) <= 2,
+                  "A zero-depth shoreline stays transparent with mixed foreground/background MSAA samples");
+    }
+  }
   void waterEnvironmentTests() {
     auto tone = [](float value) {
       return std::clamp((value * (2.51f * value + .03f)) / (value * (2.43f * value + .59f) + .14f), 0.f, 1.f);
@@ -3755,6 +3822,7 @@ int main(int argc, char **argv) {
   }
   else if (argc>2 && std::strcmp(argv[2],"water")==0) waterTests();
   else if (argc>2 && std::strcmp(argv[2],"water-environment")==0) waterEnvironmentTests();
+  else if (argc>2 && std::strcmp(argv[2],"water-shoreline")==0) waterShorelineTests(directory);
   else if (argc>2 && std::strcmp(argv[2],"sky")==0) skyTests();
   else if (argc>2 && std::strcmp(argv[2],"live-gi")==0) liveGITests();
   else if (argc>2 && std::strcmp(argv[2],"hardware-reflections")==0) reflectionTests(directory, false, true);

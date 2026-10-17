@@ -21,7 +21,9 @@ namespace remix::forward::test {
       if (m_setLayout)
         vkDestroyDescriptorSetLayout(m_device, m_setLayout, nullptr);
     }
-    void initialize(Fixture &fixture, VkExtent2D extent, water::Snapshot::Output snapshot) {
+    void initialize(Fixture &fixture, VkExtent2D extent, water::Snapshot::Output snapshot,
+                      const uint32_t *code = water_input::queryShader,
+                      size_t bytes = sizeof(water_input::queryShader)) {
       m_extent = extent;
       m_output.create(fixture.physical, m_device, extent.width * extent.height * sizeof(Vec4),
                       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, Buffer::Memory::Readback);
@@ -42,8 +44,8 @@ namespace remix::forward::test {
                                                   .pPushConstantRanges = &push};
       check(vkCreatePipelineLayout(m_device, &layoutInfo, nullptr, &m_layout));
       const VkShaderModuleCreateInfo moduleInfo{.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-                                                .codeSize = sizeof(water_input::queryShader),
-                                                .pCode = water_input::queryShader};
+                                                .codeSize = bytes,
+                                                .pCode = code};
       VkShaderModule shader;
       check(vkCreateShaderModule(m_device, &moduleInfo, nullptr, &shader));
       const VkComputePipelineCreateInfo info{

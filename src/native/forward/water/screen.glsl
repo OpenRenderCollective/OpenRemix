@@ -1,6 +1,6 @@
 #ifndef FORWARD_WATER_SCREEN_GLSL
 #define FORWARD_WATER_SCREEN_GLSL
-// Caller supplies the nearest opaque sample at a pixel. It must read the
+// Caller supplies resolved opaque depth (conservative at discontinuities). Read
 // completed opaque depth, never the water output currently being written.
 float waterOpaqueDepth(ivec2 pixel);
 struct WaterScreenHit {

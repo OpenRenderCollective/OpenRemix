@@ -1,0 +1,43 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 2, std430) writeonly buffer Results { vec4 results[]; };
+layout(push_constant) uniform Extent { uvec2 extent; };
+uvec4 target;
+uint mode;
+vec2 slope;
+#include "../../../src/native/forward/water/shaders/depth.glsl"
+vec4 waterDepthSamples(ivec2 pixel) {
+  vec4 values = vec4(1);
+  const vec2 locations[4] = vec2[4](vec2(.375, .125), vec2(.875, .375),
+                                    vec2(.125, .625), vec2(.625, .875));
+  for (uint i = 0u; i < target.z; ++i) {
+    // Independent sample data from the standard Vulkan pattern, rather than
+    // generating the fixture with the resolver's own offset helper.
+    vec2 location = target.z == 2u ? vec2(i == 0u ? .75 : .25) : locations[i];
+    vec2 p = vec2(pixel - ivec2(8, 5)) + location - .5;
+    float depth = .4 + dot(slope, p);
+    if (mode == 1u) depth = .4;
+    if (mode == 2u) depth = p.x > 0 ? .8 : .2; // real foreground/background step
+    if (mode == 3u) depth = .4 + .005 * p.x * p.x + .01 * p.y;
+    if (mode == 4u && i == 0u) depth = 1; // missing sample coverage
+    if (mode == 5u && pixel == ivec2(9, 5)) depth = 1; // neighbouring sky
+    if (mode == 9u) depth = i == 0u ? .2 : .8; // unrelated layers, not one plane
+    values[i] = depth;
+  }
+  return values;
+}
+void main() {
+  ivec2 outputPixel = ivec2(gl_GlobalInvocationID.xy);
+  if (any(greaterThanEqual(outputPixel, ivec2(extent)))) return;
+  uint index = uint(outputPixel.y) * extent.x + uint(outputPixel.x);
+  mode = (index / 2u) % 12u;
+  target = uvec4(17, 11, (index & 1u) == 0u ? 2 : 4, mode == 6u ? 0 : 2);
+  slope = mode == 8u ? vec2(1e-8) : mode == 10u ? vec2(-.02, .01) :
+            mode == 11u ? vec2(.02, -.02) : vec2(.01, .02);
+  ivec2 pixel = mode == 7u ? ivec2(0, 5) : ivec2(8, 5);
+  float nearest = waterDepthRange(waterDepthSamples(pixel)).x;
+  bool planar = mode == 0u || mode == 10u || mode == 11u;
+  float expected = planar ? .4 : nearest;
+  results[index] = vec4(waterResolvedDepth(pixel), expected, nearest, mode);
+}
