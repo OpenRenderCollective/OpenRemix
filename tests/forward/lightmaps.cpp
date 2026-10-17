@@ -1,5 +1,6 @@
 #include "forward/lightmap/data.h"
 #include "forward/lightmap/layout.h"
+#include "forward/lightmap/packing.h"
 #include "scene/fixtures.h"
 #include <cmath>
 #include <stdexcept>
@@ -33,6 +34,11 @@ int main() {
   scene.charts.push_back({0, 0, 5, 5, {{0, 0}, {4, 4}, {4, 0}, {0, 0}, {0, 4}, {4, 4}}});
   scene::freezeBakeScene(scene);
   const lm::Options options{16, 2, 2, 512};
+  const lm::Options largePage{4096, 1, 0, 16777216};
+  const auto packed4k = lm::packCharts(lm::prepareCharts(scene, largePage, {}), largePage, {});
+  require(packed4k.pageSize == 4096 && packed4k.pages == 1 && packed4k.charts.size() == 1 &&
+              packed4k.owners.empty(),
+          "A 4K page can be planned without allocating or sampling the complete atlas");
   auto layout = lm::plan(scene, options);
   require(layout.points.size() == 25 && layout.addresses.size() == 25 && layout.pages == 1,
           "A chart rasterizes actual surface texels and merges its shared triangle edge");

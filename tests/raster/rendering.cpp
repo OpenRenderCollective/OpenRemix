@@ -1074,7 +1074,7 @@ namespace {
     // pure green/blue constant irradiance. Even partial MSAA fragments must
     // never pick up red from outside their own first/last texel centres.
     const auto layout = lm::fit(*target.raster.bakeScene(),
-                                {options.baking.lightmapPageSize, 1, 0, options.baking.lightmapTexels, 1,
+                                {options.baking.lightmapPageSizeForBudget(), 1, 0, options.baking.lightmapTexels, 1,
                                  options.baking.lightmapLuxelSize});
     require(layout.pages == 1 && layout.charts.size() == 2,
             "Isolation fixture has two bounded charts on one page");
@@ -1192,7 +1192,7 @@ namespace {
         options.baking.bounces = 1;
         options.baking.batch = 16;
         options.baking.reflectionProbes = 0;
-        options.baking.lightmapPageSize = 64;
+        options.baking.lightmapPageSize = 4096; // budget must reduce this to 64 without a 4K allocation
         options.baking.lightmapTexels = 4096;
         if (curved) options.baking.lightmapLuxelSize = .1f;
         // The 4x case needs a three-centimetre grid to fit this page. Doubling

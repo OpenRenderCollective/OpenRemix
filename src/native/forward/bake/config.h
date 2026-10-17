@@ -9,8 +9,14 @@ namespace remix::forward::bake {
     uint32_t maxProbes = 32768, samples = 256, bounces = 3, batch = 64, textureResolution = 256;
     uint32_t reflectionProbes = 16, reflectionResolution = 32;
     float reflectionDetailTolerance = .5f; // metres; zero requires entirely empty boxes
-    uint32_t lightmapPageSize = 512, lightmapTexels = 1048576;
-    float lightmapLuxelSize = .25f; // metres; measured on world surfaces before budget coarsening
+    uint32_t lightmapPageSize = 1024, lightmapTexels = 4194304;
+    float lightmapLuxelSize = .125f; // metres; measured on world surfaces before budget coarsening
+    uint32_t lightmapPageSizeForBudget() const {
+      auto size = lightmapPageSize;
+      while (size > 8 && uint64_t(size) * size > lightmapTexels)
+        size /= 2;
+      return size;
+    }
     bool operator==(const Config &) const = default;
     bool sameLighting(const Config &other) const {
       auto a = *this, b = other;

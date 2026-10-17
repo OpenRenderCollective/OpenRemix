@@ -151,12 +151,12 @@ namespace remix::config {
         result.push_back(scalar("rtx.native.forward.bakeBatch", FIELD(forward.baking.batch), 1, 1024));
         result.push_back(scalar("rtx.native.forward.bakeGpuBudget", FIELD(forward.baking.gpuBudgetMs), 0, 16));
         result.push_back(scalar("rtx.native.forward.lightmapLuxelSize", FIELD(forward.baking.lightmapLuxelSize), .01, 16));
-        result.push_back(scalar("rtx.native.forward.lightmapTexels", FIELD(forward.baking.lightmapTexels), 65536, 4194304));
+        result.push_back(scalar("rtx.native.forward.lightmapTexels", FIELD(forward.baking.lightmapTexels), 65536, 16777216));
         result.push_back({"rtx.native.forward.lightmapPageSize",
             [](const Settings &s) { return number(s.forward.baking.lightmapPageSize); },
             [](Settings &s, std::string_view text) {
               unsigned value;
-              if (!readNumber(text, value) || value < 64 || value > 1024 || (value & (value - 1))) return false;
+              if (!readNumber(text, value) || value < 64 || value > 4096 || (value & (value - 1))) return false;
               s.forward.baking.lightmapPageSize = value;
               return true;
             }});

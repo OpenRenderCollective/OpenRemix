@@ -198,6 +198,17 @@ int main() {
               config::set(settings, "rtx.native.forward.lightmapTexels", "524288") ==
                   config::SetResult::Success,
           "Surface atlas quality settings participate in profile persistence");
+  require(config::set(settings, "rtx.native.forward.lightmapPageSize", "4096") == config::SetResult::Success &&
+              config::set(settings, "rtx.native.forward.lightmapTexels", "16777216") == config::SetResult::Success &&
+              config::set(settings, "rtx.native.forward.lightmapPageSize", "8192") == config::SetResult::Invalid &&
+              config::set(settings, "rtx.native.forward.lightmapTexels", "16777217") == config::SetResult::Invalid,
+          "4K atlas controls persist and reject dimensions or budgets above their limits");
+  auto pageBudget = settings.forward.baking;
+  require(pageBudget.lightmapPageSizeForBudget() == 4096,
+          "A complete 4K page fits its full texel budget");
+  pageBudget.lightmapTexels = 4194304;
+  require(pageBudget.lightmapPageSizeForBudget() == 2048,
+          "A 4K page request respects a smaller budget without increasing memory");
   require(
       config::set(settings, "rtx.native.forward.localShadowResolution", "96") == config::SetResult::Invalid &&
           config::set(settings, "rtx.native.forward.localShadowLights", "9") == config::SetResult::Invalid &&

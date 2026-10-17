@@ -18,6 +18,9 @@ namespace remix::forward::bake {
   namespace {
     std::atomic<uint64_t> generation = 0;
     constexpr uint32_t reflectionSiteSamples = 64;
+    template <typename T> void releaseStorage(std::vector<T> &values) {
+      std::vector<T>().swap(values);
+    }
   } // namespace
   struct Controller::Job {
     std::shared_ptr<const scene::BakeScene> source;
@@ -31,6 +34,7 @@ namespace remix::forward::bake {
     std::vector<Vec4> visibility;
     std::vector<lightmap::Direct> direct, directScratch;
     std::vector<lightmap::Sun> sun;
+    bool hasDirectDiffuse = false, hasSun = false; // survive release of the completed CPU arrays
     uint32_t sunNext = 0, sunReceived = 0;
     uint32_t visibilityNext = 0, visibilityReceived = 0;
     bool visibilityFinished = false;
@@ -70,7 +74,7 @@ namespace remix::forward::bake {
     // Vertex UVs address texel centres and carry explicit chart clamp bounds.
     // The outward-rounded chart grid already contains its bilinear footprint.
     atlas.padding = 0;
-    atlas.pageSize = config.lightmapPageSize;
+    atlas.pageSize = config.lightmapPageSizeForBudget();
     atlas.luxelMetres = config.lightmapLuxelSize;
     atlas.maxTexels = config.lightmapTexels;
     atlas.maxPages = std::min(256u, properties.limits.maxImageArrayLayers / lightmap::atlasLayers);
@@ -87,6 +91,8 @@ namespace remix::forward::bake {
       direct.resize(surfaceLayout.points.size());
       directScratch.resize(surfaceLayout.points.size());
     }
+    hasSun = !sun.empty();
+    hasDirectDiffuse = config.directDiffuse && (!direct.empty() || hasSun);
     Options options;
     options.batchPoints = Budget::maximumPoints;
     options.initialBatchPoints = 1024;
@@ -264,6 +270,8 @@ namespace remix::forward::bake {
     if (!job.visibilityFinished && job.visibilityReceived == job.mixedLights->tasks.size()) {
       job.visibilityFinished = !mixed::refine(*job.mixedLights, job.surfaceLayout, job.visibility,
                                               job.cancellation.get_token(), job.directScratch, job.direct);
+      if (job.visibilityFinished)
+        releaseStorage(job.directScratch);
       job.visibilityNext = job.visibilityReceived = 0;
     }
     if (job.visibilityFinished) {
@@ -366,6 +374,14 @@ namespace remix::forward::bake {
             owner->surfacePixels =
                 lightmap::pixels(owner->surfaceLayout, owner->surfaces, owner->cancellation.get_token(),
                                  owner->visibility, owner->direct, owner->sun);
+            // These transport arrays are no longer needed once encoded. Avoid
+            // retaining them beside the much larger atlas and upload allocation.
+            releaseStorage(owner->visibility);
+            releaseStorage(owner->direct);
+            releaseStorage(owner->sun);
+            const char *samples = std::getenv("REMIX_DEBUG_BAKE_SURFACE_SAMPLES");
+            if (!samples || std::strcmp(samples, "1") != 0)
+              releaseStorage(owner->surfaces);
             if (!owner->source->charts.empty())
               owner->surfaceGeometry = std::make_shared<lightmap::Geometry>(
                   physical, device, owner->source, owner->surfaceLayout, owner->cancellation.get_token(),
@@ -397,12 +413,12 @@ namespace remix::forward::bake {
     auto &grid = m_job->grid;
     if (std::none_of(grid.probes.begin(), grid.probes.end(),
                      [](const auto &p) { return p.statistics[3] > .5f; }) &&
-        m_job->surfaces.empty())
+        m_job->surfaceReceived == 0)
       throw std::runtime_error("Bake contains no usable irradiance probes");
     auto volume = std::make_shared<Volume>();
     probes::dumpCaptures(m_hash, m_job->captures);
-    volume->directDiffuse = m_config.directDiffuse && (!m_job->direct.empty() || !m_job->sun.empty());
-    if (!m_job->sun.empty())
+    volume->directDiffuse = m_job->hasDirectDiffuse;
+    if (m_job->hasSun)
       volume->sun = m_job->source->sun;
     volume->hash = m_hash;
     volume->reflectionHeader = m_job->specular.header;
@@ -441,11 +457,9 @@ namespace remix::forward::bake {
     const size_t occlusionBytes = occlusion.rgba.size() * sizeof(uint16_t);
     volume->content.staticOcclusion = scene::fastHash(occlusion.rgba.data(), occlusionBytes) | 1;
     const size_t occlusionOffset = bytes + specular.size() + surfaceBytes;
-    std::vector<std::byte> data(occlusionOffset + occlusionBytes);
-    std::memcpy(data.data() + occlusionOffset, occlusion.rgba.data(), occlusionBytes);
+    std::vector<std::byte> data(bytes);
     std::memcpy(data.data(), &grid.header, sizeof(GridHeader));
     std::memcpy(data.data() + sizeof(GridHeader), grid.probes.data(), grid.probes.size() * sizeof(Result));
-    std::memcpy(data.data() + bytes, specular.data(), specular.size());
     // Hash once at publication, before releasing staging data. Diagnostics can
     // then distinguish input identity from changes in the actual baked result
     // without a GPU readback or a mutable worker-state dependency.
@@ -455,7 +469,6 @@ namespace remix::forward::bake {
     if (surfaceBytes)
       volume->content.surfaces = scene::fastHash(m_job->surfacePixels.data(), surfaceBytes) | 1;
     if (surfaceBytes) {
-      std::memcpy(data.data() + bytes + specular.size(), m_job->surfacePixels.data(), surfaceBytes);
       const auto &atlas = m_job->surfaceLayout;
       volume->surfaceAtlas = std::make_unique<Image>();
       volume->surfaceAtlas->create(
@@ -467,8 +480,12 @@ namespace remix::forward::bake {
     volume->staging = std::make_unique<Buffer>();
     volume->occlusion = std::make_unique<mixed::OcclusionMap>(m_physical, m_device,
                                                               VkExtent2D{occlusion.width, occlusion.height});
-    volume->staging->create(m_physical, m_device, data.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    volume->staging->create(m_physical, m_device, occlusionOffset + occlusionBytes,
+                            VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
     volume->staging->write(data.data(), data.size());
+    volume->staging->write(specular.data(), specular.size(), bytes);
+    volume->staging->write(m_job->surfacePixels.data(), surfaceBytes, bytes + specular.size());
+    volume->staging->write(occlusion.rgba.data(), occlusionBytes, occlusionOffset);
     volume->data = std::make_unique<Buffer>();
     volume->data->create(m_physical, m_device, bytes,
                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
@@ -522,12 +539,12 @@ namespace remix::forward::bake {
     m_volume = std::move(volume);
     m_submissions[m_slot].upload = m_volume;
     char message[sizeof(m_statistics.status)];
-    if (m_job->surfaces.empty())
+    if (m_job->surfaceReceived == 0)
       std::snprintf(message, sizeof(message), "Baked lighting active");
     else
       std::snprintf(message, sizeof(message),
                     "Baked lighting active (%zu surface texels, %u atlas pages; %.3g m surface luxels, %u seam samples, %u curved)",
-                    m_job->surfaces.size(), m_job->surfaceLayout.pages, m_job->surfaceLayout.luxelMetres,
+                    size_t(m_job->surfaceReceived), m_job->surfaceLayout.pages, m_job->surfaceLayout.luxelMetres,
                     m_job->surfaceLayout.seamSamples, m_job->surfaceLayout.curvedSeamSamples);
     if (m_job->mixedLights->overflow) {
       const size_t used = std::strlen(message);

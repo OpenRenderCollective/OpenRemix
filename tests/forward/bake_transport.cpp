@@ -751,6 +751,25 @@ int main() try {
   std::setvbuf(stdout, nullptr, _IONBF, 0);
   {
     test::Fixture fixture;
+    {
+      Buffer staging;
+      staging.create(fixture.physical, fixture.device, 16, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+      std::array<uint8_t, 16> expected{};
+      staging.write(expected.data(), expected.size());
+      const uint8_t region[] = {1, 2, 3, 4};
+      staging.write(region, sizeof(region), 5);
+      std::copy(std::begin(region), std::end(region), expected.begin() + 5);
+      std::array<uint8_t, 16> read{};
+      staging.read(read.data(), read.size());
+      require(read == expected, "Staging offset writes preserve neighbouring upload regions");
+      bool rejected = false;
+      try {
+        staging.write(region, sizeof(region), 14);
+      } catch (VkResult error) {
+        rejected = error == VK_ERROR_OUT_OF_HOST_MEMORY;
+      }
+      require(rejected, "Staging offset writes reject a range past the allocation");
+    }
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(fixture.physical, &properties);
     pipeline::Service pipelines(fixture.device, properties, false);

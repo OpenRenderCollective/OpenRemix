@@ -98,7 +98,7 @@ namespace remix {
         ImGui::SetTooltip("World-space spacing is measured on planar and curved surfaces.\n"
                           "The atlas memory budget and page size can coarsen the requested spacing.");
       int surfaceBudget = int(forward.baking.lightmapTexels / 1024);
-      if (ui::SliderInt("Surface lightmap budget (k texels)", &surfaceBudget, 64, 4096))
+      if (ui::SliderInt("Surface lightmap budget (k texels)", &surfaceBudget, 64, 16384))
         forward.baking.lightmapTexels = uint32_t(surfaceBudget) * 1024;
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("More texels preserve smaller baked lighting details. Charts coarsen when needed to fit the budget.");
@@ -106,10 +106,10 @@ namespace remix {
                   double(forward.baking.lightmapTexels) * remix::forward::lightmap::atlasBytesPerTexel / (1024 * 1024));
       int surfacePage = 0;
       while ((64u << surfacePage) < forward.baking.lightmapPageSize) ++surfacePage;
-      if (ui::Combo("Surface atlas page size", &surfacePage, "64\0 128\0 256\0 512\0 1024\0"))
+      if (ui::Combo("Maximum surface atlas page size", &surfacePage, "64\0 128\0 256\0 512\0 1024\0 2048\0 4096\0"))
         forward.baking.lightmapPageSize = 64u << surfacePage;
       if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Larger pages let large faces retain finer luxels. The memory limit still applies.\n"
+        ImGui::SetTooltip("Larger pages let large faces retain finer luxels. Pages shrink if one would exceed the texel budget.\n"
                           "Smaller pages allocate memory in smaller increments.");
       int probeCount = int(forward.baking.reflectionProbes);
       if (ui::SliderInt("Reflection probes", &probeCount, 0, 16))

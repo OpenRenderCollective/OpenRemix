@@ -60,13 +60,13 @@ namespace remix::forward {
     if (placement == Memory::Host)
       check(vkMapMemory(device, memory, 0, VK_WHOLE_SIZE, 0, &mapped));
   }
-  void Buffer::write(const void *data, size_t bytes) {
+  void Buffer::write(const void *data, size_t bytes, size_t offset) {
     if (!mapped)
       throw VK_ERROR_MEMORY_MAP_FAILED;
-    if (bytes > capacity)
+    if (offset > capacity || bytes > capacity - offset)
       throw VK_ERROR_OUT_OF_HOST_MEMORY;
     if (bytes)
-      std::memcpy(mapped, data, bytes);
+      std::memcpy(static_cast<std::byte *>(mapped) + offset, data, bytes);
     if (!coherent) {
       const VkMappedMemoryRange range{.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
                                       .memory = memory,
