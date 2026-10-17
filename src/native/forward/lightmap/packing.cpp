@@ -2,6 +2,8 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <numeric>
 #include <stdexcept>
 #include <tuple>
@@ -18,7 +20,7 @@ namespace remix::forward::lightmap {
     check(cancelled);
     if (!scene.ready || !std::isfinite(scene.sceneScale) || scene.sceneScale <= 0 || options.pageSize < 8 ||
         options.pageSize > 4096 || !std::has_single_bit(options.pageSize) || !options.maxPages ||
-        options.maxPages > 256 || options.padding < 1 || options.padding > 16 || !options.maxTexels ||
+        options.maxPages > 256 || options.padding > 16 || !options.maxTexels ||
         options.maxTexels > (64u << 20) || !options.texelStep || options.texelStep > 4096 ||
         !std::isfinite(options.luxelMetres) || options.luxelMetres < 0 || options.luxelMetres > 1000)
       throw std::invalid_argument("Invalid surface lightmap scene or atlas budget");
@@ -35,6 +37,20 @@ namespace remix::forward::lightmap {
     result.pageSize = options.pageSize;
     result.luxelMetres = options.luxelMetres * options.texelStep;
     result.mappings = parameterize(shapes, options.luxelMetres, options.texelStep, cancelled);
+    if (const char *capture = std::getenv("REMIX_DEBUG_BAKE_CAPTURE_PREFIX"); capture && *capture) {
+      uint64_t paddedArea = 0;
+      uint32_t maximumWidth = 0, maximumHeight = 0;
+      for (const auto &mapping : result.mappings) {
+        const uint64_t width = uint64_t(mapping.width) + 2 * options.padding,
+                       height = uint64_t(mapping.height) + 2 * options.padding;
+        paddedArea += width * height;
+        maximumWidth = std::max(maximumWidth, mapping.width);
+        maximumHeight = std::max(maximumHeight, mapping.height);
+      }
+      std::fprintf(stderr, "Surface packing probe: step %u, %.3g m, %llu padded texels, largest %ux%u\n",
+                   options.texelStep, result.luxelMetres, static_cast<unsigned long long>(paddedArea),
+                   maximumWidth, maximumHeight);
+    }
     result.charts.resize(shapes.size());
     std::vector<uint32_t> order(shapes.size());
     std::iota(order.begin(), order.end(), 0u);

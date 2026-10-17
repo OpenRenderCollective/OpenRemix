@@ -6,7 +6,7 @@
 namespace remix::forward::lightmap {
   constexpr uint32_t unowned = ~0u;
   struct Options {
-    uint32_t pageSize = 1024, maxPages = 16, padding = 2;
+    uint32_t pageSize = 1024, maxPages = 16, padding = 2; // zero is valid with explicit sampling bounds
     uint64_t maxTexels = 4u << 20;
     uint32_t texelStep = 1; // global spacing multiplier; authored fallback retains chart endpoints
     float luxelMetres = 0;  // zero preserves authored UVs; positive selects world-metric surface spacing

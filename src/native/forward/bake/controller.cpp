@@ -66,7 +66,9 @@ namespace remix::forward::bake {
                  uint32_t((properties.limits.maxStorageBufferRange - sizeof(GridHeader)) / sizeof(Result)));
     grid = place(*source, placement);
     lightmap::Options atlas;
-    atlas.padding = 1; // one bilinear footprint; surface atlases have no mip sampling
+    // Vertex UVs address texel centres and carry explicit chart clamp bounds.
+    // The outward-rounded chart grid already contains its bilinear footprint.
+    atlas.padding = 0;
     atlas.pageSize = config.lightmapPageSize;
     atlas.luxelMetres = config.lightmapLuxelSize;
     atlas.maxTexels = config.lightmapTexels;
@@ -419,6 +421,8 @@ namespace remix::forward::bake {
     probes::dumpPublishedData(".probes-published.bin", specular.data(), specular.size());
     const size_t surfaceBytes = m_job->surfacePixels.size() * sizeof(uint16_t);
     probes::dumpPublishedData(".surfaces-published.bin", m_job->surfacePixels.data(), surfaceBytes);
+    probes::dumpPublishedData(".surface-charts.bin", m_job->surfaceLayout.charts.data(),
+                              m_job->surfaceLayout.charts.size() * sizeof(lightmap::Allocation));
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(m_physical, &properties);
     const auto occlusion = m_job->mixedLights->occlusion.pixels(properties.limits.maxImageDimension2D);

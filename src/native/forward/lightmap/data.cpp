@@ -40,6 +40,7 @@ namespace remix::forward::lightmap {
       const auto &surface = *draw.surface;
       const size_t count = draw.indexCount ? draw.indexCount : surface.indices.size();
       std::vector<Vec4> coordinates(count);
+      std::vector<Vec4> bounds(count);
       std::vector<bake::UInt4> lightKeys(count, {~0u, ~0u, ~0u, ~0u});
       std::vector<bake::UInt4> directKeys(count, {~0u, ~0u, ~0u, ~0u});
       for (uint32_t index : charts) {
@@ -56,9 +57,12 @@ namespace remix::forward::lightmap {
             uv[1] *= float(allocation.height - 1) / float(chart.height - 1);
           }
           coordinates[chart.firstIndex - draw.firstIndex + corner] = {
-              (allocation.x + uv[0] + .5f) / layout.pageSize,
-              (allocation.y + uv[1] + .5f) / layout.pageSize,
+              (allocation.x + uv[0] + .5f) / layout.pageSize, (allocation.y + uv[1] + .5f) / layout.pageSize,
               float(allocation.page), float(index + 1)};
+          bounds[chart.firstIndex - draw.firstIndex + corner] = {
+              (allocation.x + .5f) / layout.pageSize, (allocation.y + .5f) / layout.pageSize,
+              (allocation.x + allocation.width - .5f) / layout.pageSize,
+              (allocation.y + allocation.height - .5f) / layout.pageSize};
           if (!lightChannels.empty())
             lightKeys[chart.firstIndex - draw.firstIndex + corner] = lightChannels[index];
           if (!directChannels.empty())
@@ -89,7 +93,7 @@ namespace remix::forward::lightmap {
         const auto [found, inserted] = vertices.emplace(key, uint32_t(mesh.vertices.size()));
         if (inserted)
           mesh.vertices.push_back(
-              {surface.vertices[vertex], coordinate, lightKeys[corner], directKeys[corner]});
+              {surface.vertices[vertex], coordinate, lightKeys[corner], directKeys[corner], bounds[corner]});
         mesh.indices.push_back(found->second);
       }
       result.push_back(std::move(mesh));

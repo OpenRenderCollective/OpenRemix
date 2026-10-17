@@ -20,10 +20,11 @@ layout(location = 0) in vec3 worldPosition;
 layout(location = 1) in vec2 uv;
 layout(location = 2) in vec4 vertexColor;
 layout(location = 3) in vec3 worldNormal;
-layout(location = 4) in vec4 surfaceLightmap;
+layout(location = 4) centroid in vec4 surfaceLightmapInput;
 layout(location = 5) flat in uvec4 surfaceLights;
 layout(location = 6) flat in uint surfaceChart;
 layout(location = 7) flat in uvec4 surfaceDirectLights;
+layout(location = 8) flat in vec4 surfaceBounds;
 layout(push_constant) uniform Draw {
   uint index;
   uint cascade;
@@ -42,7 +43,7 @@ bool emitterAbovePlane(Light light, vec3 p, vec3 n) {
              dot(light.corners[2].xyz - p, n)) > 0;
 }
 vec3 localLight(uint index, vec3 p, vec3 n, vec3 v, vec3 base, float roughness, float metallic,
-                vec4 directIrradiance) {
+                vec4 directIrradiance, vec4 surfaceLightmap) {
   Light light = lights[index];
   vec3 delta = light.positionRadius.xyz - p;
   float distance2 = max(dot(delta, delta), 1e-8), distance = sqrt(distance2);
@@ -121,6 +122,11 @@ void main() {
       clamp(sqrt(roughness * roughness + min(.25, dot(dFdx(n), dFdx(n)) + dot(dFdy(n), dFdy(n)))), .04, 1);
   float depth = abs((frame.view * vec4(worldPosition, 1)).z);
   vec3 ambient = frame.ambientExposure.rgb, irradiance;
+  // Explicit subrectangle bounds isolate chart neighbours, including MSAA edge
+  // fragments. Outward-rounded grids already contain every required mip-zero
+  // bilinear tap, so no extra atlas border is needed.
+  vec4 surfaceLightmap = surfaceLightmapInput;
+  surfaceLightmap.xy = clamp(surfaceLightmap.xy, surfaceBounds.xy, surfaceBounds.zw);
   vec4 surfaceLighting = vec4(0);
   bool charted = surfaceIrradiance(surfaceLightmap, n, surfaceLighting);
 #ifdef LIVE_GI
@@ -144,7 +150,8 @@ void main() {
   // It is slower, but never silently loses illumination.
   for (uint i = 0u; i < (count > ClusterCapacity ? frame.target.z : count); ++i) {
     uint index = count > ClusterCapacity ? i : clusters[base + 1u + i];
-    color += localLight(index, worldPosition, n, v, surface.rgb, roughness, metallic, directIrradiance);
+    color += localLight(index, worldPosition, n, v, surface.rgb, roughness, metallic, directIrradiance,
+                        surfaceLightmap);
   }
   color += emitted;
   result = vec4(min(max(color, vec3(0)), vec3(65000)), 1);

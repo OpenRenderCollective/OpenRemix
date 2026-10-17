@@ -56,12 +56,13 @@ namespace remix::forward {
         attributes[3],
         {4, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(lightmap::Vertex, coordinate)},
         {5, 0, VK_FORMAT_R32G32B32A32_UINT, offsetof(lightmap::Vertex, lights)},
-        {6, 0, VK_FORMAT_R32G32B32A32_UINT, offsetof(lightmap::Vertex, directLights)}};
+        {6, 0, VK_FORMAT_R32G32B32A32_UINT, offsetof(lightmap::Vertex, directLights)},
+        {7, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(lightmap::Vertex, atlasBounds)}};
     const VkPipelineVertexInputStateCreateInfo mappedInput{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .vertexBindingDescriptionCount = 1,
         .pVertexBindingDescriptions = &mappedBinding,
-        .vertexAttributeDescriptionCount = 7,
+        .vertexAttributeDescriptionCount = 8,
         .pVertexAttributeDescriptions = mappedAttributes};
     const VkPipelineVertexInputStateCreateInfo fullscreenInput{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};

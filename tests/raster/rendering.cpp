@@ -1068,8 +1068,90 @@ namespace {
         target.render();
     }
   }
+  void chartIsolationReadback(Target &target, const remix::forward::Options &options) {
+    namespace lm = remix::forward::lightmap;
+    // Poison unused atlas space magenta; the two tightly packed charts contain
+    // pure green/blue constant irradiance. Even partial MSAA fragments must
+    // never pick up red from outside their own first/last texel centres.
+    const auto layout = lm::fit(*target.raster.bakeScene(),
+                                {options.baking.lightmapPageSize, 1, 0, options.baking.lightmapTexels, 1,
+                                 options.baking.lightmapLuxelSize});
+    require(layout.pages == 1 && layout.charts.size() == 2,
+            "Isolation fixture has two bounded charts on one page");
+    const size_t pageTexels = size_t(layout.pageSize) * layout.pageSize;
+    std::vector<uint16_t> pixels(pageTexels * lm::atlasLayers * 4);
+    for (size_t texel = 0; texel < pageTexels; ++texel) {
+      pixels[texel * 4] = 0x4800;
+      pixels[texel * 4 + 2] = 0x4800; // 8.0 in half precision
+    }
+    for (uint32_t chart = 0; chart < layout.charts.size(); ++chart) {
+      const auto &a = layout.charts[chart];
+      for (uint32_t y = a.y; y < a.y + a.height; ++y)
+        for (uint32_t x = a.x; x < a.x + a.width; ++x) {
+          const size_t texel = (size_t(y) * layout.pageSize + x) * 4;
+          pixels[texel] = 0;
+          pixels[texel + 1] = chart == 0 ? 0x4800 : 0;
+          pixels[texel + 2] = chart == 1 ? 0x4800 : 0;
+        }
+    }
+    vk(vkDeviceWaitIdle(target.device));
+    remix::forward::Buffer staging;
+    staging.create(target.physical, target.device, pixels.size() * sizeof(uint16_t),
+                   VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+    staging.write(pixels.data(), pixels.size() * sizeof(uint16_t));
+    auto image = std::make_unique<remix::forward::Image>();
+    image->create(target.physical, target.device, {layout.pageSize, layout.pageSize},
+                  VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                  VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_ASPECT_COLOR_BIT, lm::atlasLayers);
+    vk(vkResetCommandBuffer(target.command, 0));
+    const VkCommandBufferBeginInfo begin{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    vk(vkBeginCommandBuffer(target.command, &begin));
+    VkImageMemoryBarrier barrier{.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+                                 .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+                                 .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+                                 .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                 .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                 .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                                 .image = image->handle,
+                                 .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, lm::atlasLayers}};
+    vkCmdPipelineBarrier(target.command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+                         0, nullptr, 0, nullptr, 1, &barrier);
+    const VkBufferImageCopy copy{.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, lm::atlasLayers},
+                                 .imageExtent = {layout.pageSize, layout.pageSize, 1}};
+    vkCmdCopyBufferToImage(target.command, staging.handle, image->handle,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    vkCmdPipelineBarrier(target.command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+    vk(vkEndCommandBuffer(target.command));
+    vk(vkResetFences(target.device, 1, &target.fence));
+    const VkSubmitInfo submit{
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1, .pCommandBuffers = &target.command};
+    vk(vkQueueSubmit(target.queue, 1, &submit, target.fence));
+    vk(vkWaitForFences(target.device, 1, &target.fence, VK_TRUE, 5000000000ull));
+    const auto volume = target.forward->bakeController()->volume();
+    volume->surfaceAtlas.swap(image);
+    camera(target.raster);
+    target.raster.drawRetained(nullptr);
+    const auto readback = target.render();
+    uint32_t maximumRed = 0;
+    for (size_t i = 0; i < readback.size(); i += 4)
+      maximumRed = std::max(maximumRed, uint32_t(readback[i]));
+    const auto left = size_t((32 * 64 + 16) * 4), right = size_t((32 * 64 + 48) * 4);
+    std::printf("Chart bounds isolation: red max %u, left %u/%u, right %u/%u\n", maximumRed,
+                unsigned(readback[left + 1]), unsigned(readback[left + 2]), unsigned(readback[right + 1]),
+                unsigned(readback[right + 2]));
+    require(maximumRed < 3 && std::max(readback[left + 1], readback[right + 1]) > 80 &&
+                std::max(readback[left + 2], readback[right + 2]) > 80,
+            "Bounded atlas charts reject poisoned neighbours on MSAA edge fragments");
+    volume->surfaceAtlas.swap(image); // render() waited for the last sampling fence
+    std::printf("Chart bounds %ux MSAA: maximum poisoned red %u\n", options.samples, maximumRed);
+  }
   remixapi_MeshHandle curvedLightmapReceiver(remix::NativeResources &resources,
-                                           remixapi_MaterialHandle material) {
+                                             remixapi_MaterialHandle material) {
     remixapi_HardcodedVertex vertices[4]{};
     const float positions[4][3] = {
         {-.8f, -.8f, .5f}, {.8f, -.8f, .5f}, {.8f, .8f, .65f}, {-.8f, .8f, .5f}};
@@ -1127,6 +1209,7 @@ namespace {
         identity.classification = REMIXAPI_INSTANCE_STATIC_EXT;
         identity.rasterVisible = 1;
         auto receiver = instance(receiverMesh);
+        if (split && ssr && samples == 4) receiver.transform.matrix[1][3] = .0125f;
         receiver.pNext = &identity;
         const auto retained = r.createRetained(receiver);
         auto blocker = instance(blockerMesh, -.2f);
@@ -1184,6 +1267,7 @@ namespace {
           return pixels;
         };
         const auto first = until(REMIXAPI_BAKE_READY_EXT);
+        if (split && ssr) chartIsolationReadback(target, options);
         const auto content = target.forward->statistics().bakeContent;
         require(content.grid && content.reflections && content.surfaces,
                 "Published lighting diagnostics fingerprint the packed bake payloads");

@@ -636,6 +636,14 @@ a collapsed mapping over larger geometry fails explicitly.
 The positive-weight approach follows the convex-combination parameterization principles described by
 [Floater and Hormann](https://www.inf.usi.ch/hormann/papers/Floater.2002.POT.pdf).
 
+Surface vertex records include the chart's normalized first/last texel-centre bounds. The fragment
+shader uses centroid interpolation for chart coordinates under MSAA and clamps them to that explicit
+subrectangle before every indirect, per-light visibility, direct diffuse or sun lookup. Surface atlases
+sample only mip zero, with bilinear filtering and no anisotropy. Outward-rounded chart grids therefore
+already contain all required taps, including verified seam donors. The runtime allocates no additional
+outer border; CPU callers may still request one. Padding never substitutes for a neighbouring chart's
+light ownership. A future mipmapped/anisotropic atlas would need a different footprint policy.
+
 `forward/lightmap/packing` owns bounded shelf packing. `lightmap/fit` first brackets a fitting global
 spacing multiplier, then probes intermediate integer multipliers between the last failure and a known
 fit. It retains a verified fit throughout; shelf ordering means this is not a globally optimal packing
@@ -685,6 +693,7 @@ The UI exposes it, and the published bake status reports the effective spacing a
 `rtx.native.forward.lightmapPageSize` selects a power-of-two page size (64-1024, default 256).
 `rtx.native.forward.lightmapTexels` bounds allocated atlas texels including padding and unused page space
 (65536-4194304, default 262144). Device image dimensions and array-layer limits also constrain packing.
+The UI reports the memory limit in MiB and exposes page size alongside the texel budget.
 These are load-time quality/memory controls; bake spacing continues to control only the irradiance grid.
 
 The controller traces bounded surface and per-light visibility batches after the irradiance grid and

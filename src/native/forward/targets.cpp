@@ -239,8 +239,8 @@ namespace remix::forward {
                                     .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
                                     .maxLod = 0};
     check(pipeline::createSampler(device, &samplerInfo, nullptr, &sampler));
-    // Chart-local padding permits linear coefficient/mask filtering. Do not
-    // inherit the nearest sampler used for exact depth/composite texel reads.
+    // Explicit chart bounds isolate mip-zero coefficient/mask filtering. Do
+    // not inherit the nearest sampler used for exact depth/composite reads.
     VkFormatProperties format;
     vkGetPhysicalDeviceFormatProperties(physical, VK_FORMAT_R16G16B16A16_SFLOAT, &format);
     if (format.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)

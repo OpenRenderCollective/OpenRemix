@@ -1,4 +1,5 @@
 #include "runtime/runtime.h"
+#include "forward/lightmap/data.h"
 #include "ui/widgets.h"
 #include "pathtrace/block_costs.h"
 #include "pathtrace/sparse_policy.h"
@@ -87,13 +88,22 @@ namespace remix {
       ui::DragFloat("Bake probe spacing (m)", &forward.baking.spacing, .1f, .1f, 100);
       ui::DragFloat("Surface luxel size (m)", &forward.baking.lightmapLuxelSize, .01f, .01f, 16);
       if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Planar surfaces share a world grid at this spacing. The budget can coarsen the whole grid.\n"
-                          "Curved surfaces retain their authored chart mapping.");
+        ImGui::SetTooltip("World-space spacing is measured on planar and curved surfaces.\n"
+                          "The atlas memory budget and page size can coarsen the requested spacing.");
       int surfaceBudget = int(forward.baking.lightmapTexels / 1024);
       if (ui::SliderInt("Surface lightmap budget (k texels)", &surfaceBudget, 64, 4096))
         forward.baking.lightmapTexels = uint32_t(surfaceBudget) * 1024;
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("More texels preserve smaller baked lighting details. Charts coarsen when needed to fit the budget.");
+      ImGui::Text("Surface atlas memory limit: %.1f MiB",
+                  double(forward.baking.lightmapTexels) * remix::forward::lightmap::atlasBytesPerTexel / (1024 * 1024));
+      int surfacePage = 0;
+      while ((64u << surfacePage) < forward.baking.lightmapPageSize) ++surfacePage;
+      if (ui::Combo("Surface atlas page size", &surfacePage, "64\0 128\0 256\0 512\0 1024\0"))
+        forward.baking.lightmapPageSize = 64u << surfacePage;
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Larger pages let large faces retain finer luxels. The memory limit still applies.\n"
+                          "Smaller pages allocate memory in smaller increments.");
       int probeCount = int(forward.baking.reflectionProbes);
       if (ui::SliderInt("Reflection probes", &probeCount, 0, 16))
         forward.baking.reflectionProbes = uint32_t(probeCount);

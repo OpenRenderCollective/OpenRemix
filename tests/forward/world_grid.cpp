@@ -240,6 +240,25 @@ int main() {
     require(fitted.points[i].position == directPlan.points[i].position &&
                 fitted.points[i].normal == directPlan.points[i].normal,
             "Density refinement preserves the actual ray origins and bias normals of the selected grid");
+  scene::BakeScene tight;
+  tight.ready = true;
+  face(tight, 0, 0, 2, 6, 3, 7);
+  face(tight, 0, 0, 2, 6, 3, 7, 2);
+  const auto bordered = lm::fit(tight, {8, 1, 1, 64, 1, 1});
+  const auto bounded = lm::fit(tight, {8, 1, 0, 64, 1, 1});
+  require(bounded.luxelMetres == 1 && bounded.pages == 1 && bordered.luxelMetres > 1,
+          "Texel-centre chart bounds preserve finer world density within the same atlas memory budget");
+  const auto boundedMeshes = lm::meshes(tight, bounded);
+  for (const auto &mesh : boundedMeshes)
+    for (const auto &vertex : mesh.vertices) {
+      const auto &a = bounded.charts[uint32_t(vertex.coordinate[3]) - 1];
+      require(vertex.atlasBounds == forward::Vec4{(a.x + .5f) / 8, (a.y + .5f) / 8,
+                                                   (a.x + a.width - .5f) / 8, (a.y + a.height - .5f) / 8},
+              "Every mapped vertex carries its chart's exact first/last texel-centre bounds");
+      require(vertex.coordinate[0] >= vertex.atlasBounds[0] && vertex.coordinate[0] <= vertex.atlasBounds[2] &&
+                  vertex.coordinate[1] >= vertex.atlasBounds[1] && vertex.coordinate[1] <= vertex.atlasBounds[3],
+              "Outward-rounded surface UVs stay inside the bounded subrectangle");
+    }
   bool exhausted = false;
   try {
     lm::fit(large, {8, 1, 4, 64, 1, 1});

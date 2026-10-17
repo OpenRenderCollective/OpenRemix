@@ -9,15 +9,17 @@ layout(location = 3) in vec3 normal;
 layout(location = 4) in vec4 lightmapCoordinate;
 layout(location = 5) in uvec4 lightmapLights;
 layout(location = 6) in uvec4 lightmapDirectLights;
+layout(location = 7) in vec4 lightmapBounds;
 #endif
 layout(location = 0) out vec3 worldPosition;
 layout(location = 1) out vec2 uv;
 layout(location = 2) out vec4 vertexColor;
 layout(location = 3) out vec3 worldNormal;
-layout(location = 4) out vec4 surfaceLightmap;
+layout(location = 4) centroid out vec4 surfaceLightmap;
 layout(location = 5) flat out uvec4 surfaceLights;
 layout(location = 6) flat out uint surfaceChart;
 layout(location = 7) flat out uvec4 surfaceDirectLights;
+layout(location = 8) flat out vec4 surfaceBounds;
 layout(push_constant) uniform Draw {
   uint index;
   uint cascade;
@@ -34,11 +36,13 @@ void main() {
   surfaceLights = lightmapLights;
   surfaceDirectLights = lightmapDirectLights;
   surfaceChart = uint(lightmapCoordinate.w) - 1u;
+  surfaceBounds = lightmapBounds;
 #else
   surfaceLightmap = vec4(0);
   surfaceLights = uvec4(0xffffffffu);
   surfaceDirectLights = uvec4(0xffffffffu);
   surfaceChart = 0xffffffffu;
+  surfaceBounds = vec4(0);
 #endif
 #ifdef LOCAL_SHADOW_PASS
   gl_Position = frame.localShadows[draw.cascade] * world;

@@ -4,6 +4,7 @@
 namespace remix::forward::lightmap {
   constexpr uint32_t irradianceLayers = 9, visibilityLayer = 9, directLayer = 10, sunVisibilityLayer = 19,
                      atlasLayers = 20;
+  constexpr uint32_t atlasBytesPerTexel = atlasLayers * 4 * sizeof(uint16_t);
   // Nine signed, cosine-convolved coefficients of unit-radiance direct light;
   // each vector component belongs to the chart's corresponding light channel.
   using Direct = std::array<Vec4, irradianceLayers>;
@@ -16,8 +17,9 @@ namespace remix::forward::lightmap {
     Vec4 coordinate{}; // normalized atlas UV, page, chart index + 1 (zero is invalid)
     bake::UInt4 lights{~0u, ~0u, ~0u, ~0u};
     bake::UInt4 directLights{~0u, ~0u, ~0u, ~0u};
+    Vec4 atlasBounds{}; // normalized first/last texel centres; flat per triangle
   };
-  static_assert(sizeof(Vertex) == 96);
+  static_assert(sizeof(Vertex) == 112);
   struct Mesh {
     uint32_t draw = 0;
     std::vector<Vertex> vertices;
