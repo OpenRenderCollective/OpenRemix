@@ -1,4 +1,5 @@
 #include "forward/lighting.h"
+#include "forward/shadows/sun_cache.h"
 #include "runtime/settings.h"
 #include "scene/fixtures.h"
 #include <cmath>
@@ -8,6 +9,36 @@ using namespace remix::forward;
 using remix::test::require;
 
 int main() {
+  shadows::SunCache sunCache;
+  std::array<Matrix, cascadeCount> matrices;
+  matrices.fill(scene::identity());
+  auto source = std::make_shared<scene::BakeScene>();
+  auto dirty = sunCache.update(source, true, matrices);
+  require(std::count(dirty.begin(), dirty.end(), true) == cascadeCount,
+          "Every static sun layer is initialized before sampling");
+  dirty = sunCache.update(source, true, matrices);
+  require(std::count(dirty.begin(), dirty.end(), true) == 0,
+          "Unchanged frozen geometry and projections reuse every static sun cascade");
+  matrices[2][12] += 1;
+  dirty = sunCache.update(source, true, matrices);
+  require(dirty[2] && std::count(dirty.begin(), dirty.end(), true) == 1,
+          "A changed cascade only redraws its own static layer");
+  source = std::make_shared<scene::BakeScene>(*source);
+  dirty = sunCache.update(source, true, matrices);
+  require(std::count(dirty.begin(), dirty.end(), true) == cascadeCount,
+          "Replacing the frozen scene invalidates cached sun geometry");
+  source.reset();
+  dirty = sunCache.update(source, true, matrices);
+  require(std::count(dirty.begin(), dirty.end(), true) == cascadeCount,
+          "Expired frozen ownership still clears all layers on unload");
+  sunCache.update(source, false, matrices);
+  matrices[0][12] += 1;
+  dirty = sunCache.update(source, false, matrices);
+  require(std::count(dirty.begin(), dirty.end(), true) == 0,
+          "Camera motion cannot make cleared disabled sun layers dirty");
+  dirty = sunCache.update(source, true, matrices);
+  require(std::count(dirty.begin(), dirty.end(), true) == cascadeCount,
+          "Re-enabling sunlight initializes the current projections");
   scene::DistantLight capturedSun;
   capturedSun.isDistant = true;
   capturedSun.angularDiameterDegrees = .5f;

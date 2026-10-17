@@ -27,6 +27,14 @@ ray-query baking supplies indirect irradiance and soft per-light static visibili
 surfaces. Receivers without a baked channel use static plus dynamic depth maps when their light fits
 the budget. Surfaces without usable indirect lighting retain configurable ambient fill. Baked parallax
 cubemaps supply static specular transport; optional live hardware reflection rays fill SSR gaps.
+Captured geometry is excluded from moving-caster shadow maps. Static fallback maps
+remain available for receivers without a matching baked shadow; static sun cascades
+reuse their depth until the exact fitted projection or frozen scene changes. The
+Rendering tab reports captured/live caster candidates and static cascade updates.
+Developer frame captures include `.shadow-policy.bin`: five little-endian
+`uint32_t` values for captured candidates, live candidates, static sun cascade
+updates, static local-map updates, and unmatched statically classified candidates.
+Candidate counts precede shadow-frustum clipping; they are not submitted draw-call counts.
 Transparency, water, viewmodels, decals and unsupported masking
 operations stay in compatibility rasterization. Those surfaces do not yet receive forward lighting.
 

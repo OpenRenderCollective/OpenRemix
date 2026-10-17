@@ -169,6 +169,7 @@ namespace remix::forward {
     }
     data.target = {extent.width, extent.height, uint32_t(lights.size()),
                    uint32_t(options.shadows && sun.isDistant)};
+    frame.staticSunDirty = sunCache.update(shadowPlanner.source(), data.target[3] != 0, data.shadows);
     const VkDeviceSize clusterBytes = VkDeviceSize(data.grid[3]) * (clusterCapacity + 1) * sizeof(uint32_t);
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physical, &properties);
@@ -303,6 +304,17 @@ namespace remix::forward {
     statistics.shadowOverflow = shadowSelection.overflow;
     statistics.staticShadowUpdates =
         uint32_t(std::count(shadowSelection.dirty.begin(), shadowSelection.dirty.end(), true));
+    statistics.staticSunUpdates = uint32_t(std::count(frame.staticSunDirty.begin(), frame.staticSunDirty.end(), true));
+    statistics.capturedCasters = uint32_t(std::count_if(frame.commands.begin(), frame.commands.end(),
+        [](const auto &draw) { return draw.captured; }));
+    statistics.liveCasters = uint32_t(frame.commands.size()) - statistics.capturedCasters;
+    const uint32_t shadowPolicy[] = {
+        statistics.capturedCasters, statistics.liveCasters, statistics.staticSunUpdates,
+        statistics.staticShadowUpdates,
+        uint32_t(std::count_if(frame.commands.begin(), frame.commands.end(), [](const auto &draw) {
+          return !draw.captured && draw.source.classification == REMIXAPI_INSTANCE_STATIC_EXT;
+        }))};
+    probes::dumpFrameData(".shadow-policy.bin", shadowPolicy, sizeof(shadowPolicy));
     statistics.lights = uint32_t(lights.size());
     statistics.clusters = data.grid[3];
     statistics.geometryBytes = 0;

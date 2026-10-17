@@ -5,6 +5,7 @@
 #include "forward/renderer.h"
 #include "forward/resources.h"
 #include "forward/shadows/maps.h"
+#include "forward/shadows/sun_cache.h"
 #include "platform/gpu_frames.h"
 #include <chrono>
 #include <unordered_map>
@@ -47,6 +48,7 @@ namespace remix::forward {
     std::unique_ptr<shadows::Maps> localMaps;
     shadows::Planner shadowPlanner;
     shadows::Selection shadowSelection;
+    shadows::SunCache sunCache;
     uint64_t baseTargetBytes = 0;
 
     struct Geometry {
@@ -72,6 +74,7 @@ namespace remix::forward {
       bool skyEnabled = false;
       VkDescriptorImageInfo skyImage{};
       std::vector<Command> commands, staticCommands;
+      std::array<bool, cascadeCount> staticSunDirty{};
       FrameData data;
     };
     std::array<Frame, gpuFrameCount> frames;

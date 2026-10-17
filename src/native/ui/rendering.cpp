@@ -54,6 +54,12 @@ namespace remix {
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Each selected light has cached static geometry and a separate live caster map.\n"
                           "Lights beyond the budget keep illuminating the scene without local shadow maps.");
+      ImGui::Text("Sun static cascade updates: %u | captured casters: %u | live candidates: %u",
+                  statistics.staticSunUpdates, statistics.capturedCasters, statistics.liveCasters);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Captured geometry is excluded from moving-caster maps.\n"
+                          "Frozen depth maps are fallback shadows for receivers without a matching lightmap.\n"
+                          "Static sun cascades are reused until their projection or frozen scene changes.");
       ui::Checkbox("Screen-space reflections", &forward.ssr);
       ui::Checkbox("Hardware ray-traced GI", &forward.rtGI);
       if (forward.rtGI) {

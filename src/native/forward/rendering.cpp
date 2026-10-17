@@ -106,6 +106,8 @@ namespace remix::forward {
     const VkExtent2D size{options.shadowResolution, options.shadowResolution};
     gpu::GpuScope sunTime(command, "Forward+ sun shadow cascades", size);
     for (uint32_t c = 0; c < sunShadowLayers; ++c) {
+      if (c < cascadeCount && !frame.staticSunDirty[c])
+        continue;
       const VkRenderPassBeginInfo pass{.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
                                        .renderPass = shadowPass,
                                        .framebuffer = shadowFramebuffers[c],

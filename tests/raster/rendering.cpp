@@ -1706,6 +1706,11 @@ namespace {
       const size_t left = (32 * 64 + 16) * 4, edge = (32 * 64 + 32) * 4,
                    right = (32 * 64 + 48) * 4, adjacent = (27 * 64 + 48) * 4;
       const auto lit = pixels[right];
+      pixels = render();
+      require(target.forward->statistics().staticSunUpdates == 0 &&
+                  target.forward->statistics().capturedCasters == 2 &&
+                  target.forward->statistics().liveCasters == 0,
+              "Captured world geometry stays out of moving sun maps and unchanged static cascades are cached");
       std::printf("Mixed sun %ux: blocked %u, penumbra %u, lit %u\n", samples,
                   unsigned(pixels[left]), unsigned(pixels[edge]), unsigned(lit));
       require(pixels[left] < 3 && lit > 80 && pixels[edge] > 15 && pixels[edge] < lit - 10,
@@ -1724,6 +1729,8 @@ namespace {
                   unsigned(pixels[right]), unsigned(pixels[adjacent]));
       require(pixels[right] < lit / 3 && pixels[adjacent] > lit / 2 && pixels[left] < 3,
               "A realtime sun caster cuts a narrow shadow into baked static lighting at independent resolution");
+      require(target.forward->statistics().liveCasters == 1 && target.forward->statistics().capturedCasters == 2,
+              "Only the new actor enters moving sun maps alongside the captured world");
       light.radiance = {0, 0, 1};
       r.updateLight(sun, light);
       pixels = render();

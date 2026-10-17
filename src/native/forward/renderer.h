@@ -17,6 +17,7 @@ namespace remix::forward {
   struct Statistics {
     uint32_t samples = 1, lights = 0, draws = 0, clusters = 0;
     uint32_t shadowedLights = 0, shadowOverflow = 0, staticShadowUpdates = 0;
+    uint32_t staticSunUpdates = 0, capturedCasters = 0, liveCasters = 0;
     uint64_t targetBytes = 0, geometryBytes = 0, bufferBytes = 0;
     uint64_t accelerationBytes = 0;
     bake::ContentHashes bakeContent;
