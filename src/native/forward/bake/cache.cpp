@@ -1,6 +1,7 @@
 #include "forward/bake/cache.h"
 #include "forward/bake/cache_io.h"
 #include "forward/bake/shaders/embedded.h"
+#include "forward/lightmap/denoise.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -229,7 +230,11 @@ namespace remix::forward::bake::cache {
                                d.imageLayers,
                                d.storageRange};
     const auto hash = scene::fastHash(fields, sizeof(fields), content ^ shaders);
-    return scene::fastHash(d.uuid.data(), d.uuid.size(), hash);
+    const auto raw = scene::fastHash(d.uuid.data(), d.uuid.size(), hash);
+    if (!c.denoiseLightmaps)
+      return raw; // preserve existing raw cache entries when this optional stage is disabled
+    const uint32_t filter[] = {0x4f49444eu, 1, lightmap::denoiserVersion()};
+    return scene::fastHash(filter, sizeof(filter), raw);
   }
   std::filesystem::path path(uint64_t identity) {
     const char *override = std::getenv("REMIX_BAKE_CACHE_DIR");

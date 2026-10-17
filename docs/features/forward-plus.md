@@ -276,6 +276,7 @@ it does not yet verify water geometry coverage, underwater composition or live r
 | `reflectionResolution` | 32 | Power-of-two cube face size, 8 to 128 |
 | `lightmapPageSize` | 1024 | Maximum power-of-two surface atlas page size, 64 to 4096 |
 | `lightmapTexels` | 4194304 | Surface atlas texel budget, including padding and unused page space |
+| `lightmapDenoise` | 0 | Optional offline OIDN RTLightmap filtering of indirect surface SH; requires an OIDN-enabled build |
 | `ssrScale` | 2 | Reflection resolution divisor: 1, 2 or 4 |
 | `ssrSteps` | 128 | Maximum depth traversal iterations per reflection ray, 16 to 512 |
 | `ssrDistance` | 50 | Maximum reflection ray distance in metres |
@@ -290,6 +291,40 @@ Backend values are stable: raster 0, pathtrace 1, forwardplus 2. Native capabili
 bit positions. Forward+ has independent preparation and settings; selecting it never implicitly selects
 path tracing. Rendering options apply at a preparation boundary, and the previous renderer remains usable
 while a changed forward target is prepared.
+
+## Optional offline lightmap denoising
+
+Configure Meson with `-Doidn_root=<OpenImageDenoise installation prefix>` to enable the separate
+`lightmap/denoise` module, then set `rtx.native.forward.lightmapDenoise = 1` before baking.
+The integration uses Open Image Denoise 2.5 APIs; the initial Windows dependency is the official
+[OIDN 2.5.1 release](https://github.com/RenderKit/oidn/releases/tag/v2.5.1).
+The default build has no OIDN dependency. Enabling the setting without that dependency reports a
+bake error rather than silently storing unfiltered output under a denoised cache key. OIDN-enabled
+builds need its runtime library, core and selected device plugin available to the loader, together
+with that plugin's dependencies. The SDK's license and third-party notices must accompany any
+redistribution; `oidn_root` does not automatically package those files.
+
+Filtering runs on the existing preparation worker after transport readback and before half-float
+atlas encoding and persistent cache storage. OIDN chooses its default supported device, including
+GPU backends where available. This is an offline stage with explicit transfers from the existing
+CPU readback; it does not share live Vulkan atlas memory. Cancellation is checked between charts
+and coefficients and supplied to OIDN's progress callback. Errors prevent publication.
+
+Each chart is processed independently with its existing chart-local dilation donors. Packed atlas
+neighbours cannot influence one another. L0 uses HDR RTLightmap filtering; the eight signed SH bands
+are divided by twice their original L0, filtered in directional mode and reconstructed using the
+filtered L0. Zero-energy inputs use zero normalized direction. A fixed input scale avoids automatic
+exposure changing from chart to chart. Constant RGB fields bypass filtering to preserve their value
+and avoid unnecessary dispatches. All SH alpha channels, transport moments, probes, per-light
+direct SH and local/sun visibility remain unchanged. The filter cannot replace actual emitter
+radius or angular-size sampling, and does not increase world-space luxel density.
+
+The module holds three RGB float images for the largest chart it is processing, plus OIDN's reusable
+image buffer and internal working memory. Its 256 MiB `maxMemoryMB` request is a filter-memory target,
+not a hard cap on total host/device allocation. Filtering nine coefficients separately and many
+small charts can add substantial overhead. Chart boundaries are isolated rather than jointly
+denoised across connected faces; seam quality and sample-count savings need map-level visual review
+before enabling this by default. Denoising mode and compiled OIDN version participate in cache identity.
 
 ## Optional hardware reflections
 

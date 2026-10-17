@@ -4,6 +4,7 @@ option('enable_tests', type : 'boolean', value : true)
 option('sharc', type : 'boolean', value : true, description : 'Build optional NVIDIA SHARC diffuse radiance caching.')
 option('nrd', type : 'boolean', value : true, description : 'Build the pinned diffuse REBLUR SH CPU library and Vulkan adapter.')
 option('gpu_tests', type : 'boolean', value : false, description : 'Run SDL/Vulkan lifecycle tests on a display and Vulkan device.')
+option('oidn_root', type : 'string', value : '', description : 'Optional Open Image Denoise 2.5 installation prefix for offline lightmap denoising.')
 option('vulkan_probes', type : 'boolean', value : false, description : 'Build standalone ray-query/pipeline probes (requires glslangValidator).')
 option('dlss', type : 'boolean', value : true, description : 'Build pinned NGX DLSS SR and Ray Reconstruction on Linux/Windows x64.')
 

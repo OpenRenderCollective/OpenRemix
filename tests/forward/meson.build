@@ -2,6 +2,10 @@ forward_policy_test = executable('remix-forward-policy-test', 'lighting.cpp',
   '../../src/native/forward/lighting.cpp', '../../src/native/runtime/settings.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Forward+ cluster, cascade and configuration policy', forward_policy_test)
+forward_denoise_test = executable('remix-forward-lightmap-denoise-test', 'lightmap_denoise.cpp',
+  include_directories : test_includes, link_with : lightmap_denoise_library, cpp_args : test_cpp_args)
+test('Offline lightmap denoising preserves directional SH and chart isolation', forward_denoise_test,
+  timeout : 120)
 forward_grid_test = executable('remix-forward-grid-test', 'grid.cpp',
   '../../src/native/forward/bake/grid.cpp', '../../src/native/forward/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
@@ -69,7 +73,7 @@ forward_cache_test = executable('remix-forward-cache-test', 'cache.cpp',
   '../../src/native/forward/lightmap/data.cpp', '../../src/native/forward/mixed/data.cpp',
   '../../src/native/forward/mixed/occlusion.cpp',
   '../../src/native/forward/lighting.cpp',
-  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+  include_directories : test_includes, link_with : [scene_library, lightmap_denoise_library], cpp_args : test_cpp_args)
 test('Bake cache identity, payload integrity and mixed light ownership', forward_cache_test,
   args : [meson.current_build_dir() / 'cache'])
 

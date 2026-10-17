@@ -2,6 +2,7 @@
 #include "forward/bake/budget.h"
 #include "forward/bake/cache.h"
 #include "forward/bake/transport.h"
+#include "forward/lightmap/denoise.h"
 #include "forward/image_dump.h"
 #include "forward/probes/capture_dump.h"
 #include "forward/probes/data.h"
@@ -98,6 +99,8 @@ namespace remix::forward::bake {
   }
   void Controller::Job::prepareResources(VkPhysicalDevice physical, VkDevice device, const Config &config,
                                          float lightCutoff, uint32_t queueFamily) {
+    if (config.denoiseLightmaps && !lightmap::denoiserVersion())
+      throw std::runtime_error("lightmapDenoise requires an OIDN-enabled build");
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physical, &properties);
     const char *samples = std::getenv("REMIX_DEBUG_BAKE_SURFACE_SAMPLES");
@@ -451,8 +454,15 @@ namespace remix::forward::bake {
       const auto physical = m_physical;
       const auto device = m_device;
       job.ticket = m_pipelines->prepare(
-          "forward-probe-filter-" + std::to_string(++generation), [owner, physical, device] {
+          "forward-probe-filter-" + std::to_string(++generation), [owner, physical, device, config] {
             owner->specular = probes::filter(owner->captures, 128, owner->cancellation.get_token());
+            if (config.denoiseLightmaps) {
+              const auto filtered = lightmap::denoise(owner->surfaceLayout, owner->surfaces,
+                                                       owner->cancellation.get_token());
+              std::fprintf(stderr, "Forward lightmap OIDN: %u charts, %llu texels, device type %d, %.3f s\n",
+                           filtered.charts, static_cast<unsigned long long>(filtered.texels),
+                           filtered.deviceType, filtered.seconds);
+            }
             owner->surfacePixels =
                 lightmap::pixels(owner->surfaceLayout, owner->surfaces, owner->cancellation.get_token(),
                                  owner->visibility, owner->direct, owner->sun);
