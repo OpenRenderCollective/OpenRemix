@@ -22,13 +22,15 @@ namespace remix::forward::mixed {
     std::vector<bake::UInt4> directCharts; // independent owners of retained unit-radiance SH
     std::vector<Task> tasks;
     uint32_t overflow = 0; // chart/light links using the ordinary direct-light fallback
+    uint64_t hemisphereRejectedPairs = 0; // planning diagnostic; no visibility proof is stored
     Occlusion occlusion;
     Masks masks;
     std::vector<std::vector<uint32_t>> remaining;
     std::vector<uint32_t> next;
   };
+  // receiverBias is the transport's maximum origin displacement in host units.
   Plan plan(std::shared_ptr<const scene::BakeScene> source, const lightmap::Layout &layout,
-            float cutoff = .001f, std::stop_token cancelled = {});
+            float cutoff = .001f, std::stop_token cancelled = {}, float receiverBias = 0);
   // Constant visibility uses compact metadata, freeing filtered shadow channels.
   // Positive lights can retain direct SH independently before scratch channels are reused.
   bool refine(Plan &plan, const lightmap::Layout &layout, std::span<const Vec4> visibility,

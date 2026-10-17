@@ -41,6 +41,97 @@ int main() {
     require(task.light == plan.charts[layout.pointCharts[task.point]][task.channel],
             "Each visibility task retains its exact light and surface-channel "
             "provenance");
+  {
+    auto shaped = std::make_shared<scene::BakeScene>(*source);
+    shaped->lights.resize(1);
+    auto &light = shaped->lights[0];
+    light.direction[2] = -1;
+    light.focus = 1;
+    auto excluded = m::plan(shaped, layout);
+    require(excluded.tasks.empty() && excluded.remaining[0].empty() && excluded.overflow == 0 &&
+                excluded.occlusion.count() == 0 && excluded.hemisphereRejectedPairs == 1,
+            "A chart wholly behind a focused emitter needs no visibility work or invented blocked proof");
+    light.direction[2] = 1;
+    require(!m::plan(shaped, layout).tasks.empty(), "Forward-facing surface emission retains its receivers");
+    light.direction[2] = -1;
+    light.focus = 0;
+    light.coneCos = -.5f;
+    require(!m::plan(shaped, layout).tasks.empty(), "Wide unfocused spots may illuminate behind their axis");
+    light.coneCos = .5f;
+    require(m::plan(shaped, layout).tasks.empty(), "Narrow spots cannot illuminate their rear hemisphere");
+    light.coneCos = -1;
+    require(!m::plan(shaped, layout).tasks.empty(), "Isotropic lights retain their full influence");
+    light.focus = 1;
+    light.position[2] = .6f;
+    light.direction[2] = 1;
+    require(!m::plan(shaped, layout).tasks.empty(),
+            "A finite emitter overlapping the receiver plane cannot be culled by its centre");
+    light.position[2] = .5f + light.radius;
+    require(!m::plan(shaped, layout).tasks.empty(), "A tangent emitter keeps numerically uncertain lighting");
+    light.position[2] += .1f;
+    require(m::plan(shaped, layout).tasks.empty(), "Finite emitters entirely beyond the plane can be rejected");
+    require(!m::plan(shaped, layout, .001f, {}, .2f).tasks.empty(),
+            "Transport origin bias can move a receiver into the emitting hemisphere");
+    auto seamLayout = layout;
+    seamLayout.points[0].position[2] = 1;
+    require(!m::plan(shaped, seamLayout).tasks.empty(),
+            "Extended seam samples participate in candidate bounds even outside the receiver geometry");
+    light.triangle = 1;
+    light.corners[0][0] = -.2f;
+    light.corners[1][0] = .2f;
+    light.corners[0][1] = light.corners[1][1] = -.2f;
+    light.corners[2][1] = .2f;
+    light.corners[0][2] = light.corners[1][2] = light.corners[2][2] = .4f;
+    require(!m::plan(shaped, layout).tasks.empty(), "Triangle extents can reach receivers behind their centre");
+    light.corners[0][2] = light.corners[1][2] = light.corners[2][2] = .9f;
+    require(m::plan(shaped, layout).tasks.empty(), "Entirely rear-facing triangle connections need no rays");
+    light.triangle = 0;
+    light.radius = .25f;
+    uint32_t rejected = 0;
+    for (uint32_t trial = 0; trial < 256; ++trial) {
+      const float angle = float(trial) * .731f;
+      light.direction[0] = std::cos(angle);
+      light.direction[1] = std::sin(angle) * .6f;
+      light.direction[2] = std::sin(angle) * .8f;
+      light.position[0] = 2 * std::sin(angle * 1.7f);
+      light.position[1] = 2 * std::cos(angle * 1.3f);
+      light.position[2] = 2 * std::sin(angle * .9f);
+      if (!m::plan(shaped, layout).tasks.empty())
+        continue;
+      ++rejected;
+      for (const auto &receiver : layout.points)
+        for (uint32_t sample = 0; sample < 64; ++sample) {
+          const double z = 1 - 2 * (double(sample) + .5) / 64;
+          const double phi = double(sample) * 2.399963229728653;
+          const double radial = std::sqrt(1 - z * z);
+          const double offset[] = {radial * std::cos(phi), radial * std::sin(phi), z};
+          double outgoingCosine = 0;
+          for (uint32_t c = 0; c < 3; ++c)
+            outgoingCosine += light.direction[c] *
+                (double(receiver.position[c]) - light.position[c] - light.radius * offset[c]);
+          require(outgoingCosine < 0, "Rejected rotated emitters have no sampled forward connection");
+        }
+    }
+    require(rejected > 30 && rejected < 200, "Rotated emission fixtures exercise both rejection and retention");
+    for (float scale : {.001f, 1.f, 1000.f}) {
+      auto scaled = std::make_shared<scene::BakeScene>(*source);
+      scaled->lights.resize(1);
+      auto &emitter = scaled->lights[0];
+      emitter.focus = 1;
+      emitter.direction[2] = -1;
+      emitter.radius *= scale;
+      emitter.position[2] *= scale;
+      for (uint32_t c = 0; c < 3; ++c)
+        scaled->draws[0].model[c * 4 + c] *= scale;
+      auto scaledLayout = layout;
+      for (auto &point : scaledLayout.points)
+        for (uint32_t c = 0; c < 3; ++c)
+          point.position[c] *= scale;
+      require(m::plan(scaled, scaledLayout).tasks.empty(), "Emission rejection is independent of host world units");
+      emitter.direction[2] = 1;
+      require(!m::plan(scaled, scaledLayout).tasks.empty(), "Forward connections survive host unit changes");
+    }
+  }
   auto reordered = std::make_shared<scene::BakeScene>(*source);
   std::reverse(reordered->lights.begin(), reordered->lights.end());
   const auto reorderedPlan = m::plan(reordered, layout);

@@ -1,6 +1,7 @@
 #include "forward/mixed/data.h"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <tuple>
 namespace remix::forward::mixed {
@@ -8,6 +9,39 @@ namespace remix::forward::mixed {
     void check(std::stop_token cancelled) {
       if (cancelled.stop_requested())
         throw std::runtime_error("Mixed light planning superseded");
+    }
+    bool outsideEmissionHemisphere(const scene::SphereLight &light, const Bounds &bounds) {
+      // Focus clamps the outgoing cosine at zero. A cone no wider than a
+      // hemisphere also emits nothing behind its axis. Wide unfocused spots
+      // and isotropic lights must keep their full spherical influence.
+      if (!(light.focus > 0 || light.coneCos >= 0))
+        return false;
+      double length2 = 0, receiverSupport = 0, roundingScale = 0;
+      for (uint32_t c = 0; c < 3; ++c) {
+        const double axis = light.direction[c];
+        const double receiver = axis >= 0 ? bounds.maximum[c] : bounds.minimum[c];
+        length2 += axis * axis;
+        receiverSupport += axis * (receiver - light.position[c]);
+        roundingScale += std::abs(axis) * (std::abs(receiver) + std::abs(light.position[c]));
+      }
+      if (!(length2 > 0) || !std::isfinite(length2))
+        return false;
+      double emitterMinimum = -double(light.radius) * std::sqrt(length2);
+      if (light.triangle) {
+        emitterMinimum = std::numeric_limits<double>::infinity();
+        for (const auto &corner : light.corners) {
+          double projection = 0;
+          for (uint32_t c = 0; c < 3; ++c)
+            projection += double(light.direction[c]) * (double(corner[c]) - light.position[c]);
+          emitterMinimum = std::min(emitterMinimum, projection);
+        }
+      }
+      // Reject only if EVERY receiver-to-emitter connection points backward.
+      // A finite sphere/triangle can cross the axis plane even when its centre
+      // cannot. Leave float-rounding uncertainty to the hardware sampler.
+      const double margin = 32 * std::numeric_limits<float>::epsilon() *
+                            (roundingScale + std::abs(emitterMinimum));
+      return receiverSupport - emitterMinimum < -margin;
     }
     bool sameShape(const scene::SphereLight &a, const scene::SphereLight &b) {
       for (uint32_t corner = 0; corner < 3; ++corner)
@@ -29,10 +63,11 @@ namespace remix::forward::mixed {
     return none;
   }
   Plan plan(std::shared_ptr<const scene::BakeScene> source, const lightmap::Layout &layout, float cutoff,
-            std::stop_token cancelled) {
+            std::stop_token cancelled, float receiverBias) {
     check(cancelled);
     if (!source || source->charts.size() != layout.charts.size() ||
         layout.points.size() != layout.pointCharts.size() || !std::isfinite(cutoff) || cutoff <= 0 ||
+        !std::isfinite(receiverBias) || receiverBias < 0 ||
         source->lights.size() >= (1u << 24))
       throw std::invalid_argument("Invalid mixed light inputs");
     Plan result;
@@ -70,6 +105,13 @@ namespace remix::forward::mixed {
         const auto &p = draw.surface->vertices[size_t(vertex)].position;
         bounds.include(transformPoint(draw.model, {p[0], p[1], p[2]}));
       }
+      // The transport moves each origin along its surface normal before
+      // sampling emitters. Enclose every possible biased origin as well as
+      // the unshifted geometry used by forward shading.
+      for (uint32_t c = 0; c < 3; ++c) {
+        bounds.minimum[c] -= receiverBias;
+        bounds.maximum[c] += receiverBias;
+      }
       std::vector<std::pair<float, uint32_t>> candidates;
       for (uint32_t light = 0; light < radii.size(); ++light) {
         if ((light & 1023u) == 0)
@@ -81,8 +123,12 @@ namespace remix::forward::mixed {
                               std::clamp(sourceLight.position[c], bounds.minimum[c], bounds.maximum[c]);
           distance2 += delta * delta;
         }
-        if (radii[light] > 0 && std::isfinite(radii[light]) && distance2 <= radii[light] * radii[light])
-          candidates.emplace_back(radii[light] * radii[light] / std::max(distance2, 1e-8f), light);
+        if (radii[light] > 0 && std::isfinite(radii[light]) && distance2 <= radii[light] * radii[light]) {
+          if (outsideEmissionHemisphere(sourceLight, bounds))
+            ++result.hemisphereRejectedPairs;
+          else
+            candidates.emplace_back(radii[light] * radii[light] / std::max(distance2, 1e-8f), light);
+        }
       }
       std::sort(candidates.begin(), candidates.end(), [&](const auto &a, const auto &b) {
         if (a.first != b.first)

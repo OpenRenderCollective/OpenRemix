@@ -134,6 +134,13 @@ The fixed sphere radius still approximates the source patch: reconstructing patc
 emitters embedded in fixtures remain separate placement work. The conversion does not move lights or
 disable wall occlusion. Direction, cone and focus participate in bake cache identity.
 
+Mixed-light planning rejects chart/light pairs wholly outside an emitter's emitting hemisphere before
+allocating visibility work. The test includes every chart vertex and surface/seam sample, the sphere
+radius or triangle corners, and a floating-point uncertainty margin. Wide unfocused spotlights and
+isotropic lights retain their full range. Bounds also enclose the baker's surface-normal origin bias.
+Rejected pairs do not become blocked-visibility metadata:
+they emit no light toward those receivers. Diagnostic bake capture logs report the rejected pair count.
+
 An enabled live dome is drawn as a display background, followed by the existing raster sky. The dome uses
 the camera rotation and the light's world-to-local transform, with horizontal panorama wrapping and
 vertical clamping. Camera translation does not move it. This pass needs no hardware ray queries or

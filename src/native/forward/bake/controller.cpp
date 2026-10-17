@@ -170,8 +170,19 @@ namespace remix::forward::bake {
       throw std::invalid_argument("Surface lightmap page exceeds device limit");
     surfaceLayout = lightmap::fit(*source, atlas, cancellation.get_token());
     surfaces.resize(surfaceLayout.points.size());
+    Options options;
     mixedLights = std::make_shared<mixed::Plan>(
-        mixed::plan(source, surfaceLayout, lightCutoff, cancellation.get_token()));
+        mixed::plan(source, surfaceLayout, lightCutoff, cancellation.get_token(),
+                    options.bias / source->sceneScale));
+    if (std::getenv("REMIX_DEBUG_BAKE_CAPTURE_PREFIX")) {
+      uint64_t candidates = mixedLights->overflow;
+      for (const auto &chart : mixedLights->charts)
+        for (auto light : chart)
+          candidates += light != mixed::none;
+      std::fprintf(stderr, "OpenRemix mixed plan: candidates=%llu hemisphere_rejected=%llu initial_tasks=%zu\n",
+                   static_cast<unsigned long long>(candidates),
+                   static_cast<unsigned long long>(mixedLights->hemisphereRejectedPairs), mixedLights->tasks.size());
+    }
     visibility.resize(surfaceLayout.points.size(), {1, 1, 1, 1});
     if (source->sun.isDistant)
       sun.resize(surfaceLayout.points.size());
@@ -181,7 +192,6 @@ namespace remix::forward::bake {
     }
     hasSun = !sun.empty();
     hasDirectDiffuse = config.directDiffuse && (!direct.empty() || hasSun);
-    Options options;
     options.batchPoints = Budget::maximumPoints;
     options.rayBudget = Budget::maximumWork;
     options.initialBatchPoints = 1024;

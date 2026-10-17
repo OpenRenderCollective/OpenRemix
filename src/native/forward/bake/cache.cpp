@@ -14,7 +14,7 @@
 namespace remix::forward::bake::cache {
   namespace {
     // Bump whenever CPU planning, material transport or wire semantics change.
-    constexpr uint32_t algorithmRevision = 10;
+    constexpr uint32_t algorithmRevision = 11;
     void require(bool value) {
       if (!value)
         throw std::runtime_error("Invalid bake cache metadata");
