@@ -15,6 +15,90 @@ using namespace remix::test;
 namespace scene = remix::scene;
 
 namespace {
+  std::shared_ptr<scene::Material> drawn(remix::NativeResources &r, remixapi_MeshHandle mesh);
+  void replacementKeys() {
+    remix::NativeResources r;
+    remixapi_MaterialInfoOpaqueEXT opaque{};
+    opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+    opaque.albedoConstant = {1, 1, 1};
+    opaque.opacityConstant = 1;
+    opaque.alphaTestType = 7;
+    uint64_t keys[] = {0, 901, 901, 902, 900, 800};
+    remixapi_MaterialReplacementKeysEXT alternates{};
+    alternates.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_REPLACEMENT_KEYS_EXT;
+    alternates.count = 6;
+    alternates.keys = keys;
+    remixapi_MaterialInfoReplacementHashEXT primary{};
+    primary.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_REPLACEMENT_HASH_EXT;
+    primary.materialHash = 900;
+    primary.pNext = &alternates;
+    opaque.pNext = &primary;
+    remixapi_MaterialInfo info{};
+    info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+    info.pNext = &opaque;
+    info.hash = 800;
+    remixapi_MaterialHandle handle;
+    r.createMaterial(info, handle);
+    const auto mesh = quad(r, 810, handle);
+    const auto original = drawn(r, mesh);
+    require(original->replacementKeys == std::vector<uint64_t>({901, 902}),
+            "Alternate material keys omit zero, duplicates and the primary key");
+    keys[1] = 999;
+    require(original->replacementKeys[0] == 901, "Material creation must own its alternate key array");
+    const auto strong = material(r, 820, .2f, .3f, .4f);
+    const auto weak = material(r, 821, .6f, .7f, .8f);
+    r.setModMaterialCandidates({901, 902});
+    r.addModMaterial(902, weak);
+    r.finishFrame();
+    require(drawn(r, mesh) == original,
+            "A loaded weak replacement cannot win while the preferred key is waiting for textures");
+    require(r.takeModMaterialRequests() == std::vector<uint64_t>({901}),
+            "Lazy replacement requests follow host key preference");
+    r.addModMaterial(901, strong);
+    r.finishFrame();
+    require(drawn(r, mesh)->tint[0] == .2f, "The first available alternate replaces the material");
+    r.addModMaterial(900, weak);
+    r.finishFrame();
+    require(drawn(r, mesh)->tint[0] == .6f, "The single source key takes priority over alternate keys");
+    r.addModMaterial(800, strong);
+    r.finishFrame();
+    require(drawn(r, mesh)->tint[0] == .2f, "The material's own key retains highest priority");
+    r.clearModMaterials();
+    r.addModMaterial(902, weak);
+    r.finishFrame();
+    require(drawn(r, mesh)->tint[0] == .6f, "An absent preferred key permits a compatibility fallback");
+    r.clearModMaterials();
+    const auto retained = r.createRetained(instance(mesh));
+    remixapi_BakeSceneInfoEXT bake{};
+    bake.structSize = sizeof(bake);
+    bake.version = REMIXAPI_BAKE_SCENE_VERSION_EXT;
+    bake.sceneId = bake.revision = 1;
+    bake.sceneScale = 1;
+    bake.state = REMIXAPI_BAKE_SCENE_READY_EXT;
+    bake.instanceCount = 1;
+    bake.instances = &retained;
+    r.setBakeScene(&bake);
+    const auto snapshot = r.bakeScene();
+    alternates.count = 33;
+    rejected([&] { r.createMaterial(info, handle); });
+    alternates.count = 1;
+    alternates.keys = nullptr;
+    rejected([&] { r.createMaterial(info, handle); });
+    alternates.count = 0;
+    r.createMaterial(info, handle);
+    r.finishFrame();
+    require(drawn(r, mesh)->replacementKeys.empty() && original->replacementKeys.size() == 2,
+            "Empty aliases replace live metadata without mutating an existing material");
+    r.finishFrame();
+    r.drawRetained(nullptr);
+    require(r.retained(retained)->records.front().material->replacementKeys.empty(),
+            "Retained instances refresh after the material's alternate keys change");
+    r.setBakeScene(&bake);
+    require(snapshot && r.bakeScene()->contentHash == snapshot->contentHash &&
+                snapshot->draws.front().material->replacementKeys.size() == 2,
+            "Matching metadata preserves transport identity and immutable snapshot metadata");
+  }
+
   std::shared_ptr<scene::Material> drawn(remix::NativeResources &r, remixapi_MeshHandle mesh) {
     auto info = instance(mesh);
     r.drawInstance(info);
@@ -374,6 +458,7 @@ namespace {
 } // namespace
 
 int main() {
+  replacementKeys();
   materialOverride();
   dynamicTexture();
   pbrRemap();

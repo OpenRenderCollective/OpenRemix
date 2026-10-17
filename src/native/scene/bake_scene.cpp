@@ -75,6 +75,7 @@ namespace remix::scene {
         // Copy transport/shading fields explicitly. Mutable emission caches and
         // retirement flags belong to their source resource, never this snapshot.
         result->sourceHash = source->sourceHash;
+        result->replacementKeys = source->replacementKeys;
         auto map = [&](auto &out, const auto &in) {
           out = in;
           hash.add(texture(in));

@@ -349,12 +349,20 @@ namespace remix {
     }
     // A mod replaces the material by its own hash (ownKey; 0: unknown), by
     // the key its host named for it (sourceHash: a captured material's hash,
-    // or remixapi_MaterialInfoReplacementHashEXT) or by its albedo texture's
-    // hash, in that order.
+    // or remixapi_MaterialInfoReplacementHashEXT), alternate host keys, or its
+    // albedo texture's hash, in that order.
     auto modMaterial = [&](const std::shared_ptr<Material> &original, uint64_t ownKey) -> std::shared_ptr<Material> {
-      const uint64_t modKeys[3] = {ownKey, original->sourceHash,
-                                   original->texture ? original->texture->getHash() : 0};
-      for (const uint64_t modKey : modKeys) {
+      const auto &alternates = original->replacementKeys;
+      for (size_t index = 0; index < alternates.size() + 3; ++index) {
+        uint64_t modKey = 0;
+        if (index == 0)
+          modKey = ownKey;
+        else if (index == 1)
+          modKey = original->sourceHash;
+        else if (index < alternates.size() + 2)
+          modKey = alternates[index - 2];
+        else if (original->texture)
+          modKey = original->texture->getHash();
         if (!modKey)
           continue;
         if (auto replacement = m_modMaterials.find(modKey); replacement != m_modMaterials.end()) {
@@ -393,8 +401,13 @@ namespace remix {
           }
           return entry.merged;
         }
-        if (m_modCandidates.contains(modKey) && m_modRequested.insert(modKey).second)
-          m_modRequests.push_back(modKey);
+        if (m_modCandidates.contains(modKey)) {
+          if (m_modRequested.insert(modKey).second)
+            m_modRequests.push_back(modKey);
+          // A stronger replacement must not depend on texture decode timing.
+          // Keep the source until it is ready instead of using a weaker match.
+          return original;
+        }
       }
       return original;
     };

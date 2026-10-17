@@ -116,6 +116,7 @@ namespace remix {
     };
     struct Material {
       uint64_t sourceHash = 0;
+      std::vector<uint64_t> replacementKeys;
       std::shared_ptr<Texture> texture;
       std::shared_ptr<Texture> emissionTexture;
       std::shared_ptr<Texture> roughnessTexture, metallicTexture, normalTexture;

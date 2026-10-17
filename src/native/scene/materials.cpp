@@ -202,8 +202,21 @@ namespace remix {
     if (const auto *replacement = static_cast<const remixapi_MaterialInfoReplacementHashEXT *>(
             extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_REPLACEMENT_HASH_EXT)))
       material->sourceHash = replacement->materialHash;
+    if (const auto *alternates = static_cast<const remixapi_MaterialReplacementKeysEXT *>(
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_REPLACEMENT_KEYS_EXT))) {
+      if (alternates->count > 32 || (alternates->count && !alternates->keys))
+        throw invalid;
+      for (uint32_t i = 0; i < alternates->count; ++i) {
+        const auto hash = alternates->keys[i];
+        if (hash && hash != info.hash && hash != material->sourceHash &&
+            std::find(material->replacementKeys.begin(), material->replacementKeys.end(), hash) ==
+                material->replacementKeys.end())
+          material->replacementKeys.push_back(hash);
+      }
+    }
     auto equal = [&](const Material &a, const Material &b) {
-      return a.sourceHash == b.sourceHash && a.texture == b.texture && a.emissionTexture == b.emissionTexture &&
+      return a.sourceHash == b.sourceHash && a.replacementKeys == b.replacementKeys &&
+             a.texture == b.texture && a.emissionTexture == b.emissionTexture &&
              a.suppressEmissionLight == b.suppressEmissionLight && a.selfIllumination == b.selfIllumination &&
              a.selfIlluminationScale == b.selfIlluminationScale && a.roughnessTexture == b.roughnessTexture &&
              a.metallicTexture == b.metallicTexture && a.normalTexture == b.normalTexture &&

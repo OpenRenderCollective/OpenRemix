@@ -341,6 +341,18 @@ typedef struct remixapi_MaterialInfoReplacementHashEXT {
   uint64_t materialHash;
 } remixapi_MaterialInfoReplacementHashEXT;
 
+// Optional alternate USD material replacement keys, in preference order after
+// the material's own hash and MaterialInfoReplacementHashEXT, before its albedo
+// texture hash. CreateMaterial copies the array. At most 32 entries; zero keys
+// and duplicates are ignored. A null array is valid only when count is zero.
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_REPLACEMENT_KEYS_EXT ((remixapi_StructType)0x7fff1032)
+typedef struct remixapi_MaterialReplacementKeysEXT {
+  remixapi_StructType sType;
+  const void* pNext;
+  uint32_t count;
+  const uint64_t* keys;
+} remixapi_MaterialReplacementKeysEXT;
+
 // Raw BC1 uploads with one-bit alpha. The retained BC1_RGB formats remain opaque.
 #define REMIXAPI_FORMAT_BC1_RGBA_UNORM_EXT ((remixapi_Format)133)
 #define REMIXAPI_FORMAT_BC1_RGBA_SRGB_EXT ((remixapi_Format)134)

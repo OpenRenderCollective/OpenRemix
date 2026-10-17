@@ -467,6 +467,13 @@ color. Reusing the source albedo preserves its sampling and alpha state without
 overwriting those optical coefficients. A valid replacement volume inherits the
 source's explicit bake boundary policy, including when it supplies a new texture;
 a thin-walled replacement does not inherit a volume boundary.
+Hosts may provide up to 32 additional matching keys through
+`remixapi_MaterialReplacementKeysEXT`. Matching prefers the material's own hash,
+its single source hash, the ordered alternate keys, then its albedo texture hash.
+The runtime copies and normalizes the list. An authored higher-priority match
+keeps the original visible while loading; a lower-priority decoded material cannot
+temporarily win because its textures happened to finish first. These keys are
+matching metadata and do not alter an otherwise identical bake's transport hash.
 
 The shared `bake/shaders/optics.glsl` implements dielectric Fresnel, Snell
 refraction, total internal reflection and Beer-Lambert extinction per world
