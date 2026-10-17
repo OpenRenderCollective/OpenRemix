@@ -29,6 +29,44 @@ int main() {
           "Probe placement respects the volume budget and includes unpartitioned space");
   require(grid.header.originSpacing[3] >= config.spacing / scene.sceneScale,
           "Grid spacing is expressed in source world units");
+  require(grid.header.originSpacing[3] < config.spacing / scene.sceneScale * 2,
+          "Budget fitting avoids the former full doubling of probe spacing");
+  {
+    scene::BakeScene cube;
+    cube.sceneScale = 1;
+    cube.hasBounds = true;
+    cube.minimum = {0, 0, 0};
+    cube.maximum = {1000, 1000, 1000};
+    bake::Config budget;
+    budget.spacing = 1;
+    budget.maxProbes = 32768;
+    const auto dense = bake::place(cube, budget);
+    require(dense.header.dimensions == bake::UInt4{32, 32, 32, 32768},
+            "A cubic volume uses the full 32-cubed allocation instead of a coarse power-of-two grid");
+    require(dense.header.originSpacing[3] > 34 && dense.header.originSpacing[3] < 35,
+            "The fitting density lies between the former 32/64 spacing steps");
+    for (uint32_t c = 0; c < 3; ++c) {
+      require(dense.points.front().position[c] < cube.minimum[c] &&
+              dense.points.back().position[c] > cube.maximum[c],
+              "Fitted grids still enclose the entire receiver volume with an interpolation border");
+    }
+    const auto repeated = bake::place(cube, budget);
+    require(dense.header.originSpacing == repeated.header.originSpacing &&
+            dense.header.dimensions == repeated.header.dimensions,
+            "Repeated planning preserves probe locations and dimensions");
+    budget.spacing = 100;
+    const auto requested = bake::place(cube, budget);
+    require(requested.header.originSpacing[3] == 100 && requested.points.size() == 2197,
+            "An already fitting requested density is not made unnecessarily finer");
+    cube.maximum = {1000, 17, 0};
+    for (const uint32_t limit : {64u, 127u, 512u, 4096u}) {
+      budget.maxProbes = limit;
+      budget.spacing = 1;
+      const auto thin = bake::place(cube, budget);
+      require(thin.points.size() <= limit && thin.header.dimensions[2] == 3,
+              "Flat and anisotropic volumes respect the exact allocation cap");
+    }
+  }
   for (auto &probe : grid.probes) {
     probe.statistics[3] = 1;
     probe.irradiance[0] = {2.f / .2820947918f, 1.f / .2820947918f, .5f / .2820947918f, 0};

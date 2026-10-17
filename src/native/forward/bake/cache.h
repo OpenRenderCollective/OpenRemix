@@ -14,7 +14,8 @@ namespace remix::forward::bake::cache {
   // Scheduling and cache controls are excluded. Shader bytes and an explicit
   // CPU-algorithm revision participate, along with the frozen source content.
   // Explicit aggregate membership adds its estimator shaders and policy bytes;
-  // an empty policy preserves legacy cache identities and payload layout.
+  // an empty policy adds neither ownership bytes nor aggregate shader hashes.
+  // CPU planning revisions still invalidate the complete lighting cache key.
   uint64_t key(uint64_t content, const Config &config, float cutoff, const Device &device,
                const DirectPolicy &policy = {});
   std::filesystem::path path(uint64_t key);

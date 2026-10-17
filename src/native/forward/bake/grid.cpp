@@ -5,6 +5,50 @@
 #include <stdexcept>
 
 namespace remix::forward::bake {
+  namespace {
+    std::optional<UInt4> dimensions(const Bounds &bounds, double spacing, uint32_t budget) {
+      UInt4 result{};
+      uint64_t count = 1;
+      for (uint32_t c = 0; c < 3; ++c) {
+        const double size = std::ceil((double(bounds.maximum[c]) - bounds.minimum[c]) / spacing) + 3;
+        if (!std::isfinite(size) || size < 3 || size > budget / count)
+          return {};
+        result[c] = uint32_t(size);
+        count *= result[c];
+      }
+      result[3] = uint32_t(count);
+      return result;
+    }
+    float fitSpacing(const Bounds &bounds, double requested, uint32_t budget) {
+      if (!std::isfinite(requested) || requested <= 0 || requested > std::numeric_limits<float>::max())
+        throw std::invalid_argument("Invalid probe spacing in world units");
+      double lower = requested, upper = requested;
+      if (!dimensions(bounds, requested, budget)) {
+        // Establish a fitting bound, then use the available budget between
+        // coarse powers of two. The requested density is always the minimum.
+        do {
+          upper *= 2;
+          if (!std::isfinite(upper) || upper > std::numeric_limits<float>::max())
+            throw std::invalid_argument("Irradiance bounds exceed world-coordinate precision");
+        } while (!dimensions(bounds, upper, budget));
+        for (uint32_t iteration = 0; iteration < 40; ++iteration) {
+          const double middle = lower + (upper - lower) * .5;
+          if (dimensions(bounds, middle, budget))
+            upper = middle;
+          else
+            lower = middle;
+        }
+      }
+      // Count cells using the spacing actually uploaded to the shader. Rounding
+      // downward at a ceil boundary could otherwise exceed the allocation cap.
+      float spacing = float(upper);
+      if (double(spacing) < upper)
+        spacing = std::nextafter(spacing, std::numeric_limits<float>::infinity());
+      if (!std::isfinite(spacing) || spacing <= 0 || !dimensions(bounds, spacing, budget))
+        throw std::invalid_argument("Irradiance grid cannot fit the probe budget");
+      return spacing;
+    }
+  } // namespace
   Grid place(const scene::BakeScene &scene, const Config &config) {
     if (!std::isfinite(scene.sceneScale) || scene.sceneScale <= 0 || !std::isfinite(config.spacing) ||
         config.spacing <= 0 || config.maxProbes < 64 || config.maxProbes > (1u << 20))
@@ -24,37 +68,19 @@ namespace remix::forward::bake {
       if (!std::isfinite(bounds.minimum[c]) || !std::isfinite(bounds.maximum[c]) ||
           bounds.minimum[c] > bounds.maximum[c])
         throw std::invalid_argument("Invalid irradiance bounds");
-    double spacing = double(config.spacing) / scene.sceneScale;
-    if (!std::isfinite(spacing) || spacing <= 0)
-      throw std::invalid_argument("Invalid probe spacing in world units");
+    const double spacing = fitSpacing(bounds, double(config.spacing) / scene.sceneScale, config.maxProbes);
     Grid result;
-    uint64_t count = 0;
-    for (;;) {
-      count = 1;
-      bool fits = true;
-      for (uint32_t c = 0; c < 3; ++c) {
-        const double lower = double(bounds.minimum[c]) - spacing;
-        const double size = std::ceil((double(bounds.maximum[c]) - bounds.minimum[c]) / spacing) + 3;
-        if (!std::isfinite(lower) || !std::isfinite(size) || size > config.maxProbes || size < 3) {
-          fits = false;
-          break;
-        }
-        if (!std::isfinite(float(lower)))
-          throw std::invalid_argument("Irradiance bounds exceed world-coordinate precision");
-        result.header.originSpacing[c] = float(lower);
-        result.header.dimensions[c] = uint32_t(size);
-        count *= uint64_t(size);
-      }
-      if (fits && count <= config.maxProbes)
-        break;
-      spacing *= 2;
-      if (!std::isfinite(spacing) || spacing > std::numeric_limits<float>::max())
+    result.header.dimensions = *dimensions(bounds, spacing, config.maxProbes);
+    const uint32_t count = result.header.dimensions[3];
+    for (uint32_t c = 0; c < 3; ++c) {
+      const double lower = double(bounds.minimum[c]) - spacing;
+      if (!std::isfinite(float(lower)))
         throw std::invalid_argument("Irradiance bounds exceed world-coordinate precision");
+      result.header.originSpacing[c] = float(lower);
     }
     result.header.originSpacing[3] = float(spacing);
     if (!std::isfinite(float(spacing * spacing)))
       throw std::invalid_argument("Probe distance moments exceed float precision");
-    result.header.dimensions[3] = uint32_t(count);
     result.header.settings = {float(spacing * .02), float(spacing * spacing * .001), 0, 0};
     result.points.resize(count);
     result.probes.resize(count);

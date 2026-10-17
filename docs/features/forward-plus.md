@@ -876,7 +876,14 @@ independent; a work-product limit bounds each dispatch. Static upload staging an
 inputs retire after the preparation fence. The bake module performs no queue waits. Ordinary rendering
 continues while the bake prepares and traces.
 
-The grid uses metre-based spacing and coarsens to its probe budget. Version-2 scene descriptors may supply
+The grid uses metre-based spacing and coarsens to its probe budget. When requested
+density does not fit, placement brackets a fitting spacing and searches between
+the bounds instead of jumping directly to the next power of two. Cell counts use
+the rounded float spacing actually published to the GPU, retaining interpolation
+borders and the same allocation cap. Already fitting requested spacing is retained.
+The changed locations participate through the CPU cache algorithm revision, so
+older caches are preserved and a new bake is required for this layout.
+Version-2 scene descriptors may supply
 playable bounds independently of transport geometry. A closed BSP partition excludes solid/outside leaves
 from tracing. Backface coverage rejects unusable probes. The forward fragment shader reconstructs nine
 SH coefficients from eight neighbours with trilinear, normal-facing and distance-moment visibility weights.
