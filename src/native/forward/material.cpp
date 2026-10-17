@@ -36,7 +36,8 @@ namespace remix::forward {
     data.state[1] = draw.ignoreAlpha ? 7 : draw.alphaOverride ? draw.compare : m.compare;
     data.state[2] = std::bit_cast<uint32_t>(draw.alphaOverride ? draw.reference : m.reference);
     data.state[3] = uint32_t(draw.ignoreAlpha) | uint32_t(draw.doubleSided) << 1 |
-                    (m.selfIllumination ? uint32_t(m.selfIllumination - 1) << 2 : 0);
+                    (m.selfIllumination ? uint32_t(m.selfIllumination - 1) << 2 : 0) |
+                    uint32_t(draw.cameraCull & REMIXAPI_INSTANCE_CAMERA_CULL_BACK_FACES_EXT) << 4;
     data.factor = {linear(float((b.factor >> 16) & 255) / 255), linear(float((b.factor >> 8) & 255) / 255),
                    linear(float(b.factor & 255) / 255), float(b.factor >> 24) / 255};
     data.maps[0] = uint32_t(bool(m.roughnessTexture)) | uint32_t(bool(m.metallicTexture)) << 1 |

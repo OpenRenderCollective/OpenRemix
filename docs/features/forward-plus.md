@@ -13,6 +13,8 @@ rtx.native.forward.sceneScale = 0.0254
 The GMod wrapper also accepts `OPENREMIX_PROXY_BACKEND=forwardplus` at startup.
 The scale above is for Source's inch-based coordinates. Other hosts default to one metre per unit.
 The GMod wrapper supplies the Source value as a profile default. Existing saved preferences take precedence.
+It converts metric distances (luxel/probe spacing, ray bias and reflection reach) to host coordinates;
+it does not multiply emitter positions or radii. Light geometry uses the same host units in every backend.
 
 ## Current behavior
 
@@ -20,6 +22,8 @@ The backend renders supported opaque and alpha-tested world surfaces into an HDR
 PBR shading. Compute shaders build logarithmically sliced light lists. Local analytic lights use bounded
 influence spheres and smooth distance falloff; four shadow-map cascades provide sun visibility. MSAA
 supports 1x, 2x and 4x, falling back to the highest supported colour/depth sample count at or below the request.
+Camera-only backface flags hide world backs without changing double-sided shadow or bake transport.
+Two-sided camera materials retain both faces; seeing a back face never allocates a second lightmap chart.
 
 The renderer requires a graphics/compute queue, storage buffers and sampled HDR/depth attachments.
 It does not require ray-query, acceleration-structure, descriptor-indexing or temporal-upscaling features.

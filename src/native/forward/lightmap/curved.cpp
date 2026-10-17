@@ -139,17 +139,30 @@ namespace remix::forward::lightmap {
       }
       surface.corners.push_back(found->second);
     }
-    auto intrinsic = curved::harmonic(surface, cancelled);
-    if (!intrinsic)
-      intrinsic = curved::unfoldFan(surface, cancelled);
-    const auto coordinates =
-        intrinsic ? std::span<const curved::Uv>(*intrinsic) : std::span<const curved::Uv>(surface.authored);
-    const auto corrected = curved::correctMetric(surface, coordinates, cancelled);
+    // A topologically valid harmonic disk can still flatten a warped boundary
+    // triangle. Validate its metric before selecting it; an open fan has an
+    // exact intrinsic alternative. Do not discard geometry or relax density
+    // checks to make a malformed parameterization pass.
+    std::optional<std::vector<curved::Uv>> corrected;
+    const auto accept = [&](const auto &candidate) {
+      if (!candidate)
+        return false;
+      try {
+        corrected = curved::correctMetric(surface, *candidate, cancelled);
+        return true;
+      } catch (const std::invalid_argument &) {
+        return false;
+      }
+    };
+    const bool intrinsic = accept(curved::harmonic(surface, cancelled)) ||
+                           accept(curved::unfoldFan(surface, cancelled));
+    if (!corrected)
+      corrected = curved::correctMetric(surface, surface.authored, cancelled);
     CurvedCoordinates result;
-    result.intrinsic = bool(intrinsic);
+    result.intrinsic = intrinsic;
     result.metres.reserve(surface.corners.size());
     for (auto corner : surface.corners)
-      result.metres.push_back(corrected[corner]);
+      result.metres.push_back((*corrected)[corner]);
     return result;
   }
 } // namespace remix::forward::lightmap

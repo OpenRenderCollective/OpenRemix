@@ -145,6 +145,9 @@ int main() {
   light.radiance[0] = light.radiance[1] = light.radiance[2] = 4;
   require(std::abs(influenceRadius(light, .01f) - 2 * radius) < 1e-4f,
           "Influence radius follows inverse square power");
+  light.radius *= .0254f;
+  require(std::abs(influenceRadius(light, .01f) - 2 * radius * .0254f) < 1e-5f,
+          "Changing length units scales emitter influence without changing radiance");
   Bounds bounds;
   bounds.include({-2, -2, 0});
   bounds.include({2, 2, 3});

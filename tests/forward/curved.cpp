@@ -97,6 +97,11 @@ namespace {
       }
       const double a = uv[i + 1][0] - uv[i][0], b = uv[i + 2][0] - uv[i][0], c = uv[i + 1][1] - uv[i][1],
                    d = uv[i + 2][1] - uv[i][1], determinant = a * d - b * c;
+      if (lm::curved::length(lm::curved::cross(lm::curved::difference(p[1], p[0]),
+                                              lm::curved::difference(p[2], p[0]))) <= 1e-20) {
+        require(std::abs(determinant) < 1e-10, "Zero-area geometry consumes no atlas triangle area");
+        continue;
+      }
       require(std::abs(determinant) > 1e-10 && determinant * orientation >= 0,
               "Curved atlas triangles have consistent winding and no folds");
       orientation = determinant;
@@ -206,6 +211,22 @@ void curvedLightmapTests() {
               reorderedFanLayout.mappings[0].height == warpedLayout.mappings[0].height,
           "Fan unfolding recovers boundary order independently of triangle submission order");
   bound(reorderedFan, reorderedFanLayout, false);
+  auto collinearFan = warpedBoundaryFan();
+  auto &collinearSurface = *collinearFan.draws[0].surface;
+  auto midpoint = collinearSurface.vertices[0];
+  for (uint32_t c = 0; c < 3; ++c)
+    midpoint.position[c] = (midpoint.position[c] + collinearSurface.vertices[1].position[c]) * .5f;
+  const auto inserted = uint32_t(collinearSurface.vertices.size());
+  collinearSurface.vertices.push_back(midpoint);
+  collinearSurface.indices.insert(collinearSurface.indices.begin(), {0, inserted, 1});
+  collinearFan.charts[0].texcoords.insert(collinearFan.charts[0].texcoords.begin(),
+                                         {{19, 0}, {19, .5f}, {19, 1}});
+  const auto collinearLayout = lm::plan(collinearFan, options);
+  require(collinearLayout.mappings[0].intrinsic &&
+              collinearLayout.mappings[0].width == warpedLayout.mappings[0].width &&
+              collinearLayout.mappings[0].height == warpedLayout.mappings[0].height,
+          "A zero-area boundary step preserves intrinsic fan density without wasting atlas space");
+  bound(collinearFan, collinearLayout, false);
   lm::curved::Surface overlapping;
   overlapping.positions = {{0, 0, 0}, {1, 0, 0}, {-1, 1, 0}, {0, -1, 0}, {1, 1, 0}};
   overlapping.corners = {0, 1, 2, 0, 2, 3, 0, 3, 4};

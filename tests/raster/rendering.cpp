@@ -2321,7 +2321,38 @@ namespace {
     }
     std::puts("Forward+ sky, world/raster coverage, absence and MSAA passed");
   }
+  void cameraBackfaceTests() {
+    for (uint32_t samples : {1u, 2u, 4u}) {
+      Target target;
+      auto &r = target.raster;
+      remix::forward::Options options;
+      options.samples = samples;
+      options.ambient = 1;
+      options.shadows = false;
+      options.ssr = false;
+      target.enableForward(options);
+      const auto mesh = quad(r, 12900, material(r, 12901, 1, 1, 1));
+      remixapi_InstanceInfoCameraCullingEXT culling{};
+      culling.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_CAMERA_CULLING_EXT;
+      culling.flags = REMIXAPI_INSTANCE_CAMERA_CULL_BACK_FACES_EXT;
+      auto info = instance(mesh);
+      info.doubleSided = 1; // Light transport must remain double-sided.
+      info.pNext = &culling;
+      const auto render = [&] {
+        camera(r);
+        r.drawInstance(info);
+        return target.render();
+      };
+      const size_t centre = 4 * (32 * 64 + 32);
+      require(render()[centre] > 100, "Camera backface policy keeps the front face");
+      info.transform.matrix[0][0] = -1;
+      pixel(render(), 32, 32, 0, 0, 0, "Camera backface policy hides reversed winding");
+      culling.flags = 0; // Source $nocull materials omit the camera flag.
+      require(render()[centre] > 100, "Explicit two-sided camera material remains visible");
+    }
+  }
   void forwardTests(const std::filesystem::path &directory) {
+    cameraBackfaceTests();
     Target target;
     auto &r = target.raster;
     camera(r);
@@ -2436,7 +2467,13 @@ namespace {
     r.createLight(info, sun);
     auto receiver = instance(mesh, .3f);
     auto occluder = instance(mesh, -.2f);
-    occluder.transform.matrix[0][0] = occluder.transform.matrix[1][1] = .2f;
+    remixapi_InstanceInfoCameraCullingEXT casterCulling{};
+    casterCulling.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_CAMERA_CULLING_EXT;
+    casterCulling.flags = REMIXAPI_INSTANCE_CAMERA_CULL_BACK_FACES_EXT;
+    occluder.pNext = &casterCulling;
+    occluder.doubleSided = 1;
+    occluder.transform.matrix[0][0] = -.2f;
+    occluder.transform.matrix[1][1] = .2f;
     occluder.transform.matrix[0][3] = -.2f;
     auto shadowScene = [&] {
       r.drawLight(sun);

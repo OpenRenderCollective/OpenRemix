@@ -44,6 +44,12 @@ layout(location = 2) out vec4 outReflectance;
 #else
 void main() {
   Material m = materials[draw.index];
+#ifndef SHADOW_PASS
+  // Camera visibility is independent of double-sided light transport. Walls
+  // still occlude bake/GI/shadow rays when viewed from their hidden side.
+  if ((m.state.w & 16u) != 0u && !gl_FrontFacing)
+    discard;
+#endif
   vec4 surface = surfaceColor(m, uv, vertexColor);
   alphaTest(m, surface.a);
 #ifdef LOCAL_SHADOW_PASS

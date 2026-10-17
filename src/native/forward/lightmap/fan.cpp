@@ -66,7 +66,10 @@ namespace remix::forward::lightmap::curved {
         return std::nullopt;
       if (current != start) {
         const double area = length(cross(previous, edge));
-        if (!(area > 1e-20))
+        // BSP polygon fans may include an exactly collinear boundary step.
+        // It advances along the same radial edge and owns no surface area;
+        // retaining it must not prevent unfolding the nondegenerate triangles.
+        if (area <= 1e-20 && dot(previous, edge) <= 0)
           return std::nullopt;
         angle += std::atan2(area, dot(previous, edge));
       }
