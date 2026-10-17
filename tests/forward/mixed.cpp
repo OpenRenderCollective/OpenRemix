@@ -69,7 +69,8 @@ int main() {
                            : value == 1 ? m::Visibility::Clear : m::Visibility::Unknown;
       require(overflow.occlusion.state(0, 0) == expected && overflow.lights.match(source->lights[0]) == 0,
               "Hidden and clear overflow lights retain exact runtime identities; partial remains unknown");
-      require(overflow.overflow == (expected == m::Visibility::Unknown ? 1u : 0u) &&
+      require(overflow.overflow == 0 &&
+                  overflow.masks.entries().size() == (expected == m::Visibility::Unknown ? 1u : 0u) &&
                   overflow.charts == owners && overflow.directCharts == direct,
               "Auditing reduces only proven overflow and never overwrites filtered or direct channels");
     }
@@ -101,7 +102,7 @@ int main() {
       for (uint32_t task = 0; task < repeated.tasks().size(); ++task)
         repeated.observe(task, rounds == 2 ? .5f : 0.f, layout);
     }
-    require(rounds == 4 && many.overflow == 1 && many.occlusion.count() == 3,
+    require(rounds == 4 && many.overflow == 0 && many.occlusion.count() == 3 && many.masks.entries().size() == 1,
             "A partial overflow emitter cannot prevent later hidden emitters being checked");
     auto donorLayout = layout;
     donorLayout.receiverSamples.assign(layout.points.size(), 1);
@@ -110,8 +111,7 @@ int main() {
     m::OverflowAudit donors;
     require(donors.nextRound(donorPlan, donorLayout), "Receiver-only audit has work");
     for (uint32_t task = 0; task < donors.tasks().size(); ++task) {
-      require(donors.tasks()[task].point != 0, "Filter donors cannot supply chart-wide proofs");
-      donors.observe(task, 0, donorLayout);
+      donors.observe(task, donors.tasks()[task].point == 0 ? 1.f : 0.f, donorLayout);
     }
     require(!donors.nextRound(donorPlan, donorLayout) && donorPlan.occlusion.count() == 1,
             "Filtering donors do not prevent a hidden receiver's compact mask");
@@ -128,6 +128,30 @@ int main() {
     try { noReceivers.nextRound(noReceiverPlan, noReceiverLayout, cancelled.get_token()); }
     catch (const std::runtime_error &) { rejected = true; }
     require(rejected, "Superseded overflow work can stop before publishing more classifications");
+    auto budgeted = plan;
+    m::OverflowAudit noSpace(0);
+    require(noSpace.nextRound(budgeted, layout), "Budget-limited overflow still receives a visibility audit");
+    for (uint32_t task = 0; task < noSpace.tasks().size(); ++task)
+      noSpace.observe(task, .5f, layout);
+    require(!noSpace.nextRound(budgeted, layout) && budgeted.overflow == 1 && budgeted.masks.entries().empty(),
+            "Exhausted mask space remains an explicit fallback instead of suppressing a light");
+    m::Masks scalar;
+    std::vector<float> fractions(layout.points.size(), .5f);
+    require(!scalar.add(0, 0, layout, fractions, 0) && scalar.entries().empty(),
+            "Mask allocation respects the device texture budget before mutation");
+    require(scalar.add(0, 0, layout, fractions), "Partial visibility retains an independent scalar mask");
+    const auto packed = scalar.words(uint32_t(layout.charts.size()));
+    require(!packed.empty() && std::find(scalar.bytes().begin(), scalar.bytes().end(), uint8_t(128)) != scalar.bytes().end(),
+            "Half visibility is quantized to the nearest normalized byte");
+    const auto restored = m::Masks::restore(scalar.entries(), scalar.bytes(), layout, uint32_t(source->lights.size()));
+    require(restored.words(uint32_t(layout.charts.size())) == packed,
+            "Sparse lookup tables and quantized values survive cache reconstruction");
+    auto invalid = std::vector<m::Masks::Entry>(scalar.entries().begin(), scalar.entries().end());
+    ++invalid[0].offset;
+    rejected = false;
+    try { m::Masks::restore(invalid, scalar.bytes(), layout, uint32_t(source->lights.size())); }
+    catch (const std::invalid_argument &) { rejected = true; }
+    require(rejected, "Malformed sparse offsets are rejected before GPU publication");
   }
   {
     auto refined = plan;

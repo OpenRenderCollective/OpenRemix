@@ -49,8 +49,8 @@ namespace remix::forward::mixed {
     else
       ++m_clearCount;
   }
-  Occlusion::Pixels Occlusion::pixels(uint32_t maximumDimension) const {
-    const uint64_t count = 2 + m_words.size();
+  Occlusion::Pixels Occlusion::pixels(uint32_t maximumDimension, std::span<const uint32_t> tail) const {
+    const uint64_t count = 2 + m_words.size() + tail.size();
     if (!maximumDimension || count > uint64_t(maximumDimension) * maximumDimension)
       throw std::length_error("Mixed-light occlusion exceeds the device texture limit");
     uint32_t width = uint32_t(std::min(count, uint64_t(std::min(1024u, maximumDimension))));
@@ -70,6 +70,8 @@ namespace remix::forward::mixed {
     store(1, m_charts);
     for (size_t i = 0; i < m_words.size(); ++i)
       store(i + 2, m_words[i]);
+    for (size_t i = 0; i < tail.size(); ++i)
+      store(i + 2 + m_words.size(), tail[i]);
     return result;
   }
 } // namespace remix::forward::mixed

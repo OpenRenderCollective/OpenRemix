@@ -26,6 +26,8 @@ int main(int argc, char **argv) {
   lamp.position[2] = -1;
   lamp.radiance[0] = 2;
   source->lights.push_back(lamp);
+  lamp.id = 18;
+  source->lights.push_back(lamp);
   scene::freezeBakeScene(*source);
   f::bake::Config config;
   config.lightmapPageSize = 8;
@@ -86,10 +88,14 @@ int main(int argc, char **argv) {
   data.layout.mappings[0].texcoords = source->charts[0].texcoords;
   data.mixed.lights.source = source;
   data.mixed.lights.identities.emplace(17, 0);
+  data.mixed.lights.identities.emplace(18, 1);
   data.mixed.charts.push_back({0, f::mixed::none, f::mixed::none, f::mixed::none});
   data.mixed.directCharts = data.mixed.charts;
-  data.mixed.occlusion = f::mixed::Occlusion(1, 1);
+  data.mixed.occlusion = f::mixed::Occlusion(1, 2);
   data.mixed.occlusion.mark(0, 0, f::mixed::Visibility::Clear);
+  const f::mixed::Masks::Entry sparse{0, 1, 0, 5, 5};
+  const std::vector<uint8_t> sparseBytes(28, 128);
+  data.mixed.masks = f::mixed::Masks::restore({&sparse, 1}, sparseBytes, data.layout, 2);
   f::probes::Capture capture;
   capture.bounds.include({-1, -1, -1});
   capture.bounds.include({1, 1, 1});
@@ -117,6 +123,8 @@ int main(int argc, char **argv) {
               restored->mixed.occlusion.state(0, 0) == f::mixed::Visibility::Clear &&
               restored->mixed.occlusion.clearCount() == 1,
           "Mixed-light ownership and constant visibility are reconstructed against the current source");
+  require(restored->mixed.masks.words(1) == data.mixed.masks.words(1),
+          "Sparse partial visibility survives an actual disk cache round trip");
   const auto originalMesh =
       f::lightmap::meshes(*source, data.layout, {}, data.mixed.charts, data.mixed.directCharts);
   const auto restoredMesh = f::lightmap::meshes(*source, restored->layout, {}, restored->mixed.charts,

@@ -1068,14 +1068,15 @@ namespace {
                                              [](const auto &a, const auto &b) { return a.id < b.id; });
       const auto fallback = captured[size_t(overflow - source->lights.begin())];
       until("", true);
-      require(std::strstr(target.forward->statistics().baking.status, "1 direct links"),
-              "Chart overlap overflow is visible in bake diagnostics");
+      require(target.forward->bakeController()->volume()->occlusionParameters[3] != 0 &&
+                  !std::strstr(target.forward->statistics().baking.status, "direct links"),
+              "A fifth partial light retains a sparse mask instead of an unshadowed fallback");
       camera(r);
       r.drawRetained(nullptr);
       r.drawLight(fallback);
       pixels = target.render();
-      require(pixels[left + 1] > 20 && pixels[right + 1] > 20,
-              "An overflow light remains rendered through the ordinary direct-light fallback");
+      require(pixels[left + 1] < 3 && pixels[right + 1] > 20,
+              "A fifth partial light preserves both its blocked and exposed receiver regions");
       info.hash = 9706;
       info.radiance = {0, 0, 100};
       sphere.position.x = .05f;
@@ -1517,7 +1518,7 @@ namespace {
                     painted[right + 1], painted[right + 2]);
       }
   }
-  void compactOcclusionTests(bool saturated = false) {
+  void compactOcclusionTests(bool saturated = false, bool partialOverflow = false) {
     for (uint32_t samples : {1u, 2u, 4u}) {
       Target target(64, 64, true);
       auto &r = target.raster;
@@ -1624,7 +1625,8 @@ namespace {
       }
       const float uv[] = {0, 0, 8, 8, 8, 0, 0, 0, 0, 8, 8, 8};
       const remixapi_BakeSurfaceChartEXT charts[] = {
-          {receiverHandle, 0, 0, 0, 3, 9, 9, uv}, {receiverHandle, 0, 0, 3, 3, 9, 9, uv + 6}};
+          {receiverHandle, 0, 0, 0, partialOverflow ? 6u : 3u, 9, 9, uv},
+          {receiverHandle, 0, 0, 3, 3, 9, 9, uv + 6}};
       remixapi_BakeSceneSurfacesInfoEXT request{};
       request.bounds.scene = {sizeof(request), REMIXAPI_BAKE_SCENE_SURFACES_VERSION_EXT, 97, 1, 1,
                               REMIXAPI_BAKE_SCENE_READY_EXT, 2, uint32_t(lights.size()), instances, lights.data()};
@@ -1633,7 +1635,7 @@ namespace {
         request.bounds.maximum[c] = 11;
       }
       request.chartRevision = 1;
-      request.chartCount = 2;
+      request.chartCount = partialOverflow ? 1u : 2u;
       request.charts = charts;
       r.setBakeScene(&request.bounds.scene);
       auto render = [&](bool charted = true) {
@@ -1661,8 +1663,43 @@ namespace {
       if (saturated) {
         require(pixels[center] < 3 && pixels[center + 1] > 30 && pixels[center + 2] < 3,
                 "Hidden overflow lights cannot produce metallic specular after four penumbra slots fill");
-        require(std::strstr(target.forward->statistics().baking.status, "35 fully blocked"),
-                "All hidden red overflow emitters retain chart-specific compact visibility");
+        if (partialOverflow) {
+          require(pixels[neighbouringChart] > 30,
+                  "An overflow mask preserves the exposed part of the same connected chart");
+          require(target.forward->bakeController()->volume()->occlusionParameters[3] != 0,
+                  "Partial overflow publishes sparse visibility masks");
+          std::printf("Partial overflow exposed red %u; blocked red %u\n",
+                      unsigned(pixels[neighbouringChart]), unsigned(pixels[center]));
+          auto single = [&] {
+            camera(r);
+            r.drawLight(lights[0]);
+            r.drawRetained(nullptr);
+            return target.render();
+          };
+          sphere.position = {0, 0, -.4f};
+          sphere.radius = .1f;
+          light.hash = 9710;
+          light.radiance = {0, 0, 7000}; // match the energy of the 35 red test lights
+          r.updateLight(lights[0], light);
+          pixels = single();
+          std::printf("Sparse colour edit: blocked blue %u, exposed blue %u\n",
+                      unsigned(pixels[center + 2]), unsigned(pixels[neighbouringChart + 2]));
+          require(pixels[center + 2] < 3 && pixels[neighbouringChart + 2] > 30,
+                  "A light colour edit retains sparse static visibility with the correct light identity");
+          sphere.position.z = -.8f;
+          r.updateLight(lights[0], light);
+          pixels = single();
+          std::printf("Sparse moved light: blocked-site blue %u\n", unsigned(pixels[center + 2]));
+          require(pixels[center + 2] > 30, "A moved light rejects its old sparse visibility mask");
+          r.setBakeScene(nullptr);
+          for (uint32_t frame = 0; frame <= remix::gpuFrameCount; ++frame)
+            pixels = single();
+          require(!target.forward->statistics().baking.active && pixels[center + 2] > 30,
+                  "Unload releases sparse visibility with its published bake volume");
+        } else {
+          require(std::strstr(target.forward->statistics().baking.status, "35 fully blocked"),
+                  "All hidden red overflow emitters retain chart-specific compact visibility");
+        }
         continue;
       }
       require(pixels[center] < 3 && pixels[center + 1] > 30 && pixels[center + 2] < 3 &&
@@ -3452,6 +3489,7 @@ int main(int argc, char **argv) {
   else if (argc>2 && std::strcmp(argv[2],"mixed")==0) mixedLightingTests();
   else if (argc>2 && std::strcmp(argv[2],"compact-occlusion")==0) compactOcclusionTests();
   else if (argc>2 && std::strcmp(argv[2],"overflow-specular")==0) compactOcclusionTests(true);
+  else if (argc>2 && std::strcmp(argv[2],"overflow-masks")==0) compactOcclusionTests(true, true);
   else if (argc>2 && std::strcmp(argv[2],"terrain-lighting")==0) terrainLightingTests();
   else if (argc>2 && std::strcmp(argv[2],"clear-visibility")==0) clearVisibilityTests();
   else if (argc>2 && std::strcmp(argv[2],"mixed-sun")==0) sunLightingTests();

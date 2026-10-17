@@ -21,7 +21,7 @@ namespace remix::forward::bake {
     scene::DistantLight sun; // shape provenance; isDistant only when surface sunlight was baked
     probes::Header reflectionHeader;
     float sceneScale = 1;
-    std::array<uint32_t, 4> occlusionParameters{}; // words per chart, chart count, texture width, reserved
+    std::array<uint32_t, 4> occlusionParameters{}; // words/chart, chart count, texture width, sparse-mask tail
     std::unique_ptr<Buffer> data, specular, staging;
     std::unique_ptr<Image> surfaceAtlas;
     std::unique_ptr<mixed::OcclusionMap> occlusion;

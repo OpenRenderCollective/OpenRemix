@@ -51,7 +51,7 @@ namespace remix::forward::bake {
     bool visibilityFinished = false;
     std::unique_ptr<mixed::OverflowAudit> overflowAudit;
     uint32_t overflowNext = 0, overflowReceived = 0;
-    bool overflowFinished = false;
+    bool overflowFinished = false, overflowPreparing = false;
     std::vector<uint16_t> surfacePixels;
     std::shared_ptr<lightmap::Geometry> surfaceGeometry;
     uint32_t surfaceNext = 0, surfaceReceived = 0;
@@ -400,21 +400,34 @@ namespace remix::forward::bake {
   }
   void Controller::recordOverflowVisibility(VkCommandBuffer command, const Config &config) {
     auto &job = *m_job;
+    // The outer controller waits for the preparation ticket before touching
+    // worker outputs. All readbacks of this round finished before dispatch.
+    if (job.overflowPreparing) {
+      job.overflowPreparing = false;
+      if (job.overflowFinished)
+        job.overflowAudit.reset();
+    }
     if (job.overflowFinished) {
       recordSun(command, config);
       return;
     }
-    if (!job.overflowAudit)
-      job.overflowAudit = std::make_unique<mixed::OverflowAudit>();
+    if (!job.overflowAudit) {
+      VkPhysicalDeviceProperties properties;
+      vkGetPhysicalDeviceProperties(m_physical, &properties);
+      const uint64_t texels = uint64_t(properties.limits.maxImageDimension2D) * properties.limits.maxImageDimension2D;
+      const uint64_t metadata = 2 + job.mixedLights->occlusion.words().size();
+      job.overflowAudit = std::make_unique<mixed::OverflowAudit>(texels > metadata ? texels - metadata : 0);
+    }
     if (job.overflowReceived == job.overflowAudit->tasks().size()) {
-      job.overflowFinished = !job.overflowAudit->nextRound(
-          *job.mixedLights, job.surfaceLayout, job.cancellation.get_token());
-      job.overflowNext = job.overflowReceived = 0;
-      if (job.overflowFinished) {
-        job.overflowAudit.reset();
-        recordSun(command, config);
-        return;
-      }
+      job.overflowPreparing = true;
+      const auto owner = m_job;
+      job.ticket = m_pipelines->prepare("forward-overflow-" + std::to_string(++generation), [owner] {
+        owner->overflowFinished = !owner->overflowAudit->nextRound(
+            *owner->mixedLights, owner->surfaceLayout, owner->cancellation.get_token());
+        owner->overflowNext = owner->overflowReceived = 0;
+      });
+      status(REMIXAPI_BAKE_PREPARING_EXT, "Preparing overflow visibility masks");
+      return;
     }
     const auto tasks = job.overflowAudit->tasks();
     if (job.overflowNext < tasks.size()) {
@@ -614,9 +627,15 @@ namespace remix::forward::bake {
     }
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(m_physical, &properties);
-    const auto occlusion = m_job->mixedLights->occlusion.pixels(properties.limits.maxImageDimension2D);
+    const auto masks = m_job->mixedLights->masks.words(uint32_t(m_job->surfaceLayout.charts.size()));
+    probes::dumpPublishedData(".overflow-mask-entries.bin", m_job->mixedLights->masks.entries().data(),
+                              m_job->mixedLights->masks.entries().size_bytes());
+    probes::dumpPublishedData(".overflow-mask-bytes.bin", m_job->mixedLights->masks.bytes().data(),
+                              m_job->mixedLights->masks.bytes().size_bytes());
+    const auto occlusion = m_job->mixedLights->occlusion.pixels(properties.limits.maxImageDimension2D, masks);
     volume->occlusionParameters = {m_job->mixedLights->occlusion.wordsPerChart(),
-                                   m_job->mixedLights->occlusion.chartCount(), occlusion.width, 0};
+                                   m_job->mixedLights->occlusion.chartCount(), occlusion.width,
+                                   masks.empty() ? 0u : uint32_t(2 + m_job->mixedLights->occlusion.words().size())};
     const size_t occlusionBytes = occlusion.rgba.size() * sizeof(uint16_t);
     volume->content.staticOcclusion = scene::fastHash(occlusion.rgba.data(), occlusionBytes) | 1;
     const size_t occlusionOffset = bytes + specular.size() + surfaceBytes;

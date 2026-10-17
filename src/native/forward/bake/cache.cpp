@@ -14,7 +14,7 @@
 namespace remix::forward::bake::cache {
   namespace {
     // Bump whenever CPU planning, material transport or wire semantics change.
-    constexpr uint32_t algorithmRevision = 7;
+    constexpr uint32_t algorithmRevision = 8;
     void require(bool value) {
       if (!value)
         throw std::runtime_error("Invalid bake cache metadata");
@@ -124,6 +124,9 @@ namespace remix::forward::bake::cache {
       const auto words = input.array<uint32_t>(count);
       plan.occlusion =
           mixed::Occlusion(uint32_t(source->charts.size()), uint32_t(source->lights.size()), words);
+      const auto entries = input.array<mixed::Masks::Entry>(uint64_t(source->charts.size()) * source->lights.size());
+      const auto bytes = input.array<uint8_t>(mixed::Masks::maximumBytes);
+      plan.masks = mixed::Masks::restore(entries, bytes, result.layout, uint32_t(source->lights.size()));
     }
     void readCaptures(detail::Reader &input, Snapshot &result, const Config &config, const Device &device) {
       const auto count = input.pod<uint32_t>();
@@ -267,6 +270,19 @@ namespace remix::forward::bake::cache {
       readGrid(input, result, config, device);
       readLayout(input, result, *source, config, device);
       readMixed(input, result, source);
+      const auto &masks = result.mixed.masks;
+      if (!masks.entries().empty()) {
+        const uint64_t words = 2 + result.mixed.occlusion.words().size() +
+                               source->charts.size() * 2 + masks.entries().size() * 4 + masks.bytes().size() / 4;
+        require(words <= uint64_t(device.imageSize) * device.imageSize);
+        for (const auto &entry : masks.entries()) {
+          require(result.mixed.occlusion.state(entry.chart, entry.light) == mixed::Visibility::Unknown);
+          const auto &owners = result.mixed.charts[entry.chart];
+          require(std::find(owners.begin(), owners.end(), entry.light) == owners.end());
+          const auto [first, last] = result.mixed.lights.identities.equal_range(source->lights[entry.light].id);
+          require(std::any_of(first, last, [&](const auto &id) { return id.second == entry.light; }));
+        }
+      }
       readCaptures(input, result, config, device);
       require(result.surfaceSamples || std::any_of(result.grid.probes.begin(), result.grid.probes.end(),
                                                    [](const auto &p) { return p.statistics[3] > .5f; }));
@@ -326,6 +342,8 @@ namespace remix::forward::bake::cache {
       output.array(identities);
       output.pod(view.mixed.overflow);
       output.array(view.mixed.occlusion.words());
+      output.array(view.mixed.masks.entries());
+      output.array(view.mixed.masks.bytes());
       output.pod(uint32_t(view.captures.size()));
       for (const auto &capture : view.captures) {
         output.pod(uint32_t(capture.bounds.valid) | uint32_t(capture.influence.valid) << 1);

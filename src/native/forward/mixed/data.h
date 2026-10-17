@@ -1,6 +1,7 @@
 #pragma once
 #include "forward/lightmap/data.h"
 #include "forward/mixed/occlusion.h"
+#include "forward/mixed/masks.h"
 #include <span>
 #include <unordered_map>
 namespace remix::forward::mixed {
@@ -22,6 +23,7 @@ namespace remix::forward::mixed {
     std::vector<Task> tasks;
     uint32_t overflow = 0; // chart/light links using the ordinary direct-light fallback
     Occlusion occlusion;
+    Masks masks;
     std::vector<std::vector<uint32_t>> remaining;
     std::vector<uint32_t> next;
   };

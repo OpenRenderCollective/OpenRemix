@@ -13,6 +13,8 @@ namespace remix::forward::mixed {
         m_received != m_tasks.size())
       throw std::invalid_argument("Incomplete or invalid overflow visibility round");
     for (uint32_t chart = 0; chart < m_ranges.size(); ++chart) {
+      if (cancelled.stop_requested())
+        throw std::runtime_error("Overflow visibility superseded");
       const auto &range = m_ranges[chart];
       if (range.light == none || !range.sampled)
         continue;
@@ -22,16 +24,25 @@ namespace remix::forward::mixed {
         plan.occlusion.mark(chart, range.light,
                             range.maximum == 0 ? Visibility::Blocked : Visibility::Clear);
         --plan.overflow;
+      } else if (plan.masks.add(chart, range.light, layout, m_values, m_wordBudget, cancelled)) {
+        if (!plan.overflow)
+          throw std::logic_error("Overflow visibility count exhausted");
+        --plan.overflow;
       }
     }
     m_tasks.clear();
     m_seen.clear();
     m_received = 0;
+    m_values.resize(layout.points.size(), -1.f);
     if (!plan.overflow) {
       m_ranges.clear();
       return false;
     }
     m_ranges.assign(plan.charts.size(), {});
+    std::vector<uint8_t> receivers(plan.charts.size());
+    for (size_t point = 0; point < layout.points.size(); ++point)
+      if (layout.receiverSamples.empty() || layout.receiverSamples[point])
+        receivers.at(layout.pointCharts[point]) = 1;
     bool scheduled = false;
     for (uint32_t chart = 0; chart < plan.charts.size(); ++chart) {
       if (plan.next[chart] > plan.remaining[chart].size())
@@ -39,6 +50,8 @@ namespace remix::forward::mixed {
       if (plan.next[chart] == plan.remaining[chart].size())
         continue;
       const auto light = plan.remaining[chart][plan.next[chart]++];
+      if (!receivers[chart])
+        continue;
       if (light >= plan.lights.source->lights.size())
         throw std::invalid_argument("Invalid overflow light");
       m_ranges[chart].light = light;
@@ -58,9 +71,6 @@ namespace remix::forward::mixed {
       const auto chart = layout.pointCharts[point];
       if (chart >= m_ranges.size())
         throw std::invalid_argument("Invalid overflow surface chart");
-      // Donor samples contribute to filtering, not to chart-wide proofs.
-      if (!layout.receiverSamples.empty() && !layout.receiverSamples[point])
-        continue;
       if (const auto light = m_ranges[chart].light; light != none)
         m_tasks.push_back({point, light, 0});
     }
@@ -74,9 +84,13 @@ namespace remix::forward::mixed {
       throw std::invalid_argument("Invalid overflow visibility result");
     const auto chart = layout.pointCharts.at(m_tasks[task].point);
     auto &range = m_ranges.at(chart);
-    range.minimum = std::min(range.minimum, visibility);
-    range.maximum = std::max(range.maximum, visibility);
-    range.sampled = true;
+    m_values[m_tasks[task].point] = visibility;
+    // Donors filter the mask, but cannot prove a whole receiver clear/blocked.
+    if (layout.receiverSamples.empty() || layout.receiverSamples[m_tasks[task].point]) {
+      range.minimum = std::min(range.minimum, visibility);
+      range.maximum = std::max(range.maximum, visibility);
+      range.sampled = true;
+    }
     m_seen[task] = 1;
     ++m_received;
   }

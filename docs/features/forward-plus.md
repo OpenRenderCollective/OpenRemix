@@ -96,6 +96,7 @@ in the transmitted background. Nested transparent layers are unsupported.
 | `bake/shaders/sample-sums.glsl` | Workgroup sample reduction and shared containing-medium classification |
 | `probes/` | Reflection capture placement, packed cube assets, seam-aware sampling and GGX mip filtering |
 | `mixed/refine.cpp`, `mixed/occlusion.*`, `mixed/map.*` | Visibility-driven channel reuse, CPU bitset encoding and private GPU occlusion-map ownership |
+| `mixed/overflow.*`, `mixed/masks.*` | Streaming overflow audits and compact partial visibility masks with bounded storage |
 | `runtime/forward.cpp` | Background preparation, activation, retained map-bake ownership and backend retirement |
 | `scene/bake_scene.h/.cpp` | CPU-only authored bake snapshots, ownership and input fingerprinting |
 
@@ -1062,15 +1063,24 @@ candidates in the original importance/identity order. A single sample above zero
 classification; a single sample below one prevents clear classification. Charts without samples
 cannot be classified. Filtered-channel allocation stops when four channels retain partial visibility
 or the candidate queue is exhausted. Remaining candidates then receive a streaming visibility audit,
-one light per chart per round. It retains chart extrema rather than another filtered atlas, skips
-filtering donors, and classifies only exactly blocked or clear sampled results. This prevents a hidden
-overflow light from remaining unclassified solely because four other lights have partial shadows.
-Partially shadowed overflow stays unknown and still needs the real-time shadow fallback; exhausting
-that fallback's capacity or range remains an open source of leakage. The audit preserves existing
+one light per chart per round. Exactly blocked or clear receiver samples use compact metadata;
+filtering donors cannot supply chart-wide classifications. Partial pairs retain a scalar visibility
+mask at the receiving chart's existing luxel density, including its verified filtering donors. Values
+are quantized to normalized bytes and sampled bilinearly within the chart bounds. These masks shade
+both direct diffuse and specular and combine with independent moving-caster shadows. The audit preserves existing
 filtered visibility and directional direct-light channels. This can increase map-load ray work, but avoids spending filtered channels on
 constant masks. Classification remains limited by spatial/sample resolution: tiny unsampled openings
 or occluders can be missed, just as in the corresponding constant filtered chart. These states are
 not geometric proofs of visibility over every point on a surface.
+
+Sparse masks allocate only their chart rectangles, with no extra full-atlas layers. Chart-major tables
+sorted by captured-light index support binary search in the existing occlusion texture. Tables plus
+quantized masks have a 16 MiB encoded budget and must fit the device texture limit. Byte-valued half
+storage uses twice that size on the GPU, plus row padding. Preparation runs on a cancellable bake
+worker after the round's GPU fences complete. Partial pairs that exceed either budget remain counted
+as overflow and require the realtime shadow fallback; their illumination is never silently removed.
+No per-frame visibility rays or extra GPU descriptors are required. Cache wire version `RMXBAK03`
+retains masks, exact identities and dimensions; older layouts rebake.
 
 The metadata retains exact chart and captured-light identity for compacted channels. The shader
 rejects blocked direct diffuse and specular before the expensive BRDF/shadow work. Clear lights still

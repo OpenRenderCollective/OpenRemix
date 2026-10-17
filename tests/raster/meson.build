@@ -27,6 +27,8 @@ if get_option('gpu_tests')
     args : [meson.current_build_dir() / 'compact-occlusion-readback', 'compact-occlusion'], timeout : 180)
   test('Forward+ hidden metallic specular after partial visibility saturation', raster_test,
     args : [meson.current_build_dir() / 'overflow-specular-readback', 'overflow-specular'], timeout : 180)
+  test('Forward+ sparse partial overflow masks retain exposed metallic lighting', raster_test,
+    args : [meson.current_build_dir() / 'overflow-mask-readback', 'overflow-masks'], timeout : 180)
   test('Forward+ terrain paint inherits lighting, coverage and baked shadows', raster_test,
     args : [meson.current_build_dir() / 'terrain-readback', 'terrain-lighting'], timeout : 180)
   test('Forward+ compact clear visibility and realtime caster shadows', raster_test,
