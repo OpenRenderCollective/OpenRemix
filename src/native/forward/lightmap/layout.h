@@ -16,6 +16,7 @@ namespace remix::forward::lightmap {
   };
   struct Layout {
     uint32_t pageSize = 0, pages = 0, seamSamples = 0;
+    uint32_t curvedSeamSamples = 0;
     float luxelMetres = 0; // effective surface spacing after global budget coarsening
     std::vector<Mapping> mappings;
     std::vector<Allocation> charts;    // indexed like BakeScene::charts

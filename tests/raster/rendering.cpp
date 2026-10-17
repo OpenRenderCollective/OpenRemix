@@ -1093,7 +1093,7 @@ namespace {
     resources.createMesh(info, mesh);
     return mesh;
   }
-  void surfaceLightmapTests(bool curved = false) {
+  void surfaceLightmapTests(bool curved = false, bool split = false) {
     for (bool ssr : {false, true})
       for (uint32_t samples : {1u, 2u, 4u}) {
         Target target(64, 64, true);
@@ -1151,7 +1151,9 @@ namespace {
         const uint32_t extent = samples == 4 ? 256 : 8;
         const float edge = float(extent);
         const float uv[] = {0, 0, edge, edge, edge, 0, 0, 0, 0, edge, edge, edge};
-        const remixapi_BakeSurfaceChartEXT chart{retained, 0, 0, 0, 6, extent + 1, extent + 1, uv};
+        const remixapi_BakeSurfaceChartEXT charts[] = {
+            {retained, 0, 0, 0, split ? 3u : 6u, extent + 1, extent + 1, uv},
+            {retained, 0, 0, 3, 3, extent + 1, extent + 1, uv + 6}};
         remixapi_BakeSceneSurfacesInfoEXT request{};
         auto &info = request.bounds.scene;
         info = {sizeof(request), REMIXAPI_BAKE_SCENE_SURFACES_VERSION_EXT, 95, 1, 1,
@@ -1161,8 +1163,9 @@ namespace {
           request.bounds.minimum[c] = 10;
           request.bounds.maximum[c] = 11;
         }
-        request.chartRevision = request.chartCount = 1;
-        request.charts = &chart;
+        request.chartRevision = 1;
+        request.chartCount = split ? 2 : 1;
+        request.charts = charts;
         r.setBakeScene(&info);
         auto until = [&](uint32_t state) {
           const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
@@ -1282,7 +1285,7 @@ namespace {
         r.setBakeScene(nullptr);
         for (uint32_t i = 0; i < remix::gpuFrameCount + 1; ++i) target.render();
         std::printf("%s surface lightmap %ux MSAA, SSR %s: shaded green %u, exposed green %u; replacement, cancellation and stale bindings passed\n",
-                      curved ? "Curved" : "Planar", samples, ssr ? "on" : "off", unsigned(first[left + 1]), unsigned(first[right + 1]));
+                      split ? "Stitched curved" : curved ? "Curved" : "Planar", samples, ssr ? "on" : "off", unsigned(first[left + 1]), unsigned(first[right + 1]));
       }
   }
   void compactOcclusionTests() {
@@ -2848,7 +2851,7 @@ int main(int argc, char **argv) {
   else if (argc>2 && std::strcmp(argv[2],"hardware-reflections")==0) reflectionTests(directory, false, true);
   else if (argc>2 && std::strcmp(argv[2],"reflections")==0) reflectionTests(directory);
   else if (argc>2 && std::strcmp(argv[2],"baking")==0) bakingTests();
-  else if (argc>2 && std::strcmp(argv[2],"lightmaps")==0) { surfaceLightmapTests(); surfaceLightmapTests(true); }
+  else if (argc>2 && std::strcmp(argv[2],"lightmaps")==0) { surfaceLightmapTests(); surfaceLightmapTests(true); surfaceLightmapTests(true, true); }
   else if (argc>2 && std::strcmp(argv[2],"local-shadows")==0) mixedLightingTests(true);
   else if (argc>2 && std::strcmp(argv[2],"baked-direct")==0) mixedLightingTests(true, true);
   else if (argc>2 && std::strcmp(argv[2],"mixed")==0) mixedLightingTests();

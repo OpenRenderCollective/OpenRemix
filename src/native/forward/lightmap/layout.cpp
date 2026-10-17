@@ -252,6 +252,7 @@ namespace remix::forward::lightmap {
     for (uint32_t i = 0; i < scene.charts.size(); ++i)
       rasterize(scene, i, result, options, cancelled);
     extendSeams(scene, result, options.padding, cancelled);
+    extendCurvedSeams(scene, result, options.padding, cancelled);
     return result;
   }
 } // namespace remix::forward::lightmap

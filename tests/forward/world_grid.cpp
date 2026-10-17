@@ -114,9 +114,11 @@ namespace {
   }
 } // namespace
 void curvedLightmapTests();
+void curvedJoinTests();
 int main() {
   try {
     curvedLightmapTests();
+    curvedJoinTests();
   } catch (const std::exception &error) {
     std::fprintf(stderr, "Curved chart exception: %s\n", error.what());
     return 1;

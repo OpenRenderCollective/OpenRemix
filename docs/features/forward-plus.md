@@ -654,7 +654,25 @@ Only the conservative bilinear footprint can import a neighbouring donor, and th
 real geometry. `lightmap/coverage` clips the transfer segment against spatially indexed triangles:
 a connection elsewhere in a patch cannot bridge an open hole. Opposite-facing, separated parallel
 and disconnected faces do not share donors. The geometric joining tolerance is 0.1 mm. This handles
-coplanar joins; nonplanar charts and changes of facing plane retain independent boundaries.
+coplanar joins.
+
+`lightmap/seam_mesh` also builds exact chart-local triangle adjacency and indexes chart border edges
+in a private CPU hierarchy. Cross-chart links require overlapping collinear world edges within 0.1 mm,
+compatible outward facing and opposite triangle interiors. Subsegments support T-junctions. Stacked,
+opposite-facing and disconnected surfaces cannot link; sharp turns beyond 60 degrees keep independent
+padding.
+
+`lightmap/surface_walk` temporarily unfolds adjacent triangles around their actual shared edge to find
+a curved gutter sample. It follows a straight segment in the unfolded surface, advancing through real
+triangle links. An open edge stops the walk, even if another connected route exists elsewhere; a
+256-triangle bound also stops pathological micro-mesh walks. The resulting position and normal are
+interpolated on the actual neighbouring triangle. Geometry and the chart's stored UVs remain unchanged.
+`lightmap/curved_seams` uses these donors only for outside-centre bilinear taps within the receiving
+chart's conservative footprint. Existing interior samples stay authoritative. Each new filtering-only
+sample retains the receiving chart and its light ownership; original receiver samples stay in the
+blocked/clear proof set. Baked status reports the curved donor count. This supports smoothly bent
+surfaces and compatible noncoplanar joins; it does not assert exact reconstruction of arbitrary
+high-frequency lighting from a coarse atlas.
 
 Filtering samples retain the receiving chart's local-light channel ownership. The original samples
 on the face remain visibility checks even when a border tap uses a neighbouring grid centre. Compact
