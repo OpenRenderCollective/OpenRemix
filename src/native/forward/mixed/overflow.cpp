@@ -41,19 +41,34 @@ namespace remix::forward::mixed {
     m_ranges.assign(plan.charts.size(), {});
     if (!m_initialized) {
       m_receivers.resize(plan.charts.size());
-      std::vector<uint32_t> pointCounts(plan.charts.size());
+      m_chartPoints.resize(plan.charts.size());
+      std::vector<uint8_t> needed(layout.points.size());
+      for (size_t address = 0; address < layout.owners.size(); ++address) {
+        if ((address & 1023u) == 0 && cancelled.stop_requested())
+          throw std::runtime_error("Overflow visibility superseded");
+        if (const auto owner = layout.owners[address]; owner != lightmap::unowned)
+          needed.at(owner) = 1;
+      }
       for (size_t point = 0; point < layout.points.size(); ++point) {
         if ((point & 1023u) == 0 && cancelled.stop_requested())
           throw std::runtime_error("Overflow visibility superseded");
-        ++pointCounts.at(layout.pointCharts[point]);
-        if (layout.receiverSamples.empty() || layout.receiverSamples[point])
+        if (layout.pointCharts[point] >= m_chartPoints.size())
+          throw std::invalid_argument("Invalid overflow surface chart");
+        if (layout.receiverSamples.empty() || layout.receiverSamples[point]) {
           m_receivers.at(layout.pointCharts[point]) = 1;
+          needed[point] = 1;
+        }
+        // A filtering sample superseded by another atlas donor cannot affect
+        // either receiver classification or the uploaded visibility mask.
+        if (needed[point])
+          m_chartPoints.at(layout.pointCharts[point]).push_back(uint32_t(point));
       }
       for (uint32_t chart = 0; chart < plan.charts.size(); ++chart) {
         if (plan.next[chart] > plan.remaining[chart].size())
           throw std::invalid_argument("Invalid overflow visibility cursor");
         if (m_receivers[chart])
-          m_totalWork += uint64_t(pointCounts[chart]) * (plan.remaining[chart].size() - plan.next[chart]);
+          m_totalWork += uint64_t(m_chartPoints[chart].size()) *
+                         (plan.remaining[chart].size() - plan.next[chart]);
       }
       m_initialized = true;
     }
@@ -79,14 +94,15 @@ namespace remix::forward::mixed {
       m_ranges.clear();
       return false;
     }
-    for (uint32_t point = 0; point < layout.points.size(); ++point) {
-      if ((point & 1023u) == 0 && cancelled.stop_requested())
-        throw std::runtime_error("Overflow visibility superseded");
-      const auto chart = layout.pointCharts[point];
-      if (chart >= m_ranges.size())
-        throw std::invalid_argument("Invalid overflow surface chart");
-      if (const auto light = m_ranges[chart].light; light != none)
+    for (uint32_t chart = 0; chart < m_ranges.size(); ++chart) {
+      const auto light = m_ranges[chart].light;
+      if (light == none)
+        continue;
+      for (const auto point : m_chartPoints[chart]) {
+        if ((m_tasks.size() & 1023u) == 0 && cancelled.stop_requested())
+          throw std::runtime_error("Overflow visibility superseded");
         m_tasks.push_back({point, light, 0});
+      }
     }
     m_seen.assign(m_tasks.size(), 0);
     return !m_tasks.empty();

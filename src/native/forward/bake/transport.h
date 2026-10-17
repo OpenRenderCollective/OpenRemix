@@ -100,6 +100,8 @@ namespace remix::forward::bake {
     void read(uint32_t slot, std::span<Result> results) const;
     // Compact parallel CPU visibility/sun batches only; same completed-slot fence.
     void readVisibility(uint32_t slot, std::span<VisibilityResult> results) const;
+    // Visibility-only compact batches; no directional coefficient expansion.
+    void readScalarVisibility(uint32_t slot, std::span<float> results) const;
     bool timingSupported() const;
     std::optional<double> elapsed(uint32_t slot) const; // owning slot fence completed
     void releaseBuildInputs();                          // after the preparation fence

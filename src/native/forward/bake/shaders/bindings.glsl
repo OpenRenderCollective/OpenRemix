@@ -53,7 +53,8 @@ layout(set = RAY_SCENE_SET, binding = 6, std430) readonly buffer RayPointsBuffer
 };
 layout(set = RAY_SCENE_SET, binding = 7, std430) writeonly buffer RayResultsBuffer {
 #ifdef COMPACT_VISIBILITY
-  vec4 visibilityResults[]; // three vectors per point; mirrors VisibilityResult
+  // Visibility-only batches store one scalar; direct SH batches store twelve.
+  float visibilityResults[];
 #else
   RayResult rayResults[];
 #endif

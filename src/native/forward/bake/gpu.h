@@ -47,6 +47,7 @@ namespace remix::forward::bake {
       uint32_t count = 0, capacity = 0;
       uint32_t samples = 0;
       bool compactVisibility = false;
+      bool scalarVisibility = false;
     };
     std::array<Slot, gpuFrameCount> slots;
     ~Gpu();

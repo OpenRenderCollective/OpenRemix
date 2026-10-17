@@ -159,6 +159,13 @@ isotropic lights retain their full range. Bounds also enclose the baker's surfac
 Rejected pairs do not become blocked-visibility metadata:
 they emit no light toward those receivers. Diagnostic bake capture logs report the rejected pair count.
 
+Overflow audits group receiver samples and active atlas donors by chart once. Filtering samples
+that no longer own an atlas texel cannot affect classification or masks and receive no overflow rays.
+The visibility-only GPU path reduces and transfers one float per point; direct-light batches retain
+their nine directional coefficients. This preserves the same emitter samples, blocked/clear endpoints
+and mask encoding. It does not remove the per-texel/per-light visibility workload: the four retained
+direct-light channels and separate overflow masks remain a scalability limitation.
+
 An enabled live dome is drawn as a display background, followed by the existing raster sky. The dome uses
 the camera rotation and the light's world-to-local transform, with horizontal panorama wrapping and
 vertical clamping. Camera translation does not move it. This pass needs no hardware ray queries or

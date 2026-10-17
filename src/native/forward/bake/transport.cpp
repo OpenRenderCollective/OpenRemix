@@ -409,6 +409,7 @@ namespace remix::forward::bake {
     slot.compactVisibility = parallel && g.options.cpuReadback &&
                              (mode == Mode::Visibility || mode == Mode::DirectVisibility ||
                               mode == Mode::SunVisibility || mode == Mode::SunDirectVisibility);
+    slot.scalarVisibility = slot.compactVisibility && mode == Mode::Visibility;
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE,
                       slot.compactVisibility ? g.visibilityPipeline :
                       parallel ? g.parallelPipeline : g.tracePipeline);
@@ -473,6 +474,21 @@ namespace remix::forward::bake {
     const auto &slot = m_gpu->slots.at(index);
     if (!slot.compactVisibility || results.size() > slot.count)
       throw std::invalid_argument("Readback requires a completed compact visibility batch");
+    if (slot.scalarVisibility) {
+      std::vector<float> visibility(results.size());
+      readScalarVisibility(index, visibility);
+      for (size_t i = 0; i < results.size(); ++i) {
+        results[i] = {};
+        results[i].visibility = visibility[i];
+      }
+      return;
+    }
+    slot.results->read(results.data(), results.size_bytes());
+  }
+  void Transport::readScalarVisibility(uint32_t index, std::span<float> results) const {
+    const auto &slot = m_gpu->slots.at(index);
+    if (!slot.scalarVisibility || results.size() > slot.count)
+      throw std::invalid_argument("Readback requires a completed scalar visibility batch");
     slot.results->read(results.data(), results.size_bytes());
   }
   void Transport::releaseBuildInputs() {

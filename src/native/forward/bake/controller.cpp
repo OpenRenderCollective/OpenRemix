@@ -38,6 +38,7 @@ namespace remix::forward::bake {
     std::vector<Result> surfaces;
     std::vector<Result> readback; // reused between completed frame slots; avoids clearing every batch
     std::vector<VisibilityResult> visibilityReadback;
+    std::vector<float> overflowReadback;
     double readbackMs = 0;
     uint64_t readbackBytes = 0;
     std::shared_ptr<mixed::Plan> mixedLights;
@@ -87,6 +88,18 @@ namespace remix::forward::bake {
   };
   bool Controller::Job::consumeVisibility(uint32_t slot, uint32_t first, uint32_t count, bool local,
                                          bool overflow) {
+    if (overflow) {
+      if (overflowReadback.size() < count)
+        overflowReadback.resize(count);
+      const auto values = std::span(overflowReadback).first(count);
+      transport->readScalarVisibility(slot, values);
+      for (uint32_t i = 0; i < count; ++i) {
+        if (!std::isfinite(values[i]))
+          return false;
+        overflowAudit->observe(first + i, std::clamp(values[i], 0.f, 1.f), surfaceLayout);
+      }
+      return true;
+    }
     if (visibilityReadback.size() < count)
       visibilityReadback.resize(count);
     const auto results = std::span(visibilityReadback).first(count);
@@ -97,9 +110,7 @@ namespace remix::forward::bake {
           !std::all_of(value.irradiance.begin(), value.irradiance.end(),
                        [](float coefficient) { return std::isfinite(coefficient); }))
         return false;
-      if (overflow) {
-        overflowAudit->observe(first + i, std::clamp(value.visibility, 0.f, 1.f), surfaceLayout);
-      } else if (local) {
+      if (local) {
         const auto &task = mixedLights->tasks[first + i];
         visibility[task.point][task.channel] = std::clamp(value.visibility, 0.f, 1.f);
         if (!direct.empty())
@@ -310,7 +321,8 @@ namespace remix::forward::bake {
         job.readbackMs +=
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - readBegin).count();
         job.readbackBytes += uint64_t(submission.count) *
-                             (submission.visibility || submission.sun || submission.overflowVisibility
+                             (submission.overflowVisibility ? sizeof(float) :
+                              submission.visibility || submission.sun
                                   ? sizeof(VisibilityResult) : sizeof(Result));
         (submission.radiance             ? job.captureReceived
          : submission.reflectionGeometry ? job.geometryReceived

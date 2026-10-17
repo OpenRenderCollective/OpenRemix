@@ -22,6 +22,25 @@ Medium pointMedium(vec3 origin, inout uint seed) {
 }
 void storeResult(uint index, RayResult value) {
   uint lane = gl_LocalInvocationIndex;
+#ifdef COMPACT_VISIBILITY
+  if (rayFrame.control.z == 2u) {
+    // Overflow masks consume visibility alone. Avoid reducing, writing and
+    // reading nine unused directional coefficients for every light/texel pair.
+    sumIrradiance[lane] = vec4(value.irradiance[0].xzw, 0);
+    barrier();
+    for (uint stride = 32u; stride > 0u; stride >>= 1u) {
+      if (lane < stride)
+        sumIrradiance[lane] += sumIrradiance[lane + stride];
+      barrier();
+    }
+    if (lane == 0u) {
+      vec3 sum = sumIrradiance[0].xyz;
+      visibilityResults[index] = sum.z == 0 || sum.y <= 0
+          ? 1 : clamp(sum.x / sum.y, 0, uintBitsToFloat(0x3f7fffffu));
+    }
+    return;
+  }
+#endif
 #ifndef COMPACT_VISIBILITY
   if (rayFrame.control.z == 1u) {
     // Offline radiance needs one RGB reduction, not the nine irradiance SH
@@ -69,9 +88,13 @@ void storeResult(uint index, RayResult value) {
 #ifdef COMPACT_VISIBILITY
     float visible = first.z == 0 || denominator <= 0
                         ? 1 : clamp(first.x / denominator, 0, uintBitsToFloat(0x3f7fffffu));
-    visibilityResults[index * 3u] = vec4(visible, first.w, sumIrradiance[1].xy);
-    visibilityResults[index * 3u + 1u] = vec4(sumIrradiance[1].zw, sumIrradiance[2].xy);
-    visibilityResults[index * 3u + 2u] = vec4(sumIrradiance[2].zw, 0, 0);
+    visibilityResults[index * 12u] = visible;
+    visibilityResults[index * 12u + 1u] = first.w;
+    for (uint coefficient = 1u; coefficient < 9u; ++coefficient)
+      visibilityResults[index * 12u + 1u + coefficient] =
+          sumIrradiance[1u + (coefficient - 1u) / 4u][(coefficient - 1u) % 4u];
+    visibilityResults[index * 12u + 10u] = 0;
+    visibilityResults[index * 12u + 11u] = 0;
 #else
     value.irradiance[0] = vec4(first.z == 0 || denominator <= 0
                                  ? 1 : clamp(first.x / denominator, 0, uintBitsToFloat(0x3f7fffffu)),

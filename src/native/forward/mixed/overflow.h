@@ -29,5 +29,8 @@ namespace remix::forward::mixed {
     uint64_t m_completedWork = 0, m_totalWork = 0;
     bool m_initialized = false;
     std::vector<uint8_t> m_receivers;
+    // Retained receivers and atlas donors, grouped once rather than scanning
+    // the entire map again for every overflow round.
+    std::vector<std::vector<uint32_t>> m_chartPoints;
   };
 }

@@ -506,6 +506,13 @@ namespace {
           std::array<bake::VisibilityResult, 3> compact;
           std::array<bake::Result, 3> full;
           transport.readVisibility(0, compact);
+          if (!sun && !directDiffuse) {
+            std::array<float, 3> scalar;
+            transport.readScalarVisibility(0, scalar);
+            for (uint32_t i = 0; i < scalar.size(); ++i)
+              require(scalar[i] == compact[i].visibility,
+                      "Scalar overflow readback preserves each visibility without directional expansion");
+          }
           legacy.read(0, full);
           transport.read(0, results);
           require(std::memcmp(full.data(), results, sizeof(results)) == 0,

@@ -211,6 +211,24 @@ int main() {
     require(!donors.nextRound(donorPlan, donorLayout) && donorPlan.occlusion.count() == 1,
             "Filtering donors do not prevent a hidden receiver's compact mask");
     auto noReceiverLayout = layout;
+    auto unusedLayout = layout;
+    unusedLayout.receiverSamples.assign(layout.points.size(), 1);
+    unusedLayout.points.push_back(layout.points.front());
+    unusedLayout.pointCharts.push_back(0);
+    unusedLayout.receiverSamples.push_back(0);
+    auto unusedPlan = plan;
+    m::OverflowAudit unused;
+    require(unused.nextRound(unusedPlan, unusedLayout) && unused.tasks().size() == layout.points.size(),
+            "Superseded filtering samples with no atlas owner never receive overflow rays");
+    for (uint32_t task = 0; task < unused.tasks().size(); ++task)
+      unused.observe(task, .5f, unusedLayout);
+    require(!unused.nextRound(unusedPlan, unusedLayout) && unusedPlan.overflow == 0 &&
+                unusedPlan.masks.entries().size() == 1 &&
+                unusedPlan.masks.entries()[0].light == plan.remaining[0][plan.next[0]] &&
+                std::equal(unusedPlan.masks.bytes().begin(), unusedPlan.masks.bytes().end(),
+                           many.masks.bytes().begin(), many.masks.bytes().end()) &&
+                unused.completedWork() == unused.totalWork(),
+            "Removing unused donors preserves the complete partial visibility mask and progress");
     noReceiverLayout.receiverSamples.assign(layout.points.size(), 0);
     auto noReceiverPlan = plan;
     m::OverflowAudit noReceivers;
