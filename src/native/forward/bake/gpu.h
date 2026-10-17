@@ -25,7 +25,7 @@ namespace remix::forward::bake {
     std::unique_ptr<Image> atlas;
     std::vector<Texture> textures;
     uint32_t resolution = 0, domeLayer = 0;
-    bool prepared = false, hasDielectrics = false;
+    bool prepared = false, hasDielectrics = false, hasModulatingDecals = false;
     VkDescriptorSetLayout setLayout = VK_NULL_HANDLE, atlasSetLayout = VK_NULL_HANDLE;
     VkPipelineLayout layout = VK_NULL_HANDLE, atlasLayout = VK_NULL_HANDLE;
     VkPipeline tracePipeline = VK_NULL_HANDLE, parallelPipeline = VK_NULL_HANDLE,

@@ -225,6 +225,17 @@ int main() {
   require(capture({&current, 1}).inputs.triangles.empty(),
           "A current compatibility-only instance suppresses its old authored "
           "ray geometry");
+  current.blend.src = 4;
+  current.blend.dst = 2;
+  require(capture({&current, 1}).inputs.triangles.empty(),
+          "Modulation without explicit decal identity cannot become a surface-colour layer");
+  current.decal = true;
+  const auto modulated = capture({&current, 1});
+  require(modulated.inputs.triangles.size() == 2 &&
+              (modulated.inputs.materials[0].flags[3] & forward::bake::modulatingDecalFlag),
+          "Live rays preserve a static modulating decal's separate transport identity");
+  current.decal = false;
+  current.blend.src = current.blend.dst = 1;
   current.material = std::make_shared<scene::Material>(*current.material);
   current.material->transmission = current.material->bakeSmoothBoundary = true;
   current.material->transmittanceDistance = 1;

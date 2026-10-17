@@ -203,6 +203,7 @@ namespace remix::scene {
       hash.add(materialHash);
       hash.add(draw.model);
       hash.add(draw.doubleSided);
+      hash.add(draw.decal);
       hash.add(draw.ignoreAlpha);
       hash.add(draw.alphaOverride);
       hash.add(draw.compare);

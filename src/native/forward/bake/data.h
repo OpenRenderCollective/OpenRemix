@@ -5,11 +5,18 @@
 namespace remix::forward::bake {
   using UInt4 = std::array<uint32_t, 4>;
   // Only ordinary RGB source-over blending describes thin surface coverage.
-  // Additive/modulate/depth-only effects need a different transport model.
+  // Modulating decals have a separate surface-colour model below.
   inline bool sourceOverCoverage(const scene::Blend &blend) {
     return blend.enabled && blend.src == 6 && blend.dst == 7 && blend.op == 0 && blend.mask == 15;
   }
-  constexpr uint32_t suppressEmission = 1, sourceOverCoverageFlag = 2, dielectricBoundaryFlag = 4;
+  inline bool modulatingDecal(const scene::Draw &draw) {
+    const auto &blend = draw.blend;
+    return draw.decal && !draw.material->transmission && !draw.material->translucent && blend.enabled &&
+           blend.src == 4 && blend.dst == 2 && blend.op == 0 && blend.mask == 15;
+  }
+  constexpr uint32_t suppressEmission = 1, sourceOverCoverageFlag = 2, dielectricBoundaryFlag = 4,
+                     modulatingDecalFlag = 8;
+  constexpr float decalReachMetres = .005f;
   struct Vertex {
     Vec4 position, normal, uv, color;
   };

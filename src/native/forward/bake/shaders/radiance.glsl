@@ -38,6 +38,7 @@ bool traceRay(vec3 origin, vec3 direction, float maximum, inout uint seed, out H
   return true;
 }
 #include "optics.glsl"
+#include "decal.glsl"
 vec3 environment(vec3 direction) {
   vec3 d = normalize((rayFrame.dome * vec4(direction, 0)).xyz);
   vec2 uv = vec2(atan(d.z, d.x) / (2 * RayPi) + .5, acos(clamp(d.y, -1, 1)) / RayPi);
@@ -157,16 +158,17 @@ vec3 radiance(vec3 origin, vec3 direction, Medium medium, inout uint seed, out f
     if (dot(n, geometric) < .01)
       n = geometric;
     vec4 base = baseColor(m, uv, vertex);
+    vec3 modulation = decalModulation(origin + direction * hit.distance, geometric);
     vec4 emitted = sampleMap(m.textures.y, uv, m.flags.xyz);
     vec3 emission;
     float reflected;
     emissionLobes(m.shading.emission, m.shading.state, base, sampleMap(m.textures.x, uv, m.flags.xyz),
                   emitted, emission, reflected);
-    result += throughput * emission;
+    result += throughput * emission * modulation;
     float metallic = m.textures.z != 0u ? mapValue(sampleMap(m.textures.z, uv, m.flags.xyz),
                                                    m.shading.remap[1], m.shading.maps.w)
                                         : m.shading.pbr.y;
-    vec3 diffuse = clamp(base.rgb, 0, 1) * (reflected * (1 - metallic));
+    vec3 diffuse = clamp(base.rgb * modulation, 0, 1) * (reflected * (1 - metallic));
     origin += direction * hit.distance;
     origin += geometric * rayFrame.trace.y;
     result += throughput * diffuse / RayPi * directLight(origin, n, seed, medium);

@@ -48,6 +48,8 @@ vec4 baseColor(RayMaterial m, vec2 uv, vec4 vertex) {
 float random(inout uint state);
 bool covered(uint primitive, vec2 bary, bool front, uint seed) {
   RayMaterial m = rayMaterials[rayTriangles[primitive].w];
+  if ((m.flags.w & 8u) != 0u)
+    return false; // a colour layer is neither an occluder nor a refractive interface
   if ((m.shading.state.w & 2u) == 0u && !front)
     return false;
   vec2 uv;

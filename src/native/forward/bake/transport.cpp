@@ -154,6 +154,9 @@ namespace remix::forward::bake {
     hasDielectrics = std::any_of(inputs.materials.begin(), inputs.materials.end(), [](const auto &material) {
       return (material.flags[3] & dielectricBoundaryFlag) != 0;
     });
+    hasModulatingDecals = std::any_of(inputs.materials.begin(), inputs.materials.end(), [](const auto &material) {
+      return (material.flags[3] & modulatingDecalFlag) != 0;
+    });
     materials = staticBuffer(inputs.materials.data(), inputs.materials.size() * sizeof(Material));
     lights = staticBuffer(inputs.lights.data(), inputs.lights.size() * sizeof(LightData));
     textures = std::move(inputs.textures);
@@ -310,6 +313,8 @@ namespace remix::forward::bake {
     auto frame = slot.lighting.value_or(
         lightingFrame(g.source->sun, g.source->dome, distance, g.options.bias, g.source->sceneScale));
     frame.trace[0] = distance / g.source->sceneScale;
+    frame.trace[2] = decalReachMetres / g.source->sceneScale;
+    frame.trace[3] = g.hasModulatingDecals ? 1 : 0;
     frame.counts[2] = samples;
     frame.counts[3] = bounces;
     if (!slot.lighting)
@@ -370,6 +375,8 @@ namespace remix::forward::bake {
       frame.counts[1] = uint32_t(g.source->lights.size());
     }
     frame.counts[0] = count;
+    frame.trace[2] = decalReachMetres / g.source->sceneScale;
+    frame.trace[3] = g.hasModulatingDecals ? 1 : 0;
     if (mode == Mode::SunVisibility || mode == Mode::SunDirectVisibility)
       frame.trace[0] = g.sunDistance;
     frame.counts[2] = samples;

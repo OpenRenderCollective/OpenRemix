@@ -126,6 +126,11 @@ int main() {
   auto boundary = boundarySource;
   scene::freezeBakeScene(boundary);
   const auto boundaryHash = boundary.contentHash;
+  auto decalIdentity = boundarySource;
+  decalIdentity.draws[0].decal = true;
+  scene::freezeBakeScene(decalIdentity);
+  require(decalIdentity.contentHash != boundaryHash,
+          "Decal surface identity participates in immutable bake content and cache invalidation");
   require(boundary.draws[0].material->bakeSmoothBoundary && !boundary.draws[0].material->normalTexture &&
               boundary.draws[0].material->normalEncoding == 0 && water->normalTexture &&
               water->normalEncoding == 5,

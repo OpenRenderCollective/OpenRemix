@@ -30,10 +30,11 @@ namespace remix::forward::bake {
       const auto &source = *draw.material;
       const auto &blend = draw.blend;
       const bool sourceOver = sourceOverCoverage(blend);
+      const bool modulate = modulatingDecal(draw);
       const auto medium = source.bakeSmoothBoundary ? scene::measuredMedium(source) : std::nullopt;
       const bool dielectric = medium.has_value();
       if ((source.transmission && !dielectric) || (source.translucent && !sourceOver && !dielectric) ||
-          (blend.enabled && !sourceOver))
+          (blend.enabled && !sourceOver && !modulate))
         throw std::invalid_argument(
             "Unsupported bake coverage: draw " + std::to_string(result.materials.size()) +
             ", material " + std::to_string(source.sourceHash) + ", blend " +
@@ -51,7 +52,8 @@ namespace remix::forward::bake {
             texture(draw.material, source.metallicTexture), 0},
            {source.wrapU, source.wrapV, source.filter,
             (source.suppressEmissionLight ? suppressEmission : 0u) |
-                (sourceOver ? sourceOverCoverageFlag : 0u) | (dielectric ? dielectricBoundaryFlag : 0u)}});
+                (sourceOver ? sourceOverCoverageFlag : 0u) | (dielectric ? dielectricBoundaryFlag : 0u) |
+                (modulate ? modulatingDecalFlag : 0u)}});
       if (dielectric) {
         auto &optics = result.materials.back().optics;
         std::copy(medium->extinction.begin(), medium->extinction.end(), optics.begin());

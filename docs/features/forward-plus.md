@@ -559,8 +559,16 @@ that ray's seed and primitive identity, so unspecified GPU traversal order canno
 advance or reorder the path's random stream. Opaque/cutout candidates consume no
 additional random samples. This also applies to reflection
 captures and live ray transport; primary MSAA shading remains unchanged.
-Additive/modulate blending and refractive materials without an explicit bake
-boundary policy remain unsupported instead of becoming solid blockers. Static Source props can retain
+Static modulating decals use a separate surface-colour policy. They never block visibility or
+become diffuse bounce surfaces. At a real surface hit, a short hardware query along its geometric
+normal samples aligned decal layers within 5 mm on the outward side. Their texture/vertex/tint colour
+multiplies the receiver's diffuse and emissive response using the source blend's `2 * colour` factor;
+diffuse reflectance remains bounded by one. Multiple attached layers multiply. This local attachment
+test excludes remote sheets, but is not an authored receiver binding: very close parallel surfaces and
+coincident overlapping geometry still require map-level review. Scenes without these layers skip the
+extra query. The policy is shared by bake, capture and live ray transport; it leaves live raster
+compositing unchanged. Additive blending, modulation without decal identity, and refractive materials
+without an explicit bake boundary policy remain unsupported instead of becoming solid blockers. Static Source props can retain
 alpha-blended antenna sheets, and retained terrain paint/overlays carry explicit
 static identities.
 

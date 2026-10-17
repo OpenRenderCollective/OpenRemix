@@ -56,7 +56,7 @@ namespace {
     }
     uint64_t quad(remixapi_MaterialHandle material, const std::array<Vec3, 4> &positions,
                   remixapi_InstanceInfoBlendEXT *blend = nullptr, uint32_t color = 0xffffffff,
-                  Vec3 normal = {}) {
+                  Vec3 normal = {}, bool decal = false) {
       remixapi_HardcodedVertex vertices[4]{};
       for (uint32_t i = 0; i < 4; ++i) {
         std::copy_n(positions[i].begin(), 3, vertices[i].position);
@@ -83,14 +83,16 @@ namespace {
       instance.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO;
       instance.mesh = mesh;
       instance.pNext = blend;
+      instance.categoryFlags = decal ? REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_STATIC : 0;
       instance.doubleSided = 1;
       instance.transform.matrix[0][0] = instance.transform.matrix[1][1] = instance.transform.matrix[2][2] = 1;
       return resources.createRetained(instance);
     }
     uint64_t wall(remixapi_MaterialHandle material, float z, float size,
-                  remixapi_InstanceInfoBlendEXT *blend = nullptr, uint32_t color = 0xffffffff) {
+                  remixapi_InstanceInfoBlendEXT *blend = nullptr, uint32_t color = 0xffffffff,
+                  bool decal = false) {
       return quad(material, {{{-size, -size, z}, {size, -size, z}, {size, size, z}, {-size, size, z}}}, blend,
-                  color);
+                  color, {}, decal);
     }
     void texture(uint64_t id, const uint8_t (&pixels)[8],
                  remixapi_Format format = REMIXAPI_FORMAT_R8G8B8A8_UNORM) {
@@ -772,6 +774,72 @@ namespace {
                 "opaque %.3f, stacked %.3f, vertex-alpha %.3f\n",
                 irradiance[0], irradiance[1], irradiance[2], transmitted, vertexCoverage);
   }
+  void modulatingDecals(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
+    remixapi_InstanceInfoBlendEXT blend{};
+    blend.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BLEND_EXT;
+    blend.alphaBlendEnabled = 1;
+    blend.alphaTestCompareOp = 7;
+    blend.srcColorBlendFactor = blend.srcAlphaBlendFactor = 4;
+    blend.dstColorBlendFactor = blend.dstAlphaBlendFactor = 2;
+    blend.writeMask = 15;
+    const auto base = world.wall(world.material({.diffuse = .8f}), 1, 1000);
+    const auto tint = world.material({.diffuse = .25f});
+    const auto first = world.wall(tint, .9975f, 1000, &blend, 0xffffffff, true);
+    const auto second = world.wall(tint, .996f, 1000, &blend, 0xffffffff, true);
+    const auto detached = world.wall(tint, .95f, 1000, &blend, 0xffffffff, true);
+    auto lit = [&](std::initializer_list<uint64_t> instances) {
+      auto scene = world.scene(instances);
+      scene->sun.isDistant = true;
+      std::fill_n(scene->sun.direction, 3, 0);
+      scene->sun.direction[2] = 1;
+      std::fill_n(scene->sun.radiance, 3, 1);
+      return run(fixture, pipelines, world, scene, 1).irradiance[0][0];
+    };
+    const float plain = lit({base}), darkened = lit({base, first}), stacked = lit({base, first, second}),
+                floating = lit({base, detached});
+    require(plain > .01f && std::abs(darkened / plain - .5f) < .015f,
+            "An attached modulating decal changes the receiver's bounce colour without blocking its sun");
+    require(std::abs(stacked / plain - .25f) < .015f,
+            "Independent attached modulating layers multiply without creating extra bounce surfaces");
+    require(std::abs(floating / plain - 1) < .015f,
+            "A detached decal neither tints the remote surface nor casts a fake shadow");
+    world.texture(0x7101, {64, 64, 64, 0, 128, 128, 128, 0});
+    const auto textured = world.wall(world.material({.diffuse = 1, .albedo = L"0x7101"}),
+                                     .9975f, 1000, &blend, 0xffffffff, true);
+    const float patterned = lit({base, textured});
+    require(std::abs(patterned / plain - .75f) < .04f,
+            "Decal transport samples its colour texture while modulation remains independent of alpha");
+    auto sheet = world.scene({first});
+    sheet->dome.enabled = true;
+    sheet->dome.radiance = {1, 1, 1};
+    const float passing = evaluate(run(fixture, pipelines, world, sheet, 1), {0, 0, 1}, 0);
+    require(std::abs(passing - std::numbers::pi_v<float>) < .05f,
+            "Modulating decals alone leave environment visibility unchanged");
+    const auto emitter = world.wall(world.material({.emission = 3}), 1, 1000);
+    auto glowing = world.scene({emitter, first});
+    bake::Transport transport;
+    auto job = pipelines.prepare("decal-emission-diagonal", [&] {
+      transport.initialize(fixture.physical, fixture.device, glowing);
+    });
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (!job->ready() && std::chrono::steady_clock::now() < deadline)
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    require(job->ready(), "Decal directional capture preparation completed");
+    job->check();
+    const bake::Point rays[] = {{{0, 0, 0, 0}, {0, 0, 1, 0}}, {{.1f, 0, 0, 0}, {0, 0, 1, 0}}};
+    fixture.begin();
+    transport.recordPrepare(fixture.command, world.resources);
+    transport.recordRadiance(fixture.command, 0, rays, 1);
+    fixture.finish();
+    bake::Result captured[2];
+    transport.read(0, captured);
+    for (const auto &value : captured)
+      require(std::abs(value.irradiance[0][0] - 1.5f) < .001f &&
+                  std::abs(value.irradiance[0][3] - 1) < .001f,
+              "Decal modulation applies once at shared triangle edges and preserves emitter hit distance");
+    std::printf("Modulating decals: single %.4f, stacked %.4f, detached %.4f, textured %.4f; visibility %.4f\n",
+                darkened / plain, stacked / plain, floating / plain, patterned / plain, passing);
+  }
   void bakeSurface(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
     const auto receiver = world.wall(world.material({}), 0, 2);
     const auto blocker =
@@ -1086,6 +1154,7 @@ int main() try {
     siteValidation(fixture, pipelines, world);
     dielectricTransport(fixture, pipelines, world);
     blendedCoverage(fixture, pipelines, world);
+    modulatingDecals(fixture, pipelines, world);
     bakeSurface(fixture, pipelines, world);
     bakeVisibility(fixture, pipelines, world);
     emitterParity(fixture, pipelines, world);
