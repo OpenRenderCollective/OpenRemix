@@ -1,4 +1,5 @@
 #include "forward/bake/grid.h"
+#include "forward/bake/spherical_harmonics.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -118,15 +119,7 @@ namespace remix::forward::bake {
       base[c] = std::min(uint32_t(q), h.dimensions[c] - 2);
       fraction[c] = q - base[c];
     }
-    const float sh[] = {.2820947918f,
-                        .4886025119f * normal[1],
-                        .4886025119f * normal[2],
-                        .4886025119f * normal[0],
-                        1.092548431f * normal[0] * normal[1],
-                        1.092548431f * normal[1] * normal[2],
-                        .3153915653f * (3 * normal[2] * normal[2] - 1),
-                        1.092548431f * normal[0] * normal[2],
-                        .5462742153f * (normal[0] * normal[0] - normal[1] * normal[1])};
+    const auto sh = irradianceBasis(normal);
     Vec3 value{};
     float total = 0;
     for (uint32_t corner = 0; corner < 8; ++corner) {

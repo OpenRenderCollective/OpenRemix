@@ -11,6 +11,13 @@ forward_grid_test = executable('remix-forward-grid-test', 'grid.cpp',
   '../../src/native/forward/bake/grid.cpp', '../../src/native/forward/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Irradiance grid placement and visibility reconstruction', forward_grid_test)
+
+forward_receiver_report_test = executable('remix-forward-receiver-report-test', 'receiver_report.cpp',
+  '../../src/native/forward/bake/receiver_report.cpp', '../../src/native/forward/bake/grid.cpp',
+  '../../src/native/forward/lightmap/data.cpp', '../../src/native/forward/material.cpp',
+  '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Surface and probe receiver comparison preserves coordinates and indirect units', forward_receiver_report_test)
 forward_probes_test = executable('remix-forward-probes-test', 'probes.cpp',
   '../../src/native/forward/probes/data.cpp', '../../src/native/forward/probes/placement.cpp', '../../src/native/forward/probes/selection.cpp',
   '../../src/native/forward/probes/regions.cpp', '../../src/native/forward/probes/sites.cpp',

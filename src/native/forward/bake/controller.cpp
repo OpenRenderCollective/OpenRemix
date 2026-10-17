@@ -1,6 +1,7 @@
 #include "forward/bake/controller.h"
 #include "forward/bake/budget.h"
 #include "forward/bake/cache.h"
+#include "forward/bake/receiver_report.h"
 #include "forward/bake/transport.h"
 #include "forward/image_dump.h"
 #include "forward/lightmap/denoise.h"
@@ -164,6 +165,7 @@ namespace remix::forward::bake {
             surfaceGeometry = std::make_shared<lightmap::Geometry>(
                 physical, device, source, surfaceLayout, cancellation.get_token(),
                 mixedLights->charts, mixedLights->directCharts);
+          dumpReceiverReport(*source, surfaceLayout, surfacePixels, grid, cancellation.get_token());
           cacheHit = filtering = true;
           return;
         }
@@ -637,6 +639,8 @@ namespace remix::forward::bake {
             owner->surfacePixels =
                 lightmap::pixels(owner->surfaceLayout, owner->surfaces, owner->cancellation.get_token(),
                                  owner->visibility, owner->direct, owner->sun);
+            dumpReceiverReport(*owner->source, owner->surfaceLayout, owner->surfacePixels, owner->grid,
+                                owner->cancellation.get_token());
             // These transport arrays are no longer needed once encoded. Avoid
             // retaining them beside the much larger atlas and upload allocation.
             releaseStorage(owner->visibility);

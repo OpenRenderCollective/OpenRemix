@@ -1556,3 +1556,15 @@ Rectangle coverage includes padding and is not a measurement of used luxels.
 Metadata records storage size, preview exposure and, if the irradiance-grid dump
 is available, its dimensions, spacing and valid probe count. These are inspection
 views of the current twenty-layer atlas, not an export to Source 2's texture format.
+
+`REMIX_DEBUG_BAKE_RECEIVERS=<new-json-path>` compares a bounded set of charted
+triangle centres against the diffuse probe grid during preparation. It also works
+on an exact cache hit, without retracing lighting. Positions, inverse-transpose
+vertex normals, chart UV mappings, mip-zero bilinear filtering and signed half
+coefficients follow the render data. It excludes material colours, normal maps
+and direct lights; the published probe-normal bias remains in use. The report
+includes per-receiver chart/draw identity, BSP cluster when available, probe
+coverage and surface/probe RGB irradiance. Summary errors weight sampled
+triangles equally rather than by area or screen importance. An existing output
+file is refused, and reporting failures do not invalidate the bake. The feature
+is disabled unless its environment variable is set.
