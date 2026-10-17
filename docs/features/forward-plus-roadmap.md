@@ -16,6 +16,7 @@ reports. An implementation or synthetic test alone does not close an integration
 | Modular forward PBR, clustered lights and 1x/2x/4x MSAA | Implemented | Refresh current-build engine coverage through the integration milestone below |
 | World-metric surface charts, atlas budgets and irradiance probes | Implemented; warped boundary fans, modulating decals and lit displacement paint layers supported | Inspect connected-face continuity, seam donors, close decal receivers, indirect noise and budget coarsening |
 | Soft finite emitters, attributed direct diffuse and live specular | Implemented | Compare visible penumbrae and light separation in the live engine |
+| Aggregate fully static diffuse and compact directional lightmaps | Not implemented; current atlas retains nine indirect SH bands and nine per-light direct bands | Separate fully baked, mixed and dynamic light policy; remove exhaustive visibility work for fully baked lights without losing required specular/moving-shadow behavior; measure directional compression against normal-map and multi-lobe references |
 | Dynamic-object shadows combined with baked static shadows | Implemented; captured static casters excluded; overflow audits classify constant visibility and retain bounded-error palette masks within a memory budget | Confirm retained coverage across maps and bake quality settings; budget-exhausted overflow still requires realtime shadow capacity/range; live receivers, characters and static membership after map changes |
 | Automatic parallax cubemap bounds with tolerance for room details | Coverage-based selection and optional 32-capture capacity; receiver bounds contact nearby axis-aligned room surfaces independently of inset projection boxes | Limited budgets still leave rooms uncovered; review transitions, rotated rooms and reflection leaks across multiple maps |
 | Rough SSR, optional hardware reflections and live GI | Implemented | Refresh actual-engine toggles and shared-scene lifetime coverage; continue measured performance work where needed |
@@ -32,20 +33,29 @@ when baked lighting is active; a failed bake instead displays its failure messag
 
 ## Next milestones, in order
 
-1. **Complete live GMod integration.** Pool startup, a fresh bake, an exact cached reload and a moving
+1. **Replace exhaustive overflow baking.** Aggregate ordinary fully static direct diffuse with indirect
+   lighting; retain separate light identity only where mixed lighting needs it. Select mixed lights
+   automatically from legacy inputs, preserving important emitters and reusing mask channels where
+   receiver coverage permits. Define a correct fallback for overlapping mixed lights instead of
+   silently losing their shadows. Keep camera-dependent specular visibility and dynamic-object
+   shadow behavior explicit: fully baked diffuse cannot supply either by itself. Evaluate compact HDR
+   irradiance plus lower-resolution directionality against the current SH representation before
+   replacing it. Require equal-energy, no-double-counting, wall-occlusion and moving-caster tests,
+   followed by measured fresh-map bake time, GPU memory and close normal-mapped surface comparisons.
+2. **Complete live GMod integration.** Pool startup, a fresh bake, an exact cached reload and a moving
    actor have been exercised in the isolated installation. Continue with a solid receiver for mixed
    shadows beyond the exercised indoor sun case, below-water views, renderer/RT switches and a map reload/change. Record binary hashes and
    dependencies. Require actual
    engine logs, active baked lighting and captures; investigate crashes, input restarts, missing assets
    or new validation errors before extending coverage. Earlier live-game logs are historical evidence.
-2. **Close visible lighting-quality gaps.** Use fixed map views and a high-sample reference to inspect
+3. **Close visible lighting-quality gaps.** Use fixed map views and a high-sample reference to inspect
    connected chart seams, static/dynamic shadow composition, indoor/outdoor probe transitions and
    parallax bounds. Compare lower indirect sample counts separately from direct-shadow sampling.
    Keep changes tied to an observed artifact and a repeatable comparison.
-3. **Finish material and water parity.** Exercise authored/replaced normals, roughness, emission,
+4. **Finish material and water parity.** Exercise authored/replaced normals, roughness, emission,
    transmission distance and IOR in the live engine. Document supported approximations and repair
    discrepancies that break compatibility with the shared material system.
-4. **Package and deliver.** Check clean builds with and without OIDN, include required runtime plugins
+5. **Package and deliver.** Check clean builds with and without OIDN, include required runtime plugins
    and notices, document settings and defaults, and repeat the integration smoke test from the delivered
    layout. Keep the upstream `main` branches and the user's feature-branch remotes intact.
 
