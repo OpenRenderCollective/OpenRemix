@@ -98,15 +98,17 @@ namespace remix {
                           "Higher values finish first bakes faster and can reduce frame rate while baking.\n"
                           "Zero uses the fixed bakeBatch setting. Scheduling edits preserve baked lighting.");
       ui::DragFloat("Bake probe spacing (m)", &forward.baking.spacing, .1f, .1f, 100);
-      ui::DragFloat("Surface luxel size (m)", &forward.baking.lightmapLuxelSize, .01f, .01f, 16);
+      ui::Checkbox("Fit surface detail to atlas budget", &forward.baking.lightmapFitBudget);
       if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("World-space spacing is measured on planar and curved surfaces.\n"
-                          "The atlas memory budget and page size can coarsen the requested spacing.");
+        ImGui::SetTooltip("Selects the finest consistent surface density that fits the atlas.\n"
+                          "Larger budgets add detail, including on small maps.");
+      if (!forward.baking.lightmapFitBudget)
+        ui::DragFloat("Manual surface luxel size (m)", &forward.baking.lightmapLuxelSize, .01f, .01f, 16);
       int surfaceBudget = int(forward.baking.lightmapTexels / 1024);
       if (ui::SliderInt("Surface lightmap budget (k texels)", &surfaceBudget, 64, 16384))
         forward.baking.lightmapTexels = uint32_t(surfaceBudget) * 1024;
       if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("More texels preserve smaller baked lighting details. Charts coarsen when needed to fit the budget.");
+        ImGui::SetTooltip("More texels preserve smaller baked lighting details. Automatic density fills this budget.");
       ImGui::Text("Surface atlas memory limit: %.1f MiB",
                   double(forward.baking.lightmapTexels) * remix::forward::lightmap::atlasBytesPerTexel / (1024 * 1024));
       int surfacePage = 0;

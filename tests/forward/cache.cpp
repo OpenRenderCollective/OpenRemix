@@ -69,6 +69,7 @@ int main(int argc, char **argv) {
   qualityKey([](auto &c) { c.reflectionDetailTolerance += .1f; });
   qualityKey([](auto &c) { c.lightmapPageSize *= 2; });
   qualityKey([](auto &c) { c.lightmapTexels *= 2; });
+  qualityKey([](auto &c) { c.lightmapFitBudget = !c.lightmapFitBudget; });
   qualityKey([](auto &c) { c.lightmapLuxelSize *= 2; });
   bc::Snapshot data;
   data.grid.header.originSpacing = {0, 0, 0, 1};

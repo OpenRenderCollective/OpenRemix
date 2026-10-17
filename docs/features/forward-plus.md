@@ -985,8 +985,13 @@ blocked/clear classification uses those receiving-face checks, so an illuminated
 turn every blocked light into overflow. Candidate bounds also include the extended footprint.
 Unused atlas space remains unowned; padding allocation never overlaps another chart's allocation.
 
-`rtx.native.forward.lightmapLuxelSize` requests surface spacing in metres (0.01-16, default 0.125).
-The UI exposes it, and the published bake status reports the effective spacing after budget coarsening.
+`rtx.native.forward.lightmapFitBudget` defaults to enabled. The planner derives a consistent world-space
+density from atlas capacity, refining small maps as well as coarsening large ones. Packing probes include
+chart rounding, padding, page allocations and device layer limits; surface rays are generated only once.
+The published spacing is a measured result, rather than an input quality ceiling. Shelf packing is bounded
+and heuristic, so this does not promise optimal utilization of every texel. A single large chart can still
+limit density before all pages fill. `rtx.native.forward.lightmapLuxelSize` is a manual override only when
+automatic fitting is disabled; existing saved spacing values do not cap automatic detail.
 `rtx.native.forward.lightmapPageSize` selects a maximum power-of-two page size (64-4096, default 1024).
 Pages shrink when a single requested page would exceed the total texel budget.
 `rtx.native.forward.lightmapTexels` bounds allocated atlas texels including padding and unused page space

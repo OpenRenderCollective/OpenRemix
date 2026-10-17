@@ -163,6 +163,7 @@ namespace remix::forward::bake {
     atlas.padding = 0;
     atlas.pageSize = config.lightmapPageSizeForBudget();
     atlas.luxelMetres = config.lightmapLuxelSize;
+    atlas.fillBudget = config.lightmapFitBudget;
     atlas.maxTexels = config.lightmapTexels;
     atlas.maxPages = std::min(256u, properties.limits.maxImageArrayLayers / lightmap::atlasLayers);
     if (atlas.pageSize > properties.limits.maxImageDimension2D)

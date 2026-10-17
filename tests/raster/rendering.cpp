@@ -592,6 +592,7 @@ namespace {
         Target target(64, 64, true);
         auto &r = target.raster;
         remix::forward::Options options;
+        options.baking.lightmapFitBudget = false; // Controlled-density lighting fixtures.
         options.samples = samples;
         options.rtGI = true;
         options.rtGISamples = 16;
@@ -787,6 +788,7 @@ namespace {
       }
     Target ordinary;
     remix::forward::Options options;
+    options.baking.lightmapFitBudget = false; // Controlled-density lighting fixtures.
     options.rtGI = true;
     options.ssr = false;
     options.baking.enabled = false;
@@ -808,6 +810,7 @@ namespace {
       Target target(64, 64, true);
       auto &r = target.raster;
       remix::forward::Options options;
+      options.baking.lightmapFitBudget = false; // Controlled-density lighting fixtures.
       options.samples = samples;
       options.ambient = 0;
       options.shadows = false;
@@ -1213,6 +1216,7 @@ namespace {
         Target target(64, 64, true);
         auto &r = target.raster;
         remix::forward::Options options;
+        options.baking.lightmapFitBudget = false; // Controlled-density lighting fixtures.
         options.samples = samples;
         options.ambient = 0;
         options.shadows = false;
@@ -1227,6 +1231,7 @@ namespace {
         options.baking.lightmapPageSize = 4096; // budget must reduce this to 64 without a 4K allocation
         options.baking.lightmapTexels = 4096;
         if (curved) options.baking.lightmapLuxelSize = .1f;
+        if (samples == 1 && !curved) options.baking.lightmapFitBudget = true;
         // The 4x case needs a three-centimetre grid to fit this page. Doubling
         // alone would stop at four; exercise the refined layout on the GPU.
         if (samples == 4 && !curved) options.baking.lightmapLuxelSize = .01f;
@@ -1414,6 +1419,7 @@ namespace {
         Target target(64, 64, true);
         auto &r = target.raster;
         remix::forward::Options options;
+        options.baking.lightmapFitBudget = false; // Controlled-density lighting fixtures.
         options.samples = samples;
         options.ambient = 0;
         options.ssr = ssr;
@@ -1523,6 +1529,7 @@ namespace {
       Target target(64, 64, true);
       auto &r = target.raster;
       remix::forward::Options options;
+      options.baking.lightmapFitBudget = false; // Controlled-density lighting fixtures.
       options.samples = samples;
       options.ambient = 0;
       options.shadows = options.localShadows = options.ssr = false;
@@ -1735,6 +1742,7 @@ namespace {
       Target target(64, 64, true);
       auto &r = target.raster;
       remix::forward::Options options;
+      options.baking.lightmapFitBudget = false; // Controlled-density lighting fixtures.
       options.samples = samples;
       options.ambient = 0;
       options.shadows = options.ssr = false;
@@ -1836,6 +1844,7 @@ namespace {
       Target target(64, 64, true);
       auto &r = target.raster;
       remix::forward::Options options;
+      options.baking.lightmapFitBudget = false; // Controlled-density lighting fixtures.
       options.samples = samples;
       options.rtGI = samples == 2;
       options.rtGISamples = options.rtGIBounces = 1;
@@ -2032,6 +2041,7 @@ namespace {
     auto &r = target.raster;
     camera(r);
     remix::forward::Options options;
+    options.baking.lightmapFitBudget = false; // Controlled-density lighting fixtures.
     options.ambient = 0;
     options.shadows = false;
     options.ssr = false;
@@ -2224,6 +2234,7 @@ namespace {
       auto &r = target.raster;
       camera(r);
       remix::forward::Options options;
+      options.baking.lightmapFitBudget = false; // Controlled-density lighting fixtures.
       options.samples = samples;
       options.shadows = false;
       options.ambient = 0;
@@ -2326,6 +2337,7 @@ namespace {
       Target target;
       auto &r = target.raster;
       remix::forward::Options options;
+      options.baking.lightmapFitBudget = false; // Controlled-density lighting fixtures.
       options.samples = samples;
       options.ambient = 1;
       options.shadows = false;
@@ -2357,6 +2369,7 @@ namespace {
     auto &r = target.raster;
     camera(r);
     remix::forward::Options options;
+    options.baking.lightmapFitBudget = false; // Controlled-density lighting fixtures.
     options.ambient = 0;
     options.shadowResolution = 128;
     options.shadows = false;
@@ -2682,6 +2695,7 @@ namespace {
         file.write(reinterpret_cast<const char *>(image.data() + i), 3);
     };
     remix::forward::Options options;
+    options.baking.lightmapFitBudget = false; // Controlled-density lighting fixtures.
     options.ambient = 0;
     options.shadows = false;
     options.shadowResolution = 64;
@@ -3413,6 +3427,7 @@ namespace {
       Target target;
       auto &r = target.raster;
       remix::forward::Options options;
+      options.baking.lightmapFitBudget = false; // Controlled-density lighting fixtures.
       options.water = true;
       options.samples = samples;
       options.rtReflections = true; // deliberately unavailable on this core device

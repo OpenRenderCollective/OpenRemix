@@ -232,6 +232,31 @@ int main() {
           "Budget refinement chooses a verified intermediate density instead of doubling straight to eight "
           "metres");
   density(large, fitted);
+  auto automatic = budget;
+  automatic.fillBudget = true;
+  const auto filled = lm::fit(large, automatic);
+  require(filled.luxelMetres < fitted.luxelMetres && filled.charts[0].width >= 29 &&
+              filled.charts[0].height >= 29 && filled.owners.size() == 1024,
+          "Automatic density refines the fit between integer spacing steps within the same allocated budget");
+  scene::BakeScene smallMap;
+  smallMap.ready = true;
+  face(smallMap, 0, 0, 1, 1, 2, 2);
+  const auto smallFilled = lm::fit(smallMap, automatic);
+  require(smallFilled.luxelMetres < .04f && smallFilled.charts[0].width >= 29 &&
+              smallFilled.pages == 1 && smallFilled.owners.size() == 1024,
+          "Small maps spend spare atlas capacity on detail rather than stopping at requested metre spacing");
+  automatic.luxelMetres = .01f;
+  const auto independent = lm::fit(smallMap, automatic);
+  require(independent.addresses == smallFilled.addresses && independent.luxelMetres == smallFilled.luxelMetres,
+          "Saved manual spacing cannot cap or perturb automatic atlas density");
+  density(smallMap, smallFilled);
+  automatic.pageSize = 64;
+  automatic.maxTexels = 4096;
+  const auto largerAtlas = lm::fit(smallMap, automatic);
+  require(largerAtlas.luxelMetres < smallFilled.luxelMetres * .5f &&
+              largerAtlas.points.size() > smallFilled.points.size() * 3 &&
+              largerAtlas.owners.size() == 4096,
+          "A larger target atlas buys finer surface detail rather than unused capacity");
   const auto directPlan = lm::plan(large, {32, 1, 1, 1024, 6, 1});
   require(fitted.addresses == directPlan.addresses && fitted.owners == directPlan.owners &&
               fitted.points.size() == directPlan.points.size(),

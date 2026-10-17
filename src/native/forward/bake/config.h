@@ -12,7 +12,8 @@ namespace remix::forward::bake {
     uint32_t reflectionProbes = 16, reflectionResolution = 32;
     float reflectionDetailTolerance = .5f; // metres; zero requires entirely empty boxes
     uint32_t lightmapPageSize = 1024, lightmapTexels = 4194304;
-    float lightmapLuxelSize = .125f; // metres; measured on world surfaces before budget coarsening
+    bool lightmapFitBudget = true;
+    float lightmapLuxelSize = .125f; // manual spacing only when lightmapFitBudget is disabled
     uint32_t lightmapPageSizeForBudget() const {
       auto size = lightmapPageSize;
       while (size > 8 && uint64_t(size) * size > lightmapTexels)

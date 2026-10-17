@@ -10,6 +10,7 @@ namespace remix::forward::lightmap {
     uint64_t maxTexels = 4u << 20;
     uint32_t texelStep = 1; // global spacing multiplier; authored fallback retains chart endpoints
     float luxelMetres = 0;  // zero preserves authored UVs; positive selects world-metric surface spacing
+    bool fillBudget = false; // derive world density from atlas capacity, independent of requested spacing
   };
   struct Allocation {
     uint32_t page = 0, x = 0, y = 0, width = 0, height = 0;
@@ -35,7 +36,8 @@ namespace remix::forward::lightmap {
   // invalid/folded charts or exhausted budgets rather than silently dropping
   // static surfaces. Does not allocate GPU resources or publish lighting.
   Layout plan(const scene::BakeScene &scene, Options options = {}, std::stop_token cancelled = {});
-  // Find a fitting global density, then reduce page dimensions when that saves
-  // allocated texels. Returns a verified fit; shelf packing is not globally optimal.
+  // fillBudget derives the finest fitting world density from capacity; manual
+  // mode coarsens requested spacing and trims page allocations. Shelf packing
+  // returns a verified fit, not a globally optimal rectangle arrangement.
   Layout fit(const scene::BakeScene &scene, Options options = {}, std::stop_token cancelled = {});
 } // namespace remix::forward::lightmap
