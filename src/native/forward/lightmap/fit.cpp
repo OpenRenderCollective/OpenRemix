@@ -1,5 +1,6 @@
 #include "forward/lightmap/packing.h"
 #include <algorithm>
+#include <bit>
 #include <stdexcept>
 #include <utility>
 
@@ -38,6 +39,26 @@ namespace remix::forward::lightmap {
       }
     }
     options.texelStep = selected;
+    // A page size is a ceiling, not a reason to reserve mostly empty layers.
+    // Try smaller pages at exactly the selected world density; retain a change
+    // only when total allocated texels falls, including padding and layer limits.
+    uint32_t minimumPage = 8;
+    for (const auto &mapping : best.mappings)
+      minimumPage = std::max(minimumPage,
+                             std::bit_ceil(std::max(mapping.width, mapping.height) + 2 * options.padding));
+    for (uint32_t size = best.pageSize / 2; size >= minimumPage; size /= 2) {
+      auto compact = options;
+      compact.pageSize = size;
+      try {
+        auto packed = packCharts(shapes, compact, cancelled);
+        if (uint64_t(packed.pages) * size * size <
+            uint64_t(best.pages) * best.pageSize * best.pageSize)
+          best = std::move(packed);
+      } catch (const std::length_error &) {
+        // Smaller pages can exceed the array-layer limit or a chart extent.
+      }
+    }
+    options.pageSize = best.pageSize;
     return sampleCharts(scene, options, std::move(best), cancelled);
   }
 } // namespace remix::forward::lightmap

@@ -64,7 +64,7 @@ namespace remix::forward::bake {
   void Transport::initialize(VkPhysicalDevice physical, VkDevice device,
                              std::shared_ptr<const scene::BakeScene> source, Inputs inputs, Options options) {
     if (!source || !source->ready || !std::isfinite(source->sceneScale) || source->sceneScale <= 0 ||
-        !options.batchPoints || !options.rayBudget || options.batchPoints > 16384 ||
+        !options.batchPoints || !options.rayBudget || options.batchPoints > 65535 ||
         options.initialBatchPoints > options.batchPoints || options.textureResolution < 16 ||
         options.textureResolution > 1024 || !std::has_single_bit(options.textureResolution) ||
         !std::isfinite(options.distance) || !std::isfinite(options.bias) || options.bias <= 0 ||
@@ -385,7 +385,9 @@ namespace remix::forward::bake {
       return;
     const uint32_t capacity = std::min(options.batchPoints, std::max(count, slot.capacity * 2));
     auto points = buffer(nullptr, size_t(capacity) * sizeof(Point), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-    auto results = buffer(nullptr, size_t(capacity) * sizeof(Result), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    auto results = std::make_unique<Buffer>();
+    results->create(physical, device, size_t(capacity) * sizeof(Result), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                    options.cpuReadback ? Buffer::Memory::Readback : Buffer::Memory::Host);
     const VkDescriptorBufferInfo buffers[] = {points->descriptor(), results->descriptor()};
     VkWriteDescriptorSet writes[2]{};
     for (uint32_t i = 0; i < 2; ++i)

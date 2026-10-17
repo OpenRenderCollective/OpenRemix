@@ -20,6 +20,26 @@ namespace {
   }
 } // namespace
 int main() {
+  {
+    // The last 8-high row is full, but both earlier 12-high rows have a 12-wide
+    // gap. A last-row-only shelf allocator incorrectly needs another page.
+    std::vector<lm::ChartShape> shapes(5);
+    const std::array<std::array<uint32_t, 2>, 5> sizes{{{20, 12}, {20, 12}, {32, 8}, {12, 8}, {12, 8}}};
+    for (size_t i = 0; i < shapes.size(); ++i) {
+      shapes[i].frame.width = sizes[i][0];
+      shapes[i].frame.height = sizes[i][1];
+    }
+    const auto packed = lm::packCharts(shapes, {32, 1, 0, 1024}, {});
+    require(packed.pages == 1, "Short charts reuse retained row gaps within a bounded page");
+    std::vector<bool> occupied(1024);
+    for (const auto &chart : packed.charts)
+      for (uint32_t y = chart.y; y < chart.y + chart.height; ++y)
+        for (uint32_t x = chart.x; x < chart.x + chart.width; ++x) {
+          require(x < 32 && y < 32 && !occupied[y * 32 + x],
+                  "Reusing a shelf never overlaps another chart or leaves its page");
+          occupied[y * 32 + x] = true;
+        }
+  }
   NativeResources resources;
   const auto mat = material(resources, 1, 1, 1, 1);
   const auto mesh = quad(resources, 2, mat);
@@ -40,6 +60,9 @@ int main() {
               packed4k.owners.empty(),
           "A 4K page can be planned without allocating or sampling the complete atlas");
   auto layout = lm::plan(scene, options);
+  const auto compact = lm::fit(scene, {1024, 16, 2, 1048576});
+  require(compact.pageSize == 16 && compact.pages == 1 && compact.points.size() == layout.points.size(),
+          "A small chart selects a smaller page without sacrificing a single surface sample");
   require(layout.points.size() == 25 && layout.addresses.size() == 25 && layout.pages == 1,
           "A chart rasterizes actual surface texels and merges its shared triangle edge");
   bool center = false;

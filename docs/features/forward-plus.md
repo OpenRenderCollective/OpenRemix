@@ -89,7 +89,11 @@ until the worker finishes.
 
 The light list has 64 entries per cluster. A cluster that overflows evaluates the full light array in
 the fragment shader rather than silently omitting lights. Sphere and triangle emitters use approximate
-solid-angle direct lighting. Spotlight cones are approximated with a smooth transition. These analytic
+solid-angle direct lighting. The shared Forward+ emitter helper follows the path tracer's angular
+spotlight softness/focus and cancellation-resistant sphere solid angle. The baker samples actual emitter
+positions/directions for radial energy and soft visibility; it does not blur a hard shadow after baking.
+Sphere intersection chords use a perpendicular-distance calculation to avoid distant-light cancellation.
+These analytic
 approximations do not reproduce every path-traced area-light behavior.
 
 An enabled live dome is drawn as a display background, followed by the existing raster sky. The dome uses
@@ -572,7 +576,7 @@ rtx.native.forward.bakeProbes = 32768
 rtx.native.forward.bakeSamples = 256
 rtx.native.forward.bakeBounces = 3
 rtx.native.forward.bakeBatch = 64
-rtx.native.forward.bakeGpuBudget = 2
+rtx.native.forward.bakeGpuBudget = 8
 rtx.native.forward.bakeTextureResolution = 256
 ```
 
@@ -582,7 +586,8 @@ not elapsed GPU time; these defaults are not a measured GMod performance preset.
 
 ### Bake throughput
 
-`bakeGpuBudget` targets GPU milliseconds per bake batch (default 2, range 0..16). With a usable queue
+`bakeGpuBudget` targets GPU milliseconds per bake batch (default 8, range 0..16). Higher values favor
+first-bake throughput and can reduce rendering frame rate during the bake. With a usable queue
 timestamp clock, the controller starts from `bakeBatch`, subject to occupancy/work limits, and adjusts
 the point count using completed dispatch timings. Grid irradiance, surface irradiance, local visibility,
 sunlight and probe-site validation learn
@@ -593,14 +598,23 @@ bake dispatch per submitted render frame; no extra queue submission or CPU wait 
 The target is approximate: scene complexity and several submitted frame slots can cause an overrun.
 Automatic work keeps a 64-point occupancy floor, subject to the remaining points and hard work limit;
 this avoids collapsing throughput when a nearly empty GPU dispatch still has appreciable latency.
-Every dispatch remains bounded to 16384 points and 1048576 point/sample/bounce work units. A setting
-of zero uses the configured fixed batch size; missing timestamp support also uses that fallback.
+Timed dispatches remain bounded to 65535 points and 16777216 point/sample/bounce work units. A setting
+of zero uses the configured fixed batch size and the previous 1048576-work ceiling; missing timestamp
+support also uses that fallback. Transport receives the same hard ceiling as the scheduler.
 Reflection captures retain their existing 1024-point batching to preserve their sampling sequence.
+`REMIX_DEBUG_BAKE_TIMING=1` prints per-stage point/batch counts, total GPU milliseconds, largest batch
+and longest dispatch after activation. These are completed queue timestamps, rather than wall time
+or an estimate from frame rate. Cached jobs have no tracing timings.
+Bake results prefer CPU-cached host-visible memory (with invalidation on noncoherent heaps), and the
+controller reuses its CPU readback storage between completed slots. Live GPU reflection/GI consumers
+retain their previous allocation policy. Profiling also prints total CPU readback/validation/scatter time.
 
 Diffuse and local/sun visibility transport use one 64-lane workgroup per point. Lanes trace disjoint
 sample indices and reduce signed SH, visibility weights and distance moments in shared memory.
 Containing-medium classification happens once per point. The total sample count and bounce depth
 remain unchanged; sample counts below or not divisible by 64 leave only the appropriate lanes active.
+Local/sun visibility reduces only its nine scalar SH coefficients and visibility weights, avoiding
+the full irradiance/moment reduction for each chart/light connection.
 The reduction keeps exact blocked/clear decisions separate from weighted visibility arithmetic.
 Its shared arrays fit below 16 KiB. Serial radiance and probe-site queries keep their existing paths.
 Parallel lanes use independent random streams, so the noise realization and floating-point reduction
@@ -724,10 +738,14 @@ already contain all required taps, including verified seam donors. The runtime a
 outer border; CPU callers may still request one. Padding never substitutes for a neighbouring chart's
 light ownership. A future mipmapped/anisotropic atlas would need a different footprint policy.
 
-`forward/lightmap/packing` owns bounded shelf packing. `lightmap/fit` first brackets a fitting global
+`forward/lightmap/packing` owns bounded shelf packing and reuses gaps in every previous row.
+`lightmap/fit` first brackets a fitting global
 spacing multiplier, then probes intermediate integer multipliers between the last failure and a known
 fit. It retains a verified fit throughout; shelf ordering means this is not a globally optimal packing
 search. Density-independent geometry preparation, including the curved solve, runs once per plan.
+After choosing density, it tries smaller power-of-two pages and retains them only when total allocated
+texels decreases. This respects padding, chart extents and the device layer limit without discarding
+surfaces or changing luxel spacing. The configured page size remains a ceiling.
 Budget probes reuse those shapes and build only mappings and rectangle allocations. `lightmap/layout`
 rasterizes the selected layout and completes its seams once, with conservative coverage, barycentric surface samples and
 inverse-transpose normals. Planar chart bounds round outward onto that grid instead of stretching their

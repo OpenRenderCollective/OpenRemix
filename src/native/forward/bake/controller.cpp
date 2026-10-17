@@ -8,6 +8,7 @@
 #include "raster/renderer.h"
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -31,6 +32,8 @@ namespace remix::forward::bake {
     Grid grid;
     lightmap::Layout surfaceLayout;
     std::vector<Result> surfaces;
+    std::vector<Result> readback; // reused between completed frame slots; avoids clearing every batch
+    double readbackMs = 0;
     std::shared_ptr<mixed::Plan> mixedLights;
     std::vector<Vec4> visibility;
     std::vector<lightmap::Direct> direct, directScratch;
@@ -140,6 +143,7 @@ namespace remix::forward::bake {
     hasDirectDiffuse = config.directDiffuse && (!direct.empty() || hasSun);
     Options options;
     options.batchPoints = Budget::maximumPoints;
+    options.rayBudget = Budget::maximumWork;
     options.initialBatchPoints = 1024;
     options.queueFamily = queueFamily;
     options.textureResolution = config.textureResolution;
@@ -198,16 +202,29 @@ namespace remix::forward::bake {
       if (submission.preparation)
         job.transport->releaseBuildInputs();
       if (submission.count && submission.job == m_job && !job.failed) {
-        std::vector<Result> results(submission.count);
+        const auto readBegin = std::chrono::steady_clock::now();
+        if (job.readback.size() < submission.count)
+          job.readback.resize(submission.count);
+        const auto results = std::span(job.readback).first(submission.count);
         job.transport->read(slot, results);
         for (uint32_t i = 0; i < submission.count; ++i) {
           auto &value = results[i];
-          for (const auto &coefficient : value.irradiance)
-            for (float channel : coefficient)
-              if (!std::isfinite(channel)) {
-                job.failed = true;
-                status(REMIXAPI_BAKE_FAILED_EXT, "Bake produced non-finite irradiance");
-              }
+          bool finite = true;
+          if (submission.visibility || submission.sun) {
+            // These modes consume scalar visibility and nine scalar unit SH
+            // coefficients, rather than the RGB irradiance/moment payload.
+            finite = std::isfinite(value.irradiance[0][0]);
+            for (const auto &coefficient : value.irradiance)
+              finite = finite && std::isfinite(coefficient[1]);
+          } else {
+            for (const auto &coefficient : value.irradiance)
+              for (float channel : coefficient)
+                finite = finite && std::isfinite(channel);
+          }
+          if (!finite) {
+            job.failed = true;
+            status(REMIXAPI_BAKE_FAILED_EXT, "Bake produced non-finite irradiance");
+          }
           if (submission.radiance) {
             const uint32_t count = uint32_t(job.captures.front().radiance.size());
             const uint32_t ray = submission.first + i;
@@ -237,6 +254,8 @@ namespace remix::forward::bake {
             job.grid.probes[job.grid.tasks[submission.first + i]] = value;
           }
         }
+        job.readbackMs +=
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - readBegin).count();
         (submission.radiance         ? job.captureReceived
          : submission.reflectionSite ? job.siteReceived
          : submission.visibility     ? job.visibilityReceived
@@ -613,6 +632,19 @@ namespace remix::forward::bake {
     if (m_job->cacheHit) {
       const size_t used = std::strlen(message);
       std::snprintf(message + used, sizeof(message) - used, "; disk cache");
+    }
+    if (const char *profile = std::getenv("REMIX_DEBUG_BAKE_TIMING");
+        profile && std::strcmp(profile, "1") == 0) {
+      std::fprintf(stderr, "Bake CPU readback: total_ms=%.3f\n", m_job->readbackMs);
+      constexpr const char *names[] = {"grid", "surface", "visibility", "sun", "sites"};
+      for (uint32_t i = 0; i < uint32_t(Work::Count); ++i) {
+        const auto &timing = m_job->budget.statistics(Work(i));
+        std::fprintf(stderr, "Bake GPU timing: %s points=%llu batches=%llu total_ms=%.3f "
+                             "longest_ms=%.3f largest_batch=%u\n",
+                     names[i], static_cast<unsigned long long>(timing.points),
+                     static_cast<unsigned long long>(timing.batches), timing.milliseconds,
+                     timing.longest, timing.largest);
+      }
     }
     m_job.reset();
     status(REMIXAPI_BAKE_READY_EXT, message);

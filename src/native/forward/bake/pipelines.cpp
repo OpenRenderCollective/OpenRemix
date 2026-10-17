@@ -93,8 +93,10 @@ namespace remix::forward::bake {
       slot.constants = buffer(nullptr, sizeof(Frame), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
       slot.points =
           buffer(nullptr, size_t(slot.capacity) * sizeof(Point), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-      slot.results =
-          buffer(nullptr, size_t(slot.capacity) * sizeof(Result), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+      slot.results = std::make_unique<Buffer>();
+      slot.results->create(physical, device, size_t(slot.capacity) * sizeof(Result),
+                            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                            options.cpuReadback ? Buffer::Memory::Readback : Buffer::Memory::Host);
       const VkDescriptorSetAllocateInfo allocate{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
                                                  .descriptorPool = pool,
                                                  .descriptorSetCount = 1,

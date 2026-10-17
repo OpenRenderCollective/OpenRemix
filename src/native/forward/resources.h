@@ -7,7 +7,7 @@ namespace remix::forward {
   void check(VkResult result);
   uint32_t memoryType(VkPhysicalDevice physical, uint32_t bits, VkMemoryPropertyFlags flags);
   struct Buffer {
-    enum class Memory { Host, Device };
+    enum class Memory { Host, Device, Readback }; // uploads, device-only storage, CPU-cached results
     Buffer() = default;
     Buffer(const Buffer &) = delete;
     Buffer &operator=(const Buffer &) = delete;

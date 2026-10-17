@@ -35,7 +35,7 @@ namespace remix::forward::lightmap {
   // invalid/folded charts or exhausted budgets rather than silently dropping
   // static surfaces. Does not allocate GPU resources or publish lighting.
   Layout plan(const scene::BakeScene &scene, Options options = {}, std::stop_token cancelled = {});
-  // Find a fitting global density, refining the interval between exponential
-  // budget probes. Returns a verified fit; shelf packing is not globally optimal.
+  // Find a fitting global density, then reduce page dimensions when that saves
+  // allocated texels. Returns a verified fit; shelf packing is not globally optimal.
   Layout fit(const scene::BakeScene &scene, Options options = {}, std::stop_token cancelled = {});
 } // namespace remix::forward::lightmap

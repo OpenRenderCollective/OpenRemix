@@ -34,6 +34,12 @@ int main() {
             "Repeated fast samples cannot exceed storage or ray-work limits");
     budget.observe(Work::Visibility, points, .01, 16);
   }
+  require(budget.count(Work::Visibility, 64, 16, 256, 1, 100000) == Budget::maximumPoints,
+          "Measured fast visibility can fill the point buffer instead of hitting the old 4096-point ceiling");
+  const auto &timing = budget.statistics(Work::Visibility);
+  require(timing.batches == 30 && timing.points > 0 && timing.milliseconds > 0 &&
+              timing.largest == Budget::maximumPoints,
+          "Stage diagnostics retain actual GPU work and timestamp totals");
   Config a, b;
   b.batch = 1024;
   b.gpuBudgetMs = 0;

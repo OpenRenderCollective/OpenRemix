@@ -1076,22 +1076,28 @@ namespace {
     // Poison unused atlas space magenta; the two tightly packed charts contain
     // pure green/blue constant irradiance. Even partial MSAA fragments must
     // never pick up red from outside their own first/last texel centres.
+    VkPhysicalDeviceProperties properties;
+    vkGetPhysicalDeviceProperties(target.physical, &properties);
     const auto layout = lm::fit(*target.raster.bakeScene(),
-                                {options.baking.lightmapPageSizeForBudget(), 1, 0, options.baking.lightmapTexels, 1,
+                                {options.baking.lightmapPageSizeForBudget(),
+                                 std::min(256u, properties.limits.maxImageArrayLayers / lm::atlasLayers),
+                                 0, options.baking.lightmapTexels, 1,
                                  options.baking.lightmapLuxelSize});
-    require(layout.pages == 1 && layout.charts.size() == 2,
-            "Isolation fixture has two bounded charts on one page");
+    require(layout.pages > 0 && layout.charts.size() == 2,
+            "Isolation fixture has two bounded charts under the controller's page/layer policy");
     const size_t pageTexels = size_t(layout.pageSize) * layout.pageSize;
-    std::vector<uint16_t> pixels(pageTexels * lm::atlasLayers * 4);
-    for (size_t texel = 0; texel < pageTexels; ++texel) {
-      pixels[texel * 4] = 0x4800;
-      pixels[texel * 4 + 2] = 0x4800; // 8.0 in half precision
-    }
+    std::vector<uint16_t> pixels(layout.pages * pageTexels * lm::atlasLayers * 4);
+    for (uint32_t page = 0; page < layout.pages; ++page)
+      for (size_t texel = 0; texel < pageTexels; ++texel) {
+        const auto offset = (page * lm::atlasLayers * pageTexels + texel) * 4;
+        pixels[offset] = 0x4800;
+        pixels[offset + 2] = 0x4800; // 8.0 in half precision
+      }
     for (uint32_t chart = 0; chart < layout.charts.size(); ++chart) {
       const auto &a = layout.charts[chart];
       for (uint32_t y = a.y; y < a.y + a.height; ++y)
         for (uint32_t x = a.x; x < a.x + a.width; ++x) {
-          const size_t texel = (size_t(y) * layout.pageSize + x) * 4;
+          const size_t texel = (a.page * lm::atlasLayers * pageTexels + size_t(y) * layout.pageSize + x) * 4;
           pixels[texel] = 0;
           pixels[texel + 1] = chart == 0 ? 0x4800 : 0;
           pixels[texel + 2] = chart == 1 ? 0x4800 : 0;
@@ -1105,7 +1111,7 @@ namespace {
     auto image = std::make_unique<remix::forward::Image>();
     image->create(target.physical, target.device, {layout.pageSize, layout.pageSize},
                   VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-                  VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_ASPECT_COLOR_BIT, lm::atlasLayers);
+                  VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_ASPECT_COLOR_BIT, layout.pages * lm::atlasLayers);
     vk(vkResetCommandBuffer(target.command, 0));
     const VkCommandBufferBeginInfo begin{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     vk(vkBeginCommandBuffer(target.command, &begin));
@@ -1116,10 +1122,10 @@ namespace {
                                  .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                                  .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                                  .image = image->handle,
-                                 .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, lm::atlasLayers}};
+                                 .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, layout.pages * lm::atlasLayers}};
     vkCmdPipelineBarrier(target.command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
                          0, nullptr, 0, nullptr, 1, &barrier);
-    const VkBufferImageCopy copy{.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, lm::atlasLayers},
+    const VkBufferImageCopy copy{.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, layout.pages * lm::atlasLayers},
                                  .imageExtent = {layout.pageSize, layout.pageSize, 1}};
     vkCmdCopyBufferToImage(target.command, staging.handle, image->handle,
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);

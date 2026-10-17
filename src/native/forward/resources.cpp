@@ -42,11 +42,15 @@ namespace remix::forward {
     } else {
       try {
         type = memoryType(physical, requirements.memoryTypeBits,
-                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-        coherent = true;
+                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                              (placement == Memory::Readback ? VK_MEMORY_PROPERTY_HOST_CACHED_BIT
+                                                             : VK_MEMORY_PROPERTY_HOST_COHERENT_BIT));
       } catch (VkResult) {
         type = memoryType(physical, requirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
       }
+      VkPhysicalDeviceMemoryProperties properties;
+      vkGetPhysicalDeviceMemoryProperties(physical, &properties);
+      coherent = (properties.memoryTypes[type].propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0;
     }
     const VkMemoryAllocateFlagsInfo flags{.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO,
                                           .flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT};
@@ -57,7 +61,7 @@ namespace remix::forward {
         .memoryTypeIndex = type};
     check(vkAllocateMemory(device, &allocation, nullptr, &memory));
     check(vkBindBufferMemory(device, handle, memory, 0));
-    if (placement == Memory::Host)
+    if (placement != Memory::Device)
       check(vkMapMemory(device, memory, 0, VK_WHOLE_SIZE, 0, &mapped));
   }
   void Buffer::write(const void *data, size_t bytes, size_t offset) {

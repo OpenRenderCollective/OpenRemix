@@ -1,4 +1,5 @@
 #include "forward/bake/transport.h"
+#include "forward/bake/budget.h"
 #include "forward/lightmap/layout.h"
 #include "gpu_fixture.h"
 #include "probe_queries.h"
@@ -418,6 +419,69 @@ namespace {
     for (const auto &value : results)
       require(value.irradiance[0][0] == 0,
               "Static sun queries cover complete geometry beyond the indirect transport distance");
+  }
+  void emitterParity(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
+    auto source = world.scene({});
+    scene::SphereLight sphere;
+    sphere.id = ++world.hash;
+    sphere.position[2] = -10;
+    sphere.radius = .001f;
+    sphere.radiance[0] = sphere.radiance[1] = sphere.radiance[2] = 1;
+    source->lights.push_back(sphere);
+    auto spot = sphere;
+    spot.id = ++world.hash;
+    spot.direction[2] = 1;
+    spot.coneCos = .5f; // 60 degrees outer, 30 degrees inner
+    spot.softness = .5f;
+    source->lights.push_back(spot);
+    bake::Transport transport;
+    bake::Options options;
+    options.batchPoints = bake::Budget::maximumPoints;
+    options.initialBatchPoints = 4;
+    options.rayBudget = bake::Budget::maximumWork;
+    auto job = pipelines.prepare("emitter-pathtrace-parity", [&] {
+      transport.initialize(fixture.physical, fixture.device, source, options);
+    });
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (!job->ready() && std::chrono::steady_clock::now() < deadline)
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    require(job->ready(), "Emitter parity preparation completed");
+    job->check();
+    fixture.begin();
+    transport.recordPrepare(fixture.command, world.resources);
+    fixture.finish();
+    constexpr float diagonal = .70710678118f;
+    const bake::VisibilityPoint points[] = {
+        {{{0, 0, 0, 0}, {}}, 0}, {{{0, 0, 10, 0}, {}}, 0},
+        {{{10 * diagonal, 0, -10 + 10 * diagonal, 0}, {}}, 0},
+        {{{10 * diagonal, 0, -10 + 10 * diagonal, 0}, {}}, 1}};
+    fixture.begin();
+    transport.recordVisibility(fixture.command, 0, points, 256, true);
+    fixture.finish();
+    std::array<bake::Result, 4> results;
+    transport.read(0, results);
+    const float nearIrradiance = evaluate(results[0], {0, 0, -1}, 1);
+    const float farIrradiance = evaluate(results[1], {0, 0, -1}, 1);
+    const float radial = evaluate(results[2], {-diagonal, 0, -diagonal}, 1);
+    const float shaped = evaluate(results[3], {-diagonal, 0, -diagonal}, 1);
+    const float t = (diagonal - .5f) / (std::cos(std::numbers::pi_v<float> / 6) - .5f);
+    const float expectedShape = t * t * (3 - 2 * t);
+    require(nearIrradiance > 3e-8f && nearIrradiance < 3.6e-8f &&
+                std::abs(farIrradiance / nearIrradiance - .25f) < .001f,
+            "Subpixel emitters retain energy and inverse-square radial falloff instead of cancelling to zero");
+    require(std::abs(radial / nearIrradiance - 1) < .001f && std::abs(shaped / radial - expectedShape) < .002f,
+            "Spotlight penumbra uses the path tracer's angular inner/outer cone interpretation");
+    std::vector<bake::VisibilityPoint> maximum(bake::Budget::maximumPoints, points[0]);
+    std::vector<bake::Result> maximumResults(maximum.size());
+    fixture.begin();
+    transport.recordVisibility(fixture.command, 0, maximum, 1, true);
+    fixture.finish();
+    transport.read(0, maximumResults);
+    for (const auto &value : maximumResults)
+      require(value.irradiance[0][0] == 1 && evaluate(value, {0, 0, -1}, 1) > 3e-8f,
+              "Maximum workgroup-count batches publish complete cached-memory readbacks without dropping their tail");
+    std::printf("Emitter parity: near %.8g, twice-distance %.8g, cone %.5f (expected %.5f); %zu groups\n",
+                  nearIrradiance, farIrradiance, shaped / radial, expectedShape, maximum.size());
   }
   void siteValidation(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
     const auto material = world.material({});
@@ -903,6 +967,7 @@ int main() try {
     blendedCoverage(fixture, pipelines, world);
     bakeSurface(fixture, pipelines, world);
     bakeVisibility(fixture, pipelines, world);
+    emitterParity(fixture, pipelines, world);
     liveLighting(fixture, pipelines, world);
     std::printf("Bake readback: emitter %.4f, blocked %.4f, alpha holes %.4f, "
                 "local light %.4f, shadowed %.4f\n",

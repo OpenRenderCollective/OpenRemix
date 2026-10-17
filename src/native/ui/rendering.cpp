@@ -95,6 +95,7 @@ namespace remix {
       ui::DragFloat("Bake GPU budget (ms)", &forward.baking.gpuBudgetMs, .25f, 0, 16);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Adjusts batch size from completed GPU timings. Complex batches can exceed the target.\n"
+                          "Higher values finish first bakes faster and can reduce frame rate while baking.\n"
                           "Zero uses the fixed bakeBatch setting. Scheduling edits preserve baked lighting.");
       ui::DragFloat("Bake probe spacing (m)", &forward.baking.spacing, .1f, .1f, 100);
       ui::DragFloat("Surface luxel size (m)", &forward.baking.lightmapLuxelSize, .01f, .01f, 16);

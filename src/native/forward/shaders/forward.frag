@@ -7,6 +7,7 @@
 #include "material.glsl"
 #ifndef SHADOW_PASS
 #include "brdf.glsl"
+#include "emitter.glsl"
 #include "irradiance.glsl"
 #include "lightmap.glsl"
 #include "occlusion.glsl"
@@ -64,13 +65,8 @@ vec3 localLight(uint index, vec3 p, vec3 n, vec3 v, vec3 base, float roughness, 
   if (moving <= 0 || (!bakedDiffuse && visibility <= 0))
     return vec3(0);
   vec3 l = delta / distance;
-  float shape = 1;
-  if (light.directionCone.w > -1) {
-    shape = smoothstep(light.directionCone.w, min(1, light.directionCone.w + max(light.shaping.x, .001)),
-                       dot(-l, light.directionCone.xyz));
-    if (light.shaping.y > 0)
-      shape *= pow(max(dot(-l, light.directionCone.xyz), 0), light.shaping.y);
-  }
+  float shape = emitterConeWeight(light.directionCone.xyz, light.directionCone.w,
+                                   light.shaping.x, light.shaping.y, -l);
   float solidAngle;
   if (light.radiance.w > 0) {
     vec3 normal =
@@ -81,8 +77,7 @@ vec3 localLight(uint index, vec3 p, vec3 n, vec3 v, vec3 base, float roughness, 
       cosine = abs(cosine);
     solidAngle = area * max(cosine, 0) / distance2;
   } else
-    solidAngle =
-        2 * Pi * (1 - sqrt(max(0, 1 - min(1, light.positionRadius.w * light.positionRadius.w / distance2))));
+    solidAngle = 2 * Pi * sphereOneMinusCos(distance2, light.positionRadius.w);
   float fade = pow(clamp(1 - pow(distance / range, 4), 0, 1), 2);
   BrdfLobes response = brdfLobes(base, roughness, metallic, n, v, l);
   // Truncated SH can ring below the receiver plane. Clip a wholly hidden

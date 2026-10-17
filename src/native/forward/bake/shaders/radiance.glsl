@@ -1,3 +1,4 @@
+#include "../../shaders/emitter.glsl"
 float random(inout uint state) {
   state = state * 747796405u + 2891336453u;
   uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
@@ -62,22 +63,20 @@ bool sampleEmitter(RayLight light, vec3 p, inout uint seed, out vec3 direction, 
     float d2 = dot(delta, delta), radius = light.positionRadius.w;
     if (d2 < 1e-12 || radius <= 0)
       return false;
-    float cosine = d2 <= radius * radius ? -1 : sqrt(max(0, 1 - radius * radius / d2));
-    direction = basisDirection(delta / sqrt(d2), mix(cosine, 1, random(seed)), 2 * RayPi * random(seed));
+    float oneMinusCos = sphereOneMinusCos(d2, radius);
+    vec3 axis = delta / sqrt(d2);
+    float offset = random(seed) * oneMinusCos, phi = 2 * RayPi * random(seed);
+    vec3 tangent = normalize(cross(abs(axis.z) < .99 ? vec3(0, 0, 1) : vec3(1, 0, 0), axis));
+    direction = normalize(axis * (1 - offset) + sqrt(max(0, offset * (2 - offset))) *
+                            (tangent * cos(phi) + cross(axis, tangent) * sin(phi)));
     float projected = dot(delta, direction);
-    float chord = sqrt(max(0, radius * radius - d2 + projected * projected));
+    vec3 perpendicular = delta - direction * projected;
+    float chord = sqrt(max(0, radius * radius - dot(perpendicular, perpendicular)));
     distance = d2 <= radius * radius ? projected + chord : projected - chord;
-    weight = 2 * RayPi * (1 - cosine);
+    weight = 2 * RayPi * oneMinusCos;
   }
-  float shape = 1;
-  if (light.directionCone.w > -1) {
-    float angle = dot(-direction, light.directionCone.xyz);
-    shape =
-        smoothstep(light.directionCone.w, min(1, light.directionCone.w + max(light.shaping.x, .001)), angle);
-    if (light.shaping.y > 0)
-      shape *= pow(max(angle, 0), light.shaping.y);
-  }
-  weight *= shape;
+  weight *= emitterConeWeight(light.directionCone.xyz, light.directionCone.w,
+                               light.shaping.x, light.shaping.y, -direction);
   return weight > 0;
 }
 vec3 directLight(vec3 p, vec3 n, inout uint seed, Medium medium) {

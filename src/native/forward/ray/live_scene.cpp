@@ -82,6 +82,7 @@ namespace remix::forward::ray {
         next->key = snapshot.key;
         next->resolution = options.rtTextureResolution;
         bake::Options transport;
+        transport.cpuReadback = false;
         transport.batchPoints = options.rtReflections ? 16384u : 1u;
         transport.textureResolution = options.rtTextureResolution;
         transport.distance = distance;

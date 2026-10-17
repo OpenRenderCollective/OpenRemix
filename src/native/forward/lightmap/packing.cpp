@@ -61,7 +61,13 @@ namespace remix::forward::lightmap {
     struct Shelf {
       uint32_t x = 0, y = 0, height = 0;
     };
-    std::vector<Shelf> shelves;
+    // Retain every row: short charts can fill earlier gaps instead of forcing
+    // a new row/page whenever the most recently opened row is full.
+    struct Page {
+      uint32_t height = 0;
+      std::vector<Shelf> shelves;
+    };
+    std::vector<Page> pages;
     for (uint32_t index : order) {
       check(cancelled);
       const auto &chart = result.mappings[index];
@@ -72,30 +78,40 @@ namespace remix::forward::lightmap {
         throw std::length_error("Surface lightmap chart exceeds atlas page size");
       const uint32_t width = chartWidth + border, height = chartHeight + border;
       uint32_t page = 0;
-      for (; page < shelves.size(); ++page) {
-        auto candidate = shelves[page];
-        if (candidate.x + width > options.pageSize) {
-          candidate.y += candidate.height;
-          candidate.x = candidate.height = 0;
-        }
-        if (candidate.y + height <= options.pageSize) {
-          shelves[page] = candidate;
-          break;
+      uint32_t row = ~0u, remaining = ~0u;
+      for (uint32_t p = 0; p < pages.size(); ++p) {
+        for (uint32_t r = 0; r < pages[p].shelves.size(); ++r) {
+          const auto &shelf = pages[p].shelves[r];
+          if (height <= shelf.height && width <= options.pageSize - shelf.x &&
+              options.pageSize - shelf.x - width < remaining) {
+            page = p;
+            row = r;
+            remaining = options.pageSize - shelf.x - width;
+          }
         }
       }
-      if (page == shelves.size()) {
-        const uint64_t texels = uint64_t(page + 1) * options.pageSize * options.pageSize;
-        if (page == options.maxPages || texels > options.maxTexels)
-          throw std::length_error("Surface lightmap atlas budget exhausted");
-        shelves.emplace_back();
+      if (row == ~0u) {
+        for (page = 0; page < pages.size(); ++page)
+          if (height <= options.pageSize - pages[page].height)
+            break;
+        if (page == pages.size()) {
+          const uint64_t texels = uint64_t(page + 1) * options.pageSize * options.pageSize;
+          if (page == options.maxPages || texels > options.maxTexels)
+            throw std::length_error("Surface lightmap atlas budget exhausted");
+          pages.emplace_back();
+        }
+        auto &target = pages[page];
+        row = uint32_t(target.shelves.size());
+        target.shelves.push_back({0, target.height, height});
+        target.height += height;
       }
-      auto &shelf = shelves[page];
+      auto &shelf = pages[page].shelves[row];
       result.charts[index] = {page, shelf.x + options.padding, shelf.y + options.padding, chartWidth,
                               chartHeight};
       shelf.x += width;
       shelf.height = std::max(shelf.height, height);
     }
-    result.pages = uint32_t(shelves.size());
+    result.pages = uint32_t(pages.size());
     return result;
   }
 } // namespace remix::forward::lightmap
