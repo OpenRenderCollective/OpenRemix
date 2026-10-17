@@ -50,9 +50,11 @@ foreground rejection and a contact tolerance for shorelines. A caller supplies t
 sample in Vulkan zero-to-one depth coordinates; a depth of one means no opaque layer. Unknown/off-screen
 layers remain misses. The query brackets crossings even if a coarse step passes the camera's far plane.
 
-These helpers are GPU-tested building blocks, not an active water render pass. The test supplies
-one/two/four per-pixel depth values through a buffer; it does not prove MSAA attachment coverage or
-HDR composition. Remaining integration includes independent water targets and resource transitions,
+These helpers and `water::Snapshot` are GPU-tested building blocks, not an active water render pass.
+The snapshot reads completed opaque HDR and actual one/two/four-sample depth attachments into
+independent single-sample textures. Tests cover partial coverage, additive opaque reflections,
+frame-slot reuse and downstream GPU refraction/absorption queries. Remaining integration includes
+the late water geometry pass and its attachment transitions,
 PBR normal/roughness replacements and Source scrolling normals, probe/SSR reflection composition,
 surface coverage/depth, and camera-medium absorption for opaque geometry seen underwater.
 
@@ -67,6 +69,7 @@ surface coverage/depth, and camera-medium absorption for opaque geometry seen un
 | `bindings.h` | Explicit CPU/GPU buffer layout contracts |
 | `material.h/.cpp` | Shared draw/material packing and normal transforms |
 | `water/optics.glsl`, `water/screen.glsl` | Primary water boundary and bounded screen-depth tracing primitives; render integration pending |
+| `water/snapshot.h/.cpp`, `water/shaders/snapshot.comp` | Independent completed opaque HDR/depth inputs for water; render integration pending |
 | `resources.h/.cpp` | Noncopyable Vulkan buffer/image ownership and allocation |
 | `targets.cpp` | HDR/MSAA/depth/shadow attachments and descriptor layouts |
 | `pipelines.cpp` | Forward, shadow, cluster and display pipeline creation |
@@ -240,6 +243,21 @@ shade reflection/refraction and absorption in scene-linear HDR, preserve MSAA ed
 and participate in depth/composition without reading an attachment it is writing. Routing
 these draws through the opaque pass would lose the transmitted background. Its material inputs
 must come from the same resolved replacement material as the bake and optional ray transport.
+
+`water::Snapshot` supplies independent sampled inputs for that later pass. It stores RGBA16F
+scene-linear HDR and R32F nearest opaque depth, about twelve bytes per pixel before allocation
+alignment. It resolves depth by taking the minimum MSAA sample and preserves premultiplied HDR
+coverage. Optional opaque reflections are added with that coverage before water samples the colour;
+their provider may use GENERAL or SHADER_READ_ONLY layout. Outputs use SHADER_READ_ONLY layout.
+This component does not modify the original opaque attachments or submit/wait for GPU work.
+The caller must complete the selected descriptor slot's fence before recording, retain inputs until
+completion, and retire all uses before resizing or destruction. Shared output images require the
+same ordered queue. Direct output-view feedback is rejected.
+
+Tests exercise actual render-pass attachments at 1x, 2x and 4x MSAA with ray-tracing features disabled,
+then run the production refraction/absorption helpers directly on the GPU snapshots. This verifies
+the snapshot boundary, including partial opaque coverage and repeated read/write transitions;
+it does not yet verify water geometry coverage, underwater composition or live replacement materials.
 
 ## Settings
 

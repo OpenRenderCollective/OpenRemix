@@ -23,8 +23,9 @@ namespace remix::forward::test {
     }
     return VK_FALSE;
   }
-  // Headless ray-query device with only the three required optional features.
-  // In particular, no shaderInt64 or descriptor-indexing feature is enabled.
+  // By default, a headless ray-query device with only its required optional
+  // features. The core Vulkan 1.1 mode enables no optional features/extensions;
+  // graphics tests can require a queue that also supports attachment rendering.
   struct Fixture {
     VkInstance instance = VK_NULL_HANDLE;
     VkDebugUtilsMessengerEXT messenger = VK_NULL_HANDLE;
@@ -34,7 +35,7 @@ namespace remix::forward::test {
     uint32_t family = 0;
     VkCommandPool pool = VK_NULL_HANDLE;
     VkCommandBuffer command = VK_NULL_HANDLE;
-    Fixture() {
+    Fixture(bool hardware = true, bool graphics = false) {
       const bool enabled = std::getenv("REMIX_VULKAN_VALIDATION");
       const char *layer = "VK_LAYER_KHRONOS_validation";
       const char *debug = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
@@ -47,7 +48,7 @@ namespace remix::forward::test {
           .pfnUserCallback = validation};
       const VkApplicationInfo app{.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
                                   .pApplicationName = "Forward+ hardware transport tests",
-                                  .apiVersion = VK_API_VERSION_1_2};
+                                  .apiVersion = hardware ? VK_API_VERSION_1_2 : VK_API_VERSION_1_1};
       const VkInstanceCreateInfo info{.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
                                       .pNext = enabled ? &callback : nullptr,
                                       .pApplicationInfo = &app,
@@ -66,13 +67,16 @@ namespace remix::forward::test {
       std::vector<VkPhysicalDevice> devices(count);
       check(vkEnumeratePhysicalDevices(instance, &count, devices.data()));
       for (auto candidate : devices) {
-        if (!RayScene::supported(candidate))
+        VkPhysicalDeviceProperties properties;
+        vkGetPhysicalDeviceProperties(candidate, &properties);
+        if (hardware ? !RayScene::supported(candidate) : properties.apiVersion < VK_API_VERSION_1_1)
           continue;
         vkGetPhysicalDeviceQueueFamilyProperties(candidate, &count, nullptr);
         std::vector<VkQueueFamilyProperties> families(count);
         vkGetPhysicalDeviceQueueFamilyProperties(candidate, &count, families.data());
         for (uint32_t i = 0; i < count; ++i)
-          if (families[i].queueFlags & VK_QUEUE_COMPUTE_BIT) {
+          if ((families[i].queueFlags & VK_QUEUE_COMPUTE_BIT) &&
+              (!graphics || (families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT))) {
             physical = candidate;
             family = i;
             break;
@@ -81,7 +85,7 @@ namespace remix::forward::test {
           break;
       }
       if (!physical) {
-        std::puts("SKIP: no Vulkan 1.2 hardware ray-query device");
+        std::puts(hardware ? "SKIP: no Vulkan 1.2 hardware ray-query device" : "SKIP: no core Vulkan device");
         std::exit(77);
       }
       const float priority = 1;
@@ -103,16 +107,16 @@ namespace remix::forward::test {
                                   VK_KHR_RAY_QUERY_EXTENSION_NAME,
                                   VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME};
       const VkDeviceCreateInfo deviceInfo{.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-                                          .pNext = &vulkan12,
+                                          .pNext = hardware ? &vulkan12 : nullptr,
                                           .queueCreateInfoCount = 1,
                                           .pQueueCreateInfos = &queueInfo,
-                                          .enabledExtensionCount = 3,
-                                          .ppEnabledExtensionNames = extensions};
+                                          .enabledExtensionCount = hardware ? 3u : 0u,
+                                          .ppEnabledExtensionNames = hardware ? extensions : nullptr};
       check(vkCreateDevice(physical, &deviceInfo, nullptr, &device));
       vkGetDeviceQueue(device, family, 0, &queue);
       VkPhysicalDeviceProperties properties;
       vkGetPhysicalDeviceProperties(physical, &properties);
-      std::printf("Hardware ray-query device: %s\n", properties.deviceName);
+      std::printf("%s device: %s\n", hardware ? "Hardware ray-query" : "Core Vulkan", properties.deviceName);
       const VkCommandPoolCreateInfo poolInfo{.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
                                              .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
                                              .queueFamilyIndex = family};

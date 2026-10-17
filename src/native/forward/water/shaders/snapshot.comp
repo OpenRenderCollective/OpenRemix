@@ -1,0 +1,32 @@
+#version 450
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0) uniform sampler2D opaqueHdr;
+#ifdef SINGLE_SAMPLE
+layout(set = 0, binding = 1) uniform sampler2D opaqueDepth;
+#else
+layout(set = 0, binding = 1) uniform sampler2DMS opaqueDepth;
+#endif
+layout(set = 0, binding = 2) uniform sampler2D opaqueReflections;
+layout(set = 0, binding = 3, rgba16f) writeonly uniform image2D savedHdr;
+layout(set = 0, binding = 4, r32f) writeonly uniform image2D savedDepth;
+layout(push_constant) uniform Settings { uvec4 target; }; // width, height, samples, reflections
+void main() {
+  ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+  if (any(greaterThanEqual(pixel, ivec2(target.xy)))) return;
+  vec4 hdr = texelFetch(opaqueHdr, pixel, 0);
+  // Match display composition before tone mapping. HDR is premultiplied by
+  // opaque MSAA coverage; the reflection contribution is scene-linear RGB.
+  if (target.w != 0u)
+    hdr.rgb += texelFetch(opaqueReflections, pixel, 0).rgb * hdr.a;
+  // Keep an extreme emissive/specular sum finite when stored as half floats.
+  hdr.rgb = clamp(hdr.rgb, vec3(0), vec3(65000));
+  float depth = 1;
+#ifdef SINGLE_SAMPLE
+  depth = texelFetch(opaqueDepth, pixel, 0).r;
+#else
+  for (uint sampleIndex = 0u; sampleIndex < target.z; ++sampleIndex)
+    depth = min(depth, texelFetch(opaqueDepth, pixel, int(sampleIndex)).r);
+#endif
+  imageStore(savedHdr, pixel, hdr);
+  imageStore(savedDepth, pixel, vec4(depth));
+}

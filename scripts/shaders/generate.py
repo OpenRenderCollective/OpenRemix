@@ -18,6 +18,8 @@ ROOT = Path(__file__).resolve().parents[2]
 # driver compiles them about twice as fast; the runtime decompresses on use.
 OPTIMIZED = {'pathtrace'}
 BACKENDS = {
+    'water_test': ('forward::test::water_input', 'vulkan1.1', ('vert', 'frag', 'query')),
+    'water': ('forward::water', 'vulkan1.1', ('snapshot', 'snapshotSingle')),
     'live_gi': ('forward::ray::gi', 'vulkan1.2', ('frag', 'guides')),
     'live_ray': ('forward::ray', 'vulkan1.2', ('launch', 'merge')),
     'bake': ('forward::bake', 'vulkan1.2', ('atlas', 'transport', 'parallel', 'visibility')),
@@ -32,6 +34,10 @@ BACKENDS = {
 
 
 def shader_directory(backend):
+    if backend == 'water_test':
+        return ROOT / 'tests/forward/water_shaders'
+    if backend == 'water':
+        return ROOT / 'src/native/forward/water/shaders'
     if backend == 'live_gi':
         return ROOT / 'src/native/forward/ray/gi_shaders'
     if backend == 'live_ray':
@@ -47,6 +53,10 @@ def defines_for(backend, stage, stages):
     """Preprocessor defines and source file of one embedded stage."""
     directory = shader_directory(backend)
     defines = ['-DTEMPORAL=1'] if stage in ('temporal', 'temporalTransparency', 'confidence') else []
+    if backend == 'water_test':
+        return [], directory / ('query.comp' if stage == 'query' else 'input.' + stage)
+    if backend == 'water':
+        return (['-DSINGLE_SAMPLE=1'] if stage == 'snapshotSingle' else []), directory / 'snapshot.comp'
     if stage in ('sigma', 'sigmaTemporal', 'sharcSigmaTemporal'): defines += ['-DSIGMA_PASS=1']
     if stage in ('sigmaTemporal', 'sharcSigmaTemporal'): defines += ['-DTEMPORAL=1']
     if stage in ('indirectTemporal', 'sharcIndirectTemporal'): defines += ['-DTEMPORAL=1', '-DINDIRECT_PASS=1']
@@ -92,7 +102,8 @@ def defines_for(backend, stage, stages):
         source = directory / ('transport.comp' if stage in ('parallel', 'visibility') else stage + '.comp')
         if stage in ('parallel', 'visibility'): defines = ['-DPARALLEL_BAKE=1']
         if stage == 'visibility': defines += ['-DCOMPACT_VISIBILITY=1']
-    if backend == 'forward_test': source = directory / ('ray-scene.comp' if stage == 'comp' else stage + '.comp')
+    if backend == 'forward_test':
+        source = directory / ('ray-scene.comp' if stage == 'comp' else stage + '.comp')
     if backend == 'forward':
         source = directory / {
             'vert': 'forward.vert', 'lightmapVert': 'forward.vert', 'frag': 'forward.frag', 'cluster': 'cluster.comp',

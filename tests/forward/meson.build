@@ -18,6 +18,10 @@ forward_regions_test = executable('remix-forward-regions-test', 'regions.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('BSP reflection region occupancy and room fitting', forward_regions_test)
 if get_option('gpu_tests')
+  water_snapshot_test = executable('remix-forward-water-snapshot-test', 'water_snapshot.cpp',
+    include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+    cpp_args : test_cpp_args)
+  test('Water opaque HDR and actual MSAA depth snapshots', water_snapshot_test, timeout : 60)
   water_test = executable('remix-forward-water-test', 'water.cpp',
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)

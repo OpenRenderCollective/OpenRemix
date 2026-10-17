@@ -1,0 +1,24 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0) uniform sampler2D opaqueHdr;
+layout(set = 0, binding = 1) uniform sampler2D opaqueDepth;
+layout(set = 0, binding = 2, std430) writeonly buffer Results { vec4 results[]; };
+layout(push_constant) uniform Extent { uvec2 extent; };
+#include "../../../src/native/forward/water/optics.glsl"
+#include "../../../src/native/forward/water/screen.glsl"
+float waterOpaqueDepth(ivec2 pixel) { return texelFetch(opaqueDepth, pixel, 0).r; }
+void main() {
+  ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+  if (any(greaterThanEqual(pixel, ivec2(extent)))) return;
+  vec2 uv = (vec2(pixel) + .5) / vec2(extent);
+  vec3 origin = vec3(uv * 2 - 1, .1);
+  WaterBoundary boundary = waterBoundary(vec3(0, 0, 1), vec3(0, 0, -1), 1, false);
+  WaterScreenHit hit = traceWaterRefraction(origin, boundary.refracted, mat4(1), mat4(1),
+                                            ivec2(extent), 1, 1, 1e-5, .001);
+  float weight;
+  vec3 through = waterThrough(boundary, vec3(.5, .25, 1), 1, hit.distance, hit.valid, false, weight);
+  vec4 hdr = texelFetch(opaqueHdr, pixel, 0);
+  results[uint(pixel.y) * extent.x + uint(pixel.x)] =
+      vec4(hdr.rgb / max(hdr.a, 1e-6) * through, hit.valid ? hit.distance : -1);
+}
