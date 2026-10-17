@@ -349,7 +349,12 @@ namespace remix {
     VkPhysicalDevicePresentMeteringFeaturesNV metering = {
         .sType = presentMeteringFeaturesType};
     m_presentMeteringSupported = false;
-    if (!m_headless && m_instanceApiVersion >= VK_API_VERSION_1_1 &&
+    // The diagnostic switch must also omit the device feature, rather than
+    // merely disabling metered presents after enabling the extension. Older
+    // validation layers may not understand this optional provisional feature.
+    const char *meteringOption = std::getenv("REMIX_FG_PRESENT_METERING");
+    const bool meteringAllowed = !meteringOption || meteringOption[0] != '0';
+    if (meteringAllowed && !m_headless && m_instanceApiVersion >= VK_API_VERSION_1_1 &&
         supportsDeviceExtension(selection.physicalDevice, VK_NV_PRESENT_METERING_EXTENSION_NAME)) {
       VkPhysicalDeviceFeatures2 available = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
                                              .pNext = &metering};

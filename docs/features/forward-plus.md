@@ -1467,3 +1467,7 @@ python scripts/shaders/generate.py live_gi --validate
 
 Synthetic readback does not establish GMod map compatibility or performance. Test dense lights, moving
 casters, map changes, late materials, masks, water, 3D skyboxes and backend/resize transitions in the host.
+
+For real-window validation with layers that do not recognize the provisional NVIDIA present-metering
+feature, set `REMIX_FG_PRESENT_METERING=0` before device creation. This omits that optional device
+feature and uses the existing timed-present fallback; Vulkan validation remains enabled.
