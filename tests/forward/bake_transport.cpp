@@ -1,6 +1,7 @@
 #include "forward/bake/transport.h"
 #include "forward/bake/budget.h"
 #include "forward/lightmap/layout.h"
+#include "forward/mixed/overflow.h"
 #include "gpu_fixture.h"
 #include "probe_queries.h"
 #include "raster/renderer.h"
@@ -259,6 +260,81 @@ namespace {
     require(removed[0] == 0 && removed[1] == 0 && removed[2] == 0,
             "Removing streamed lights clears their contribution without stale "
             "captured illumination");
+  }
+  void overflowVisibility(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
+    const auto receiver = world.wall(world.material({}), 0, 2);
+    const auto blocker = world.quad(world.material({}),
+        {{{-3, -3, -.5f}, {0, -3, -.5f}, {0, 3, -.5f}, {-3, 3, -.5f}}});
+    auto source = world.scene({receiver, blocker});
+    source->charts.push_back({0, 0, 2, 2, {{0, 0}, {1, 1}, {1, 0}, {0, 0}, {0, 1}, {1, 1}}});
+    for (uint32_t light = 0; light < 5; ++light) {
+      scene::SphereLight lamp;
+      lamp.id = light + 1;
+      lamp.radius = .25f;
+      lamp.position[0] = light == 4 ? -1.f : 0.f;
+      lamp.position[2] = -1.5f;
+      lamp.radiance[0] = lamp.radiance[1] = lamp.radiance[2] = 1;
+      source->lights.push_back(lamp);
+    }
+    lightmap::Layout layout;
+    layout.charts.resize(1);
+    layout.points.push_back({{0, 0, 0, 0}, {0, 0, -1, 0}});
+    layout.pointCharts.push_back(0);
+    auto plan = mixed::plan(source, layout);
+    require(plan.overflow == 1 && plan.charts[0] == bake::UInt4{0, 1, 2, 3},
+            "Four equally important penumbra lights occupy the finite visibility channels");
+    bake::Transport transport;
+    bake::Options options;
+    options.textureResolution = 32;
+    options.batchPoints = 8;
+    options.queueFamily = fixture.family;
+    auto job = pipelines.prepare("overflow-visibility-test", [&] {
+      transport.initialize(fixture.physical, fixture.device, source, options);
+    });
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (!job->ready() && std::chrono::steady_clock::now() < deadline)
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    require(job->ready(), "Overflow transport preparation completed");
+    job->check();
+    fixture.begin();
+    transport.recordPrepare(fixture.command, world.resources);
+    fixture.finish();
+    transport.releaseBuildInputs();
+    bake::VisibilityPoint points[5];
+    for (uint32_t light = 0; light < 5; ++light)
+      points[light] = {layout.points[0], light};
+    fixture.begin();
+    transport.recordVisibility(fixture.command, 0, points, 1024);
+    fixture.finish();
+    bake::VisibilityResult results[5];
+    transport.readVisibility(0, results);
+    Vec4 partial{};
+    for (uint32_t light = 0; light < 4; ++light) {
+      partial[light] = results[light].visibility;
+      require(partial[light] > .25f && partial[light] < .75f,
+              "Four real finite emitters have partial hardware visibility");
+    }
+    require(results[4].visibility == 0, "The overflow emitter is wholly behind the static blocker");
+    require(!mixed::refine(plan, layout, {&partial, 1}) && plan.overflow == 1 &&
+                plan.occlusion.state(0, 4) == mixed::Visibility::Unknown,
+            "Old channel traversal leaves a physically blocked fifth emitter unclassified");
+    const auto owners = plan.charts;
+    mixed::OverflowAudit audit;
+    require(audit.nextRound(plan, layout) && audit.tasks().size() == 1 && audit.tasks()[0].light == 4,
+            "The overflow audit schedules the previously skipped emitter");
+    fixture.begin();
+    const bake::VisibilityPoint extra{layout.points[0], audit.tasks()[0].light};
+    transport.recordVisibility(fixture.command, 1, {&extra, 1}, 1024);
+    fixture.finish();
+    bake::VisibilityResult hidden;
+    transport.readVisibility(1, {&hidden, 1});
+    audit.observe(0, hidden.visibility, layout);
+    require(!audit.nextRound(plan, layout) && plan.overflow == 0 && plan.charts == owners &&
+                plan.occlusion.state(0, 4) == mixed::Visibility::Blocked &&
+                plan.lights.match(source->lights[4]) == 4,
+            "Hardware-verified hidden overflow receives a runtime mask without losing penumbra channels");
+    std::printf("Overflow fixture: four penumbrae %.3f %.3f %.3f %.3f, hidden %.3f, classified blocked\n",
+                partial[0], partial[1], partial[2], partial[3], hidden.visibility);
   }
   void bakeVisibility(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
     const auto receiver = world.wall(world.material({}), 0, 2);
@@ -1172,6 +1248,7 @@ int main() try {
     modulatingDecals(fixture, pipelines, world);
     bakeSurface(fixture, pipelines, world);
     bakeVisibility(fixture, pipelines, world);
+    overflowVisibility(fixture, pipelines, world);
     emitterParity(fixture, pipelines, world);
     liveLighting(fixture, pipelines, world);
     std::printf("Bake readback: emitter %.4f, blocked %.4f, alpha holes %.4f, "

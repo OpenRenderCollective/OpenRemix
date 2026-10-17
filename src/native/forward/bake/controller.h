@@ -64,7 +64,7 @@ namespace remix::forward::bake {
       std::shared_ptr<Volume> sampled;
       uint32_t first = 0, count = 0;
       bool preparation = false, radiance = false, surface = false, visibility = false, reflectionSite = false,
-           sun = false;
+           sun = false, overflowVisibility = false;
     };
     VkPhysicalDevice m_physical;
     VkDevice m_device;
@@ -89,6 +89,7 @@ namespace remix::forward::bake {
     void activate(VkCommandBuffer command);
     void recordSurfaces(VkCommandBuffer command, const Config &config);
     void recordVisibility(VkCommandBuffer command, const Config &config);
+    void recordOverflowVisibility(VkCommandBuffer command, const Config &config);
     void recordSun(VkCommandBuffer command, const Config &config);
     void recordReflections(VkCommandBuffer command, const Config &config);
   };

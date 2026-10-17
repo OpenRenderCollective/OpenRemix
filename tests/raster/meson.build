@@ -25,6 +25,8 @@ if get_option('gpu_tests')
     args : [meson.current_build_dir() / 'mixed-readback', 'mixed'], timeout : 180)
   test('Forward+ compact static occlusion and mixed-light overflow', raster_test,
     args : [meson.current_build_dir() / 'compact-occlusion-readback', 'compact-occlusion'], timeout : 180)
+  test('Forward+ hidden metallic specular after partial visibility saturation', raster_test,
+    args : [meson.current_build_dir() / 'overflow-specular-readback', 'overflow-specular'], timeout : 180)
   test('Forward+ compact clear visibility and realtime caster shadows', raster_test,
     args : [meson.current_build_dir() / 'clear-visibility-readback', 'clear-visibility'], timeout : 180)
   test('Forward+ baked sunlight and independent moving-caster shadows', raster_test,

@@ -2,6 +2,7 @@
 #include "forward/bake/budget.h"
 #include "forward/bake/cache.h"
 #include "forward/bake/transport.h"
+#include "forward/mixed/overflow.h"
 #include "forward/lightmap/denoise.h"
 #include "forward/image_dump.h"
 #include "forward/probes/capture_dump.h"
@@ -48,6 +49,9 @@ namespace remix::forward::bake {
     uint32_t sunNext = 0, sunReceived = 0;
     uint32_t visibilityNext = 0, visibilityReceived = 0;
     bool visibilityFinished = false;
+    std::unique_ptr<mixed::OverflowAudit> overflowAudit;
+    uint32_t overflowNext = 0, overflowReceived = 0;
+    bool overflowFinished = false;
     std::vector<uint16_t> surfacePixels;
     std::shared_ptr<lightmap::Geometry> surfaceGeometry;
     uint32_t surfaceNext = 0, surfaceReceived = 0;
@@ -66,14 +70,15 @@ namespace remix::forward::bake {
     bool initialized = false, prepared = false, failed = false;
     void prepareResources(VkPhysicalDevice physical, VkDevice device, const Config &config, float lightCutoff,
                           uint32_t queueFamily);
-    bool consumeVisibility(uint32_t slot, uint32_t first, uint32_t count, bool local);
+    bool consumeVisibility(uint32_t slot, uint32_t first, uint32_t count, bool local, bool overflow);
     uint32_t count(Work work, const Config &config, uint32_t remaining, uint32_t samples,
                    uint32_t bounces = 1) {
       return budget.count(work, config.batch, transport->timingSupported() ? config.gpuBudgetMs : 0, samples,
                           bounces, remaining);
     }
   };
-  bool Controller::Job::consumeVisibility(uint32_t slot, uint32_t first, uint32_t count, bool local) {
+  bool Controller::Job::consumeVisibility(uint32_t slot, uint32_t first, uint32_t count, bool local,
+                                         bool overflow) {
     if (visibilityReadback.size() < count)
       visibilityReadback.resize(count);
     const auto results = std::span(visibilityReadback).first(count);
@@ -84,7 +89,9 @@ namespace remix::forward::bake {
           !std::all_of(value.irradiance.begin(), value.irradiance.end(),
                        [](float coefficient) { return std::isfinite(coefficient); }))
         return false;
-      if (local) {
+      if (overflow) {
+        overflowAudit->observe(first + i, std::clamp(value.visibility, 0.f, 1.f), surfaceLayout);
+      } else if (local) {
         const auto &task = mixedLights->tasks[first + i];
         visibility[task.point][task.channel] = std::clamp(value.visibility, 0.f, 1.f);
         if (!direct.empty())
@@ -235,8 +242,9 @@ namespace remix::forward::bake {
         job.transport->releaseBuildInputs();
       if (submission.count && submission.job == m_job && !job.failed) {
         const auto readBegin = std::chrono::steady_clock::now();
-        if (submission.visibility || submission.sun) {
-          if (!job.consumeVisibility(slot, submission.first, submission.count, submission.visibility)) {
+        if (submission.visibility || submission.sun || submission.overflowVisibility) {
+          if (!job.consumeVisibility(slot, submission.first, submission.count, submission.visibility,
+                                     submission.overflowVisibility)) {
             job.failed = true;
             status(REMIXAPI_BAKE_FAILED_EXT, "Bake produced non-finite visibility");
           }
@@ -277,20 +285,22 @@ namespace remix::forward::bake {
         job.readbackMs +=
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - readBegin).count();
         job.readbackBytes += uint64_t(submission.count) *
-                             (submission.visibility || submission.sun ? sizeof(VisibilityResult) : sizeof(Result));
-        (submission.radiance         ? job.captureReceived
-         : submission.reflectionSite ? job.siteReceived
-         : submission.visibility     ? job.visibilityReceived
-         : submission.sun            ? job.sunReceived
-         : submission.surface        ? job.surfaceReceived
-                                     : job.received) += submission.count;
+                             (submission.visibility || submission.sun || submission.overflowVisibility
+                                  ? sizeof(VisibilityResult) : sizeof(Result));
+        (submission.radiance             ? job.captureReceived
+         : submission.reflectionSite     ? job.siteReceived
+         : submission.visibility         ? job.visibilityReceived
+         : submission.overflowVisibility ? job.overflowReceived
+         : submission.sun                ? job.sunReceived
+         : submission.surface            ? job.surfaceReceived
+                                         : job.received) += submission.count;
         if (!submission.radiance)
           if (const auto elapsed = job.transport->elapsed(slot)) {
-            const auto work = submission.visibility       ? Work::Visibility
-                              : submission.sun            ? Work::Sun
-                              : submission.reflectionSite ? Work::Site
-                              : submission.surface        ? Work::Surface
-                                                          : Work::Irradiance;
+            const auto work = submission.visibility || submission.overflowVisibility ? Work::Visibility
+                              : submission.sun                                      ? Work::Sun
+                              : submission.reflectionSite                           ? Work::Site
+                              : submission.surface                                  ? Work::Surface
+                                                                                    : Work::Irradiance;
             job.budget.observe(work, submission.count, *elapsed, m_config.gpuBudgetMs);
           }
         m_statistics.completed = job.received;
@@ -361,7 +371,7 @@ namespace remix::forward::bake {
       job.visibilityNext = job.visibilityReceived = 0;
     }
     if (job.visibilityFinished) {
-      recordSun(command, config);
+      recordOverflowVisibility(command, config);
       return;
     }
     if (job.visibilityNext < job.mixedLights->tasks.size()) {
@@ -386,6 +396,48 @@ namespace remix::forward::bake {
     char progress[128];
     std::snprintf(progress, sizeof(progress), "Baking per-light static visibility (%u/%zu samples)",
                   job.visibilityReceived, job.mixedLights->tasks.size());
+    status(REMIXAPI_BAKE_TRACING_EXT, progress);
+  }
+  void Controller::recordOverflowVisibility(VkCommandBuffer command, const Config &config) {
+    auto &job = *m_job;
+    if (job.overflowFinished) {
+      recordSun(command, config);
+      return;
+    }
+    if (!job.overflowAudit)
+      job.overflowAudit = std::make_unique<mixed::OverflowAudit>();
+    if (job.overflowReceived == job.overflowAudit->tasks().size()) {
+      job.overflowFinished = !job.overflowAudit->nextRound(
+          *job.mixedLights, job.surfaceLayout, job.cancellation.get_token());
+      job.overflowNext = job.overflowReceived = 0;
+      if (job.overflowFinished) {
+        job.overflowAudit.reset();
+        recordSun(command, config);
+        return;
+      }
+    }
+    const auto tasks = job.overflowAudit->tasks();
+    if (job.overflowNext < tasks.size()) {
+      auto &submission = m_submissions[m_slot];
+      if (submission.job)
+        throw std::logic_error("Overflow visibility slot reused before its fence");
+      const uint32_t count = job.count(Work::Visibility, config,
+                                       uint32_t(tasks.size() - job.overflowNext), config.samples);
+      std::vector<VisibilityPoint> points;
+      points.reserve(count);
+      for (const auto &task : tasks.subspan(job.overflowNext, count))
+        points.push_back({job.surfaceLayout.points[task.point], task.light});
+      // Classification needs visibility only, not another set of directional SH.
+      job.transport->recordVisibility(command, m_slot, points, config.samples, false);
+      submission.job = m_job;
+      submission.overflowVisibility = true;
+      submission.first = job.overflowNext;
+      submission.count = count;
+      job.overflowNext += count;
+    }
+    char progress[128];
+    std::snprintf(progress, sizeof(progress), "Checking overflow light visibility (%u/%zu samples)",
+                  job.overflowReceived, tasks.size());
     status(REMIXAPI_BAKE_TRACING_EXT, progress);
   }
   void Controller::recordReflections(VkCommandBuffer command, const Config &config) {

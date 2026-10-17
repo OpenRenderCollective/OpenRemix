@@ -1056,8 +1056,14 @@ After each completed visibility round, chart/light pairs with exactly constant s
 move into compact two-bit metadata: unknown, blocked or clear. Their filtered channels test the next
 candidates in the original importance/identity order. A single sample above zero prevents blocked
 classification; a single sample below one prevents clear classification. Charts without samples
-cannot be classified. The process stops when four channels retain partial visibility or the candidate
-queue is exhausted. This can increase map-load ray work, but avoids spending filtered channels on
+cannot be classified. Filtered-channel allocation stops when four channels retain partial visibility
+or the candidate queue is exhausted. Remaining candidates then receive a streaming visibility audit,
+one light per chart per round. It retains chart extrema rather than another filtered atlas, skips
+filtering donors, and classifies only exactly blocked or clear sampled results. This prevents a hidden
+overflow light from remaining unclassified solely because four other lights have partial shadows.
+Partially shadowed overflow stays unknown and still needs the real-time shadow fallback; exhausting
+that fallback's capacity or range remains an open source of leakage. The audit preserves existing
+filtered visibility and directional direct-light channels. This can increase map-load ray work, but avoids spending filtered channels on
 constant masks. Classification remains limited by spatial/sample resolution: tiny unsampled openings
 or occluders can be missed, just as in the corresponding constant filtered chart. These states are
 not geometric proofs of visibility over every point on a surface.

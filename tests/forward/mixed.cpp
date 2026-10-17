@@ -1,5 +1,6 @@
 #include "forward/lightmap/data.h"
 #include "forward/mixed/data.h"
+#include "forward/mixed/overflow.h"
 #include "forward/ray/capture.h"
 #include "scene/fixtures.h"
 #include <algorithm>
@@ -50,6 +51,84 @@ int main() {
             "ownership");
   require(plan.lights.match(source->lights[0]) == m::none,
           "Unassigned overflow lights avoid a needless runtime mask lookup");
+  {
+    for (float value : {0.f, 1.f, .5f, 1e-6f, 1.f - 1e-6f}) {
+      auto overflow = plan;
+      std::vector<forward::Vec4> partial(layout.points.size(), {.5f, .5f, .5f, .5f});
+      require(!m::refine(overflow, layout, partial) && overflow.overflow == 1 &&
+                  overflow.occlusion.state(0, 0) == m::Visibility::Unknown,
+              "Four partial lights leave an unseen fifth light unknown in the old channel walk");
+      const auto owners = overflow.charts;
+      const auto direct = overflow.directCharts;
+      m::OverflowAudit audit;
+      require(audit.nextRound(overflow, layout), "Overflow lights receive independent visibility work");
+      for (uint32_t task = uint32_t(audit.tasks().size()); task-- > 0;)
+        audit.observe(task, value, layout);
+      require(!audit.nextRound(overflow, layout), "A single overflow light needs one round");
+      const auto expected = value == 0 ? m::Visibility::Blocked
+                           : value == 1 ? m::Visibility::Clear : m::Visibility::Unknown;
+      require(overflow.occlusion.state(0, 0) == expected && overflow.lights.match(source->lights[0]) == 0,
+              "Hidden and clear overflow lights retain exact runtime identities; partial remains unknown");
+      require(overflow.overflow == (expected == m::Visibility::Unknown ? 1u : 0u) &&
+                  overflow.charts == owners && overflow.directCharts == direct,
+              "Auditing reduces only proven overflow and never overwrites filtered or direct channels");
+    }
+    auto incomplete = plan;
+    m::OverflowAudit audit;
+    require(audit.nextRound(incomplete, layout), "Incomplete-round fixture has tasks");
+    bool rejected = false;
+    try { audit.nextRound(incomplete, layout); } catch (const std::invalid_argument &) { rejected = true; }
+    require(rejected, "An uncompleted frame readback cannot publish a chart-wide visibility proof");
+    audit.observe(0, 0, layout);
+    rejected = false;
+    try { audit.observe(0, 0, layout); } catch (const std::invalid_argument &) { rejected = true; }
+    require(rejected, "Duplicate readback cannot substitute for an unobserved receiver");
+    auto extended = std::make_shared<scene::BakeScene>(*source);
+    for (uint64_t id : {60u, 70u, 80u}) {
+      auto light = source->lights[0];
+      light.id = id;
+      extended->lights.push_back(light);
+    }
+    auto many = m::plan(extended, layout);
+    std::vector<forward::Vec4> partial(layout.points.size(), {.5f, .5f, .5f, .5f});
+    require(!m::refine(many, layout, partial) && many.overflow == 4, "Multiple overflow rounds are needed");
+    m::OverflowAudit repeated;
+    uint32_t rounds = 0;
+    while (repeated.nextRound(many, layout)) {
+      ++rounds;
+      require(repeated.tasks().size() <= layout.points.size(),
+              "Overflow work retains at most one task per surface sample in each round");
+      for (uint32_t task = 0; task < repeated.tasks().size(); ++task)
+        repeated.observe(task, rounds == 2 ? .5f : 0.f, layout);
+    }
+    require(rounds == 4 && many.overflow == 1 && many.occlusion.count() == 3,
+            "A partial overflow emitter cannot prevent later hidden emitters being checked");
+    auto donorLayout = layout;
+    donorLayout.receiverSamples.assign(layout.points.size(), 1);
+    donorLayout.receiverSamples[0] = 0;
+    auto donorPlan = plan;
+    m::OverflowAudit donors;
+    require(donors.nextRound(donorPlan, donorLayout), "Receiver-only audit has work");
+    for (uint32_t task = 0; task < donors.tasks().size(); ++task) {
+      require(donors.tasks()[task].point != 0, "Filter donors cannot supply chart-wide proofs");
+      donors.observe(task, 0, donorLayout);
+    }
+    require(!donors.nextRound(donorPlan, donorLayout) && donorPlan.occlusion.count() == 1,
+            "Filtering donors do not prevent a hidden receiver's compact mask");
+    auto noReceiverLayout = layout;
+    noReceiverLayout.receiverSamples.assign(layout.points.size(), 0);
+    auto noReceiverPlan = plan;
+    m::OverflowAudit noReceivers;
+    require(!noReceivers.nextRound(noReceiverPlan, noReceiverLayout) &&
+                noReceiverPlan.occlusion.count() == 0 && noReceiverPlan.overflow == 1,
+            "Unsampled geometry remains unknown rather than becoming a false blocked proof");
+    std::stop_source cancelled;
+    cancelled.request_stop();
+    rejected = false;
+    try { noReceivers.nextRound(noReceiverPlan, noReceiverLayout, cancelled.get_token()); }
+    catch (const std::runtime_error &) { rejected = true; }
+    require(rejected, "Superseded overflow work can stop before publishing more classifications");
+  }
   {
     auto refined = plan;
     std::vector<forward::Vec4> visibility(layout.points.size());

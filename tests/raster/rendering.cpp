@@ -1407,7 +1407,7 @@ namespace {
                       split ? "Stitched curved" : curved ? "Curved" : "Planar", samples, ssr ? "on" : "off", unsigned(first[left + 1]), unsigned(first[right + 1]));
       }
   }
-  void compactOcclusionTests() {
+  void compactOcclusionTests(bool saturated = false) {
     for (uint32_t samples : {1u, 2u, 4u}) {
       Target target(64, 64, true);
       auto &r = target.raster;
@@ -1421,8 +1421,25 @@ namespace {
       options.baking.batch = 128;
       options.baking.reflectionProbes = 0;
       options.baking.lightmapPageSize = 32;
+      if (saturated)
+        options.baking.diskCache = false; // each MSAA case must execute the overflow audit
       target.enableForward(options);
-      const auto receiverMesh = quad(r, 9700, material(r, 9701, 1, 1, 1));
+      auto receiverMaterial = material(r, 9701, 1, 1, 1);
+      if (saturated) {
+        remixapi_MaterialInfoOpaqueEXT metal{};
+        metal.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+        metal.albedoConstant = {1, 1, 1};
+        metal.opacityConstant = 1;
+        metal.roughnessConstant = .45f;
+        metal.metallicConstant = 1;
+        metal.alphaTestType = 7;
+        remixapi_MaterialInfo info{};
+        info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+        info.pNext = &metal;
+        info.hash = 9799;
+        r.createMaterial(info, receiverMaterial);
+      }
+      const auto receiverMesh = quad(r, 9700, receiverMaterial);
       const auto blockerMaterial = material(r, 9703, 0, 0, 0);
       remixapi_HardcodedVertex blockerVertices[3]{};
       const float blockerPositions[3][3] = {{-.7f, -.55f, .5f}, {.55f, .7f, .5f}, {.55f, -.55f, .5f}};
@@ -1482,6 +1499,19 @@ namespace {
         r.createLight(light, handle);
         lights.push_back(handle);
       }
+      if (saturated) {
+        // Large green emitters hold all four partial-visibility slots. Red
+        // behind the blocker must still be rejected, including metallic specular.
+        sphere.position = {0, 0, -.4f};
+        sphere.radius = .5f;
+        light.radiance = {0, 5000, 0};
+        for (uint32_t i = 0; i < 4; ++i) {
+          light.hash = 9800 + i;
+          remixapi_LightHandle handle;
+          r.createLight(light, handle);
+          lights.push_back(handle);
+        }
+      }
       const float uv[] = {0, 0, 8, 8, 8, 0, 0, 0, 0, 8, 8, 8};
       const remixapi_BakeSurfaceChartEXT charts[] = {
           {receiverHandle, 0, 0, 0, 3, 9, 9, uv}, {receiverHandle, 0, 0, 3, 3, 9, 9, uv + 6}};
@@ -1518,9 +1548,16 @@ namespace {
       std::printf("Compact occlusion %ux MSAA: RGB %u %u %u; %s\n", samples,
                   unsigned(pixels[center]), unsigned(pixels[center + 1]), unsigned(pixels[center + 2]),
                   target.forward->statistics().baking.status);
+      if (saturated) {
+        require(pixels[center] < 3 && pixels[center + 1] > 30 && pixels[center + 2] < 3,
+                "Hidden overflow lights cannot produce metallic specular after four penumbra slots fill");
+        require(std::strstr(target.forward->statistics().baking.status, "35 fully blocked"),
+                "All hidden red overflow emitters retain chart-specific compact visibility");
+        continue;
+      }
       require(pixels[center] < 3 && pixels[center + 1] > 30 && pixels[center + 2] < 3 &&
                   std::strstr(target.forward->statistics().baking.status, "35 fully blocked") &&
-                  std::strstr(target.forward->statistics().baking.status, "1 fully clear"),
+                  std::strstr(target.forward->statistics().baking.status, "2 fully clear"),
               "Blocked overflow lights stay dark while promoted clear visibility uses compact metadata");
       pixel(pixels, 48, 48, 0, 79, 0,
             "Compacting a clear light preserves its original baked unit direct diffuse irradiance");
@@ -3304,6 +3341,7 @@ int main(int argc, char **argv) {
   else if (argc>2 && std::strcmp(argv[2],"baked-direct")==0) mixedLightingTests(true, true);
   else if (argc>2 && std::strcmp(argv[2],"mixed")==0) mixedLightingTests();
   else if (argc>2 && std::strcmp(argv[2],"compact-occlusion")==0) compactOcclusionTests();
+  else if (argc>2 && std::strcmp(argv[2],"overflow-specular")==0) compactOcclusionTests(true);
   else if (argc>2 && std::strcmp(argv[2],"clear-visibility")==0) clearVisibilityTests();
   else if (argc>2 && std::strcmp(argv[2],"mixed-sun")==0) sunLightingTests();
   else if (argc>2 && std::strcmp(argv[2],"probe-blend")==0) reflectionTests(directory, true);
