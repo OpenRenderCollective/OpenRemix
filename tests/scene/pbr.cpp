@@ -90,6 +90,12 @@ int main(int argc, char **argv) {
   resources.drawInstance(draw);
   require(resources.draws().back().material->pbr,
           "Smooth dielectric override missing");
+  pbr.enabled = 0;
+  opaque.roughnessConstant = 1;
+  resources.createMaterial(info, materialHandle);
+  resources.drawInstance(draw);
+  require(!resources.draws().back().material->pbr && resources.draws().back().material->roughness == 1,
+          "A rough Forward+ fallback must preserve explicit diffuse-only path tracing");
   pbr.enabled = 2;
   rejected([&] { resources.createMaterial(info, materialHandle); });
   if (argc == 2) {
