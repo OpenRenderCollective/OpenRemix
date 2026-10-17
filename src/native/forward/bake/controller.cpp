@@ -468,11 +468,11 @@ namespace remix::forward::bake {
                            filtered.charts, static_cast<unsigned long long>(filtered.texels),
                            filtered.deviceType, filtered.seconds);
               std::fprintf(stderr, "Forward lightmap OIDN work: %u executions, %u preparations, "
-                                   "%u constant fields, %u monitored, %u batches; %llu host bytes, %llu image bytes, "
+                                   "%u constant fields, %u monitored, %u batches, %u waits; %llu host bytes, %llu image bytes, "
                                    "%llu transfer bytes\n",
                            filtered.executions, filtered.preparations, filtered.constantFields,
                            filtered.monitoredExecutions,
-                           filtered.batches,
+                           filtered.batches, filtered.synchronizations,
                            static_cast<unsigned long long>(filtered.peakHostBytes),
                            static_cast<unsigned long long>(filtered.imageBufferBytes),
                            static_cast<unsigned long long>(filtered.transferBytes));

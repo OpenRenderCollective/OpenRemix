@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <numeric>
 #include <stdexcept>
 
@@ -108,6 +109,66 @@ namespace {
     std::printf("OIDN large chart: %u executions in %u bounded batches, %.3f s\n", statistics.executions,
                 statistics.batches, statistics.seconds);
   }
+  void queuedCharts(uint32_t side, uint32_t count) {
+    lightmap::Layout layout;
+    layout.pageSize = 512;
+    layout.pages = 1;
+    layout.owners.resize(512 * 512, lightmap::unowned);
+    std::vector<bake::Result> values;
+    for (uint32_t chart = 0; chart < count; ++chart) {
+      const uint32_t originX = (chart % 8) * side, originY = (chart / 8) * side;
+      layout.charts.push_back({0, originX, originY, side, side});
+      for (uint32_t y = 0; y < side; ++y)
+        for (uint32_t x = 0; x < side; ++x) {
+          const auto index = uint32_t(values.size()), address = (originY + y) * 512 + originX + x;
+          layout.points.push_back({});
+          layout.pointCharts.push_back(chart);
+          layout.addresses.push_back(address);
+          layout.owners[address] = index;
+          bake::Result value;
+          const float noise = float((x * 1664525u + y * 1013904223u + chart * 7919u) % 1009) / 1008.f - .5f;
+          for (uint32_t c = 0; c < 3; ++c) {
+            value.irradiance[0][c] = 1 + chart * .1f + noise * .3f;
+            value.irradiance[1][c] = value.irradiance[0][c] * (.2f + noise * .1f);
+          }
+          value.irradiance[0][3] = float(chart) + .5f;
+          value.statistics = {float(index), 2, 3, 4};
+          values.push_back(value);
+        }
+    }
+    const auto original = values;
+    if (side == 16) {
+      auto invalid = original;
+      invalid[size_t(side) * side].irradiance[1][0] = std::numeric_limits<float>::quiet_NaN();
+      bool rejected = false;
+      try {
+        lightmap::denoise(layout, invalid);
+      } catch (const std::invalid_argument &) {
+        rejected = true;
+      }
+      require(rejected, "Invalid later chart data drains already queued host transfers before cleanup");
+    }
+    const auto statistics = lightmap::denoise(layout, values);
+    const size_t chartBytes = size_t(side) * side * 3 * sizeof(float) * 11;
+    const size_t limit = std::min(size_t(lightmap::denoising::queuedChartLimit),
+                                  lightmap::denoising::queueBudgetBytes / chartBytes);
+    require(statistics.charts == count && statistics.batches == count && statistics.executions == 2 * count &&
+                statistics.synchronizations == (count + limit - 1) / limit,
+            "Chart queues flush at both count and host-byte bounds without dropping packets");
+    require(statistics.peakHostBytes == limit * chartBytes &&
+                statistics.peakHostBytes <= lightmap::denoising::queueBudgetBytes,
+            "Queued host image storage respects its bounded scratch target");
+    for (uint32_t i = 0; i < values.size(); ++i) {
+      require(values[i].statistics == original[i].statistics &&
+                  values[i].irradiance[0][3] == original[i].irradiance[0][3],
+              "Queued readbacks preserve every chart's metadata and direct-light channel");
+      require(std::isfinite(values[i].irradiance[0][0]) && std::isfinite(values[i].irradiance[1][0]),
+              "Every queued packet completes before reconstruction");
+    }
+    std::printf("OIDN queue %u x %ux%u: %u packets, %u waits, %llu host bytes\n", count, side, side,
+                statistics.batches, statistics.synchronizations,
+                static_cast<unsigned long long>(statistics.peakHostBytes));
+  }
 } // namespace
 int main() try {
   chartPacking();
@@ -123,6 +184,8 @@ int main() try {
     return 0;
   }
   largeBatch();
+  queuedCharts(16, 40); // chart-count bound, then a partial tail
+  queuedCharts(64, 18); // byte bound, then a partial tail
   lightmap::Layout layout;
   layout.pageSize = 128;
   layout.pages = 1;
@@ -210,12 +273,13 @@ int main() try {
             "Denoising progress is monotonic with a stable total");
   require(statistics.executions == 12 && statistics.preparations == 8 && statistics.constantFields == 24,
           "Per-band models are prepared only for changed image shapes, not every chart");
-  require(statistics.batches == 3, "Each nonconstant small chart needs only one upload/fence/readback batch");
+  require(statistics.batches == 3 && statistics.synchronizations == 2,
+          "Equal-sized charts queue separate packets with one synchronization per bounded shape group");
   require(statistics.monitoredExecutions == (statistics.deviceType == 1 ? 12u : 0u),
           "Small GPU fields avoid internal progress callbacks; CPU filters retain in-flight cancellation");
-  require(statistics.peakHostBytes == 64u * 64 * 3 * 11 * sizeof(float) &&
+  require(statistics.peakHostBytes == 3u * 64 * 64 * 3 * 11 * sizeof(float) &&
               statistics.imageBufferBytes == 64u * 64 * 3 * 9 * sizeof(float),
-          "Host images and reusable device buffer are bounded by the largest chart");
+          "Pending chart arrays are accounted separately from the one reusable device image buffer");
   std::printf("OIDN %u device type %d: chart isolation, signed SH, metadata and cancellation passed; "
               "L0 RMSE %.5f -> %.5f, directional RMSE %.5f -> %.5f, %.3f s\n",
               lightmap::denoiserVersion(), statistics.deviceType, std::sqrt(before / 8719),

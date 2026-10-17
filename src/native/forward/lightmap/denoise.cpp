@@ -4,6 +4,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <memory>
 #include <numeric>
 #include <stdexcept>
 #include <string>
@@ -43,13 +44,23 @@ namespace remix::forward::lightmap {
       DenoiseStatistics &statistics;
       std::stop_token cancellation;
       bool inFlight = false;
+      void retire() noexcept {
+        if (inFlight) {
+          oidnSyncDevice(device);
+          inFlight = false;
+          ++statistics.synchronizations;
+        }
+      }
+      void finish() {
+        retire();
+        check();
+      }
       Filter(DenoiseStatistics &statistics, size_t requiredCapacity)
           : requiredCapacity(requiredCapacity), statistics(statistics) {}
       ~Filter() {
         // Even cancellation/errors must retire queued work before its inputs,
         // callbacks, filters or buffers can be released.
-        if (inFlight)
-          oidnSyncDevice(device);
+        retire();
         for (const auto &model : models)
           if (model.handle)
             oidnReleaseFilter(model.handle);
@@ -83,7 +94,7 @@ namespace remix::forward::lightmap {
           check();
         }
       }
-      void run(std::span<float> images, uint32_t width, uint32_t height, uint32_t first) {
+      void enqueue(std::span<float> images, uint32_t width, uint32_t height, uint32_t first) {
         checkCancellation(cancellation);
         const size_t plane = size_t(width) * height * 3;
         const uint32_t count = uint32_t(images.size() / plane);
@@ -103,6 +114,7 @@ namespace remix::forward::lightmap {
           return;
         const auto bytes = images.size() * sizeof(float);
         if (bytes > capacity) {
+          finish();
           if (buffer)
             oidnReleaseBuffer(buffer);
           capacity = std::max(bytes, requiredCapacity);
@@ -124,6 +136,7 @@ namespace remix::forward::lightmap {
           if (model.image == buffer && model.width == width && model.height == height &&
               model.offset == offset)
             continue;
+          finish(); // retire prior uses before changing a committed binding
           // OIDN warns that progress callbacks add significant GPU synchronization
           // overhead. Small fields already have bounded cancellation between bands.
           model.monitored =
@@ -145,30 +158,37 @@ namespace remix::forward::lightmap {
           model.offset = offset;
           ++statistics.preparations;
         }
-        oidnWriteBuffer(buffer, 0, bytes, images.data());
+        inFlight = true;
+        oidnWriteBufferAsync(buffer, 0, bytes, images.data());
         check();
         for (uint32_t slot = 0; slot < count; ++slot) {
           if (!active[slot])
             continue;
           checkCancellation(cancellation);
-          inFlight = true;
           oidnExecuteFilterAsync(models[first + slot].handle);
           check();
           ++statistics.executions;
           statistics.monitoredExecutions += uint32_t(models[first + slot].monitored);
         }
-        // One ordered-device fence per chart batch. No output or model is
-        // touched until OIDN reports all queued operations complete.
-        oidnSyncDevice(device);
-        inFlight = false;
-        check();
         ++statistics.batches;
-        oidnReadBuffer(buffer, 0, bytes, images.data());
+        oidnReadBufferAsync(buffer, 0, bytes, images.data());
         check();
         statistics.transferBytes += 2 * bytes;
+      }
+      void validate(std::span<const float> images) {
         for (const auto value : images)
           if (!std::isfinite(value))
             throw std::runtime_error("OIDN returned nonfinite lightmap data");
+      }
+      void run(std::span<float> images, uint32_t width, uint32_t height, uint32_t first) {
+        try {
+          enqueue(images, width, height, first);
+          finish();
+          validate(images);
+        } catch (...) {
+          retire(); // caller-owned host arrays must outlive even failed async copies
+          throw;
+        }
       }
     };
   } // namespace
@@ -203,6 +223,13 @@ namespace remix::forward::lightmap {
       const auto &first = layout.charts[a], &second = layout.charts[b];
       return std::tie(first.width, first.height) > std::tie(second.width, second.height);
     });
+    struct PendingChart {
+      std::unique_ptr<denoising::Chart> image;
+      std::span<float> fields;
+    };
+    // Declaration order matters: Filter retires copies before pending host
+    // arrays are destroyed, including on cancellation or an exception.
+    std::vector<PendingChart> pending;
     Filter filter(statistics, largestImage);
     filter.initialize(cancelled);
     statistics.deviceType = oidnGetDeviceInt(filter.device, "type");
@@ -217,27 +244,59 @@ namespace remix::forward::lightmap {
                                               [](const auto &points) { return !points.empty(); }));
     if (progress)
       progress(0, total);
+    uint64_t pendingBytes = 0;
+    auto flush = [&] {
+      filter.finish();
+      for (auto &chart : pending) {
+        filter.validate(chart.fields);
+        chart.image->apply(0, denoising::coefficientCount, chart.fields);
+        chart.image->finish();
+        ++statistics.charts;
+        if (progress)
+          progress(statistics.charts, total);
+      }
+      pending.clear();
+      pendingBytes = 0;
+    };
+    uint32_t pendingWidth = 0, pendingHeight = 0;
     for (const auto chart : order) {
       checkCancellation(cancelled);
       if (chartPoints[chart].empty())
         continue;
       const auto &a = layout.charts[chart];
-      denoising::Chart image(layout, chart, results, chartPoints[chart], cancelled);
-      statistics.peakHostBytes = std::max(statistics.peakHostBytes, image.hostBytes());
-      const auto batch = image.fieldsPerBatch();
+      const auto fieldBytes = uint64_t(a.width) * a.height * 3 * sizeof(float);
+      const auto batch = denoising::batchFields(size_t(fieldBytes));
+      const auto chartBytes = fieldBytes * (2 + batch);
+      if (!pending.empty() && (a.width != pendingWidth || a.height != pendingHeight ||
+                               pendingBytes + chartBytes > denoising::queueBudgetBytes ||
+                               pending.size() >= denoising::queuedChartLimit))
+        flush();
+      auto image = std::make_unique<denoising::Chart>(layout, chart, results, chartPoints[chart], cancelled);
+      statistics.texels += uint64_t(a.width) * a.height;
+      statistics.peakHostBytes = std::max(statistics.peakHostBytes, pendingBytes + image->hostBytes());
+      if (batch == denoising::coefficientCount) {
+        pendingWidth = a.width;
+        pendingHeight = a.height;
+        auto fields = image->pack(0, batch);
+        pendingBytes += image->hostBytes();
+        pending.push_back({std::move(image), fields}); // retain arrays before any async copy
+        filter.enqueue(fields, a.width, a.height, 0);
+        continue;
+      }
+      flush();
       for (uint32_t first = 0; first < denoising::coefficientCount; first += batch) {
         checkCancellation(cancelled);
         const auto count = std::min(batch, denoising::coefficientCount - first);
-        auto fields = image.pack(first, count);
+        auto fields = image->pack(first, count);
         filter.run(fields, a.width, a.height, first);
-        image.apply(first, count, fields);
+        image->apply(first, count, fields);
       }
-      image.finish();
+      image->finish();
       ++statistics.charts;
-      statistics.texels += uint64_t(a.width) * a.height;
       if (progress)
         progress(statistics.charts, total);
     }
+    flush();
     statistics.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     return statistics;
 #endif

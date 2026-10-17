@@ -5,6 +5,8 @@
 namespace remix::forward::lightmap::denoising {
   constexpr uint32_t coefficientCount = 9;
   constexpr size_t batchBudgetBytes = 8u << 20;
+  constexpr uint32_t queuedChartLimit = 32;
+  constexpr size_t queueBudgetBytes = 8u << 20; // includes original/filtered L0 for every pending chart
   // A single field larger than the batch budget still needs one image.
   uint32_t batchFields(size_t fieldBytes);
   // CPU-only chart encoding. Every plane is tightly packed RGB, with no atlas
