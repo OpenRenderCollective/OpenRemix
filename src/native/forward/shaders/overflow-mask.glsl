@@ -11,11 +11,21 @@ float overflowMaskTexel(uint base, uint address, uint width, bool tiled, uvec2 p
   uint tag = descriptor >> 30u;
   if (tag == 0u)
     return float(descriptor & 255u) / 255;
-  uint payload = address + (descriptor & 0x3fffffffu);
+  uint payload = address + (descriptor & 0x3ffffffcu);
   uint index = (pixel.y % 8u) * 8u + pixel.x % 8u;
   if (tag == 1u) {
     uint bits = occlusionWord(base + payload / 4u + index / 32u);
     return float((bits >> (index % 32u)) & 1u);
+  }
+  if (tag == 3u) {
+    uint mode = descriptor & 3u, bits = 2u + mode, colors = 4u << mode;
+    uint bit = index * bits, shift = bit % 32u;
+    uint indices = occlusionWord(base + payload / 4u + colors / 4u + bit / 32u) >> shift;
+    if (shift + bits > 32u)
+      indices |= occlusionWord(base + payload / 4u + colors / 4u + bit / 32u + 1u) << (32u - shift);
+    uint color = indices & ((1u << bits) - 1u);
+    uint palette = occlusionWord(base + payload / 4u + color / 4u);
+    return float((palette >> ((color % 4u) * 8u)) & 255u) / 255;
   }
   return overflowMaskByte(base, payload + index);
 }

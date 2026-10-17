@@ -42,10 +42,11 @@ namespace remix::forward::mixed {
         texels[size_t(y) * a.width + x] = uint8_t(std::lround(value * 255));
       }
     }
-    const auto encoded = mask::encode(std::span(texels).first(size_t(count)), a.width, a.height, cancelled);
+    const auto input = std::span(texels).first(size_t(count));
+    const auto encoded = mask::encodeCompact(input, a.width, a.height, cancelled);
     if (audit)
-      m_candidateCosts.observe(std::span(texels).first(size_t(count)), a.width, a.height,
-                                encoded.bytes.size(), cancelled);
+      m_candidateCosts.observe(input, a.width, a.height,
+                                mask::encode(input, a.width, a.height, cancelled).bytes.size(), cancelled);
     const uint64_t words = tableWords + (m_bytes.size() + encoded.bytes.size()) / 4;
     if (words * sizeof(uint32_t) > maximumBytes || words > wordBudget)
       return false;

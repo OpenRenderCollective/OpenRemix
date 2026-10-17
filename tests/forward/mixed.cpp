@@ -11,6 +11,7 @@ using namespace remix::test;
 namespace m = remix::forward::mixed;
 namespace lm = remix::forward::lightmap;
 int main() {
+  require(m::Masks::maximumBytes == (16u << 20), "Visibility coverage keeps the sixteen MiB encoded budget");
   NativeResources resources;
   const auto mat = material(resources, 1, 1, 1, 1);
   const auto mesh = quad(resources, 2, mat);

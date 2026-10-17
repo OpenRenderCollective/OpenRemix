@@ -31,8 +31,8 @@ int main() try {
   std::vector<float> expected;
   std::vector<mixed::Masks::Entry> entries;
   std::vector<uint8_t> bytes;
-  for (uint32_t mode = 0; mode < 3; ++mode) {
-    const uint32_t chart = mode == 1 ? 1 : 0, light = mode == 2 ? 1 : 0;
+  for (uint32_t mode = 0; mode < 4; ++mode) {
+    const uint32_t chart = mode == 1 ? 1 : 0, light = mode >= 2 ? mode - 1 : 0;
     const auto &a = layout.charts[chart];
     std::vector<uint8_t> pixels(size_t(a.width) * a.height);
     for (uint32_t y = 0; y < a.height; ++y)
@@ -43,9 +43,16 @@ int main() try {
                   x < 24 ? uint8_t((x * 23 + y * 19) & 255) : 255;
         } else if (mode == 1)
           value = uint8_t((x * 123 + y * 29 + x * y * 17) & 255);
+        else if (mode == 3) {
+          constexpr uint8_t endpoints[] = {0, 1, 254, 255};
+          constexpr uint8_t eightColors[] = {0, 1, 40, 80, 120, 160, 220, 255};
+          value = x < 8 ? endpoints[(x + y) % 4] : x < 16 ? eightColors[(x + y) % 8] :
+                  x < 24 ? uint8_t(1 + (x + y) % 8) : uint8_t(((x + y * 8) % 16) * 17);
+        }
         pixels[size_t(y) * a.width + x] = value;
       }
-    const auto packed = mask::encode(pixels, a.width, a.height);
+    const auto packed = mode == 3 ? mask::encodeCompact(pixels, a.width, a.height)
+                                  : mask::encode(pixels, a.width, a.height);
     require(packed.encoding == (mode == 1 ? mask::raw : mask::tiled), "GPU fixture exercises raw and tiled chunks");
     entries.push_back({chart, light, uint32_t(bytes.size()), a.width, a.height, packed.encoding});
     bytes.insert(bytes.end(), packed.bytes.begin(), packed.bytes.end());
@@ -57,12 +64,15 @@ int main() try {
         const uint32_t x0 = x / 2, x1 = std::min(x0 + 1, a.width - 1),
                        y0 = y / 2, y1 = std::min(y0 + 1, a.height - 1);
         const float fx = (x & 1) * .5f, fy = (y & 1) * .5f;
-        const auto sample = [&](uint32_t px, uint32_t py) { return pixels[size_t(py) * a.width + px] / 255.f; };
+        const auto sample = [&](uint32_t px, uint32_t py) {
+          return (mode == 3 ? mask::texel(packed.bytes, a.width, packed.encoding, px, py)
+                            : pixels[size_t(py) * a.width + px]) / 255.f;
+        };
         expected.push_back(std::lerp(std::lerp(sample(x0, y0), sample(x1, y0), fx),
                                     std::lerp(sample(x0, y1), sample(x1, y1), fx), fy));
       }
   }
-  const auto masks = mixed::Masks::restore(entries, bytes, layout, 2);
+  const auto masks = mixed::Masks::restore(entries, bytes, layout, 3);
   auto words = masks.words(2);
   words.insert(words.begin(), 0); // Tail base zero is reserved for absent masks.
   const VkDescriptorSetLayoutBinding bindings[] = {

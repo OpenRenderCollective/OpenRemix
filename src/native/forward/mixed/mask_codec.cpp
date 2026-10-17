@@ -1,4 +1,5 @@
 #include "forward/mixed/mask_codec.h"
+#include "forward/mixed/mask_palette.h"
 #include <algorithm>
 #include <array>
 #include <limits>
@@ -20,7 +21,8 @@ namespace remix::forward::mixed::mask {
       return size_t((uint64_t(width) + 7) / 8) * ((uint64_t(height) + 7) / 8);
     }
   }
-  Encoded encode(std::span<const uint8_t> texels, uint32_t width, uint32_t height, std::stop_token cancelled) {
+  static Encoded encodeImage(std::span<const uint8_t> texels, uint32_t width, uint32_t height,
+                             std::stop_token cancelled, bool palettes) {
     const uint64_t count = uint64_t(width) * height;
     if (!count || count != texels.size() || count > (1u << 28))
       throw std::invalid_argument("Invalid visibility image");
@@ -51,11 +53,15 @@ namespace remix::forward::mixed::mask {
         uint32_t descriptor = tile[0];
         if (!constant) {
           const auto offset = uint32_t(compact.size());
-          descriptor = (binary ? 1u : 2u) << 30 | offset;
+          const auto palette = palettes && !binary ? fitBoundedPalette(tile) : Palette{};
+          descriptor = (binary ? 1u : palette.size ? 3u : 2u) << 30 | offset;
           if (binary) {
             compact.resize(compact.size() + 8);
             for (uint32_t i = 0; i < 64; ++i)
               compact[offset + i / 8] |= uint8_t((tile[i] != 0) << (i % 8));
+          } else if (palette.size) {
+            descriptor |= palette.mode; // Payloads are word-aligned; low two bits select palette size.
+            compact.insert(compact.end(), palette.bytes.begin(), palette.bytes.begin() + palette.size);
           } else
             compact.insert(compact.end(), tile.begin(), tile.end());
         }
@@ -67,6 +73,12 @@ namespace remix::forward::mixed::mask {
     result.encoding = tiled;
     result.bytes = std::move(compact);
     return result;
+  }
+  Encoded encode(std::span<const uint8_t> texels, uint32_t width, uint32_t height, std::stop_token cancelled) {
+    return encodeImage(texels, width, height, cancelled, false);
+  }
+  Encoded encodeCompact(std::span<const uint8_t> texels, uint32_t width, uint32_t height, std::stop_token cancelled) {
+    return encodeImage(texels, width, height, cancelled, true);
   }
   size_t validate(std::span<const uint8_t> bytes, uint32_t width, uint32_t height, uint32_t encoding) {
     const uint64_t count = uint64_t(width) * height;
@@ -84,11 +96,23 @@ namespace remix::forward::mixed::mask {
           if (descriptor > 255)
             throw std::invalid_argument("Invalid constant visibility tile");
         } else {
-          if (tag == 3 || (descriptor & 0x3fffffffu) != occupied)
+          const uint32_t mode = tag == 3 ? descriptor & 3u : 0u;
+          if ((descriptor & (tag == 3 ? 0x3ffffffcu : 0x3fffffffu)) != occupied || mode == 3)
             throw std::invalid_argument("Invalid visibility tile payload offset");
-          occupied += tag == 1 ? 8 : 64;
+          const auto start = occupied;
+          const uint32_t colors = 4u << mode;
+          occupied += tag == 1 ? 8 : tag == 3 ? colors + 8 * (2 + mode) : 64;
           if (occupied > bytes.size())
             throw std::invalid_argument("Truncated visibility payload");
+          if (tag == 3) {
+            if (!std::is_sorted(bytes.begin() + start, bytes.begin() + start + colors))
+              throw std::invalid_argument("Unsorted visibility palette");
+            for (uint32_t i = 0; i < 64; ++i) {
+              const auto color = paletteIndex(bytes.subspan(start), mode, i);
+              if (color && bytes[start + color] == bytes[start + color - 1])
+                throw std::invalid_argument("Duplicate visibility palette index");
+            }
+          }
         }
       }
     } else if (encoding != raw)
@@ -106,6 +130,8 @@ namespace remix::forward::mixed::mask {
       return uint8_t(descriptor);
     if (tag == 1)
       return (bytes[offset + index / 8] >> (index % 8) & 1) ? 255 : 0;
+    if (tag == 3)
+      return bytes[(offset & ~3u) + paletteIndex(bytes.subspan(offset & ~3u), descriptor & 3u, index)];
     return bytes[offset + index];
   }
   void Costs::observe(std::span<const uint8_t> values, uint32_t width, uint32_t height,
@@ -125,6 +151,21 @@ namespace remix::forward::mixed::mask {
     texels += count;
     rawBytes += padded(count);
     losslessBytes += encodedBytes;
+    const auto compact = encodeCompact(values, width, height, cancelled);
+    compactBytes += compact.bytes.size();
+    std::vector<uint8_t> tileErrors(tileCount(width, height));
+    for (uint32_t y = 0; y < height; ++y)
+      for (uint32_t x = 0; x < width; ++x) {
+        const int error = int(texel(compact.bytes, width, compact.encoding, x, y)) - values[size_t(y) * width + x];
+        const auto magnitude = uint64_t(error < 0 ? -error : error);
+        compactAbsoluteError += magnitude;
+        compactSquaredError += magnitude * magnitude;
+        compactMaximumError = std::max(compactMaximumError, magnitude);
+        auto &maximum = tileErrors[size_t(y / 8) * ((width + 7) / 8) + x / 8];
+        maximum = std::max(maximum, uint8_t(magnitude));
+      }
+    for (auto error : tileErrors)
+      ++compactErrorHistogram[error];
     size_t sizeBin = 0;
     for (auto bytes = encodedBytes; bytes > 1 && sizeBin < 31; bytes >>= 1)
       ++sizeBin;

@@ -6,8 +6,9 @@
 
 namespace remix::forward::mixed {
   // Scalar visibility only for partial chart/light pairs beyond the four SH
-  // channels. R8 values use lossless tiled storage when it beats raw bytes;
-  // no full-atlas layers or reduced-resolution shadows.
+  // channels. Adaptive palettes approximate soft R8 values within an explicit
+  // error bound; constant and binary coverage stays exact. No full-atlas
+  // layers or reduced-resolution shadows.
   class Masks {
   public:
     static constexpr uint32_t maximumBytes = 16u << 20; // encoded tables + quantized values

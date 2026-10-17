@@ -94,9 +94,15 @@ int main(int argc, char **argv) {
   data.mixed.directCharts = data.mixed.charts;
   data.mixed.occlusion = f::mixed::Occlusion(1, 2);
   data.mixed.occlusion.mark(0, 0, f::mixed::Visibility::Clear);
-  const f::mixed::Masks::Entry sparse{0, 1, 0, 5, 5, 1};
-  const std::vector<uint8_t> sparseBytes{128, 0, 0, 0}; // One constant 8x8 tile, clipped to 5x5.
-  data.mixed.masks = f::mixed::Masks::restore({&sparse, 1}, sparseBytes, data.layout, 2);
+  std::vector<uint8_t> sparseValues(25);
+  constexpr uint8_t colors[] = {0, 1, 254, 255};
+  for (uint32_t i = 0; i < sparseValues.size(); ++i)
+    sparseValues[i] = colors[i % 4];
+  const auto sparseBytes = f::mixed::mask::encodeCompact(sparseValues, 5, 5);
+  require(sparseBytes.encoding == f::mixed::mask::tiled && sparseBytes.bytes.size() == 24,
+          "Cache fixture includes a palette tile clipped to a small chart");
+  const f::mixed::Masks::Entry sparse{0, 1, 0, 5, 5, sparseBytes.encoding};
+  data.mixed.masks = f::mixed::Masks::restore({&sparse, 1}, sparseBytes.bytes, data.layout, 2);
   f::probes::Capture capture;
   capture.bounds.include({-1, -1, -1});
   capture.bounds.include({1, 1, 1});

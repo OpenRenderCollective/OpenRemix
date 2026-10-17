@@ -386,8 +386,8 @@ component; they do not diagnose its sampling cause on their own.
 For a fresh diagnostic bake, `REMIX_DEBUG_MASK_COSTS=1` together with
 `REMIX_DEBUG_BAKE_CAPTURE_PREFIX` writes `.overflow-mask-costs.bin`. It measures every partial
 overflow candidate before admission, including rejected masks: R8 texel populations, tile cardinality,
-payload-size histogram, lossless cost and estimated endpoint-preserving 2/4-bit costs and errors.
-These estimates do not enable a lower-bit rendering format. The audit adds CPU work only when
+payload-size histogram, lossless cost, actual bounded-palette cost/error and estimated uniform 2/4-bit
+costs and errors. Uniform quantization estimates do not enable those rendering formats. The audit adds CPU work only when
 requested, retains aggregate counters rather than every mask, and does not change the memory budget
 or allocation order. A cache hit has no candidate stream to measure; use a separate empty cache.
 
@@ -1121,12 +1121,21 @@ or occluders can be missed, just as in the corresponding constant filtered chart
 not geometric proofs of visibility over every point on a surface.
 
 Sparse masks allocate only their chart regions, with no extra full-atlas layers. An R8 mask chooses
-between raw bytes and lossless 8x8 tiles. Constant tiles store their actual byte, binary tiles store
-64 coverage bits, and other tiles retain all 64 original bytes. Compact storage is used only when
-smaller than the padded raw rectangle. Dimensions, luxel density, quantization and bilinear filtering
-remain unchanged. The decoder handles interpolation across tile boundaries; cache import validates
-tile tags, contiguous payload offsets and lengths before publication. CPU codec and shader decoder
-live in `mixed/mask_codec.*` and `shaders/overflow-mask.glsl` respectively.
+between raw bytes and adaptive 8x8 tiles. Constant tiles store their actual byte and binary tiles store
+64 exact coverage bits. Soft tiles try local four-, eight- and sixteen-colour palettes, then retain
+all 64 original bytes if fitting exceeds eight R8 units of error at any sample. Zero and 255 get
+reserved colours; intermediate samples never select those endpoints. The bound applies to quantized
+R8 visibility, not to radiance or unsampled geometry. Local palettes preserve faint/near-clear gradients
+better than uniformly quantizing the whole visibility range at the same index precision.
+
+Four/eight/sixteen-colour payloads use 20/32/48 bytes; raw soft tiles use 64 bytes, each with a
+four-byte descriptor. Palettes are fit on the bake worker using bounded iterations. The lowest-cost
+palette satisfying the error limit wins; a whole chunk uses raw bytes when those are smaller.
+Dimensions, luxel density and bilinear filtering remain unchanged. The decoder interpolates across
+tile boundaries, including three-bit index word crossings. Cache import validates palette mode,
+sorted colours, canonical indices, contiguous payload offsets and lengths before publication.
+CPU codec/fitting and shader decoder live in `mixed/mask_codec.*`, `mixed/mask_palette.*` and
+`shaders/overflow-mask.glsl` respectively. Algorithm cache identity invalidates older allocation results.
 
 Chart-major tables
 sorted by captured-light index support binary search in the existing occlusion texture. Tables plus

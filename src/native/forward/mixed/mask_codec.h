@@ -16,6 +16,11 @@ namespace remix::forward::mixed::mask {
   // offsets are chunk-relative bytes in the lower 30 bits. Raw wins ties.
   Encoded encode(std::span<const uint8_t> texels, uint32_t width, uint32_t height,
                  std::stop_token cancelled = {});
+  // Tag 3 adds local 4/8/16-colour palettes (20/32/48 bytes). Descriptor low
+  // bits select their size. Constant/binary tiles stay exact; soft errors above
+  // eight R8 units retain raw storage. No texels lose spatial resolution.
+  Encoded encodeCompact(std::span<const uint8_t> texels, uint32_t width, uint32_t height,
+                        std::stop_token cancelled = {});
   // Validate canonical payload offsets/tags and return the occupied byte count.
   // The span may include subsequent chunks; nothing beyond this chunk is read.
   size_t validate(std::span<const uint8_t> bytes, uint32_t width, uint32_t height, uint32_t encoding);
@@ -31,6 +36,8 @@ namespace remix::forward::mixed::mask {
     std::array<uint64_t, 65> tileCardinality{};
     std::array<uint64_t, 32> maskSizeHistogram{}; // floor(log2(lossless payload bytes))
     std::array<uint64_t, 2> absoluteError{}, squaredError{}, maximumError{}; // R8 units, 2/4 bits
+    uint64_t compactBytes = 0, compactAbsoluteError = 0, compactSquaredError = 0, compactMaximumError = 0;
+    std::array<uint64_t, 256> compactErrorHistogram{}; // Per-tile maximum R8 error.
     void observe(std::span<const uint8_t> values, uint32_t width, uint32_t height,
                  uint64_t encodedBytes, std::stop_token cancelled = {});
   };
