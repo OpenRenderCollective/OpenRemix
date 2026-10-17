@@ -26,6 +26,9 @@ void basis(vec3 d, out float sh[9]) {
   sh[7] = 1.092548431 * d.x * d.z;
   sh[8] = .5462742153 * (d.x * d.x - d.y * d.y);
 }
+#ifdef AGGREGATE_DIFFUSE
+#include "aggregate.glsl"
+#endif
 void main() {
   uint index =
 #ifdef PARALLEL_BAKE
@@ -234,6 +237,9 @@ void main() {
     basis(direction, sh);
     for (uint j = 0; j < 9; ++j)
       outputValue.irradiance[j].rgb += value * sh[j];
+#ifdef AGGREGATE_DIFFUSE
+    accumulateBakedDiffuse(outputValue, origin, medium, i + rayFrame.control.y);
+#endif
     vec3 axis = abs(direction);
     uint face = axis.x >= axis.y && axis.x >= axis.z ? (direction.x >= 0 ? 0u : 1u)
                 : axis.y >= axis.z                   ? (direction.y >= 0 ? 2u : 3u)

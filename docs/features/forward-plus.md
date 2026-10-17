@@ -166,6 +166,17 @@ their nine directional coefficients. This preserves the same emitter samples, bl
 and mask encoding. It does not remove the per-texel/per-light visibility workload: the four retained
 direct-light channels and separate overflow masks remain a scalability limitation.
 
+The private bake transport also accepts explicit fully baked diffuse membership through
+`bake/policy.*`. It preserves captured indices, rejects moving-light membership and samples
+selected static direct emitters into the existing RGB irradiance SH using the all-light mixture PDF.
+The direct estimator has an independent ordinal-based random stream; visibility/direct-SH,
+radiance captures and streamed live lighting retain their existing contracts. The ordinary map
+shaders exclude the aggregate estimator, and its separate pipeline is compiled only when needed.
+The ordinary map
+controller still uses the legacy policy. Automatic mixed-light selection, runtime diffuse
+suppression and cache/publication of aggregate ownership must be integrated before enabling it.
+Generated emissive geometry needs an explicit sampling/double-counting treatment as well.
+
 An enabled live dome is drawn as a display background, followed by the existing raster sky. The dome uses
 the camera rotation and the light's world-to-local transform, with horizontal panorama wrapping and
 vertical clamping. Camera translation does not move it. This pass needs no hardware ray queries or

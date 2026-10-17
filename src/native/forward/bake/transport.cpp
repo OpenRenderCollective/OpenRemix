@@ -34,7 +34,8 @@ namespace remix::forward::bake {
   Transport::Gpu::~Gpu() {
     if (pool)
       vkDestroyDescriptorPool(device, pool, nullptr);
-    for (auto handle : {tracePipeline, parallelPipeline, visibilityPipeline, atlasPipeline})
+    for (auto handle : {tracePipeline, parallelPipeline, visibilityPipeline, atlasPipeline,
+                        aggregatePipeline, aggregateParallelPipeline})
       if (handle)
         pipeline::destroyPipeline(device, handle, nullptr);
     for (auto handle : {layout, atlasLayout})
@@ -91,6 +92,7 @@ namespace remix::forward::bake {
     next->device = device;
     next->source = std::move(source);
     next->options = options;
+    next->aggregateDiffuse = applyDirectPolicy(*next->source, options.directLighting, inputs.lights);
     next->timing = std::make_unique<Timing>(physical, device, options.queueFamily);
     next->createInputs(std::move(inputs));
     next->createLayouts();
@@ -398,8 +400,10 @@ namespace remix::forward::bake {
       frame.trace[0] = g.sunDistance;
     frame.counts[2] = samples;
     frame.counts[3] = bounces;
+    const bool aggregate = mode == Mode::Irradiance && g.aggregateDiffuse && !slot.lighting;
     frame.control = {g.domeLayer, firstSample, uint32_t(mode), uint32_t(g.hasDielectrics) |
-                         (g.options.lightImportanceSampling && !slot.lighting ? 2u : 0u)};
+                         (g.options.lightImportanceSampling && !slot.lighting ? 2u : 0u) |
+                         (aggregate ? 4u : 0u)};
     slot.constants->write(&frame, sizeof(frame));
     slot.count = count;
     slot.samples = samples;
@@ -411,6 +415,7 @@ namespace remix::forward::bake {
                               mode == Mode::SunVisibility || mode == Mode::SunDirectVisibility);
     slot.scalarVisibility = slot.compactVisibility && mode == Mode::Visibility;
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE,
+                      aggregate ? (parallel ? g.aggregateParallelPipeline : g.aggregatePipeline) :
                       slot.compactVisibility ? g.visibilityPipeline :
                       parallel ? g.parallelPipeline : g.tracePipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, g.layout, 0, 1, &slot.set, 0, nullptr);

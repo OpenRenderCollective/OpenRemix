@@ -105,3 +105,8 @@ light_selection_test = executable('remix-bake-light-selection-test', 'light_samp
   '../../src/native/forward/bake/light_sampling.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Bake light hierarchy preserves indices and normalized exploration', light_selection_test)
+
+direct_policy_test = executable('remix-bake-direct-policy-test', 'direct_policy.cpp',
+  '../../src/native/forward/bake/policy.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Baked diffuse policy preserves mixed and moving light identities', direct_policy_test)

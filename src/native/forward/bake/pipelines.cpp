@@ -60,6 +60,14 @@ namespace remix::forward::bake {
     };
     tracePipeline = compute(transportShader, sizeof(transportShader), layout);
     parallelPipeline = compute(parallelShader, sizeof(parallelShader), layout);
+    // Keep optional aggregate transport out of the ordinary bake/live kernels.
+    // Compile only the variant this immutable policy can actually dispatch.
+    if (aggregateDiffuse) {
+      if (options.parallel)
+        aggregateParallelPipeline = compute(aggregateParallelShader, sizeof(aggregateParallelShader), layout);
+      else
+        aggregatePipeline = compute(aggregateShader, sizeof(aggregateShader), layout);
+    }
     if (options.cpuReadback && options.parallel)
       visibilityPipeline = compute(visibilityShader, sizeof(visibilityShader), layout);
     atlasPipeline = compute(atlasShader, sizeof(atlasShader), atlasLayout);

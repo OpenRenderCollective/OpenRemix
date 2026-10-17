@@ -8,6 +8,7 @@
 
 namespace remix::forward::bake {
   struct Transport::Gpu {
+    bool aggregateDiffuse = false;
     VkPhysicalDevice physical = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
     std::shared_ptr<const scene::BakeScene> source;
@@ -30,6 +31,7 @@ namespace remix::forward::bake {
     VkPipelineLayout layout = VK_NULL_HANDLE, atlasLayout = VK_NULL_HANDLE;
     VkPipeline tracePipeline = VK_NULL_HANDLE, parallelPipeline = VK_NULL_HANDLE,
                visibilityPipeline = VK_NULL_HANDLE, atlasPipeline = VK_NULL_HANDLE;
+    VkPipeline aggregatePipeline = VK_NULL_HANDLE, aggregateParallelPipeline = VK_NULL_HANDLE;
     VkDescriptorPool pool = VK_NULL_HANDLE;
     VkSampler sampler = VK_NULL_HANDLE;
     std::vector<VkDescriptorSet> atlasSets;

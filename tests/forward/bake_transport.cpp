@@ -316,6 +316,132 @@ namespace {
             "Removing streamed lights clears their contribution without stale "
             "captured illumination");
   }
+  void aggregateDiffuse(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
+    const auto black = world.material({});
+    const auto background = world.quad(black, {{{-4, -4, -3}, {4, -4, -3}, {4, 4, -3}, {-4, 4, -3}}});
+    auto source = world.scene({background});
+    scene::SphereLight red;
+    red.id = 91;
+    red.radius = .25f;
+    red.position[2] = 2;
+    red.radiance[0] = 3;
+    scene::SphereLight blue = red;
+    blue.id = 19;
+    blue.position[0] = .5f;
+    blue.radiance[0] = 0;
+    blue.radiance[2] = 5;
+    scene::SphereLight green = red;
+    green.id = 51;
+    green.triangle = 1;
+    green.radiance[0] = 0;
+    green.radiance[1] = 2;
+    const float corners[3][3] = {{-.3f, -.25f, 2}, {0, .3f, 2}, {.3f, -.25f, 2}};
+    for (uint32_t corner = 0; corner < 3; ++corner)
+      std::copy_n(corners[corner], 3, green.corners[corner]);
+    source->lights = {red, blue, green};
+    source->dome.enabled = true;
+    source->dome.radiance = {.1f, .1f, .1f};
+    const uint32_t baked[] = {0, 2};
+    bake::Options options;
+    options.textureResolution = 32;
+    options.batchPoints = 8;
+    options.rayBudget = 1u << 18;
+    options.directLighting = bake::directPolicy(*source, baked);
+    const auto initialize = [&](bake::Transport &transport, const auto &input, const auto &settings,
+                                 const char *name) {
+      auto ticket = pipelines.prepare(name, [&] {
+        transport.initialize(fixture.physical, fixture.device, input, settings);
+      });
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+      while (!ticket->ready() && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      require(ticket->ready(), "Aggregate diffuse transport preparation completed");
+      ticket->check();
+      fixture.begin();
+      transport.recordPrepare(fixture.command, world.resources);
+      fixture.finish();
+      transport.releaseBuildInputs();
+    };
+    bake::Transport aggregate, legacy;
+    initialize(aggregate, source, options, "aggregate-diffuse-fixture");
+    auto legacyOptions = options;
+    legacyOptions.directLighting = {};
+    initialize(legacy, source, legacyOptions, "aggregate-diffuse-reference");
+    const bake::Point point{};
+    fixture.begin();
+    aggregate.recordBatch(fixture.command, 0, {&point, 1}, 8192, 1);
+    legacy.recordBatch(fixture.command, 0, {&point, 1}, 8192, 1);
+    fixture.finish();
+    bake::Result actual, indirect;
+    aggregate.read(0, {&actual, 1});
+    legacy.read(0, {&indirect, 1});
+    bake::VisibilityPoint connections[] = {{point, 0}, {point, 1}, {point, 2}};
+    fixture.begin();
+    aggregate.recordVisibility(fixture.command, 1, connections, 8192, true);
+    fixture.finish();
+    bake::VisibilityResult direct[3];
+    aggregate.readVisibility(1, direct);
+    bake::Result reference;
+    bake::Result contribution = actual;
+    for (uint32_t coefficient = 0; coefficient < 9; ++coefficient) {
+      reference.irradiance[coefficient][0] = direct[0].irradiance[coefficient] * 3;
+      reference.irradiance[coefficient][1] = direct[2].irradiance[coefficient] * 2;
+      require(actual.irradiance[coefficient][2] == indirect.irradiance[coefficient][2],
+              "Mixed blue adds no direct energy and the existing environment contribution is not doubled");
+      for (uint32_t color = 0; color < 3; ++color)
+        contribution.irradiance[coefficient][color] -= indirect.irradiance[coefficient][color];
+    }
+    require(evaluate(indirect, {0, 0, 1}, 2) > .1f,
+            "The additive energy reference contains nonzero pre-existing irradiance");
+    for (const Vec3 normal : {Vec3{0, 0, 1}, Vec3{.6f, 0, .8f}, Vec3{0, -.6f, .8f}})
+      for (uint32_t color = 0; color < 2; ++color) {
+        const float expected = evaluate(reference, normal, color), measured = evaluate(contribution, normal, color);
+        if (!(expected > 0 && std::abs(measured - expected) < .04f * expected))
+          std::fprintf(stderr, "Aggregate mismatch: normal %.3f %.3f %.3f, color %u, measured %.9g expected %.9g\n",
+                        normal[0], normal[1], normal[2], color, measured, expected);
+        require(expected > 0 && std::abs(measured - expected) < .04f * expected,
+                "Aggregate sphere/triangle irradiance agrees with independently attributed direct SH");
+      }
+    const bake::Point ray{{0, 0, 0, 0}, {0, 0, 1, 0}};
+    fixture.begin();
+    aggregate.recordRadiance(fixture.command, 0, {&ray, 1}, 1);
+    fixture.finish();
+    bake::Result capture;
+    aggregate.read(0, {&capture, 1});
+    require(capture.irradiance[0] == Vec4{.1f, .1f, .1f, options.distance},
+            "Radiance captures retain outgoing-radiance semantics without aggregate irradiance added");
+    auto serialSource = std::make_shared<scene::BakeScene>(*source);
+    serialSource->dome.enabled = false;
+    auto serialOptions = options;
+    serialOptions.parallel = false;
+    bake::Transport serial;
+    initialize(serial, serialSource, serialOptions, "aggregate-diffuse-serial");
+    fixture.begin();
+    serial.recordBatch(fixture.command, 0, {&point, 1}, 8192, 1);
+    fixture.finish();
+    bake::Result serialResult;
+    serial.read(0, {&serialResult, 1});
+    for (uint32_t coefficient = 0; coefficient < 9; ++coefficient)
+      for (uint32_t color = 0; color < 3; ++color)
+        require(std::abs(serialResult.irradiance[coefficient][color] -
+                          contribution.irradiance[coefficient][color]) < 2e-5f,
+                "Serial and parallel aggregate kernels retain the same ordinal-based direct samples");
+    const auto blocker = world.quad(black, {{{-4, -4, 1}, {4, -4, 1}, {4, 4, 1}, {-4, 4, 1}}});
+    auto occluded = world.scene({background, blocker});
+    occluded->lights = source->lights;
+    bake::Transport blocked;
+    initialize(blocked, occluded, options, "aggregate-diffuse-blocked");
+    fixture.begin();
+    blocked.recordBatch(fixture.command, 0, {&point, 1}, 8192, 1);
+    fixture.finish();
+    bake::Result shadow;
+    blocked.read(0, {&shadow, 1});
+    for (const auto &coefficient : shadow.irradiance)
+      require(coefficient == Vec4{}, "Fully baked direct cannot pass through an opaque wall");
+    std::printf("Aggregate direct: red %.6f/%.6f, triangle green %.6f/%.6f; mixed blue 0, behind wall 0\n",
+                 evaluate(contribution, {0, 0, 1}, 0), evaluate(reference, {0, 0, 1}, 0),
+                 evaluate(contribution, {0, 0, 1}, 1), evaluate(reference, {0, 0, 1}, 1));
+  }
   void overflowVisibility(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
     const auto receiver = world.wall(world.material({}), 0, 2);
     const auto blocker = world.quad(world.material({}),
@@ -1606,6 +1732,7 @@ int main() try {
     embeddedEmitterVisibility(fixture, pipelines, world);
     emitterParity(fixture, pipelines, world);
     lightSelectionVariance(fixture, pipelines, world);
+    aggregateDiffuse(fixture, pipelines, world);
     liveLighting(fixture, pipelines, world);
     std::printf("Bake readback: emitter %.4f, blocked %.4f, alpha holes %.4f, "
                 "local light %.4f, shadowed %.4f\n",

@@ -26,7 +26,7 @@ BACKENDS = {
     'water': ('forward::water', 'vulkan1.1', ('snapshot', 'snapshotSingle', 'vert', 'frag', 'overlayVert', 'overlayFrag', 'compositeFrag', 'compositeSingle')),
     'live_gi': ('forward::ray::gi', 'vulkan1.2', ('frag', 'guides')),
     'live_ray': ('forward::ray', 'vulkan1.2', ('launch', 'merge')),
-    'bake': ('forward::bake', 'vulkan1.2', ('atlas', 'transport', 'parallel', 'visibility')),
+    'bake': ('forward::bake', 'vulkan1.2', ('atlas', 'transport', 'parallel', 'visibility', 'aggregate', 'aggregateParallel')),
     'forward_test': ('forward::test', 'vulkan1.2', ('comp', 'probes', 'water')),
     'forward': ('forward', 'vulkan1.1', ('vert', 'lightmapVert', 'frag', 'cluster', 'shadowVert', 'shadowFrag', 'localShadowVert', 'localShadowFrag', 'compositeVert', 'compositeFrag', 'compositeSingle', 'ssrFrag', 'ssrResolve', 'ssrResolveSingle', 'ssrReduce', 'ssrTrace', 'ssrFilter')),
     'postfx': ('postfx', 'vulkan1.2', ('meter', 'resolve', 'down', 'up')),
@@ -119,9 +119,10 @@ def defines_for(backend, stage, stages):
         source = directory / 'screen.comp'
         defines = ['-DRAY_LAUNCH=1'] if stage == 'launch' else []
     if backend == 'bake':
-        source = directory / ('transport.comp' if stage in ('parallel', 'visibility') else stage + '.comp')
-        if stage in ('parallel', 'visibility'): defines = ['-DPARALLEL_BAKE=1']
+        source = directory / ('transport.comp' if stage in ('parallel', 'visibility', 'aggregate', 'aggregateParallel') else stage + '.comp')
+        if stage in ('parallel', 'visibility', 'aggregateParallel'): defines = ['-DPARALLEL_BAKE=1']
         if stage == 'visibility': defines += ['-DCOMPACT_VISIBILITY=1']
+        if stage in ('aggregate', 'aggregateParallel'): defines += ['-DAGGREGATE_DIFFUSE=1']
     if backend == 'forward_test':
         source = directory / ('ray-scene.comp' if stage == 'comp' else stage + '.comp')
     if backend == 'forward':
