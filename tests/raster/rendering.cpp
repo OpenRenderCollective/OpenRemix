@@ -2329,6 +2329,34 @@ namespace {
       r.createLight(light, lamp);
       submit();
       pixel(target.render(), 32, 32, 0, 0, 205, "Dome transform rotates the panoramic background");
+      // A horizontal horizon must agree with world geometry when pitching.
+      // Longitude-only colours above cannot detect a reversed vertical axis.
+      std::array<uint8_t, 8 * 64 * 4> horizon{};
+      for (uint32_t y = 0; y < 64; ++y)
+        for (uint32_t x = 0; x < 8; ++x) {
+          horizon[(y * 8 + x) * 4 + (y < 32 ? 1 : 2)] = 255;
+          horizon[(y * 8 + x) * 4 + 3] = 255;
+        }
+      texture.height = 64;
+      texture.data = horizon.data();
+      texture.dataSize = horizon.size();
+      r.createTexture(texture, imageHandle);
+      dome.transform.matrix[0][0] = dome.transform.matrix[2][2] = 1;
+      r.createLight(light, lamp);
+      for (float pitch : {0.f, -.2617994f, .2617994f}) {
+        params.right = {1, 0, 0};
+        params.forward = {0, std::sin(pitch), std::cos(pitch)};
+        params.up = {0, std::cos(pitch), -std::sin(pitch)};
+        r.setupCamera(view);
+        submit();
+        const auto pitched = target.render();
+        const int horizonRow = int(32 + 32 * std::tan(pitch) / std::tan(.5235988f));
+        const size_t above = size_t((horizonRow - 12) * 64 + 32) * 4;
+        const size_t below = size_t((horizonRow + 12) * 64 + 32) * 4;
+        require(int(pitched[above + 1]) - int(pitched[above + 2]) > 100 &&
+                    int(pitched[below + 2]) - int(pitched[below + 1]) > 100,
+                "Sky north/south and pitched horizon agree with the world camera projection");
+      }
     }
     std::puts("Forward+ sky, world/raster coverage, absence and MSAA passed");
   }

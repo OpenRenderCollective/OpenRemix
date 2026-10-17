@@ -129,10 +129,10 @@ namespace remix::forward {
       data.occlusion = baking->volume()->occlusionParameters;
     data.camera = resources.camera();
     data.view = resources.view();
-    auto projection = resources.projection();
-    for (int c = 0; c < 4; ++c)
-      projection[c * 4 + 1] = -projection[c * 4 + 1];
-    data.inverseProjection = scene::inverse(projection);
+    // The shared camera already includes Vulkan framebuffer Y. Reconstruction
+    // from gl_FragCoord must invert that same projection, without flipping it
+    // back to the host convention (which mirrors sky, water and screen rays).
+    data.inverseProjection = scene::inverse(resources.projection());
     const auto position = transformPoint(scene::inverse(data.view), {0, 0, 0});
     std::copy(position.begin(), position.end(), data.cameraPosition.begin());
     const auto direction = normalized({sun.direction[0], sun.direction[1], sun.direction[2]});
