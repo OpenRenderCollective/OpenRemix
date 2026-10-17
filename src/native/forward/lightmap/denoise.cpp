@@ -1,4 +1,5 @@
 #include "forward/lightmap/denoise.h"
+#include "forward/lightmap/denoise_chart.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -31,18 +32,24 @@ namespace remix::forward::lightmap {
         OIDNFilter handle = nullptr;
         uint32_t width = 0, height = 0;
         OIDNBuffer image = nullptr;
+        size_t offset = 0;
         bool monitored = false;
       };
       OIDNDevice device = nullptr;
-      std::array<Model, 2> models{}; // HDR and signed directional weights stay committed independently
+      std::array<Model, denoising::coefficientCount> models{}; // one immutable image binding per SH band
       OIDNBuffer buffer = nullptr;
       size_t capacity = 0;
       size_t requiredCapacity = 0;
       DenoiseStatistics &statistics;
       std::stop_token cancellation;
+      bool inFlight = false;
       Filter(DenoiseStatistics &statistics, size_t requiredCapacity)
           : requiredCapacity(requiredCapacity), statistics(statistics) {}
       ~Filter() {
+        // Even cancellation/errors must retire queued work before its inputs,
+        // callbacks, filters or buffers can be released.
+        if (inFlight)
+          oidnSyncDevice(device);
         for (const auto &model : models)
           if (model.handle)
             oidnReleaseFilter(model.handle);
@@ -72,22 +79,29 @@ namespace remix::forward::lightmap {
           oidnSetFilterInt(model.handle, "maxMemoryMB", 256);
           // Fixed across charts, avoiding per-chart auto-exposure differences.
           oidnSetFilterFloat(model.handle, "inputScale", 1);
-          oidnSetFilterBool(model.handle, "directional", i == 1);
+          oidnSetFilterBool(model.handle, "directional", i != 0);
           check();
         }
       }
-      void run(std::vector<float> &image, uint32_t width, uint32_t height, bool directional) {
+      void run(std::span<float> images, uint32_t width, uint32_t height, uint32_t first) {
         checkCancellation(cancellation);
-        // A trained filter can introduce a small bias even into a constant field.
-        // Preserve those fields exactly and avoid a device/model dispatch for them.
-        bool constant = true;
-        for (size_t i = 3; i < image.size() && constant; ++i)
-          constant = std::abs(image[i] - image[i % 3]) <= 1e-7f;
-        if (constant) {
-          ++statistics.constantFields;
-          return;
+        const size_t plane = size_t(width) * height * 3;
+        const uint32_t count = uint32_t(images.size() / plane);
+        std::array<bool, denoising::coefficientCount> active{};
+        bool any = false;
+        for (uint32_t slot = 0; slot < count; ++slot) {
+          const auto image = images.subspan(size_t(slot) * plane, plane);
+          // Preserve constant fields exactly, avoiding both neural bias and work.
+          bool constant = true;
+          for (size_t i = 3; i < image.size() && constant; ++i)
+            constant = std::abs(image[i] - image[i % 3]) <= 1e-7f;
+          active[slot] = !constant;
+          statistics.constantFields += uint32_t(constant);
+          any |= !constant;
         }
-        const auto bytes = image.size() * sizeof(float);
+        if (!any)
+          return;
+        const auto bytes = images.size() * sizeof(float);
         if (bytes > capacity) {
           if (buffer)
             oidnReleaseBuffer(buffer);
@@ -99,9 +113,17 @@ namespace remix::forward::lightmap {
           for (auto &model : models)
             model.image = nullptr;
         }
-        oidnWriteBuffer(buffer, 0, bytes, image.data());
-        auto &model = models[directional ? 1 : 0];
-        if (model.image != buffer || model.width != width || model.height != height) {
+        // Commit every binding before queuing anything. Recommitting while an
+        // earlier field is running would introduce another implicit device wait.
+        for (uint32_t slot = 0; slot < count; ++slot) {
+          if (!active[slot])
+            continue;
+          checkCancellation(cancellation);
+          auto &model = models[first + slot];
+          const size_t offset = size_t(slot) * plane * sizeof(float);
+          if (model.image == buffer && model.width == width && model.height == height &&
+              model.offset == offset)
+            continue;
           // OIDN warns that progress callbacks add significant GPU synchronization
           // overhead. Small fields already have bounded cancellation between bands.
           model.monitored =
@@ -113,24 +135,38 @@ namespace remix::forward::lightmap {
             };
           oidnSetFilterProgressMonitorFunction(model.handle, monitor,
                                                model.monitored ? &cancellation : nullptr);
-          oidnSetFilterImage(model.handle, "color", buffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
-          oidnSetFilterImage(model.handle, "output", buffer, OIDN_FORMAT_FLOAT3, width, height, 0, 0, 0);
+          oidnSetFilterImage(model.handle, "color", buffer, OIDN_FORMAT_FLOAT3, width, height, offset, 0, 0);
+          oidnSetFilterImage(model.handle, "output", buffer, OIDN_FORMAT_FLOAT3, width, height, offset, 0, 0);
           oidnCommitFilter(model.handle);
           check();
           model.image = buffer;
           model.width = width;
           model.height = height;
+          model.offset = offset;
           ++statistics.preparations;
         }
+        oidnWriteBuffer(buffer, 0, bytes, images.data());
         check();
-        oidnExecuteFilter(model.handle);
+        for (uint32_t slot = 0; slot < count; ++slot) {
+          if (!active[slot])
+            continue;
+          checkCancellation(cancellation);
+          inFlight = true;
+          oidnExecuteFilterAsync(models[first + slot].handle);
+          check();
+          ++statistics.executions;
+          statistics.monitoredExecutions += uint32_t(models[first + slot].monitored);
+        }
+        // One ordered-device fence per chart batch. No output or model is
+        // touched until OIDN reports all queued operations complete.
+        oidnSyncDevice(device);
+        inFlight = false;
         check();
-        oidnReadBuffer(buffer, 0, bytes, image.data());
+        ++statistics.batches;
+        oidnReadBuffer(buffer, 0, bytes, images.data());
         check();
-        ++statistics.executions;
-        statistics.monitoredExecutions += uint32_t(model.monitored);
         statistics.transferBytes += 2 * bytes;
-        for (const auto value : image)
+        for (const auto value : images)
           if (!std::isfinite(value))
             throw std::runtime_error("OIDN returned nonfinite lightmap data");
       }
@@ -158,7 +194,8 @@ namespace remix::forward::lightmap {
       if (!a.width || !a.height || a.page >= layout.pages || uint64_t(a.x) + a.width > layout.pageSize ||
           uint64_t(a.y) + a.height > layout.pageSize)
         throw std::invalid_argument("Invalid denoising allocation");
-      largestImage = std::max(largestImage, size_t(a.width) * a.height * 3 * sizeof(float));
+      const size_t fieldBytes = size_t(a.width) * a.height * 3 * sizeof(float);
+      largestImage = std::max(largestImage, fieldBytes * denoising::batchFields(fieldBytes));
     }
     // Chart-local donors make charts independent. Group equal image shapes so
     // the same committed network can serve all of them without re-preparation.
@@ -185,65 +222,17 @@ namespace remix::forward::lightmap {
       if (chartPoints[chart].empty())
         continue;
       const auto &a = layout.charts[chart];
-      const size_t origin = (size_t(a.page) * layout.pageSize + a.y) * layout.pageSize + a.x;
-      // Three RGB host images for the largest chart, never a copy of the whole atlas.
-      std::vector<float> original(size_t(a.width) * a.height * 3), l0(original.size()), band(original.size());
-      statistics.peakHostBytes =
-          std::max(statistics.peakHostBytes, uint64_t(original.size()) * sizeof(float) * 3);
-      for (uint32_t y = 0; y < a.height; ++y)
-        for (uint32_t x = 0; x < a.width; ++x) {
-          const auto owner = layout.owners[origin + size_t(y) * layout.pageSize + x];
-          if (owner >= results.size() || layout.pointCharts[owner] != chart)
-            throw std::invalid_argument("Lightmap denoising requires chart-local dilation donors");
-          for (uint32_t c = 0; c < 3; ++c) {
-            const float value = results[owner].irradiance[0][c];
-            if (!std::isfinite(value) || value < 0)
-              throw std::invalid_argument("Invalid indirect L0");
-            original[(size_t(y) * a.width + x) * 3 + c] = value;
-          }
-        }
-      l0 = original;
-      filter.run(l0, a.width, a.height, false);
-      for (uint32_t coefficient = 1; coefficient < 9; ++coefficient) {
+      denoising::Chart image(layout, chart, results, chartPoints[chart], cancelled);
+      statistics.peakHostBytes = std::max(statistics.peakHostBytes, image.hostBytes());
+      const auto batch = image.fieldsPerBatch();
+      for (uint32_t first = 0; first < denoising::coefficientCount; first += batch) {
         checkCancellation(cancelled);
-        for (uint32_t y = 0; y < a.height; ++y)
-          for (uint32_t x = 0; x < a.width; ++x) {
-            const auto owner = layout.owners[origin + size_t(y) * layout.pageSize + x];
-            for (uint32_t c = 0; c < 3; ++c) {
-              const size_t k = (size_t(y) * a.width + x) * 3 + c;
-              // Cosine-convolved SH has |Ln/L0| <= 1.155 for L1 and .56 for L2.
-              // Dividing by two keeps every normalized signed coefficient in [-1,1].
-              const float value = results[owner].irradiance[coefficient][c];
-              if (!std::isfinite(value))
-                throw std::invalid_argument("Invalid indirect SH band");
-              band[k] = original[k] > 1e-10f ? std::clamp(value / (2 * original[k]), -1.f, 1.f) : 0;
-            }
-          }
-        filter.run(band, a.width, a.height, true);
-        for (const auto point : chartPoints[chart]) {
-          const size_t address = layout.addresses[point];
-          if (address < origin)
-            continue; // seam donors outside this chart rectangle remain raw
-          const size_t offset = address - origin, x = offset % layout.pageSize, y = offset / layout.pageSize;
-          if (x >= a.width || y >= a.height)
-            continue;
-          for (uint32_t c = 0; c < 3; ++c) {
-            const size_t k = (y * a.width + x) * 3 + c;
-            results[point].irradiance[coefficient][c] =
-                std::clamp(band[k], -1.f, 1.f) * 2 * std::max(l0[k], 0.f);
-          }
-        }
+        const auto count = std::min(batch, denoising::coefficientCount - first);
+        auto fields = image.pack(first, count);
+        filter.run(fields, a.width, a.height, first);
+        image.apply(first, count, fields);
       }
-      for (const auto point : chartPoints[chart]) {
-        const size_t address = layout.addresses[point];
-        if (address < origin)
-          continue;
-        const size_t offset = address - origin, x = offset % layout.pageSize, y = offset / layout.pageSize;
-        if (x >= a.width || y >= a.height)
-          continue;
-        for (uint32_t c = 0; c < 3; ++c)
-          results[point].irradiance[0][c] = std::max(l0[(y * a.width + x) * 3 + c], 0.f);
-      }
+      image.finish();
       ++statistics.charts;
       statistics.texels += uint64_t(a.width) * a.height;
       if (progress)

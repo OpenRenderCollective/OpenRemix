@@ -307,10 +307,10 @@ redistribution; `oidn_root` does not automatically package those files.
 Filtering runs on the existing preparation worker after transport readback and before half-float
 atlas encoding and persistent cache storage. OIDN chooses its default supported device, including
 GPU backends where available. This is an offline stage with explicit transfers from the existing
-CPU readback; it does not share live Vulkan atlas memory. Cancellation is checked between charts
-and coefficients. CPU filters and GPU images of at least one megapixel also use OIDN's internal
+CPU readback; it does not share live Vulkan atlas memory. Cancellation is checked between chart batches
+and band submissions. CPU filters and GPU images of at least one megapixel also use OIDN's internal
 progress callback for in-flight cancellation. Small GPU fields omit that callback because it adds
-significant synchronization overhead; their cancellation occurs between bounded fields instead.
+significant synchronization overhead; cancellation drains any queued bounded batch before cleanup.
 Errors prevent publication.
 
 Each chart is processed independently with its existing chart-local dilation donors. Packed atlas
@@ -322,17 +322,24 @@ and avoid unnecessary dispatches. All SH alpha channels, transport moments, prob
 direct SH and local/sun visibility remain unchanged. The filter cannot replace actual emitter
 radius or angular-size sampling, and does not increase world-space luxel density.
 
-The module holds three RGB float images for the largest chart it is processing, plus OIDN's reusable
-image buffer and internal working memory. Its 256 MiB `maxMemoryMB` request is a filter-memory target,
-not a hard cap on total host/device allocation. Filtering nine coefficients separately and many
-small charts can add substantial overhead. Chart boundaries are isolated rather than jointly
+The module holds original and filtered L0 plus a bounded batch of RGB float coefficient images for
+one chart, plus OIDN's reusable image buffer and internal working memory. Its 256 MiB `maxMemoryMB` request is a filter-memory target,
+not a hard cap on total host/device allocation. Evaluating nine coefficient filters for many
+small charts can still add substantial overhead. Chart boundaries are isolated rather than jointly
 denoised across connected faces; seam quality and sample-count savings need map-level visual review
 before enabling this by default. Denoising mode and compiled OIDN version participate in cache identity.
 
-HDR and directional filters retain separate committed models. Charts are grouped by image dimensions,
-and a model is rebound only when dimensions or the shared image buffer change. The image buffer is
-reserved once for the largest chart on its first nonconstant field. This reuse does not join chart
-images or let one chart influence another. Diagnostics report actual executions, preparations,
+Each SH band retains a committed filter and a separate image binding. Charts are grouped by image
+dimensions, and a filter is rebound only when dimensions, offset or the shared image buffer change.
+Up to nine bands are packed into one upload and queued in order on one OIDN device, with one explicit
+`oidnSyncDevice` before readback. All queued work is also drained before cleanup on cancellation or
+error. This reuse does not join chart images or let one chart influence another.
+
+Coefficient batches target at most 8 MiB of image data. Larger charts use fewer bands per batch;
+a single field larger than that target still requires one image. This bounds the image-buffer
+reservation by the larger of 8 MiB and the largest single field, without allocating a second atlas.
+Two additional host images retain original and filtered L0, so total host-image memory is larger
+than the batch target. Diagnostics report actual executions, preparations, upload/fence/readback batches,
 constant-field bypasses, internally monitored executions, peak host-image bytes, reserved image-buffer
 bytes and transfer bytes; OIDN's internal allocations are additional. Bake status reports completed/total denoised charts
 through worker-owned atomic counters so a long offline stage remains visible without blocking frames.
