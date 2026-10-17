@@ -1049,6 +1049,14 @@ namespace {
     require(bool(probes::sample(inset, {0, 0, -1}, {0, 0, 1}, .2f)),
             "A floor receiver can use influence reaching beyond its inset projection proxy");
     test::probeQueries(fixture, inset);
+    probes::Capture floorCaptures[] = {capture, capture};
+    floorCaptures[0].position = {-.5f, 0, 0};
+    floorCaptures[1].position = {.5f, 0, 0};
+    for (auto &pixel : floorCaptures[0].radiance)
+      pixel = {4, 0, 0, 0};
+    for (auto &pixel : floorCaptures[1].radiance)
+      pixel = {0, 2, 0, 0};
+    test::probeQueries(fixture, probes::filter(floorCaptures, 64));
     std::vector<probes::Capture> allSlots(probes::maxProbes, capture);
     for (uint32_t i = 0; i < allSlots.size(); ++i) {
       auto &slot = allSlots[i];

@@ -230,7 +230,11 @@ Placement initially uses the same fitted box for both; future authored volumes c
 For each eligible receiver, the reflected ray intersects the proxy box; the vector from capture origin to
 that hit supplies the corrected lookup direction. Receivers beyond a proxy face use the original ray
 when its box exit is behind them, avoiding a reversed lookup. Influence bounds determine overlap weights.
-Overlapping volumes blend before the single specular weight.
+Overlapping volumes blend before the single specular weight. Their weights combine the box-edge
+fade with inverse squared distance to the capture. A finite core, one tenth of the shortest influence
+half-extent, prevents a singularity at the capture origin. Capture distance keeps spatial preference
+on shared floors and walls, where every touching box has the same minimum edge fade. Normalized
+weights preserve HDR brightness and are independent of the world's coordinate units.
 
 Irradiance and reflection assets publish together only for their matching input/settings generation.
 Map replacement, cancellation, disable and in-flight descriptor ownership follow the same controller.

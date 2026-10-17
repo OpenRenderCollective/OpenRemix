@@ -93,6 +93,39 @@ int main() {
     require(value && std::abs((*value)[0] - 2) < 1e-5f && std::abs((*value)[1] - 1) < 1e-5f,
             "Overlapping probes blend once and preserve HDR energy through every roughness mip");
   }
+  // Both volumes touch the same floor. Box-edge distance is zero for every
+  // floor receiver, so it cannot distinguish the nearby and distant captures.
+  constants[0].position = {-.5f, 0, 0};
+  constants[1].position = {.5f, 0, 0};
+  const auto floorBlend = p::filter(constants, 64);
+  for (float roughness : {0.f, .3f, 1.f}) {
+    const auto left = p::sample(floorBlend, {-.5f, 0, -1}, {0, 0, 1}, roughness);
+    const auto right = p::sample(floorBlend, {.5f, 0, -1}, {0, 0, 1}, roughness);
+    require(left && right && (*left)[0] > (*right)[0] + .5f && (*right)[1] > (*left)[1] + .25f,
+            "Shared floor boundaries retain spatial blending between nearby captures");
+    require(std::abs((*left)[0] / 4 + (*left)[1] / 2 - 1) < 1e-5f,
+            "Boundary blending preserves HDR energy");
+    float previous = 5;
+    for (int step = 0; step <= 20; ++step) {
+      const float x = -.5f + step * .05f;
+      const auto value = p::sample(floorBlend, {x, 0, -1}, {0, 0, 1}, roughness);
+      require(value && std::isfinite((*value)[0]) && (*value)[0] <= previous &&
+                  previous - (*value)[0] < .15f + (step == 0 ? 5.f : 0.f),
+              "Capture preference changes continuously along a shared floor");
+      previous = (*value)[0];
+    }
+    auto scaled = floorBlend;
+    for (auto &record : scaled.header.probes)
+      for (auto *coordinate : {&record.minimum, &record.maximum, &record.influenceMinimum,
+                               &record.influenceMaximum, &record.position})
+        for (uint32_t axis = 0; axis < 3; ++axis)
+          (*coordinate)[axis] *= 40;
+    const auto scaledLeft = p::sample(scaled, {-20, 0, -40}, {0, 0, 1}, roughness);
+    require(scaledLeft && std::abs((*scaledLeft)[0] - (*left)[0]) < 1e-5f,
+            "Reflection blend weights are independent of world coordinate units");
+    std::printf("Floor roughness %.1f: left %.4f/%.4f, right %.4f/%.4f; continuous and scale invariant\n",
+                roughness, (*left)[0], (*left)[1], (*right)[0], (*right)[1]);
+  }
   std::stop_source stop;
   stop.request_stop();
   bool cancelled = false;

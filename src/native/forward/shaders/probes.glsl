@@ -68,7 +68,12 @@ bool probeRadiance(vec3 position, vec3 reflected, float roughness, out vec3 resu
     vec3 halfSize = (record.influenceMaximum.xyz - record.influenceMinimum.xyz) * .5;
     vec3 distance = abs((position - center) / halfSize);
     float edge = 1 - max(max(distance.x, distance.y), distance.z);
-    float weight = pow(max(.001, edge), 2);
+    // Shared floor/wall faces have identical zero edge fade. Prefer nearby
+    // captures there as well, with a finite core relative to the room size.
+    vec3 offset = position - record.position.xyz;
+    float smallestHalf = min(min(halfSize.x, halfSize.y), halfSize.z);
+    float coreSquared = max(.01 * smallestHalf * smallestHalf, 1e-20);
+    float weight = pow(max(.001, edge), 2) / max(dot(offset, offset), coreSquared);
     result +=
         mix(probeMip(probe, low, corrected), probeMip(probe, high, corrected), lod - float(low)) * weight;
     total += weight;

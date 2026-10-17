@@ -229,10 +229,12 @@ namespace remix::forward::probes {
       const auto &record = data.header.probes[probe];
       bool inside = true;
       float exitDistance = std::numeric_limits<float>::max(), edge = 1;
+      float smallestHalf = std::numeric_limits<float>::max();
       for (uint32_t c = 0; c < 3; ++c) {
         inside &= position[c] >= record.influenceMinimum[c] && position[c] <= record.influenceMaximum[c];
         const float center = (record.influenceMinimum[c] + record.influenceMaximum[c]) * .5f;
         const float half = (record.influenceMaximum[c] - record.influenceMinimum[c]) * .5f;
+        smallestHalf = std::min(smallestHalf, half);
         edge = std::min(edge, 1 - std::abs((position[c] - center) / half));
         if (std::abs(reflected[c]) > 1e-10f) {
           const float plane = reflected[c] > 0 ? record.maximum[c] : record.minimum[c];
@@ -252,7 +254,15 @@ namespace remix::forward::probes {
         return lookup(std::span(data.texels).subspan(start, 6 * size * size), size, corrected);
       };
       const auto a = mip(low), b = mip(high);
-      const float weight = std::pow(std::max(.001f, edge), 2.f);
+      // Several room captures can share a solid floor/wall boundary. Their
+      // edge fades all reach zero there; capture distance preserves spatial
+      // preference instead of averaging every touching capture equally. A
+      // small room-relative core keeps the weight finite at capture origins.
+      Vec3 offset;
+      for (uint32_t c = 0; c < 3; ++c)
+        offset[c] = position[c] - record.position[c];
+      const float coreSquared = std::max(.01f * smallestHalf * smallestHalf, 1e-20f);
+      const float weight = std::pow(std::max(.001f, edge), 2.f) / std::max(dot(offset, offset), coreSquared);
       for (uint32_t c = 0; c < 3; ++c)
         result[c] += weight * std::lerp(a[c], b[c], lod - low);
       total += weight;
