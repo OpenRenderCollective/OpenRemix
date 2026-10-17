@@ -357,6 +357,8 @@ bake error rather than silently storing unfiltered output under a denoised cache
 builds need its runtime library, core and selected device plugin available to the loader, together
 with that plugin's dependencies. The SDK's license and third-party notices must accompany any
 redistribution; `oidn_root` does not automatically package those files.
+On Windows, `scripts/windows/package-runtime.py` bundles the configured SDK's DLLs
+and notices alongside USD and the renderer; see [runtime packaging](../platforms.md#build-on-windows).
 
 Filtering runs on the existing preparation worker after transport readback and before half-float
 atlas encoding and persistent cache storage. OIDN chooses its default supported device, including

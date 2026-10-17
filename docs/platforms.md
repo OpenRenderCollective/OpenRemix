@@ -67,6 +67,22 @@ python scripts/common/package-remix.py --build _work/build/windows --deps _work/
 ```
 
 The package contains `remix.dll`, `SDL3.dll` and the sample together in `bin`.
+For a wrapper that loads a flat `openremix` runtime directory, the Windows-only
+bundler also reads the build's USD and OIDN options and includes their runtime
+libraries, plugin resources and notices:
+
+```powershell
+python scripts/windows/package-runtime.py --build _work/build/windows --sdl _work/deps/windows/prefix/bin/SDL3.dll --output _work/packages/windows-runtime
+```
+
+Use a fresh output directory and the SDL DLL linked by that build (the pinned
+fallback can name it `SDL3_shared.dll`). The bundle records source paths and
+SHA-256 hashes in `runtime-manifest.json`. OIDN builds include all SDK device
+plugins and use its newer oneTBB DLL where USD shares that dependency; validate
+the combined runtime on the target machine. Builds without OIDN use the USD TBB
+prefix and its adjacent `sources/onetbb` notices. This command does not install
+files into a game. It targets the repository's pinned Windows dependency layouts.
+
 The Vulkan loader/driver and Visual C++ runtime are platform prerequisites. Null HWND
 startup creates a 1280×720 window. Existing HWNDs retain native ownership after Shutdown.
 GPU tests (`meson configure _work/build/windows -Dgpu_tests=true`) include owned/borrowed HWNDs
