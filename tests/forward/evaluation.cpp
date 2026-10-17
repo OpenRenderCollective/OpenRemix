@@ -84,6 +84,8 @@ int main() {
   auto invalid = values;
   invalid.back().statistics[1] = std::numeric_limits<float>::quiet_NaN();
   require(!audit.observe(0, invalid), "Invalid flags refuse the entire geometry batch");
+  require(!audit.observe(uint32_t(values.size()), std::span(values).first(1)),
+          "Out-of-range readback cannot address unrelated candidate memory");
   require(audit.observe(0, values), "A valid batch remains usable after an invalid batch was refused");
   require(!audit.observe(0, values), "Duplicate readback cannot bias geometry preference");
   const auto assessed = audit.finish();
@@ -129,7 +131,7 @@ int main() {
   require(empty.rays().empty() && empty.finish().empty(), "Empty candidate work needs no GPU submission");
   bool bounded = false;
   try {
-    p::ProjectionAudit excessive(std::vector<p::FittedRegion>(161));
+    p::ProjectionAudit excessive(std::vector<p::FittedRegion>(161, candidates.front()));
   } catch (const std::invalid_argument &) {
     bounded = true;
   }
@@ -142,7 +144,7 @@ int main() {
   } catch (const std::runtime_error &) {
     cancelled = true;
   }
-  require(cancelled, "Map changes cancel geometry preparation before allocation");
+  require(cancelled, "Map changes cancel geometry preparation");
   std::printf("Candidate geometry: doorway %.4f, rooms %.4f/%.4f; bounded "
               "streaming and explicit misses passed\n",
               assessed[0].quality, assessed[1].quality, assessed[2].quality);
