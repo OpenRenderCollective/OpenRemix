@@ -1,5 +1,7 @@
 #include "forward/mixed/masks.h"
 #include "forward/mixed/mask_codec.h"
+#include "forward/mixed/mask_pages.h"
+#include "forward/mixed/map.h"
 #include "gpu_fixture.h"
 #include "mask_shaders/embedded.h"
 #include <cmath>
@@ -12,7 +14,8 @@ int main() try {
   Fixture fixture(false); // Decoder requires only core Vulkan, not hardware RT.
   struct Gpu {
     VkDevice device;
-    Buffer asset, input, output;
+    Buffer asset, input, output, staging;
+    std::unique_ptr<mixed::OcclusionMap> pages;
     VkDescriptorSetLayout setLayout{};
     VkPipelineLayout layout{};
     VkPipeline pipeline{};
@@ -31,7 +34,7 @@ int main() try {
   std::vector<float> expected;
   std::vector<mixed::Masks::Entry> entries;
   std::vector<uint8_t> bytes;
-  for (uint32_t mode = 0; mode < 4; ++mode) {
+  for (uint32_t mode = 0; mode < 9; ++mode) {
     const uint32_t chart = mode == 1 ? 1 : 0, light = mode >= 2 ? mode - 1 : 0;
     const auto &a = layout.charts[chart];
     std::vector<uint8_t> pixels(size_t(a.width) * a.height);
@@ -59,7 +62,7 @@ int main() try {
     // Every centre, half-texel interpolation, tile boundary and chart edge.
     for (uint32_t y = 0; y < a.height * 2 - 1; ++y)
       for (uint32_t x = 0; x < a.width * 2 - 1; ++x) {
-        queries.push_back({{chart, light + 1, 0, 0},
+        queries.push_back({{chart, light + 1, 1, 0},
                            {float(x) / (2 * (a.width - 1)), float(y) / (2 * (a.height - 1)), 0, 1}});
         const uint32_t x0 = x / 2, x1 = std::min(x0 + 1, a.width - 1),
                        y0 = y / 2, y1 = std::min(y0 + 1, a.height - 1);
@@ -72,15 +75,28 @@ int main() try {
                                     std::lerp(sample(x0, y1), sample(x1, y1), fx), fy));
       }
   }
-  const auto masks = mixed::Masks::restore(entries, bytes, layout, 3);
+  const auto masks = mixed::Masks::restore(entries, bytes, layout, 8);
   auto words = masks.words(2);
   words.insert(words.begin(), 0); // Tail base zero is reserved for absent masks.
+  const auto pages = mixed::packMaskPages(masks, 32, 16, 1u << 20);
+  require(pages && pages->layers > 4, "GPU fixture exercises many independent array layers");
+  const uint32_t pageBase = uint32_t(words.size());
+  const auto pageWords = pages->words(2);
+  words.insert(words.end(), pageWords.begin(), pageWords.end());
+  const size_t originalQueries = queries.size();
+  for (size_t i = 0; i < originalQueries; ++i) {
+    auto query = queries[i];
+    query.identity[2] = pageBase;
+    queries.push_back(query);
+    expected.push_back(expected[i]);
+  }
   const VkDescriptorSetLayoutBinding bindings[] = {
       {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
       {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-      {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}};
+      {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+      {3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}};
   const VkDescriptorSetLayoutCreateInfo setInfo{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-                                               .bindingCount = 3, .pBindings = bindings};
+                                               .bindingCount = 4, .pBindings = bindings};
   check(vkCreateDescriptorSetLayout(fixture.device, &setInfo, nullptr, &gpu.setLayout));
   struct Push { bake::UInt4 occlusion; uint32_t count; } push{{0, 2, 0, 1}, uint32_t(queries.size())};
   const VkPushConstantRange range{VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(Push)};
@@ -102,9 +118,26 @@ int main() try {
   gpu.input.create(fixture.physical, fixture.device, queries.size() * sizeof(Query), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   gpu.input.write(queries.data(), queries.size() * sizeof(Query));
   gpu.output.create(fixture.physical, fixture.device, queries.size() * sizeof(Vec4), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-  const VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3};
+  gpu.pages = std::make_unique<mixed::OcclusionMap>(fixture.physical, fixture.device,
+      VkExtent2D{pages->size, pages->size}, VK_FORMAT_R8_UNORM, pages->layers);
+  gpu.staging.create(fixture.physical, fixture.device, pages->texels.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+  gpu.staging.write(pages->texels.data(), pages->texels.size());
+  struct Sampler {
+    VkDevice device;
+    VkSampler handle{};
+    ~Sampler() { if (handle) vkDestroySampler(device, handle, nullptr); }
+  } sampler{fixture.device};
+  const VkSamplerCreateInfo samplerInfo{.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+      .magFilter = VK_FILTER_NEAREST, .minFilter = VK_FILTER_NEAREST,
+      .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+      .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+      .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+      .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
+  check(vkCreateSampler(fixture.device, &samplerInfo, nullptr, &sampler.handle));
+  const VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3},
+                                      {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1}};
   const VkDescriptorPoolCreateInfo poolInfo{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-      .maxSets = 1, .poolSizeCount = 1, .pPoolSizes = &size};
+      .maxSets = 1, .poolSizeCount = 2, .pPoolSizes = sizes};
   check(vkCreateDescriptorPool(fixture.device, &poolInfo, nullptr, &gpu.pool));
   VkDescriptorSet set;
   const VkDescriptorSetAllocateInfo allocate{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -116,7 +149,14 @@ int main() try {
     writes[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = i,
       .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &buffers[i]};
   vkUpdateDescriptorSets(fixture.device, 3, writes, 0, nullptr);
+  auto pageImage = gpu.pages->descriptor();
+  pageImage.sampler = sampler.handle;
+  const VkWriteDescriptorSet pageWrite{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+      .dstSet = set, .dstBinding = 3, .descriptorCount = 1,
+      .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &pageImage};
+  vkUpdateDescriptorSets(fixture.device, 1, &pageWrite, 0, nullptr);
   fixture.begin();
+  gpu.pages->upload(fixture.command, gpu.staging.handle, 0);
   vkCmdBindPipeline(fixture.command, VK_PIPELINE_BIND_POINT_COMPUTE, gpu.pipeline);
   vkCmdBindDescriptorSets(fixture.command, VK_PIPELINE_BIND_POINT_COMPUTE, gpu.layout, 0, 1, &set, 0, nullptr);
   vkCmdPushConstants(fixture.command, gpu.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), &push);

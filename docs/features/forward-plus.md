@@ -166,6 +166,21 @@ their nine directional coefficients. This preserves the same emitter samples, bl
 and mask encoding. It does not remove the per-texel/per-light visibility workload: the four retained
 direct-light channels and separate overflow masks remain a scalability limitation.
 
+Published scalar masks can use a pooled R8 texture array. `mixed/mask_pages.*` packs
+chart/light rectangles into shared layers, retaining an independent lookup for each
+captured light. Layer ownership is local to a rectangle rather than one layer per
+light. Sampling clamps the four bilinear taps to that rectangle, preserving chart
+edges without allocating gutters or reading another light's texels. The cache keeps
+its existing compressed payload; page publication decodes those exact R8 values.
+
+Selection compares page padding and lookup storage against compressed storage,
+then compares actual Vulkan allocations, including image alignment. Pages are used
+only when they save allocated image memory and fit device dimensions/layer limits;
+dense masks retain their compressed representation. Both paths use the same indexed
+chart/light lookup and can represent more than four partial shadow masks per chart.
+This changes storage and sampling, not the number of visibility rays required to bake
+those masks. `REMIX_DEBUG_MASK_PAGES=0` retains compressed publication for comparisons.
+
 The private bake transport also accepts explicit fully baked diffuse membership through
 `bake/policy.*`. It preserves captured indices, rejects moving-light membership and samples
 selected static direct emitters into the existing RGB irradiance SH using the all-light mixture PDF.

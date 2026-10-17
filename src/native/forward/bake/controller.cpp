@@ -5,6 +5,7 @@
 #include "forward/image_dump.h"
 #include "forward/lightmap/denoise.h"
 #include "forward/mixed/overflow.h"
+#include "forward/mixed/mask_pages.h"
 #include "forward/probes/capture_dump.h"
 #include "forward/probes/data.h"
 #include "forward/probes/evaluation.h"
@@ -722,7 +723,16 @@ namespace remix::forward::bake {
     }
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(m_physical, &properties);
-    const auto masks = m_job->mixedLights->masks.words(uint32_t(m_job->surfaceLayout.charts.size()));
+    const auto chartCount = uint32_t(m_job->surfaceLayout.charts.size());
+    VkFormatProperties maskFormat;
+    vkGetPhysicalDeviceFormatProperties(m_physical, VK_FORMAT_R8_UNORM, &maskFormat);
+    std::optional<mixed::MaskPages> visibilityPages;
+    const char *pageOverride = std::getenv("REMIX_DEBUG_MASK_PAGES");
+    if ((!pageOverride || std::strcmp(pageOverride, "0") != 0) &&
+        (maskFormat.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT))
+      visibilityPages = mixed::selectMaskPages(m_job->mixedLights->masks, chartCount,
+          properties.limits.maxImageDimension2D, properties.limits.maxImageArrayLayers);
+    auto masks = m_job->mixedLights->masks.words(chartCount);
     const auto &maskCosts = m_job->mixedLights->masks.candidateCosts();
     if (maskCosts.candidates)
       probes::dumpPublishedData(".overflow-mask-costs.bin", &maskCosts, sizeof(maskCosts));
@@ -730,13 +740,46 @@ namespace remix::forward::bake {
                               m_job->mixedLights->masks.entries().size_bytes());
     probes::dumpPublishedData(".overflow-mask-bytes.bin", m_job->mixedLights->masks.bytes().data(),
                               m_job->mixedLights->masks.bytes().size_bytes());
-    const auto occlusion = m_job->mixedLights->occlusion.pixels(properties.limits.maxImageDimension2D, masks);
+    auto occlusion = m_job->mixedLights->occlusion.pixels(properties.limits.maxImageDimension2D, masks);
+    volume->occlusion = std::make_unique<mixed::OcclusionMap>(m_physical, m_device,
+        VkExtent2D{occlusion.width, occlusion.height});
+    const uint64_t compressedAllocation = volume->occlusion->bytes();
+    if (visibilityPages) {
+      auto pageWords = visibilityPages->words(chartCount);
+      auto pageLookup = m_job->mixedLights->occlusion.pixels(properties.limits.maxImageDimension2D, pageWords);
+      auto lookupImage = std::make_unique<mixed::OcclusionMap>(m_physical, m_device,
+          VkExtent2D{pageLookup.width, pageLookup.height});
+      auto pageImage = std::make_unique<mixed::OcclusionMap>(m_physical, m_device,
+          VkExtent2D{visibilityPages->size, visibilityPages->size}, VK_FORMAT_R8_UNORM, visibilityPages->layers);
+      // Allocation alignment can outweigh logical savings on small maps.
+      // Neither candidate has been submitted; discard it if actual device
+      // allocations do not improve on the compressed image.
+      if (lookupImage->bytes() + pageImage->bytes() < compressedAllocation) {
+        masks = std::move(pageWords);
+        occlusion = std::move(pageLookup);
+        volume->occlusion = std::move(lookupImage);
+        volume->visibilityPages = std::move(pageImage);
+      } else {
+        visibilityPages.reset();
+      }
+    }
     volume->occlusionParameters = {m_job->mixedLights->occlusion.wordsPerChart(),
                                    m_job->mixedLights->occlusion.chartCount(), occlusion.width,
                                    masks.empty() ? 0u : uint32_t(2 + m_job->mixedLights->occlusion.words().size())};
     const size_t occlusionBytes = occlusion.rgba.size() * sizeof(uint16_t);
     volume->content.staticOcclusion = scene::fastHash(occlusion.rgba.data(), occlusionBytes) | 1;
     const size_t occlusionOffset = bytes + specular.size() + surfaceBytes;
+    const size_t visibilityOffset = occlusionOffset + occlusionBytes;
+    const size_t visibilityBytes = visibilityPages ? visibilityPages->texels.size() : 0;
+    if (visibilityPages) {
+      volume->content.staticOcclusion = scene::hashBytes(visibilityPages->texels.data(), visibilityBytes,
+                                                        volume->content.staticOcclusion) | 1;
+    }
+    const uint64_t pageStatistics[] = {visibilityPages ? visibilityPages->size : 0,
+        visibilityPages ? visibilityPages->layers : 0, visibilityBytes, occlusionBytes,
+        compressedAllocation, volume->occlusion->bytes() +
+            (volume->visibilityPages ? volume->visibilityPages->bytes() : 0)};
+    probes::dumpPublishedData(".visibility-pages.bin", pageStatistics, sizeof(pageStatistics));
     std::vector<std::byte> data(bytes);
     std::memcpy(data.data(), &grid.header, sizeof(GridHeader));
     std::memcpy(data.data() + sizeof(GridHeader), grid.probes.data(), grid.probes.size() * sizeof(Result));
@@ -758,14 +801,14 @@ namespace remix::forward::bake {
       volume->surfaces = m_job->surfaceGeometry;
     }
     volume->staging = std::make_unique<Buffer>();
-    volume->occlusion = std::make_unique<mixed::OcclusionMap>(m_physical, m_device,
-                                                              VkExtent2D{occlusion.width, occlusion.height});
-    volume->staging->create(m_physical, m_device, occlusionOffset + occlusionBytes,
+    volume->staging->create(m_physical, m_device, visibilityOffset + visibilityBytes,
                             VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
     volume->staging->write(data.data(), data.size());
     volume->staging->write(specular.data(), specular.size(), bytes);
     volume->staging->write(m_job->surfacePixels.data(), surfaceBytes, bytes + specular.size());
     volume->staging->write(occlusion.rgba.data(), occlusionBytes, occlusionOffset);
+    if (visibilityBytes)
+      volume->staging->write(visibilityPages->texels.data(), visibilityBytes, visibilityOffset);
     volume->data = std::make_unique<Buffer>();
     volume->data->create(m_physical, m_device, bytes,
                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
@@ -782,6 +825,8 @@ namespace remix::forward::bake {
     vkCmdCopyBuffer(command, volume->staging->handle, volume->specular->handle, 1, &reflectionCopy);
     VkImageMemoryBarrier surfaceReady{};
     volume->occlusion->upload(command, volume->staging->handle, occlusionOffset);
+    if (volume->visibilityPages)
+      volume->visibilityPages->upload(command, volume->staging->handle, visibilityOffset);
     if (volume->surfaceAtlas) {
       const auto &atlas = m_job->surfaceLayout;
       const VkImageMemoryBarrier transfer{
@@ -1034,6 +1079,13 @@ namespace remix::forward::bake {
     const auto &image = m_volume ? m_volume->occlusion : m_emptyOcclusion;
     return image->descriptor();
   }
+  VkDescriptorImageInfo Controller::visibilityDescriptor() const {
+    if (m_volume && m_volume->visibilityPages)
+      return m_volume->visibilityPages->descriptor();
+    // An unused floating-point array descriptor can share the existing empty
+    // surface view. Do not reserve another image for maps with no R8 pages.
+    return {VK_NULL_HANDLE, m_emptySurface->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+  }
   Memory Controller::memory() const {
     Memory result;
     result.buffers = m_empty->allocationBytes;
@@ -1067,6 +1119,8 @@ namespace remix::forward::bake {
         result.images += volume->surfaceAtlas->bytes;
       if (volume->occlusion)
         result.images += volume->occlusion->bytes();
+      if (volume->visibilityPages)
+        result.images += volume->visibilityPages->bytes();
       result.buffers += volume->data->allocationBytes;
       result.buffers += volume->specular->allocationBytes;
       if (volume->staging)

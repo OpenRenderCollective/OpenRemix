@@ -24,7 +24,7 @@ namespace remix::forward::bake {
     std::array<uint32_t, 4> occlusionParameters{}; // words/chart, chart count, texture width, sparse-mask tail
     std::unique_ptr<Buffer> data, specular, staging;
     std::unique_ptr<Image> surfaceAtlas;
-    std::unique_ptr<mixed::OcclusionMap> occlusion;
+    std::unique_ptr<mixed::OcclusionMap> occlusion, visibilityPages;
     std::shared_ptr<lightmap::Geometry> surfaces;
     std::shared_ptr<const mixed::Bindings> mixedLights;
   };
@@ -53,6 +53,7 @@ namespace remix::forward::bake {
     VkDescriptorBufferInfo reflectionDescriptor() const;
     VkDescriptorImageInfo surfaceDescriptor() const;
     VkDescriptorImageInfo occlusionDescriptor() const;
+    VkDescriptorImageInfo visibilityDescriptor() const;
     const remixapi_BakeStatisticsEXT &statistics() const { return m_statistics; }
     Memory memory() const;
 

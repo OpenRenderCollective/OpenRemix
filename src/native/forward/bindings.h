@@ -21,7 +21,7 @@ namespace remix::forward {
     std::array<Matrix, shadows::maximumLights * shadows::faces> localShadows{};
     std::array<Vec4, shadows::maximumLights> localPositions{}; // xyz origin, w far plane
     Vec4 localSettings{}; // local resolution, local radial bias, sun bias (scene units), baked direct enabled
-    std::array<uint32_t, 4> occlusion{}; // words per chart, chart count, texture width, reserved
+    std::array<uint32_t, 4> occlusion{}; // words per chart, chart count, texture width, indexed-mask tail
   };
   struct LightData {
     Vec4 positionRadius{}, radiance{}, directionCone{}, shaping{};

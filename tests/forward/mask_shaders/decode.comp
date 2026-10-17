@@ -7,12 +7,13 @@ layout(set = 0, binding = 1, std430) readonly buffer Input { Query queries[]; };
 layout(set = 0, binding = 2, std430) writeonly buffer Output { vec4 results[]; };
 layout(push_constant) uniform Settings { uvec4 occlusion; uint count; } frame;
 uint occlusionWord(uint index) { return words[index]; }
+#define MASK_PAGE_BINDING 3
 #include "../../../src/native/forward/shaders/overflow-mask.glsl"
 void main() {
   uint index = gl_GlobalInvocationID.x;
   if (index >= frame.count) return;
   float visibility;
-  bool found = overflowLightVisibility(queries[index].identity.x, queries[index].identity.y,
+  bool found = indexedLightVisibility(queries[index].identity.z, queries[index].identity.x, queries[index].identity.y,
       queries[index].coordinate, vec4(0, 0, 1, 1), visibility);
   results[index] = vec4(visibility, found ? 1 : 0, 0, 0);
 }

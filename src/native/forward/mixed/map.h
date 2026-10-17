@@ -6,7 +6,8 @@ namespace remix::forward::mixed {
   // caller retains its upload buffer through the submission's existing fence.
   class OcclusionMap {
   public:
-    OcclusionMap(VkPhysicalDevice physical, VkDevice device, VkExtent2D extent);
+    OcclusionMap(VkPhysicalDevice physical, VkDevice device, VkExtent2D extent,
+                 VkFormat format = VK_FORMAT_R16G16B16A16_SFLOAT, uint32_t layers = 1);
     void upload(VkCommandBuffer command, VkBuffer source, VkDeviceSize offset) const;
     void clear(VkCommandBuffer command) const;
     VkDescriptorImageInfo descriptor() const;
@@ -16,5 +17,6 @@ namespace remix::forward::mixed {
     void transfer(VkCommandBuffer command, VkBuffer source, VkDeviceSize offset) const;
     Image m_image;
     VkExtent2D m_extent;
+    uint32_t m_layers;
   };
 } // namespace remix::forward::mixed

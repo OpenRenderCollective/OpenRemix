@@ -268,7 +268,7 @@ namespace remix::forward {
     }
     const VkDescriptorBufferInfo buffers[] = {frame.constants->descriptor(), frame.lights->descriptor(),
                                               frame.clusters->descriptor(), frame.draws->descriptor()};
-    VkWriteDescriptorSet writes[13]{};
+    VkWriteDescriptorSet writes[14]{};
     for (uint32_t i = 0; i < 4; ++i)
       writes[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                    .dstSet = frame.scene,
@@ -329,6 +329,15 @@ namespace remix::forward {
                   .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                   .pImageInfo = &occlusion};
     vkUpdateDescriptorSets(device, 1, &writes[12], 0, nullptr);
+    auto visibilityPages = baking->visibilityDescriptor();
+    visibilityPages.sampler = sampler;
+    writes[13] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                  .dstSet = frame.scene,
+                  .dstBinding = 10,
+                  .descriptorCount = 1,
+                  .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                  .pImageInfo = &visibilityPages};
+    vkUpdateDescriptorSets(device, 1, &writes[13], 0, nullptr);
     std::unordered_map<const scene::Material *, VkDescriptorSet> materials;
     for (auto *commands : {&frame.commands, &frame.staticCommands, &frame.terrainCommands, &frame.waterCommands})
       for (auto &draw : *commands) {

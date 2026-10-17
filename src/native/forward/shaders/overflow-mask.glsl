@@ -1,4 +1,8 @@
 // Requires occlusionWord() and frame.occlusion from the binding owner.
+#ifndef MASK_PAGE_BINDING
+#define MASK_PAGE_BINDING 10
+#endif
+layout(set = 0, binding = MASK_PAGE_BINDING) uniform sampler2DArray staticVisibilityPages;
 float overflowMaskByte(uint base, uint address) {
   uint word = occlusionWord(base + address / 4u);
   return float((word >> ((address % 4u) * 8u)) & 255u) / 255;
@@ -29,10 +33,9 @@ float overflowMaskTexel(uint base, uint address, uint width, bool tiled, uvec2 p
   }
   return overflowMaskByte(base, payload + index);
 }
-bool overflowLightVisibility(uint chart, uint capturedLight, vec4 coordinate, vec4 bounds,
-                              out float visibility) {
+bool indexedLightVisibility(uint base, uint chart, uint capturedLight, vec4 coordinate, vec4 bounds,
+                            out float visibility) {
   visibility = 1;
-  uint base = frame.occlusion.w;
   if (base == 0u || chart >= frame.occlusion.y || capturedLight == 0u || coordinate.w < .5)
     return false;
   uint first = occlusionWord(base + chart * 2u);
@@ -50,17 +53,33 @@ bool overflowLightVisibility(uint chart, uint capturedLight, vec4 coordinate, ve
     return false;
   uint address = occlusionWord(record + 1u);
   uvec2 size = uvec2(occlusionWord(record + 2u), occlusionWord(record + 3u));
+  bool paged = (size.x & 0x40000000u) != 0u;
   bool tiled = (size.x & 0x80000000u) != 0u;
-  size.x &= 0x7fffffffu;
+  size.x &= 0x3fffffffu;
+  uint layer = paged ? size.y >> 16u : 0u;
+  if (paged) size.y &= 65535u;
   // Match the surface atlas's chart bounds and bilinear texel-centre sampling.
   vec2 uv = clamp((coordinate.xy - bounds.xy) / max(bounds.zw - bounds.xy, vec2(1e-20)), 0, 1);
   vec2 pixel = uv * vec2(size - 1u);
   uvec2 a = uvec2(floor(pixel)), b = min(a + 1u, size - 1u);
   vec2 fraction = fract(pixel);
+  if (paged) {
+    ivec2 origin = ivec2(address & 65535u, address >> 16u);
+    float row0 = mix(texelFetch(staticVisibilityPages, ivec3(origin + ivec2(a), layer), 0).r,
+                     texelFetch(staticVisibilityPages, ivec3(origin + ivec2(b.x, a.y), layer), 0).r, fraction.x);
+    float row1 = mix(texelFetch(staticVisibilityPages, ivec3(origin + ivec2(a.x, b.y), layer), 0).r,
+                     texelFetch(staticVisibilityPages, ivec3(origin + ivec2(b), layer), 0).r, fraction.x);
+    visibility = mix(row0, row1, fraction.y);
+    return true;
+  }
   float row0 = mix(overflowMaskTexel(base, address, size.x, tiled, a),
                    overflowMaskTexel(base, address, size.x, tiled, uvec2(b.x, a.y)), fraction.x);
   float row1 = mix(overflowMaskTexel(base, address, size.x, tiled, uvec2(a.x, b.y)),
                    overflowMaskTexel(base, address, size.x, tiled, b), fraction.x);
   visibility = mix(row0, row1, fraction.y);
   return true;
+}
+bool overflowLightVisibility(uint chart, uint capturedLight, vec4 coordinate, vec4 bounds,
+                              out float visibility) {
+  return indexedLightVisibility(frame.occlusion.w, chart, capturedLight, coordinate, bounds, visibility);
 }
