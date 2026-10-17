@@ -1,5 +1,6 @@
 forward_policy_test = executable('remix-forward-policy-test', 'lighting.cpp',
   '../../src/native/forward/lighting.cpp', '../../src/native/runtime/settings.cpp',
+  '../../src/native/forward/water/data.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Forward+ cluster, cascade and configuration policy', forward_policy_test)
 forward_denoise_test = executable('remix-forward-lightmap-denoise-test', 'lightmap_denoise.cpp',

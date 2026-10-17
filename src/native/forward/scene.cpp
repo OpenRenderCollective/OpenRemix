@@ -76,6 +76,9 @@ namespace remix::forward {
     const auto sun = resources.light();
     frame.commands.clear();
     frame.staticCommands.clear();
+    frame.waterCommands.clear();
+    frame.waterComposed = false;
+    frame.waterMedium = false;
     auto sources = resources.sphereLights();
     std::sort(sources.begin(), sources.end(), [](const auto &a, const auto &b) { return a.id < b.id; });
     const auto eye = transformPoint(scene::inverse(resources.view()), {0, 0, 0});
@@ -83,10 +86,11 @@ namespace remix::forward {
                                            options.lightCutoff, options.localShadowDistance,
                                            options.sceneScale, resources.bakeScene());
     std::vector<DrawData> draws;
+    std::vector<water::MaterialData> waterMaterials;
     Bounds casters;
     const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - epoch).count();
-    auto append = [&](const scene::Draw &draw, std::vector<Command> &commands, bool staticOnly) {
-      if (!accepts(draw))
+    auto append = [&](const scene::Draw &draw, std::vector<Command> &commands, bool staticOnly, bool liquid = false) {
+      if (!(liquid ? water::accepts(draw) : accepts(draw)))
         return;
       const uint32_t count = draw.indexCount ? draw.indexCount : uint32_t(draw.surface->indices.size());
       if (!count)
@@ -94,19 +98,25 @@ namespace remix::forward {
       Command out;
       out.geometry = geometry(draw);
       out.source = draw;
-      out.captured = staticOnly || shadowPlanner.captured(draw);
-      if (!staticOnly)
+      out.captured = !liquid && (staticOnly || shadowPlanner.captured(draw));
+      if (!staticOnly && !liquid)
         if (const auto &volume = baking->volume(); volume && volume->surfaces)
           out.lightmap = volume->surfaces->find(draw);
       out.index = uint32_t(draws.size());
       out.count = count;
       out.worldBounds = transformBounds(out.geometry->bounds, draw.model);
-      casters.merge(out.worldBounds);
+      if (!liquid) casters.merge(out.worldBounds);
+      if (liquid) {
+        out.waterIndex = uint32_t(waterMaterials.size());
+        waterMaterials.push_back(water::materialData(*draw.material, seconds));
+      }
       draws.push_back(materialData(draw, seconds));
       commands.push_back(std::move(out));
     };
-    for (const auto &draw : resources.draws())
-      append(draw, frame.commands, false);
+    for (const auto &draw : resources.draws()) {
+      const bool liquid = waterPass && water::accepts(draw);
+      append(draw, liquid ? frame.waterCommands : frame.commands, false, liquid);
+    }
     // Complete frozen bounds still fit the cascades even when no static draw
     // descriptors or material records need preparing for this frame.
     if (options.shadows && sun.isDistant)
@@ -204,14 +214,14 @@ namespace remix::forward {
     probes::dumpFrameData(".world-frame.bin", &data, sizeof(data));
     probes::dumpFrameData(".draws.bin", draws.data(), draws.size() * sizeof(DrawData));
     probes::dumpFrameData(".lights.bin", lights.data(), lights.size() * sizeof(LightData));
-    const uint32_t capacity = uint32_t(frame.commands.size() + frame.staticCommands.size()) + 2;
+    const uint32_t capacity = uint32_t(frame.commands.size() + frame.staticCommands.size() + frame.waterCommands.size()) + 2;
     if (!frame.pool || frame.poolCapacity < capacity) {
       if (frame.pool)
         vkDestroyDescriptorPool(device, frame.pool, nullptr);
       frame.pool = VK_NULL_HANDLE;
       frame.poolCapacity = std::max(64u, capacity);
       const VkDescriptorPoolSize sizes[] = {
-          {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2},
+          {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, options.water ? 3u : 2u},
           {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4},
           {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frame.poolCapacity * 5}};
       const VkDescriptorPoolCreateInfo info{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
@@ -223,6 +233,27 @@ namespace remix::forward {
     frame.scene = allocate(frame, sceneLayout);
     frame.composite = allocate(frame, compositeSetLayout);
     prepareSky(command, resources);
+    if (waterPass) {
+      water::Parameters parameters;
+      parameters.projection = scene::inverse(data.inverseProjection);
+      parameters.cameraMedium = resources.cameraMedium();
+      frame.waterMedium = parameters.cameraMedium[3] > 0;
+      parameters.target = {float(extent.width), float(extent.height), options.waterDistance / options.sceneScale,
+                            .002f / options.sceneScale};
+      parameters.settings = {options.waterThickness / options.sceneScale,
+                              parameters.cameraMedium[3] > 0 ? 1.f : 0.f, options.sceneScale, 0};
+      const auto up = transformVector(resources.dome().worldToLocal, {0, 0, 1});
+      std::copy(up.begin(), up.end(), parameters.domeUp.begin());
+      const float light = sun.isDistant ? std::max(-direction[2], 0.f) / 3.14159265359f : 0;
+      for (uint32_t c = 0; c < 3; ++c) parameters.sunFog[c] = sun.radiance[c] * light;
+      waterPass->prepare(slot, parameters, waterMaterials,
+                          {baking->reflectionDescriptor(), frame.skyConstants->descriptor(), frame.skyImage});
+      const auto medium = waterPass->parameters(slot);
+      const VkWriteDescriptorSet write{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+          .dstSet = frame.composite, .dstBinding = 5, .descriptorCount = 1,
+          .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = &medium};
+      vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+    }
     const VkDescriptorBufferInfo buffers[] = {frame.constants->descriptor(), frame.lights->descriptor(),
                                               frame.clusters->descriptor(), frame.draws->descriptor()};
     VkWriteDescriptorSet writes[13]{};
@@ -287,7 +318,7 @@ namespace remix::forward {
                   .pImageInfo = &occlusion};
     vkUpdateDescriptorSets(device, 1, &writes[12], 0, nullptr);
     std::unordered_map<const scene::Material *, VkDescriptorSet> materials;
-    for (auto *commands : {&frame.commands, &frame.staticCommands})
+    for (auto *commands : {&frame.commands, &frame.staticCommands, &frame.waterCommands})
       for (auto &draw : *commands) {
         const auto &material = draw.source.material;
         if (auto found = materials.find(material.get()); found != materials.end()) {
@@ -313,7 +344,7 @@ namespace remix::forward {
                               .pImageInfo = &textures[i]};
         vkUpdateDescriptorSets(device, 5, textureWrites, 0, nullptr);
       }
-    statistics.draws = uint32_t(frame.commands.size());
+    statistics.draws = uint32_t(frame.commands.size() + frame.waterCommands.size());
     statistics.shadowedLights =
         uint32_t(std::count(shadowSelection.active.begin(), shadowSelection.active.end(), true));
     statistics.shadowOverflow = shadowSelection.overflow;
@@ -339,6 +370,7 @@ namespace remix::forward {
     for (const auto &[key, value] : geometries)
       statistics.geometryBytes += value->vertices->allocationBytes + value->indices->allocationBytes;
     statistics.bufferBytes = statistics.geometryBytes;
+    if (waterPass) statistics.bufferBytes += waterPass->bufferBytes();
     if (reflections)
       statistics.bufferBytes += reflections->bufferBytes();
     for (const auto &submitted : frames) {
@@ -346,10 +378,11 @@ namespace remix::forward {
                                  submitted.clusters.get(), submitted.skyConstants.get()})
         if (buffer)
           statistics.bufferBytes += buffer->allocationBytes;
-      for (const auto &draw : submitted.commands)
-        if (draw.source.surface->bonesPerVertex)
-          statistics.bufferBytes +=
-              draw.geometry->vertices->allocationBytes + draw.geometry->indices->allocationBytes;
+      for (const auto *commands : {&submitted.commands, &submitted.waterCommands})
+        for (const auto &draw : *commands)
+          if (draw.source.surface->bonesPerVertex)
+            statistics.bufferBytes +=
+                draw.geometry->vertices->allocationBytes + draw.geometry->indices->allocationBytes;
     }
   }
 } // namespace remix::forward

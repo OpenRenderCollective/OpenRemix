@@ -3,10 +3,13 @@
 #ifndef PROBE_BINDING
 #define PROBE_BINDING 13
 #endif
+#ifndef PROBE_SET
+#define PROBE_SET 0
+#endif
 struct ReflectionProbe {
   vec4 minimum, maximum, influenceMinimum, influenceMaximum, position;
 };
-layout(set = 0, binding = PROBE_BINDING, std430) readonly buffer ReflectionProbes {
+layout(set = PROBE_SET, binding = PROBE_BINDING, std430) readonly buffer ReflectionProbes {
   uvec4 probeParameters;
   ReflectionProbe probes[16];
   vec4 probeTexels[];

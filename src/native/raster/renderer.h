@@ -2,6 +2,7 @@
 #include <vulkan/vulkan.h>
 #include "scene/resources.h"
 #include "platform/gpu_frames.h"
+#include <functional>
 
 namespace remix {
   class RasterRenderer : public NativeResources {
@@ -80,9 +81,11 @@ namespace remix {
     VkFormat depthFormat() const;
     VkImageView depthView() const;
     std::shared_ptr<void> depthLifetime() const;
-    bool preparePipelines(bool tracing, bool forward = false);
+    using DrawOwner = std::function<bool(const scene::Draw &)>;
+    bool preparePipelines(bool tracing, bool forward = false, DrawOwner owner = {});
     void prepare(VkCommandBuffer command,
-                 bool tracing = false, bool forward = false); // After prior frame fence, outside render pass.
+                 bool tracing = false, bool forward = false,
+                 DrawOwner owner = {}); // After prior frame fence, outside render pass.
     // Layers: 0 sky, 1 world, 2 view model, 3 UI and overlays. part: with
     // masked overlays, the commands before (1) or from (2) the coverage passes.
     void record(VkCommandBuffer command, bool skyOnly = false, bool skipSky = false,

@@ -6,6 +6,7 @@
 #include "forward/resources.h"
 #include "forward/shadows/maps.h"
 #include "forward/shadows/sun_cache.h"
+#include "forward/water/pass.h"
 #include "platform/gpu_frames.h"
 #include <chrono>
 #include <unordered_map>
@@ -38,6 +39,7 @@ namespace remix::forward {
     std::unique_ptr<Image> color, depth, resolved, shadow;
     std::unique_ptr<Image> normalGuide, reflectanceGuide;
     std::unique_ptr<Reflections> reflections;
+    std::unique_ptr<water::Pass> waterPass;
     std::unique_ptr<ray::Reflections> rayReflections;
     std::unique_ptr<ray::LiveScene> liveScene;
     bool giSupported = false;
@@ -66,6 +68,7 @@ namespace remix::forward {
       scene::Draw source; // material, mesh and texture owners live through the fence
       VkDescriptorSet material = VK_NULL_HANDLE;
       uint32_t index = 0, count = 0;
+      uint32_t waterIndex = 0;
     };
     struct Frame {
       VkDescriptorPool pool = VK_NULL_HANDLE;
@@ -76,6 +79,9 @@ namespace remix::forward {
       bool skyEnabled = false;
       VkDescriptorImageInfo skyImage{};
       std::vector<Command> commands, staticCommands;
+      std::vector<Command> waterCommands;
+      bool waterComposed = false;
+      bool waterMedium = false;
       std::array<bool, cascadeCount> staticSunDirty{};
       FrameData data;
     };
@@ -88,6 +94,7 @@ namespace remix::forward {
     void createPipelines(VkRenderPass output);
     void prepareFrame(VkCommandBuffer command, RasterRenderer &resources);
     void recordWorld(VkCommandBuffer command);
+    void recordWater(VkCommandBuffer command);
     void drawLocalCasters(VkCommandBuffer command, uint32_t slot, uint32_t face, bool staticCasters);
     void drawGeometry(VkCommandBuffer command);
     void drawSunCasters(VkCommandBuffer command, uint32_t cascade, bool staticCasters);

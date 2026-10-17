@@ -9,6 +9,7 @@ namespace remix::forward {
   Renderer::Renderer() = default;
   Renderer::~Renderer() = default;
   Renderer::Gpu::~Gpu() {
+    waterPass.reset();
     baking.reset();
     localMaps.reset();
     reflections.reset();
@@ -19,6 +20,7 @@ namespace remix::forward {
         vkDestroyDescriptorPool(device, frame.pool, nullptr);
       frame.commands.clear();
       frame.staticCommands.clear();
+      frame.waterCommands.clear();
     }
     geometries.clear();
     for (auto handle : {opaquePipeline, lightmapPipeline, shadowPipeline, localShadowPipeline,
@@ -84,6 +86,14 @@ namespace remix::forward {
       next->rayReflections->initialize(physical, device, *next->liveScene);
     }
     next->createPipelines(output);
+    if (options.water) {
+      next->waterPass = std::make_unique<water::Pass>();
+      next->waterPass->initialize(physical, device, extent, next->samples, next->sceneLayout,
+                                  next->materialLayout,
+                                  {next->color->view, next->depth->view,
+                                   next->resolved ? next->resolved->view : VK_NULL_HANDLE});
+      next->statistics.targetBytes += next->waterPass->targetBytes();
+    }
     next->baking =
         baking ? std::move(baking)
                : std::make_shared<bake::Controller>(physical, device, pipelines, hardwareRay, queueFamily);
@@ -106,6 +116,8 @@ namespace remix::forward {
     auto &frame = g.frames.at(slot);
     frame.commands.clear();
     frame.staticCommands.clear();
+    frame.waterCommands.clear();
+    frame.waterComposed = false;
     if (frame.pool)
       check(vkResetDescriptorPool(g.device, frame.pool, 0));
     std::erase_if(g.geometries, [](const auto &entry) { return entry.second->source.expired(); });
@@ -141,6 +153,7 @@ namespace remix::forward {
           {frame.skyConstants->descriptor(), m_gpu->baking->descriptor(), frame.skyImage},
           m_gpu->rayReflections.get());
     }
+    m_gpu->recordWater(command);
     m_gpu->statistics.baking = m_gpu->baking->statistics();
     const auto &volume = m_gpu->baking->volume();
     m_gpu->statistics.bakeContent = volume ? volume->content : bake::ContentHashes{};
@@ -166,6 +179,9 @@ namespace remix::forward {
   }
   const Statistics &Renderer::statistics() const { return m_gpu->statistics; }
   const Options &Renderer::options() const { return m_gpu->options; }
+  bool Renderer::owns(const scene::Draw &draw) const {
+    return accepts(draw) || (m_gpu && m_gpu->waterPass && water::accepts(draw));
+  }
   void Renderer::updateLighting(const Options &options) {
     if (!m_gpu->options.sameTargets(options))
       throw VK_ERROR_INITIALIZATION_FAILED;

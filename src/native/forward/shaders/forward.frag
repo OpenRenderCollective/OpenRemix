@@ -37,58 +37,11 @@ layout(location = 0) out vec4 result;
 layout(location = 1) out vec4 outNormalRoughness;
 layout(location = 2) out vec4 outReflectance;
 #endif
-bool emitterAbovePlane(Light light, vec3 p, vec3 n) {
-  if (light.radiance.w <= 0)
-    return dot(light.positionRadius.xyz - p, n) + light.positionRadius.w > 0;
-  return max(max(dot(light.corners[0].xyz - p, n), dot(light.corners[1].xyz - p, n)),
-             dot(light.corners[2].xyz - p, n)) > 0;
-}
-vec3 localLight(uint index, vec3 p, vec3 n, vec3 v, vec3 base, float roughness, float metallic,
-                vec4 directIrradiance, vec4 surfaceLightmap) {
-  Light light = lights[index];
-  vec3 delta = light.positionRadius.xyz - p;
-  float distance2 = max(dot(delta, delta), 1e-8), distance = sqrt(distance2);
-  float range = light.shaping.z;
-  if (distance >= range)
-    return vec3(0);
-  uint cachedVisibility = staticLightVisibility(surfaceChart, uint(light.shaping.w));
-  if (cachedVisibility == 1u)
-    return vec3(0);
-  float visibility;
-  uint channel;
-  bool baked =
-      bakedLightVisibility(surfaceLightmap, surfaceLights, uint(light.shaping.w), visibility, channel);
-  baked = baked || cachedVisibility == 2u;
-  float moving = localShadowVisibility(light, p, !baked);
-  uint directChannel = lightChannel(surfaceDirectLights, uint(light.shaping.w));
-  bool bakedDiffuse = directChannel < 4u && directIrradiance[min(directChannel, 3u)] >= 0;
-  if (moving <= 0 || (!bakedDiffuse && visibility <= 0))
-    return vec3(0);
-  vec3 l = delta / distance;
-  float shape = emitterConeWeight(light.directionCone.xyz, light.directionCone.w,
-                                   light.shaping.x, light.shaping.y, -l);
-  float solidAngle;
-  if (light.radiance.w > 0) {
-    vec3 normal =
-        cross(light.corners[1].xyz - light.corners[0].xyz, light.corners[2].xyz - light.corners[0].xyz);
-    float area = .5 * length(normal);
-    float cosine = dot(normal / max(2 * area, 1e-8), -l);
-    if (light.radiance.w > 1)
-      cosine = abs(cosine);
-    solidAngle = area * max(cosine, 0) / distance2;
-  } else
-    solidAngle = 2 * Pi * sphereOneMinusCos(distance2, light.positionRadius.w);
-  float fade = pow(clamp(1 - pow(distance / range, 4), 0, 1), 2);
-  BrdfLobes response = brdfLobes(base, roughness, metallic, n, v, l);
-  // Truncated SH can ring below the receiver plane. Clip a wholly hidden
-  // emitter analytically while allowing a finite emitter to cross the horizon.
-  float unitDiffuse = bakedDiffuse ? (emitterAbovePlane(light, p, n) ? directIrradiance[directChannel] : 0)
-                                   : max(dot(n, l), 0) * solidAngle * shape * visibility;
-  vec3 diffuse = response.diffuse * unitDiffuse;
-  vec3 specular = response.specular * (solidAngle * shape * visibility);
-  return (diffuse + specular) * light.radiance.rgb * (fade * moving);
-}
+#include "direct-light.glsl"
 #endif
+#ifdef WATER_SURFACE
+#include "../water/shaders/surface.glsl"
+#else
 void main() {
   Material m = materials[draw.index];
   vec4 surface = surfaceColor(m, uv, vertexColor);
@@ -156,3 +109,5 @@ void main() {
 #endif
 #endif
 }
+
+#endif // WATER_SURFACE

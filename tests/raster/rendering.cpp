@@ -313,9 +313,11 @@ namespace {
       vk(vkResetCommandBuffer(command, 0));
       const VkCommandBufferBeginInfo begin = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
       vk(vkBeginCommandBuffer(command, &begin));
-      while (!raster.preparePipelines(false, bool(forward)))
+      RasterRenderer::DrawOwner owner;
+      if (forward) owner = [this](const remix::scene::Draw &draw) { return forward->owns(draw); };
+      while (!raster.preparePipelines(false, bool(forward), owner))
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
-      raster.prepare(command,false,bool(forward));
+      raster.prepare(command,false,bool(forward), owner);
       if (forward) forward->prepare(command,raster);
       VkClearValue clear[2] = {};
       clear[1].depthStencil.depth = 1;
@@ -2353,6 +2355,19 @@ namespace {
     const auto roughFloor = makeQuad(9011, roughMaterial, floorPositions, floorNormal);
     const auto wall = makeQuad(9012, wallMaterial, wallPositions, wallNormal);
     const auto cutoutWall = makeQuad(9013, cutoutMaterial, wallPositions, wallNormal);
+    remixapi_MaterialInfoTranslucentEXT waterOptics{};
+    waterOptics.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_TRANSLUCENT_EXT;
+    waterOptics.refractiveIndex = 1.333f;
+    waterOptics.transmittanceColor = {1, 1, 1};
+    waterOptics.transmittanceMeasurementDistance = 1;
+    remixapi_MaterialInfo waterInfo{};
+    waterInfo.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+    waterInfo.hash = 9014;
+    waterInfo.pNext = &waterOptics;
+    remixapi_MaterialHandle waterMaterial;
+    r.createMaterial(waterInfo, waterMaterial);
+    const auto occludedWater = makeQuad(9015, waterMaterial, wallPositions, wallNormal);
+    bool composeWater = false;
     remixapi_MeshHandle reflectionBackdrop = nullptr;
     auto drawScene = [&](bool rough = false, bool showWall = true, bool cutout = false,
                          bool hidden = false, float offset = 0.f, remixapi_MeshHandle receiver = nullptr,
@@ -2374,6 +2389,12 @@ namespace {
       if (environmentLight)
         r.drawLight(environmentLight);
       r.drawInstance(instance(receiver ? receiver : rough ? roughFloor : floor));
+      if (composeWater) {
+        auto liquid = instance(occludedWater, .01f);
+        liquid.transform.matrix[0][0] = liquid.transform.matrix[1][1] = .5f;
+        liquid.transform.matrix[1][3] = .5f;
+        r.drawInstance(liquid);
+      }
       if (showWall) {
         auto draw = instance(emitter ? emitter : cutout ? cutoutWall : wall);
         remixapi_InstanceIdentityEXT identity{};
@@ -2673,6 +2694,20 @@ namespace {
         std::printf("SSR %ux, scale %u: %zu reflected pixels\n", samples, scale, reflectedPixels(reflected));
         require(reflectedPixels(reflected) > 12,
                 "SSR reflects the visible emissive wall in the metallic floor");
+        if (!baked) {
+          options.water = true;
+          target.enableForward(options);
+          composeWater = true;
+          const auto composed = drawScene();
+          require(target.forward->statistics().draws == 3,
+                  "An occluded measured surface still exercises late water composition");
+          for (size_t at = 0; at < reflected.size(); ++at)
+            require(std::abs(int(composed[at]) - int(reflected[at])) <= 2,
+                    "Late water composition preserves opaque SSR energy and coverage exactly once");
+          composeWater = false;
+          options.water = false;
+          target.enableForward(options);
+        }
         require(reflectedPixels(drawScene(true)) < 3, "Roughness cutoff removes sharp screen reflections");
         require(reflectedPixels(drawScene(false, false)) < 3,
                 "Removed geometry leaves no stale reflection radiance");
@@ -2951,12 +2986,115 @@ namespace {
     std::puts(
         "Raster GPU readback: depth, culling, textures, cutouts, blending, skinning, UI and lifetime passed");
   }
+  void waterTests() {
+    auto tone = [](float value) {
+      return std::clamp((value * (2.51f * value + .03f)) / (value * (2.43f * value + .59f) + .14f), 0.f, 1.f);
+    };
+    for (uint32_t samples : {1u, 2u, 4u}) {
+      Target target;
+      auto &r = target.raster;
+      remix::forward::Options options;
+      options.water = true;
+      options.samples = samples;
+      options.ambient = 1;
+      options.shadows = options.localShadows = options.ssr = false;
+      options.baking.enabled = false;
+      options.baking.reflectionProbes = 0;
+      target.enableForward(options);
+      const auto background = quad(r, 0xe100, material(r, 0xe101, 1, .1f, .05f));
+      remixapi_MaterialInfoTranslucentEXT optical{};
+      optical.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_TRANSLUCENT_EXT;
+      optical.refractiveIndex = 1;
+      optical.transmittanceColor = {.15f, .6f, .8f};
+      optical.transmittanceMeasurementDistance = 1;
+      remixapi_MaterialInfo info{};
+      info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+      info.hash = 0xe102;
+      info.pNext = &optical;
+      remixapi_MaterialHandle measured;
+      r.createMaterial(info, measured);
+      const auto liquid = quad(r, 0xe103, measured);
+      const auto foreground = quad(r, 0xe104, material(r, 0xe105, 0, 0, 1));
+      const auto centre = (32 * 64 + 32) * 4;
+      auto draw = [&](bool water, bool front) {
+        camera(r);
+        r.drawInstance(instance(background, .3f));
+        if (water) {
+          auto surface = instance(liquid, -.2f);
+          surface.transform.matrix[0][0] = surface.transform.matrix[1][1] = .6f;
+          r.drawInstance(surface);
+        }
+        if (front) r.drawInstance(instance(foreground, -.4f));
+        return target.render();
+      };
+      const auto dry = draw(false, false);
+      const auto wet = draw(true, false);
+      const float passed[] = {std::sqrt(.15f), std::sqrt(.6f), std::sqrt(.8f)};
+      const float tint[] = {.15f, .6f, .8f}, color[] = {1, .1f, .05f};
+      const float body = 1 - (passed[0] * .2126f + passed[1] * .7152f + passed[2] * .0722f);
+      for (uint32_t c = 0; c < 3; ++c) {
+        const float expected = tone(color[c] * passed[c] + tint[c] * body) * 255;
+        std::printf("Water %ux channel %u: %u expected %.2f\n", samples, c, unsigned(wet[centre+c]), expected);
+        require(std::abs(float(wet[centre+c]) - expected) < 4,
+                "Live water consumes opaque HDR, measured path length and lit body colour before tone mapping");
+      }
+      require(target.forward->statistics().draws == 2,
+              "Water geometry is submitted by the active Forward+ renderer");
+      const auto front = draw(true, true);
+      require(front[centre] < 3 && front[centre+1] < 3 && front[centre+2] > 180,
+              "Foreground opaque geometry remains in front of measured water");
+      for (uint32_t slot = 0; slot < remix::gpuFrameCount + 2; ++slot) {
+        const auto reused = draw(true, false);
+        for (uint32_t c = 0; c < 3; ++c)
+          require(std::abs(int(reused[centre+c]) - int(wet[centre+c])) <= 1,
+                  "Water targets and descriptor slots can be reused without stale data");
+      }
+      if (samples > 1) {
+        uint32_t partial = 0;
+        for (uint32_t y = 10; y < 54; ++y)
+          for (uint32_t x = 10; x < 54; ++x) {
+            const auto at = (y*64+x)*4;
+            if (wet[at] > wet[centre] + 2 && wet[at] + 2 < dry[at]) ++partial;
+          }
+        require(partial > 0, "Water edges retain partial MSAA coverage over opaque HDR");
+      }
+      auto submerged = [&](bool surface) {
+        remixapi_CameraMediumEXT medium{};
+        medium.sType = REMIXAPI_STRUCT_TYPE_CAMERA_MEDIUM_EXT;
+        medium.inside = 1;
+        medium.transmittanceColor = {.25f, .5f, .75f};
+        medium.transmittanceMeasurementDistance = 1;
+        remixapi_CameraInfo view{};
+        view.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO;
+        view.pNext = &medium;
+        for (uint32_t i = 0; i < 4; ++i) view.view[i][i] = view.projection[i][i] = 1;
+        r.setupCamera(view);
+        r.drawInstance(instance(background, .3f));
+        if (surface) r.drawInstance(instance(liquid, -.2f));
+        return target.render();
+      };
+      for (bool exit : {false, true}) {
+        const auto underwater = submerged(exit);
+        const float distance = exit ? .3f : .8f;
+        const float medium[] = {.25f, .5f, .75f};
+        for (uint32_t c = 0; c < 3; ++c)
+          require(std::abs(float(underwater[centre+c]) - tone(color[c] * std::pow(medium[c], distance)) * 255) < 4,
+                  "Camera medium attenuates opaque geometry and water exits once at the nearest depth");
+      }
+      options.water = false;
+      target.enableForward(options);
+      draw(true, false);
+      require(target.forward->statistics().draws == 1,
+              "Disabling the water pass returns its draw to compatibility rendering");
+    }
+  }
 } // namespace
 int main(int argc, char **argv) {
   require(argc >= 2, "Supply scratch directory");
   const std::filesystem::path directory(argv[1]);
   std::filesystem::create_directories(directory);
   if (argc>2 && std::strcmp(argv[2],"forward")==0) forwardTests(directory);
+  else if (argc>2 && std::strcmp(argv[2],"water")==0) waterTests();
   else if (argc>2 && std::strcmp(argv[2],"sky")==0) skyTests();
   else if (argc>2 && std::strcmp(argv[2],"live-gi")==0) liveGITests();
   else if (argc>2 && std::strcmp(argv[2],"hardware-reflections")==0) reflectionTests(directory, false, true);

@@ -10,6 +10,23 @@ vec4 surfaceColor(Material m, vec2 uv, vec4 vertexColor) {
 void alphaTest(Material m, float alpha) {
   if (!alphaPass(m.state.y, uintBitsToFloat(m.state.z), alpha)) discard;
 }
+vec3 tangentNormal(vec3 local, vec2 uv, vec3 p, vec3 n, vec3 v) {
+  vec3 dx = dFdx(p), dy = dFdy(p);
+  vec2 tx = dFdx(uv), ty = dFdy(uv);
+  float det = tx.x * ty.y - tx.y * ty.x;
+  if (abs(det) < 1e-10 || dot(local, local) < 1e-10)
+    return n;
+  vec3 t = (dx * ty.y - dy * tx.y) / det;
+  t -= n * dot(n, t);
+  if (dot(t, t) < 1e-10)
+    return n;
+  t = normalize(t);
+  vec3 b = cross(n, t);
+  if (dot(b, (dy * tx.x - dx * ty.x) / det) < 0)
+    b = -b;
+  vec3 result = normalize(mat3(t, b, n) * vec3(local.xy, max(local.z, .001)));
+  return dot(result, v) > 1e-4 ? result : n;
+}
 vec3 mappedNormal(Material m, vec2 uv, vec3 p, vec3 n, vec3 v) {
   if ((m.maps.x & 4u) == 0u)
     return n;
@@ -28,19 +45,5 @@ vec3 mappedNormal(Material m, vec2 uv, vec3 p, vec3 n, vec3 v) {
     local.z = sqrt(max(0, 1 - dot(local.xy, local.xy)));
   if (m.maps.y == 3u)
     local.y = -local.y;
-  vec3 dx = dFdx(p), dy = dFdy(p);
-  vec2 tx = dFdx(uv), ty = dFdy(uv);
-  float det = tx.x * ty.y - tx.y * ty.x;
-  if (abs(det) < 1e-10 || dot(local, local) < 1e-10)
-    return n;
-  vec3 t = (dx * ty.y - dy * tx.y) / det;
-  t -= n * dot(n, t);
-  if (dot(t, t) < 1e-10)
-    return n;
-  t = normalize(t);
-  vec3 b = cross(n, t);
-  if (dot(b, (dy * tx.x - dx * ty.x) / det) < 0)
-    b = -b;
-  vec3 result = normalize(mat3(t, b, n) * vec3(local.xy, max(local.z, .001)));
-  return dot(result, v) > 1e-4 ? result : n;
+  return tangentNormal(local, uv, p, n, v);
 }

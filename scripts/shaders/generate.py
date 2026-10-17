@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 OPTIMIZED = {'pathtrace'}
 BACKENDS = {
     'water_test': ('forward::test::water_input', 'vulkan1.1', ('vert', 'frag', 'query')),
-    'water': ('forward::water', 'vulkan1.1', ('snapshot', 'snapshotSingle')),
+    'water': ('forward::water', 'vulkan1.1', ('snapshot', 'snapshotSingle', 'vert', 'frag', 'overlayVert', 'overlayFrag', 'compositeFrag', 'compositeSingle')),
     'live_gi': ('forward::ray::gi', 'vulkan1.2', ('frag', 'guides')),
     'live_ray': ('forward::ray', 'vulkan1.2', ('launch', 'merge')),
     'bake': ('forward::bake', 'vulkan1.2', ('atlas', 'transport', 'parallel', 'visibility')),
@@ -56,6 +56,13 @@ def defines_for(backend, stage, stages):
     if backend == 'water_test':
         return [], directory / ('query.comp' if stage == 'query' else 'input.' + stage)
     if backend == 'water':
+        forward = ROOT / 'src/native/forward/shaders'
+        if stage == 'vert': return [], forward / 'forward.vert'
+        if stage == 'frag': return ['-DWATER_SURFACE=1'], forward / 'forward.frag'
+        if stage == 'overlayVert': return [], forward / 'composite.vert'
+        if stage == 'overlayFrag': return [], directory / 'overlay.frag'
+        if stage in ('compositeFrag', 'compositeSingle'):
+            return ['-DWATER_VOLUME=1'] + (['-DSINGLE_SAMPLE=1'] if stage == 'compositeSingle' else []), forward / 'composite.frag'
         return (['-DSINGLE_SAMPLE=1'] if stage == 'snapshotSingle' else []), directory / 'snapshot.comp'
     if stage in ('sigma', 'sigmaTemporal', 'sharcSigmaTemporal'): defines += ['-DSIGMA_PASS=1']
     if stage in ('sigmaTemporal', 'sharcSigmaTemporal'): defines += ['-DTEMPORAL=1']

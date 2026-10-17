@@ -20,6 +20,8 @@ namespace remix::forward {
     bool ssr = true;
     bool rtReflections = false;
     bool rtGI = false;
+    bool water = false; // dedicated measured-water pass; enable after target preparation
+    float waterDistance = 50, waterThickness = .15f; // metres; refraction extent and depth tolerance
     uint32_t rtGISamples = 16, rtGIBounces = 2;
     float rtGIDistance = 50;         // metres
     float rtReflectionDistance = 50; // metres
@@ -33,7 +35,7 @@ namespace remix::forward {
     bool operator==(const Options &) const = default;
     bool reflections() const { return ssr || rtReflections || baking.reflectionProbes != 0; }
     bool sameTargets(const Options &other) const {
-      return rtGI == other.rtGI && rtReflections == other.rtReflections &&
+      return water == other.water && rtGI == other.rtGI && rtReflections == other.rtReflections &&
              localShadowLights == other.localShadowLights &&
              localShadowResolution == other.localShadowResolution && samples == other.samples &&
              shadowResolution == other.shadowResolution && ssr == other.ssr &&

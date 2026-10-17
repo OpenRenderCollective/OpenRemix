@@ -42,6 +42,13 @@
 #include <limits>
 #include <optional>
 
+namespace {
+  remix::RasterRenderer::DrawOwner forwardDrawOwner(const remix::forward::Renderer *renderer) {
+    if (!renderer) return {};
+    return [renderer](const remix::scene::Draw &draw) { return renderer->owns(draw); };
+  }
+}
+
 namespace remix {
 void RemixNativeRuntime::presented() {
   const auto now = std::chrono::steady_clock::now();
@@ -544,7 +551,7 @@ void RemixNativeRuntime::presented() {
           m_pathTracer->setStaticValidation(settings.persistentStatic && settings.persistentStaticValidation);
       }
       frame.setSkyTarget(m_pathTracer ? m_pathTracer->skyPass() : VK_NULL_HANDLE);
-      m_rasterPreparing = !frame.preparePipelines(m_backend == config::Backend::PathTrace, m_backend == config::Backend::ForwardPlus);
+      m_rasterPreparing = !frame.preparePipelines(m_backend == config::Backend::PathTrace, m_backend == config::Backend::ForwardPlus, forwardDrawOwner(m_forward.get()));
       m_loading |= m_rasterPreparing;
       if (m_loading && m_postProcessing) m_postProcessing->freeze();
       prepareFrameGeneration();
@@ -822,7 +829,7 @@ void RemixNativeRuntime::presented() {
       }
       m_raster.setSkyTarget(m_pathTracer ? m_pathTracer->skyPass()
                                          : VK_NULL_HANDLE);
-      m_rasterPreparing = !m_raster.preparePipelines(m_backend == config::Backend::PathTrace, m_backend == config::Backend::ForwardPlus);
+      m_rasterPreparing = !m_raster.preparePipelines(m_backend == config::Backend::PathTrace, m_backend == config::Backend::ForwardPlus, forwardDrawOwner(m_forward.get()));
       m_loading |= m_rasterPreparing;
       if (m_loading && m_postProcessing) m_postProcessing->freeze();
       prepareFrameGeneration();
@@ -1406,7 +1413,7 @@ void RemixNativeRuntime::presented() {
     raster.setSkyTarget(m_pathTracer ? m_pathTracer->skyPass() : VK_NULL_HANDLE);
     if (!m_loading) {
       gpu::GpuScope scope(buffer, "Raster uploads and skinning");
-      raster.prepare(buffer, m_backend == config::Backend::PathTrace, m_backend == config::Backend::ForwardPlus);
+      raster.prepare(buffer, m_backend == config::Backend::PathTrace, m_backend == config::Backend::ForwardPlus, forwardDrawOwner(m_forward.get()));
       breakdown.rasterPrepareMilliseconds = 1; // Replaced by the raster profile.
     }
     if (m_pathTracer && !m_loading) {

@@ -8,7 +8,7 @@ namespace remix {
   using namespace scene;
   using namespace raster::detail;
 
-  void RasterRenderer::prepare(VkCommandBuffer command, bool tracing, bool forward) {
+  void RasterRenderer::prepare(VkCommandBuffer command, bool tracing, bool forward, DrawOwner owner) {
     auto &g = *m_gpu;
     m_profile = {};
     g.uploadBytes = 0;
@@ -121,7 +121,8 @@ namespace remix {
     ordered.reserve(m_draws.size() + m_overlay.size() + m_uiDraws.size() + 1);
     std::deque<Draw> adjusted;
     for (const auto &draw : m_draws) {
-      if (draw.rasterVisible && (!tracing || !draw.traced()) && (!forward || !forward::accepts(draw))) {
+      if (draw.rasterVisible && (!tracing || !draw.traced()) &&
+          (!forward || !(owner ? owner(draw) : forward::accepts(draw)))) {
         const Draw *source = &draw;
         // Traced barycentric depth and raster interpolation can differ by ULPs.
         // Bias coplanar EQUAL feedback toward the camera while preserving occlusion.

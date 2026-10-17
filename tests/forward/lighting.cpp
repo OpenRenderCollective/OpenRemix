@@ -1,5 +1,6 @@
 #include "forward/lighting.h"
 #include "forward/shadows/sun_cache.h"
+#include "forward/water/data.h"
 #include "runtime/settings.h"
 #include "scene/fixtures.h"
 #include <cmath>
@@ -9,6 +10,37 @@ using namespace remix::forward;
 using remix::test::require;
 
 int main() {
+  {
+    scene::Draw body;
+    body.surface = std::make_shared<scene::Surface>();
+    body.material = std::make_shared<scene::Material>();
+    body.material->transmission = true;
+    body.material->refractiveIndex = 1.333f;
+    body.material->transmittanceDistance = 50;
+    body.material->normalEncoding = 5;
+    body.material->scrollLayers = 3;
+    body.material->scroll[0] = .1f;
+    body.material->scroll[3] = -.2f;
+    body.material->scroll[5] = .3f;
+    require(water::accepts(body) && !accepts(body),
+            "Measured water has separate ownership and stays out of opaque shadow/bake policies");
+    const auto data = water::materialData(*body.material, 2);
+    require(data.transmittance[3] == 50 && data.optical == Vec4{1.333f, 2, 3, 0} &&
+                data.scroll01[0] == .1f && data.scroll01[3] == -.2f && data.scroll2[1] == .3f,
+            "Water retains measured optics and authored Source normal-scroll rates");
+    body.material->transmittanceDistance = 0;
+    require(!water::accepts(body), "Thin transmission remains in compatibility rendering");
+    body.material->transmittanceDistance = 50;
+    body.depthWriteOverride = true;
+    body.depthWrite = false;
+    require(!water::accepts(body), "Water ownership respects an explicit no-depth-write draw");
+    Options a, b;
+    b.water = true;
+    require(!a.sameTargets(b), "Water enable prepares its independent targets and pipelines");
+    a.water = true;
+    b.waterDistance = 80;
+    require(a.sameTargets(b), "Water trace-parameter edits retain target resources");
+  }
   const Bounds localBox{{-1, -2, -3}, {2, 4, 5}, true};
   auto model = scene::identity();
   model[0] = -2; model[4] = .5f; model[12] = 10;

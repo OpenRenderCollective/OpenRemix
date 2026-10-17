@@ -2,6 +2,7 @@
 #include "forward/gpu.h"
 #include "forward/ray/gi_shaders/embedded.h"
 #include "forward/shaders/embedded.h"
+#include "forward/water/shaders/embedded.h"
 
 namespace remix::forward {
   void Renderer::Gpu::createPipelines(VkRenderPass output) {
@@ -31,7 +32,10 @@ namespace remix::forward {
     const auto localVertex = modules.add(localShadowVertShader, sizeof(localShadowVertShader));
     const auto localFragment = modules.add(localShadowFragShader, sizeof(localShadowFragShader));
     const auto compositeVertex = modules.add(compositeVertShader, sizeof(compositeVertShader));
-    const auto compositeFragment = samples == VK_SAMPLE_COUNT_1_BIT
+    const auto compositeFragment = options.water ? (samples == VK_SAMPLE_COUNT_1_BIT
+                                       ? modules.add(water::compositeSingleShader, sizeof(water::compositeSingleShader))
+                                       : modules.add(water::compositeFragShader, sizeof(water::compositeFragShader)))
+                                   : samples == VK_SAMPLE_COUNT_1_BIT
                                        ? modules.add(compositeSingleShader, sizeof(compositeSingleShader))
                                        : modules.add(compositeFragShader, sizeof(compositeFragShader));
     const auto compute = modules.add(clusterShader, sizeof(clusterShader));

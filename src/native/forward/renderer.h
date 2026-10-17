@@ -48,6 +48,7 @@ namespace remix::forward {
     void background(VkCommandBuffer command); // before raster sky and the world composite
     const Statistics &statistics() const;
     const Options &options() const;
+    bool owns(const scene::Draw &draw) const;
     void updateLighting(const Options &options); // target-compatible edits, on the render thread
 
   private:

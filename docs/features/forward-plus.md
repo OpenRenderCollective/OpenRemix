@@ -39,10 +39,11 @@ Frozen caster bounds are cached with the immutable scene. Per-frame frozen draw
 records and material descriptors are prepared only when a static sun cascade or
 local-light map needs rebuilding. `.shadow-preparation.bin` records that frame's
 prepared frozen draw count as one little-endian `uint32_t`.
-Transparency, water, viewmodels, decals and unsupported masking
-operations stay in compatibility rasterization. Those surfaces do not yet receive forward lighting.
+General transparency, viewmodels, decals and unsupported masking operations stay in compatibility
+rasterization. Measured transmission bodies can opt into the late Forward+ water pass with
+`rtx.native.forward.water = 1`. The setting defaults to zero while host integration is experimental.
 
-Water integration is in progress. `water/optics.glsl` provides the primary path tracer's Schlick/Snell
+`water/optics.glsl` provides the primary path tracer's Schlick/Snell
 boundary, total internal reflection, measured absorption and surface/through weights. This stays distinct
 from the exact-Fresnel smooth transport used by the light baker. `water/screen.glsl` supplies bounded
 opaque-depth refraction queries with orthographic/perspective reconstruction, either camera-Z sign,
@@ -50,13 +51,12 @@ foreground rejection and a contact tolerance for shorelines. A caller supplies t
 sample in Vulkan zero-to-one depth coordinates; a depth of one means no opaque layer. Unknown/off-screen
 layers remain misses. The query brackets crossings even if a coarse step passes the camera's far plane.
 
-These helpers and `water::Snapshot` are GPU-tested building blocks, not an active water render pass.
-The snapshot reads completed opaque HDR and actual one/two/four-sample depth attachments into
-independent single-sample textures. Tests cover partial coverage, additive opaque reflections,
-frame-slot reuse and downstream GPU refraction/absorption queries. Remaining integration includes
-the late water geometry pass and its attachment transitions,
-PBR normal/roughness replacements and Source scrolling normals, probe/SSR reflection composition,
-surface coverage/depth, and camera-medium absorption for opaque geometry seen underwater.
+The late pass samples independent snapshots of completed opaque HDR and nearest opaque depth,
+then writes water into the existing one/two/four-sample colour and depth attachments. It uses shared
+replacement materials, PBR maps, clustered lights, mixed shadows and filtered parallax cubemaps.
+Source water normals retain their authored scroll rates. Camera-medium absorption happens before
+tone mapping. Water's own SSR and hardware reflection queries remain pending; existing opaque
+reflections are included once in the transmitted background. Nested transparent layers are unsupported.
 
 ## Ownership and modules
 
@@ -68,8 +68,10 @@ surface coverage/depth, and camera-medium absorption for opaque geometry seen un
 | `lighting.h/.cpp` | CPU transforms, cluster-depth policy, draw eligibility and cascade fitting |
 | `bindings.h` | Explicit CPU/GPU buffer layout contracts |
 | `material.h/.cpp` | Shared draw/material packing and normal transforms |
-| `water/optics.glsl`, `water/screen.glsl` | Primary water boundary and bounded screen-depth tracing primitives; render integration pending |
-| `water/snapshot.h/.cpp`, `water/shaders/snapshot.comp` | Independent completed opaque HDR/depth inputs for water; render integration pending |
+| `water/data.h/.cpp` | Measured-body draw eligibility and resolved optical/normal-scroll material data |
+| `water/optics.glsl`, `water/screen.glsl` | Primary water boundary and bounded screen-depth tracing primitives |
+| `water/snapshot.h/.cpp`, `water/shaders/snapshot.comp` | Independent completed opaque HDR/depth inputs for water |
+| `water/pass.h/.cpp`, `water/shaders/surface.glsl` | Late MSAA water shading, attachment transitions and opaque specular composition |
 | `resources.h/.cpp` | Noncopyable Vulkan buffer/image ownership and allocation |
 | `targets.cpp` | HDR/MSAA/depth/shadow attachments and descriptor layouts |
 | `pipelines.cpp` | Forward, shadow, cluster and display pipeline creation |
@@ -237,14 +239,13 @@ water is about two percent at normal incidence rather than the opaque BRDF's fou
 The baker still selects an explicitly marked smooth mean interface. Live ripple normals are
 a separate surface-shading input and must not alter volume absorption or the frozen boundary.
 
-Primary Forward+ water rendering remains unfinished. Transmission draws currently use the
-compatibility raster path. The water pass must sample completed opaque HDR colour and depth,
-shade reflection/refraction and absorption in scene-linear HDR, preserve MSAA edge coverage,
-and participate in depth/composition without reading an attachment it is writing. Routing
-these draws through the opaque pass would lose the transmitted background. Its material inputs
-must come from the same resolved replacement material as the bake and optional ray transport.
+The optional late water pass accepts measured transmission bodies with valid IOR and constant
+measurement colour/distance, ordinary depth testing/writes and opaque or source-over coverage.
+Thin sheets, unusual blend/depth state, decals and viewmodels retain compatibility rendering.
+Eligibility reads the resolved replacement material, as do baking and optional ray transport.
+Water geometry does not enter opaque shadow-caster lists or surface-lightmap charts.
 
-`water::Snapshot` supplies independent sampled inputs for that later pass. It stores RGBA16F
+`water::Snapshot` supplies independent sampled inputs for the late pass. It stores RGBA16F
 scene-linear HDR and R32F nearest opaque depth, about twelve bytes per pixel before allocation
 alignment. It resolves depth by taking the minimum MSAA sample and preserves premultiplied HDR
 coverage. Optional opaque reflections are added with that coverage before water samples the colour;
@@ -254,10 +255,19 @@ The caller must complete the selected descriptor slot's fence before recording, 
 completion, and retire all uses before resizing or destruction. Shared output images require the
 same ordered queue. Direct output-view feedback is rejected.
 
-Tests exercise actual render-pass attachments at 1x, 2x and 4x MSAA with ray-tracing features disabled,
-then run the production refraction/absorption helpers directly on the GPU snapshots. This verifies
-the snapshot boundary, including partial opaque coverage and repeated read/write transitions;
-it does not yet verify water geometry coverage, underwater composition or live replacement materials.
+The pass reuses the original MSAA attachments and owns its render pass, pipelines and fenced
+descriptor slots. An additive overlay puts completed opaque specular into those attachments before
+water shading; final composition skips its usual specular addition in that frame. Refraction reads
+only the snapshots. Missing bent rays can use a known straight-through opaque layer behind the
+surface; unknown background layers remain misses. Total internal reflection skips refraction queries.
+Probe misses use sky radiance gated by baked visibility. Water SSR, rough sky prefiltering and multiple
+transparent layers remain future work.
+
+The shared camera-medium API attenuates opaque geometry and visible water exits before tone mapping,
+using the nearest depth and measured distance in scene units. The exit sheet skips duplicate body
+absorption. Fog illumination currently assumes Source's world Z-up axis. Tests cover HDR transmission,
+foreground occlusion, partial water MSAA coverage, repeated frame slots, underwater opaque geometry,
+water exits and disabled-pass compatibility at 1x, 2x and 4x with ray-tracing features disabled.
 
 ## Settings
 
@@ -270,6 +280,9 @@ it does not yet verify water geometry coverage, underwater composition or live r
 | `sceneScale` | 1 | Metres per world unit |
 | `ambient` | 0.025 | Constant diffuse ambient fill |
 | `exposure` | 1 | Display exposure multiplier |
+| `water` | 0 | Enable the experimental late measured-transmission pass and camera-medium composition |
+| `waterDistance` | 50 | Maximum screen refraction distance in metres |
+| `waterThickness` | 0.15 | Screen refraction hit tolerance in metres |
 | `lightCutoff` | 0.001 | Contribution threshold used to bound local-light influence |
 | `ssr` | 1 | Enable current-frame screen-space reflections |
 | `reflectionProbes` | 16 | Maximum baked box-projected cubemaps, 0 to 16 |
@@ -284,7 +297,7 @@ it does not yet verify water geometry coverage, underwater composition or live r
 | `ssrRoughness` | 0.6 | Roughness cutoff for screen reflections |
 
 Lighting, exposure and SSR trace-parameter edits update per-frame data without recreating render targets.
-MSAA, shadow-map resolution, SSR enablement or SSR resolution edits prepare replacement targets in the
+MSAA, water enablement, shadow-map resolution, SSR enablement or SSR resolution edits prepare replacement targets in the
 background.
 
 Backend values are stable: raster 0, pathtrace 1, forwardplus 2. Native capability bits use the matching
@@ -593,7 +606,7 @@ normal texture/scrolling; base/emission animation, mutable optical maps and
 moving geometry are still refused. Constant index, measurement color and
 measurement distance belong to the snapshot and its content hash. Live normal
 ripples keep their original textures and scroll rates. Source BSP water enables
-this policy, while its original material remains in the compatibility pass.
+this policy; its original material uses the late water pass when enabled and eligible.
 USD transmission replacements retain their authored measurement distance and
 color. Reusing the source albedo preserves its sampling and alpha state without
 overwriting those optical coefficients. A valid replacement volume inherits the
@@ -621,8 +634,8 @@ Shadow connections use straight paths with colored extinction and Fresnel loss;
 refractive caustic focusing is omitted. Existing scalar mixed-light channels use
 the luminance of that transmission, while indirect/radiance paths retain RGB.
 The ordinary depth-shadow maps do not gain colored dielectric shadowing through
-this change. Full ripple refraction in primary Forward+ rendering remains the
-compatibility renderer's responsibility. Optional live ray transport shares the
+this change. Primary ripple refraction uses the optional late Forward+ water pass.
+Optional live ray transport shares the
 same smooth optical policy without changing primary MSAA.
 
 The render-thread controller schedules CPU packing and pipeline creation through the existing preparation

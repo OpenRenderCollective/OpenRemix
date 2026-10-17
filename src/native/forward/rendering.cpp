@@ -1,5 +1,6 @@
 #include "forward/gpu.h"
 #include "platform/gpu_timers.h"
+#include <algorithm>
 
 namespace remix::forward {
   namespace {
@@ -144,8 +145,37 @@ namespace remix::forward {
     vkCmdEndRenderPass(command);
   }
   void Renderer::composite(VkCommandBuffer command) { m_gpu->display(command, false); }
+  void Renderer::Gpu::recordWater(VkCommandBuffer command) {
+    auto &frame = frames[slot];
+    frame.waterComposed = false;
+    if (!waterPass || !std::any_of(frame.waterCommands.begin(), frame.waterCommands.end(), [&](const auto &draw) {
+          return draw.source.rasterVisible && intersectsClip(draw.worldBounds, frame.data.camera);
+        })) return;
+    gpu::GpuScope time(command, "Forward+ measured water", extent);
+    const auto specular = reflections ? reflections->output() : VkDescriptorImageInfo{};
+    waterPass->record(command, slot,
+        {resolved ? resolved->view : color->view, depth->view, specular},
+        [&](VkPipeline pipeline, VkPipelineLayout waterLayout) {
+          vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+          vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, waterLayout, 0, 1,
+                                  &frame.scene, 0, nullptr);
+          for (const auto &draw : frame.waterCommands) {
+            if (!draw.source.rasterVisible || !intersectsClip(draw.worldBounds, frame.data.camera)) continue;
+            vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, waterLayout, 1, 1,
+                                    &draw.material, 0, nullptr);
+            const uint32_t push[] = {draw.index, draw.waterIndex};
+            vkCmdPushConstants(command, waterLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                               0, sizeof(push), push);
+            const VkDeviceSize offset = 0;
+            vkCmdBindVertexBuffers(command, 0, 1, &draw.geometry->vertices->handle, &offset);
+            vkCmdBindIndexBuffer(command, draw.geometry->indices->handle, 0, VK_INDEX_TYPE_UINT32);
+            vkCmdDrawIndexed(command, draw.count, 1, draw.source.firstIndex, draw.source.vertexOffset, 0);
+          }
+        });
+    frame.waterComposed = true;
+  }
   void Renderer::background(VkCommandBuffer command) {
-    if (m_gpu->frames[m_gpu->slot].skyEnabled)
+    if (m_gpu->frames[m_gpu->slot].skyEnabled || m_gpu->frames[m_gpu->slot].waterMedium)
       m_gpu->display(command, true);
   }
   void Renderer::Gpu::display(VkCommandBuffer command, bool background) {
@@ -158,7 +188,7 @@ namespace remix::forward {
     const struct {
       float exposure;
       uint32_t encode, samples, reflections, background;
-    } push{g.options.exposure, uint32_t(g.encodeOutput), uint32_t(g.samples), uint32_t(bool(g.reflections)),
+    } push{g.options.exposure, uint32_t(g.encodeOutput), uint32_t(g.samples), uint32_t(bool(g.reflections) && !frame.waterComposed),
            uint32_t(background)};
     vkCmdPushConstants(command, g.compositeLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
     vkCmdDraw(command, 3, 1, 0, 0);

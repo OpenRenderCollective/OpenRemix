@@ -17,7 +17,7 @@ namespace remix {
     }
   } // namespace
 
-  bool RasterRenderer::preparePipelines(bool tracing, bool forward) {
+  bool RasterRenderer::preparePipelines(bool tracing, bool forward, DrawOwner owner) {
     bool ready = true;
     // Masked overlays (raster/mask.cpp): their coverage machinery and their
     // pipeline variants are compiled on first use, as for halos. A frame never
@@ -93,7 +93,8 @@ namespace remix {
       request(draw, true, false);
     };
     for (const auto &draw : m_draws)
-      if (draw.rasterVisible && (!tracing || !draw.traced()) && (!forward || !forward::accepts(draw))) {
+      if (draw.rasterVisible && (!tracing || !draw.traced()) &&
+          (!forward || !(owner ? owner(draw) : forward::accepts(draw)))) {
         if (tracing && draw.depthCompare == 2) {
           auto adjusted = draw;
           adjusted.depthCompare = 3;

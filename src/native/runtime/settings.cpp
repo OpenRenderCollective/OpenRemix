@@ -117,6 +117,9 @@ namespace remix::config {
                             return true;
                           }});
         result.push_back(scalar("rtx.native.forward.ssr", FIELD(forward.ssr), 0, 1));
+        result.push_back(scalar("rtx.native.forward.water", FIELD(forward.water), 0, 1));
+        result.push_back(scalar("rtx.native.forward.waterDistance", FIELD(forward.waterDistance), .1, 10000));
+        result.push_back(scalar("rtx.native.forward.waterThickness", FIELD(forward.waterThickness), .001, 10));
         result.push_back(scalar("rtx.native.forward.rtReflections", FIELD(forward.rtReflections), 0, 1));
         result.push_back(scalar("rtx.native.forward.rtGI", FIELD(forward.rtGI), 0, 1));
         result.push_back(scalar("rtx.native.forward.rtGISamples", FIELD(forward.rtGISamples), 1, 64));
