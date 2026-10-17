@@ -624,9 +624,12 @@ change the requested metre-space texel density. Material UVs remain unchanged. N
 including curved displacement charts, retains its authored unwrapping; its density can still vary with
 the host mapping and surface distortion.
 
-`forward/lightmap/layout` owns bounded shelf packing, conservative coverage, barycentric surface samples
-and inverse-transpose normals. The controller doubles one global spacing multiplier until all charts
-fit the atlas budget. Planar chart bounds round outward onto that grid instead of stretching their
+`forward/lightmap/packing` owns bounded shelf packing. `lightmap/fit` first brackets a fitting global
+spacing multiplier, then probes intermediate integer multipliers between the last failure and a known
+fit. It retains a verified fit throughout; shelf ordering means this is not a globally optimal packing
+search. Probes build only mappings and rectangle allocations. `lightmap/layout` rasterizes the selected
+layout and completes its seams once, with conservative coverage, barycentric surface samples and
+inverse-transpose normals. Planar chart bounds round outward onto that grid instead of stretching their
 endpoints independently. Authored fallback charts retain their endpoints when coarsened. Tiny faces
 keep real covered-centroid samples. Invalid/folded charts or an exhausted minimum-size budget fail
 explicitly; no chart is silently dropped. Planning supports cancellation.

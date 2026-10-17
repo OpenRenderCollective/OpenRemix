@@ -34,13 +34,13 @@ if get_option('gpu_tests')
 endif
 
 forward_lightmaps_test = executable('remix-forward-lightmaps-test', 'lightmaps.cpp',
-  '../../src/native/forward/lightmap/layout.cpp', '../../src/native/forward/lightmap/parameterization.cpp', '../../src/native/forward/lightmap/seams.cpp', '../../src/native/forward/lightmap/coverage.cpp', '../../src/native/forward/lightmap/data.cpp', '../../src/native/forward/lighting.cpp',
+  '../../src/native/forward/lightmap/layout.cpp', '../../src/native/forward/lightmap/packing.cpp', '../../src/native/forward/lightmap/fit.cpp', '../../src/native/forward/lightmap/parameterization.cpp', '../../src/native/forward/lightmap/seams.cpp', '../../src/native/forward/lightmap/coverage.cpp', '../../src/native/forward/lightmap/data.cpp', '../../src/native/forward/lighting.cpp',
   '../../src/native/forward/material.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Surface lightmap atlas planning and world texel ownership', forward_lightmaps_test)
 
 forward_mixed_test = executable('remix-forward-mixed-test', 'mixed.cpp',
-  '../../src/native/forward/mixed/data.cpp', '../../src/native/forward/lightmap/layout.cpp', '../../src/native/forward/lightmap/parameterization.cpp', '../../src/native/forward/lightmap/seams.cpp', '../../src/native/forward/lightmap/coverage.cpp',
+  '../../src/native/forward/mixed/data.cpp', '../../src/native/forward/lightmap/layout.cpp', '../../src/native/forward/lightmap/packing.cpp', '../../src/native/forward/lightmap/fit.cpp', '../../src/native/forward/lightmap/parameterization.cpp', '../../src/native/forward/lightmap/seams.cpp', '../../src/native/forward/lightmap/coverage.cpp',
   '../../src/native/forward/mixed/refine.cpp', '../../src/native/forward/mixed/occlusion.cpp',
   '../../src/native/forward/ray/capture.cpp', '../../src/native/forward/bake/data.cpp',
   '../../src/native/forward/lightmap/data.cpp', '../../src/native/forward/material.cpp',
@@ -58,7 +58,7 @@ forward_budget_test = executable('remix-forward-budget-test', 'budget.cpp',
 test('Forward+ adaptive bake work and lighting identity', forward_budget_test)
 
 forward_world_grid_test = executable('remix-forward-world-grid-test', 'world_grid.cpp',
-  '../../src/native/forward/lightmap/layout.cpp', '../../src/native/forward/lightmap/parameterization.cpp',
+  '../../src/native/forward/lightmap/layout.cpp', '../../src/native/forward/lightmap/packing.cpp', '../../src/native/forward/lightmap/fit.cpp', '../../src/native/forward/lightmap/parameterization.cpp',
   '../../src/native/forward/lightmap/seams.cpp', '../../src/native/forward/lightmap/coverage.cpp', '../../src/native/forward/lightmap/data.cpp',
   '../../src/native/forward/material.cpp', '../../src/native/forward/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)

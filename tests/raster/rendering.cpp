@@ -1087,6 +1087,9 @@ namespace {
         options.baking.reflectionProbes = 0;
         options.baking.lightmapPageSize = 64;
         options.baking.lightmapTexels = 4096;
+        // The 4x case needs a three-centimetre grid to fit this page. Doubling
+        // alone would stop at four; exercise the refined layout on the GPU.
+        if (samples == 4) options.baking.lightmapLuxelSize = .01f;
         target.enableForward(options);
         const auto white = material(r, 9500, 1, 1, 1);
         const auto black = material(r, 9501, 0, 0, 0);
@@ -1156,9 +1159,9 @@ namespace {
         require(content.grid && content.reflections && content.surfaces,
                 "Published lighting diagnostics fingerprint the packed bake payloads");
         if (samples == 4)
-          require(std::strstr(target.forward->statistics().baking.status, "49 surface texels") &&
-                      std::strstr(target.forward->statistics().baking.status, "0.25 m planar luxels"),
-                  "An oversized authored chart uses metre-space density rather than its original UV dimensions");
+          require(std::strstr(target.forward->statistics().baking.status, "3025 surface texels") &&
+                      std::strstr(target.forward->statistics().baking.status, "0.03 m planar luxels"),
+                  "The intermediate world density publishes complete surface lighting within the atlas budget");
         const size_t left = (32 * 64 + 16) * 4, right = (32 * 64 + 48) * 4;
         require(first[right + 1] > 80 && first[left + 1] < first[right + 1] * .3f,
                 "Surface atlas resolves static shadows while probes lie outside the receiver volume");

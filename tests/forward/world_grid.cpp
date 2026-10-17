@@ -4,6 +4,7 @@
 #include "scene/fixtures.h"
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 
 using namespace remix;
 using namespace remix::test;
@@ -117,7 +118,8 @@ int main() {
   auto &rotated = scene.charts[1];
   const float oldWidth = float(rotated.width - 1);
   std::swap(rotated.width, rotated.height);
-  for (auto &uv : rotated.texcoords) uv = {uv[1], oldWidth - uv[0]};
+  for (auto &uv : rotated.texcoords)
+    uv = {uv[1], oldWidth - uv[0]};
   lm::Options options{16, 8, 2, 8192, 1, .5f};
   const auto layout = lm::plan(scene, options);
   require(layout.luxelMetres == .5f && layout.seamSamples > 0 && layout.pages > 1,
@@ -205,11 +207,47 @@ int main() {
   }
   options.luxelMetres = .1f;
   density(transformed, lm::plan(transformed, options));
-  for (auto &draw : transformed.draws) draw.model[0] = -20;
+  for (auto &draw : transformed.draws)
+    draw.model[0] = -20;
   const auto mirrored = lm::plan(transformed, options);
   density(transformed, mirrored);
   require(mirrored.seamSamples > 0 && mirrored.mappings[0].normalKey == layout.mappings[0].normalKey,
           "Mirrored instance transforms retain the shading-facing plane and connected world grid");
+  scene::BakeScene large;
+  large.ready = true;
+  face(large, -80, -80, 80, 80, 5, 5);
+  const lm::Options budget{32, 1, 1, 1024, 1, 1};
+  const auto fitted = lm::fit(large, budget);
+  require(fitted.pages == 1 && fitted.luxelMetres == 6 && fitted.charts[0].width == 29 &&
+              fitted.charts[0].height == 29 && fitted.owners.size() == 1024,
+          "Budget refinement chooses a verified intermediate density instead of doubling straight to eight "
+          "metres");
+  density(large, fitted);
+  const auto directPlan = lm::plan(large, {32, 1, 1, 1024, 6, 1});
+  require(fitted.addresses == directPlan.addresses && fitted.owners == directPlan.owners &&
+              fitted.points.size() == directPlan.points.size(),
+          "Budget probes leave the final surface samples identical to a direct plan at the selected spacing");
+  for (size_t i = 0; i < fitted.points.size(); ++i)
+    require(fitted.points[i].position == directPlan.points[i].position &&
+                fitted.points[i].normal == directPlan.points[i].normal,
+            "Density refinement preserves the actual ray origins and bias normals of the selected grid");
+  bool exhausted = false;
+  try {
+    lm::fit(large, {8, 1, 4, 64, 1, 1});
+  } catch (const std::length_error &) {
+    exhausted = true;
+  }
+  require(exhausted,
+          "Impossible minimum-size packing fails after bounded coarsening without dropping a face");
+  std::stop_source cancelled;
+  cancelled.request_stop();
+  bool stopped = false;
+  try {
+    lm::fit(large, budget, cancelled.get_token());
+  } catch (const std::runtime_error &) {
+    stopped = true;
+  }
+  require(stopped, "Budget refinement propagates cancellation rather than treating it as a packing failure");
   std::puts("Metre-space density, global coarsening, connected seams, T-junctions, isolation and curved "
             "fallback passed");
 }

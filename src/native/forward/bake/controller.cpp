@@ -73,16 +73,7 @@ namespace remix::forward::bake {
     atlas.maxPages = std::min(256u, properties.limits.maxImageArrayLayers / lightmap::atlasLayers);
     if (atlas.pageSize > properties.limits.maxImageDimension2D)
       throw std::invalid_argument("Surface lightmap page exceeds device limit");
-    for (;;) {
-      try {
-        surfaceLayout = lightmap::plan(*source, atlas, cancellation.get_token());
-        break;
-      } catch (const std::length_error &) {
-        if (atlas.texelStep == 4096)
-          throw;
-        atlas.texelStep *= 2;
-      }
-    }
+    surfaceLayout = lightmap::fit(*source, atlas, cancellation.get_token());
     surfaces.resize(surfaceLayout.points.size());
     mixedLights = std::make_shared<mixed::Plan>(
         mixed::plan(source, surfaceLayout, lightCutoff, cancellation.get_token()));
