@@ -30,10 +30,25 @@ namespace remix::forward::probes {
     if (!count || !scene.partition || !scene.partition->closed)
       return {};
     const auto bounds = placementBounds(scene, grid);
-    std::vector<Vec3> result = scene.reflectionHints;
+    const float clearance = .05f / scene.sceneScale, range = 64.f / scene.sceneScale;
+    std::vector<RegionSite> ranked;
+    for (const auto &hint : scene.reflectionHints) {
+      const auto site = regionSite(*scene.partition, hint, clearance, range, cancelled);
+      if (site)
+        ranked.push_back(*site);
+    }
     const auto automatic =
-        regionSites(*scene.partition, bounds, .05f / scene.sceneScale, 64.f / scene.sceneScale, cancelled);
-    for (const auto &site : automatic)
+        regionSites(*scene.partition, bounds, clearance, range, cancelled);
+    ranked.insert(ranked.end(), automatic.begin(), automatic.end());
+    // Sheltered rooms need local parallax more than open areas. Preserve authored
+    // preference within each enclosure class, rather than consuming every slot
+    // with the first outdoor env_cubemap entities in BSP order.
+    std::stable_sort(ranked.begin(), ranked.end(), [](const auto &a, const auto &b) {
+      return a.enclosedAxes > b.enclosedAxes;
+    });
+    std::vector<Vec3> result;
+    result.reserve(ranked.size());
+    for (const auto &site : ranked)
       result.push_back(site.position);
     return result;
   }

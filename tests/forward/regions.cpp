@@ -167,6 +167,25 @@ int main() {
           "Authored seeds reach rooms without grid probes, reject solid origins and merge duplicate fits");
   for (const auto &capture : seeded)
     require(p::emptyRegion(separated, capture.bounds), "Seed hints cannot override a separating wall");
+  require(!p::regionSite(separated, {0, 0, 0}, .05f, 64),
+          "Authored candidate assessment rejects a solid origin");
+  // Stretch the right chamber beyond the enclosure search range. An outdoor
+  // authored seed must not consume the only slot before an automatic room site.
+  auto openSide = separated;
+  openSide.nodes[1].plane[3] = -200;
+  authored.maximum[0] = 200;
+  authored.partition = std::make_shared<scene::VisibilityPartition>(openSide);
+  authored.reflectionHints = {{100, 0, 0}};
+  const auto ranked = p::candidateSites(authored, sparse, 1);
+  require(!ranked.empty() && ranked.front()[0] < 0,
+          "Sheltered automatic rooms rank before open authored cubemap positions");
+  const auto indoor = p::place(authored, sparse, 1, 8);
+  require(indoor.size() == 1 && indoor[0].bounds.maximum[0] < 0,
+          "A limited capture budget still reaches the enclosed room");
+  authored.reflectionHints.push_back({-2, .4f, 0});
+  const auto preferred = p::candidateSites(authored, sparse, 1);
+  require(preferred.front() == Vec3{-2, .4f, 0},
+          "Authored origins retain priority among equally enclosed candidates");
   scene::VisibilityPartition angled;
   angled.closed = true;
   angled.clusterCount = 1;

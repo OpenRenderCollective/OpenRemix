@@ -73,6 +73,19 @@ namespace remix::forward::probes {
       }
       return range;
     }
+    std::optional<RegionSite> enclosure(const scene::VisibilityPartition &partition, Vec3 position,
+                                         float clearance, float enclosureRange) {
+      RegionSite site{position, enclosureRange, 0};
+      for (uint32_t axis = 0; axis < 3; ++axis) {
+        const auto a = solidDistance(partition, position, axis, 1, enclosureRange);
+        const auto b = solidDistance(partition, position, axis, -1, enclosureRange);
+        if (!a || !b)
+          return {};
+        site.clearance = std::min({site.clearance, *a, *b});
+        site.enclosedAxes += *a < enclosureRange && *b < enclosureRange;
+      }
+      return site.clearance >= clearance ? std::optional{site} : std::nullopt;
+    }
     std::vector<detail::Box> emptyCells(const scene::VisibilityPartition &partition, const Bounds &limit,
                                         std::stop_token cancelled) {
       struct Entry {
@@ -127,6 +140,26 @@ namespace remix::forward::probes {
       return cells;
     }
   } // namespace
+  std::optional<RegionSite> regionSite(const scene::VisibilityPartition &partition, Vec3 position,
+                                       float clearance, float enclosureRange,
+                                       std::stop_token cancelled) {
+    check(cancelled);
+    if (!partition.closed || partition.nodes.empty() || !std::isfinite(clearance) ||
+        !std::isfinite(enclosureRange) || clearance <= 0 || enclosureRange <= clearance)
+      return {};
+    Bounds safety;
+    for (uint32_t c = 0; c < 3; ++c) {
+      if (!std::isfinite(position[c]))
+        return {};
+      safety.minimum[c] = position[c] - clearance;
+      safety.maximum[c] = position[c] + clearance;
+    }
+    safety.valid = true;
+    RegionQuery query(partition, cancelled);
+    if (!query.contains(safety))
+      return {};
+    return enclosure(partition, position, clearance, enclosureRange);
+  }
   std::vector<RegionSite> regionSites(const scene::VisibilityPartition &partition, const Bounds &limit,
                                       float clearance, float enclosureRange, std::stop_token cancelled) {
     check(cancelled);
@@ -173,20 +206,8 @@ namespace remix::forward::probes {
       }
       if (!position)
         continue;
-      RegionSite site{*position, enclosureRange, 0};
-      bool valid = true;
-      for (uint32_t axis = 0; axis < 3; ++axis) {
-        const auto a = solidDistance(partition, *position, axis, 1, enclosureRange);
-        const auto b = solidDistance(partition, *position, axis, -1, enclosureRange);
-        if (!a || !b) {
-          valid = false;
-          break;
-        }
-        site.clearance = std::min({site.clearance, *a, *b});
-        site.enclosedAxes += *a < enclosureRange && *b < enclosureRange;
-      }
-      if (valid && site.clearance >= clearance)
-        sites.push_back(site);
+      if (const auto site = enclosure(partition, *position, clearance, enclosureRange))
+        sites.push_back(*site);
     }
     // Cap the clearance preference so a cavern cannot starve every ordinary
     // room. Deterministic position ties make map reloads reproducible.

@@ -33,6 +33,11 @@ namespace remix::forward::probes {
     float clearance = 0;
     uint32_t enclosedAxes = 0;
   };
+  // Assess authored and automatic origins with the same clearance and axial
+  // enclosure rules. Solid or malformed origins are refused before GPU testing.
+  std::optional<RegionSite> regionSite(const scene::VisibilityPartition &partition, Vec3 position,
+                                       float clearance, float enclosureRange,
+                                       std::stop_token cancelled = {});
   // Empty-leaf candidates independent of irradiance spacing. Conservative cell
   // bounds are only a search aid: each origin is checked against actual space.
   // Nearby opposite solid boundaries rank sheltered rooms before open areas.

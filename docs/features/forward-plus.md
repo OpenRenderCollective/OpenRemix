@@ -161,8 +161,10 @@ and first-hit distance without the irradiance mode's cosine convolution. Geometr
 visibility and diffuse continuation use the shared material rules. The capture currently models diffuse
 outgoing radiance at hits; secondary glossy reflections and normal-map detail are not captured.
 
-Capture origins prefer authored cubemap hints, then automatically searched empty-leaf sites, with validated
-irradiance sites as a fallback. When a closed BSP partition is available, a worker grows axis-aligned boxes across empty leaves, clipping conservative
+Capture origins rank authored cubemap hints and automatically searched empty-leaf sites by nearby axial
+enclosure, preferring sheltered rooms over open areas. Authored positions retain priority within each
+enclosure class; validated irradiance sites provide a fallback. When a closed BSP partition is available,
+a worker grows axis-aligned boxes across empty leaves, clipping conservative
 bounds down each BSP path. Artificial empty-leaf splits do not become room boundaries. Nearly duplicate
 fits share one capture. Capture origins always require strict empty-space clearance.
 
@@ -213,7 +215,7 @@ These are low-resolution static approximations, not per-frame ray tracing or a p
 | `exposure` | 1 | Display exposure multiplier |
 | `lightCutoff` | 0.001 | Contribution threshold used to bound local-light influence |
 | `ssr` | 1 | Enable current-frame screen-space reflections |
-| `reflectionProbes` | 4 | Maximum baked box-projected cubemaps, 0 to 16 |
+| `reflectionProbes` | 16 | Maximum baked box-projected cubemaps, 0 to 16 |
 | `reflectionResolution` | 32 | Power-of-two cube face size, 8 to 128 |
 | `lightmapPageSize` | 512 | Power-of-two surface atlas page size, 64 to 1024 |
 | `lightmapTexels` | 1048576 | Surface atlas texel budget, including padding and unused page space |
