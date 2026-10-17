@@ -22,7 +22,8 @@ namespace remix::scene {
            draw.material == binding.material.lock() && draw.model == expected.model &&
            draw.firstIndex == expected.firstIndex && draw.indexCount == expected.indexCount &&
            draw.vertexOffset == expected.vertexOffset && draw.doubleSided == expected.doubleSided &&
-           draw.ignoreAlpha == expected.ignoreAlpha && draw.alphaOverride == expected.alphaOverride &&
+           draw.ignoreAlpha == expected.ignoreAlpha && draw.terrain == expected.terrain &&
+           draw.alphaOverride == expected.alphaOverride &&
            draw.compare == expected.compare && draw.reference == expected.reference &&
            sameBlend(draw.blend, expected.blend);
   }

@@ -81,6 +81,12 @@ int main() {
           "Boxes extending outside the map are refused");
   const auto fit = p::fitRegion(splitRoom, room, {-.75f, .5f, 0}, .01f);
   require(fit && p::emptyRegion(splitRoom, *fit), "Fitted region is wholly empty");
+  const auto receivers = p::receiverRegion(splitRoom, *fit, .02f);
+  require(receivers.minimum == room.minimum && receivers.maximum == room.maximum &&
+              p::emptyRegion(splitRoom, receivers),
+          "Receiver influence reaches the room's actual surfaces without altering its inset projection");
+  require(fit->minimum[2] > room.minimum[2] && receivers.minimum[2] == room.minimum[2],
+          "A real floor excluded by the proxy inset is included in receiver influence");
   for (uint32_t c = 0; c < 3; ++c)
     require(std::abs(fit->minimum[c] - room.minimum[c]) < .03f &&
                 std::abs(fit->maximum[c] - room.maximum[c]) < .03f,
@@ -137,6 +143,11 @@ int main() {
           "Excessive interior solid volume exceeds the ignored-detail budget");
   const auto wall = box({-.01f, -3, -2}, {.01f, 3, 2});
   const auto separated = partition(&wall);
+  const auto leftInset = p::fitRegion(separated, room, {-2, 0, 0}, .01f);
+  require(bool(leftInset), "Thin-wall receiver fixture fits the left room");
+  const auto leftInfluence = p::receiverRegion(separated, *leftInset, .04f);
+  require(leftInfluence.maximum[0] == wall.minimum[0] && p::emptyRegion(separated, leftInfluence),
+          "Receiver snapping reaches a thin wall's near face but refuses its nearby far face");
   const auto left = p::fitRegion(separated, room, {-2, 0, 0}, .001f);
   const auto right = p::fitRegion(separated, room, {2, 0, 0}, .001f);
   require(left && right && left->maximum[0] < 0 && right->minimum[0] > 0,
@@ -278,6 +289,13 @@ int main() {
     sitesCancelled = true;
   }
   require(sitesCancelled, "Automatic site search supports cancellation before traversal");
+  bool receiversCancelled = false;
+  try {
+    p::receiverRegion(splitRoom, *fit, .02f, stop.get_token());
+  } catch (const std::runtime_error &) {
+    receiversCancelled = true;
+  }
+  require(receiversCancelled, "Receiver-boundary snapping supports map-change cancellation");
   bool selectionCancelled = false;
   try {
     p::selectRegions(adjoining, 3, stop.get_token());

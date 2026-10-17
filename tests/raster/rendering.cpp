@@ -1407,6 +1407,116 @@ namespace {
                       split ? "Stitched curved" : curved ? "Curved" : "Planar", samples, ssr ? "on" : "off", unsigned(first[left + 1]), unsigned(first[right + 1]));
       }
   }
+  void terrainLightingTests() {
+    for (bool ssr : {false, true})
+      for (uint32_t samples : {1u, 2u, 4u}) {
+        Target target(64, 64, true);
+        auto &r = target.raster;
+        remix::forward::Options options;
+        options.samples = samples;
+        options.ambient = 0;
+        options.ssr = ssr;
+        options.shadowResolution = 128;
+        options.baking.maxProbes = 64;
+        options.baking.samples = 128;
+        options.baking.bounces = 1;
+        options.baking.batch = 128;
+        options.baking.reflectionProbes = 0;
+        options.baking.lightmapPageSize = 32;
+        options.baking.diskCache = false;
+        target.enableForward(options);
+        const auto baseMesh = quad(r, 12000, material(r, 12001, 1, 1, 1));
+        const auto layerMesh = quad(r, 12002, material(r, 12003, 1, 0, 0), 0x80ffffff);
+        const auto shadeMesh = quad(r, 12004, material(r, 12005, 0, 0, 0));
+        remixapi_InstanceIdentityEXT baseIdentity{};
+        baseIdentity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+        baseIdentity.instanceId = 12006;
+        baseIdentity.classification = REMIXAPI_INSTANCE_STATIC_EXT;
+        baseIdentity.rasterVisible = 1;
+        auto base = instance(baseMesh);
+        base.pNext = &baseIdentity;
+        const auto baseHandle = r.createRetained(base);
+        remixapi_InstanceInfoBlendEXT blend{};
+        blend.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BLEND_EXT;
+        blend.alphaTestCompareOp = 7;
+        blend.alphaBlendEnabled = 1;
+        blend.srcColorBlendFactor = blend.srcAlphaBlendFactor = 6;
+        blend.dstColorBlendFactor = blend.dstAlphaBlendFactor = 7;
+        blend.writeMask = 15;
+        blend.textureAlphaOperation = 1;
+        blend.textureAlphaArg1Source = 2;
+        auto layerIdentity = baseIdentity;
+        layerIdentity.instanceId = 12007;
+        layerIdentity.pNext = &blend;
+        auto layer = instance(layerMesh, -.001f);
+        layer.pNext = &layerIdentity;
+        layer.categoryFlags = REMIXAPI_INSTANCE_CATEGORY_BIT_TERRAIN | REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_STATIC;
+        const auto layerHandle = r.createRetained(layer);
+        require(target.forward->owns(r.retained(layerHandle)->records[0]),
+                "Tagged terrain paint belongs to lit Forward+ rather than unlit compatibility rendering");
+        auto shadeIdentity = baseIdentity;
+        shadeIdentity.instanceId = 12008;
+        shadeIdentity.rasterVisible = 0;
+        auto shade = instance(shadeMesh, -.4f);
+        shade.pNext = &shadeIdentity;
+        shade.doubleSided = 1;
+        shade.transform.matrix[0][0] = .5f;
+        shade.transform.matrix[0][3] = -.4f;
+        shade.transform.matrix[1][1] = 3;
+        const uint64_t instances[] = {baseHandle, layerHandle, r.createRetained(shade)};
+        remixapi_LightInfoDistantEXT distant{};
+        distant.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT;
+        distant.direction = {0, 0, 1};
+        remixapi_LightInfo light{};
+        light.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+        light.pNext = &distant;
+        light.hash = 12009;
+        light.radiance = {1, 1, 1};
+        remixapi_LightHandle sun;
+        r.createLight(light, sun);
+        const float uv[] = {0, 0, 8, 8, 8, 0, 0, 0, 0, 8, 8, 8};
+        const remixapi_BakeSurfaceChartEXT charts[] = {
+            {baseHandle, 0, 0, 0, 6, 9, 9, uv}, {layerHandle, 0, 0, 0, 6, 9, 9, uv}};
+        remixapi_BakeSceneSurfacesInfoEXT request{};
+        request.bounds.scene = {sizeof(request), REMIXAPI_BAKE_SCENE_SURFACES_VERSION_EXT, 120, 1, 1,
+                                REMIXAPI_BAKE_SCENE_READY_EXT, 3, 1, instances, &sun};
+        for (uint32_t c = 0; c < 3; ++c) {
+          request.bounds.minimum[c] = 10;
+          request.bounds.maximum[c] = 11;
+        }
+        request.chartRevision = 1;
+        request.chartCount = 2;
+        request.charts = charts;
+        r.setBakeScene(&request.bounds.scene);
+        auto render = [&](bool paint) {
+          camera(r);
+          if (paint) r.drawRetained(nullptr);
+          else r.drawInstance(base);
+          r.drawLight(sun);
+          return target.render();
+        };
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        do {
+          render(true);
+          require(target.forward->statistics().baking.state != REMIXAPI_BAKE_FAILED_EXT,
+                  "Terrain lightmap bake succeeds");
+          if (target.forward->statistics().baking.active) break;
+        } while (std::chrono::steady_clock::now() < deadline);
+        require(target.forward->statistics().baking.active, "Terrain lightmaps publish");
+        const auto plain = render(false), painted = render(true);
+        const size_t left = (32 * 64 + 16) * 4, right = (32 * 64 + 48) * 4;
+        require(plain[left] < 3 && painted[left] < 3,
+                "Terrain paint respects the baked shadow instead of glowing over its receiver");
+        require(plain[right] > 30 && std::abs(int(plain[right]) - int(painted[right])) <= 3,
+                "Identical terrain colour channels retain the receiver's lighting across blend boundaries");
+        require(painted[right + 1] > plain[right + 1] * .35f &&
+                    painted[right + 1] < plain[right + 1] * .75f,
+                "Vertex coverage blends different terrain albedos in HDR without making the layer opaque");
+        std::printf("Terrain %ux MSAA, SSR %u: shadow %u, lit base %u, painted RGB %u %u %u\n",
+                    samples, unsigned(ssr), painted[left], plain[right], painted[right],
+                    painted[right + 1], painted[right + 2]);
+      }
+  }
   void compactOcclusionTests(bool saturated = false) {
     for (uint32_t samples : {1u, 2u, 4u}) {
       Target target(64, 64, true);
@@ -3342,6 +3452,7 @@ int main(int argc, char **argv) {
   else if (argc>2 && std::strcmp(argv[2],"mixed")==0) mixedLightingTests();
   else if (argc>2 && std::strcmp(argv[2],"compact-occlusion")==0) compactOcclusionTests();
   else if (argc>2 && std::strcmp(argv[2],"overflow-specular")==0) compactOcclusionTests(true);
+  else if (argc>2 && std::strcmp(argv[2],"terrain-lighting")==0) terrainLightingTests();
   else if (argc>2 && std::strcmp(argv[2],"clear-visibility")==0) clearVisibilityTests();
   else if (argc>2 && std::strcmp(argv[2],"mixed-sun")==0) sunLightingTests();
   else if (argc>2 && std::strcmp(argv[2],"probe-blend")==0) reflectionTests(directory, true);

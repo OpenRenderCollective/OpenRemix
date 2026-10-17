@@ -50,4 +50,9 @@ namespace remix::forward::probes {
   std::optional<Bounds> fitRegion(const scene::VisibilityPartition &partition, const Bounds &limit, Vec3 site,
                                   float margin, std::stop_token cancelled = {},
                                   RegionTolerance tolerance = {});
+  // Restore contact with nearby axis-aligned room surfaces for receivers.
+  // Projection remains inset. Every snap must pass whole-volume occupancy;
+  // influence never grows through a wall just because it is within the margin.
+  Bounds receiverRegion(const scene::VisibilityPartition &partition, const Bounds &projection,
+                         float snapDistance, std::stop_token cancelled = {}, RegionTolerance tolerance = {});
 } // namespace remix::forward::probes

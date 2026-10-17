@@ -20,11 +20,13 @@ namespace remix::forward {
         vkDestroyDescriptorPool(device, frame.pool, nullptr);
       frame.commands.clear();
       frame.staticCommands.clear();
+      frame.terrainCommands.clear();
       frame.waterCommands.clear();
     }
     geometries.clear();
     for (auto handle : {opaquePipeline, lightmapPipeline, shadowPipeline, localShadowPipeline,
-                        clusterPipeline, compositePipeline, giOpaquePipeline, giLightmapPipeline})
+                        clusterPipeline, compositePipeline, giOpaquePipeline, giLightmapPipeline,
+                        terrainPipeline, terrainLightmapPipeline, giTerrainPipeline, giTerrainLightmapPipeline})
       if (handle)
         pipeline::destroyPipeline(device, handle, nullptr);
     for (auto handle : {layout, compositeLayout, giLayout})
@@ -118,6 +120,7 @@ namespace remix::forward {
     auto &frame = g.frames.at(slot);
     frame.commands.clear();
     frame.staticCommands.clear();
+    frame.terrainCommands.clear();
     frame.waterCommands.clear();
     frame.waterComposed = false;
     if (frame.pool)
@@ -189,7 +192,7 @@ namespace remix::forward {
   const Statistics &Renderer::statistics() const { return m_gpu->statistics; }
   const Options &Renderer::options() const { return m_gpu->options; }
   bool Renderer::owns(const scene::Draw &draw) const {
-    return accepts(draw) || (m_gpu && m_gpu->waterPass && water::accepts(draw));
+    return accepts(draw) || acceptsTerrainLayer(draw) || (m_gpu && m_gpu->waterPass && water::accepts(draw));
   }
   void Renderer::updateLighting(const Options &options) {
     if (!m_gpu->options.sameTargets(options))

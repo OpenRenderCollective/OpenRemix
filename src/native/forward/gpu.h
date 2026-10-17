@@ -47,6 +47,8 @@ namespace remix::forward {
     VkDescriptorSetLayout giSceneLayout = VK_NULL_HANDLE;
     VkPipelineLayout giLayout = VK_NULL_HANDLE;
     VkPipeline giOpaquePipeline = VK_NULL_HANDLE, giLightmapPipeline = VK_NULL_HANDLE;
+    VkPipeline terrainPipeline = VK_NULL_HANDLE, terrainLightmapPipeline = VK_NULL_HANDLE,
+               giTerrainPipeline = VK_NULL_HANDLE, giTerrainLightmapPipeline = VK_NULL_HANDLE;
     std::shared_ptr<bake::Controller> baking;
     std::unique_ptr<shadows::Maps> localMaps;
     shadows::Planner shadowPlanner;
@@ -81,6 +83,7 @@ namespace remix::forward {
       bool skyEnabled = false;
       VkDescriptorImageInfo skyImage{};
       std::vector<Command> commands, staticCommands;
+      std::vector<Command> terrainCommands;
       std::vector<Command> waterCommands;
       bool waterComposed = false;
       bool waterMedium = false;
@@ -98,7 +101,7 @@ namespace remix::forward {
     void recordWorld(VkCommandBuffer command);
     void recordWater(VkCommandBuffer command);
     void drawLocalCasters(VkCommandBuffer command, uint32_t slot, uint32_t face, bool staticCasters);
-    void drawGeometry(VkCommandBuffer command);
+    void drawGeometry(VkCommandBuffer command, bool terrain = false);
     void drawSunCasters(VkCommandBuffer command, uint32_t cascade, bool staticCasters);
     void prepareSky(VkCommandBuffer command, RasterRenderer &resources);
     void display(VkCommandBuffer command, bool background);

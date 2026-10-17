@@ -76,6 +76,7 @@ namespace remix::forward {
     const auto sun = resources.light();
     frame.commands.clear();
     frame.staticCommands.clear();
+    frame.terrainCommands.clear();
     frame.waterCommands.clear();
     frame.waterComposed = false;
     frame.waterMedium = false;
@@ -90,7 +91,7 @@ namespace remix::forward {
     Bounds casters;
     const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - epoch).count();
     auto append = [&](const scene::Draw &draw, std::vector<Command> &commands, bool staticOnly, bool liquid = false) {
-      if (!(liquid ? water::accepts(draw) : accepts(draw)))
+      if (!(liquid ? water::accepts(draw) : accepts(draw) || (!staticOnly && acceptsTerrainLayer(draw))))
         return;
       const uint32_t count = draw.indexCount ? draw.indexCount : uint32_t(draw.surface->indices.size());
       if (!count)
@@ -115,7 +116,8 @@ namespace remix::forward {
     };
     for (const auto &draw : resources.draws()) {
       const bool liquid = waterPass && water::accepts(draw);
-      append(draw, liquid ? frame.waterCommands : frame.commands, false, liquid);
+      append(draw, liquid ? frame.waterCommands
+                   : acceptsTerrainLayer(draw) ? frame.terrainCommands : frame.commands, false, liquid);
     }
     // Complete frozen bounds still fit the cascades even when no static draw
     // descriptors or material records need preparing for this frame.
@@ -215,7 +217,8 @@ namespace remix::forward {
     probes::dumpFrameData(".world-frame.bin", &data, sizeof(data));
     probes::dumpFrameData(".draws.bin", draws.data(), draws.size() * sizeof(DrawData));
     probes::dumpFrameData(".lights.bin", lights.data(), lights.size() * sizeof(LightData));
-    const uint32_t capacity = uint32_t(frame.commands.size() + frame.staticCommands.size() + frame.waterCommands.size()) + 2;
+    const uint32_t capacity = uint32_t(frame.commands.size() + frame.staticCommands.size() +
+                                      frame.terrainCommands.size() + frame.waterCommands.size()) + 2;
     if (!frame.pool || frame.poolCapacity < capacity) {
       if (frame.pool)
         vkDestroyDescriptorPool(device, frame.pool, nullptr);
@@ -327,7 +330,7 @@ namespace remix::forward {
                   .pImageInfo = &occlusion};
     vkUpdateDescriptorSets(device, 1, &writes[12], 0, nullptr);
     std::unordered_map<const scene::Material *, VkDescriptorSet> materials;
-    for (auto *commands : {&frame.commands, &frame.staticCommands, &frame.waterCommands})
+    for (auto *commands : {&frame.commands, &frame.staticCommands, &frame.terrainCommands, &frame.waterCommands})
       for (auto &draw : *commands) {
         const auto &material = draw.source.material;
         if (auto found = materials.find(material.get()); found != materials.end()) {
@@ -353,7 +356,7 @@ namespace remix::forward {
                               .pImageInfo = &textures[i]};
         vkUpdateDescriptorSets(device, 5, textureWrites, 0, nullptr);
       }
-    statistics.draws = uint32_t(frame.commands.size() + frame.waterCommands.size());
+    statistics.draws = uint32_t(frame.commands.size() + frame.terrainCommands.size() + frame.waterCommands.size());
     statistics.shadowedLights =
         uint32_t(std::count(shadowSelection.active.begin(), shadowSelection.active.end(), true));
     statistics.shadowOverflow = shadowSelection.overflow;

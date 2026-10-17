@@ -102,7 +102,7 @@ void main() {
                         surfaceLightmap);
   }
   color += emitted;
-  result = vec4(min(max(color, vec3(0)), vec3(65000)), 1);
+  result = vec4(min(max(color, vec3(0)), vec3(65000)), m.pbr.w > .5 ? surface.a : 1);
 #ifdef REFLECTION_GUIDES
   outNormalRoughness = vec4(n, roughness);
   outReflectance = vec4(mix(vec3(.04), surface.rgb, metallic), 1);

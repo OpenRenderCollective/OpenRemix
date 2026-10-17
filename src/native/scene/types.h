@@ -258,6 +258,7 @@ namespace remix {
       bool depthWriteOverride = false, depthWrite = true, depthBias = false;
       uint32_t depthCompare = 3;
       bool decal = false;
+      bool terrain = false; // existing TERRAIN category; enables lit static paint in Forward+
       // remixapi_InstanceInfoWireframeEXT: drawn as its triangles' edges
       // (raster-only, line polygon mode).
       bool wireframe = false;

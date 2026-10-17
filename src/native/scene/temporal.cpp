@@ -66,6 +66,7 @@ namespace remix::scene {
     add(b.factor);
     add(draw.ignoreAlpha);
     add(draw.decal);
+    add(draw.terrain);
     add(draw.alphaOverride);
     add(draw.compare);
     add(draw.reference);

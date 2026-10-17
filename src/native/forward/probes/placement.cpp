@@ -100,6 +100,9 @@ namespace remix::forward::probes {
     };
     auto append = [&](Bounds box, Vec3 position) {
       Capture capture{box, position, resolution, {}, box};
+      if (fitted)
+        capture.influence = receiverRegion(*scene.partition, box, .002f / scene.sceneScale, cancelled,
+                                            {detailTolerance / scene.sceneScale});
       capture.radiance.resize(rays(capture).size());
       captures.push_back(std::move(capture));
     };

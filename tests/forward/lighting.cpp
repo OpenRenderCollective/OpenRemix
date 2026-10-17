@@ -160,6 +160,23 @@ int main() {
   require(accepts(draw), "Opaque world belongs to Forward+");
   draw.blend.enabled = true;
   require(!accepts(draw), "Transparency stays in compatibility raster");
+  {
+    auto paint = draw;
+    paint.terrain = paint.decal = true;
+    paint.classification = REMIXAPI_INSTANCE_STATIC_EXT;
+    paint.blend.src = 6;
+    paint.blend.dst = 7;
+    require(acceptsTerrainLayer(paint) && !accepts(paint),
+            "Explicit static terrain paint receives lighting without becoming an opaque caster");
+    paint.terrain = false;
+    require(!acceptsTerrainLayer(paint), "Ordinary decals retain compatibility ownership");
+    paint.terrain = true;
+    paint.classification = REMIXAPI_INSTANCE_DYNAMIC_EXT;
+    require(!acceptsTerrainLayer(paint), "Dynamic decals cannot inherit static terrain lighting");
+    paint.classification = REMIXAPI_INSTANCE_STATIC_EXT;
+    paint.blend.dst = 1;
+    require(!acceptsTerrainLayer(paint), "Additive layers do not become terrain source-over paint");
+  }
   draw.blend.enabled = false;
   draw.cutGroup = 1;
   require(!accepts(draw), "Mask cut stays in compatibility raster");

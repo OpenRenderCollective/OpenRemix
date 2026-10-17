@@ -1041,6 +1041,14 @@ namespace {
     require(refused, "A zero reflection capture direction is refused before dispatch");
     const auto data = probes::filter({&capture, 1}, 256);
     test::probeQueries(fixture, data);
+    auto inset = data;
+    for (uint32_t axis = 0; axis < 3; ++axis) {
+      inset.header.probes[0].minimum[axis] += .001f;
+      inset.header.probes[0].maximum[axis] -= .001f;
+    }
+    require(bool(probes::sample(inset, {0, 0, -1}, {0, 0, 1}, .2f)),
+            "A floor receiver can use influence reaching beyond its inset projection proxy");
+    test::probeQueries(fixture, inset);
     std::vector<probes::Capture> allSlots(probes::maxProbes, capture);
     for (uint32_t i = 0; i < allSlots.size(); ++i) {
       auto &slot = allSlots[i];

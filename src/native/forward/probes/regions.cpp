@@ -185,6 +185,51 @@ namespace remix::forward::probes {
   bool emptyRegion(const scene::VisibilityPartition &partition, const Bounds &bounds) {
     return EmptySpace(partition).contains(bounds);
   }
+  Bounds receiverRegion(const scene::VisibilityPartition &partition, const Bounds &projection,
+                         float snapDistance, std::stop_token cancelled, RegionTolerance tolerance) {
+    check(cancelled);
+    if (!valid(projection) || !std::isfinite(snapDistance) || snapDistance < 0)
+      throw std::invalid_argument("Invalid reflection receiver bounds");
+    EmptySpace space(partition, cancelled);
+    if (!snapDistance || !space.contains(projection, tolerance))
+      return projection;
+    std::array<std::vector<float>, 6> candidates;
+    for (const auto &node : partition.nodes) {
+      uint32_t axis = 3;
+      for (uint32_t c = 0; c < 3; ++c)
+        if (node.plane[c] != 0) {
+          if (axis != 3) { axis = 3; break; }
+          axis = c;
+        }
+      if (axis == 3)
+        continue; // an oblique plane is not a constant axis coordinate
+      const float boundary = node.plane[3] / node.plane[axis];
+      if (!std::isfinite(boundary))
+        continue;
+      if (boundary <= projection.minimum[axis] && projection.minimum[axis] - boundary <= snapDistance)
+        candidates[axis * 2].push_back(boundary);
+      if (boundary >= projection.maximum[axis] && boundary - projection.maximum[axis] <= snapDistance)
+        candidates[axis * 2 + 1].push_back(boundary);
+    }
+    Bounds result = projection;
+    for (uint32_t face = 0; face < 6; ++face) {
+      check(cancelled);
+      auto &coordinates = candidates[face];
+      std::sort(coordinates.begin(), coordinates.end(), [face](float a, float b) {
+        return face & 1u ? a > b : a < b;
+      });
+      coordinates.erase(std::unique(coordinates.begin(), coordinates.end()), coordinates.end());
+      for (float coordinate : coordinates) {
+        auto candidate = result;
+        (face & 1u ? candidate.maximum : candidate.minimum)[face / 2] = coordinate;
+        if (space.contains(candidate, tolerance)) {
+          result = candidate;
+          break;
+        }
+      }
+    }
+    return result;
+  }
   std::optional<Bounds> fitRegion(const scene::VisibilityPartition &partition, const Bounds &limit, Vec3 site,
                                   float margin, std::stop_token cancelled, RegionTolerance tolerance) {
     check(cancelled);

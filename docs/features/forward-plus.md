@@ -1281,6 +1281,19 @@ host-visible allocation path. GPU scratch storage does not inherit that path.
 
 ## Verification
 
+Static displacement paint submitted with the terrain and decal categories uses a lit HDR
+source-over pass after opaque geometry. Its surface charts receive baked diffuse lighting and
+static visibility; dynamic lighting uses the same PBR material path. The pass tests the opaque
+depth without writing it and preserves the underlying receiver's reflection guides. Blended
+normal/roughness guides for those layers remain a limitation. Ordinary decals retain their
+compatibility path, and paint layers are excluded from opaque shadow-caster lists.
+
+Fitted cubemap projection boxes remain inset from solid room boundaries. Receiver influence
+can snap outward to nearby axis-aligned BSP planes, so a floor or wall at the boundary can use
+its room's capture. Each snap is checked against whole-volume occupancy with the existing
+bounded trim tolerance; proximity alone never permits crossing a wall. This does not solve
+rotated-room fitting or guarantee coverage when the capture budget is exhausted.
+
 CPU policy coverage lives in `tests/forward`. GPU readback extends the existing raster fixture to check
 local-light contribution, sun-shadow occlusion, MSAA silhouette coverage, frame-slot reuse and HUD
 composition. SSR readback checks reflected emissive geometry at odd target dimensions across 1x, 2x

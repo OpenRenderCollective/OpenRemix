@@ -449,6 +449,7 @@ namespace remix {
                                           REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_DYNAMIC |
                                           REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_SINGLE_OFFSET |
                                           REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_NO_OFFSET)) != 0;
+        draw.terrain = (d.categoryFlags & REMIXAPI_INSTANCE_CATEGORY_BIT_TERRAIN) != 0;
         draw.material = m_default;
         if (surface->material) {
           auto it = m_materials.find(key(surface->material));

@@ -24,9 +24,13 @@ namespace remix::forward {
     const auto fragment = options.reflections() ? modules.add(ssrFragShader, sizeof(ssrFragShader))
                                                 : modules.add(fragShader, sizeof(fragShader));
     VkShaderModule giFragment = VK_NULL_HANDLE;
+    const auto terrainFragment = modules.add(fragShader, sizeof(fragShader));
+    VkShaderModule giTerrainFragment = VK_NULL_HANDLE;
     if (giSupported)
       giFragment = options.reflections() ? modules.add(ray::gi::guidesShader, sizeof(ray::gi::guidesShader))
                                          : modules.add(ray::gi::fragShader, sizeof(ray::gi::fragShader));
+    if (giSupported)
+      giTerrainFragment = modules.add(ray::gi::fragShader, sizeof(ray::gi::fragShader));
     const auto shadowVertex = modules.add(shadowVertShader, sizeof(shadowVertShader));
     const auto shadowFragment = modules.add(shadowFragShader, sizeof(shadowFragShader));
     const auto localVertex = modules.add(localShadowVertShader, sizeof(localShadowVertShader));
@@ -83,7 +87,7 @@ namespace remix::forward {
                                                    .dynamicStateCount = 2,
                                                    .pDynamicStates = states};
     auto graphics = [&](VkShaderModule vs, VkShaderModule fs, VkRenderPass pass, bool shadow,
-                        bool composite) {
+                        bool composite, bool terrain = false) {
       const VkPipelineShaderStageCreateInfo stages[] = {
           {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
            .stage = VK_SHADER_STAGE_VERTEX_BIT,
@@ -109,11 +113,11 @@ namespace remix::forward {
       const VkPipelineDepthStencilStateCreateInfo depthState{
           .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
           .depthTestEnable = VK_TRUE,
-          .depthWriteEnable = VK_TRUE,
+          .depthWriteEnable = !terrain,
           .depthCompareOp = composite ? VK_COMPARE_OP_ALWAYS : VK_COMPARE_OP_LESS_OR_EQUAL};
       const VkPipelineColorBlendAttachmentState attachment{
-          .blendEnable = composite,
-          .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
+          .blendEnable = composite || terrain,
+          .srcColorBlendFactor = terrain ? VK_BLEND_FACTOR_SRC_ALPHA : VK_BLEND_FACTOR_ONE,
           .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
           .colorBlendOp = VK_BLEND_OP_ADD,
           .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
@@ -124,7 +128,7 @@ namespace remix::forward {
       const VkPipelineColorBlendStateCreateInfo blend{
           .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
           .attachmentCount = shadow                                ? 0u
-                             : composite || !options.reflections() ? 1u
+                             : composite || terrain || !options.reflections() ? 1u
                                                                    : 3u,
           .pAttachments = shadow ? nullptr : attachments};
       const VkGraphicsPipelineCreateInfo info{.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
@@ -141,18 +145,23 @@ namespace remix::forward {
                                               .pColorBlendState = &blend,
                                               .pDynamicState = &dynamic,
                                               .layout = composite          ? compositeLayout
-                                                        : fs == giFragment ? giLayout
+                                                        : fs == giFragment || fs == giTerrainFragment ? giLayout
                                                                            : layout,
-                                              .renderPass = pass};
+                                              .renderPass = pass,
+                                              .subpass = terrain ? 1u : 0u};
       VkPipeline result;
       check(pipeline::createGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &result));
       return result;
     };
     opaquePipeline = graphics(vertex, fragment, worldPass, false, false);
     lightmapPipeline = graphics(lightmapVertex, fragment, worldPass, false, false);
+    terrainPipeline = graphics(vertex, terrainFragment, worldPass, false, false, true);
+    terrainLightmapPipeline = graphics(lightmapVertex, terrainFragment, worldPass, false, false, true);
     if (giSupported) {
       giOpaquePipeline = graphics(vertex, giFragment, worldPass, false, false);
       giLightmapPipeline = graphics(lightmapVertex, giFragment, worldPass, false, false);
+      giTerrainPipeline = graphics(vertex, giTerrainFragment, worldPass, false, false, true);
+      giTerrainLightmapPipeline = graphics(lightmapVertex, giTerrainFragment, worldPass, false, false, true);
     }
     shadowPipeline = graphics(shadowVertex, shadowFragment, shadowPass, true, false);
     localShadowPipeline = graphics(localVertex, localFragment, shadowPass, true, false);

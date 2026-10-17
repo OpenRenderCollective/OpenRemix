@@ -11,7 +11,7 @@ namespace remix::forward {
       vkCmdSetScissor(command, 0, 1, &scissor);
     }
   } // namespace
-  void Renderer::Gpu::drawGeometry(VkCommandBuffer command) {
+  void Renderer::Gpu::drawGeometry(VkCommandBuffer command, bool terrain) {
     const auto &frame = frames[slot];
     const bool gi = bool(frame.giScene);
     const auto drawLayout = gi ? giLayout : layout;
@@ -20,14 +20,16 @@ namespace remix::forward {
     if (gi)
       vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 2, 1, &frame.giScene, 0,
                               nullptr);
-    for (const auto &draw : frame.commands) {
+    for (const auto &draw : terrain ? frame.terrainCommands : frame.commands) {
       if (!draw.source.rasterVisible)
         continue;
       if (!intersectsClip(draw.worldBounds, frame.data.camera))
         continue;
       const auto *mapped = draw.lightmap;
       vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                        gi       ? (mapped ? giLightmapPipeline : giOpaquePipeline)
+                        terrain  ? (gi ? (mapped ? giTerrainLightmapPipeline : giTerrainPipeline)
+                                       : (mapped ? terrainLightmapPipeline : terrainPipeline))
+                        : gi       ? (mapped ? giLightmapPipeline : giOpaquePipeline)
                         : mapped ? lightmapPipeline
                                  : opaquePipeline);
       vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 1, 1, &draw.material, 0,
@@ -142,6 +144,8 @@ namespace remix::forward {
     vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
     viewport(command, extent);
     drawGeometry(command);
+    vkCmdNextSubpass(command, VK_SUBPASS_CONTENTS_INLINE);
+    drawGeometry(command, true);
     vkCmdEndRenderPass(command);
   }
   void Renderer::composite(VkCommandBuffer command) { m_gpu->display(command, false); }

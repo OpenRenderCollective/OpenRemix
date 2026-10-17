@@ -80,8 +80,20 @@ namespace remix::forward {
     const VkSubpassDescription subpass{.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
                                        .colorAttachmentCount = options.reflections() ? 3u : 1u,
                                        .pColorAttachments = colorReferences,
-                                       .pResolveAttachments = resolved ? resolveReferences : nullptr,
                                        .pDepthStencilAttachment = &depthReference};
+    // Paint is lit in HDR after opaque receivers. Preserve their reflection
+    // guides and depth, then resolve colour only after both subpasses finish.
+    const uint32_t preserveGuides[] = {2, 3};
+    const VkAttachmentReference readDepth{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
+    const VkSubpassDescription terrainSubpass{
+        .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = colorReferences,
+        .pResolveAttachments = resolved ? resolveReferences : nullptr,
+        .pDepthStencilAttachment = &readDepth,
+        .preserveAttachmentCount = options.reflections() ? 2u : 0u,
+        .pPreserveAttachments = preserveGuides};
+    const VkSubpassDescription subpasses[] = {subpass, terrainSubpass};
     // Targets are shared between slots on one queue. The incoming dependency
     // includes the previous frame's composite reads, not just attachment writes.
     const auto attachmentStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
@@ -98,17 +110,32 @@ namespace remix::forward {
          .dstAccessMask =
              VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT},
         {.srcSubpass = 0,
+         .dstSubpass = 1,
+         .srcStageMask = attachmentStages,
+         .dstStageMask = attachmentStages,
+         .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+         .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                          VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+         .dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT},
+        {.srcSubpass = 0,
          .dstSubpass = VK_SUBPASS_EXTERNAL,
          .srcStageMask = attachmentStages,
          .dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
          .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+         .dstAccessMask = VK_ACCESS_SHADER_READ_BIT},
+        {.srcSubpass = 1,
+         .dstSubpass = VK_SUBPASS_EXTERNAL,
+         .srcStageMask = attachmentStages,
+         .dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+         .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                          VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
          .dstAccessMask = VK_ACCESS_SHADER_READ_BIT}};
     const VkRenderPassCreateInfo info{.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
                                       .attachmentCount = attachmentCount,
                                       .pAttachments = attachments,
-                                      .subpassCount = 1,
-                                      .pSubpasses = &subpass,
-                                      .dependencyCount = 2,
+                                      .subpassCount = 2,
+                                      .pSubpasses = subpasses,
+                                      .dependencyCount = 4,
                                       .pDependencies = dependencies};
     check(pipeline::createRenderPass(device, &info, nullptr, &worldPass));
     VkImageView views[5] = {color->view, depth->view};
@@ -142,13 +169,14 @@ namespace remix::forward {
     const VkAttachmentReference shadowReference{0, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
     const VkSubpassDescription shadowSubpass{.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
                                              .pDepthStencilAttachment = &shadowReference};
+    const VkSubpassDependency shadowDependencies[] = {dependencies[0], dependencies[2]};
     const VkRenderPassCreateInfo shadowInfo{.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
                                             .attachmentCount = 1,
                                             .pAttachments = &shadowAttachment,
                                             .subpassCount = 1,
                                             .pSubpasses = &shadowSubpass,
                                             .dependencyCount = 2,
-                                            .pDependencies = dependencies};
+                                            .pDependencies = shadowDependencies};
     check(pipeline::createRenderPass(device, &shadowInfo, nullptr, &shadowPass));
     for (uint32_t c = 0; c < sunShadowLayers; ++c) {
       const VkImageViewCreateInfo view{.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
