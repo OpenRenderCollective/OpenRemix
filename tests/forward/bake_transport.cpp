@@ -207,6 +207,60 @@ namespace {
             "Reused slots replace points, counts and sampling offsets");
     return results[0];
   }
+  void lightSelectionVariance(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
+    const auto wall = world.wall(world.material({.diffuse = 1}), 1, 2);
+    auto source = world.scene({wall});
+    source->sun.isDistant = false;
+    source->dome.enabled = false;
+    source->lights.clear();
+    for (uint32_t i = 0; i < 128; ++i) {
+      scene::SphereLight light;
+      light.id = i + 1;
+      light.position[2] = -1;
+      light.radius = .1f;
+      light.radiance[0] = light.radiance[1] = light.radiance[2] = i ? .0001f : 1;
+      source->lights.push_back(light);
+    }
+    const bake::Point ray{{0, 0, 0, 0}, {0, 0, 1, 0}};
+    const double distance = 2 - .002; // receiver bias points toward the lights
+    const double expected = (1 + 127 * .0001) * .1 * .1 / (distance * distance);
+    double mse[2]{}, mean[2]{};
+    for (uint32_t weighted = 0; weighted < 2; ++weighted) {
+      bake::Transport transport;
+      bake::Options options;
+      options.batchPoints = 1;
+      options.textureResolution = 16;
+      options.lightImportanceSampling = weighted != 0;
+      auto ticket = pipelines.prepare("bake-selection-" + std::to_string(weighted), [&] {
+        transport.initialize(fixture.physical, fixture.device, source, options);
+      });
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+      while (!ticket->ready() && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      require(ticket->ready(), "Light selection fixture prepares");
+      ticket->check();
+      fixture.begin();
+      transport.recordPrepare(fixture.command, world.resources);
+      fixture.finish();
+      for (uint32_t batch = 0; batch < 64; ++batch) {
+        fixture.begin();
+        transport.recordRadiance(fixture.command, 0, {&ray, 1}, 1, 64, batch * 64);
+        fixture.finish();
+        bake::Result result;
+        transport.read(0, {&result, 1});
+        const double value = result.irradiance[0][0];
+        require(std::isfinite(value), "Light selection returns finite energy");
+        mean[weighted] += value / 64;
+        mse[weighted] += std::pow(value - expected, 2) / 64;
+      }
+    }
+    require(std::abs(mean[1] - expected) < expected * .05,
+            "Spatial light selection preserves the independent analytic lighting sum");
+    require(mse[1] < mse[0] * .1,
+            "Importance selection reduces error without increasing the ray/sample count");
+    std::printf("128-light selection: uniform RMSE %.7f, importance %.7f; weighted mean %.7f, "
+                "analytic %.7f\n", std::sqrt(mse[0]), std::sqrt(mse[1]), mean[1], expected);
+  }
   void liveLighting(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
     const auto wall = world.wall(world.material({.diffuse = 1}), 1, 2);
     auto source = world.scene({wall});
@@ -1544,6 +1598,7 @@ int main() try {
     overflowVisibility(fixture, pipelines, world);
     embeddedEmitterVisibility(fixture, pipelines, world);
     emitterParity(fixture, pipelines, world);
+    lightSelectionVariance(fixture, pipelines, world);
     liveLighting(fixture, pipelines, world);
     std::printf("Bake readback: emitter %.4f, blocked %.4f, alpha holes %.4f, "
                 "local light %.4f, shadowed %.4f\n",

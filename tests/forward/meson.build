@@ -100,3 +100,8 @@ forward_mask_codec_test = executable('remix-forward-mask-codec-test', 'mask_code
   '../../src/native/forward/mixed/mask_codec.cpp', '../../src/native/forward/mixed/mask_palette.cpp',
   include_directories : test_includes, cpp_args : test_cpp_args)
 test('Lossless visibility tile encoding and cache bounds', forward_mask_codec_test)
+
+light_selection_test = executable('remix-bake-light-selection-test', 'light_sampling.cpp',
+  '../../src/native/forward/bake/light_sampling.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Bake light hierarchy preserves indices and normalized exploration', light_selection_test)

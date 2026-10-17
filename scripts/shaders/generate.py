@@ -17,6 +17,8 @@ ROOT = Path(__file__).resolve().parents[2]
 # XZ-compressed in embedded.bin. Inlined modules are ~10x larger, but NVIDIA's
 # driver compiles them about twice as fast; the runtime decompresses on use.
 OPTIMIZED = {'pathtrace'}
+# Offline transport benefits from inlining too, but retains its word-array ABI.
+INLINED = {'bake'}
 BACKENDS = {
     'mask_test': ('forward::test::mask_input', 'vulkan1.1', ('decode',)),
     'water_ray': ('forward::water::hardware', 'vulkan1.2', ('frag',)),
@@ -180,7 +182,7 @@ def compile_stage(backend, stage, temporary):
     subprocess.run(['glslangValidator', '-V', '--target-env', environment, *defines,
                     '-I' + str(ROOT/'third_party/nrd/Shaders'), '-I' + str(ROOT/'third_party/sharc/include'),
                     '-o', str(binary), str(source)], check=True, stdout=subprocess.DEVNULL)
-    if backend in OPTIMIZED:
+    if backend in OPTIMIZED or backend in INLINED:
         optimized = binary.with_suffix('.opt.spv')
         subprocess.run(['spirv-opt', '-O', '--target-env=' + environment, str(binary), '-o', str(optimized)],
                        check=True)

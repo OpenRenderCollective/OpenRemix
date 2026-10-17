@@ -1,4 +1,5 @@
 #include "forward/bake/gpu.h"
+#include "forward/bake/light_sampling.h"
 #include "runtime/pipelines.h"
 #include <algorithm>
 #include <bit>
@@ -109,11 +110,14 @@ namespace remix::forward::bake {
   void Transport::Gpu::createInputs(Inputs inputs) {
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physical, &properties);
-    if (properties.limits.maxPerStageDescriptorStorageBuffers < 6 ||
-        properties.limits.maxDescriptorSetStorageBuffers < 6)
+    if (properties.limits.maxPerStageDescriptorStorageBuffers < 7 ||
+        properties.limits.maxDescriptorSetStorageBuffers < 7)
       throw VK_ERROR_FEATURE_NOT_PRESENT;
     // Storage-buffer range checks happen before GPU allocations.
     const auto limit = properties.limits.maxStorageBufferRange;
+    const uint64_t nodeCount = inputs.lights.empty() ? 0 : 2ull * inputs.lights.size() - 1;
+    if (nodeCount > limit / sizeof(scene::LightNode))
+      throw VK_ERROR_TOO_MANY_OBJECTS;
     for (auto bytes : {inputs.vertices.size() * sizeof(Vertex), inputs.triangles.size() * sizeof(UInt4),
                        inputs.materials.size() * sizeof(Material), inputs.lights.size() * sizeof(LightData),
                        size_t(options.batchPoints) * sizeof(Result)})
@@ -121,6 +125,7 @@ namespace remix::forward::bake {
         throw VK_ERROR_TOO_MANY_OBJECTS;
     if (inputs.textures.size() + 1 > properties.limits.maxImageArrayLayers)
       throw VK_ERROR_TOO_MANY_OBJECTS;
+    const auto nodes = lightSelectionTree(inputs.lights);
     resolution = options.textureResolution;
     while (resolution > 16 &&
            uint64_t(resolution) * resolution * 8 * (inputs.textures.size() + 1) > options.atlasBudget)
@@ -159,6 +164,7 @@ namespace remix::forward::bake {
     });
     materials = staticBuffer(inputs.materials.data(), inputs.materials.size() * sizeof(Material));
     lights = staticBuffer(inputs.lights.data(), inputs.lights.size() * sizeof(LightData));
+    lightNodes = staticBuffer(nodes.data(), nodes.size() * sizeof(scene::LightNode));
     textures = std::move(inputs.textures);
     domeLayer = inputs.domeLayer;
     for (;;) {
@@ -322,7 +328,8 @@ namespace remix::forward::bake {
     frame.counts[3] = bounces;
     if (!slot.lighting)
       frame.counts[1] = uint32_t(g.source->lights.size());
-    frame.control = {g.domeLayer, 0, 1, uint32_t(g.hasDielectrics)};
+    frame.control = {g.domeLayer, 0, 1, uint32_t(g.hasDielectrics) |
+                         (g.options.lightImportanceSampling && !slot.lighting ? 2u : 0u)};
     fragment.constants->write(&frame, sizeof(frame));
     const auto acceleration = g.rays.handle();
     const VkWriteDescriptorSetAccelerationStructureKHR rayInfo{
@@ -333,7 +340,7 @@ namespace remix::forward::bake {
         fragment.constants->descriptor(), g.vertices->descriptor(), g.triangles->descriptor(),
         g.materials->descriptor(), slot.liveLights ? slot.liveLights->descriptor() : g.lights->descriptor()};
     const VkDescriptorImageInfo atlas{g.sampler, g.atlas->view, VK_IMAGE_LAYOUT_GENERAL};
-    VkWriteDescriptorSet writes[7]{};
+    VkWriteDescriptorSet writes[8]{};
     writes[0] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                  .pNext = &rayInfo,
                  .dstSet = fragment.set,
@@ -354,7 +361,14 @@ namespace remix::forward::bake {
                  .descriptorCount = 1,
                  .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                  .pImageInfo = &atlas};
-    vkUpdateDescriptorSets(g.device, 7, writes, 0, nullptr);
+    const auto nodes = g.lightNodes->descriptor();
+    writes[7] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                 .dstSet = fragment.set,
+                 .dstBinding = 9,
+                 .descriptorCount = 1,
+                 .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                 .pBufferInfo = &nodes};
+    vkUpdateDescriptorSets(g.device, 8, writes, 0, nullptr);
     return fragment.set;
   }
   void Transport::recordDeviceRadiance(VkCommandBuffer command, uint32_t index, uint32_t count,
@@ -384,7 +398,8 @@ namespace remix::forward::bake {
       frame.trace[0] = g.sunDistance;
     frame.counts[2] = samples;
     frame.counts[3] = bounces;
-    frame.control = {g.domeLayer, firstSample, uint32_t(mode), uint32_t(g.hasDielectrics)};
+    frame.control = {g.domeLayer, firstSample, uint32_t(mode), uint32_t(g.hasDielectrics) |
+                         (g.options.lightImportanceSampling && !slot.lighting ? 2u : 0u)};
     slot.constants->write(&frame, sizeof(frame));
     slot.count = count;
     slot.samples = samples;
@@ -468,7 +483,7 @@ namespace remix::forward::bake {
   uint64_t Transport::memoryBytes() const {
     const auto &g = *m_gpu;
     uint64_t bytes = g.rays.accelerationBytes() + g.rays.buildBytes() + g.atlas->bytes;
-    for (const auto *buffer : {g.vertices.get(), g.triangles.get(), g.materials.get(), g.lights.get()})
+    for (const auto *buffer : {g.vertices.get(), g.triangles.get(), g.materials.get(), g.lights.get(), g.lightNodes.get()})
       bytes += buffer->allocationBytes;
     for (const auto &slot : g.slots) {
       bytes += slot.constants->allocationBytes + slot.points->allocationBytes + slot.results->allocationBytes;

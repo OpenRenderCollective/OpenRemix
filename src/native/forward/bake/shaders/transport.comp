@@ -1,9 +1,11 @@
 #version 460
 #extension GL_EXT_ray_query : require
+#extension GL_EXT_control_flow_attributes : require
 #extension GL_GOOGLE_include_directive : require
 layout(local_size_x = 64) in;
 #include "bindings.glsl"
 #include "material.glsl"
+#define OFFLINE_LIGHT_SELECTION
 #include "radiance.glsl"
 #include "sample-sums.glsl"
 #ifdef PARALLEL_BAKE

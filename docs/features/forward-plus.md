@@ -647,7 +647,15 @@ rules as forward shading.
 
 The compute integrator traces diffuse paths through textured alpha coverage. It evaluates sun, shaped
 sphere and triangle lights with hardware visibility, emissive ray hits and environment radiance. It samples
-one explicit local light per bounce with its selection weight. Baked radiance excludes analytic direct
+one explicit local light per bounce with its selection weight. Static snapshots reuse the scene
+light hierarchy to propose nearby, high-power emitters in logarithmic work. One eighth of the
+proposal remains uniform over captured lights; the combined PDF is used for both proposal branches,
+so lights disfavoured by the bounds or hemisphere estimate retain nonzero probability. Leaf records
+keep the original captured light IDs used by explicit visibility and mixed shadows. This is a
+variance proposal, not an occlusion test: sampled emitters still use the same hardware visibility.
+The hierarchy is compiled only into offline compute transport; streamed live-light queries retain
+their uniform proposal. Bake SPIR-V is optimized and inlined by the shader generator before
+embedding, while retaining its existing word-array loading contract. Baked radiance excludes analytic direct
 lighting at the receiver, which the forward pass already evaluates. Environment visibility and emissive
 geometry remain bake sources. Self-illumination emits its masked colour and reduces reflected diffuse
 energy; suppressing generated emissive lights does not remove visible emission on ray hits.

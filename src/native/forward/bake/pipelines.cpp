@@ -5,8 +5,8 @@
 
 namespace remix::forward::bake {
   VkDescriptorSetLayout Transport::createSceneLayout(VkDevice device) {
-    VkDescriptorSetLayoutBinding bindings[9];
-    for (uint32_t i = 0; i < 9; ++i) {
+    VkDescriptorSetLayoutBinding bindings[10];
+    for (uint32_t i = 0; i < 10; ++i) {
       const auto type = i == 0   ? VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR
                         : i == 1 ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
                         : i == 8 ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
@@ -16,7 +16,7 @@ namespace remix::forward::bake {
       bindings[i] = {i, type, 1, stages, nullptr};
     }
     const VkDescriptorSetLayoutCreateInfo info{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-                                               .bindingCount = 9,
+                                               .bindingCount = 10,
                                                .pBindings = bindings};
     VkDescriptorSetLayout result;
     check(pipeline::createDescriptorSetLayout(device, &info, nullptr, &result));
@@ -77,7 +77,7 @@ namespace remix::forward::bake {
     const uint32_t sets = gpuFrameCount * (1 + uint32_t(FragmentUse::Count));
     const VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, sets},
                                           {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, sets},
-                                          {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, sets * 6},
+                                          {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, sets * 7},
                                           {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, sets + images},
                                           {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, std::max(1u, images)}};
     const VkDescriptorPoolCreateInfo poolInfo{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
@@ -105,7 +105,7 @@ namespace remix::forward::bake {
                                                 triangles->descriptor(),      materials->descriptor(),
                                                 lights->descriptor(),         slot.points->descriptor(),
                                                 slot.results->descriptor()};
-      VkWriteDescriptorSet writes[9]{};
+      VkWriteDescriptorSet writes[10]{};
       writes[0] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                    .pNext = &rayInfo,
                    .dstSet = slot.set,
@@ -126,7 +126,14 @@ namespace remix::forward::bake {
                    .descriptorCount = 1,
                    .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                    .pImageInfo = &image};
-      vkUpdateDescriptorSets(device, 9, writes, 0, nullptr);
+      const auto nodes = lightNodes->descriptor();
+      writes[9] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                   .dstSet = slot.set,
+                   .dstBinding = 9,
+                   .descriptorCount = 1,
+                   .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                   .pBufferInfo = &nodes};
+      vkUpdateDescriptorSets(device, 10, writes, 0, nullptr);
     }
     for (uint32_t i = 0; i < images; ++i) {
       VkDescriptorSet set;

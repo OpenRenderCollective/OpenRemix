@@ -2173,6 +2173,9 @@ namespace {
         require(statistics.state != REMIXAPI_BAKE_FAILED_EXT, "Static lighting preparation succeeded");
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
       } while (std::chrono::steady_clock::now() < deadline);
+      const auto &last = target.forward->statistics().baking;
+      std::fprintf(stderr, "Static lighting timeout: requested %u, actual %u, active %u; %s\n",
+                   state, last.state, uint32_t(last.active), last.status);
       require(false, "Static lighting reached its requested state before timeout");
       return pixels;
     };

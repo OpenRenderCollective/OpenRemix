@@ -94,6 +94,7 @@ float emitterShadowDistance(RayLight light, float distance) {
   // tolerance because their emitting geometry may be present in the scene.
   return light.radiance.w > 0 ? distance - rayFrame.trace.y : distance;
 }
+#include "light_sampling.glsl"
 vec3 directLight(vec3 p, vec3 n, inout uint seed, Medium medium) {
   vec3 irradiance = vec3(0);
   if (any(greaterThan(rayFrame.sunRadiance.rgb, vec3(0)))) {
@@ -106,13 +107,14 @@ vec3 directLight(vec3 p, vec3 n, inout uint seed, Medium medium) {
   }
   if (rayFrame.counts.y == 0u)
     return irradiance;
-  uint index = min(uint(random(seed) * float(rayFrame.counts.y)), rayFrame.counts.y - 1u);
+  float selectionPdf;
+  uint index = selectLight(p, n, random(seed), selectionPdf);
   vec3 direction;
   float distance, weight;
   if (sampleEmitter(rayLights[index], p, seed, direction, distance, weight)) {
     float cosine = max(dot(n, direction), 0);
     if (cosine > 0)
-      irradiance += rayLights[index].radiance.rgb * (weight * cosine * float(rayFrame.counts.y)) *
+      irradiance += rayLights[index].radiance.rgb * (weight * cosine / selectionPdf) *
                     visibility(p, direction, emitterShadowDistance(rayLights[index], distance), seed, medium);
   }
   return irradiance;

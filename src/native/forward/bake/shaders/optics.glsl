@@ -14,7 +14,7 @@ vec3 attenuation(Medium medium, float distance) { return beerLambert(medium.exti
 // Disjoint bodies are supported; overlapping/nested media need a volume stack.
 Medium initialMedium(vec3 position, inout uint seed) {
   Medium result = airMedium();
-  if (rayFrame.control.w == 0u)
+  if ((rayFrame.control.w & 1u) == 0u)
     return result;
   float nearest = rayFrame.trace.x;
   for (uint axis = 0; axis < 6u; ++axis) {
@@ -46,7 +46,7 @@ vec3 visibility(vec3 origin, vec3 direction, float maximum, inout uint seed, Med
   // connection. Let hardware stop at its first accepted hit. Cutout and thin
   // coverage tests still run before confirmation. Water scenes retain closest
   // boundary traversal so Fresnel loss and absorption stay ordered correctly.
-  if (rayFrame.control.w == 0u) {
+  if ((rayFrame.control.w & 1u) == 0u) {
     Hit hit;
     return traceRayFlags(origin, direction, maximum, seed, gl_RayFlagsTerminateOnFirstHitEXT, hit)
                ? vec3(0) : attenuation(medium, maximum);

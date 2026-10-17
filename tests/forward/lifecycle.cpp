@@ -119,6 +119,9 @@ int main() {
         break;
       std::this_thread::sleep_for(std::chrono::milliseconds(2));
     } while (std::chrono::steady_clock::now() < deadline);
+    if (!baking.active)
+      std::fprintf(stderr, "Lifecycle bake timeout: state %u, progress %u/%u; %s\n",
+                   baking.state, baking.completed, baking.probes, baking.status);
     require(baking.active, "Lifecycle map bake publishes before target changes");
     publishedHash = baking.activeHash;
     expectPublishedBake = true;

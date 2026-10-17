@@ -60,3 +60,11 @@ layout(set = RAY_SCENE_SET, binding = 7, std430) writeonly buffer RayResultsBuff
 };
 #endif
 layout(set = RAY_SCENE_SET, binding = 8) uniform sampler2DArray rayAtlas;
+
+struct RayLightNode {
+  vec4 minimumPower, maximum;
+  uvec4 links;
+};
+layout(set = RAY_SCENE_SET, binding = 9, std430) readonly buffer RayLightNodesBuffer {
+  RayLightNode rayLightNodes[];
+};
