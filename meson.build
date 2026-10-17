@@ -11,8 +11,10 @@ endif
 if cpp.get_id() not in ['clang', 'clang-cl']
   error('Use Clang (clang-cl with the Visual Studio toolchain on Windows).')
 endif
+platform_defines = []
 if system == 'windows'
-  add_project_arguments('-DNOMINMAX', '-D_CRT_SECURE_NO_WARNINGS', '-D_SILENCE_ALL_CXX20_DEPRECATION_WARNINGS', '-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH', language : ['c', 'cpp'])
+  platform_defines = ['-DNOMINMAX', '-D_CRT_SECURE_NO_WARNINGS', '-D_SILENCE_ALL_CXX20_DEPRECATION_WARNINGS', '-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH']
+  add_project_arguments(platform_defines, language : ['c', 'cpp'])
   if cpp.get_id() == 'clang'
     add_project_arguments('-include', meson.project_source_root() / 'src/native/platform/mingw_compat.h', language : 'cpp')
   endif

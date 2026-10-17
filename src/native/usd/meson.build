@@ -25,14 +25,14 @@ if get_option('usd_gnu_stl')
   usd_args += ['-DARCH_HAS_GNU_STL_EXTENSIONS']
 endif
 if get_option('json_include') != ''
-  usd_args += ['-I' + get_option('json_include')]
+  usd_args += [usd_system + get_option('json_include')]
 endif
 if not cpp.compiles('#include <pxr/pxr.h>
 #if PXR_VERSION != 2511
 #error OpenUSD 25.11 required
 #endif
 #include <nlohmann/json.hpp>
-int main() {}', args : usd_args)
+int main() {}', args : usd_args + platform_defines)
   error('USD loader requires OpenUSD 25.11 and nlohmann/json headers')
 endif
 usd_library = static_library('remix_usd', 'scene.cpp', 'skinning.cpp', 'capture_categories.cpp', 'loader.cpp', 'submission.cpp', 'mods.cpp',

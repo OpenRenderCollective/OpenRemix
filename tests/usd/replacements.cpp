@@ -44,8 +44,13 @@ void texture(const std::filesystem::path &p, uint8_t red) {
   uint8_t pixel[] = {red, 0, 0, 255};
   f.write((char *)pixel, 4);
 }
+void pbrMaterialTests();
 int main(int argc, char **argv) {
   try {
+    if (argc == 2 && std::string(argv[1]) == "--pbr") {
+      pbrMaterialTests();
+      return 0;
+    }
     require(argc == 2, "fixture path");
     auto fixture = std::filesystem::absolute(argv[1]);
     auto dir =
@@ -68,6 +73,7 @@ def Xform "RootNode" {
    custom int preserveOriginalDrawCall = 1
    double3 xformOp:translate = (2,0,0)
    uniform token[] xformOpOrder = ["xformOp:translate"]
+   rel material:binding = </RootNode/Looks/mat_0123456789ABCDEF>
    def SphereLight "attached" {
     float inputs:intensity = 3
    }
@@ -156,9 +162,9 @@ custom int preserveOriginalDrawCall = 0
     parent.pNext = &batch;
     batched.pNext = &parent;
     usd::modInstance(resources, batched, 0x0123456789ABCDEFull);
-    require(resources.draws().size() == 2 &&
+    require(resources.draws().size() == 4 &&
                 resources.draws()[0].instanceId != resources.draws()[1].instanceId,
-            "GPU-instanced parents receive distinct attachment identities");
+            "GPU-instanced parents preserve originals alongside distinct attachment identities");
     require(resources.draws()[1].model[12] - resources.draws()[0].model[12] == 4,
             "GPU-instanced parent transforms propagate to attachments");
     lights = resources.sphereLights();
