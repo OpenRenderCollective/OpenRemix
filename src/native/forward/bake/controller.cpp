@@ -450,8 +450,9 @@ namespace remix::forward::bake {
       job.overflowNext += count;
     }
     char progress[128];
-    std::snprintf(progress, sizeof(progress), "Checking overflow light visibility (%u/%zu samples)",
-                  job.overflowReceived, tasks.size());
+    std::snprintf(progress, sizeof(progress), "Checking overflow light visibility (%llu/%llu surface/light pairs)",
+                  static_cast<unsigned long long>(job.overflowAudit->completedWork()),
+                  static_cast<unsigned long long>(job.overflowAudit->totalWork()));
     status(REMIXAPI_BAKE_TRACING_EXT, progress);
   }
   void Controller::recordReflections(VkCommandBuffer command, const Config &config) {

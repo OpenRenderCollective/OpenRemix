@@ -11,6 +11,8 @@ namespace remix::forward::mixed {
     bool nextRound(Plan &plan, const lightmap::Layout &layout, std::stop_token cancelled = {});
     std::span<const Task> tasks() const { return m_tasks; }
     void observe(uint32_t task, float visibility, const lightmap::Layout &layout);
+    uint64_t completedWork() const { return m_completedWork; }
+    uint64_t totalWork() const { return m_totalWork; }
 
   private:
     struct Range {
@@ -24,5 +26,8 @@ namespace remix::forward::mixed {
     std::vector<float> m_values;
     uint32_t m_received = 0;
     uint64_t m_wordBudget;
+    uint64_t m_completedWork = 0, m_totalWork = 0;
+    bool m_initialized = false;
+    std::vector<uint8_t> m_receivers;
   };
 }

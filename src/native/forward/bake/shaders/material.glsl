@@ -52,6 +52,12 @@ bool covered(uint primitive, vec2 bary, bool front, uint seed) {
     return false; // a colour layer is neither an occluder nor a refractive interface
   if ((m.shading.state.w & 2u) == 0u && !front)
     return false;
+  // Opaque shadow hits need neither UV interpolation nor texture fetches.
+  // Texture alpha is meaningful only to an alpha test or source-over coverage.
+  if (m.shading.state.y == 0u)
+    return false;
+  if (m.shading.state.y == 7u && (m.flags.w & 2u) == 0u)
+    return true;
   vec2 uv;
   vec4 vertex;
   vec3 n, g;

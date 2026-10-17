@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <fstream>
 #include <numbers>
 #include <thread>
 
@@ -338,8 +339,16 @@ namespace {
   }
   void bakeVisibility(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
     const auto receiver = world.wall(world.material({}), 0, 2);
+    // Alpha is irrelevant to this opaque material, including zero-alpha texels.
+    world.texture(0x5cab, {255, 255, 255, 0, 255, 255, 255, 255});
+#if defined(_WIN32)
+    const auto opaqueTexture = L"0x5cab";
+#else
+    const auto opaqueTexture = "0x5cab";
+#endif
     const auto blocker =
-        world.quad(world.material({}), {{{-3, -3, -.5f}, {0, -3, -.5f}, {0, 3, -.5f}, {-3, 3, -.5f}}});
+        world.quad(world.material({.albedo = opaqueTexture}),
+                    {{{-3, -3, -.5f}, {0, -3, -.5f}, {0, 3, -.5f}, {-3, 3, -.5f}}});
     remixapi_LightInfoSphereEXT sphere{};
     sphere.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT;
     sphere.position = {0, 0, -1.5f};
@@ -362,6 +371,10 @@ namespace {
     options.batchPoints = 8;
     options.initialBatchPoints = 2;
     options.queueFamily = fixture.family;
+    if (std::getenv("REMIX_BENCH_VISIBILITY")) {
+      options.batchPoints = 12288;
+      options.rayBudget = 16u << 20;
+    }
     auto job = pipelines.prepare("mixed-visibility-test", [&] {
       transport.initialize(fixture.physical, fixture.device, source, options);
     });
@@ -392,6 +405,21 @@ namespace {
     require(results[1].statistics[2] == 1024, "Per-light visibility retains its independent sample budget");
     require(right == 1,
             "Fully unobstructed transport preserves an exact clear endpoint despite weighted reduction");
+    if (const char *output = std::getenv("REMIX_BENCH_VISIBILITY")) {
+      std::vector<bake::VisibilityPoint> batch(12288);
+      for (size_t i = 0; i < batch.size(); ++i) batch[i] = points[i % 3];
+      std::vector<bake::VisibilityResult> measured(batch.size());
+      for (uint32_t repeat = 0; repeat < 9; ++repeat) {
+        fixture.begin();
+        transport.recordVisibility(fixture.command, 0, batch, 256, false);
+        fixture.finish();
+        transport.readVisibility(0, measured);
+        std::printf("Visibility benchmark %u: %.6f ms\n", repeat, transport.elapsed(0).value_or(0));
+      }
+      std::ofstream capture(output, std::ios::binary);
+      capture.write(reinterpret_cast<const char *>(measured.data()),
+                     std::streamsize(measured.size() * sizeof(measured[0])));
+    }
     // Compare the compact wire format against the original full-result GPU
     // kernel, including partial workgroups and both local/sun query modes.
     bake::Transport legacy;
@@ -1134,6 +1162,10 @@ int main() try {
     vkGetPhysicalDeviceProperties(fixture.physical, &properties);
     pipeline::Service pipelines(fixture.device, properties, false);
     World world(fixture);
+    if (std::getenv("REMIX_BENCH_VISIBILITY")) {
+      bakeVisibility(fixture, pipelines, world);
+      return 0;
+    }
     auto environment = world.scene({});
     environment->dome.enabled = true;
     environment->dome.radiance = {.2f, .4f, .8f};

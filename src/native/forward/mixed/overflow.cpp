@@ -39,10 +39,24 @@ namespace remix::forward::mixed {
       return false;
     }
     m_ranges.assign(plan.charts.size(), {});
-    std::vector<uint8_t> receivers(plan.charts.size());
-    for (size_t point = 0; point < layout.points.size(); ++point)
-      if (layout.receiverSamples.empty() || layout.receiverSamples[point])
-        receivers.at(layout.pointCharts[point]) = 1;
+    if (!m_initialized) {
+      m_receivers.resize(plan.charts.size());
+      std::vector<uint32_t> pointCounts(plan.charts.size());
+      for (size_t point = 0; point < layout.points.size(); ++point) {
+        if ((point & 1023u) == 0 && cancelled.stop_requested())
+          throw std::runtime_error("Overflow visibility superseded");
+        ++pointCounts.at(layout.pointCharts[point]);
+        if (layout.receiverSamples.empty() || layout.receiverSamples[point])
+          m_receivers.at(layout.pointCharts[point]) = 1;
+      }
+      for (uint32_t chart = 0; chart < plan.charts.size(); ++chart) {
+        if (plan.next[chart] > plan.remaining[chart].size())
+          throw std::invalid_argument("Invalid overflow visibility cursor");
+        if (m_receivers[chart])
+          m_totalWork += uint64_t(pointCounts[chart]) * (plan.remaining[chart].size() - plan.next[chart]);
+      }
+      m_initialized = true;
+    }
     bool scheduled = false;
     for (uint32_t chart = 0; chart < plan.charts.size(); ++chart) {
       if (plan.next[chart] > plan.remaining[chart].size())
@@ -50,7 +64,7 @@ namespace remix::forward::mixed {
       if (plan.next[chart] == plan.remaining[chart].size())
         continue;
       const auto light = plan.remaining[chart][plan.next[chart]++];
-      if (!receivers[chart])
+      if (!m_receivers[chart])
         continue;
       if (light >= plan.lights.source->lights.size())
         throw std::invalid_argument("Invalid overflow light");
@@ -93,5 +107,6 @@ namespace remix::forward::mixed {
     }
     m_seen[task] = 1;
     ++m_received;
+    ++m_completedWork;
   }
 }

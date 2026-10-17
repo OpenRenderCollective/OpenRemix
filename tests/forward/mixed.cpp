@@ -104,6 +104,9 @@ int main() {
     }
     require(rounds == 4 && many.overflow == 0 && many.occlusion.count() == 3 && many.masks.entries().size() == 1,
             "A partial overflow emitter cannot prevent later hidden emitters being checked");
+    require(repeated.completedWork() == layout.points.size() * 4 &&
+                repeated.totalWork() == repeated.completedWork(),
+            "Visibility progress counts completed work across all light rounds without resetting");
     auto donorLayout = layout;
     donorLayout.receiverSamples.assign(layout.points.size(), 1);
     donorLayout.receiverSamples[0] = 0;

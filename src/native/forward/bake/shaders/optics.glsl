@@ -42,6 +42,15 @@ Medium initialMedium(vec3 position, inout uint seed) {
 vec3 visibility(vec3 origin, vec3 direction, float maximum, inout uint seed, Medium medium) {
   if (maximum <= rayFrame.trace.y)
     return vec3(0);
+  // Without dielectric interfaces, any covered blocker fully occludes the
+  // connection. Let hardware stop at its first accepted hit. Cutout and thin
+  // coverage tests still run before confirmation. Water scenes retain closest
+  // boundary traversal so Fresnel loss and absorption stay ordered correctly.
+  if (rayFrame.control.w == 0u) {
+    Hit hit;
+    return traceRayFlags(origin, direction, maximum, seed, gl_RayFlagsTerminateOnFirstHitEXT, hit)
+               ? vec3(0) : attenuation(medium, maximum);
+  }
   vec3 weight = vec3(1);
   for (uint boundary = 0; boundary < 32u; ++boundary) {
     Hit hit;

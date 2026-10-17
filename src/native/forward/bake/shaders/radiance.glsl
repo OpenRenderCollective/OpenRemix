@@ -14,13 +14,13 @@ struct Hit {
   vec2 bary;
   bool front;
 };
-bool traceRay(vec3 origin, vec3 direction, float maximum, inout uint seed, out Hit hit) {
+bool traceRayFlags(vec3 origin, vec3 direction, float maximum, inout uint seed, uint flags, out Hit hit) {
   // One stream step per ray keeps repeated samples independent, including rays
   // that miss. Candidate visits must never change the path's random stream.
   uint coverageSeed = seed;
   random(seed);
   rayQueryEXT query;
-  rayQueryInitializeEXT(query, rayWorld, 0, 255, origin, rayFrame.trace.y, direction, maximum);
+  rayQueryInitializeEXT(query, rayWorld, flags, 255, origin, rayFrame.trace.y, direction, maximum);
   while (rayQueryProceedEXT(query)) {
     if (rayQueryGetIntersectionTypeEXT(query, false) == gl_RayQueryCandidateIntersectionTriangleEXT &&
         covered(rayQueryGetIntersectionPrimitiveIndexEXT(query, false),
@@ -36,6 +36,9 @@ bool traceRay(vec3 origin, vec3 direction, float maximum, inout uint seed, out H
   hit.bary = rayQueryGetIntersectionBarycentricsEXT(query, true);
   hit.front = rayQueryGetIntersectionFrontFaceEXT(query, true);
   return true;
+}
+bool traceRay(vec3 origin, vec3 direction, float maximum, inout uint seed, out Hit hit) {
+  return traceRayFlags(origin, direction, maximum, seed, 0u, hit);
 }
 #include "optics.glsl"
 #include "decal.glsl"
