@@ -2,6 +2,13 @@
 
 See the [delivery roadmap](forward-plus-roadmap.md) for remaining integration and quality gates.
 
+The reference renderers are Counter-Strike 2, Half-Life: Alyx and s&box. Use their
+lighting decomposition, forward PBR/MSAA behavior, mixed shadows, probe volumes
+and reflection handling as references while checking the actual version and
+available implementation. Public viewer code and extracted resources do not
+establish Valve compiler limits or defaults. A light's authored range, runtime
+light count and baked visibility-channel capacity are separate properties.
+
 Select `Forward+ (experimental)` in the Rendering tab, or set:
 
 ```ini
@@ -1523,3 +1530,22 @@ casters, map changes, late materials, masks, water, 3D skyboxes and backend/resi
 For real-window validation with layers that do not recognize the provisional NVIDIA present-metering
 feature, set `REMIX_FG_PRESENT_METERING=0` before device creation. This omits that optional device
 feature and uses the existing timed-present fallback; Vulkan validation remains enabled.
+
+## Inspecting published lightmaps
+
+`scripts/experiments/lightmap_inspect.py` reads existing bake capture dumps without
+opening the game or changing a cache. It requires NumPy and Pillow. Use a fresh
+output directory and the same page size as the captured bake:
+
+```text
+python scripts/experiments/lightmap_inspect.py --prefix <capture-prefix> --output <new-directory> --page-size 1024 --metres-per-unit 0.0254
+```
+
+The overview shows chart rectangles, an exposed RGB view of the constant indirect
+SH coefficient, and sun visibility. Individual page PNGs retain the original
+resolution. The constant coefficient is orientation-independent; it does not show
+the complete directional irradiance, attributed direct lighting or material BRDF.
+Rectangle coverage includes padding and is not a measurement of used luxels.
+Metadata records storage size, preview exposure and, if the irradiance-grid dump
+is available, its dimensions, spacing and valid probe count. These are inspection
+views of the current twenty-layer atlas, not an export to Source 2's texture format.
