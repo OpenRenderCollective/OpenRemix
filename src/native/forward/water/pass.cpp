@@ -302,10 +302,12 @@ namespace remix::forward::water {
     auto &g = *m_gpu;
     auto &frame = g.frames.at(slot);
     g.ensure(frame.parameters, sizeof(parameters), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-    g.ensure(frame.materials, materials.size_bytes(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     frame.parameters->write(&parameters, sizeof(parameters));
-    if (!materials.empty())
-      frame.materials->write(materials.data(), materials.size_bytes());
+    if (materials.empty())
+      return; // The composite still needs its parameters, but no refraction images or descriptors.
+    g.ensure(frame.materials, materials.size_bytes(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    frame.materials->write(materials.data(), materials.size_bytes());
+    g.snapshot.prepareImages();
     const auto saved = g.snapshot.output();
     const VkDescriptorImageInfo images[] = {saved.hdr, saved.depth, lighting.dome};
     const VkDescriptorBufferInfo buffers[] = {frame.parameters->descriptor(), frame.materials->descriptor(),

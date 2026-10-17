@@ -8,10 +8,14 @@
 
 namespace remix::forward::water {
   struct Snapshot::Gpu {
+    struct Images {
+      Image hdr, depth;
+    };
+    VkPhysicalDevice physical = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
     VkExtent2D extent{};
     VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
-    Image hdr, depth;
+    std::unique_ptr<Images> images;
     VkSampler sampler = VK_NULL_HANDLE;
     VkSampler colorSampler = VK_NULL_HANDLE;
     VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
@@ -46,14 +50,9 @@ namespace remix::forward::water {
     auto next = std::make_unique<Gpu>();
     auto &g = *next;
     g.device = device;
+    g.physical = physical;
     g.extent = extent;
     g.samples = samples;
-    const auto usage =
-        VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-    g.hdr.create(physical, device, extent, VK_FORMAT_R16G16B16A16_SFLOAT, usage, VK_SAMPLE_COUNT_1_BIT,
-                 VK_IMAGE_ASPECT_COLOR_BIT);
-    g.depth.create(physical, device, extent, VK_FORMAT_R32_SFLOAT, usage, VK_SAMPLE_COUNT_1_BIT,
-                   VK_IMAGE_ASPECT_COLOR_BIT);
     const VkSamplerCreateInfo samplerInfo{.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
                                           .magFilter = VK_FILTER_NEAREST,
                                           .minFilter = VK_FILTER_NEAREST,
@@ -114,12 +113,28 @@ namespace remix::forward::water {
     check(vkAllocateDescriptorSets(device, &allocate, g.sets.data()));
     m_gpu = std::move(next);
   }
+  void Snapshot::prepareImages() {
+    if (!m_gpu)
+      throw std::logic_error("Water snapshot is not initialized");
+    auto &g = *m_gpu;
+    if (g.images)
+      return;
+    auto images = std::make_unique<Gpu::Images>();
+    const auto usage =
+        VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    images->hdr.create(g.physical, g.device, g.extent, VK_FORMAT_R16G16B16A16_SFLOAT, usage,
+                       VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+    images->depth.create(g.physical, g.device, g.extent, VK_FORMAT_R32_SFLOAT, usage,
+                         VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+    g.images = std::move(images);
+  }
   void Snapshot::record(VkCommandBuffer command, uint32_t slot, Inputs inputs) {
     if (!m_gpu || !inputs.hdr || !inputs.depth)
       throw std::invalid_argument("Water snapshot requires completed opaque inputs");
+    prepareImages();
     auto &g = *m_gpu;
     for (const auto view : {inputs.hdr, inputs.depth, inputs.reflections.imageView})
-      if (view && (view == g.hdr.view || view == g.depth.view))
+      if (view && (view == g.images->hdr.view || view == g.images->depth.view))
         throw std::invalid_argument("Water snapshot cannot sample its own output");
     if (inputs.reflections.imageView && inputs.reflections.imageLayout != VK_IMAGE_LAYOUT_GENERAL &&
         inputs.reflections.imageLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
@@ -131,8 +146,8 @@ namespace remix::forward::water {
         {g.sampler, inputs.reflections.imageView ? inputs.reflections.imageView : inputs.hdr,
          inputs.reflections.imageView ? inputs.reflections.imageLayout
                                       : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-        {VK_NULL_HANDLE, g.hdr.view, VK_IMAGE_LAYOUT_GENERAL},
-        {VK_NULL_HANDLE, g.depth.view, VK_IMAGE_LAYOUT_GENERAL}};
+        {VK_NULL_HANDLE, g.images->hdr.view, VK_IMAGE_LAYOUT_GENERAL},
+        {VK_NULL_HANDLE, g.images->depth.view, VK_IMAGE_LAYOUT_GENERAL}};
     VkWriteDescriptorSet writes[5]{};
     for (uint32_t i = 0; i < 5; ++i)
       writes[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -144,7 +159,7 @@ namespace remix::forward::water {
                    .pImageInfo = &images[i]};
     vkUpdateDescriptorSets(g.device, 5, writes, 0, nullptr);
     std::array<VkImageMemoryBarrier, 2> barriers{};
-    const VkImage targets[] = {g.hdr.handle, g.depth.handle};
+    const VkImage targets[] = {g.images->hdr.handle, g.images->depth.handle};
     for (uint32_t i = 0; i < 2; ++i)
       barriers[i] = {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
                      .srcAccessMask = g.ready ? VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT |
@@ -183,13 +198,15 @@ namespace remix::forward::water {
     g.ready = true;
   }
   Snapshot::Output Snapshot::output() const {
-    if (!m_gpu)
-      throw std::logic_error("Water snapshot is not initialized");
+    if (!m_gpu || !m_gpu->images)
+      throw std::logic_error("Water snapshot images are not prepared");
     const auto &g = *m_gpu;
-    return {{g.colorSampler, g.hdr.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-            {g.sampler, g.depth.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-            g.hdr.handle,
-            g.depth.handle};
+    return {{g.colorSampler, g.images->hdr.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+            {g.sampler, g.images->depth.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+            g.images->hdr.handle,
+            g.images->depth.handle};
   }
-  uint64_t Snapshot::targetBytes() const { return m_gpu ? m_gpu->hdr.bytes + m_gpu->depth.bytes : 0; }
+  uint64_t Snapshot::targetBytes() const {
+    return m_gpu && m_gpu->images ? m_gpu->images->hdr.bytes + m_gpu->images->depth.bytes : 0;
+  }
 } // namespace remix::forward::water

@@ -874,6 +874,11 @@ namespace {
       options.debugView = 0;
       target.enableForward(options, true);
       require(render() == shaded, "Leaving diagnostics restores identical shaded output after shader specialization");
+      const auto dryTargets = target.forward->statistics().targetBytes;
+      options.water = false;
+      target.enableForward(options, true);
+      require(render() == shaded && target.forward->statistics().targetBytes == dryTargets,
+              "Default water support preserves dry-scene pixels and allocates no full-screen snapshot images");
     }
   }
   void mixedLightingTests(bool localShadows = false, bool directDiffuse = false) {

@@ -22,7 +22,7 @@ namespace remix::forward {
     bool ssr = true;
     bool rtReflections = false;
     bool rtGI = false;
-    bool water = false; // dedicated measured-water pass; enable after target preparation
+    bool water = true; // measured refraction/reflections; snapshot images are allocated only on use
     float waterDistance = 50, waterThickness = .15f; // metres; refraction extent and depth tolerance
     uint32_t rtGISamples = 16, rtGIBounces = 2;
     float rtGIDistance = 50;         // metres

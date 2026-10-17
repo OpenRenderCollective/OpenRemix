@@ -35,6 +35,8 @@ int main() {
     body.depthWrite = false;
     require(!water::accepts(body), "Water ownership respects an explicit no-depth-write draw");
     Options a, b;
+    require(a.water, "New Forward+ settings enable measured water");
+    a.water = false;
     b.water = true;
     require(!a.sameTargets(b), "Water enable prepares its independent targets and pipelines");
     a.water = true;
@@ -330,5 +332,9 @@ int main() {
   require(config::parse(config::serialize(settings), restored, unknown, warnings, error) &&
               restored == settings,
           "Forward settings persist exactly");
+  require(config::set(settings, "rtx.native.forward.water", "0") == config::SetResult::Success &&
+              config::parse(config::serialize(settings), restored, unknown, warnings, error) &&
+              !restored.forward.water,
+          "An explicitly saved compatibility-water preference survives the new default");
   std::puts("Forward+ cluster ranges, shadows, draw ownership and configuration passed");
 }

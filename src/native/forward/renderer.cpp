@@ -96,7 +96,6 @@ namespace remix::forward {
                                   next->materialLayout,
                                   {next->color->view, next->depth->view,
                                    next->resolved ? next->resolved->view : VK_NULL_HANDLE}, next->waterRaySupported);
-      next->statistics.targetBytes += next->waterPass->targetBytes();
     }
     next->baking =
         baking ? std::move(baking)
@@ -173,7 +172,8 @@ namespace remix::forward {
     m_gpu->statistics.reflectionSceneScale = volume ? volume->sceneScale : 1;
     const auto memory = m_gpu->baking->memory();
     m_gpu->statistics.bufferBytes += memory.buffers;
-    m_gpu->statistics.targetBytes = m_gpu->baseTargetBytes + memory.images;
+    m_gpu->statistics.targetBytes = m_gpu->baseTargetBytes + memory.images +
+                                    (m_gpu->waterPass ? m_gpu->waterPass->targetBytes() : 0);
     m_gpu->statistics.accelerationBytes = memory.acceleration;
     if (m_gpu->liveScene) {
       const auto live = m_gpu->liveScene->memory();

@@ -294,6 +294,12 @@ int main() try {
       preparation->check();
       if (test::validationErrors)
         throw std::runtime_error("Water snapshot pipeline validation failed");
+      require(snapshot.targetBytes() == 0, "Pipeline preparation leaves refraction images unallocated");
+      snapshot.prepareImages();
+      const auto allocated = snapshot.targetBytes();
+      require(allocated > 0, "First water use allocates independent snapshot images");
+      snapshot.prepareImages();
+      require(snapshot.targetBytes() == allocated, "Repeated preparation reuses the snapshot allocation");
       const auto output = snapshot.output();
       test::SnapshotQueries queries(fixture.device);
       queries.initialize(fixture, extent, output);

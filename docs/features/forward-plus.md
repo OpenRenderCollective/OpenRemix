@@ -46,8 +46,12 @@ records and material descriptors are prepared only when a static sun cascade or
 local-light map needs rebuilding. `.shadow-preparation.bin` records that frame's
 prepared frozen draw count as one little-endian `uint32_t`.
 General transparency, viewmodels, decals and unsupported masking operations stay in compatibility
-rasterization. Measured transmission bodies can opt into the late Forward+ water pass with
-`rtx.native.forward.water = 1`. The setting defaults to zero while host integration is experimental.
+rasterization. Measured transmission bodies use the late Forward+ water pass by default.
+The Rendering panel's Water refraction and reflections control, or `rtx.native.forward.water = 0`,
+restores compatibility rendering. An explicitly saved zero remains respected.
+Pipeline preparation runs with the renderer's worker preparation; independent refraction images are
+allocated only on first water use and remain reusable until target replacement. Dry scenes allocate
+no water snapshot images. Target-memory statistics include those images once allocated.
 
 `water/optics.glsl` provides the primary path tracer's Schlick/Snell
 boundary, total internal reflection, measured absorption and surface/through weights. This stays distinct
@@ -355,7 +359,7 @@ water exits and disabled-pass compatibility at 1x, 2x and 4x with ray-tracing fe
 | `sceneScale` | 1 | Metres per world unit |
 | `ambient` | 0.025 | Constant diffuse ambient fill |
 | `exposure` | 1 | Display exposure multiplier |
-| `water` | 0 | Enable the experimental late measured-transmission pass and camera-medium composition |
+| `water` | 1 | Late measured-transmission pass and camera-medium composition; zero selects compatibility water |
 | `waterDistance` | 50 | Maximum screen refraction distance in metres |
 | `waterThickness` | 0.15 | Screen refraction hit tolerance in metres |
 | `lightCutoff` | 0.001 | Contribution threshold used to bound local-light influence |

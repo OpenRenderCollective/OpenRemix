@@ -71,6 +71,10 @@ namespace remix {
                           "Static sun cascades are reused until their projection or frozen scene changes.");
       ImGui::Text("Frozen caster draws prepared this frame: %u", statistics.staticCasterPreparations);
       ui::Checkbox("Screen-space reflections", &forward.ssr);
+      ui::Checkbox("Water refraction and reflections", &forward.water);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Uses the material's tint, absorption and refractive index.\n"
+                          "Disabling restores compatibility water rendering.");
       ui::Checkbox("Hardware ray-traced GI", &forward.rtGI);
       if (forward.rtGI) {
         if (!statistics.rayGI.available)
