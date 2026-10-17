@@ -1772,6 +1772,19 @@ namespace {
               "Only the new actor enters moving sun maps alongside the captured world");
       require(target.forward->statistics().staticCasterPreparations == 0,
               "A live actor inside the frozen scene bounds needs no frozen caster preparation");
+      // Skybox-scale depth bounds must not turn a small comparison bias into
+      // metres of missing shadow around a gameplay-sized moving caster.
+      auto remoteCaster = instance(blockerMesh, 400000);
+      remoteCaster.doubleSided = 1;
+      remoteCaster.transform.matrix[0][3] = 1000000;
+      identity.instanceId = 9911;
+      remoteCaster.pNext = &identity;
+      const auto remote = r.createRetained(remoteCaster);
+      pixels = render();
+      require(pixels[right] < lit / 3 && pixels[adjacent] > lit / 2 && pixels[left] < 3,
+              "Skybox-scale cascade depth preserves small dynamic shadows and the baked static mask");
+      r.destroyRetained(&remote, 1);
+      pixels = render();
       light.radiance = {0, 0, 1};
       r.updateLight(sun, light);
       pixels = render();

@@ -16,10 +16,10 @@ reports. An implementation or synthetic test alone does not close an integration
 | Modular forward PBR, clustered lights and 1x/2x/4x MSAA | Implemented | Refresh current-build engine coverage through the integration milestone below |
 | World-metric surface charts, atlas budgets and irradiance probes | Implemented; live pool bake and cached reload exercised | Inspect connected-face continuity, seam donors and budget coarsening in representative map views |
 | Soft finite emitters, attributed direct diffuse and live specular | Implemented | Compare visible penumbrae and light separation in the live engine |
-| Dynamic-object shadows combined with baked static shadows | Implemented; captured static casters excluded from dynamic maps | Verify actual moving props and static membership after map changes |
+| Dynamic-object shadows combined with baked static shadows | Implemented; captured static casters excluded; world-metric sun bias and one indoor live case exercised | Local-light receiver quality, characters and static membership after map changes |
 | Automatic parallax cubemap bounds with tolerance for room details | Implemented | Review room transitions, bevels, interior props and reflection leaks in map views |
 | Rough SSR, optional hardware reflections and live GI | Implemented | Refresh actual-engine toggles and shared-scene lifetime coverage; continue measured performance work where needed |
-| Shared USD/PBR material replacements | Implemented | Refresh late material arrival and replacement parity in the current engine build |
+| Shared USD/PBR material replacements | Implemented; plain Source roughness fallback corrected | Refresh late material arrival and broader material/BRDF parity in the current engine build |
 | Water optics, normals, HDR refraction, SSR/RT and underwater composition | Implemented and opt-in; above-water engine captures exercised | Underwater/lifecycle validation, noise and visual comparison with the path-traced material response |
 | Optional OIDN indirect-lightmap filtering | Implemented and opt-in | Connected-seam review and lower-sample quality comparisons; distribution of optional dependencies |
 | Usable build and deployment | Feature branches/remotes retained; Windows runtime bundler available | Remaining platform/dependency coverage, lifecycle smoke tests and final delivery instructions |
@@ -28,7 +28,7 @@ reports. An implementation or synthetic test alone does not close an integration
 
 1. **Complete live GMod integration.** Pool startup, a fresh bake, an exact cached reload and a moving
    actor have been exercised in the isolated installation. Continue with a solid receiver for mixed
-   shadows, below-water views, renderer/RT switches and a map reload/change. Record binary hashes and
+   shadows beyond the exercised indoor sun case, below-water views, renderer/RT switches and a map reload/change. Record binary hashes and
    dependencies. Require actual
    engine logs, active baked lighting and captures; investigate crashes, input restarts, missing assets
    or new validation errors before extending coverage. Earlier live-game logs are historical evidence.

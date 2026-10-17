@@ -7,6 +7,7 @@ namespace remix::forward {
     uint32_t samples = 4;
     uint32_t shadowResolution = 1024;
     float shadowDistance = 100; // metres; converted using sceneScale
+    float shadowBias = .002f; // metres along the sun direction, independent of cascade depth span
     float sceneScale = 1;
     float ambient = .025f;
     float exposure = 1;

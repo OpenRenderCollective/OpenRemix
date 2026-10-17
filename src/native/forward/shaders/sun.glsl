@@ -10,12 +10,17 @@ float sunShadowVisibility(vec3 p, float depth, bool includeStatic) {
     return 1;
   vec2 coord = q.xy * .5 + .5;
   vec2 texel = 1.0 / vec2(textureSize(sunShadow, 0).xy);
+  // The caster depth span can include a distant 3D skybox. Convert the
+  // world-metric bias with the projection's Z row instead of a fixed clip offset.
+  mat4 projection = frame.shadows[cascade];
+  float depthScale = length(vec3(projection[0].z, projection[1].z, projection[2].z));
+  float reference = q.z - frame.localSettings.z * depthScale;
   float visibility = 0;
   for (int y = -1; y <= 1; ++y)
     for (int x = -1; x <= 1; ++x) {
       vec2 uv = coord + vec2(x, y) * texel;
-      float moving = texture(sunShadow, vec4(uv, cascade + 4, q.z - .0003));
-      float frozen = includeStatic ? texture(sunShadow, vec4(uv, cascade, q.z - .0003)) : 1;
+      float moving = texture(sunShadow, vec4(uv, cascade + 4, reference));
+      float frozen = includeStatic ? texture(sunShadow, vec4(uv, cascade, reference)) : 1;
       visibility += min(moving, frozen);
     }
   return visibility / 9;

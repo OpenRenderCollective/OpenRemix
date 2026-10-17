@@ -290,6 +290,13 @@ int main() {
   changed.rtGI = false;
   require(!changed.sameTargets(settings.forward), "GI enable changes prepare replacement pipelines");
   std::string error;
+  require(config::set(settings, "rtx.native.forward.shadowBias", "-0.001") == config::SetResult::Invalid &&
+              config::set(settings, "rtx.native.forward.shadowBias", "nan") == config::SetResult::Invalid &&
+              config::set(settings, "rtx.native.forward.shadowBias", "0.003") == config::SetResult::Success,
+          "World-metric sun bias is finite, nonnegative and participates in profile persistence");
+  changed = settings.forward;
+  changed.shadowBias *= 2;
+  require(changed.sameTargets(settings.forward), "Sun comparison bias updates reuse existing targets");
   require(config::parse(config::serialize(settings), restored, unknown, warnings, error) &&
               restored == settings,
           "Forward settings persist exactly");

@@ -152,7 +152,8 @@ namespace remix::forward {
     data.splits = cascades.splits;
     std::vector<LightData> lights;
     data.localSettings = {
-        float(options.localShadowResolution), options.localShadowBias / options.sceneScale, 0,
+        float(options.localShadowResolution), options.localShadowBias / options.sceneScale,
+        options.shadowBias / options.sceneScale,
         float(options.baking.directDiffuse && baking->volume() && baking->volume()->directDiffuse)};
     for (uint32_t i = 0; i < shadows::maximumLights; ++i) {
       if (!shadowSelection.active[i])

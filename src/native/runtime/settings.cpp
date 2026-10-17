@@ -100,6 +100,7 @@ namespace remix::config {
                             return true;
                           }});
         result.push_back(scalar("rtx.native.forward.shadowDistance", FIELD(forward.shadowDistance), 1, 10000));
+        result.push_back(scalar("rtx.native.forward.shadowBias", FIELD(forward.shadowBias), 0, .1));
         result.push_back(scalar("rtx.native.forward.sceneScale", FIELD(forward.sceneScale), .0001, 1000));
         result.push_back(scalar("rtx.native.forward.ambient", FIELD(forward.ambient), 0, 100));
         result.push_back(scalar("rtx.native.forward.exposure", FIELD(forward.exposure), .0001, 10000));

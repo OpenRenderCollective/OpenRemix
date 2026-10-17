@@ -317,6 +317,7 @@ water exits and disabled-pass compatibility at 1x, 2x and 4x with ray-tracing fe
 | `samples` | 4 | Requested MSAA count: 1, 2 or 4 |
 | `shadows` | 1 | Enable sun shadow rendering |
 | `shadowResolution` | 1024 | Power-of-two size per cascade, 64 to 4096 |
+| `shadowBias` | 0.002 | Sun shadow comparison bias in metres; converted per cascade so distant skybox bounds do not erase small shadows |
 | `shadowDistance` | 100 | Maximum sun-shadow distance in metres |
 | `sceneScale` | 1 | Metres per world unit |
 | `ambient` | 0.025 | Constant diffuse ambient fill |
