@@ -52,6 +52,10 @@ restores compatibility rendering. An explicitly saved zero remains respected.
 Pipeline preparation runs with the renderer's worker preparation; independent refraction images are
 allocated only on first water use and remain reusable until target replacement. Dry scenes allocate
 no water snapshot images. Target-memory statistics include those images once allocated.
+Water's sky-reflection fallback and underwater body lighting also accept the camera's uniform
+environment radiance when no dome is authored, matching the primary path tracer's environment
+selection. An authored dome replaces that uniform environment. This does not paint a sky background
+for the uniform environment or bypass the baked-visibility requirement for uncovered reflections.
 
 `water/optics.glsl` provides the primary path tracer's Schlick/Snell
 boundary, total internal reflection, measured absorption and surface/through weights. This stays distinct

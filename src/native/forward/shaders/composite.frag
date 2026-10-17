@@ -45,6 +45,7 @@ vec3 mediumColor(vec3 color, float depth) {
                    acos(clamp(direction.y, -1, 1)) / 3.14159265359);
     vec3 light = waterFrame.sunFog.rgb;
     if (sky.radiance.w > 0) light += textureLod(dome, uv, 0).rgb * sky.radiance.rgb;
+    else light += sky.radiance.rgb;
     color = passed * color + (1 - passed) * tint * light;
   }
 #endif

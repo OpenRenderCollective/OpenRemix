@@ -11,7 +11,10 @@ namespace remix::forward {
     SkyData data;
     data.inverseProjection = frame.data.inverseProjection;
     data.viewToDome = scene::multiply(dome.worldToLocal, scene::inverse(frame.data.view));
-    std::copy(dome.radiance.begin(), dome.radiance.end(), data.radiance.begin());
+    // A uniform camera environment lights water even without a displayed dome.
+    // Keep background ownership separate: only an authored dome enables it.
+    const auto &radiance = dome.enabled ? dome.radiance : resources.skyRadiance();
+    std::copy(radiance.begin(), radiance.end(), data.radiance.begin());
     data.radiance[3] = dome.enabled ? 1.f : 0.f;
     data.target = {float(extent.width), float(extent.height), 0, 0};
     probes::dumpFrameData(".sky-frame.bin", &data, sizeof(data));

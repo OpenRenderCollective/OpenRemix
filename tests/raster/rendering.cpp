@@ -3597,9 +3597,15 @@ namespace {
           }
         require(partial > 0, "Water edges retain partial MSAA coverage over opaque HDR");
       }
+      std::array<float, 3> environment{};
       auto submerged = [&](bool surface) {
+        remixapi_CameraEnvironmentEXT sky{};
+        sky.sType = REMIXAPI_STRUCT_TYPE_CAMERA_ENVIRONMENT_EXT;
+        sky.enabled = 1;
+        sky.radiance = {environment[0], environment[1], environment[2]};
         remixapi_CameraMediumEXT medium{};
         medium.sType = REMIXAPI_STRUCT_TYPE_CAMERA_MEDIUM_EXT;
+        medium.pNext = &sky;
         medium.inside = 1;
         medium.transmittanceColor = {.25f, .5f, .75f};
         medium.transmittanceMeasurementDistance = 1;
@@ -3620,11 +3626,119 @@ namespace {
           require(std::abs(float(underwater[centre+c]) - tone(color[c] * std::pow(medium[c], distance)) * 255) < 4,
                   "Camera medium attenuates opaque geometry and water exits once at the nearest depth");
       }
+      environment = {.2f, .4f, .6f};
+      for (bool exit : {false, true}) {
+        const auto underwater = submerged(exit);
+        const float distance = exit ? .3f : .8f;
+        const float medium[] = {.25f, .5f, .75f};
+        for (uint32_t c = 0; c < 3; ++c) {
+          const float passed = std::pow(medium[c], distance);
+          const float expected = passed * color[c] + (1 - passed) * medium[c] * environment[c];
+          require(std::abs(float(underwater[centre+c]) - tone(expected) * 255) < 4,
+                  "Underwater body colour uses uniform camera environment without a sky dome");
+        }
+      }
       options.water = false;
       target.enableForward(options);
       draw(true, false);
       require(target.forward->statistics().draws == 1,
               "Disabling the water pass returns its draw to compatibility rendering");
+    }
+  }
+  void waterEnvironmentTests() {
+    auto tone = [](float value) {
+      return std::clamp((value * (2.51f * value + .03f)) / (value * (2.43f * value + .59f) + .14f), 0.f, 1.f);
+    };
+    for (uint32_t samples : {1u, 2u, 4u}) {
+      Target target(64, 64, true); // The visibility bake requires hardware ray queries.
+      auto &r = target.raster;
+      remix::forward::Options options;
+      options.samples = samples;
+      options.water = true;
+      options.shadows = options.localShadows = options.ssr = false;
+      options.baking.enabled = false;
+      options.baking.reflectionProbes = 0;
+      const auto backdrop = quad(r, 0xe109, material(r, 0xe10a, 0, 0, 0));
+      const auto centre = (32 * 64 + 32) * 4;
+      remixapi_MaterialInfoTranslucentEXT optical{};
+      optical.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_TRANSLUCENT_EXT;
+      optical.transmittanceMeasurementDistance = 1;
+      optical.refractiveIndex = 1.5f;
+      optical.transmittanceColor = {1, 1, 1};
+      remixapi_MaterialInfo info{};
+      info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+      info.pNext = &optical;
+      info.hash = 0xe106;
+      remixapi_MaterialHandle measured;
+      r.createMaterial(info, measured);
+      const auto reflectiveLiquid = quad(r, 0xe107, measured);
+      options.ambient = 0;
+      target.enableForward(options);
+      const std::array<float, 3> environment{2, 4, 6};
+      remixapi_CameraEnvironmentEXT sky{};
+      sky.sType = REMIXAPI_STRUCT_TYPE_CAMERA_ENVIRONMENT_EXT;
+      sky.enabled = 1;
+      sky.radiance = {environment[0], environment[1], environment[2]};
+      remixapi_CameraInfo view{};
+      view.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO;
+      view.pNext = &sky;
+      for (uint32_t i = 0; i < 4; ++i) view.view[i][i] = view.projection[i][i] = 1;
+      remixapi_LightHandle environmentLight = nullptr;
+      auto reflectSky = [&] {
+        r.setupCamera(view);
+        if (environmentLight) r.drawLight(environmentLight);
+        r.drawInstance(instance(reflectiveLiquid, -.2f));
+        r.drawInstance(instance(backdrop, .6f));
+        return target.render();
+      };
+      const auto unknown = reflectSky();
+      require(unknown[centre] < 3 && unknown[centre+1] < 3 && unknown[centre+2] < 3,
+              "Uniform environment reflections remain suppressed without baked visibility");
+      remixapi_BakeSceneBoundsInfoEXT bounds{};
+      bounds.scene.structSize = sizeof(bounds);
+      bounds.scene.version = REMIXAPI_BAKE_SCENE_BOUNDS_VERSION_EXT;
+      bounds.scene.sceneId = bounds.scene.revision = 0xe108;
+      bounds.scene.sceneScale = 1;
+      bounds.scene.state = REMIXAPI_BAKE_SCENE_READY_EXT;
+      std::fill_n(bounds.minimum, 3, -1.f);
+      std::fill_n(bounds.maximum, 3, 1.f);
+      r.setBakeScene(&bounds.scene);
+      options.baking.enabled = true;
+      options.baking.diskCache = false;
+      options.baking.maxProbes = 128;
+      options.baking.samples = 16;
+      options.baking.bounces = 1;
+      target.enableForward(options);
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+      while (!target.forward->statistics().baking.active && std::chrono::steady_clock::now() < deadline) {
+        reflectSky();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
+      require(target.forward->statistics().baking.active, "Water sky fallback waits for published visibility");
+      const auto reflected = reflectSky();
+      for (uint32_t c = 0; c < 3; ++c) {
+        std::printf("Water sky %ux channel %u: %u expected %.2f\n", samples, c, unsigned(reflected[centre+c]),
+                    tone(.04f * environment[c]) * 255);
+        require(std::abs(float(reflected[centre+c]) - tone(.04f * environment[c]) * 255) < 3,
+                "Uncovered water reflections use uniform camera environment with IOR Fresnel weighting");
+      }
+      remixapi_LightInfoDomeEXT dome{};
+      dome.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT;
+      for (uint32_t c = 0; c < 3; ++c) dome.transform.matrix[c][c] = 1;
+      remixapi_LightInfo domeLight{};
+      domeLight.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+      domeLight.pNext = &dome;
+      domeLight.hash = 0xe10b;
+      domeLight.radiance = {6, 2, 1};
+      r.createLight(domeLight, environmentLight);
+      const auto authored = reflectSky();
+      const float authoredColor[] = {6, 2, 1};
+      for (uint32_t c = 0; c < 3; ++c)
+        require(std::abs(float(authored[centre+c]) - tone(.04f * authoredColor[c]) * 255) < 3,
+                "An authored dome replaces uniform water environment instead of adding it twice");
+      environmentLight = nullptr;
+      const auto restored = reflectSky();
+      require(restored == reflected, "Removing a live dome restores identical uniform water reflections");
     }
   }
 } // namespace
@@ -3640,6 +3754,7 @@ int main(int argc, char **argv) {
     surfaceLightmapTests();
   }
   else if (argc>2 && std::strcmp(argv[2],"water")==0) waterTests();
+  else if (argc>2 && std::strcmp(argv[2],"water-environment")==0) waterEnvironmentTests();
   else if (argc>2 && std::strcmp(argv[2],"sky")==0) skyTests();
   else if (argc>2 && std::strcmp(argv[2],"live-gi")==0) liveGITests();
   else if (argc>2 && std::strcmp(argv[2],"hardware-reflections")==0) reflectionTests(directory, false, true);

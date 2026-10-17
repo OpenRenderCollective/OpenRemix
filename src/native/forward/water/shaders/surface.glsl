@@ -25,7 +25,7 @@ layout(set = 2, binding = 10) uniform sampler2D opaqueColor;
 float waterOpaqueDepth(ivec2 pixel) { return texelFetch(savedDepth, pixel, 0).r; }
 #include "../screen.glsl"
 vec3 waterSkyRadiance(vec3 worldDirection) {
-  if (waterSky.radiance.w == 0) return vec3(0);
+  if (waterSky.radiance.w == 0) return waterSky.radiance.rgb;
   vec3 d = normalize(mat3(waterSky.viewToDome) * mat3(frame.view) * worldDirection);
   vec2 coordinate = vec2(atan(d.z, d.x) / (2 * Pi) + .5, acos(clamp(d.y, -1, 1)) / Pi);
   return textureLod(waterDome, coordinate, 0).rgb * waterSky.radiance.rgb;
