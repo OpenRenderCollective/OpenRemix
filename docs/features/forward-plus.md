@@ -215,8 +215,8 @@ These are low-resolution static approximations, not per-frame ray tracing or a p
 | `ssr` | 1 | Enable current-frame screen-space reflections |
 | `reflectionProbes` | 4 | Maximum baked box-projected cubemaps, 0 to 16 |
 | `reflectionResolution` | 32 | Power-of-two cube face size, 8 to 128 |
-| `lightmapPageSize` | 256 | Power-of-two surface atlas page size, 64 to 1024 |
-| `lightmapTexels` | 262144 | Surface atlas texel budget, including padding and unused page space |
+| `lightmapPageSize` | 512 | Power-of-two surface atlas page size, 64 to 1024 |
+| `lightmapTexels` | 1048576 | Surface atlas texel budget, including padding and unused page space |
 | `ssrScale` | 2 | Reflection resolution divisor: 1, 2 or 4 |
 | `ssrSteps` | 128 | Maximum depth traversal iterations per reflection ray, 16 to 512 |
 | `ssrDistance` | 50 | Maximum reflection ray distance in metres |
@@ -714,9 +714,9 @@ Unused atlas space remains unowned; padding allocation never overlaps another ch
 
 `rtx.native.forward.lightmapLuxelSize` requests surface spacing in metres (0.01-16, default 0.25).
 The UI exposes it, and the published bake status reports the effective spacing after budget coarsening.
-`rtx.native.forward.lightmapPageSize` selects a power-of-two page size (64-1024, default 256).
+`rtx.native.forward.lightmapPageSize` selects a power-of-two page size (64-1024, default 512).
 `rtx.native.forward.lightmapTexels` bounds allocated atlas texels including padding and unused page space
-(65536-4194304, default 262144). Device image dimensions and array-layer limits also constrain packing.
+(65536-4194304, default 1048576). Device image dimensions and array-layer limits also constrain packing.
 The UI reports the memory limit in MiB and exposes page size alongside the texel budget.
 These are load-time quality/memory controls; bake spacing continues to control only the irradiance grid.
 
@@ -860,7 +860,7 @@ visibility with centre-based dynamic PCF is still an approximation.
 
 Pages use 20 RGBA16F layers: indirect RGB SH plus unit sun SH in 0..8, local visibility in 9,
 unit local direct SH in 10..18 and sun visibility in 19. That is 160 bytes per allocated page texel
-before device alignment. The default 262144-texel budget is about 40 MiB for a fully allocated surface
+before device alignment. The default 1048576-texel budget is about 160 MiB for a fully allocated surface
 atlas. Local direct coefficients use two temporary 144-byte arrays per sampled point (working and
 retained); sunlight adds 40 bytes per point when a distant light is captured. Device array-layer limits
 participate in chart coarsening. Finished atlases still require no
