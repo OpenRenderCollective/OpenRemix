@@ -462,6 +462,11 @@ moving geometry are still refused. Constant index, measurement color and
 measurement distance belong to the snapshot and its content hash. Live normal
 ripples keep their original textures and scroll rates. Source BSP water enables
 this policy, while its original material remains in the compatibility pass.
+USD transmission replacements retain their authored measurement distance and
+color. Reusing the source albedo preserves its sampling and alpha state without
+overwriting those optical coefficients. A valid replacement volume inherits the
+source's explicit bake boundary policy, including when it supplies a new texture;
+a thin-walled replacement does not inherit a volume boundary.
 
 The shared `bake/shaders/optics.glsl` implements dielectric Fresnel, Snell
 refraction, total internal reflection and Beer-Lambert extinction per world

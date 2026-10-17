@@ -6,7 +6,8 @@ usd_probe = executable('remix-usd-probe', 'probe.cpp',
   include_directories : test_includes, cpp_args : usd_args,
   dependencies : usd_deps + [threads_dep], link_with : [usd_library, scene_library])
 replacements_test = executable('remix-usd-replacements-test', 'replacements.cpp', 'pbr_materials.cpp',
-  '../../src/native/forward/material.cpp',
+  '../../src/native/forward/material.cpp', '../../src/native/forward/bake/data.cpp',
+  '../../src/native/forward/lighting.cpp',
   include_directories : test_includes, cpp_args : usd_args,
   dependencies : usd_deps + [threads_dep], link_with : [usd_library, scene_library])
 test('USD captured hash replay and replacement reload', replacements_test, args : [meson.current_source_dir() / 'fixtures'], timeout : 120)

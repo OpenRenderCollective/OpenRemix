@@ -1,4 +1,5 @@
 #include "scene/images.h"
+#include "scene/bake_material.h"
 #include "scene/resources.h"
 #include "scene/validation.h"
 #include <remix/remix_native_ext.h>
@@ -364,22 +365,30 @@ namespace remix {
           // sampling, as the capture runtime does; alone it would paint
           // the surface its constant colour.
           // (No albedo texture: the default one every such material gets.)
-          if (mod->texture != m_default->texture || original->texture == m_default->texture)
+          const bool keepAlbedo = mod->texture == m_default->texture && original->texture != m_default->texture;
+          const bool keepBoundary = original->bakeSmoothBoundary && validSmoothBoundary(*mod);
+          if (!keepAlbedo && !keepBoundary)
             return mod;
           auto &entry = m_modMerged[ownKey ? ownKey : modKey];
           if (!entry.merged || entry.mod.lock() != mod || entry.original.lock() != original) {
             auto merged = std::make_shared<scene::Material>(*mod);
-            merged->texture = original->texture;
-            std::copy(std::begin(original->tint), std::end(original->tint), merged->tint);
-            merged->compare = original->compare;
-            merged->reference = original->reference;
-            merged->drawAlpha = original->drawAlpha;
-            merged->filter = original->filter;
-            merged->wrapU = original->wrapU;
-            merged->wrapV = original->wrapV;
-            merged->rows = original->rows;
-            merged->columns = original->columns;
-            merged->fps = original->fps;
+            if (keepAlbedo) {
+              merged->texture = original->texture;
+              // A transmissive material's RGB describes absorption, rather
+              // than the diffuse multiplier of an opaque generated material.
+              if (!mod->transmission)
+                std::copy(std::begin(original->tint), std::end(original->tint), merged->tint);
+              merged->compare = original->compare;
+              merged->reference = original->reference;
+              merged->drawAlpha = original->drawAlpha;
+              merged->filter = original->filter;
+              merged->wrapU = original->wrapU;
+              merged->wrapV = original->wrapV;
+              merged->rows = original->rows;
+              merged->columns = original->columns;
+              merged->fps = original->fps;
+            }
+            merged->bakeSmoothBoundary |= keepBoundary;
             entry = {mod, original, std::move(merged)};
           }
           return entry.merged;
