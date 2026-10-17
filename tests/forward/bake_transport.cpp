@@ -586,6 +586,12 @@ namespace {
     spot.coneCos = .5f; // 60 degrees outer, 30 degrees inner
     spot.softness = .5f;
     source->lights.push_back(spot);
+    auto surface = spot;
+    surface.id = ++world.hash;
+    surface.coneCos = 0;
+    surface.softness = 0;
+    surface.focus = 1;
+    source->lights.push_back(surface);
     bake::Transport transport;
     bake::Options options;
     options.batchPoints = bake::Budget::maximumPoints;
@@ -606,11 +612,14 @@ namespace {
     const bake::VisibilityPoint points[] = {
         {{{0, 0, 0, 0}, {}}, 0}, {{{0, 0, 10, 0}, {}}, 0},
         {{{10 * diagonal, 0, -10 + 10 * diagonal, 0}, {}}, 0},
-        {{{10 * diagonal, 0, -10 + 10 * diagonal, 0}, {}}, 1}};
+        {{{10 * diagonal, 0, -10 + 10 * diagonal, 0}, {}}, 1},
+        {{{0, 0, 0, 0}, {}}, 2},
+        {{{10 * diagonal, 0, -10 + 10 * diagonal, 0}, {}}, 2},
+        {{{0, 0, -20, 0}, {}}, 2}};
     fixture.begin();
     transport.recordVisibility(fixture.command, 0, points, 256, true);
     fixture.finish();
-    std::array<bake::Result, 4> results;
+    std::array<bake::Result, 7> results;
     transport.read(0, results);
     const float nearIrradiance = evaluate(results[0], {0, 0, -1}, 1);
     const float farIrradiance = evaluate(results[1], {0, 0, -1}, 1);
@@ -623,6 +632,10 @@ namespace {
             "Subpixel emitters retain energy and inverse-square radial falloff instead of cancelling to zero");
     require(std::abs(radial / nearIrradiance - 1) < .001f && std::abs(shaped / radial - expectedShape) < .002f,
             "Spotlight penumbra uses the path tracer's angular inner/outer cone interpretation");
+    require(std::abs(evaluate(results[4], {0, 0, -1}, 1) / nearIrradiance - 1) < .001f &&
+                std::abs(evaluate(results[5], {-diagonal, 0, -diagonal}, 1) / radial - diagonal) < .001f &&
+                evaluate(results[6], {0, 0, 1}, 1) == 0,
+            "Texture-light cosine shaping preserves frontal energy, attenuates oblique light and emits nothing behind");
     std::vector<bake::VisibilityPoint> maximum(bake::Budget::maximumPoints, points[0]);
     std::vector<bake::Result> maximumResults(maximum.size());
     fixture.begin();

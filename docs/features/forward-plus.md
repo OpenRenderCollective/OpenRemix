@@ -126,6 +126,14 @@ Sphere intersection chords use a perpendicular-distance calculation to avoid dis
 These analytic
 approximations do not reproduce every path-traced area-light behavior.
 
+The Source bridge retains BSP texture lights as a distinct internal light type. Its shared game/replay
+conversion applies hemisphere emission with a cosine focus along the authored surface normal, rather
+than Source's isotropic model-light approximation. This uses the existing sphere sampler and keeps one
+runtime emitter per BSP light; forward lighting, baking and path tracing consume the same shaping.
+The fixed sphere radius still approximates the source patch: reconstructing patch extents and handling
+emitters embedded in fixtures remain separate placement work. The conversion does not move lights or
+disable wall occlusion. Direction, cone and focus participate in bake cache identity.
+
 An enabled live dome is drawn as a display background, followed by the existing raster sky. The dome uses
 the camera rotation and the light's world-to-local transform, with horizontal panorama wrapping and
 vertical clamping. Camera translation does not move it. This pass needs no hardware ray queries or
