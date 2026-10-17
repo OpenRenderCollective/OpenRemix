@@ -25,8 +25,8 @@ float sunShadowVisibility(vec3 p, float depth, bool includeStatic) {
     }
   return visibility / 9;
 }
-vec3 sunLight(vec4 coordinate, float unitIrradiance, vec3 p, float depth, vec3 n, vec3 v,
-              vec3 base, float roughness, float metallic) {
+BrdfLobes sunLightResponse(vec4 coordinate, float unitIrradiance, vec3 p, float depth, vec3 n, vec3 v,
+                           vec3 base, float roughness, float metallic) {
   bool baked = frame.sunDirection.w > .5 && coordinate.w > .5;
   float visibility = baked ? clamp(textureLod(surfaceAtlas,
       vec3(coordinate.xy, coordinate.z * SurfaceAtlasLayers + 19), 0).r, 0, 1) : 1;
@@ -37,6 +37,11 @@ vec3 sunLight(vec4 coordinate, float unitIrradiance, vec3 p, float depth, vec3 n
   // disc crossing the horizon, while rejecting a wholly back-facing source.
   float diffuse = direct ? (dot(n, l) + frame.sunRadiance.w > 0 ? unitIrradiance : 0)
                          : max(dot(n, l), 0) * visibility;
-  return (response.diffuse * diffuse + response.specular * visibility) * frame.sunRadiance.rgb *
-         sunShadowVisibility(p, depth, !baked);
+  vec3 scale = frame.sunRadiance.rgb * sunShadowVisibility(p, depth, !baked);
+  return BrdfLobes(response.diffuse * diffuse * scale, response.specular * visibility * scale);
+}
+vec3 sunLight(vec4 coordinate, float unitIrradiance, vec3 p, float depth, vec3 n, vec3 v,
+              vec3 base, float roughness, float metallic) {
+  BrdfLobes response = sunLightResponse(coordinate, unitIrradiance, p, depth, n, v, base, roughness, metallic);
+  return response.diffuse + response.specular;
 }

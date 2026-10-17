@@ -1,6 +1,7 @@
 #include "raster/renderer.h"
 #include "forward/renderer.h"
 #include "forward/bake/controller.h"
+#include "forward/lightmap/denoise.h"
 #include "forward/ray_scene.h"
 #include "runtime/pipelines.h"
 #include "scene/fixtures.h"
@@ -804,6 +805,76 @@ namespace {
     require(image[(32 * 64 + 32) * 4] > 150 && !ordinary.forward->statistics().rayGI.available &&
                 !ordinary.forward->statistics().rayGI.active,
             "Requesting GI without hardware features preserves the ordinary baked/ambient fallback");
+  }
+  void lightingViewTests() {
+    for (uint32_t samples : {1u, 2u, 4u}) {
+      Target target(64, 64);
+      auto &r = target.raster;
+      remix::forward::Options options;
+      options.samples = samples;
+      options.ambient = .2f;
+      options.shadows = options.localShadows = options.ssr = false;
+      options.baking.enabled = false;
+      options.baking.reflectionProbes = 0;
+      target.enableForward(options);
+      remixapi_MaterialInfoOpaqueEXT opaque{};
+      opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+      opaque.albedoConstant = {.8f, .2f, .05f};
+      opaque.opacityConstant = 1;
+      opaque.alphaTestType = 7;
+      opaque.roughnessConstant = .5f;
+      remixapi_MaterialInfo info{};
+      info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+      info.pNext = &opaque;
+      info.hash = 9790;
+      info.emissiveColorConstant = {1, 0, 0};
+      info.emissiveIntensity = 2;
+      remixapi_MaterialHandle mat;
+      r.createMaterial(info, mat);
+      const auto mesh = quad(r, 9791, mat);
+      remixapi_LightInfoDistantEXT sun{};
+      sun.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT;
+      sun.direction = {0, 0, 1};
+      remixapi_LightInfo light{};
+      light.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+      light.pNext = &sun;
+      light.hash = 9792;
+      light.radiance = {0, 0, 6};
+      remixapi_LightHandle sunHandle, localHandle;
+      r.createLight(light, sunHandle);
+      remixapi_LightInfoSphereEXT sphere{};
+      sphere.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT;
+      sphere.position = {0, 0, -1};
+      sphere.radius = .1f;
+      light.pNext = &sphere;
+      light.hash = 9793;
+      light.radiance = {0, 100, 0};
+      r.createLight(light, localHandle);
+      auto render = [&] {
+        camera(r);
+        r.drawLight(sunHandle);
+        r.drawLight(localHandle);
+        r.drawInstance(instance(mesh));
+        return target.render();
+      };
+      const auto shaded = render();
+      const size_t at = (32 * 64 + 32) * 4;
+      for (uint32_t view : {1u, 2u, 3u}) {
+        options.debugView = view;
+        target.enableForward(options, true);
+        const auto image = render();
+        if (view == 1)
+          require(image[at] > 40 && std::abs(int(image[at]) - int(image[at + 1])) <= 1 &&
+                      std::abs(int(image[at]) - int(image[at + 2])) <= 1,
+                  "Neutral indirect view excludes material tint, emission and direct lights");
+        else
+          require(image[at] < 3 && image[at + 1] > 5 && image[at + 2] > 5,
+                  "Direct diffuse/specular views isolate green local and blue sun light from red emission/ambient");
+      }
+      options.debugView = 0;
+      target.enableForward(options, true);
+      require(render() == shaded, "Leaving diagnostics restores identical shaded output after shader specialization");
+    }
   }
   void mixedLightingTests(bool localShadows = false, bool directDiffuse = false) {
     for (uint32_t samples : {1u, 2u, 4u}) {
@@ -3557,6 +3628,12 @@ int main(int argc, char **argv) {
   const std::filesystem::path directory(argv[1]);
   std::filesystem::create_directories(directory);
   if (argc>2 && std::strcmp(argv[2],"forward")==0) forwardTests(directory);
+  else if (argc>2 && std::strcmp(argv[2],"lighting-views")==0) lightingViewTests();
+  else if (argc>2 && std::strcmp(argv[2],"no-oidn")==0) {
+    require(remix::forward::lightmap::denoiserVersion() == 0,
+            "Unavailable-denoiser test links the actual module without OIDN support");
+    surfaceLightmapTests();
+  }
   else if (argc>2 && std::strcmp(argv[2],"water")==0) waterTests();
   else if (argc>2 && std::strcmp(argv[2],"sky")==0) skyTests();
   else if (argc>2 && std::strcmp(argv[2],"live-gi")==0) liveGITests();

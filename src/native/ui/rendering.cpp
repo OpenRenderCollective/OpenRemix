@@ -1,5 +1,6 @@
 #include "runtime/runtime.h"
 #include "forward/lightmap/data.h"
+#include "forward/lightmap/denoise.h"
 #include "ui/widgets.h"
 #include "pathtrace/block_costs.h"
 #include "pathtrace/sparse_policy.h"
@@ -37,6 +38,14 @@ namespace remix {
       ImGui::Text("Active MSAA: %ux | opaque draws: %u | lights: %u | clusters: %u",
                   statistics.samples, statistics.draws, statistics.lights, statistics.clusters);
       auto &forward = settings.forward;
+      int lightingView = int(forward.debugView);
+      if (ui::Combo("Lighting view", &lightingView,
+                    "Shaded\0Baked indirect (neutral)\0Direct diffuse\0Direct specular\0"))
+        forward.debugView = uint32_t(lightingView);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Separates opaque-world lighting using the current bake.\n"
+                          "Neutral indirect excludes material colour, emission and reflections.\n"
+                          "Direct views exclude screen-space and probe reflections. Does not rebake.");
       int samples = forward.samples == 4 ? 2 : forward.samples == 2 ? 1 : 0;
       if (ui::Combo("MSAA", &samples, "Off\0 2x\0 4x\0")) forward.samples = 1u << samples;
       ui::Checkbox("Sun shadows", &forward.shadows);
@@ -92,6 +101,13 @@ namespace remix {
         ImGui::SetTooltip("Reuses finished lighting when map inputs, materials, quality and GPU match.\n"
                           "Cache changes affect subsequent map loads; disabling keeps the active lighting.");
       ui::Checkbox("Bake per-light direct diffuse", &forward.baking.directDiffuse);
+      ImGui::BeginDisabled(!remix::forward::lightmap::denoiserVersion());
+      ui::Checkbox("Denoise indirect lightmaps", &forward.baking.denoiseLightmaps);
+      ImGui::EndDisabled();
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("Filters baked indirect light while preserving direct-light and shadow masks.\n"
+                          "Adds a filtering stage to new bakes; cached lighting reuses the result.\n"
+                          "Requires an Open Image Denoise enabled build; otherwise raw lighting is retained.");
       ui::DragFloat("Bake GPU budget (ms)", &forward.baking.gpuBudgetMs, .25f, 0, 16);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Adjusts batch size from completed GPU timings. Complex batches can exceed the target.\n"

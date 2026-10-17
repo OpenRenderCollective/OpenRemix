@@ -11,6 +11,7 @@ namespace remix::forward {
     float sceneScale = 1;
     float ambient = .025f;
     float exposure = 1;
+    uint32_t debugView = 0; // 0 shaded, 1 indirect irradiance, 2 direct diffuse, 3 specular
     float lightCutoff = .001f;
     bool shadows = true;
     bool localShadows = true;
@@ -36,7 +37,7 @@ namespace remix::forward {
     bool operator==(const Options &) const = default;
     bool reflections() const { return ssr || rtReflections || baking.reflectionProbes != 0; }
     bool sameTargets(const Options &other) const {
-      return water == other.water && rtGI == other.rtGI && rtReflections == other.rtReflections &&
+      return debugView == other.debugView && water == other.water && rtGI == other.rtGI && rtReflections == other.rtReflections &&
              localShadowLights == other.localShadowLights &&
              localShadowResolution == other.localShadowResolution && samples == other.samples &&
              shadowResolution == other.shadowResolution && ssr == other.ssr &&

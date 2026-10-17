@@ -359,7 +359,7 @@ water exits and disabled-pass compatibility at 1x, 2x and 4x with ray-tracing fe
 | `reflectionResolution` | 32 | Power-of-two cube face size, 8 to 128 |
 | `lightmapPageSize` | 1024 | Maximum power-of-two surface atlas page size, 64 to 4096 |
 | `lightmapTexels` | 4194304 | Surface atlas texel budget, including padding and unused page space |
-| `lightmapDenoise` | 0 | Optional offline OIDN RTLightmap filtering of indirect surface SH; requires an OIDN-enabled build |
+| `lightmapDenoise` | 1 | Offline OIDN RTLightmap filtering of indirect surface SH where available; raw fallback without OIDN |
 | `ssrScale` | 2 | Reflection resolution divisor: 1, 2 or 4 |
 | `ssrSteps` | 128 | Maximum depth traversal iterations per reflection ray, 16 to 512 |
 | `ssrDistance` | 50 | Maximum reflection ray distance in metres |
@@ -370,19 +370,29 @@ Lighting, exposure and SSR trace-parameter edits update per-frame data without r
 MSAA, water enablement, shadow-map resolution, SSR enablement or SSR resolution edits prepare replacement targets in the
 background.
 
+The Rendering panel's Lighting view and `rtx.native.forward.debugView` isolate opaque-world components:
+0 is normal shaded output, 1 is neutral baked indirect irradiance (or probe/ambient fallback), 2 is
+material-weighted direct diffuse, and 3 is direct specular. Diagnostic views exclude emission and
+reflection composition; water, compatibility effects and UI retain their ordinary paths. Switching
+views prepares a specialized shader while retaining the active bake; normal shading compiles out
+diagnostic branches. Exposure/display mapping still applies. These views locate an artifact's lighting
+component; they do not diagnose its sampling cause on their own.
+
 Backend values are stable: raster 0, pathtrace 1, forwardplus 2. Native capability bits use the matching
 bit positions. Forward+ has independent preparation and settings; selecting it never implicitly selects
 path tracing. Rendering options apply at a preparation boundary, and the previous renderer remains usable
 while a changed forward target is prepared.
 
-## Optional offline lightmap denoising
+## Offline lightmap denoising
 
 Configure Meson with `-Doidn_root=<OpenImageDenoise installation prefix>` to enable the separate
-`lightmap/denoise` module, then set `rtx.native.forward.lightmapDenoise = 1` before baking.
+`lightmap/denoise` module. New settings enable `rtx.native.forward.lightmapDenoise = 1`;
+an explicitly saved zero still selects raw transport. The Rendering panel exposes the setting.
 The integration uses Open Image Denoise 2.5 APIs; the initial Windows dependency is the official
 [OIDN 2.5.1 release](https://github.com/RenderKit/oidn/releases/tag/v2.5.1).
-The default build has no OIDN dependency. Enabling the setting without that dependency reports a
-bake error rather than silently storing unfiltered output under a denoised cache key. OIDN-enabled
+Builds without that dependency retain raw transport, including with the default setting enabled.
+Availability/version participates in the cache key, so a raw unsupported-build cache cannot stand in
+for denoised output in an OIDN-enabled build. OIDN-enabled
 builds need its runtime library, core and selected device plugin available to the loader, together
 with that plugin's dependencies. The SDK's license and third-party notices must accompany any
 redistribution; `oidn_root` does not automatically package those files.
@@ -418,8 +428,8 @@ The module holds original and filtered L0 plus bounded RGB coefficient packets f
 plus OIDN's reusable image buffer and internal working memory. Its 256 MiB `maxMemoryMB` request is a filter-memory target,
 not a hard cap on total host/device allocation. Evaluating nine coefficient filters for many
 small charts can still add substantial overhead. Chart boundaries are isolated rather than jointly
-denoised across connected faces; seam quality and sample-count savings need map-level visual review
-before enabling this by default. Denoising mode and compiled OIDN version participate in cache identity.
+denoised across connected faces; seam quality and sample-count savings remain map-level visual
+validation requirements. Denoising mode and compiled OIDN version participate in cache identity.
 
 Each SH band retains a committed filter and a separate image binding. Charts are grouped by image
 dimensions, and a filter is rebound only when dimensions, offset or the shared image buffer change.

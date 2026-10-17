@@ -107,8 +107,6 @@ namespace remix::forward::bake {
   }
   void Controller::Job::prepareResources(VkPhysicalDevice physical, VkDevice device, const Config &config,
                                          float lightCutoff, uint32_t queueFamily) {
-    if (config.denoiseLightmaps && !lightmap::denoiserVersion())
-      throw std::runtime_error("lightmapDenoise requires an OIDN-enabled build");
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physical, &properties);
     const char *samples = std::getenv("REMIX_DEBUG_BAKE_SURFACE_SAMPLES");
@@ -534,7 +532,7 @@ namespace remix::forward::bake {
       job.ticket = m_pipelines->prepare(
           "forward-probe-filter-" + std::to_string(++generation), [owner, physical, device, config] {
             owner->specular = probes::filter(owner->captures, 128, owner->cancellation.get_token());
-            if (config.denoiseLightmaps) {
+            if (config.denoiseLightmaps && lightmap::denoiserVersion()) {
               auto progress = [owner](uint32_t completed, uint32_t total) {
                 owner->denoisedCharts.store(completed, std::memory_order_relaxed);
                 owner->denoiseChartCount.store(total, std::memory_order_relaxed);

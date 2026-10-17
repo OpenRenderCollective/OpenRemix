@@ -2,9 +2,17 @@ if get_option('gpu_tests')
   raster_test = executable('remix-raster-test', 'rendering.cpp',
     include_directories : test_includes, dependencies : vulkan_dep, link_with : [raster_library, forward_library],
     cpp_args : cpp.get_supported_arguments('-Wno-missing-field-initializers'))
+  raster_no_oidn_test = executable('remix-raster-no-oidn-test',
+    'rendering.cpp', '../../src/native/forward/lightmap/denoise.cpp',
+    include_directories : test_includes, dependencies : vulkan_dep, link_with : [raster_library, forward_library],
+    cpp_args : cpp.get_supported_arguments('-Wno-missing-field-initializers'))
+  test('Forward+ surface baking without optional OIDN', raster_no_oidn_test,
+    args : [meson.current_build_dir() / 'no-oidn-readback', 'no-oidn'], timeout : 180)
   test('Raster GPU pixel readback', raster_test, args : [meson.current_build_dir() / 'readback'], timeout : 90)
   test('Forward+ GPU lighting, MSAA and compatibility readback', raster_test,
     args : [meson.current_build_dir() / 'forward-readback', 'forward'], timeout : 120)
+  test('Forward+ lighting component isolation and MSAA', raster_test,
+    args : [meson.current_build_dir() / 'lighting-view-readback', 'lighting-views'], timeout : 120)
   test('Forward+ measured water HDR, MSAA and frame-slot readback', raster_test,
     args : [meson.current_build_dir() / 'water-readback', 'water'], timeout : 120)
   test('Forward+ live dome background and MSAA coverage', raster_test,

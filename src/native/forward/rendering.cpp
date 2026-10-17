@@ -192,7 +192,8 @@ namespace remix::forward {
     const struct {
       float exposure;
       uint32_t encode, samples, reflections, background;
-    } push{g.options.exposure, uint32_t(g.encodeOutput), uint32_t(g.samples), uint32_t(bool(g.reflections) && !frame.waterComposed),
+    } push{g.options.exposure, uint32_t(g.encodeOutput), uint32_t(g.samples),
+           uint32_t(bool(g.reflections) && !frame.waterComposed && g.options.debugView == 0),
            uint32_t(background)};
     vkCmdPushConstants(command, g.compositeLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
     vkCmdDraw(command, 3, 1, 0, 0);

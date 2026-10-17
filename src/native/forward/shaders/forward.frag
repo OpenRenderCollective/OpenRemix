@@ -38,6 +38,13 @@ layout(location = 1) out vec4 outNormalRoughness;
 layout(location = 2) out vec4 outReflectance;
 #endif
 #include "direct-light.glsl"
+// Specialization removes diagnostic branches from ordinary world shading.
+layout(constant_id = 1) const uint LightingView = 0u;
+vec3 directLightComponent(BrdfLobes light, uint view) {
+  if (view == 2u) return light.diffuse;
+  if (view == 3u) return light.specular;
+  return light.diffuse + light.specular;
+}
 #endif
 #ifdef WATER_SURFACE
 #include "../water/shaders/surface.glsl"
@@ -83,6 +90,18 @@ void main() {
   surfaceLightmap.xy = clamp(surfaceLightmap.xy, surfaceBounds.xy, surfaceBounds.zw);
   vec4 surfaceLighting = vec4(0);
   bool charted = surfaceIrradiance(surfaceLightmap, n, surfaceLighting);
+  uint debugView = LightingView;
+  if (debugView == 1u) {
+    // Neutral irradiance: exclude albedo, metallic, emission and reflections.
+    vec3 indirect = charted ? surfaceLighting.rgb / Pi
+                           : bakedIrradiance(worldPosition, n, irradiance) ? irradiance / Pi : ambient;
+    result = vec4(min(max(indirect, vec3(0)), vec3(65000)), m.pbr.w > .5 ? surface.a : 1);
+#ifdef REFLECTION_GUIDES
+    outNormalRoughness = vec4(n, roughness);
+    outReflectance = vec4(0);
+#endif
+    return;
+  }
 #ifdef LIVE_GI
   ambient = metallic < 1 && any(greaterThan(surface.rgb, vec3(0))) ? liveDiffuse(worldPosition, n, geometric)
                                                                    : vec3(0);
@@ -92,9 +111,10 @@ void main() {
   else if (bakedIrradiance(worldPosition, n, irradiance))
     ambient = irradiance / Pi;
 #endif
-  vec3 color = surface.rgb * (1 - metallic) * ambient;
-  color += sunLight(surfaceLightmap, surfaceLighting.w, worldPosition, depth, n, v,
-                    surface.rgb, roughness, metallic);
+  vec3 color = debugView >= 2u ? vec3(0) : surface.rgb * (1 - metallic) * ambient;
+  BrdfLobes sun = sunLightResponse(surfaceLightmap, surfaceLighting.w, worldPosition, depth, n, v,
+                                   surface.rgb, roughness, metallic);
+  color += directLightComponent(sun, debugView);
   bool directChannels =
       metallic < 1 && frame.target.z > 0u && any(notEqual(surfaceDirectLights, uvec4(0xffffffffu)));
   vec4 directIrradiance = directChannels ? surfaceDirectIrradiance(surfaceLightmap, n) : vec4(-1);
@@ -104,10 +124,11 @@ void main() {
   // It is slower, but never silently loses illumination.
   for (uint i = 0u; i < (count > ClusterCapacity ? frame.target.z : count); ++i) {
     uint index = count > ClusterCapacity ? i : clusters[base + 1u + i];
-    color += localLight(index, worldPosition, n, v, surface.rgb, roughness, metallic, directIrradiance,
-                        surfaceLightmap);
+    BrdfLobes local = localLightResponse(index, worldPosition, n, v, surface.rgb, roughness, metallic,
+                                         directIrradiance, surfaceLightmap, vec3(.04));
+    color += directLightComponent(local, debugView);
   }
-  color += emitted;
+  if (debugView == 0u) color += emitted;
   result = vec4(min(max(color, vec3(0)), vec3(65000)), m.pbr.w > .5 ? surface.a : 1);
 #ifdef REFLECTION_GUIDES
   outNormalRoughness = vec4(n, roughness);

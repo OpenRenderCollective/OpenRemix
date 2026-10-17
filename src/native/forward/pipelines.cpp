@@ -88,6 +88,8 @@ namespace remix::forward {
                                                    .pDynamicStates = states};
     auto graphics = [&](VkShaderModule vs, VkShaderModule fs, VkRenderPass pass, bool shadow,
                         bool composite, bool terrain = false) {
+      const VkSpecializationMapEntry viewEntry{1, 0, sizeof(options.debugView)};
+      const VkSpecializationInfo viewInfo{1, &viewEntry, sizeof(options.debugView), &options.debugView};
       const VkPipelineShaderStageCreateInfo stages[] = {
           {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
            .stage = VK_SHADER_STAGE_VERTEX_BIT,
@@ -96,7 +98,8 @@ namespace remix::forward {
           {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
            .module = fs,
-           .pName = "main"}};
+           .pName = "main",
+           .pSpecializationInfo = !shadow && !composite ? &viewInfo : nullptr}};
       const VkPipelineRasterizationStateCreateInfo raster{
           .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
           .polygonMode = VK_POLYGON_MODE_FILL,

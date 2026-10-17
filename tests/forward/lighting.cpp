@@ -310,6 +310,16 @@ int main() {
   changed.rtGI = false;
   require(!changed.sameTargets(settings.forward), "GI enable changes prepare replacement pipelines");
   std::string error;
+  require(remix::forward::bake::Config{}.denoiseLightmaps,
+          "New bake configurations request indirect lightmap denoising by default");
+  require(settings.forward.debugView == 0 &&
+              config::set(settings, "rtx.native.forward.debugView", "4") == config::SetResult::Invalid &&
+              config::set(settings, "rtx.native.forward.debugView", "2") == config::SetResult::Success,
+          "Lighting diagnostics default off and reject unknown modes");
+  changed = settings.forward;
+  changed.debugView = 1;
+  require(!changed.sameTargets(settings.forward) && changed.baking == settings.forward.baking,
+          "Lighting views prepare specialized pipelines with identical bake inputs");
   require(config::set(settings, "rtx.native.forward.shadowBias", "-0.001") == config::SetResult::Invalid &&
               config::set(settings, "rtx.native.forward.shadowBias", "nan") == config::SetResult::Invalid &&
               config::set(settings, "rtx.native.forward.shadowBias", "0.003") == config::SetResult::Success,
