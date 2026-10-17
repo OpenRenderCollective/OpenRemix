@@ -10,6 +10,7 @@ namespace remix::forward::bake {
     uint32_t reflectionProbes = 4, reflectionResolution = 32;
     float reflectionDetailTolerance = .5f; // metres; zero requires entirely empty boxes
     uint32_t lightmapPageSize = 256, lightmapTexels = 262144;
+    float lightmapLuxelSize = .25f; // metres; planar faces share one world grid before budget coarsening
     bool operator==(const Config &) const = default;
     bool sameLighting(const Config &other) const {
       auto a = *this, b = other;

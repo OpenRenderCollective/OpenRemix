@@ -1,5 +1,6 @@
 #pragma once
 #include "forward/bake/data.h"
+#include "forward/lightmap/parameterization.h"
 #include <stop_token>
 
 namespace remix::forward::lightmap {
@@ -7,19 +8,26 @@ namespace remix::forward::lightmap {
   struct Options {
     uint32_t pageSize = 1024, maxPages = 16, padding = 2;
     uint64_t maxTexels = 4u << 20;
-    uint32_t texelStep = 1; // coarsen sampling while keeping both chart endpoints
+    uint32_t texelStep = 1; // global spacing multiplier; authored fallback retains chart endpoints
+    float luxelMetres = 0;  // zero preserves authored UVs; positive selects a uniform planar world grid
   };
   struct Allocation {
     uint32_t page = 0, x = 0, y = 0, width = 0, height = 0;
   };
   struct Layout {
-    uint32_t pageSize = 0, pages = 0;
-    std::vector<Allocation> charts;  // indexed like BakeScene::charts
-    std::vector<bake::Point> points; // actual world-surface samples, never probe reconstruction
+    uint32_t pageSize = 0, pages = 0, seamSamples = 0;
+    float luxelMetres = 0; // effective planar spacing after global budget coarsening
+    std::vector<Mapping> mappings;
+    std::vector<Allocation> charts;    // indexed like BakeScene::charts
+    std::vector<bake::Point> points;   // actual world-surface samples, never probe reconstruction
     std::vector<uint32_t> pointCharts; // chart ownership of each actual surface sample
-    std::vector<uint32_t> addresses; // atlas texel for each point
-    // Atlas texel -> point, including chart-local dilation/padding. Unused
-    // space is unowned; padding never borrows a different chart's light data.
+    // Receiver checks can share an address with an extended filtering sample.
+    std::vector<uint32_t> addresses;
+    std::vector<uint8_t> receiverSamples; // true only for samples on the receiving chart itself
+    std::vector<uint8_t> footprints;    // conservative bilinear support, excluding unused chart-box interiors
+    std::vector<uint8_t> sampleCenters; // sample lies at its integer grid coordinate
+    // Atlas texel -> point, including dilation and verified coplanar completion.
+    // Every shading donor retains the receiving chart's mixed-light identities.
     std::vector<uint32_t> owners;
   };
   // CPU-only planning for the existing hardware bake transport. Throws on

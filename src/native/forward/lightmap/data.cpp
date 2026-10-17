@@ -26,6 +26,7 @@ namespace remix::forward::lightmap {
                            std::span<const bake::UInt4> lightChannels,
                            std::span<const bake::UInt4> directChannels) {
     if (layout.charts.size() != scene.charts.size() ||
+        (!layout.mappings.empty() && layout.mappings.size() != scene.charts.size()) ||
         (!lightChannels.empty() && lightChannels.size() != scene.charts.size()) ||
         (!directChannels.empty() && directChannels.size() != scene.charts.size()))
       throw std::invalid_argument("Lightmap chart allocation mismatch");
@@ -44,13 +45,19 @@ namespace remix::forward::lightmap {
       for (uint32_t index : charts) {
         const auto &chart = scene.charts[index];
         const auto &allocation = layout.charts[index];
+        if (!layout.mappings.empty() && layout.mappings[index].texcoords.size() != chart.texcoords.size())
+          throw std::invalid_argument("Incomplete lightmap parameterization");
         for (size_t corner = 0; corner < chart.texcoords.size(); ++corner) {
-          const auto uv = chart.texcoords[corner];
+          auto uv = chart.texcoords[corner];
+          if (layout.mappings.size() == scene.charts.size())
+            uv = layout.mappings[index].texcoords[corner];
+          else {
+            uv[0] *= float(allocation.width - 1) / float(chart.width - 1);
+            uv[1] *= float(allocation.height - 1) / float(chart.height - 1);
+          }
           coordinates[chart.firstIndex - draw.firstIndex + corner] = {
-              (allocation.x + uv[0] * float(allocation.width - 1) / float(chart.width - 1) + .5f) /
-                  layout.pageSize,
-              (allocation.y + uv[1] * float(allocation.height - 1) / float(chart.height - 1) + .5f) /
-                  layout.pageSize,
+              (allocation.x + uv[0] + .5f) / layout.pageSize,
+              (allocation.y + uv[1] + .5f) / layout.pageSize,
               float(allocation.page), float(index + 1)};
           if (!lightChannels.empty())
             lightKeys[chart.firstIndex - draw.firstIndex + corner] = lightChannels[index];

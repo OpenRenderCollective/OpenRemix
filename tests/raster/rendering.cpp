@@ -1156,8 +1156,9 @@ namespace {
         require(content.grid && content.reflections && content.surfaces,
                 "Published lighting diagnostics fingerprint the packed bake payloads");
         if (samples == 4)
-          require(std::strstr(target.forward->statistics().baking.status, "1089 surface texels"),
-                  "Oversized charts coarsen to the atlas budget while preserving complete surface coverage");
+          require(std::strstr(target.forward->statistics().baking.status, "49 surface texels") &&
+                      std::strstr(target.forward->statistics().baking.status, "0.25 m planar luxels"),
+                  "An oversized authored chart uses metre-space density rather than its original UV dimensions");
         const size_t left = (32 * 64 + 16) * 4, right = (32 * 64 + 48) * 4;
         require(first[right + 1] > 80 && first[left + 1] < first[right + 1] * .3f,
                 "Surface atlas resolves static shadows while probes lie outside the receiver volume");

@@ -44,6 +44,14 @@ namespace remix::forward::mixed {
     result.remaining.resize(result.charts.size());
     result.next.resize(result.charts.size());
     std::vector<float> radii;
+    std::vector<Bounds> sampleBounds(layout.charts.size());
+    for (uint32_t point = 0; point < layout.points.size(); ++point) {
+      if ((point & 1023u) == 0) check(cancelled);
+      const auto chart = layout.pointCharts[point];
+      if (chart >= sampleBounds.size()) throw std::invalid_argument("Invalid surface point chart");
+      const auto &p = layout.points[point].position;
+      sampleBounds[chart].include({p[0], p[1], p[2]});
+    }
     radii.reserve(result.lights.source->lights.size());
     std::vector<bool> selected(result.lights.source->lights.size());
     for (uint32_t i = 0; i < result.lights.source->lights.size(); ++i) {
@@ -54,7 +62,9 @@ namespace remix::forward::mixed {
       check(cancelled);
       const auto &chart = result.lights.source->charts[index];
       const auto &draw = result.lights.source->draws[chart.draw];
-      Bounds bounds;
+      // Coplanar seam footprints can extend onto the connected neighbouring face.
+      // Those samples need the same candidate-light coverage as the chart itself.
+      Bounds bounds = sampleBounds[index];
       for (size_t corner = 0; corner < chart.texcoords.size(); ++corner) {
         const auto vertex = int64_t(draw.surface->indices[chart.firstIndex + corner]) + draw.vertexOffset;
         const auto &p = draw.surface->vertices[size_t(vertex)].position;

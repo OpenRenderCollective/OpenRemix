@@ -10,7 +10,9 @@ namespace remix::forward::mixed {
     if (cancelled.stop_requested())
       throw std::runtime_error("Mixed visibility refinement superseded");
     if (!plan.lights.source || visibility.size() != layout.points.size() ||
-        layout.pointCharts.size() != visibility.size() || plan.remaining.size() != plan.charts.size() ||
+        layout.pointCharts.size() != visibility.size() ||
+        (!layout.receiverSamples.empty() && layout.receiverSamples.size() != visibility.size()) ||
+        plan.remaining.size() != plan.charts.size() ||
         plan.next.size() != plan.charts.size() || plan.directCharts.size() != plan.charts.size() ||
         scratch.size() != direct.size() || (!direct.empty() && direct.size() != visibility.size()))
       throw std::invalid_argument("Invalid mixed visibility round");
@@ -23,11 +25,15 @@ namespace remix::forward::mixed {
       const auto chart = layout.pointCharts[point];
       if (chart >= plan.charts.size())
         throw std::invalid_argument("Invalid mixed visibility chart");
-      sampled[chart] = true;
+      // Filtering can borrow a real sample across a coplanar edge. That donor
+      // shades the receiving chart but cannot prove visibility over its face.
+      const bool receiver = layout.receiverSamples.empty() || layout.receiverSamples[point];
+      sampled[chart] = sampled[chart] || receiver;
       for (uint32_t channel = 0; channel < channels; ++channel) {
         const float value = visibility[point][channel];
         if (!std::isfinite(value) || value < 0 || value > 1)
           throw std::invalid_argument("Invalid mixed visibility sample");
+        if (!receiver) continue;
         maximum[chart][channel] = std::max(maximum[chart][channel], value);
         minimum[chart][channel] = std::min(minimum[chart][channel], value);
       }

@@ -143,10 +143,12 @@ int main() {
                   config::SetResult::Success,
           "Strict and tolerant reflection fitting participate in profile persistence");
   require(config::set(settings, "rtx.native.forward.lightmapPageSize", "96") == config::SetResult::Invalid &&
+              config::set(settings, "rtx.native.forward.lightmapLuxelSize", "0") == config::SetResult::Invalid &&
               config::set(settings, "rtx.native.forward.lightmapTexels", "1024") ==
                   config::SetResult::Invalid,
           "Surface atlas controls enforce supported page sizes and texel budgets");
   require(config::set(settings, "rtx.native.forward.lightmapPageSize", "128") == config::SetResult::Success &&
+              config::set(settings, "rtx.native.forward.lightmapLuxelSize", "0.125") == config::SetResult::Success &&
               config::set(settings, "rtx.native.forward.lightmapTexels", "524288") ==
                   config::SetResult::Success,
           "Surface atlas quality settings participate in profile persistence");

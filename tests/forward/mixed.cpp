@@ -76,8 +76,17 @@ int main() {
     auto noSamples = layout;
     noSamples.points.clear();
     noSamples.pointCharts.clear();
+    noSamples.receiverSamples.clear();
     require(!m::refine(unused, noSamples, {}) && unused.occlusion.count() == 0,
             "A chart without samples cannot be classified as blocked");
+    auto borderLayout = layout;
+    auto borderPlan = plan;
+    borderLayout.receiverSamples[0] = 0;
+    visibility.assign(layout.points.size(), {});
+    visibility[0] = {1, 1, 1, 1};
+    m::refine(borderPlan, borderLayout, visibility);
+    require(borderPlan.occlusion.count() == 4,
+            "A lit neighbour's filtering donor cannot invalidate a fully blocked receiving face");
     auto clear = plan;
     visibility.assign(layout.points.size(), {0, .5f, 1, .25f});
     std::vector<lm::Direct> scratch(layout.points.size()), retained(layout.points.size());

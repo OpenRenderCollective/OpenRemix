@@ -85,6 +85,10 @@ namespace remix {
         ImGui::SetTooltip("Adjusts batch size from completed GPU timings. Complex batches can exceed the target.\n"
                           "Zero uses the fixed bakeBatch setting. Scheduling edits preserve baked lighting.");
       ui::DragFloat("Bake probe spacing (m)", &forward.baking.spacing, .1f, .1f, 100);
+      ui::DragFloat("Surface luxel size (m)", &forward.baking.lightmapLuxelSize, .01f, .01f, 16);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Planar surfaces share a world grid at this spacing. The budget can coarsen the whole grid.\n"
+                          "Curved surfaces retain their authored chart mapping.");
       int surfaceBudget = int(forward.baking.lightmapTexels / 1024);
       if (ui::SliderInt("Surface lightmap budget (k texels)", &surfaceBudget, 64, 4096))
         forward.baking.lightmapTexels = uint32_t(surfaceBudget) * 1024;

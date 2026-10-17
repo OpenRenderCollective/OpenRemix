@@ -617,23 +617,40 @@ world surface. Invalid, degenerate or out-of-range host mappings remain uncharte
 geometry, props and decal sheets currently remain uncharted as well. These use probe lighting until
 additional mappings are available. Version-3 publication requires the matching native runtime.
 
-`forward/lightmap/layout` owns bounded shelf packing into atlas pages, barycentric world-surface texel
-positions and inverse-transpose vertex normals with a geometric fallback. Shared triangle edges produce
-one sample. A valid subtexel chart that misses every integer luxel centre uses a centroid sample on
-its largest UV-area triangle, then dilates that donor through the chart. Each chart dilates its own
-covered donors into holes and padding; no bake rays originate in padding, and no donor crosses a chart
-allocation. Unallocated atlas texels retain an explicit unowned
-value. Page dimensions, padding, page count and texel budgets are checked before storage allocation;
-invalid/folded charts or exhausted budgets fail explicitly. Planning and mapping validation support
-cancellation. The controller starts at authored resolution and doubles the texel step until every chart
-fits its pages and total texel budget. Both source-chart endpoints remain addressable at every step. If even
-minimum-size charts cannot fit, the job fails explicitly; it never silently drops a chart.
+`forward/lightmap/parameterization` maps planar faces onto a world-space orthonormal grid. Its
+orientation is shared by faces with the same facing plane normal, and its phase is anchored in world
+coordinates. Authored face scale, chart rotation and nonuniform instance placement therefore cannot
+change the requested metre-space texel density. Material UVs remain unchanged. Nonplanar geometry,
+including curved displacement charts, retains its authored unwrapping; its density can still vary with
+the host mapping and surface distortion.
 
+`forward/lightmap/layout` owns bounded shelf packing, conservative coverage, barycentric surface samples
+and inverse-transpose normals. The controller doubles one global spacing multiplier until all charts
+fit the atlas budget. Planar chart bounds round outward onto that grid instead of stretching their
+endpoints independently. Authored fallback charts retain their endpoints when coarsened. Tiny faces
+keep real covered-centroid samples. Invalid/folded charts or an exhausted minimum-size budget fail
+explicitly; no chart is silently dropped. Planning supports cancellation.
+
+`lightmap/seams` identifies connected coplanar geometry from shared or overlapping edge segments,
+including T-junctions. Separate atlas allocations use the same integer world-grid samples at a join.
+Only the conservative bilinear footprint can import a neighbouring donor, and that donor must lie on
+real geometry. `lightmap/coverage` clips the transfer segment against spatially indexed triangles:
+a connection elsewhere in a patch cannot bridge an open hole. Opposite-facing, separated parallel
+and disconnected faces do not share donors. The geometric joining tolerance is 0.1 mm. This handles
+coplanar joins; nonplanar charts and changes of facing plane retain independent boundaries.
+
+Filtering samples retain the receiving chart's local-light channel ownership. The original samples
+on the face remain visibility checks even when a border tap uses a neighbouring grid centre. Compact
+blocked/clear classification uses those receiving-face checks, so an illuminated neighbour cannot
+turn every blocked light into overflow. Candidate bounds also include the extended footprint.
+Unused atlas space remains unowned; padding allocation never overlaps another chart's allocation.
+
+`rtx.native.forward.lightmapLuxelSize` requests planar spacing in metres (0.01-16, default 0.25).
+The UI exposes it, and the published bake status reports the effective spacing after budget coarsening.
 `rtx.native.forward.lightmapPageSize` selects a power-of-two page size (64-1024, default 256).
 `rtx.native.forward.lightmapTexels` bounds allocated atlas texels including padding and unused page space
-(65536-4194304, default 262144). The UI exposes that texel budget. Device image dimensions and array-layer
-limits also constrain packing. These are load-time quality/memory controls; bake spacing continues to
-control only the irradiance grid.
+(65536-4194304, default 262144). Device image dimensions and array-layer limits also constrain packing.
+These are load-time quality/memory controls; bake spacing continues to control only the irradiance grid.
 
 The controller traces bounded surface and per-light visibility batches after the irradiance grid and
 before reflection capture.
@@ -659,15 +676,15 @@ on the face keeps that centre; otherwise the planner clips the triangle to the t
 samples its covered centroid. Multiple triangles sharing a texel retain one real surface donor,
 preferring a contained centre and then the nearest clipped centroid. Rays therefore remain on actual
 geometry, including slivers that cross texels without containing any integer centres. This avoids
-collapsing an entire fractional face to one fallback sample. Chart-local dilation still fills unused
-texels without borrowing another chart. Runtime atlas packing uses one texel of padding, sufficient
+collapsing an entire fractional face to one fallback sample. Chart-local dilation fills remaining unsupported
+texels; verified coplanar completion replaces only supported border taps. Runtime atlas packing uses one texel of padding, sufficient
 for its explicit mip-zero bilinear sampling, to preserve more coverage within the fixed memory budget.
 
 The surface shader samples the chart's coefficients at mip zero with a dedicated linear sampler when
 the HDR format supports it (nearest fallback otherwise), evaluates them with the
 current mapped normal, and replaces the probe/ambient indirect diffuse term. Valid black texels remain
 black. Normal-map and specular shading keep surface resolution. Selected local lights combine their
-separate baked diffuse term with current specular; other lights use the ordinary Forward+ path. Atlas padding never crosses a chart. Original and charted vertex buffers currently
+separate baked diffuse term with current specular; other lights use the ordinary Forward+ path. Atlas allocations remain isolated even where their lighting samples match. Original and charted vertex buffers currently
 coexist; this increases static geometry memory and still needs real-map profiling.
 
 ### Per-light static visibility

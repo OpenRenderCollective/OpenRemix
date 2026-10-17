@@ -68,6 +68,7 @@ namespace remix::forward::bake {
     lightmap::Options atlas;
     atlas.padding = 1; // one bilinear footprint; surface atlases have no mip sampling
     atlas.pageSize = config.lightmapPageSize;
+    atlas.luxelMetres = config.lightmapLuxelSize;
     atlas.maxTexels = config.lightmapTexels;
     atlas.maxPages = std::min(256u, properties.limits.maxImageArrayLayers / lightmap::atlasLayers);
     if (atlas.pageSize > properties.limits.maxImageDimension2D)
@@ -519,8 +520,10 @@ namespace remix::forward::bake {
     if (m_job->surfaces.empty())
       std::snprintf(message, sizeof(message), "Baked lighting active");
     else
-      std::snprintf(message, sizeof(message), "Baked lighting active (%zu surface texels, %u atlas pages)",
-                    m_job->surfaces.size(), m_job->surfaceLayout.pages);
+      std::snprintf(message, sizeof(message),
+                    "Baked lighting active (%zu surface texels, %u atlas pages; %.3g m planar luxels, %u seam samples)",
+                    m_job->surfaces.size(), m_job->surfaceLayout.pages, m_job->surfaceLayout.luxelMetres,
+                    m_job->surfaceLayout.seamSamples);
     if (m_job->mixedLights->overflow) {
       const size_t used = std::strlen(message);
       std::snprintf(message + used, sizeof(message) - used, "; %u direct links use overflow fallback",

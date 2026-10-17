@@ -1,4 +1,5 @@
 #include "forward/lightmap/layout.h"
+#include "forward/lightmap/seams.h"
 #include "forward/material.h"
 #include <algorithm>
 #include <bit>
@@ -63,6 +64,7 @@ namespace remix::forward::lightmap {
                    std::stop_token cancelled) {
       const auto &source = scene.charts[chartIndex];
       const auto &allocation = layout.charts[chartIndex];
+      const auto &mapping = layout.mappings[chartIndex];
       const auto &draw = scene.draws[source.draw];
       const auto &surface = *draw.surface;
       const auto normal = normalMatrix(draw.model);
@@ -80,9 +82,7 @@ namespace remix::forward::lightmap {
         std::array<Uv, 3> uv;
         std::array<Vec3, 3> positions, normals;
         for (uint32_t c = 0; c < 3; ++c) {
-          uv[c] = source.texcoords[triangle + c];
-          uv[c][0] *= float(allocation.width - 1) / float(source.width - 1);
-          uv[c][1] *= float(allocation.height - 1) / float(source.height - 1);
+          uv[c] = mapping.texcoords[triangle + c];
           const auto index = int64_t(surface.indices[source.firstIndex + triangle + c]) + draw.vertexOffset;
           const auto &vertex = surface.vertices[size_t(index)];
           positions[c] =
@@ -166,6 +166,7 @@ namespace remix::forward::lightmap {
                 throw std::invalid_argument("Overlapping or folded surface lightmap chart");
               if (interior[local] < -1e-7f && (centreInside || sampleDistance < donorDistance[local])) {
                 layout.points[owners[local]] = point;
+                layout.sampleCenters[owners[local]] = uint8_t(centreInside);
                 interior[local] = centreInside ? float(minimum) : -1;
                 donorDistance[local] = sampleDistance;
               }
@@ -177,6 +178,8 @@ namespace remix::forward::lightmap {
             queue.push_back(local);
             layout.pointCharts.push_back(chartIndex);
             layout.points.push_back(point);
+            layout.sampleCenters.push_back(uint8_t(centreInside));
+            layout.receiverSamples.push_back(1);
             layout.addresses.push_back(address(layout, allocation, x, y));
           }
         }
@@ -191,10 +194,23 @@ namespace remix::forward::lightmap {
         queue.push_back(local);
         layout.pointCharts.push_back(chartIndex);
         layout.points.push_back(fallbackPoint);
+        layout.sampleCenters.push_back(0);
+        layout.receiverSamples.push_back(1);
         layout.addresses.push_back(address(layout, allocation, fallbackX, fallbackY));
       }
-      // Multi-source chart-local dilation. Donors are real baked texels; no
-      // rays originate in padding, holes or another chart's surface.
+      // Only a one-texel ring around actual coverage can support the rendered
+      // bilinear footprint. Unused interiors of a triangular chart's bounding
+      // rectangle must not import the whole neighbouring face.
+      std::vector<uint8_t> footprints(owners.size());
+      for (auto pixel : queue) {
+        const int x = int(pixel % paddedWidth), y = int(pixel / paddedWidth);
+        for (int dy = -1; dy <= 1; ++dy)
+          for (int dx = -1; dx <= 1; ++dx)
+            if (x + dx >= 0 && y + dy >= 0 && x + dx < int(paddedWidth) && y + dy < int(paddedHeight))
+              footprints[size_t(y + dy) * paddedWidth + size_t(x + dx)] = 1;
+      }
+      // Initial chart-local dilation. Once every chart has real surface samples,
+      // seam completion can replace supported border taps with connected donors.
       for (size_t next = 0; next < queue.size(); ++next) {
         if ((next & 255u) == 0)
           check(cancelled);
@@ -221,6 +237,7 @@ namespace remix::forward::lightmap {
               (allocation.page * layout.pageSize + allocation.y - options.padding + y) * layout.pageSize +
               allocation.x - options.padding + x;
           layout.owners[atlas] = owners[y * paddedWidth + x];
+          layout.footprints[atlas] = footprints[y * paddedWidth + x];
         }
     }
   } // namespace
@@ -229,7 +246,8 @@ namespace remix::forward::lightmap {
     if (!scene.ready || !std::isfinite(scene.sceneScale) || scene.sceneScale <= 0 || options.pageSize < 8 ||
         options.pageSize > 4096 || !std::has_single_bit(options.pageSize) || !options.maxPages ||
         options.maxPages > 256 || options.padding < 1 || options.padding > 16 || !options.maxTexels ||
-        options.maxTexels > (64u << 20) || !options.texelStep || options.texelStep > 4096)
+        options.maxTexels > (64u << 20) || !options.texelStep || options.texelStep > 4096 ||
+        !std::isfinite(options.luxelMetres) || options.luxelMetres < 0 || options.luxelMetres > 1000)
       throw std::invalid_argument("Invalid surface lightmap scene or atlas budget");
     try {
       scene::validateBakeCharts(scene.draws, scene.charts, cancelled);
@@ -238,11 +256,13 @@ namespace remix::forward::lightmap {
     }
     Layout result;
     result.pageSize = options.pageSize;
+    result.luxelMetres = options.luxelMetres * options.texelStep;
+    result.mappings = parameterize(scene, options.luxelMetres, options.texelStep, cancelled);
     result.charts.resize(scene.charts.size());
     std::vector<uint32_t> order(scene.charts.size());
     std::iota(order.begin(), order.end(), 0u);
     std::stable_sort(order.begin(), order.end(), [&](uint32_t a, uint32_t b) {
-      const auto &first = scene.charts[a], &second = scene.charts[b];
+      const auto &first = result.mappings[a], &second = result.mappings[b];
       return std::tie(first.height, first.width) > std::tie(second.height, second.width);
     });
     struct Shelf {
@@ -251,10 +271,8 @@ namespace remix::forward::lightmap {
     std::vector<Shelf> shelves;
     for (uint32_t index : order) {
       check(cancelled);
-      const auto &chart = scene.charts[index];
-      const uint32_t chartWidth = std::max(2u, 1 + (chart.width - 2 + options.texelStep) / options.texelStep);
-      const uint32_t chartHeight =
-          std::max(2u, 1 + (chart.height - 2 + options.texelStep) / options.texelStep);
+      const auto &chart = result.mappings[index];
+      const uint32_t chartWidth = chart.width, chartHeight = chart.height;
       const uint32_t width = chartWidth + 2 * options.padding, height = chartHeight + 2 * options.padding;
       if (width > options.pageSize || height > options.pageSize)
         throw std::length_error("Surface lightmap chart exceeds atlas page size");
@@ -284,8 +302,10 @@ namespace remix::forward::lightmap {
     }
     result.pages = uint32_t(shelves.size());
     result.owners.resize(size_t(result.pages) * options.pageSize * options.pageSize, unowned);
+    result.footprints.resize(result.owners.size());
     for (uint32_t i = 0; i < scene.charts.size(); ++i)
       rasterize(scene, i, result, options, cancelled);
+    extendSeams(scene, result, options.padding, cancelled);
     return result;
   }
 } // namespace remix::forward::lightmap
