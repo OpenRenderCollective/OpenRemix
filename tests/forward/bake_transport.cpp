@@ -662,7 +662,7 @@ namespace {
     std::printf("Surface texel readback: occluded %.3f, exposed %.3f green irradiance\n", left, right);
   }
   void captureProbe(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
-    const auto emitter = world.wall(world.material({.emission = 3}), 1, 2);
+    const auto emitter = world.wall(world.material({.diffuse = .5f, .emission = 3}), 1, 2);
     auto scene = world.scene({emitter});
     scene->dome.enabled = true;
     scene->dome.radiance = {0, 0, 1};
@@ -717,6 +717,31 @@ namespace {
     const auto extended = probes::filter({&capture, 1}, 64);
     for (uint32_t skyCase = 1; skyCase <= 3; ++skyCase)
       test::probeQueries(fixture, extended, skyCase);
+    LightData lamp;
+    lamp.positionRadius = {0, 0, 0, .4f};
+    lamp.radiance = {5, 5, 5, 0};
+    lamp.directionCone[3] = -1;
+    transport.updateLighting(0, {&lamp, 1}, scene->sun, scene->dome, 100);
+    fixture.begin();
+    transport.recordRadiance(fixture.command, 0, rays, 2);
+    fixture.finish();
+    std::vector<bake::Result> reference(rays.size());
+    transport.read(0, reference);
+    // Cubemap faces and live reflection rays may be chunked differently. The
+    // same origin/direction must retain its random stream when its batch index
+    // changes; this fixture includes stochastic finite-emitter sampling.
+    for (size_t first = 0; first < rays.size(); first += 37) {
+      const size_t count = std::min(size_t(37), rays.size() - first);
+      fixture.begin();
+      transport.recordRadiance(fixture.command, 0, std::span(rays).subspan(first, count), 2);
+      fixture.finish();
+      std::vector<bake::Result> chunk(count);
+      transport.read(0, chunk);
+      for (size_t i = 0; i < count; ++i)
+        for (uint32_t c = 0; c < 4; ++c)
+          require(std::abs(chunk[i].irradiance[0][c] - reference[first + i].irradiance[0][c]) < 1e-5f,
+                  "Radiance sampling is independent of batch boundaries");
+    }
     std::printf("Cubemap readback: +Z red %.3f at %.3f units, -Z blue %.3f; "
                 "CPU/GPU box projection agrees\n",
                 positiveZ[0], positiveZ[3], negativeZ[2]);

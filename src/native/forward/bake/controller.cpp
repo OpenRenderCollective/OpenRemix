@@ -9,6 +9,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <stdexcept>
 #include <unordered_set>
@@ -423,6 +424,15 @@ namespace remix::forward::bake {
     probes::dumpPublishedData(".surfaces-published.bin", m_job->surfacePixels.data(), surfaceBytes);
     probes::dumpPublishedData(".surface-charts.bin", m_job->surfaceLayout.charts.data(),
                               m_job->surfaceLayout.charts.size() * sizeof(lightmap::Allocation));
+    const char *surfaceSamples = std::getenv("REMIX_DEBUG_BAKE_SURFACE_SAMPLES");
+    if (surfaceSamples && std::strcmp(surfaceSamples, "1") == 0) {
+      probes::dumpPublishedData(".surface-points.bin", m_job->surfaceLayout.points.data(),
+                                m_job->surfaceLayout.points.size() * sizeof(Point));
+      probes::dumpPublishedData(".surface-results.bin", m_job->surfaces.data(),
+                                m_job->surfaces.size() * sizeof(Result));
+      probes::dumpPublishedData(".surface-owners.bin", m_job->surfaceLayout.owners.data(),
+                                m_job->surfaceLayout.owners.size() * sizeof(uint32_t));
+    }
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(m_physical, &properties);
     const auto occlusion = m_job->mixedLights->occlusion.pixels(properties.limits.maxImageDimension2D);

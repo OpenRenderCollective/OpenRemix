@@ -165,10 +165,15 @@ void main() {
     }
     // A cubemap stores outgoing radiance, rather than cosine-convolved
     // irradiance. Reuse exactly the same scene/material/visibility transport.
-    seed ^= index * 747796405u;
+    // A ray keeps its sample stream when capture faces or live queries are
+    // split into different batches. Batch-local invocation IDs are scheduling
+    // details, not part of a lighting sample's identity.
+    vec3 direction = normalize(point.normal.xyz);
+    uvec3 directionBits = floatBitsToUint(direction);
+    seed ^= directionBits.x * 73856093u ^ directionBits.y * 19349663u ^ directionBits.z * 83492791u;
     float distance;
     bool back, miss;
-    vec3 value = radiance(origin, normalize(point.normal.xyz), medium, seed, distance, back, miss);
+    vec3 value = radiance(origin, direction, medium, seed, distance, back, miss);
     outputValue.irradiance[0] = vec4(value, distance);
     outputValue.statistics = vec4(back ? 1 : 0, miss ? 1 : 0, 1, 0);
     storeResult(index, outputValue);

@@ -160,6 +160,8 @@ It reuses the prepared acceleration structures and texture atlas. The directiona
 and first-hit distance without the irradiance mode's cosine convolution. Geometry emission, analytic light
 visibility and diffuse continuation use the shared material rules. The capture currently models diffuse
 outgoing radiance at hits; secondary glossy reflections and normal-map detail are not captured.
+Radiance sample streams use the ray origin and direction, so splitting captures or live reflection
+queries into different dispatch batches does not change their stochastic lighting samples.
 
 Capture origins rank authored cubemap hints and automatically searched empty-leaf sites by nearby axial
 enclosure, preferring sheltered rooms over open areas. Authored positions retain priority within each
@@ -436,6 +438,14 @@ world uniform blocks plus draw/light arrays beside it. These auxiliary layouts
 are specific to the producing build. BSP replay creates the request after its
 measurement window, near the final screenshot. No captured CPU arrays are kept
 alive just for diagnostics, and unavailable output never invalidates the bake.
+
+With the same prefix, `REMIX_DEBUG_BAKE_SURFACE_SAMPLES=1` also writes the completed
+surface transport inputs and results. `.surface-points.bin` contains 32-byte `bake::Point`
+records, `.surface-results.bin` contains matching 256-byte `bake::Result` records, and
+`.surface-owners.bin` maps each atlas texel to a 32-bit point index (`UINT32_MAX` is unused).
+These private native layouts allow a changed atlas coefficient to be traced back to its
+world position and raw GPU result. They add no tracing or GPU readback; output is opt-in
+because the arrays can be large.
 
 The same developer switch enables one-frame GPU readbacks when the HDR/depth
 formats support transfer-source images. Once requested, the reflection pass
