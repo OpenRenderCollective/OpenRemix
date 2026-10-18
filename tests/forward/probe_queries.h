@@ -96,8 +96,12 @@ namespace remix::forward::test {
       std::vector<bake::VisibilityResult> results(pairs.size());
       for (size_t i = 0; i < pairs.size(); ++i) {
         results[i].visibility = masks[i];
-        results[i].irradiance[0] = .5f + float(pairs[i].point) * .1f + float(pairs[i].light) * .003f;
-        results[i].irradiance[2] = -.2f;
+        // One fully covered light uses the shared black field. Other lights
+        // retain signed coefficients and distinct amplitudes across corners.
+        if (pairs[i].light != 64) {
+          results[i].irradiance[0] = .5f + float(pairs[i].point) * .1f + float(pairs[i].light) * .003f;
+          results[i].irradiance[2] = -.2f;
+        }
       }
       local.observe(pairs, results);
     } else local.observe(pairs, masks);
@@ -194,7 +198,11 @@ namespace remix::forward::test {
         auto directReference = reference;
         for (uint32_t probe = 0; probe < 8; ++probe) {
           auto &value = directReference.probes[probe];
-          const auto coefficients = local.sampleDirect(probe, light);
+          auto coefficients = local.sampleDirect(probe, light);
+          // Compare shader decoding/interpolation against the packed CPU
+          // reference. Full-precision quantization bounds have separate tests.
+          if (coefficients)
+            *coefficients = bake::unpackUnitDirect(bake::packUnitDirect(*coefficients));
           if (!local.sample(probe, light)) value.statistics[3] = 0;
           for (uint32_t c = 0; c < 9; ++c) {
             const float scalar = coefficients ? (*coefficients)[c] : 0;
@@ -205,7 +213,7 @@ namespace remix::forward::test {
         if (light == 1) expected.reset();
         require((values[i][3] > .5f) == bool(expected), "Directional probe response preserves receiver coverage");
         if (expected) require(directional ? std::abs(values[i][1] - (*expected)[0]) < 2e-5f : values[i][1] == -1,
-                              "Directional sparse SH matches signed CPU interpolation; scalar caches retain unknown SH");
+                              "Indexed directional fields match packed CPU interpolation, including black fields; scalar caches retain unknown SH");
         continue;
       }
       if (q.position[3] == 8) {

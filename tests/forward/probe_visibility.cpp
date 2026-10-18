@@ -1,5 +1,6 @@
 #include "forward/bake/probe_visibility.h"
 #include "forward/bake/probe_visibility_plan.h"
+#include "forward/bake/spherical_harmonics.h"
 #include <algorithm>
 #include <array>
 #include <cstdio>
@@ -26,6 +27,67 @@ namespace {
   }
 } // namespace
 int main() {
+  {
+    const UnitDirect golden{1, -1, .5f, -.5f, 0, -0.f, .25f, -.25f, 1};
+    const auto packed = packUnitDirect(golden);
+    require(packed[0] == 0xbc003c00u && packed[1] == 0xb8003800u &&
+                packed[2] == 0x80000000u && packed[3] == 0xb4003400u &&
+                packed[4] == 0x00003c00u && packed[5] == 0x3f800000u &&
+                unpackUnitDirect(packed) == golden,
+            "Unit-direct GPU words use signed half pairs, a zero padding half and full-range amplitude");
+    UnitDirect zero{};
+    zero[4] = -0.f;
+    require(std::signbit(unpackUnitDirect(packUnitDirect(zero))[4]),
+            "Zero-amplitude unit-direct fields preserve signed zero without division by zero");
+    uint32_t random = 19;
+    const auto next = [&] {
+      random = random * 1664525u + 1013904223u;
+      return float(random >> 8) / float(1u << 24) * 2 - 1;
+    };
+    for (float scale : {1e-40f, 1e-20f, 1e-4f, 1.f, 1e4f, 1e20f, 1e38f}) {
+      for (uint32_t record = 0; record < 100; ++record) {
+        UnitDirect coefficients;
+        for (float &coefficient : coefficients) coefficient = next() * scale;
+        const auto wire = packUnitDirect(coefficients);
+        const auto decoded = unpackUnitDirect(wire);
+        double maximumError = 0;
+        const double amplitude = std::bit_cast<float>(wire[5]);
+        for (uint32_t i = 0; i < 9; ++i) {
+          require(std::isfinite(decoded[i]), "Finite HDR input cannot become infinite after GPU packing");
+          maximumError = std::max(maximumError, std::abs(double(decoded[i]) - coefficients[i]));
+        }
+        const double tolerance = amplitude / 2048 + 2 * double(std::numeric_limits<float>::denorm_min());
+        require(maximumError <= tolerance,
+                "Unit-direct packing bounds coefficient error across tiny, signed and HDR fields");
+        for (const remix::forward::Vec3 normal : {remix::forward::Vec3{1, 0, 0}, {0, 1, 0}, {0, 0, 1},
+                                                 {0, 0, -1}, {.577350269f, -.577350269f, .577350269f}}) {
+          const auto basis = irradianceBasis(normal);
+          double original = 0, restored = 0, bound = 0;
+          for (uint32_t i = 0; i < 9; ++i) {
+            original += double(coefficients[i]) * basis[i];
+            restored += double(decoded[i]) * basis[i];
+            bound += std::abs(double(basis[i])) * tolerance;
+          }
+          require(std::abs(restored - original) <= bound,
+                  "Directional reconstruction error is bounded before final irradiance clamping");
+        }
+      }
+    }
+    auto invalid = golden;
+    invalid[8] = std::numeric_limits<float>::quiet_NaN();
+    rejects([&] { packUnitDirect(invalid); });
+    invalid[8] = std::numeric_limits<float>::infinity();
+    rejects([&] { packUnitDirect(invalid); });
+    auto broken = packed;
+    broken[4] |= 1u << 16;
+    rejects([&] { unpackUnitDirect(broken); });
+    broken = packed;
+    broken[5] = std::bit_cast<uint32_t>(-1.f);
+    rejects([&] { unpackUnitDirect(broken); });
+    broken = packed;
+    broken[0] = 0x00003c01u;
+    rejects([&] { unpackUnitDirect(broken); });
+  }
   const std::array<VisibilityTask, 6> pairs{
       {{2, 9, 0}, {0, 5, 0}, {0, 1, 0}, {0, 8, 0}, {0, 3, 0}, {0, 7, 0}}};
   constexpr uint64_t bytes = 4 * sizeof(uint32_t) + pairs.size() * sizeof(ProbeVisibility::Entry);
@@ -54,6 +116,28 @@ int main() {
     require(bounded[1] == 2 && bounded[3] == 3 && bounded[4] == UINT32_MAX && bounded[6] == 3 &&
                 bounded.size() * sizeof(uint32_t) == wide.gpuBytes() && wide.gpuBytes() < (2u << 20),
             "A sparse large probe grid falls back before its ranked directory exceeds the eight-MiB bound");
+    ProbeVisibility wideDirectional(350000, 66, dense, 2u << 20, true);
+    std::vector<VisibilityResult> directionalResults(dense.size());
+    for (uint32_t i = 0; i < directionalResults.size(); ++i) {
+      directionalResults[i].visibility = masks[i];
+      directionalResults[i].irradiance[0] = float(i + 1);
+      directionalResults[i].irradiance[2] = -float(i + 1);
+    }
+    wideDirectional.observe(dense, directionalResults);
+    const auto directionalWire = wideDirectional.words();
+    require(directionalWire[1] == 7 && directionalWire[9] == 2 &&
+                directionalWire.size() * 4 == wideDirectional.gpuBytes(),
+            "Compact directional records also wrap the bounded sorted-entry fallback");
+    const auto directIndices = 8 + directionalWire[3];
+    const auto directOffset = directIndices + directionalWire[4];
+    for (uint32_t i = 0; i < dense.size(); ++i) {
+      PackedUnitDirect record;
+      const auto field = directionalWire[directIndices + i];
+      require(field != 0, "Positive directional fields cannot alias the shared black record");
+      std::copy_n(directionalWire.begin() + directOffset + (field - 1) * record.size(), record.size(), record.begin());
+      require(unpackUnitDirect(record) == directionalResults[i].irradiance,
+              "Rank-directory fallback preserves directional entry order for every overlapping light");
+    }
   }
   {
     const uint64_t directionalBytes = bytes + pairs.size() * sizeof(ProbeVisibility::Direct);
@@ -77,8 +161,24 @@ int main() {
                 directional.sampleDirect(2, 9) == results[0].irradiance,
             "Directional coefficients follow sparse captured-light ownership, not submission order");
     const auto wire = directional.words();
-    require(wire[1] == 5 && wire[5] == 3 && wire.size() * 4 == directional.gpuBytes(),
+    require(wire[1] == 7 && wire[9] == 3 && wire[4] == pairs.size() && wire[6] == 6 && wire[7] == 0 &&
+                wire.size() * 4 == directional.gpuBytes(),
             "Directional wrapper preserves ranked scalar masks and exact padded allocation");
+    const auto indices = 8 + wire[3];
+    const auto coefficientOffset = indices + wire[4];
+    for (size_t i = 0; i < directional.direct().size(); ++i) {
+      PackedUnitDirect record;
+      const auto field = wire[indices + i];
+      require(field != 0, "Signed nonzero coefficients must retain a directional field");
+      std::copy_n(wire.begin() + coefficientOffset + (field - 1) * record.size(), record.size(), record.begin());
+      const auto decoded = unpackUnitDirect(record);
+      for (uint32_t coefficient = 0; coefficient < 9; ++coefficient)
+        require(std::abs(decoded[coefficient] - directional.direct()[i][coefficient]) < .0005f,
+                "Packed GPU coefficients preserve signed sparse ownership within normalized half precision");
+    }
+    const auto oldGpuBytes = (16 + table.gpuBytes() + pairs.size() * sizeof(ProbeVisibility::Direct) + 15) & ~uint64_t(15);
+    require(directional.gpuBytes() < oldGpuBytes,
+            "Directional GPU packing saves storage without dropping probe/light pairs");
     const auto restored = ProbeVisibility::restore(3, 10, directional.offsets(), directional.entries(),
                                                    directionalBytes, directional.direct());
     require(restored.words() == wire && restored.sampleDirect(0, 1) == results[2].irradiance,
@@ -87,6 +187,25 @@ int main() {
     rejects([&] { ProbeVisibility::restore(3, 10, directional.offsets(), directional.entries(),
                                            directionalBytes - 1, directional.direct()); });
     rejects([&] { directional.observe(pairs, results); });
+  }
+  {
+    ProbeVisibility black(3, 10, pairs, bytes + pairs.size() * sizeof(ProbeVisibility::Direct), true);
+    std::array<VisibilityResult, pairs.size()> results{};
+    // A clear mask with a black directional field is still known coverage;
+    // conversely no field may be discarded just because its scalar mask is zero.
+    for (auto &value : results) value.visibility = 1;
+    results[0].visibility = 0;
+    results[0].irradiance[8] = -.75f;
+    black.observe(pairs, results);
+    const auto words = black.words();
+    require(words[5] == 1 && words.size() * 4 == black.gpuBytes(),
+            "Exactly black directional fields share one reference without reserving coefficient records");
+    const auto indices = 8 + words[3];
+    for (uint32_t i = 0; i < black.entries().size(); ++i)
+      require((words[indices + i] != 0) == (black.entries()[i].light == 9),
+              "Directional blackness is independent of clear/blocked scalar coverage and captured light identity");
+    require(black.sample(0, 1) == 1 && black.sampleDirect(0, 1) == UnitDirect{} && !black.sampleDirect(1, 1),
+            "A shared black field remains distinct from unallocated probe/light coverage");
   }
   const auto imported = ProbeVisibility::restore(3, 10, table.offsets(), table.entries(), bytes);
   require(imported.sample(0, 1) == .25f && !imported.sample(1, 1),

@@ -1,5 +1,6 @@
 #pragma once
 #include "forward/bake/data.h"
+#include "forward/bake/unit_direct.h"
 #include <optional>
 #include <span>
 
@@ -18,7 +19,7 @@ namespace remix::forward::bake {
     static_assert(sizeof(Entry) == 8);
     // Unit-radiance convolved SH for aggregate moving-shadow corrections.
     // Sparse attribution has no four-light channel limit; it shares mask IDs.
-    using Direct = std::array<float, 9>;
+    using Direct = UnitDirect;
     static_assert(sizeof(Direct) == 36);
     // Input may be unordered. Duplicate pairs are rejected. The complete table
     // must fit its budget; silently dropping pairs would advertise false
@@ -34,7 +35,9 @@ namespace remix::forward::bake {
     // Versioned shader words: compact selected-light directory, ranked probe
     // membership and exact float masks. Oversized directories use the bounded
     // availability/offset/sorted-entry representation. Both are padded to vec4.
-    // Optional version-five wrapper adds signed directional coefficients.
+    // Optional version-seven wrapper adds indexed amplitude-scaled half fields;
+    // exactly black fields share index zero, independently of scalar visibility.
+    // CPU/cache Direct records retain full-precision coefficients.
     std::vector<uint32_t> words() const;
     static void validate(uint32_t probes, uint32_t lights, std::span<const uint32_t> offsets,
                          std::span<const Entry> entries, uint64_t byteBudget);

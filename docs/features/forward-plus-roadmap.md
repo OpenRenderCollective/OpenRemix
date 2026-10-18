@@ -74,7 +74,13 @@ when baked lighting is active; a failed bake instead displays its failure messag
    pair alongside scalar visibility. This removes analytic diffuse reconstruction from covered moving
    corrections, without a four-light probe ownership limit. Directional payloads remain bounded by the
    existing storage and pair budgets and use the existing connection rays; scalar-only policies retain
-   their cheaper transport. This still needs cross-map normal-mapped actor comparisons and measured
+   their cheaper transport. Probe GPU publication now indexes nonzero unit-direct fields separately
+   from scalar masks: exactly black fields share index zero, while signed nonzero fields use nine
+   amplitude-scaled half coefficients. CPU/cache values stay full precision, with unchanged trace
+   work, pair selection and coverage rules. CPU bounds/cache tests and shader compilation pass;
+   GPU interpolation, mixed-shadow image checks and performance validation remain required before
+   shipping this encoding. Surface corrections still use the four retained owners; the shared unit
+   record type does not itself remove that limit. This still needs cross-map normal-mapped actor comparisons and measured
    preparation/runtime costs before default rollout. Select mixed lights
    automatically from legacy inputs, preserving important emitters and reusing mask channels where
    receiver coverage permits. Define a correct fallback for overlapping mixed lights instead of

@@ -1,7 +1,6 @@
 #include "forward/bake/probe_visibility.h"
 #include <algorithm>
 #include <bit>
-#include <cmath>
 #include <stdexcept>
 
 namespace remix::forward::bake {
@@ -38,25 +37,29 @@ namespace remix::forward::bake {
     }
   } // namespace
   uint64_t ProbeVisibility::gpuBytes() const {
-    const uint64_t directBytes = m_direct.size() * sizeof(Direct);
-    const auto scalar = encoding(uint32_t(m_offsets.size() - 1), m_lights, m_entries, bytes() - directBytes).bytes;
-    return m_direct.empty() ? scalar : (16 + scalar + directBytes + 15) & ~uint64_t(15);
+    const auto scalar = encoding(uint32_t(m_offsets.size() - 1), m_lights, m_entries,
+        bytes() - m_direct.size() * sizeof(Direct)).bytes;
+    const uint64_t fields = std::count_if(m_direct.begin(), m_direct.end(),
+        [](const auto &field) { return !zeroUnitDirect(field); });
+    const uint64_t directBytes = m_direct.size() * sizeof(uint32_t) + fields * sizeof(PackedUnitDirect);
+    return m_direct.empty() ? scalar : (32 + scalar + directBytes + 15) & ~uint64_t(15);
   }
   std::vector<uint32_t> ProbeVisibility::words() const {
     auto masks = maskWords();
     if (m_direct.empty()) return masks;
-    // Version five wraps the unchanged scalar encoding and appends unit direct
-    // SH in exactly the entry order used by its ranked/sorted mask indices.
-    std::vector<uint32_t> result{0x56504c52u, 5u, uint32_t(m_offsets.size() - 1), uint32_t(masks.size())};
-    result.reserve(size_t(gpuBytes() / sizeof(uint32_t)));
+    // The private GPU wire format is rebuilt from CPU/cache data each upload;
+    // no previous GPU wrapper needs importing or retaining in the shader.
+    const UnitDirectRecords fields(m_direct);
+    std::vector<uint32_t> result{0x56504c52u, 7u, uint32_t(m_offsets.size() - 1), uint32_t(masks.size()),
+        uint32_t(fields.indices.size()), uint32_t(fields.records.size()), 6u, 0u};
+    const auto words = (result.size() + masks.size() + fields.indices.size() +
+                        fields.records.size() * PackedUnitDirect{}.size() + 3) & ~size_t(3);
+    result.reserve(words);
     result.insert(result.end(), masks.begin(), masks.end());
-    for (const auto &value : m_direct)
-      for (float coefficient : value) {
-        if (!std::isfinite(coefficient))
-          throw std::invalid_argument("Non-finite directional probe coefficient");
-        result.push_back(std::bit_cast<uint32_t>(coefficient));
-      }
-    result.resize(size_t(gpuBytes() / sizeof(uint32_t)));
+    result.insert(result.end(), fields.indices.begin(), fields.indices.end());
+    for (const auto &packed : fields.records)
+      result.insert(result.end(), packed.begin(), packed.end());
+    result.resize(words);
     return result;
   }
   std::vector<uint32_t> ProbeVisibility::maskWords() const {

@@ -202,6 +202,17 @@ bool localProbeMask(uint base, uint probe, uint light, out float visibility, out
   visibility = uintBitsToFloat(localProbeWord(base, entries + low * 2u + 1u));
   return true;
 }
+float localProbeDirect(uint indices, uint records, uint entry, float sh[9]) {
+  uint field = localProbeWord(0u, indices + entry);
+  if (field == 0u) return 0;
+  uint record = records + (field - 1u) * 6u;
+  float value = 0;
+  for (uint pair = 0u; pair < 4u; ++pair)
+    value += dot(unpackHalf2x16(localProbeWord(0u, record + pair)),
+                 vec2(sh[pair * 2u], sh[pair * 2u + 1u]));
+  value += unpackHalf2x16(localProbeWord(0u, record + 4u)).x * sh[8];
+  return value * uintBitsToFloat(localProbeWord(0u, record + 5u));
+}
 bool bakedLocalProbeResponse(vec3 position, vec3 normal, vec3 shadingNormal, uint capturedLight,
                               bool directional, out float visibility, out float unitDiffuse) {
   unitDiffuse = -1;
@@ -209,9 +220,11 @@ bool bakedLocalProbeResponse(vec3 position, vec3 normal, vec3 shadingNormal, uin
   if (capturedLight == 0u || table == 0u || localProbeWord(table, 0u) != 0x56504c52u ||
       localProbeWord(table, 2u) != bakeDimensions.w) return false;
   uint direct = 0u;
-  if (localProbeWord(table, 1u) == 5u) {
-    direct = (table + 1u) * 4u + localProbeWord(table, 3u);
-    table += 1u; // wrapper and scalar payload are both vec4 aligned
+  uint records = 0u;
+  if (localProbeWord(table, 1u) == 7u) {
+    direct = (table + 2u) * 4u + localProbeWord(table, 3u);
+    records = direct + localProbeWord(table, 4u);
+    table += 2u; // wrapper and scalar payload are both vec4 aligned
   }
   uint light = capturedLight - 1u, version = localProbeWord(table, 1u), count = localProbeWord(table, 3u);
   if (version == 3u) {
@@ -243,8 +256,7 @@ bool bakedLocalProbeResponse(vec3 position, vec3 normal, vec3 shadingNormal, uin
     }
     visibility += weight * mask;
     if (directional && direct != 0u)
-      for (uint coefficient = 0u; coefficient < 9u; ++coefficient)
-        diffuse += weight * uintBitsToFloat(localProbeWord(0u, direct + entry * 9u + coefficient)) * sh[coefficient];
+      diffuse += weight * localProbeDirect(direct, records, entry, sh);
     total += weight;
   }
   if (total < 1e-4) return false;
