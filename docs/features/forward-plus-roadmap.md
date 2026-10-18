@@ -77,6 +77,10 @@ when baked lighting is active; a failed bake instead displays its failure messag
    dependencies. Require actual
    engine logs, active baked lighting and captures; investigate crashes, input restarts, missing assets
    or new validation errors before extending coverage. Earlier live-game logs are historical evidence.
+   The refreshed paired testing install also publishes the same Construct bake on consecutive
+   controlled launches with disk-cache hits and no GPU bake work. Keep first-start input stability,
+   late material replacement and addon-heavy sessions as separate cache gates; an unchanged warm
+   capture does not explain an earlier differing scene fingerprint or prove all-map cache reuse.
 3. **Close visible lighting-quality gaps.** Use fixed map views and a high-sample reference to inspect
    connected chart seams, static/dynamic shadow composition, indoor/outdoor probe transitions and
    parallax bounds. Compare lower indirect sample counts separately from direct-shadow sampling.
