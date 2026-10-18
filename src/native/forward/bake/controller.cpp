@@ -1200,6 +1200,18 @@ namespace remix::forward::bake {
     const uint64_t hash = source && source->ready ? source->contentHash : 0;
     if (source != m_source || hash != m_hash || !config.sameLighting(m_config) ||
         lightCutoff != m_lightCutoff) {
+      // A content hash excludes live handles. Even identical lighting needs
+      // fresh receiver bindings when its retained scene is replaced. Record
+      // that distinction so a late asset or adapter update is diagnosable.
+      if (m_job || m_volume)
+        std::fprintf(stderr,
+            "Forward+ bake invalidated: scene %llu -> %llu, content %llu -> %llu, "
+            "bindingsChanged %u, lightingSettingsChanged %u, cutoffChanged %u, published %u\n",
+            static_cast<unsigned long long>(m_source ? m_source->sceneId : 0),
+            static_cast<unsigned long long>(source ? source->sceneId : 0),
+            static_cast<unsigned long long>(m_hash), static_cast<unsigned long long>(hash),
+            unsigned(source != m_source), unsigned(!config.sameLighting(m_config)),
+            unsigned(lightCutoff != m_lightCutoff), unsigned(bool(m_volume)));
       invalidate();
       m_source = source;
       m_hash = hash;
@@ -1231,8 +1243,11 @@ namespace remix::forward::bake {
         }
         if ((config.aggregateDiffuse || config.fullyBakedLights || config.bakedGeometryLights) &&
             !resources.bakeLightsCurrent()) {
-          if (m_job || m_volume)
+          if (m_job || m_volume) {
+            std::fprintf(stderr, "Forward+ bake invalidated: captured light dependencies changed, published %u\n",
+                         unsigned(bool(m_volume)));
             invalidate();
+          }
           status(REMIXAPI_BAKE_WAITING_EXT, "Static lights changed; waiting for updated map inputs");
           return;
         }

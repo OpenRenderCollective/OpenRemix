@@ -41,6 +41,25 @@ responses and their preparation instead of adding more branches inside the local
 
 ## Current capabilities and open requirements
 
+### Profiling and authoring priorities
+
+Investigate unexpected mid-map rebakes with explicit invalidation receipts: distinguish changed
+lighting content, replacement receiver bindings, settings and stale captured lights. Camera movement
+alone must not invalidate lighting. Keep genuine edits and late replacement assets correct; do not
+silence invalidation by accepting stale bindings. Adapter sky-prop discovery and late material loading
+also need controlled live-engine checks.
+
+Light lists already use screen tiles and depth slices. Profile opaque shading, list construction,
+shadow work, CPU submission and frame-time spikes independently. Consider receiver depth ranges,
+cone bounds and tighter visibility culling after finishing bounded baked-receiver responses. A smaller
+light count or faster isolated replay is not proof of improved live-game frame pacing.
+
+Build a BSP cubemap authoring tool with live bounds visualization, draggable faces, independent
+capture points, translation, rotation, priorities and durable map-specific files. Support import/export
+of automatic results so authored examples become a fitting-validation corpus. Game integration must
+handle rotated projection/influence bounds and live updates without rebaking unrelated diffuse
+lighting. Keep authored overrides optional; improving automatic fitting remains the default goal.
+
 | Requirement | Current state | Remaining proof or work |
 | --- | --- | --- |
 | Modular forward PBR, clustered lights and 1x/2x/4x MSAA | Implemented | Refresh current-build engine coverage through the integration milestone below |
