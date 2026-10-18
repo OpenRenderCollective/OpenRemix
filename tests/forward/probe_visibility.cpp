@@ -39,6 +39,22 @@ int main() {
           "Untraced, unallocated and invalid coverage remains unknown");
   const std::array<float, 6> values{0, 1, .25f, .5f, .75f, 0};
   table.observe(pairs, values);
+  const auto packed = table.words();
+  require(packed[1] == 3 && packed[3] == 10 && packed[4 + 9] != UINT32_MAX && packed[4] == UINT32_MAX &&
+              packed.size() * sizeof(uint32_t) == table.gpuBytes(),
+          "Shader availability includes blocked lights, rejects uncovered lights and obeys exact wire size");
+  {
+    std::vector<VisibilityTask> dense;
+    for (uint32_t light = 0; light < 66; ++light)
+      dense.push_back({0, light, 0});
+    ProbeVisibility wide(350000, 66, dense, 2u << 20);
+    std::vector<float> masks(dense.size(), .5f);
+    wide.observe(dense, masks);
+    const auto bounded = wide.words();
+    require(bounded[1] == 2 && bounded[3] == 3 && bounded[4] == UINT32_MAX && bounded[6] == 3 &&
+                bounded.size() * sizeof(uint32_t) == wide.gpuBytes() && wide.gpuBytes() < (2u << 20),
+            "A sparse large probe grid falls back before its ranked directory exceeds the eight-MiB bound");
+  }
   const auto imported = ProbeVisibility::restore(3, 10, table.offsets(), table.entries(), bytes);
   require(imported.sample(0, 1) == .25f && !imported.sample(1, 1),
           "Completed restoration preserves sparse ownership and uncovered probes");
@@ -108,8 +124,10 @@ int main() {
     require(std::any_of(planned->tasks.begin(), planned->tasks.end(),
                         [](const auto &task) { return task.light == 2 && task.point == 300; }),
             "Stationary toggle/style lights retain visibility candidates");
-    require(!planProbeVisibility(grid, lights, .001f, 6),
-            "Overflow refuses the entire plan instead of returning truncated coverage");
+    const auto bounded = planProbeVisibility(grid, lights, .001f, 6);
+    require(bounded && bounded->tasks.size() == 6 && bounded->selectedLights == 6 &&
+                bounded->eligibleLights == 7 && bounded->deferredLights == 1,
+            "Budget overflow retains complete light volumes rather than discarding the whole map");
     auto vertical = grid;
     auto verticalLights = lights;
     for (auto &point : vertical.points)
@@ -134,6 +152,48 @@ int main() {
     rejects([&] { planProbeVisibility(grid, lights, 0, 7); });
     grid.points[300].position[0] = std::numeric_limits<float>::quiet_NaN();
     rejects([&] { planProbeVisibility(grid, lights, .001f, 7); });
+  }
+  {
+    Grid grid;
+    grid.header.originSpacing[3] = .1f;
+    grid.points.resize(6);
+    grid.probes.resize(6);
+    for (uint32_t i = 0; i < 6; ++i) {
+      grid.points[i].position = {float(i) * 100, 0, 0, 0};
+      grid.probes[i].statistics[3] = 1;
+    }
+    std::array<remix::scene::SphereLight, 6> lights{};
+    lights[0].radius = 1;
+    lights[0].radiance[0] = 1000000; // first light covers the whole grid, exceeding the pair budget
+    for (uint32_t i = 1; i < lights.size(); ++i) {
+      lights[i].position[0] = float(i) * 100;
+      lights[i].radius = .1f;
+      lights[i].radiance[0] = .001f;
+    }
+    const auto full = planProbeVisibility(grid, lights, .001f, 100);
+    const auto selected = planProbeVisibility(grid, lights, .001f, 5);
+    require(full && selected && selected->tasks.size() == 5 && selected->selectedLights == 5 &&
+                selected->eligibleLights == 6 && selected->deferredLights == 1,
+            "An oversized first light cannot starve five smaller complete light volumes");
+    for (uint32_t light = 1; light < lights.size(); ++light) {
+      auto countLight = [&](const auto &plan) {
+        return std::count_if(plan.tasks.begin(), plan.tasks.end(),
+                             [&](const auto &task) { return task.light == light; });
+      };
+      require(countLight(*selected) == countLight(*full),
+              "Every selected light retains its complete unbudgeted probe coverage");
+    }
+    ProbeVisibility table(6, 6, selected->tasks, 1024);
+    std::vector<float> masks(selected->tasks.size(), 1);
+    table.observe(selected->tasks, masks);
+    for (uint32_t probe = 0; probe < 6; ++probe)
+      require(!table.sample(probe, 0),
+              "Deferred large light remains unknown rather than clear or partially covered");
+    require(!planProbeVisibility(grid, lights, .001f, 0),
+            "A zero pair budget schedules no trace work or false coverage");
+    const auto tied = planProbeVisibility(grid, lights, .001f, 3);
+    require(tied && tied->tasks.size() == 3 && tied->tasks[0].light == 1 && tied->tasks[2].light == 3,
+            "Equal-cost volumes use stable captured indices, independent of camera order");
   }
   {
     Grid grid;

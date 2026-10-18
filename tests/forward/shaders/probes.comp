@@ -16,8 +16,14 @@ void main() {
     return;
   Query q = queries[index];
   if (q.position.w >= 4) {
+    // Exercise private stencil invalidation across positions and normals, then
+    // reuse at the same receiver for a different captured light.
+    float ignored;
+    bakedLocalProbeVisibility(q.position.xyz + vec3(1000), q.reflected.xyz, 1u, ignored);
+    bakedLocalProbeVisibility(q.position.xyz, normalize(vec3(1, 2, 3)), 1u, ignored);
+    bakedLocalProbeVisibility(q.position.xyz, q.reflected.xyz, 2u, ignored);
     float value = 0;
-    uint light = q.position.w == 4 ? 1u : q.position.w == 5 ? 2u : 0u;
+    uint light = q.position.w == 4 ? 1u : q.position.w == 5 ? 2u : q.position.w == 7 ? 65u : 0u;
     bool found = bakedLocalProbeVisibility(q.position.xyz, q.reflected.xyz, light, value);
     results[index] = vec4(value, 0, 0, found ? 1 : 0);
     return;

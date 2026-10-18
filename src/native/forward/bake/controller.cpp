@@ -703,7 +703,7 @@ namespace remix::forward::bake {
               VkPhysicalDeviceProperties limits;
               vkGetPhysicalDeviceProperties(physical, &limits);
               const uint64_t baseBytes = sizeof(GridHeader) + owner->grid.probes.size() * sizeof(Result);
-              const uint64_t localBytes = owner->localProbes ? ((owner->localProbes->bytes() + 31) & ~uint64_t(15)) : 0;
+              const uint64_t localBytes = owner->localProbes ? owner->localProbes->gpuBytes() : 0;
               if (baseBytes + localBytes + 16 >= limits.limits.maxStorageBufferRange)
                 throw std::length_error("No device storage range for attributed lighting");
               const uint64_t maximum = std::min(uint64_t(config.styleStorageMiB) << 20,

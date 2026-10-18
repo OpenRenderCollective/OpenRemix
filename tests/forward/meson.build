@@ -14,7 +14,7 @@ forward_grid_test = executable('remix-forward-grid-test', 'grid.cpp',
 test('Irradiance grid placement and visibility reconstruction', forward_grid_test)
 
 forward_probe_visibility_test = executable('remix-forward-probe-visibility-test', 'probe_visibility.cpp',
-  '../../src/native/forward/bake/probe_visibility.cpp', '../../src/native/forward/bake/probe_visibility_plan.cpp',
+  '../../src/native/forward/bake/probe_visibility.cpp', '../../src/native/forward/bake/probe_visibility_gpu.cpp', '../../src/native/forward/bake/probe_visibility_plan.cpp',
   '../../src/native/forward/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Sparse probe local-light visibility preserves unknown coverage and budgets', forward_probe_visibility_test)
@@ -96,7 +96,7 @@ forward_budget_test = executable('remix-forward-budget-test', 'budget.cpp',
 test('Forward+ adaptive bake work and lighting identity', forward_budget_test)
 forward_cache_test = executable('remix-forward-cache-test', 'cache.cpp',
   '../../src/native/forward/bake/sparse_sh.cpp', '../../src/native/forward/bake/styles.cpp',
-  '../../src/native/forward/bake/cache.cpp', '../../src/native/forward/bake/probe_visibility.cpp', '../../src/native/forward/bake/policy.cpp', '../../src/native/forward/probes/data.cpp',
+  '../../src/native/forward/bake/cache.cpp', '../../src/native/forward/bake/probe_visibility.cpp', '../../src/native/forward/bake/probe_visibility_gpu.cpp', '../../src/native/forward/bake/policy.cpp', '../../src/native/forward/probes/data.cpp',
   '../../src/native/forward/lightmap/data.cpp', '../../src/native/forward/mixed/data.cpp',
   '../../src/native/forward/mixed/occlusion.cpp', '../../src/native/forward/mixed/masks.cpp', '../../src/native/forward/mixed/mask_codec.cpp', '../../src/native/forward/mixed/mask_palette.cpp',
   '../../src/native/forward/lighting.cpp',

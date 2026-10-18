@@ -1811,12 +1811,14 @@ layer supports arbitrary overlap without a four-channel assignment.
 `planProbeVisibility` uses the existing renderer influence radius and actual
 relocated usable probe positions. A sweep on the widest spatial axis prunes
 distant pairs; a conservative cell-corner halo retains interpolation coverage.
-Stationary toggleable lights participate, moving lights do not. Pair-budget
-overflow returns no plan rather than partial coverage. The controller schedules
-accepted pairs after usable probes and sunlight, using its measured visibility
-work budget. A 131072-pair ceiling bounds the additional trace work; larger plans
-retain shadow-map fallback. This is a current scalability limit, not a light-count
-limit in the storage format.
+Stationary toggleable lights participate, moving lights do not. Planning counts
+complete light volumes, then selects them in increasing pair cost with captured
+index as a deterministic tie break. It never truncates one selected light's probe
+coverage. Deferred lights remain unknown and retain shadow-map fallback. This
+maximizes the number of covered lights within the budget; it does not rank their
+visual importance. The controller schedules selected pairs after usable probes
+and sunlight, using its measured visibility work budget. A 131072-pair ceiling
+bounds additional trace work without rejecting every light on a large map.
 
 `Transport::recordVisibilityTasks` accepts bounded batches of probe/light pairs
 against caller-owned relocated receiver positions. It writes directly to the
@@ -1830,10 +1832,27 @@ Offsets, sorted captured-light ownership, usable probe membership and finite uni
 fractions are validated before use. Untraced masks cannot replace a completed
 cache. Missing sections preserve unknown coverage, so existing bake files remain
 usable without implying local visibility. Controller jobs retain this data through
-cache reload and GPU publication. Algorithm revision 18 identifies the new bake
-work. The GPU buffer appends a versioned sparse table after probes and optional
+cache reload and GPU publication. Algorithm revision 19 identifies complete
+per-light selection under the work budget. The new policy needs a fresh bake;
+unchanged-policy reloads reuse the completed table. The initial runtime path used
+revision 18. The GPU buffer appends a versioned sparse table after probes and optional
 styled SH; settings.w encodes the table offset and the independent style flag.
 There is no additional descriptor or per-frame upload for the completed table.
+
+GPU encoding lives in `bake/probe_visibility_gpu.cpp`, separately from CPU table
+ownership and validation. A captured-light directory rejects deferred lights
+immediately. Selected-light membership bits and prefix counts locate each mask
+without a binary search, preserving its exact float bits. Directory storage is
+bounded to eight MiB; larger cases use sorted sparse rows instead. Per-invocation
+interpolation weights are shared only while receiver position and normal match,
+so another reflection/ray query cannot reuse a different receiver's weights.
+
+The host adapter canonicalizes insignificant noise in repeated sky captures to
+the exact previous pixels and hash. Alpha must match; RGB differs by at most four
+byte levels locally and one eighth of a byte level on average. Uniform one-level
+brightness changes and larger local changes replace the reference. Accepted
+captures never accumulate drift. The backend still uses strict frozen-input cache
+identity; this tolerance belongs to host capture, not generic scene hashing.
 
 Uncharted receivers reconstruct per-light visibility using the same relocated,
 wall-aware weights as irradiance. Significant missing corners, absent light

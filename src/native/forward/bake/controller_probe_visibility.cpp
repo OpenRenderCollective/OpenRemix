@@ -13,10 +13,12 @@ namespace remix::forward::bake {
       const uint64_t base = sizeof(GridHeader) + job.grid.probes.size() * sizeof(Result);
       const uint64_t offsets = (job.grid.probes.size() + 1) * sizeof(uint32_t);
       const uint64_t range = properties.limits.maxStorageBufferRange;
-      // Bound new trace work as well as storage. A declined complete plan keeps
-      // ordinary shadows; never publish a truncated set as complete coverage.
-      if (!job.source->lights.empty() && range > base + offsets + 32) {
-        const uint64_t budget = std::min(ProbeVisibility::maximumBytes, range - base - 32);
+      const uint64_t wireOverhead = 16 + ((job.source->lights.size() + 31) / 32) * sizeof(uint32_t) + 15 +
+                                    ProbeVisibility::maximumDirectoryBytes;
+      // Bound trace work and storage. Each selected light has its complete
+      // volume; deferred lights keep ordinary shadows and unknown probe masks.
+      if (!job.source->lights.empty() && range > base + offsets + wireOverhead) {
+        const uint64_t budget = std::min(ProbeVisibility::maximumBytes, range - base - wireOverhead);
         const uint32_t pairs =
             uint32_t(std::min<uint64_t>(131072, (budget - offsets) / sizeof(ProbeVisibility::Entry)));
         auto plan = planProbeVisibility(job.grid, job.source->lights, m_lightCutoff, pairs,
@@ -34,8 +36,12 @@ namespace remix::forward::bake {
               indexed[task.light] = true;
             }
         }
-        std::fprintf(stderr, "Forward local probe visibility: %zu pairs, plan %s, cap %u\n",
-                     job.localProbeTasks.size(), plan ? "accepted" : "budget fallback", pairs);
+        std::fprintf(stderr,
+                     "Forward local probe visibility: %zu pairs, %u selected / %u eligible lights, "
+                     "%u deferred, %llu candidate tests, cap %u\n",
+                     job.localProbeTasks.size(), plan ? plan->selectedLights : 0,
+                     plan ? plan->eligibleLights : 0, plan ? plan->deferredLights : 0,
+                     static_cast<unsigned long long>(plan ? plan->candidates : 0), pairs);
       }
       job.localProbesPlanned = true;
     }

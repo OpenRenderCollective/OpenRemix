@@ -27,7 +27,7 @@ namespace remix::forward::test {
         {{-.5f, .2f, 0, 3}, {0, 1, 0, 0}}, {{4, 0, 0, 3}, {0, 0, 1, 0}},
         {{0, 0, 0, 4}, {0, 0, 1, 0}}, {{.5f, 0, 0, 4}, {1, 0, 0, 0}},
         {{4, 0, 0, 4}, {0, 0, 1, 0}}, {{0, 0, 0, 5}, {0, 0, 1, 0}},
-        {{0, 0, 0, 6}, {0, 0, 1, 0}}};
+        {{0, 0, 0, 6}, {0, 0, 1, 0}}, {{0, 0, 0, 7}, {0, 0, 1, 0}}};
     struct Gpu {
       VkDevice device;
       Buffer asset, input, output, sky;
@@ -75,14 +75,13 @@ namespace remix::forward::test {
     std::vector<bake::VisibilityTask> pairs;
     std::vector<float> masks;
     for (uint32_t probe = 0; probe < 8; ++probe) {
-      pairs.push_back({probe, 0, 0});
-      masks.push_back(float(probe) / 7.f);
-      if (probe != 0) {
-        pairs.push_back({probe, 1, 0});
+      for (uint32_t light = 0; light < 66; ++light) {
+        if (light == 1 && probe == 0) continue;
+        pairs.push_back({probe, light, 0});
         masks.push_back(float(probe) / 7.f);
       }
     }
-    bake::ProbeVisibility local(8, 2, pairs, 4096);
+    bake::ProbeVisibility local(8, 66, pairs, 8192);
     local.observe(pairs, masks);
     const auto localWords = local.words();
     sky.header.settings[3] = float(2 * (sizeof(sky.probes) / 16));

@@ -10,6 +10,7 @@ namespace remix::forward::bake {
   class ProbeVisibility {
   public:
     static constexpr uint64_t maximumBytes = 64ull << 20;
+    static constexpr uint64_t maximumDirectoryBytes = 8ull << 20;
     struct Entry {
       uint32_t light;
       float visibility = -1;
@@ -23,8 +24,10 @@ namespace remix::forward::bake {
     std::span<const uint32_t> offsets() const { return m_offsets; }
     std::span<const Entry> entries() const { return m_entries; }
     uint64_t bytes() const;
-    // Shader words: magic/version/probe count/entry count, offsets, then
-    // captured-light index and IEEE float visibility per entry; padded to vec4.
+    uint64_t gpuBytes() const;
+    // Versioned shader words: compact selected-light directory, ranked probe
+    // membership and exact float masks. Oversized directories use the bounded
+    // availability/offset/sorted-entry representation. Both are padded to vec4.
     std::vector<uint32_t> words() const;
     static void validate(uint32_t probes, uint32_t lights, std::span<const uint32_t> offsets,
                          std::span<const Entry> entries, uint64_t byteBudget);

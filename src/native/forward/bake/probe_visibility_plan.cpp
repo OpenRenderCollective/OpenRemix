@@ -46,6 +46,13 @@ namespace remix::forward::bake {
       return x < y || (x == y && a < b);
     });
     ProbeVisibilityPlan result;
+    struct Candidate {
+      uint32_t light;
+      size_t first, end;
+      uint64_t count;
+      double reach;
+    };
+    std::vector<Candidate> candidates;
     // A trilinear corner can be sqrt(3) cells from the receiver. Relocation
     // moves it at most .45 cells per axis; include the receiver's normal bias.
     const double halo = std::sqrt(3.) * 1.45 * spacing + bias;
@@ -66,10 +73,12 @@ namespace remix::forward::bake {
       const auto first = std::lower_bound(
           sorted.begin(), sorted.end(), double(light.position[sweepAxis]) - reach,
           [&](uint32_t probe, double x) { return grid.points[probe].position[sweepAxis] < x; });
-      for (auto entry = first; entry != sorted.end(); ++entry) {
+      const auto end = std::upper_bound(
+          first, sorted.end(), double(light.position[sweepAxis]) + reach,
+          [&](double x, uint32_t probe) { return x < grid.points[probe].position[sweepAxis]; });
+      uint64_t count = 0;
+      for (auto entry = first; entry != end; ++entry) {
         const auto &position = grid.points[*entry].position;
-        if (position[sweepAxis] > double(light.position[sweepAxis]) + reach)
-          break;
         if ((result.candidates++ & 1023u) == 0)
           check(cancelled);
         double distanceSquared = 0;
@@ -79,9 +88,44 @@ namespace remix::forward::bake {
         }
         if (distanceSquared > reach * reach)
           continue;
-        if (result.tasks.size() == maximumPairs)
-          return {};
-        result.tasks.push_back({*entry, lightIndex, 0});
+        // A single light larger than the entire budget cannot be selected.
+        // Stop counting it, but continue examining later, cheaper volumes.
+        if (++count > maximumPairs)
+          break;
+      }
+      if (count)
+        candidates.push_back(
+            {lightIndex, size_t(first - sorted.begin()), size_t(end - sorted.begin()), count, reach});
+    }
+    result.eligibleLights = uint32_t(candidates.size());
+    std::sort(candidates.begin(), candidates.end(), [](const Candidate &a, const Candidate &b) {
+      return a.count < b.count || (a.count == b.count && a.light < b.light);
+    });
+    uint64_t selectedPairs = 0;
+    for (const auto &candidate : candidates) {
+      if (candidate.count > maximumPairs - selectedPairs)
+        break;
+      selectedPairs += candidate.count;
+      ++result.selectedLights;
+    }
+    result.deferredLights = result.eligibleLights - result.selectedLights;
+    if (result.eligibleLights && !result.selectedLights)
+      return {};
+    result.tasks.reserve(size_t(selectedPairs));
+    for (uint32_t selected = 0; selected < result.selectedLights; ++selected) {
+      const auto &candidate = candidates[selected];
+      const auto &light = lights[candidate.light];
+      for (size_t i = candidate.first; i < candidate.end; ++i) {
+        if ((result.candidates++ & 1023u) == 0)
+          check(cancelled);
+        const auto &position = grid.points[sorted[i]].position;
+        double distanceSquared = 0;
+        for (uint32_t axis = 0; axis < 3; ++axis) {
+          const double delta = double(position[axis]) - light.position[axis];
+          distanceSquared += delta * delta;
+        }
+        if (distanceSquared <= candidate.reach * candidate.reach)
+          result.tasks.push_back({sorted[i], candidate.light, 0});
       }
     }
     check(cancelled);

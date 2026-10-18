@@ -146,9 +146,50 @@ bool bakedSunVisibility(vec3 position, vec3 normal, out float visibility) {
 uint localProbeWord(uint base, uint word) {
   return bakeRecords[base + word / 4u][word % 4u];
 }
+// Private to one shader invocation. Local lights at the same receiver share
+// interpolation work; ray/reflection queries at another point must rebuild it.
+bool localStencilInitialized = false;
+bool localStencilValid = false;
+vec3 localStencilPosition, localStencilNormal;
+uint localStencilIndices[8];
+float localStencilWeights[8];
+bool localProbeStencil(vec3 position, vec3 normal) {
+  if (localStencilInitialized && all(equal(position, localStencilPosition)) &&
+      all(equal(normal, localStencilNormal))) return localStencilValid;
+  localStencilInitialized = true;
+  localStencilValid = false;
+  localStencilPosition = position;
+  localStencilNormal = normal;
+  uvec3 base;
+  vec3 fraction;
+  if (!bakeCell(position, normal, base, fraction)) return false;
+  float total = 0;
+  for (uint corner = 0u; corner < 8u; ++corner) {
+    uvec3 upper = uvec3(corner & 1u, (corner >> 1u) & 1u, (corner >> 2u) & 1u);
+    uint index;
+    float weight = bakeProbeWeight(position, normal, base + upper, fraction, upper, index);
+    localStencilIndices[corner] = index;
+    localStencilWeights[corner] = weight;
+    total += weight;
+  }
+  localStencilValid = total >= 1e-4;
+  return localStencilValid;
+}
 bool localProbeMask(uint base, uint probe, uint light, out float visibility) {
-  uint low = localProbeWord(base, 4u + probe), end = localProbeWord(base, 5u + probe), high = end;
-  uint entries = 5u + bakeDimensions.w;
+  if (localProbeWord(base, 1u) == 3u) {
+    uint count = localProbeWord(base, 3u), rowWords = localProbeWord(base, 4u + count);
+    uint rows = 5u + count, row = rows + (probe * rowWords + light / 32u) * 2u;
+    uint bits = localProbeWord(base, row), bit = light % 32u;
+    if ((bits & (1u << bit)) == 0u) return false;
+    uint rank = localProbeWord(base, row + 1u) + uint(bitCount(bits & ((1u << bit) - 1u)));
+    uint offsets = rows + bakeDimensions.w * rowWords * 2u;
+    uint index = localProbeWord(base, offsets + probe) + rank;
+    visibility = uintBitsToFloat(localProbeWord(base, offsets + bakeDimensions.w + 1u + index));
+    return true;
+  }
+  uint offsets = 4u + localProbeWord(base, 3u);
+  uint low = localProbeWord(base, offsets + probe), end = localProbeWord(base, offsets + 1u + probe), high = end;
+  uint entries = offsets + 1u + bakeDimensions.w;
   while (low < high) {
     uint middle = low + (high - low) / 2u;
     if (localProbeWord(base, entries + middle * 2u) < light) low = middle + 1u;
@@ -161,19 +202,25 @@ bool localProbeMask(uint base, uint probe, uint light, out float visibility) {
 bool bakedLocalProbeVisibility(vec3 position, vec3 normal, uint capturedLight, out float visibility) {
   uint table = uint(bakeSettings.w) / 2u;
   if (capturedLight == 0u || table == 0u || localProbeWord(table, 0u) != 0x56504c52u ||
-      localProbeWord(table, 1u) != 1u || localProbeWord(table, 2u) != bakeDimensions.w) return false;
-  uvec3 base;
-  vec3 fraction;
-  if (!bakeCell(position, normal, base, fraction)) return false;
+      localProbeWord(table, 2u) != bakeDimensions.w) return false;
+  uint light = capturedLight - 1u, version = localProbeWord(table, 1u), count = localProbeWord(table, 3u);
+  if (version == 3u) {
+    if (light >= count) return false;
+    light = localProbeWord(table, 4u + light);
+    if (light == 0xffffffffu) return false;
+  } else if (version == 2u) {
+    if (light / 32u >= count ||
+        (localProbeWord(table, 4u + light / 32u) & (1u << (light % 32u))) == 0u) return false;
+  } else return false;
+  if (!localProbeStencil(position, normal)) return false;
   visibility = 0;
   float total = 0;
   for (uint corner = 0u; corner < 8u; ++corner) {
-    uvec3 upper = uvec3(corner & 1u, (corner >> 1u) & 1u, (corner >> 2u) & 1u);
-    uint index;
-    float weight = bakeProbeWeight(position, normal, base + upper, fraction, upper, index);
+    uint index = localStencilIndices[corner];
+    float weight = localStencilWeights[corner];
     if (weight <= 0) continue;
     float mask;
-    if (!localProbeMask(table, index, capturedLight - 1u, mask)) {
+    if (!localProbeMask(table, index, light, mask)) {
       if (weight > 1e-6) return false;
       continue;
     }
