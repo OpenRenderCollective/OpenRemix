@@ -820,8 +820,10 @@ namespace remix::forward::bake {
                            filtered.initializationSeconds, filtered.preparationSeconds,
                            filtered.uploadSeconds, filtered.executionSeconds, filtered.readbackSeconds,
                            filtered.waitSeconds, filtered.chartSeconds);
-              std::fprintf(stderr, "Forward lightmap OIDN staging: %llu pinned bytes, %.3f s host setup/copies\n",
-                           static_cast<unsigned long long>(filtered.stagingBufferBytes), filtered.stagingSeconds);
+              std::fprintf(stderr, "Forward lightmap OIDN staging: %llu pinned bytes, %.3f s host setup/copies; "
+                                   "%llu GPU batch bytes\n",
+                           static_cast<unsigned long long>(filtered.stagingBufferBytes), filtered.stagingSeconds,
+                           static_cast<unsigned long long>(filtered.batchBufferBytes));
             }
             dumpPhaseFingerprint("filtered", owner->source->contentHash, owner->grid, owner->surfaceLayout, owner->surfaces,
                                  owner->sun, owner->captures);

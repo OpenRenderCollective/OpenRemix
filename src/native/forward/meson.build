@@ -7,7 +7,7 @@ if get_option('oidn_root') != ''
     dependencies : cpp.find_library('OpenImageDenoise', dirs : [oidn_root / 'lib']))
   oidn_args += '-DREMIX_OIDN=1'
 endif
-lightmap_denoise_library = static_library('remix_lightmap_denoise', 'lightmap/denoise.cpp', 'lightmap/denoise_chart.cpp', 'lightmap/denoise_graph.cpp',
+lightmap_denoise_library = static_library('remix_lightmap_denoise', 'lightmap/denoise.cpp', 'lightmap/denoise_chart.cpp', 'lightmap/denoise_graph.cpp', 'lightmap/denoise_filter.cpp',
   dependencies : oidn_deps, include_directories : [remix_public_include, native_include],
   cpp_args : oidn_args, gnu_symbol_visibility : 'hidden', pic : true)
 

@@ -176,7 +176,7 @@ namespace {
     }
     require(rejected, "Padded image dimensions cannot wrap");
   }
-  void queuedCharts(uint32_t side, uint32_t count) {
+  void queuedCharts(uint32_t side, uint32_t count, bool mixedMasks = false) {
     lightmap::Layout layout;
     layout.pageSize = 512;
     layout.pages = 1;
@@ -193,10 +193,12 @@ namespace {
           layout.addresses.push_back(address);
           layout.owners[address] = index;
           bake::Result value;
-          const float noise = float((x * 1664525u + y * 1013904223u + chart * 7919u) % 1009) / 1008.f - .5f;
+          const float noise = mixedMasks && chart % 7 == 0 ? 0.f :
+              float((x * 1664525u + y * 1013904223u + chart * 7919u) % 1009) / 1008.f - .5f;
           for (uint32_t c = 0; c < 3; ++c) {
             value.irradiance[0][c] = 1 + chart * .1f + noise * .3f;
-            value.irradiance[1][c] = value.irradiance[0][c] * (.2f + noise * .1f);
+            value.irradiance[1][c] = value.irradiance[0][c] *
+                (.2f + (mixedMasks && chart % 5 == 0 ? 0.f : noise * .1f));
           }
           value.irradiance[0][3] = float(chart) + .5f;
           value.statistics = {float(index), 2, 3, 4};
@@ -213,7 +215,7 @@ namespace {
       } catch (const std::invalid_argument &) {
         rejected = true;
       }
-      require(rejected, "Invalid later chart data drains already queued host transfers before cleanup");
+      require(rejected, "Invalid later chart data cannot publish deferred or queued host transfers");
     }
     if (side == 16) {
       auto interrupted = original;
@@ -241,9 +243,20 @@ namespace {
     const size_t chartBytes = size_t(side) * side * 3 * sizeof(float) * 11;
     const size_t limit = std::min(size_t(lightmap::denoising::queuedChartLimit),
                                   lightmap::denoising::queueBudgetBytes / chartBytes);
-    require(statistics.charts == count && statistics.batches == count && statistics.executions == 2 * count &&
+    uint32_t expectedBatches = 0, expectedExecutions = 0;
+    for (uint32_t chart = 0; chart < count; ++chart)
+      if (!mixedMasks || chart % 7 != 0) {
+        ++expectedBatches;
+        expectedExecutions += mixedMasks && chart % 5 == 0 ? 1 : 2;
+      }
+    require(statistics.charts == count && statistics.batches == expectedBatches &&
+                statistics.executions == expectedExecutions &&
                 statistics.synchronizations == (count + limit - 1) / limit,
             "Chart queues flush at both count and host-byte bounds without dropping packets");
+    if (statistics.graphLaunches && !statistics.graphFallbacks)
+      require(statistics.graphLaunches == (count + limit - 1) / limit &&
+                  statistics.batchBufferBytes == lightmap::denoising::queueBudgetBytes,
+              "CUDA batches preserve constant-band masks and capture one graph per bounded queue");
     require(statistics.peakHostBytes == limit * chartBytes &&
                 statistics.peakHostBytes <= lightmap::denoising::queueBudgetBytes,
             "Queued host image storage respects its bounded scratch target");
@@ -276,6 +289,7 @@ int main() try {
   paddedCharts();
   queuedCharts(16, 40); // chart-count bound, then a partial tail
   queuedCharts(64, 18); // byte bound, then a partial tail
+  queuedCharts(16, 40, true); // fully constant charts and independently changing band masks
   lightmap::Layout layout;
   layout.pageSize = 128;
   layout.pages = 1;

@@ -90,6 +90,16 @@ when baked lighting is active; a failed bake instead displays its failure messag
    workload; retain ordinary stream scheduling. Next investigate filter/image work organization,
    preserving chart isolation, directional coefficients and cancellation, before changing quality
    settings or introducing an interactive frame-rate tradeoff.
+   The automatic CUDA path now submits bounded queues of independent chart filters, with one
+   host upload/readback per queue and an additional device arena capped at 8 MiB. Device copies
+   keep every chart's filter input and result separate. CPU, pageable and oversized work retain
+   ordinary submission; unsupported batching or arena allocation falls back without changing
+   filter models or samples. Chart orchestration, private filter ownership and driver graph
+   operations live in separate modules. Constant fields, changing band masks, partial queues,
+   directional reconstruction and cancellation remain covered by ordinary-dispatch comparisons.
+   This is an incremental reduction; substantial filter/render contention remains. A first
+   version capturing host copies regressed and was rejected. Continue device/workload comparisons
+   and live-map responsiveness checks; do not infer game FPS or universal speedups from replays.
    Timed visibility batches now grow within an eight-row rectangular dispatch and a guaranteed
    128 MiB maximum result-buffer range, reducing frame submission overhead without changing quality.
    Scalar classification now selects positive direct owners before a separate directional pass.

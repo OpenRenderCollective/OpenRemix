@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <cstdlib>
 #include <cstring>
+#include <cstdint>
 #include <stdexcept>
 
 namespace remix::forward::lightmap::denoising {
@@ -38,6 +39,7 @@ namespace remix::forward::lightmap::denoising {
     int (WINAPI *destroyGraph)(Graph) = nullptr;
     int (WINAPI *destroyExecutable)(Executable) = nullptr;
     int (WINAPI *launchGraph)(Executable, Stream) = nullptr;
+    int (WINAPI *copyDevice)(uint64_t, uint64_t, size_t, Stream) = nullptr;
     struct Current {
       State &state;
       bool valid;
@@ -87,7 +89,8 @@ namespace remix::forward::lightmap::denoising {
           !load(beginCapture, "cuStreamBeginCapture_v2") || !load(endCapture, "cuStreamEndCapture") ||
           !load(graphNodes, "cuGraphGetNodes") || !load(instantiate, "cuGraphInstantiate_v2") ||
           !load(destroyGraph, "cuGraphDestroy") ||
-          !load(destroyExecutable, "cuGraphExecDestroy") || !load(launchGraph, "cuGraphLaunch") || init(0))
+          !load(destroyExecutable, "cuGraphExecDestroy") || !load(launchGraph, "cuGraphLaunch") ||
+          !load(copyDevice, "cuMemcpyDtoDAsync_v2") || init(0))
         return false;
       int count = 0;
       if (deviceCount(&count)) return false;
@@ -166,6 +169,13 @@ namespace remix::forward::lightmap::denoising {
     if (!ready() || !current.valid || m_state->launchGraph(m_state->graph, m_state->stream))
       throw std::runtime_error("Cannot submit CUDA denoising graph");
   }
+  bool CudaGraph::copyDevice(void *destination, const void *source, size_t bytes) {
+    if (!enabled()) return false;
+    State::Current current(*m_state);
+    return current.valid &&
+        m_state->copyDevice(uint64_t(reinterpret_cast<uintptr_t>(destination)),
+                            uint64_t(reinterpret_cast<uintptr_t>(source)), bytes, m_state->stream) == 0;
+  }
 } // namespace remix::forward::lightmap::denoising
 #else
 namespace remix::forward::lightmap::denoising {
@@ -177,6 +187,7 @@ namespace remix::forward::lightmap::denoising {
   bool CudaGraph::ready() const { return false; }
   bool CudaGraph::capture(const std::function<void()> &) { return false; }
   void CudaGraph::launch() {}
+  bool CudaGraph::copyDevice(void *, const void *, size_t) { return false; }
   void CudaGraph::invalidate() noexcept {}
   void CudaGraph::disable() noexcept {}
 } // namespace remix::forward::lightmap::denoising
