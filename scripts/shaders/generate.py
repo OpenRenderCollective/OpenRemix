@@ -20,6 +20,7 @@ OPTIMIZED = {'pathtrace'}
 # Offline transport benefits from inlining too, but retains its word-array ABI.
 INLINED = {'bake'}
 BACKENDS = {
+    'style_test': ('forward::test::style_input', 'vulkan1.1', ('query',)),
     'mask_test': ('forward::test::mask_input', 'vulkan1.1', ('decode',)),
     'water_ray': ('forward::water::hardware', 'vulkan1.2', ('frag',)),
     'water_test': ('forward::test::water_input', 'vulkan1.1', ('vert', 'frag', 'query', 'depth')),
@@ -38,6 +39,8 @@ BACKENDS = {
 
 
 def shader_directory(backend):
+    if backend == 'style_test':
+        return ROOT / 'tests/forward/style_shaders'
     if backend == 'mask_test':
         return ROOT / 'tests/forward/mask_shaders'
     if backend == 'water_ray':
@@ -107,6 +110,8 @@ def defines_for(backend, stage, stages):
     if stage == 'sharcUpdate': defines += ['-DSHARC_UPDATE_PASS=1']
     source_stage = 'comp' if defines else stage
     source = directory / (backend + '.' + source_stage)
+    if backend == 'style_test':
+        source = directory / 'query.comp'
     if backend == 'mask_test':
         source = directory / 'decode.comp'
     if backend == 'water_ray':

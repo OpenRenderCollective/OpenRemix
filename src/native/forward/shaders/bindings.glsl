@@ -9,6 +9,7 @@ layout(set = 0, binding = 0, std140) uniform Frame {
   mat4 localShadows[48];
   vec4 localPositions[8];
   vec4 localSettings;
+  vec4 styleScales[32];
   uvec4 occlusion;
 } frame;
 struct Light {

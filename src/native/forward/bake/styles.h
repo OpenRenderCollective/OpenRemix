@@ -10,6 +10,7 @@ namespace remix::forward::bake {
     StyleStatus status = StyleStatus::Missing;
     bool operator==(const StyleScale &) const = default;
   };
+  std::vector<uint32_t> styleIds(const scene::BakeScene &captured);
   // An attributed RGB component can follow one scalar only if every member of
   // its style group agrees. Missing/changed/non-scalar groups return zero with
   // an explicit reason, preventing stale baked colour or glow. Other groups

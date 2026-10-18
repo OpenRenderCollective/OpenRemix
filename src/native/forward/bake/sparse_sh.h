@@ -1,0 +1,45 @@
+#pragma once
+#include "forward/bake/styles.h"
+#include "forward/lightmap/layout.h"
+#include <span>
+
+namespace remix::forward::bake::sparse {
+  constexpr uint32_t magic = 0x48535352, version = 1, tileSide = 16;
+  constexpr uint32_t headerWords = 12, entryWords = 8, coefficientWords = 14;
+  using Coefficients = std::array<Vec4, 9>; // RGB only; alpha/geometry never belongs to a style
+  struct Dimensions {
+    uint32_t pageSize = 0, pages = 0, probes = 0;
+    bool operator==(const Dimensions &) const = default;
+  };
+  // Maps contain record index + 1; zero denotes an entirely black block.
+  // Surface records form 16x16 tiles; probes use individual records.
+  struct Component {
+    uint32_t style = 0;
+    std::vector<uint32_t> surface, probes, coefficients;
+  };
+  class Builder {
+  public:
+    Builder(Dimensions dimensions, uint64_t maximumBytes);
+    void add(uint32_t style, const lightmap::Layout &layout, std::span<const Result> surfaces,
+             std::span<const Result> probes, std::stop_token cancelled = {});
+    std::vector<uint32_t> serialize(std::stop_token cancelled = {}) const;
+    uint64_t bytes() const;
+    const Dimensions &dimensions() const { return m_dimensions; }
+
+  private:
+    Dimensions m_dimensions;
+    uint64_t m_maximumBytes;
+    std::vector<Component> m_components;
+  };
+  // Full validation before a cache or external blob reaches the GPU. Requires
+  // canonical offsets, sorted unique styles, finite half values and block bounds.
+  void validate(std::span<const uint32_t> words, Dimensions expected,
+                std::span<const uint32_t> styles, uint64_t maximumBytes);
+  // CPU reference sampling of validated data. Returns signed contributions;
+  // callers combine these with base SH before the final irradiance clamp.
+  Coefficients probe(std::span<const uint32_t> words, uint32_t style, uint32_t index);
+  Coefficients surface(std::span<const uint32_t> words, uint32_t style,
+                       uint32_t page, uint32_t x, uint32_t y);
+  Vec3 surfaceIrradiance(std::span<const uint32_t> words, std::span<const StyleScale> scales,
+                         Vec4 coordinate, Vec3 normal);
+} // namespace remix::forward::bake::sparse

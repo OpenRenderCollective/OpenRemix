@@ -10,8 +10,20 @@ layout(set = 0, binding = IRRADIANCE_BINDING, std430) readonly buffer BakedIrrad
   vec4 bakeOriginSpacing;
   uvec4 bakeDimensions;
   vec4 bakeSettings;
-  IrradianceProbe bakeProbes[];
+  uvec4 bakeRecords[]; // 16 vectors per probe; optional sparse style words follow
 };
+vec4 bakeProbeCoefficient(uint index, uint coefficient) {
+  return uintBitsToFloat(bakeRecords[index * 16u + coefficient]);
+}
+vec4 bakeProbeMoment(uint index, uint face) {
+  return uintBitsToFloat(bakeRecords[index * 16u + 9u + face]);
+}
+vec4 bakeProbeStatistics(uint index) {
+  return uintBitsToFloat(bakeRecords[index * 16u + 15u]);
+}
+#ifdef STYLED_BAKE
+vec3 styledProbeIrradiance(uint index, float sh[9]);
+#endif
 bool bakeCell(inout vec3 position, vec3 normal, out uvec3 base, out vec3 fraction) {
   if (bakeDimensions.w == 0u)
     return false;
@@ -28,17 +40,17 @@ float bakeProbeWeight(vec3 position, vec3 normal, uvec3 coordinate, vec3 fractio
   vec3 factors = mix(1 - fraction, fraction, vec3(upper));
   float weight = factors.x * factors.y * factors.z;
   index = (coordinate.z * bakeDimensions.y + coordinate.y) * bakeDimensions.x + coordinate.x;
-  if (bakeProbes[index].statistics.w < .5 || weight <= 0)
+  if (bakeProbeStatistics(index).w < .5 || weight <= 0)
     return 0;
   vec3 delta = position - (bakeOriginSpacing.xyz + vec3(coordinate) * bakeOriginSpacing.w);
   if (bakeSettings.z > .5)
-    delta -= vec3(bakeProbes[index].irradiance[0].w, bakeProbes[index].irradiance[1].w,
-                  bakeProbes[index].irradiance[2].w);
+    delta -= vec3(bakeProbeCoefficient(index, 0u).w, bakeProbeCoefficient(index, 1u).w,
+                  bakeProbeCoefficient(index, 2u).w);
   float distance = length(delta);
   vec3 absolute = abs(delta);
   uint axis = absolute.x >= absolute.y && absolute.x >= absolute.z ? 0u
               : absolute.y >= absolute.z                           ? 1u : 2u;
-  vec4 moments = bakeProbes[index].moments[axis * 2u + (delta[axis] < 0 ? 1u : 0u)];
+  vec4 moments = bakeProbeMoment(index, axis * 2u + (delta[axis] < 0 ? 1u : 0u));
   if (moments.w <= 0)
     return 0;
   if (distance > moments.x) {
@@ -69,7 +81,10 @@ bool bakedIrradiance(vec3 position, vec3 normal, out vec3 result) {
     if (weight <= 0)
       continue;
     for (uint j = 0; j < 9u; ++j)
-      result += weight * bakeProbes[index].irradiance[j].rgb * sh[j];
+      result += weight * bakeProbeCoefficient(index, j).rgb * sh[j];
+#ifdef STYLED_BAKE
+    result += weight * styledProbeIrradiance(index, sh);
+#endif
     total += weight;
   }
   if (total < 1e-4)
@@ -96,7 +111,7 @@ float bakedSkyVisibility(vec3 position, vec3 normal, vec3 ray) {
       continue;
     float visible = 0;
     for (uint axis = 0; axis < 3u; ++axis) {
-      vec4 moments = bakeProbes[index].moments[axis * 2u + (ray[axis] < 0 ? 1u : 0u)];
+      vec4 moments = bakeProbeMoment(index, axis * 2u + (ray[axis] < 0 ? 1u : 0u));
       if (moments.w > 0)
         visible += axes[axis] * pow(clamp(1 - moments.z, 0, 1), 3);
     }

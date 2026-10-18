@@ -1,4 +1,5 @@
 #include "forward/bake/cache.h"
+#include "forward/bake/sparse_sh.h"
 #include "forward/bake/cache_io.h"
 #include "forward/bake/shaders/embedded.h"
 #include "forward/lightmap/denoise.h"
@@ -48,6 +49,7 @@ namespace remix::forward::bake::cache {
       grid.header = input.pod<GridHeader>();
       finite(grid.header.originSpacing);
       finite(grid.header.settings);
+      require(grid.header.settings[3] == 0);
       require(grid.header.originSpacing[3] > 0 && device.storageRange >= sizeof(GridHeader));
       require(grid.header.settings[2] == 0 || (grid.header.settings[2] == 1 && config.relocateProbes));
       const auto maximum =
@@ -268,6 +270,10 @@ namespace remix::forward::bake::cache {
       raw = scene::fastHash(aggregateShader, sizeof(aggregateShader), raw);
       raw = scene::fastHash(aggregateParallelShader, sizeof(aggregateParallelShader), raw);
     }
+    if (c.styledIndirect) {
+      const uint32_t styles[] = {sparse::magic, sparse::version, c.styleStorageMiB};
+      raw = scene::fastHash(styles, sizeof(styles), raw);
+    }
     if (!c.denoiseLightmaps)
       return raw; // preserve existing raw cache entries when this optional stage is disabled
     const uint32_t filter[] = {0x4f49444eu, 1, lightmap::denoiserVersion()};
@@ -296,7 +302,7 @@ namespace remix::forward::bake::cache {
       require(source && source->ready);
       Snapshot result;
       const auto flags = input.pod<uint32_t>();
-      require(flags <= 7 && (!(flags & 1) || config.directDiffuse) &&
+      require(flags <= 15 && (!(flags & 8) || config.styledIndirect) && (!(flags & 1) || config.directDiffuse) &&
               (!(flags & 2) || source->sun.isDistant));
       result.directDiffuse = (flags & 1) != 0;
       result.sun = (flags & 2) != 0;
@@ -329,6 +335,16 @@ namespace remix::forward::bake::cache {
       require(result.pixels.size() == count);
       for (uint16_t value : result.pixels)
         require((value & 0x7c00u) != 0x7c00u);
+      const auto ids = styleIds(*source);
+      require(bool(flags & 8) == (config.styledIndirect && !ids.empty()));
+      if (flags & 8) {
+        const uint64_t baseBytes = sizeof(GridHeader) + result.grid.probes.size() * sizeof(Result);
+        require(baseBytes + 16 < device.storageRange);
+        const uint64_t maximum = std::min(uint64_t(config.styleStorageMiB) << 20,
+                                          uint64_t(device.storageRange) - baseBytes - 15);
+        result.styles = input.array<uint32_t>(maximum / 4);
+        sparse::validate(result.styles, {layout.pageSize, layout.pages, uint32_t(result.grid.probes.size())}, ids, maximum);
+      }
       input.finish();
       return std::optional<Snapshot>{std::move(result)};
     } catch (const std::exception &error) {
@@ -343,6 +359,12 @@ namespace remix::forward::bake::cache {
     try {
       detail::check(cancelled);
       require(view.grid.header.settings[2] == 0 || view.grid.header.settings[2] == 1);
+      require(view.grid.header.settings[3] == 0);
+      if (!view.styles.empty()) {
+        require(view.mixed.lights.source != nullptr);
+        sparse::validate(view.styles, {view.layout.pageSize, view.layout.pages, uint32_t(view.grid.probes.size())},
+                         styleIds(*view.mixed.lights.source), view.styles.size_bytes());
+      }
       for (const auto &probe : view.grid.probes) probeOffsets(view.grid.header, probe);
       require(view.surfaceSamples || std::any_of(view.grid.probes.begin(), view.grid.probes.end(),
                                                  [](const auto &p) { return p.statistics[3] > .5f; }));
@@ -358,7 +380,7 @@ namespace remix::forward::bake::cache {
         require(view.mixed.lights.source != nullptr);
         validateDirectPolicy(*view.mixed.lights.source, view.mixed.lights.directLighting);
       }
-      output.pod(uint32_t(view.directDiffuse) | uint32_t(view.sun) << 1 | uint32_t(hasPolicy) << 2);
+      output.pod(uint32_t(view.directDiffuse) | uint32_t(view.sun) << 1 | uint32_t(hasPolicy) << 2 | uint32_t(!view.styles.empty()) << 3);
       output.pod(view.surfaceSamples);
       output.pod(view.grid.header);
       output.array(view.grid.probes);
@@ -403,6 +425,7 @@ namespace remix::forward::bake::cache {
       output.pod(view.specular.header);
       output.array(view.specular.texels);
       output.array(view.pixels);
+      if (!view.styles.empty()) output.array(view.styles);
       output.finish();
       detail::check(cancelled);
       replace(temporary, file);

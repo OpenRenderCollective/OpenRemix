@@ -9,6 +9,7 @@ namespace remix::forward::bake {
     uint64_t staticOcclusion = 0;
     uint64_t captureRadiance = 0;
     uint64_t captureInputs = 0;
+    uint64_t styledIndirect = 0;
     bool operator==(const ContentHashes &) const = default;
   };
 } // namespace remix::forward::bake

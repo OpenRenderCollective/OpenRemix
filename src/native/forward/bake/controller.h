@@ -17,7 +17,7 @@ namespace remix::forward::bake {
   struct Volume {
     uint64_t hash = 0;
     ContentHashes content;
-    bool directDiffuse = false;
+    bool directDiffuse = false, styledIndirect = false;
     scene::DistantLight sun; // shape provenance; isDistant only when surface sunlight was baked
     probes::Header reflectionHeader;
     float sceneScale = 1;
@@ -63,7 +63,7 @@ namespace remix::forward::bake {
       std::shared_ptr<Job> job;
       std::shared_ptr<Volume> upload;
       std::shared_ptr<Volume> sampled;
-      uint32_t first = 0, count = 0;
+      uint32_t first = 0, count = 0, styled = 0;
       bool preparation = false, radiance = false, surface = false, visibility = false, reflectionSite = false,
            sun = false, overflowVisibility = false, reflectionGeometry = false;
     };
@@ -88,6 +88,7 @@ namespace remix::forward::bake {
     void invalidate();
     void status(uint32_t state, const char *message);
     void activate(VkCommandBuffer command);
+    void recordStyles(VkCommandBuffer command, const Config &config);
     void recordSurfaces(VkCommandBuffer command, const Config &config);
     void recordVisibility(VkCommandBuffer command, const Config &config);
     void recordOverflowVisibility(VkCommandBuffer command, const Config &config);

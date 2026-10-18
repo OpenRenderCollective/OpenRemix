@@ -18,6 +18,9 @@ bool surfaceIrradiance(vec4 coordinate, vec3 normal, out vec4 result) {
     result += textureLod(surfaceAtlas,
                          vec3(coordinate.xy, coordinate.z * SurfaceAtlasLayers + float(coefficient)), 0)
                   * sh[coefficient];
+#ifdef STYLED_BAKE
+  result.rgb += styledSurfaceIrradiance(coordinate, sh);
+#endif
   result = max(result, vec4(0));
   // A valid black chart remains black; it must not fall through to probes.
   return true;

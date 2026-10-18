@@ -1,0 +1,142 @@
+// Included beside the readback Target fixture in rendering.cpp.
+void styledIndirectTests() {
+  for (uint32_t samples : {1u, 2u, 4u}) {
+    Target target(64, 64, true);
+    auto &r = target.raster;
+    remix::forward::Options options;
+    options.samples = samples;
+    options.ambient = 0;
+    options.debugView = 1; // Indirect only: live direct/specular cannot satisfy this test.
+    options.shadows = options.localShadows = options.ssr = false;
+    options.baking.styledIndirect = true;
+    options.baking.denoiseLightmaps = false; // Raw linear reconstruction is checked here.
+    options.baking.styleStorageMiB = 1;
+    options.baking.lightmapFitBudget = false;
+    options.baking.lightmapPageSize = 32;
+    options.baking.lightmapTexels = 1024;
+    options.baking.lightmapLuxelSize = .125f;
+    options.baking.maxProbes = 64;
+    options.baking.spacing = .5f;
+    options.baking.samples = 256;
+    options.baking.bounces = 3;
+    options.baking.batch = 16;
+    options.baking.diskCache = false;
+    options.baking.reflectionProbes = 0;
+    target.enableForward(options);
+    const auto mesh = quad(r, 18001, material(r, 18000, .8f, .8f, .8f));
+    remixapi_InstanceIdentityEXT id{};
+    id.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+    id.instanceId = 18002;
+    id.classification = REMIXAPI_INSTANCE_STATIC_EXT;
+    id.rasterVisible = 1;
+    auto receiver = instance(mesh);
+    receiver.pNext = &id;
+    const auto surface = r.createRetained(receiver);
+    auto ceiling = instance(mesh, -2);
+    ceiling.pNext = &id;
+    ceiling.doubleSided = 1;
+    ceiling.transform.matrix[0][0] = 4;
+    ceiling.transform.matrix[1][1] = -4;
+    id.instanceId = 18003;
+    id.rasterVisible = 0;
+    const uint64_t instances[] = {surface, r.createRetained(ceiling)};
+    remixapi_LightInfoSphereEXT sphere{};
+    sphere.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT;
+    sphere.position = {0, 0, -1};
+    sphere.radius = .2f;
+    remixapi_LightInfo light{};
+    light.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+    light.pNext = &sphere;
+    light.hash = 18004;
+    light.radiance = {32, 8, 2};
+    remixapi_LightHandle authored, live;
+    r.createLight(light, authored);
+    light.hash = 18005;
+    light.radiance = {};
+    r.createLight(light, live);
+    remixapi_BakeSceneStyledLightsInfoEXT request{};
+    auto &base = request.reflections.surfaces.bounds.scene;
+    base = {sizeof(request), REMIXAPI_BAKE_SCENE_STYLED_LIGHTS_VERSION_EXT, 18006, 1, 1,
+            REMIXAPI_BAKE_SCENE_READY_EXT, 2, 0, instances, nullptr};
+    auto &bounds = request.reflections.surfaces.bounds;
+    bounds.minimum[0] = bounds.minimum[1] = -.5f;
+    bounds.maximum[0] = bounds.maximum[1] = .5f;
+    bounds.minimum[2] = -1.5f;
+    bounds.maximum[2] = .25f;
+    const float uv[] = {0, 0, 8, 8, 8, 0, 0, 0, 0, 8, 8, 8};
+    const remixapi_BakeSurfaceChartEXT chart{surface, 0, 0, 0, 6, 9, 9, uv};
+    request.reflections.surfaces.chartRevision = 1;
+    request.reflections.surfaces.chartCount = 1;
+    request.reflections.surfaces.charts = &chart;
+    const remixapi_BakeStyledLightEXT styled{authored, live, 32, 0};
+    request.styledLightCount = 1;
+    request.styledLights = &styled;
+    auto publish = [&] { r.setBakeScene(&base); };
+    auto render = [&](bool charted) {
+      camera(r);
+      if (charted) r.drawRetained(nullptr);
+      else r.drawInstance(instance(mesh)); // Same receiver, through dynamic probe reconstruction.
+      r.drawLight(live);
+      return target.render();
+    };
+    auto until = [&](bool stylePhase = false) {
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+      std::vector<uint8_t> image;
+      do {
+        image = render(true);
+        const auto &stats = target.forward->statistics().baking;
+        if (stats.state == REMIXAPI_BAKE_FAILED_EXT) std::fprintf(stderr, "%s\n", stats.status);
+        require(stats.state != REMIXAPI_BAKE_FAILED_EXT, "Attributed map bake succeeds");
+        if (stylePhase ? std::strstr(stats.status, "Styled indirect") != nullptr : bool(stats.active)) return image;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      } while (std::chrono::steady_clock::now() < deadline);
+      require(false, "Attributed map bake reaches its requested phase");
+      return image;
+    };
+    auto set = [&](float value) {
+      light.radiance = {32 * value, 8 * value, 2 * value};
+      r.updateLight(live, light);
+      publish();
+    };
+    publish();
+    until(true);
+    r.setBakeScene(nullptr); // Cancellation with component submissions in flight.
+    for (uint32_t i = 0; i < remix::gpuFrameCount + 2; ++i) render(true);
+    require(!target.forward->statistics().baking.active, "Cancelled attributed work cannot publish");
+    options.baking.diskCache = true;
+    target.forward->updateLighting(options);
+    publish();
+    auto off = until();
+    const size_t at = (32 * 64 + 32) * 4;
+    const auto frozen = r.bakeScene();
+    const auto volume = target.forward->bakeController()->volume();
+    require(volume && volume->styledIndirect && off[at] < 3,
+            "Initially-off attributed map publishes style storage without residual indirect glow");
+    set(1);
+    auto on = render(true);
+    const auto lit = on[at];
+    require(lit > 8 && r.bakeScene() == frozen, "Surface indirect follows live style without rebaking");
+    set(.5f);
+    const auto partial = render(true);
+    require(partial[at] > 3 && partial[at] < lit, "Surface indirect supports partial style values");
+    set(0);
+    require(render(true)[at] < 3, "Surface indirect switches fully off");
+    set(1);
+    const auto probeOn = render(false);
+    set(0);
+    const auto probeOff = render(false);
+    require(probeOn[at] > 8 && probeOff[at] < 3, "Dynamic receiver probes follow the same live style");
+    set(1);
+    r.setBakeScene(nullptr);
+    for (uint32_t i = 0; i < remix::gpuFrameCount + 2; ++i) render(true);
+    publish();
+    const auto cached = until();
+    require(std::strstr(target.forward->statistics().baking.status, "Cached") &&
+            cached == on && target.forward->bakeController()->volume()->styledIndirect,
+            "Attributed cache reload preserves exact surface pixels and runtime style ownership");
+    std::printf("Styled indirect %ux: surface %u/%u/%u, probe %u/%u; cache and cancellation passed\n",
+                samples, unsigned(off[at]), unsigned(partial[at]), unsigned(lit),
+                unsigned(probeOff[at]), unsigned(probeOn[at]));
+    require(errors.load() == 0, "Attributed map publication is Vulkan validation clean");
+  }
+}

@@ -1,4 +1,4 @@
-#include "forward/bake/controller.h"
+#include "forward/bake/job.h"
 #include "forward/bake/budget.h"
 #include "forward/bake/cache.h"
 #include "forward/bake/receiver_report.h"
@@ -30,64 +30,6 @@ namespace remix::forward::bake {
       std::vector<T>().swap(values);
     }
   } // namespace
-  struct Controller::Job {
-    std::shared_ptr<const scene::BakeScene> source;
-    pipeline::PreparationQueue::Ticket ticket;
-    std::unique_ptr<Transport> transport;
-    Budget budget;
-    Grid grid;
-    lightmap::Layout surfaceLayout;
-    std::vector<Result> surfaces;
-    std::vector<Result> readback; // reused between completed frame slots; avoids clearing every batch
-    std::vector<VisibilityResult> visibilityReadback;
-    std::vector<float> overflowReadback;
-    double readbackMs = 0;
-    uint64_t readbackBytes = 0;
-    std::shared_ptr<mixed::Plan> mixedLights;
-    std::vector<Vec4> visibility;
-    std::vector<lightmap::Direct> direct, directScratch;
-    std::vector<lightmap::Sun> sun;
-    bool hasDirectDiffuse = false, hasSun = false; // survive release of the completed CPU arrays
-    std::filesystem::path cacheFile;
-    uint64_t cacheKey = 0;
-    bool cacheHit = false;
-    uint32_t sunNext = 0, sunReceived = 0;
-    uint32_t visibilityNext = 0, visibilityReceived = 0;
-    bool visibilityFinished = false;
-    std::unique_ptr<mixed::OverflowAudit> overflowAudit;
-    uint32_t overflowNext = 0, overflowReceived = 0;
-    bool overflowFinished = false, overflowPreparing = false;
-    std::vector<uint16_t> surfacePixels;
-    std::shared_ptr<lightmap::Geometry> surfaceGeometry;
-    uint32_t surfaceNext = 0, surfaceReceived = 0;
-    std::vector<Point> reflectionSites;
-    std::vector<uint8_t> usableReflectionSites;
-    uint32_t siteNext = 0, siteReceived = 0;
-    bool sitesPlanned = false;
-    std::vector<probes::FittedRegion> candidateRegions;
-    std::unique_ptr<probes::ProjectionAudit> projectionAudit;
-    uint32_t geometryNext = 0, geometryReceived = 0;
-    bool candidatesPlanned = false;
-    std::vector<probes::Capture> captures;
-    std::vector<Point> captureRays;
-    probes::Data specular;
-    std::stop_source cancellation;
-    uint32_t captureNext = 0, captureReceived = 0;
-    bool capturePlanned = false, filtering = false;
-    enum class FinishStage { None, Reflections, Denoising, Atlas, Geometry, Cache };
-    std::atomic<FinishStage> finishStage{FinishStage::None};
-    std::atomic<uint32_t> denoisedCharts{0}, denoiseChartCount{0};
-    uint32_t next = 0, received = 0;
-    bool initialized = false, prepared = false, failed = false;
-    void prepareResources(VkPhysicalDevice physical, VkDevice device, const Config &config, float lightCutoff,
-                          uint32_t queueFamily);
-    bool consumeVisibility(uint32_t slot, uint32_t first, uint32_t count, bool local, bool overflow);
-    uint32_t count(Work work, const Config &config, uint32_t remaining, uint32_t samples,
-                   uint32_t bounces = 1) {
-      return budget.count(work, config.batch, transport->timingSupported() ? config.gpuBudgetMs : 0, samples,
-                          bounces, remaining);
-    }
-  };
   bool Controller::Job::consumeVisibility(uint32_t slot, uint32_t first, uint32_t count, bool local,
                                          bool overflow) {
     if (overflow) {
@@ -153,6 +95,7 @@ namespace remix::forward::bake {
           captures = std::move(cached->captures);
           specular = std::move(cached->specular);
           surfacePixels = std::move(cached->pixels);
+          styleWords = std::move(cached->styles);
           surfaceReceived = cached->surfaceSamples;
           hasDirectDiffuse = cached->directDiffuse;
           hasSun = cached->sun;
@@ -223,6 +166,7 @@ namespace remix::forward::bake {
     options.initialBatchPoints = 1024;
     options.queueFamily = queueFamily;
     options.textureResolution = config.textureResolution;
+    options.lightingComponents = config.styledIndirect && !styleIds(*source).empty();
     transport = std::make_unique<Transport>();
     transport->initialize(physical, device, source, options);
   }
@@ -290,7 +234,15 @@ namespace remix::forward::bake {
             job.readback.resize(submission.count);
           const auto results = std::span(job.readback).first(submission.count);
           job.transport->read(slot, results);
-          if (submission.reflectionGeometry) {
+          if (submission.styled) {
+            try {
+              if (!job.styles) throw std::logic_error("Attributed readback has no owner");
+              job.styles->consume(submission.styled, submission.surface, submission.first, results);
+            } catch (const std::exception &) {
+              job.failed = true;
+              status(REMIXAPI_BAKE_FAILED_EXT, "Invalid attributed irradiance readback");
+            }
+          } else if (submission.reflectionGeometry) {
             if (!job.projectionAudit->observe(submission.first, results)) {
               job.failed = true;
               status(REMIXAPI_BAKE_FAILED_EXT, "Invalid reflection projection geometry");
@@ -333,7 +285,7 @@ namespace remix::forward::bake {
                              (submission.overflowVisibility ? sizeof(float) :
                               submission.visibility || submission.sun
                                   ? sizeof(VisibilityResult) : sizeof(Result));
-        (submission.radiance             ? job.captureReceived
+        if (!submission.styled) (submission.radiance             ? job.captureReceived
          : submission.reflectionGeometry ? job.geometryReceived
          : submission.reflectionSite     ? job.siteReceived
          : submission.visibility         ? job.visibilityReceived
@@ -653,19 +605,28 @@ namespace remix::forward::bake {
             releaseStorage(owner->direct);
             releaseStorage(owner->sun);
             const char *samples = std::getenv("REMIX_DEBUG_BAKE_SURFACE_SAMPLES");
-            if (!samples || std::strcmp(samples, "1") != 0)
+            if (config.styledIndirect && !styleIds(*owner->source).empty()) {
+              VkPhysicalDeviceProperties limits;
+              vkGetPhysicalDeviceProperties(physical, &limits);
+              const uint64_t baseBytes = sizeof(GridHeader) + owner->grid.probes.size() * sizeof(Result);
+              if (baseBytes + 16 >= limits.limits.maxStorageBufferRange)
+                throw std::length_error("No device storage range for attributed lighting");
+              const uint64_t maximum = std::min(uint64_t(config.styleStorageMiB) << 20,
+                  uint64_t(limits.limits.maxStorageBufferRange) - baseBytes - 15);
+              owner->styles = std::make_unique<StyleWork>(*owner->source, owner->surfaceLayout, owner->grid, maximum);
+              owner->styles->takeSurfaces(owner->surfaces, owner->surfaceLayout.points.size());
+            } else if (!samples || std::strcmp(samples, "1") != 0) {
               releaseStorage(owner->surfaces);
+            }
             owner->finishStage.store(Job::FinishStage::Geometry, std::memory_order_relaxed);
             if (!owner->source->charts.empty())
               owner->surfaceGeometry = std::make_shared<lightmap::Geometry>(
                   physical, device, owner->source, owner->surfaceLayout, owner->cancellation.get_token(),
                   owner->mixedLights->charts, owner->mixedLights->directCharts);
             owner->finishStage.store(Job::FinishStage::Cache, std::memory_order_relaxed);
-            if (!owner->cacheFile.empty())
-              cache::write(owner->cacheFile, owner->cacheKey,
-                            {owner->grid, owner->surfaceLayout, *owner->mixedLights, owner->captures,
-                             owner->specular, owner->surfacePixels, owner->surfaceReceived,
-                             owner->hasDirectDiffuse, owner->hasSun}, owner->cancellation.get_token());
+            owner->baseFinished = true;
+            owner->filtering = !owner->styles;
+            if (owner->filtering) owner->saveCache();
           });
       status(REMIXAPI_BAKE_PREPARING_EXT, "Finishing baked lighting assets");
       return;
@@ -715,7 +676,10 @@ namespace remix::forward::bake {
     }
     volume->sceneScale = m_source->sceneScale;
     volume->mixedLights = std::make_shared<mixed::Bindings>(m_job->mixedLights->lights);
-    const size_t bytes = sizeof(GridHeader) + grid.probes.size() * sizeof(Result);
+    const size_t baseBytes = sizeof(GridHeader) + grid.probes.size() * sizeof(Result);
+    const size_t styleBytes = m_job->styleWords.size() * sizeof(uint32_t);
+    volume->styledIndirect = styleBytes != 0;
+    const size_t bytes = (baseBytes + styleBytes + 15) & ~size_t(15);
     const auto specular = probes::serialize(m_job->specular);
     probes::dumpPublishedData(".probes-published.bin", specular.data(), specular.size());
     const size_t surfaceBytes = m_job->surfacePixels.size() * sizeof(uint16_t);
@@ -796,8 +760,16 @@ namespace remix::forward::bake {
     // Hash once at publication, before releasing staging data. Diagnostics can
     // then distinguish input identity from changes in the actual baked result
     // without a GPU readback or a mutable worker-state dependency.
-    probes::dumpPublishedData(".irradiance-published.bin", data.data(), bytes);
-    volume->content.grid = scene::fastHash(data.data(), bytes) | 1;
+    probes::dumpPublishedData(".irradiance-published.bin", data.data(), baseBytes);
+    volume->content.grid = scene::fastHash(data.data(), baseBytes) | 1;
+    if (styleBytes) {
+      volume->content.styledIndirect = scene::fastHash(m_job->styleWords.data(), styleBytes) | 1;
+      std::memcpy(data.data() + baseBytes, m_job->styleWords.data(), styleBytes);
+      auto header = grid.header;
+      header.settings[3] = 1;
+      std::memcpy(data.data(), &header, sizeof(header));
+      probes::dumpPublishedData(".styled-irradiance.bin", m_job->styleWords.data(), styleBytes);
+    }
     volume->content.reflections = scene::fastHash(specular.data(), specular.size()) | 1;
     if (surfaceBytes)
       volume->content.surfaces = scene::fastHash(m_job->surfacePixels.data(), surfaceBytes) | 1;
@@ -972,7 +944,8 @@ namespace remix::forward::bake {
           return;
         if (!m_job) {
           if (!config.samples || config.samples > 8192 || !config.bounces || config.bounces > 8 ||
-              !config.batch || config.batch > 1024)
+              !config.batch || config.batch > 1024 ||
+              (config.styledIndirect && (!config.styleStorageMiB || config.styleStorageMiB > 512)))
             throw std::invalid_argument("Invalid bake batch settings");
           auto job = std::make_shared<Job>();
           job->source = source;
@@ -1005,6 +978,7 @@ namespace remix::forward::bake {
             case Job::FinishStage::Atlas: message = "Encoding surface lightmaps"; break;
             case Job::FinishStage::Geometry: message = "Preparing lightmapped geometry"; break;
             case Job::FinishStage::Cache: message = "Saving baked lighting cache"; break;
+            case Job::FinishStage::Styles: message = "Encoding styled indirect lightmaps"; break;
             case Job::FinishStage::None: break;
             }
             if (message)
@@ -1021,6 +995,10 @@ namespace remix::forward::bake {
         m_statistics.completed = job.received;
         if (job.filtering) {
           activate(command);
+          return;
+        }
+        if (job.baseFinished && job.styles) {
+          recordStyles(command, config);
           return;
         }
         if (!job.prepared) {

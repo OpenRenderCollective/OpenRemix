@@ -134,7 +134,7 @@ namespace remix::forward::bake {
         throw VK_ERROR_TOO_MANY_OBJECTS;
     if (inputs.textures.size() + 1 > properties.limits.maxImageArrayLayers)
       throw VK_ERROR_TOO_MANY_OBJECTS;
-    const auto nodes = lightSelectionTree(inputs.lights, options.lightingComponents);
+    const auto nodes = lightSelectionTree(inputs.lights);
     resolution = options.textureResolution;
     while (resolution > 16 &&
            uint64_t(resolution) * resolution * 8 * (inputs.textures.size() + 1) > options.atlasBudget)
@@ -174,6 +174,10 @@ namespace remix::forward::bake {
     materials = staticBuffer(inputs.materials.data(), inputs.materials.size() * sizeof(Material));
     lights = staticBuffer(inputs.lights.data(), inputs.lights.size() * sizeof(LightData));
     lightNodes = staticBuffer(nodes.data(), nodes.size() * sizeof(scene::LightNode));
+    if (options.lightingComponents) {
+      const auto componentNodes = lightSelectionTree(inputs.lights, true);
+      componentLightNodes = staticBuffer(componentNodes.data(), componentNodes.size() * sizeof(scene::LightNode));
+    }
     textures = std::move(inputs.textures);
     domeLayer = inputs.domeLayer;
     for (;;) {
@@ -413,6 +417,14 @@ namespace remix::forward::bake {
                            std::optional<uint32_t> component) {
     auto &g = *m_gpu;
     auto &slot = g.slots.at(index);
+    if (slot.componentProposal != bool(component)) {
+      const auto nodes = (component ? g.componentLightNodes : g.lightNodes)->descriptor();
+      const VkWriteDescriptorSet write{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+          .dstSet = slot.set, .dstBinding = 9, .descriptorCount = 1,
+          .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &nodes};
+      vkUpdateDescriptorSets(g.device, 1, &write, 0, nullptr);
+      slot.componentProposal = bool(component);
+    }
     Frame frame;
     if (slot.lighting) {
       frame = *slot.lighting;
@@ -534,6 +546,7 @@ namespace remix::forward::bake {
     uint64_t bytes = g.rays.accelerationBytes() + g.rays.buildBytes() + g.atlas->bytes;
     for (const auto *buffer : {g.vertices.get(), g.triangles.get(), g.materials.get(), g.lights.get(), g.lightNodes.get()})
       bytes += buffer->allocationBytes;
+    if (g.componentLightNodes) bytes += g.componentLightNodes->allocationBytes;
     for (const auto &slot : g.slots) {
       bytes += slot.constants->allocationBytes + slot.points->allocationBytes + slot.results->allocationBytes;
       if (slot.liveLights)

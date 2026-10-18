@@ -151,6 +151,8 @@ namespace remix::config {
         result.push_back(scalar("rtx.native.forward.bake", FIELD(forward.baking.enabled), 0, 1));
         result.push_back(scalar("rtx.native.forward.bakeCache", FIELD(forward.baking.diskCache), 0, 1));
         result.push_back(scalar("rtx.native.forward.lightmapDenoise", FIELD(forward.baking.denoiseLightmaps), 0, 1));
+        result.push_back(scalar("rtx.native.forward.styledIndirect", FIELD(forward.baking.styledIndirect), 0, 1));
+        result.push_back(scalar("rtx.native.forward.styleStorageMiB", FIELD(forward.baking.styleStorageMiB), 1, 512));
         result.push_back(scalar("rtx.native.forward.bakeDirectDiffuse", FIELD(forward.baking.directDiffuse), 0, 1));
         result.push_back(scalar("rtx.native.forward.bakeSpacing", FIELD(forward.baking.spacing), .1, 100));
         result.push_back(scalar("rtx.native.forward.bakeProbes", FIELD(forward.baking.maxProbes), 64, 1048576));

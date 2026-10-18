@@ -8,7 +8,9 @@
 #ifndef SHADOW_PASS
 #include "brdf.glsl"
 #include "emitter.glsl"
+#define STYLED_BAKE
 #include "irradiance.glsl"
+#include "style-lighting.glsl"
 #include "lightmap.glsl"
 #include "occlusion.glsl"
 #include "local-shadows.glsl"

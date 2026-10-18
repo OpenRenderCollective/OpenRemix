@@ -185,6 +185,23 @@ namespace remix::forward::test {
     try { ordinary.recordComponent(VK_NULL_HANDLE, 0, points, 32, 256); }
     catch (const std::invalid_argument &) { refused = true; }
     require(refused, "Component passes require explicit preparation with styled sampling power");
+    b::Transport paired;
+    auto componentOptions = defaults;
+    componentOptions.lightingComponents = true;
+    prepare(paired, source, componentOptions);
+    Results baseline, preserved;
+    fixture.begin();
+    ordinary.recordBatch(fixture.command, 0, points, 256, 3, 13);
+    fixture.finish();
+    ordinary.read(0, baseline);
+    fixture.begin();
+    paired.recordBatch(fixture.command, 0, points, 256, 3, 13);
+    fixture.finish();
+    paired.read(0, preserved);
+    for (uint32_t point = 0; point < 4; ++point)
+      require(baseline[point].irradiance == preserved[point].irradiance &&
+              baseline[point].moments == preserved[point].moments,
+              "Preparing style components preserves ordinary base results exactly for cache reuse");
     std::printf("Lighting components: additive SH/radiance max error %.9g; physical scalar mix %.9g; "
                 "serial/parallel, uniform/spatial, alpha coverage and shared acceleration passed\n",
                 maximumSumError, maximumMixError);

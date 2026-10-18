@@ -1,4 +1,5 @@
 #include "forward/lightmap/data.h"
+#include "forward/half.h"
 #include <algorithm>
 #include <bit>
 #include <cmath>
@@ -10,16 +11,6 @@ namespace remix::forward::lightmap {
     void check(std::stop_token cancelled) {
       if (cancelled.stop_requested())
         throw std::runtime_error("Surface lightmap data preparation superseded");
-    }
-    uint16_t half(float value) {
-      if (!std::isfinite(value))
-        throw std::invalid_argument("Nonfinite surface lightmap coefficient");
-      const uint32_t sign = std::bit_cast<uint32_t>(value) >> 16 & 0x8000u;
-      const float magnitude = std::min(std::abs(value), 65000.f);
-      if (magnitude < 6.103515625e-5f)
-        return uint16_t(sign | uint32_t(std::lround(magnitude / 5.960464477539063e-8f)));
-      const uint32_t bits = std::bit_cast<uint32_t>(magnitude) + 0x1000u;
-      return uint16_t(sign | (((bits >> 23) - 112) << 10) | (bits >> 13 & 0x3ffu));
     }
   } // namespace
   std::vector<Mesh> meshes(const scene::BakeScene &scene, const Layout &layout, std::stop_token cancelled,
@@ -125,21 +116,21 @@ namespace remix::forward::lightmap {
       for (uint32_t coefficient = 0; coefficient < 9; ++coefficient)
         for (uint32_t channel = 0; channel < 3; ++channel)
           result[((page * atlasLayers + coefficient) * pageTexels + pixel) * 4 + channel] =
-              half(results[owner].irradiance[coefficient][channel]);
+              half::encode(results[owner].irradiance[coefficient][channel]);
       for (uint32_t channel = 0; channel < 4; ++channel)
         result[((page * atlasLayers + irradianceLayers) * pageTexels + pixel) * 4 + channel] =
-            half(visibility.empty() ? 1.f : std::clamp(visibility[owner][channel], 0.f, 1.f));
+            half::encode(visibility.empty() ? 1.f : std::clamp(visibility[owner][channel], 0.f, 1.f));
       result[((page * atlasLayers + sunVisibilityLayer) * pageTexels + pixel) * 4] =
-          half(sun.empty() ? 1.f : std::clamp(sun[owner].visibility, 0.f, 1.f));
+          half::encode(sun.empty() ? 1.f : std::clamp(sun[owner].visibility, 0.f, 1.f));
       if (!sun.empty())
         for (uint32_t coefficient = 0; coefficient < irradianceLayers; ++coefficient)
           result[((page * atlasLayers + coefficient) * pageTexels + pixel) * 4 + 3] =
-              half(sun[owner].direct[coefficient]);
+              half::encode(sun[owner].direct[coefficient]);
       if (!direct.empty())
         for (uint32_t coefficient = 0; coefficient < irradianceLayers; ++coefficient)
           for (uint32_t channel = 0; channel < 4; ++channel)
             result[((page * atlasLayers + directLayer + coefficient) * pageTexels + pixel) * 4 + channel] =
-                half(direct[owner][coefficient][channel]);
+                half::encode(direct[owner][coefficient][channel]);
     }
     return result;
   }

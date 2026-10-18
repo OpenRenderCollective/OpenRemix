@@ -16,7 +16,7 @@ namespace remix::forward::bake {
     float sunDistance = 0; // scene units; covers the complete frozen geometry bounds
     std::unique_ptr<Timing> timing;
     RayScene rays;
-    std::unique_ptr<Buffer> vertices, triangles, materials, lights, lightNodes;
+    std::unique_ptr<Buffer> vertices, triangles, materials, lights, lightNodes, componentLightNodes;
     struct Upload {
       std::unique_ptr<Buffer> source;
       VkBuffer target;
@@ -48,6 +48,7 @@ namespace remix::forward::bake {
       VkDescriptorSet set = VK_NULL_HANDLE;
       uint32_t count = 0, capacity = 0;
       uint32_t samples = 0;
+      bool componentProposal = false;
       bool compactVisibility = false;
       bool scalarVisibility = false;
     };

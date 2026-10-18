@@ -24,6 +24,18 @@ namespace remix::forward::bake {
       std::optional<float> minimum, maximum;
     };
   } // namespace
+  std::vector<uint32_t> styleIds(const scene::BakeScene &captured) {
+    std::vector<uint32_t> result;
+    for (const auto &light : captured.lights) {
+      if (!light.style) continue;
+      if (light.style > 127 || light.dynamic)
+        throw std::invalid_argument("Invalid captured stationary style group");
+      result.push_back(light.style);
+    }
+    std::sort(result.begin(), result.end());
+    result.erase(std::unique(result.begin(), result.end()), result.end());
+    return result;
+  }
   std::vector<StyleScale> styleScales(const scene::BakeScene &captured,
                                      std::span<const scene::SphereLight> current) {
     std::unordered_multimap<uint64_t, const scene::SphereLight *> lights;

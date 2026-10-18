@@ -1670,3 +1670,21 @@ map lights with immutable bake definitions. `replay.lightStyleValue` selects a
 snapshot multiplier in [0,4], including initially off. These host-only settings
 are not engine lightstyle animation or gameplay playback. The default replay
 keeps its previous unstyled scope.
+
+`rtx.native.forward.styledIndirect=1` enables experimental attributed indirect
+surface and dynamic-receiver probe lighting for captured stationary lightstyles.
+It traces one component per style group, shares the base probe visibility and
+atlas mapping, and stores RGB SH in sparse 16×16 surface tiles and individual
+probe records. Runtime intensity scales are resolved from the complete live
+light set in authored-envelope units. Signed components are combined before
+clamping. Incompatible geometry, missing emitters or non-scalar colour changes
+disable the affected indirect component rather than retaining stale light.
+
+The option defaults off. `rtx.native.forward.styleStorageMiB` limits encoded
+component storage (default128, range1–512MiB); the combined probe buffer also
+obeys the device's storage range. Exceeding the budget fails publication without
+silently dropping a group. One surface workspace is reused between groups;
+this reduces retained intermediate storage, but component passes still repeat
+tracing. The cache validates group ownership, sparse offsets, finite half values
+and allocation bounds before upload. Styled indirect has its own cache identity.
+It does not yet relight reflection captures or provide arbitrary live RGB changes.

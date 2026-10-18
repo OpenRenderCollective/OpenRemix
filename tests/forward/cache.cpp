@@ -1,5 +1,6 @@
 #include "forward/bake/cache.h"
 #include "forward/bake/cache_io.h"
+#include "forward/bake/sparse_sh.h"
 #include "scene/fixtures.h"
 #include <fstream>
 #include <random>
@@ -284,6 +285,59 @@ int main(int argc, char **argv) {
     aggregate.lights.directLighting.lights[0] = f::bake::DirectMode::Dynamic;
     require(!saveAggregate() && loadAggregate().has_value(),
             "Invalid moving-light membership cannot replace a completed aggregate cache");
+  }
+  {
+    auto styledSource = std::make_shared<scene::BakeScene>(*source);
+    styledSource->lights[0].style = 32;
+    auto styledPlan = data.mixed;
+    styledPlan.lights.source = styledSource;
+    auto styledConfig = config;
+    styledConfig.styledIndirect = true;
+    styledConfig.styleStorageMiB = 1;
+    const auto styledKey = bc::key(source->contentHash, styledConfig, .001f, device);
+    require(styledKey != identity, "Attributed storage has a separate cache identity");
+    auto changedBudget = styledConfig;
+    changedBudget.styleStorageMiB = 2;
+    require(bc::key(source->contentHash, changedBudget, .001f, device) != styledKey,
+            "Encoded style budget participates in attributed cache identity");
+    auto layout = data.layout;
+    layout.points.resize(1);
+    layout.owners.resize(64, f::lightmap::unowned);
+    layout.owners[0] = 0;
+    f::bake::Result surface;
+    surface.irradiance[1] = {-1, 2, -3, 0};
+    f::bake::sparse::Builder builder({8, 1, 8}, 1u << 20);
+    builder.add(32, layout, {&surface, 1}, data.grid.probes);
+    auto words = builder.serialize();
+    const auto styledFile = root / "styled.bake";
+    auto saveStyled = [&] {
+      return bc::write(styledFile, styledKey,
+          {data.grid, data.layout, styledPlan, data.captures, data.specular, data.pixels,
+           data.surfaceSamples, data.directDiffuse, data.sun, words});
+    };
+    auto loadStyled = [&] { return bc::read(styledFile, styledKey, styledSource, styledConfig, device); };
+    require(saveStyled(), "Attributed cache writes validated surface and probe SH");
+    const auto restored = loadStyled();
+    require(restored && restored->styles == words && restored->pixels == data.pixels &&
+                restored->grid.probes.size() == data.grid.probes.size() &&
+                std::memcmp(restored->grid.probes.data(), data.grid.probes.data(), data.grid.probes.size() * sizeof(f::bake::Result)) == 0,
+            "Attributed cache retains exact style words and shared base pixels/probes");
+    require(!bc::read(styledFile, styledKey, styledSource, config, device),
+            "A caller-supplied key cannot enable style payloads under legacy policy");
+    auto wrongGroup = std::make_shared<scene::BakeScene>(*styledSource);
+    wrongGroup->lights[0].style = 97;
+    require(!bc::read(styledFile, styledKey, wrongGroup, styledConfig, device),
+            "A matching file key cannot override captured style ownership");
+    auto constrained = device;
+    constrained.storageRange = uint32_t(sizeof(f::bake::GridHeader) + data.grid.probes.size() * sizeof(f::bake::Result) + 32);
+    require(!bc::read(styledFile, styledKey, styledSource, styledConfig, constrained),
+            "Combined probe and style allocation obeys device storage range before allocation");
+    words[1]++;
+    require(!saveStyled() && loadStyled().has_value(), "Invalid sparse data cannot replace a completed cache");
+    words[1]--;
+    data.grid.header.settings[3] = 1;
+    require(!saveStyled() && loadStyled().has_value(), "Cached headers cannot request GPU reads beyond their probe array");
+    data.grid.header.settings[3] = 0;
   }
   std::puts("Bake cache: identity, complete payloads, chart UVs, mixed light bindings, corruption and "
             "cancellation passed");

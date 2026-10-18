@@ -89,6 +89,7 @@ forward_budget_test = executable('remix-forward-budget-test', 'budget.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Forward+ adaptive bake work and lighting identity', forward_budget_test)
 forward_cache_test = executable('remix-forward-cache-test', 'cache.cpp',
+  '../../src/native/forward/bake/sparse_sh.cpp', '../../src/native/forward/bake/styles.cpp',
   '../../src/native/forward/bake/cache.cpp', '../../src/native/forward/bake/policy.cpp', '../../src/native/forward/probes/data.cpp',
   '../../src/native/forward/lightmap/data.cpp', '../../src/native/forward/mixed/data.cpp',
   '../../src/native/forward/mixed/occlusion.cpp', '../../src/native/forward/mixed/masks.cpp', '../../src/native/forward/mixed/mask_codec.cpp', '../../src/native/forward/mixed/mask_palette.cpp',
@@ -129,3 +130,22 @@ style_scale_test = executable('remix-bake-style-scale-test', 'styles.cpp',
   '../../src/native/forward/bake/styles.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Styled component scalar units, ownership and stale colour rejection', style_scale_test)
+
+sparse_style_test = executable('remix-bake-sparse-style-test', 'sparse_sh.cpp',
+  '../../src/native/forward/bake/sparse_sh.cpp', '../../src/native/forward/lightmap/data.cpp',
+  '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Sparse styled SH preserves atlas mapping, signed values and bounded storage', sparse_style_test)
+
+style_work_test = executable('remix-bake-style-work-test', 'style_work.cpp',
+  '../../src/native/forward/bake/style_work.cpp', '../../src/native/forward/bake/sparse_sh.cpp',
+  '../../src/native/forward/bake/styles.cpp', '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : [scene_library, lightmap_denoise_library], cpp_args : test_cpp_args)
+test('Attributed workspace preserves group ownership across fences and cancellation', style_work_test)
+
+if get_option('gpu_tests')
+  sparse_style_gpu_test = executable('remix-bake-sparse-style-gpu-test', 'sparse_sh_gpu.cpp',
+    include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+    cpp_args : test_cpp_args)
+  test('Sparse styled GPU surface and probe reconstruction', sparse_style_gpu_test, timeout : 120)
+endif

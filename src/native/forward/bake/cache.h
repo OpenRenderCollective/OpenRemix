@@ -28,6 +28,7 @@ namespace remix::forward::bake::cache {
     std::span<const uint16_t> pixels;
     uint32_t surfaceSamples;
     bool directDiffuse, sun;
+    std::span<const uint32_t> styles{};
   };
   struct Snapshot {
     Grid grid;
@@ -36,6 +37,7 @@ namespace remix::forward::bake::cache {
     std::vector<probes::Capture> captures;
     probes::Data specular;
     std::vector<uint16_t> pixels;
+    std::vector<uint32_t> styles;
     uint32_t surfaceSamples = 0;
     bool directDiffuse = false, sun = false;
   };

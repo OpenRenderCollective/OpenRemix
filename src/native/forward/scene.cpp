@@ -1,3 +1,4 @@
+#include "forward/bake/styles.h"
 #include "forward/gpu.h"
 #include "forward/material.h"
 #include "forward/probes/capture_dump.h"
@@ -126,6 +127,11 @@ namespace remix::forward {
       casters.merge(frozenShadowBounds());
     auto &data = frame.data;
     data = {};
+    if (const auto &volume = baking->volume(); volume && volume->styledIndirect && volume->mixedLights) {
+      for (const auto &scale : bake::styleScales(*volume->mixedLights->source, sources))
+        if (scale.status == bake::StyleStatus::Ready)
+          data.styleScales[scale.style / 4][scale.style % 4] = scale.value;
+    }
     if (baking->volume())
       data.occlusion = baking->volume()->occlusionParameters;
     data.camera = resources.camera();

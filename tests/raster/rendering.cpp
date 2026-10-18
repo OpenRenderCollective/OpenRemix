@@ -2199,6 +2199,7 @@ namespace {
       require(errors.load() == 0, "Mixed sunlight is Vulkan validation clean");
     }
   }
+#include "styled_indirect.h"
   void bakingTests() {
     Target target(64, 64, true);
     auto &r = target.raster;
@@ -3921,6 +3922,7 @@ int main(int argc, char **argv) {
   else if (argc>2 && std::strcmp(argv[2],"lightmaps")==0) { surfaceLightmapTests(); surfaceLightmapTests(true); surfaceLightmapTests(true, true); }
   else if (argc>2 && std::strcmp(argv[2],"local-shadows")==0) mixedLightingTests(true);
   else if (argc>2 && std::strcmp(argv[2],"baked-direct")==0) mixedLightingTests(true, true);
+  else if (argc>2 && std::strcmp(argv[2],"styled-indirect")==0) styledIndirectTests();
   else if (argc>2 && std::strcmp(argv[2],"styled-mixed")==0) mixedLightingTests(true, true, true);
   else if (argc>2 && std::strcmp(argv[2],"mixed")==0) mixedLightingTests();
   else if (argc>2 && std::strcmp(argv[2],"compact-occlusion")==0) compactOcclusionTests();

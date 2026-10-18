@@ -23,7 +23,7 @@ namespace remix {
         << state.bakeContent.reflections << "\", \"surfaces\": \"" << state.bakeContent.surfaces
         << "\", \"staticOcclusion\": \"" << state.bakeContent.staticOcclusion
         << "\", \"captureRadiance\": \"" << state.bakeContent.captureRadiance << "\", \"captureInputs\": \""
-        << state.bakeContent.captureInputs << "\"}"
+        << state.bakeContent.captureInputs << "\", \"styledIndirect\": \"" << state.bakeContent.styledIndirect << "\"}"
         << ",\n  \"metersPerUnit\": " << state.reflectionSceneScale
         << ",\n  \"resolution\": " << header.parameters[1] << ",\n  \"probes\": [";
     auto vector = [&](const auto &v) { out << '[' << v[0] << ", " << v[1] << ", " << v[2] << ']'; };
