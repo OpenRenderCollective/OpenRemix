@@ -61,6 +61,8 @@ int main(int argc, char **argv) {
   };
   qualityKey([](auto &c) { c.directDiffuse = !c.directDiffuse; });
   qualityKey([](auto &c) { c.aggregateDiffuse = !c.aggregateDiffuse; });
+  qualityKey([](auto &c) { c.fullyBakedLights = !c.fullyBakedLights; });
+  qualityKey([](auto &c) { c.bakedGeometryLights = !c.bakedGeometryLights; });
   qualityKey([](auto &c) { c.antialiasSun = !c.antialiasSun; });
   qualityKey([](auto &c) { c.denoiseLightmaps = !c.denoiseLightmaps; });
   qualityKey([](auto &c) { c.relocateProbes = !c.relocateProbes; });

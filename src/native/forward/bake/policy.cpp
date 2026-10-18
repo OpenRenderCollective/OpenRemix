@@ -1,6 +1,7 @@
 #include "forward/bake/policy.h"
 #include <stdexcept>
 #include <unordered_map>
+#include <remix/remix_native_ext.h>
 
 namespace remix::forward::bake {
   DirectPolicy directPolicy(const scene::BakeScene &source, std::span<const uint32_t> bakedLights,
@@ -42,7 +43,8 @@ namespace remix::forward::bake {
     }
     return aggregate;
   }
-  DirectPolicy staticMixedPolicy(const scene::BakeScene &source) {
+  DirectPolicy staticAggregatePolicy(const scene::BakeScene &source, DirectMode mode,
+                                     bool bakeGeometryLights) {
     std::unordered_map<uint64_t, bool> eligible;
     for (const auto &light : source.lights) {
       const bool fixed = !light.dynamic && !light.style;
@@ -54,7 +56,19 @@ namespace remix::forward::bake {
     for (uint32_t i = 0; i < source.lights.size(); ++i)
       if (eligible.at(source.lights[i].id))
         selected.push_back(i);
-    return directPolicy(source, selected, DirectMode::BakedMixed);
+    auto policy = directPolicy(source, selected, mode);
+    // Geometry emission is captured with the baked environment. Explicit
+    // point/spot lights keep analytic highlights and moving-caster corrections.
+    // Apply only after shared-identity eligibility excludes styled/moving sets.
+    for (const auto index : selected) {
+      const auto &light = source.lights[index];
+      if (light.bakeHint == REMIXAPI_LIGHT_BAKING_REQUIRE_MIXED_EXT)
+        policy.lights[index] = DirectMode::BakedMixed;
+      else if (bakeGeometryLights &&
+               (light.triangle || light.bakeHint == REMIXAPI_LIGHT_BAKING_PREFER_BAKED_EXT))
+        policy.lights[index] = DirectMode::Baked;
+    }
+    return policy;
   }
   bool applyDirectPolicy(const scene::BakeScene &source, const DirectPolicy &policy,
                          std::span<LightData> lights) {

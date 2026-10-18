@@ -92,7 +92,10 @@ namespace remix {
     remixapi_LightInfo info{};
     info.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
     info.hash = hash;
-    info.pNext = &merged;
+    remixapi_LightInfoBakingEXT baking{REMIXAPI_STRUCT_TYPE_LIGHT_BAKING_EXT, &merged,
+        found->second.emitters.empty() ? REMIXAPI_LIGHT_BAKING_DEFAULT_EXT
+            : remixapi_LightBakingHintEXT(found->second.emitters.front().bakeHint)};
+    info.pNext = &baking;
     remixapi_LightHandle handle{};
     createLight(info, handle);
     if (!replaceTransform) {
@@ -108,6 +111,11 @@ namespace remix {
     if (!info.hash)
       throw invalid;
     auto ext = [&](remixapi_StructType type) { return extension(info.pNext, type); };
+    const auto *baking = static_cast<const remixapi_LightInfoBakingEXT *>(
+        ext(REMIXAPI_STRUCT_TYPE_LIGHT_BAKING_EXT));
+    const uint32_t bakeHint = baking ? uint32_t(baking->hint) : 0;
+    if (bakeHint > REMIXAPI_LIGHT_BAKING_REQUIRE_MIXED_EXT)
+      throw invalid;
     auto *usd = static_cast<const remixapi_LightInfoUSDEXT *>(ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_USD_EXT));
     Vec position{}, x{1, 0, 0}, y{0, 1, 0}, z{0, 0, -1}, radiance = vec(info.radiance);
     float radius = .5f, width = 1, height = 1, span = 1, angle = .53f;
@@ -323,6 +331,7 @@ namespace remix {
     source.direction = {direction[0], direction[1], direction[2]};
     definition.revision = ++m_lightRevision;
     definition.dynamic = info.isDynamic != 0;
+    for (auto &emitter : definition.emitters) emitter.bakeHint = bakeHint;
     m_lights[info.hash] = std::move(definition);
     handle = reinterpret_cast<remixapi_LightHandle>(uintptr_t(info.hash));
   }

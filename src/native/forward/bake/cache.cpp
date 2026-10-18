@@ -296,6 +296,14 @@ namespace remix::forward::bake::cache {
       const uint32_t aggregate[] = {0x41474752u, 1};
       raw = scene::fastHash(aggregate, sizeof(aggregate), raw);
     }
+    if (c.fullyBakedLights) {
+      const uint32_t fullyBaked[] = {0x46554c4cu, 2}; // omit fully baked probe visibility
+      raw = scene::fastHash(fullyBaked, sizeof(fullyBaked), raw);
+    }
+    if (c.bakedGeometryLights) {
+      const uint32_t geometry[] = {0x47454f4du, 2};
+      raw = scene::fastHash(geometry, sizeof(geometry), raw);
+    }
     if (c.relocateProbes) {
       const uint32_t relocation[] = {0x524c4f43u, 1};
       raw = scene::fastHash(relocation, sizeof(relocation), raw);

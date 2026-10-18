@@ -23,8 +23,10 @@ namespace remix::forward::bake {
   DirectPolicy directPolicy(const scene::BakeScene &source, std::span<const uint32_t> bakedLights,
                             DirectMode selectedMode = DirectMode::Baked);
   // Permanent aggregate RGB excludes an entire shared identity if any emitter
-  // is moving or styled. All selected lights retain correction visibility.
-  DirectPolicy staticMixedPolicy(const scene::BakeScene &source);
+  // is moving or styled. The selected mode controls retained mixed visibility.
+  DirectPolicy staticAggregatePolicy(const scene::BakeScene &source,
+                                     DirectMode mode = DirectMode::BakedMixed,
+                                     bool bakeGeometryLights = false);
   bool validateDirectPolicy(const scene::BakeScene &source, const DirectPolicy &policy);
   // Validate the complete policy before changing any packed input. Returns true
   // when aggregate direct sampling is needed; never reorders captured lights.

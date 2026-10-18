@@ -22,7 +22,7 @@ namespace remix::forward::bake {
         const uint32_t pairs =
             uint32_t(std::min<uint64_t>(131072, (budget - offsets) / sizeof(ProbeVisibility::Entry)));
         auto plan = planProbeVisibility(job.grid, job.source->lights, m_lightCutoff, pairs,
-                                        job.cancellation.get_token());
+                                        job.cancellation.get_token(), job.mixedLights->lights.directLighting);
         if (plan && !plan->tasks.empty()) {
           job.localProbeTasks = std::move(plan->tasks);
           job.localProbes.emplace(uint32_t(job.grid.probes.size()), uint32_t(job.source->lights.size()),

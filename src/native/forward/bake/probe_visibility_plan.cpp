@@ -13,12 +13,14 @@ namespace remix::forward::bake {
   std::optional<ProbeVisibilityPlan> planProbeVisibility(const Grid &grid,
                                                          std::span<const scene::SphereLight> lights,
                                                          float cutoff, uint32_t maximumPairs,
-                                                         std::stop_token cancelled) {
+                                                         std::stop_token cancelled,
+                                                         const DirectPolicy &directLighting) {
     check(cancelled);
     const float spacing = grid.header.originSpacing[3], bias = grid.header.settings[0];
     if (grid.points.size() != grid.probes.size() || grid.points.size() > UINT32_MAX ||
         lights.size() >= (1u << 24) || !std::isfinite(spacing) || spacing <= 0 || !std::isfinite(bias) ||
-        bias < 0 || !std::isfinite(cutoff) || cutoff <= 0)
+        bias < 0 || !std::isfinite(cutoff) || cutoff <= 0 ||
+        (!directLighting.lights.empty() && directLighting.lights.size() != lights.size()))
       throw std::invalid_argument("Invalid local probe visibility planning inputs");
     std::vector<uint32_t> sorted;
     Bounds bounds;
@@ -61,6 +63,8 @@ namespace remix::forward::bake {
       const auto &light = lights[lightIndex];
       if (light.dynamic)
         continue;
+      if (!directLighting.lights.empty() && !retainsVisibility(directLighting.lights[lightIndex]))
+        continue; // Fully baked diffuse needs no per-light probe shadow mask.
       for (float value : light.position)
         if (!std::isfinite(value))
           throw std::invalid_argument("Non-finite local light position");

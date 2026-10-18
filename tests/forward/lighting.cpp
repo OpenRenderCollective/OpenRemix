@@ -331,6 +331,18 @@ int main() {
               config::set(settings, "rtx.native.forward.experimentalAggregateDiffuse", "0") ==
                   config::SetResult::Success && !settings.forward.baking.aggregateDiffuse,
           "Aggregate map experiments require an explicit profile opt-in and can return to the default path");
+  require(!settings.forward.baking.fullyBakedLights &&
+              config::set(settings, "rtx.native.forward.experimentalFullyBakedLights", "1") ==
+                  config::SetResult::Success && settings.forward.baking.fullyBakedLights &&
+              config::set(settings, "rtx.native.forward.experimentalFullyBakedLights", "0") ==
+                  config::SetResult::Success && !settings.forward.baking.fullyBakedLights,
+          "Fully baked lighting policy is explicit and leaves the default mixed path unchanged");
+  require(!settings.forward.baking.bakedGeometryLights &&
+              config::set(settings, "rtx.native.forward.experimentalBakedGeometryLights", "1") ==
+                  config::SetResult::Success && settings.forward.baking.bakedGeometryLights &&
+              config::set(settings, "rtx.native.forward.experimentalBakedGeometryLights", "0") ==
+                  config::SetResult::Success && !settings.forward.baking.bakedGeometryLights,
+          "Baked geometry selection is an independent opt-in with a reversible default");
   require(config::set(settings, "rtx.native.forward.bakeDirectDiffuse", "0") == config::SetResult::Success &&
               !settings.forward.baking.directDiffuse,
           "Baked direct-diffuse policy participates in independent profile persistence");

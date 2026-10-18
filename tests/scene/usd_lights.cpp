@@ -14,6 +14,42 @@ void require(bool value, const char *message) {
 int main() {
   try {
     remix::NativeResources resources;
+    {
+      remix::NativeResources hinted;
+      remixapi_LightInfoBakingEXT baking{REMIXAPI_STRUCT_TYPE_LIGHT_BAKING_EXT, nullptr,
+                                       REMIXAPI_LIGHT_BAKING_PREFER_BAKED_EXT};
+      remixapi_LightInfoSphereEXT sphere{};
+      sphere.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT;
+      sphere.pNext = &baking;
+      sphere.radius = 1;
+      remixapi_LightInfo input{};
+      input.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+      input.pNext = &sphere;
+      input.hash = 12345;
+      input.radiance = {1, 2, 3};
+      remixapi_LightHandle light{};
+      hinted.createLight(input, light);
+      baking.hint = REMIXAPI_LIGHT_BAKING_REQUIRE_MIXED_EXT;
+      hinted.drawLight(light);
+      require(hinted.sphereLights().front().bakeHint == REMIXAPI_LIGHT_BAKING_PREFER_BAKED_EXT,
+              "Light baking hint is copied by value from an optional chain");
+      hinted.updateLight(light, input);
+      require(hinted.sphereLights().front().bakeHint == REMIXAPI_LIGHT_BAKING_REQUIRE_MIXED_EXT,
+              "Authored mixed policy survives a live light update");
+      baking.hint = remixapi_LightBakingHintEXT(99);
+      bool rejected = false;
+      try { hinted.updateLight(light, input); }
+      catch (remixapi_ErrorCode error) { rejected = error == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS; }
+      require(rejected && hinted.sphereLights().front().bakeHint == REMIXAPI_LIGHT_BAKING_REQUIRE_MIXED_EXT,
+              "Invalid baking hints cannot replace a valid light");
+      remixapi_LightInfoUSDEXT replacement{};
+      replacement.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_USD_EXT;
+      const auto replaced = hinted.overrideLight(light, 12346, replacement, false);
+      hinted.drawLight(replaced);
+      for (const auto &emitter : hinted.sphereLights())
+        require(emitter.bakeHint == REMIXAPI_LIGHT_BAKING_REQUIRE_MIXED_EXT,
+                "USD asset replacement preserves authored light policy");
+    }
     remixapi_LightInfoUSDEXT usd{};
     usd.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_USD_EXT;
     for (int c = 0; c < 3; ++c)

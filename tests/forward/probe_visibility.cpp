@@ -119,6 +119,17 @@ int main() {
     lights[1].dynamic = true;
     lights[2].style = 32;
     const auto planned = planProbeVisibility(grid, lights, .001f, 7);
+    DirectPolicy policy;
+    policy.lights.assign(lights.size(), DirectMode::Baked);
+    policy.lights[2] = DirectMode::Mixed;
+    policy.lights[4] = DirectMode::BakedMixed;
+    const auto mixedOnly = planProbeVisibility(grid, lights, .001f, 7, {}, policy);
+    require(mixedOnly && mixedOnly->selectedLights == 2 && mixedOnly->tasks.size() == 2 &&
+                std::all_of(mixedOnly->tasks.begin(), mixedOnly->tasks.end(),
+                            [](const auto &task) { return task.light == 2 || task.light == 4; }),
+            "Fully baked lights schedule no probe visibility while mixed and styled indices remain stable");
+    policy.lights.pop_back();
+    rejects([&] { planProbeVisibility(grid, lights, .001f, 7, {}, policy); });
     require(planned && planned->tasks.size() == 7 && planned->candidates < 100,
             "Spatial lookup prunes distant probes rather than enumerating the full light/probe product");
     require(std::any_of(planned->tasks.begin(), planned->tasks.end(),

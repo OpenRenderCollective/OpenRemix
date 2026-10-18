@@ -1,5 +1,6 @@
 #include "scene/fixtures.h"
 #include <limits>
+#include <remix/remix_native_ext.h>
 
 using namespace remix;
 using namespace remix::test;
@@ -186,6 +187,24 @@ int main() {
   require(resources.bakeLightsCurrent(), "Recapturing changed definitions restores lighting validity");
   require(resources.bakeScene()->contentHash != lit->contentHash && lit->lights[0].radiance[0] == 1,
           "Changed light definitions recapture while prior lighting remains immutable");
+  const auto beforeHint = resources.bakeScene();
+  remixapi_LightInfoBakingEXT baking{REMIXAPI_STRUCT_TYPE_LIGHT_BAKING_EXT, nullptr,
+                                   REMIXAPI_LIGHT_BAKING_PREFER_BAKED_EXT};
+  sphere.pNext = &baking;
+  resources.updateLight(lamp, light);
+  require(!resources.bakeLightsCurrent(), "Changing representation hints invalidates captured light definitions");
+  resources.setBakeScene(&info);
+  const auto bakedHint = resources.bakeScene();
+  require(bakedHint->lights[0].bakeHint == REMIXAPI_LIGHT_BAKING_PREFER_BAKED_EXT &&
+              bakedHint->contentHash != beforeHint->contentHash && beforeHint->lights[0].bakeHint == 0,
+          "Captured hint is immutable and participates in bake content identity");
+  baking.hint = REMIXAPI_LIGHT_BAKING_REQUIRE_MIXED_EXT;
+  resources.updateLight(lamp, light);
+  resources.setBakeScene(&info);
+  require(resources.bakeScene()->contentHash != bakedHint->contentHash &&
+              bakedHint->lights[0].bakeHint == REMIXAPI_LIGHT_BAKING_PREFER_BAKED_EXT,
+          "Different valid policy hints cannot reuse one baked content identity");
+  sphere.pNext = nullptr;
   light.isDynamic = 1;
   resources.updateLight(lamp, light);
   rejected([&] { resources.setBakeScene(&info); });

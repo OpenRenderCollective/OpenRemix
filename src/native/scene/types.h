@@ -224,6 +224,7 @@ namespace remix {
       // (remixapi_InstanceIdentityEXT): kept in the light tree's dynamic part.
       bool dynamic = false;
       uint32_t style = 0; // captured stationary style; excluded from shared indirect transport
+      uint32_t bakeHint = 0; // optional engine-agnostic static representation preference
       bool operator==(const SphereLight &) const = default;
     };
     struct DomeLight {

@@ -1112,6 +1112,32 @@ namespace {
         options.baking.aggregateDiffuse = true;
         target.forward->updateLighting(options);
         pixels = until("", true);
+        options.baking.fullyBakedLights = true;
+        target.forward->updateLighting(options);
+        pixels = until("", true);
+        const auto fullyBaked = target.forward->bakeController()->volume();
+        require(fullyBaked && fullyBaked->mixedLights &&
+                    fullyBaked->mixedLights->directLighting.lights[0] ==
+                        remix::forward::bake::DirectMode::Baked &&
+                    !fullyBaked->mixedLights->retainsVisibility(0) &&
+                    pixels[left] < 3 && pixels[right] > 80,
+                "Fully static direct lighting comes from the aggregate without mixed visibility data");
+        options.debugView = 3;
+        target.enableForward(options, true);
+        pixels = render(false);
+        require(pixels[right] < 3 && pixels[right + 1] < 3 && pixels[right + 2] < 3,
+                "Fully baked receivers do not reevaluate static analytic specular");
+        options.baking.enabled = false;
+        options.debugView = 0;
+        target.enableForward(options, true);
+        for (uint32_t frame = 0; frame <= remix::gpuFrameCount; ++frame) pixels = render(false);
+        require(pixels[right] > 80,
+                "Removing baked coverage restores analytic direct lighting fallback");
+        options.debugView = 0;
+        options.baking.enabled = true;
+        options.baking.fullyBakedLights = false;
+        target.enableForward(options, true);
+        pixels = until("", true);
       }
       if (directDiffuse && !aggregateDiffuse) {
         const auto baked = pixels[right];

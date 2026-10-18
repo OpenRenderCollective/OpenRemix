@@ -2,6 +2,22 @@
 #pragma once
 #include "remix_c.h"
 
+// Optional LightInfo pNext. A backend may use this hint when choosing static
+// lighting representation. Absence preserves its normal policy. Moving and
+// styled lights remain live regardless of a baked preference.
+#define REMIXAPI_STRUCT_TYPE_LIGHT_BAKING_EXT ((remixapi_StructType)0x7fff1032)
+typedef enum remixapi_LightBakingHintEXT {
+  REMIXAPI_LIGHT_BAKING_DEFAULT_EXT = 0,
+  REMIXAPI_LIGHT_BAKING_PREFER_BAKED_EXT = 1,
+  REMIXAPI_LIGHT_BAKING_REQUIRE_MIXED_EXT = 2
+} remixapi_LightBakingHintEXT;
+
+typedef struct remixapi_LightInfoBakingEXT {
+  remixapi_StructType sType;
+  const void* pNext;
+  remixapi_LightBakingHintEXT hint;
+} remixapi_LightInfoBakingEXT;
+
 // Optional pNext on opaque MaterialInfo. Nonzero roughness/metalness constants
 // or a roughness/metalness/normal map automatically select EON + GGX. Completely
 // zero-initialized legacy parameters retain Lambert shading. This override also

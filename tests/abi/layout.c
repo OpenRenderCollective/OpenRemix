@@ -8,6 +8,8 @@
 #include "posix_layout.h"
 #endif
 _Static_assert(REMIXAPI_VERSION_MINOR == 1003, "ABI line");
+_Static_assert(sizeof(remixapi_LightInfoBakingEXT) == 24, "Optional light baking hint ABI");
+_Static_assert(offsetof(remixapi_LightInfoBakingEXT, hint) == 16, "Light baking hint alignment");
 _Static_assert(sizeof(remixapi_BakeSceneInfoEXT) == 56, "Bake scene extension ABI");
 _Static_assert(sizeof(remixapi_BakeSceneBoundsInfoEXT) == 80, "Bake scene bounds extension ABI");
 _Static_assert(offsetof(remixapi_BakeSceneBoundsInfoEXT, minimum) == 56, "Bake scene bounds alignment");

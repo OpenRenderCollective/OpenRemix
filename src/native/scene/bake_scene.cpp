@@ -160,6 +160,10 @@ namespace remix::scene {
       hash.add(light.softness);
       hash.add(light.focus);
       if (light.style) hash.add(light.style);
+      if (light.bakeHint) {
+        hash.add(uint32_t(0x42414b45u));
+        hash.add(light.bakeHint);
+      }
     }
     uint64_t styledShapeHash(std::span<const SphereLight> lights) {
       Hash hash;

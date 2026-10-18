@@ -92,7 +92,10 @@ namespace remix::forward::bake {
                                          float lightCutoff, uint32_t queueFamily) {
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physical, &properties);
-    const auto directLighting = config.aggregateDiffuse ? staticMixedPolicy(*source) : DirectPolicy{};
+    const auto directLighting = (config.aggregateDiffuse || config.fullyBakedLights || config.bakedGeometryLights)
+        ? staticAggregatePolicy(*source, config.fullyBakedLights ? DirectMode::Baked : DirectMode::BakedMixed,
+                                 config.bakedGeometryLights)
+        : DirectPolicy{};
     const char *samples = std::getenv("REMIX_DEBUG_BAKE_SURFACE_SAMPLES");
     if (config.diskCache && (!samples || std::strcmp(samples, "1") != 0)) {
       cache::Device deviceIdentity{properties.vendorID, properties.deviceID, properties.driverVersion,
@@ -1140,7 +1143,8 @@ namespace remix::forward::bake {
           status(REMIXAPI_BAKE_WAITING_EXT, "Waiting for complete static map inputs");
           return;
         }
-        if (config.aggregateDiffuse && !resources.bakeLightsCurrent()) {
+        if ((config.aggregateDiffuse || config.fullyBakedLights || config.bakedGeometryLights) &&
+            !resources.bakeLightsCurrent()) {
           if (m_job || m_volume)
             invalidate();
           status(REMIXAPI_BAKE_WAITING_EXT, "Static lights changed; waiting for updated map inputs");

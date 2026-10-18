@@ -7,6 +7,8 @@ namespace remix::forward::bake {
     // Experimental profile control, not exposed in F12. Automatic map use
     // waits for full-map quality/performance acceptance.
     bool aggregateDiffuse = false;
+    bool fullyBakedLights = false; // experimental: static lights have no per-light baked-receiver work
+    bool bakedGeometryLights = false; // experimental: retain explicit lights as mixed, fully bake emitting geometry
     bool antialiasSun = true; // bounded receiver-area refinement at detected shadow edges
     bool diskCache = true;
     bool denoiseLightmaps = true; // OIDN RTLightmap where available; unsupported builds retain raw transport

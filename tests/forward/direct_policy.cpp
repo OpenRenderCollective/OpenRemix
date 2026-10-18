@@ -1,6 +1,7 @@
 #include "forward/bake/policy.h"
 #include <cstdio>
 #include <stdexcept>
+#include <remix/remix_native_ext.h>
 
 using namespace remix;
 namespace bake = forward::bake;
@@ -58,6 +59,12 @@ int main() try {
   require(!bake::applyDirectPolicy(source, mixed, packed) && packed[0].shaping[2] == 0,
           "An all-mixed policy disables aggregate sampling and clears previous static tags");
   const auto corrected = bake::directPolicy(source, selected, bake::DirectMode::BakedMixed);
+  const auto fullyStatic = bake::staticAggregatePolicy(source, bake::DirectMode::Baked);
+  require(fullyStatic.lights[0] == bake::DirectMode::Baked &&
+              fullyStatic.lights[1] == bake::DirectMode::Baked &&
+              fullyStatic.lights[2] == bake::DirectMode::Dynamic &&
+              !bake::retainsVisibility(fullyStatic.lights[0]),
+          "Fully baked static policy omits mixed data without changing moving-light membership");
   require(bake::applyDirectPolicy(source, corrected, packed) && packed[0].shaping[2] == 1 &&
               packed[3].shaping[2] == 1 &&
               bake::retainsVisibility(corrected.lights[0]) &&
@@ -68,21 +75,44 @@ int main() try {
               invalid([&] { bake::directPolicy(source, selected, bake::DirectMode::Dynamic); }),
           "A selected aggregate cannot silently become an ordinary mixed or moving light");
   auto styled = source;
+  auto geometry = source;
+  geometry.lights[0].triangle = true;
+  const auto geometryPolicy = bake::staticAggregatePolicy(geometry, bake::DirectMode::BakedMixed, true);
+  require(geometryPolicy.lights[0] == bake::DirectMode::Baked &&
+              geometryPolicy.lights[1] == bake::DirectMode::BakedMixed &&
+              geometryPolicy.lights[2] == bake::DirectMode::Dynamic,
+          "Geometry-only selection retains explicit mixed highlights without a map-wide light cap");
+  geometry.lights[0].style = 32;
+  geometry.lights[1].id = geometry.lights[0].id;
+  const auto styledGeometry = bake::staticAggregatePolicy(geometry, bake::DirectMode::BakedMixed, true);
+  require(styledGeometry.lights[0] == bake::DirectMode::Mixed &&
+              styledGeometry.lights[1] == bake::DirectMode::Mixed,
+          "Styled geometry and shared identities retain live controllable contributions");
+  auto hinted = source;
+  hinted.lights[0].bakeHint = REMIXAPI_LIGHT_BAKING_PREFER_BAKED_EXT;
+  hinted.lights[1].bakeHint = REMIXAPI_LIGHT_BAKING_REQUIRE_MIXED_EXT;
+  const auto hintedPolicy = bake::staticAggregatePolicy(hinted, bake::DirectMode::BakedMixed, true);
+  require(!hinted.lights[0].triangle && hintedPolicy.lights[0] == bake::DirectMode::Baked &&
+              hintedPolicy.lights[1] == bake::DirectMode::BakedMixed,
+          "Generic policy hints classify sphere emission without inferring host-specific identities");
+  require(bake::staticAggregatePolicy(hinted, bake::DirectMode::Baked).lights[1] ==
+              bake::DirectMode::BakedMixed,
+          "Required mixed lighting survives a broad fully baked preference");
   styled.lights[0].style = 32;
   require(invalid([&] { bake::directPolicy(styled, selected, bake::DirectMode::BakedMixed); }),
           "Retaining visibility does not make styled energy safe for permanent aggregate RGB");
-  require(bake::staticMixedPolicy(source).lights ==
+  require(bake::staticAggregatePolicy(source).lights ==
               std::vector{bake::DirectMode::BakedMixed, bake::DirectMode::BakedMixed,
                           bake::DirectMode::Dynamic, bake::DirectMode::BakedMixed},
           "Automatic static policy aggregates fixed emitters while retaining moving membership");
   styled.lights[1].id = styled.lights[0].id;
-  const auto styledPolicy = bake::staticMixedPolicy(styled);
+  const auto styledPolicy = bake::staticAggregatePolicy(styled);
   require(styledPolicy.lights[0] == bake::DirectMode::Mixed &&
               styledPolicy.lights[1] == bake::DirectMode::Mixed &&
               styledPolicy.lights[3] == bake::DirectMode::BakedMixed,
           "One styled emitter excludes every sibling with the same identity from permanent RGB");
   source.lights[0].id = source.lights[2].id;
-  const auto movingPolicy = bake::staticMixedPolicy(source);
+  const auto movingPolicy = bake::staticAggregatePolicy(source);
   require(movingPolicy.lights[0] == bake::DirectMode::Mixed &&
               movingPolicy.lights[2] == bake::DirectMode::Dynamic,
           "A shared moving identity cannot acquire partially immutable diffuse ownership");

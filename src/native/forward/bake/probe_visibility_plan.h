@@ -1,5 +1,6 @@
 #pragma once
 #include "forward/bake/grid.h"
+#include "forward/bake/policy.h"
 #include <stop_token>
 
 namespace remix::forward::bake {
@@ -17,5 +18,6 @@ namespace remix::forward::bake {
   std::optional<ProbeVisibilityPlan> planProbeVisibility(const Grid &grid,
                                                          std::span<const scene::SphereLight> lights,
                                                          float cutoff, uint32_t maximumPairs,
-                                                         std::stop_token cancelled = {});
+                                                         std::stop_token cancelled = {},
+                                                         const DirectPolicy &directLighting = {});
 } // namespace remix::forward::bake

@@ -208,6 +208,8 @@ namespace remix::forward {
         if (captured != mixed::none) {
           light.shaping[3] = float(captured + 1);
           light.corners[2][3] = float(volume->mixedLights->bakedDiffuse(captured));
+          if (light.corners[2][3] > 0 && !volume->mixedLights->retainsVisibility(captured))
+            light.corners[2][3] = 2; // fully baked; fallback remains available outside baked coverage
         }
       }
       for (int i = 0; i < 3; ++i)
