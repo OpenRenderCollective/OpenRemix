@@ -62,6 +62,12 @@ int main() try {
           "The complete proposal normalizes and bounds inverse selection weights");
   const auto single = bake::lightSelectionTree(std::span(lights).first(1));
   require(single.size() == 1 && single[0].links[2] == 0, "One light keeps its original index");
+  auto styled = lights[0];
+  styled.shaping[3] = 97;
+  const auto unstyledProposal = bake::lightSelectionTree({&styled, 1});
+  const auto componentProposal = bake::lightSelectionTree({&styled, 1}, true);
+  require(unstyledProposal[0].minimumPower[3] == 0 && componentProposal[0].minimumPower[3] > 0,
+          "Component proposals retain styled power without changing the default shared-light proposal");
   std::printf("Bake light hierarchy: %zu emitters, %zu nodes; normalized mixed PDF, minimum %.8f\n",
               lights.size(), nodes.size(), minimum);
 } catch (const std::exception &error) {

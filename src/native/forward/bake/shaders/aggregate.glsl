@@ -2,7 +2,7 @@
 // requiring a separate visibility query for every light at every texel.
 // The all-light mixture PDF stays valid when only a subset contributes.
 void accumulateBakedDiffuse(inout RayResult value, vec3 origin, Medium medium, uint ordinal) {
-  if ((rayFrame.control.w & 4u) == 0u || rayFrame.counts.y == 0u)
+  if (!lightingStyleSelected(0u) || (rayFrame.control.w & 4u) == 0u || rayFrame.counts.y == 0u)
     return;
   // Independent of the diffuse path's random stream and batch-local indices.
   uint seed = floatBitsToUint(origin.x) * 73856093u ^ floatBitsToUint(origin.y) * 19349663u ^

@@ -87,6 +87,13 @@ namespace remix::forward::bake {
     const float distance = options.distance / source->sceneScale, bias = options.bias / source->sceneScale;
     if (!std::isfinite(distance * distance) || !(bias > 0))
       throw std::invalid_argument("Bake units exceed the distance-moment precision range");
+    if (options.lightingComponents) {
+      if (inputs.lights.size() != source->lights.size())
+        throw std::invalid_argument("Component proposal does not match captured lights");
+      for (size_t i = 0; i < inputs.lights.size(); ++i)
+        if (inputs.lights[i].shaping[3] != float(source->lights[i].style))
+          throw std::invalid_argument("Component proposal does not match captured style ownership");
+    }
     auto next = std::make_unique<Gpu>();
     next->physical = physical;
     next->device = device;
@@ -127,7 +134,7 @@ namespace remix::forward::bake {
         throw VK_ERROR_TOO_MANY_OBJECTS;
     if (inputs.textures.size() + 1 > properties.limits.maxImageArrayLayers)
       throw VK_ERROR_TOO_MANY_OBJECTS;
-    const auto nodes = lightSelectionTree(inputs.lights);
+    const auto nodes = lightSelectionTree(inputs.lights, options.lightingComponents);
     resolution = options.textureResolution;
     while (resolution > 16 &&
            uint64_t(resolution) * resolution * 8 * (inputs.textures.size() + 1) > options.atlasBudget)
@@ -214,6 +221,16 @@ namespace remix::forward::bake {
                               uint32_t samples, uint32_t bounces, uint32_t firstSample) {
     record(command, index, points, samples, bounces, firstSample, Mode::Irradiance);
   }
+  void Transport::recordComponent(VkCommandBuffer command, uint32_t index, std::span<const Point> points,
+                                  uint32_t component, uint32_t samples, uint32_t bounces,
+                                  uint32_t firstSample) {
+    record(command, index, points, samples, bounces, firstSample, Mode::Irradiance, component);
+  }
+  void Transport::recordRadianceComponent(VkCommandBuffer command, uint32_t index,
+                                          std::span<const Point> rays, uint32_t component,
+                                          uint32_t bounces, uint32_t samples, uint32_t firstSample) {
+    record(command, index, rays, samples, bounces, firstSample, Mode::Radiance, component);
+  }
   void Transport::recordRadiance(VkCommandBuffer command, uint32_t index, std::span<const Point> rays,
                                  uint32_t bounces, uint32_t samples, uint32_t firstSample) {
     record(command, index, rays, samples, bounces, firstSample, Mode::Radiance);
@@ -247,12 +264,22 @@ namespace remix::forward::bake {
            directDiffuse ? Mode::SunDirectVisibility : Mode::SunVisibility);
   }
   void Transport::record(VkCommandBuffer command, uint32_t index, std::span<const Point> points,
-                         uint32_t samples, uint32_t bounces, uint32_t firstSample, Mode mode) {
+                         uint32_t samples, uint32_t bounces, uint32_t firstSample, Mode mode,
+                         std::optional<uint32_t> component) {
     auto &g = *m_gpu;
     if (g.options.deviceLocalBatches)
       throw std::logic_error("Device-local batches require GPU-produced points");
     if (!g.prepared)
       throw std::logic_error("Bake transport must be prepared before tracing");
+    if (component) {
+      if (!g.options.lightingComponents || *component > combinedLighting ||
+          (*component != 0 && *component != combinedLighting &&
+           std::none_of(g.source->lights.begin(), g.source->lights.end(),
+                        [&](const auto &light) { return light.style == *component; })))
+        throw std::invalid_argument("Lighting component requires a prepared captured style proposal");
+      if (g.slots.at(index).lighting)
+        throw std::logic_error("Lighting components require immutable captured light definitions");
+    }
     if (points.empty() || points.size() > g.options.batchPoints || samples < 1 || samples > 8192 ||
         bounces < 1 || bounces > 8 || uint64_t(points.size()) * samples * bounces > g.options.rayBudget)
       throw std::invalid_argument("Bake batch exceeds its point, sample or bounce limits");
@@ -271,7 +298,7 @@ namespace remix::forward::bake {
     g.reserveSlot(index, uint32_t(points.size()));
     auto &slot = g.slots.at(index);
     slot.points->write(points.data(), points.size_bytes());
-    dispatch(command, index, uint32_t(points.size()), samples, bounces, firstSample, mode);
+    dispatch(command, index, uint32_t(points.size()), samples, bounces, firstSample, mode, component);
   }
   Transport::DeviceBatch Transport::deviceBatch(uint32_t index) const {
     const auto &g = *m_gpu;
@@ -382,7 +409,8 @@ namespace remix::forward::bake {
     dispatch(command, index, count, 1, bounces, 0, Mode::Radiance);
   }
   void Transport::dispatch(VkCommandBuffer command, uint32_t index, uint32_t count, uint32_t samples,
-                           uint32_t bounces, uint32_t firstSample, Mode mode) {
+                           uint32_t bounces, uint32_t firstSample, Mode mode,
+                           std::optional<uint32_t> component) {
     auto &g = *m_gpu;
     auto &slot = g.slots.at(index);
     Frame frame;
@@ -403,7 +431,7 @@ namespace remix::forward::bake {
     const bool aggregate = mode == Mode::Irradiance && g.aggregateDiffuse && !slot.lighting;
     frame.control = {g.domeLayer, firstSample, uint32_t(mode), uint32_t(g.hasDielectrics) |
                          (g.options.lightImportanceSampling && !slot.lighting ? 2u : 0u) |
-                         (aggregate ? 4u : 0u)};
+                         (aggregate ? 4u : 0u) | (component ? lightingComponentFlag | (*component << lightingComponentShift) : 0u)};
     slot.constants->write(&frame, sizeof(frame));
     slot.count = count;
     slot.samples = samples;

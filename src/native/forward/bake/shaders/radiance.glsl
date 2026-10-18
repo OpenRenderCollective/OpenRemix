@@ -46,7 +46,9 @@ bool traceRay(vec3 origin, vec3 direction, float maximum, inout uint seed, out H
 }
 #include "optics.glsl"
 #include "decal.glsl"
+#include "components.glsl"
 vec3 environment(vec3 direction) {
+  if (!lightingStyleSelected(0u)) return vec3(0);
   vec3 d = normalize((rayFrame.dome * vec4(direction, 0)).xyz);
   vec2 uv = vec2(atan(d.z, d.x) / (2 * RayPi) + .5, acos(clamp(d.y, -1, 1)) / RayPi);
   return rayFrame.domeRadiance.rgb * sampleMap(rayFrame.control.x, uv, uvec3(1, 3, 1)).rgb;
@@ -102,24 +104,30 @@ vec3 directLight(vec3 p, vec3 n, inout uint seed, Medium medium) {
     direction = basisDirection(direction, mix(cos(rayFrame.sunDirection.w), 1, random(seed)),
                                2 * RayPi * random(seed));
     float cosine = max(dot(n, direction), 0);
-    if (cosine > 0)
-      irradiance += rayFrame.sunRadiance.rgb * cosine * visibility(p, direction, rayFrame.trace.x, seed, medium);
+    if (cosine > 0) {
+      vec3 passing = visibility(p, direction, rayFrame.trace.x, seed, medium);
+      if (lightingStyleSelected(0u))
+        irradiance += rayFrame.sunRadiance.rgb * cosine * passing;
+    }
   }
   if (rayFrame.counts.y == 0u)
     return irradiance;
   float selectionPdf;
   uint index = selectLight(p, n, random(seed), selectionPdf);
-  // Styled direct visibility is baked separately; its mutable energy must not
-  // become permanent shared indirect lighting or frozen capture radiance.
-  if (rayLights[index].shaping.w > .5)
+  bool contributes = lightingStyleSelected(uint(rayLights[index].shaping.w));
+  if (!contributes && !lightingComponentsEnabled())
     return irradiance;
+  // Components must consume the same random stream, including unselected
+  // emitter and visibility samples. Otherwise their paths and PDFs diverge.
   vec3 direction;
   float distance, weight;
   if (sampleEmitter(rayLights[index], p, seed, direction, distance, weight)) {
     float cosine = max(dot(n, direction), 0);
-    if (cosine > 0)
-      irradiance += rayLights[index].radiance.rgb * (weight * cosine / selectionPdf) *
-                    visibility(p, direction, emitterShadowDistance(rayLights[index], distance), seed, medium);
+    if (cosine > 0) {
+      vec3 passing = visibility(p, direction, emitterShadowDistance(rayLights[index], distance), seed, medium);
+      if (contributes)
+        irradiance += rayLights[index].radiance.rgb * (weight * cosine / selectionPdf) * passing;
+    }
   }
   return irradiance;
 }
@@ -184,7 +192,7 @@ vec3 radiance(vec3 origin, vec3 direction, Medium medium, inout uint seed, out f
     float reflected;
     emissionLobes(m.shading.emission, m.shading.state, base, sampleMap(m.textures.x, uv, m.flags.xyz),
                   emitted, emission, reflected);
-    result += throughput * emission * modulation;
+    if (lightingStyleSelected(0u)) result += throughput * emission * modulation;
     float metallic = m.textures.z != 0u ? mapValue(sampleMap(m.textures.z, uv, m.flags.xyz),
                                                    m.shading.remap[1], m.shading.maps.w)
                                         : m.shading.pbr.y;

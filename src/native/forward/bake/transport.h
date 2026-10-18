@@ -14,6 +14,7 @@ namespace remix::forward::bake {
     uint32_t initialBatchPoints = 0, queueFamily = VK_QUEUE_FAMILY_IGNORED;
     bool parallel = true; // sample-parallel offline transport; single radiance rays and site queries stay serial
     bool lightImportanceSampling = true; // static snapshots; live lighting retains uniform selection
+    bool lightingComponents = false; // retain styled power in the immutable component proposal
     DirectPolicy directLighting; // explicit fully baked diffuse membership; default preserves legacy output
     bool cpuReadback = true; // prefer CPU-cached results for baking
     bool deviceLocalBatches = false; // GPU-produced points/results; CPU batch/read APIs are unavailable
@@ -44,6 +45,19 @@ namespace remix::forward::bake {
     // The selected slot's prior fence has completed. Call after recordPrepare.
     void recordBatch(VkCommandBuffer command, uint32_t slot, std::span<const Point> points, uint32_t samples,
                      uint32_t bounces = 3, uint32_t firstSample = 0);
+    // Separate authored lighting: 0 is the unstyled base, 1..127 a captured
+    // style group, and combinedLighting includes all groups for reference.
+    // Requires Options.lightingComponents. Components share random paths and
+    // proposal PDFs, so RGB/SH can be summed; geometry metadata is shared, not
+    // additive. Style energy uses captured authored envelope units. This does
+    // not schedule, store or publish style lightmaps/probes by itself.
+    static constexpr uint32_t combinedLighting = 128;
+    void recordComponent(VkCommandBuffer command, uint32_t slot, std::span<const Point> points,
+                         uint32_t component, uint32_t samples, uint32_t bounces = 3,
+                         uint32_t firstSample = 0);
+    void recordRadianceComponent(VkCommandBuffer command, uint32_t slot, std::span<const Point> rays,
+                                 uint32_t component, uint32_t bounces = 3, uint32_t samples = 1,
+                                 uint32_t firstSample = 0);
     // Directional radiance for reflection capture. Point.normal.xyz is a ray
     // direction; no surface-normal bias is applied. Result.irradiance[0] holds
     // RGB radiance and first-hit distance, without SH/cosine convolution.
@@ -126,8 +140,9 @@ namespace remix::forward::bake {
       Geometry
     };
     void record(VkCommandBuffer command, uint32_t slot, std::span<const Point> points, uint32_t samples,
-                uint32_t bounces, uint32_t firstSample, Mode mode);
+                uint32_t bounces, uint32_t firstSample, Mode mode,
+                std::optional<uint32_t> component = {});
     void dispatch(VkCommandBuffer command, uint32_t slot, uint32_t count, uint32_t samples, uint32_t bounces,
-                  uint32_t firstSample, Mode mode);
+                  uint32_t firstSample, Mode mode, std::optional<uint32_t> component = {});
   };
 } // namespace remix::forward::bake

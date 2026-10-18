@@ -124,3 +124,8 @@ direct_policy_test = executable('remix-bake-direct-policy-test', 'direct_policy.
   '../../src/native/forward/bake/policy.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Baked diffuse policy preserves mixed and moving light identities', direct_policy_test)
+
+style_scale_test = executable('remix-bake-style-scale-test', 'styles.cpp',
+  '../../src/native/forward/bake/styles.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Styled component scalar units, ownership and stale colour rejection', style_scale_test)

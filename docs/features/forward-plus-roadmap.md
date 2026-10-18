@@ -59,6 +59,9 @@ when baked lighting is active; a failed bake instead displays its failure messag
    Complete style-dependent indirect components for surfaces and probes, indexed static visibility on
    dynamic receivers, and reflection relighting. Verify actual engine on/off/flicker and initially-off
    loads across maps. The direct-only stage does not complete styled lighting or identify ceiling artifacts.
+   Attributed SH/radiance transport and authored-envelope scalar resolution are available internally.
+   They still need compact chart/probe storage, component caches and coordinated runtime publication.
+   Current component passes repeat tracing; require measured work/memory bounds before default use.
 4. **Finish material and water parity.** Exercise authored/replaced normals, roughness, emission,
    transmission distance and IOR in the live engine. Document supported approximations and repair
    discrepancies that break compatibility with the shared material system.

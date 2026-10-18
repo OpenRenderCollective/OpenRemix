@@ -4,6 +4,7 @@
 #include "forward/mixed/overflow.h"
 #include "gpu_fixture.h"
 #include "probe_queries.h"
+#include "lighting_components.h"
 #include "raster/renderer.h"
 #include "runtime/pipelines.h"
 #include <chrono>
@@ -1741,6 +1742,7 @@ int main() try {
     emitterParity(fixture, pipelines, world);
     lightSelectionVariance(fixture, pipelines, world);
     aggregateDiffuse(fixture, pipelines, world);
+    test::lightingComponents(fixture, pipelines, world);
     liveLighting(fixture, pipelines, world);
     std::printf("Bake readback: emitter %.4f, blocked %.4f, alpha holes %.4f, "
                 "local light %.4f, shadowed %.4f\n",

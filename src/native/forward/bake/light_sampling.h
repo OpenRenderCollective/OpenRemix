@@ -6,5 +6,6 @@
 namespace remix::forward::bake {
   // Reuse the scene light hierarchy while retaining captured light indices.
   // Mixed-light ownership and explicit visibility queries keep their ordering.
-  std::vector<scene::LightNode> lightSelectionTree(std::span<const LightData> lights);
+  std::vector<scene::LightNode> lightSelectionTree(std::span<const LightData> lights,
+                                                 bool includeStyled = false);
 } // namespace remix::forward::bake

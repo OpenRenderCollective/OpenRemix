@@ -1461,6 +1461,37 @@ Uncharted/dynamic receivers still need indexed baked static visibility beyond
 the local-map budget. This stage does not establish complete Source 2 styled
 lighting or resolve unidentified large ceiling/floor shading artifacts.
 
+The private bake transport can prepare attributed lighting proposals with
+`Options.lightingComponents`. `recordComponent` traces irradiance and
+`recordRadianceComponent` traces reflection radiance: selector zero is the
+unstyled base, 1..127 is a captured style group, and `combinedLighting` is the
+combined reference. Each pass reuses the prepared scene and bounded batch
+buffers. The passes preserve their shared random paths and proposal PDFs,
+including unselected emitter/shadow samples, and gate only attributed energy.
+Their RGB coefficients can therefore be added. Hit metadata, distance moments,
+coverage and any non-RGB fields remain shared geometry data, not additive terms.
+Ordinary callers retain the shared-unstyled path; component preparation is opt-in.
+
+Components use captured authored-envelope radiance units. The CPU `styleScales`
+resolver compares the complete current emitter set against that capture, before
+view/range culling. A group needs one consistent scalar across its members and
+colour channels. Missing, ambiguous, moved, recoloured or inconsistently scaled
+groups return zero with an explicit status; valid groups remain independent.
+Different envelope normalization within one group must be resolved before
+reconstruction, rather than assuming the live style value is the correct weight.
+
+This transport/resolver is not yet scheduled or published by the map baker.
+It currently repeats tracing per requested component; acceleration reuse does
+not imply one-pass tracing or reduced bake time. Sparse chart/probe storage,
+component cache ownership, denoising, live weights and reflection publication
+remain required before enabling styled indirect light. Avoid duplicating the
+entire directional atlas for every style. Styled emissive surfaces also need
+explicit attribution; they currently retain their ordinary material ownership.
+Combine signed SH coefficients before the final irradiance clamp. Independently
+clamping each component or summing geometry metadata would change the result.
+Component denoising needs a separate quality comparison: nonlinear filtering
+does not inherit the raw transport's exact additive reconstruction.
+
 Static world surfaces should sample surface lightmaps, with irradiance probes retained for moving and
 uncharted objects. The GMod BSP already contains face lightmap vectors, extents and dimensions; preserve
 that mapping through an optional extension rather than changing the core Remix vertex/mesh ABI. Other
