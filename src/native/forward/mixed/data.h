@@ -15,6 +15,7 @@ namespace remix::forward::mixed {
     std::unordered_multimap<uint64_t, uint32_t> identities;
     bake::DirectPolicy directLighting;
     bool bakedDiffuse(uint32_t captured) const;
+    bool retainsVisibility(uint32_t captured) const;
     uint32_t match(const scene::SphereLight &light) const;
   };
   struct Plan {

@@ -55,7 +55,15 @@ namespace remix::forward::mixed {
   } // namespace
   bool Bindings::bakedDiffuse(uint32_t captured) const {
     return captured < directLighting.lights.size() &&
-           directLighting.lights[captured] == bake::DirectMode::Baked;
+           bake::aggregatesDiffuse(directLighting.lights[captured]);
+  }
+  bool Bindings::retainsVisibility(uint32_t captured) const {
+    if (!source || captured >= source->lights.size())
+      return false;
+    if (directLighting.lights.empty())
+      return !source->lights[captured].dynamic;
+    return captured < directLighting.lights.size() &&
+           bake::retainsVisibility(directLighting.lights[captured]);
   }
   uint32_t Bindings::match(const scene::SphereLight &light) const {
     if (!source || light.dynamic)
@@ -101,7 +109,7 @@ namespace remix::forward::mixed {
     for (uint32_t i = 0; i < result.lights.source->lights.size(); ++i) {
       const auto &light = result.lights.source->lights[i];
       const bool aggregate = result.lights.bakedDiffuse(i);
-      radii.push_back(light.dynamic || aggregate ? 0 : influenceRadius(light, cutoff));
+      radii.push_back(result.lights.retainsVisibility(i) ? influenceRadius(light, cutoff) : 0);
       if (aggregate) {
         selected[i] = true;
         result.lights.identities.emplace(light.id, i);

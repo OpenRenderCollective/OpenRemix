@@ -4,6 +4,9 @@ namespace remix::forward::bake {
   struct Config {
     bool enabled = true;
     bool directDiffuse = true;
+    // Internal integration switch. Automatic map use waits for rendered
+    // correction/probe/stale-input acceptance; no user-facing setting yet.
+    bool aggregateDiffuse = false;
     bool antialiasSun = true; // bounded receiver-area refinement at detected shadow edges
     bool diskCache = true;
     bool denoiseLightmaps = true; // OIDN RTLightmap where available; unsupported builds retain raw transport

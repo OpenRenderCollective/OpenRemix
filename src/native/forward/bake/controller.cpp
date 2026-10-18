@@ -91,6 +91,7 @@ namespace remix::forward::bake {
                                          float lightCutoff, uint32_t queueFamily) {
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physical, &properties);
+    const auto directLighting = config.aggregateDiffuse ? staticMixedPolicy(*source) : DirectPolicy{};
     const char *samples = std::getenv("REMIX_DEBUG_BAKE_SURFACE_SAMPLES");
     if (config.diskCache && (!samples || std::strcmp(samples, "1") != 0)) {
       cache::Device deviceIdentity{properties.vendorID, properties.deviceID, properties.driverVersion,
@@ -99,17 +100,18 @@ namespace remix::forward::bake {
                                      properties.limits.maxStorageBufferRange,
                                      {}};
       std::copy_n(properties.pipelineCacheUUID, deviceIdentity.uuid.size(), deviceIdentity.uuid.begin());
-      cacheKey = cache::key(source->contentHash, config, lightCutoff, deviceIdentity);
+      cacheKey = cache::key(source->contentHash, config, lightCutoff, deviceIdentity, directLighting);
       try {
         cacheFile = cache::path(cacheKey);
       } catch (const std::exception &) {
         cacheFile.clear();
       }
       if (!cacheFile.empty()) {
-        auto cached = cache::read(cacheFile, cacheKey, source, config, deviceIdentity, cancellation.get_token());
+        auto cached = cache::read(cacheFile, cacheKey, source, config, deviceIdentity,
+                                  cancellation.get_token(), directLighting);
         if (!cancellation.stop_requested())
           cache::recordLookup(cacheFile, cacheKey, source->contentHash,
-                               cache::key(0, config, lightCutoff, deviceIdentity), bool(cached));
+                               cache::key(0, config, lightCutoff, deviceIdentity, directLighting), bool(cached));
         if (cached) {
           grid = std::move(cached->grid);
           surfaceLayout = std::move(cached->layout);
@@ -164,9 +166,10 @@ namespace remix::forward::bake {
     }
     surfaces.resize(surfaceLayout.points.size());
     Options options;
+    options.directLighting = directLighting;
     mixedLights = std::make_shared<mixed::Plan>(
         mixed::plan(source, surfaceLayout, lightCutoff, cancellation.get_token(),
-                    options.bias / source->sceneScale));
+                    options.bias / source->sceneScale, directLighting));
     if (std::getenv("REMIX_DEBUG_BAKE_CAPTURE_PREFIX")) {
       uint64_t candidates = mixedLights->overflow;
       for (const auto &chart : mixedLights->charts)

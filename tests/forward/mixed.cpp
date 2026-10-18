@@ -58,6 +58,25 @@ int main() {
     require(fullyStatic.tasks.empty() && fullyStatic.overflow == 0 &&
                 fullyStatic.charts[0] == forward::bake::UInt4{m::none, m::none, m::none, m::none},
             "A fully static chart schedules no mixed or overflow shadow work");
+    auto corrected = m::plan(source, layout, .001f, {}, 0,
+                             forward::bake::directPolicy(*source, all, forward::bake::DirectMode::BakedMixed));
+    require(corrected.charts == plan.charts && corrected.remaining == plan.remaining &&
+                corrected.overflow == plan.overflow && corrected.tasks.size() == plan.tasks.size(),
+            "Aggregate mixed lights retain the original attributed visibility coverage and budget");
+    for (uint32_t i = 0; i < source->lights.size(); ++i)
+      require(corrected.lights.bakedDiffuse(i) && corrected.lights.retainsVisibility(i) &&
+                  corrected.lights.match(source->lights[i]) == i,
+              "Every aggregate mixed emitter retains independent identity and correction ownership");
+    std::vector<forward::Vec4> partial(layout.points.size(), {.5f, .5f, .5f, .5f});
+    std::vector<lm::Direct> scratch(layout.points.size()), retained(layout.points.size());
+    for (auto &point : scratch)
+      for (auto &coefficient : point)
+        coefficient = {1, 2, 3, 4};
+    require(!m::refine(corrected, layout, partial, {}, scratch, retained) &&
+                corrected.directCharts == plan.charts && retained == scratch && corrected.overflow == 1,
+            "Aggregate mixed refinement retains unit direct SH without changing overlap fallback");
+    require(!corrected.lights.retainsVisibility(m::none),
+            "An unknown captured index cannot advertise aggregate correction coverage");
     auto recoloured = source->lights[0];
     recoloured.radiance[0] *= 2;
     require(aggregate.lights.match(recoloured) == m::none,

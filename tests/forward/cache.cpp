@@ -60,6 +60,7 @@ int main(int argc, char **argv) {
             "Every bake quality field participates in disk cache identity");
   };
   qualityKey([](auto &c) { c.directDiffuse = !c.directDiffuse; });
+  qualityKey([](auto &c) { c.aggregateDiffuse = !c.aggregateDiffuse; });
   qualityKey([](auto &c) { c.antialiasSun = !c.antialiasSun; });
   qualityKey([](auto &c) { c.denoiseLightmaps = !c.denoiseLightmaps; });
   qualityKey([](auto &c) { c.relocateProbes = !c.relocateProbes; });
@@ -343,6 +344,42 @@ int main(int argc, char **argv) {
     aggregate.lights.directLighting.lights[0] = f::bake::DirectMode::Dynamic;
     require(!saveAggregate() && loadAggregate().has_value(),
             "Invalid moving-light membership cannot replace a completed aggregate cache");
+  }
+  {
+    const uint32_t selected[] = {0, 1};
+    const auto policy = f::bake::directPolicy(*source, selected, f::bake::DirectMode::BakedMixed);
+    const auto correctedKey = bc::key(source->contentHash, config, .001f, device, policy);
+    require(correctedKey != bc::key(source->contentHash, config, .001f, device,
+                                    f::bake::directPolicy(*source, selected)),
+            "Retained aggregate visibility has a different cache identity from diffuse-only ownership");
+    auto corrected = data.mixed;
+    corrected.lights.directLighting = policy;
+    const auto correctedFile = root / "aggregate-mixed.bake";
+    const auto saveCorrected = [&] {
+      return bc::write(correctedFile, correctedKey,
+                       {data.grid, data.layout, corrected, data.captures, data.specular, data.pixels,
+                        data.surfaceSamples, data.directDiffuse, data.sun});
+    };
+    const auto loadCorrected = [&] {
+      return bc::read(correctedFile, correctedKey, source, config, device, {}, policy);
+    };
+    require(saveCorrected(), "Aggregate mixed irradiance and attributed channels can share a cache");
+    const auto reloaded = loadCorrected();
+    require(reloaded && reloaded->mixed.charts == corrected.charts &&
+                reloaded->mixed.directCharts == corrected.directCharts &&
+                reloaded->mixed.masks.words(1) == corrected.masks.words(1) &&
+                std::equal(reloaded->mixed.occlusion.words().begin(), reloaded->mixed.occlusion.words().end(),
+                           corrected.occlusion.words().begin(), corrected.occlusion.words().end()) &&
+                reloaded->pixels == data.pixels && reloaded->mixed.lights.bakedDiffuse(0) &&
+                reloaded->mixed.lights.retainsVisibility(0) &&
+                reloaded->mixed.lights.match(source->lights[0]) == 0,
+            "Aggregate cache reload preserves diffuse ownership, unit SH, indexed masks and static visibility");
+    require(!bc::read(correctedFile, correctedKey, source, config, device, {},
+                      f::bake::directPolicy(*source, selected)),
+            "A supplied key cannot reinterpret aggregate mixed coverage as diffuse-only ownership");
+    corrected.lights.directLighting.lights[0] = static_cast<f::bake::DirectMode>(255);
+    require(!saveCorrected() && loadCorrected(),
+            "Unknown ownership modes cannot replace a completed aggregate mixed cache");
   }
   {
     auto styledSource = std::make_shared<scene::BakeScene>(*source);

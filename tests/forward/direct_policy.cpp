@@ -57,6 +57,35 @@ int main() try {
   const auto mixed = bake::directPolicy(source, {});
   require(!bake::applyDirectPolicy(source, mixed, packed) && packed[0].shaping[2] == 0,
           "An all-mixed policy disables aggregate sampling and clears previous static tags");
+  const auto corrected = bake::directPolicy(source, selected, bake::DirectMode::BakedMixed);
+  require(bake::applyDirectPolicy(source, corrected, packed) && packed[0].shaping[2] == 1 &&
+              packed[3].shaping[2] == 1 &&
+              bake::retainsVisibility(corrected.lights[0]) &&
+              !bake::retainsVisibility(policy.lights[0]) &&
+              !bake::retainsVisibility(corrected.lights[2]),
+          "Aggregate ownership and attributed visibility are independent of moving membership");
+  require(invalid([&] { bake::directPolicy(source, selected, bake::DirectMode::Mixed); }) &&
+              invalid([&] { bake::directPolicy(source, selected, bake::DirectMode::Dynamic); }),
+          "A selected aggregate cannot silently become an ordinary mixed or moving light");
+  auto styled = source;
+  styled.lights[0].style = 32;
+  require(invalid([&] { bake::directPolicy(styled, selected, bake::DirectMode::BakedMixed); }),
+          "Retaining visibility does not make styled energy safe for permanent aggregate RGB");
+  require(bake::staticMixedPolicy(source).lights ==
+              std::vector{bake::DirectMode::BakedMixed, bake::DirectMode::BakedMixed,
+                          bake::DirectMode::Dynamic, bake::DirectMode::BakedMixed},
+          "Automatic static policy aggregates fixed emitters while retaining moving membership");
+  styled.lights[1].id = styled.lights[0].id;
+  const auto styledPolicy = bake::staticMixedPolicy(styled);
+  require(styledPolicy.lights[0] == bake::DirectMode::Mixed &&
+              styledPolicy.lights[1] == bake::DirectMode::Mixed &&
+              styledPolicy.lights[3] == bake::DirectMode::BakedMixed,
+          "One styled emitter excludes every sibling with the same identity from permanent RGB");
+  source.lights[0].id = source.lights[2].id;
+  const auto movingPolicy = bake::staticMixedPolicy(source);
+  require(movingPolicy.lights[0] == bake::DirectMode::Mixed &&
+              movingPolicy.lights[2] == bake::DirectMode::Dynamic,
+          "A shared moving identity cannot acquire partially immutable diffuse ownership");
   std::puts("Direct lighting policy: static/mixed/dynamic identities and atomic validation passed");
 } catch (const std::exception &error) {
   std::fprintf(stderr, "%s\n", error.what());

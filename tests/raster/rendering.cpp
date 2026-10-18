@@ -884,7 +884,8 @@ namespace {
               "Default water support preserves dry-scene pixels and allocates no full-screen snapshot images");
     }
   }
-  void mixedLightingTests(bool localShadows = false, bool directDiffuse = false, bool styled = false) {
+  void mixedLightingTests(bool localShadows = false, bool directDiffuse = false, bool styled = false,
+                          bool aggregateDiffuse = false) {
     for (uint32_t samples : {1u, 2u, 4u}) {
       Target target(64, 64, true);
       auto &r = target.raster;
@@ -902,6 +903,9 @@ namespace {
       options.baking.maxProbes = 64;
       options.baking.spacing = 2;
       options.baking.samples = 256;
+      options.baking.aggregateDiffuse = aggregateDiffuse;
+      if (aggregateDiffuse)
+        options.baking.samples = 2048;
       options.baking.bounces = 1;
       options.baking.batch = 16;
       options.baking.reflectionProbes = 0;
@@ -1094,7 +1098,20 @@ namespace {
       require(
           pixels[left] < 3 && pixels[right] > 80,
           "Baked static visibility shadows direct metallic specular without a diffuse lightmap contribution");
-      if (directDiffuse) {
+      if (aggregateDiffuse) {
+        const auto aggregate = pixels[right];
+        options.baking.aggregateDiffuse = false;
+        target.forward->updateLighting(options);
+        pixels = until("", true);
+        std::printf("Aggregate direct %ux: aggregate %u, attributed %u\n", samples,
+                      unsigned(aggregate), unsigned(pixels[right]));
+        require(pixels[left] < 3 && std::abs(int(pixels[right]) - int(aggregate)) < 15,
+                "Published aggregate diffuse replaces attributed direct lighting without doubling energy");
+        options.baking.aggregateDiffuse = true;
+        target.forward->updateLighting(options);
+        pixels = until("", true);
+      }
+      if (directDiffuse && !aggregateDiffuse) {
         const auto baked = pixels[right];
         options.baking.directDiffuse = false;
         target.forward->updateLighting(options);
@@ -1162,6 +1179,64 @@ namespace {
         require(std::abs(int(pixels[right]) - int(lit)) < 4 && target.forward->statistics().draws == 3,
                 "Alpha-rejected caster fragments leave the local depth map clear");
         r.destroyRetained(&cutout, 1);
+        if (aggregateDiffuse) {
+          r.setBakeScene(nullptr);
+          for (uint32_t frame = 0; frame < remix::gpuFrameCount + 2; ++frame) render(false);
+          publish();
+          pixels = until("", true);
+          require(pixels[left] < 3 && std::abs(int(pixels[right]) - int(lit)) < 4 &&
+                      std::strstr(target.forward->statistics().baking.status, "Cached lighting active"),
+                  "Aggregate RGB, attributed mixed correction and runtime ownership survive cached publication");
+          // Only the hidden wall belongs to this next bake. The visible quad
+          // must receive direct diffuse from the grid, with no surface atlas
+          // and no realtime local shadow maps to hide missing static visibility.
+          options.baking.spacing = .125f;
+          options.baking.maxProbes = 8192;
+          options.localShadows = false;
+          target.forward->updateLighting(options);
+          base.instances = &instances[1];
+          base.instanceCount = 1;
+          ++base.revision;
+          request.chartCount = 0;
+          request.charts = nullptr;
+          ++request.chartRevision;
+          for (uint32_t c = 0; c < 3; ++c) {
+            request.bounds.minimum[c] = c == 2 ? .25f : -1.f;
+            request.bounds.maximum[c] = c == 2 ? .55f : 1.f;
+          }
+          publish();
+          pixels = until("", true);
+          const auto probeLit = pixels[right];
+          std::printf("Aggregate probe receiver %ux: blocked %u, clear %u\n", samples,
+                        unsigned(pixels[left]), unsigned(probeLit));
+          require(pixels[left] < 15 && probeLit > 80,
+                  "Uncharted receivers obtain aggregate direct diffuse and wall occlusion from probes alone");
+          options.localShadows = true;
+          target.forward->updateLighting(options);
+          moving.mesh = black;
+          moving.transform.matrix[1][3] = 0;
+          identity.instanceId = 9794;
+          const auto probeActor = r.createRetained(moving);
+          pixels = render(false);
+          std::printf("Aggregate probe mixed %ux: lit %u, moving %u\n", samples,
+                        unsigned(probeLit), unsigned(pixels[right]));
+          require(pixels[right] < probeLit / 3 && pixels[adjacent] > probeLit / 2,
+                  "A moving shadow subtracts its own direct light from a probe-lit dynamic receiver");
+          r.destroyRetained(&probeActor, 1);
+          pixels = render(false);
+          require(std::abs(int(pixels[right]) - int(probeLit)) < 4,
+                  "Removing a probe receiver caster restores aggregate diffuse without trails");
+          options.localShadows = false;
+          options.baking.aggregateDiffuse = false;
+          target.forward->updateLighting(options);
+          pixels = until("", true);
+          std::printf("Aggregate probe comparison %ux: aggregate %u, analytic %u\n", samples,
+                        unsigned(probeLit), unsigned(pixels[right]));
+          require(pixels[left] < 15 && std::abs(int(pixels[right]) - int(probeLit)) < 20,
+                  "Aggregate probe diffuse replaces analytic direct energy on an uncharted receiver");
+          require(errors.load() == 0, "Aggregate mixed-light rendering is Vulkan validation clean");
+          continue;
+        }
         // Disable baking to exercise an uncharted receiver, then remove the
         // live caster. The complete frozen geometry must still shadow it.
         options.baking.enabled = false;
@@ -4073,6 +4148,7 @@ int main(int argc, char **argv) {
   else if (argc>2 && std::strcmp(argv[2],"lightmaps")==0) { surfaceLightmapTests(); surfaceLightmapTests(true); surfaceLightmapTests(true, true); }
   else if (argc>2 && std::strcmp(argv[2],"local-shadows")==0) mixedLightingTests(true);
   else if (argc>2 && std::strcmp(argv[2],"baked-direct")==0) mixedLightingTests(true, true);
+  else if (argc>2 && std::strcmp(argv[2],"aggregate-direct")==0) mixedLightingTests(true, true, false, true);
   else if (argc>2 && std::strcmp(argv[2],"styled-indirect")==0) styledIndirectTests();
   else if (argc>2 && std::strcmp(argv[2],"local-shadow-plane")==0) localShadowPlaneTests();
   else if (argc>2 && std::strcmp(argv[2],"auto-exposure")==0) autoExposureTests();

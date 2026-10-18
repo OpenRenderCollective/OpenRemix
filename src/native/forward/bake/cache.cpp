@@ -161,7 +161,7 @@ namespace remix::forward::bake::cache {
         for (const auto *owners : {&plan.charts, &plan.directCharts})
           for (const auto &chart : *owners)
             for (const auto light : chart)
-              require(light == mixed::none || !plan.lights.bakedDiffuse(light));
+              require(light == mixed::none || plan.lights.retainsVisibility(light));
       }
       auto identities = input.array<uint32_t>(source->lights.size());
       std::vector<bool> used(source->lights.size());
@@ -292,6 +292,10 @@ namespace remix::forward::bake::cache {
                                d.storageRange};
     const auto hash = scene::fastHash(fields, sizeof(fields), content ^ shaders);
     auto raw = scene::fastHash(d.uuid.data(), d.uuid.size(), hash);
+    if (c.aggregateDiffuse) {
+      const uint32_t aggregate[] = {0x41474752u, 1};
+      raw = scene::fastHash(aggregate, sizeof(aggregate), raw);
+    }
     if (c.relocateProbes) {
       const uint32_t relocation[] = {0x524c4f43u, 1};
       raw = scene::fastHash(relocation, sizeof(relocation), raw);
@@ -350,7 +354,7 @@ namespace remix::forward::bake::cache {
                                source->charts.size() * 2 + masks.entries().size() * 4 + masks.bytes().size() / 4;
         require(words <= uint64_t(device.imageSize) * device.imageSize);
         for (const auto &entry : masks.entries()) {
-          require(!result.mixed.lights.bakedDiffuse(entry.light));
+          require(result.mixed.lights.retainsVisibility(entry.light));
           require(result.mixed.occlusion.state(entry.chart, entry.light) == mixed::Visibility::Unknown);
           const auto &owners = result.mixed.charts[entry.chart];
           require(std::find(owners.begin(), owners.end(), entry.light) == owners.end());
