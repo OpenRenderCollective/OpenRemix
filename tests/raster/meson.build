@@ -33,6 +33,8 @@ if get_option('gpu_tests')
     args : [meson.current_build_dir() / 'local-shadow-readback', 'local-shadows'], timeout : 180)
   test('Forward+ separable baked direct diffuse and mixed shadows', raster_test,
     args : [meson.current_build_dir() / 'baked-direct-readback', 'baked-direct'], timeout : 180)
+  test('Forward+ styled baked visibility, toggles, mixed shadows and cache', raster_test,
+    args : [meson.current_build_dir() / 'styled-mixed-readback', 'styled-mixed'], timeout : 180)
   test('Forward+ per-light static visibility and live specular', raster_test,
     args : [meson.current_build_dir() / 'mixed-readback', 'mixed'], timeout : 180)
   test('Forward+ compact static occlusion and mixed-light overflow', raster_test,

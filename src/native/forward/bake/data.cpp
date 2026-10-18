@@ -114,7 +114,7 @@ namespace remix::forward::bake {
       light.positionRadius = {source.position[0], source.position[1], source.position[2], source.radius};
       light.radiance = {source.radiance[0], source.radiance[1], source.radiance[2], float(source.triangle)};
       light.directionCone = {source.direction[0], source.direction[1], source.direction[2], source.coneCos};
-      light.shaping = {source.softness, source.focus, 0, 0};
+      light.shaping = {source.softness, source.focus, 0, source.style ? 1.f : 0.f};
       for (uint32_t i = 0; i < 3; ++i)
         std::copy_n(source.corners[i], 3, light.corners[i].begin());
       result.lights.push_back(light);

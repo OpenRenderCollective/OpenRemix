@@ -149,16 +149,33 @@ namespace remix::scene {
         return entry;
       }
     };
-    void lightHash(Hash &hash, const SphereLight &light) {
+    void lightHash(Hash &hash, const SphereLight &light, bool includeRadiance = true) {
       hash.add(light.position);
       hash.add(light.radius);
-      hash.add(light.radiance);
+      if (includeRadiance) hash.add(light.radiance);
       hash.add(light.triangle);
       hash.add(light.corners);
       hash.add(light.direction);
       hash.add(light.coneCos);
       hash.add(light.softness);
       hash.add(light.focus);
+      if (light.style) hash.add(light.style);
+    }
+    uint64_t styledShapeHash(std::span<const SphereLight> lights) {
+      Hash hash;
+      hash.add(uint64_t(lights.size()));
+      for (const auto &light : lights) {
+        hash.add(light.id);
+        hash.add(light.dynamic);
+        lightHash(hash, light, false);
+      }
+      return hash.value;
+    }
+    bool sameStyledShape(SphereLight a, SphereLight b) {
+      a.id = b.id = 0;
+      std::fill_n(a.radiance, 3, 0.f);
+      std::fill_n(b.radiance, 3, 0.f);
+      return a == b;
     }
   } // namespace
   void freezeBakeScene(BakeScene &scene) {
@@ -233,7 +250,7 @@ namespace remix::scene {
         fingerprints.push_back({geometryHash, materialHash, chartHash, hash.value});
     }
     for (const auto &light : scene.lights) {
-      if (light.dynamic)
+      if (light.dynamic || light.style > 127)
         throw invalid;
       Hash hash;
       lightHash(hash, light);
@@ -294,7 +311,8 @@ namespace remix::scene {
 
 namespace remix {
   bool NativeResources::bakeRequestCurrent(const remixapi_BakeSceneInfoEXT &info) const {
-    const bool reflections = info.version == REMIXAPI_BAKE_SCENE_REFLECTIONS_VERSION_EXT;
+    const bool styled = info.version == REMIXAPI_BAKE_SCENE_STYLED_LIGHTS_VERSION_EXT;
+    const bool reflections = styled || info.version == REMIXAPI_BAKE_SCENE_REFLECTIONS_VERSION_EXT;
     const bool surfaces = reflections || info.version == REMIXAPI_BAKE_SCENE_SURFACES_VERSION_EXT;
     const bool bounded = surfaces || info.version == REMIXAPI_BAKE_SCENE_BOUNDS_VERSION_EXT;
     if (!m_bakeScene || m_bakeScene->hasBounds != bounded || m_bakeScene->partition != m_visibilityPartition)
@@ -326,6 +344,22 @@ namespace remix {
         m_bakeScene->ready != (info.state == REMIXAPI_BAKE_SCENE_READY_EXT) ||
         m_bakeInstances.size() != info.instanceCount || m_bakeLights.size() != info.lightCount)
       return false;
+    const auto *styledInfo = styled ? reinterpret_cast<const remixapi_BakeSceneStyledLightsInfoEXT *>(&info) : nullptr;
+    if (m_bakeStyledLights.size() != (styled ? styledInfo->styledLightCount : 0)) return false;
+    for (size_t i = 0; i < m_bakeStyledLights.size(); ++i) {
+      const auto &previous = m_bakeStyledLights[i];
+      const auto &requested = styledInfo->styledLights[i];
+      if (previous.info.authoredLight != requested.authoredLight ||
+          previous.info.runtimeLight != requested.runtimeLight || previous.info.style != requested.style)
+        return false;
+      const auto authored = m_lights.find(uint64_t(reinterpret_cast<uintptr_t>(requested.authoredLight)));
+      const auto runtime = m_lights.find(uint64_t(reinterpret_cast<uintptr_t>(requested.runtimeLight)));
+      if (authored == m_lights.end() || runtime == m_lights.end() ||
+          authored->second.revision != previous.authoredRevision || runtime->second.dynamic ||
+          runtime->second.distant.isDistant || runtime->second.dome.enabled ||
+          scene::styledShapeHash(runtime->second.emitters) != previous.runtimeShape)
+        return false;
+    }
     for (uint32_t i = 0; i < info.instanceCount; ++i) {
       const auto [handle, revision] = m_bakeInstances[i];
       if (handle != info.instances[i])
@@ -351,10 +385,25 @@ namespace remix {
       m_bakeScene.reset();
       m_bakeInstances.clear();
       m_bakeLights.clear();
+      m_bakeStyledLights.clear();
       return;
     }
-    const bool reflections = info->version == REMIXAPI_BAKE_SCENE_REFLECTIONS_VERSION_EXT &&
-                             info->structSize == sizeof(remixapi_BakeSceneReflectionsInfoEXT);
+    const bool styled = info->version == REMIXAPI_BAKE_SCENE_STYLED_LIGHTS_VERSION_EXT &&
+                         info->structSize == sizeof(remixapi_BakeSceneStyledLightsInfoEXT);
+    const auto *styledInfo = styled ? reinterpret_cast<const remixapi_BakeSceneStyledLightsInfoEXT *>(info) : nullptr;
+    if (styled && (styledInfo->reserved || styledInfo->styledLightCount > 4096 ||
+                   (styledInfo->styledLightCount && !styledInfo->styledLights) ||
+                   (info->state == REMIXAPI_BAKE_SCENE_LOADING_EXT && styledInfo->styledLightCount)))
+      throw invalid;
+    if (styled)
+      for (uint32_t i = 0; i < styledInfo->styledLightCount; ++i) {
+        const auto &light = styledInfo->styledLights[i];
+        if (!light.authoredLight || !light.runtimeLight || light.authoredLight == light.runtimeLight ||
+            !light.style || light.style > 127 || light.reserved)
+          throw invalid;
+      }
+    const bool reflections = styled || (info->version == REMIXAPI_BAKE_SCENE_REFLECTIONS_VERSION_EXT &&
+                                        info->structSize == sizeof(remixapi_BakeSceneReflectionsInfoEXT));
     const auto *reflectionInfo =
         reflections ? reinterpret_cast<const remixapi_BakeSceneReflectionsInfoEXT *>(info) : nullptr;
     if (reflections && (reflectionInfo->reserved || reflectionInfo->positionCount > 4096 ||
@@ -472,10 +521,35 @@ namespace remix {
         next->dome = light.dome;
       }
     }
+    std::vector<BakeStyledDependency> styledDependencies;
+    if (styled)
+      for (uint32_t i = 0; i < styledInfo->styledLightCount; ++i) {
+        const auto &request = styledInfo->styledLights[i];
+        const auto authoredKey = uint64_t(reinterpret_cast<uintptr_t>(request.authoredLight));
+        const auto runtimeKey = uint64_t(reinterpret_cast<uintptr_t>(request.runtimeLight));
+        const auto authored = m_lights.find(authoredKey), runtime = m_lights.find(runtimeKey);
+        if (authored == m_lights.end() || runtime == m_lights.end() ||
+            !seen.insert(authoredKey).second || !seen.insert(runtimeKey).second)
+          throw invalid;
+        const auto &a = authored->second;
+        const auto &r = runtime->second;
+        if (a.dynamic || r.dynamic || a.distant.isDistant || r.distant.isDistant ||
+            a.dome.enabled || r.dome.enabled || a.emitters.empty() || a.emitters.size() != r.emitters.size())
+          throw invalid;
+        for (size_t emitter = 0; emitter < a.emitters.size(); ++emitter) {
+          auto light = a.emitters[emitter];
+          if (!scene::sameStyledShape(light, r.emitters[emitter])) throw invalid;
+          light.id = r.emitters[emitter].id;
+          light.style = request.style;
+          next->lights.push_back(light);
+        }
+        styledDependencies.push_back({request, a.revision, scene::styledShapeHash(r.emitters)});
+      }
     if (next->ready)
       scene::freezeBakeScene(*next);
     m_bakeInstances = std::move(instances);
     m_bakeLights = std::move(lights);
+    m_bakeStyledLights = std::move(styledDependencies);
     m_bakeScene = std::move(next);
   }
 } // namespace remix

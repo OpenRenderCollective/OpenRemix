@@ -1008,7 +1008,7 @@ GPU/driver identity, device allocation limits and a versioned CPU-algorithm revi
 GPU timing budget, cache preference and camera movement do not change its lighting identity.
 
 The in-process GMod wrapper publishes after its retained BSP scene is ready. It invalidates inputs at map
-changes and material/mesh rebuilds, excludes sky-camera polygons, and supplies unstyled map lights plus the
+changes and material/mesh rebuilds, excludes sky-camera polygons, and supplies ordinary map lights plus the
 map-load sky snapshot. The wrapper owns a separate copy of the first complete sky capture for baking;
 later live sky animation does not restart it. A map change releases that snapshot. Time-of-day changes
 are therefore not reflected in this static sky contribution. Both the wrapper's ordered engine marker
@@ -1436,14 +1436,30 @@ allocation overhead: 48 MiB at the default, plus cached frozen geometry. Budget 
 tiny descriptors. The current all-face raster approach and influence-only selection need real-map GPU
 profiling and may benefit from face culling, spot-specific maps, update budgets and selection hysteresis.
 
-The GMod wrapper currently excludes styled map lights from the immutable bake.
-Their runtime lightstyle scaling works, but they lack baked static visibility and
-fall back to the bounded local shadow maps. This can expose illumination through
-walls when such a light has no map slot. Correct switchable baking needs stable
-authored light identities and unit visibility/direct coefficients, with separately
-scaled indirect contributions on both surface lightmaps and dynamic-object probes.
-Adding current styled lights to the shared indirect bake would leave light behind
-when switched off; that is not a supported workaround.
+The GMod wrapper captures styled map lights through the optional version-5
+`remixapi_BakeSceneStyledLightsInfoEXT`. Each stationary local light has a separate
+immutable authored intensity envelope and a live runtime handle. Native capture
+requires matching emitter geometry, retains live emitter identities and records
+the style group. Current intensity or colour edits reuse that snapshot; authored
+edits, geometry changes and changed style ownership invalidate it. Initially-off
+lights are therefore included in chart visibility and unit direct-light baking.
+Versions 1 through 4 retain their layouts and behavior. Authored handles are never
+drawn, and a handle cannot belong to both ordinary and styled capture lists.
+
+The wrapper reserves four times the base intensity for style range planning.
+If the current style exceeds the retained envelope, it grows to the next power
+of two and republishes once; it never shrinks during that map. This is a host
+planning envelope, not a claim about Source's maximum style value. Off/on/flicker
+inside the envelope does not restart baking or change baked-light identity.
+
+Styled direct diffuse and specular use current radiance with baked per-light
+static visibility on charted receivers, plus current-object mixed shadows where
+local-map slots are available. Styled lights are excluded from shared indirect
+SH and frozen reflection lighting, and cannot enter the shared aggregate direct
+policy. Separate style-dependent indirect surface/probe components remain pending.
+Uncharted/dynamic receivers still need indexed baked static visibility beyond
+the local-map budget. This stage does not establish complete Source 2 styled
+lighting or resolve unidentified large ceiling/floor shading artifacts.
 
 Static world surfaces should sample surface lightmaps, with irradiance probes retained for moving and
 uncharted objects. The GMod BSP already contains face lightmap vectors, extents and dimensions; preserve
@@ -1616,3 +1632,10 @@ The comparison reports coverage separately from error on commonly covered
 receivers. BSP-empty classification is provenance, rather than a complete
 gameplay visibility test. These indirect-only measurements do not establish
 dynamic-actor, direct-light or screen-space agreement.
+
+
+For diagnostic BSP replay, `replay.styledLights=1` includes stationary styled
+map lights with immutable bake definitions. `replay.lightStyleValue` selects a
+snapshot multiplier in [0,4], including initially off. These host-only settings
+are not engine lightstyle animation or gameplay playback. The default replay
+keeps its previous unstyled scope.

@@ -109,6 +109,10 @@ vec3 directLight(vec3 p, vec3 n, inout uint seed, Medium medium) {
     return irradiance;
   float selectionPdf;
   uint index = selectLight(p, n, random(seed), selectionPdf);
+  // Styled direct visibility is baked separately; its mutable energy must not
+  // become permanent shared indirect lighting or frozen capture radiance.
+  if (rayLights[index].shaping.w > .5)
+    return irradiance;
   vec3 direction;
   float distance, weight;
   if (sampleEmitter(rayLights[index], p, seed, direction, distance, weight)) {

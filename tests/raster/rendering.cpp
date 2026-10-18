@@ -881,7 +881,7 @@ namespace {
               "Default water support preserves dry-scene pixels and allocates no full-screen snapshot images");
     }
   }
-  void mixedLightingTests(bool localShadows = false, bool directDiffuse = false) {
+  void mixedLightingTests(bool localShadows = false, bool directDiffuse = false, bool styled = false) {
     for (uint32_t samples : {1u, 2u, 4u}) {
       Target target(64, 64, true);
       auto &r = target.raster;
@@ -949,6 +949,13 @@ namespace {
       info.radiance = {directDiffuse ? 8.f : 100.f, 0, 0};
       remixapi_LightHandle red;
       r.createLight(info, red);
+      remixapi_LightHandle authoredRed = nullptr;
+      if (styled) {
+        info.hash = 9710;
+        r.createLight(info, authoredRed);
+        info.radiance = {};
+        r.updateLight(red, info); // initially off, authored definition remains fully on
+      }
       info.hash = 9707;
       info.isDynamic = 1;
       info.radiance = {0, directDiffuse ? 3.f : 40.f, 0};
@@ -974,7 +981,21 @@ namespace {
       }
       request.chartRevision = request.chartCount = 1;
       request.charts = &chart;
-      r.setBakeScene(&base);
+      remixapi_BakeSceneStyledLightsInfoEXT styledRequest{};
+      const remixapi_BakeStyledLightEXT styledInput{authoredRed, red, 32, 0};
+      auto publish = [&] {
+        if (!styled) { r.setBakeScene(&base); return; }
+        styledRequest.reflections.surfaces = request;
+        auto &styledBase = styledRequest.reflections.surfaces.bounds.scene;
+        styledBase.structSize = sizeof(styledRequest);
+        styledBase.version = REMIXAPI_BAKE_SCENE_STYLED_LIGHTS_VERSION_EXT;
+        styledBase.lightCount = 0;
+        styledBase.lights = nullptr;
+        styledRequest.styledLightCount = 1;
+        styledRequest.styledLights = &styledInput;
+        r.setBakeScene(&styledBase);
+      };
+      publish();
       auto render = [&](bool dynamic) {
         camera(r);
         r.drawRetained(nullptr);
@@ -1010,9 +1031,61 @@ namespace {
       options.baking.diskCache = true;
       target.forward->updateLighting(options);
       ++base.revision;
-      r.setBakeScene(&base);
+      publish();
       auto pixels = until("", true);
       const size_t left = (32 * 64 + 16) * 4, right = (32 * 64 + 48) * 4;
+      if (styled) {
+        const auto frozen = r.bakeScene();
+        const auto hash = target.forward->statistics().baking.activeHash;
+        require(pixels[left] < 3 && pixels[right] < 3,
+                "Initially-off styled light leaves neither direct light nor permanent shared indirect glow");
+        auto setStyle = [&](float redValue, float blueValue = 0) {
+          info.isDynamic = 0;
+          info.radiance = {redValue, 0, blueValue};
+          r.updateLight(red, info);
+          publish();
+          require(r.bakeScene() == frozen, "Live style intensity and colour reuse captured input identity");
+          return render(false);
+        };
+        pixels = setStyle(8);
+        const auto lit = pixels[right];
+        require(pixels[left] < 3 && lit > 80 && target.forward->statistics().baking.activeHash == hash,
+                "Turning on a styled light retains baked static wall occlusion and unit direct response");
+        pixels = setStyle(4);
+        require(pixels[left] < 3 && pixels[right] > 3 && pixels[right] < lit,
+                "Partial style intensity scales direct lighting without rebaking");
+        pixels = setStyle(0, 8);
+        require(pixels[left + 2] < 3 && pixels[right + 2] > 80 && pixels[right] < 3,
+                "Live styled colour changes preserve baked visibility and direct coefficient ownership");
+        pixels = setStyle(0);
+        require(pixels[right] < 3 && pixels[right + 2] < 3,
+                "Switching off removes styled lighting with no baked RGB residue");
+        pixels = setStyle(8);
+        auto moving = instance(black, -.4f);
+        moving.doubleSided = 1;
+        moving.transform.matrix[0][0] = .15f;
+        moving.transform.matrix[0][3] = .35f;
+        moving.transform.matrix[1][1] = .04f;
+        identity.instanceId = 9790;
+        moving.pNext = &identity;
+        const auto actor = r.createRetained(moving);
+        pixels = render(false);
+        require(pixels[right] < lit / 3 && pixels[left] < 3,
+                "A styled baked light still receives independent current-object mixed shadows");
+        r.destroyRetained(&actor, 1);
+        pixels = render(false);
+        require(std::abs(int(pixels[right]) - int(lit)) < 4,
+                "Styled mixed shadows clear when their dynamic caster is removed");
+        r.setBakeScene(nullptr);
+        for (uint32_t frame = 0; frame < remix::gpuFrameCount + 2; ++frame) render(false);
+        publish();
+        pixels = until("", true);
+        require(pixels[left] < 3 && std::abs(int(pixels[right]) - int(lit)) < 4 &&
+                target.forward->statistics().baking.activeHash == hash,
+                "Disk-cached styled visibility and unit direct data retain the same runtime identity");
+        require(errors.load() == 0, "Styled mixed-light rendering is Vulkan validation clean");
+        continue;
+      }
       std::printf("Mixed mask %ux initial: left red %u, right red %u\n", samples, unsigned(pixels[left]),
                   unsigned(pixels[right]));
       require(
@@ -1154,7 +1227,7 @@ namespace {
       base.lightCount = uint32_t(captured.size());
       base.lights = captured.data();
       ++base.revision;
-      r.setBakeScene(&base);
+      publish();
       const auto source = r.bakeScene();
       const auto overflow = std::max_element(source->lights.begin() + 1, source->lights.end(),
                                              [](const auto &a, const auto &b) { return a.id < b.id; });
@@ -3848,6 +3921,7 @@ int main(int argc, char **argv) {
   else if (argc>2 && std::strcmp(argv[2],"lightmaps")==0) { surfaceLightmapTests(); surfaceLightmapTests(true); surfaceLightmapTests(true, true); }
   else if (argc>2 && std::strcmp(argv[2],"local-shadows")==0) mixedLightingTests(true);
   else if (argc>2 && std::strcmp(argv[2],"baked-direct")==0) mixedLightingTests(true, true);
+  else if (argc>2 && std::strcmp(argv[2],"styled-mixed")==0) mixedLightingTests(true, true, true);
   else if (argc>2 && std::strcmp(argv[2],"mixed")==0) mixedLightingTests();
   else if (argc>2 && std::strcmp(argv[2],"compact-occlusion")==0) compactOcclusionTests();
   else if (argc>2 && std::strcmp(argv[2],"overflow-specular")==0) compactOcclusionTests(true);

@@ -68,6 +68,20 @@ int main() {
             "Mixed unit-radiance data can still follow live colour changes");
   }
   {
+    auto styled = std::make_shared<scene::BakeScene>(*source);
+    styled->lights[1].style = 32;
+    const auto mixed = m::plan(styled, layout);
+    auto off = styled->lights[1];
+    std::fill_n(off.radiance, 3, 0.f);
+    off.style = 0; // live packet needs no special flag to match its captured identity
+    require(mixed.lights.match(off) == 1, "Initially-off styled runtime light matches authored visibility");
+    bool refused = false;
+    const uint32_t selected[] = {1};
+    try { (void)forward::bake::directPolicy(*styled, selected); }
+    catch (const std::invalid_argument &) { refused = true; }
+    require(refused, "Styled energy cannot become permanent aggregate irradiance");
+  }
+  {
     auto shaped = std::make_shared<scene::BakeScene>(*source);
     shaped->lights.resize(1);
     auto &light = shaped->lights[0];

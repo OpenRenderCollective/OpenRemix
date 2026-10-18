@@ -1716,6 +1716,13 @@ int main() try {
     world.resources.createLight(light, lamp);
     const auto patch = world.wall(world.material({.diffuse = .8f}), 1, .5f);
     const auto lit = run(fixture, pipelines, world, world.scene({patch}, {lamp}), 1);
+    auto styledScene = world.scene({patch}, {lamp});
+    for (auto &light : styledScene->lights) light.style = 32;
+    const auto styledIndirect = run(fixture, pipelines, world, styledScene, 1);
+    for (const auto &coefficient : styledIndirect.irradiance)
+      require(coefficient[0] == 0 && coefficient[1] == 0 && coefficient[2] == 0,
+              "Styled energy cannot leave permanent shared indirect SH after switch-off");
+
     const auto shade = world.quad(world.material({}), {{{1, -3, -.5f}, {1, 3, -.5f}, {1, 3, 2}, {1, -3, 2}}});
     const auto shadowed = run(fixture, pipelines, world, world.scene({patch, shade}, {lamp}), 1);
     require(lit.irradiance[0][0] > .01f && shadowed.irradiance[0][0] < lit.irradiance[0][0] * .05f,

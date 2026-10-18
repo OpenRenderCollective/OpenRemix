@@ -30,6 +30,8 @@ namespace remix::forward::bake {
         throw std::invalid_argument("Direct lighting policy changes moving-light membership");
       aggregate |= mode == DirectMode::Baked;
       const bool baked = mode == DirectMode::Baked;
+      if (baked && source.lights[i].style)
+        throw std::invalid_argument("Styled light cannot join shared aggregate irradiance");
       const auto [identity, inserted] = bakedIdentities.emplace(source.lights[i].id, baked);
       if (!inserted && identity->second != baked)
         throw std::invalid_argument("A captured light identity cannot mix aggregate and per-light ownership");

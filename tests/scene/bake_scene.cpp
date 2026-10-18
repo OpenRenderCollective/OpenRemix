@@ -250,5 +250,77 @@ int main() {
   resources.setBakeScene(&info);
   require(resources.bakeScene()->reflectionHints.empty() && !resources.bakeScene()->reflectionRevision,
           "Legacy clients do not retain reflection sites from a preceding version 4 request");
+  {
+    remixapi_BakeSceneStyledLightsInfoEXT styled{};
+    styled.reflections = reflectionRequest;
+    auto &request = styled.reflections.surfaces.bounds.scene;
+    request.structSize = sizeof(styled);
+    request.version = REMIXAPI_BAKE_SCENE_STYLED_LIGHTS_VERSION_EXT;
+    request.state = REMIXAPI_BAKE_SCENE_READY_EXT;
+    remixapi_LightInfoSphereEXT shape{};
+    shape.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT;
+    shape.position = {0, 0, 2};
+    shape.radius = .1f;
+    remixapi_LightInfo definition{};
+    definition.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+    definition.pNext = &shape;
+    definition.hash = 500;
+    definition.radiance = {4, 2, 1};
+    remixapi_LightHandle authoredLight, runtimeLight;
+    resources.createLight(definition, authoredLight);
+    definition.hash = 501;
+    definition.radiance = {};
+    resources.createLight(definition, runtimeLight);
+    remixapi_BakeStyledLightEXT input{authoredLight, runtimeLight, 32, 0};
+    styled.styledLightCount = 1;
+    styled.styledLights = &input;
+    resources.setBakeScene(&request);
+    const auto off = resources.bakeScene();
+    require(off->lights.size() == 1 && off->lights[0].id == 501 && off->lights[0].style == 32 &&
+            off->lights[0].radiance[0] == 4, "Initially off light captures full authored energy and live identity");
+    for (float value : {1.f, .5f, 0.f, 2.f}) {
+      definition.radiance = {value, value * .5f, value * .25f};
+      resources.updateLight(runtimeLight, definition);
+      resources.setBakeScene(&request);
+      require(resources.bakeScene() == off, "Runtime style on/off/flicker leaves the captured snapshot unchanged");
+    }
+    definition.radiance = {0, 1, 0};
+    resources.updateLight(runtimeLight, definition);
+    resources.setBakeScene(&request);
+    require(resources.bakeScene() == off, "Live colour edits reuse unit direct visibility without rebaking");
+    input.style = 33;
+    resources.setBakeScene(&request);
+    require(resources.bakeScene()->contentHash != off->contentHash && off->lights[0].style == 32,
+            "Style ownership edits change content without modifying prior frames");
+    auto stableStyle = resources.bakeScene();
+    shape.position.x = 1;
+    resources.updateLight(runtimeLight, definition);
+    rejected([&] { resources.setBakeScene(&request); });
+    require(resources.bakeScene() == stableStyle, "Live geometry mismatch is rejected atomically");
+    shape.position.x = 0;
+    resources.updateLight(runtimeLight, definition);
+    input.reserved = 1;
+    rejected([&] { resources.setBakeScene(&request); });
+    input.reserved = 0;
+    input.style = 128;
+    rejected([&] { resources.setBakeScene(&request); });
+    input.style = 32;
+    input.runtimeLight = input.authoredLight;
+    rejected([&] { resources.setBakeScene(&request); });
+    input.runtimeLight = runtimeLight;
+    request.lightCount = 1;
+    request.lights = &authoredLight;
+    rejected([&] { resources.setBakeScene(&request); });
+    request.lightCount = 0;
+    request.lights = nullptr;
+    styled.styledLightCount = 4097;
+    rejected([&] { resources.setBakeScene(&request); });
+    styled.styledLightCount = 1;
+    resources.setBakeScene(nullptr);
+    resources.setBakeScene(&request);
+    require(resources.bakeScene()->lights[0].style == 32, "Unload clears styled dependencies and permits recapture");
+    resources.setBakeScene(&info);
+    require(resources.bakeScene()->lights.empty(), "Legacy descriptors do not retain prior styled membership");
+  }
   std::puts("Bake scene authored membership, fingerprints, atomic commits and publication lifetimes passed");
 }

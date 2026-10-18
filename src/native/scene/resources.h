@@ -336,6 +336,11 @@ namespace remix {
     uint64_t m_lightRevision = 0;
     std::shared_ptr<const scene::BakeScene> m_bakeScene;
     std::vector<std::pair<uint64_t, uint64_t>> m_bakeInstances, m_bakeLights;
+    struct BakeStyledDependency {
+      remixapi_BakeStyledLightEXT info{};
+      uint64_t authoredRevision = 0, runtimeShape = 0;
+    };
+    std::vector<BakeStyledDependency> m_bakeStyledLights;
     bool bakeRequestCurrent(const remixapi_BakeSceneInfoEXT &info) const;
     std::unordered_set<uint64_t> m_frameLights;
     // A published frame's sphere lights, as sphereLights() returned them at

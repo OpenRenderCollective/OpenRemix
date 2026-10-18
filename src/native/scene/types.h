@@ -223,6 +223,7 @@ namespace remix {
       // Emitter of an instance the host identified as dynamic
       // (remixapi_InstanceIdentityEXT): kept in the light tree's dynamic part.
       bool dynamic = false;
+      uint32_t style = 0; // captured stationary style; excluded from shared indirect transport
       bool operator==(const SphereLight &) const = default;
     };
     struct DomeLight {

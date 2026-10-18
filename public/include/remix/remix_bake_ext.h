@@ -92,6 +92,29 @@ typedef struct remixapi_BakeSceneReflectionsInfoEXT {
   const float *positions;
 } remixapi_BakeSceneReflectionsInfoEXT;
 
+// Optional version 5 stationary styled lights. authoredLight is a separate,
+// immutable local-light intensity envelope; runtimeLight is the corresponding live light,
+// including when off. Their emitter geometry must match. Never draw authoredLight.
+// The runtime captures authored radiance/geometry with runtime emitter identities.
+// Runtime colour/intensity edits within that envelope do not invalidate this capture;
+// geometry or authored envelope edits do.
+// Style identifiers are 1..127. Arrays are copied on READY; do not also include
+// these handles in scene.lights. Current Forward+ support bakes unit direct/static
+// visibility, excluding styled energy from shared indirect lightmaps/probes and
+// frozen reflection captures. Separate style-dependent indirect remains pending.
+#define REMIXAPI_BAKE_SCENE_STYLED_LIGHTS_VERSION_EXT 5u
+
+typedef struct remixapi_BakeStyledLightEXT {
+  remixapi_LightHandle authoredLight, runtimeLight;
+  uint32_t style, reserved;
+} remixapi_BakeStyledLightEXT;
+
+typedef struct remixapi_BakeSceneStyledLightsInfoEXT {
+  remixapi_BakeSceneReflectionsInfoEXT reflections;
+  uint32_t styledLightCount, reserved;
+  const remixapi_BakeStyledLightEXT *styledLights;
+} remixapi_BakeSceneStyledLightsInfoEXT;
+
 #define REMIXAPI_BAKE_WAITING_EXT 0u
 #define REMIXAPI_BAKE_PREPARING_EXT 1u
 #define REMIXAPI_BAKE_TRACING_EXT 2u

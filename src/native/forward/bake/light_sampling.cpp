@@ -18,6 +18,7 @@ namespace remix::forward::bake {
       std::copy_n(input.positionRadius.begin(), 3, light.position);
       light.radius = input.positionRadius[3];
       std::copy_n(input.radiance.begin(), 3, light.radiance);
+      if (input.shaping[3] > .5f) std::fill_n(light.radiance, 3, 0.f);
       light.triangle = uint32_t(input.radiance[3]);
       std::copy_n(input.directionCone.begin(), 3, light.direction);
       light.coneCos = input.directionCone[3];
