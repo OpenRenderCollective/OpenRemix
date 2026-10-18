@@ -1,5 +1,6 @@
 #pragma once
 #include "forward/bake/grid.h"
+#include "forward/bake/probe_visibility.h"
 #include "forward/mixed/data.h"
 #include "forward/probes/data.h"
 #include <filesystem>
@@ -34,6 +35,7 @@ namespace remix::forward::bake::cache {
     uint32_t surfaceSamples;
     bool directDiffuse, sun;
     std::span<const uint32_t> styles{};
+    const ProbeVisibility *localProbes = nullptr;
   };
   struct Snapshot {
     Grid grid;
@@ -43,6 +45,7 @@ namespace remix::forward::bake::cache {
     probes::Data specular;
     std::vector<uint16_t> pixels;
     std::vector<uint32_t> styles;
+    std::optional<ProbeVisibility> localProbes;
     uint32_t surfaceSamples = 0;
     bool directDiffuse = false, sun = false;
   };

@@ -39,6 +39,24 @@ int main() {
           "Untraced, unallocated and invalid coverage remains unknown");
   const std::array<float, 6> values{0, 1, .25f, .5f, .75f, 0};
   table.observe(pairs, values);
+  const auto imported = ProbeVisibility::restore(3, 10, table.offsets(), table.entries(), bytes);
+  require(imported.sample(0, 1) == .25f && !imported.sample(1, 1),
+          "Completed restoration preserves sparse ownership and uncovered probes");
+  rejects([&] { ProbeVisibility::restore(3, 10, table.offsets(), table.entries(), bytes - 1); });
+  auto badOffsets = std::vector<uint32_t>(table.offsets().begin(), table.offsets().end());
+  badOffsets[1] = 7;
+  rejects([&] { ProbeVisibility::restore(3, 10, badOffsets, table.entries(), bytes); });
+  badOffsets.assign(table.offsets().begin(), table.offsets().end());
+  badOffsets[0] = 1;
+  rejects([&] { ProbeVisibility::restore(3, 10, badOffsets, table.entries(), bytes); });
+  auto badEntries = std::vector<ProbeVisibility::Entry>(table.entries().begin(), table.entries().end());
+  badEntries[1].light = badEntries[0].light;
+  rejects([&] { ProbeVisibility::restore(3, 10, table.offsets(), badEntries, bytes); });
+  badEntries.assign(table.entries().begin(), table.entries().end());
+  badEntries[0].visibility = -1;
+  rejects([&] { ProbeVisibility::restore(3, 10, table.offsets(), badEntries, bytes); });
+  badEntries[0].visibility = std::numeric_limits<float>::quiet_NaN();
+  rejects([&] { ProbeVisibility::restore(3, 10, table.offsets(), badEntries, bytes); });
   require(table.sample(2, 9) == 0 && table.sample(0, 5) == 1 && table.sample(0, 1) == .25f,
           "Readback preserves blocked, clear and partial visibility under "
           "original light ownership");

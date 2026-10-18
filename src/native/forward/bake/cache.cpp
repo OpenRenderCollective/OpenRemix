@@ -99,6 +99,17 @@ namespace remix::forward::bake::cache {
         used[task] = true;
       }
     }
+    void localProbeOwners(const Grid &grid, const scene::BakeScene &source,
+                            const ProbeVisibility &visibility) {
+      ProbeVisibility::validate(uint32_t(grid.probes.size()), uint32_t(source.lights.size()),
+          visibility.offsets(), visibility.entries(), ProbeVisibility::maximumBytes);
+      const auto offsets = visibility.offsets();
+      for (uint32_t probe = 0; probe < grid.probes.size(); ++probe)
+        for (uint32_t i = offsets[probe]; i < offsets[probe + 1]; ++i) {
+          require(grid.probes[probe].statistics[3] > .5f);
+          require(!source.lights[visibility.entries()[i].light].dynamic);
+        }
+    }
     void readLayout(detail::Reader &input, Snapshot &result, const scene::BakeScene &source,
                     const Config &config, const Device &device) {
       auto &layout = result.layout;
@@ -323,7 +334,7 @@ namespace remix::forward::bake::cache {
       require(source && source->ready);
       Snapshot result;
       const auto flags = input.pod<uint32_t>();
-      require(flags <= 15 && (!(flags & 8) || config.styledIndirect) && (!(flags & 1) || config.directDiffuse) &&
+      require(flags <= 31 && (!(flags & 8) || config.styledIndirect) && (!(flags & 1) || config.directDiffuse) &&
               (!(flags & 2) || source->sun.isDistant));
       result.directDiffuse = (flags & 1) != 0;
       result.sun = (flags & 2) != 0;
@@ -366,6 +377,16 @@ namespace remix::forward::bake::cache {
         result.styles = input.array<uint32_t>(maximum / 4);
         sparse::validate(result.styles, {layout.pageSize, layout.pages, uint32_t(result.grid.probes.size())}, ids, maximum);
       }
+      if (flags & 16) {
+        const uint64_t maximum = std::min(uint64_t(device.storageRange), ProbeVisibility::maximumBytes);
+        const auto offsets = input.array<uint32_t>(result.grid.probes.size() + 1);
+        require(offsets.size() * sizeof(uint32_t) <= maximum);
+        const auto entries = input.array<ProbeVisibility::Entry>(
+            (maximum - offsets.size() * sizeof(uint32_t)) / sizeof(ProbeVisibility::Entry));
+        result.localProbes = ProbeVisibility::restore(uint32_t(result.grid.probes.size()),
+            uint32_t(source->lights.size()), offsets, entries, maximum);
+        localProbeOwners(result.grid, *source, *result.localProbes);
+      }
       input.finish();
       return std::optional<Snapshot>{std::move(result)};
     } catch (const std::exception &error) {
@@ -379,6 +400,10 @@ namespace remix::forward::bake::cache {
     std::filesystem::path temporary;
     try {
       detail::check(cancelled);
+      if (view.localProbes) {
+        require(view.mixed.lights.source != nullptr);
+        localProbeOwners(view.grid, *view.mixed.lights.source, *view.localProbes);
+      }
       require(view.grid.header.settings[2] == 0 || view.grid.header.settings[2] == 1);
       require(view.grid.header.settings[3] == 0);
       if (!view.styles.empty()) {
@@ -401,7 +426,8 @@ namespace remix::forward::bake::cache {
         require(view.mixed.lights.source != nullptr);
         validateDirectPolicy(*view.mixed.lights.source, view.mixed.lights.directLighting);
       }
-      output.pod(uint32_t(view.directDiffuse) | uint32_t(view.sun) << 1 | uint32_t(hasPolicy) << 2 | uint32_t(!view.styles.empty()) << 3);
+      output.pod(uint32_t(view.directDiffuse) | uint32_t(view.sun) << 1 | uint32_t(hasPolicy) << 2 |
+                 uint32_t(!view.styles.empty()) << 3 | uint32_t(view.localProbes != nullptr) << 4);
       output.pod(view.surfaceSamples);
       output.pod(view.grid.header);
       output.array(view.grid.probes);
@@ -447,6 +473,10 @@ namespace remix::forward::bake::cache {
       output.array(view.specular.texels);
       output.array(view.pixels);
       if (!view.styles.empty()) output.array(view.styles);
+      if (view.localProbes) {
+        output.array(view.localProbes->offsets());
+        output.array(view.localProbes->entries());
+      }
       output.finish();
       detail::check(cancelled);
       replace(temporary, file);

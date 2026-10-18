@@ -133,6 +133,52 @@ int main(int argc, char **argv) {
   require(restored->grid.probes[3].irradiance[7][3] == 1 &&
               restored->grid.probes[3].irradiance[8][3] == data.grid.probes[3].irradiance[8][3],
           "Probe static sunlight visibility survives the disk cache without a second allocation");
+  require(!restored->localProbes, "Existing caches without local probe masks remain explicitly uncovered");
+  {
+    const f::bake::VisibilityTask pairs[] = {{0, 0, 0}, {0, 1, 0}, {7, 1, 0}};
+    const float values[] = {0, .375f, 1};
+    f::bake::ProbeVisibility local(8, 2, pairs, 1024);
+    local.observe(pairs, values);
+    const auto localFile = root / "local-probes.bake";
+    auto saveLocal = [&](const auto &masks) {
+      return bc::write(localFile, identity,
+          {data.grid, data.layout, data.mixed, data.captures, data.specular, data.pixels,
+           data.surfaceSamples, data.directDiffuse, data.sun, {}, &masks});
+    };
+    auto loadLocal = [&] { return bc::read(localFile, identity, source, config, device); };
+    require(saveLocal(local), "Completed sparse local probe visibility is saved");
+    const auto imported = loadLocal();
+    require(imported && imported->localProbes && imported->localProbes->sample(0, 0) == 0 &&
+            imported->localProbes->sample(0, 1) == .375f && imported->localProbes->sample(7, 1) == 1 &&
+            !imported->localProbes->sample(1, 0) && imported->pixels == data.pixels,
+            "Sparse blocked/partial/clear masks preserve ownership and unknown coverage across cache reload");
+    f::bake::ProbeVisibility unfinished(8, 2, pairs, 1024);
+    require(!saveLocal(unfinished) && loadLocal(), "Incomplete masks cannot replace a completed cache");
+    data.grid.probes[0].statistics[3] = 0;
+    require(!saveLocal(local), "Unusable probe records cannot advertise cached local coverage");
+    data.grid.probes[0].statistics[3] = 1;
+    auto movingSource = std::make_shared<scene::BakeScene>(*source);
+    movingSource->lights[1].dynamic = true;
+    require(!bc::read(localFile, identity, movingSource, config, device),
+            "Moving lights cannot inherit static probe masks even with a supplied file key");
+    std::vector<char> damaged;
+    {
+      std::ifstream input(localFile, std::ios::binary);
+      damaged.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+    }
+    const size_t tailBytes = 2 * sizeof(uint64_t) + local.offsets().size_bytes() + local.entries().size_bytes();
+    const uint32_t invalidStart = 1;
+    std::memcpy(damaged.data() + damaged.size() - tailBytes + sizeof(uint64_t), &invalidStart, sizeof(invalidStart));
+    const uint64_t checksum = scene::hashBytes(damaged.data() + sizeof(bc::detail::Header),
+        damaged.size() - sizeof(bc::detail::Header), 1469598103934665603ull);
+    std::memcpy(damaged.data() + offsetof(bc::detail::Header, checksum), &checksum, sizeof(checksum));
+    {
+      std::ofstream output(localFile, std::ios::binary | std::ios::trunc);
+      output.write(damaged.data(), std::streamsize(damaged.size()));
+    }
+    require(!loadLocal(), "Even a checksummed local table must obey sparse offset semantics");
+    require(saveLocal(local) && loadLocal(), "A valid local table atomically repairs a malformed cache");
+  }
   data.grid.probes[0].irradiance[8][3] = 2;
   require(!save(), "Out-of-range probe sunlight cannot replace a completed lighting cache");
   data.grid.probes[0].irradiance[8][3] = 0;

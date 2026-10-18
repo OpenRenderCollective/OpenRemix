@@ -1813,7 +1813,7 @@ relocated usable probe positions. A sweep on the widest spatial axis prunes
 distant pairs; a conservative cell-corner halo retains interpolation coverage.
 Stationary toggleable lights participate, moving lights do not. Pair-budget
 overflow returns no plan rather than partial coverage. These modules are not yet
-connected to bake scheduling, cache payloads or shader reconstruction, so the
+connected to bake scheduling or shader reconstruction, so the
 existing local-light shadow fallback remains active.
 
 `Transport::recordVisibilityTasks` accepts bounded batches of probe/light pairs
@@ -1822,3 +1822,11 @@ completed frame slot's upload buffer and returns compact scalar visibility,
 without retaining another receiver table. The immutable indexed-receiver path
 shares the same submission implementation while retaining its one-time receiver
 validation. Submission and fence ownership remain with the caller.
+
+The bake cache accepts an optional completed local-probe visibility section.
+Offsets, sorted captured-light ownership, usable probe membership and finite unit
+fractions are validated before use. Untraced masks cannot replace a completed
+cache. Missing sections preserve unknown coverage, so existing bake files remain
+usable without implying local visibility. The controller does not yet produce or
+publish this section; enabling that work still requires runtime reconstruction
+and coverage gates.
