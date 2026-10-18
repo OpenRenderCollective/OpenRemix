@@ -11,6 +11,8 @@
 #include <atomic>
 #include <filesystem>
 
+namespace remix::forward::bake::cache { struct Snapshot; }
+
 namespace remix::forward::bake {
   struct Controller::Job {
     std::shared_ptr<const scene::BakeScene> source;
@@ -47,7 +49,7 @@ namespace remix::forward::bake {
     bool hasDirectDiffuse = false, hasSun = false; // survive release of the completed CPU arrays
     std::filesystem::path cacheFile;
     uint64_t cacheKey = 0;
-    void saveCache();
+    std::unique_ptr<const cache::Snapshot> takeCacheSnapshot();
     bool cacheHit = false;
     uint32_t sunNext = 0, sunReceived = 0;
     std::unique_ptr<SunAntialiasing> sunAntialiasing;
@@ -81,7 +83,7 @@ namespace remix::forward::bake {
     std::stop_source cancellation;
     uint32_t captureNext = 0, captureReceived = 0;
     bool capturePlanned = false, filtering = false;
-    enum class FinishStage { None, Reflections, Denoising, Atlas, Geometry, Cache, Styles };
+    enum class FinishStage { None, Reflections, Denoising, Atlas, Geometry, Styles };
     std::atomic<FinishStage> finishStage{FinishStage::None};
     std::atomic<uint32_t> denoisedCharts{0}, denoiseChartCount{0};
     uint32_t next = 0, received = 0;

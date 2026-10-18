@@ -1,6 +1,7 @@
 #include "raster/renderer.h"
 #include "forward/renderer.h"
 #include "forward/bake/controller.h"
+#include "forward/bake/cache_persistence.h"
 #include "forward/lightmap/denoise.h"
 #include "forward/ray_scene.h"
 #include "runtime/pipelines.h"
@@ -1404,6 +1405,7 @@ namespace {
                 "Alpha-rejected caster fragments leave the local depth map clear");
         r.destroyRetained(&cutout, 1);
         if (aggregateDiffuse) {
+          remix::forward::bake::cache::persistence().waitIdle();
           r.setBakeScene(nullptr);
           for (uint32_t frame = 0; frame < remix::gpuFrameCount + 2; ++frame) render(false);
           publish();
@@ -1582,6 +1584,7 @@ namespace {
         r.updateLight(red, info);
         pixels = render(false);
         require(pixels[left] < 15, "Restoring emitter shape reuses matching local probe visibility");
+        remix::forward::bake::cache::persistence().waitIdle();
         r.setBakeScene(nullptr);
         for (uint32_t frame = 0; frame < remix::gpuFrameCount + 2; ++frame) render(false);
         publish();

@@ -1,6 +1,7 @@
 #include "forward/bake/job.h"
 #include "forward/bake/budget.h"
 #include "forward/bake/cache.h"
+#include "forward/bake/cache_persistence.h"
 #include "forward/bake/fingerprint.h"
 #include "forward/bake/receiver_report.h"
 #include "forward/bake/transport.h"
@@ -855,10 +856,8 @@ namespace remix::forward::bake {
               owner->surfaceGeometry = std::make_shared<lightmap::Geometry>(
                   physical, device, owner->source, owner->surfaceLayout, owner->cancellation.get_token(),
                   owner->mixedLights->charts, owner->mixedLights->directCharts);
-            owner->finishStage.store(Job::FinishStage::Cache, std::memory_order_relaxed);
             owner->baseFinished = true;
             owner->filtering = !owner->styles;
-            if (owner->filtering) owner->saveCache();
           });
       status(REMIXAPI_BAKE_PREPARING_EXT, "Finishing baked lighting assets");
       return;
@@ -1152,6 +1151,17 @@ namespace remix::forward::bake {
                      timing.longest, timing.largest);
       }
     }
+    // GPU upload data and runtime bindings now own everything required for
+    // publication. Move CPU cache inputs into an independent immutable task.
+    // A slow/full/unavailable disk must never delay this ready transition.
+    if (!m_job->cacheHit && !m_job->cacheFile.empty()) {
+      try {
+        if (!cache::persistence().submit(m_job->cacheFile, m_job->cacheKey, m_job->takeCacheSnapshot()))
+          std::fprintf(stderr, "Background bake cache budget busy; retaining published lighting without persistence\n");
+      } catch (const std::exception &error) {
+        std::fprintf(stderr, "Background bake cache unavailable: %s\n", error.what());
+      }
+    }
     m_job.reset();
     status(REMIXAPI_BAKE_READY_EXT, message);
   }
@@ -1250,7 +1260,6 @@ namespace remix::forward::bake {
             case Job::FinishStage::Denoising: message = "Denoising surface lightmaps"; break;
             case Job::FinishStage::Atlas: message = "Encoding surface lightmaps"; break;
             case Job::FinishStage::Geometry: message = "Preparing lightmapped geometry"; break;
-            case Job::FinishStage::Cache: message = "Saving baked lighting cache"; break;
             case Job::FinishStage::Styles: message = "Encoding styled indirect lightmaps"; break;
             case Job::FinishStage::None: break;
             }

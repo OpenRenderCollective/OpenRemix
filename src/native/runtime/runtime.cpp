@@ -22,6 +22,7 @@
 
 #include "platform/memory_release.h"
 #include "runtime/runtime.h"
+#include "forward/bake/cache_persistence.h"
 
 #include <algorithm>
 #include <array>
@@ -31,6 +32,11 @@
 #include <limits>
 
 namespace remix {
+  RemixNativeRuntime::RemixNativeRuntime() {
+    // Establish destruction order before this runtime can launch persistence.
+    // The service itself starts no thread until a completed map is submitted.
+    forward::bake::cache::persistence();
+  }
   RemixNativeRuntime::~RemixNativeRuntime() {
     // Without a Shutdown: the render thread's frame completes first.
     waitRenderThread();
@@ -39,6 +45,7 @@ namespace remix {
     if (m_asyncActive)
       switchPresentation(false);
     m_renderThread.stop();
+    forward::bake::cache::persistence().stop();
     if (m_device && !m_deviceLost) {
       vkDeviceWaitIdle(m_device);
     }
@@ -155,6 +162,8 @@ namespace remix {
     if (m_asyncActive)
       switchPresentation(false);
     m_renderThread.stop();
+    // Join CPU-only persistence during explicit Shutdown, before DLL unload.
+    forward::bake::cache::persistence().stop();
     m_frameScene.reset();
     m_asyncCaller = m_previousAsyncCaller = m_asyncRender = {};
     m_renderedMemory = {};

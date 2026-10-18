@@ -3,6 +3,10 @@ forward_policy_test = executable('remix-forward-policy-test', 'lighting.cpp',
   '../../src/native/forward/water/data.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Forward+ cluster, cascade and configuration policy', forward_policy_test)
+cache_persistence_test = executable('remix-cache-persistence-test', 'cache_persistence.cpp',
+  include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+  cpp_args : test_cpp_args)
+test('Background bake persistence bounds slow writes, failures and shutdown', cache_persistence_test, timeout : 30)
 forward_denoise_test = executable('remix-forward-lightmap-denoise-test', 'lightmap_denoise.cpp',
   include_directories : test_includes, link_with : lightmap_denoise_library, cpp_args : test_cpp_args)
 test('Offline lightmap denoising preserves directional SH and chart isolation', forward_denoise_test,

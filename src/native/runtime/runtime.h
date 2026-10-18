@@ -49,7 +49,7 @@ namespace remix {
 class FrameSnapshot;
 class RemixNativeRuntime {
 public:
-  RemixNativeRuntime() = default;
+  RemixNativeRuntime();
   ~RemixNativeRuntime();
   RemixNativeRuntime(const RemixNativeRuntime &) = delete;
   RemixNativeRuntime &operator=(const RemixNativeRuntime &) = delete;

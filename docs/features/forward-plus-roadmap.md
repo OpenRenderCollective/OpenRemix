@@ -77,9 +77,15 @@ when baked lighting is active; a failed bake instead displays its failure messag
    First-bake denoising still competes with rendering. The replay host can isolate that contention
    using `replay.denoiseFrameDelayMs`, a default-off diagnostic restricted to the denoising stage;
    it does not change the installed game's cadence. Investigate scheduling before adopting a frame
-   cap. Cache persistence also remains inside the finishing ticket and can delay ready publication.
-   Separate it from publication with immutable ownership and bounded memory; verify cancellation,
-   map changes, slow/failed writes and a subsequent cache hit before enabling asynchronous persistence.
+   cap. Completed caches now move into CPU-only immutable snapshots after upload preparation,
+   independently of ready publication. Persistence retains at most one active and one pending map,
+   with a 4 GiB charge budget for owned payloads (shared captured assets are not duplicated or charged).
+   Admission failure skips optional persistence without blocking lighting. Cancelled/incomplete bakes
+   never enter this queue; completed old-map writes remain valid across map/renderer changes.
+   Slow/failed writer tests cover nonblocking admission, bounds, failure recovery and shutdown drain;
+   SDK shutdown joins the worker before DLL unload and a later startup can restart it. Cache-reload
+   tests wait for persistence explicitly. Continue live-map lifecycle and storage-failure coverage;
+   orderly shutdown can wait for accepted writes, and the filter/render contention remains unresolved.
    Timed visibility batches now grow within an eight-row rectangular dispatch and a guaranteed
    128 MiB maximum result-buffer range, reducing frame submission overhead without changing quality.
    Scalar classification now selects positive direct owners before a separate directional pass.
