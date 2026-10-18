@@ -75,6 +75,10 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
   vec3 diffuseWeight = aggregateDiffuse ? base * (1 - metallic) / Pi : response.diffuse;
   vec3 diffuse = diffuseResidual(diffuseWeight * unitDiffuse, moving, aggregateDiffuse);
   vec3 specular = response.specular * (solidAngle * shape * visibility);
+  // SelectedAggregate (LightResponse = 3) follows the shadow slot's existing
+  // fade. Outside baked coverage this is still a complete analytic fallback.
+  if (aggregateReceiver && light.corners[2].w == 3)
+    specular *= 1 - light.corners[1].w;
   // Aggregate transport integrates the physical emitter without the runtime
   // influence fade. Its subtraction must use those same radiometric units.
   return BrdfLobes(diffuse * light.radiance.rgb * (aggregateDiffuse ? 1 : fade),

@@ -51,6 +51,13 @@ when baked lighting is active; a failed bake instead displays its failure messag
    aggregate ownership to those fixed emitters while retaining compact, selected per-light specular
    visibility and moving-caster corrections; avoid restoring exhaustive evaluation for every baked
    emitter. Validate this separately on maps with no texture-emission lights, including Steamlab.
+   The opt-in `experimentalSelectedBakedLights` runtime policy now keeps aggregate corrections and
+   direct highlights only for lights holding a mixed-shadow slot (including outgoing fades).
+   Unselected fixed lights retain aggregate diffuse and environment reflections; uncovered receivers
+   retain the full analytic fallback. Styled/moving lights and adapter-required mixed lights are
+   exempt. This reuses attributed bake data and does not reduce its preparation cost. Broader quality,
+   independent specular selection and cheaper on-demand correction visibility remain open; leave the
+   option off by default until those tradeoffs are accepted in live maps.
    Supported live RTGI temporarily requests attributed static visibility instead of aggregate bake
    policies, because its analytic primary lighting cannot use aggregate irradiance for occlusion.
    Raster preferences remain intact when switching back. This is a correctness fallback; a compact

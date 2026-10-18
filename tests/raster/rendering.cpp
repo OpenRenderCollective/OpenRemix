@@ -1122,6 +1122,69 @@ namespace {
         options.baking.aggregateDiffuse = true;
         target.forward->updateLighting(options);
         pixels = until("", true);
+        const auto aggregateVolume = target.forward->bakeController()->volume();
+        options.selectedBakedLights = true;
+        options.localShadows = false;
+        target.forward->updateLighting(options);
+        pixels = render(false);
+        require(target.forward->statistics().clusteredLights == 0 &&
+                    target.forward->statistics().fullyBakedLights == 1 && pixels[left] < 3 && pixels[right] > 80 &&
+                    target.forward->bakeController()->volume() == aggregateVolume,
+                "Unselected aggregate lights use shared diffuse without rebuilding or entering clusters");
+        options.debugView = 3;
+        target.enableForward(options, true);
+        pixels = render(false);
+        auto specularPeak = [](const std::vector<uint8_t> &image) {
+          uint8_t peak = 0;
+          for (size_t pixel = 0; pixel < image.size(); pixel += 4)
+            peak = std::max(peak, image[pixel]);
+          return peak;
+        };
+        require(specularPeak(pixels) == 0,
+                "An unselected aggregate light leaves specular to the baked environment");
+        options.localShadows = localShadows;
+        options.localShadowFade = 2;
+        target.enableForward(options, true);
+        pixels = render(false);
+        require(specularPeak(pixels) == 0 && target.forward->statistics().clusteredLights == 1,
+                "A newly selected aggregate light fades in its analytic highlight with its shadow slot");
+        options.localShadowFade = 0;
+        target.forward->updateLighting(options);
+        pixels = render(false);
+        std::printf("Selected aggregate specular %ux: peak %u\n", samples, unsigned(specularPeak(pixels)));
+        require(specularPeak(pixels) > 0,
+                "A selected aggregate light retains its direct analytic highlight");
+        const auto selectedHighlight = pixels;
+        options.selectedBakedLights = false;
+        target.forward->updateLighting(options);
+        require(render(false) == selectedHighlight,
+                "A fully selected aggregate highlight matches unrestricted mixed specular exactly");
+        options.selectedBakedLights = true;
+        target.forward->updateLighting(options);
+        options.debugView = 0;
+        target.enableForward(options, true);
+        pixels = render(false);
+        require(pixels[left] < 3 && std::abs(int(pixels[right]) - int(aggregate)) < 4,
+                "Selected aggregate lighting retains static visibility and direct diffuse energy");
+        auto selectedCaster = instance(black, -.4f);
+        selectedCaster.doubleSided = 1;
+        selectedCaster.transform.matrix[0][0] = .15f;
+        selectedCaster.transform.matrix[0][3] = .35f;
+        selectedCaster.transform.matrix[1][1] = .04f;
+        auto selectedIdentity = identity;
+        selectedIdentity.instanceId = 9786;
+        selectedIdentity.rasterVisible = 0;
+        selectedCaster.pNext = &selectedIdentity;
+        const auto selectedActor = r.createRetained(selectedCaster);
+        pixels = render(false);
+        require(pixels[right] < aggregate / 3 && target.forward->statistics().staticShadowUpdates == 0,
+                "Selected aggregate correction subtracts its moving shadow without redrawing frozen geometry");
+        r.destroyRetained(&selectedActor, 1);
+        pixels = render(false);
+        require(std::abs(int(pixels[right]) - int(aggregate)) < 4,
+                "Removing a selected aggregate caster restores baked diffuse without trails");
+        options.selectedBakedLights = false;
+        target.forward->updateLighting(options);
         options.baking.fullyBakedLights = true;
         target.forward->updateLighting(options);
         pixels = until("", true);

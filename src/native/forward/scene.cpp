@@ -1,5 +1,6 @@
 #include "forward/bake/styles.h"
 #include "forward/gpu.h"
+#include "forward/light_response.h"
 #include "forward/material.h"
 #include "forward/probes/capture_dump.h"
 #include <algorithm>
@@ -223,9 +224,12 @@ namespace remix::forward {
         const auto captured = capturedLights[sourceIndex];
         if (captured != mixed::none) {
           light.shaping[3] = float(captured + 1);
-          light.corners[2][3] = float(publishedBake->mixedLights->bakedDiffuse(captured));
-          if (light.corners[2][3] > 0 && !publishedBake->mixedLights->retainsVisibility(captured))
-            light.corners[2][3] = 2; // fully baked; fallback remains available outside baked coverage
+          const auto &bindings = *publishedBake->mixedLights;
+          const bool requireMixed = bindings.source->lights[captured].bakeHint ==
+                                    REMIXAPI_LIGHT_BAKING_REQUIRE_MIXED_EXT;
+          light.corners[2][3] = float(lightResponse(bindings.bakedDiffuse(captured),
+              bindings.retainsVisibility(captured), options.selectedBakedLights && !giSupported,
+              shadowSelection.slots[sourceIndex] != UINT32_MAX, requireMixed));
         }
       }
       for (int i = 0; i < 3; ++i)
@@ -237,9 +241,9 @@ namespace remix::forward {
       lights.push_back(light);
     }
     const auto firstBaked = std::find_if(lights.begin(), lights.end(),
-        [](const auto &light) { return light.corners[2][3] > 1.5f; });
+        [](const auto &light) { return light.corners[2][3] == float(LightResponse::BakedFallback); });
     const auto mixedEnd = std::stable_partition(firstBaked, lights.end(),
-        [](const auto &light) { return light.corners[2][3] <= 1.5f; });
+        [](const auto &light) { return light.corners[2][3] != float(LightResponse::BakedFallback); });
     const uint32_t runtimeLights = uint32_t(mixedEnd - lights.begin());
     // Zero preserves the ordinary full-list contract. Otherwise the prefix
     // contains mixed/dynamic lights; the baked tail is only an uncovered fallback.

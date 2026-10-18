@@ -28,7 +28,7 @@ namespace remix::forward {
   struct LightData {
     Vec4 positionRadius{}, radiance{}, directionCone{}, shaping{};
     // xyz triangle; [0].w shadow slot + 1, [1].w unshadowed blend,
-    // [2].w: 0 analytic, 1 aggregate mixed, 2 fully baked (runtime packing only).
+    // [2].w: LightResponse (runtime packing only; see light_response.h).
     std::array<Vec4, 3> corners{};
   };
   struct DrawData {

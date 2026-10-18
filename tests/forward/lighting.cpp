@@ -1,4 +1,5 @@
 #include "forward/lighting.h"
+#include "forward/light_response.h"
 #include "forward/shadows/sun_cache.h"
 #include "forward/water/data.h"
 #include "runtime/settings.h"
@@ -10,6 +11,13 @@ using namespace remix::forward;
 using remix::test::require;
 
 int main() {
+  require(lightResponse(false, true, true, false, false) == LightResponse::Analytic &&
+              lightResponse(true, false, true, true, false) == LightResponse::BakedFallback &&
+              lightResponse(true, true, false, false, false) == LightResponse::Aggregate &&
+              lightResponse(true, true, true, true, false) == LightResponse::SelectedAggregate &&
+              lightResponse(true, true, true, false, false) == LightResponse::BakedFallback &&
+              lightResponse(true, true, true, false, true) == LightResponse::Aggregate,
+          "Runtime selection preserves analytic, pure-baked and required mixed ownership");
   {
     Options options;
     options.baking.aggregateDiffuse = true;
@@ -343,6 +351,12 @@ int main() {
   require(!changed.sameTargets(settings.forward),
           "Hardware reflection enable prepares replacement resources");
   std::vector<std::string> warnings;
+  require(!settings.forward.selectedBakedLights &&
+              config::set(settings, "rtx.native.forward.experimentalSelectedBakedLights", "1") ==
+                  config::SetResult::Success && settings.forward.selectedBakedLights &&
+              config::set(settings, "rtx.native.forward.experimentalSelectedBakedLights", "0") ==
+                  config::SetResult::Success && !settings.forward.selectedBakedLights,
+          "Selected baked response is an explicit reversible runtime profile preference");
   require(!settings.forward.baking.aggregateDiffuse &&
               config::set(settings, "rtx.native.forward.experimentalAggregateDiffuse", "1") ==
                   config::SetResult::Success && settings.forward.baking.aggregateDiffuse &&
