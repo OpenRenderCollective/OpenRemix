@@ -215,15 +215,29 @@ namespace {
       }
       require(rejected, "Invalid later chart data drains already queued host transfers before cleanup");
     }
+    if (side == 16) {
+      auto interrupted = original;
+      std::stop_source stop;
+      bool cancelled = false;
+      try {
+        lightmap::denoise(layout, interrupted, stop.get_token(), [&](uint32_t completed, uint32_t) {
+          if (completed) stop.request_stop();
+        });
+      } catch (const std::runtime_error &) { cancelled = stop.stop_requested(); }
+      require(cancelled, "Cancellation after queued filtering retires work before releasing graph resources");
+    }
     const auto statistics = lightmap::denoise(layout, values);
     auto pageable = original;
-    lightmap::denoise(layout, pageable, {}, {}, lightmap::HostTransfers::Pageable);
+    lightmap::denoise(layout, pageable, {}, {}, lightmap::HostTransfers::Pageable, lightmap::FilterDispatch::Ordinary);
     float error = 0;
     for (size_t point = 0; point < values.size(); ++point)
       for (uint32_t band = 0; band < 9; ++band)
         for (uint32_t c = 0; c < 3; ++c)
           error = std::max(error, std::abs(values[point].irradiance[band][c] - pageable[point].irradiance[band][c]));
-    require(error < .0001f, "Queued pinned packets preserve pageable output across byte/count flushes and tails");
+    require(error < .0001f, "Graph packets preserve ordinary output across changing charts, byte/count flushes and tails");
+    std::printf("OIDN graph queue %u x %ux%u: %u captures, %u launches, %u fallbacks, max error %.8g\n",
+                count, side, side, statistics.graphCaptures, statistics.graphLaunches,
+                statistics.graphFallbacks, error);
     const size_t chartBytes = size_t(side) * side * 3 * sizeof(float) * 11;
     const size_t limit = std::min(size_t(lightmap::denoising::queuedChartLimit),
                                   lightmap::denoising::queueBudgetBytes / chartBytes);
@@ -302,14 +316,14 @@ int main() try {
     progress.push_back({completed, total});
   });
   auto pageable = raw;
-  const auto reference = lightmap::denoise(layout, pageable, {}, {}, lightmap::HostTransfers::Pageable);
+  const auto reference = lightmap::denoise(layout, pageable, {}, {}, lightmap::HostTransfers::Pageable, lightmap::FilterDispatch::Ordinary);
   float transferError = 0;
   for (size_t point = 0; point < values.size(); ++point)
     for (uint32_t band = 0; band < 9; ++band)
       for (uint32_t c = 0; c < 3; ++c)
         transferError = std::max(transferError,
             std::abs(values[point].irradiance[band][c] - pageable[point].irradiance[band][c]));
-  require(transferError < .0001f, "Pinned and pageable transfers preserve the same filtered chart fields");
+  require(transferError < .0001f, "Graph and ordinary submission preserve the same isolated chart fields");
   require(statistics.stagingBufferBytes <= lightmap::denoising::queueBudgetBytes &&
               reference.stagingBufferBytes == 0,
           "Pinned staging remains bounded and pageable mode allocates none");

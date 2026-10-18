@@ -661,6 +661,8 @@ namespace remix::forward::bake {
                            static_cast<unsigned long long>(filtered.peakHostBytes),
                            static_cast<unsigned long long>(filtered.imageBufferBytes),
                            static_cast<unsigned long long>(filtered.transferBytes));
+              std::fprintf(stderr, "Forward lightmap OIDN graphs: %u captures, %u launches, %u fallbacks\n",
+                           filtered.graphCaptures, filtered.graphLaunches, filtered.graphFallbacks);
               std::fprintf(stderr, "Forward lightmap OIDN host time: initialize %.3f s, prepare %.3f s, "
                                    "upload %.3f s, execute %.3f s, readback %.3f s, wait %.3f s, chart %.3f s\n",
                            filtered.initializationSeconds, filtered.preparationSeconds,

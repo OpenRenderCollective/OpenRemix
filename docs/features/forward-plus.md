@@ -545,6 +545,15 @@ filter binding, at 32 charts, or at an 8 MiB host-image scratch target. One over
 valid. Large charts retain the synchronous bounded-band path. All queued work is also drained before
 cleanup on cancellation or error. This reuse does not join chart images or let one chart influence another.
 
+On Windows, an eligible default CUDA device can submit each coefficient packet through a captured
+CUDA graph. The device UUID must match OIDN's default physical device; explicit OIDN device selection
+keeps ordinary submission. The optional driver adapter owns its context reference and stream and
+requires no CUDA toolkit installation. Transfers use that same stream outside capture. One graph
+retains the current filter bindings and active-band mask; changing either retires the graph before
+reusing storage. Chart isolation, network weights, quality and coefficient reconstruction are unchanged.
+Other backends/platforms, monitored fields and unsupported capture retain ordinary OIDN dispatch.
+Graph submission is a scheduling optimization and does not invalidate compatible bake caches.
+
 Coefficient batches target at most 8 MiB of image data. Larger charts use fewer bands per batch;
 a single field larger than that target still requires one image. This bounds the image-buffer
 reservation by the larger of 8 MiB and the largest single field, without allocating a second atlas.

@@ -1,5 +1,6 @@
 #include "forward/lightmap/denoise.h"
 #include "forward/lightmap/denoise_chart.h"
+#include "forward/lightmap/denoise_graph.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -56,6 +57,9 @@ namespace remix::forward::lightmap {
         size_t offset = 0;
         bool monitored = false;
       };
+      denoising::CudaGraph graph;
+      uint32_t graphMask = 0;
+      FilterDispatch dispatch;
       OIDNDevice device = nullptr;
       std::array<Model, denoising::coefficientCount> models{}; // one immutable image binding per SH band
       OIDNBuffer buffer = nullptr;
@@ -90,12 +94,13 @@ namespace remix::forward::lightmap {
         pendingTransfers.clear();
         stagingUsed = 0;
       }
-      Filter(DenoiseStatistics &statistics, size_t requiredCapacity, HostTransfers hostTransfers)
-          : hostTransfers(hostTransfers), requiredCapacity(requiredCapacity), statistics(statistics) {}
+      Filter(DenoiseStatistics &statistics, size_t requiredCapacity, HostTransfers hostTransfers, FilterDispatch dispatch)
+          : dispatch(dispatch), hostTransfers(hostTransfers), requiredCapacity(requiredCapacity), statistics(statistics) {}
       ~Filter() {
         // Even cancellation/errors must retire queued work before its inputs,
         // callbacks, filters or buffers can be released.
         retire();
+        graph.invalidate();
         for (const auto &model : models)
           if (model.handle)
             oidnReleaseFilter(model.handle);
@@ -114,7 +119,8 @@ namespace remix::forward::lightmap {
       void initialize(std::stop_token &cancelled) {
         const Duration duration(statistics.initializationSeconds);
         cancellation = cancelled;
-        device = oidnNewDevice(OIDN_DEVICE_TYPE_DEFAULT);
+        if (dispatch == FilterDispatch::Automatic) device = graph.createDevice();
+        if (!device) device = oidnNewDevice(OIDN_DEVICE_TYPE_DEFAULT);
         check();
         if (!device)
           throw std::runtime_error("No OIDN lightmap device");
@@ -195,6 +201,8 @@ namespace remix::forward::lightmap {
         const auto bytes = images.size() * sizeof(float);
         if (bytes > capacity) {
           finish();
+          graph.invalidate();
+          graphMask = 0;
           if (buffer)
             oidnReleaseBuffer(buffer);
           capacity = std::max(bytes, requiredCapacity);
@@ -217,6 +225,8 @@ namespace remix::forward::lightmap {
               model.offset == offset)
             continue;
           finish(); // retire prior uses before changing a committed binding
+          graph.invalidate();
+          graphMask = 0;
           const Duration duration(statistics.preparationSeconds);
           // OIDN warns that progress callbacks add significant GPU synchronization
           // overhead. Small fields already have bounded cancellation between bands.
@@ -239,6 +249,32 @@ namespace remix::forward::lightmap {
           model.offset = offset;
           ++statistics.preparations;
         }
+        uint32_t mask = 0;
+        bool monitored = false;
+        for (uint32_t slot = 0; slot < count; ++slot)
+          if (active[slot]) {
+            mask |= 1u << (first + slot);
+            monitored |= models[first + slot].monitored;
+          }
+        if (graph.enabled() && !monitored && (!graph.ready() || graphMask != mask)) {
+          // Captured kernels keep OIDN scratch/image pointers. Finish old work
+          // and capture only after every binding in this packet is committed.
+          // Transfers stay outside capture and always use the same stream.
+          finish();
+          graph.invalidate();
+          const bool captured = graph.capture([&] {
+            for (uint32_t slot = 0; slot < count; ++slot)
+              if (active[slot]) oidnExecuteFilterAsync(models[first + slot].handle);
+          });
+          const auto captureError = oidnGetDeviceError(device, nullptr);
+          if (!captured || captureError != OIDN_ERROR_NONE) {
+            graph.disable();
+            ++statistics.graphFallbacks;
+          } else {
+            graphMask = mask;
+            ++statistics.graphCaptures;
+          }
+        }
         auto *host = transferData(images);
         inFlight = true;
         {
@@ -246,17 +282,23 @@ namespace remix::forward::lightmap {
           oidnWriteBufferAsync(buffer, 0, bytes, host);
         }
         check();
-        for (uint32_t slot = 0; slot < count; ++slot) {
-          if (!active[slot])
-            continue;
-          checkCancellation(cancellation);
-          {
-            const Duration duration(statistics.executionSeconds);
-            oidnExecuteFilterAsync(models[first + slot].handle);
+        if (graph.ready() && !monitored && graphMask == mask) {
+          const Duration duration(statistics.executionSeconds);
+          graph.launch();
+          ++statistics.graphLaunches;
+          statistics.executions += uint32_t(std::count(active.begin(), active.begin() + count, true));
+        } else {
+          for (uint32_t slot = 0; slot < count; ++slot) {
+            if (!active[slot]) continue;
+            checkCancellation(cancellation);
+            {
+              const Duration duration(statistics.executionSeconds);
+              oidnExecuteFilterAsync(models[first + slot].handle);
+            }
+            check();
+            ++statistics.executions;
+            statistics.monitoredExecutions += uint32_t(models[first + slot].monitored);
           }
-          check();
-          ++statistics.executions;
-          statistics.monitoredExecutions += uint32_t(models[first + slot].monitored);
         }
         ++statistics.batches;
         {
@@ -286,7 +328,7 @@ namespace remix::forward::lightmap {
   } // namespace
 #endif
   DenoiseStatistics denoise(const Layout &layout, std::span<bake::Result> results, std::stop_token cancelled,
-                            std::function<void(uint32_t, uint32_t)> progress, HostTransfers transfers) {
+                            std::function<void(uint32_t, uint32_t)> progress, HostTransfers transfers, FilterDispatch dispatch) {
 #ifndef REMIX_OIDN
     throw std::runtime_error("Lightmap denoising requires a build configured with oidn_root");
 #else
@@ -323,7 +365,7 @@ namespace remix::forward::lightmap {
     // Declaration order matters: Filter retires copies before pending host
     // arrays are destroyed, including on cancellation or an exception.
     std::vector<PendingChart> pending;
-    Filter filter(statistics, largestImage, transfers);
+    Filter filter(statistics, largestImage, transfers, dispatch);
     filter.initialize(cancelled);
     statistics.deviceType = oidnGetDeviceInt(filter.device, "type");
     filter.check();

@@ -1381,6 +1381,7 @@ namespace {
         Target target(64, 64, true);
         auto &r = target.raster;
         remix::forward::Options options;
+        options.prism = false; // Compare transport/ownership without saturated-primary display compression.
         options.baking.lightmapFitBudget = false; // Controlled-density lighting fixtures.
         options.samples = samples;
         options.ambient = 0;
