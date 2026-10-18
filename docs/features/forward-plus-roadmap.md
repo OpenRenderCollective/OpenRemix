@@ -9,6 +9,36 @@ remain compatible with the same authored optical materials.
 This roadmap tracks delivery requirements. Detailed measurements and run evidence belong in local
 reports. An implementation or synthetic test alone does not close an integration or visual-quality gate.
 
+## Primary delivery task: default baked lighting
+
+Finish the baked runtime before adding renderer features. Ordinary fixed lights should contribute
+direct and indirect diffuse through surface lightmaps and probe volumes. Covered receivers should
+evaluate only bounded mixed-shadow corrections and independently selected direct highlights;
+uncaptured, moving and controllable lights must retain their correct response. Static geometry must
+not re-enter moving-caster passes. The current default is still exhaustive and does not meet this goal.
+
+Completion requires scalable attributed surface corrections beyond the four retained SH owners,
+known probe coverage for selected corrections, and a bounded fallback for uncovered receivers.
+Toggleable/styled components must remain independently controllable instead of joining permanent
+aggregate RGB. Check water, displacement layers and live-GI transitions, then measure Crossfire,
+Construct, c1a0/c1a0d and Steamlab with identical quality and fixed camera positions. Default rollout
+requires measured steady-state GPU improvement and visual checks of highlights, wall occlusion and
+moving shadows, not just a smaller clustered-light counter.
+
+Consolidate policy while finishing this work. Runtime response classification now has one named-input
+decision point for aggregate ownership, required mixed responses, shadow selection and independent
+highlight fades. Retain the exhaustive mode as a comparison/fallback until the default passes those
+gates; retire overlapping experimental switches with explicit profile migration afterward. Indexed
+R8 pages and compressed visibility are alternative storage encodings, not separate lighting models.
+Cache import and unknown-coverage fallback are required compatibility paths, not cleanup candidates.
+The source/build audit found all 85 Forward+ C++ files listed in the feature build; that establishes
+build participation only, not that every internal branch is reachable or necessary.
+
+Avoid assuming that fewer texture fetches make a cheaper shader. A lazy per-fragment attributed-SH
+fetch experiment preserved pixels but regressed paired Crossfire GPU timings and was rejected.
+Keep shader performance changes behind matched measurements; prioritize removing exhaustive light
+responses and their preparation instead of adding more branches inside the local-light loop.
+
 ## Current capabilities and open requirements
 
 | Requirement | Current state | Remaining proof or work |

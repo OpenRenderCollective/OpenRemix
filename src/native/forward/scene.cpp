@@ -251,33 +251,32 @@ namespace remix::forward {
       std::copy_n(source.direction, 3, light.directionCone.begin());
       light.directionCone[3] = source.coneCos;
       light.shaping = {source.softness, source.focus, radius, 0};
+      const auto shadowSlot = shadowSelection.slots[sourceIndex];
+      LightResponseInput responseInput;
+      responseInput.selectedOnly = options.selectBakedLights(giSupported);
+      responseInput.shadowSelected = shadowSlot != UINT32_MAX;
+      responseInput.shadowWeight = responseInput.shadowSelected ? shadowSelection.strength[shadowSlot] : 0;
+      responseInput.independentHighlights = options.bakedLightingPreviewActive(giSupported);
+      const auto captured = capturedLights[sourceIndex];
+      if (captured < highlightWeights.size()) responseInput.highlightWeight = highlightWeights[captured];
       if (publishedBake && publishedBake->mixedLights) {
-        const auto captured = capturedLights[sourceIndex];
         if (captured != mixed::none) {
           light.shaping[3] = float(captured + 1);
           const auto &bindings = *publishedBake->mixedLights;
-          const bool requireMixed = bindings.source->lights[captured].bakeHint ==
+          responseInput.aggregate = bindings.bakedDiffuse(captured);
+          responseInput.attributed = bindings.retainsVisibility(captured);
+          responseInput.requireMixed = bindings.source->lights[captured].bakeHint ==
                                     REMIXAPI_LIGHT_BAKING_REQUIRE_MIXED_EXT;
-          light.corners[2][3] = float(lightResponse(bindings.bakedDiffuse(captured),
-              bindings.retainsVisibility(captured), options.selectBakedLights(giSupported),
-              shadowSelection.slots[sourceIndex] != UINT32_MAX, requireMixed));
         }
       }
+      const auto response = lightResponse(responseInput);
+      light.corners[2][3] = float(response.mode);
+      light.responseWeights[0] = response.highlightWeight;
       for (int i = 0; i < 3; ++i)
         std::copy_n(source.corners[i], 3, light.corners[i].begin());
       if (const auto slot = shadowSelection.slots[sourceIndex]; slot != UINT32_MAX) {
         light.corners[0][3] = float(slot + 1);
         light.corners[1][3] = 1 - shadowSelection.strength[slot];
-      }
-      const auto captured = capturedLights[sourceIndex];
-      if (light.corners[2][3] == float(LightResponse::SelectedAggregate))
-        light.responseWeights[0] = 1 - light.corners[1][3]; // preserve the low-level selected policy
-      if (options.bakedLightingPreviewActive(giSupported) && captured < highlightWeights.size()) {
-        const float weight = highlightWeights[captured];
-        if (weight >= 0 && light.corners[2][3] == float(LightResponse::BakedFallback))
-          light.corners[2][3] = float(LightResponse::SelectedAggregate);
-        if (light.corners[2][3] == float(LightResponse::SelectedAggregate))
-          light.responseWeights[0] = std::max(weight, 0.f);
       }
       lights.push_back(light);
     }

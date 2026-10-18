@@ -62,13 +62,54 @@ int main() {
     weights = selection.update(candidates, 1, 2, 2);
     require(weights[0].value == 1, "Valid time resumes after a non-finite clock");
   }
-  require(lightResponse(false, true, true, false, false) == LightResponse::Analytic &&
-              lightResponse(true, false, true, true, false) == LightResponse::BakedFallback &&
-              lightResponse(true, true, false, false, false) == LightResponse::Aggregate &&
-              lightResponse(true, true, true, true, false) == LightResponse::SelectedAggregate &&
-              lightResponse(true, true, true, false, false) == LightResponse::BakedFallback &&
-              lightResponse(true, true, true, false, true) == LightResponse::Aggregate,
-          "Runtime selection preserves analytic, pure-baked and required mixed ownership");
+  {
+    LightResponseInput input;
+    require(lightResponse(input).mode == LightResponse::Analytic,
+            "Uncaptured and moving lights keep analytic lighting");
+    input.aggregate = true;
+    input.selectedOnly = true;
+    input.shadowSelected = true;
+    input.shadowWeight = .4f;
+    require(lightResponse(input).mode == LightResponse::BakedFallback,
+            "A shadow slot cannot manufacture attributed data for a pure baked light");
+    input.attributed = true;
+    auto response = lightResponse(input);
+    require(response.mode == LightResponse::SelectedAggregate && response.highlightWeight == .4f,
+            "Selected mixed shadows retain their legacy highlight fade");
+    input.independentHighlights = true;
+    response = lightResponse(input);
+    require(response.mode == LightResponse::SelectedAggregate && response.highlightWeight == 0,
+            "A shadow-only assignment must not enable an unselected highlight");
+    input.shadowSelected = false;
+    input.highlightWeight = 0;
+    response = lightResponse(input);
+    require(response.mode == LightResponse::SelectedAggregate && response.highlightWeight == 0,
+            "An incoming highlight retains cluster membership at the start of its fade");
+    input.highlightWeight = .7f;
+    require(lightResponse(input).highlightWeight == .7f,
+            "Highlights do not require a shadow slot or inherit its strength");
+    input.attributed = false;
+    require(lightResponse(input).mode == LightResponse::BakedFallback,
+            "Highlight selection cannot promote an emitter without attributed visibility");
+    input.attributed = true;
+    input.highlightWeight = -1;
+    require(lightResponse(input).mode == LightResponse::BakedFallback,
+            "An unselected aggregate light is excluded from the covered-receiver prefix");
+    input.requireMixed = true;
+    require(lightResponse(input).mode == LightResponse::Aggregate,
+            "Required mixed lights remain independent of selection budgets");
+    input.requireMixed = false;
+    input.selectedOnly = false;
+    require(lightResponse(input).mode == LightResponse::Aggregate,
+            "Exhaustive comparison mode preserves every attributed response");
+    input.selectedOnly = true;
+    input.highlightWeight = std::numeric_limits<float>::quiet_NaN();
+    require(lightResponse(input).mode == LightResponse::BakedFallback,
+            "A non-finite highlight weight cannot add clustered work");
+    input.highlightWeight = 2;
+    require(lightResponse(input).highlightWeight == 1,
+            "Selection weights cannot add more energy than the captured emitter");
+  }
   {
     Options options;
     options.baking.fullyBakedLights = true; // A custom profile must survive preview on/off.
