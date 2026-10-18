@@ -31,9 +31,8 @@ namespace remix::forward::bake {
       std::vector<T>().swap(values);
     }
   } // namespace
-  bool Controller::Job::consumeVisibility(uint32_t slot, uint32_t first, uint32_t count, bool local,
-                                         bool overflow) {
-    if (overflow) {
+  bool Controller::Job::consumeVisibility(uint32_t slot, uint32_t first, uint32_t count, Visibility kind) {
+    if (kind == Visibility::Overflow) {
       if (overflowReadback.size() < count)
         overflowReadback.resize(count);
       const auto values = std::span(overflowReadback).first(count);
@@ -55,7 +54,13 @@ namespace remix::forward::bake {
           !std::all_of(value.irradiance.begin(), value.irradiance.end(),
                        [](float coefficient) { return std::isfinite(coefficient); }))
         return false;
-      if (local) {
+      if (kind == Visibility::ProbeSun) {
+        auto &probe = grid.probes[probeSunTasks[first + i]];
+        // RGB and relocation offsets remain unchanged. Only usable irradiance
+        // probes can advertise matching static sun visibility.
+        probe.irradiance[7][3] = probe.statistics[3] > .5f ? 1.f : 0.f;
+        probe.irradiance[8][3] = std::clamp(value.visibility, 0.f, 1.f);
+      } else if (kind == Visibility::Local) {
         const auto &task = mixedLights->tasks[first + i];
         visibility[task.point][task.channel] = std::clamp(value.visibility, 0.f, 1.f);
         if (!direct.empty())
@@ -231,9 +236,11 @@ namespace remix::forward::bake {
         job.transport->releaseBuildInputs();
       if (submission.count && submission.job == m_job && !job.failed) {
         const auto readBegin = std::chrono::steady_clock::now();
-        if (submission.visibility || submission.sun || submission.overflowVisibility) {
-          if (!job.consumeVisibility(slot, submission.first, submission.count, submission.visibility,
-                                     submission.overflowVisibility)) {
+        if (submission.visibility || submission.sun || submission.probeSun || submission.overflowVisibility) {
+          const auto kind = submission.probeSun ? Job::Visibility::ProbeSun
+                          : submission.overflowVisibility ? Job::Visibility::Overflow
+                          : submission.visibility ? Job::Visibility::Local : Job::Visibility::SurfaceSun;
+          if (!job.consumeVisibility(slot, submission.first, submission.count, kind)) {
             job.failed = true;
             status(REMIXAPI_BAKE_FAILED_EXT, "Bake produced non-finite visibility");
           }
@@ -294,13 +301,14 @@ namespace remix::forward::bake {
           job.overflowTiming.readbackMs += readbackMs;
         job.readbackBytes += uint64_t(submission.count) *
                              (submission.overflowVisibility ? sizeof(float) :
-                              submission.visibility || submission.sun
+                              submission.visibility || submission.sun || submission.probeSun
                                   ? sizeof(VisibilityResult) : sizeof(Result));
         if (!submission.styled) (submission.radiance             ? job.captureReceived
          : submission.reflectionGeometry ? job.geometryReceived
          : submission.reflectionSite     ? job.siteReceived
          : submission.visibility         ? job.visibilityReceived
          : submission.overflowVisibility ? job.overflowReceived
+         : submission.probeSun           ? job.probeSunReceived
          : submission.sun                ? job.sunReceived
          : submission.surface            ? job.surfaceReceived
                                          : job.received) += submission.count;
@@ -309,7 +317,7 @@ namespace remix::forward::bake {
             job.overflowTiming.gpuMs += *elapsed;
           const auto work = submission.reflectionGeometry                            ? Work::Geometry
                             : submission.visibility || submission.overflowVisibility ? Work::Visibility
-                            : submission.sun                                         ? Work::Sun
+                            : submission.sun || submission.probeSun                  ? Work::Sun
                             : submission.reflectionSite                              ? Work::Site
                             : submission.radiance                                    ? Work::Reflection
                             : submission.surface                                     ? Work::Surface
@@ -346,6 +354,43 @@ namespace remix::forward::bake {
     char progress[128];
     std::snprintf(progress, sizeof(progress), "Baking surface lightmaps (%u/%zu texels)", job.surfaceReceived,
                   job.surfaceLayout.points.size());
+    status(REMIXAPI_BAKE_TRACING_EXT, progress);
+  }
+  void Controller::recordProbeSun(VkCommandBuffer command, const Config &config) {
+    auto &job = *m_job;
+    if (!job.probeSunPlanned) {
+      if (job.source->sun.isDistant)
+        for (const auto index : job.grid.tasks)
+          if (job.grid.probes[index].statistics[3] > .5f)
+            job.probeSunTasks.push_back(index);
+      job.probeSunPlanned = true;
+    }
+    if (job.probeSunReceived == job.probeSunTasks.size()) {
+      recordSurfaces(command, config);
+      return;
+    }
+    if (job.probeSunNext < job.probeSunTasks.size()) {
+      auto &submission = m_submissions[m_slot];
+      if (submission.job)
+        throw std::logic_error("Probe sunlight slot reused before its fence");
+      const uint32_t count = job.count(Work::Sun, config,
+          uint32_t(job.probeSunTasks.size() - job.probeSunNext), config.samples);
+      std::vector<Point> points;
+      points.reserve(count);
+      for (uint32_t i = 0; i < count; ++i)
+        points.push_back(job.grid.points[job.probeSunTasks[job.probeSunNext + i]]);
+      // Probe points have no surface normal, so transport applies no surface
+      // offset. Relocated positions match those used by indirect irradiance.
+      job.transport->recordSun(command, m_slot, points, config.samples, false);
+      submission.job = m_job;
+      submission.probeSun = true;
+      submission.first = job.probeSunNext;
+      submission.count = count;
+      job.probeSunNext += count;
+    }
+    char progress[128];
+    std::snprintf(progress, sizeof(progress), "Baking probe sunlight visibility (%u/%zu probes)",
+                  job.probeSunReceived, job.probeSunTasks.size());
     status(REMIXAPI_BAKE_TRACING_EXT, progress);
   }
   void Controller::recordSun(VkCommandBuffer command, const Config &config) {
@@ -694,7 +739,8 @@ namespace remix::forward::bake {
     auto volume = std::make_shared<Volume>();
     probes::dumpCaptures(m_hash, m_job->captures);
     volume->directDiffuse = m_job->hasDirectDiffuse;
-    if (m_job->hasSun)
+    if (m_job->hasSun || std::any_of(grid.probes.begin(), grid.probes.end(),
+                                    [](const auto &p) { return p.irradiance[7][3] > .5f; }))
       volume->sun = m_job->source->sun;
     volume->hash = m_hash;
     volume->reflectionHeader = m_job->specular.header;
@@ -1054,7 +1100,7 @@ namespace remix::forward::bake {
           return;
         }
         if (job.received == job.grid.tasks.size()) {
-          recordSurfaces(command, config);
+          recordProbeSun(command, config);
           return;
         }
         auto &submission = m_submissions[m_slot];

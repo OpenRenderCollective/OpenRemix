@@ -34,12 +34,14 @@ namespace remix::forward::bake::cache {
   }
   namespace {
     // Bump whenever CPU planning, material transport or wire semantics change.
-    constexpr uint32_t algorithmRevision = 16; // probe spacing fits the budget between powers of two
+    constexpr uint32_t algorithmRevision = 17; // probe alpha carries baked static sunlight visibility
     void require(bool value) {
       if (!value)
         throw std::runtime_error("Invalid bake cache metadata");
     }
     void probeOffsets(const GridHeader &header, const Result &probe) {
+      require(probe.irradiance[7][3] == 0 || probe.irradiance[7][3] == 1);
+      require(probe.irradiance[8][3] >= 0 && probe.irradiance[8][3] <= 1);
       if (header.settings[2] > .5f)
         for (uint32_t c = 0; c < 3; ++c)
           require(std::isfinite(probe.irradiance[c][3]) &&

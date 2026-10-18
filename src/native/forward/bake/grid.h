@@ -26,6 +26,10 @@ namespace remix::forward::bake {
   // Grid-only alpha slots 0..2 retain the displacement of the actual trace
   // origin. Surface/capture Result alpha channels keep their own contracts.
   void storeProbe(Grid &grid, uint32_t index, const Result &value);
+  // Probe-only alpha: coefficients 0..2 are relocation offsets; 7 marks
+  // available static sunlight visibility and 8 stores its unit visible fraction.
+  // These channels never add energy to RGB irradiance.
   // CPU reference for the forward shader's visibility-aware reconstruction.
   std::optional<Vec3> sample(const Grid &grid, Vec3 position, Vec3 normal);
+  std::optional<float> sampleSunVisibility(const Grid &grid, Vec3 position, Vec3 normal);
 } // namespace remix::forward::bake

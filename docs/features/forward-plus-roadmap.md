@@ -15,7 +15,7 @@ reports. An implementation or synthetic test alone does not close an integration
 | --- | --- | --- |
 | Modular forward PBR, clustered lights and 1x/2x/4x MSAA | Implemented | Refresh current-build engine coverage through the integration milestone below |
 | World-metric surface charts, atlas budgets and irradiance probes | Implemented; warped boundary fans, modulating decals and lit displacement paint layers supported | Inspect connected-face continuity, seam donors, close decal receivers, indirect noise and budget coarsening |
-| Dynamic receiver agreement with surface lightmaps | Budget-fitted grid and bounded recovery of unused BSP-solid slots; shared-position indirect receiver diagnostics; per-light static surface visibility/direct SH is not present in that grid | Close remaining room-scale coverage/visibility gaps and verify moving actors; integrate localized/adaptive placement and indexed mixed visibility using CS2, Half-Life: Alyx and s&box as references |
+| Dynamic receiver agreement with surface lightmaps | Budget-fitted grid and bounded recovery of unused BSP-solid slots; shared-position indirect receiver diagnostics; static sunlight visibility now shares the probe records; local-light static visibility/direct SH is not present in that grid | Close remaining room-scale coverage/visibility gaps and verify moving actors; integrate localized/adaptive placement and indexed mixed visibility using CS2, Half-Life: Alyx and s&box as references |
 | Soft finite emitters, attributed direct diffuse and live specular | Implemented | Compare visible penumbrae and light separation in the live engine |
 | Aggregate fully static diffuse and compact directional lightmaps | Explicit policy, aggregate GPU transport, mixed-work exclusion and cache ownership validated; map controller still uses the legacy policy and atlas | Integrate runtime suppression/stale-RGB invalidation, automatic mixed selection and generated-emitter sampling; remove exhaustive visibility work without losing required specular/moving-shadow behavior; measure directional compression against normal-map and multi-lobe references |
 | Dynamic-object shadows combined with baked static shadows | Implemented; captured static casters excluded; overflow audits classify constant visibility and retain bounded-error palette masks within a memory budget | Confirm retained coverage across maps and bake quality settings; budget-exhausted overflow still requires realtime shadow capacity/range; live receivers, characters and static membership after map changes |
@@ -35,8 +35,10 @@ when baked lighting is active; a failed bake instead displays its failure messag
 
 ## Next milestones, in order
 
-1. **Replace exhaustive overflow baking.** Aggregate ordinary fully static direct diffuse with indirect
-   lighting; retain separate light identity only where mixed lighting needs it. Select mixed lights
+1. **Replace exhaustive overflow baking.** Complete indexed static local-light visibility for probe
+   receivers; static sun visibility already uses the shared probe interpolation, with moving-caster
+   shadows and complete shadow maps retained for uncovered receivers. Aggregate ordinary fully static
+   direct diffuse with indirect lighting; retain separate light identity only where mixed lighting needs it. Select mixed lights
    automatically from legacy inputs, preserving important emitters and reusing mask channels where
    receiver coverage permits. Define a correct fallback for overlapping mixed lights instead of
    silently losing their shadows. Keep camera-dependent specular visibility and dynamic-object

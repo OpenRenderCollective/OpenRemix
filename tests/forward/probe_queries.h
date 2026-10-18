@@ -21,7 +21,9 @@ namespace remix::forward::test {
         {{0, 0, -1, 0}, {0, 0, 1, .2f}}, {{-1, 0, 0, 0}, {1, 0, 0, .4f}},
         {{-.5f, 0, -1, 0}, {0, 0, 1, .3f}}, {{.5f, 0, -1, 0}, {0, 0, 1, .3f}},
         {{0, 0, 0, 2}, {0, 0, 1, 0}}, {{.5f, 0, 0, 2}, {1, 0, 0, 0}},
-        {{-.5f, .2f, 0, 2}, {0, 1, 0, 0}}, {{4, 0, 0, 2}, {0, 0, 1, 0}}};
+        {{-.5f, .2f, 0, 2}, {0, 1, 0, 0}}, {{4, 0, 0, 2}, {0, 0, 1, 0}},
+        {{0, 0, 0, 3}, {0, 0, 1, 0}}, {{.5f, 0, 0, 3}, {1, 0, 0, 0}},
+        {{-.5f, .2f, 0, 3}, {0, 1, 0, 0}}, {{4, 0, 0, 3}, {0, 0, 1, 0}}};
     struct Gpu {
       VkDevice device;
       Buffer asset, input, output, sky;
@@ -54,6 +56,8 @@ namespace remix::forward::test {
       auto &probe = sky.probes[i];
       probe.statistics[3] = skyCase == 2 ? 0.f : 1.f;
       probe.irradiance[0] = {.2f + i * .1f, .5f, .8f - i * .05f, 0};
+      probe.irradiance[7][3] = skyCase == 1 && i == 0 ? 0.f : 1.f;
+      probe.irradiance[8][3] = float(i) / 7.f;
       probe.irradiance[1] = {-.05f, .1f, .05f, 0};
       if (skyCase == 4) {
         sky.header.settings[2] = 1;
@@ -146,6 +150,16 @@ namespace remix::forward::test {
     gpu.output.read(values, sizeof(values));
     for (uint32_t i = 0; i < count; ++i) {
       const auto &q = queries[i];
+      if (q.position[3] == 3) {
+        const auto expected = bake::sampleSunVisibility(reference, {q.position[0], q.position[1], q.position[2]},
+                                                        {q.reflected[0], q.reflected[1], q.reflected[2]});
+        require((values[i][3] > .5f) == bool(expected),
+                "GPU probe sunlight preserves missing, relocated and wall-occluded coverage");
+        if (expected)
+          require(std::abs(values[i][0] - *expected) < 2e-5f,
+                  "GPU static sunlight interpolation matches CPU weights without adding irradiance");
+        continue;
+      }
       if (q.position[3] == 2) {
         const auto expected = bake::sample(reference, {q.position[0], q.position[1], q.position[2]},
                                            {q.reflected[0], q.reflected[1], q.reflected[2]});

@@ -18,7 +18,7 @@ namespace remix::forward::bake {
     uint64_t hash = 0;
     ContentHashes content;
     bool directDiffuse = false, styledIndirect = false;
-    scene::DistantLight sun; // shape provenance; isDistant only when surface sunlight was baked
+    scene::DistantLight sun; // shape provenance for matching surface/probe static sunlight
     probes::Header reflectionHeader;
     float sceneScale = 1;
     std::array<uint32_t, 4> occlusionParameters{}; // words/chart, chart count, texture width, sparse-mask tail
@@ -65,7 +65,7 @@ namespace remix::forward::bake {
       std::shared_ptr<Volume> sampled;
       uint32_t first = 0, count = 0, styled = 0;
       bool preparation = false, radiance = false, surface = false, visibility = false, reflectionSite = false,
-           sun = false, overflowVisibility = false, reflectionGeometry = false;
+           sun = false, probeSun = false, overflowVisibility = false, reflectionGeometry = false;
     };
     VkPhysicalDevice m_physical;
     VkDevice m_device;
@@ -93,6 +93,7 @@ namespace remix::forward::bake {
     void recordVisibility(VkCommandBuffer command, const Config &config);
     void recordOverflowVisibility(VkCommandBuffer command, const Config &config);
     void recordSun(VkCommandBuffer command, const Config &config);
+    void recordProbeSun(VkCommandBuffer command, const Config &config);
     void recordReflections(VkCommandBuffer command, const Config &config);
   };
 } // namespace remix::forward::bake

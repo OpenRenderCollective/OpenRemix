@@ -120,3 +120,25 @@ float bakedSkyVisibility(vec3 position, vec3 normal, vec3 ray) {
   }
   return total >= 1e-4 ? result / total : 0;
 }
+
+// Static direct occlusion is independent of sun colour/intensity and diffuse
+// irradiance. Missing coverage keeps the complete shadow-map fallback.
+bool bakedSunVisibility(vec3 position, vec3 normal, out float visibility) {
+  uvec3 base;
+  vec3 fraction;
+  if (!bakeCell(position, normal, base, fraction)) return false;
+  visibility = 0;
+  float total = 0;
+  for (uint corner = 0u; corner < 8u; ++corner) {
+    uvec3 upper = uvec3(corner & 1u, (corner >> 1u) & 1u, (corner >> 2u) & 1u);
+    uint index;
+    float weight = bakeProbeWeight(position, normal, base + upper, fraction, upper, index);
+    if (weight <= 0) continue;
+    if (bakeProbeCoefficient(index, 7u).w < .5 && weight > 1e-6) return false;
+    visibility += weight * bakeProbeCoefficient(index, 8u).w;
+    total += weight;
+  }
+  if (total < 1e-4) return false;
+  visibility = clamp(visibility / total, 0, 1);
+  return true;
+}

@@ -39,6 +39,9 @@ namespace remix::forward::bake {
     void saveCache();
     bool cacheHit = false;
     uint32_t sunNext = 0, sunReceived = 0;
+    std::vector<uint32_t> probeSunTasks;
+    bool probeSunPlanned = false;
+    uint32_t probeSunNext = 0, probeSunReceived = 0;
     uint32_t visibilityNext = 0, visibilityReceived = 0;
     bool visibilityFinished = false;
     std::unique_ptr<mixed::OverflowAudit> overflowAudit;
@@ -68,7 +71,8 @@ namespace remix::forward::bake {
     bool initialized = false, prepared = false, failed = false;
     void prepareResources(VkPhysicalDevice physical, VkDevice device, const Config &config, float lightCutoff,
                           uint32_t queueFamily);
-    bool consumeVisibility(uint32_t slot, uint32_t first, uint32_t count, bool local, bool overflow);
+    enum class Visibility { Local, Overflow, SurfaceSun, ProbeSun };
+    bool consumeVisibility(uint32_t slot, uint32_t first, uint32_t count, Visibility kind);
     uint32_t count(Work work, const Config &config, uint32_t remaining, uint32_t samples,
                    uint32_t bounces = 1) {
       return budget.count(work, config.batch, transport->timingSupported() ? config.gpuBudgetMs : 0, samples,

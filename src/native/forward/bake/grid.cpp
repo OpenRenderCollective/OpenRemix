@@ -104,7 +104,7 @@ namespace remix::forward::bake {
       throw std::invalid_argument("Probe bounds contain no usable BSP leaves");
     return result;
   }
-  std::optional<Vec3> sample(const Grid &grid, Vec3 position, Vec3 normal) {
+  static std::optional<Vec3> sampleSignal(const Grid &grid, Vec3 position, Vec3 normal, bool sunlight) {
     const auto &h = grid.header;
     if (!h.dimensions[3])
       return {};
@@ -153,9 +153,15 @@ namespace remix::forward::bake {
       }
       const float facing = distance > 1e-6f ? dot(normal, delta) / distance : -1;
       weight *= std::pow(std::max(.05f, .5f - .5f * facing), 2.f);
-      for (uint32_t j = 0; j < 9; ++j)
-        for (uint32_t c = 0; c < 3; ++c)
-          value[c] += weight * probe.irradiance[j][c] * sh[j];
+      if (sunlight) {
+        if (probe.irradiance[7][3] < .5f && weight > 1e-6f)
+          return {};
+        value[0] += weight * probe.irradiance[8][3];
+      } else {
+        for (uint32_t j = 0; j < 9; ++j)
+          for (uint32_t c = 0; c < 3; ++c)
+            value[c] += weight * probe.irradiance[j][c] * sh[j];
+      }
       total += weight;
     }
     if (total < 1e-4f)
@@ -163,5 +169,12 @@ namespace remix::forward::bake {
     for (auto &channel : value)
       channel = std::max(0.f, channel / total);
     return value;
+  }
+  std::optional<Vec3> sample(const Grid &grid, Vec3 position, Vec3 normal) {
+    return sampleSignal(grid, position, normal, false);
+  }
+  std::optional<float> sampleSunVisibility(const Grid &grid, Vec3 position, Vec3 normal) {
+    const auto value = sampleSignal(grid, position, normal, true);
+    return value ? std::optional(std::clamp((*value)[0], 0.f, 1.f)) : std::nullopt;
   }
 } // namespace remix::forward::bake

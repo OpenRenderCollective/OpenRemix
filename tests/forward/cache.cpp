@@ -81,6 +81,8 @@ int main(int argc, char **argv) {
     data.grid.tasks.push_back(i);
     data.grid.probes[i].statistics = {0, 1, 256, 1};
     data.grid.probes[i].irradiance[0] = {1, 2, 3, 0};
+    data.grid.probes[i].irradiance[7][3] = 1;
+    data.grid.probes[i].irradiance[8][3] = float(i) / 7.f;
   }
   data.layout.pageSize = 8;
   data.layout.pages = 1;
@@ -128,6 +130,15 @@ int main(int argc, char **argv) {
               f::probes::serialize(restored->specular) == f::probes::serialize(data.specular) &&
               restored->surfaceSamples == 25 && restored->directDiffuse,
           "Atlas, reflection data and direct-light policy survive the cache round trip");
+  require(restored->grid.probes[3].irradiance[7][3] == 1 &&
+              restored->grid.probes[3].irradiance[8][3] == data.grid.probes[3].irradiance[8][3],
+          "Probe static sunlight visibility survives the disk cache without a second allocation");
+  data.grid.probes[0].irradiance[8][3] = 2;
+  require(!save(), "Out-of-range probe sunlight cannot replace a completed lighting cache");
+  data.grid.probes[0].irradiance[8][3] = 0;
+  data.grid.probes[0].irradiance[7][3] = .5f;
+  require(!save(), "Ambiguous probe sunlight availability cannot enter the cache");
+  data.grid.probes[0].irradiance[7][3] = 1;
   {
     auto relocated = data;
     auto relocationConfig = config;

@@ -2011,6 +2011,10 @@ namespace {
       auto &r = target.raster;
       remix::forward::Options options;
       options.baking.lightmapFitBudget = false; // Controlled-density lighting fixtures.
+      // This fixture measures shadow visibility in linear output, independent
+      // of the shared display curve's compression of saturated primaries.
+      options.prism = false;
+      options.exposure = 2;
       options.samples = samples;
       options.rtGI = samples == 2;
       options.rtGISamples = options.rtGIBounces = 1;
@@ -2069,10 +2073,12 @@ namespace {
       request.chartRevision = request.chartCount = 1;
       request.charts = &chart;
       r.setBakeScene(&base);
+      std::optional<remixapi_InstanceInfo> probeCaster;
       auto render = [&](bool charted = true) {
         camera(r);
         if (charted) r.drawRetained(nullptr);
         else r.drawInstance(instance(receiverMesh));
+        if (probeCaster) r.drawInstance(*probeCaster);
         r.drawLight(sun);
         return target.render();
       };
@@ -2083,7 +2089,7 @@ namespace {
           pixels = render();
           const auto &bake = target.forward->statistics().baking;
           require(bake.state != REMIXAPI_BAKE_FAILED_EXT, "Mixed sunlight bake succeeds");
-          if ((ready && bake.active) || (!ready && std::strstr(bake.status, "Baking static sunlight")))
+          if ((ready && bake.active && bake.state == REMIXAPI_BAKE_READY_EXT) || (!ready && std::strstr(bake.status, "Baking static sunlight")))
             return pixels;
           std::this_thread::sleep_for(std::chrono::milliseconds(1));
         } while (std::chrono::steady_clock::now() < deadline);
@@ -2195,6 +2201,51 @@ namespace {
       pixels = render(false);
       require(pixels[left + 2] < 3 && pixels[right + 2] > 80,
               "Uncharted sun receivers still see complete frozen casters outside live submissions");
+      // Put actual probes around the receiver, then move the realtime cascade
+      // range entirely in front of it. Occlusion on the uncharted draw can now
+      // come only from baked probe data, never either shadow-map family.
+      const auto fallbackDistance = options.shadowDistance;
+      options.baking.spacing = .125f;
+      options.baking.maxProbes = 8192;
+      options.baking.diskCache = false;
+      target.forward->updateLighting(options);
+      // Recreate the frozen occluder removed for the fallback test above.
+      const uint64_t probeInstances[] = {receiverHandle, r.createRetained(blocker)};
+      base.instances = probeInstances;
+      ++base.revision;
+      for (uint32_t c = 0; c < 3; ++c) {
+        request.bounds.minimum[c] = c == 2 ? .25f : -1.f;
+        request.bounds.maximum[c] = c == 2 ? .55f : 1.f;
+      }
+      r.setBakeScene(&base);
+      until(true);
+      options.shadowDistance = .11f;
+      target.forward->updateLighting(options);
+      pixels = render(false);
+      std::printf("Probe sunlight %ux: blocked %u, clear %u\n", samples,
+                  unsigned(pixels[left + 2]), unsigned(pixels[right + 2]));
+      require(pixels[left + 2] < 15 && pixels[right + 2] > 80,
+              "Dynamic receivers use baked static sunlight outside all realtime cascades");
+      distant.direction = {-.8944272f, 0, .4472136f};
+      r.updateLight(sun, light);
+      pixels = render(false);
+      require(pixels[left + 2] > 30,
+              "Changed sun rejects probe visibility even when the cascade fallback is out of range");
+      distant.direction = {0, 0, 1};
+      r.updateLight(sun, light);
+      options.shadowDistance = fallbackDistance;
+      target.forward->updateLighting(options);
+      identity.instanceId = 9912;
+      probeCaster = moving;
+      probeCaster->transform.matrix[1][3] = 0;
+      pixels = render(false);
+      require(pixels[right + 2] < 30 && pixels[adjacent + 2] > 80 && pixels[left + 2] < 15,
+              "Moving-only sunlight shadows combine with probe static visibility on dynamic receivers");
+      probeCaster.reset();
+      pixels = render(false);
+      require(pixels[right + 2] > 80 && pixels[left + 2] < 15,
+              "Removing the moving caster restores probe-lit receivers without shadow trails");
+      r.destroyRetained(&probeInstances[1], 1);
       r.setBakeScene(nullptr);
       for (uint32_t i = 0; i < remix::gpuFrameCount + 1; ++i) pixels = render(false);
       require(pixels[left + 2] > 80 && !target.forward->statistics().baking.active,

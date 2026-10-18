@@ -15,6 +15,12 @@ void main() {
   if (index >= count)
     return;
   Query q = queries[index];
+  if (q.position.w == 3) {
+    float value = 0;
+    bool found = bakedSunVisibility(q.position.xyz, q.reflected.xyz, value);
+    results[index] = vec4(value, 0, 0, found ? 1 : 0);
+    return;
+  }
   if (q.position.w == 2) {
     vec3 value = vec3(0);
     bool found = bakedIrradiance(q.position.xyz, q.reflected.xyz, value);

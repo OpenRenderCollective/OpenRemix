@@ -165,7 +165,7 @@ namespace remix::forward {
     std::copy(direction.begin(), direction.end(), data.sunDirection.begin());
     std::copy_n(sun.radiance, 3, data.sunRadiance.begin());
     if (const auto &volume = baking->volume(); volume && options.shadows && matchesSun(volume->sun, sun))
-      data.sunDirection[3] = 1; // charted receivers may use this sun's static bake
+      data.sunDirection[3] = 1; // lightmap/probe receivers may use matching static visibility
     data.sunRadiance[3] = std::sin(sun.angularDiameterDegrees * .008726646259971648f);
     data.ambientExposure = {options.ambient, options.ambient, options.ambient, options.exposure};
     const auto range = depthRange(resources.projection());

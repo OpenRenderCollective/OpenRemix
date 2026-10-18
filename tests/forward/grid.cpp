@@ -79,6 +79,20 @@ int main() {
     require(value && std::abs((*value)[0] - 2) < 1e-5f && std::abs((*value)[2] - .5f) < 1e-5f,
             "Constant irradiance reconstructs independently of position and normal");
   }
+  require(!bake::sampleSunVisibility(grid, {0, 0, 0}, {0, 0, 1}),
+          "Indirect probes without direct visibility retain the shadow-map fallback");
+  for (auto &probe : grid.probes) {
+    probe.irradiance[7][3] = 1;
+    probe.irradiance[8][3] = .25f;
+  }
+  const auto visibility = bake::sampleSunVisibility(grid, {0, 0, 0}, {0, 0, 1});
+  require(visibility && std::abs(*visibility - .25f) < 1e-6f,
+          "Static direct visibility interpolates separately from RGB irradiance");
+  const auto unchanged = bake::sample(grid, {0, 0, 0}, {0, 0, 1});
+  require(unchanged && std::abs((*unchanged)[0] - 2) < 1e-5f,
+          "Probe visibility metadata cannot double-count direct diffuse energy");
+  require(!bake::sampleSunVisibility(grid, {100000, 0, 0}, {0, 0, 1}),
+          "Uncovered sunlight receivers retain complete shadow maps");
   require(!bake::sample(grid, {100000, 0, 0}, {0, 0, 1}), "Outside surfaces use the ambient fallback");
   for (auto &probe : grid.probes)
     probe.statistics[3] = 0;
