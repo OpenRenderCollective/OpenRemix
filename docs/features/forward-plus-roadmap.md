@@ -101,8 +101,17 @@ when baked lighting is active; a failed bake instead displays its failure messag
    lookup/page allocations and unbound-image atlas requirements, selecting a nineteen-layer GPU
    atlas only when it saves total memory. Budget/device-capacity failures keep the complete legacy
    layout. Cache and logical diagnostic atlas data stay at twenty layers; segmented upload skips
-   visibility without copying a second full atlas or invalidating existing disk caches. Directional
-   ownership still uses four retained owners, independently of the scalable scalar masks.
+   visibility without copying a second full atlas or invalidating existing disk caches.
+   Surface directionality now has a lossless sparse chart/light representation with no four-owner
+   storage limit: empty and constant 8x8 blocks share compact records, while dense chunks retain raw
+   half fields. Worker conversion preserves every currently retained coefficient and never modifies
+   the cache atlas. Publication compares all four visibility/directionality layouts using unbound
+   image memory requirements, allocates only the winner, and can omit the nine local directional
+   layers independently of visibility. Budget/device failures retain a complete atlas fallback.
+   CPU codec, ownership, multi-page upload and real-cache bit comparisons pass; shader compilation
+   passes. GPU decoding, filtering/image agreement, lifecycle and performance checks are still
+   pending. Transport and cache ownership still retain four directional owners: capture and persist
+   additional fields before claiming that the four-owner limit is removed end to end.
    Geometry-emitter hints alone do not address maps dominated by explicit point/spot lights. Extend
    aggregate ownership to those fixed emitters while retaining compact, selected per-light specular
    visibility and moving-caster corrections; avoid restoring exhaustive evaluation for every baked

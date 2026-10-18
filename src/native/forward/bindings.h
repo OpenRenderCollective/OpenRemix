@@ -23,7 +23,7 @@ namespace remix::forward {
     Vec4 localSettings{}; // local resolution, local radial bias, sun bias (scene units), baked direct enabled
     std::array<Vec4, 32> styleScales{}; // current/authored envelope scalar, indexed by adapter-assigned group ID
     std::array<uint32_t, 4> occlusion{}; // words per chart, chart count, texture width, indexed-mask tail
-    std::array<uint32_t, 4> clusterInfo{}; // capacity; zero or mixed-prefix length + 1; reserved
+    std::array<uint32_t, 4> clusterInfo{}; // capacity; zero or mixed-prefix length + 1; sparse surface SH word; reserved
   };
   struct LightData {
     Vec4 positionRadius{}, radiance{}, directionCone{}, shaping{};

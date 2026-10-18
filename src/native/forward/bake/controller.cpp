@@ -159,7 +159,7 @@ namespace remix::forward::bake {
                 physical, device, source, surfaceLayout, cancellation.get_token(),
                 mixedLights->charts, mixedLights->directCharts);
           dumpReceiverReport(*source, surfaceLayout, surfacePixels, grid, cancellation.get_token());
-          prepareIndexedVisibility();
+          prepareSurfaceStorage();
           cacheHit = filtering = true;
           return;
         }
@@ -870,7 +870,7 @@ namespace remix::forward::bake {
               owner->surfaceGeometry = std::make_shared<lightmap::Geometry>(
                   physical, device, owner->source, owner->surfaceLayout, owner->cancellation.get_token(),
                   owner->mixedLights->charts, owner->mixedLights->directCharts);
-            owner->prepareIndexedVisibility();
+            owner->prepareSurfaceStorage();
             owner->baseFinished = true;
             owner->filtering = !owner->styles;
           });
@@ -951,21 +951,25 @@ namespace remix::forward::bake {
     auto visibility = mixed::prepareVisibility(m_physical, m_device, *m_job->mixedLights,
         m_job->surfaceLayout, m_job->surfacePixels,
         !pageOverride || std::strcmp(pageOverride, "0") != 0,
-        m_job->unifiedMasks ? &*m_job->unifiedMasks : nullptr);
+        m_job->unifiedMasks ? &*m_job->unifiedMasks : nullptr, m_job->directionalWords);
     auto &visibilityPages = visibility.pages;
     auto &occlusion = visibility.lookup;
     const auto compressedAllocation = visibility.compressedAllocation;
     volume->occlusion = std::move(visibility.lookupImage);
     volume->visibilityPages = std::move(visibility.pageImage);
-    const uint32_t surfaceLayers = lightmap::uploadedLayers(visibility.indexed);
+    volume->surfaceDirectOffset = visibility.directionalOffset;
+    const uint32_t surfaceLayers = lightmap::uploadedLayers(visibility.indexed, visibility.indexedDirect);
     const auto &surfaceLayout = m_job->surfaceLayout;
-    const auto segments = lightmap::uploadSegments(surfaceLayout, visibility.indexed);
+    const auto segments = lightmap::uploadSegments(surfaceLayout, visibility.indexed, visibility.indexedDirect);
     const size_t surfaceBytes = m_job->surfacePixels.empty() ? 0 : size_t(surfaceLayout.pageSize) *
         surfaceLayout.pageSize * surfaceLayout.pages * surfaceLayers * 4 * sizeof(uint16_t);
     std::fprintf(stderr, "Forward indexed visibility: %u, %llu -> %llu GPU bytes, %llu primary texels, max error %.9g\n",
         unsigned(visibility.indexed), static_cast<unsigned long long>(visibility.legacyAllocation),
         static_cast<unsigned long long>(visibility.totalAllocation),
         static_cast<unsigned long long>(visibility.convertedTexels), visibility.maximumError);
+    std::fprintf(stderr, "Forward indexed directionality: %u, %zu bytes, table word %u, %u atlas layers\n",
+        unsigned(visibility.indexedDirect), visibility.indexedDirect ? m_job->directionalWords.size() * sizeof(uint32_t) : 0,
+        visibility.directionalOffset, surfaceLayers);
     const auto &maskCosts = m_job->mixedLights->masks.candidateCosts();
     if (maskCosts.candidates)
       probes::dumpPublishedData(".overflow-mask-costs.bin", &maskCosts, sizeof(maskCosts));

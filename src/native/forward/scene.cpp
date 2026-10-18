@@ -199,8 +199,10 @@ namespace remix::forward {
         if (scale.status == bake::StyleStatus::Ready)
           data.styleScales[scale.style / 4][scale.style % 4] = scale.value;
     }
-    if (baking->volume())
+    if (baking->volume()) {
       data.occlusion = baking->volume()->occlusionParameters;
+      data.clusterInfo[2] = baking->volume()->surfaceDirectOffset;
+    }
     data.camera = resources.camera();
     data.view = resources.view();
     // The shared camera already includes Vulkan framebuffer Y. Reconstruction

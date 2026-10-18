@@ -1,9 +1,10 @@
 // Mirrors forward/lightmap/data.h. Each atlas page keeps indirect, visibility
 // and per-light unit direct irradiance separate.
-// The GPU-only compact layout omits source layer nine. Direct coefficients
-// start at (layer count - 10); the sun mask is the final layer.
+// GPU-only compaction can omit visibility and/or local direct coefficients.
+// Retained direct coefficients start at (layer count - 10); sun is always last.
 bool indexedSurfaceVisibility() { return (frame.occlusion.x & 0x80000000u) != 0u; }
-#define SurfaceAtlasLayers (indexedSurfaceVisibility() ? 19.0 : 20.0)
+bool indexedSurfaceDirect() { return frame.clusterInfo.z != 0u; }
+#define SurfaceAtlasLayers (20.0 - (indexedSurfaceVisibility() ? 1.0 : 0.0) - (indexedSurfaceDirect() ? 9.0 : 0.0))
 void surfaceBasis(vec3 normal, out float sh[9]) {
   sh = float[9](.2820947918, .4886025119 * normal.y, .4886025119 * normal.z, .4886025119 * normal.x,
                 1.092548431 * normal.x * normal.y, 1.092548431 * normal.y * normal.z,
@@ -56,7 +57,7 @@ bool bakedLightVisibility(vec4 coordinate, uvec4 owners, uint capturedLight, out
 }
 
 vec4 surfaceDirectIrradiance(vec4 coordinate, vec3 normal) {
-  if (coordinate.w < .5 || frame.localSettings.w < .5)
+  if (indexedSurfaceDirect() || coordinate.w < .5 || frame.localSettings.w < .5)
     return vec4(-1);
   float sh[9];
   surfaceBasis(normal, sh);

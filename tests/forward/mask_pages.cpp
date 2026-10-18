@@ -84,6 +84,30 @@ int main() {
         require(uploaded[(page * 19 + layer) * 64] == pixels[(page * 20 + sourceLayer) * 64],
                 "Segmented upload preserves indirect, direct and sun layers on every page");
       }
+    for (bool masksIndexed : {false, true})
+      for (bool directIndexed : {false, true}) {
+        const auto layers = lightmap::uploadedLayers(masksIndexed, directIndexed);
+        std::vector<uint16_t> source(2 * 20 * 64);
+        for (uint32_t i = 0; i < source.size(); ++i) source[i] = uint16_t(i);
+        std::vector<uint16_t> target(2 * layers * 64, 0xffff);
+        for (const auto &segment : lightmap::uploadSegments(layout, masksIndexed, directIndexed)) {
+          require(segment.source + segment.values <= source.size() &&
+                      segment.destination + segment.values <= target.size(),
+                  "Every compact-atlas upload segment fits its source and destination");
+          std::copy_n(source.begin() + segment.source, segment.values, target.begin() + segment.destination);
+        }
+        for (uint32_t page = 0; page < 2; ++page) {
+          uint32_t destination = 0;
+          for (uint32_t layer = 0; layer < 20; ++layer) {
+            if ((masksIndexed && layer == 9) || (directIndexed && layer >= 10 && layer < 19)) continue;
+            for (uint32_t i = 0; i < 64; ++i)
+              require(target[(page * layers + destination) * 64 + i] == source[(page * 20 + layer) * 64 + i],
+                      "All four complete storage layouts preserve every retained atlas value across pages");
+            ++destination;
+          }
+          require(destination == layers, "Both independent replacements have an exact atlas layer count");
+        }
+      }
   }
 
   {

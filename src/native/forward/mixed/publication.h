@@ -9,14 +9,15 @@ namespace remix::forward::mixed {
     Occlusion::Pixels lookup;
     std::unique_ptr<OcclusionMap> lookupImage, pageImage;
     std::optional<MaskPages> pages;
-    bool indexed = false, hasMasks = false;
+    bool indexed = false, indexedDirect = false, hasMasks = false;
+    uint32_t directionalOffset = 0; // R32_UINT word offset, zero keeps atlas SH
     uint64_t compressedAllocation = 0, legacyAllocation = 0, totalAllocation = 0;
     uint64_t convertedTexels = 0;
     float maximumError = 0;
   };
-  // Chooses a complete representation before upload. Surface memory is queried
-  // using unbound images, so comparison never allocates two large atlases.
+  // Chooses complete replacements before upload. All candidate image memory is
+  // queried unbound; only the winning lookup/pages receive GPU allocations.
   VisibilityPublication prepareVisibility(VkPhysicalDevice physical, VkDevice device,
       const Plan &plan, const lightmap::Layout &layout, std::span<const uint16_t> pixels,
-      bool allowPages, const UnifiedMasks *unified);
+      bool allowPages, const UnifiedMasks *unified, std::span<const uint32_t> directional = {});
 }

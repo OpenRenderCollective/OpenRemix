@@ -22,6 +22,7 @@ namespace remix::forward::bake {
     probes::Header reflectionHeader;
     float sceneScale = 1;
     std::array<uint32_t, 4> occlusionParameters{}; // stride + compact-atlas flag, charts, width, indexed-mask tail
+    uint32_t surfaceDirectOffset = 0; // sparse directional table in the R32_UINT lookup; zero keeps atlas SH
     std::unique_ptr<Buffer> data, specular, staging;
     std::unique_ptr<Image> surfaceAtlas;
     std::unique_ptr<mixed::OcclusionMap> occlusion, visibilityPages;

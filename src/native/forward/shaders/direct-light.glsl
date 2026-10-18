@@ -1,4 +1,5 @@
 #include "diffuse-residual.glsl"
+#include "directional-fields.glsl"
 bool emitterAbovePlane(Light light, vec3 p, vec3 n) {
   if (light.radiance.w <= 0)
     return dot(light.positionRadius.xyz - p, n) + light.positionRadius.w > 0;
@@ -27,6 +28,8 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
   bool bakedDiffuse = directChannel < 4u && directIrradiance[min(directChannel, 3u)] >= 0;
   bool probeCorrection = aggregateDiffuse && light.corners[0].w > 0 && light.corners[1].w < 1;
   float attributedDiffuse = bakedDiffuse ? directIrradiance[min(directChannel, 3u)] : 0;
+  if (indexedSurfaceDirect() && (!aggregateDiffuse || probeCorrection))
+    bakedDiffuse = surfaceDirectionalField(surfaceChart, uint(light.shaping.w), surfaceLightmap, n, attributedDiffuse);
   vec3 l = delta / distance;
   float shape = emitterConeWeight(light.directionCone.xyz, light.directionCone.w,
                                    light.shaping.x, light.shaping.y, -l);
