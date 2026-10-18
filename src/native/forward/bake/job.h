@@ -6,6 +6,7 @@
 #include "forward/bake/probe_visibility.h"
 #include "forward/bake/sun_antialiasing.h"
 #include "forward/mixed/overflow.h"
+#include "forward/mixed/direct_work.h"
 #include "forward/probes/evaluation.h"
 #include <atomic>
 #include <filesystem>
@@ -38,7 +39,8 @@ namespace remix::forward::bake {
     std::shared_ptr<mixed::Plan> mixedLights;
     std::vector<Vec4> visibility;
     std::vector<lightmap::Direct> direct;
-    std::vector<VisibilityTask> directTasks;
+    std::optional<mixed::DirectWork> directWork;
+    uint64_t directWorkBytes = 0;
     bool directPlanned = false, directFinished = false;
     uint32_t directNext = 0, directReceived = 0;
     std::vector<lightmap::Sun> sun;

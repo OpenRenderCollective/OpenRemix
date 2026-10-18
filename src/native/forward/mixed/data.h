@@ -40,7 +40,4 @@ namespace remix::forward::mixed {
   bool refine(Plan &plan, const lightmap::Layout &layout, std::span<const Vec4> visibility,
               std::stop_token cancelled = {}, std::span<const lightmap::Direct> scratch = {},
               std::span<lightmap::Direct> direct = {}, DirectCapture capture = DirectCapture::Immediate);
-  // Deferred capture traces only retained owners after scalar classification.
-  std::vector<Task> directTasks(const Plan &plan, const lightmap::Layout &layout,
-                                std::stop_token cancelled = {});
 } // namespace remix::forward::mixed

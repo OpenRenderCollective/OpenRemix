@@ -1,5 +1,6 @@
 #include "forward/lightmap/data.h"
 #include "forward/mixed/data.h"
+#include "forward/mixed/direct_work.h"
 #include "forward/mixed/overflow.h"
 #include "forward/ray/capture.h"
 #include "scene/fixtures.h"
@@ -400,7 +401,8 @@ int main() {
                 std::equal(deferred.occlusion.words().begin(), deferred.occlusion.words().end(),
                            clear.occlusion.words().begin(), clear.occlusion.words().end()),
             "Scalar classification retains the same filtered masks and positive direct owners");
-    const auto firstDirectTasks = m::directTasks(deferred, layout);
+    const m::DirectWork firstDirectWork(deferred, layout);
+    const auto firstDirectTasks = firstDirectWork.batch(0, firstDirectWork.size());
     require(firstDirectTasks.size() == layout.points.size() * 3,
             "Deferred tracing excludes the blocked candidate and includes every selected receiver/donor");
     for (const auto &task : firstDirectTasks)
@@ -420,18 +422,65 @@ int main() {
             "Later clear candidates fill spare direct channels without overwriting previously retained SH");
     require(!m::refine(deferred, layout, visibility, {}, {}, {}, m::DirectCapture::Deferred) &&
                 deferred.charts == clear.charts && deferred.directCharts == clear.directCharts &&
-                m::directTasks(deferred, layout).size() == layout.points.size() * 4,
+                m::DirectWork(deferred, layout).size() == layout.points.size() * 4,
             "Deferred ownership remains identical through channel reuse and subsequent clear candidates");
     std::stop_source directCancellation;
     directCancellation.request_stop();
     bool directCancelled = false;
-    try { m::directTasks(deferred, layout, directCancellation.get_token()); }
+    try { m::DirectWork cancelled(deferred, layout, directCancellation.get_token()); }
     catch (const std::runtime_error &) { directCancelled = true; }
     require(directCancelled, "Superseded direct-task preparation stops before publication");
     auto noDirect = deferred;
     for (auto &owners : noDirect.directCharts) owners.fill(m::none);
-    require(m::directTasks(noDirect, layout).empty(),
+    require(m::DirectWork(noDirect, layout).empty(),
             "A plan with no retained positive owners schedules no directional rays");
+    {
+      auto sparse = deferred;
+      sparse.charts.resize(3);
+      sparse.directCharts = {{m::none, 1, m::none, 2},
+                             {m::none, m::none, m::none, m::none}, {0, m::none, 3, 4}};
+      lm::Layout interleaved;
+      interleaved.pointCharts = {1, 0, 0, 1, 2, 0, 2, 1, 2, 2, 1};
+      interleaved.points.resize(interleaved.pointCharts.size());
+      std::vector<m::Task> expected;
+      for (uint32_t point = 0; point < interleaved.points.size(); ++point)
+        for (uint32_t channel = 0; channel < m::channels; ++channel)
+          if (const auto light = sparse.directCharts[interleaved.pointCharts[point]][channel]; light != m::none)
+            expected.push_back({point, light, channel});
+      const m::DirectWork work(sparse, interleaved);
+      require(work.size() == expected.size(), "Compact direct prefixes count sparse owners and empty receivers");
+      // Neither caller mutation nor a batch spanning empty receivers may alter
+      // the ownership snapshot already referenced by GPU submissions.
+      for (auto &owners : sparse.directCharts) owners.fill(m::none);
+      std::fill(interleaved.pointCharts.begin(), interleaved.pointCharts.end(), 1);
+      for (uint32_t first = 0; first <= work.size(); ++first)
+        for (uint32_t count = 0; count <= work.size() - first; ++count) {
+          const auto batch = work.batch(first, count);
+          require(batch.size() == count, "Compact direct batches retain exact tail lengths");
+          for (uint32_t i = 0; i < count; ++i)
+            require(batch[i].point == expected[first+i].point && batch[i].light == expected[first+i].light &&
+                        batch[i].channel == expected[first+i].channel,
+                    "Every batch boundary preserves receiver/light/channel order across empty gaps");
+        }
+      bool refused = false;
+      try { work.batch(work.size(), 1); }
+      catch (const std::out_of_range &) { refused = true; }
+      require(refused, "Out-of-range direct batches fail before allocating or submitting work");
+      sparse.charts.resize(1);
+      sparse.directCharts = {{0, 1, 2, 3}};
+      lm::Layout large;
+      large.points.resize(100000);
+      large.pointCharts.resize(large.points.size(), 0);
+      const m::DirectWork dense(sparse, large);
+      require(dense.size() == 400000 && dense.memoryBytes() < (1u << 20),
+              "Four hundred thousand directional tasks retain less than one MiB of index storage");
+      const auto tail = dense.batch(dense.size() - 5, 5);
+      for (uint32_t i = 0; i < tail.size(); ++i) {
+        const uint32_t task = dense.size() - 5 + i;
+        require(tail[i].point == task / 4 && tail[i].light == task % 4 && tail[i].channel == task % 4,
+                "A large streamed tail crosses receiver boundaries without an expanded task list");
+      }
+    }
     auto almostClear = plan;
     visibility.assign(layout.points.size(), {1, 1, 1, 1});
     visibility[0][0] = .999999f;

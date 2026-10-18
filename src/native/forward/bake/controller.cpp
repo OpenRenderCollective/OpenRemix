@@ -70,6 +70,8 @@ namespace remix::forward::bake {
       visibilityReadback.resize(count);
     const auto results = std::span(visibilityReadback).first(count);
     transport->readVisibility(slot, results);
+    const auto directBatch = kind == Visibility::Direct ? directWork->batch(first, count)
+                                                       : std::vector<VisibilityTask>{};
     for (uint32_t i = 0; i < count; ++i) {
       const auto &value = results[i];
       if (!std::isfinite(value.visibility) ||
@@ -83,7 +85,7 @@ namespace remix::forward::bake {
         probe.irradiance[7][3] = probe.statistics[3] > .5f ? 1.f : 0.f;
         probe.irradiance[8][3] = std::clamp(value.visibility, 0.f, 1.f);
       } else if (kind == Visibility::Direct) {
-        const auto &task = directTasks[first + i];
+        const auto &task = directBatch[i];
         for (uint32_t coefficient = 0; coefficient < lightmap::irradianceLayers; ++coefficient)
           direct[task.point][coefficient][task.channel] = value.irradiance[coefficient];
       } else {
@@ -570,26 +572,27 @@ namespace remix::forward::bake {
       job.directPlanned = true;
       const auto owner = m_job;
       job.ticket = m_pipelines->prepare("forward-direct-" + std::to_string(++generation), [owner] {
-        owner->directTasks = mixed::directTasks(*owner->mixedLights, owner->surfaceLayout,
-                                                owner->cancellation.get_token());
+        owner->directWork.emplace(*owner->mixedLights, owner->surfaceLayout,
+                                  owner->cancellation.get_token());
+        owner->directWorkBytes = owner->directWork->memoryBytes();
       });
       status(REMIXAPI_BAKE_PREPARING_EXT, "Preparing retained direct lighting");
       return;
     }
-    if (job.directReceived == job.directTasks.size()) {
+    if (job.directReceived == job.directWork->size()) {
       job.directFinished = true;
-      releaseStorage(job.directTasks);
+      job.directWork.reset();
       recordOverflowVisibility(command, config);
       return;
     }
-    if (job.directNext < job.directTasks.size()) {
+    if (job.directNext < job.directWork->size()) {
       auto &submission = m_submissions[m_slot];
       if (submission.job) throw std::logic_error("Direct-light slot reused before its fence");
       const uint32_t count = job.count(Work::Visibility, config,
-          uint32_t(job.directTasks.size() - job.directNext), config.samples);
+          job.directWork->size() - job.directNext, config.samples);
       std::vector<VisibilityPoint> points;
       points.reserve(count);
-      for (const auto &task : std::span(job.directTasks).subspan(job.directNext, count))
+      for (const auto &task : job.directWork->batch(job.directNext, count))
         points.push_back({job.surfaceLayout.points[task.point], task.light});
       job.transport->recordVisibility(command, m_slot, points, config.samples, true);
       submission.job = m_job;
@@ -599,8 +602,8 @@ namespace remix::forward::bake {
       job.directNext += count;
     }
     char progress[128];
-    std::snprintf(progress, sizeof(progress), "Baking retained direct lighting (%u/%zu samples)",
-                  job.directReceived, job.directTasks.size());
+    std::snprintf(progress, sizeof(progress), "Baking retained direct lighting (%u/%u samples)",
+                  job.directReceived, job.directWork->size());
     status(REMIXAPI_BAKE_TRACING_EXT, progress);
   }
   void Controller::recordOverflowVisibility(VkCommandBuffer command, const Config &config) {
@@ -1120,9 +1123,10 @@ namespace remix::forward::bake {
       std::fprintf(stderr, "Bake CPU readback: total_ms=%.3f bytes=%llu\n", m_job->readbackMs,
                    static_cast<unsigned long long>(m_job->readbackBytes));
       std::fprintf(stderr, "Bake retained direct: classified_points=%llu retained_points=%u "
-                           "removed_scratch_bytes=%llu\n",
+                           "removed_scratch_bytes=%llu task_index_bytes=%llu\n",
                    static_cast<unsigned long long>(m_job->visibilityPoints), m_job->directReceived,
-                   static_cast<unsigned long long>(m_job->surfaceLayout.points.size() * sizeof(lightmap::Direct)));
+                   static_cast<unsigned long long>(m_job->surfaceLayout.points.size() * sizeof(lightmap::Direct)),
+                   static_cast<unsigned long long>(m_job->directWorkBytes));
       const auto &overflow = m_job->overflowTiming;
       std::fprintf(stderr, "Bake overflow timing: points=%llu batches=%llu rounds=%llu "
                            "cpu_rounds_ms=%.3f cpu_submission_ms=%.3f cpu_readback_ms=%.3f gpu_ms=%.3f "

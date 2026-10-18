@@ -91,36 +91,4 @@ namespace remix::forward::mixed {
     }
     return !plan.tasks.empty();
   }
-  std::vector<Task> directTasks(const Plan &plan, const lightmap::Layout &layout,
-                                std::stop_token cancelled) {
-    if (cancelled.stop_requested()) throw std::runtime_error("Direct lighting superseded");
-    if (!plan.lights.source || plan.directCharts.size() != plan.charts.size() ||
-        layout.points.size() != layout.pointCharts.size() || layout.points.size() > UINT32_MAX)
-      throw std::invalid_argument("Invalid retained direct-light plan");
-    std::vector<uint32_t> owners(plan.directCharts.size());
-    for (size_t chart = 0; chart < plan.directCharts.size(); ++chart)
-      for (auto light : plan.directCharts[chart]) {
-        if (light == none) continue;
-        if (light >= plan.lights.source->lights.size())
-          throw std::invalid_argument("Invalid retained direct-light owner");
-        ++owners[chart];
-      }
-    uint64_t count = 0;
-    for (auto chart : layout.pointCharts) {
-      if (cancelled.stop_requested()) throw std::runtime_error("Direct lighting superseded");
-      if (chart >= owners.size()) throw std::invalid_argument("Invalid direct-light receiver chart");
-      count += owners[chart];
-    }
-    if (count > UINT32_MAX) throw std::length_error("Too many retained direct-light receivers");
-    std::vector<Task> tasks;
-    tasks.reserve(size_t(count));
-    for (uint32_t point = 0; point < layout.points.size(); ++point) {
-      if ((point & 1023u) == 0 && cancelled.stop_requested())
-        throw std::runtime_error("Direct lighting superseded");
-      const auto &lights = plan.directCharts[layout.pointCharts[point]];
-      for (uint32_t channel = 0; channel < channels; ++channel)
-        if (lights[channel] != none) tasks.push_back({point, lights[channel], channel});
-    }
-    return tasks;
-  }
 } // namespace remix::forward::mixed
