@@ -382,6 +382,7 @@ int main() {
     require(borderPlan.occlusion.count() == 4,
             "A lit neighbour's filtering donor cannot invalidate a fully blocked receiving face");
     auto clear = plan;
+    auto deferred = plan;
     visibility.assign(layout.points.size(), {0, .5f, 1, .25f});
     std::vector<lm::Direct> scratch(layout.points.size()), retained(layout.points.size());
     for (uint32_t point = 0; point < scratch.size(); ++point)
@@ -394,6 +395,17 @@ int main() {
                 clear.directCharts[0] == forward::bake::UInt4{plan.charts[0][1], plan.charts[0][2],
                                                             plan.charts[0][3], m::none},
             "Clear masks free filtered storage while retaining independent positive-light SH owners");
+    require(m::refine(deferred, layout, visibility, {}, {}, {}, m::DirectCapture::Deferred) &&
+                deferred.charts == clear.charts && deferred.directCharts == clear.directCharts &&
+                std::equal(deferred.occlusion.words().begin(), deferred.occlusion.words().end(),
+                           clear.occlusion.words().begin(), clear.occlusion.words().end()),
+            "Scalar classification retains the same filtered masks and positive direct owners");
+    const auto firstDirectTasks = m::directTasks(deferred, layout);
+    require(firstDirectTasks.size() == layout.points.size() * 3,
+            "Deferred tracing excludes the blocked candidate and includes every selected receiver/donor");
+    for (const auto &task : firstDirectTasks)
+      require(task.light == deferred.directCharts[layout.pointCharts[task.point]][task.channel],
+              "Deferred tasks preserve each owner's independent destination channel");
     for (uint32_t point = 0; point < scratch.size(); ++point)
       for (uint32_t coefficient = 0; coefficient < 9; ++coefficient)
         require(retained[point][coefficient] == forward::Vec4{float(point + coefficient + 11),
@@ -406,6 +418,20 @@ int main() {
                 clear.directCharts[0][3] == 0 && clear.occlusion.clearCount() == 2 &&
                 retained[0][8] == forward::Vec4{19, 30, 41, -7},
             "Later clear candidates fill spare direct channels without overwriting previously retained SH");
+    require(!m::refine(deferred, layout, visibility, {}, {}, {}, m::DirectCapture::Deferred) &&
+                deferred.charts == clear.charts && deferred.directCharts == clear.directCharts &&
+                m::directTasks(deferred, layout).size() == layout.points.size() * 4,
+            "Deferred ownership remains identical through channel reuse and subsequent clear candidates");
+    std::stop_source directCancellation;
+    directCancellation.request_stop();
+    bool directCancelled = false;
+    try { m::directTasks(deferred, layout, directCancellation.get_token()); }
+    catch (const std::runtime_error &) { directCancelled = true; }
+    require(directCancelled, "Superseded direct-task preparation stops before publication");
+    auto noDirect = deferred;
+    for (auto &owners : noDirect.directCharts) owners.fill(m::none);
+    require(m::directTasks(noDirect, layout).empty(),
+            "A plan with no retained positive owners schedules no directional rays");
     auto almostClear = plan;
     visibility.assign(layout.points.size(), {1, 1, 1, 1});
     visibility[0][0] = .999999f;

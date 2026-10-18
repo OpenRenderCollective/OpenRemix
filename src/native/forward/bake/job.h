@@ -37,7 +37,10 @@ namespace remix::forward::bake {
     uint64_t readbackBytes = 0;
     std::shared_ptr<mixed::Plan> mixedLights;
     std::vector<Vec4> visibility;
-    std::vector<lightmap::Direct> direct, directScratch;
+    std::vector<lightmap::Direct> direct;
+    std::vector<VisibilityTask> directTasks;
+    bool directPlanned = false, directFinished = false;
+    uint32_t directNext = 0, directReceived = 0;
     std::vector<lightmap::Sun> sun;
     bool hasDirectDiffuse = false, hasSun = false; // survive release of the completed CPU arrays
     std::filesystem::path cacheFile;
@@ -54,6 +57,7 @@ namespace remix::forward::bake {
     bool probeSunPlanned = false;
     uint32_t probeSunNext = 0, probeSunReceived = 0;
     uint32_t visibilityNext = 0, visibilityReceived = 0;
+    uint64_t visibilityPoints = 0;
     bool visibilityFinished = false;
     std::unique_ptr<mixed::OverflowAudit> overflowAudit;
     uint32_t overflowNext = 0, overflowReceived = 0;
@@ -82,7 +86,7 @@ namespace remix::forward::bake {
     bool initialized = false, prepared = false, failed = false;
     void prepareResources(VkPhysicalDevice physical, VkDevice device, const Config &config, float lightCutoff,
                           uint32_t queueFamily);
-    enum class Visibility { Local, Overflow, SurfaceSun, SurfaceSunAntialiasing, ProbeSun, ProbeLocal };
+    enum class Visibility { Local, Direct, Overflow, SurfaceSun, SurfaceSunAntialiasing, ProbeSun, ProbeLocal };
     bool consumeVisibility(uint32_t slot, uint32_t first, uint32_t count, Visibility kind);
     uint32_t count(Work work, const Config &config, uint32_t remaining, uint32_t samples,
                    uint32_t bounces = 1) {

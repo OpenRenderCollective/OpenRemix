@@ -60,9 +60,11 @@ when baked lighting is active; a failed bake instead displays its failure messag
    option off by default until those tradeoffs are accepted in live maps.
    Timed visibility batches now grow within an eight-row rectangular dispatch and a guaranteed
    128 MiB maximum result-buffer range, reducing frame submission overhead without changing quality.
-   Preparation still computes directional coefficients for many chart/light candidates that are
-   later rejected. Investigate scalar classification first, followed by directional tracing only for
-   retained direct owners, with exact visibility/SH/cache comparisons before replacing the current pass.
+   Scalar classification now selects positive direct owners before a separate directional pass.
+   This removes the full-map directional scratch array and readback for discarded candidates;
+   encoded caches remain identical in the exercised fixtures and map replays. Extra directional rays
+   offset the transfer savings in measured wall time. Compact/stream the retained task list and reduce
+   exhaustive visibility pairs next, while preserving the same shadow and direct ownership guarantees.
    Supported live RTGI temporarily requests attributed static visibility instead of aggregate bake
    policies, because its analytic primary lighting cannot use aggregate irradiance for occlusion.
    Raster preferences remain intact when switching back. This is a correctness fallback; a compact

@@ -66,7 +66,7 @@ namespace remix::forward::bake {
       uint32_t first = 0, count = 0, styled = 0;
       bool preparation = false, radiance = false, surface = false, visibility = false, reflectionSite = false,
            sun = false, probeSun = false, probeLocal = false, overflowVisibility = false, reflectionGeometry = false,
-           sunAntialiasing = false;
+           sunAntialiasing = false, direct = false;
     };
     VkPhysicalDevice m_physical;
     VkDevice m_device;
@@ -92,6 +92,7 @@ namespace remix::forward::bake {
     void recordStyles(VkCommandBuffer command, const Config &config);
     void recordSurfaces(VkCommandBuffer command, const Config &config);
     void recordVisibility(VkCommandBuffer command, const Config &config);
+    void recordDirect(VkCommandBuffer command, const Config &config);
     void recordOverflowVisibility(VkCommandBuffer command, const Config &config);
     void recordSun(VkCommandBuffer command, const Config &config);
     void recordSunAntialiasing(VkCommandBuffer command, const Config &config);
