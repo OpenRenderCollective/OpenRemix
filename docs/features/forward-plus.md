@@ -452,6 +452,7 @@ water exits and disabled-pass compatibility at 1x, 2x and 4x with ray-tracing fe
 | `lightmapPageSize` | 1024 | Maximum power-of-two surface atlas page size, 64 to 4096 |
 | `lightmapTexels` | 4194304 | Surface atlas texel budget, including padding and unused page space |
 | `lightmapDenoise` | 1 | Offline OIDN RTLightmap filtering of indirect surface SH where available; raw fallback without OIDN |
+| `bakeSunAntialiasing` | 1 | Adaptive receiver-area sampling at detected baked sunlight shadow edges |
 | `ssrScale` | 2 | Reflection resolution divisor: 1, 2 or 4 |
 | `ssrSteps` | 128 | Maximum depth traversal iterations per reflection ray, 16 to 512 |
 | `ssrDistance` | 50 | Maximum reflection ray distance in metres |
@@ -1861,3 +1862,30 @@ Matching probe masks compose with moving-caster shadows and current light colour
 and intensity. Existing chart masks remain authoritative for static surfaces.
 This does not yet replace analytic per-light direct lighting with aggregate probe
 SH, or remove all frozen-map preparation: uncovered receivers still need it.
+
+## Receiver-area sunlight antialiasing
+
+Emitter sampling resolves finite light shapes but does not integrate a luxel's receiving area.
+After the ordinary sunlight pass, `bake/sun_antialiasing` finds visible receiver texels whose
+four-connected, same-chart neighbours differ in static visibility by at least one sixteenth.
+Only that contrast band receives additional work. The setting and F12 checkbox are
+`rtx.native.forward.bakeSunAntialiasing` and **Antialias baked sunlight edges**.
+
+`lightmap/receiver_sampler` clips every covering triangle to the luxel footprint, selects triangles
+by covered area and reconstructs four actual world positions with their surface normals. It reuses
+one chart's geometry and scratch rather than retaining expanded origins for the whole atlas.
+Verified seam-extension donors keep their original positions. No sampling plane is extrapolated
+past the chart's actual geometry, including bent or displaced triangles.
+
+The sample-parallel transport distributes at most 64 additional sunlight rays across those four
+sites, rather than tracing four complete emitter batches. Each site has its own containing medium.
+Visibility and unit direct SH use the same rays and retain deterministic receiver identities across
+batch boundaries and frame slots. Ordinary probes and reflection queries retain their single origins.
+The controller publishes only after all refinement readbacks finish; reflection capture and atlas
+encoding follow it. Finished caches retain the filtered values, with no refinement on a cache hit.
+
+The setting participates in cache identity; algorithm revision 20 replaces older lighting results.
+Atlas page sizes, total texel budget and chart density are unchanged. This is adaptive sampling:
+shadows entirely missed by the original receiver centres may remain undetected. Four spatial sites
+also retain finite quadrature error. Local emitter transport supports the same grouped-site protocol,
+but local-light and overflow controller refinement remain separate work.

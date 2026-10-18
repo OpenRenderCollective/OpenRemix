@@ -50,7 +50,8 @@ namespace remix::forward::probes {
     }
   }
   namespace {
-    void dumpData(const char *suffix, const void *data, size_t bytes, bool frameRequest) noexcept {
+    void dumpData(const char *suffix, const void *data, size_t bytes, bool frameRequest,
+                  bool requireCapture = true) noexcept {
       const char *prefix = std::getenv("REMIX_DEBUG_BAKE_CAPTURE_PREFIX");
       if (!prefix || !*prefix)
         return;
@@ -58,7 +59,7 @@ namespace remix::forward::probes {
         static thread_local std::unordered_set<std::string> written;
         if (written.contains(suffix))
           return;
-        if (!std::filesystem::exists(std::string(prefix) + ".capture.bin"))
+        if (requireCapture && !std::filesystem::exists(std::string(prefix) + ".capture.bin"))
           return;
         if (frameRequest && !std::filesystem::exists(std::string(prefix) + ".frame.request"))
           return;
@@ -80,6 +81,9 @@ namespace remix::forward::probes {
   }
   void dumpPublishedData(const char *suffix, const void *data, size_t bytes) noexcept {
     dumpData(suffix, data, bytes, false);
+  }
+  void dumpTransportData(const char *suffix, const void *data, size_t bytes) noexcept {
+    dumpData(suffix, data, bytes, false, false);
   }
   void dumpCaptures(uint64_t sceneHash, std::span<const Capture> captures) noexcept {
     const char *prefix = std::getenv("REMIX_DEBUG_BAKE_CAPTURE_PREFIX");

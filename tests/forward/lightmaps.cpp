@@ -2,8 +2,11 @@
 #include "forward/lightmap/layout.h"
 #include "forward/lightmap/packing.h"
 #include "forward/lightmap/receiver_footprint.h"
+#include "forward/lightmap/receiver_sampler.h"
+#include "forward/bake/sun_antialiasing.h"
 #include "scene/fixtures.h"
 #include <cmath>
+#include <cstring>
 #include <stdexcept>
 
 using namespace remix;
@@ -149,6 +152,63 @@ int main() {
     center |= std::abs(p.position[0] - 10) < 1e-5f && std::abs(p.position[1]) < 1e-5f;
   }
   require(center, "Barycentric texel positions follow nonuniform instance transforms");
+  {
+    lm::ReceiverSampler sampler(scene, layout);
+    bool crossesDiagonal = false;
+    for (uint32_t i = 0; i < layout.points.size(); ++i) {
+      const auto sites = sampler.sample(i), repeated = sampler.sample(i);
+      require(std::memcmp(sites.data(), repeated.data(), sizeof(sites)) == 0,
+              "Receiver quadrature is stable across repeated batches and light identities");
+      bool above = false, below = false;
+      for (const auto &site : sites) {
+        require(site.position[0] >= 8.39999f && site.position[0] <= 11.60001f &&
+                    site.position[1] >= -2.40001f && site.position[1] <= 2.40001f &&
+                    std::abs(site.position[2] - .5f) < 1e-5f && site.normal[2] < -.99f,
+                "Footprint sites follow transformed real geometry and never leave chart edges");
+        const float diagonal = (site.position[0] - 10) / 1.6f - site.position[1] / 2.4f;
+        above |= diagonal > 1e-5f;
+        below |= diagonal < -1e-5f;
+      }
+      crossesDiagonal |= above && below;
+    }
+    require(crossesDiagonal, "Shared-edge receiver footprints sample both actual triangles");
+    std::vector<lm::Sun> clear(layout.points.size());
+    remix::forward::bake::SunAntialiasing noEdges(scene, layout, clear);
+    require(noEdges.count() == 0, "Uniform sunlight does not schedule extra receiver rays");
+    for (uint32_t i = 0; i < clear.size(); ++i)
+      clear[i].visibility = layout.points[i].position[0] < 10 ? 0 : 1;
+    remix::forward::bake::SunAntialiasing edges(scene, layout, clear);
+    require(edges.count() > 0 && edges.count() < layout.points.size(),
+            "Sunlight refinement is restricted to the detected contrast band");
+    const auto all = edges.sites(0, edges.count());
+    for (uint32_t i = 0; i < edges.count(); ++i) {
+      const auto one = edges.sites(i, 1);
+      require(std::memcmp(one.data(), all.data() + i * 4, one.size() * sizeof(one[0])) == 0,
+              "Adaptive sunlight sites retain identity across batch boundaries");
+    }
+    refused([&] { edges.sites(edges.count(), 1); });
+    std::stop_source cancelled;
+    cancelled.request_stop();
+    refused([&] { remix::forward::bake::SunAntialiasing stopped(scene, layout, clear, cancelled.get_token()); });
+    auto bent = scene;
+    bent.draws[0].surface = std::make_shared<scene::Surface>(*scene.draws[0].surface);
+    bent.draws[0].surface->vertices[2].position[2] += .8f;
+    const auto bentLayout = lm::plan(bent, options);
+    lm::ReceiverSampler bentSampler(bent, bentLayout);
+    for (uint32_t i = 0; i < bentLayout.points.size(); ++i)
+      for (const auto &site : bentSampler.sample(i)) {
+        const float u = (site.position[0] - 8.4f) / 3.2f, v = (site.position[1] + 2.4f) / 4.8f;
+        require(std::abs(site.position[2] - (.5f + .8f * std::min(u, v))) < 2e-5f,
+                "Bent surface samples lie on their actual triangle, never an averaged or extrapolated plane");
+      }
+    auto extended = layout;
+    extended.receiverSamples[0] = 0;
+    extended.points[0].position[0] += .125f;
+    lm::ReceiverSampler seamSampler(scene, extended);
+    for (const auto &site : seamSampler.sample(0))
+      require(site.position == extended.points[0].position && site.normal == extended.points[0].normal,
+              "Verified seam-extension donors retain their original actual surface sites");
+  }
   const auto &a = layout.charts[0];
   for (uint32_t y = 0; y < 9; ++y)
     for (uint32_t x = 0; x < 9; ++x)

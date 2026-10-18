@@ -38,7 +38,13 @@ void main() {
 #endif
   if (index >= rayFrame.counts.x)
     return;
-  RayPoint point = rayPoints[index];
+  uint inputIndex = index;
+#ifdef PARALLEL_BAKE
+  // Four actual receiver sites share this group's existing sample budget.
+  if ((rayFrame.control.w & 16u) != 0u)
+    inputIndex = index * 4u + gl_LocalInvocationIndex % 4u;
+#endif
+  RayPoint point = rayPoints[inputIndex];
   vec3 origin = point.position.xyz;
   if (rayFrame.control.z != 1u && rayFrame.control.z != 7u && dot(point.normal.xyz, point.normal.xyz) > 1e-10)
     origin += normalize(point.normal.xyz) * rayFrame.trace.y;

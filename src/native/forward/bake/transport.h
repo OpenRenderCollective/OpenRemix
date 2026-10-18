@@ -126,6 +126,15 @@ namespace remix::forward::bake {
     // Same result layout as local visibility/direct SH, using the distant disc.
     void recordSun(VkCommandBuffer command, uint32_t slot, std::span<const Point> points,
                    uint32_t samples = 256, bool directDiffuse = false);
+    // Four actual surface origins per receiver, packed consecutively. Distribute
+    // the existing ray count over those sites; do not trace four full batches.
+    // Requires sample-parallel transport and a sample count divisible by four.
+    // Ordinary probes/radiance rays retain their single-origin semantics.
+    void recordSurfaceSun(VkCommandBuffer command, uint32_t slot, std::span<const Point> sites,
+                          uint32_t samples = 256, bool directDiffuse = false);
+    void recordSurfaceVisibility(VkCommandBuffer command, uint32_t slot,
+                                 std::span<const VisibilityPoint> sites, uint32_t samples = 256,
+                                 bool directDiffuse = false);
     // The selected slot's submission fence has completed.
     void read(uint32_t slot, std::span<Result> results) const;
     // Compact parallel CPU visibility/sun batches only; same completed-slot fence.
@@ -155,9 +164,10 @@ namespace remix::forward::bake {
     };
     void record(VkCommandBuffer command, uint32_t slot, std::span<const Point> points, uint32_t samples,
                 uint32_t bounces, uint32_t firstSample, Mode mode,
-                std::optional<uint32_t> component = {});
+                std::optional<uint32_t> component = {}, uint32_t receiverSites = 1);
     void dispatch(VkCommandBuffer command, uint32_t slot, uint32_t count, uint32_t samples, uint32_t bounces,
-                  uint32_t firstSample, Mode mode, std::optional<uint32_t> component = {});
+                  uint32_t firstSample, Mode mode, std::optional<uint32_t> component = {},
+                  uint32_t receiverSites = 1);
     void recordTaskVisibility(VkCommandBuffer command, uint32_t slot, std::span<const Point> receivers,
                               std::span<const VisibilityTask> tasks, uint32_t samples, bool validatedReceivers);
   };

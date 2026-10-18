@@ -60,6 +60,7 @@ int main(int argc, char **argv) {
             "Every bake quality field participates in disk cache identity");
   };
   qualityKey([](auto &c) { c.directDiffuse = !c.directDiffuse; });
+  qualityKey([](auto &c) { c.antialiasSun = !c.antialiasSun; });
   qualityKey([](auto &c) { c.denoiseLightmaps = !c.denoiseLightmaps; });
   qualityKey([](auto &c) { c.relocateProbes = !c.relocateProbes; });
   qualityKey([](auto &c) { c.spacing += 1; });

@@ -78,7 +78,9 @@ namespace remix::forward::bake {
           for (uint32_t coefficient = 0; coefficient < lightmap::irradianceLayers; ++coefficient)
             directScratch[task.point][coefficient][task.channel] = value.irradiance[coefficient];
       } else {
-        auto &output = sun[first + i];
+        const auto point = kind == Visibility::SurfaceSunAntialiasing ? sunAntialiasing->receiver(first + i)
+                                                                    : first + i;
+        auto &output = sun[point];
         output.visibility = std::clamp(value.visibility, 0.f, 1.f);
         output.direct = value.irradiance;
       }
@@ -252,7 +254,9 @@ namespace remix::forward::bake {
           const auto kind = submission.probeLocal ? Job::Visibility::ProbeLocal
                           : submission.probeSun ? Job::Visibility::ProbeSun
                           : submission.overflowVisibility ? Job::Visibility::Overflow
-                          : submission.visibility ? Job::Visibility::Local : Job::Visibility::SurfaceSun;
+                          : submission.visibility ? Job::Visibility::Local
+                          : submission.sunAntialiasing ? Job::Visibility::SurfaceSunAntialiasing
+                          : Job::Visibility::SurfaceSun;
           if (!job.consumeVisibility(slot, submission.first, submission.count, kind)) {
             job.failed = true;
             status(REMIXAPI_BAKE_FAILED_EXT, "Bake produced non-finite visibility");
@@ -323,10 +327,12 @@ namespace remix::forward::bake {
          : submission.overflowVisibility ? job.overflowReceived
          : submission.probeSun           ? job.probeSunReceived
          : submission.probeLocal         ? job.localProbeReceived
+         : submission.sunAntialiasing     ? job.sunAntialiasingReceived
          : submission.sun                ? job.sunReceived
          : submission.surface            ? job.surfaceReceived
                                          : job.received) += submission.count;
         if (const auto elapsed = job.transport->elapsed(slot)) {
+          if (submission.sunAntialiasing) job.sunAntialiasingGpuMs += *elapsed;
           if (submission.overflowVisibility)
             job.overflowTiming.gpuMs += *elapsed;
           const auto work = submission.reflectionGeometry                            ? Work::Geometry
@@ -410,7 +416,7 @@ namespace remix::forward::bake {
   void Controller::recordSun(VkCommandBuffer command, const Config &config) {
     auto &job = *m_job;
     if (job.sunReceived == job.sun.size()) {
-      recordReflections(command, config);
+      recordSunAntialiasing(command, config);
       return;
     }
     if (job.sunNext < job.sun.size()) {
@@ -431,6 +437,75 @@ namespace remix::forward::bake {
     char progress[128];
     std::snprintf(progress, sizeof(progress), "Baking static sunlight (%u/%zu texels)", job.sunReceived,
                   job.sun.size());
+    status(REMIXAPI_BAKE_TRACING_EXT, progress);
+  }
+  void Controller::recordSunAntialiasing(VkCommandBuffer command, const Config &config) {
+    auto &job = *m_job;
+    if (job.sun.empty() || !config.antialiasSun || config.samples < 4 || job.sunAntialiasingFinished) {
+      recordReflections(command, config);
+      return;
+    }
+    if (!job.sunAntialiasingPlanned) {
+      job.sunAntialiasingPlanned = true;
+      const auto owner = m_job;
+      job.ticket = m_pipelines->prepare("forward-sun-edges-" + std::to_string(++generation), [owner] {
+        const auto begin = std::chrono::steady_clock::now();
+        owner->sunAntialiasing = std::make_unique<SunAntialiasing>(
+            *owner->source, owner->surfaceLayout, owner->sun, owner->cancellation.get_token());
+        owner->sunAntialiasingCpuMs +=
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
+        if (std::getenv("REMIX_DEBUG_BAKE_CAPTURE_PREFIX")) {
+          std::fprintf(stderr, "Sunlight edge refinement: %u/%zu receivers, %llu metadata bytes\n",
+                       owner->sunAntialiasing->count(), owner->sun.size(),
+                       static_cast<unsigned long long>(owner->sunAntialiasing->memoryBytes()));
+          const auto points = owner->sunAntialiasing->receivers();
+          probes::dumpTransportData(".sun-edge-ids.bin", points.data(), points.size_bytes());
+          std::vector<lightmap::Sun> before;
+          before.reserve(points.size());
+          for (const auto point : points) before.push_back(owner->sun[point]);
+          probes::dumpTransportData(".sun-edges-before.bin", before.data(), before.size() * sizeof(before[0]));
+        }
+      });
+      status(REMIXAPI_BAKE_PREPARING_EXT, "Finding sunlight shadow edges");
+      return;
+    }
+    if (job.sunAntialiasingReceived == job.sunAntialiasing->count()) {
+      if (std::getenv("REMIX_DEBUG_BAKE_CAPTURE_PREFIX")) {
+        std::vector<lightmap::Sun> after;
+        after.reserve(job.sunAntialiasing->count());
+        for (const auto point : job.sunAntialiasing->receivers()) after.push_back(job.sun[point]);
+        probes::dumpTransportData(".sun-edges-after.bin", after.data(), after.size() * sizeof(after[0]));
+        std::fprintf(stderr, "Sunlight edge refinement complete: %u receivers, "
+                             "cpu_plan_submit_ms=%.3f gpu_ms=%.3f memory_bytes=%llu fallback_receivers=%u\n",
+                     job.sunAntialiasing->count(), job.sunAntialiasingCpuMs, job.sunAntialiasingGpuMs,
+                     static_cast<unsigned long long>(job.sunAntialiasing->memoryBytes()),
+                     job.sunAntialiasing->fallbackCount());
+      }
+      job.sunAntialiasingFinished = true;
+      job.sunAntialiasing.reset();
+      recordReflections(command, config);
+      return;
+    }
+    if (job.sunAntialiasingNext < job.sunAntialiasing->count()) {
+      auto &submission = m_submissions[m_slot];
+      if (submission.job) throw std::logic_error("Sunlight edge slot reused before its fence");
+      const uint32_t samples = std::min(config.samples / 4, 16u) * 4;
+      const uint32_t count = std::min(Budget::maximumPoints / 4,
+          job.count(Work::Sun, config, job.sunAntialiasing->count() - job.sunAntialiasingNext, samples));
+      const auto begin = std::chrono::steady_clock::now();
+      const auto sites = job.sunAntialiasing->sites(job.sunAntialiasingNext, count);
+      job.transport->recordSurfaceSun(command, m_slot, sites, samples, config.directDiffuse);
+      job.sunAntialiasingCpuMs +=
+          std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
+      submission.job = m_job;
+      submission.sun = submission.sunAntialiasing = true;
+      submission.first = job.sunAntialiasingNext;
+      submission.count = count;
+      job.sunAntialiasingNext += count;
+    }
+    char progress[128];
+    std::snprintf(progress, sizeof(progress), "Antialiasing sunlight shadow edges (%u/%u texels)",
+                  job.sunAntialiasingReceived, job.sunAntialiasing->count());
     status(REMIXAPI_BAKE_TRACING_EXT, progress);
   }
   void Controller::recordVisibility(VkCommandBuffer command, const Config &config) {

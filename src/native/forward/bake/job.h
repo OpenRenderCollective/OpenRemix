@@ -4,6 +4,7 @@
 #include "forward/bake/transport.h"
 #include "forward/bake/style_work.h"
 #include "forward/bake/probe_visibility.h"
+#include "forward/bake/sun_antialiasing.h"
 #include "forward/mixed/overflow.h"
 #include "forward/probes/evaluation.h"
 #include <atomic>
@@ -44,6 +45,11 @@ namespace remix::forward::bake {
     void saveCache();
     bool cacheHit = false;
     uint32_t sunNext = 0, sunReceived = 0;
+    std::unique_ptr<SunAntialiasing> sunAntialiasing;
+    bool sunAntialiasingPlanned = false, sunAntialiasingFinished = false;
+    uint32_t sunAntialiasingNext = 0, sunAntialiasingReceived = 0;
+    double sunAntialiasingCpuMs = 0; // edge planning and submission; readback is included in readbackMs
+    double sunAntialiasingGpuMs = 0;
     std::vector<uint32_t> probeSunTasks;
     bool probeSunPlanned = false;
     uint32_t probeSunNext = 0, probeSunReceived = 0;
@@ -76,7 +82,7 @@ namespace remix::forward::bake {
     bool initialized = false, prepared = false, failed = false;
     void prepareResources(VkPhysicalDevice physical, VkDevice device, const Config &config, float lightCutoff,
                           uint32_t queueFamily);
-    enum class Visibility { Local, Overflow, SurfaceSun, ProbeSun, ProbeLocal };
+    enum class Visibility { Local, Overflow, SurfaceSun, SurfaceSunAntialiasing, ProbeSun, ProbeLocal };
     bool consumeVisibility(uint32_t slot, uint32_t first, uint32_t count, Visibility kind);
     uint32_t count(Work work, const Config &config, uint32_t remaining, uint32_t samples,
                    uint32_t bounces = 1) {

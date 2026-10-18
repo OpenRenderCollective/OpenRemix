@@ -15,4 +15,7 @@ namespace remix::forward::probes {
   // Suffixes are internal constants; raw files are tied to the producing build.
   void dumpFrameData(const char *suffix, const void *data, size_t bytes) noexcept;
   void dumpPublishedData(const char *suffix, const void *data, size_t bytes) noexcept;
+  // Immutable transport diagnostics can precede reflection capture/publication.
+  // Same fresh-prefix and once-per-suffix rules; never requires .capture.bin.
+  void dumpTransportData(const char *suffix, const void *data, size_t bytes) noexcept;
 } // namespace remix::forward::probes

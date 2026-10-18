@@ -711,6 +711,83 @@ namespace {
             "Unit sunlight SH preserves visibility and directional normal response even with black captured radiance");
     std::printf("Sun visibility: %.3f %.3f %.3f; unit direct %.5f\n", results[0].irradiance[0][0],
                   results[1].irradiance[0][0], results[2].irradiance[0][0], sunDiffuse);
+    {
+      std::array<bake::Point, 12> duplicateSites;
+      for (uint32_t receiver = 0; receiver < 3; ++receiver)
+        std::fill_n(duplicateSites.begin() + receiver * 4, 4, sunPoints[receiver]);
+      fixture.begin();
+      transport.recordSurfaceSun(fixture.command, 0, duplicateSites, 1024, true);
+      fixture.finish();
+      bake::Result duplicateResults[3];
+      transport.read(0, duplicateResults);
+      require(std::memcmp(results, duplicateResults, sizeof(results)) == 0,
+              "Duplicated receiver sites preserve the original sun sample stream and result exactly");
+      const bake::Point crossing[] = {sunPoints[0], sunPoints[2], sunPoints[0], sunPoints[2]};
+      fixture.begin();
+      transport.recordSurfaceSun(fixture.command, 1, crossing, 1024, true);
+      fixture.finish();
+      bake::Result integrated;
+      transport.read(1, {&integrated, 1});
+      require(integrated.irradiance[0][0] == .5f && integrated.statistics[2] == 1024,
+              "A receiver footprint crossing a hard shadow integrates half coverage with the original ray count");
+      const float integratedDirect = evaluate(integrated, {0, 0, -1}, 1);
+      require(integratedDirect > .4f && integratedDirect < .65f,
+              "Receiver-area direct SH and visibility use the same blocked and exposed surface sites");
+      bake::VisibilityPoint localSites[4];
+      for (uint32_t site = 0; site < 4; ++site) localSites[site] = {crossing[site], 0};
+      fixture.begin();
+      transport.recordSurfaceVisibility(fixture.command, 0, localSites, 1024, true);
+      fixture.finish();
+      transport.read(0, {&integrated, 1});
+      require(integrated.irradiance[0][0] > .45f && integrated.irradiance[0][0] < .55f &&
+                  integrated.statistics[2] == 1024,
+              "Local emitter visibility integrates receiver area without multiplying the sample budget");
+      bool partialRejected = false, unbalancedRejected = false;
+      try {
+        transport.recordSurfaceSun(fixture.command, 0, std::span(crossing).first(3), 1024);
+      } catch (const std::invalid_argument &) { partialRejected = true; }
+      try {
+        transport.recordSurfaceSun(fixture.command, 0, crossing, 6);
+      } catch (const std::invalid_argument &) { unbalancedRejected = true; }
+      require(partialRejected && unbalancedRejected,
+              "Receiver-area batches reject incomplete sites and unequal sample allocation before recording");
+      std::array<bake::Point, 48> batchSites;
+      std::array<bake::VisibilityPoint, 48> batchLocal;
+      for (uint32_t receiver = 0; receiver < 12; ++receiver)
+        for (uint32_t site = 0; site < 4; ++site) {
+          auto point = sunPoints[1];
+          point.position[0] = .03f * (float(receiver) - 6) + .12f * (float(site) - 1.5f);
+          batchSites[receiver * 4 + site] = point;
+          batchLocal[receiver * 4 + site] = {point, 0};
+        }
+      for (bool sunlight : {false, true}) {
+        auto recordSites = [&](uint32_t slot, size_t first, size_t count) {
+          if (sunlight)
+            transport.recordSurfaceSun(fixture.command, slot, std::span(batchSites).subspan(first * 4, count * 4), 64, true);
+          else
+            transport.recordSurfaceVisibility(fixture.command, slot, std::span(batchLocal).subspan(first * 4, count * 4), 64, true);
+        };
+        fixture.begin();
+        recordSites(0, 0, 12);
+        fixture.finish();
+        std::array<bake::VisibilityResult, 12> reference;
+        transport.readVisibility(0, reference);
+        for (size_t batch : {1u, 3u, 7u})
+          for (size_t first = 0; first < reference.size(); first += batch) {
+            const auto count = std::min(batch, reference.size() - first);
+            const auto slot = uint32_t(first % 2);
+            fixture.begin();
+            recordSites(slot, first, count);
+            fixture.finish();
+            std::vector<bake::VisibilityResult> measured(count);
+            transport.readVisibility(slot, measured);
+            require(std::memcmp(measured.data(), reference.data() + first, count * sizeof(measured[0])) == 0,
+                    "Receiver-area sun/local masks and SH preserve exact sample identity across chunks and frame slots");
+          }
+      }
+      std::printf("Receiver-area integration: sun visibility 0.5, direct %.5f, local %.5f, rays 1024\n",
+                  integratedDirect, integrated.irradiance[0][0]);
+    }
     std::vector<bake::VisibilityPoint> receivers(127);
     std::vector<bake::Point> sunlight(127);
     for (uint32_t i = 0; i < receivers.size(); ++i) {

@@ -4,6 +4,7 @@ namespace remix::forward::bake {
   struct Config {
     bool enabled = true;
     bool directDiffuse = true;
+    bool antialiasSun = true; // bounded receiver-area refinement at detected shadow edges
     bool diskCache = true;
     bool denoiseLightmaps = true; // OIDN RTLightmap where available; unsupported builds retain raw transport
     bool styledIndirect = false; // attributed surface/probe components; enable after map-level validation

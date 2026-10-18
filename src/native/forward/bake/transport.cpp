@@ -274,9 +274,33 @@ namespace remix::forward::bake {
     record(command, slot, points, samples, 1, 0,
            directDiffuse ? Mode::SunDirectVisibility : Mode::SunVisibility);
   }
+  void Transport::recordSurfaceSun(VkCommandBuffer command, uint32_t slot, std::span<const Point> sites,
+                                   uint32_t samples, bool directDiffuse) {
+    if (!m_gpu->source->sun.isDistant)
+      throw std::invalid_argument("Sun visibility requires a captured distant light");
+    record(command, slot, sites, samples, 1, 0,
+           directDiffuse ? Mode::SunDirectVisibility : Mode::SunVisibility, {}, 4);
+  }
+  void Transport::recordSurfaceVisibility(VkCommandBuffer command, uint32_t slot,
+                                          std::span<const VisibilityPoint> sites, uint32_t samples,
+                                          bool directDiffuse) {
+    std::vector<Point> packed;
+    packed.reserve(sites.size());
+    for (size_t i = 0; i < sites.size(); ++i) {
+      const auto &site = sites[i];
+      if (site.light >= m_gpu->source->lights.size() || site.light >= (1u << 24) ||
+          site.light != sites[i - i % 4].light)
+        throw std::invalid_argument("Surface visibility sites must share one valid captured light");
+      auto point = site.surface;
+      point.position[3] = float(site.light);
+      packed.push_back(point);
+    }
+    record(command, slot, packed, samples, 1, 0,
+           directDiffuse ? Mode::DirectVisibility : Mode::Visibility, {}, 4);
+  }
   void Transport::record(VkCommandBuffer command, uint32_t index, std::span<const Point> points,
                          uint32_t samples, uint32_t bounces, uint32_t firstSample, Mode mode,
-                         std::optional<uint32_t> component) {
+                         std::optional<uint32_t> component, uint32_t receiverSites) {
     auto &g = *m_gpu;
     if (g.options.deviceLocalBatches)
       throw std::logic_error("Device-local batches require GPU-produced points");
@@ -291,8 +315,14 @@ namespace remix::forward::bake {
       if (g.slots.at(index).lighting)
         throw std::logic_error("Lighting components require immutable captured light definitions");
     }
-    if (points.empty() || points.size() > g.options.batchPoints || samples < 1 || samples > 8192 ||
-        bounces < 1 || bounces > 8 || uint64_t(points.size()) * samples * bounces > g.options.rayBudget)
+    if (receiverSites != 1 &&
+        (receiverSites != 4 || !g.options.parallel || samples % 4 || samples < 4 ||
+         (mode != Mode::Visibility && mode != Mode::DirectVisibility &&
+          mode != Mode::SunVisibility && mode != Mode::SunDirectVisibility)))
+      throw std::invalid_argument("Surface visibility requires four sites and balanced parallel samples");
+    if (points.empty() || points.size() % receiverSites || points.size() > g.options.batchPoints ||
+        samples < 1 || samples > 8192 || bounces < 1 || bounces > 8 ||
+        uint64_t(points.size() / receiverSites) * samples * bounces > g.options.rayBudget)
       throw std::invalid_argument("Bake batch exceeds its point, sample or bounce limits");
     for (const auto &point : points) {
       for (auto values : {point.position, point.normal})
@@ -314,7 +344,8 @@ namespace remix::forward::bake {
     g.reserveSlot(index, uint32_t(points.size()), stride);
     auto &slot = g.slots.at(index);
     slot.points->write(points.data(), points.size_bytes());
-    dispatch(command, index, uint32_t(points.size()), samples, bounces, firstSample, mode, component);
+    dispatch(command, index, uint32_t(points.size() / receiverSites), samples, bounces, firstSample, mode,
+             component, receiverSites);
   }
   Transport::DeviceBatch Transport::deviceBatch(uint32_t index) const {
     const auto &g = *m_gpu;
@@ -428,7 +459,7 @@ namespace remix::forward::bake {
   }
   void Transport::dispatch(VkCommandBuffer command, uint32_t index, uint32_t count, uint32_t samples,
                            uint32_t bounces, uint32_t firstSample, Mode mode,
-                           std::optional<uint32_t> component) {
+                           std::optional<uint32_t> component, uint32_t receiverSites) {
     auto &g = *m_gpu;
     auto &slot = g.slots.at(index);
     if (slot.componentProposal != bool(component)) {
@@ -457,7 +488,8 @@ namespace remix::forward::bake {
     const bool aggregate = mode == Mode::Irradiance && g.aggregateDiffuse && !slot.lighting;
     frame.control = {g.domeLayer, firstSample, uint32_t(mode), uint32_t(g.hasDielectrics) |
                          (g.options.lightImportanceSampling && !slot.lighting ? 2u : 0u) |
-                         (aggregate ? 4u : 0u) | (component ? lightingComponentFlag | (*component << lightingComponentShift) : 0u)};
+                         (aggregate ? 4u : 0u) | (receiverSites == 4 ? 16u : 0u) |
+                         (component ? lightingComponentFlag | (*component << lightingComponentShift) : 0u)};
     slot.constants->write(&frame, sizeof(frame));
     slot.count = count;
     slot.samples = samples;

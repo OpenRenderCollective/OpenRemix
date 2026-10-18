@@ -8,17 +8,19 @@ shared vec4 sumIrradiance[64 * 9];
 shared vec4 sumMoments[64 * 6];
 shared float sumFirst[64], sumSecond[64];
 #endif
-shared vec4 containingMedium;
-shared uint containingSeed;
+shared vec4 containingMedium[4];
+shared uint containingSeed[4];
 Medium pointMedium(vec3 origin, inout uint seed) {
-  if (gl_LocalInvocationIndex == 0u) {
+  uint sites = (rayFrame.control.w & 16u) != 0u ? 4u : 1u;
+  uint site = gl_LocalInvocationIndex % sites;
+  if (gl_LocalInvocationIndex < sites) {
     Medium medium = initialMedium(origin, seed);
-    containingMedium = vec4(medium.extinction, medium.index);
-    containingSeed = seed;
+    containingMedium[site] = vec4(medium.extinction, medium.index);
+    containingSeed[site] = seed;
   }
   barrier();
-  seed = containingSeed;
-  return Medium(containingMedium.xyz, containingMedium.w);
+  seed = containingSeed[site];
+  return Medium(containingMedium[site].xyz, containingMedium[site].w);
 }
 void storeResult(uint index, RayResult value) {
   uint lane = gl_LocalInvocationIndex;
