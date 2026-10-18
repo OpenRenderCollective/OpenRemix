@@ -50,8 +50,9 @@ when baked lighting is active; a failed bake instead displays its failure messag
    Supported live RTGI temporarily requests attributed static visibility instead of aggregate bake
    policies, because its analytic primary lighting cannot use aggregate irradiance for occlusion.
    Raster preferences remain intact when switching back. This is a correctness fallback; a compact
-   shared visibility path for live GI remains future work. Resolve the existing live-GI color
-   contamination regression before treating RTGI parity as accepted.
+   shared visibility path for live GI remains future work. Transport checks inspect linear channels
+   independently of Prism, whose saturated-primary compression intentionally mixes display channels;
+   live-GI coverage separately checks the shared display transform.
 2. **Complete live GMod integration.** Pool startup, a fresh bake, an exact cached reload and a moving
    actor have been exercised in the isolated installation. Continue with a solid receiver for mixed
    shadows beyond the exercised indoor sun case, below-water views, renderer/RT switches and a map reload/change. Record binary hashes and

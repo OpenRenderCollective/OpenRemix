@@ -596,6 +596,7 @@ namespace {
         Target target(64, 64, true);
         auto &r = target.raster;
         remix::forward::Options options;
+        options.prism = false; // Inspect transport channels before the display transform mixes primaries.
         options.baking.lightmapFitBudget = false; // Controlled-density lighting fixtures.
         options.samples = samples;
         options.rtGI = true;
@@ -747,6 +748,15 @@ namespace {
         require(target.forward->statistics().rayGI.active && image[at] < 3 && image[at + 1] > 150 &&
                     image[at + 2] < 3,
                 "Live green GI replaces an active red surface lightmap instead of adding to it");
+        options.prism = true;
+        target.forward->updateLighting(options);
+        image = render();
+        const auto display = prismDisplay({0, 1, 0});
+        for (uint32_t channel = 0; channel < 3; ++channel)
+          require(std::abs(int(image[at + channel]) - int(std::lround(display[channel] * 255))) <= 2,
+                  "Live GI uses the shared Prism transform after replacing baked irradiance");
+        options.prism = false;
+        target.forward->updateLighting(options);
         render();
         require(target.forward->statistics().rayGI.sceneBuilds == 0, "Unchanged GI reuses live acceleration");
         image = render(1);
