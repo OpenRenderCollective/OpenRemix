@@ -10,6 +10,7 @@
 #include <stdexcept>
 
 namespace remix::forward::bake {
+  static_assert(uint64_t(maximumBatchPoints) * sizeof(Result) <= (128ull << 20));
   namespace {
     Frame lightingFrame(const scene::DistantLight &sun, const scene::DomeLight &dome, float distance,
                         float bias, float sceneScale) {

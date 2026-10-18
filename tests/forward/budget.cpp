@@ -40,12 +40,21 @@ int main() {
             "Repeated fast samples cannot exceed storage or ray-work limits");
     budget.observe(Work::Visibility, points, .01, 16);
   }
-  require(budget.count(Work::Visibility, 64, 16, 256, 1, 1000000) == Budget::maximumPoints,
+  const auto visibilityLimit = std::min(Budget::maximumPoints, Budget::maximumWork / 256);
+  require(budget.count(Work::Visibility, 64, 16, 256, 1, 1000000) == visibilityLimit,
           "Measured fast visibility can fill the point buffer instead of hitting the old 4096-point ceiling");
   const auto &timing = budget.statistics(Work::Visibility);
   require(timing.batches == 30 && timing.points > 0 && timing.milliseconds > 0 &&
-              timing.largest == Budget::maximumPoints,
+              timing.largest == visibilityLimit,
           "Stage diagnostics retain actual GPU work and timestamp totals");
+  Budget lowSampleVisibility;
+  for (uint32_t iteration = 0; iteration < 30; ++iteration) {
+    const auto points = lowSampleVisibility.count(Work::Visibility, 64, 8, 64, 1, 1000000);
+    lowSampleVisibility.observe(Work::Visibility, points, .5, 8);
+  }
+  require(lowSampleVisibility.count(Work::Visibility, 64, 8, 64, 1, 1000000) == Budget::maximumPoints &&
+              lowSampleVisibility.count(Work::Visibility, 64, 0, 64, 1, 1000000) == 64,
+          "Low-sample visibility can use a larger timed batch while manual execution retains its seed");
   Config a, b;
   require(budget.count(Work::Reflection, 1024, 0, 8192, 8, 5000) == 16 &&
               budget.count(Work::Reflection, 1024, 8, 8192, 8, 5000) <= 256,
