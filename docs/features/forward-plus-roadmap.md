@@ -19,6 +19,11 @@ not re-enter moving-caster passes. The current default is still exhaustive and d
 
 Completion requires scalable attributed surface corrections beyond the four retained SH owners,
 known probe coverage for selected corrections, and a bounded fallback for uncovered receivers.
+The direct-work scheduler now uses immutable sparse chart offsets and explicit output tags;
+its existing four-slot adapter runs through the same batching code. Arbitrary overlap, batch
+boundaries and 32-bit task-count overflow have CPU coverage. The collector and cache still retain
+four surface owners: connect bounded streamed field collection and persistence before treating
+the scheduler change as increased published lighting coverage.
 Toggleable/styled components must remain independently controllable instead of joining permanent
 aggregate RGB. Check water, displacement layers and live-GI transitions, then measure Crossfire,
 Construct, c1a0/c1a0d and Steamlab with identical quality and fixed camera positions. Default rollout

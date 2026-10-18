@@ -13,7 +13,9 @@ using namespace remix;
 using namespace remix::test;
 namespace m = remix::forward::mixed;
 namespace lm = remix::forward::lightmap;
+#include "direct_work_cases.h"
 int main() {
+  sparseDirectWorkTests();
   {
     auto source = std::make_shared<scene::BakeScene>();
     source->lights.resize(6);
