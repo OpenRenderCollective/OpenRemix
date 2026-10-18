@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <stdexcept>
 
 namespace remix::forward::shadows {
   View lightView(const scene::SphereLight &light, float range, float sceneScale) {
@@ -44,7 +45,10 @@ namespace remix::forward::shadows {
   }
   Selection Planner::update(std::span<const scene::SphereLight> lights, Vec3 eye, uint32_t budget,
                             float cutoff, float distance, float sceneScale,
-                            std::shared_ptr<const scene::BakeScene> source, double seconds, float fadeSeconds) {
+                            std::shared_ptr<const scene::BakeScene> source, double seconds, float fadeSeconds,
+                            std::span<const uint8_t> fallbackLights) {
+    if (!fallbackLights.empty() && fallbackLights.size() != lights.size())
+      throw std::invalid_argument("Shadow fallback policy does not match submitted lights");
     if (source && !source->ready)
       source.reset();
     if (m_source != source) {
@@ -61,6 +65,7 @@ namespace remix::forward::shadows {
       uint32_t index;
       View view;
       float priority;
+      bool fallback;
     };
     std::vector<Candidate> candidates;
     for (uint32_t i = 0; i < lights.size(); ++i) {
@@ -71,9 +76,12 @@ namespace remix::forward::shadows {
       Vec3 delta;
       for (uint32_t c = 0; c < 3; ++c)
         delta[c] = eye[c] - view.position[c];
-      candidates.push_back({i, view, range * range / std::max(dot(delta, delta), 1e-6f)});
+      candidates.push_back({i, view, range * range / std::max(dot(delta, delta), 1e-6f),
+                            !fallbackLights.empty() && fallbackLights[i] != 0});
     }
     std::stable_sort(candidates.begin(), candidates.end(), [](const Candidate &a, const Candidate &b) {
+      if (a.fallback != b.fallback)
+        return !a.fallback;
       if (a.priority != b.priority)
         return a.priority > b.priority;
       return a.view.id < b.view.id;

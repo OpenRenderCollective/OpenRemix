@@ -28,9 +28,12 @@ namespace remix::forward::shadows {
   public:
     // Monotonic seconds drive transitions independently of frame rate. A zero
     // duration keeps immediate selection for callers that do not supply a clock.
+    // Optional nonzero fallback entries retain ordinary shadow coverage, but
+    // yield slots to lights needing realtime mixed/dynamic receiver shadows.
     Selection update(std::span<const scene::SphereLight> lights, Vec3 eye, uint32_t budget, float cutoff,
                      float distance, float sceneScale, std::shared_ptr<const scene::BakeScene> source,
-                     double seconds = 0, float fadeSeconds = 0);
+                     double seconds = 0, float fadeSeconds = 0,
+                     std::span<const uint8_t> fallbackLights = {});
     bool captured(const scene::Draw &draw) const;
     const std::shared_ptr<const scene::BakeScene> &source() const { return m_source; }
 

@@ -100,12 +100,28 @@ namespace remix::forward {
     frame.waterMedium = false;
     auto sources = resources.sphereLights();
     std::sort(sources.begin(), sources.end(), [](const auto &a, const auto &b) { return a.id < b.id; });
+    const auto publishedBake = baking->volume();
+    std::vector<uint32_t> capturedLights(sources.size(), mixed::none);
+    std::vector<uint8_t> fallbackShadows;
+    if (publishedBake && publishedBake->mixedLights)
+      for (uint32_t i = 0; i < sources.size(); ++i) {
+        const auto &bindings = *publishedBake->mixedLights;
+        const auto captured = bindings.match(sources[i]);
+        capturedLights[i] = captured;
+        // Live GI evaluates direct lights analytically, so those lights retain
+        // ordinary shadow priority rather than becoming baked-only fallbacks.
+        if (!options.rtGI && captured != mixed::none && bindings.bakedDiffuse(captured) &&
+            !bindings.retainsVisibility(captured)) {
+          if (fallbackShadows.empty()) fallbackShadows.resize(sources.size());
+          fallbackShadows[i] = 1;
+        }
+      }
     const auto eye = transformPoint(scene::inverse(resources.view()), {0, 0, 0});
     const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - epoch).count();
     shadowSelection = shadowPlanner.update(sources, eye, options.localShadows ? options.localShadowLights : 0,
                                            options.lightCutoff, options.localShadowDistance,
                                            options.sceneScale, resources.bakeScene(), seconds,
-                                           options.localShadowFade);
+                                           options.localShadowFade, fallbackShadows);
     step(cpu.selection);
     std::vector<DrawData> draws;
     std::vector<water::MaterialData> waterMaterials;
@@ -203,12 +219,12 @@ namespace remix::forward {
       std::copy_n(source.direction, 3, light.directionCone.begin());
       light.directionCone[3] = source.coneCos;
       light.shaping = {source.softness, source.focus, radius, 0};
-      if (const auto &volume = baking->volume(); volume && volume->mixedLights) {
-        const auto captured = volume->mixedLights->match(source);
+      if (publishedBake && publishedBake->mixedLights) {
+        const auto captured = capturedLights[sourceIndex];
         if (captured != mixed::none) {
           light.shaping[3] = float(captured + 1);
-          light.corners[2][3] = float(volume->mixedLights->bakedDiffuse(captured));
-          if (light.corners[2][3] > 0 && !volume->mixedLights->retainsVisibility(captured))
+          light.corners[2][3] = float(publishedBake->mixedLights->bakedDiffuse(captured));
+          if (light.corners[2][3] > 0 && !publishedBake->mixedLights->retainsVisibility(captured))
             light.corners[2][3] = 2; // fully baked; fallback remains available outside baked coverage
         }
       }

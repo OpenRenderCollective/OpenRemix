@@ -1125,6 +1125,31 @@ namespace {
                     !fullyBaked->mixedLights->retainsVisibility(0) &&
                     pixels[left] < 3 && pixels[right] > 80,
                 "Fully static direct lighting comes from the aggregate without mixed visibility data");
+        if (localShadows) {
+          pixels = render(true);
+          const auto greenLit = pixels[right + 1];
+          std::printf("Fully baked/mixed priority %ux: lit RGB %u %u %u\n", samples,
+                      pixels[right], pixels[right + 1], pixels[right + 2]);
+          require(greenLit > 20, "Dimmer mixed light contributes beside the brighter fully baked light");
+          auto shadowCaster = instance(black, -.4f);
+          shadowCaster.doubleSided = 1;
+          shadowCaster.transform.matrix[0][0] = .15f;
+          shadowCaster.transform.matrix[0][3] = .35f;
+          shadowCaster.transform.matrix[1][1] = .04f;
+          identity.instanceId = 9788;
+          identity.rasterVisible = 0; // invisible/offscreen casters still need their mixed shadow
+          shadowCaster.pNext = &identity;
+          const auto caster = r.createRetained(shadowCaster);
+          pixels = render(true);
+          require(pixels[right + 1] < greenLit / 3 && pixels[right] > 80 &&
+                      target.forward->statistics().staticShadowUpdates == 0,
+                  "One shadow slot follows the mixed light while fully baked diffuse remains intact");
+          r.destroyRetained(&caster, 1);
+          pixels = render(true);
+          require(std::abs(int(pixels[right + 1]) - int(greenLit)) < 4,
+                  "Removing the caster restores mixed light without a stale fallback map");
+          pixels = render(false);
+        }
         {
           auto blueInfo = info;
           blueInfo.hash = 9796;

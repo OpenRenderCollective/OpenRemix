@@ -133,5 +133,46 @@ int main() {
     frame = fading.update({}, {}, 1, .001f, 100, 1, source, 9, 2);
     require(!frame.active[0], "Removed or zero-influence lights cannot retain a stale shadow assignment");
   }
+  {
+    scene::SphereLight lights[] = {light, light};
+    lights[0].id = 201;
+    lights[0].radiance[0] = 100;
+    lights[1].id = 202;
+    lights[1].radiance[0] = 1;
+    const uint8_t fallback[] = {1, 0};
+    s::Planner priority;
+    auto frame = priority.update(lights, {}, 1, .001f, 100, 1, source);
+    require(frame.slots[0] == 0, "Legacy importance ranking selects the brighter light");
+    frame = priority.update(lights, {}, 1, .001f, 100, 1, source, 0, 0, fallback);
+    require(frame.slots[1] == 0 && frame.slots[0] == UINT32_MAX,
+            "Mixed shadows take priority over brighter fully baked fallback emitters");
+    frame = priority.update(lights, {}, 2, .001f, 100, 1, source, 0, 0, fallback);
+    require(frame.slots[0] != UINT32_MAX && frame.slots[1] != UINT32_MAX,
+            "Spare slots retain fully baked light shadows for uncovered receivers");
+    const auto retainedSlots = frame.slots;
+    bool rejected = false;
+    try { priority.update(lights, {}, 1, .001f, 100, 1, source, 0, 0, std::span(fallback).first(1)); }
+    catch (const std::invalid_argument &) { rejected = true; }
+    frame = priority.update(lights, {}, 2, .001f, 100, 1, source, 0, 0, fallback);
+    require(rejected && frame.slots == retainedSlots && !frame.dirty[0] && !frame.dirty[1],
+            "A mismatched fallback policy is rejected before changing cache ownership");
+    const uint8_t onlyFallback[] = {1, 1};
+    frame = priority.update(lights, {}, 1, .001f, 100, 1, source, 0, 0, onlyFallback);
+    require(frame.slots[0] == 0 && frame.slots[1] == UINT32_MAX,
+            "An all-baked scene retains its ordinary ranked fallback shadow coverage");
+    s::Planner fading;
+    frame = fading.update(lights, {}, 1, .001f, 100, 1, source, 0, 2);
+    frame = fading.update(lights, {}, 1, .001f, 100, 1, source, 2, 2);
+    require(frame.slots[0] == 0 && frame.strength[0] == 1, "Outgoing fallback shadow starts fully visible");
+    frame = fading.update(lights, {}, 1, .001f, 100, 1, source, 3, 2, fallback);
+    require(frame.slots[0] == 0 && frame.slots[1] == UINT32_MAX && frame.strength[0] == .5f,
+            "A mixed-priority change fades the old map using its own identity");
+    frame = fading.update(lights, {}, 1, .001f, 100, 1, source, 4, 2, fallback);
+    require(frame.slots[0] == UINT32_MAX && frame.slots[1] == 0 && frame.strength[0] == 0,
+            "Mixed replacement acquires a slot only after fallback fade-out");
+    frame = fading.update(lights, {}, 1, .001f, 100, 1, source, 5, 2, fallback);
+    require(frame.slots[1] == 0 && frame.strength[0] == .5f && !frame.dirty[0],
+            "Mixed replacement fades in without redrawing unchanged static geometry");
+  }
   std::puts("Local shadow cube projections, cache ownership, selection and caster policy passed");
 }
