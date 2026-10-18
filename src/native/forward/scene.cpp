@@ -207,9 +207,12 @@ namespace remix::forward {
     if ((refreshLocal || refreshSun) && shadowPlanner.source())
       for (const auto &draw : shadowPlanner.source()->draws)
         append(draw, frame.staticCommands, true);
-    const VkDeviceSize clusterBytes = VkDeviceSize(data.grid[3]) * (clusterCapacity + 1) * sizeof(uint32_t);
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physical, &properties);
+    data.clusterInfo[0] = clusterListCapacity(uint32_t(lights.size()), data.grid[3],
+        properties.limits.maxStorageBufferRange, options.clusterLights);
+    statistics.clusterLightCapacity = data.clusterInfo[0];
+    const VkDeviceSize clusterBytes = VkDeviceSize(data.grid[3]) * (data.clusterInfo[0] + 1) * sizeof(uint32_t);
     for (const auto bytes : {clusterBytes, VkDeviceSize(lights.size() * sizeof(LightData)),
                              VkDeviceSize(draws.size() * sizeof(DrawData))})
       if (bytes > properties.limits.maxStorageBufferRange)

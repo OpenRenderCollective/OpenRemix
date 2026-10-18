@@ -339,6 +339,22 @@ int main(int argc, char **argv) {
     require(!saveStyled() && loadStyled().has_value(), "Cached headers cannot request GPU reads beyond their probe array");
     data.grid.header.settings[3] = 0;
   }
+  {
+    bc::recordLookup(file, identity, source->contentHash, 123, true);
+    bc::recordLookup(file, identity, source->contentHash, 123, false);
+    bc::recordLookup(root / "missing.bake", identity + 1, source->contentHash, 124, false);
+    std::ifstream receipts(root / "cache-events.jsonl");
+    std::string hit, rejected, missing;
+    std::getline(receipts, hit);
+    std::getline(receipts, rejected);
+    std::getline(receipts, missing);
+    require(hit.find("\"outcome\":\"hit\"") != std::string::npos &&
+            rejected.find("\"outcome\":\"rejected\"") != std::string::npos &&
+            missing.find("\"outcome\":\"missing\"") != std::string::npos &&
+            hit.find("\"policy\":\"123\"") != std::string::npos &&
+            missing.find("\"policy\":\"124\"") != std::string::npos,
+            "Cache lookup receipts distinguish hits, absent payloads and rejected metadata independently of policy/input identity");
+  }
   std::puts("Bake cache: identity, complete payloads, chart UVs, mixed light bindings, corruption and "
             "cancellation passed");
 }

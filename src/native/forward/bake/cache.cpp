@@ -4,6 +4,8 @@
 #include "forward/bake/shaders/embedded.h"
 #include "forward/lightmap/denoise.h"
 #include <cmath>
+#include <chrono>
+#include <mutex>
 #include <cstdio>
 #include <cstdlib>
 #include <random>
@@ -13,6 +15,23 @@
 #endif
 
 namespace remix::forward::bake::cache {
+  void recordLookup(const std::filesystem::path &file, uint64_t identity, uint64_t input,
+                     uint64_t policy, bool hit) noexcept {
+    try {
+      static std::mutex mutex;
+      std::lock_guard lock(mutex);
+      std::error_code error;
+      const bool exists = std::filesystem::is_regular_file(file, error);
+      std::filesystem::create_directories(file.parent_path());
+      std::ofstream out(file.parent_path() / "cache-events.jsonl", std::ios::app);
+      out.imbue(std::locale::classic());
+      const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::system_clock::now().time_since_epoch()).count();
+      out << "{\"unixMs\":" << now << ",\"key\":\"" << identity << "\",\"input\":\"" << input
+          << "\",\"policy\":\"" << policy << "\",\"outcome\":\""
+          << (hit ? "hit" : exists ? "rejected" : "missing") << "\"}\n";
+    } catch (...) {} // Profiling must not make an otherwise valid bake fail.
+  }
   namespace {
     // Bump whenever CPU planning, material transport or wire semantics change.
     constexpr uint32_t algorithmRevision = 16; // probe spacing fits the budget between powers of two

@@ -104,6 +104,7 @@ namespace remix::config {
         result.push_back(scalar("rtx.native.forward.sceneScale", FIELD(forward.sceneScale), .0001, 1000));
         result.push_back(scalar("rtx.native.forward.ambient", FIELD(forward.ambient), 0, 100));
         result.push_back(scalar("rtx.native.forward.exposure", FIELD(forward.exposure), .0001, 10000));
+        result.push_back(scalar("rtx.native.forward.clusterLights", FIELD(forward.clusterLights), 0, 1024));
         result.push_back(scalar("rtx.native.forward.debugView", FIELD(forward.debugView), 0, 3));
         result.push_back(scalar("rtx.native.forward.lightCutoff", FIELD(forward.lightCutoff), .000001, 10));
         result.push_back(scalar("rtx.native.forward.shadows", FIELD(forward.shadows), 0, 1));

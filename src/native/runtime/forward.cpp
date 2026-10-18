@@ -24,6 +24,11 @@ namespace remix {
         << "\", \"staticOcclusion\": \"" << state.bakeContent.staticOcclusion
         << "\", \"captureRadiance\": \"" << state.bakeContent.captureRadiance << "\", \"captureInputs\": \""
         << state.bakeContent.captureInputs << "\", \"styledIndirect\": \"" << state.bakeContent.styledIndirect << "\"}"
+        << ",\n  \"rendering\": {\"lights\": " << state.lights << ", \"draws\": " << state.draws
+        << ", \"clusters\": " << state.clusters << ", \"clusterCapacity\": " << state.clusterLightCapacity
+        << ", \"staticShadowUpdates\": " << state.staticShadowUpdates
+        << ", \"staticSunUpdates\": " << state.staticSunUpdates
+        << ", \"staticCasterPreparations\": " << state.staticCasterPreparations << '}'
         << ",\n  \"metersPerUnit\": " << state.reflectionSceneScale
         << ",\n  \"resolution\": " << header.parameters[1] << ",\n  \"probes\": [";
     auto vector = [&](const auto &v) { out << '[' << v[0] << ", " << v[1] << ", " << v[2] << ']'; };

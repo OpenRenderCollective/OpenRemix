@@ -11,6 +11,7 @@ layout(set = 0, binding = 0, std140) uniform Frame {
   vec4 localSettings;
   vec4 styleScales[32];
   uvec4 occlusion;
+  uvec4 clusterInfo;
 } frame;
 struct Light {
   vec4 positionRadius, radiance, directionCone, shaping;
@@ -38,8 +39,8 @@ layout(set = 0, binding = 3, std430) readonly buffer Materials {
   Material materials[];
 };
 layout(set = 0, binding = 4) uniform sampler2DArrayShadow sunShadow;
-const uint ClusterCapacity = 64u;
-const uint ClusterStride = ClusterCapacity + 1u;
+#define ClusterCapacity frame.clusterInfo.x
+#define ClusterStride (ClusterCapacity + 1u)
 float sliceDepth(uint slice) {
   return frame.depth.x * pow(frame.depth.y / frame.depth.x, float(slice) / float(frame.grid.z));
 }

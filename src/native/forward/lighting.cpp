@@ -1,9 +1,19 @@
 #include "forward/lighting.h"
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <limits>
 
 namespace remix::forward {
+  uint32_t clusterListCapacity(uint32_t lights, uint32_t cells, uint64_t storageRange, uint32_t requested) {
+    if (!cells) return clusterCapacity;
+    const uint64_t budget = std::min(storageRange, uint64_t(32) << 20);
+    const uint64_t stride = budget / (uint64_t(cells) * sizeof(uint32_t));
+    if (stride < 2) return 1; // caller's existing storage-range check reports an unsupported grid
+    const uint32_t target = requested ? std::clamp(requested, 1u, 1024u)
+        : std::bit_ceil(std::clamp(lights, clusterCapacity, 512u));
+    return uint32_t(std::min(uint64_t(target), stride - 1));
+  }
   bool matchesSun(const scene::DistantLight &captured, const scene::DistantLight &live) {
     return captured.isDistant && live.isDistant &&
            captured.angularDiameterDegrees == live.angularDiameterDegrees &&

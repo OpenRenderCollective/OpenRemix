@@ -127,7 +127,7 @@ void main() {
   for (uint i = 0u; i < (count > ClusterCapacity ? frame.target.z : count); ++i) {
     uint index = count > ClusterCapacity ? i : clusters[base + 1u + i];
     BrdfLobes local = localLightResponse(index, worldPosition, n, v, surface.rgb, roughness, metallic,
-                                         directIrradiance, surfaceLightmap, vec3(.04));
+                                         directIrradiance, surfaceLightmap, vec3(.04), normalize(geometric));
     color += directLightComponent(local, debugView);
   }
   if (debugView == 0u) color += emitted;

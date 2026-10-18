@@ -92,16 +92,20 @@ typedef struct remixapi_BakeSceneReflectionsInfoEXT {
   const float *positions;
 } remixapi_BakeSceneReflectionsInfoEXT;
 
-// Optional version 5 stationary styled lights. authoredLight is a separate,
+// Optional version 5 stationary controllable lights. authoredLight is a separate,
 // immutable local-light intensity envelope; runtimeLight is the corresponding live light,
 // including when off. Their emitter geometry must match. Never draw authoredLight.
 // The runtime captures authored radiance/geometry with runtime emitter identities.
 // Runtime colour/intensity edits within that envelope do not invalidate this capture;
 // geometry or authored envelope edits do.
-// Style identifiers are 1..127. Arrays are copied on READY; do not also include
-// these handles in scene.lights. Current Forward+ support bakes unit direct/static
-// visibility, excluding styled energy from shared indirect lightmaps/probes and
-// frozen reflection captures. Separate style-dependent indirect remains pending.
+// Group identifiers are adapter-assigned 1..127; no engine lightstyle system is
+// required. A single stationary on/off light can own a group. Members of an
+// indirect group share a scalar current/authored intensity. The host supplies
+// current light values; animation curves and game/entity logic stay in the host.
+// Arrays are copied on READY; do not also include these handles in scene.lights.
+// Forward+ bakes unit direct/static visibility and optionally separate grouped
+// indirect surface/probe components. Shared base irradiance and frozen reflection
+// captures exclude controllable energy. Reflection relighting remains pending.
 #define REMIXAPI_BAKE_SCENE_STYLED_LIGHTS_VERSION_EXT 5u
 
 typedef struct remixapi_BakeStyledLightEXT {

@@ -89,7 +89,7 @@ void main() {
   for (uint i = 0u; i < (count > ClusterCapacity ? frame.target.z : count); ++i) {
     uint light = count > ClusterCapacity ? i : clusters[base + 1u + i];
     BrdfLobes response = localLightResponse(light, worldPosition, n, v, surface.rgb, roughness, 0,
-                                           vec4(-1), vec4(0), vec3(f0));
+                                           vec4(-1), vec4(0), vec3(f0), normalize(geometric));
     diffuse += response.diffuse;
     specular += response.specular;
   }

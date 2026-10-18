@@ -10,6 +10,9 @@ namespace remix::forward {
   using scene::Matrix;
   constexpr uint32_t clusterSlices = 24, clusterCapacity = 64, cascadeCount = 4;
   constexpr uint32_t sunShadowLayers = cascadeCount * 2; // frozen geometry, then moving casters
+  // Bounded adaptive lists avoid evaluating every uploaded light when a
+  // cluster exceeds the legacy64 entries. Overflow still falls back correctly.
+  uint32_t clusterListCapacity(uint32_t lights, uint32_t cells, uint64_t storageRange, uint32_t requested = 0);
   bool matchesSun(const scene::DistantLight &captured, const scene::DistantLight &live);
 
   Vec3 transformPoint(const Matrix &matrix, const Vec3 &point);

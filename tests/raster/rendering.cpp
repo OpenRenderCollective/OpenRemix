@@ -2200,6 +2200,7 @@ namespace {
     }
   }
 #include "styled_indirect.h"
+#include "local_shadow_plane.h"
   void bakingTests() {
     Target target(64, 64, true);
     auto &r = target.raster;
@@ -2635,6 +2636,9 @@ namespace {
     r.drawInstance(instance(mesh));
     ui(r, 0, 0xffff0000);
     pixel(target.render(), 32, 32, 0, 0, 255, "Compatibility HUD remains above lit world");
+    const bool previousLocalShadows = options.localShadows;
+    options.localShadows = false; // Compare list traversal without time-dependent shadow selection fades.
+    target.forward->updateLighting(options);
     std::vector<remixapi_LightHandle> crowdedLights;
     for (uint32_t i = 0; i < 65; ++i) {
       info.hash = 8100 + i;
@@ -2648,6 +2652,16 @@ namespace {
     pixels = target.render();
     require(target.forward->statistics().lights == 65 && pixels[center] > 20,
             "Cluster overflow retains the last light instead of truncating illumination");
+    require(target.forward->statistics().clusterLightCapacity == 128, "Dense fixture expands its light list");
+    const auto adaptivePixels = pixels;
+    options.clusterLights = 64;
+    target.forward->updateLighting(options);
+    for (auto member : crowdedLights) r.drawLight(member);
+    r.drawInstance(instance(mesh));
+    require(target.render() == adaptivePixels && target.forward->statistics().clusterLightCapacity == 64,
+            "Adaptive lists reproduce the complete legacy overflow image without losing late lights");
+    options.clusterLights = 0;
+    target.forward->updateLighting(options);
     // Keep 65 uploaded lights but only the last one inside the camera clusters.
     // This exercises an index beyond the first 64 lights through the stored list,
     // independently of the full-array overflow fallback above.
@@ -2664,6 +2678,8 @@ namespace {
             "A sparse cluster retains an eligible light beyond the first 64 uploaded lights");
     for (auto member : crowdedLights)
       r.destroyLight(member);
+    options.localShadows = previousLocalShadows;
+    target.forward->updateLighting(options);
 
     remixapi_LightInfoDistantEXT distant{};
     distant.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT;
@@ -3923,6 +3939,7 @@ int main(int argc, char **argv) {
   else if (argc>2 && std::strcmp(argv[2],"local-shadows")==0) mixedLightingTests(true);
   else if (argc>2 && std::strcmp(argv[2],"baked-direct")==0) mixedLightingTests(true, true);
   else if (argc>2 && std::strcmp(argv[2],"styled-indirect")==0) styledIndirectTests();
+  else if (argc>2 && std::strcmp(argv[2],"local-shadow-plane")==0) localShadowPlaneTests();
   else if (argc>2 && std::strcmp(argv[2],"styled-mixed")==0) mixedLightingTests(true, true, true);
   else if (argc>2 && std::strcmp(argv[2],"mixed")==0) mixedLightingTests();
   else if (argc>2 && std::strcmp(argv[2],"compact-occlusion")==0) compactOcclusionTests();

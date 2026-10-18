@@ -13,6 +13,7 @@ namespace remix::forward {
     float exposure = 1;
     uint32_t debugView = 0; // 0 shaded, 1 indirect irradiance, 2 direct diffuse, 3 specular
     float lightCutoff = .001f;
+    uint32_t clusterLights = 0; // zero adapts64..512; explicit1..1024 retains a bounded profiling override
     bool shadows = true;
     bool localShadows = true;
     uint32_t localShadowLights = 4;

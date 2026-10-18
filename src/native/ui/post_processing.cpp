@@ -7,6 +7,13 @@
 
 namespace remix {
   void RemixNativeRuntime::drawPostProcessingTab(config::Settings &settings) {
+    if (settings.backend == config::Backend::ForwardPlus) {
+      ImGui::TextUnformatted("Forward+ brightness");
+      ui::DragFloat("Manual exposure", &settings.forward.exposure, .01f, .0001f, 10000.f);
+      ImGui::TextWrapped("Forward+ currently uses manual exposure. Automatic exposure and the path-traced "
+                        "post-processing controls are not connected to this backend yet.");
+      return;
+    }
     auto &options = settings.trace;
     const bool rrActive =
         m_pathTracer && m_pathTracer->upscalingStatistics().backend == upscale::Backend::DlssRr;

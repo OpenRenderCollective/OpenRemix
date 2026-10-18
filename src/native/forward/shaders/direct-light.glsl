@@ -5,7 +5,7 @@ bool emitterAbovePlane(Light light, vec3 p, vec3 n) {
              dot(light.corners[2].xyz - p, n)) > 0;
 }
 BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, float roughness, float metallic,
-                vec4 directIrradiance, vec4 surfaceLightmap, vec3 dielectricF0) {
+                vec4 directIrradiance, vec4 surfaceLightmap, vec3 dielectricF0, vec3 receiverNormal) {
   Light light = lights[index];
   vec3 delta = light.positionRadius.xyz - p;
   float distance2 = max(dot(delta, delta), 1e-8), distance = sqrt(distance2);
@@ -22,7 +22,7 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
   baked = baked || cachedVisibility == 2u;
   if (!baked)
     baked = overflowLightVisibility(surfaceChart, uint(light.shaping.w), surfaceLightmap, surfaceBounds, visibility);
-  float moving = localShadowVisibility(light, p, !baked);
+  float moving = localShadowVisibility(light, p, receiverNormal, !baked);
   uint directChannel = lightChannel(surfaceDirectLights, uint(light.shaping.w));
   bool bakedDiffuse = directChannel < 4u && directIrradiance[min(directChannel, 3u)] >= 0;
   if (moving <= 0 || (!bakedDiffuse && visibility <= 0))
@@ -53,8 +53,8 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
   return BrdfLobes(diffuse * scale, specular * scale);
 }
 vec3 localLight(uint index, vec3 p, vec3 n, vec3 v, vec3 base, float roughness, float metallic,
-                vec4 directIrradiance, vec4 surfaceLightmap) {
+                vec4 directIrradiance, vec4 surfaceLightmap, vec3 receiverNormal) {
   BrdfLobes response = localLightResponse(index, p, n, v, base, roughness, metallic,
-                                         directIrradiance, surfaceLightmap, vec3(.04));
+                                         directIrradiance, surfaceLightmap, vec3(.04), receiverNormal);
   return response.diffuse + response.specular;
 }

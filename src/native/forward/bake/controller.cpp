@@ -86,9 +86,12 @@ namespace remix::forward::bake {
       } catch (const std::exception &) {
         cacheFile.clear();
       }
-      if (!cacheFile.empty())
-        if (auto cached = cache::read(cacheFile, cacheKey, source, config, deviceIdentity,
-                                       cancellation.get_token())) {
+      if (!cacheFile.empty()) {
+        auto cached = cache::read(cacheFile, cacheKey, source, config, deviceIdentity, cancellation.get_token());
+        if (!cancellation.stop_requested())
+          cache::recordLookup(cacheFile, cacheKey, source->contentHash,
+                               cache::key(0, config, lightCutoff, deviceIdentity), bool(cached));
+        if (cached) {
           grid = std::move(cached->grid);
           surfaceLayout = std::move(cached->layout);
           mixedLights = std::make_shared<mixed::Plan>(std::move(cached->mixed));
@@ -112,6 +115,7 @@ namespace remix::forward::bake {
           cacheHit = filtering = true;
           return;
         }
+      }
     }
     if (cancellation.stop_requested())
       throw std::runtime_error("Bake preparation superseded");

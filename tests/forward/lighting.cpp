@@ -10,6 +10,15 @@ using namespace remix::forward;
 using remix::test::require;
 
 int main() {
+  require(clusterListCapacity(1, 12240, 128u << 20) == 64 &&
+          clusterListCapacity(175, 12240, 128u << 20) == 256 &&
+          clusterListCapacity(457, 12240, 128u << 20) == 512,
+          "Adaptive lists fit sparse and dense light sets without the legacy64-light fallback");
+  require(clusterListCapacity(4096, 12240, 128u << 20) == 512 &&
+          clusterListCapacity(457, 12240, 128u << 20, 64) == 64 &&
+          uint64_t(clusterListCapacity(457, 100000, 128u << 20) + 1) * 100000 * 4 <= (32u << 20) &&
+          uint64_t(clusterListCapacity(457, 12240, 4u << 20) + 1) * 12240 * 4 <= (4u << 20),
+          "Cluster capacity obeys total memory/device limits and retains explicit comparison overrides");
   {
     scene::Draw body;
     body.surface = std::make_shared<scene::Surface>();

@@ -19,6 +19,11 @@ namespace remix::forward::bake::cache {
   uint64_t key(uint64_t content, const Config &config, float cutoff, const Device &device,
                const DirectPolicy &policy = {});
   std::filesystem::path path(uint64_t key);
+  // One small receipt per attempted disk lookup. Separates changed captured
+  // inputs from shader/settings/device policy changes across installations.
+  // Diagnostic I/O failure never prevents a bake or changes cache validity.
+  void recordLookup(const std::filesystem::path &file, uint64_t key, uint64_t input,
+                     uint64_t policy, bool hit) noexcept;
   struct View {
     const Grid &grid;
     const lightmap::Layout &layout;

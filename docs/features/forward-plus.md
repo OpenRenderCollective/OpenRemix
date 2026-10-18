@@ -1688,3 +1688,30 @@ this reduces retained intermediate storage, but component passes still repeat
 tracing. The cache validates group ownership, sparse offsets, finite half values
 and allocation bounds before upload. Styled indirect has its own cache identity.
 It does not yet relight reflection captures or provide arbitrary live RGB changes.
+
+Stationary lighting groups are an engine-independent capture contract. An
+adapter assigns group IDs and supplies authored envelopes plus current light
+handles. One ordinary switchable static light can own one group; grouped scalar
+animation does not require Source lightstyle curves in the native renderer.
+Source's lightstyle evaluation and entity handling remain in the GMod adapter.
+
+Cluster light lists adapt from64 to512entries when the scene needs them, within
+a32MiB per-frame list budget and the device's buffer range. Explicit
+`rtx.native.forward.clusterLights=64` retains the previous capacity for profiling;
+zero selects automatic sizing. Larger counts still use the complete-light
+fallback rather than silently dropping illumination. This list capacity is
+independent of mixed-lightmap channels and local shadow-map budgets.
+
+Local shadow PCF compares each nearest depth texel against its ray's intersection
+with the geometric receiver plane. It does not use the perturbed normal-map
+normal for that plane. This prevents grazing flat receivers from shadowing
+themselves merely because neighboring cube texels represent different distances.
+
+Disk bake lookups append `cache-events.jsonl` in the selected bake-cache folder.
+Each receipt records input identity, shader/settings/device policy identity, full
+key and hit/missing/rejected outcome. A changed input versus a changed rendering
+policy can therefore be distinguished across launches without a GPU capture.
+Cancelled lookups are omitted; diagnostic write failure never aborts baking.
+
+Forward+ currently uses manual exposure. Its post-processing panel explicitly
+shows that setting; the path-traced automatic-exposure controls do not affect it.

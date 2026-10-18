@@ -21,8 +21,9 @@ namespace remix::forward {
     std::array<Matrix, shadows::maximumLights * shadows::faces> localShadows{};
     std::array<Vec4, shadows::maximumLights> localPositions{}; // xyz origin, w far plane
     Vec4 localSettings{}; // local resolution, local radial bias, sun bias (scene units), baked direct enabled
-    std::array<Vec4, 32> styleScales{}; // current/authored envelope scalar, indexed by Source style ID
+    std::array<Vec4, 32> styleScales{}; // current/authored envelope scalar, indexed by adapter-assigned group ID
     std::array<uint32_t, 4> occlusion{}; // words per chart, chart count, texture width, indexed-mask tail
+    std::array<uint32_t, 4> clusterInfo{}; // per-cell light capacity; remaining words reserved
   };
   struct LightData {
     Vec4 positionRadius{}, radiance{}, directionCone{}, shaping{};
@@ -34,7 +35,7 @@ namespace remix::forward {
     Vec4 remap[2]{};
     std::array<uint32_t, 4> state{}, maps{};
   };
-  static_assert(sizeof(FrameData) == 4320);
+  static_assert(sizeof(FrameData) == 4336);
   static_assert(sizeof(LightData) == 112);
   static_assert(sizeof(DrawData) == 272);
 } // namespace remix::forward
