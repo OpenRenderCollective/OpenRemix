@@ -1137,6 +1137,12 @@ namespace remix::forward::bake {
           status(REMIXAPI_BAKE_WAITING_EXT, "Waiting for complete static map inputs");
           return;
         }
+        if (config.aggregateDiffuse && !resources.bakeLightsCurrent()) {
+          if (m_job || m_volume)
+            invalidate();
+          status(REMIXAPI_BAKE_WAITING_EXT, "Static lights changed; waiting for updated map inputs");
+          return;
+        }
         if (m_volume || m_statistics.state == REMIXAPI_BAKE_FAILED_EXT)
           return;
         if (!m_job) {

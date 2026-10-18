@@ -9,6 +9,7 @@ namespace remix {
 
   void NativeResources::publishFrame(NativeResources &frame) {
     frame.m_bakeScene = m_bakeScene;
+    frame.m_publishedBakeLightsCurrent = bakeLightsCurrent();
     // The frame's draw lists move; state that persists across frames here is
     // copied. finishFrame below leaves this side as a finished frame would.
     frame.m_draws = std::move(m_draws);

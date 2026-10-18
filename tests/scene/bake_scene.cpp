@@ -172,14 +172,18 @@ int main() {
   const auto lit = resources.bakeScene();
   require(lit->lights.size() == 1 && lit->lights[0].radiance[0] == 1,
           "Explicit static lights enter the snapshot without a camera draw");
+  require(resources.bakeLightsCurrent(), "Captured light validity is independent of camera submission");
   light.hash = 51;
   remixapi_LightHandle dynamicLamp;
   resources.createLight(light, dynamicLamp);
   resources.setBakeScene(&info);
   require(resources.bakeScene() == lit, "Unrelated lights do not invalidate static bake inputs");
+  require(resources.bakeLightsCurrent(), "Unrelated definition revisions preserve captured lighting validity");
   light.radiance = {0, 1, 0};
   resources.updateLight(lamp, light);
+  require(!resources.bakeLightsCurrent(), "A changed definition invalidates aggregate lighting before recapture");
   resources.setBakeScene(&info);
+  require(resources.bakeLightsCurrent(), "Recapturing changed definitions restores lighting validity");
   require(resources.bakeScene()->contentHash != lit->contentHash && lit->lights[0].radiance[0] == 1,
           "Changed light definitions recapture while prior lighting remains immutable");
   light.isDynamic = 1;
@@ -281,11 +285,13 @@ int main() {
     for (float value : {1.f, .5f, 0.f, 2.f}) {
       definition.radiance = {value, value * .5f, value * .25f};
       resources.updateLight(runtimeLight, definition);
+      require(resources.bakeLightsCurrent(), "Styled intensity changes retain the authored lighting envelope");
       resources.setBakeScene(&request);
       require(resources.bakeScene() == off, "Runtime style on/off/flicker leaves the captured snapshot unchanged");
     }
     definition.radiance = {0, 1, 0};
     resources.updateLight(runtimeLight, definition);
+    require(resources.bakeLightsCurrent(), "Styled live RGB changes do not stale their captured envelope");
     resources.setBakeScene(&request);
     require(resources.bakeScene() == off, "Live colour edits reuse unit direct visibility without rebaking");
     input.style = 33;
@@ -295,6 +301,7 @@ int main() {
     auto stableStyle = resources.bakeScene();
     shape.position.x = 1;
     resources.updateLight(runtimeLight, definition);
+    require(!resources.bakeLightsCurrent(), "Styled emitter shape edits require new static inputs");
     rejected([&] { resources.setBakeScene(&request); });
     require(resources.bakeScene() == stableStyle, "Live geometry mismatch is rejected atomically");
     shape.position.x = 0;

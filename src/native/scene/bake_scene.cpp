@@ -310,6 +310,27 @@ namespace remix::scene {
 } // namespace remix::scene
 
 namespace remix {
+  bool NativeResources::bakeLightsCurrent() const {
+    if (m_publishedBakeLightsCurrent)
+      return *m_publishedBakeLightsCurrent;
+    if (!m_bakeScene)
+      return false;
+    for (const auto &[handle, revision] : m_bakeLights) {
+      const auto found = m_lights.find(handle);
+      if (found == m_lights.end() || found->second.revision != revision)
+        return false;
+    }
+    for (const auto &previous : m_bakeStyledLights) {
+      const auto authored = m_lights.find(uint64_t(reinterpret_cast<uintptr_t>(previous.info.authoredLight)));
+      const auto runtime = m_lights.find(uint64_t(reinterpret_cast<uintptr_t>(previous.info.runtimeLight)));
+      if (authored == m_lights.end() || runtime == m_lights.end() ||
+          authored->second.revision != previous.authoredRevision || runtime->second.dynamic ||
+          runtime->second.distant.isDistant || runtime->second.dome.enabled ||
+          scene::styledShapeHash(runtime->second.emitters) != previous.runtimeShape)
+        return false;
+    }
+    return true;
+  }
   bool NativeResources::bakeRequestCurrent(const remixapi_BakeSceneInfoEXT &info) const {
     const bool styled = info.version == REMIXAPI_BAKE_SCENE_STYLED_LIGHTS_VERSION_EXT;
     const bool reflections = styled || info.version == REMIXAPI_BAKE_SCENE_REFLECTIONS_VERSION_EXT;
@@ -352,13 +373,6 @@ namespace remix {
       if (previous.info.authoredLight != requested.authoredLight ||
           previous.info.runtimeLight != requested.runtimeLight || previous.info.style != requested.style)
         return false;
-      const auto authored = m_lights.find(uint64_t(reinterpret_cast<uintptr_t>(requested.authoredLight)));
-      const auto runtime = m_lights.find(uint64_t(reinterpret_cast<uintptr_t>(requested.runtimeLight)));
-      if (authored == m_lights.end() || runtime == m_lights.end() ||
-          authored->second.revision != previous.authoredRevision || runtime->second.dynamic ||
-          runtime->second.distant.isDistant || runtime->second.dome.enabled ||
-          scene::styledShapeHash(runtime->second.emitters) != previous.runtimeShape)
-        return false;
     }
     for (uint32_t i = 0; i < info.instanceCount; ++i) {
       const auto [handle, revision] = m_bakeInstances[i];
@@ -370,14 +384,11 @@ namespace remix {
         return false;
     }
     for (uint32_t i = 0; i < info.lightCount; ++i) {
-      const auto [handle, revision] = m_bakeLights[i];
+      const auto handle = m_bakeLights[i].first;
       if (handle != uint64_t(reinterpret_cast<uintptr_t>(info.lights[i])))
         return false;
-      const auto found = m_lights.find(handle);
-      if (found == m_lights.end() || found->second.revision != revision)
-        return false;
     }
-    return true;
+    return bakeLightsCurrent();
   }
   void NativeResources::setBakeScene(const remixapi_BakeSceneInfoEXT *info) {
     constexpr auto invalid = REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
@@ -386,6 +397,7 @@ namespace remix {
       m_bakeInstances.clear();
       m_bakeLights.clear();
       m_bakeStyledLights.clear();
+      m_publishedBakeLightsCurrent.reset();
       return;
     }
     const bool styled = info->version == REMIXAPI_BAKE_SCENE_STYLED_LIGHTS_VERSION_EXT &&
@@ -551,5 +563,6 @@ namespace remix {
     m_bakeLights = std::move(lights);
     m_bakeStyledLights = std::move(styledDependencies);
     m_bakeScene = std::move(next);
+    m_publishedBakeLightsCurrent.reset();
   }
 } // namespace remix

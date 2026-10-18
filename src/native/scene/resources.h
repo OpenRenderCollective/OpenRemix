@@ -14,6 +14,7 @@
 #include <unordered_set>
 #include <utility>
 #include <memory>
+#include <optional>
 #include <remix/remix_c.h>
 #include <remix/remix_native_ext.h>
 #include <remix/remix_bake_ext.h>
@@ -148,6 +149,9 @@ namespace remix {
     void drawRetained(const float *sceneOrigin);
     void setBakeScene(const remixapi_BakeSceneInfoEXT *info);
     const std::shared_ptr<const scene::BakeScene> &bakeScene() const { return m_bakeScene; }
+    // Authored definition dependencies, independent of this frame's light draw
+    // list. Published frames retain the answer from their own publication.
+    bool bakeLightsCurrent() const;
     size_t retainedCount() const { return m_retained.size(); }
     const scene::RetainedStatistics &retainedStatistics() const { return m_retainedStats; }
     // DrawRetainedInstances calls after which a moved instance returns to static.
@@ -336,6 +340,7 @@ namespace remix {
     uint64_t m_lightRevision = 0;
     std::shared_ptr<const scene::BakeScene> m_bakeScene;
     std::vector<std::pair<uint64_t, uint64_t>> m_bakeInstances, m_bakeLights;
+    std::optional<bool> m_publishedBakeLightsCurrent;
     struct BakeStyledDependency {
       remixapi_BakeStyledLightEXT info{};
       uint64_t authoredRevision = 0, runtimeShape = 0;

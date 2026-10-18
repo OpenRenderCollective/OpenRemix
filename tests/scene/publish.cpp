@@ -304,7 +304,46 @@ namespace {
   }
 } // namespace
 
+namespace {
+  void bakeLightDependencies() {
+    NativeResources api, original, missing, replaced;
+    auto light = sphereLight(api, 9800, 0);
+    remixapi_BakeSceneInfoEXT request{};
+    request.structSize = sizeof(request);
+    request.version = REMIXAPI_BAKE_SCENE_VERSION_EXT;
+    request.sceneId = request.revision = 1;
+    request.sceneScale = 1;
+    request.state = REMIXAPI_BAKE_SCENE_READY_EXT;
+    request.lightCount = 1;
+    request.lights = &light;
+    api.setBakeScene(&request);
+    api.publishFrame(original); // No drawLight call: culling is not removal.
+    require(original.bakeLightsCurrent() && original.sphereLights().empty(),
+            "Published static validity does not require a camera-visible light");
+    api.destroyLight(light);
+    require(!api.bakeLightsCurrent() && original.bakeLightsCurrent(),
+            "Destroying a captured light invalidates future frames without mutating earlier publication");
+    api.publishFrame(missing);
+    require(!missing.bakeLightsCurrent() && missing.bakeScene() == original.bakeScene(),
+            "A render replica receives stale-light state even though it owns no definition registry");
+    light = sphereLight(api, 9800, 1);
+    require(!api.bakeLightsCurrent(), "Reusing a destroyed light handle cannot revive old aggregate data");
+    api.setBakeScene(&request);
+    api.publishFrame(replaced);
+    require(replaced.bakeLightsCurrent() && !missing.bakeLightsCurrent() && original.bakeLightsCurrent() &&
+                replaced.bakeScene()->contentHash != original.bakeScene()->contentHash,
+            "Recaptured replacements publish their own validity and content identity");
+    api.setBakeScene(nullptr);
+    api.publishFrame(replaced);
+    require(!replaced.bakeLightsCurrent() && !replaced.bakeScene(),
+            "Unload cannot retain a prior publication's light validity");
+    missing.reset();
+    require(!missing.bakeLightsCurrent(), "Reset clears published stale/current dependency state");
+  }
+}
+
 int main() {
+  bakeLightDependencies();
   snapshot();
   lifetime();
   emissionCache();

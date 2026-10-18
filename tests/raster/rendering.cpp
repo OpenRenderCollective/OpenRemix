@@ -1003,10 +1003,12 @@ namespace {
         r.setBakeScene(&styledBase);
       };
       publish();
+      bool redExists = true;
       auto render = [&](bool dynamic) {
         camera(r);
         r.drawRetained(nullptr);
-        r.drawLight(red);
+        if (redExists)
+          r.drawLight(red);
         if (dynamic)
           r.drawLight(green);
         return target.render();
@@ -1187,6 +1189,47 @@ namespace {
           require(pixels[left] < 3 && std::abs(int(pixels[right]) - int(lit)) < 4 &&
                       std::strstr(target.forward->statistics().baking.status, "Cached lighting active"),
                   "Aggregate RGB, attributed mixed correction and runtime ownership survive cached publication");
+          const auto originalHash = target.forward->statistics().baking.activeHash;
+          info.isDynamic = 0;
+          info.radiance = {0, 0, 8};
+          r.updateLight(red, info);
+          pixels = render(false); // Deliberately do not republish the capture yet.
+          require(!target.forward->statistics().baking.active && pixels[right] < 3 &&
+                      pixels[right + 2] > 80,
+                  "A static RGB edit removes stale aggregate energy before the client republishes its snapshot");
+          publish();
+          pixels = until("", true);
+          require(pixels[right] < 3 && pixels[right + 2] > 80 && pixels[left + 2] < 3 &&
+                      target.forward->statistics().baking.activeHash != originalHash,
+                  "Republished static light edits produce new aggregate lighting with wall occlusion");
+          info.radiance = {8, 0, 0};
+          r.updateLight(red, info);
+          publish();
+          pixels = until("", true);
+          require(target.forward->statistics().baking.activeHash == originalHash &&
+                      std::abs(int(pixels[right]) - int(lit)) < 4 &&
+                      std::strstr(target.forward->statistics().baking.status, "Cached lighting active"),
+                  "Restoring authored light content reuses its original aggregate cache");
+          r.destroyLight(red);
+          redExists = false;
+          pixels = render(false);
+          require(!target.forward->statistics().baking.active && pixels[right] < 3 && pixels[right + 2] < 3,
+                  "Destroying a captured light cannot leave permanent aggregate illumination");
+          base.lightCount = 0;
+          base.lights = nullptr;
+          publish();
+          pixels = until("", true);
+          require(pixels[right] < 3, "A republished light removal bakes a genuinely dark aggregate");
+          info.hash = 9706;
+          r.createLight(info, red);
+          redExists = true;
+          base.lightCount = 1;
+          base.lights = &red;
+          publish();
+          pixels = until("", true);
+          require(target.forward->statistics().baking.activeHash == originalHash &&
+                      std::abs(int(pixels[right]) - int(lit)) < 4,
+                  "Recreating the original authored light restores matching cached aggregate ownership");
           // Only the hidden wall belongs to this next bake. The visible quad
           // must receive direct diffuse from the grid, with no surface atlas
           // and no realtime local shadow maps to hide missing static visibility.

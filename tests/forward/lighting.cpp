@@ -325,6 +325,12 @@ int main() {
   require(!changed.sameTargets(settings.forward),
           "Hardware reflection enable prepares replacement resources");
   std::vector<std::string> warnings;
+  require(!settings.forward.baking.aggregateDiffuse &&
+              config::set(settings, "rtx.native.forward.experimentalAggregateDiffuse", "1") ==
+                  config::SetResult::Success && settings.forward.baking.aggregateDiffuse &&
+              config::set(settings, "rtx.native.forward.experimentalAggregateDiffuse", "0") ==
+                  config::SetResult::Success && !settings.forward.baking.aggregateDiffuse,
+          "Aggregate map experiments require an explicit profile opt-in and can return to the default path");
   require(config::set(settings, "rtx.native.forward.bakeDirectDiffuse", "0") == config::SetResult::Success &&
               !settings.forward.baking.directDiffuse,
           "Baked direct-diffuse policy participates in independent profile persistence");

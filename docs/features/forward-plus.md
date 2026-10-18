@@ -453,6 +453,7 @@ water exits and disabled-pass compatibility at 1x, 2x and 4x with ray-tracing fe
 | `lightmapTexels` | 4194304 | Surface atlas texel budget, including padding and unused page space |
 | `lightmapDenoise` | 1 | Offline OIDN RTLightmap filtering of indirect surface SH where available; raw fallback without OIDN |
 | `bakeSunAntialiasing` | 1 | Adaptive receiver-area sampling at detected baked sunlight shadow edges |
+| `experimentalAggregateDiffuse` | 0 | Developer profile experiment: aggregate fixed-light diffuse while retaining attributed visibility and mixed-shadow corrections |
 | `ssrScale` | 2 | Reflection resolution divisor: 1, 2 or 4 |
 | `ssrSteps` | 128 | Maximum depth traversal iterations per reflection ray, 16 to 512 |
 | `ssrDistance` | 50 | Maximum reflection ray distance in metres |
