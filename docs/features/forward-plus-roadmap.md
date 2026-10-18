@@ -74,6 +74,12 @@ when baked lighting is active; a failed bake instead displays its failure messag
    live-map highlights, leakage and frame cost before changing the default lighting policy.
    Transport uses a separate 112-byte light contract, preserving its existing shaders and cache
    identity when the runtime light contract grows to carry independent response weights.
+   First-bake denoising still competes with rendering. The replay host can isolate that contention
+   using `replay.denoiseFrameDelayMs`, a default-off diagnostic restricted to the denoising stage;
+   it does not change the installed game's cadence. Investigate scheduling before adopting a frame
+   cap. Cache persistence also remains inside the finishing ticket and can delay ready publication.
+   Separate it from publication with immutable ownership and bounded memory; verify cancellation,
+   map changes, slow/failed writes and a subsequent cache hit before enabling asynchronous persistence.
    Timed visibility batches now grow within an eight-row rectangular dispatch and a guaranteed
    128 MiB maximum result-buffer range, reducing frame submission overhead without changing quality.
    Scalar classification now selects positive direct owners before a separate directional pass.
