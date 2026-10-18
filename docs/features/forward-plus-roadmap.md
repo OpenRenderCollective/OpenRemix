@@ -86,6 +86,10 @@ when baked lighting is active; a failed bake instead displays its failure messag
    SDK shutdown joins the worker before DLL unload and a later startup can restart it. Cache-reload
    tests wait for persistence explicitly. Continue live-map lifecycle and storage-failure coverage;
    orderly shutdown can wait for accepted writes, and the filter/render contention remains unresolved.
+   A highest-priority CUDA stream did not reduce filtering time in the exercised Vulkan-rendering
+   workload; retain ordinary stream scheduling. Next investigate filter/image work organization,
+   preserving chart isolation, directional coefficients and cancellation, before changing quality
+   settings or introducing an interactive frame-rate tradeoff.
    Timed visibility batches now grow within an eight-row rectangular dispatch and a guaranteed
    128 MiB maximum result-buffer range, reducing frame submission overhead without changing quality.
    Scalar classification now selects positive direct owners before a separate directional pass.
