@@ -40,6 +40,7 @@ subdir('ui')
 # GCC 8's standard library ships filesystem in a separate static archive (filesystem_dep above).
 pipeline_library = static_library('remix_pipelines',
   'runtime/preparation.cpp', 'runtime/pipeline_cache.cpp', 'runtime/pipelines.cpp',
+  'runtime/pipeline_executables.cpp',
   dependencies : [vulkan_dep, threads_dep, filesystem_dep], include_directories : native_include,
   cpp_args : cpp.get_supported_arguments('-Wno-missing-field-initializers'),
   gnu_symbol_visibility : 'hidden', pic : true)

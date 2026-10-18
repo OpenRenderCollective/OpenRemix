@@ -14,7 +14,7 @@ struct Statistics {
 class Service {
 public:
   Service(VkDevice device, const VkPhysicalDeviceProperties &properties,
-          bool feedback);
+          bool feedback, bool executableStatistics = false);
   ~Service();
   Service(const Service &) = delete;
   Service &operator=(const Service &) = delete;

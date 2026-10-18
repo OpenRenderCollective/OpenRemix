@@ -7,6 +7,12 @@
 
 namespace remix::forward {
   void Renderer::Gpu::createPipelines(VkRenderPass output) {
+    pipeline::nameCode(vertShader, "forward.vertex");
+    pipeline::nameCode(lightmapVertShader, "forward.lightmap-vertex");
+    pipeline::nameCode(fragShader, "forward.fragment");
+    pipeline::nameCode(ssrFragShader, "forward.reflection-guides");
+    pipeline::nameCode(ray::gi::fragShader, "forward.live-gi");
+    pipeline::nameCode(ray::gi::guidesShader, "forward.live-gi-guides");
     struct Modules {
       VkDevice device;
       std::vector<VkShaderModule> handles;

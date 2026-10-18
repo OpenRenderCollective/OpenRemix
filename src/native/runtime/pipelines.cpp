@@ -1,5 +1,6 @@
 #include "runtime/pipelines.h"
 #include "runtime/pipeline_cache.h"
+#include "runtime/pipeline_executables.h"
 #include "platform/utf8_path.h"
 #include <algorithm>
 #include <atomic>
@@ -183,6 +184,7 @@ struct Service::Impl {
   std::filesystem::path path;
   mutable std::mutex mutex;
   Statistics stats;
+  bool captureExecutables = false;
   // Immutable objects are retained until the compiler and GPU have stopped.
   struct Object {
     uint64_t handle;
@@ -208,6 +210,7 @@ struct Service::Impl {
     double queued = 0, started = 0, finished = 0;
     bool hit = false, failed = false;
     std::string name;
+    std::string executables;
   };
   std::vector<Record> records;
   std::vector<std::pair<double, std::string>> events;
@@ -333,6 +336,8 @@ struct Service::Impl {
               .pPipelineCreationFeedback = &feedback};
           const auto status =
               compile(&result->handle, stats.feedback ? &info : nullptr);
+          auto executables = status == VK_SUCCESS && captureExecutables
+              ? executableStatistics(device, result->handle) : std::string{};
           {
             std::lock_guard lock(mutex);
             ++stats.completed;
@@ -346,6 +351,7 @@ struct Service::Impl {
             } else
               ++stats.failed;
             auto &entry = records[record];
+            entry.executables = std::move(executables);
             entry.finished = since();
             entry.failed = status != VK_SUCCESS;
             if (feedback.flags & VK_PIPELINE_CREATION_FEEDBACK_VALID_BIT) {
@@ -422,10 +428,11 @@ struct Service::Impl {
   }
 };
 Service::Service(VkDevice device, const VkPhysicalDeviceProperties &p,
-                 bool feedback)
+                 bool feedback, bool executableStatistics)
     : impl(std::make_unique<Impl>(device)) {
   auto &g = *impl;
   g.stats.feedback = feedback;
+  g.captureExecutables = executableStatistics;
   g.identity = {p.vendorID, p.deviceID, p.driverVersion};
   std::copy_n(p.pipelineCacheUUID, 16, g.identity.uuid.begin());
   std::error_code directoryError;
@@ -506,6 +513,8 @@ std::string Service::report() const {
                 Impl::compilerThreads(),
                 s.cacheLoaded ? "loaded" : "not loaded");
   std::string text = line;
+  text += g.captureExecutables ? "# executable statistics enabled (diagnostic run)\n"
+                               : "# executable statistics disabled\n";
   text += "# queued started finished compile(ms) hit name, and events "
           "(milliseconds since the service started)\n";
   // Compiles and events merged in time order.
@@ -521,6 +530,8 @@ std::string Service::report() const {
                     r.started ? "running" : "queued", "", "", "    ",
                     r.name.c_str());
     lines.emplace_back(r.queued, line);
+    if (!r.executables.empty())
+      lines.emplace_back(r.queued, r.name + "\n" + r.executables);
   }
   std::stable_sort(lines.begin(), lines.end(),
                    [](auto &a, auto &b) { return a.first < b.first; });
@@ -775,6 +786,7 @@ enqueueCompute(Service::Impl &g, const VkComputePipelineCreateInfo &info,
                    VkPipelineCreationFeedbackCreateInfo *feedback) {
         recipe->info.stage = recipe->stage.bind();
         recipe->info.pNext = feedback;
+        if (g.captureExecutables) recipe->info.flags |= VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
         return vkCreateComputePipelines(g.device, g.cache, 1, &recipe->info,
                                         nullptr, p);
       },
@@ -919,6 +931,7 @@ createGraphicsPipelines(VkDevice d, VkPipelineCache, uint32_t count,
         [r, &g](VkPipeline *p, VkPipelineCreationFeedbackCreateInfo *feedback) {
           r->bind();
           r->info.pNext = feedback;
+          if (g.captureExecutables) r->info.flags |= VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
           return vkCreateGraphicsPipelines(g.device, g.cache, 1, &r->info,
                                            nullptr, p);
         }));

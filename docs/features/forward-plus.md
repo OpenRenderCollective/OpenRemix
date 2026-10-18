@@ -786,6 +786,14 @@ already-tested irradiance probes. A low budget can still leave particular rooms
 uncovered; larger maps can use 32 captures without changing irradiance-grid density. This increases
 capture work, storage and per-pixel lookup cost; it does not make arbitrary concave rooms rectangular.
 
+For compiler inspection, start with `REMIX_PIPELINE_EXECUTABLES=1`, then create
+`pipelines.request` in the profile directory to write `pipelines.txt`. On supporting
+Vulkan devices the report includes executable names, subgroup sizes and the driver's
+named statistics, such as register count and machine-code size. Query failures are
+diagnostic only. This is off by default; keep captures separate from timing runs,
+because statistic capture can affect compilation and driver optimization. Treat
+driver-reported values as implementation-specific, not portable occupancy estimates.
+
 For inspection, `probes.request` in the profile directory writes `probes.json`
 from the published frame's immutable metadata. It lists the active content hash,
 world-unit scale, resolution, origins, projection boxes and influence boxes.

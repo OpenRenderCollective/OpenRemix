@@ -334,6 +334,22 @@ namespace remix {
         VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME);
     if (pipelineFeedback)
       extensions.push_back(VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME);
+    VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR executableFeatures{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR};
+    const char *executableOption = std::getenv("REMIX_PIPELINE_EXECUTABLES");
+    const bool executableRequested = executableOption && std::strcmp(executableOption, "1") == 0;
+    if (executableRequested && m_instanceApiVersion >= VK_API_VERSION_1_1 &&
+        supportsDeviceExtension(selection.physicalDevice,
+        VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME)) {
+      VkPhysicalDeviceFeatures2 available{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+                                          .pNext = &executableFeatures};
+      vkGetPhysicalDeviceFeatures2(selection.physicalDevice, &available);
+      if (executableFeatures.pipelineExecutableInfo) {
+        extensions.push_back(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
+        executableFeatures.pNext = features.pNext;
+        features.pNext = &executableFeatures;
+      }
+    }
     // NVIDIA Reflex. Its sleep is signalled on a timeline semaphore (core in
     // Vulkan 1.2, enabled through the 1.2 features the tracer's chain holds).
     m_lowLatencySupported = !m_headless && m_traceSupported && m_instanceApiVersion >= VK_API_VERSION_1_2 &&
@@ -399,7 +415,7 @@ namespace remix {
     }
     m_gpuTimers.initialize(m_physicalDevice, m_device, m_queueFamily);
     m_pipelines = std::make_unique<pipeline::Service>(m_device, m_properties,
-                                                      pipelineFeedback);
+                                                      pipelineFeedback, executableFeatures.pipelineExecutableInfo);
     m_hostPasses.initialize(m_physicalDevice, m_device);
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
