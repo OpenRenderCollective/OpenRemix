@@ -1,4 +1,5 @@
 #include "runtime/settings.h"
+#include "runtime/float_chars.h"
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -15,15 +16,13 @@ namespace remix::config {
       std::function<bool(Settings &, std::string_view)> write;
     };
     template <typename T> std::string number(T value) {
-      char buffer[64];
-      auto result = [&] {
-        if constexpr (std::is_floating_point_v<T>)
-          return std::to_chars(buffer, buffer + sizeof(buffer), value, std::chars_format::general,
-                               std::numeric_limits<T>::max_digits10);
-        else
-          return std::to_chars(buffer, buffer + sizeof(buffer), unsigned(value));
-      }();
-      return {buffer, result.ptr};
+      if constexpr (std::is_floating_point_v<T>)
+        return formatFloat(value);
+      else {
+        char buffer[64];
+        auto result = std::to_chars(buffer, buffer + sizeof(buffer), unsigned(value));
+        return {buffer, result.ptr};
+      }
     }
     template <typename T> bool readNumber(std::string_view text, T &value) {
       if constexpr (std::is_unsigned_v<T>) {
@@ -37,8 +36,12 @@ namespace remix::config {
           return true;
         }
       }
-      auto result = std::from_chars(text.data(), text.data() + text.size(), value);
-      return result.ec == std::errc{} && result.ptr == text.data() + text.size();
+      if constexpr (std::is_floating_point_v<T>)
+        return parseFloat(text, value);
+      else {
+        auto result = std::from_chars(text.data(), text.data() + text.size(), value);
+        return result.ec == std::errc{} && result.ptr == text.data() + text.size();
+      }
     }
     template <typename Access>
     Entry scalar(std::string key, Access access, double low, double high, double gap = 0,

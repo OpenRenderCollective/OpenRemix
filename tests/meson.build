@@ -5,6 +5,20 @@ test_includes = [remix_public_include, native_include, test_include, image_inclu
 # Vulkan and Remix structs are designated-initialized with only the fields set,
 # as in the runtime libraries (werror builds).
 test_cpp_args = cpp.get_supported_arguments('-Wno-missing-field-initializers')
+if metal_backend
+  # gpu_backend=metal: the backend-independent tests, and the Metal backend's.
+  subdir('abi')
+  subdir('api')
+  subdir('scene')
+  subdir('ui')
+  subdir('platform')
+  subdir('runtime')
+  subdir('metal')
+  if get_option('usd')
+    subdir('usd')
+  endif
+  subdir_done()
+endif
 # Render fixtures inspect the internal preparation status without adding an
 # export to the Remix ABI. They execute the same compiled runtime objects.
 runtime_test_dep = declare_dependency(

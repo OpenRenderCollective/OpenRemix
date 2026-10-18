@@ -28,7 +28,9 @@
 #include <deque>
 
 #include <SDL3/SDL.h>
+#if !REMIX_METAL
 #include <SDL3/SDL_vulkan.h>
+#endif
 
 #include <remix/remix_c.h>
 #include <remix/remix_native_ext.h>
@@ -60,9 +62,15 @@ namespace remix {
     remixapi_ErrorCode setTextInputEnabled(bool enabled);
     void syncTextInput(bool guiWantsText);
 
+#if REMIX_METAL
+    // The window's CAMetalLayer (a CAMetalLayer *), from a view created on
+    // first use and destroyed with the window.
+    void *metalLayer();
+#else
     std::vector<const char *> getVulkanInstanceExtensions() const;
     remixapi_ErrorCode createVulkanSurface(VkInstance instance, const VkAllocationCallbacks *allocator,
                                            VkSurfaceKHR &surface) const;
+#endif
 
     void setEventHandler(EventHandler handler, void *userData);
     void setGuiCapture(bool keyboard, bool mouse);
@@ -99,6 +107,9 @@ namespace remix {
     bool m_embedded = false;
     bool m_appInBackground = false;
     mutable void *m_surfaceWindow = nullptr;
+#if REMIX_METAL
+    SDL_MetalView m_metalView = nullptr;
+#endif
     bool m_closeRequested = false;
     bool m_guiWantsKeyboard = false;
     bool m_guiWantsMouse = false;

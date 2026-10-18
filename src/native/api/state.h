@@ -22,7 +22,11 @@
 
 #pragma once
 #include "api/exports.h"
+#if REMIX_METAL
+#include "metal/runtime.h"
+#else
 #include "runtime/runtime.h"
+#endif
 #include <mutex>
 #include <string>
 #include <unordered_map>

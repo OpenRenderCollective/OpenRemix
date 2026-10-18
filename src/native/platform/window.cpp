@@ -80,7 +80,11 @@ namespace remix {
         info.windowTitle != nullptr && info.windowTitle[0] != '\0' ? info.windowTitle : "Remix Shell";
     const int width = static_cast<int>(info.windowWidth != 0 ? info.windowWidth : 1280u);
     const int height = static_cast<int>(info.windowHeight != 0 ? info.windowHeight : 720u);
+#if REMIX_METAL
+    SDL_WindowFlags flags = SDL_WINDOW_METAL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+#else
     SDL_WindowFlags flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+#endif
     if (info.fullscreen) {
       flags |= SDL_WINDOW_FULLSCREEN;
     }
@@ -103,6 +107,12 @@ namespace remix {
   }
 
   void RemixSdlWindow::shutdown() {
+#if REMIX_METAL
+    if (m_metalView != nullptr) {
+      SDL_Metal_DestroyView(m_metalView);
+      m_metalView = nullptr;
+    }
+#endif
     if (m_window != nullptr) {
       SDL_DestroyWindow(m_window);
       m_window = nullptr;
@@ -166,6 +176,20 @@ namespace remix {
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
 
+#if REMIX_METAL
+  void *RemixSdlWindow::metalLayer() {
+    if (checkThread() != REMIXAPI_ERROR_CODE_SUCCESS)
+      return nullptr;
+    if (m_metalView == nullptr) {
+      m_metalView = SDL_Metal_CreateView(m_window);
+      if (m_metalView == nullptr) {
+        setSdlError("SDL_Metal_CreateView");
+        return nullptr;
+      }
+    }
+    return SDL_Metal_GetLayer(m_metalView);
+  }
+#else
   std::vector<const char *> RemixSdlWindow::getVulkanInstanceExtensions() const {
     uint32_t count = 0;
     const char *const *extensions = SDL_Vulkan_GetInstanceExtensions(&count);
@@ -176,6 +200,7 @@ namespace remix {
 
     return std::vector<const char *>(extensions, extensions + count);
   }
+#endif
 
   bool RemixSdlWindow::isSurfaceAvailable() const {
 #if defined(__ANDROID__)
@@ -195,6 +220,7 @@ namespace remix {
 #endif
   }
 
+#if !REMIX_METAL
   remixapi_ErrorCode RemixSdlWindow::createVulkanSurface(VkInstance instance,
                                                          const VkAllocationCallbacks *allocator,
                                                          VkSurfaceKHR &surface) const {
@@ -214,6 +240,7 @@ namespace remix {
 #endif
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
+#endif
 
   remixapi_ErrorCode RemixSdlWindow::getWindowMetrics(remixapi_WindowMetrics &metrics) const {
     metrics = {};

@@ -4,8 +4,10 @@ test('API stubs and failed startup cleanup', runtime_test, args : [remix.full_pa
 host_pass_test = executable('remix-host-pass-test', 'host_passes.cpp',
   include_directories : test_includes, dependencies : [dl_dep, threads_dep])
 if get_option('gpu_tests')
-  test('Vulkan presentation and lifecycle', runtime_test, args : [remix.full_path(), 'gpu'], timeout : 90)
-  test('Host passes on the GPU', host_pass_test, args : [remix.full_path()], timeout : 120)
+  test(metal_backend ? 'Metal presentation and lifecycle' : 'Vulkan presentation and lifecycle', runtime_test, args : [remix.full_path(), 'gpu'], timeout : 90)
+  if not metal_backend
+    test('Host passes on the GPU', host_pass_test, args : [remix.full_path()], timeout : 120)
+  endif
   test('Compressed BC textures on the GPU', runtime_test, args : [remix.full_path(), 'compressed'], timeout : 90)
   if system != 'windows'
     test('Live process exit cleanup', runtime_test, args : [remix.full_path(), 'exit'], timeout : 30)
@@ -46,10 +48,12 @@ if get_option('gpu_tests')
 endif
 
 
-pipeline_test = executable('remix-pipeline-test', 'pipelines.cpp',
-  include_directories : native_include, link_with : pipeline_library,
-  dependencies : [vulkan_dep, threads_dep, filesystem_dep], cpp_args : test_cpp_args)
-test('Pipeline preparation, persistence and shutdown', pipeline_test, args : ['@CONFIG_DIR@'], timeout : 30)
+if not metal_backend
+  pipeline_test = executable('remix-pipeline-test', 'pipelines.cpp',
+    include_directories : native_include, link_with : pipeline_library,
+    dependencies : [vulkan_dep, threads_dep, filesystem_dep], cpp_args : test_cpp_args)
+  test('Pipeline preparation, persistence and shutdown', pipeline_test, args : ['@CONFIG_DIR@'], timeout : 30)
+endif
 
 if get_option('gpu_tests') and system == 'linux'
   preparation_gpu_test = executable('remix-preparation-gpu-test', 'preparation_gpu.cpp',

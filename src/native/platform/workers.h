@@ -113,7 +113,7 @@ namespace remix {
     size_t m_count = 0, m_active = 0;
     std::atomic<size_t> m_next{0};
     uint64_t m_generation = 0;
-    unsigned m_csr = 0;
+    [[maybe_unused]] unsigned m_csr = 0; // x86 MXCSR only
     std::exception_ptr m_error;
     bool m_stop = false;
   };

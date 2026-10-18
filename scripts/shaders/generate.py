@@ -302,7 +302,8 @@ def process(backends, check, validate):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('backend', choices=[*BACKENDS, 'nrd', 'fsr31', 'all'])
+    # metal translates the other backends' SPIR-V; 'all' leaves it out (it needs macOS and Xcode).
+    parser.add_argument('backend', choices=[*BACKENDS, 'nrd', 'fsr31', 'metal', 'all'])
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--check', action='store_true', help='Compare generated output without modifying files')
     mode.add_argument('--validate', action='store_true', help='Validate checked-in SPIR-V using only spirv-val')
@@ -311,6 +312,9 @@ def main():
     glsl = [backend for backend in selected if backend in BACKENDS]
     if glsl:
         process(glsl, args.check, args.validate)
+    if 'metal' in selected:
+        import metal
+        metal.process(args.check, args.validate)
     for backend in selected:
         if backend in ('nrd', 'fsr31'):
             (nrd if backend == 'nrd' else fsr31).process(args.check, args.validate)

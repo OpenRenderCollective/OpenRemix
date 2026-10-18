@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package the shell, SDL3 and (on macOS) standard SDK Vulkan/MoltenVK libraries."""
+"""Package the shell, SDL3 and (on macOS Vulkan builds) standard SDK Vulkan/MoltenVK libraries."""
 import argparse
 import json
 import os
@@ -21,7 +21,10 @@ args = parser.parse_args()
 build, deps, output = args.build.resolve(), args.deps.resolve(), args.output.resolve()
 if output.exists(): parser.error('Use a fresh output directory.')
 system = {'linux': 'Linux', 'windows': 'Windows', 'macos': 'Darwin'}.get(args.target, platform.system())
-if system == 'Darwin' and not args.vulkan_sdk: parser.error('macOS requires --vulkan-sdk.')
+# gpu_backend=metal builds (macOS) link neither Vulkan nor MoltenVK.
+options = json.loads((build / 'meson-info/intro-buildoptions.json').read_text())
+metal = any(o['name'] == 'gpu_backend' and o['value'] == 'metal' for o in options)
+if system == 'Darwin' and not metal and not args.vulkan_sdk: parser.error('macOS Vulkan builds require --vulkan-sdk.')
 for directory in ['bin', 'lib', 'include/remix', 'share/remix/licenses']:
     (output / directory).mkdir(parents=True, exist_ok=True)
 licenses = output / 'share/remix/licenses'
@@ -39,9 +42,11 @@ for source, name in [('LICENSE.txt','NRD.txt'), ('External/MathLib/LICENSE.txt',
 shutil.copy2(root / 'third_party/nrd/README.remix.md', licenses / 'NRD-provenance.md')
 shutil.copy2(root / 'third_party/sharc/License.md', licenses / 'SHARC.md')
 shutil.copy2(root / 'third_party/sharc/README.md', licenses / 'SHARC-provenance.md')
-
-shutil.copytree(root / 'include/vulkan/LICENSES', licenses / 'Vulkan-Headers')
-shutil.copy2(root / 'include/vulkan/LICENSE.md', licenses / 'Vulkan-Headers/NOTICE.md')
+if not metal:
+    shutil.copytree(root / 'include/vulkan/LICENSES', licenses / 'Vulkan-Headers')
+    shutil.copy2(root / 'include/vulkan/LICENSE.md', licenses / 'Vulkan-Headers/NOTICE.md')
+else:
+    shutil.copy2(root / 'third_party/xz-embedded/COPYING', licenses / 'XZEmbedded.txt')
 shutil.copy2(deps / 'sources/sdl3/LICENSE.txt', licenses / 'SDL3.txt')
 shutil.copy2(root / 'scripts/common/dependencies.lock.json', output / 'share/remix/dependencies.lock.json')
 if system == 'Windows':
@@ -79,13 +84,14 @@ exec "$root/bin/remix-native-sample" "$root/lib/libremix.so.0" "$@"
 ''')
     launcher.chmod(0o755)
 elif system == 'Darwin':
-    sdk = args.vulkan_sdk.resolve()
     libraries = {
         'libremix.0.dylib': build / 'src/native/libremix.0.dylib',
         'libSDL3.0.dylib': deps / 'prefix/lib/libSDL3.0.dylib',
-        'libvulkan.1.dylib': sdk / 'lib/libvulkan.1.dylib',
-        'libMoltenVK.dylib': sdk / 'lib/libMoltenVK.dylib',
     }
+    if not metal:
+        sdk = args.vulkan_sdk.resolve()
+        libraries['libvulkan.1.dylib'] = sdk / 'lib/libvulkan.1.dylib'
+        libraries['libMoltenVK.dylib'] = sdk / 'lib/libMoltenVK.dylib'
     for name, source in libraries.items():
         target = output / 'lib' / name
         architectures = subprocess.check_output(['lipo', '-archs', source], text=True).split()
@@ -103,6 +109,18 @@ elif system == 'Darwin':
         subprocess.run(['codesign', '--force', '--sign', '-', target], check=True)
     shutil.copy2(build / 'samples/remix-native/remix-native-sample', output / 'bin/remix-native-sample')
     (output / 'lib/libremix.dylib').symlink_to('libremix.0.dylib')
+    launcher = output / 'bin/run-sample'
+    if metal:
+        launcher.write_text('''#!/usr/bin/env python3
+import os
+from pathlib import Path
+import sys
+root = Path(__file__).resolve().parent.parent
+env = dict(os.environ, DYLD_LIBRARY_PATH=str(root / 'lib'))
+os.execve(root / 'bin/remix-native-sample', ['remix-native-sample', str(root / 'lib/libremix.0.dylib'), *sys.argv[1:]], env)
+''')
+        launcher.chmod(0o755)
+if system == 'Darwin' and not metal:
     manifests = list((sdk / 'share/vulkan/icd.d').glob('*MoltenVK*.json')) + list((sdk / 'etc/vulkan/icd.d').glob('*MoltenVK*.json'))
     if not manifests: raise RuntimeError('SDK MoltenVK ICD manifest missing')
     icd = json.loads(manifests[0].read_text())
@@ -113,7 +131,6 @@ elif system == 'Darwin':
     sdk_licenses = next((p for p in [sdk.parent / 'Licenses', sdk / 'share/vulkan/licensing', sdk / 'Licenses'] if p.is_dir()), None)
     if sdk_licenses is None: raise RuntimeError('Vulkan SDK license directory missing')
     shutil.copytree(sdk_licenses, licenses / 'VulkanSDK')
-    launcher = output / 'bin/run-sample'
     launcher.write_text('''#!/usr/bin/env python3
 import os
 from pathlib import Path
@@ -124,10 +141,11 @@ env = dict(os.environ, VK_DRIVER_FILES=str(root / 'etc/vulkan/icd.d/MoltenVK_icd
 os.execve(root / 'bin/remix-native-sample', ['remix-native-sample', str(root / 'lib/libremix.0.dylib'), *sys.argv[1:]], env)
 ''')
     launcher.chmod(0o755)
-else:
+if system not in ('Windows', 'Linux', 'Darwin'):
     parser.error('Use scripts/android/build-apk.py for Android packaging.')
 # Package the actual build's optional NGX runtime, never an installed version.
-manifest = json.loads((build / 'src/native/upscale/dlss-runtime.json').read_text())
+manifest_path = build / 'src/native/upscale/dlss-runtime.json'
+manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {'enabled': False}
 if manifest['enabled'] and system in ('Linux', 'Windows'):
     isolated = output / ('lib' if system == 'Linux' else 'bin') / 'dlss' / manifest['version']
     isolated.mkdir(parents=True)

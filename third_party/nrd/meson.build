@@ -8,6 +8,8 @@ if get_option('nrd')
   if host_machine.cpu_family() == 'x86_64'
     nrd_args += cpp.get_id() == 'clang-cl' ? ['/clang:-mssse3'] : ['-mssse3']
   endif
+  # sse2neon (arm64) announces itself with #warning, an error under werror.
+  nrd_args += cpp.get_supported_arguments('-Wno-#warnings')
   nrd_cpu = static_library('nrd',
     'Source/InstanceImpl.cpp', 'Source/Reblur.cpp', 'Source/Reference.cpp',
     'Source/Relax.cpp', 'Source/Sigma.cpp', 'Source/Timer.cpp', 'Source/Wrapper.cpp',

@@ -6,5 +6,10 @@
       "url": "https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.9.2602.24/linux_dxc_2026_05_26.x86_64.tar.gz",
       "sha256": "928b3e9986d11dc4279050e02340950c29bcbd1e5efb9d3ded9669dade37639d"
     }
+  },
+  "spirv-cross-msl": {
+    "repository": "https://github.com/sambow23/SPIRV-Cross.git",
+    "branch": "openremix-macos-compat",
+    "revision": "9f9991c5454c262154e4918a263b60b5f26c75fc"
   }
 }

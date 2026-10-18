@@ -169,7 +169,9 @@ remixapi_GetTextureStatisticsEXT(remixapi_TextureStatisticsEXT *out) {
 }
 
 static_assert(sizeof(remixapi_GpuPassTimingEXT) == 88 && sizeof(remixapi_GpuPassTimingsEXT) == 80 + 88 * 128);
+#if !REMIX_METAL // The Metal backend records no Vulkan pass timers.
 static_assert(REMIXAPI_GPU_PASS_TIMING_CAPACITY_EXT >= remix::gpu::GpuTimers::maxPasses);
+#endif
 
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
 remixapi_GetGpuPassTimingsEXT(remixapi_GpuPassTimingsEXT *out) {

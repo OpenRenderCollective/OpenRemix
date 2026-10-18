@@ -1,0 +1,6 @@
+# Upstream src/native/ui tabs the Metal copies match (scripts/macos/metal-ui.py --update).
+e6edeaf16a4b9d646f81acde32d2f8dfc7391f25 diagnostics.cpp
+a5f79c09c5c81cbb319b461f7d2b19b15b7cad29 lighting.cpp
+75c17e883cc738701a9a87f4a3f789e747d4a17f post_processing.cpp
+2d7aed95b81d933244621b0b88487b0ce500466b rendering.cpp
+55a7774f17c01c6e3fe9ff3333d73e383fc86724 textures.cpp

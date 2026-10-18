@@ -4,6 +4,7 @@
 
 // requestedMode: 0 off, 1 auto, 2 FSR 3.1, 3 DLSS.
 // activeBackend: 0 native, 1 FSR 3.1, 2 DLSS SR, 3 DLSS Ray Reconstruction.
+// Metal builds: 1 MetalFX temporal scaler, 3 MetalFX temporal denoised scaler.
 // capabilities: bit 0 SDK built, bit 1 SR available, bit 2 RR available.
 // structSize is caller capacity (at least 8); only the known prefix is written.
 // Returned structSize is this implementation's size; version is 1.

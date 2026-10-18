@@ -1,3 +1,5 @@
+option('gpu_backend', type : 'combo', choices : ['vulkan', 'metal'], value : 'vulkan',
+  description : 'GPU backend compiled into the runtime. metal (macOS only) builds the native Metal renderer without Vulkan.')
 option('deps_root', type : 'string', value : '', description : 'SDL3 dependency prefix (include and lib).')
 option('use_system_sdl', type : 'boolean', value : true, description : 'Use installed SDL3; false builds the pinned fallback.')
 option('enable_tests', type : 'boolean', value : true)

@@ -108,6 +108,26 @@ runtime names remain `libremix.0.dylib` and `libremix.dylib`. Startup runs on th
 thread. The deployment target for authored code is macOS 13; the selected SDK's binary
 minimum OS requirement also applies.
 
+### Native Metal backend
+
+`-Dgpu_backend=metal` builds a separate runtime that renders with Metal directly and links
+neither Vulkan nor MoltenVK; the backend is chosen at compile time and one build contains one
+backend. It needs Xcode's Command Line Tools and no Vulkan SDK. Path tracing requires a Metal
+ray tracing device (Apple7 GPU family or newer). MetalFX replaces FSR and DLSS: upscaling, and on
+macOS 26 denoising and frame generation. See [the Metal backend](features/metal-backend.md).
+
+```sh
+python3 scripts/common/build-dependencies.py --output _work/deps/macos
+python3 scripts/macos/build-remix.py --metal
+python3 scripts/common/package-remix.py --build _work/build/macos-metal --deps _work/deps/macos \
+  --output _work/packages/macos-metal
+_work/packages/macos-metal/bin/run-sample 300 pathtrace
+```
+
+The Metal package contains `libremix`, SDL3 and the sample only. GPU tests
+(`-Dgpu_tests=true`) add rendering tests of raster, path traced, NRD and MetalFX frames, and of
+halos, masks, cut coverage and soft sprites.
+
 The separately pinned experimental driver, SPIRV-Cross revisions and patches remain
 in `tools/moltenvk/dependencies.lock.json`, `build-moltenvk.py` and `patches/`.
 `tools/vulkan-probes/macos-run-probe.py` requires explicit experimental GPU opt-in because of the historical

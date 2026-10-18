@@ -34,6 +34,9 @@ indexes them and `trace::shader()` decompresses a stage on first use (vendored X
 Regeneration needs glslang and SPIRV-Tools and compiles every stage concurrently.
 Standalone driver probes in `tools/vulkan-probes` require `-Dvulkan_probes=true` and shader tools.
 Experimental MoltenVK tooling in `tools/moltenvk` remains separate from SDK-based platform builds.
+`-Dgpu_backend=metal` builds the native Metal backend in `src/native/metal` instead of the Vulkan
+runtime (macOS; see `docs/features/metal-backend.md`). Its libraries are generated from the same
+shaders by `scripts/shaders/generate.py metal`; check them with `generate.py metal --check`.
 
 Preserve `ref/`, Git history, linked worktrees, and archived evidence. Do not discard ignored
 artifacts without an explicit cleanup scope from the user. Track architecture and feature docs only;

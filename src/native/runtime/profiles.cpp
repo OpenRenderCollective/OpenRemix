@@ -1,4 +1,5 @@
 #include "runtime/profiles.h"
+#include "runtime/float_chars.h"
 #include <algorithm>
 #include <atomic>
 #include <charconv>
@@ -160,8 +161,7 @@ namespace remix::config {
           m_panel.right = value == "right";
         else if (key == "panel.width") {
           float width = 0;
-          auto result = std::from_chars(value.data(), value.data() + value.size(), width);
-          if (result.ec == std::errc{} && result.ptr == value.data() + value.size() && std::isfinite(width))
+          if (parseFloat(value, width) && std::isfinite(width))
             m_panel.width = std::clamp(width, 240.f, 1600.f);
         } else if (key == "panel.tab" && value.size() == 1 && value[0] >= '0' && value[0] <= '5')
           m_panel.tab = value[0] - '0';

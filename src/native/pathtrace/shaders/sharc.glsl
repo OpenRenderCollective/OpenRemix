@@ -37,6 +37,11 @@ SharcParameters cacheParameters() {
   p.hashGridParameters.levelBias=0;
   p.hashGridData.capacity=frame.sharcConfig.y;
   p.hashGridData.hashEntriesBuffer=RWStructuredBuffer_uint64_t(frame.sharcHash);
+#if defined(HASH_GRID_ENABLE_64_BIT_ATOMICS) && !HASH_GRID_ENABLE_64_BIT_ATOMICS
+  // Without 64-bit atomics (the Metal backend) SHARC serializes insertion with
+  // a 32-bit lock per entry, allocated after the hash entries.
+  p.hashGridData.lockBuffer=RWStructuredBuffer_uint(frame.sharcHash+uint64_t(frame.sharcConfig.y)*8);
+#endif
   p.radianceScale=1000;
   p.accumulationBuffer=RWStructuredBuffer_SharcAccumulationData(frame.sharcAccumulation);
   p.resolvedBuffer=RWStructuredBuffer_SharcPackedData(frame.sharcResolved);

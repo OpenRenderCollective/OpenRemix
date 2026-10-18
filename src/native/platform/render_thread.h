@@ -143,7 +143,7 @@ namespace remix {
     std::function<void()> m_job;
     std::exception_ptr m_error;
     uint64_t m_submitted = 0, m_completed = 0;
-    unsigned m_csr = 0;
+    [[maybe_unused]] unsigned m_csr = 0; // x86 MXCSR only
     bool m_busy = false, m_stop = false;
     std::thread m_thread;
   };

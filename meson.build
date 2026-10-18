@@ -19,7 +19,19 @@ if system == 'windows'
     add_project_arguments('-include', meson.project_source_root() / 'src/native/platform/mingw_compat.h', language : 'cpp')
   endif
 endif
-add_project_arguments('-DREMIX_HAS_SHARC=' + (get_option('sharc') ? '1' : '0'), language : ['c', 'cpp'])
+# One GPU backend per build: the Metal backend replaces the Vulkan renderer and
+# links neither Vulkan nor MoltenVK.
+metal_backend = get_option('gpu_backend') == 'metal'
+if metal_backend and system != 'darwin'
+  error('The Metal backend (gpu_backend=metal) is macOS only.')
+endif
+if metal_backend
+  add_languages('objcpp', native : false)
+  add_project_arguments('-DREMIX_METAL=1', language : ['c', 'cpp', 'objcpp'])
+  metal_frameworks = dependency('appleframeworks', modules : ['Metal', 'MetalFX', 'QuartzCore', 'Foundation'])
+endif
+add_project_arguments('-DREMIX_HAS_SHARC=' + (get_option('sharc') ? '1' : '0'),
+  language : metal_backend ? ['c', 'cpp', 'objcpp'] : ['c', 'cpp'])
 threads_dep = dependency('threads')
 dl_dep = cpp.find_library('dl', required : false)
 remix_public_include = include_directories('public/include')
@@ -39,30 +51,38 @@ else
   sdl_project = cmake.subproject('SDL3', options : opts)
   sdl3_dep = sdl_project.dependency('SDL3-shared')
 endif
-if system == 'android'
-  vulkan_dep = cpp.find_library('vulkan')
-else
-  vulkan_dep = dependency('vulkan', version : '>=1.1')
+if not metal_backend
+  if system == 'android'
+    vulkan_dep = cpp.find_library('vulkan')
+  else
+    vulkan_dep = dependency('vulkan', version : '>=1.1')
+  endif
+  vulkan_dep = declare_dependency(dependencies : vulkan_dep,
+    # The SDK supplies the loader; pinned runtime headers take precedence.
+    include_directories : include_directories('include/vulkan/include'))
 endif
-vulkan_dep = declare_dependency(dependencies : vulkan_dep,
-  # These headers are pinned by the runtime. A platform SDK supplies the loader,
-  # but its older headers must not take precedence over the pinned definitions.
-  include_directories : include_directories('include/vulkan/include'))
 subdir('third_party/imgui')
 subdir('third_party/nrd')
-subdir('third_party/fsr31')
-subdir('third_party/dlss')
+if not metal_backend
+  subdir('third_party/fsr31')
+  subdir('third_party/dlss')
+endif
 subdir('third_party/xz-embedded')
 subdir('src/native')
 subdir('samples/remix-native')
 # The benchmark uses narrow SDK paths and a desktop window.
 if host_machine.system() in ['linux', 'darwin']
   subdir('samples/remix-bench')
+  subdir('samples/remix-cornell')
+  subdir('samples/remix-sponza')
 endif
 if get_option('enable_tests')
   subdir('tests')
 endif
 if get_option('vulkan_probes')
+  if metal_backend
+    error('Vulkan probes need gpu_backend=vulkan.')
+  endif
   subdir('tools/vulkan-probes')
 endif
 install_subdir('public/include/remix', install_dir : get_option('includedir'))
