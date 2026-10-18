@@ -1,4 +1,5 @@
 #pragma once
+#include "forward/bake/dispatch.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -16,9 +17,10 @@ namespace remix::forward::bake {
       uint32_t largest = 0;
     };
     const Statistics &statistics(Work work) const { return m_states[size_t(work)].statistics; }
-    // Vulkan guarantees at least 65535 workgroups on X. One parallel group
-    // shades a point; the time estimate, not a tiny fixed launch, sets occupancy.
-    static constexpr uint32_t maximumPoints = 65535, maximumWork = 16u << 20;
+    // One parallel group shades a point; larger rectangular dispatches let the
+    // timing estimate set occupancy without a one-dimensional launch ceiling.
+    static constexpr uint32_t maximumPoints = maximumBatchPoints, maximumWork = 64u << 20;
+    static constexpr uint32_t maximumRadianceWork = 16u << 20;
     static constexpr uint32_t manualWork = 1u << 20;
     static constexpr uint32_t minimumAutomaticPoints = 64; // avoid learning from an underfilled GPU
     uint32_t count(Work work, uint32_t initial, float milliseconds, uint32_t samples, uint32_t bounces,
@@ -31,7 +33,8 @@ namespace remix::forward::bake {
       const uint32_t desired = milliseconds > 0 ? state.points : initial;
       // Timed batches can use more of a fast RT device. Keep the legacy manual
       // ceiling on hosts without timestamps, where there is no feedback.
-      const uint32_t limit = (milliseconds > 0 ? maximumWork : manualWork) /
+      const uint32_t timedWork = work == Work::Visibility ? maximumWork : maximumRadianceWork;
+      const uint32_t limit = (milliseconds > 0 ? timedWork : manualWork) /
                              std::max(1u, samples * bounces);
       return std::min({remaining, std::max(1u, desired), maximumPoints, limit});
     }

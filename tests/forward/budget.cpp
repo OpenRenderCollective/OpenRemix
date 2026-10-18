@@ -6,6 +6,12 @@
 using namespace remix::forward::bake;
 using remix::test::require;
 int main() {
+  for (uint32_t groups : {1u, 65535u, 65536u, 100003u, maximumBatchPoints - 3, maximumBatchPoints}) {
+    const auto shape = dispatchShape(groups);
+    require(shape.x > 0 && shape.y > 0 && shape.x <= 65535 && shape.y <= 65535 &&
+                uint64_t(shape.x) * shape.y >= groups && uint64_t(shape.x) * shape.y - groups < shape.y,
+            "Large dispatches fit guaranteed Vulkan dimensions with only a few padded workgroups");
+  }
   Budget budget;
   require(budget.count(Work::Irradiance, 64, 2, 256, 3, 10000) == 64,
           "Automatic work starts from the configured seed");
@@ -29,12 +35,12 @@ int main() {
               budget.count(Work::Sun, 64, 2, 256, 1, 0) == 0,
           "Manual work, maximum-quality work ceilings and exhausted queues stay bounded");
   for (uint32_t iteration = 0; iteration < 30; ++iteration) {
-    const auto points = budget.count(Work::Visibility, 64, 16, 256, 1, 100000);
+    const auto points = budget.count(Work::Visibility, 64, 16, 256, 1, 1000000);
     require(uint64_t(points) * 256 <= Budget::maximumWork && points <= Budget::maximumPoints,
             "Repeated fast samples cannot exceed storage or ray-work limits");
     budget.observe(Work::Visibility, points, .01, 16);
   }
-  require(budget.count(Work::Visibility, 64, 16, 256, 1, 100000) == Budget::maximumPoints,
+  require(budget.count(Work::Visibility, 64, 16, 256, 1, 1000000) == Budget::maximumPoints,
           "Measured fast visibility can fill the point buffer instead of hitting the old 4096-point ceiling");
   const auto &timing = budget.statistics(Work::Visibility);
   require(timing.batches == 30 && timing.points > 0 && timing.milliseconds > 0 &&

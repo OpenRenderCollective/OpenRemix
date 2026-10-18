@@ -958,15 +958,41 @@ namespace {
                 std::abs(evaluate(results[5], {-diagonal, 0, -diagonal}, 1) / radial - diagonal) < .001f &&
                 evaluate(results[6], {0, 0, 1}, 1) == 0,
             "Texture-light cosine shaping preserves frontal energy, attenuates oblique light and emits nothing behind");
-    std::vector<bake::VisibilityPoint> maximum(bake::Budget::maximumPoints, points[0]);
+    fixture.begin();
+    transport.recordVisibility(fixture.command, 0, points, 1, true);
+    fixture.finish();
+    std::array<bake::Result, 7> smallReference;
+    transport.read(0, smallReference);
+    const auto beforeLarge = transport.memoryBytes();
+    std::vector<bake::VisibilityPoint> maximum(bake::Budget::maximumPoints - 3);
+    for (size_t i = 0; i < maximum.size(); ++i) maximum[i] = points[i % 7];
     std::vector<bake::Result> maximumResults(maximum.size());
     fixture.begin();
     transport.recordVisibility(fixture.command, 0, maximum, 1, true);
     fixture.finish();
     transport.read(0, maximumResults);
+    for (size_t i = 0; i < maximumResults.size(); ++i)
+      require(std::memcmp(&maximumResults[i], &smallReference[i % 7], sizeof(bake::Result)) == 0,
+              "Rectangular dispatches retain each distinct receiver and the partial final row exactly");
+    require(transport.memoryBytes() - beforeLarge < uint64_t(maximum.size()) * 128,
+            "Large compact visibility batches do not allocate full irradiance results per receiver");
+    const auto compactBatch = transport.deviceBatch(0);
+    require(uint64_t(compactBatch.capacity) * sizeof(bake::Result) <= compactBatch.results.range,
+            "GPU producers receive the common point/full-result capacity after compact CPU work");
+    bool undersizedRefused = false;
+    try { transport.recordDeviceRadiance(VK_NULL_HANDLE, 0, compactBatch.capacity + 1, 1); }
+    catch (const std::invalid_argument &) { undersizedRefused = true; }
+    require(undersizedRefused, "A GPU producer cannot overrun compact result storage");
+    // Reuse that completed slot for a full result larger than its compact
+    // allocation. Point capacity alone must not suppress result-buffer growth.
+    std::vector<bake::Point> fullPoints(maximum.size(), points[0].surface);
+    fixture.begin();
+    transport.recordBatch(fixture.command, 0, fullPoints, 1, 1);
+    fixture.finish();
+    transport.read(0, maximumResults);
     for (const auto &value : maximumResults)
-      require(value.irradiance[0][0] == 1 && evaluate(value, {0, 0, -1}, 1) > 3e-8f,
-              "Maximum workgroup-count batches publish complete cached-memory readbacks without dropping their tail");
+      require(value.statistics[2] == 1 && std::isfinite(value.irradiance[0][0]),
+              "A completed compact slot grows its full irradiance storage before reuse");
     std::printf("Emitter parity: near %.8g, twice-distance %.8g, cone %.5f (expected %.5f); %zu groups\n",
                   nearIrradiance, farIrradiance, shaped / radial, expectedShape, maximum.size());
   }

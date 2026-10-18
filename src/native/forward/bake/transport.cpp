@@ -79,7 +79,7 @@ namespace remix::forward::bake {
   void Transport::initialize(VkPhysicalDevice physical, VkDevice device,
                              std::shared_ptr<const scene::BakeScene> source, Inputs inputs, Options options) {
     if (!source || !source->ready || !std::isfinite(source->sceneScale) || source->sceneScale <= 0 ||
-        !options.batchPoints || !options.rayBudget || options.batchPoints > 65535 ||
+        !options.batchPoints || !options.rayBudget || options.batchPoints > maximumBatchPoints ||
         options.initialBatchPoints > options.batchPoints || options.textureResolution < 16 ||
         options.textureResolution > 1024 || !std::has_single_bit(options.textureResolution) ||
         !std::isfinite(options.distance) || !std::isfinite(options.bias) || options.bias <= 0 ||
@@ -304,7 +304,12 @@ namespace remix::forward::bake {
           throw std::invalid_argument("Invalid directional bake ray");
       }
     }
-    g.reserveSlot(index, uint32_t(points.size()));
+    const bool compact = g.options.parallel && g.options.cpuReadback &&
+                         (mode == Mode::Visibility || mode == Mode::DirectVisibility ||
+                          mode == Mode::SunVisibility || mode == Mode::SunDirectVisibility);
+    const uint32_t stride = compact ? (mode == Mode::Visibility ? sizeof(float) : sizeof(VisibilityResult))
+                                   : sizeof(Result);
+    g.reserveSlot(index, uint32_t(points.size()), stride);
     auto &slot = g.slots.at(index);
     slot.points->write(points.data(), points.size_bytes());
     dispatch(command, index, uint32_t(points.size()), samples, bounces, firstSample, mode, component);
@@ -312,7 +317,8 @@ namespace remix::forward::bake {
   Transport::DeviceBatch Transport::deviceBatch(uint32_t index) const {
     const auto &g = *m_gpu;
     const auto &slot = g.slots.at(index);
-    return {slot.points->descriptor(), slot.results->descriptor(), slot.capacity};
+    const auto capacity = uint32_t(std::min(uint64_t(slot.capacity), slot.results->capacity / sizeof(Result)));
+    return {slot.points->descriptor(), slot.results->descriptor(), capacity};
   }
   void Transport::updateLighting(uint32_t index, std::span<const LightData> lights,
                                  const scene::DistantLight &sun, const scene::DomeLight &dome,
@@ -412,7 +418,8 @@ namespace remix::forward::bake {
   void Transport::recordDeviceRadiance(VkCommandBuffer command, uint32_t index, uint32_t count,
                                        uint32_t bounces) {
     const auto &g = *m_gpu;
-    if (!g.prepared || !count || count > g.slots.at(index).capacity || bounces < 1 || bounces > 8 ||
+    if (!g.prepared || !count || count > g.slots.at(index).capacity ||
+        uint64_t(count) * sizeof(Result) > g.slots.at(index).results->capacity || bounces < 1 || bounces > 8 ||
         uint64_t(count) * bounces > g.options.rayBudget)
       throw std::invalid_argument("GPU radiance batch exceeds its point or bounce limits");
     dispatch(command, index, count, 1, bounces, 0, Mode::Radiance);
@@ -464,7 +471,8 @@ namespace remix::forward::bake {
                       slot.compactVisibility ? g.visibilityPipeline :
                       parallel ? g.parallelPipeline : g.tracePipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, g.layout, 0, 1, &slot.set, 0, nullptr);
-    vkCmdDispatch(command, parallel ? slot.count : (slot.count + 63) / 64, 1, 1);
+    const auto shape = dispatchShape(parallel ? slot.count : (slot.count + 63) / 64);
+    vkCmdDispatch(command, shape.x, shape.y, 1);
     const VkMemoryBarrier barrier{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
                                   .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
                                   .dstAccessMask = VK_ACCESS_HOST_READ_BIT | VK_ACCESS_SHADER_READ_BIT};
@@ -476,13 +484,16 @@ namespace remix::forward::bake {
   }
   bool Transport::timingSupported() const { return m_gpu->timing->supported(); }
   std::optional<double> Transport::elapsed(uint32_t slot) const { return m_gpu->timing->elapsed(slot); }
-  void Transport::Gpu::reserveSlot(uint32_t index, uint32_t count) {
+  void Transport::Gpu::reserveSlot(uint32_t index, uint32_t count, uint32_t resultStride) {
     auto &slot = slots.at(index);
-    if (count <= slot.capacity)
+    const size_t required = size_t(count) * resultStride;
+    if (count <= slot.capacity && required <= slot.results->capacity)
       return;
-    const uint32_t capacity = std::min(options.batchPoints, std::max(count, slot.capacity * 2));
+    const uint32_t capacity = count <= slot.capacity ? slot.capacity
+        : std::min(options.batchPoints, std::max(count, slot.capacity * 2));
     auto points = batchBuffer(size_t(capacity) * sizeof(Point), false);
-    auto results = batchBuffer(size_t(capacity) * sizeof(Result), true);
+    auto results = batchBuffer(std::max(required, std::min(size_t(capacity) * resultStride,
+                                                          slot.results->capacity * 2)), true);
     const VkDescriptorBufferInfo buffers[] = {points->descriptor(), results->descriptor()};
     VkWriteDescriptorSet writes[2]{};
     for (uint32_t i = 0; i < 2; ++i)

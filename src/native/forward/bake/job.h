@@ -24,6 +24,10 @@ namespace remix::forward::bake {
     std::vector<VisibilityResult> visibilityReadback;
     std::vector<float> overflowReadback;
     double readbackMs = 0;
+    struct OverflowTiming {
+      double roundsMs = 0, submissionMs = 0, readbackMs = 0, gpuMs = 0;
+      uint64_t rounds = 0, batches = 0, points = 0;
+    } overflowTiming;
     uint64_t readbackBytes = 0;
     std::shared_ptr<mixed::Plan> mixedLights;
     std::vector<Vec4> visibility;

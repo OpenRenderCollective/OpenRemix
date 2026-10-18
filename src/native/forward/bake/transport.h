@@ -1,5 +1,6 @@
 #pragma once
 #include "forward/bake/data.h"
+#include "forward/bake/dispatch.h"
 #include "forward/bake/policy.h"
 #include <optional>
 #include <span>

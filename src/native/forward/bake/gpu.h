@@ -58,7 +58,7 @@ namespace remix::forward::bake {
     void createLayouts();
     void createPipelines();
     void createDescriptors();
-    void reserveSlot(uint32_t slot, uint32_t count);
+    void reserveSlot(uint32_t slot, uint32_t count, uint32_t resultStride);
     void recordAtlas(VkCommandBuffer command, RasterRenderer &resources);
     std::unique_ptr<Buffer> buffer(const void *data, size_t bytes, VkBufferUsageFlags usage);
     std::unique_ptr<Buffer> batchBuffer(size_t bytes, bool results);

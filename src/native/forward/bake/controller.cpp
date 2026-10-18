@@ -284,8 +284,11 @@ namespace remix::forward::bake {
             }
           }
         }
-        job.readbackMs +=
+        const double readbackMs =
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - readBegin).count();
+        job.readbackMs += readbackMs;
+        if (submission.overflowVisibility)
+          job.overflowTiming.readbackMs += readbackMs;
         job.readbackBytes += uint64_t(submission.count) *
                              (submission.overflowVisibility ? sizeof(float) :
                               submission.visibility || submission.sun
@@ -299,6 +302,8 @@ namespace remix::forward::bake {
          : submission.surface            ? job.surfaceReceived
                                          : job.received) += submission.count;
         if (const auto elapsed = job.transport->elapsed(slot)) {
+          if (submission.overflowVisibility)
+            job.overflowTiming.gpuMs += *elapsed;
           const auto work = submission.reflectionGeometry                            ? Work::Geometry
                             : submission.visibility || submission.overflowVisibility ? Work::Visibility
                             : submission.sun                                         ? Work::Sun
@@ -427,8 +432,12 @@ namespace remix::forward::bake {
       job.overflowPreparing = true;
       const auto owner = m_job;
       job.ticket = m_pipelines->prepare("forward-overflow-" + std::to_string(++generation), [owner] {
+        const auto begin = std::chrono::steady_clock::now();
         owner->overflowFinished = !owner->overflowAudit->nextRound(
             *owner->mixedLights, owner->surfaceLayout, owner->cancellation.get_token());
+        owner->overflowTiming.roundsMs +=
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
+        ++owner->overflowTiming.rounds;
         owner->overflowNext = owner->overflowReceived = 0;
       });
       status(REMIXAPI_BAKE_PREPARING_EXT, "Preparing overflow visibility masks");
@@ -436,6 +445,7 @@ namespace remix::forward::bake {
     }
     const auto tasks = job.overflowAudit->tasks();
     if (job.overflowNext < tasks.size()) {
+      const auto begin = std::chrono::steady_clock::now();
       auto &submission = m_submissions[m_slot];
       if (submission.job)
         throw std::logic_error("Overflow visibility slot reused before its fence");
@@ -452,6 +462,10 @@ namespace remix::forward::bake {
       submission.first = job.overflowNext;
       submission.count = count;
       job.overflowNext += count;
+      job.overflowTiming.submissionMs +=
+          std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
+      ++job.overflowTiming.batches;
+      job.overflowTiming.points += count;
     }
     char progress[128];
     std::snprintf(progress, sizeof(progress), "Checking overflow light visibility (%llu/%llu surface/light pairs)",
@@ -886,6 +900,13 @@ namespace remix::forward::bake {
         profile && std::strcmp(profile, "1") == 0) {
       std::fprintf(stderr, "Bake CPU readback: total_ms=%.3f bytes=%llu\n", m_job->readbackMs,
                    static_cast<unsigned long long>(m_job->readbackBytes));
+      const auto &overflow = m_job->overflowTiming;
+      std::fprintf(stderr, "Bake overflow timing: points=%llu batches=%llu rounds=%llu "
+                           "cpu_rounds_ms=%.3f cpu_submission_ms=%.3f cpu_readback_ms=%.3f gpu_ms=%.3f\n",
+                   static_cast<unsigned long long>(overflow.points),
+                   static_cast<unsigned long long>(overflow.batches),
+                   static_cast<unsigned long long>(overflow.rounds), overflow.roundsMs,
+                   overflow.submissionMs, overflow.readbackMs, overflow.gpuMs);
       constexpr const char *names[] = {"grid",  "surface",     "visibility", "sun",
                                        "sites", "reflections", "geometry"};
       for (uint32_t i = 0; i < uint32_t(Work::Count); ++i) {
