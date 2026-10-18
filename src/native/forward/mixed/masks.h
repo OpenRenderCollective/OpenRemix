@@ -5,13 +5,14 @@
 #include <set>
 
 namespace remix::forward::mixed {
-  // Scalar visibility only for partial chart/light pairs beyond the four SH
-  // channels. Adaptive palettes approximate soft R8 values within an explicit
-  // error bound; constant and binary coverage stays exact. No full-atlas
-  // layers or reduced-resolution shadows.
+  // Scalar visibility is independent of bounded directional SH ownership.
+  // Overflow preparation can use bounded-error palettes; primary publication
+  // uses lossless encoding after R8 conversion. Constant and binary coverage
+  // stay exact. Many chart/light rectangles share indexed storage.
   class Masks {
   public:
     static constexpr uint32_t maximumBytes = 16u << 20; // encoded tables + quantized values
+    static constexpr uint32_t maximumPublishedBytes = 64u << 20; // combined primary + overflow publication
     struct Entry {
       uint32_t chart, light, offset, width, height;
       uint32_t encoding = 0;
@@ -24,7 +25,8 @@ namespace remix::forward::mixed {
     // Validated cache import. Dimensions and identities must agree with the
     // published layout/source; offsets are contiguous, including word padding.
     static Masks restore(std::span<const Entry> entries, std::span<const uint8_t> bytes,
-                         const lightmap::Layout &layout, uint32_t lights);
+                         const lightmap::Layout &layout, uint32_t lights,
+                         uint64_t byteBudget = maximumBytes);
     // Chart-major binary-search tables and packed bytes. All offsets are
     // relative to this tail, appended to the existing occlusion texture.
     std::vector<uint32_t> words(uint32_t charts) const;

@@ -120,10 +120,10 @@ forward_mask_codec_test = executable('remix-forward-mask-codec-test', 'mask_code
   include_directories : test_includes, cpp_args : test_cpp_args)
 test('Lossless visibility tile encoding and cache bounds', forward_mask_codec_test)
 
-forward_mask_pages_test = executable('remix-forward-mask-pages-test', 'mask_pages.cpp',
+forward_mask_pages_test = executable('remix-forward-mask-pages-test', 'mask_pages.cpp', '../../src/native/forward/mixed/unified_masks.cpp',
   '../../src/native/forward/mixed/mask_pages.cpp', '../../src/native/forward/mixed/masks.cpp',
   '../../src/native/forward/mixed/mask_codec.cpp', '../../src/native/forward/mixed/mask_palette.cpp',
-  include_directories : test_includes, cpp_args : test_cpp_args)
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Reusable visibility pages preserve independent overlapping light masks', forward_mask_pages_test)
 
 light_selection_test = executable('remix-bake-light-selection-test', 'light_sampling.cpp',

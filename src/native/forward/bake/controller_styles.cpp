@@ -1,11 +1,26 @@
 #include "forward/bake/job.h"
 #include "forward/bake/cache.h"
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <chrono>
 #include <stdexcept>
 
 namespace remix::forward::bake {
   namespace {
     std::atomic<uint64_t> styleGeneration{0};
+  }
+  void Controller::Job::prepareIndexedVisibility() {
+    const char *override = std::getenv("REMIX_DEBUG_UNIFIED_MASKS");
+    if ((override && std::strcmp(override, "0") == 0) || surfacePixels.empty()) return;
+    const auto began = std::chrono::steady_clock::now();
+    const uint64_t visibilityBytes = uint64_t(surfaceLayout.pageSize) * surfaceLayout.pageSize * surfaceLayout.pages * 8;
+    const uint64_t budget = std::min<uint64_t>(mixed::Masks::maximumPublishedBytes,
+        mixed::Masks::maximumBytes + visibilityBytes);
+    unifiedMasks = mixed::unifyMasks(*mixedLights, surfaceLayout, surfacePixels, budget, cancellation.get_token());
+    std::fprintf(stderr, "Forward unified visibility preparation: %.3f ms, fits %u\n",
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count(),
+        unsigned(bool(unifiedMasks)));
   }
   std::unique_ptr<const cache::Snapshot> Controller::Job::takeCacheSnapshot() {
     auto snapshot = std::make_unique<cache::Snapshot>();

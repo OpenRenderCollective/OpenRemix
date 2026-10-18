@@ -8,7 +8,7 @@ uint occlusionWord(uint index) {
 uint staticLightVisibility(uint chart, uint capturedLight) {
   if (chart == 0xffffffffu || capturedLight == 0u)
     return 0u;
-  uint stride = frame.occlusion.x;
+  uint stride = frame.occlusion.x & 0x7fffffffu;
   uint light = capturedLight - 1u;
   if (light / 16u >= stride || chart >= frame.occlusion.y)
     return 0u;

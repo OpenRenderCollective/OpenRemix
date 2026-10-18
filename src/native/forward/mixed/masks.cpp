@@ -56,10 +56,10 @@ namespace remix::forward::mixed {
     return true;
   }
   Masks Masks::restore(std::span<const Entry> entries, std::span<const uint8_t> bytes,
-                         const lightmap::Layout &layout, uint32_t lights) {
+                         const lightmap::Layout &layout, uint32_t lights, uint64_t byteBudget) {
     const uint64_t encoded = entries.empty() ? bytes.size()
         : layout.charts.size() * 8 + entries.size() * 16 + bytes.size();
-    if (encoded > maximumBytes || entries.size() > uint64_t(layout.charts.size()) * lights)
+    if (byteBudget > maximumPublishedBytes || encoded > byteBudget || entries.size() > uint64_t(layout.charts.size()) * lights)
       throw std::invalid_argument("Overflow visibility cache exceeds budget");
     size_t offset = 0;
     std::set<std::pair<uint32_t, uint32_t>> identities;

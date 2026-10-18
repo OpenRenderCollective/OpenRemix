@@ -1,5 +1,8 @@
 #include "forward/mixed/mask_pages.h"
 #include "forward/mixed/mask_lookup.h"
+#include "forward/mixed/unified_masks.h"
+#include "forward/lightmap/upload.h"
+#include "forward/half.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -38,6 +41,51 @@ namespace {
   }
 }
 int main() {
+  {
+    using namespace remix::forward;
+    auto source = std::make_shared<remix::scene::BakeScene>();
+    source->lights.resize(6);
+    Plan plan;
+    plan.lights.source = source;
+    plan.charts = {{0, 1, 2, 3}};
+    lightmap::Layout layout;
+    layout.pageSize = 4;
+    layout.pages = 2;
+    layout.charts = {{1, 1, 1, 2, 2}};
+    std::vector<uint16_t> pixels(2 * 4 * 4 * lightmap::atlasLayers * 4);
+    for (uint32_t layer = 0; layer < 2 * lightmap::atlasLayers; ++layer)
+      std::fill_n(pixels.begin() + layer * 64, 64, uint16_t(layer));
+    for (uint32_t y = 0; y < 2; ++y)
+      for (uint32_t x = 0; x < 2; ++x)
+        for (uint32_t c = 0; c < 4; ++c)
+          pixels[(((lightmap::atlasLayers + lightmap::visibilityLayer) * 4 + y + 1) * 4 + x + 1) * 4 + c] =
+              half::encode(float(c * 4 + y * 2 + x) / 15);
+    const auto encoded = mask::encode(std::vector<uint8_t>{0, 63, 127, 255}, 2, 2);
+    const Masks::Entry entry{0, 5, 0, 2, 2, encoded.encoding};
+    plan.masks = Masks::restore({&entry, 1}, encoded.bytes, layout, 6);
+    const auto original = pixels;
+    const auto unified = unifyMasks(plan, layout, pixels, 4096);
+    require(unified && unified->masks.entries().size() == 5 && unified->convertedTexels == 16 &&
+                unified->maximumError <= .5f / 255 + 1e-7f && pixels == original,
+            "Primary and overflow masks share indexed identities with bounded R8 error and immutable cache data");
+    const auto pages = packMaskPages(unified->masks, 8, 4, 4096);
+    require(bool(pages), "Unified masks reuse the existing page representation");
+    verify(unified->masks, *pages);
+    const auto &preserved = unified->masks.entries().front();
+    require(preserved.light == 5 && std::equal(encoded.bytes.begin(), encoded.bytes.end(),
+                unified->masks.bytes().begin()), "Existing overflow bytes remain unchanged");
+    require(!unifyMasks(plan, layout, pixels, 1), "A full budget declines the entire migration");
+    std::vector<uint16_t> uploaded(2 * 4 * 4 * lightmap::uploadedLayers(true) * 4);
+    for (const auto &segment : lightmap::uploadSegments(layout, true))
+      std::copy_n(pixels.begin() + segment.source, segment.values, uploaded.begin() + segment.destination);
+    for (uint32_t page = 0; page < 2; ++page)
+      for (uint32_t layer = 0; layer < lightmap::uploadedLayers(true); ++layer) {
+        const uint32_t sourceLayer = layer < 9 ? layer : layer + 1;
+        require(uploaded[(page * 19 + layer) * 64] == pixels[(page * 20 + sourceLayer) * 64],
+                "Segmented upload preserves indirect, direct and sun layers on every page");
+      }
+  }
+
   {
     std::vector<uint32_t> records(2 + 8 * 4);
     records[0] = 2;

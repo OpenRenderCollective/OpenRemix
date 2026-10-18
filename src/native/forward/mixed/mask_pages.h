@@ -30,5 +30,5 @@ namespace remix::forward::mixed {
   // Candidate layouts contain metadata only; decode just the winning layout.
   std::optional<MaskPages> selectMaskPages(const Masks &masks, uint32_t charts,
                                          uint32_t maximumDimension, uint32_t maximumLayers,
-                                         std::stop_token cancelled = {});
+                                         std::stop_token cancelled = {}, uint64_t maximumBytes = Masks::maximumBytes);
 } // namespace remix::forward::mixed

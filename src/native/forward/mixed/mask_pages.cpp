@@ -171,17 +171,17 @@ namespace remix::forward::mixed {
   }
   std::optional<MaskPages> selectMaskPages(const Masks &masks, uint32_t charts,
                                          uint32_t maximumDimension, uint32_t maximumLayers,
-                                         std::stop_token cancelled) {
+                                         std::stop_token cancelled, uint64_t maximumBytes) {
     check(cancelled);
     if (masks.entries().empty() || !maximumLayers)
       return {};
     uint64_t bestBytes = masks.words(charts).size() * 4ull; // R32_UINT lookup/payload
     std::optional<PagePlan> best;
     for (uint32_t size = 64; size <= maximumDimension && size <= 32768; size *= 2) {
-      if (uint64_t(size) * size >= Masks::maximumBytes)
+      if (uint64_t(size) * size >= maximumBytes)
         break;
       auto candidate = planPages(masks, size, std::min(maximumLayers, 65536u),
-                                     Masks::maximumBytes, cancelled);
+                                     maximumBytes, cancelled);
       if (!candidate || !candidate->pages.layers)
         continue;
       // Lookup size is fixed by chart/rectangle counts. Compare layouts without
@@ -189,7 +189,7 @@ namespace remix::forward::mixed {
       const auto &pages = candidate->pages;
       const uint64_t bytes = uint64_t(size) * size * pages.layers +
           (uint64_t(charts) * 2 + pages.rectangles.size() * 4ull) * sizeof(uint32_t);
-      if (bytes < bestBytes && bytes <= Masks::maximumBytes) {
+      if (bytes < bestBytes && bytes <= maximumBytes) {
         bestBytes = bytes;
         best = std::move(candidate);
       }

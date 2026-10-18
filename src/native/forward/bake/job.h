@@ -7,6 +7,7 @@
 #include "forward/bake/sun_antialiasing.h"
 #include "forward/mixed/overflow.h"
 #include "forward/mixed/direct_work.h"
+#include "forward/mixed/unified_masks.h"
 #include "forward/probes/evaluation.h"
 #include <atomic>
 #include <filesystem>
@@ -39,6 +40,8 @@ namespace remix::forward::bake {
     } overflowTiming;
     uint64_t readbackBytes = 0;
     std::shared_ptr<mixed::Plan> mixedLights;
+    std::optional<mixed::UnifiedMasks> unifiedMasks;
+    void prepareIndexedVisibility();
     std::vector<Vec4> visibility;
     std::vector<lightmap::Direct> direct;
     std::optional<mixed::DirectWork> directWork;

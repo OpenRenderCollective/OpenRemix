@@ -1,6 +1,9 @@
 // Mirrors forward/lightmap/data.h. Each atlas page keeps indirect, visibility
 // and per-light unit direct irradiance separate.
-const float SurfaceAtlasLayers = 20;
+// The GPU-only compact layout omits source layer nine. Direct coefficients
+// start at (layer count - 10); the sun mask is the final layer.
+bool indexedSurfaceVisibility() { return (frame.occlusion.x & 0x80000000u) != 0u; }
+#define SurfaceAtlasLayers (indexedSurfaceVisibility() ? 19.0 : 20.0)
 void surfaceBasis(vec3 normal, out float sh[9]) {
   sh = float[9](.2820947918, .4886025119 * normal.y, .4886025119 * normal.z, .4886025119 * normal.x,
                 1.092548431 * normal.x * normal.y, 1.092548431 * normal.y * normal.z,
@@ -39,7 +42,7 @@ bool bakedLightVisibility(vec4 coordinate, uvec4 owners, uint capturedLight, out
                           out uint selected) {
   visibility = 1;
   selected = 0xffffffffu;
-  if (coordinate.w < .5 || capturedLight == 0u)
+  if (indexedSurfaceVisibility() || coordinate.w < .5 || capturedLight == 0u)
     return false;
   for (uint channel = 0; channel < 4u; ++channel)
     if (owners[channel] == capturedLight - 1u) {
@@ -61,7 +64,7 @@ vec4 surfaceDirectIrradiance(vec4 coordinate, vec3 normal) {
   for (uint coefficient = 0; coefficient < 9u; ++coefficient)
     result +=
         textureLod(surfaceAtlas,
-                   vec3(coordinate.xy, coordinate.z * SurfaceAtlasLayers + 10 + float(coefficient)), 0) *
+                   vec3(coordinate.xy, coordinate.z * SurfaceAtlasLayers + (SurfaceAtlasLayers - 10) + float(coefficient)), 0) *
         sh[coefficient];
   return max(result, vec4(0));
 }
