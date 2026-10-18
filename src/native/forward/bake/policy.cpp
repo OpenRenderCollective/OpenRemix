@@ -71,7 +71,7 @@ namespace remix::forward::bake {
     return policy;
   }
   bool applyDirectPolicy(const scene::BakeScene &source, const DirectPolicy &policy,
-                         std::span<LightData> lights) {
+                         std::span<TransportLight> lights) {
     const bool aggregate = validateDirectPolicy(source, policy);
     if (policy.lights.empty())
       return false;

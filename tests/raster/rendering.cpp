@@ -1126,6 +1126,7 @@ namespace {
         const auto beforePreview = options.baking;
         options.baking.aggregateDiffuse = false;
         options.bakedLightingPreview = true;
+        options.bakedHighlightLights = 0;
         options.localShadows = false;
         target.forward->updateLighting(options);
         pixels = until("", true);
@@ -1163,6 +1164,23 @@ namespace {
         };
         require(specularPeak(pixels) == 0,
                 "An unselected aggregate light leaves specular to the baked environment");
+        options.bakedLightingPreview = true;
+        options.bakedHighlightLights = 16;
+        options.bakedHighlightFade = 0;
+        target.forward->updateLighting(options);
+        pixels = until("", true);
+        require(specularPeak(pixels) > 0 && pixels[left] < 3 &&
+                    target.forward->statistics().clusteredLights == 1 &&
+                    target.forward->statistics().shadowedLights == 0,
+                "Independent preview highlights retain baked specular without any shadow-map slots");
+        const auto independentHighlight = pixels;
+        options.bakedLightingPreview = false;
+        options.selectedBakedLights = false;
+        target.forward->updateLighting(options);
+        pixels = until("", true);
+        require(pixels == independentHighlight,
+                "Fully selected independent highlights match unrestricted aggregate specular");
+        options.selectedBakedLights = true;
         options.localShadows = localShadows;
         options.localShadowFade = 2;
         target.enableForward(options, true);

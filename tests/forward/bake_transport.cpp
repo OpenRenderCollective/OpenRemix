@@ -19,6 +19,7 @@
 
 using namespace remix;
 using namespace remix::forward;
+using remix::forward::bake::TransportLight;
 using remix::forward::test::require;
 namespace bake = remix::forward::bake;
 namespace {
@@ -288,12 +289,12 @@ namespace {
     transport.recordPrepare(fixture.command, world.resources);
     fixture.finish();
     transport.releaseBuildInputs();
-    LightData light;
+    TransportLight light;
     light.positionRadius = {0, 0, -1, .25f};
     light.radiance = {100, 0, 0, 0};
     light.directionCone = {0, 0, -1, -1};
     const bake::Point ray{{0, 0, 0, 0}, {0, 0, 1, 0}};
-    auto sample = [&](uint32_t slot, std::span<const LightData> lights) {
+    auto sample = [&](uint32_t slot, std::span<const TransportLight> lights) {
       fixture.begin();
       transport.updateLighting(slot, lights, source->sun, source->dome, 10);
       transport.recordRadiance(fixture.command, slot, {&ray, 1}, 1);
@@ -310,7 +311,7 @@ namespace {
     const auto blue = sample(0, {&light, 1});
     require(blue[2] > .01f && blue[0] == 0,
             "A completed slot streams changed light colour without a scene rebuild");
-    std::vector<LightData> many(65, light);
+    std::vector<TransportLight> many(65, light);
     const auto resized = sample(0, many);
     require(resized[2] > .01f && resized[0] == 0,
             "A completed slot can replace its live light buffer safely");
@@ -1480,7 +1481,7 @@ namespace {
     fixture.begin();
     transport.recordPrepare(fixture.command, world.resources);
     fixture.finish();
-    std::vector<LightData> lights(100);
+    std::vector<TransportLight> lights(100);
     for (auto &light : lights) {
       light.positionRadius = {0, 0, 0, .4f};
       light.directionCone[3] = -1;
@@ -1651,7 +1652,7 @@ namespace {
     for (uint32_t skyCase = 1; skyCase <= 3; ++skyCase)
       test::probeQueries(fixture, extended, skyCase);
     test::probeQueries(fixture, extended, 4); // bounded probe relocation
-    LightData lamp;
+    TransportLight lamp;
     lamp.positionRadius = {0, 0, 0, .4f};
     lamp.radiance = {5, 5, 5, 0};
     lamp.directionCone[3] = -1;

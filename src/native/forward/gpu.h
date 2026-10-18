@@ -1,6 +1,7 @@
 #pragma once
 #include "forward/bake/controller.h"
 #include "forward/bindings.h"
+#include "forward/highlight_selection.h"
 #include "forward/reflections.h"
 #include "forward/renderer.h"
 #include "forward/resources.h"
@@ -56,6 +57,8 @@ namespace remix::forward {
     std::unique_ptr<shadows::Maps> localMaps;
     shadows::Planner shadowPlanner;
     shadows::Selection shadowSelection;
+    HighlightSelection highlightSelection;
+    std::weak_ptr<const mixed::Bindings> highlightSource;
     shadows::SunCache sunCache;
     std::weak_ptr<const scene::BakeScene> staticBoundsSource;
     Bounds staticBounds;

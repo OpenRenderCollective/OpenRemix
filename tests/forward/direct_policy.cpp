@@ -26,7 +26,7 @@ int main() try {
   require(policy.lights == std::vector{bake::DirectMode::Baked, bake::DirectMode::Mixed,
                                       bake::DirectMode::Dynamic, bake::DirectMode::Baked},
           "Static diffuse membership preserves mixed/dynamic identity in captured order");
-  std::vector<forward::LightData> packed(4);
+  std::vector<forward::bake::TransportLight> packed(4);
   for (uint32_t i = 0; i < packed.size(); ++i) {
     packed[i].positionRadius[0] = float(i);
     packed[i].radiance = {1, 2, 3, 0};

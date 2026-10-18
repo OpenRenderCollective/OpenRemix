@@ -30,6 +30,8 @@ namespace remix::forward {
     bool rtGI = false;
     bool selectedBakedLights = false; // experimental: aggregate lights use selected mixed-shadow slots
     bool bakedLightingPreview = false; // grouped opt-in; underlying profile preferences remain intact
+    uint32_t bakedHighlightLights = 16; // preview budget independent of the mixed-shadow budget
+    float bakedHighlightFade = 2;
     bool water = true; // measured refraction/reflections; snapshot images are allocated only on use
     float waterDistance = 50, waterThickness = .15f; // metres; refraction extent and depth tolerance
     uint32_t rtGISamples = 16, rtGIBounces = 2;

@@ -4,7 +4,7 @@
 #include <stdexcept>
 
 namespace remix::forward::bake {
-  std::vector<scene::LightNode> lightSelectionTree(std::span<const LightData> lights, bool includeStyled) {
+  std::vector<scene::LightNode> lightSelectionTree(std::span<const TransportLight> lights, bool includeStyled) {
     if (lights.empty())
       return {};
     if (lights.size() > std::numeric_limits<uint32_t>::max() / 2)

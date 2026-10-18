@@ -123,6 +123,37 @@ namespace remix::forward {
                                            options.lightCutoff, options.localShadowDistance,
                                            options.sceneScale, resources.bakeScene(), seconds,
                                            options.localShadowFade, fallbackShadows);
+    const auto bindings = publishedBake ? publishedBake->mixedLights : nullptr;
+    if (highlightSource.lock() != bindings) {
+      highlightSelection.reset();
+      highlightSource = bindings;
+    }
+    std::vector<float> highlightWeights;
+    std::vector<HighlightCandidate> highlightCandidates;
+    if (options.bakedLightingPreviewActive(giSupported) && bindings) {
+      // Captured indices distinguish emitters even when the adapter shares IDs.
+      // Merge repeated submissions of the same captured emitter before selection.
+      std::vector<float> priorities(bindings->source->lights.size(), 0);
+      for (uint32_t i = 0; i < sources.size(); ++i) {
+        const auto captured = capturedLights[i];
+        if (captured == mixed::none || !bindings->bakedDiffuse(captured) ||
+            !bindings->retainsVisibility(captured) || bindings->source->lights[captured].bakeHint ==
+                REMIXAPI_LIGHT_BAKING_REQUIRE_MIXED_EXT) continue;
+        const auto &source = sources[i];
+        const float range = influenceRadius(source, options.lightCutoff);
+        if (!std::isfinite(range) || range <= 0) continue;
+        Vec3 delta;
+        for (uint32_t c = 0; c < 3; ++c) delta[c] = eye[c] - source.position[c];
+        const float priority = range * range / std::max(dot(delta, delta), 1e-6f);
+        priorities[captured] = std::max(priorities[captured], priority);
+      }
+      highlightWeights.resize(priorities.size(), -1);
+      for (uint32_t i = 0; i < priorities.size(); ++i)
+        if (priorities[i] > 0) highlightCandidates.push_back({i, priorities[i]});
+    }
+    for (const auto &highlight : highlightSelection.update(highlightCandidates,
+             options.bakedHighlightLights, seconds, options.bakedHighlightFade))
+      highlightWeights[highlight.key] = highlight.value;
     step(cpu.selection);
     std::vector<DrawData> draws;
     std::vector<water::MaterialData> waterMaterials;
@@ -237,6 +268,16 @@ namespace remix::forward {
       if (const auto slot = shadowSelection.slots[sourceIndex]; slot != UINT32_MAX) {
         light.corners[0][3] = float(slot + 1);
         light.corners[1][3] = 1 - shadowSelection.strength[slot];
+      }
+      const auto captured = capturedLights[sourceIndex];
+      if (light.corners[2][3] == float(LightResponse::SelectedAggregate))
+        light.responseWeights[0] = 1 - light.corners[1][3]; // preserve the low-level selected policy
+      if (options.bakedLightingPreviewActive(giSupported) && captured < highlightWeights.size()) {
+        const float weight = highlightWeights[captured];
+        if (weight >= 0 && light.corners[2][3] == float(LightResponse::BakedFallback))
+          light.corners[2][3] = float(LightResponse::SelectedAggregate);
+        if (light.corners[2][3] == float(LightResponse::SelectedAggregate))
+          light.responseWeights[0] = std::max(weight, 0.f);
       }
       lights.push_back(light);
     }

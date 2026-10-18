@@ -94,7 +94,7 @@ namespace remix::forward::bake {
                                     FragmentUse use = FragmentUse::Diffuse);
     // Stream current analytic lighting into a completed frame slot without
     // rebuilding geometry. Dome texture membership still belongs to the atlas.
-    void updateLighting(uint32_t slot, std::span<const LightData> lights, const scene::DistantLight &sun,
+    void updateLighting(uint32_t slot, std::span<const TransportLight> lights, const scene::DistantLight &sun,
                         const scene::DomeLight &dome, float distance);
     // Repeated batches in one submission share slot constants: keep count and
     // bounces fixed, padding a short tail with inactive rays when necessary.

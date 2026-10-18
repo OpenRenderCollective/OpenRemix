@@ -64,12 +64,16 @@ when baked lighting is active; a failed bake instead displays its failure messag
    supported live GI temporarily pauses the preview. Disabling it restores the requested policy.
    The UI explicitly describes omitted direct highlights and moving-object shadows. This is a
    comparison tool for the unfinished baked-light policy, not the final quality default.
-   An independent CPU highlight selector now provides bounded assignments and monotonic timed
-   fades, retaining outgoing identities until their weight reaches zero. It consumes unique
-   captured-emitter keys rather than potentially shared adapter light IDs. It is not yet wired
-   into rendering: GPU packing needs a separate highlight weight so changing highlight selection
-   cannot change mixed-shadow strength. Integrate it with attributed static visibility, then
-   compare highlights, leakage and frame cost before changing the preview policy or defaults.
+   The preview independently selects up to 16 attributed fixed-light highlights, with timed fades
+   and captured-emitter keys rather than potentially shared adapter light IDs. A separate GPU
+   highlight weight preserves mixed-shadow strength when the selections differ. Outgoing highlights
+   retain their bounded assignments until their weight reaches zero. The experimental profile keys
+   `experimentalBakedHighlightLights` (0..32) and `experimentalBakedHighlightFade` (0..10 seconds)
+   control that budget and fade independently of shadow maps. Pure baked geometry emitters still
+   omit analytic highlights. Camera-distance/influence ranking is an initial approximation; test
+   live-map highlights, leakage and frame cost before changing the default lighting policy.
+   Transport uses a separate 112-byte light contract, preserving its existing shaders and cache
+   identity when the runtime light contract grows to carry independent response weights.
    Timed visibility batches now grow within an eight-row rectangular dispatch and a guaranteed
    128 MiB maximum result-buffer range, reducing frame submission overhead without changing quality.
    Scalar classification now selects positive direct owners before a separate directional pass.

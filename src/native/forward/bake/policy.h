@@ -31,5 +31,5 @@ namespace remix::forward::bake {
   // Validate the complete policy before changing any packed input. Returns true
   // when aggregate direct sampling is needed; never reorders captured lights.
   bool applyDirectPolicy(const scene::BakeScene &source, const DirectPolicy &policy,
-                         std::span<LightData> lights);
+                         std::span<TransportLight> lights);
 } // namespace remix::forward::bake

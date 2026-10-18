@@ -132,7 +132,7 @@ namespace remix::forward::bake {
     if (nodeCount > limit / sizeof(scene::LightNode))
       throw VK_ERROR_TOO_MANY_OBJECTS;
     for (auto bytes : {inputs.vertices.size() * sizeof(Vertex), inputs.triangles.size() * sizeof(UInt4),
-                       inputs.materials.size() * sizeof(Material), inputs.lights.size() * sizeof(LightData),
+                       inputs.materials.size() * sizeof(Material), inputs.lights.size() * sizeof(TransportLight),
                        size_t(options.batchPoints) * sizeof(Result)})
       if (bytes > limit)
         throw VK_ERROR_TOO_MANY_OBJECTS;
@@ -176,7 +176,7 @@ namespace remix::forward::bake {
       return (material.flags[3] & modulatingDecalFlag) != 0;
     });
     materials = staticBuffer(inputs.materials.data(), inputs.materials.size() * sizeof(Material));
-    lights = staticBuffer(inputs.lights.data(), inputs.lights.size() * sizeof(LightData));
+    lights = staticBuffer(inputs.lights.data(), inputs.lights.size() * sizeof(TransportLight));
     lightNodes = staticBuffer(nodes.data(), nodes.size() * sizeof(scene::LightNode));
     std::vector<scene::LightNode> componentNodes;
     if (options.lightingComponents) {
@@ -354,7 +354,7 @@ namespace remix::forward::bake {
     const auto capacity = uint32_t(std::min(uint64_t(slot.capacity), slot.results->capacity / sizeof(Result)));
     return {slot.points->descriptor(), slot.results->descriptor(), capacity};
   }
-  void Transport::updateLighting(uint32_t index, std::span<const LightData> lights,
+  void Transport::updateLighting(uint32_t index, std::span<const TransportLight> lights,
                                  const scene::DistantLight &sun, const scene::DomeLight &dome,
                                  float distance) {
     auto &g = *m_gpu;

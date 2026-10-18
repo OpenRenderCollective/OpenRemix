@@ -429,6 +429,13 @@ int main() {
   require(!changed.sameTargets(settings.forward),
           "Hardware reflection enable prepares replacement resources");
   std::vector<std::string> warnings;
+  require(config::set(settings, "rtx.native.forward.experimentalBakedHighlightLights", "0") ==
+              config::SetResult::Success && settings.forward.bakedHighlightLights == 0 &&
+              config::set(settings, "rtx.native.forward.experimentalBakedHighlightLights", "32") ==
+                  config::SetResult::Success && settings.forward.bakedHighlightLights == 32 &&
+              config::set(settings, "rtx.native.forward.experimentalBakedHighlightFade", "1.5") ==
+                  config::SetResult::Success && settings.forward.bakedHighlightFade == 1.5f,
+          "Preview highlight budget and duration persist independently of shadow settings");
   require(!settings.forward.bakedLightingPreview &&
               config::set(settings, "rtx.native.forward.experimentalBakedLightingPreview", "1") ==
                   config::SetResult::Success && settings.forward.bakedLightingPreview &&

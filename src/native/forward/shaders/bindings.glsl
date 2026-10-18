@@ -16,6 +16,7 @@ layout(set = 0, binding = 0, std140) uniform Frame {
 struct Light {
   vec4 positionRadius, radiance, directionCone, shaping;
   vec4 corners[3];
+  vec4 responseWeights;
 };
 struct Material {
   mat4 model, normal;

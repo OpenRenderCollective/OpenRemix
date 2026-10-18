@@ -4,6 +4,13 @@
 
 namespace remix::forward::bake {
   using UInt4 = std::array<uint32_t, 4>;
+  // Transport has no runtime selection/fade weights. Keep its shader contract
+  // independent so changes to per-frame light packing do not invalidate bakes.
+  struct TransportLight {
+    Vec4 positionRadius{}, radiance{}, directionCone{}, shaping{};
+    std::array<Vec4, 3> corners{};
+  };
+  static_assert(sizeof(TransportLight) == 112);
   // Only ordinary RGB source-over blending describes thin surface coverage.
   // Modulating decals have a separate surface-colour model below.
   inline bool sourceOverCoverage(const scene::Blend &blend) {
@@ -34,7 +41,7 @@ namespace remix::forward::bake {
     std::vector<UInt4> triangles; // vertex indices, then material index
     std::vector<Material> materials;
     std::vector<Texture> textures; // layer zero is implicit white
-    std::vector<LightData> lights;
+    std::vector<TransportLight> lights;
     uint32_t domeLayer = 0;
   };
   Inputs pack(const scene::BakeScene &scene, double seconds = 0);

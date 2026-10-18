@@ -110,7 +110,7 @@ namespace remix::forward::bake {
       }
     }
     for (const auto &source : scene.lights) {
-      LightData light;
+      TransportLight light;
       light.positionRadius = {source.position[0], source.position[1], source.position[2], source.radius};
       light.radiance = {source.radiance[0], source.radiance[1], source.radiance[2], float(source.triangle)};
       light.directionCone = {source.direction[0], source.direction[1], source.direction[2], source.coneCos};

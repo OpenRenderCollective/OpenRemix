@@ -17,7 +17,7 @@ namespace {
 }
 int main() try {
   require(bake::lightSelectionTree({}).empty(), "No lights require no hierarchy");
-  std::vector<forward::LightData> lights(129);
+  std::vector<forward::bake::TransportLight> lights(129);
   for (uint32_t i = 0; i < lights.size(); ++i) {
     lights[i].positionRadius = {0, 0, 4, .25f};
     lights[i].radiance = {float(i + 1), 1, 1, 0};
