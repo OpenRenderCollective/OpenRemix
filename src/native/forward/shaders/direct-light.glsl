@@ -1,3 +1,4 @@
+#include "diffuse-residual.glsl"
 bool emitterAbovePlane(Light light, vec3 p, vec3 n) {
   if (light.radiance.w <= 0)
     return dot(light.positionRadius.xyz - p, n) + light.positionRadius.w > 0;
@@ -5,8 +6,10 @@ bool emitterAbovePlane(Light light, vec3 p, vec3 n) {
              dot(light.corners[2].xyz - p, n)) > 0;
 }
 BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, float roughness, float metallic,
-                vec4 directIrradiance, vec4 surfaceLightmap, vec3 dielectricF0, vec3 receiverNormal) {
+                vec4 directIrradiance, vec4 surfaceLightmap, vec3 dielectricF0, vec3 receiverNormal,
+                bool aggregateReceiver) {
   Light light = lights[index];
+  bool aggregateDiffuse = aggregateReceiver && light.corners[2].w > .5;
   vec3 delta = light.positionRadius.xyz - p;
   float distance2 = max(dot(delta, delta), 1e-8), distance = sqrt(distance2);
   float range = light.shaping.z;
@@ -39,7 +42,7 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
   if (!bakedDiffuse && visibility <= 0)
     return BrdfLobes(vec3(0), vec3(0));
   float moving = localShadowVisibility(light, p, receiverNormal, !baked);
-  if (moving <= 0)
+  if (moving <= 0 && !aggregateDiffuse)
     return BrdfLobes(vec3(0), vec3(0));
   vec3 l = delta / distance;
   float shape = emitterConeWeight(light.directionCone.xyz, light.directionCone.w,
@@ -61,14 +64,25 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
   // emitter analytically while allowing a finite emitter to cross the horizon.
   float unitDiffuse = bakedDiffuse ? (emitterAbovePlane(light, p, n) ? directIrradiance[directChannel] : 0)
                                    : max(dot(n, l), 0) * solidAngle * shape * visibility;
-  vec3 diffuse = response.diffuse * unitDiffuse;
+  // Missing attributed coverage is not evidence that the aggregate contains
+  // this analytic estimate. Do not subtract unproven energy from other lights.
+  // Automatic aggregate selection must supply correction coverage first.
+  if (aggregateDiffuse && !baked && !bakedDiffuse)
+    unitDiffuse = 0;
+  // The aggregate SH is irradiance, shaded by the same Lambertian material
+  // weight as the ambient term. Keep its moving-caster correction in those
+  // units instead of adding another view-dependent analytic diffuse lobe.
+  vec3 diffuseWeight = aggregateDiffuse ? base * (1 - metallic) / Pi : response.diffuse;
+  vec3 diffuse = diffuseResidual(diffuseWeight * unitDiffuse, moving, aggregateDiffuse);
   vec3 specular = response.specular * (solidAngle * shape * visibility);
-  vec3 scale = light.radiance.rgb * (fade * moving);
-  return BrdfLobes(diffuse * scale, specular * scale);
+  // Aggregate transport integrates the physical emitter without the runtime
+  // influence fade. Its subtraction must use those same radiometric units.
+  return BrdfLobes(diffuse * light.radiance.rgb * (aggregateDiffuse ? 1 : fade),
+                   specular * light.radiance.rgb * (fade * moving));
 }
 vec3 localLight(uint index, vec3 p, vec3 n, vec3 v, vec3 base, float roughness, float metallic,
                 vec4 directIrradiance, vec4 surfaceLightmap, vec3 receiverNormal) {
   BrdfLobes response = localLightResponse(index, p, n, v, base, roughness, metallic,
-                                         directIrradiance, surfaceLightmap, vec3(.04), receiverNormal);
+                                         directIrradiance, surfaceLightmap, vec3(.04), receiverNormal, false);
   return response.diffuse + response.specular;
 }

@@ -4,6 +4,7 @@ layout(local_size_x = 64) in;
 #include "../../../src/native/forward/shaders/probes.glsl"
 #define IRRADIANCE_BINDING 2
 #include "../../../src/native/forward/shaders/irradiance.glsl"
+#include "../../../src/native/forward/shaders/diffuse-residual.glsl"
 struct Query {
   vec4 position, reflected;
 };
@@ -15,6 +16,10 @@ void main() {
   if (index >= count)
     return;
   Query q = queries[index];
+  if (q.position.w == 8) {
+    results[index] = vec4(diffuseResidual(q.position.xyz, q.reflected.x, q.reflected.y > .5), 1);
+    return;
+  }
   if (q.position.w >= 4) {
     // Exercise private stencil invalidation across positions and normals, then
     // reuse at the same receiver for a different captured light.

@@ -77,7 +77,8 @@ void main() {
                               behind.distance, behind.valid, waterFrame.settings.y > .5, surfaceWeight);
   float f0 = pow((index - 1) / (index + 1), 2);
   vec3 irradiance, diffuse = surface.rgb * frame.ambientExposure.rgb;
-  if (bakedIrradiance(worldPosition, n, irradiance)) diffuse = surface.rgb * irradiance / Pi;
+  bool aggregateReceiver = bakedIrradiance(worldPosition, n, irradiance);
+  if (aggregateReceiver) diffuse = surface.rgb * irradiance / Pi;
   float depth = abs(p.z);
   vec3 l = -frame.sunDirection.xyz;
   BrdfLobes sun = brdfLobes(surface.rgb, roughness, 0, n, v, l, vec3(f0));
@@ -89,7 +90,7 @@ void main() {
   for (uint i = 0u; i < (count > ClusterCapacity ? frame.target.z : count); ++i) {
     uint light = count > ClusterCapacity ? i : clusters[base + 1u + i];
     BrdfLobes response = localLightResponse(light, worldPosition, n, v, surface.rgb, roughness, 0,
-                                           vec4(-1), vec4(0), vec3(f0), normalize(geometric));
+                                           vec4(-1), vec4(0), vec3(f0), normalize(geometric), aggregateReceiver);
     diffuse += response.diffuse;
     specular += response.specular;
   }

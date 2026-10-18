@@ -104,14 +104,18 @@ void main() {
 #endif
     return;
   }
+  bool aggregateReceiver = false;
 #ifdef LIVE_GI
   ambient = metallic < 1 && any(greaterThan(surface.rgb, vec3(0))) ? liveDiffuse(worldPosition, n, geometric)
                                                                    : vec3(0);
 #else
-  if (charted)
+  if (charted) {
     ambient = surfaceLighting.rgb / Pi;
-  else if (bakedIrradiance(worldPosition, n, irradiance))
+    aggregateReceiver = true;
+  } else if (bakedIrradiance(worldPosition, n, irradiance)) {
     ambient = irradiance / Pi;
+    aggregateReceiver = true;
+  }
 #endif
   vec3 color = debugView >= 2u ? vec3(0) : surface.rgb * (1 - metallic) * ambient;
   BrdfLobes sun = sunLightResponse(surfaceLightmap, surfaceLighting.w, worldPosition, depth, n, v,
@@ -127,7 +131,8 @@ void main() {
   for (uint i = 0u; i < (count > ClusterCapacity ? frame.target.z : count); ++i) {
     uint index = count > ClusterCapacity ? i : clusters[base + 1u + i];
     BrdfLobes local = localLightResponse(index, worldPosition, n, v, surface.rgb, roughness, metallic,
-                                         directIrradiance, surfaceLightmap, vec3(.04), normalize(geometric));
+                                         directIrradiance, surfaceLightmap, vec3(.04), normalize(geometric),
+                                         aggregateReceiver);
     color += directLightComponent(local, debugView);
   }
   if (debugView == 0u) color += emitted;

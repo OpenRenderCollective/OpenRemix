@@ -205,8 +205,10 @@ namespace remix::forward {
       light.shaping = {source.softness, source.focus, radius, 0};
       if (const auto &volume = baking->volume(); volume && volume->mixedLights) {
         const auto captured = volume->mixedLights->match(source);
-        if (captured != mixed::none)
+        if (captured != mixed::none) {
           light.shaping[3] = float(captured + 1);
+          light.corners[2][3] = float(volume->mixedLights->bakedDiffuse(captured));
+        }
       }
       for (int i = 0; i < 3; ++i)
         std::copy_n(source.corners[i], 3, light.corners[i].begin());

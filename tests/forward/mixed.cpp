@@ -62,6 +62,18 @@ int main() {
     recoloured.radiance[0] *= 2;
     require(aggregate.lights.match(recoloured) == m::none,
             "RGB aggregate ownership cannot match a changed light colour or intensity");
+    auto moved = source->lights[0];
+    moved.position[0] += 1;
+    require(aggregate.lights.match(moved) == m::none,
+            "Moving an aggregate emitter clears its runtime diffuse ownership");
+    moved = source->lights[0];
+    moved.radius *= 2;
+    require(aggregate.lights.match(moved) == m::none,
+            "Changing an aggregate emitter footprint cannot suppress its new analytic diffuse");
+    moved = source->lights[0];
+    moved.dynamic = true;
+    require(aggregate.lights.match(moved) == m::none,
+            "A live moving light cannot inherit immutable aggregate ownership by identity");
     recoloured = source->lights[1];
     recoloured.radiance[0] *= 2;
     require(aggregate.lights.match(recoloured) == 1,

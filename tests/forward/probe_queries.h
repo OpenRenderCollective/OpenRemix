@@ -27,7 +27,13 @@ namespace remix::forward::test {
         {{-.5f, .2f, 0, 3}, {0, 1, 0, 0}}, {{4, 0, 0, 3}, {0, 0, 1, 0}},
         {{0, 0, 0, 4}, {0, 0, 1, 0}}, {{.5f, 0, 0, 4}, {1, 0, 0, 0}},
         {{4, 0, 0, 4}, {0, 0, 1, 0}}, {{0, 0, 0, 5}, {0, 0, 1, 0}},
-        {{0, 0, 0, 6}, {0, 0, 1, 0}}, {{0, 0, 0, 7}, {0, 0, 1, 0}}};
+        {{0, 0, 0, 6}, {0, 0, 1, 0}}, {{0, 0, 0, 7}, {0, 0, 1, 0}},
+        // The aggregate contributes C once; the residual must leave C*V.
+        {{2, 3, 5, 8}, {1, 1, 0, 0}}, {{2, 3, 5, 8}, {0, 1, 0, 0}},
+        {{2, 3, 5, 8}, {.25f, 1, 0, 0}}, {{2, 3, 5, 8}, {.75f, 1, 0, 0}},
+        // Missing aggregate receiver coverage keeps ordinary direct lighting.
+        {{2, 3, 5, 8}, {1, 0, 0, 0}}, {{2, 3, 5, 8}, {0, 0, 0, 0}},
+        {{2, 3, 5, 8}, {.25f, 0, 0, 0}}, {{0, 0, 0, 8}, {.5f, 1, 0, 0}}};
     struct Gpu {
       VkDevice device;
       Buffer asset, input, output, sky;
@@ -169,6 +175,15 @@ namespace remix::forward::test {
     gpu.output.read(values, sizeof(values));
     for (uint32_t i = 0; i < count; ++i) {
       const auto &q = queries[i];
+      if (q.position[3] == 8) {
+        const bool aggregate = q.reflected[1] > .5f;
+        for (uint32_t c = 0; c < 3; ++c) {
+          const float baked = aggregate ? q.position[c] : 0;
+          require(std::abs(baked + values[i][c] - q.position[c] * q.reflected[0]) < 1e-6f,
+                  "Aggregate plus GPU mixed-shadow residual equals visible diffuse without double counting");
+        }
+        continue;
+      }
       if (q.position[3] >= 4) {
         auto localReference = reference;
         for (auto &probe : localReference.probes) probe.irradiance[7][3] = 1;
