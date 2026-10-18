@@ -198,6 +198,15 @@ int main() {
   draw.viewModel = true;
   require(!accepts(draw), "Viewmodel camera is not world lighting");
   config::Settings settings;
+  require(settings.forward.autoExposure, "Forward+ runtime profiles enable automatic exposure by default");
+  const auto beforeExposure = settings.forward;
+  require(config::set(settings, "rtx.native.forward.autoExposure", "false") == config::SetResult::Success &&
+              config::set(settings, "rtx.native.forward.autoExposureTarget", "0.24") == config::SetResult::Success &&
+              config::set(settings, "rtx.native.forward.autoExposureSpeed", "3") == config::SetResult::Success &&
+              config::set(settings, "rtx.native.forward.autoExposureMinEv", "-25") == config::SetResult::Invalid &&
+              config::set(settings, "rtx.native.forward.autoExposureMaxEv", "25") == config::SetResult::Invalid &&
+              beforeExposure.sameTargets(settings.forward) && beforeExposure.baking == settings.forward.baking,
+          "Exposure controls validate and update without replacing targets or invalidating map lighting");
   require(config::set(settings, "rtx.native.backend", "forwardplus") == config::SetResult::Success &&
               settings.backend == 2,
           "Explicit forward backend value");

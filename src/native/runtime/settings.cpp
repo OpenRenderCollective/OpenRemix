@@ -104,6 +104,12 @@ namespace remix::config {
         result.push_back(scalar("rtx.native.forward.sceneScale", FIELD(forward.sceneScale), .0001, 1000));
         result.push_back(scalar("rtx.native.forward.ambient", FIELD(forward.ambient), 0, 100));
         result.push_back(scalar("rtx.native.forward.exposure", FIELD(forward.exposure), .0001, 10000));
+        result.push_back(scalar("rtx.native.forward.autoExposure", FIELD(forward.autoExposure), 0, 1));
+        result.push_back(scalar("rtx.native.forward.autoExposureTarget", FIELD(forward.autoExposureTarget), .02, .6));
+        result.push_back(scalar("rtx.native.forward.autoExposureSpeed", FIELD(forward.autoExposureSpeed), .1, 16));
+        result.push_back(scalar("rtx.native.forward.autoExposureCentre", FIELD(forward.autoExposureCentre), 0, 1));
+        result.push_back(scalar("rtx.native.forward.autoExposureMinEv", FIELD(forward.autoExposureMinEv), -24, 0));
+        result.push_back(scalar("rtx.native.forward.autoExposureMaxEv", FIELD(forward.autoExposureMaxEv), 0, 24));
         result.push_back(scalar("rtx.native.forward.clusterLights", FIELD(forward.clusterLights), 0, 1024));
         result.push_back(scalar("rtx.native.forward.debugView", FIELD(forward.debugView), 0, 3));
         result.push_back(scalar("rtx.native.forward.lightCutoff", FIELD(forward.lightCutoff), .000001, 10));

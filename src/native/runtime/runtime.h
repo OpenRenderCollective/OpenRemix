@@ -63,7 +63,8 @@ public:
   postfx::Statistics postProcessingStatistics() const {
     if (const auto *busy = busyState())
       return busy->post;
-    return m_postProcessing ? m_postProcessing->statistics() : postfx::Statistics{};
+    return m_forward ? m_forward->statistics().postProcessing
+                     : m_postProcessing ? m_postProcessing->statistics() : postfx::Statistics{};
   }
   std::string reflectionProbeReport() const;
   remixapi_BakeStatisticsEXT bakingStatistics() const {
@@ -377,6 +378,7 @@ private:
   // Map bake ownership survives target recreation, but not backend exit or
   // device destruction. Preparation workers only retain this shared owner.
   std::shared_ptr<forward::bake::Controller> m_forwardBaking;
+  std::shared_ptr<postfx::State> m_forwardExposure;
   struct PreparedForward {
     pipeline::PreparationQueue::Ticket job;
     std::unique_ptr<forward::Renderer> renderer;

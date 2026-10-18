@@ -46,6 +46,8 @@ struct Meter {
   }
 };
 struct Exposure {
+  // GPU scene-radiance metering uses initialized=2 for retained empty frames;
+  // history remains valid, but there is no current sample to adapt toward.
   float current = 1, target = 1, initialized = 0, limit = 0;
   void resolve(const Meter &meter, float middle, float minEv, float maxEv,
                float blend, bool reset = false) {

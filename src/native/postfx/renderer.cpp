@@ -132,7 +132,9 @@ struct Push {
   float centre{};
   float target{}, blend{}, minEv{}, maxEv{}, radius{};
   uint32_t reset{};
+  uint32_t meterMode{};
 };
+static_assert(sizeof(Push) == 44); // mirrored by shaders/postfx.comp
 } // namespace
 class State {
 public:
@@ -162,6 +164,7 @@ struct Renderer::Gpu {
   VkDevice device{};
   VkExtent2D display{}, render{};
   std::shared_ptr<State> state;
+  bool radianceMeter = false;
   std::unique_ptr<Image> dummy, guide;
   std::vector<std::unique_ptr<Image>> down, up;
   std::unique_ptr<Buffer> partials;
@@ -219,10 +222,12 @@ struct Renderer::Gpu {
     return result;
   }
   void descriptors(VkDescriptorSet set, VkImageView source, VkImageView second,
-                   VkImageView output, VkSampler sampler) {
+                   VkImageView output, VkSampler sampler,
+                   VkImageLayout sourceLayout = VK_IMAGE_LAYOUT_GENERAL,
+                   VkImageLayout secondLayout = VK_IMAGE_LAYOUT_GENERAL) {
     VkDescriptorImageInfo images[] = {
-        {sampler, source, VK_IMAGE_LAYOUT_GENERAL},
-        {edge, second, VK_IMAGE_LAYOUT_GENERAL},
+        {sampler, source, sourceLayout},
+        {edge, second, secondLayout},
         {VK_NULL_HANDLE, output, VK_IMAGE_LAYOUT_GENERAL}};
     VkDescriptorBufferInfo buffers[] = {{partials->handle, 0, VK_WHOLE_SIZE},
                                         {state->exposure->handle, 0, 16}};
@@ -261,13 +266,14 @@ Renderer::~Renderer() = default;
 void Renderer::initialize(VkPhysicalDevice physical, VkDevice device,
                           uint32_t family, VkExtent2D display,
                           VkExtent2D render, bool meter, bool bloom,
-                          std::shared_ptr<State> state) {
+                          std::shared_ptr<State> state, MeterMode mode) {
   m_gpu = std::make_unique<Gpu>();
   auto &g = *m_gpu;
   g.physical = physical;
   g.device = device;
   g.display = display;
   g.render = render;
+  g.radianceMeter = meter && mode == MeterMode::SceneRadiance;
   if (!state) {
     state = std::make_shared<State>();
     state->exposure = buffer(physical, device, 16,
@@ -277,7 +283,7 @@ void Renderer::initialize(VkPhysicalDevice physical, VkDevice device,
   }
   g.state = std::move(state);
   g.dummy = image(physical, device, {1, 1});
-  if (meter)
+  if (meter && !g.radianceMeter)
     g.guide = image(physical, device, render);
   if (bloom)
     for (auto size : pyramid({display.width, display.height})) {
@@ -356,7 +362,7 @@ void Renderer::initialize(VkPhysicalDevice physical, VkDevice device,
   vkGetPhysicalDeviceQueueFamilyProperties(physical, &count, nullptr);
   std::vector<VkQueueFamilyProperties> families(count);
   vkGetPhysicalDeviceQueueFamilyProperties(physical, &count, families.data());
-  g.timestampBits = families.at(family).timestampValidBits;
+  g.timestampBits = family == VK_QUEUE_FAMILY_IGNORED ? 0 : families.at(family).timestampValidBits;
   g.timestampPeriod = properties.limits.timestampPeriod;
   uint32_t sets = 2 + g.down.size() + g.up.size();
   for (auto &f : g.frames) {
@@ -405,7 +411,7 @@ bool Renderer::supports(VkExtent2D display, VkExtent2D render, bool meter,
   const auto &g = *m_gpu;
   return g.display.width == display.width &&
          g.display.height == display.height && g.render.width == render.width &&
-         g.render.height == render.height && (!meter || g.guide) &&
+         g.render.height == render.height && (!meter || g.guide || g.radianceMeter) &&
          (!bloom || !g.down.empty());
 }
 void Renderer::selectFrame(uint32_t slot) {
@@ -419,7 +425,7 @@ void Renderer::selectFrame(uint32_t slot) {
   g.stats.exposure = value.current;
   g.stats.target = value.target;
   g.stats.limit = value.limit;
-  g.stats.adapting = g.activeMeter && std::abs(value.current - value.target) >
+  g.stats.adapting = g.activeMeter && value.initialized == 1 && std::abs(value.current - value.target) >
                                           std::max(value.target, 1e-6f) * .001f;
   if (f.timestamps) {
     uint64_t times[2];
@@ -509,7 +515,7 @@ void Renderer::freeze() {
 void Renderer::record(VkCommandBuffer command, upscale::Input hdr,
                       const TraceOptions &options, scene::TemporalEpoch epoch,
                       bool changed, bool bypass, float seconds,
-                      uint64_t generation) {
+                      uint64_t generation, MeterInputs inputs) {
   auto &g = *m_gpu;
   auto &f = g.frames[g.slot];
   auto &s = *g.state;
@@ -517,7 +523,8 @@ void Renderer::record(VkCommandBuffer command, upscale::Input hdr,
     g.guideValid = true;
     g.bloomValid = false;
   }
-  const bool meter = !bypass && options.autoExposure && bool(g.guide);
+  const bool hasMeter = g.guide || g.radianceMeter;
+  const bool meter = !bypass && options.autoExposure && hasMeter;
   const bool bloom =
       !bypass && options.bloom && !g.down.empty() && options.bloomIntensity > 0;
   g.activeMeter = meter;
@@ -533,7 +540,7 @@ void Renderer::record(VkCommandBuffer command, upscale::Input hdr,
   const bool reset = !s.enabled || !s.epochValid || s.epoch != epoch;
   // Diagnostic bypass freezes the meter; explicit disabling marks
   // re-enablement.
-  if (!bypass && (g.guide || !options.autoExposure)) {
+  if (!bypass && (hasMeter || !options.autoExposure)) {
     s.enabled = options.autoExposure;
     s.epoch = epoch;
     s.epochValid = true;
@@ -554,7 +561,12 @@ void Renderer::record(VkCommandBuffer command, upscale::Input hdr,
       g.settlingFrames = gpuFrameCount;
     g.previousMeter = meterSettings;
     g.sourceGeneration = generation;
-    g.descriptors(f.meter, hdr.view, g.guide->view, g.dummy->view, g.edge);
+    const auto auxiliary = g.radianceMeter
+        ? (inputs.auxiliary.imageView ? inputs.auxiliary.imageView : g.dummy->view) : g.guide->view;
+    const auto auxiliaryLayout = g.radianceMeter && inputs.auxiliary.imageView
+        ? inputs.auxiliary.imageLayout : VK_IMAGE_LAYOUT_GENERAL;
+    g.descriptors(f.meter, hdr.view, auxiliary, g.dummy->view, g.edge,
+                  inputs.colorLayout, auxiliaryLayout);
     Push p{g.display.width,
            g.display.height,
            ((g.display.width + 15) / 16) * ((g.display.height + 15) / 16),
@@ -564,7 +576,8 @@ void Renderer::record(VkCommandBuffer command, upscale::Input hdr,
            options.autoExposureMinEv,
            options.autoExposureMaxEv,
            0,
-           uint32_t(reset)};
+           uint32_t(reset),
+           uint32_t(g.radianceMeter)};
     {
       gpu::GpuScope scope(command, "Auto exposure meter", g.display);
       g.dispatch(command, 0, f.meter, p);
@@ -585,7 +598,8 @@ void Renderer::record(VkCommandBuffer command, upscale::Input hdr,
     for (size_t i = 0; i < g.down.size(); ++i) {
       auto &im = *g.down[i];
       g.descriptors(f.down[i], i ? g.down[i - 1]->view : hdr.view,
-                    g.dummy->view, im.view, g.border);
+                    g.dummy->view, im.view, g.border,
+                    i ? VK_IMAGE_LAYOUT_GENERAL : inputs.colorLayout);
       g.dispatch(command, 2, f.down[i], {im.size.width, im.size.height});
     }
     downTime.close();

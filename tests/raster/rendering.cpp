@@ -37,6 +37,7 @@ namespace {
     VkExtent2D extent;
     std::unique_ptr<remix::forward::Renderer> forward;
     uint32_t frameIndex = 0, forwardGeneration = 0;
+    float exposureSeconds = -1;
     uint32_t queueFamily = VK_QUEUE_FAMILY_IGNORED;
     bool hardwareRay = false;
     std::unique_ptr<remix::pipeline::Service> pipelines;
@@ -299,9 +300,10 @@ namespace {
     void enableForward(remix::forward::Options options, bool preserveBaking = false) {
       vk(vkDeviceWaitIdle(device));
       const auto baking = preserveBaking && forward ? forward->bakeController() : nullptr;
+      const auto exposure = preserveBaking && forward ? forward->exposureState() : nullptr;
       auto next = std::make_unique<remix::forward::Renderer>();
       auto job = pipelines->prepare("forward-test-" + std::to_string(++forwardGeneration), [&] {
-        next->initialize(physical,device,pass,extent,options,false,pipelines.get(),hardwareRay,baking,queueFamily);
+          next->initialize(physical,device,pass,extent,options,false,pipelines.get(),hardwareRay,baking,queueFamily,exposure);
       });
       while (!job->ready()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
       job->check();
@@ -319,7 +321,7 @@ namespace {
       while (!raster.preparePipelines(false, bool(forward), owner))
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
       raster.prepare(command,false,bool(forward), owner);
-      if (forward) forward->prepare(command,raster);
+      if (forward) forward->prepare(command,raster,exposureSeconds);
       VkClearValue clear[2] = {};
       clear[1].depthStencil.depth = 1;
       const VkRenderPassBeginInfo rp = {.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
@@ -2201,6 +2203,7 @@ namespace {
   }
 #include "styled_indirect.h"
 #include "local_shadow_plane.h"
+#include "auto_exposure.h"
   void bakingTests() {
     Target target(64, 64, true);
     auto &r = target.raster;
@@ -3819,7 +3822,7 @@ namespace {
                   "A zero-depth shoreline stays transparent with mixed foreground/background MSAA samples");
     }
   }
-  void waterEnvironmentTests() {
+  void waterEnvironmentTests(bool automatic = false) {
     auto tone = [](float value) {
       return std::clamp((value * (2.51f * value + .03f)) / (value * (2.43f * value + .59f) + .14f), 0.f, 1.f);
     };
@@ -3829,6 +3832,8 @@ namespace {
       remix::forward::Options options;
       options.samples = samples;
       options.water = true;
+      options.autoExposure = automatic;
+      options.autoExposureMinEv = options.autoExposureMaxEv = 0; // Keep analytic water references at unity.
       options.shadows = options.localShadows = options.ssr = false;
       options.baking.enabled = false;
       options.baking.reflectionProbes = 0;
@@ -3929,6 +3934,7 @@ int main(int argc, char **argv) {
   }
   else if (argc>2 && std::strcmp(argv[2],"water")==0) waterTests();
   else if (argc>2 && std::strcmp(argv[2],"water-environment")==0) waterEnvironmentTests();
+  else if (argc>2 && std::strcmp(argv[2],"water-exposure")==0) waterEnvironmentTests(true);
   else if (argc>2 && std::strcmp(argv[2],"water-shoreline")==0) waterShorelineTests(directory);
   else if (argc>2 && std::strcmp(argv[2],"sky")==0) skyTests();
   else if (argc>2 && std::strcmp(argv[2],"live-gi")==0) liveGITests();
@@ -3940,6 +3946,7 @@ int main(int argc, char **argv) {
   else if (argc>2 && std::strcmp(argv[2],"baked-direct")==0) mixedLightingTests(true, true);
   else if (argc>2 && std::strcmp(argv[2],"styled-indirect")==0) styledIndirectTests();
   else if (argc>2 && std::strcmp(argv[2],"local-shadow-plane")==0) localShadowPlaneTests();
+  else if (argc>2 && std::strcmp(argv[2],"auto-exposure")==0) autoExposureTests();
   else if (argc>2 && std::strcmp(argv[2],"styled-mixed")==0) mixedLightingTests(true, true, true);
   else if (argc>2 && std::strcmp(argv[2],"mixed")==0) mixedLightingTests();
   else if (argc>2 && std::strcmp(argv[2],"compact-occlusion")==0) compactOcclusionTests();

@@ -40,6 +40,8 @@ namespace remix::forward {
     std::unique_ptr<Image> normalGuide, reflectanceGuide;
     std::unique_ptr<Reflections> reflections;
     std::unique_ptr<water::Pass> waterPass;
+    std::unique_ptr<postfx::Renderer> postProcessing;
+    VkDescriptorSetLayout postLayout = VK_NULL_HANDLE;
     std::unique_ptr<ray::Reflections> rayReflections;
     std::unique_ptr<ray::LiveScene> liveScene;
     bool giSupported = false;
@@ -100,6 +102,7 @@ namespace remix::forward {
     void prepareFrame(VkCommandBuffer command, RasterRenderer &resources);
     void recordWorld(VkCommandBuffer command);
     void recordWater(VkCommandBuffer command);
+    void recordExposure(VkCommandBuffer command, RasterRenderer &resources, float seconds);
     void drawLocalCasters(VkCommandBuffer command, uint32_t slot, uint32_t face, bool staticCasters);
     void drawGeometry(VkCommandBuffer command, bool terrain = false);
     void drawSunCasters(VkCommandBuffer command, uint32_t cascade, bool staticCasters);

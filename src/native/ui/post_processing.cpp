@@ -9,9 +9,18 @@ namespace remix {
   void RemixNativeRuntime::drawPostProcessingTab(config::Settings &settings) {
     if (settings.backend == config::Backend::ForwardPlus) {
       ImGui::TextUnformatted("Forward+ brightness");
-      ui::DragFloat("Manual exposure", &settings.forward.exposure, .01f, .0001f, 10000.f);
-      ImGui::TextWrapped("Forward+ currently uses manual exposure. Automatic exposure and the path-traced "
-                        "post-processing controls are not connected to this backend yet.");
+      auto &options = settings.forward;
+      ui::Checkbox("Automatic exposure", &options.autoExposure);
+      ui::DragFloat("Exposure multiplier", &options.exposure, .01f, .0001f, 10000.f);
+      ui::SliderFloat("Meter target", &options.autoExposureTarget, .02f, .6f, "%.3f");
+      ui::SliderFloat("Adaptation rate (1/s)", &options.autoExposureSpeed, .1f, 16.f, "%.2f");
+      ui::SliderFloat("Centre weight", &options.autoExposureCentre, 0, 1, "%.2f");
+      ui::SliderFloat("Minimum exposure EV", &options.autoExposureMinEv, -24, 0, "%.1f");
+      ui::SliderFloat("Maximum exposure EV", &options.autoExposureMaxEv, 0, 24, "%.1f");
+      const auto post = postProcessingStatistics();
+      ImGui::TextWrapped("Automatic %.4g | target %.4g | %.3f ms", post.exposure, post.target, post.milliseconds);
+      ImGui::TextWrapped("Meters linear world lighting and reflections before tonemapping. Empty background "
+                        "and overlays are excluded. Debug lighting views freeze adaptation.");
       return;
     }
     auto &options = settings.trace;

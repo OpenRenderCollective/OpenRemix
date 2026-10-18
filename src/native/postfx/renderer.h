@@ -6,6 +6,13 @@
 
 namespace remix::postfx {
 class State;
+enum class MeterMode { MaterialNormalized, SceneRadiance };
+struct MeterInputs {
+  VkImageLayout colorLayout = VK_IMAGE_LAYOUT_GENERAL;
+  // SceneRadiance adds this optional linear reflection image to unpremultiplied
+  // HDR color. MaterialNormalized uses the renderer's own albedo guide instead.
+  VkDescriptorImageInfo auxiliary{};
+};
 struct Statistics {
   float exposure = 1, target = 1, limit = 0, milliseconds = 0;
   uint64_t memoryBytes = 0, meterFrames = 0, bloomFrames = 0;
@@ -20,7 +27,7 @@ public:
   // Called only on the preparation worker. State survives target replacement.
   void initialize(VkPhysicalDevice physical, VkDevice device, uint32_t family,
                   VkExtent2D display, VkExtent2D render, bool meter, bool bloom,
-                  std::shared_ptr<State> state = {});
+                  std::shared_ptr<State> state = {}, MeterMode mode = MeterMode::MaterialNormalized);
   std::shared_ptr<State> state() const;
   bool supports(VkExtent2D display, VkExtent2D render, bool meter,
                 bool bloom) const;
@@ -32,7 +39,8 @@ public:
   bool needsGuide() const;
   void record(VkCommandBuffer command, upscale::Input hdr,
               const TraceOptions &options, scene::TemporalEpoch epoch,
-              bool changed, bool bypass, float seconds = -1, uint64_t generation = 0);
+              bool changed, bool bypass, float seconds = -1, uint64_t generation = 0,
+              MeterInputs inputs = {});
   void freeze();
   VkDescriptorSet bindings() const;
   Statistics statistics() const;

@@ -29,6 +29,12 @@ namespace remix {
         << ", \"staticShadowUpdates\": " << state.staticShadowUpdates
         << ", \"staticSunUpdates\": " << state.staticSunUpdates
         << ", \"staticCasterPreparations\": " << state.staticCasterPreparations << '}'
+        << ",\n  \"exposure\": {\"current\": " << state.postProcessing.exposure
+        << ", \"target\": " << state.postProcessing.target << ", \"limit\": " << state.postProcessing.limit
+        << ", \"milliseconds\": " << state.postProcessing.milliseconds
+        << ", \"memoryBytes\": " << state.postProcessing.memoryBytes
+        << ", \"meterFrames\": " << state.postProcessing.meterFrames
+        << ", \"adapting\": " << (state.postProcessing.adapting ? "true" : "false") << '}'
         << ",\n  \"metersPerUnit\": " << state.reflectionSceneScale
         << ",\n  \"resolution\": " << header.parameters[1] << ",\n  \"probes\": [";
     auto vector = [&](const auto &v) { out << '[' << v[0] << ", " << v[1] << ", " << v[2] << ']'; };
@@ -62,8 +68,10 @@ namespace remix {
       }
       m_forward.reset();
     }
-    if (!preserveBaking)
+    if (!preserveBaking) {
       m_forwardBaking.reset();
+      m_forwardExposure.reset();
+    }
   }
   bool RemixNativeRuntime::prepareForwardSettings() {
     std::erase_if(m_obsoleteForward, [](const auto &entry) { return entry->job->ready(); });
@@ -93,6 +101,7 @@ namespace remix {
       auto *pipelines = m_pipelines.get();
       const bool hardwareRay = m_forwardRaySupported;
       const auto baking = m_forwardBaking;
+      const auto exposure = m_forwardExposure;
       const auto queueFamily = m_queueFamily;
       const bool srgb =
           m_swapchainFormat == VK_FORMAT_R8G8B8A8_SRGB || m_swapchainFormat == VK_FORMAT_B8G8R8A8_SRGB;
@@ -100,7 +109,7 @@ namespace remix {
       next->job = m_pipelines->prepare("forward-" + std::to_string(++m_preparationGeneration), [=] {
         auto replacement = std::make_unique<forward::Renderer>();
         replacement->initialize(physical, device, output, extent, options, encode, pipelines, hardwareRay,
-                                baking, queueFamily);
+                                baking, queueFamily, exposure);
         next->renderer = std::move(replacement);
       });
       m_forwardPreparation = std::move(next);
@@ -113,6 +122,7 @@ namespace remix {
           throw status;
         m_forward = std::move(m_forwardPreparation->renderer);
         m_forwardBaking = m_forward->bakeController();
+        m_forwardExposure = m_forward->exposureState();
         // Activation waited for the whole queue. Adopt the actual frame slot
         // before the new targets advance a retained bake or touch descriptors.
         m_forward->selectFrame(m_frameIndex);

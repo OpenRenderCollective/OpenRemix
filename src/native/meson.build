@@ -19,9 +19,9 @@ if get_option('usd')
   subdir('usd')
 endif
 subdir('raster')
+subdir('postfx')
 subdir('forward')
 subdir('denoise')
-subdir('postfx')
 subdir('upscale')
 subdir('pathtrace')
 imgui_vulkan = static_library('remix_imgui_vulkan', 'ui/vulkan_backend.cpp',

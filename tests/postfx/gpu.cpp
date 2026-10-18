@@ -130,11 +130,12 @@ struct Fixture {
     check(vkQueueWaitIdle(queue));
   }
   std::unique_ptr<Renderer> renderer(VkExtent2D size, bool bloom = true,
-                                     std::shared_ptr<State> state = {}, bool meter = true) {
+                                     std::shared_ptr<State> state = {}, bool meter = true,
+                                     MeterMode mode = MeterMode::MaterialNormalized) {
     auto r = std::make_unique<Renderer>();
     static unsigned id = 0;
     auto ticket = pipelines->prepare("fixture-" + std::to_string(++id), [&] {
-      r->initialize(physical, device, family, size, size, meter, bloom, state);
+      r->initialize(physical, device, family, size, size, meter, bloom, state, mode);
     });
     while (!ticket->ready())
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -263,11 +264,55 @@ std::vector<float> readBloom(Fixture &f, Renderer &r, VkExtent2D size) {
 }
 int main() {
   Fixture f;
+  {
+    const VkExtent2D size{32, 24};
+    auto r = f.renderer(size, false, {}, true, MeterMode::SceneRadiance);
+    require(!r->materialGuide() && !r->needsGuide(), "Radiance metering allocates no material guide");
+    Texture hdr(f, size), reflected(f, size);
+    TraceOptions options;
+    options.bloom = false;
+    options.autoExposureTarget = .18f;
+    options.autoExposureCentre = 0;
+    options.autoExposureMinEv = -8;
+    options.autoExposureMaxEv = 4;
+    uint64_t epoch = 0;
+    auto run = [&](float light, float alpha, float specular, bool reset, float seconds = .1f) {
+      hdr.upload(std::vector<std::array<float, 4>>(size.width * size.height, {light, light, light, alpha}));
+      reflected.upload(std::vector<std::array<float, 4>>(size.width * size.height, {specular, specular, specular, 1}));
+      r->selectFrame(0);
+      f.begin();
+      r->begin(f.cmd);
+      if (reset) ++epoch;
+      r->record(f.cmd, {hdr.image, hdr.view}, options, {1, epoch}, true, false, seconds, 0,
+                 {VK_IMAGE_LAYOUT_GENERAL, {{}, reflected.view, VK_IMAGE_LAYOUT_GENERAL}});
+      f.end();
+      r->selectFrame(0);
+      return r->statistics();
+    };
+    require(std::abs(run(.18f, 1, 0, true).exposure - 1) < .0001f, "Neutral scene radiance meters to unity");
+    require(std::abs(run(.09f, .5f, 0, true).exposure - 1) < .0001f, "MSAA coverage is unpremultiplied before metering");
+    require(std::abs(run(.18f, 1, .18f, true).exposure - .5f) < .0001f, "Composited reflection radiance participates");
+    const auto bright = run(2, 1, 0, true);
+    const auto dark = run(.02f, 1, 0, false);
+    const float expected = bright.exposure + (9 - bright.exposure) * adaptation(.1f, options.autoExposureSpeed);
+    require(std::abs(dark.exposure - expected) < .001f && dark.exposure < dark.target,
+            "Radiance adaptation is time based and approaches the new target without snapping");
+    const auto empty = run(10000, 0, 0, false);
+    require(std::abs(empty.exposure - dark.exposure) < .0001f && !empty.adapting,
+            "An empty background retains exposure instead of metering its clear color");
+    const auto resumed = run(.18f, 1, 0, false);
+    require(resumed.exposure > 1 && resumed.exposure < empty.exposure,
+            "Returning from an empty background resumes adaptation without resetting it");
+    std::printf("Radiance meter: neutral/coverage/reflections, adaptation %.6f -> %.6f, memory %llu bytes\n",
+                bright.exposure, dark.exposure, (unsigned long long)r->statistics().memoryBytes);
+  }
   for (VkExtent2D size : {VkExtent2D{1, 1}, VkExtent2D{3, 7},
                           VkExtent2D{65, 49}, VkExtent2D{128, 128}}) {
     auto r = f.renderer(size);
     Texture hdr(f, size);
     TraceOptions o;
+    o.autoExposureMinEv = -2;
+    o.autoExposureMaxEv = 2; // This analytic fixture expects the explicit 4x night cap.
     std::vector<std::array<float, 4>> pixels(size.width * size.height);
     uint64_t epoch = 0;
     auto run = [&](float albedo, bool changed = true, bool reset = true,

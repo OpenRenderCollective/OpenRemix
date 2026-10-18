@@ -7,7 +7,7 @@ layout(binding=4,std430) buffer State { vec4 exposure; } state;
 layout(push_constant) uniform Settings {
   uvec2 size; uint groups; float centre;
   float target; float blend; float minEv; float maxEv;
-  float radius; uint reset;
+  float radius; uint reset; uint meterMode;
 } settings;
 #if POST_PASS < 2
 #if POST_PASS == 0
@@ -24,15 +24,19 @@ void main() {
   uvec2 pixel=gl_GlobalInvocationID.xy;
   if(all(lessThan(pixel,settings.size))) {
     vec2 uv=(vec2(pixel)+.5)/vec2(settings.size);
-    vec3 radiance=texelFetch(sourceImage,ivec2(pixel),0).rgb;
+    vec4 source=texelFetch(sourceImage,ivec2(pixel),0);
+    vec3 radiance=source.rgb;
     ivec2 guideSize=textureSize(secondImage,0);
     vec3 albedo=texelFetch(secondImage,min(ivec2(uv*guideSize),guideSize-1),0).rgb;
-    if(finite3(radiance)&&finite3(albedo)) {
-      vec3 light=max(radiance,vec3(0))*.18/max(albedo,vec3(.05));
-      float average=dot(light,vec3(1.0/3.0));
+    bool sceneRadiance=settings.meterMode==1u;
+    if(finite3(radiance)&&finite3(albedo)&&(!sceneRadiance||(source.a>0&&!isinf(source.a)))) {
+      vec3 light=sceneRadiance ? max(radiance/max(source.a,1e-6)+albedo,vec3(0))
+                              : max(radiance,vec3(0))*.18/max(albedo,vec3(.05));
+      float average=dot(light,sceneRadiance ? vec3(.2126,.7152,.0722) : vec3(1.0/3.0));
       vec2 offset=(uv-.5)*2;
       offset.x*=float(settings.size.x)/float(settings.size.y);
       float weight=1-settings.centre*smoothstep(0,1,length(offset));
+      if(sceneRadiance)weight*=clamp(source.a,0,1);
       if(!isnan(average)&&!isinf(average))sum=vec2(weight*log(max(average,1e-4)),weight);
     }
   }
@@ -52,6 +56,8 @@ void main() {
 #else
   if(!(sums[0].y>0)||isnan(sums[0].x)||isinf(sums[0].x)) {
     if(settings.reset!=0)state.exposure.z=0;
+    // Preserve history while reporting a paused, empty radiance meter.
+    else if(settings.meterMode==1u&&state.exposure.z>0)state.exposure.z=2;
     return;
   }
   float mean=exp(sums[0].x/sums[0].y);

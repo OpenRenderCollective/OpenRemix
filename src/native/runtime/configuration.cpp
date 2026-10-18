@@ -449,7 +449,7 @@ namespace remix {
                   : m_pathTracer ? m_pathTracer->statistics()
                                  : remixapi_TracingStatisticsEXT{.structSize = sizeof(remixapi_TracingStatisticsEXT)};
     result.redrawRequested =
-        preparationPending() || (m_backend && m_postProcessing && postProcessingStatistics().adapting) ||
+        preparationPending() || (m_backend && postProcessingStatistics().adapting) ||
         (m_backend &&
          (result.redrawRequested || m_profiles.current().trace.accumulate)) ||
         m_backend != m_targetBackend ||
@@ -570,7 +570,8 @@ namespace remix {
     s.frameStarted = m_frameStarted;
     s.digest = (m_pathTracer ? m_pathTracer->frameDigest() : 0) * 31 + renderer().profile().digest;
     s.upscaling = m_pathTracer ? m_pathTracer->upscalingStatistics() : upscale::Statistics{};
-    s.post = m_postProcessing ? m_postProcessing->statistics() : postfx::Statistics{};
+    s.post = m_forward ? m_forward->statistics().postProcessing
+                      : m_postProcessing ? m_postProcessing->statistics() : postfx::Statistics{};
     if (m_pathTracer) {
       s.tracing = m_pathTracer->statistics();
       s.sharc = m_pathTracer->sharcStatistics();

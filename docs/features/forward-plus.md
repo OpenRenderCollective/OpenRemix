@@ -1713,8 +1713,20 @@ key and hit/missing/rejected outcome. A changed input versus a changed rendering
 policy can therefore be distinguished across launches without a GPU capture.
 Cancelled lookups are omitted; diagnostic write failure never aborts baking.
 
-Forward+ currently uses manual exposure. Its post-processing panel explicitly
-shows that setting; the path-traced automatic-exposure controls do not affect it.
+Forward+ profiles enable automatic exposure by default. The post-processing panel
+controls `forward.autoExposure`, `autoExposureTarget` (0.18), `autoExposureSpeed`
+(2), `autoExposureCentre` (0.75), and `autoExposureMinEv`/`autoExposureMaxEv`
+(-8/4). `forward.exposure` remains a multiplicative manual adjustment. These
+settings update without rebuilding targets or invalidating lighting caches.
+
+The shared GPU exposure service meters coverage-weighted, linear HDR luminance
+from world surfaces, reflections and composited water. It excludes empty sky
+background and overlays. Metering precedes camera-medium fog and display tone
+mapping; native sky presentation receives the resulting exposure. Debug views
+pause adaptation, and empty frames retain history. History survives target/MSAA
+replacement and resets when scene identity changes. Forward+ uses no full-size
+material guide and does not enable bloom. Its exposure controls are independent
+of the path-traced profile.
 
 GPU lightmap denoising stages transfers through an OIDN-owned pinned host arena
 of at most 8 MiB, additional to chart scratch and device/model memory. Ordered

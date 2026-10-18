@@ -12,7 +12,7 @@ lightmap_denoise_library = static_library('remix_lightmap_denoise', 'lightmap/de
   cpp_args : oidn_args, gnu_symbol_visibility : 'hidden', pic : true)
 
 forward_library = static_library('remix_forward',
-  'lighting.cpp', 'resources.cpp', 'renderer.cpp', 'targets.cpp', 'pipelines.cpp', 'scene.cpp', 'rendering.cpp', 'sky.cpp', 'image_dump.cpp',
+  'lighting.cpp', 'resources.cpp', 'renderer.cpp', 'targets.cpp', 'pipelines.cpp', 'scene.cpp', 'rendering.cpp', 'exposure.cpp', 'sky.cpp', 'image_dump.cpp',
   'reflections.cpp', 'ray/capture.cpp', 'ray/live_scene.cpp', 'ray/reflections.cpp',
   'ray_scene.cpp',
   'material.cpp', 'bake/data.cpp', 'bake/light_sampling.cpp', 'bake/policy.cpp', 'bake/cache.cpp', 'bake/transport.cpp', 'bake/pipelines.cpp', 'bake/atlas.cpp',
@@ -20,7 +20,7 @@ forward_library = static_library('remix_forward',
   'shadows/plan.cpp', 'shadows/maps.cpp', 'mixed/data.cpp', 'mixed/refine.cpp', 'mixed/overflow.cpp', 'mixed/masks.cpp', 'mixed/mask_codec.cpp', 'mixed/mask_palette.cpp', 'mixed/occlusion.cpp', 'mixed/map.cpp', 'lightmap/layout.cpp', 'lightmap/packing.cpp', 'lightmap/fit.cpp', 'lightmap/parameterization.cpp', 'lightmap/curved.cpp', 'lightmap/harmonic.cpp', 'lightmap/fan.cpp', 'lightmap/seams.cpp', 'lightmap/curved_seams.cpp', 'lightmap/seam_mesh.cpp', 'lightmap/surface_walk.cpp', 'lightmap/coverage.cpp', 'lightmap/data.cpp', 'lightmap/geometry.cpp', 'bake/grid.cpp', 'bake/controller.cpp',
   'mixed/mask_pages.cpp', 'bake/receiver_report.cpp', 'bake/fingerprint.cpp', 'bake/relocation.cpp', 'bake/styles.cpp', 'bake/sparse_sh.cpp', 'bake/style_work.cpp', 'bake/controller_styles.cpp',
   'probes/data.cpp', 'probes/capture_dump.cpp', 'probes/placement.cpp', 'probes/selection.cpp', 'probes/evaluation.cpp', 'probes/regions.cpp', 'probes/sites.cpp',
-  link_with : [scene_library, raster_library, pipeline_library, lightmap_denoise_library],
+  link_with : [scene_library, raster_library, pipeline_library, lightmap_denoise_library, postfx_library],
   dependencies : vulkan_dep, include_directories : [remix_public_include, native_include],
   cpp_args : cpp.get_supported_arguments('-Wno-missing-field-initializers'),
   gnu_symbol_visibility : 'hidden', pic : true)

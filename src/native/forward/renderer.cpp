@@ -32,7 +32,7 @@ namespace remix::forward {
     for (auto handle : {layout, compositeLayout, giLayout})
       if (handle)
         pipeline::destroyPipelineLayout(device, handle, nullptr);
-    for (auto handle : {sceneLayout, materialLayout, compositeSetLayout, giSceneLayout})
+    for (auto handle : {sceneLayout, materialLayout, compositeSetLayout, giSceneLayout, postLayout})
       if (handle)
         pipeline::destroyDescriptorSetLayout(device, handle, nullptr);
     if (worldFramebuffer)
@@ -53,7 +53,8 @@ namespace remix::forward {
   void Renderer::initialize(VkPhysicalDevice physical, VkDevice device, VkRenderPass output,
                             VkExtent2D extent, Options options, bool encodeOutput,
                             pipeline::Service *pipelines, bool hardwareRay,
-                            std::shared_ptr<bake::Controller> baking, uint32_t queueFamily) {
+                            std::shared_ptr<bake::Controller> baking, uint32_t queueFamily,
+                            std::shared_ptr<postfx::State> exposure) {
     if (baking && !baking->compatible(physical, device, pipelines, hardwareRay, queueFamily))
       throw std::invalid_argument("Shared map bake belongs to another device or pipeline service");
     auto next = std::make_unique<Gpu>();
@@ -68,6 +69,10 @@ namespace remix::forward {
     next->statistics.rayGI.available = hardwareRay && ray::LiveScene::supportsFragmentGI(physical);
     next->createLayouts();
     next->createTargets();
+    next->postProcessing = std::make_unique<postfx::Renderer>();
+    next->postProcessing->initialize(physical, device, queueFamily, extent, extent, true, false,
+                                     std::move(exposure), postfx::MeterMode::SceneRadiance);
+    next->statistics.targetBytes += next->postProcessing->statistics().memoryBytes;
     next->localMaps = std::make_unique<shadows::Maps>();
     next->localMaps->initialize(physical, device, next->shadowPass, options.localShadowLights,
                                 options.localShadowResolution);
@@ -106,9 +111,13 @@ namespace remix::forward {
   std::shared_ptr<bake::Controller> Renderer::bakeController() const {
     return m_gpu ? m_gpu->baking : nullptr;
   }
+  std::shared_ptr<postfx::State> Renderer::exposureState() const {
+    return m_gpu ? m_gpu->postProcessing->state() : nullptr;
+  }
   void Renderer::selectFrame(uint32_t slot) {
     auto &g = *m_gpu;
     g.slot = slot;
+    g.postProcessing->selectFrame(slot);
     g.baking->selectFrame(slot);
     if (g.reflections)
       g.reflections->selectFrame(slot);
@@ -126,7 +135,8 @@ namespace remix::forward {
       check(vkResetDescriptorPool(g.device, frame.pool, 0));
     std::erase_if(g.geometries, [](const auto &entry) { return entry.second->source.expired(); });
   }
-  void Renderer::prepare(VkCommandBuffer command, RasterRenderer &resources) {
+  void Renderer::prepare(VkCommandBuffer command, RasterRenderer &resources, float seconds) {
+    m_gpu->postProcessing->begin(command);
     gpu::GpuScope bakeTime(command, "Forward+ bake publication and transport");
     m_gpu->baking->record(command, resources, m_gpu->options.baking, m_gpu->options.lightCutoff);
     bakeTime.close();
@@ -165,6 +175,7 @@ namespace remix::forward {
           m_gpu->rayReflections.get());
     }
     m_gpu->recordWater(command);
+    m_gpu->recordExposure(command, resources, seconds);
     m_gpu->statistics.baking = m_gpu->baking->statistics();
     const auto &volume = m_gpu->baking->volume();
     m_gpu->statistics.bakeContent = volume ? volume->content : bake::ContentHashes{};

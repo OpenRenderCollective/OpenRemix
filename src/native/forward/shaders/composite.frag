@@ -1,4 +1,5 @@
 #version 450
+#extension GL_GOOGLE_include_directive : require
 #ifdef WATER_VOLUME
 #extension GL_GOOGLE_include_directive : require
 #define WATER_PARAMETERS_SET 0
@@ -25,10 +26,9 @@ layout(push_constant) uniform Display {
   uint background;
 } display;
 layout(location = 0) out vec4 result;
+#include "../../postfx/shaders/composite.glsl"
 vec3 tonemap(vec3 color) {
-  // Neutral, bounded display transform; HDR exposure/bloom can later use the
-  // shared postfx service without changing forward material shading.
-  color *= display.exposure;
+  color = postColor(color, gl_FragCoord.xy / sky.target.xy);
   return clamp((color * (2.51 * color + .03)) / (color * (2.43 * color + .59) + .14), 0, 1);
 }
 vec3 mediumColor(vec3 color, float depth) {

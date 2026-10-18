@@ -4,6 +4,7 @@
 #include "forward/probes/data.h"
 #include "forward/ray/reflections.h"
 #include "raster/renderer.h"
+#include "postfx/renderer.h"
 #include <memory>
 #include <remix/remix_bake_ext.h>
 namespace remix::pipeline {
@@ -25,6 +26,7 @@ namespace remix::forward {
     bake::ContentHashes bakeContent;
     ray::Statistics rayReflections;
     ray::Statistics rayGI;
+    postfx::Statistics postProcessing;
     probes::Header reflectionProbes;
     float reflectionSceneScale = 1;
     remixapi_BakeStatisticsEXT baking{.structSize = sizeof(remixapi_BakeStatisticsEXT)};
@@ -39,12 +41,14 @@ namespace remix::forward {
     void initialize(VkPhysicalDevice physical, VkDevice device, VkRenderPass output, VkExtent2D extent,
                     Options options, bool encodeOutput, pipeline::Service *pipelines = nullptr,
                     bool hardwareRay = false, std::shared_ptr<bake::Controller> baking = {},
-                    uint32_t queueFamily = VK_QUEUE_FAMILY_IGNORED);
+                    uint32_t queueFamily = VK_QUEUE_FAMILY_IGNORED,
+                    std::shared_ptr<postfx::State> exposure = {});
     // Target replacements may share the map bake. Only the active renderer
     // advances it, on the render thread after the owning frame-slot fence.
     std::shared_ptr<bake::Controller> bakeController() const;
+    std::shared_ptr<postfx::State> exposureState() const;
     void selectFrame(uint32_t slot); // caller has waited for this slot's fence
-    void prepare(VkCommandBuffer command, RasterRenderer &resources);
+    void prepare(VkCommandBuffer command, RasterRenderer &resources, float seconds = -1);
     void composite(VkCommandBuffer command);  // inside the output render pass
     void background(VkCommandBuffer command); // before raster sky and the world composite
     const Statistics &statistics() const;

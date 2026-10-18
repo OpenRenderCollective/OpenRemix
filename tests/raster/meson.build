@@ -13,10 +13,14 @@ if get_option('gpu_tests')
     args : [meson.current_build_dir() / 'forward-readback', 'forward'], timeout : 120)
   test('Forward+ lighting component isolation and MSAA', raster_test,
     args : [meson.current_build_dir() / 'lighting-view-readback', 'lighting-views'], timeout : 120)
+  test('Forward+ automatic exposure transitions, manual mode and MSAA state', raster_test,
+      args : [meson.current_build_dir() / 'auto-exposure-readback', 'auto-exposure'], timeout : 120)
   test('Forward+ measured water HDR, MSAA and frame-slot readback', raster_test,
     args : [meson.current_build_dir() / 'water-readback', 'water'], timeout : 120)
   test('Forward+ water environment reflection and baked visibility', raster_test,
     args : [meson.current_build_dir() / 'water-environment-readback', 'water-environment'], timeout : 120)
+  test('Forward+ automatic exposure with water HDR composition', raster_test,
+      args : [meson.current_build_dir() / 'water-exposure-readback', 'water-exposure'], timeout : 120)
   test('Forward+ water shoreline coverage and refraction', raster_test,
     args : [meson.current_build_dir() / 'water-shoreline-readback', 'water-shoreline'], timeout : 120)
   test('Forward+ live dome background and MSAA coverage', raster_test,

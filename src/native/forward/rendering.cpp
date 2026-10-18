@@ -189,6 +189,9 @@ namespace remix::forward {
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.compositePipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.compositeLayout, 0, 1,
                             &frame.composite, 0, nullptr);
+    const auto post = g.postProcessing->bindings();
+    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.compositeLayout, 1, 1,
+                            &post, 0, nullptr);
     const struct {
       float exposure;
       uint32_t encode, samples, reflections, background;

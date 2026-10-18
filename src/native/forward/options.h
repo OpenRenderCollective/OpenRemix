@@ -11,6 +11,9 @@ namespace remix::forward {
     float sceneScale = 1;
     float ambient = .025f;
     float exposure = 1;
+    bool autoExposure = false; // runtime profiles enable it; low-level callers retain explicit manual output
+    float autoExposureTarget = .18f, autoExposureSpeed = 2, autoExposureCentre = .75f;
+    float autoExposureMinEv = -8, autoExposureMaxEv = 4;
     uint32_t debugView = 0; // 0 shaded, 1 indirect irradiance, 2 direct diffuse, 3 specular
     float lightCutoff = .001f;
     uint32_t clusterLights = 0; // zero adapts64..512; explicit1..1024 retains a bounded profiling override
