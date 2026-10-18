@@ -71,8 +71,10 @@ resolution receipts; compare shaded and irradiance-only diagnostics to isolate d
 finish bounded static-light responses and coverage; then test conservative receiver-aware light lists.
 Keep shadow-map generation separate from fragment shadow/visibility sampling in reports. Cluster
 construction can be inexpensive while the fragment shader still spends substantial time evaluating
-its lists. Investigate opaque overdraw/depth rejection separately before adding a prepass; preserve
-alpha-test holes, MSAA edges and terrain/decal ordering. None of these diagnostic views is a
+its lists. An opaque depth prepass now reuses vertex transforms and alpha/backface rejection before
+expensive shading. It preserves draw order and leaves terrain overlays and shadow passes separate;
+cutout holes and 1x/2x/4x MSAA have explicit comparison coverage. Continue live-engine and cross-map
+validation, including CPU submission cost and scenes with little overdraw. None of these diagnostic views is a
 quality-preserving replacement for the shaded renderer.
 
 Build a BSP cubemap authoring tool with live bounds visualization, draggable faces, independent

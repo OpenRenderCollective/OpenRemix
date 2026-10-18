@@ -11,6 +11,7 @@ namespace remix::forward {
     pipeline::nameCode(lightmapVertShader, "forward.lightmap-vertex");
     pipeline::nameCode(fragShader, "forward.fragment");
     pipeline::nameCode(ssrFragShader, "forward.reflection-guides");
+    pipeline::nameCode(opaqueDepthFragShader, "forward.opaque-depth");
     pipeline::nameCode(ray::gi::fragShader, "forward.live-gi");
     pipeline::nameCode(ray::gi::guidesShader, "forward.live-gi-guides");
     struct Modules {
@@ -32,6 +33,7 @@ namespace remix::forward {
                                                 : modules.add(fragShader, sizeof(fragShader));
     VkShaderModule giFragment = VK_NULL_HANDLE;
     const auto terrainFragment = modules.add(fragShader, sizeof(fragShader));
+    const auto depthFragment = modules.add(opaqueDepthFragShader, sizeof(opaqueDepthFragShader));
     VkShaderModule giTerrainFragment = VK_NULL_HANDLE;
     if (giSupported)
       giFragment = options.reflections() ? modules.add(ray::gi::guidesShader, sizeof(ray::gi::guidesShader))
@@ -93,8 +95,10 @@ namespace remix::forward {
                                                        VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
                                                    .dynamicStateCount = 2,
                                                    .pDynamicStates = states};
-    auto graphics = [&](VkShaderModule vs, VkShaderModule fs, VkRenderPass pass, bool shadow,
-                        bool composite, bool terrain = false) {
+    enum class Pass { Opaque, Shadow, Composite, Terrain, Depth };
+    auto graphics = [&](VkShaderModule vs, VkShaderModule fs, VkRenderPass pass, Pass mode = Pass::Opaque) {
+      const bool shadow = mode == Pass::Shadow, composite = mode == Pass::Composite;
+      const bool terrain = mode == Pass::Terrain, depthOnly = mode == Pass::Depth;
       const uint32_t values[] = {options.debugView, uint32_t(bake::directionalFieldsRequested())};
       const VkSpecializationMapEntry entries[] = {{1, 0, sizeof(uint32_t)},
                                                   {2, sizeof(uint32_t), sizeof(uint32_t)}};
@@ -135,7 +139,7 @@ namespace remix::forward {
           .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
           .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
           .alphaBlendOp = VK_BLEND_OP_ADD,
-          .colorWriteMask = 15};
+          .colorWriteMask = depthOnly ? 0u : 15u};
       const VkPipelineColorBlendAttachmentState attachments[] = {attachment, attachment, attachment};
       const VkPipelineColorBlendStateCreateInfo blend{
           .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
@@ -165,19 +169,21 @@ namespace remix::forward {
       check(pipeline::createGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &result));
       return result;
     };
-    opaquePipeline = graphics(vertex, fragment, worldPass, false, false);
-    lightmapPipeline = graphics(lightmapVertex, fragment, worldPass, false, false);
-    terrainPipeline = graphics(vertex, terrainFragment, worldPass, false, false, true);
-    terrainLightmapPipeline = graphics(lightmapVertex, terrainFragment, worldPass, false, false, true);
+    opaquePipeline = graphics(vertex, fragment, worldPass);
+    lightmapPipeline = graphics(lightmapVertex, fragment, worldPass);
+    depthPipeline = graphics(vertex, depthFragment, worldPass, Pass::Depth);
+    depthLightmapPipeline = graphics(lightmapVertex, depthFragment, worldPass, Pass::Depth);
+    terrainPipeline = graphics(vertex, terrainFragment, worldPass, Pass::Terrain);
+    terrainLightmapPipeline = graphics(lightmapVertex, terrainFragment, worldPass, Pass::Terrain);
     if (giSupported) {
-      giOpaquePipeline = graphics(vertex, giFragment, worldPass, false, false);
-      giLightmapPipeline = graphics(lightmapVertex, giFragment, worldPass, false, false);
-      giTerrainPipeline = graphics(vertex, giTerrainFragment, worldPass, false, false, true);
-      giTerrainLightmapPipeline = graphics(lightmapVertex, giTerrainFragment, worldPass, false, false, true);
+      giOpaquePipeline = graphics(vertex, giFragment, worldPass);
+      giLightmapPipeline = graphics(lightmapVertex, giFragment, worldPass);
+      giTerrainPipeline = graphics(vertex, giTerrainFragment, worldPass, Pass::Terrain);
+      giTerrainLightmapPipeline = graphics(lightmapVertex, giTerrainFragment, worldPass, Pass::Terrain);
     }
-    shadowPipeline = graphics(shadowVertex, shadowFragment, shadowPass, true, false);
-    localShadowPipeline = graphics(localVertex, localFragment, shadowPass, true, false);
-    compositePipeline = graphics(compositeVertex, compositeFragment, output, false, true);
+    shadowPipeline = graphics(shadowVertex, shadowFragment, shadowPass, Pass::Shadow);
+    localShadowPipeline = graphics(localVertex, localFragment, shadowPass, Pass::Shadow);
+    compositePipeline = graphics(compositeVertex, compositeFragment, output, Pass::Composite);
     const VkComputePipelineCreateInfo computeInfo{
         .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
         .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,

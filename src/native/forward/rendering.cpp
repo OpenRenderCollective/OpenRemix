@@ -11,9 +11,9 @@ namespace remix::forward {
       vkCmdSetScissor(command, 0, 1, &scissor);
     }
   } // namespace
-  void Renderer::Gpu::drawGeometry(VkCommandBuffer command, bool terrain) {
+  void Renderer::Gpu::drawGeometry(VkCommandBuffer command, bool terrain, bool depthOnly) {
     const auto &frame = frames[slot];
-    const bool gi = bool(frame.giScene);
+    const bool gi = !depthOnly && bool(frame.giScene);
     const auto drawLayout = gi ? giLayout : layout;
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 0, 1, &frame.scene, 0,
                             nullptr);
@@ -27,7 +27,8 @@ namespace remix::forward {
         continue;
       const auto *mapped = draw.lightmap;
       vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                        terrain  ? (gi ? (mapped ? giTerrainLightmapPipeline : giTerrainPipeline)
+                        depthOnly ? (mapped ? depthLightmapPipeline : depthPipeline)
+                        : terrain  ? (gi ? (mapped ? giTerrainLightmapPipeline : giTerrainPipeline)
                                        : (mapped ? terrainLightmapPipeline : terrainPipeline))
                         : gi       ? (mapped ? giLightmapPipeline : giOpaquePipeline)
                         : mapped ? lightmapPipeline
@@ -143,6 +144,10 @@ namespace remix::forward {
                                      .pClearValues = clear};
     vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
     viewport(command, extent);
+    if (options.depthPrepass) {
+      gpu::GpuScope depthTime(command, "Forward+ opaque depth prepass", extent);
+      drawGeometry(command, false, true);
+    }
     drawGeometry(command);
     vkCmdNextSubpass(command, VK_SUBPASS_CONTENTS_INLINE);
     drawGeometry(command, true);

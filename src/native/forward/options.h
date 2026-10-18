@@ -20,6 +20,7 @@ namespace remix::forward {
     uint32_t clusterLights = 0; // zero adapts64..512; explicit1..1024 retains a bounded profiling override
     bool shadows = true;
     bool localShadows = true;
+    bool depthPrepass = true; // reject hidden opaque fragments before expensive lighting
     uint32_t localShadowLights = 4;
     uint32_t localShadowResolution = 512;
     float localShadowDistance = 100; // metres, independent of light influence

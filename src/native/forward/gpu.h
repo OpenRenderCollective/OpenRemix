@@ -30,6 +30,7 @@ namespace remix::forward {
                           compositeSetLayout = VK_NULL_HANDLE;
     VkPipelineLayout layout = VK_NULL_HANDLE, compositeLayout = VK_NULL_HANDLE;
     VkPipeline opaquePipeline = VK_NULL_HANDLE, lightmapPipeline = VK_NULL_HANDLE,
+               depthPipeline = VK_NULL_HANDLE, depthLightmapPipeline = VK_NULL_HANDLE,
                shadowPipeline = VK_NULL_HANDLE, localShadowPipeline = VK_NULL_HANDLE,
                clusterPipeline = VK_NULL_HANDLE, compositePipeline = VK_NULL_HANDLE;
     VkSampler sampler = VK_NULL_HANDLE, shadowSampler = VK_NULL_HANDLE, surfaceSampler = VK_NULL_HANDLE,
@@ -112,7 +113,7 @@ namespace remix::forward {
     void recordWater(VkCommandBuffer command);
     void recordExposure(VkCommandBuffer command, RasterRenderer &resources, float seconds);
     void drawLocalCasters(VkCommandBuffer command, uint32_t slot, uint32_t face, bool staticCasters);
-    void drawGeometry(VkCommandBuffer command, bool terrain = false);
+    void drawGeometry(VkCommandBuffer command, bool terrain = false, bool depthOnly = false);
     void drawSunCasters(VkCommandBuffer command, uint32_t cascade, bool staticCasters);
     void prepareSky(VkCommandBuffer command, RasterRenderer &resources);
     void display(VkCommandBuffer command, bool background);

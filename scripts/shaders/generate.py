@@ -29,7 +29,7 @@ BACKENDS = {
     'live_ray': ('forward::ray', 'vulkan1.2', ('launch', 'merge')),
     'bake': ('forward::bake', 'vulkan1.2', ('atlas', 'transport', 'parallel', 'visibility', 'aggregate', 'aggregateParallel')),
     'forward_test': ('forward::test', 'vulkan1.2', ('comp', 'probes', 'water')),
-    'forward': ('forward', 'vulkan1.1', ('vert', 'lightmapVert', 'frag', 'cluster', 'shadowVert', 'shadowFrag', 'localShadowVert', 'localShadowFrag', 'compositeVert', 'compositeFrag', 'compositeSingle', 'ssrFrag', 'ssrResolve', 'ssrResolveSingle', 'ssrReduce', 'ssrTrace', 'ssrFilter')),
+    'forward': ('forward', 'vulkan1.1', ('vert', 'lightmapVert', 'frag', 'cluster', 'shadowVert', 'shadowFrag', 'opaqueDepthFrag', 'localShadowVert', 'localShadowFrag', 'compositeVert', 'compositeFrag', 'compositeSingle', 'ssrFrag', 'ssrResolve', 'ssrResolveSingle', 'ssrReduce', 'ssrTrace', 'ssrFilter')),
     'postfx': ('postfx', 'vulkan1.1', ('meter', 'resolve', 'down', 'up')),
     'upscale': ('upscale', 'vulkan1.2', ('comp', 'vert', 'frag')),
     'raster': ('raster', 'vulkan1.1', ('vert', 'frag', 'haloMask', 'haloVert', 'haloBlur', 'haloComposite', 'maskWithin', 'maskOverlay', 'spriteVert', 'spriteFrag')),
@@ -133,7 +133,7 @@ def defines_for(backend, stage, stages):
     if backend == 'forward':
         source = directory / {
             'vert': 'forward.vert', 'lightmapVert': 'forward.vert', 'frag': 'forward.frag', 'cluster': 'cluster.comp',
-            'shadowVert': 'forward.vert', 'shadowFrag': 'forward.frag',
+            'shadowVert': 'forward.vert', 'shadowFrag': 'forward.frag', 'opaqueDepthFrag': 'depth.frag',
             'localShadowVert': 'forward.vert', 'localShadowFrag': 'forward.frag',
             'compositeVert': 'composite.vert', 'compositeFrag': 'composite.frag',
             'compositeSingle': 'composite.frag',

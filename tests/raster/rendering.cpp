@@ -3043,8 +3043,10 @@ namespace {
     }
   }
 #include "forward_skinning.h"
+#include "forward_depth.h"
   void forwardTests(const std::filesystem::path &directory) {
     cameraBackfaceTests();
+    forwardDepthPrepassTests();
     Target target;
     auto &r = target.raster;
     camera(r);

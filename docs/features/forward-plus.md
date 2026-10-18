@@ -786,6 +786,13 @@ already-tested irradiance probes. A low budget can still leave particular rooms
 uncovered; larger maps can use 32 captures without changing irradiance-grid density. This increases
 capture work, storage and per-pixel lookup cost; it does not make arbitrary concave rooms rectangular.
 
+Opaque geometry first fills depth using the same vertex transforms, camera-backface policy
+and alpha tests as its shaded pass. This lets depth rejection skip hidden fragments before
+expensive material and lighting evaluation. Terrain overlays, decals, water and moving-caster
+shadow passes retain their separate handling. `rtx.native.forward.depthPrepass` defaults to
+`1`; set it to `0` for comparisons. Changing it does not invalidate baked lighting or require
+new render targets. The GPU report exposes the prepass separately within opaque world shading.
+
 For compiler inspection, start with `REMIX_PIPELINE_EXECUTABLES=1`, then create
 `pipelines.request` in the profile directory to write `pipelines.txt`. On supporting
 Vulkan devices the report includes executable names, subgroup sizes and the driver's

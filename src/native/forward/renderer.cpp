@@ -25,7 +25,8 @@ namespace remix::forward {
       frame.waterCommands.clear();
     }
     geometries.clear();
-    for (auto handle : {opaquePipeline, lightmapPipeline, shadowPipeline, localShadowPipeline,
+    for (auto handle : {opaquePipeline, lightmapPipeline, depthPipeline, depthLightmapPipeline,
+                        shadowPipeline, localShadowPipeline,
                         clusterPipeline, compositePipeline, giOpaquePipeline, giLightmapPipeline,
                         terrainPipeline, terrainLightmapPipeline, giTerrainPipeline, giTerrainLightmapPipeline})
       if (handle)
