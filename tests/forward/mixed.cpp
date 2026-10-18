@@ -1,6 +1,7 @@
 #include "forward/lightmap/data.h"
 #include "forward/mixed/data.h"
 #include "forward/mixed/direct_work.h"
+#include "forward/mixed/ownership.h"
 #include "forward/mixed/emitter_bounds.h"
 #include "forward/mixed/overflow.h"
 #include "forward/ray/capture.h"
@@ -13,6 +14,44 @@ using namespace remix::test;
 namespace m = remix::forward::mixed;
 namespace lm = remix::forward::lightmap;
 int main() {
+  {
+    auto source = std::make_shared<scene::BakeScene>();
+    source->lights.resize(6);
+    m::Plan plan;
+    plan.lights.source = source;
+    plan.charts = {{1, 2, m::none, m::none}};
+    plan.directCharts = {{0, 1, m::none, m::none}};
+    plan.occlusion = m::Occlusion(1, 6);
+    plan.occlusion.mark(0, 4, m::Visibility::Clear);
+    plan.occlusion.mark(0, 5, m::Visibility::Blocked);
+    lm::Layout layout;
+    layout.pageSize = 16;
+    layout.pages = 1;
+    layout.charts = {{0, 0, 0, 3, 2}};
+    layout.points.resize(6);
+    layout.pointCharts.resize(6, 0);
+    layout.owners.resize(16 * 16, lm::unowned);
+    for (uint32_t y = 0; y < 2; ++y)
+      for (uint32_t x = 0; x < 3; ++x) layout.owners[y * 16 + x] = y * 3 + x;
+    const float values[] = {.1f, .2f, .3f, .4f, .5f, .6f};
+    require(plan.masks.add(0, 3, layout, values), "Ownership fixture retains its partial mask");
+    const auto summary = m::summarizeOwnership(plan, layout);
+    require(summary.retainedPairs == 2 && summary.knownPositivePairs == 5 &&
+                summary.chartsByRetainedCount[2] == 1 && summary.clearPairs == 1 &&
+                summary.clearRectangleBytes == 6 * 18,
+            "Ownership accounting deduplicates shared owners and includes scalar/clear links beyond four");
+    require(summary.allocatedDirectionalBytes == 16 * 16 * 4 * 18 &&
+                summary.retainedRectangleBytes == 6 * 2 * 18 &&
+                summary.knownPositiveRectangleBytes == 6 * 5 * 18,
+            "Sparse rectangle lower bounds stay separate from allocated directional atlas bytes");
+    std::stop_source cancelled;
+    cancelled.request_stop();
+    bool stopped = false;
+    try { (void)m::summarizeOwnership(plan, layout, cancelled.get_token()); }
+    catch (const std::runtime_error &) { stopped = true; }
+    require(stopped, "Ownership analysis obeys cancellation");
+  }
+
   require(m::Masks::maximumBytes == (16u << 20), "Visibility coverage keeps the sixteen MiB encoded budget");
   NativeResources resources;
   const auto mat = material(resources, 1, 1, 1, 1);

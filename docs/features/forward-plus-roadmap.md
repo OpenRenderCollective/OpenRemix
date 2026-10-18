@@ -53,6 +53,12 @@ when baked lighting is active; a failed bake instead displays its failure messag
    irradiance plus lower-resolution directionality against the current SH representation before
    replacing it. Require equal-energy, no-double-counting, wall-occlusion and moving-caster tests,
    followed by measured fresh-map bake time, GPU memory and close normal-mapped surface comparisons.
+   Keep scalable scalar visibility separate from directional correction storage. A single-channel
+   array can index/reuse many chart/light masks; that does not require retaining nine full-resolution
+   coefficients for every contributing light. Audit assigned chart rectangles and constant-clear
+   coverage before choosing correction allocation, and keep packing/alignment costs separate from raw
+   rectangle sums. The optional `REMIX_DEBUG_DIRECT_OWNERSHIP` file report captures this accounting on
+   both fresh and cached publication without modifying the bake or selecting a new lighting policy.
    Geometry-emitter hints alone do not address maps dominated by explicit point/spot lights. Extend
    aggregate ownership to those fixed emitters while retaining compact, selected per-light specular
    visibility and moving-caster corrections; avoid restoring exhaustive evaluation for every baked

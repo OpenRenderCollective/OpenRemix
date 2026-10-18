@@ -8,6 +8,7 @@
 #include "forward/image_dump.h"
 #include "forward/lightmap/denoise.h"
 #include "forward/mixed/overflow.h"
+#include "forward/mixed/ownership.h"
 #include "forward/mixed/mask_pages.h"
 #include "forward/mixed/mask_lookup.h"
 #include "forward/probes/capture_dump.h"
@@ -918,6 +919,7 @@ namespace remix::forward::bake {
     }
     volume->sceneScale = m_source->sceneScale;
     volume->mixedLights = std::make_shared<mixed::Bindings>(m_job->mixedLights->lights);
+    mixed::dumpOwnership(*m_job->mixedLights, m_job->surfaceLayout);
     const size_t baseBytes = sizeof(GridHeader) + grid.probes.size() * sizeof(Result);
     const size_t styleBytes = m_job->styleWords.size() * sizeof(uint32_t);
     volume->styledIndirect = styleBytes != 0;
