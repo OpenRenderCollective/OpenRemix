@@ -29,16 +29,34 @@ namespace remix::forward::bake {
   }
   void Transport::recordIndexedVisibility(VkCommandBuffer command, uint32_t index,
                                           std::span<const VisibilityTask> tasks, uint32_t samples) {
+    if (!m_gpu->indexedVisibility)
+      throw std::logic_error("Indexed visibility requires immutable receivers");
+    recordTaskVisibility(command, index, m_gpu->indexedVisibility->receivers, tasks, samples, true);
+  }
+  void Transport::recordVisibilityTasks(VkCommandBuffer command, uint32_t index,
+                                         std::span<const Point> receivers,
+                                         std::span<const VisibilityTask> tasks, uint32_t samples) {
+    recordTaskVisibility(command, index, receivers, tasks, samples, false);
+  }
+  void Transport::recordTaskVisibility(VkCommandBuffer command, uint32_t index,
+                                        std::span<const Point> receivers,
+                                        std::span<const VisibilityTask> tasks, uint32_t samples,
+                                        bool validatedReceivers) {
     auto &g = *m_gpu;
-    if (!g.prepared || !g.indexedVisibility || g.slots.at(index).lighting)
-      throw std::logic_error("Indexed visibility requires prepared immutable receiver and lighting tables");
+    if (!g.prepared || g.slots.at(index).lighting || !g.options.parallel ||
+        !g.options.cpuReadback || g.options.deviceLocalBatches)
+      throw std::logic_error("Task visibility requires prepared CPU batch transport and immutable lighting");
     if (tasks.empty() || tasks.size() > g.options.batchPoints || samples < 1 || samples > 8192 ||
         uint64_t(tasks.size()) * samples > g.options.rayBudget)
       throw std::invalid_argument("Indexed visibility exceeds its point or sample limits");
-    const auto &receivers = g.indexedVisibility->receivers;
-    for (const auto &task : tasks)
+    for (const auto &task : tasks) {
       if (task.point >= receivers.size() || task.light >= g.source->lights.size() || task.light >= (1u << 24))
         throw std::invalid_argument("Invalid indexed visibility receiver or light");
+      if (!validatedReceivers)
+        for (const auto &values : {receivers[task.point].position, receivers[task.point].normal})
+          for (float value : values)
+            if (!std::isfinite(value)) throw std::invalid_argument("Non-finite visibility task receiver");
+    }
     g.reserveSlot(index, uint32_t(tasks.size()), sizeof(float));
     auto &points = *g.slots.at(index).points;
     // reserveSlot guarantees mapped host input with room for one Point per task.

@@ -1815,3 +1815,10 @@ Stationary toggleable lights participate, moving lights do not. Pair-budget
 overflow returns no plan rather than partial coverage. These modules are not yet
 connected to bake scheduling, cache payloads or shader reconstruction, so the
 existing local-light shadow fallback remains active.
+
+`Transport::recordVisibilityTasks` accepts bounded batches of probe/light pairs
+against caller-owned relocated receiver positions. It writes directly to the
+completed frame slot's upload buffer and returns compact scalar visibility,
+without retaining another receiver table. The immutable indexed-receiver path
+shares the same submission implementation while retaining its one-time receiver
+validation. Submission and fence ownership remain with the caller.
