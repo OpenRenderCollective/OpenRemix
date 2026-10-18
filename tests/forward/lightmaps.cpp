@@ -1,6 +1,7 @@
 #include "forward/lightmap/data.h"
 #include "forward/lightmap/layout.h"
 #include "forward/lightmap/packing.h"
+#include "forward/lightmap/receiver_footprint.h"
 #include "scene/fixtures.h"
 #include <cmath>
 #include <stdexcept>
@@ -20,6 +21,80 @@ namespace {
   }
 } // namespace
 int main() {
+  {
+    using Footprint = lm::ReceiverFootprint;
+    const Footprint square({Footprint::Uv{-8, -8}, {8, -8}, {0, 8}}, {0, 0});
+    require(std::abs(square.area() - 1) < 1e-6 &&
+                std::abs(square.centroid()[0]) < 1e-6 && std::abs(square.centroid()[1]) < 1e-6,
+            "Receiver footprint clips to one luxel rather than the triangle bounds");
+    const Footprint partial({Footprint::Uv{0, -.5f}, {.5f, .5f}, {-.5f, .5f}}, {0, 0});
+    require(std::abs(partial.area() - .5) < 1e-6, "Partial luxel coverage retains its true area");
+    std::array<double, 2> mean{};
+    uint32_t visible = 0;
+    constexpr uint32_t count = 16384;
+    for (uint32_t i = 0; i < count; ++i) {
+      uint32_t bits = i, reversed = 0;
+      for (uint32_t bit = 0; bit < 14; ++bit) {
+        reversed = (reversed << 1) | (bits & 1);
+        bits >>= 1;
+      }
+      const double u = (i + .5) / count, v = (reversed + .5) / count;
+      const auto p = partial.sample(u, v), full = square.sample(u, v);
+      require(p[0] >= -.500001f && p[0] <= .500001f && p[1] >= -.500001f && p[1] <= .500001f &&
+                  p[1] >= 2 * std::abs(p[0]) - .500001f,
+              "Every footprint sample stays inside both the luxel and the actual receiving triangle");
+      require(full[0] >= -.500001f && full[0] <= .500001f && full[1] >= -.500001f && full[1] <= .500001f,
+              "Area sampling cannot leave the clipped convex polygon");
+      for (uint32_t axis = 0; axis < 2; ++axis) mean[axis] += p[axis] / count;
+      visible += p[0] > 0;
+    }
+    require(std::abs(mean[0]) < .002 && std::abs(mean[1] - 1. / 6) < .002,
+            "Area-weighted sample mean matches the analytic triangle centroid");
+    require(std::abs(double(visible) / count - .5) < .002,
+            "A hard shadow bisecting a luxel integrates to half coverage instead of a binary centre test");
+    const Footprint empty({Footprint::Uv{2, 2}, {3, 2}, {2, 3}}, {0, 0});
+    const Footprint line({Footprint::Uv{-.5f, 0}, {0, 0}, {.5f, 0}}, {0, 0});
+    require(empty.empty() && line.empty(), "Absent and zero-area geometry never manufacture coverage");
+    refused([&] { empty.sample(.5, .5); });
+    refused([&] { square.sample(1, .5); });
+    refused([&] { square.sample(.5, -.1); });
+    // Two triangles meeting at a diagonal must account for exactly one square,
+    // so future quadrature can combine donors without double-counting the seam.
+    const Footprint left({Footprint::Uv{-.5f, -.5f}, {.5f, .5f}, {-.5f, .5f}}, {0, 0});
+    const Footprint right({Footprint::Uv{-.5f, -.5f}, {.5f, -.5f}, {.5f, .5f}}, {0, 0});
+    require(std::abs(left.area() + right.area() - 1) < 1e-6,
+            "Shared triangle edges neither lose nor duplicate receiver area");
+    const Footprint reversed({Footprint::Uv{-.5f, .5f}, {.5f, .5f}, {0, -.5f}}, {0, 0});
+    require(std::abs(reversed.area() - partial.area()) < 1e-6 &&
+                std::abs(reversed.centroid()[1] - partial.centroid()[1]) < 1e-6,
+            "Receiver footprint measure is independent of triangle winding");
+    uint32_t state = 7193;
+    const auto random = [&] {
+      state = state * 1664525u + 1013904223u;
+      return double(state >> 8) / 16777216.;
+    };
+    for (uint32_t trial = 0; trial < 4096; ++trial) {
+      std::array<Footprint::Uv, 3> triangle;
+      for (auto &vertex : triangle)
+        for (float &value : vertex) value = float(8 * random() - 4);
+      const Footprint clipped(triangle, {0, 0});
+      require(clipped.area() <= 1.00001, "Clipping never allocates more than one luxel of coverage");
+      if (clipped.empty()) continue;
+      const auto edge = [](Footprint::Uv a, Footprint::Uv b, Footprint::Uv p) {
+        return (double(b[0]) - a[0]) * (double(p[1]) - a[1]) -
+               (double(b[1]) - a[1]) * (double(p[0]) - a[0]);
+      };
+      const double orientation = edge(triangle[0], triangle[1], triangle[2]) > 0 ? 1 : -1;
+      for (uint32_t sample = 0; sample < 16; ++sample) {
+        const auto point = clipped.sample(random(), random());
+        require(std::abs(point[0]) <= .50001 && std::abs(point[1]) <= .50001,
+                "Random clipped footprint stays inside its luxel");
+        for (uint32_t corner = 0; corner < 3; ++corner)
+          require(orientation * edge(triangle[corner], triangle[(corner + 1) % 3], point) >= -1e-5,
+                  "Random clipped footprint stays on its actual receiving triangle in either winding");
+      }
+    }
+  }
   {
     // The last 8-high row is full, but both earlier 12-high rows have a 12-wide
     // gap. A last-row-only shelf allocator incorrectly needs another page.
