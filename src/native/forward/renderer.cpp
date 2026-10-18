@@ -149,7 +149,8 @@ namespace remix::forward {
     };
     m_gpu->postProcessing->begin(command);
     gpu::GpuScope bakeTime(command, "Forward+ bake publication and transport");
-    m_gpu->baking->record(command, resources, m_gpu->options.baking, m_gpu->options.lightCutoff);
+    m_gpu->baking->record(command, resources, m_gpu->options.bakeConfiguration(m_gpu->giSupported),
+                         m_gpu->options.lightCutoff);
     bakeTime.close();
     step(cpu.bake);
     if (m_gpu->liveScene) {

@@ -40,6 +40,17 @@ namespace remix::forward {
     float ssrThickness = .15f; // metres, single-layer screen depth tolerance
     float ssrRoughness = .6f;
     bake::Config baking;
+    bake::Config bakeConfiguration(bool liveGiActive) const {
+      auto config = baking;
+      // Live GI replaces aggregate irradiance and evaluates primary lights
+      // analytically. Preserve their attributed static visibility in that mode.
+      if (liveGiActive) {
+        config.aggregateDiffuse = false;
+        config.fullyBakedLights = false;
+        config.bakedGeometryLights = false;
+      }
+      return config;
+    }
     bool operator==(const Options &) const = default;
     bool reflections() const { return ssr || rtReflections || baking.reflectionProbes != 0; }
     bool sameTargets(const Options &other) const {

@@ -110,7 +110,7 @@ namespace remix::forward {
         capturedLights[i] = captured;
         // Live GI evaluates direct lights analytically, so those lights retain
         // ordinary shadow priority rather than becoming baked-only fallbacks.
-        if (!options.rtGI && captured != mixed::none && bindings.bakedDiffuse(captured) &&
+        if (!giSupported && captured != mixed::none && bindings.bakedDiffuse(captured) &&
             !bindings.retainsVisibility(captured)) {
           if (fallbackShadows.empty()) fallbackShadows.resize(sources.size());
           fallbackShadows[i] = 1;

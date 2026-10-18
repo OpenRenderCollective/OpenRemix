@@ -1189,6 +1189,23 @@ namespace {
         pixels = target.render();
         require(target.forward->statistics().baking.active && pixels[left] < 3 && pixels[right] > 80,
                 "An uncovered receiver keeps analytic light and frozen-world occlusion beside an active bake");
+        if (target.forward->statistics().rayGI.available) {
+          options.rtGI = true;
+          options.localShadows = false;
+          target.enableForward(options, true);
+          pixels = until("", true);
+          require(target.forward->statistics().rayGI.active && pixels[left] < 3 && pixels[right] > 80 &&
+                      target.forward->statistics().fullyBakedLights == 0,
+                  "Live GI restores attributed static occlusion without fallback shadow maps");
+          require(options.baking.fullyBakedLights && options.baking.aggregateDiffuse,
+                  "Live GI leaves requested raster bake preferences intact");
+          options.rtGI = false;
+          options.localShadows = localShadows;
+          target.enableForward(options, true);
+          pixels = until("", true);
+          require(target.forward->statistics().fullyBakedLights == 1 && pixels[left] < 3 && pixels[right] > 80,
+                  "Returning from live GI restores fully baked lighting and static occlusion");
+        }
         options.debugView = 3;
         target.enableForward(options, true);
         pixels = render(false);

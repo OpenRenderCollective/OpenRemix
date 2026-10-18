@@ -10,6 +10,24 @@ using namespace remix::forward;
 using remix::test::require;
 
 int main() {
+  {
+    Options options;
+    options.baking.aggregateDiffuse = true;
+    options.baking.fullyBakedLights = true;
+    options.baking.bakedGeometryLights = true;
+    options.baking.samples = 37;
+    options.baking.styledIndirect = true;
+    const auto requested = options.baking;
+    auto expected = requested;
+    expected.aggregateDiffuse = false;
+    expected.fullyBakedLights = false;
+    expected.bakedGeometryLights = false;
+    require(options.bakeConfiguration(true) == expected && options.baking == requested,
+            "Live GI retains attributed visibility without changing requested bake quality or preferences");
+    options.rtGI = true;
+    require(options.bakeConfiguration(false) == requested,
+            "Inactive or unsupported live GI preserves the requested aggregate bake policy");
+  }
   require(clusterListCapacity(1, 12240, 128u << 20) == 64 &&
           clusterListCapacity(175, 12240, 128u << 20) == 256 &&
           clusterListCapacity(457, 12240, 128u << 20) == 512,
