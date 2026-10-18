@@ -1,16 +1,67 @@
 #include "forward/lighting.h"
 #include "forward/light_response.h"
+#include "forward/highlight_selection.h"
 #include "forward/shadows/sun_cache.h"
 #include "forward/water/data.h"
 #include "runtime/settings.h"
 #include "scene/fixtures.h"
 #include <cmath>
+#include <limits>
 
 using namespace remix;
 using namespace remix::forward;
 using remix::test::require;
 
 int main() {
+  {
+    HighlightSelection selection;
+    std::array<HighlightCandidate, 2> candidates{{{20, 1}, {10, 1}}};
+    auto weights = selection.update(candidates, 1, 0, 2);
+    require(weights.size() == 1 && weights[0].key == 10 && weights[0].value == 0,
+            "Highlight ties use captured identity and start a timed fade");
+    weights = selection.update(candidates, 1, 1, 2);
+    require(weights[0].value == .5f, "Highlight fade uses elapsed seconds");
+    std::swap(candidates[0], candidates[1]);
+    weights = selection.update(candidates, 1, .5, 2);
+    require(weights[0].key == 10 && weights[0].value == .5f,
+            "Reordered input and a backwards clock do not restart or reverse a fade");
+    weights = selection.update(candidates, 1, 2, 2);
+    require(weights[0].value == 1, "Backwards time does not extend the next interval");
+    candidates[1].priority = 2; // Key 20 now wins; key 10 must fade before replacement.
+    weights = selection.update(candidates, 1, 3, 2);
+    require(weights.size() == 1 && weights[0].key == 10 && weights[0].value == .5f,
+            "Outgoing highlights keep their identity and cannot exceed the cost budget");
+    weights = selection.update(candidates, 1, 4, 2);
+    require(weights.size() == 1 && weights[0].key == 20 && weights[0].value == 0,
+            "A new highlight never inherits the outgoing light's weight");
+    weights = selection.update(candidates, 1, 5, 2);
+    require(weights[0].value == .5f, "Replacement fades in independently of shadow selection");
+    require(selection.update(candidates, 0, 6, 2).empty(), "Disabling highlights enforces zero work");
+    selection.reset();
+    weights = selection.update(candidates, 2, 0, 0);
+    require(weights.size() == 2 && weights[0].value == 1 && weights[1].value == 1,
+            "Reset and zero duration allow immediate selection without shadow maps");
+    candidates[0].priority = std::numeric_limits<float>::quiet_NaN();
+    weights = selection.update(candidates, 2, 1, 0);
+    require(weights.size() == 1 && weights[0].key == 20,
+            "Invalid priorities remove stale highlight assignments");
+    std::vector<HighlightCandidate> many;
+    for (uint64_t i = 0; i < 400; ++i) many.push_back({i, float(i + 1)});
+    weights = selection.update(many, 400, 2, 0);
+    require(weights.size() == HighlightSelection::maximum,
+            "Highlight selection stays bounded independently of the submitted light count");
+    selection.reset();
+    const std::array<HighlightCandidate, 2> duplicate{{{10, 1}, {10, 2}}};
+    bool rejected = false;
+    try { selection.update(duplicate, 2, 0, 0); }
+    catch (const std::invalid_argument &) { rejected = true; }
+    require(rejected, "Shared adapter IDs cannot silently alias distinct captured highlights");
+    weights = selection.update(candidates, 1, 0, 2);
+    weights = selection.update(candidates, 1, std::numeric_limits<double>::quiet_NaN(), 2);
+    require(weights[0].value == 0, "A non-finite clock cannot poison highlight fades");
+    weights = selection.update(candidates, 1, 2, 2);
+    require(weights[0].value == 1, "Valid time resumes after a non-finite clock");
+  }
   require(lightResponse(false, true, true, false, false) == LightResponse::Analytic &&
               lightResponse(true, false, true, true, false) == LightResponse::BakedFallback &&
               lightResponse(true, true, false, false, false) == LightResponse::Aggregate &&

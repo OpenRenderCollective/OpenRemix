@@ -64,6 +64,12 @@ when baked lighting is active; a failed bake instead displays its failure messag
    supported live GI temporarily pauses the preview. Disabling it restores the requested policy.
    The UI explicitly describes omitted direct highlights and moving-object shadows. This is a
    comparison tool for the unfinished baked-light policy, not the final quality default.
+   An independent CPU highlight selector now provides bounded assignments and monotonic timed
+   fades, retaining outgoing identities until their weight reaches zero. It consumes unique
+   captured-emitter keys rather than potentially shared adapter light IDs. It is not yet wired
+   into rendering: GPU packing needs a separate highlight weight so changing highlight selection
+   cannot change mixed-shadow strength. Integrate it with attributed static visibility, then
+   compare highlights, leakage and frame cost before changing the preview policy or defaults.
    Timed visibility batches now grow within an eight-row rectangular dispatch and a guaranteed
    128 MiB maximum result-buffer range, reducing frame submission overhead without changing quality.
    Scalar classification now selects positive direct owners before a separate directional pass.
