@@ -1801,3 +1801,12 @@ enabled; they are not cache-key inputs.
 Hashing is disabled when the variable is unset; cache hits do not produce fresh
 transport receipts. Cancelled jobs may leave only their initial record. Diagnostic
 write failures are reported but never fail an otherwise valid bake.
+
+Local-light probe visibility is being separated from aggregate RGB irradiance.
+`bake::ProbeVisibility` provides a bounded, sparse probe-major table keyed by
+captured light index. Each entry retains a unit visibility fraction, independently
+of light colour, intensity or animation. Missing or untraced entries remain
+unknown; only a complete, validated readback batch publishes coverage. This data
+layer supports arbitrary overlap without a four-channel assignment. It is not yet
+connected to bake scheduling, cache payloads or shader reconstruction, so the
+existing local-light shadow fallback remains active.

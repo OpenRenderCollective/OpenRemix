@@ -13,6 +13,11 @@ forward_grid_test = executable('remix-forward-grid-test', 'grid.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Irradiance grid placement and visibility reconstruction', forward_grid_test)
 
+forward_probe_visibility_test = executable('remix-forward-probe-visibility-test', 'probe_visibility.cpp',
+  '../../src/native/forward/bake/probe_visibility.cpp',
+  include_directories : test_includes, cpp_args : test_cpp_args)
+test('Sparse probe local-light visibility preserves unknown coverage and budgets', forward_probe_visibility_test)
+
 forward_receiver_report_test = executable('remix-forward-receiver-report-test', 'receiver_report.cpp',
   '../../src/native/forward/bake/receiver_report.cpp', '../../src/native/forward/bake/grid.cpp',
   '../../src/native/forward/lightmap/data.cpp', '../../src/native/forward/material.cpp',
