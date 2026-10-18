@@ -27,7 +27,9 @@ namespace remix {
         << "\", \"staticOcclusion\": \"" << state.bakeContent.staticOcclusion
         << "\", \"captureRadiance\": \"" << state.bakeContent.captureRadiance << "\", \"captureInputs\": \""
         << state.bakeContent.captureInputs << "\", \"styledIndirect\": \"" << state.bakeContent.styledIndirect << "\"}"
-        << ",\n  \"rendering\": {\"lights\": " << state.lights << ", \"draws\": " << state.draws
+        << ",\n  \"rendering\": {\"lights\": " << state.lights
+        << ", \"clusteredLights\": " << state.clusteredLights
+        << ", \"bakedFallbackLights\": " << state.fullyBakedLights << ", \"draws\": " << state.draws
         << ", \"clusters\": " << state.clusters << ", \"clusterCapacity\": " << state.clusterLightCapacity
         << ", \"staticShadowUpdates\": " << state.staticShadowUpdates
         << ", \"staticSunUpdates\": " << state.staticSunUpdates

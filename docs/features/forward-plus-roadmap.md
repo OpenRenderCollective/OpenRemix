@@ -54,6 +54,15 @@ shadow work, CPU submission and frame-time spikes independently. Consider receiv
 cone bounds and tighter visibility culling after finishing bounded baked-receiver responses. A smaller
 light count or faster isolated replay is not proof of improved live-game frame pacing.
 
+The next optimization gates are: establish live fixed-camera pass costs with GPU availability and
+resolution receipts; compare shaded and irradiance-only diagnostics to isolate direct response cost;
+finish bounded static-light responses and coverage; then test conservative receiver-aware light lists.
+Keep shadow-map generation separate from fragment shadow/visibility sampling in reports. Cluster
+construction can be inexpensive while the fragment shader still spends substantial time evaluating
+its lists. Investigate opaque overdraw/depth rejection separately before adding a prepass; preserve
+alpha-test holes, MSAA edges and terrain/decal ordering. None of these diagnostic views is a
+quality-preserving replacement for the shaded renderer.
+
 Build a BSP cubemap authoring tool with live bounds visualization, draggable faces, independent
 capture points, translation, rotation, priorities and durable map-specific files. Support import/export
 of automatic results so authored examples become a fitting-validation corpus. Game integration must
