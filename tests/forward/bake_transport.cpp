@@ -4,6 +4,8 @@
 #include "forward/bake/probe_visibility_plan.h"
 #include "forward/lightmap/layout.h"
 #include "forward/mixed/overflow.h"
+#include "forward/mixed/directional_capture.h"
+#include "forward/half.h"
 #include "gpu_fixture.h"
 #include "probe_queries.h"
 #include "lighting_components.h"
@@ -133,6 +135,7 @@ namespace {
   };
 #include "indexed_visibility.h"
 #include "probe_visibility_gpu.h"
+#include "directional_capture_gpu.h"
   float evaluate(const bake::Result &value, Vec3 n, uint32_t channel) {
     const float sh[] = {.2820947918f,
                         .4886025119f * n[1],
@@ -1931,6 +1934,7 @@ int main() try {
     bakeSurface(fixture, pipelines, world);
     bakeVisibility(fixture, pipelines, world);
     overflowVisibility(fixture, pipelines, world);
+    directionalCaptureGpuTests(fixture, pipelines, world);
     localProbeVisibilityTests(fixture, pipelines, world);
     embeddedEmitterVisibility(fixture, pipelines, world);
     emitterParity(fixture, pipelines, world);

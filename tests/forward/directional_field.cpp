@@ -27,7 +27,9 @@ namespace {
     return encoded;
   }
 }
+#include "directional_capture_cases.h"
 int main() {
+  directionalCaptureTests();
   std::vector<field::Field> values(16 * 16);
   const auto black = roundTrip(values, 16, 16);
   require(black.encoding == field::tiled && black.words == std::vector<uint32_t>(4),

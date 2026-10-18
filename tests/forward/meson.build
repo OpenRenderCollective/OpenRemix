@@ -116,7 +116,7 @@ forward_world_grid_test = executable('remix-forward-world-grid-test', 'world_gri
 test('World-space lightmap density and connected chart seams', forward_world_grid_test)
 
 forward_directional_field_test = executable('remix-forward-directional-field-test', 'directional_field.cpp',
-  '../../src/native/forward/mixed/directional_field.cpp', '../../src/native/forward/mixed/directional_fields.cpp',
+  '../../src/native/forward/mixed/directional_field.cpp', '../../src/native/forward/mixed/directional_fields.cpp', '../../src/native/forward/mixed/directional_capture.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Lossless directional surface blocks preserve signed SH and chunk bounds', forward_directional_field_test)
 
