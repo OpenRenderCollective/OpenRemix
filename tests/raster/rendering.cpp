@@ -1746,6 +1746,13 @@ namespace {
     vk(vkWaitForFences(target.device, 1, &target.fence, VK_TRUE, 5000000000ull));
     const auto volume = target.forward->bakeController()->volume();
     volume->surfaceAtlas.swap(image);
+    // This fixture injects the complete twenty-layer source layout. Published
+    // data may omit visibility/direct layers; its decoder flags must describe
+    // the injected image rather than the replaced allocation.
+    const auto previousOcclusion = volume->occlusionParameters[0];
+    const auto previousDirectOffset = volume->surfaceDirectOffset;
+    volume->occlusionParameters[0] &= 0x7fffffffu;
+    volume->surfaceDirectOffset = 0;
     camera(target.raster);
     target.raster.drawRetained(nullptr);
     const auto readback = target.render();
@@ -1760,6 +1767,8 @@ namespace {
                 std::max(readback[left + 2], readback[right + 2]) > 80,
             "Bounded atlas charts reject poisoned neighbours on MSAA edge fragments");
     volume->surfaceAtlas.swap(image); // render() waited for the last sampling fence
+    volume->occlusionParameters[0] = previousOcclusion;
+    volume->surfaceDirectOffset = previousDirectOffset;
     std::printf("Chart bounds %ux MSAA: maximum poisoned red %u\n", options.samples, maximumRed);
   }
   remixapi_MeshHandle curvedLightmapReceiver(remix::NativeResources &resources,

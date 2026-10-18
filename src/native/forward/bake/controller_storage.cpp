@@ -21,7 +21,9 @@ namespace remix::forward::bake {
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count(),
         unsigned(bool(unifiedMasks)));
     const char *directional = std::getenv("REMIX_DEBUG_DIRECTIONAL_FIELDS");
-    if (directional && std::strcmp(directional, "0") == 0) return;
+    // The codec reduces memory, but its indexed shader lookup still needs
+    // matched performance acceptance. Keep it opt-in until that gate passes.
+    if (!directional || std::strcmp(directional, "1") != 0) return;
     const auto directBegan = std::chrono::steady_clock::now();
     size_t owners = 0;
     try {
