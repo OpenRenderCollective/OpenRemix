@@ -1,4 +1,5 @@
 #include "forward/mixed/mask_pages.h"
+#include "forward/mixed/mask_lookup.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -37,6 +38,51 @@ namespace {
   }
 }
 int main() {
+  {
+    std::vector<uint32_t> records(2 + 8 * 4);
+    records[0] = 2;
+    records[1] = 8;
+    for (uint32_t i = 0; i < 8; ++i) {
+      records[2 + i * 4] = i * 3;
+      records[3 + i * 4] = 1234 + i;
+    }
+    const auto original = records;
+    indexMaskRecords(records, 1, 0);
+    require(records == original, "Insufficient directory budget preserves compact lookup exactly");
+    indexMaskRecords(records, 1);
+    require(records[1] == (0x80000000u | 22u), "Directory bounds include the highest light");
+    for (uint32_t light = 0; light < 22; ++light) {
+      const uint32_t record = records[records[0] + light];
+      require(record == (light % 3 ? 0u : 2u + light / 3 * 4),
+              "Directory preserves sparse light identity and missing entries");
+      if (record) require(records[record + 1] == 1234 + light / 3,
+                          "Directory retains original payload addresses");
+    }
+    const auto indexed = records;
+    indexMaskRecords(records, 1);
+    require(records == indexed, "Directory publication is idempotent");
+    auto sparse = original;
+    sparse[2 + 7 * 4] = 0x7fffffffu;
+    const auto oversized = sparse;
+    indexMaskRecords(sparse, 1);
+    require(sparse == oversized, "Unrepresentable light spans retain compact lookup");
+    auto compactChart = original;
+    compactChart[1] = 7;
+    const auto compact = compactChart;
+    indexMaskRecords(compactChart, 1);
+    require(compactChart == compact, "Small charts avoid directory allocation");
+    std::vector<uint32_t> mixedCharts(4 + 9 * 4);
+    mixedCharts[0] = 4;
+    mixedCharts[1] = 8;
+    mixedCharts[2] = 36;
+    mixedCharts[3] = 1;
+    for (uint32_t i = 0; i < 8; ++i) mixedCharts[4 + i * 4] = i;
+    mixedCharts[36] = 99;
+    indexMaskRecords(mixedCharts, 2);
+    require(mixedCharts[1] == (0x80000000u | 8u) && mixedCharts[2] == 36 &&
+                mixedCharts[3] == 1 && mixedCharts[36] == 99,
+            "Indexed and compact charts coexist without relocating records");
+  }
   remix::forward::lightmap::Layout layout;
   layout.charts = {{0, 0, 0, 8, 8}, {0, 0, 0, 5, 3}, {0, 0, 0, 1, 13}, {0, 0, 0, 7, 9}};
   std::vector<Masks::Entry> entries;

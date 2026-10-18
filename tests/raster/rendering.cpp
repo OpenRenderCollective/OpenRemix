@@ -1876,6 +1876,7 @@ namespace {
       remix::forward::Options options;
       options.baking.lightmapFitBudget = false; // Controlled-density lighting fixtures.
       options.samples = samples;
+      options.prism = false; // Visibility assertions inspect linear channels before display mixing.
       options.ambient = 0;
       options.shadows = options.localShadows = options.ssr = false;
       options.baking.maxProbes = 64;
@@ -2058,7 +2059,7 @@ namespace {
                   std::strstr(target.forward->statistics().baking.status, "35 fully blocked") &&
                   std::strstr(target.forward->statistics().baking.status, "2 fully clear"),
               "Blocked overflow lights stay dark while promoted clear visibility uses compact metadata");
-      pixel(pixels, 48, 48, 0, 79, 0,
+      pixel(pixels, 48, 48, 0, 53, 0,
             "Compacting a clear light preserves its original baked unit direct diffuse irradiance");
       require(pixels[neighbouringChart] > 30,
               "A partially lit neighbouring chart cannot inherit another chart's compact occlusion");

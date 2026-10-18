@@ -8,6 +8,7 @@
 #include "forward/lightmap/denoise.h"
 #include "forward/mixed/overflow.h"
 #include "forward/mixed/mask_pages.h"
+#include "forward/mixed/mask_lookup.h"
 #include "forward/probes/capture_dump.h"
 #include "forward/probes/data.h"
 #include "forward/probes/evaluation.h"
@@ -886,6 +887,7 @@ namespace remix::forward::bake {
       visibilityPages = mixed::selectMaskPages(m_job->mixedLights->masks, chartCount,
           properties.limits.maxImageDimension2D, properties.limits.maxImageArrayLayers);
     auto masks = m_job->mixedLights->masks.words(chartCount);
+    mixed::indexMaskRecords(masks, chartCount);
     const auto &maskCosts = m_job->mixedLights->masks.candidateCosts();
     if (maskCosts.candidates)
       probes::dumpPublishedData(".overflow-mask-costs.bin", &maskCosts, sizeof(maskCosts));
@@ -899,6 +901,7 @@ namespace remix::forward::bake {
     const uint64_t compressedAllocation = volume->occlusion->bytes();
     if (visibilityPages) {
       auto pageWords = visibilityPages->words(chartCount);
+      mixed::indexMaskRecords(pageWords, chartCount);
       auto pageLookup = m_job->mixedLights->occlusion.pixels(properties.limits.maxImageDimension2D, pageWords);
       auto lookupImage = std::make_unique<mixed::OcclusionMap>(m_physical, m_device,
           VkExtent2D{pageLookup.width, pageLookup.height});

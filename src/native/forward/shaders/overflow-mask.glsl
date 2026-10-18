@@ -41,16 +41,25 @@ bool indexedLightVisibility(uint base, uint chart, uint capturedLight, vec4 coor
   uint first = occlusionWord(base + chart * 2u);
   uint count = occlusionWord(base + chart * 2u + 1u);
   uint low = 0u, high = count, light = capturedLight - 1u;
-  while (low < high) {
-    uint middle = low + (high - low) / 2u;
-    if (occlusionWord(base + first + middle * 4u) < light)
-      low = middle + 1u;
-    else
-      high = middle;
+  uint record;
+  if ((count & 0x80000000u) != 0u) {
+    // Optional publication-time directory points to the original records.
+    if (light >= (count & 0x7fffffffu)) return false;
+    record = occlusionWord(base + first + light);
+    if (record == 0u) return false;
+    record += base;
+  } else {
+    while (low < high) {
+      uint middle = low + (high - low) / 2u;
+      if (occlusionWord(base + first + middle * 4u) < light)
+        low = middle + 1u;
+      else
+        high = middle;
+    }
+    record = base + first + low * 4u;
+    if (low == count || occlusionWord(record) != light)
+      return false;
   }
-  uint record = base + first + low * 4u;
-  if (low == count || occlusionWord(record) != light)
-    return false;
   uint address = occlusionWord(record + 1u);
   uvec2 size = uvec2(occlusionWord(record + 2u), occlusionWord(record + 3u));
   bool paged = (size.x & 0x40000000u) != 0u;
