@@ -1,4 +1,5 @@
 #include "forward/bake/gpu.h"
+#include "forward/bake/fingerprint.h"
 #include "forward/bake/light_sampling.h"
 #include "runtime/pipelines.h"
 #include <algorithm>
@@ -174,17 +175,17 @@ namespace remix::forward::bake {
     materials = staticBuffer(inputs.materials.data(), inputs.materials.size() * sizeof(Material));
     lights = staticBuffer(inputs.lights.data(), inputs.lights.size() * sizeof(LightData));
     lightNodes = staticBuffer(nodes.data(), nodes.size() * sizeof(scene::LightNode));
+    std::vector<scene::LightNode> componentNodes;
     if (options.lightingComponents) {
-      const auto componentNodes = lightSelectionTree(inputs.lights, true);
+      componentNodes = lightSelectionTree(inputs.lights, true);
       componentLightNodes = staticBuffer(componentNodes.data(), componentNodes.size() * sizeof(scene::LightNode));
     }
-    textures = std::move(inputs.textures);
     domeLayer = inputs.domeLayer;
     for (;;) {
       atlas = std::make_unique<Image>();
       atlas->create(physical, device, {resolution, resolution}, VK_FORMAT_R16G16B16A16_SFLOAT,
                     VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-                    VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_ASPECT_COLOR_BIT, uint32_t(textures.size() + 1), 1,
+                    VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_ASPECT_COLOR_BIT, uint32_t(inputs.textures.size() + 1), 1,
                     VK_IMAGE_VIEW_TYPE_2D_ARRAY);
       if (atlas->bytes <= options.atlasBudget)
         break;
@@ -192,6 +193,10 @@ namespace remix::forward::bake {
         throw VK_ERROR_OUT_OF_DEVICE_MEMORY;
       resolution /= 2; // Account for device tiling/alignment beyond the nominal texel budget.
     }
+    dumpInputFingerprint(source->sceneId, inputs, nodes, componentNodes,
+                         lightingFrame(source->sun, source->dome, options.distance, options.bias, source->sceneScale),
+                         resolution, sunDistance);
+    textures = std::move(inputs.textures);
     for (uint32_t i = 0; i < textures.size(); ++i) {
       VkImageView view;
       const VkImageViewCreateInfo info{.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,

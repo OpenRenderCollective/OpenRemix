@@ -1567,6 +1567,52 @@ namespace {
           require(std::abs(chunk[i].irradiance[0][c] - reference[first + i].irradiance[0][c]) < 1e-5f,
                   "Radiance sampling is independent of batch boundaries");
     }
+    // Separate dispatch reuse from acceleration-structure construction. The
+    // fixture has an emissive surface, finite local emitter and environment;
+    // compare full indirect SH/moments as well as reflection radiance.
+    std::array<std::vector<bake::Result>, 2> retainedReference;
+    auto measure = [&](bake::Transport &candidate, uint32_t slot, bool radiance) {
+      candidate.updateLighting(slot, {&lamp, 1}, scene->sun, scene->dome, 100);
+      fixture.begin();
+      if (radiance)
+        candidate.recordRadiance(fixture.command, slot, rays, 3, 65);
+      else
+        candidate.recordBatch(fixture.command, slot, rays, 65, 3);
+      fixture.finish();
+      std::vector<bake::Result> measured(rays.size());
+      candidate.read(slot, measured);
+      return measured;
+    };
+    for (uint32_t mode = 0; mode < 2; ++mode)
+      retainedReference[mode] = measure(transport, 0, mode != 0);
+    for (uint32_t build = 0; build < 3; ++build) {
+      bake::Transport rebuilt;
+      bake::Transport *candidate = &transport;
+      if (build) {
+        auto rebuild = pipelines.prepare("transport-repeat-build-" + std::to_string(build), [&] {
+          rebuilt.initialize(fixture.physical, fixture.device, scene, options);
+        });
+        const auto limit = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        while (!rebuild->ready() && std::chrono::steady_clock::now() < limit)
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        require(rebuild->ready(), "Repeated acceleration structure preparation completed");
+        rebuild->check();
+        fixture.begin();
+        rebuilt.recordPrepare(fixture.command, world.resources);
+        fixture.finish();
+        rebuilt.releaseBuildInputs();
+        candidate = &rebuilt;
+      }
+      for (uint32_t slot : {0u, 1u, 0u})
+        for (uint32_t mode = 0; mode < 2; ++mode) {
+          const auto measured = measure(*candidate, slot, mode != 0);
+          require(std::memcmp(measured.data(), retainedReference[mode].data(),
+                              measured.size() * sizeof(bake::Result)) == 0,
+                  "Indirect SH, moments and radiance repeat exactly on retained and rebuilt acceleration structures");
+        }
+    }
+    std::puts("Transport repeatability: retained and two rebuilt acceleration structures, 65 samples, "
+              "indirect SH/moments and radiance, slots 0/1/0 match exactly");
     for (uint32_t samples : {16u, 65u}) {
       fixture.begin();
       transport.recordRadiance(fixture.command, 0, rays, 2, samples);

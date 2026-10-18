@@ -1,5 +1,6 @@
 #include "forward/bake/fingerprint.h"
 #include <array>
+#include <bit>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -9,6 +10,7 @@
 
 namespace remix::forward::bake {
   namespace {
+    std::mutex outputMutex;
     template <class T> uint64_t hash(std::span<const T> values) {
       return scene::fastHash(values.data(), values.size_bytes());
     }
@@ -27,6 +29,41 @@ namespace remix::forward::bake {
         return used ? scene::fastHash(block.data(), used * sizeof(float), result) : result;
       }
     };
+  }
+  void dumpInputFingerprint(uint64_t source, const Inputs &inputs, std::span<const scene::LightNode> nodes,
+                            std::span<const scene::LightNode> componentNodes, const Frame &frame,
+                            uint32_t resolution, float sunDistance) noexcept {
+    const char *name = std::getenv("REMIX_DEBUG_BAKE_PHASE_HASHES");
+    if (!name || !*name)
+      return;
+    try {
+      uint64_t textures = 0;
+      for (const auto &texture : inputs.textures) {
+        const uint64_t identity = texture.image ? texture.image->fingerprint() : 0;
+        textures = scene::fastHash(&identity, sizeof(identity), textures);
+      }
+      const std::filesystem::path path(name);
+      std::lock_guard lock(outputMutex);
+      if (!path.parent_path().empty())
+        std::filesystem::create_directories(path.parent_path());
+      std::ofstream out(path, std::ios::app);
+      out.exceptions(std::ios::failbit | std::ios::badbit);
+      out.imbue(std::locale::classic());
+      out << "{\"version\":1,\"phase\":\"packedInputs\",\"source\":\"" << source
+          << "\",\"vertexCount\":" << inputs.vertices.size() << ",\"triangleCount\":" << inputs.triangles.size()
+          << ",\"materialCount\":" << inputs.materials.size() << ",\"lightCount\":" << inputs.lights.size()
+          << ",\"textureCount\":" << inputs.textures.size() << ",\"vertices\":\"" << hash(std::span(inputs.vertices))
+          << "\",\"triangles\":\"" << hash(std::span(inputs.triangles))
+          << "\",\"materials\":\"" << hash(std::span(inputs.materials))
+          << "\",\"lights\":\"" << hash(std::span(inputs.lights)) << "\",\"lightNodes\":\"" << hash(nodes)
+          << "\",\"componentLightNodes\":\"" << hash(componentNodes)
+          << "\",\"textureSources\":\"" << textures << "\",\"domeLayer\":" << inputs.domeLayer
+          << ",\"frame\":\"" << scene::fastHash(&frame, sizeof(frame))
+          << "\",\"atlasResolution\":" << resolution
+          << ",\"sunDistanceBits\":" << std::bit_cast<uint32_t>(sunDistance) << "}\n";
+    } catch (const std::exception &error) {
+      std::fprintf(stderr, "Bake input fingerprint unavailable: %s\n", error.what());
+    }
   }
   void dumpPhaseFingerprint(const char *phase, uint64_t source, const Grid &grid, const lightmap::Layout &layout,
                             std::span<const Result> surfaces, std::span<const lightmap::Sun> sun,
@@ -51,7 +88,6 @@ namespace remix::forward::bake {
           for (uint32_t c = 0; c < 3; ++c) captureLighting.append(pixel[c]);
       }
       const std::filesystem::path path(name);
-      static std::mutex outputMutex;
       std::lock_guard lock(outputMutex);
       if (!path.parent_path().empty())
         std::filesystem::create_directories(path.parent_path());

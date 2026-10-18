@@ -1743,6 +1743,12 @@ filtering; `filtered` records the data after reflection and optional neural
 filtering. Versioned receipts separate receiver planning inputs, surface RGB SH,
 surface alpha, sunlight, grid probes and capture RGB/depth data. This distinguishes
 input/transport changes from filter changes without retaining full sample dumps.
+The `packedInputs` record identifies ordered vertices, triangle/material indices,
+material bytes, post-policy lights and proposal trees, texture source identities,
+authored lighting constants and atlas resolution before transport preparation.
+Texture source identities do not substitute for a GPU atlas readback. These
+records also cover independently prepared live transports when diagnostics are
+enabled; they are not cache-key inputs.
 Hashing is disabled when the variable is unset; cache hits do not produce fresh
 transport receipts. Cancelled jobs may leave only their initial record. Diagnostic
 write failures are reported but never fail an otherwise valid bake.
