@@ -119,9 +119,11 @@ namespace remix::forward::bake {
                                  uint32_t samples = 256);
     // Bounded task batches against caller-owned receivers (for example relocated
     // probes). Packs directly into the completed slot's mapped upload buffer;
-    // receiver storage only needs to survive this call. Returns scalar masks.
+    // receiver storage only needs to survive this call. Returns scalar masks, or
+    // VisibilityResult with unit direct SH when directDiffuse is requested.
     void recordVisibilityTasks(VkCommandBuffer command, uint32_t slot, std::span<const Point> receivers,
-                               std::span<const VisibilityTask> tasks, uint32_t samples = 256);
+                               std::span<const VisibilityTask> tasks, uint32_t samples = 256,
+                               bool directDiffuse = false);
     // Unit-radiance static sunlight, independent of the captured sun's colour.
     // Same result layout as local visibility/direct SH, using the distant disc.
     void recordSun(VkCommandBuffer command, uint32_t slot, std::span<const Point> points,
@@ -169,6 +171,7 @@ namespace remix::forward::bake {
                   uint32_t firstSample, Mode mode, std::optional<uint32_t> component = {},
                   uint32_t receiverSites = 1);
     void recordTaskVisibility(VkCommandBuffer command, uint32_t slot, std::span<const Point> receivers,
-                              std::span<const VisibilityTask> tasks, uint32_t samples, bool validatedReceivers);
+                              std::span<const VisibilityTask> tasks, uint32_t samples, bool validatedReceivers,
+                              bool directDiffuse = false);
   };
 } // namespace remix::forward::bake

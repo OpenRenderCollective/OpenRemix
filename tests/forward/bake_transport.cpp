@@ -1652,6 +1652,8 @@ namespace {
     for (uint32_t skyCase = 1; skyCase <= 3; ++skyCase)
       test::probeQueries(fixture, extended, skyCase);
     test::probeQueries(fixture, extended, 4); // bounded probe relocation
+    test::probeQueries(fixture, extended, 0, true);
+    test::probeQueries(fixture, extended, 4, true);
     TransportLight lamp;
     lamp.positionRadius = {0, 0, 0, .4f};
     lamp.radiance = {5, 5, 5, 0};

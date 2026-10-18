@@ -16,6 +16,14 @@ void main() {
   if (index >= count)
     return;
   Query q = queries[index];
+  if (q.position.w >= 9) {
+    float visibility = 0, diffuse = -1;
+    uint light = q.position.w == 10 ? 2u : q.position.w == 11 ? 65u : 1u;
+    bool found = bakedLocalProbeResponse(q.position.xyz, q.reflected.xyz, q.reflected.xyz, light,
+                                          true, visibility, diffuse);
+    results[index] = vec4(visibility, diffuse, 0, found ? 1 : 0);
+    return;
+  }
   if (q.position.w == 8) {
     results[index] = vec4(diffuseResidual(q.position.xyz, q.reflected.x, q.reflected.y > .5), 1);
     return;

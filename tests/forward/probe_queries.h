@@ -9,7 +9,8 @@ namespace remix::forward::test {
   // Runs the production probe lookup on the GPU against its CPU reference.
   // A host-visible storage buffer supplies the same packed asset that the
   // frame-boundary uploader will copy to device memory.
-  inline void probeQueries(Fixture &fixture, const probes::Data &data, uint32_t skyCase = 0) {
+  inline void probeQueries(Fixture &fixture, const probes::Data &data, uint32_t skyCase = 0,
+                            bool directional = false) {
     // Sky cases: open, closed, unusable, and hidden behind a distance boundary.
     struct Query {
       Vec4 position, reflected;
@@ -33,7 +34,10 @@ namespace remix::forward::test {
         {{2, 3, 5, 8}, {.25f, 1, 0, 0}}, {{2, 3, 5, 8}, {.75f, 1, 0, 0}},
         // Missing aggregate receiver coverage keeps ordinary direct lighting.
         {{2, 3, 5, 8}, {1, 0, 0, 0}}, {{2, 3, 5, 8}, {0, 0, 0, 0}},
-        {{2, 3, 5, 8}, {.25f, 0, 0, 0}}, {{0, 0, 0, 8}, {.5f, 1, 0, 0}}};
+        {{2, 3, 5, 8}, {.25f, 0, 0, 0}}, {{0, 0, 0, 8}, {.5f, 1, 0, 0}},
+        {{0, 0, 0, 9}, {0, 0, 1, 0}}, {{.5f, 0, 0, 9}, {1, 0, 0, 0}},
+        {{4, 0, 0, 9}, {0, 0, 1, 0}}, {{0, 0, 0, 9}, {0, 0, -1, 0}},
+        {{0, 0, 0, 10}, {0, 0, 1, 0}}, {{0, 0, 0, 11}, {0, 0, 1, 0}}};
     struct Gpu {
       VkDevice device;
       Buffer asset, input, output, sky;
@@ -87,8 +91,16 @@ namespace remix::forward::test {
         masks.push_back(float(probe) / 7.f);
       }
     }
-    bake::ProbeVisibility local(8, 66, pairs, 8192);
-    local.observe(pairs, masks);
+    bake::ProbeVisibility local(8, 66, pairs, 32768, directional);
+    if (directional) {
+      std::vector<bake::VisibilityResult> results(pairs.size());
+      for (size_t i = 0; i < pairs.size(); ++i) {
+        results[i].visibility = masks[i];
+        results[i].irradiance[0] = .5f + float(pairs[i].point) * .1f + float(pairs[i].light) * .003f;
+        results[i].irradiance[2] = -.2f;
+      }
+      local.observe(pairs, results);
+    } else local.observe(pairs, masks);
     const auto localWords = local.words();
     sky.header.settings[3] = float(2 * (sizeof(sky.probes) / 16));
     gpu.sky.create(fixture.physical, fixture.device, sizeof(sky) + localWords.size() * sizeof(uint32_t),
@@ -175,6 +187,27 @@ namespace remix::forward::test {
     gpu.output.read(values, sizeof(values));
     for (uint32_t i = 0; i < count; ++i) {
       const auto &q = queries[i];
+      if (q.position[3] >= 9) {
+        const uint32_t light = q.position[3] == 10 ? 1u : q.position[3] == 11 ? 64u : 0u;
+        const Vec3 position{q.position[0], q.position[1], q.position[2]};
+        const Vec3 normal{q.reflected[0], q.reflected[1], q.reflected[2]};
+        auto directReference = reference;
+        for (uint32_t probe = 0; probe < 8; ++probe) {
+          auto &value = directReference.probes[probe];
+          const auto coefficients = local.sampleDirect(probe, light);
+          if (!local.sample(probe, light)) value.statistics[3] = 0;
+          for (uint32_t c = 0; c < 9; ++c) {
+            const float scalar = coefficients ? (*coefficients)[c] : 0;
+            for (uint32_t rgb = 0; rgb < 3; ++rgb) value.irradiance[c][rgb] = scalar;
+          }
+        }
+        auto expected = bake::sample(directReference, position, normal);
+        if (light == 1) expected.reset();
+        require((values[i][3] > .5f) == bool(expected), "Directional probe response preserves receiver coverage");
+        if (expected) require(directional ? std::abs(values[i][1] - (*expected)[0]) < 2e-5f : values[i][1] == -1,
+                              "Directional sparse SH matches signed CPU interpolation; scalar caches retain unknown SH");
+        continue;
+      }
       if (q.position[3] == 8) {
         const bool aggregate = q.reflected[1] > .5f;
         for (uint32_t c = 0; c < 3; ++c) {

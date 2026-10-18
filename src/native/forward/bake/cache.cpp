@@ -101,8 +101,12 @@ namespace remix::forward::bake::cache {
     }
     void localProbeOwners(const Grid &grid, const scene::BakeScene &source,
                             const ProbeVisibility &visibility) {
+      require(visibility.bytes() <= ProbeVisibility::maximumBytes);
+      require(visibility.direct().empty() || visibility.direct().size() == visibility.entries().size());
+      for (const auto &value : visibility.direct())
+        for (float coefficient : value) require(std::isfinite(coefficient));
       ProbeVisibility::validate(uint32_t(grid.probes.size()), uint32_t(source.lights.size()),
-          visibility.offsets(), visibility.entries(), ProbeVisibility::maximumBytes);
+          visibility.offsets(), visibility.entries(), ProbeVisibility::maximumBytes - visibility.direct().size_bytes());
       const auto offsets = visibility.offsets();
       for (uint32_t probe = 0; probe < grid.probes.size(); ++probe)
         for (uint32_t i = offsets[probe]; i < offsets[probe + 1]; ++i) {
@@ -293,7 +297,7 @@ namespace remix::forward::bake::cache {
     const auto hash = scene::fastHash(fields, sizeof(fields), content ^ shaders);
     auto raw = scene::fastHash(d.uuid.data(), d.uuid.size(), hash);
     if (c.aggregateDiffuse) {
-      const uint32_t aggregate[] = {0x41474752u, 1};
+      const uint32_t aggregate[] = {0x41474752u, 2}; // attributed directional probe corrections
       raw = scene::fastHash(aggregate, sizeof(aggregate), raw);
     }
     if (c.fullyBakedLights) {
@@ -309,6 +313,12 @@ namespace remix::forward::bake::cache {
       raw = scene::fastHash(relocation, sizeof(relocation), raw);
     }
     if (!policy.lights.empty()) {
+      if (std::any_of(policy.lights.begin(), policy.lights.end(), [](DirectMode mode) {
+            return aggregatesDiffuse(mode) && retainsVisibility(mode);
+          })) {
+        const uint32_t probeDirectVersion = 1;
+        raw = scene::fastHash(&probeDirectVersion, sizeof(probeDirectVersion), raw);
+      }
       const uint32_t policyVersion = 1;
       raw = scene::fastHash(&policyVersion, sizeof(policyVersion), raw);
       raw = scene::fastHash(policy.lights.data(), policy.lights.size() * sizeof(DirectMode), raw);
@@ -347,7 +357,7 @@ namespace remix::forward::bake::cache {
       require(source && source->ready);
       Snapshot result;
       const auto flags = input.pod<uint32_t>();
-      require(flags <= 31 && (!(flags & 8) || config.styledIndirect) && (!(flags & 1) || config.directDiffuse) &&
+      require(flags <= 63 && (!(flags & 32) || (flags & 16)) && (!(flags & 8) || config.styledIndirect) && (!(flags & 1) || config.directDiffuse) &&
               (!(flags & 2) || source->sun.isDistant));
       result.directDiffuse = (flags & 1) != 0;
       result.sun = (flags & 2) != 0;
@@ -396,8 +406,13 @@ namespace remix::forward::bake::cache {
         require(offsets.size() * sizeof(uint32_t) <= maximum);
         const auto entries = input.array<ProbeVisibility::Entry>(
             (maximum - offsets.size() * sizeof(uint32_t)) / sizeof(ProbeVisibility::Entry));
+        const uint64_t maskBytes = offsets.size() * sizeof(uint32_t) + entries.size() * sizeof(ProbeVisibility::Entry);
+        const auto direct = (flags & 32)
+            ? input.array<ProbeVisibility::Direct>((maximum - maskBytes) / sizeof(ProbeVisibility::Direct))
+            : std::vector<ProbeVisibility::Direct>{};
+        require(!(flags & 32) || (!direct.empty() && direct.size() == entries.size()));
         result.localProbes = ProbeVisibility::restore(uint32_t(result.grid.probes.size()),
-            uint32_t(source->lights.size()), offsets, entries, maximum);
+            uint32_t(source->lights.size()), offsets, entries, maximum, direct);
         localProbeOwners(result.grid, *source, *result.localProbes);
         const uint64_t combined = sizeof(GridHeader) + result.grid.probes.size() * sizeof(Result) +
             result.styles.size() * sizeof(uint32_t);
@@ -444,7 +459,8 @@ namespace remix::forward::bake::cache {
         validateDirectPolicy(*view.mixed.lights.source, view.mixed.lights.directLighting);
       }
       output.pod(uint32_t(view.directDiffuse) | uint32_t(view.sun) << 1 | uint32_t(hasPolicy) << 2 |
-                 uint32_t(!view.styles.empty()) << 3 | uint32_t(view.localProbes != nullptr) << 4);
+                 uint32_t(!view.styles.empty()) << 3 | uint32_t(view.localProbes != nullptr) << 4 |
+                 uint32_t(view.localProbes && view.localProbes->directional()) << 5);
       output.pod(view.surfaceSamples);
       output.pod(view.grid.header);
       output.array(view.grid.probes);
@@ -493,6 +509,7 @@ namespace remix::forward::bake::cache {
       if (view.localProbes) {
         output.array(view.localProbes->offsets());
         output.array(view.localProbes->entries());
+        if (view.localProbes->directional()) output.array(view.localProbes->direct());
       }
       output.finish();
       detail::check(cancelled);

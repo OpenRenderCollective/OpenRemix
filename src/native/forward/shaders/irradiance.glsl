@@ -175,7 +175,8 @@ bool localProbeStencil(vec3 position, vec3 normal) {
   localStencilValid = total >= 1e-4;
   return localStencilValid;
 }
-bool localProbeMask(uint base, uint probe, uint light, out float visibility) {
+bool localProbeMask(uint base, uint probe, uint light, out float visibility, out uint entry) {
+  entry = 0u;
   if (localProbeWord(base, 1u) == 3u) {
     uint count = localProbeWord(base, 3u), rowWords = localProbeWord(base, 4u + count);
     uint rows = 5u + count, row = rows + (probe * rowWords + light / 32u) * 2u;
@@ -184,6 +185,7 @@ bool localProbeMask(uint base, uint probe, uint light, out float visibility) {
     uint rank = localProbeWord(base, row + 1u) + uint(bitCount(bits & ((1u << bit) - 1u)));
     uint offsets = rows + bakeDimensions.w * rowWords * 2u;
     uint index = localProbeWord(base, offsets + probe) + rank;
+    entry = index;
     visibility = uintBitsToFloat(localProbeWord(base, offsets + bakeDimensions.w + 1u + index));
     return true;
   }
@@ -196,13 +198,21 @@ bool localProbeMask(uint base, uint probe, uint light, out float visibility) {
     else high = middle;
   }
   if (low >= end || localProbeWord(base, entries + low * 2u) != light) return false;
+  entry = low;
   visibility = uintBitsToFloat(localProbeWord(base, entries + low * 2u + 1u));
   return true;
 }
-bool bakedLocalProbeVisibility(vec3 position, vec3 normal, uint capturedLight, out float visibility) {
+bool bakedLocalProbeResponse(vec3 position, vec3 normal, vec3 shadingNormal, uint capturedLight,
+                              bool directional, out float visibility, out float unitDiffuse) {
+  unitDiffuse = -1;
   uint table = uint(bakeSettings.w) / 2u;
   if (capturedLight == 0u || table == 0u || localProbeWord(table, 0u) != 0x56504c52u ||
       localProbeWord(table, 2u) != bakeDimensions.w) return false;
+  uint direct = 0u;
+  if (localProbeWord(table, 1u) == 5u) {
+    direct = (table + 1u) * 4u + localProbeWord(table, 3u);
+    table += 1u; // wrapper and scalar payload are both vec4 aligned
+  }
   uint light = capturedLight - 1u, version = localProbeWord(table, 1u), count = localProbeWord(table, 3u);
   if (version == 3u) {
     if (light >= count) return false;
@@ -213,6 +223,12 @@ bool bakedLocalProbeVisibility(vec3 position, vec3 normal, uint capturedLight, o
         (localProbeWord(table, 4u + light / 32u) & (1u << (light % 32u))) == 0u) return false;
   } else return false;
   if (!localProbeStencil(position, normal)) return false;
+  float sh[9] = float[9](.2820947918, .4886025119 * shadingNormal.y, .4886025119 * shadingNormal.z,
+      .4886025119 * shadingNormal.x, 1.092548431 * shadingNormal.x * shadingNormal.y,
+      1.092548431 * shadingNormal.y * shadingNormal.z, .3153915653 * (3 * shadingNormal.z * shadingNormal.z - 1),
+      1.092548431 * shadingNormal.x * shadingNormal.z,
+      .5462742153 * (shadingNormal.x * shadingNormal.x - shadingNormal.y * shadingNormal.y));
+  float diffuse = 0;
   visibility = 0;
   float total = 0;
   for (uint corner = 0u; corner < 8u; ++corner) {
@@ -220,14 +236,23 @@ bool bakedLocalProbeVisibility(vec3 position, vec3 normal, uint capturedLight, o
     float weight = localStencilWeights[corner];
     if (weight <= 0) continue;
     float mask;
-    if (!localProbeMask(table, index, light, mask)) {
+    uint entry;
+    if (!localProbeMask(table, index, light, mask, entry)) {
       if (weight > 1e-6) return false;
       continue;
     }
     visibility += weight * mask;
+    if (directional && direct != 0u)
+      for (uint coefficient = 0u; coefficient < 9u; ++coefficient)
+        diffuse += weight * uintBitsToFloat(localProbeWord(0u, direct + entry * 9u + coefficient)) * sh[coefficient];
     total += weight;
   }
   if (total < 1e-4) return false;
   visibility = clamp(visibility / total, 0, 1);
+  if (directional && direct != 0u) unitDiffuse = max(diffuse / total, 0);
   return true;
+}
+bool bakedLocalProbeVisibility(vec3 position, vec3 normal, uint capturedLight, out float visibility) {
+  float ignored;
+  return bakedLocalProbeResponse(position, normal, normal, capturedLight, false, visibility, ignored);
 }

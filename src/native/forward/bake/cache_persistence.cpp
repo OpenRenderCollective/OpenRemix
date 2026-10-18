@@ -30,7 +30,8 @@ namespace remix::forward::bake::cache {
                    s.mixed.masks.entries().size_bytes()) + s.mixed.masks.entries().size() * 64;
     bytes += storage(s.mixed.lights.directLighting.lights) + s.mixed.lights.identities.size() * 64;
     if (s.localProbes)
-      bytes += 2 * (s.localProbes->offsets().size_bytes() + s.localProbes->entries().size_bytes());
+      bytes += 2 * (s.localProbes->offsets().size_bytes() + s.localProbes->entries().size_bytes() +
+                    s.localProbes->direct().size_bytes());
     // The captured source is shared with the published runtime, not duplicated.
     return bytes;
   }

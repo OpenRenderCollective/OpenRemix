@@ -1478,6 +1478,14 @@ namespace {
                         unsigned(pixels[left]), unsigned(probeLit));
           require(pixels[left] < 15 && probeLit > 80,
                   "Uncharted receivers obtain aggregate direct diffuse and wall occlusion from probes alone");
+          remix::forward::bake::cache::persistence().waitIdle();
+          r.setBakeScene(nullptr);
+          for (uint32_t frame = 0; frame < remix::gpuFrameCount + 2; ++frame) render(false);
+          publish();
+          pixels = until("", true);
+          require(std::strstr(target.forward->statistics().baking.status, "Cached lighting active") &&
+                      std::abs(int(pixels[right]) - int(probeLit)) < 4,
+                  "Probe-only aggregate and attributed directional responses reload from disk together");
           options.localShadows = true;
           target.forward->updateLighting(options);
           moving.mesh = black;

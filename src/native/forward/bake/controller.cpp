@@ -46,10 +46,17 @@ namespace remix::forward::bake {
     }
     if (kind == Visibility::ProbeLocal) {
       if (!localProbes) return false;
-      overflowReadback.resize(count);
-      transport->readScalarVisibility(slot, overflowReadback);
       try {
-        localProbes->observe(std::span(localProbeTasks).subspan(first, count), overflowReadback);
+        const auto tasks = std::span(localProbeTasks).subspan(first, count);
+        if (localProbes->directional()) {
+          visibilityReadback.resize(count);
+          transport->readVisibility(slot, visibilityReadback);
+          localProbes->observe(tasks, visibilityReadback);
+        } else {
+          overflowReadback.resize(count);
+          transport->readScalarVisibility(slot, overflowReadback);
+          localProbes->observe(tasks, overflowReadback);
+        }
         return true;
       } catch (const std::invalid_argument &) {
         return false;
@@ -335,8 +342,9 @@ namespace remix::forward::bake {
         if (submission.overflowVisibility)
           job.overflowTiming.readbackMs += readbackMs;
         job.readbackBytes += uint64_t(submission.count) *
-                             (submission.overflowVisibility || submission.probeLocal || submission.visibility ? sizeof(float) :
-                              submission.direct || submission.sun || submission.probeSun
+                             (submission.overflowVisibility || submission.visibility ||
+                              (submission.probeLocal && !job.localProbes->directional()) ? sizeof(float) :
+                              submission.direct || submission.sun || submission.probeSun || submission.probeLocal
                                   ? sizeof(VisibilityResult) : sizeof(Result));
         if (!submission.styled) (submission.radiance             ? job.captureReceived
          : submission.reflectionGeometry ? job.geometryReceived

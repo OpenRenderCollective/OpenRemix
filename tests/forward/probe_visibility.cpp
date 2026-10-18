@@ -55,6 +55,39 @@ int main() {
                 bounded.size() * sizeof(uint32_t) == wide.gpuBytes() && wide.gpuBytes() < (2u << 20),
             "A sparse large probe grid falls back before its ranked directory exceeds the eight-MiB bound");
   }
+  {
+    const uint64_t directionalBytes = bytes + pairs.size() * sizeof(ProbeVisibility::Direct);
+    ProbeVisibility directional(3, 10, pairs, directionalBytes, true);
+    require(directional.directional() && directional.bytes() == directionalBytes &&
+                !directional.sampleDirect(0, 1), "Untraced directional pairs remain unknown");
+    std::array<VisibilityResult, pairs.size()> results{};
+    for (size_t i = 0; i < results.size(); ++i) {
+      results[i].visibility = values[i];
+      for (uint32_t coefficient = 0; coefficient < 9; ++coefficient)
+        results[i].irradiance[coefficient] = float(int(i * 9 + coefficient) - 20) * .01f;
+    }
+    auto invalid = results;
+    invalid.back().irradiance[8] = std::numeric_limits<float>::infinity();
+    rejects([&] { directional.observe(pairs, invalid); });
+    rejects([&] { directional.observe(pairs, values); });
+    require(!directional.sample(2, 9) && !directional.sampleDirect(0, 1),
+            "Failed directional observation publishes neither masks nor partial coefficients");
+    directional.observe(pairs, results);
+    require(directional.sampleDirect(0, 1) == results[2].irradiance &&
+                directional.sampleDirect(2, 9) == results[0].irradiance,
+            "Directional coefficients follow sparse captured-light ownership, not submission order");
+    const auto wire = directional.words();
+    require(wire[1] == 5 && wire[5] == 3 && wire.size() * 4 == directional.gpuBytes(),
+            "Directional wrapper preserves ranked scalar masks and exact padded allocation");
+    const auto restored = ProbeVisibility::restore(3, 10, directional.offsets(), directional.entries(),
+                                                   directionalBytes, directional.direct());
+    require(restored.words() == wire && restored.sampleDirect(0, 1) == results[2].irradiance,
+            "Directional cache payload retains signed SH and shader words exactly");
+    rejects([&] { ProbeVisibility(3, 10, pairs, directionalBytes - 1, true); });
+    rejects([&] { ProbeVisibility::restore(3, 10, directional.offsets(), directional.entries(),
+                                           directionalBytes - 1, directional.direct()); });
+    rejects([&] { directional.observe(pairs, results); });
+  }
   const auto imported = ProbeVisibility::restore(3, 10, table.offsets(), table.entries(), bytes);
   require(imported.sample(0, 1) == .25f && !imported.sample(1, 1),
           "Completed restoration preserves sparse ownership and uncovered probes");

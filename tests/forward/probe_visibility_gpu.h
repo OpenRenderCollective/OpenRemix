@@ -75,6 +75,26 @@ void localProbeVisibilityTests(test::Fixture &fixture, pipeline::Service &pipeli
     require(actual == reference, "Local probe task masks match ordinary visibility byte for byte");
     visibility.observe(tasks, actual);
   }
+  bake::ProbeVisibility directional(3, 6, plan->tasks, 4096, true);
+  for (size_t first = 0; first < plan->tasks.size(); first += 4) {
+    const auto tasks = std::span(plan->tasks).subspan(first, std::min<size_t>(4, plan->tasks.size() - first));
+    std::vector<bake::VisibilityPoint> expanded;
+    for (const auto &task : tasks) expanded.push_back({grid.points[task.point], task.light});
+    fixture.begin();
+    transport.recordVisibilityTasks(fixture.command, 0, grid.points, tasks, 256, true);
+    transport.recordVisibility(fixture.command, 1, expanded, 256, true);
+    fixture.finish();
+    std::vector<bake::VisibilityResult> actual(tasks.size()), reference(tasks.size());
+    transport.readVisibility(0, actual);
+    transport.readVisibility(1, reference);
+    for (size_t i = 0; i < actual.size(); ++i)
+      require(actual[i].visibility == reference[i].visibility && actual[i].irradiance == reference[i].irradiance,
+              "Indexed probe SH matches ordinary hardware direct visibility without additional rays");
+    directional.observe(tasks, actual);
+  }
+  require(directional.sampleDirect(0, 0) && (*directional.sampleDirect(0, 0))[0] == 0 &&
+              directional.sampleDirect(1, 0) && (*directional.sampleDirect(1, 0))[0] > 0,
+          "Probe directional attribution distinguishes blocked and clear finite emitters");
   for (uint32_t light = 0; light < 5; ++light) {
     require(visibility.sample(0, light) == 0, "Opaque static wall blocks local probe visibility");
     require(visibility.sample(1, light) == 1, "Unblocked local probe retains clear visibility");

@@ -1,6 +1,7 @@
 #include "forward/bake/probe_visibility.h"
 #include <algorithm>
 #include <bit>
+#include <cmath>
 #include <stdexcept>
 
 namespace remix::forward::bake {
@@ -37,12 +38,31 @@ namespace remix::forward::bake {
     }
   } // namespace
   uint64_t ProbeVisibility::gpuBytes() const {
-    return encoding(uint32_t(m_offsets.size() - 1), m_lights, m_entries, bytes()).bytes;
+    const uint64_t directBytes = m_direct.size() * sizeof(Direct);
+    const auto scalar = encoding(uint32_t(m_offsets.size() - 1), m_lights, m_entries, bytes() - directBytes).bytes;
+    return m_direct.empty() ? scalar : (16 + scalar + directBytes + 15) & ~uint64_t(15);
   }
   std::vector<uint32_t> ProbeVisibility::words() const {
+    auto masks = maskWords();
+    if (m_direct.empty()) return masks;
+    // Version five wraps the unchanged scalar encoding and appends unit direct
+    // SH in exactly the entry order used by its ranked/sorted mask indices.
+    std::vector<uint32_t> result{0x56504c52u, 5u, uint32_t(m_offsets.size() - 1), uint32_t(masks.size())};
+    result.reserve(size_t(gpuBytes() / sizeof(uint32_t)));
+    result.insert(result.end(), masks.begin(), masks.end());
+    for (const auto &value : m_direct)
+      for (float coefficient : value) {
+        if (!std::isfinite(coefficient))
+          throw std::invalid_argument("Non-finite directional probe coefficient");
+        result.push_back(std::bit_cast<uint32_t>(coefficient));
+      }
+    result.resize(size_t(gpuBytes() / sizeof(uint32_t)));
+    return result;
+  }
+  std::vector<uint32_t> ProbeVisibility::maskWords() const {
     validate(uint32_t(m_offsets.size() - 1), m_lights, m_offsets, m_entries, maximumBytes);
     const uint32_t probes = uint32_t(m_offsets.size() - 1);
-    const auto plan = encoding(probes, m_lights, m_entries, bytes());
+    const auto plan = encoding(probes, m_lights, m_entries, bytes() - m_direct.size() * sizeof(Direct));
     if (!plan.ranked) {
       const uint32_t availability = (m_lights + 31) / 32;
       std::vector<uint32_t> result{0x56504c52u, 2u, probes, availability};

@@ -25,13 +25,15 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
     return BrdfLobes(vec3(0), vec3(0));
   uint directChannel = lightChannel(surfaceDirectLights, uint(light.shaping.w));
   bool bakedDiffuse = directChannel < 4u && directIrradiance[min(directChannel, 3u)] >= 0;
+  bool probeCorrection = aggregateDiffuse && light.corners[0].w > 0 && light.corners[1].w < 1;
+  float attributedDiffuse = bakedDiffuse ? directIrradiance[min(directChannel, 3u)] : 0;
   vec3 l = delta / distance;
   float shape = emitterConeWeight(light.directionCone.xyz, light.directionCone.w,
                                    light.shaping.x, light.shaping.y, -l);
   // A zero analytic response needs no filtered masks or shadow filtering.
   // Retained direct SH can still contain a finite emitter crossing the cone
   // boundary even when its centre response vanishes.
-  if (shape <= 0 && !bakedDiffuse)
+  if (shape <= 0 && !bakedDiffuse && !(probeCorrection && surfaceLightmap.w < .5))
     return BrdfLobes(vec3(0), vec3(0));
   float visibility;
   uint channel;
@@ -41,12 +43,22 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
   if (!baked)
     baked = overflowLightVisibility(surfaceChart, uint(light.shaping.w), surfaceLightmap, surfaceBounds, visibility);
   if (!baked && surfaceLightmap.w < .5) {
-    float probeVisibility;
-    if (bakedLocalProbeVisibility(p, receiverNormal, uint(light.shaping.w), probeVisibility)) {
+    float probeVisibility, probeDiffuse;
+    // Aggregate corrections use the same normal-dependent probe stencil as
+    // bakedIrradiance; otherwise normal maps could subtract another mixture.
+    if (bakedLocalProbeResponse(p, aggregateDiffuse ? n : receiverNormal, n, uint(light.shaping.w), probeCorrection,
+                                 probeVisibility, probeDiffuse)) {
       baked = true;
       visibility = probeVisibility;
+      if (probeDiffuse >= 0) {
+        bakedDiffuse = true;
+        attributedDiffuse = probeDiffuse;
+      }
     }
   }
+  // Probe SH, like surface SH, may retain a finite emitter crossing the cone.
+  if (shape <= 0 && !bakedDiffuse)
+    return BrdfLobes(vec3(0), vec3(0));
   if (!bakedDiffuse && visibility <= 0)
     return BrdfLobes(vec3(0), vec3(0));
   float moving = localShadowVisibility(light, p, receiverNormal, !baked);
@@ -67,7 +79,7 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
   BrdfLobes response = brdfLobes(base, roughness, metallic, n, v, l, dielectricF0);
   // Truncated SH can ring below the receiver plane. Clip a wholly hidden
   // emitter analytically while allowing a finite emitter to cross the horizon.
-  float unitDiffuse = bakedDiffuse ? (emitterAbovePlane(light, p, n) ? directIrradiance[directChannel] : 0)
+  float unitDiffuse = bakedDiffuse ? (emitterAbovePlane(light, p, n) ? attributedDiffuse : 0)
                                    : max(dot(n, l), 0) * solidAngle * shape * visibility;
   // Missing attributed coverage is not evidence that the aggregate contains
   // this analytic estimate. Do not subtract unproven energy from other lights.

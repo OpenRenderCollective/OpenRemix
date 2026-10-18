@@ -156,6 +156,20 @@ int main(int argc, char **argv) {
             imported->localProbes->sample(0, 1) == .375f && imported->localProbes->sample(7, 1) == 1 &&
             !imported->localProbes->sample(1, 0) && imported->pixels == data.pixels,
             "Sparse blocked/partial/clear masks preserve ownership and unknown coverage across cache reload");
+    f::bake::ProbeVisibility directional(8, 2, pairs, 4096, true);
+    std::array<f::bake::VisibilityResult, 3> directionalValues{};
+    for (size_t i = 0; i < 3; ++i) {
+      directionalValues[i].visibility = values[i];
+      for (uint32_t coefficient = 0; coefficient < 9; ++coefficient)
+        directionalValues[i].irradiance[coefficient] = float(int(i * 9 + coefficient) - 10) * .1f;
+    }
+    directional.observe(pairs, directionalValues);
+    require(saveLocal(directional), "Attributed directional probes save their optional cache payload");
+    const auto directReload = loadLocal();
+    require(directReload && directReload->localProbes &&
+                directReload->localProbes->words() == directional.words(),
+            "Disk cache preserves signed directional probe values and exact GPU words");
+    require(saveLocal(local), "Scalar-only payload remains readable after directional cache replacement");
     f::bake::ProbeVisibility unfinished(8, 2, pairs, 1024);
     require(!saveLocal(unfinished) && loadLocal(), "Incomplete masks cannot replace a completed cache");
     data.grid.probes[0].statistics[3] = 0;

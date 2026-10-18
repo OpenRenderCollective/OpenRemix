@@ -35,13 +35,13 @@ namespace remix::forward::bake {
   }
   void Transport::recordVisibilityTasks(VkCommandBuffer command, uint32_t index,
                                          std::span<const Point> receivers,
-                                         std::span<const VisibilityTask> tasks, uint32_t samples) {
-    recordTaskVisibility(command, index, receivers, tasks, samples, false);
+                                         std::span<const VisibilityTask> tasks, uint32_t samples, bool directDiffuse) {
+    recordTaskVisibility(command, index, receivers, tasks, samples, false, directDiffuse);
   }
   void Transport::recordTaskVisibility(VkCommandBuffer command, uint32_t index,
                                         std::span<const Point> receivers,
                                         std::span<const VisibilityTask> tasks, uint32_t samples,
-                                        bool validatedReceivers) {
+                                        bool validatedReceivers, bool directDiffuse) {
     auto &g = *m_gpu;
     if (!g.prepared || g.slots.at(index).lighting || !g.options.parallel ||
         !g.options.cpuReadback || g.options.deviceLocalBatches)
@@ -57,7 +57,7 @@ namespace remix::forward::bake {
           for (float value : values)
             if (!std::isfinite(value)) throw std::invalid_argument("Non-finite visibility task receiver");
     }
-    g.reserveSlot(index, uint32_t(tasks.size()), sizeof(float));
+    g.reserveSlot(index, uint32_t(tasks.size()), directDiffuse ? sizeof(VisibilityResult) : sizeof(float));
     auto &points = *g.slots.at(index).points;
     // reserveSlot guarantees mapped host input with room for one Point per task.
     // Write each complete point before setting its light; never read upload memory.
@@ -67,6 +67,6 @@ namespace remix::forward::bake {
       packed[i].position[3] = float(tasks[i].light);
     }
     points.flush();
-    dispatch(command, index, uint32_t(tasks.size()), samples, 1, 0, Mode::Visibility);
+    dispatch(command, index, uint32_t(tasks.size()), samples, 1, 0, directDiffuse ? Mode::DirectVisibility : Mode::Visibility);
   }
 }

@@ -15,7 +15,7 @@ reports. An implementation or synthetic test alone does not close an integration
 | --- | --- | --- |
 | Modular forward PBR, clustered lights and 1x/2x/4x MSAA | Implemented | Refresh current-build engine coverage through the integration milestone below |
 | World-metric surface charts, atlas budgets and irradiance probes | Implemented; warped boundary fans, modulating decals and lit displacement paint layers supported | Inspect connected-face continuity, seam donors, close decal receivers, indirect noise and budget coarsening |
-| Dynamic receiver agreement with surface lightmaps | Budget-fitted grid, bounded recovery of BSP-solid slots, shared-position receiver diagnostics, static sun visibility and sparse local-light visibility; experimental aggregate direct grid lighting and moving corrections tested | Close room-scale/deferred-light coverage and strict attributed reconstruction gaps; validate moving actors across maps using CS2, Half-Life: Alyx and s&box as references |
+| Dynamic receiver agreement with surface lightmaps | Budget-fitted grid, bounded recovery of BSP-solid slots, shared-position receiver diagnostics, static sun visibility and sparse local-light visibility; experimental aggregate direct grid lighting and moving corrections tested; sparse attributed unit-direct probe SH now supplies aggregate corrections with the same receiver stencil as baked irradiance, with scalar-only fallback/cache compatibility | Close room-scale/deferred-light coverage and strict attributed reconstruction gaps; validate moving actors across maps using CS2, Half-Life: Alyx and s&box as references |
 | Soft finite emitters, attributed direct diffuse and live specular | Implemented | Compare visible penumbrae and light separation in the live engine |
 | Receiver-area antialiasing of baked direct shadows | Adaptive sunlight edge refinement integrated; grouped-site local transport available | Integrate local/overflow refinement, improve subpixel coverage detection and inspect more maps/views |
 | Aggregate fully static diffuse and compact directional lightmaps | Controller integration retains attributed masks/SH beside aggregate RGB; surface/probe publication, moving shadows and cache reload tested at 1x/2x/4x MSAA; definition edits/removal invalidate stale data until recapture; experimental fully baked policy skips per-light response on covered receivers and retains analytic fallback; optional adapter bake hints preserve mixed requirements and identify sphere-shaped surface emission; covered receivers cluster only the mixed/dynamic prefix, with the complete light tail retained for uncovered fallback; default remains legacy | All-mixed aggregate alone did not improve steady-state cost; fully baked policy changes specular/moving-shadow semantics and now prioritizes mixed-shadow slots with timed fades and retains spare fallback coverage; still needs broader live receiver coverage and water/probe/RT parity and broader-map quality before rollout |
@@ -39,7 +39,13 @@ when baked lighting is active; a failed bake instead displays its failure messag
 1. **Replace exhaustive overflow baking.** Complete indexed static local-light visibility for probe
    receivers; static sun visibility already uses the shared probe interpolation, with moving-caster
    shadows and complete shadow maps retained for uncovered receivers. Aggregate ordinary fully static
-   direct diffuse with indirect lighting; retain separate light identity only where mixed lighting needs it. Select mixed lights
+   direct diffuse with indirect lighting; retain separate light identity only where mixed lighting needs it.
+   Aggregate mixed probes now retain nine signed unit-direct coefficients per selected probe/light
+   pair alongside scalar visibility. This removes analytic diffuse reconstruction from covered moving
+   corrections, without a four-light probe ownership limit. Directional payloads remain bounded by the
+   existing storage and pair budgets and use the existing connection rays; scalar-only policies retain
+   their cheaper transport. This still needs cross-map normal-mapped actor comparisons and measured
+   preparation/runtime costs before default rollout. Select mixed lights
    automatically from legacy inputs, preserving important emitters and reusing mask channels where
    receiver coverage permits. Define a correct fallback for overlapping mixed lights instead of
    silently losing their shadows. Keep camera-dependent specular visibility and dynamic-object

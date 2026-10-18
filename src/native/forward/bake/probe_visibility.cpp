@@ -23,18 +23,26 @@ namespace remix::forward::bake {
   }
   ProbeVisibility ProbeVisibility::restore(uint32_t probes, uint32_t lights,
                                            std::span<const uint32_t> offsets, std::span<const Entry> entries,
-                                           uint64_t byteBudget) {
-    validate(probes, lights, offsets, entries, byteBudget);
+                                           uint64_t byteBudget, std::span<const Direct> direct) {
+    if ((!direct.empty() && direct.size() != entries.size()) || direct.size_bytes() > byteBudget)
+      throw std::invalid_argument("Invalid directional probe storage");
+    for (const auto &value : direct)
+      for (float coefficient : value)
+        if (!std::isfinite(coefficient))
+          throw std::invalid_argument("Non-finite directional probe coefficient");
+    validate(probes, lights, offsets, entries, byteBudget - direct.size_bytes());
     ProbeVisibility result;
     result.m_lights = lights;
     result.m_offsets.assign(offsets.begin(), offsets.end());
     result.m_entries.assign(entries.begin(), entries.end());
+    result.m_direct.assign(direct.begin(), direct.end());
     return result;
   }
   ProbeVisibility::ProbeVisibility(uint32_t probes, uint32_t lights, std::span<const VisibilityTask> pairs,
-                                   uint64_t byteBudget)
+                                   uint64_t byteBudget, bool directional)
       : m_lights(lights) {
-    const uint64_t required = (uint64_t(probes) + 1) * sizeof(uint32_t) + pairs.size() * sizeof(Entry);
+    const uint64_t stride = sizeof(Entry) + (directional ? sizeof(Direct) : 0);
+    const uint64_t required = (uint64_t(probes) + 1) * sizeof(uint32_t) + pairs.size() * stride;
     if (probes == UINT32_MAX || pairs.size() >= UINT32_MAX || required > byteBudget)
       throw std::length_error("Probe visibility exceeds its storage budget");
     for (const auto &pair : pairs)
@@ -56,9 +64,11 @@ namespace remix::forward::bake {
         m_entries.push_back({ordered[next++].light, -1});
     }
     m_offsets.back() = uint32_t(next);
+    if (directional) m_direct.resize(m_entries.size());
   }
   uint64_t ProbeVisibility::bytes() const {
-    return m_offsets.size() * sizeof(uint32_t) + m_entries.size() * sizeof(Entry);
+    return m_offsets.size() * sizeof(uint32_t) + m_entries.size() * sizeof(Entry) +
+        m_direct.size() * sizeof(Direct);
   }
   uint32_t ProbeVisibility::find(uint32_t probe, uint32_t light) const {
     if (uint64_t(probe) + 1 >= m_offsets.size() || light >= m_lights)
@@ -74,7 +84,34 @@ namespace remix::forward::bake {
                ? std::optional(m_entries[index].visibility)
                : std::nullopt;
   }
+  std::optional<ProbeVisibility::Direct> ProbeVisibility::sampleDirect(uint32_t probe, uint32_t light) const {
+    const uint32_t index = find(probe, light);
+    if (m_direct.empty() || index == UINT32_MAX || m_entries[index].visibility < 0) return {};
+    return m_direct[index];
+  }
+  void ProbeVisibility::observe(std::span<const VisibilityTask> pairs,
+                                 std::span<const VisibilityResult> results) {
+    if (m_direct.empty() || pairs.size() != results.size())
+      throw std::invalid_argument("Directional probe readback count mismatch");
+    std::vector<float> visibility;
+    visibility.reserve(results.size());
+    for (const auto &result : results) {
+      for (float coefficient : result.irradiance)
+        if (!std::isfinite(coefficient))
+          throw std::invalid_argument("Non-finite directional probe readback");
+      visibility.push_back(result.visibility);
+    }
+    // The scalar observer validates all identities/duplicates before mutation.
+    observeMasks(pairs, visibility);
+    for (size_t i = 0; i < pairs.size(); ++i)
+      m_direct[find(pairs[i].point, pairs[i].light)] = results[i].irradiance;
+  }
   void ProbeVisibility::observe(std::span<const VisibilityTask> pairs, std::span<const float> visibility) {
+    if (directional())
+      throw std::invalid_argument("Directional probes require complete directional readback");
+    observeMasks(pairs, visibility);
+  }
+  void ProbeVisibility::observeMasks(std::span<const VisibilityTask> pairs, std::span<const float> visibility) {
     if (pairs.size() != visibility.size())
       throw std::invalid_argument("Probe visibility readback count mismatch");
     std::vector<uint32_t> indices;
