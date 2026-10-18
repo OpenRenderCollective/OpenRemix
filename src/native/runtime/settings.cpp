@@ -167,6 +167,8 @@ namespace remix::config {
                                 FIELD(forward.baking.aggregateDiffuse), 0, 1));
         result.push_back(scalar("rtx.native.forward.experimentalSelectedBakedLights",
                                 FIELD(forward.selectedBakedLights), 0, 1));
+        result.push_back(scalar("rtx.native.forward.experimentalBakedLightingPreview",
+                                FIELD(forward.bakedLightingPreview), 0, 1));
         result.push_back(scalar("rtx.native.forward.experimentalFullyBakedLights",
                                 FIELD(forward.baking.fullyBakedLights), 0, 1));
         result.push_back(scalar("rtx.native.forward.experimentalBakedGeometryLights",

@@ -20,6 +20,33 @@ int main() {
           "Runtime selection preserves analytic, pure-baked and required mixed ownership");
   {
     Options options;
+    options.baking.fullyBakedLights = true; // A custom profile must survive preview on/off.
+    options.baking.samples = 37;
+    const auto requested = options.baking;
+    auto expected = requested;
+    expected.aggregateDiffuse = true;
+    expected.fullyBakedLights = false;
+    expected.bakedGeometryLights = true;
+    const auto ordinary = options;
+    options.bakedLightingPreview = true;
+    require(options.bakeConfiguration(false) == expected && options.baking == requested &&
+                options.selectBakedLights(false) && options.sameTargets(ordinary),
+            "Preview derives aggregate/geometry/selected lighting without changing quality, preferences or targets");
+    require(!options.selectBakedLights(true) && !options.bakedLightingPreviewActive(true),
+            "Supported live GI pauses the preview and its selected responses");
+    options.baking.directDiffuse = false;
+    require(!options.bakedLightingPreviewActive(false) && options.bakeConfiguration(false) == options.baking,
+            "Preview pauses when baked direct diffuse is disabled");
+    options.baking = requested;
+    options.baking.enabled = false;
+    require(!options.bakedLightingPreviewActive(false), "Preview does not implicitly enable map baking");
+    options.baking = requested;
+    options.bakedLightingPreview = false;
+    require(options.bakeConfiguration(false) == requested && !options.selectBakedLights(false),
+            "Disabling preview restores the exact requested custom lighting policy");
+  }
+  {
+    Options options;
     options.baking.aggregateDiffuse = true;
     options.baking.fullyBakedLights = true;
     options.baking.bakedGeometryLights = true;
@@ -351,6 +378,12 @@ int main() {
   require(!changed.sameTargets(settings.forward),
           "Hardware reflection enable prepares replacement resources");
   std::vector<std::string> warnings;
+  require(!settings.forward.bakedLightingPreview &&
+              config::set(settings, "rtx.native.forward.experimentalBakedLightingPreview", "1") ==
+                  config::SetResult::Success && settings.forward.bakedLightingPreview &&
+              config::set(settings, "rtx.native.forward.experimentalBakedLightingPreview", "0") ==
+                  config::SetResult::Success && !settings.forward.bakedLightingPreview,
+          "Grouped baked preview persists independently without changing the default");
   require(!settings.forward.selectedBakedLights &&
               config::set(settings, "rtx.native.forward.experimentalSelectedBakedLights", "1") ==
                   config::SetResult::Success && settings.forward.selectedBakedLights &&

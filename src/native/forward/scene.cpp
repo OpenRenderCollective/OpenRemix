@@ -228,7 +228,7 @@ namespace remix::forward {
           const bool requireMixed = bindings.source->lights[captured].bakeHint ==
                                     REMIXAPI_LIGHT_BAKING_REQUIRE_MIXED_EXT;
           light.corners[2][3] = float(lightResponse(bindings.bakedDiffuse(captured),
-              bindings.retainsVisibility(captured), options.selectedBakedLights && !giSupported,
+              bindings.retainsVisibility(captured), options.selectBakedLights(giSupported),
               shadowSelection.slots[sourceIndex] != UINT32_MAX, requireMixed));
         }
       }

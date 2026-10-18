@@ -29,6 +29,7 @@ namespace remix::forward {
     bool rtReflections = false;
     bool rtGI = false;
     bool selectedBakedLights = false; // experimental: aggregate lights use selected mixed-shadow slots
+    bool bakedLightingPreview = false; // grouped opt-in; underlying profile preferences remain intact
     bool water = true; // measured refraction/reflections; snapshot images are allocated only on use
     float waterDistance = 50, waterThickness = .15f; // metres; refraction extent and depth tolerance
     uint32_t rtGISamples = 16, rtGIBounces = 2;
@@ -41,8 +42,19 @@ namespace remix::forward {
     float ssrThickness = .15f; // metres, single-layer screen depth tolerance
     float ssrRoughness = .6f;
     bake::Config baking;
+    bool bakedLightingPreviewActive(bool liveGiActive) const {
+      return bakedLightingPreview && baking.enabled && baking.directDiffuse && !liveGiActive;
+    }
+    bool selectBakedLights(bool liveGiActive) const {
+      return !liveGiActive && (selectedBakedLights || bakedLightingPreviewActive(liveGiActive));
+    }
     bake::Config bakeConfiguration(bool liveGiActive) const {
       auto config = baking;
+      if (bakedLightingPreviewActive(liveGiActive)) {
+        config.aggregateDiffuse = true;
+        config.fullyBakedLights = false;
+        config.bakedGeometryLights = true;
+      }
       // Live GI replaces aggregate irradiance and evaluates primary lights
       // analytically. Preserve their attributed static visibility in that mode.
       if (liveGiActive) {

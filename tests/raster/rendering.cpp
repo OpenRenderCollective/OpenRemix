@@ -1123,6 +1123,26 @@ namespace {
         options.baking.aggregateDiffuse = true;
         target.forward->updateLighting(options);
         pixels = until("", true);
+        const auto beforePreview = options.baking;
+        options.baking.aggregateDiffuse = false;
+        options.bakedLightingPreview = true;
+        options.localShadows = false;
+        target.forward->updateLighting(options);
+        pixels = until("", true);
+        const auto previewVolume = target.forward->bakeController()->volume();
+        require(!options.baking.aggregateDiffuse && !options.selectedBakedLights &&
+                    previewVolume->mixedLights->bakedDiffuse(0) &&
+                    previewVolume->mixedLights->retainsVisibility(0) &&
+                    target.forward->statistics().clusteredLights == 0 &&
+                    target.forward->statistics().fullyBakedLights == 1 && pixels[left] < 3 && pixels[right] > 80,
+                "Grouped preview publishes aggregate data and selected responses without editing raw preferences");
+        options.bakedLightingPreview = false;
+        options.baking = beforePreview;
+        options.localShadows = localShadows;
+        target.forward->updateLighting(options);
+        pixels = until("", true);
+        require(target.forward->statistics().clusteredLights == 1 && pixels[left] < 3 && pixels[right] > 80,
+                "Disabling grouped preview restores the requested aggregate mixed path");
         const auto aggregateVolume = target.forward->bakeController()->volume();
         options.selectedBakedLights = true;
         options.localShadows = false;

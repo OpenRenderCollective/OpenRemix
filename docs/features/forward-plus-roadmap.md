@@ -58,6 +58,12 @@ when baked lighting is active; a failed bake instead displays its failure messag
    exempt. This reuses attributed bake data and does not reduce its preparation cost. Broader quality,
    independent specular selection and cheaper on-demand correction visibility remain open; leave the
    option off by default until those tradeoffs are accepted in live maps.
+   F12 exposes a single default-off **Baked lighting preview (experimental)** control. It derives
+   aggregate diffuse, baked geometry emitters and selected mixed responses without overwriting
+   the underlying profile preferences. Map baking and baked direct diffuse must be enabled;
+   supported live GI temporarily pauses the preview. Disabling it restores the requested policy.
+   The UI explicitly describes omitted direct highlights and moving-object shadows. This is a
+   comparison tool for the unfinished baked-light policy, not the final quality default.
    Timed visibility batches now grow within an eight-row rectangular dispatch and a guaranteed
    128 MiB maximum result-buffer range, reducing frame submission overhead without changing quality.
    Scalar classification now selects positive direct owners before a separate directional pass.

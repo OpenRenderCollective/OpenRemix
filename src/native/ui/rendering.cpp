@@ -107,6 +107,21 @@ namespace remix {
         ImGui::SetTooltip("Reuses finished lighting when map inputs, materials, quality and GPU match.\n"
                           "Cache changes affect subsequent map loads; disabling keeps the active lighting.");
       ui::Checkbox("Bake per-light direct diffuse", &forward.baking.directDiffuse);
+      ui::Checkbox("Baked lighting preview (experimental)", &forward.bakedLightingPreview);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Uses baked diffuse for fixed lights and reduces their per-frame work.\n"
+                          "Some direct highlights and moving-object shadows are omitted.\n"
+                          "Switching can prepare another bake; disabling restores your previous policy.");
+      if (forward.bakedLightingPreview) {
+        ImGui::TextWrapped("Preview trades some direct highlights and moving shadows for lower GPU cost. "
+                           "Other reflections still use the enabled reflection effects.");
+        if (!forward.baking.enabled)
+          ImGui::TextWrapped("Enable map baking to use the preview.");
+        else if (!forward.baking.directDiffuse)
+          ImGui::TextWrapped("Enable baked direct diffuse to use the preview.");
+        else if (forward.rtGI && statistics.rayGI.available)
+          ImGui::TextWrapped("Live ray-traced GI uses its own lighting policy. The preview resumes when GI is off.");
+      }
       ImGui::BeginDisabled(!remix::forward::lightmap::denoiserVersion());
       ui::Checkbox("Denoise indirect lightmaps", &forward.baking.denoiseLightmaps);
       ImGui::EndDisabled();
