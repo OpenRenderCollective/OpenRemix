@@ -45,8 +45,11 @@ same-binary Crossfire replay improved about 5.3%; warm Construct showed no relia
 This does not close the overall performance gate: the combined candidate still regresses against
 the earlier package. A charted-only shader/pipeline experiment measured no useful gain and was
 removed. Disabled indexed directional surface decoding is specialized out of ordinary pipelines;
-that alone did not resolve the regression. Next isolate attributed probe decoding and shader cost
-while retaining sparse zero fields, exact unknown-coverage fallback and measured output parity.
+that alone did not resolve the regression. An indexed full-float probe experiment also left the
+combined package slower (about 3.5%) and was removed; removing half/amplitude decode is not a
+demonstrated remedy. Next compare the old and current shader paths directly, with controlled
+specialization/instruction-cost evidence, while retaining sparse zero fields, exact unknown-coverage
+fallback and measured output parity. Avoid another storage-format change without such evidence.
 
 ## Current capabilities and open requirements
 
