@@ -6,7 +6,7 @@
 namespace remix::forward::mixed {
   // Optional GPU-only directory. Records and visibility payloads retain their
   // original offsets; zero denotes a missing light. The cache stays compact.
-  // The budget counts RGBA16F texture bytes, not just the uint32_t CPU words.
+  // The budget counts R32_UINT texture bytes, not just the uint32_t CPU words.
   inline void indexMaskRecords(std::vector<uint32_t> &words, uint32_t charts,
                                uint64_t maximumExtraBytes = 8ull << 20) {
     if (words.empty()) return;
@@ -19,7 +19,7 @@ namespace remix::forward::mixed {
       if (span >= indexed) return;
       extraWords += span;
     }
-    if (extraWords > maximumExtraBytes / 8 || words.size() + extraWords >= indexed)
+    if (extraWords > maximumExtraBytes / 4 || words.size() + extraWords >= indexed)
       return; // Atomic fallback: retain every original binary-search table.
     words.reserve(words.size() + std::size_t(extraWords));
     for (uint32_t chart = 0; chart < charts; ++chart) {

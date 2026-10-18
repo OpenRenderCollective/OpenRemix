@@ -7,7 +7,7 @@ namespace remix::forward::mixed {
   class OcclusionMap {
   public:
     OcclusionMap(VkPhysicalDevice physical, VkDevice device, VkExtent2D extent,
-                 VkFormat format = VK_FORMAT_R16G16B16A16_SFLOAT, uint32_t layers = 1);
+                 VkFormat format = VK_FORMAT_R32_UINT, uint32_t layers = 1);
     void upload(VkCommandBuffer command, VkBuffer source, VkDeviceSize offset) const;
     void clear(VkCommandBuffer command) const;
     VkDescriptorImageInfo descriptor() const;

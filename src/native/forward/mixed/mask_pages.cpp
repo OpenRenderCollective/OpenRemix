@@ -153,7 +153,7 @@ namespace remix::forward::mixed {
     check(cancelled);
     if (masks.entries().empty() || !maximumLayers)
       return {};
-    uint64_t bestBytes = masks.words(charts).size() * 8ull; // existing RGBA16F lookup/payload
+    uint64_t bestBytes = masks.words(charts).size() * 4ull; // R32_UINT lookup/payload
     std::optional<MaskPages> best;
     for (uint32_t size = 64; size <= maximumDimension && size <= 32768; size *= 2) {
       if (uint64_t(size) * size >= Masks::maximumBytes)
@@ -162,7 +162,7 @@ namespace remix::forward::mixed {
                                      Masks::maximumBytes, cancelled);
       if (!candidate || !candidate->layers)
         continue;
-      const uint64_t bytes = candidate->texels.size() + candidate->words(charts).size() * 8ull;
+      const uint64_t bytes = candidate->texels.size() + candidate->words(charts).size() * 4ull;
       if (bytes < bestBytes && bytes <= Masks::maximumBytes) {
         bestBytes = bytes;
         best = std::move(candidate);

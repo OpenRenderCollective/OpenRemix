@@ -137,8 +137,8 @@ int main() {
   try { (void)packMaskPages(masks, 16, 8, 4096, cancelled.get_token()); }
   catch (const std::runtime_error &) { stopped = true; }
   require(stopped, "Cancellation never returns partial published pages");
-  // High-entropy masks benefit from R8 pages; constant/paletted maps can stay
-  // compressed. Selection must compare allocated storage, not occupied area.
+  // Integer payload packs raw bytes as tightly as R8 pages, without page
+  // padding. Selection must use the four-byte metadata texel cost.
   std::vector<Masks::Entry> rawEntries;
   std::vector<uint8_t> rawBytes;
   for (uint32_t light = 0; light < 100; ++light) {
@@ -150,11 +150,7 @@ int main() {
   }
   const auto raw = Masks::restore(rawEntries, rawBytes, layout, 100);
   const auto selected = selectMaskPages(raw, uint32_t(layout.charts.size()), 1024, 256);
-  require(bool(selected), "R8 selection recognizes savings for high-entropy masks");
-  verify(raw, *selected);
-  require(selected->texels.size() + selected->words(uint32_t(layout.charts.size())).size() * 8 <
-            raw.words(uint32_t(layout.charts.size())).size() * 8,
-          "Selected page representation reduces total payload and lookup storage");
+  require(!selected, "Integer payload avoids expanding raw masks into padded R8 pages");
   require(!selectMaskPages(raw, uint32_t(layout.charts.size()), 32, 1),
           "Devices without a fitting page retain compressed masks");
   std::vector<Masks::Entry> constantEntries;

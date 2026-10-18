@@ -423,12 +423,19 @@ int main() {
     mask.mark(1, 5);
     mask.mark(1, 5);
     const auto pixels = mask.pixels(4);
+    const uint32_t tail[] = {0u, 0xffffffffu, 0x80000000u, 0x12345678u};
+    const auto integers = mask.pixels(4, tail);
+    require(integers.words[0] == mask.wordsPerChart() && integers.words[1] == mask.chartCount() &&
+                std::equal(mask.words().begin(), mask.words().end(), integers.words.begin() + 2) &&
+                std::equal(std::begin(tail), std::end(tail),
+                           integers.words.begin() + 2 + mask.words().size()),
+            "Integer metadata preserves state words, high bits and payload without float conversion");
     require(mask.count() == 13 && mask.clearCount() == 7 && mask.contains(1, 5) && !mask.contains(0, 5) &&
                 mask.state(0, 5) == m::Visibility::Clear && mask.state(2, 0) == m::Visibility::Unknown &&
                 pixels.width == 4 && pixels.height == 3 &&
-                pixels.rgba[8] == 0x5490 && pixels.rgba[9] == 0x5490 && pixels.rgba[10] == 0x5490 &&
-                pixels.rgba[11] == 0x5490 && pixels.rgba[12] == 0x4880 && pixels.rgba[15] == 0x5400 &&
-                pixels.rgba[16] == 0x4880 && pixels.rgba[23] == 0x5600 && pixels.rgba[25] == 0x4400,
+                pixels.words[2] == 0x49494949u && pixels.words[3] == 0x40000009u &&
+                (pixels.words[4] & 255u) == 9u && (pixels.words[5] >> 24u) == 96u &&
+                ((pixels.words[6] >> 8u) & 255u) == 4u,
             "Two-bit states preserve chart boundaries, all byte lanes and 16-light word seams");
   }
   auto changed = source->lights[1];

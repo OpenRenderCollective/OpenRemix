@@ -57,15 +57,8 @@ namespace remix::forward::mixed {
     if ((count + width - 1) / width > maximumDimension)
       width = uint32_t(std::min(count, uint64_t(maximumDimension)));
     Pixels result{width, uint32_t((count + width - 1) / width), {}};
-    result.rgba.resize(size_t(result.width) * result.height * 4);
-    auto store = [&](size_t index, uint32_t value) {
-      for (uint32_t byte = 0; byte < 4; ++byte)
-        if (const uint32_t integer = (value >> (byte * 8)) & 255u) {
-          const uint32_t exponent = std::bit_width(integer) - 1;
-          result.rgba[index * 4 + byte] =
-              uint16_t(((exponent + 15) << 10) | ((integer << (10 - exponent)) & 1023u));
-        }
-    };
+    result.words.resize(size_t(result.width) * result.height);
+    auto store = [&](size_t index, uint32_t value) { result.words[index] = value; };
     store(0, m_stride);
     store(1, m_charts);
     for (size_t i = 0; i < m_words.size(); ++i)

@@ -922,8 +922,8 @@ namespace remix::forward::bake {
     volume->occlusionParameters = {m_job->mixedLights->occlusion.wordsPerChart(),
                                    m_job->mixedLights->occlusion.chartCount(), occlusion.width,
                                    masks.empty() ? 0u : uint32_t(2 + m_job->mixedLights->occlusion.words().size())};
-    const size_t occlusionBytes = occlusion.rgba.size() * sizeof(uint16_t);
-    volume->content.staticOcclusion = scene::fastHash(occlusion.rgba.data(), occlusionBytes) | 1;
+    const size_t occlusionBytes = occlusion.words.size() * sizeof(uint32_t);
+    volume->content.staticOcclusion = scene::fastHash(occlusion.words.data(), occlusionBytes) | 1;
     const size_t occlusionOffset = bytes + specular.size() + surfaceBytes;
     const size_t visibilityOffset = occlusionOffset + occlusionBytes;
     const size_t visibilityBytes = visibilityPages ? visibilityPages->texels.size() : 0;
@@ -978,7 +978,7 @@ namespace remix::forward::bake {
     volume->staging->write(data.data(), data.size());
     volume->staging->write(specular.data(), specular.size(), bytes);
     volume->staging->write(m_job->surfacePixels.data(), surfaceBytes, bytes + specular.size());
-    volume->staging->write(occlusion.rgba.data(), occlusionBytes, occlusionOffset);
+    volume->staging->write(occlusion.words.data(), occlusionBytes, occlusionOffset);
     if (visibilityBytes)
       volume->staging->write(visibilityPages->texels.data(), visibilityBytes, visibilityOffset);
     volume->data = std::make_unique<Buffer>();

@@ -22,11 +22,10 @@ namespace remix::forward::mixed {
     uint32_t chartCount() const { return m_charts; }
     struct Pixels {
       uint32_t width, height;
-      std::vector<uint16_t> rgba;
+      std::vector<uint32_t> words;
     };
-    // Header words (stride, chart count), followed by chart-major bitsets.
-    // Each logical byte is an exact integer in an RGBA16F component, using
-    // the format already required for HDR without normalized-byte decoding.
+    // Header words (stride, chart count), chart-major bitsets, then lookup/payload.
+    // Each packed word occupies one exact R32_UINT texel.
     Pixels pixels(uint32_t maximumDimension, std::span<const uint32_t> tail = {}) const;
 
   private:
