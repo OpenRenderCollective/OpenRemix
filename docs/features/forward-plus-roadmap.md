@@ -66,6 +66,12 @@ when baked lighting is active; a failed bake instead displays its failure messag
    offset the transfer savings in measured wall time. Retained directional work now uses an immutable
    receiver-prefix index and bounded generated batches instead of an expanded pair list. Continue
    reducing exhaustive visibility pairs while preserving the same shadow and direct ownership guarantees.
+   Finite-emitter cone bounds reject chart/light links only when every biased receiver and seam donor
+   lies outside the emitting cone, with sphere/triangle extent and rounding margins retained. These
+   are zero-emission exclusions, not invented occlusion proofs or a fixed influence-radius cap.
+   Runtime shading also skips filtered visibility/shadow work for a zero analytic cone response when
+   no retained direct coefficient needs evaluation; finite emitters crossing the cone edge keep their
+   baked directional contribution even when the centre approximation is zero.
    Supported live RTGI temporarily requests attributed static visibility instead of aggregate bake
    policies, because its analytic primary lighting cannot use aggregate irradiance for occlusion.
    Raster preferences remain intact when switching back. This is a correctness fallback; a compact

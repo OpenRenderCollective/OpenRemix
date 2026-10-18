@@ -1,4 +1,5 @@
 #include "forward/mixed/data.h"
+#include "forward/mixed/emitter_bounds.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -148,6 +149,8 @@ namespace remix::forward::mixed {
         if (radii[light] > 0 && std::isfinite(radii[light]) && distance2 <= radii[light] * radii[light]) {
           if (outsideEmissionHemisphere(sourceLight, bounds))
             ++result.hemisphereRejectedPairs;
+          else if (outsideEmissionCone(sourceLight, bounds))
+            ++result.coneRejectedPairs;
           else
             candidates.emplace_back(radii[light] * radii[light] / std::max(distance2, 1e-8f), light);
         }

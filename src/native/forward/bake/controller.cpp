@@ -189,9 +189,10 @@ namespace remix::forward::bake {
       for (const auto &chart : mixedLights->charts)
         for (auto light : chart)
           candidates += light != mixed::none;
-      std::fprintf(stderr, "OpenRemix mixed plan: candidates=%llu hemisphere_rejected=%llu initial_tasks=%zu\n",
+      std::fprintf(stderr, "OpenRemix mixed plan: candidates=%llu hemisphere_rejected=%llu cone_rejected=%llu initial_tasks=%zu\n",
                    static_cast<unsigned long long>(candidates),
-                   static_cast<unsigned long long>(mixedLights->hemisphereRejectedPairs), mixedLights->tasks.size());
+                   static_cast<unsigned long long>(mixedLights->hemisphereRejectedPairs),
+                   static_cast<unsigned long long>(mixedLights->coneRejectedPairs), mixedLights->tasks.size());
     }
     visibility.resize(surfaceLayout.points.size(), {1, 1, 1, 1});
     if (source->sun.isDistant)
@@ -1122,6 +1123,9 @@ namespace remix::forward::bake {
         profile && std::strcmp(profile, "1") == 0) {
       std::fprintf(stderr, "Bake CPU readback: total_ms=%.3f bytes=%llu\n", m_job->readbackMs,
                    static_cast<unsigned long long>(m_job->readbackBytes));
+      std::fprintf(stderr, "Bake emitter bounds: hemisphere_rejected=%llu cone_rejected=%llu\n",
+                   static_cast<unsigned long long>(m_job->mixedLights->hemisphereRejectedPairs),
+                   static_cast<unsigned long long>(m_job->mixedLights->coneRejectedPairs));
       std::fprintf(stderr, "Bake retained direct: classified_points=%llu retained_points=%u "
                            "removed_scratch_bytes=%llu task_index_bytes=%llu\n",
                    static_cast<unsigned long long>(m_job->visibilityPoints), m_job->directReceived,

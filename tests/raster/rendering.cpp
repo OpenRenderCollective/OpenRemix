@@ -894,6 +894,7 @@ namespace {
               "Default water support preserves dry-scene pixels and allocates no full-screen snapshot images");
     }
   }
+#include "finite_cone.h"
   void mixedLightingTests(bool localShadows = false, bool directDiffuse = false, bool styled = false,
                           bool aggregateDiffuse = false) {
     for (uint32_t samples : {1u, 2u, 4u}) {
@@ -4376,6 +4377,7 @@ int main(int argc, char **argv) {
   else if (argc>2 && std::strcmp(argv[2],"local-shadows")==0) mixedLightingTests(true);
   else if (argc>2 && std::strcmp(argv[2],"baked-direct")==0) mixedLightingTests(true, true);
   else if (argc>2 && std::strcmp(argv[2],"aggregate-direct")==0) mixedLightingTests(true, true, false, true);
+  else if (argc>2 && std::strcmp(argv[2],"finite-cone")==0) finiteConeLightingTests();
   else if (argc>2 && std::strcmp(argv[2],"styled-indirect")==0) styledIndirectTests();
   else if (argc>2 && std::strcmp(argv[2],"local-shadow-plane")==0) localShadowPlaneTests();
   else if (argc>2 && std::strcmp(argv[2],"auto-exposure")==0) autoExposureTests();

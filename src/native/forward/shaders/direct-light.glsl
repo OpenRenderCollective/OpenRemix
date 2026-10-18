@@ -23,6 +23,16 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
   uint cachedVisibility = staticLightVisibility(surfaceChart, uint(light.shaping.w));
   if (cachedVisibility == 1u)
     return BrdfLobes(vec3(0), vec3(0));
+  uint directChannel = lightChannel(surfaceDirectLights, uint(light.shaping.w));
+  bool bakedDiffuse = directChannel < 4u && directIrradiance[min(directChannel, 3u)] >= 0;
+  vec3 l = delta / distance;
+  float shape = emitterConeWeight(light.directionCone.xyz, light.directionCone.w,
+                                   light.shaping.x, light.shaping.y, -l);
+  // A zero analytic response needs no filtered masks or shadow filtering.
+  // Retained direct SH can still contain a finite emitter crossing the cone
+  // boundary even when its centre response vanishes.
+  if (shape <= 0 && !bakedDiffuse)
+    return BrdfLobes(vec3(0), vec3(0));
   float visibility;
   uint channel;
   bool baked =
@@ -37,16 +47,11 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
       visibility = probeVisibility;
     }
   }
-  uint directChannel = lightChannel(surfaceDirectLights, uint(light.shaping.w));
-  bool bakedDiffuse = directChannel < 4u && directIrradiance[min(directChannel, 3u)] >= 0;
   if (!bakedDiffuse && visibility <= 0)
     return BrdfLobes(vec3(0), vec3(0));
   float moving = localShadowVisibility(light, p, receiverNormal, !baked);
   if (moving <= 0 && !aggregateDiffuse)
     return BrdfLobes(vec3(0), vec3(0));
-  vec3 l = delta / distance;
-  float shape = emitterConeWeight(light.directionCone.xyz, light.directionCone.w,
-                                   light.shaping.x, light.shaping.y, -l);
   float solidAngle;
   if (light.radiance.w > 0) {
     vec3 normal =

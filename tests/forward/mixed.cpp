@@ -1,6 +1,7 @@
 #include "forward/lightmap/data.h"
 #include "forward/mixed/data.h"
 #include "forward/mixed/direct_work.h"
+#include "forward/mixed/emitter_bounds.h"
 #include "forward/mixed/overflow.h"
 #include "forward/ray/capture.h"
 #include "scene/fixtures.h"
@@ -112,6 +113,102 @@ int main() {
     try { (void)forward::bake::directPolicy(*styled, selected); }
     catch (const std::invalid_argument &) { refused = true; }
     require(refused, "Styled energy cannot become permanent aggregate irradiance");
+  }
+  {
+    scene::SphereLight spot;
+    spot.radius = .1f;
+    spot.direction[2] = 1;
+    spot.coneCos = std::sqrt(.5f);
+    const forward::Bounds outside{{9, -1, 0}, {11, 1, 2}, true};
+    require(m::outsideEmissionCone(spot, outside),
+            "A narrow spot cannot reach a box entirely beside its finite emitting cone");
+    spot.radius = 10;
+    require(!m::outsideEmissionCone(spot, outside),
+            "A finite emitter reaching the cone boundary remains eligible");
+    spot.radius = 1e-8f;
+    require(!m::outsideEmissionCone(spot, {{1.000001f, 0, 1}, {1.000001f, 0, 1}, true}),
+            "Cone tangency and float-rounding uncertainty remain with hardware sampling");
+    spot.radius = .1f;
+    spot.direction[2] = 2;
+    require(!m::outsideEmissionCone(spot, {{10, 0, 4}, {10, 0, 4}, true}),
+            "Nonunit emission axes preserve the GPU's wider effective cone");
+    spot.direction[2] = 1;
+    spot.triangle = 1;
+    spot.corners[0][0] = -.1f;
+    spot.corners[1][0] = .1f;
+    spot.corners[2][1] = .1f;
+    require(m::outsideEmissionCone(spot, outside), "Triangle emission uses its full finite extent");
+    spot.corners[1][0] = 9.9f;
+    require(!m::outsideEmissionCone(spot, outside),
+            "A triangle corner reaching a receiver cannot be rejected by its centre");
+    spot.triangle = 0;
+    uint32_t rejected = 0;
+    for (uint32_t trial = 0; trial < 256; ++trial) {
+      const float angle = trial * .731f;
+      spot.direction[0] = .6f * std::cos(angle);
+      spot.direction[1] = .6f * std::sin(angle);
+      spot.direction[2] = .8f;
+      spot.coneCos = .25f + .7f * float(trial % 7) / 6;
+      spot.radius = .1f + .3f * float(trial % 5);
+      const forward::Vec3 centre{8*std::sin(angle*.7f), 8*std::cos(angle*1.3f), 5*std::sin(angle*.9f)};
+      forward::Bounds bounds;
+      for (uint32_t c = 0; c < 3; ++c) {
+        bounds.minimum[c] = centre[c] - .4f;
+        bounds.maximum[c] = centre[c] + .4f;
+      }
+      bounds.valid = true;
+      if (!m::outsideEmissionCone(spot, bounds)) continue;
+      ++rejected;
+      for (uint32_t corner = 0; corner < 8; ++corner)
+        for (uint32_t sample = 0; sample < 32; ++sample) {
+          const double z = 1 - 2*(double(sample)+.5)/32, phi = sample*2.399963229728653;
+          const double radial = std::sqrt(1-z*z);
+          const double offset[] = {radial*std::cos(phi), radial*std::sin(phi), z};
+          double projection = 0, length2 = 0;
+          for (uint32_t c = 0; c < 3; ++c) {
+            const double delta = ((corner & (1u << c)) ? bounds.maximum[c] : bounds.minimum[c]) -
+                                 spot.radius*offset[c];
+            projection += spot.direction[c]*delta;
+            length2 += delta*delta;
+          }
+          require(projection/std::sqrt(length2) <= spot.coneCos,
+                  "Rejected finite spot bounds contain no sampled emitting connection");
+        }
+    }
+    require(rejected > 30 && rejected < 250, "Rotated cone fixtures exercise both retention and rejection");
+    for (float scale : {.001f, 1.f, 1000.f}) {
+      scene::SphereLight scaled;
+      scaled.radius = .1f * scale;
+      scaled.direction[2] = 1;
+      scaled.coneCos = std::sqrt(.5f);
+      auto bounds = outside;
+      for (uint32_t c = 0; c < 3; ++c) {
+        bounds.minimum[c] *= scale;
+        bounds.maximum[c] *= scale;
+      }
+      require(m::outsideEmissionCone(scaled, bounds),
+              "Cone rejection is independent of the host's world-unit scale");
+    }
+  }
+  {
+    auto shaped = std::make_shared<scene::BakeScene>(*source);
+    shaped->lights.resize(1);
+    auto &light = shaped->lights[0];
+    light.position[0] = -10;
+    light.direction[2] = 1;
+    light.coneCos = .9f;
+    const auto excluded = m::plan(shaped, layout);
+    require(excluded.tasks.empty() && excluded.coneRejectedPairs == 1 && excluded.occlusion.count() == 0,
+            "Cone-excluded chart links schedule no rays and invent no blocked-visibility records");
+    require(!m::plan(shaped, layout, .001f, {}, 10).tasks.empty(),
+            "Transport bias expands receiver bounds before cone rejection");
+    auto seamLayout = layout;
+    seamLayout.points[0].position[0] = -10;
+    require(!m::plan(shaped, seamLayout).tasks.empty(),
+            "A seam donor entering the cone preserves the chart's light candidate");
+    light.radius = 20;
+    require(!m::plan(shaped, layout).tasks.empty(),
+            "An emitter extent overlapping the chart retains the original visibility path");
   }
   {
     auto shaped = std::make_shared<scene::BakeScene>(*source);

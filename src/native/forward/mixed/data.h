@@ -25,6 +25,7 @@ namespace remix::forward::mixed {
     std::vector<Task> tasks;
     uint32_t overflow = 0; // chart/light links using the ordinary direct-light fallback
     uint64_t hemisphereRejectedPairs = 0; // planning diagnostic; no visibility proof is stored
+    uint64_t coneRejectedPairs = 0; // finite-emitter cone cannot reach the biased chart bounds
     Occlusion occlusion;
     Masks masks;
     std::vector<std::vector<uint32_t>> remaining;
