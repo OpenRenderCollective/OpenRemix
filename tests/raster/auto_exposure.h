@@ -81,5 +81,21 @@ void autoExposureTests() {
             "Minimum EV limits bound bright-scene exposure");
     std::printf("Forward+ auto exposure %ux: display %u -> %u -> %u; target replacement/manual/EV passed\n",
                 samples, neutral[centre], bright[centre], dark[centre]);
+    options.autoExposure = false;
+    options.ambient = .3f;
+    options.prism = false;
+    target.forward->updateLighting(options);
+    require(std::abs(int(render()[centre]) - int(std::lround(.3f * 255))) <= 1,
+            "Disabling Prism passes linear scene radiance without a hidden second tone curve");
+    options.prism = true;
+    const auto reference = prismDisplay({.3f, .3f, .3f});
+    target.enableForward(options, true, true);
+    require(std::abs(int(render()[centre]) - int(std::lround(std::pow(reference[0], 1.f / 2.2f) * 255))) <= 2,
+            "Forward+ uses the path-traced Prism and gamma 2.2 display path exactly once");
+    options.gamma22 = false;
+    target.forward->updateLighting(options);
+    const float srgb = 1.055f * std::pow(reference[0], 1.f / 2.4f) - .055f;
+    require(std::abs(int(render()[centre]) - int(std::lround(srgb * 255))) <= 2,
+            "Standard sRGB output remains available without double encoding");
   }
 }

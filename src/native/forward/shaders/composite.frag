@@ -19,17 +19,20 @@ layout(set = 0, binding = 3, std140) uniform Sky {
 } sky;
 layout(set = 0, binding = 4) uniform sampler2D dome;
 layout(push_constant) uniform Display {
-  float exposure;
+  uint prism;
   uint encodeOutput;
   uint samples;
   uint hasReflections;
   uint background;
+  uint gamma22;
+  uint hardwareSrgb;
 } display;
 layout(location = 0) out vec4 result;
 #include "../../postfx/shaders/composite.glsl"
+#include "../../pathtrace/shaders/display.glsl"
 vec3 tonemap(vec3 color) {
   color = postColor(color, gl_FragCoord.xy / sky.target.xy);
-  return clamp((color * (2.51 * color + .03)) / (color * (2.43 * color + .59) + .14), 0, 1);
+  return displayColor(color, display.prism, display.gamma22, display.encodeOutput, display.hardwareSrgb);
 }
 vec3 mediumColor(vec3 color, float depth) {
 #ifdef WATER_VOLUME
@@ -59,9 +62,6 @@ void main() {
     vec2 uv = vec2(atan(direction.z, direction.x) / 6.28318530718 + .5,
                    acos(clamp(direction.y, -1, 1)) / 3.14159265359);
     vec3 mapped = tonemap(mediumColor(textureLod(dome, uv, 0).rgb * sky.radiance.rgb, 1));
-    if (display.encodeOutput != 0u)
-      mapped = mix(mapped * 12.92, 1.055 * pow(mapped, vec3(1.0 / 2.4)) - .055,
-                   greaterThan(mapped, vec3(.0031308)));
     result = vec4(mapped, 1);
     gl_FragDepth = 1;
     return;
@@ -80,9 +80,6 @@ void main() {
   vec3 scene = color.rgb / max(color.a, 1e-6);
   if (display.hasReflections != 0u) scene += texelFetch(reflections,pixel,0).rgb;
   vec3 mapped = tonemap(mediumColor(scene, depth));
-  if (display.encodeOutput != 0u)
-    mapped =
-        mix(mapped * 12.92, 1.055 * pow(mapped, vec3(1.0 / 2.4)) - .055, greaterThan(mapped, vec3(.0031308)));
   result = vec4(mapped * color.a, color.a);
   gl_FragDepth = depth;
 }

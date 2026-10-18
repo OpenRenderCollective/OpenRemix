@@ -11,6 +11,7 @@ namespace remix::forward {
     float sceneScale = 1;
     float ambient = .025f;
     float exposure = 1;
+    bool prism = true, gamma22 = true; // shared path-traced display transform
     bool autoExposure = false; // runtime profiles enable it; low-level callers retain explicit manual output
     float autoExposureTarget = .18f, autoExposureSpeed = 2, autoExposureCentre = .75f;
     float autoExposureMinEv = -8, autoExposureMaxEv = 4;

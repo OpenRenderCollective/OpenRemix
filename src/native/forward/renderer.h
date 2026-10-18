@@ -42,7 +42,7 @@ namespace remix::forward {
                     Options options, bool encodeOutput, pipeline::Service *pipelines = nullptr,
                     bool hardwareRay = false, std::shared_ptr<bake::Controller> baking = {},
                     uint32_t queueFamily = VK_QUEUE_FAMILY_IGNORED,
-                    std::shared_ptr<postfx::State> exposure = {});
+                    std::shared_ptr<postfx::State> exposure = {}, bool hardwareSrgb = false);
     // Target replacements may share the map bake. Only the active renderer
     // advances it, on the render thread after the owning frame-slot fence.
     std::shared_ptr<bake::Controller> bakeController() const;

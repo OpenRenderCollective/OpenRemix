@@ -54,7 +54,7 @@ namespace remix::forward {
                             VkExtent2D extent, Options options, bool encodeOutput,
                             pipeline::Service *pipelines, bool hardwareRay,
                             std::shared_ptr<bake::Controller> baking, uint32_t queueFamily,
-                            std::shared_ptr<postfx::State> exposure) {
+                            std::shared_ptr<postfx::State> exposure, bool hardwareSrgb) {
     if (baking && !baking->compatible(physical, device, pipelines, hardwareRay, queueFamily))
       throw std::invalid_argument("Shared map bake belongs to another device or pipeline service");
     auto next = std::make_unique<Gpu>();
@@ -63,6 +63,7 @@ namespace remix::forward {
     next->extent = extent;
     next->options = options;
     next->encodeOutput = encodeOutput;
+    next->hardwareSrgb = hardwareSrgb;
     next->giSupported = options.rtGI && hardwareRay && ray::LiveScene::supportsFragmentGI(physical);
     next->waterRaySupported = options.water && options.rtReflections && hardwareRay &&
                               water::Pass::supportsRayReflections(physical);

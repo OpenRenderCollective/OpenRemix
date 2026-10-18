@@ -209,8 +209,8 @@ vertical clamping. Camera translation does not move it. This pass needs no hardw
 anisotropy support. Forward HDR resolves before a display composite writes colour
 and representative opaque depth into the output target. Uncovered samples retain sky colour through
 premultiplied coverage. Raster effects, viewmodels and UI then use the established ordering, including
-soft-depth capture, mask passes and halos. The display transform currently uses fixed exposure and a
-bounded filmic curve; shared automatic exposure/bloom integration is future work.
+soft-depth capture, mask passes and halos. The display transform uses the shared GPU automatic exposure
+service and the same Prism/gamma display helper as the path tracer. Forward+ bloom remains future work.
 
 MSAA covers geometry, including alpha-tested geometry silhouettes. Alpha tests remain thresholded;
 alpha-to-coverage and sample-rate shading are not enabled. Normal variance increases roughness to reduce
@@ -951,10 +951,11 @@ bake dispatch per submitted render frame; no extra queue submission or CPU wait 
 The target is approximate: scene complexity and several submitted frame slots can cause an overrun.
 Automatic work keeps a 64-point occupancy floor, subject to the remaining points and hard work limit;
 this avoids collapsing throughput when a nearly empty GPU dispatch still has appreciable latency.
-Timed dispatches remain bounded to 65535 points and 16777216 point/sample/bounce work units. A setting
+Timed dispatches remain bounded to 262140 points using compact rectangular compute grids. Visibility
+may use up to 67108864 point/sample work units; other stages retain the 16777216-work ceiling. A setting
 of zero uses the configured fixed batch size and the previous 1048576-work ceiling; missing timestamp
 support also uses that fallback. Transport receives the same hard ceiling as the scheduler.
-Reflection captures retain their existing 1024-point batching to preserve their sampling sequence.
+Reflection captures start from their configured seed; sample identity is independent of batch boundaries.
 `REMIX_DEBUG_BAKE_TIMING=1` prints per-stage point/batch counts, total GPU milliseconds, largest batch
 and longest dispatch after activation. These are completed queue timestamps, rather than wall time
 or an estimate from frame rate. Cached jobs have no tracing timings.
@@ -1727,6 +1728,19 @@ pause adaptation, and empty frames retain history. History survives target/MSAA
 replacement and resets when scene identity changes. Forward+ uses no full-size
 material guide and does not enable bloom. Its exposure controls are independent
 of the path-traced profile.
+
+Forward+ uses the path tracer's `displayColor` helper for Prism tone mapping and
+gamma-2.2 or standard sRGB output, including hardware-sRGB attachment compensation.
+`forward.prism` and `forward.gamma22` default to enabled and update without target
+replacement. Exposure is applied once before the shared display transform for
+world, native sky and water composition. Raster overlays retain their established
+display handling.
+
+Visibility result buffers grow for their actual wire format: four bytes for
+scalar overflow visibility, 48 for visibility with directional SH, and 256 for
+full irradiance. Reusing a completed slot for a larger output format grows its
+result storage independently of point capacity. GPU producers receive the common
+point/full-result capacity and cannot overrun a compact allocation.
 
 GPU lightmap denoising stages transfers through an OIDN-owned pinned host arena
 of at most 8 MiB, additional to chart scratch and device/model memory. Ordered

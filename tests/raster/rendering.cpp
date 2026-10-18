@@ -19,6 +19,7 @@
 using namespace remix::test;
 namespace {
   using remix::RasterRenderer;
+#include "display_reference.h"
   void vk(VkResult result) { require(result == VK_SUCCESS, "Vulkan call"); }
 
   std::atomic<unsigned> errors = 0;
@@ -297,13 +298,13 @@ namespace {
                                           .layers = 1};
       vk(vkCreateFramebuffer(device, &fb, nullptr, &framebuffer));
     }
-    void enableForward(remix::forward::Options options, bool preserveBaking = false) {
+    void enableForward(remix::forward::Options options, bool preserveBaking = false, bool encodeOutput = false) {
       vk(vkDeviceWaitIdle(device));
       const auto baking = preserveBaking && forward ? forward->bakeController() : nullptr;
       const auto exposure = preserveBaking && forward ? forward->exposureState() : nullptr;
       auto next = std::make_unique<remix::forward::Renderer>();
       auto job = pipelines->prepare("forward-test-" + std::to_string(++forwardGeneration), [&] {
-          next->initialize(physical,device,pass,extent,options,false,pipelines.get(),hardwareRay,baking,queueFamily,exposure);
+          next->initialize(physical,device,pass,extent,options,encodeOutput,pipelines.get(),hardwareRay,baking,queueFamily,exposure);
       });
       while (!job->ready()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
       job->check();
@@ -2399,6 +2400,11 @@ namespace {
             "Unloaded map waits for an explicit complete scene");
     std::puts("Forward+ bake publication, replacement, pixel lighting, disable and unload passed");
   }
+  void pixel(const std::vector<uint8_t> &image, uint32_t x, uint32_t y,
+             const std::array<float, 3> &expected, const char *reason) {
+    pixel(image, x, y, int(std::lround(expected[0] * 255)), int(std::lround(expected[1] * 255)),
+          int(std::lround(expected[2] * 255)), reason);
+  }
   void skyTests() {
     for (uint32_t samples : {1u, 4u}) {
       Target target;
@@ -2423,7 +2429,7 @@ namespace {
       r.createLight(light, lamp);
       auto submit = [&] { r.drawLight(lamp); };
       submit();
-      pixel(target.render(), 32, 32, 205, 0, 0, "Forward+ displays a radiance dome without world geometry");
+      pixel(target.render(), 32, 32, prismDisplay({1, 0, 0}), "Forward+ displays a radiance dome without world geometry");
       const auto green = quad(r, 0x900002, material(r, 0x900003, 0, 1, 0));
       auto sky = instance(green);
       sky.categoryFlags = REMIXAPI_INSTANCE_CATEGORY_BIT_SKY;
@@ -2435,7 +2441,7 @@ namespace {
       r.drawInstance(instance(black));
       const auto image = target.render();
       pixel(image, 32, 32, 0, 0, 0, "Opaque world covers the radiance background");
-      pixel(image, 0, 0, 205, 0, 0, "Uncovered world samples retain the radiance background");
+      pixel(image, 0, 0, prismDisplay({1, 0, 0}), "Uncovered world samples retain the radiance background");
       if (target.forward->statistics().samples > 1) {
         bool partial = false;
         for (uint32_t x = 0; x < 64; ++x) {
@@ -2486,20 +2492,20 @@ namespace {
       view.pNext = &params;
       r.setupCamera(view);
       submit();
-      pixel(target.render(), 32, 32, 0, 0, 205, "Dome panorama follows the world view direction");
+      pixel(target.render(), 32, 32, prismDisplay({0, 0, 1}), "Dome panorama follows the world view direction");
       params.position = {-200, 30, 80};
       r.setupCamera(view);
       submit();
-      pixel(target.render(), 32, 32, 0, 0, 205, "Camera translation does not move an infinite sky");
+      pixel(target.render(), 32, 32, prismDisplay({0, 0, 1}), "Camera translation does not move an infinite sky");
       params.forward = {0, 0, -1};
       params.right = {-1, 0, 0};
       r.setupCamera(view);
       submit();
-      pixel(target.render(), 32, 32, 205, 0, 0, "Camera rotation selects the opposite dome hemisphere");
+      pixel(target.render(), 32, 32, prismDisplay({1, 0, 0}), "Camera rotation selects the opposite dome hemisphere");
       dome.transform.matrix[0][0] = dome.transform.matrix[2][2] = -1;
       r.createLight(light, lamp);
       submit();
-      pixel(target.render(), 32, 32, 0, 0, 205, "Dome transform rotates the panoramic background");
+      pixel(target.render(), 32, 32, prismDisplay({0, 0, 1}), "Dome transform rotates the panoramic background");
       // A horizontal horizon must agree with world geometry when pitching.
       // Longitude-only colours above cannot detect a reversed vertical axis.
       std::array<uint8_t, 8 * 64 * 4> horizon{};
@@ -3634,9 +3640,6 @@ namespace {
         "Raster GPU readback: depth, culling, textures, cutouts, blending, skinning, UI and lifetime passed");
   }
   void waterTests() {
-    auto tone = [](float value) {
-      return std::clamp((value * (2.51f * value + .03f)) / (value * (2.43f * value + .59f) + .14f), 0.f, 1.f);
-    };
     for (uint32_t samples : {1u, 2u, 4u}) {
       Target target;
       auto &r = target.raster;
@@ -3681,8 +3684,11 @@ namespace {
       const float passed[] = {std::sqrt(.15f), std::sqrt(.6f), std::sqrt(.8f)};
       const float tint[] = {.15f, .6f, .8f}, color[] = {1, .1f, .05f};
       const float body = 1 - (passed[0] * .2126f + passed[1] * .7152f + passed[2] * .0722f);
+      std::array<float, 3> wetHdr;
+      for (uint32_t c = 0; c < 3; ++c) wetHdr[c] = color[c] * passed[c] + tint[c] * body;
+      const auto wetDisplay = prismDisplay(wetHdr);
       for (uint32_t c = 0; c < 3; ++c) {
-        const float expected = tone(color[c] * passed[c] + tint[c] * body) * 255;
+        const float expected = wetDisplay[c] * 255;
         std::printf("Water %ux channel %u: %u expected %.2f\n", samples, c, unsigned(wet[centre+c]), expected);
         require(std::abs(float(wet[centre+c]) - expected) < 4,
                 "Live water consumes opaque HDR, measured path length and lit body colour before tone mapping");
@@ -3690,7 +3696,10 @@ namespace {
       require(target.forward->statistics().draws == 2,
               "Water geometry is submitted by the active Forward+ renderer");
       const auto front = draw(true, true);
-      require(front[centre] < 3 && front[centre+1] < 3 && front[centre+2] > 180,
+      const auto foregroundDisplay = prismDisplay({0, 0, 1});
+      require(std::abs(front[centre] - foregroundDisplay[0] * 255) < 3 &&
+                  std::abs(front[centre+1] - foregroundDisplay[1] * 255) < 3 &&
+                  std::abs(front[centre+2] - foregroundDisplay[2] * 255) < 3,
               "Foreground opaque geometry remains in front of measured water");
       for (uint32_t slot = 0; slot < remix::gpuFrameCount + 2; ++slot) {
         const auto reused = draw(true, false);
@@ -3732,8 +3741,11 @@ namespace {
         const auto underwater = submerged(exit);
         const float distance = exit ? .3f : .8f;
         const float medium[] = {.25f, .5f, .75f};
+        std::array<float, 3> fogHdr;
+        for (uint32_t c = 0; c < 3; ++c) fogHdr[c] = color[c] * std::pow(medium[c], distance);
+        const auto fogDisplay = prismDisplay(fogHdr);
         for (uint32_t c = 0; c < 3; ++c)
-          require(std::abs(float(underwater[centre+c]) - tone(color[c] * std::pow(medium[c], distance)) * 255) < 4,
+          require(std::abs(float(underwater[centre+c]) - fogDisplay[c] * 255) < 4,
                   "Camera medium attenuates opaque geometry and water exits once at the nearest depth");
       }
       environment = {.2f, .4f, .6f};
@@ -3741,10 +3753,14 @@ namespace {
         const auto underwater = submerged(exit);
         const float distance = exit ? .3f : .8f;
         const float medium[] = {.25f, .5f, .75f};
+        std::array<float, 3> fogHdr;
         for (uint32_t c = 0; c < 3; ++c) {
           const float passed = std::pow(medium[c], distance);
-          const float expected = passed * color[c] + (1 - passed) * medium[c] * environment[c];
-          require(std::abs(float(underwater[centre+c]) - tone(expected) * 255) < 4,
+          fogHdr[c] = passed * color[c] + (1 - passed) * medium[c] * environment[c];
+        }
+        const auto fogDisplay = prismDisplay(fogHdr);
+        for (uint32_t c = 0; c < 3; ++c) {
+          require(std::abs(float(underwater[centre+c]) - fogDisplay[c] * 255) < 4,
                   "Underwater body colour uses uniform camera environment without a sky dome");
         }
       }
@@ -3823,9 +3839,6 @@ namespace {
     }
   }
   void waterEnvironmentTests(bool automatic = false) {
-    auto tone = [](float value) {
-      return std::clamp((value * (2.51f * value + .03f)) / (value * (2.43f * value + .59f) + .14f), 0.f, 1.f);
-    };
     for (uint32_t samples : {1u, 2u, 4u}) {
       Target target(64, 64, true); // The visibility bake requires hardware ray queries.
       auto &r = target.raster;
@@ -3895,10 +3908,11 @@ namespace {
       }
       require(target.forward->statistics().baking.active, "Water sky fallback waits for published visibility");
       const auto reflected = reflectSky();
+      const auto reflectedDisplay = prismDisplay({.04f * environment[0], .04f * environment[1], .04f * environment[2]});
       for (uint32_t c = 0; c < 3; ++c) {
         std::printf("Water sky %ux channel %u: %u expected %.2f\n", samples, c, unsigned(reflected[centre+c]),
-                    tone(.04f * environment[c]) * 255);
-        require(std::abs(float(reflected[centre+c]) - tone(.04f * environment[c]) * 255) < 3,
+                    reflectedDisplay[c] * 255);
+        require(std::abs(float(reflected[centre+c]) - reflectedDisplay[c] * 255) < 3,
                 "Uncovered water reflections use uniform camera environment with IOR Fresnel weighting");
       }
       remixapi_LightInfoDomeEXT dome{};
@@ -3911,9 +3925,9 @@ namespace {
       domeLight.radiance = {6, 2, 1};
       r.createLight(domeLight, environmentLight);
       const auto authored = reflectSky();
-      const float authoredColor[] = {6, 2, 1};
+      const auto authoredDisplay = prismDisplay({.04f * 6, .04f * 2, .04f});
       for (uint32_t c = 0; c < 3; ++c)
-        require(std::abs(float(authored[centre+c]) - tone(.04f * authoredColor[c]) * 255) < 3,
+        require(std::abs(float(authored[centre+c]) - authoredDisplay[c] * 255) < 3,
                 "An authored dome replaces uniform water environment instead of adding it twice");
       environmentLight = nullptr;
       const auto restored = reflectSky();

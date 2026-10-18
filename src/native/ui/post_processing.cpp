@@ -10,6 +10,8 @@ namespace remix {
     if (settings.backend == config::Backend::ForwardPlus) {
       ImGui::TextUnformatted("Forward+ brightness");
       auto &options = settings.forward;
+      ui::Checkbox("Prism tone mapping", &options.prism);
+      ui::Checkbox("Gamma 2.2 output", &options.gamma22);
       ui::Checkbox("Automatic exposure", &options.autoExposure);
       ui::DragFloat("Exposure multiplier", &options.exposure, .01f, .0001f, 10000.f);
       ui::SliderFloat("Meter target", &options.autoExposureTarget, .02f, .6f, "%.3f");

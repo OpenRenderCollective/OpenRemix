@@ -193,11 +193,10 @@ namespace remix::forward {
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.compositeLayout, 1, 1,
                             &post, 0, nullptr);
     const struct {
-      float exposure;
-      uint32_t encode, samples, reflections, background;
-    } push{g.options.exposure, uint32_t(g.encodeOutput), uint32_t(g.samples),
+      uint32_t prism, encode, samples, reflections, background, gamma22, hardwareSrgb;
+    } push{uint32_t(g.options.prism), uint32_t(g.encodeOutput), uint32_t(g.samples),
            uint32_t(bool(g.reflections) && !frame.waterComposed && g.options.debugView == 0),
-           uint32_t(background)};
+           uint32_t(background), uint32_t(g.options.gamma22), uint32_t(g.hardwareSrgb)};
     vkCmdPushConstants(command, g.compositeLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
     vkCmdDraw(command, 3, 1, 0, 0);
   }

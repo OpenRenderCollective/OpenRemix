@@ -199,7 +199,13 @@ int main() {
   require(!accepts(draw), "Viewmodel camera is not world lighting");
   config::Settings settings;
   require(settings.forward.autoExposure, "Forward+ runtime profiles enable automatic exposure by default");
+  require(settings.forward.prism && settings.forward.gamma22,
+          "Forward+ defaults to the shared path-traced Prism and gamma display transform");
   const auto beforeExposure = settings.forward;
+  require(config::set(settings, "rtx.native.forward.prism", "false") == config::SetResult::Success &&
+              config::set(settings, "rtx.native.forward.gamma22", "false") == config::SetResult::Success &&
+              beforeExposure.sameTargets(settings.forward) && beforeExposure.baking == settings.forward.baking,
+          "Display transform controls update without replacing targets or rebaking lighting");
   require(config::set(settings, "rtx.native.forward.autoExposure", "false") == config::SetResult::Success &&
               config::set(settings, "rtx.native.forward.autoExposureTarget", "0.24") == config::SetResult::Success &&
               config::set(settings, "rtx.native.forward.autoExposureSpeed", "3") == config::SetResult::Success &&

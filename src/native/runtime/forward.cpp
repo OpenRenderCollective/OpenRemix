@@ -109,7 +109,7 @@ namespace remix {
       next->job = m_pipelines->prepare("forward-" + std::to_string(++m_preparationGeneration), [=] {
         auto replacement = std::make_unique<forward::Renderer>();
         replacement->initialize(physical, device, output, extent, options, encode, pipelines, hardwareRay,
-                                baking, queueFamily, exposure);
+                                baking, queueFamily, exposure, srgb);
         next->renderer = std::move(replacement);
       });
       m_forwardPreparation = std::move(next);

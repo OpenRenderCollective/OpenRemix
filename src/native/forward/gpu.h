@@ -21,6 +21,7 @@ namespace remix::forward {
     Options options;
     Statistics statistics;
     bool encodeOutput = false;
+    bool hardwareSrgb = false;
     uint32_t slot = 0;
     std::chrono::steady_clock::time_point epoch = std::chrono::steady_clock::now();
 
