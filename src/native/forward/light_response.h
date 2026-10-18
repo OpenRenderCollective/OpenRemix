@@ -1,6 +1,8 @@
 #pragma once
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <span>
 
 namespace remix::forward {
   // Stored exactly as floats in LightData::corners[2].w; shared with direct-light.glsl.
@@ -22,6 +24,18 @@ namespace remix::forward {
     LightResponse mode = LightResponse::Analytic;
     float highlightWeight = 1;
   };
+  // Aggregate highlights do not consume unit-direct SH without a moving
+  // correction. Analytic/styled responses still need their attributed diffuse.
+  inline bool needsUnitDirect(LightResponse mode, bool shadowSelected, float shadowWeight) {
+    if (mode == LightResponse::Analytic) return true;
+    if (mode == LightResponse::BakedFallback) return false;
+    return shadowSelected && (!std::isfinite(shadowWeight) || shadowWeight > 0);
+  }
+  inline bool drawNeedsUnitDirect(std::span<const uint32_t> owners, std::span<const uint8_t> needed) {
+    return std::any_of(owners.begin(), owners.end(), [&](uint32_t owner) {
+      return owner >= needed.size() || needed[owner];
+    });
+  }
   inline RuntimeLightResponse lightResponse(const LightResponseInput &input) {
     if (!input.aggregate) return {};
     if (!input.attributed) return {LightResponse::BakedFallback};

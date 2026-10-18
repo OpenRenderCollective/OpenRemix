@@ -39,6 +39,15 @@ fetch experiment preserved pixels but regressed paired Crossfire GPU timings and
 Keep shader performance changes behind matched measurements; prioritize removing exhaustive light
 responses and their preparation instead of adding more branches inside the local-light loop.
 
+Draw-level ownership now skips unit-direct surface texture reads when no retained light needs
+analytic diffuse or an active moving-shadow correction. Unknown owners remain conservative. A
+same-binary Crossfire replay improved about 5.3%; warm Construct showed no reliable improvement.
+This does not close the overall performance gate: the combined candidate still regresses against
+the earlier package. A charted-only shader/pipeline experiment measured no useful gain and was
+removed. Disabled indexed directional surface decoding is specialized out of ordinary pipelines;
+that alone did not resolve the regression. Next isolate attributed probe decoding and shader cost
+while retaining sparse zero fields, exact unknown-coverage fallback and measured output parity.
+
 ## Current capabilities and open requirements
 
 ### Profiling and authoring priorities

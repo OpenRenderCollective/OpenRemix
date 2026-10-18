@@ -25,6 +25,17 @@ namespace {
 } // namespace
 int main() {
   {
+    lm::Mesh mesh;
+    mesh.vertices.resize(3);
+    mesh.vertices[0].directLights = {7, 2, 7, ~0u};
+    mesh.vertices[1].directLights = {2, ~0u, ~0u, ~0u};
+    require(lm::directOwners(mesh) == std::vector<uint32_t>{2, 7},
+            "Draw direct ownership excludes invalid channels and merges repeated chart owners");
+    mesh.vertices[2].directLights[0] = 4000000;
+    require(lm::directOwners(mesh) == std::vector<uint32_t>{2, 7, 4000000},
+            "Unknown ownership survives metadata preparation for conservative runtime fallback");
+  }
+  {
     using Footprint = lm::ReceiverFootprint;
     const Footprint square({Footprint::Uv{-8, -8}, {8, -8}, {0, 8}}, {0, 0});
     require(std::abs(square.area() - 1) < 1e-6 &&

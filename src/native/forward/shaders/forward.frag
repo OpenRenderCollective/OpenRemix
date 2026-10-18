@@ -122,7 +122,8 @@ void main() {
                                    surface.rgb, roughness, metallic);
   color += directLightComponent(sun, debugView);
   bool directChannels =
-      !indexedSurfaceDirect() && metallic < 1 && frame.target.z > 0u && any(notEqual(surfaceDirectLights, uvec4(0xffffffffu)));
+      (m.maps.x & 16u) == 0u && !indexedSurfaceDirect() && metallic < 1 && frame.target.z > 0u &&
+      any(notEqual(surfaceDirectLights, uvec4(0xffffffffu)));
   vec4 directIrradiance = directChannels ? surfaceDirectIrradiance(surfaceLightmap, n) : vec4(-1);
   uint base = clusterIndex(gl_FragCoord.xy, depth) * ClusterStride;
   uint count = clusters[base];

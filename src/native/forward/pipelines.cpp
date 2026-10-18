@@ -1,5 +1,6 @@
 #include "runtime/pipelines.h"
 #include "forward/gpu.h"
+#include "forward/bake/storage_options.h"
 #include "forward/ray/gi_shaders/embedded.h"
 #include "forward/shaders/embedded.h"
 #include "forward/water/shaders/embedded.h"
@@ -88,8 +89,10 @@ namespace remix::forward {
                                                    .pDynamicStates = states};
     auto graphics = [&](VkShaderModule vs, VkShaderModule fs, VkRenderPass pass, bool shadow,
                         bool composite, bool terrain = false) {
-      const VkSpecializationMapEntry viewEntry{1, 0, sizeof(options.debugView)};
-      const VkSpecializationInfo viewInfo{1, &viewEntry, sizeof(options.debugView), &options.debugView};
+      const uint32_t values[] = {options.debugView, uint32_t(bake::directionalFieldsRequested())};
+      const VkSpecializationMapEntry entries[] = {{1, 0, sizeof(uint32_t)},
+                                                  {2, sizeof(uint32_t), sizeof(uint32_t)}};
+      const VkSpecializationInfo specialization{2, entries, sizeof(values), values};
       const VkPipelineShaderStageCreateInfo stages[] = {
           {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
            .stage = VK_SHADER_STAGE_VERTEX_BIT,
@@ -99,7 +102,7 @@ namespace remix::forward {
            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
            .module = fs,
            .pName = "main",
-           .pSpecializationInfo = !shadow && !composite ? &viewInfo : nullptr}};
+           .pSpecializationInfo = !shadow && !composite ? &specialization : nullptr}};
       const VkPipelineRasterizationStateCreateInfo raster{
           .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
           .polygonMode = VK_POLYGON_MODE_FILL,

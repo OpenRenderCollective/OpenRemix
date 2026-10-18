@@ -7,6 +7,7 @@ namespace remix::forward::lightmap {
   public:
     struct Entry {
       uint32_t draw = 0, count = 0;
+      std::vector<uint32_t> directOwners;
       std::unique_ptr<Buffer> vertices, indices;
     };
     Geometry(VkPhysicalDevice physical, VkDevice device, std::shared_ptr<const scene::BakeScene> source,

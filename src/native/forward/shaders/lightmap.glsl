@@ -3,7 +3,8 @@
 // GPU-only compaction can omit visibility and/or local direct coefficients.
 // Retained direct coefficients start at (layer count - 10); sun is always last.
 bool indexedSurfaceVisibility() { return (frame.occlusion.x & 0x80000000u) != 0u; }
-bool indexedSurfaceDirect() { return frame.clusterInfo.z != 0u; }
+layout(constant_id = 2) const bool IndexedSurfaceDirectionals = false;
+bool indexedSurfaceDirect() { return IndexedSurfaceDirectionals && frame.clusterInfo.z != 0u; }
 #define SurfaceAtlasLayers (20.0 - (indexedSurfaceVisibility() ? 1.0 : 0.0) - (indexedSurfaceDirect() ? 9.0 : 0.0))
 void surfaceBasis(vec3 normal, out float sh[9]) {
   sh = float[9](.2820947918, .4886025119 * normal.y, .4886025119 * normal.z, .4886025119 * normal.x,

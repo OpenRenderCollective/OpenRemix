@@ -10,6 +10,7 @@ namespace remix::forward::lightmap {
       Entry entry;
       entry.draw = mesh.draw;
       entry.count = uint32_t(mesh.indices.size());
+      entry.directOwners = directOwners(mesh);
       entry.vertices = std::make_unique<Buffer>();
       entry.indices = std::make_unique<Buffer>();
       entry.vertices->create(physical, device, mesh.vertices.size() * sizeof(Vertex),

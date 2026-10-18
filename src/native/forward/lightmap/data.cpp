@@ -5,8 +5,19 @@
 #include <cmath>
 #include <map>
 #include <stdexcept>
+#include <unordered_set>
 
 namespace remix::forward::lightmap {
+  std::vector<uint32_t> directOwners(const Mesh &mesh) {
+    std::unordered_set<uint32_t> unique;
+    unique.reserve(std::min<size_t>(mesh.vertices.size(), 64));
+    for (const auto &vertex : mesh.vertices)
+      for (const auto light : vertex.directLights)
+        if (light != ~0u) unique.insert(light);
+    std::vector<uint32_t> owners(unique.begin(), unique.end());
+    std::sort(owners.begin(), owners.end());
+    return owners;
+  }
   namespace {
     void check(std::stop_token cancelled) {
       if (cancelled.stop_requested())

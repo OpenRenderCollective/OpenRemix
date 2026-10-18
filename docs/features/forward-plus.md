@@ -194,14 +194,25 @@ selected static direct emitters into the existing RGB irradiance SH using the al
 The direct estimator has an independent ordinal-based random stream; visibility/direct-SH,
 radiance captures and streamed live lighting retain their existing contracts. The ordinary map
 shaders exclude the aggregate estimator, and its separate pipeline is compiled only when needed.
-The mixed planner omits aggregate lights from visibility tasks while retaining their identities.
+Pure baked membership omits per-light visibility tasks while retaining identities; mixed aggregate
+membership keeps attributed visibility and unit-direct responses for moving-caster corrections.
 Caches store explicit ownership, reject aggregate/mixed owner conflicts and require the caller's
 expected policy; empty-policy entries keep the legacy layout and key. Aggregate matching also
 requires unchanged radiance, while mixed unit-radiance data can follow colour changes. A shared
 source identity cannot ambiguously span both ownership policies.
-The ordinary map controller still uses the legacy policy. Automatic mixed-light selection,
-runtime diffuse suppression and invalidation of stale aggregate RGB must be integrated before enabling it.
-Generated emissive geometry needs an explicit sampling/double-counting treatment as well.
+The ordinary map controller still defaults to the legacy policy. The optional baked-lighting preview
+integrates aggregate diffuse, bounded mixed-shadow responses and independently selected highlights.
+Completing surface/probe correction coverage and cross-map quality checks remains necessary before
+making that policy the default.
+
+Retained unit-direct lightmaps contain nine RGBA coefficient layers. Geometry keeps a compact union
+of its captured direct owners. Frame preparation marks a draw as needing those fields when an owner
+has an analytic/styled diffuse response or an active moving-shadow correction. Unknown owner indices
+conservatively keep the reads. Otherwise the fragment shader skips that draw's unit-direct fetches
+outside the light loop; aggregate diffuse and highlights retain their existing response. This applies
+to mapped world and terrain layers, preserves generic probe fallback, and leaves live GI unchanged.
+The metadata is rebuilt with GPU lightmap geometry; it changes no bake rays, cache identity or public ABI.
+`REMIX_DEBUG_DIRECT_FETCH=0` retains the eager reads for measured comparisons.
 
 An enabled live dome is drawn as a display background, followed by the existing raster sky. The dome uses
 the camera rotation and the light's world-to-local transform, with horizontal panorama wrapping and

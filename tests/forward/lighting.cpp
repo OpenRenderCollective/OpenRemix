@@ -64,6 +64,22 @@ int main() {
   }
   {
     LightResponseInput input;
+    require(needsUnitDirect(LightResponse::Analytic, false, 0),
+            "Analytic and styled diffuse retain unit-direct fields without a shadow slot");
+    require(!needsUnitDirect(LightResponse::SelectedAggregate, false, 0) &&
+                !needsUnitDirect(LightResponse::Aggregate, true, 0),
+            "Highlight-only and fully faded aggregate responses need no diffuse correction");
+    require(needsUnitDirect(LightResponse::SelectedAggregate, true, .01f) &&
+                needsUnitDirect(LightResponse::Aggregate, true, 1) &&
+                needsUnitDirect(LightResponse::Aggregate, true, std::numeric_limits<float>::quiet_NaN()),
+            "Active mixed corrections and unknown fade values preserve unit-direct fields");
+    require(!needsUnitDirect(LightResponse::BakedFallback, true, 1),
+            "Uncovered-only fallback lights consume no surface correction on covered receivers");
+    const uint8_t needed[] = {0, 1, 0};
+    const uint32_t idleOwners[] = {0, 2}, activeOwners[] = {1}, unknownOwners[] = {20};
+    require(!drawNeedsUnitDirect(idleOwners, needed) && drawNeedsUnitDirect(activeOwners, needed) &&
+                drawNeedsUnitDirect(unknownOwners, needed) && drawNeedsUnitDirect(activeOwners, {}),
+            "Draw eligibility keeps active or unknown ownership and skips only proven unused fields");
     require(lightResponse(input).mode == LightResponse::Analytic,
             "Uncaptured and moving lights keep analytic lighting");
     input.aggregate = true;

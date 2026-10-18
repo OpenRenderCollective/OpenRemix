@@ -7,6 +7,8 @@
 #include <bit>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include <limits>
 
 namespace remix::forward {
@@ -240,6 +242,14 @@ namespace remix::forward {
       data.localPositions[i] = {view.position[0], view.position[1], view.position[2], view.farPlane};
       std::copy(view.matrices.begin(), view.matrices.end(), data.localShadows.begin() + i * shadows::faces);
     }
+    static const bool selectiveDirect = [] {
+      const auto value = std::getenv("REMIX_DEBUG_DIRECT_FETCH");
+      return !value || std::strcmp(value, "0") != 0;
+    }();
+    const bool selectDirectOwners = selectiveDirect && bindings && !giSupported &&
+        std::any_of(bindings->directLighting.lights.begin(), bindings->directLighting.lights.end(),
+                    bake::aggregatesDiffuse);
+    std::vector<uint8_t> unitDirectNeeded(selectDirectOwners ? bindings->source->lights.size() : 0);
     for (uint32_t sourceIndex = 0; sourceIndex < sources.size(); ++sourceIndex) {
       const auto &source = sources[sourceIndex];
       const float radius = influenceRadius(source, options.lightCutoff);
@@ -272,6 +282,9 @@ namespace remix::forward {
         }
       }
       const auto response = lightResponse(responseInput);
+      if (captured < unitDirectNeeded.size())
+        unitDirectNeeded[captured] |= needsUnitDirect(response.mode, responseInput.shadowSelected,
+                                                     responseInput.shadowWeight);
       light.corners[2][3] = float(response.mode);
       light.responseWeights[0] = response.highlightWeight;
       for (int i = 0; i < 3; ++i)
@@ -281,6 +294,14 @@ namespace remix::forward {
         light.corners[1][3] = 1 - shadowSelection.strength[slot];
       }
       lights.push_back(light);
+    }
+    if (selectDirectOwners) {
+      for (const auto *commands : {&frame.commands, &frame.terrainCommands})
+        for (const auto &draw : *commands) {
+          if (!draw.lightmap) continue;
+          const auto &owners = draw.lightmap->directOwners;
+          if (!drawNeedsUnitDirect(owners, unitDirectNeeded)) draws[draw.index].maps[0] |= skipUnitDirect;
+        }
     }
     const auto firstBaked = std::find_if(lights.begin(), lights.end(),
         [](const auto &light) { return light.corners[2][3] == float(LightResponse::BakedFallback); });
