@@ -72,17 +72,17 @@ namespace {
 #ifdef REMIX_OIDN
   void deviceCalibrationPreservesInput() {
     lightmap::Layout layout;
-    layout.pageSize = 128;
+    layout.pageSize = 256;
     layout.pages = 1;
-    layout.owners.resize(128 * 128, lightmap::unowned);
+    layout.owners.resize(256 * 256, lightmap::unowned);
     std::vector<bake::Result> values;
-    std::vector<std::vector<uint32_t>> points(512);
-    for (uint32_t chart = 0; chart < 512; ++chart) {
-      layout.charts.push_back({0, (chart % 32) * 4, (chart / 32) * 4, 4, 4});
+    std::vector<std::vector<uint32_t>> points(4096);
+    for (uint32_t chart = 0; chart < 4096; ++chart) {
+      layout.charts.push_back({0, (chart % 64) * 4, (chart / 64) * 4, 4, 4});
       const auto &a = layout.charts.back();
       for (uint32_t y = 0; y < 4; ++y)
         for (uint32_t x = 0; x < 4; ++x) {
-          const uint32_t index = uint32_t(values.size()), address = (a.y + y) * 128 + a.x + x;
+          const uint32_t index = uint32_t(values.size()), address = (a.y + y) * 256 + a.x + x;
           layout.owners[address] = index;
           layout.addresses.push_back(address);
           layout.pointCharts.push_back(chart);
@@ -312,14 +312,14 @@ namespace {
 int main() try {
   {
     lightmap::Layout probeLayout;
-    probeLayout.charts.resize(600, {0, 0, 0, 16, 16});
-    std::vector<std::vector<uint32_t>> points(600, {0});
+    probeLayout.charts.resize(4096, {0, 0, 0, 16, 16});
+    std::vector<std::vector<uint32_t>> points(4096, {0});
     const auto probes = lightmap::denoising::deviceProbePlan(probeLayout, points, 16);
-    require(probes.size() == 1 && probes[0].population == 600 && probes[0].charts[0].size() == 16,
+    require(probes.size() == 1 && probes[0].population == 4096 && probes[0].charts[0].size() == 16,
             "Chart-heavy device probes retain population and bound sample count");
     for (const auto &group : probes)
       for (const auto &batch : group.charts)
-        for (uint32_t chart : batch) require(chart < 600, "Device probes preserve source chart identities");
+        for (uint32_t chart : batch) require(chart < 4096, "Device probes preserve source chart identities");
     lightmap::Layout varied;
     std::vector<std::vector<uint32_t>> variedPoints(1800, {0});
     for (uint32_t side : {16u, 32u, 128u})
@@ -331,6 +331,11 @@ int main() try {
         probeBytes += uint64_t(group.width) * group.height * 3 * 9 * sizeof(float) * batch.size();
     require(variedProbes.size() == 3 && probeBytes <= (8u << 20),
             "Three chart-size bins share one bounded calibration input budget");
+    auto tiny = probeLayout;
+    tiny.charts.resize(600);
+    std::vector<std::vector<uint32_t>> tinyPoints(600, {0});
+    require(lightmap::denoising::deviceProbePlan(tiny, tinyPoints, 16).empty(),
+            "Many tiny charts still skip calibration when total padded work is small");
     probeLayout.charts.resize(100);
     points.resize(100);
     require(lightmap::denoising::deviceProbePlan(probeLayout, points, 16).empty(),

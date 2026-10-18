@@ -9,7 +9,9 @@ namespace remix::forward::lightmap::denoising {
     std::array<std::vector<uint32_t>, 2> charts;
   };
   // Representative small-chart groups, with at most eight MiB of packed input.
-  // Large-image workloads and small maps keep OIDN's ordinary device choice.
+  // Require 512 usable charts and one million padded pixels, with at least
+  // 75% of padded work in charts no larger than 128x128. Other workloads keep
+  // OIDN's ordinary device choice.
   std::vector<DeviceProbe> deviceProbePlan(const Layout &layout,
       std::span<const std::vector<uint32_t>> chartPoints, uint32_t alignment);
   bool preferCpuDevice(double cpu, double ordinary);

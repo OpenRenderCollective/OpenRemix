@@ -13,6 +13,7 @@
 namespace remix::forward::lightmap::denoising {
   namespace {
     constexpr uint32_t minimumCharts = 512, maximumExtent = 128, chartsPerProbe = 16;
+    constexpr uint64_t minimumPixels = 1u << 20;
     uint32_t sizeBin(uint64_t pixels) { return pixels <= 512 ? 0 : pixels <= 2048 ? 1 : 2; }
   }
   std::vector<DeviceProbe> deviceProbePlan(const Layout &layout,
@@ -38,7 +39,7 @@ namespace remix::forward::lightmap::denoising {
       bins[bin][{width, height}].push_back(i);
       ++populations[bin];
     }
-    if (count < minimumCharts || double(smallPixels) < double(totalPixels) * .75) return {};
+    if (count < minimumCharts || totalPixels < minimumPixels || double(smallPixels) < double(totalPixels) * .75) return {};
     std::vector<DeviceProbe> result;
     for (uint32_t bin = 0; bin < bins.size(); ++bin) {
       if (bins[bin].empty()) continue;
