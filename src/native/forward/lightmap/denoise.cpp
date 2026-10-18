@@ -1,6 +1,7 @@
 #include "forward/lightmap/denoise.h"
 #include "forward/lightmap/denoise_chart.h"
 #include "forward/lightmap/denoise_filter.h"
+#include "forward/lightmap/denoise_device.h"
 #include <algorithm>
 #include <chrono>
 #include <memory>
@@ -66,6 +67,14 @@ namespace remix::forward::lightmap {
       const auto &first = layout.charts[a], &second = layout.charts[b];
       return imageShape(first) > imageShape(second);
     });
+    std::vector<std::vector<uint32_t>> chartPoints(layout.charts.size());
+    for (uint32_t i = 0; i < results.size(); ++i) {
+      if (layout.pointCharts[i] >= chartPoints.size())
+        throw std::invalid_argument("Invalid denoising chart");
+      chartPoints[layout.pointCharts[i]].push_back(i);
+    }
+    const auto device = denoising::chooseDevice(layout, results, chartPoints, imageAlignment,
+        largestImage, transfers, dispatch, cancelled, statistics);
     struct PendingChart {
       std::unique_ptr<denoising::Chart> image;
       std::span<float> fields;
@@ -75,14 +84,8 @@ namespace remix::forward::lightmap {
     // Declaration order matters: Filter retires copies before pending host
     // arrays are destroyed, including on cancellation or an exception.
     std::vector<PendingChart> pending;
-    Filter filter(statistics, largestImage, transfers, dispatch);
+    Filter filter(statistics, largestImage, transfers, dispatch, device);
     filter.initialize(cancelled);
-    std::vector<std::vector<uint32_t>> chartPoints(layout.charts.size());
-    for (uint32_t i = 0; i < results.size(); ++i) {
-      if (layout.pointCharts[i] >= chartPoints.size())
-        throw std::invalid_argument("Invalid denoising chart");
-      chartPoints[layout.pointCharts[i]].push_back(i);
-    }
     const auto total = uint32_t(std::count_if(chartPoints.begin(), chartPoints.end(),
                                               [](const auto &points) { return !points.empty(); }));
     if (progress)

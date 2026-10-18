@@ -6,6 +6,8 @@
 
 #ifdef REMIX_OIDN
 namespace remix::forward::lightmap::denoising {
+  // CPU is a preference; unavailable creation retains ordinary OIDN fallback.
+  enum class FilterDevice { Default, Cpu };
   inline void checkCancellation(std::stop_token cancelled) {
     if (cancelled.stop_requested())
       throw std::runtime_error("Lightmap denoising superseded");
@@ -31,7 +33,8 @@ namespace remix::forward::lightmap::denoising {
   // this interface; callers retain chart arrays until finish() retires copies.
   class Filter {
   public:
-    Filter(DenoiseStatistics &statistics, size_t requiredCapacity, HostTransfers transfers, FilterDispatch dispatch);
+    Filter(DenoiseStatistics &statistics, size_t requiredCapacity, HostTransfers transfers, FilterDispatch dispatch,
+           FilterDevice device = FilterDevice::Default);
     ~Filter();
     Filter(const Filter &) = delete;
     Filter &operator=(const Filter &) = delete;

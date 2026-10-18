@@ -25,7 +25,7 @@ reports. An implementation or synthetic test alone does not close an integration
 | Rough SSR, optional hardware reflections and live GI | Implemented | Refresh actual-engine toggles and shared-scene lifetime coverage; continue measured performance work where needed |
 | Shared USD/PBR material replacements | Implemented; plain Source roughness fallback corrected | Refresh late material arrival and broader material/BRDF parity in the current engine build |
 | Water optics, normals, HDR refraction, SSR/RT and underwater composition | Implemented; enabled for new settings; lazy refraction snapshots | Broader underwater/lifecycle validation, noise and live visual comparison with path-traced material response |
-| OIDN indirect-lightmap filtering | Implemented; defaults on where available, raw fallback without OIDN | Connected-seam review and lower-sample quality comparisons; distribution of optional dependencies |
+| OIDN indirect-lightmap filtering | Implemented; bounded real-chart CPU/CUDA calibration for chart-heavy maps, explicit device overrides retained; defaults on where available, raw fallback without OIDN | Connected-seam review and lower-sample quality comparisons; distribution of optional dependencies |
 | Usable build and deployment | Feature branches/remotes retained; Windows runtime bundler available | Remaining platform/dependency coverage, lifecycle smoke tests and final delivery instructions |
 
 Forward+ displays a passive map-lighting indicator while preparing or baking, even
@@ -118,7 +118,14 @@ when baked lighting is active; a failed bake instead displays its failure messag
    operations live in separate modules. Constant fields, changing band masks, partial queues,
    directional reconstruction and cancellation remain covered by ordinary-dispatch comparisons.
    This is an incremental reduction; substantial filter/render contention remains. A first
-   version capturing host copies regressed and was rejected. Continue device/workload comparisons
+   version capturing host copies regressed and was rejected. Chart-heavy default-CUDA workloads now
+   sample copied real chart packets on CPU and the default device. Three size bins and a bounded input
+   budget limit calibration work; a CPU override needs a projected margin above 35%. Small workloads,
+   maps dominated by large images, other default device types and explicit `OIDN_DEFAULT_DEVICE`
+   settings keep normal selection. Trials do not modify captured lighting or production work counters;
+   candidate arrays outlive queued execution and cancellation drains through the existing filter owner.
+   Calibration uses no persisted hardware preference and changes no rays, model quality or cache schema.
+   Continue device/workload comparisons
    and live-map responsiveness checks; do not infer game FPS or universal speedups from replays.
    Timed visibility batches now grow within an eight-row rectangular dispatch and a guaranteed
    128 MiB maximum result-buffer range, reducing frame submission overhead without changing quality.

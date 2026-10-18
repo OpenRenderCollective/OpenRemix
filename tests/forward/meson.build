@@ -8,7 +8,7 @@ cache_persistence_test = executable('remix-cache-persistence-test', 'cache_persi
   cpp_args : test_cpp_args)
 test('Background bake persistence bounds slow writes, failures and shutdown', cache_persistence_test, timeout : 30)
 forward_denoise_test = executable('remix-forward-lightmap-denoise-test', 'lightmap_denoise.cpp',
-  include_directories : test_includes, link_with : lightmap_denoise_library, cpp_args : test_cpp_args)
+  include_directories : test_includes, link_with : lightmap_denoise_library, cpp_args : test_cpp_args + oidn_args)
 test('Offline lightmap denoising preserves directional SH and chart isolation', forward_denoise_test,
   timeout : 120)
 forward_grid_test = executable('remix-forward-grid-test', 'grid.cpp',

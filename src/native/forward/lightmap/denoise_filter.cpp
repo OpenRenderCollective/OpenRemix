@@ -22,6 +22,7 @@ namespace remix::forward::lightmap::denoising {
     uint32_t graphMask = 0;
     std::vector<uint32_t> graphBatchMasks;
     FilterDispatch dispatch;
+    FilterDevice selectedDevice;
     OIDNDevice device = nullptr;
     std::array<Model, denoising::coefficientCount> models{}; // one immutable image binding per SH band
     OIDNBuffer buffer = nullptr;
@@ -59,8 +60,8 @@ namespace remix::forward::lightmap::denoising {
       pendingTransfers.clear();
       stagingUsed = 0;
     }
-    Impl(DenoiseStatistics &statistics, size_t requiredCapacity, HostTransfers hostTransfers, FilterDispatch dispatch)
-        : dispatch(dispatch), hostTransfers(hostTransfers), requiredCapacity(requiredCapacity), statistics(statistics) {}
+    Impl(DenoiseStatistics &statistics, size_t requiredCapacity, HostTransfers hostTransfers, FilterDispatch dispatch, FilterDevice selectedDevice)
+        : dispatch(dispatch), selectedDevice(selectedDevice), hostTransfers(hostTransfers), requiredCapacity(requiredCapacity), statistics(statistics) {}
     ~Impl() {
       // Even cancellation/errors must retire queued work before its inputs,
       // callbacks, filters or buffers can be released.
@@ -86,7 +87,15 @@ namespace remix::forward::lightmap::denoising {
     void initialize(std::stop_token &cancelled) {
       const Duration duration(statistics.initializationSeconds);
       cancellation = cancelled;
-      if (dispatch == FilterDispatch::Automatic) device = graph.createDevice();
+      if (selectedDevice == FilterDevice::Cpu) {
+        device = oidnNewDevice(OIDN_DEVICE_TYPE_CPU);
+        const auto error = oidnGetDeviceError(device, nullptr);
+        if (error != OIDN_ERROR_NONE || !device) {
+          if (device) oidnReleaseDevice(device);
+          device = nullptr;
+          oidnGetDeviceError(nullptr, nullptr);
+        }
+      } else if (dispatch == FilterDispatch::Automatic) device = graph.createDevice();
       if (!device) device = oidnNewDevice(OIDN_DEVICE_TYPE_DEFAULT);
       check();
       if (!device)
@@ -418,8 +427,8 @@ namespace remix::forward::lightmap::denoising {
     }
   };
 
-  Filter::Filter(DenoiseStatistics &statistics, size_t requiredCapacity, HostTransfers transfers, FilterDispatch dispatch)
-      : m_impl(std::make_unique<Impl>(statistics, requiredCapacity, transfers, dispatch)) {}
+  Filter::Filter(DenoiseStatistics &statistics, size_t requiredCapacity, HostTransfers transfers, FilterDispatch dispatch, FilterDevice device)
+      : m_impl(std::make_unique<Impl>(statistics, requiredCapacity, transfers, dispatch, device)) {}
   Filter::~Filter() = default;
   void Filter::initialize(std::stop_token cancelled) {
     m_impl->initialize(cancelled);

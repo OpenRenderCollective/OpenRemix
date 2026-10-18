@@ -27,7 +27,16 @@ namespace remix::forward::lightmap {
     double uploadSeconds = 0, executionSeconds = 0, readbackSeconds = 0;
     double waitSeconds = 0, chartSeconds = 0;
     double stagingSeconds = 0;
+    // Optional device trials use copied inputs; their work never joins the
+    // production counters above. Total seconds includes calibration wall time.
+    uint32_t calibrationCharts = 0;
+    double deviceCalibrationSeconds = 0, cpuEstimateSeconds = 0, defaultEstimateSeconds = 0;
   };
+  // Chart-heavy CUDA workloads may compare bounded real-chart CPU/GPU trials
+  // before filtering. A CPU win needs a 35% projected margin; small maps,
+  // workloads dominated by large images, other default devices and OIDN_DEFAULT_DEVICE keep normal selection.
+  // Trial inputs/outputs together are capped at 16 MiB, apart from one chart's
+  // scratch and OIDN's internal model/device storage. Explicit device hints win.
   // Worker-only offline operation, after transport readback and before atlas encoding.
   // Filters indirect RGB SH within each chart. Signed bands are normalized by L0,
   // filtered as directional data, then reconstructed with the filtered L0.

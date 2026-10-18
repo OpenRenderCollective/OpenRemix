@@ -1,4 +1,5 @@
 #include "forward/lightmap/denoise.h"
+#include "forward/lightmap/denoise_device.h"
 #include "forward/lightmap/denoise_chart.h"
 #include <algorithm>
 #include <cmath>
@@ -68,6 +69,42 @@ namespace {
       }
     }
   }
+#ifdef REMIX_OIDN
+  void deviceCalibrationPreservesInput() {
+    lightmap::Layout layout;
+    layout.pageSize = 128;
+    layout.pages = 1;
+    layout.owners.resize(128 * 128, lightmap::unowned);
+    std::vector<bake::Result> values;
+    std::vector<std::vector<uint32_t>> points(512);
+    for (uint32_t chart = 0; chart < 512; ++chart) {
+      layout.charts.push_back({0, (chart % 32) * 4, (chart / 32) * 4, 4, 4});
+      const auto &a = layout.charts.back();
+      for (uint32_t y = 0; y < 4; ++y)
+        for (uint32_t x = 0; x < 4; ++x) {
+          const uint32_t index = uint32_t(values.size()), address = (a.y + y) * 128 + a.x + x;
+          layout.owners[address] = index;
+          layout.addresses.push_back(address);
+          layout.pointCharts.push_back(chart);
+          layout.points.push_back({});
+          points[chart].push_back(index);
+          bake::Result value;
+          for (uint32_t c = 0; c < 9; ++c)
+            value.irradiance[c] = {.2f + .01f * x, .1f + .02f * y, .3f + .01f * (x + y), 7};
+          value.moments[0] = {1, 2, 3, 4};
+          values.push_back(value);
+        }
+    }
+    const auto before = values;
+    lightmap::DenoiseStatistics statistics;
+    (void)lightmap::denoising::chooseDevice(layout, values, points, 16, 16 * 16 * 3 * 9 * sizeof(float),
+        lightmap::HostTransfers::Pinned, lightmap::FilterDispatch::Automatic, {}, statistics);
+    require(std::memcmp(values.data(), before.data(), values.size() * sizeof(bake::Result)) == 0,
+            "Device calibration never applies trial filtering to captured lighting or metadata");
+    require(statistics.executions == 0 && statistics.charts == 0 && statistics.texels == 0,
+            "Calibration work stays separate from production chart and filter counters");
+  }
+#endif
   void largeBatch() {
     auto layout = squareLayout();
     std::vector<bake::Result> values(layout.points.size());
@@ -273,6 +310,42 @@ namespace {
   }
 } // namespace
 int main() try {
+  {
+    lightmap::Layout probeLayout;
+    probeLayout.charts.resize(600, {0, 0, 0, 16, 16});
+    std::vector<std::vector<uint32_t>> points(600, {0});
+    const auto probes = lightmap::denoising::deviceProbePlan(probeLayout, points, 16);
+    require(probes.size() == 1 && probes[0].population == 600 && probes[0].charts[0].size() == 16,
+            "Chart-heavy device probes retain population and bound sample count");
+    for (const auto &group : probes)
+      for (const auto &batch : group.charts)
+        for (uint32_t chart : batch) require(chart < 600, "Device probes preserve source chart identities");
+    lightmap::Layout varied;
+    std::vector<std::vector<uint32_t>> variedPoints(1800, {0});
+    for (uint32_t side : {16u, 32u, 128u})
+      for (uint32_t i = 0; i < 600; ++i) varied.charts.push_back({0, 0, 0, side, side});
+    const auto variedProbes = lightmap::denoising::deviceProbePlan(varied, variedPoints, 16);
+    uint64_t probeBytes = 0;
+    for (const auto &group : variedProbes)
+      for (const auto &batch : group.charts)
+        probeBytes += uint64_t(group.width) * group.height * 3 * 9 * sizeof(float) * batch.size();
+    require(variedProbes.size() == 3 && probeBytes <= (8u << 20),
+            "Three chart-size bins share one bounded calibration input budget");
+    probeLayout.charts.resize(100);
+    points.resize(100);
+    require(lightmap::denoising::deviceProbePlan(probeLayout, points, 16).empty(),
+            "Small workloads avoid device calibration overhead");
+    probeLayout.charts.resize(600, {0, 0, 0, 512, 512});
+    points.resize(600, {0});
+    require(lightmap::denoising::deviceProbePlan(probeLayout, points, 16).empty(),
+            "Large-image workloads retain the default device");
+    require(lightmap::denoising::preferCpuDevice(1, 2) &&
+                !lightmap::denoising::preferCpuDevice(1.5, 2) &&
+                !lightmap::denoising::preferCpuDevice(0, 2) &&
+                !lightmap::denoising::preferCpuDevice(std::numeric_limits<double>::infinity(), 2),
+            "CPU selection requires a substantial finite timing margin");
+  }
+
   chartPacking();
   if (!lightmap::denoiserVersion()) {
     bool unavailable = false;
@@ -285,6 +358,9 @@ int main() try {
     std::puts("Optional OIDN disabled: explicit filtering requests are rejected");
     return 0;
   }
+#ifdef REMIX_OIDN
+  deviceCalibrationPreservesInput();
+#endif
   largeBatch();
   paddedCharts();
   queuedCharts(16, 40); // chart-count bound, then a partial tail
