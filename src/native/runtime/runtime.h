@@ -67,6 +67,7 @@ public:
                      : m_postProcessing ? m_postProcessing->statistics() : postfx::Statistics{};
   }
   std::string reflectionProbeReport() const;
+  forward::Statistics::CpuRecording forwardCpuRecording() const;
   remixapi_BakeStatisticsEXT bakingStatistics() const {
     auto statistics = forwardStatistics().baking;
     statistics.supported = m_forwardRaySupported;

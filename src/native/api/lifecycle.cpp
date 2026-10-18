@@ -254,6 +254,13 @@ void serviceDevRequests() {
           text += line;
         }
         const auto breakdown = g_runtime.frameBreakdown();
+        const auto forward = g_runtime.forwardCpuRecording();
+        std::snprintf(line, sizeof(line),
+                      "# Forward+ CPU recording ms: bake %.3f, live scene %.3f, frame preparation %.3f, "
+                      "world commands %.3f, reflections %.3f, water/exposure %.3f, publication %.3f\n",
+                      forward.bake, forward.liveScene, forward.frame, forward.world,
+                      forward.reflections, forward.waterExposure, forward.publication);
+        text += line;
         std::snprintf(line, sizeof(line),
                       "# raster draws %llu, outside the view (not drawn) %llu, prepare %.3f ms, record %.3f ms\n",
                       (unsigned long long)breakdown.rasterDraws, (unsigned long long)breakdown.rasterCulledDraws,

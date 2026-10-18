@@ -5,6 +5,9 @@
 #include <sstream>
 
 namespace remix {
+  forward::Statistics::CpuRecording RemixNativeRuntime::forwardCpuRecording() const {
+    return forwardStatistics().cpuRecording;
+  }
   forward::Statistics RemixNativeRuntime::forwardStatistics() const {
     if (const auto *busy = busyState())
       return busy->forward;

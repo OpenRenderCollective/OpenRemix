@@ -16,6 +16,10 @@ namespace remix::forward {
     class Controller;
   }
   struct Statistics {
+    struct CpuRecording {
+      double bake = 0, liveScene = 0, frame = 0, world = 0;
+      double reflections = 0, waterExposure = 0, publication = 0;
+    } cpuRecording;
     uint32_t samples = 1, lights = 0, draws = 0, clusters = 0;
     uint32_t shadowedLights = 0, shadowOverflow = 0, staticShadowUpdates = 0;
     uint32_t staticSunUpdates = 0, capturedCasters = 0, liveCasters = 0;

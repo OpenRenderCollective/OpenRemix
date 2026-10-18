@@ -3,6 +3,7 @@
 #include "platform/gpu_timers.h"
 #include "runtime/pipelines.h"
 #include <algorithm>
+#include <chrono>
 #include <stdexcept>
 
 namespace remix::forward {
@@ -137,10 +138,18 @@ namespace remix::forward {
     std::erase_if(g.geometries, [](const auto &entry) { return entry.second->source.expired(); });
   }
   void Renderer::prepare(VkCommandBuffer command, RasterRenderer &resources, float seconds) {
+    Statistics::CpuRecording cpu;
+    auto began = std::chrono::steady_clock::now();
+    auto step = [&](double &milliseconds) {
+      const auto now = std::chrono::steady_clock::now();
+      milliseconds = std::chrono::duration<double, std::milli>(now - began).count();
+      began = now;
+    };
     m_gpu->postProcessing->begin(command);
     gpu::GpuScope bakeTime(command, "Forward+ bake publication and transport");
     m_gpu->baking->record(command, resources, m_gpu->options.baking, m_gpu->options.lightCutoff);
     bakeTime.close();
+    step(cpu.bake);
     if (m_gpu->liveScene) {
       gpu::GpuScope liveTime(command, "Forward+ live ray scene");
       const double seconds =
@@ -163,10 +172,13 @@ namespace remix::forward {
           m_gpu->slot, 1, options.rtReflectionBounces, options.rtReflectionDistance,
           bake::Transport::FragmentUse::Reflection);
     }
+    step(cpu.liveScene);
     gpu::GpuScope uploadTime(command, "Forward+ frame uploads");
     m_gpu->prepareFrame(command, resources);
     uploadTime.close();
+    step(cpu.frame);
     m_gpu->recordWorld(command);
+    step(cpu.world);
     if (m_gpu->reflections) {
       gpu::GpuScope reflectionTime(command, "Forward+ reflection resolve and composition", m_gpu->extent);
       m_gpu->reflections->record(
@@ -175,8 +187,10 @@ namespace remix::forward {
           {frame.skyConstants->descriptor(), m_gpu->baking->descriptor(), frame.skyImage},
           m_gpu->rayReflections.get());
     }
+    step(cpu.reflections);
     m_gpu->recordWater(command);
     m_gpu->recordExposure(command, resources, seconds);
+    step(cpu.waterExposure);
     m_gpu->statistics.baking = m_gpu->baking->statistics();
     const auto &volume = m_gpu->baking->volume();
     m_gpu->statistics.bakeContent = volume ? volume->content : bake::ContentHashes{};
@@ -200,6 +214,8 @@ namespace remix::forward {
       m_gpu->statistics.targetBytes += live.images;
       m_gpu->statistics.accelerationBytes += live.acceleration;
     }
+    step(cpu.publication);
+    m_gpu->statistics.cpuRecording = cpu;
   }
   const Statistics &Renderer::statistics() const { return m_gpu->statistics; }
   const Options &Renderer::options() const { return m_gpu->options; }

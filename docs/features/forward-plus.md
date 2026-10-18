@@ -1752,6 +1752,13 @@ bake-cache policy change. `REMIX_DEBUG_BAKE_CPU_VISIBILITY=1` selects ordinary
 packing for controlled comparisons. Receiver-table bytes in timing diagnostics
 describe host memory, separate from GPU transport memory.
 
+The developer `timings.request` dump also reports CPU time spent recording the
+completed Forward+ frame: bake handling, live ray scene, frame preparation,
+world commands, reflections, water/exposure, and statistics publication. These
+are host elapsed milliseconds, separate from GPU pass timestamps and Present
+intervals. They use the existing completed-frame snapshot during asynchronous
+presentation and do not extend the public Remix ABI.
+
 GPU lightmap denoising stages transfers through an OIDN-owned pinned host arena
 of at most 8 MiB, additional to chart scratch and device/model memory. Ordered
 uploads and readbacks retain distinct arena ranges until synchronization, then
