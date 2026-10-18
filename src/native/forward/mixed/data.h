@@ -7,9 +7,7 @@
 #include <unordered_map>
 namespace remix::forward::mixed {
   constexpr uint32_t channels = 4, none = ~0u;
-  struct Task {
-    uint32_t point, light, channel;
-  };
+  using Task = bake::VisibilityTask;
   // Small immutable table retained by the runtime after tracing finishes.
   // The per-texel work list stays with the temporary bake plan.
   struct Bindings {

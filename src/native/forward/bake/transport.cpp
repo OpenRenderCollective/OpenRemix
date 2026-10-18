@@ -1,4 +1,5 @@
 #include "forward/bake/gpu.h"
+#include "forward/bake/indexed_visibility.h"
 #include "forward/bake/fingerprint.h"
 #include "forward/bake/light_sampling.h"
 #include "runtime/pipelines.h"
@@ -33,6 +34,7 @@ namespace remix::forward::bake {
     pipelines.createPipelines();
   }
   Transport::Gpu::~Gpu() {
+    indexedVisibility.reset();
     if (pool)
       vkDestroyDescriptorPool(device, pool, nullptr);
     for (auto handle : {tracePipeline, parallelPipeline, visibilityPipeline, atlasPipeline,

@@ -174,6 +174,9 @@ namespace remix::forward::bake {
     options.lightingComponents = config.styledIndirect && !styleIds(*source).empty();
     transport = std::make_unique<Transport>();
     transport->initialize(physical, device, source, options);
+    const char *cpuVisibility = std::getenv("REMIX_DEBUG_BAKE_CPU_VISIBILITY");
+    if (mixedLights->overflow && (!cpuVisibility || std::strcmp(cpuVisibility, "1") != 0))
+      transport->prepareVisibilityReceivers(surfaceLayout.points);
   }
   Controller::Controller(VkPhysicalDevice physical, VkDevice device, pipeline::Service *pipelines,
                          bool hardware, uint32_t queueFamily)
@@ -451,12 +454,17 @@ namespace remix::forward::bake {
         throw std::logic_error("Overflow visibility slot reused before its fence");
       const uint32_t count = job.count(Work::Visibility, config,
                                        uint32_t(tasks.size() - job.overflowNext), config.samples);
-      std::vector<VisibilityPoint> points;
-      points.reserve(count);
-      for (const auto &task : tasks.subspan(job.overflowNext, count))
-        points.push_back({job.surfaceLayout.points[task.point], task.light});
       // Classification needs visibility only, not another set of directional SH.
-      job.transport->recordVisibility(command, m_slot, points, config.samples, false);
+      const auto batch = tasks.subspan(job.overflowNext, count);
+      if (job.transport->hasVisibilityReceivers()) {
+        job.transport->recordIndexedVisibility(command, m_slot, batch, config.samples);
+      } else {
+        std::vector<VisibilityPoint> points;
+        points.reserve(count);
+        for (const auto &task : batch)
+          points.push_back({job.surfaceLayout.points[task.point], task.light});
+        job.transport->recordVisibility(command, m_slot, points, config.samples, false);
+      }
       submission.job = m_job;
       submission.overflowVisibility = true;
       submission.first = job.overflowNext;
@@ -902,11 +910,14 @@ namespace remix::forward::bake {
                    static_cast<unsigned long long>(m_job->readbackBytes));
       const auto &overflow = m_job->overflowTiming;
       std::fprintf(stderr, "Bake overflow timing: points=%llu batches=%llu rounds=%llu "
-                           "cpu_rounds_ms=%.3f cpu_submission_ms=%.3f cpu_readback_ms=%.3f gpu_ms=%.3f\n",
+                           "cpu_rounds_ms=%.3f cpu_submission_ms=%.3f cpu_readback_ms=%.3f gpu_ms=%.3f "
+                           "indexed_receivers=%u receiver_bytes=%llu\n",
                    static_cast<unsigned long long>(overflow.points),
                    static_cast<unsigned long long>(overflow.batches),
                    static_cast<unsigned long long>(overflow.rounds), overflow.roundsMs,
-                   overflow.submissionMs, overflow.readbackMs, overflow.gpuMs);
+                   overflow.submissionMs, overflow.readbackMs, overflow.gpuMs,
+                   uint32_t(m_job->transport && m_job->transport->hasVisibilityReceivers()),
+                   static_cast<unsigned long long>(m_job->transport ? m_job->transport->visibilityReceiverBytes() : 0));
       constexpr const char *names[] = {"grid",  "surface",     "visibility", "sun",
                                        "sites", "reflections", "geometry"};
       for (uint32_t i = 0; i < uint32_t(Work::Count); ++i) {

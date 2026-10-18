@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <numbers>
 #include <thread>
 
@@ -127,6 +128,7 @@ namespace {
       return std::make_shared<scene::BakeScene>(*resources.bakeScene());
     }
   };
+#include "indexed_visibility.h"
   float evaluate(const bake::Result &value, Vec3 n, uint32_t channel) {
     const float sh[] = {.2820947918f,
                         .4886025119f * n[1],
@@ -571,6 +573,7 @@ namespace {
     const bake::VisibilityPoint points[] = {{{{-.6f, 0, 0, 0}, {0, 0, -1, 0}}, 0},
                                             {{{0, 0, 0, 0}, {0, 0, -1, 0}}, 0},
                                             {{{.6f, 0, 0, 0}, {0, 0, -1, 0}}, 0}};
+    indexedVisibilityTests(fixture, pipelines, world, source);
     fixture.begin();
     transport.recordVisibility(fixture.command, 0, points, 1024);
     fixture.finish();

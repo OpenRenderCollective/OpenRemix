@@ -1742,6 +1742,16 @@ full irradiance. Reusing a completed slot for a larger output format grows its
 result storage independently of point capacity. GPU producers receive the common
 point/full-result capacity and cannot overrun a compact allocation.
 
+Overflow classification can own a prevalidated immutable CPU receiver table,
+bounded to 128 MiB per bake. Each batch supplies receiver/light indices and packs
+points directly into its fenced upload slot, avoiding temporary expanded vectors
+and repeated floating-point validation. Indices remain checked on every batch;
+host writes are flushed before dispatch. Allocation failure or an oversized table
+uses ordinary point input. This adds no device receiver table, shader variant or
+bake-cache policy change. `REMIX_DEBUG_BAKE_CPU_VISIBILITY=1` selects ordinary
+packing for controlled comparisons. Receiver-table bytes in timing diagnostics
+describe host memory, separate from GPU transport memory.
+
 GPU lightmap denoising stages transfers through an OIDN-owned pinned host arena
 of at most 8 MiB, additional to chart scratch and device/model memory. Ordered
 uploads and readbacks retain distinct arena ranges until synchronization, then

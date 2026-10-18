@@ -22,6 +22,8 @@ namespace remix::forward {
     void create(VkPhysicalDevice physical, VkDevice device, VkDeviceSize bytes, VkBufferUsageFlags usage,
                 Memory memory = Memory::Host);
     void write(const void *data, size_t bytes, size_t offset = 0);
+    // Publish writes made directly through mapped, after checking capacity.
+    void flush();
     // Caller has made GPU writes visible to HOST and waited for their fence.
     void read(void *data, size_t bytes) const;
     VkDescriptorBufferInfo descriptor() const { return {handle, 0, capacity}; }

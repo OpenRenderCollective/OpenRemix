@@ -109,6 +109,14 @@ namespace remix::forward::bake {
                               uint32_t samples = 64);
     void recordVisibility(VkCommandBuffer command, uint32_t slot, std::span<const VisibilityPoint> points,
                           uint32_t samples = 256, bool directDiffuse = false);
+    // Preparation worker, before recordPrepare. Validate and own immutable
+    // receivers once. CPU packing avoids repeated validation and temporary vectors.
+    // A declined memory budget retains ordinary input.
+    bool prepareVisibilityReceivers(std::span<const Point> points, uint64_t byteBudget = 128ull << 20);
+    bool hasVisibilityReceivers() const;
+    uint64_t visibilityReceiverBytes() const;
+    void recordIndexedVisibility(VkCommandBuffer command, uint32_t slot, std::span<const VisibilityTask> tasks,
+                                 uint32_t samples = 256);
     // Unit-radiance static sunlight, independent of the captured sun's colour.
     // Same result layout as local visibility/direct SH, using the distant disc.
     void recordSun(VkCommandBuffer command, uint32_t slot, std::span<const Point> points,

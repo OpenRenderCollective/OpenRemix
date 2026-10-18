@@ -45,6 +45,10 @@ namespace remix::forward::bake {
     Point surface;
     uint32_t light = 0; // index in the captured BakeScene::lights
   };
+  struct VisibilityTask {
+    uint32_t point, light, channel; // channel is caller metadata; transport ignores it
+  };
+  static_assert(sizeof(VisibilityTask) == 12);
   struct Result {
     // Real SH order 0, y, z, x, xy, yz, (3z²-1), xz, (x²-y²), convolved for
     // cosine irradiance.

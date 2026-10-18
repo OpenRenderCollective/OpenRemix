@@ -71,6 +71,11 @@ namespace remix::forward {
       throw VK_ERROR_OUT_OF_HOST_MEMORY;
     if (bytes)
       std::memcpy(static_cast<std::byte *>(mapped) + offset, data, bytes);
+    flush();
+  }
+  void Buffer::flush() {
+    if (!mapped)
+      throw VK_ERROR_MEMORY_MAP_FAILED;
     if (!coherent) {
       const VkMappedMemoryRange range{.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
                                       .memory = memory,

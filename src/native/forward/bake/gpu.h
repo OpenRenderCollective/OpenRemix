@@ -23,6 +23,8 @@ namespace remix::forward::bake {
       size_t bytes;
     };
     std::vector<Upload> uploads;
+    struct IndexedVisibility;
+    std::unique_ptr<IndexedVisibility> indexedVisibility;
     std::unique_ptr<Image> atlas;
     std::vector<Texture> textures;
     uint32_t resolution = 0, domeLayer = 0;
