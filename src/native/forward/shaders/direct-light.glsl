@@ -12,6 +12,11 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
   float range = light.shaping.z;
   if (distance >= range)
     return BrdfLobes(vec3(0), vec3(0));
+  // Both analytic lobes vanish below the shading horizon. Retained direct SH
+  // can still represent the part of a finite emitter crossing that horizon,
+  // so reject only when its entire shape is below the plane as well.
+  if (dot(n, delta) <= 0 && !emitterAbovePlane(light, p, n))
+    return BrdfLobes(vec3(0), vec3(0));
   uint cachedVisibility = staticLightVisibility(surfaceChart, uint(light.shaping.w));
   if (cachedVisibility == 1u)
     return BrdfLobes(vec3(0), vec3(0));
@@ -29,10 +34,12 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
       visibility = probeVisibility;
     }
   }
-  float moving = localShadowVisibility(light, p, receiverNormal, !baked);
   uint directChannel = lightChannel(surfaceDirectLights, uint(light.shaping.w));
   bool bakedDiffuse = directChannel < 4u && directIrradiance[min(directChannel, 3u)] >= 0;
-  if (moving <= 0 || (!bakedDiffuse && visibility <= 0))
+  if (!bakedDiffuse && visibility <= 0)
+    return BrdfLobes(vec3(0), vec3(0));
+  float moving = localShadowVisibility(light, p, receiverNormal, !baked);
+  if (moving <= 0)
     return BrdfLobes(vec3(0), vec3(0));
   vec3 l = delta / distance;
   float shape = emitterConeWeight(light.directionCone.xyz, light.directionCone.w,
