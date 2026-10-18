@@ -1807,6 +1807,11 @@ Local-light probe visibility is being separated from aggregate RGB irradiance.
 captured light index. Each entry retains a unit visibility fraction, independently
 of light colour, intensity or animation. Missing or untraced entries remain
 unknown; only a complete, validated readback batch publishes coverage. This data
-layer supports arbitrary overlap without a four-channel assignment. It is not yet
+layer supports arbitrary overlap without a four-channel assignment.
+`planProbeVisibility` uses the existing renderer influence radius and actual
+relocated usable probe positions. A sweep on the widest spatial axis prunes
+distant pairs; a conservative cell-corner halo retains interpolation coverage.
+Stationary toggleable lights participate, moving lights do not. Pair-budget
+overflow returns no plan rather than partial coverage. These modules are not yet
 connected to bake scheduling, cache payloads or shader reconstruction, so the
 existing local-light shadow fallback remains active.
