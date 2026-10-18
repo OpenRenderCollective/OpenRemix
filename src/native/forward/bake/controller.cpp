@@ -1,6 +1,7 @@
 #include "forward/bake/job.h"
 #include "forward/bake/budget.h"
 #include "forward/bake/cache.h"
+#include "forward/bake/fingerprint.h"
 #include "forward/bake/receiver_report.h"
 #include "forward/bake/transport.h"
 #include "forward/image_dump.h"
@@ -569,6 +570,8 @@ namespace remix::forward::bake {
       const auto device = m_device;
       job.ticket = m_pipelines->prepare(
           "forward-probe-filter-" + std::to_string(++generation), [owner, physical, device, config] {
+            dumpPhaseFingerprint("transport", owner->source->contentHash, owner->grid, owner->surfaceLayout, owner->surfaces,
+                                 owner->sun, owner->captures);
             owner->finishStage.store(Job::FinishStage::Reflections, std::memory_order_relaxed);
             owner->specular = probes::filter(owner->captures, 128, owner->cancellation.get_token());
             if (config.denoiseLightmaps && lightmap::denoiserVersion()) {
@@ -599,6 +602,8 @@ namespace remix::forward::bake {
               std::fprintf(stderr, "Forward lightmap OIDN staging: %llu pinned bytes, %.3f s host setup/copies\n",
                            static_cast<unsigned long long>(filtered.stagingBufferBytes), filtered.stagingSeconds);
             }
+            dumpPhaseFingerprint("filtered", owner->source->contentHash, owner->grid, owner->surfaceLayout, owner->surfaces,
+                                 owner->sun, owner->captures);
             owner->finishStage.store(Job::FinishStage::Atlas, std::memory_order_relaxed);
             owner->surfacePixels =
                 lightmap::pixels(owner->surfaceLayout, owner->surfaces, owner->cancellation.get_token(),

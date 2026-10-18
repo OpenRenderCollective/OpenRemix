@@ -1724,3 +1724,13 @@ retire queued transfers before releasing their storage. CPU devices, packets
 larger than the arena and pinned-allocation failures retain pageable transfers.
 The denoiser's quality, chart isolation and nine signed SH bands are unchanged;
 this transfer optimization does not invalidate existing bake caches.
+
+For fresh-bake consistency investigations, `REMIX_DEBUG_BAKE_PHASE_HASHES` names
+an optional JSONL receipt file. `transport` records completed CPU readbacks before
+filtering; `filtered` records the data after reflection and optional neural
+filtering. Versioned receipts separate receiver planning inputs, surface RGB SH,
+surface alpha, sunlight, grid probes and capture RGB/depth data. This distinguishes
+input/transport changes from filter changes without retaining full sample dumps.
+Hashing is disabled when the variable is unset; cache hits do not produce fresh
+transport receipts. Cancelled jobs may leave only their initial record. Diagnostic
+write failures are reported but never fail an otherwise valid bake.

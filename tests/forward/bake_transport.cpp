@@ -549,7 +549,7 @@ namespace {
     bake::Transport transport;
     bake::Options options;
     options.textureResolution = 32;
-    options.batchPoints = 8;
+    options.batchPoints = 128;
     options.initialBatchPoints = 2;
     options.queueFamily = fixture.family;
     if (std::getenv("REMIX_BENCH_VISIBILITY")) {
@@ -705,6 +705,41 @@ namespace {
             "Unit sunlight SH preserves visibility and directional normal response even with black captured radiance");
     std::printf("Sun visibility: %.3f %.3f %.3f; unit direct %.5f\n", results[0].irradiance[0][0],
                   results[1].irradiance[0][0], results[2].irradiance[0][0], sunDiffuse);
+    std::vector<bake::VisibilityPoint> receivers(127);
+    std::vector<bake::Point> sunlight(127);
+    for (uint32_t i = 0; i < receivers.size(); ++i) {
+      auto point = points[1];
+      point.surface.position[0] = -.8f + 1.6f * float(i % 17) / 16;
+      point.surface.position[1] = -.6f + 1.2f * float(i / 17) / 7;
+      receivers[i] = point;
+      sunlight[i] = point.surface;
+    }
+    for (bool sun : {false, true}) {
+      auto record = [&](uint32_t slot, size_t first, size_t count) {
+        if (sun)
+          transport.recordSun(fixture.command, slot, std::span(sunlight).subspan(first, count), 256, true);
+        else
+          transport.recordVisibility(fixture.command, slot, std::span(receivers).subspan(first, count), 256, true);
+      };
+      fixture.begin();
+      record(0, 0, receivers.size());
+      fixture.finish();
+      std::vector<bake::VisibilityResult> reference(receivers.size());
+      transport.readVisibility(0, reference);
+      for (size_t batch : {1u, 7u, 31u, 64u})
+        for (size_t first = 0; first < receivers.size(); first += batch) {
+          const auto count = std::min(batch, receivers.size() - first);
+          const auto slot = uint32_t(first % 2);
+          fixture.begin();
+          record(slot, first, count);
+          fixture.finish();
+          std::vector<bake::VisibilityResult> measured(count);
+          transport.readVisibility(slot, measured);
+          require(std::memcmp(measured.data(), reference.data() + first, count * sizeof(bake::VisibilityResult)) == 0,
+                  "Local/sun visibility and unit SH retain exact sample identity across batch sizes and slots");
+        }
+    }
+    std::puts("Visibility batching: 127 receivers, local/sun SH, batches 1/7/31/64 and alternating slots match exactly");
     auto triangleSource = std::make_shared<scene::BakeScene>(*source);
     auto &emitter = triangleSource->lights[0];
     emitter.triangle = 1;
