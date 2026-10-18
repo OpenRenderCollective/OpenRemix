@@ -1715,3 +1715,12 @@ Cancelled lookups are omitted; diagnostic write failure never aborts baking.
 
 Forward+ currently uses manual exposure. Its post-processing panel explicitly
 shows that setting; the path-traced automatic-exposure controls do not affect it.
+
+GPU lightmap denoising stages transfers through an OIDN-owned pinned host arena
+of at most 8 MiB, additional to chart scratch and device/model memory. Ordered
+uploads and readbacks retain distinct arena ranges until synchronization, then
+copy results into their owning charts. Rebinding filters, cancellation and errors
+retire queued transfers before releasing their storage. CPU devices, packets
+larger than the arena and pinned-allocation failures retain pageable transfers.
+The denoiser's quality, chart isolation and nine signed SH bands are unchanged;
+this transfer optimization does not invalidate existing bake caches.

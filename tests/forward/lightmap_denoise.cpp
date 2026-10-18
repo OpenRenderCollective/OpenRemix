@@ -216,6 +216,14 @@ namespace {
       require(rejected, "Invalid later chart data drains already queued host transfers before cleanup");
     }
     const auto statistics = lightmap::denoise(layout, values);
+    auto pageable = original;
+    lightmap::denoise(layout, pageable, {}, {}, lightmap::HostTransfers::Pageable);
+    float error = 0;
+    for (size_t point = 0; point < values.size(); ++point)
+      for (uint32_t band = 0; band < 9; ++band)
+        for (uint32_t c = 0; c < 3; ++c)
+          error = std::max(error, std::abs(values[point].irradiance[band][c] - pageable[point].irradiance[band][c]));
+    require(error < .0001f, "Queued pinned packets preserve pageable output across byte/count flushes and tails");
     const size_t chartBytes = size_t(side) * side * 3 * sizeof(float) * 11;
     const size_t limit = std::min(size_t(lightmap::denoising::queuedChartLimit),
                                   lightmap::denoising::queueBudgetBytes / chartBytes);
@@ -293,6 +301,23 @@ int main() try {
   const auto statistics = lightmap::denoise(layout, values, {}, [&](uint32_t completed, uint32_t total) {
     progress.push_back({completed, total});
   });
+  auto pageable = raw;
+  const auto reference = lightmap::denoise(layout, pageable, {}, {}, lightmap::HostTransfers::Pageable);
+  float transferError = 0;
+  for (size_t point = 0; point < values.size(); ++point)
+    for (uint32_t band = 0; band < 9; ++band)
+      for (uint32_t c = 0; c < 3; ++c)
+        transferError = std::max(transferError,
+            std::abs(values[point].irradiance[band][c] - pageable[point].irradiance[band][c]));
+  require(transferError < .0001f, "Pinned and pageable transfers preserve the same filtered chart fields");
+  require(statistics.stagingBufferBytes <= lightmap::denoising::queueBudgetBytes &&
+              reference.stagingBufferBytes == 0,
+          "Pinned staging remains bounded and pageable mode allocates none");
+  require(statistics.deviceType != 1 || statistics.stagingBufferBytes == 0,
+          "CPU devices retain direct transfers without allocating pinned staging");
+  std::printf("Transfer parity: maxerror %.8g, pinned %.6fs, pageable %.6fs, staging %llu bytes\n",
+              transferError, statistics.seconds, reference.seconds,
+              static_cast<unsigned long long>(statistics.stagingBufferBytes));
   double before = 0, after = 0, directionBefore = 0, directionAfter = 0;
   for (uint32_t i = 0; i < values.size(); ++i) {
     const auto &sample = values[i];

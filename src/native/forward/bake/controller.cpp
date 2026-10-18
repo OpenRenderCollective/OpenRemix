@@ -596,6 +596,8 @@ namespace remix::forward::bake {
                            filtered.initializationSeconds, filtered.preparationSeconds,
                            filtered.uploadSeconds, filtered.executionSeconds, filtered.readbackSeconds,
                            filtered.waitSeconds, filtered.chartSeconds);
+              std::fprintf(stderr, "Forward lightmap OIDN staging: %llu pinned bytes, %.3f s host setup/copies\n",
+                           static_cast<unsigned long long>(filtered.stagingBufferBytes), filtered.stagingSeconds);
             }
             owner->finishStage.store(Job::FinishStage::Atlas, std::memory_order_relaxed);
             owner->surfacePixels =

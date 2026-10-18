@@ -59,6 +59,15 @@ namespace remix::forward::lightmap {
       OIDNDevice device = nullptr;
       std::array<Model, denoising::coefficientCount> models{}; // one immutable image binding per SH band
       OIDNBuffer buffer = nullptr;
+      OIDNBuffer staging = nullptr;
+      float *stagingData = nullptr;
+      size_t stagingCapacity = 0, stagingUsed = 0; // float elements, not bytes
+      struct Transfer {
+        std::span<float> destination;
+        size_t offset; // float elements in the pinned arena
+      };
+      std::vector<Transfer> pendingTransfers;
+      HostTransfers hostTransfers;
       size_t capacity = 0;
       size_t requiredCapacity = 0;
       DenoiseStatistics &statistics;
@@ -75,9 +84,14 @@ namespace remix::forward::lightmap {
       void finish() {
         retire();
         check();
+        const Duration duration(statistics.stagingSeconds);
+        for (const auto &transfer : pendingTransfers)
+          std::copy_n(stagingData + transfer.offset, transfer.destination.size(), transfer.destination.data());
+        pendingTransfers.clear();
+        stagingUsed = 0;
       }
-      Filter(DenoiseStatistics &statistics, size_t requiredCapacity)
-          : requiredCapacity(requiredCapacity), statistics(statistics) {}
+      Filter(DenoiseStatistics &statistics, size_t requiredCapacity, HostTransfers hostTransfers)
+          : hostTransfers(hostTransfers), requiredCapacity(requiredCapacity), statistics(statistics) {}
       ~Filter() {
         // Even cancellation/errors must retire queued work before its inputs,
         // callbacks, filters or buffers can be released.
@@ -87,6 +101,8 @@ namespace remix::forward::lightmap {
             oidnReleaseFilter(model.handle);
         if (buffer)
           oidnReleaseBuffer(buffer);
+        if (staging)
+          oidnReleaseBuffer(staging);
         if (device)
           oidnReleaseDevice(device);
       }
@@ -115,6 +131,43 @@ namespace remix::forward::lightmap {
           oidnSetFilterBool(model.handle, "directional", i != 0);
           check();
         }
+      }
+      float *transferData(std::span<float> images) {
+        if (hostTransfers == HostTransfers::Pageable || statistics.deviceType == OIDN_DEVICE_TYPE_CPU ||
+            images.size_bytes() > denoising::queueBudgetBytes)
+          return images.data();
+        if (!staging) {
+          const Duration duration(statistics.stagingSeconds);
+          stagingCapacity = denoising::queueBudgetBytes / sizeof(float);
+          staging = oidnNewBufferWithStorage(device, stagingCapacity * sizeof(float), OIDN_STORAGE_HOST);
+          const char *message = nullptr;
+          const auto error = oidnGetDeviceError(device, &message);
+          if (!staging && error == OIDN_ERROR_OUT_OF_MEMORY) {
+            // Staging is an optimization. Keep the existing transfer path if
+            // additional pinned memory is unavailable.
+            hostTransfers = HostTransfers::Pageable;
+            return images.data();
+          }
+          if (error != OIDN_ERROR_NONE)
+            throw std::runtime_error(std::string("OIDN host staging: ") + (message ? message : "unknown error"));
+          stagingData = static_cast<float *>(oidnGetBufferData(staging));
+          check();
+          if (!stagingData)
+            throw std::runtime_error("OIDN host staging is not accessible");
+          statistics.stagingBufferBytes = stagingCapacity * sizeof(float);
+        }
+        if (images.size() > stagingCapacity)
+          throw std::logic_error("OIDN packet exceeds its host staging budget");
+        if (images.size() > stagingCapacity - stagingUsed)
+          finish();
+        const Duration duration(statistics.stagingSeconds);
+        auto *data = stagingData + stagingUsed;
+        std::copy(images.begin(), images.end(), data);
+        // Keep the destination until the readback retires. Callers already
+        // retain its chart before enqueueing, including exception unwinding.
+        pendingTransfers.push_back({images, stagingUsed});
+        stagingUsed += images.size();
+        return data;
       }
       void enqueue(std::span<float> images, uint32_t width, uint32_t height, uint32_t first,
                     uint32_t contentWidth, uint32_t contentHeight) {
@@ -186,10 +239,11 @@ namespace remix::forward::lightmap {
           model.offset = offset;
           ++statistics.preparations;
         }
+        auto *host = transferData(images);
         inFlight = true;
         {
           const Duration duration(statistics.uploadSeconds);
-          oidnWriteBufferAsync(buffer, 0, bytes, images.data());
+          oidnWriteBufferAsync(buffer, 0, bytes, host);
         }
         check();
         for (uint32_t slot = 0; slot < count; ++slot) {
@@ -207,7 +261,7 @@ namespace remix::forward::lightmap {
         ++statistics.batches;
         {
           const Duration duration(statistics.readbackSeconds);
-          oidnReadBufferAsync(buffer, 0, bytes, images.data());
+          oidnReadBufferAsync(buffer, 0, bytes, host);
         }
         check();
         statistics.transferBytes += 2 * bytes;
@@ -232,7 +286,7 @@ namespace remix::forward::lightmap {
   } // namespace
 #endif
   DenoiseStatistics denoise(const Layout &layout, std::span<bake::Result> results, std::stop_token cancelled,
-                            std::function<void(uint32_t, uint32_t)> progress) {
+                            std::function<void(uint32_t, uint32_t)> progress, HostTransfers transfers) {
 #ifndef REMIX_OIDN
     throw std::runtime_error("Lightmap denoising requires a build configured with oidn_root");
 #else
@@ -269,7 +323,7 @@ namespace remix::forward::lightmap {
     // Declaration order matters: Filter retires copies before pending host
     // arrays are destroyed, including on cancellation or an exception.
     std::vector<PendingChart> pending;
-    Filter filter(statistics, largestImage);
+    Filter filter(statistics, largestImage, transfers);
     filter.initialize(cancelled);
     statistics.deviceType = oidnGetDeviceInt(filter.device, "type");
     filter.check();
