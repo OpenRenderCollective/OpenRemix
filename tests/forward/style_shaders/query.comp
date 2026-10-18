@@ -7,8 +7,8 @@ layout(set = 0, binding = 1, std140) uniform Weights { vec4 scales[32]; } weight
 #define STYLE_SCALE(style) weights.scales[(style) / 4u][(style) % 4u]
 #include "../../../src/native/forward/shaders/irradiance.glsl"
 #include "../../../src/native/forward/shaders/style-lighting.glsl"
-struct QueryFrame { vec4 localSettings; };
-QueryFrame frame;
+struct QueryFrame { vec4 localSettings; uvec4 occlusion; };
+QueryFrame frame = QueryFrame(vec4(0), uvec4(0));
 #include "../../../src/native/forward/shaders/lightmap.glsl"
 struct Query { vec4 coordinate, normal; uvec4 control; };
 layout(set = 0, binding = 2, std430) readonly buffer Queries { Query queries[]; };
