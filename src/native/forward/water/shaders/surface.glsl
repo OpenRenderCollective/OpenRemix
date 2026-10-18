@@ -87,8 +87,10 @@ void main() {
   vec3 specular = sun.specular * frame.sunRadiance.rgb * visibility;
   uint base = clusterIndex(gl_FragCoord.xy, depth) * ClusterStride;
   uint count = clusters[base];
-  for (uint i = 0u; i < (count > ClusterCapacity ? frame.target.z : count); ++i) {
-    uint light = count > ClusterCapacity ? i : clusters[base + 1u + i];
+  bool linear;
+  uint lightCount = receiverLightCount(count, aggregateReceiver, linear);
+  for (uint i = 0u; i < lightCount; ++i) {
+    uint light = linear ? i : clusters[base + 1u + i];
     BrdfLobes response = localLightResponse(light, worldPosition, n, v, surface.rgb, roughness, 0,
                                            vec4(-1), vec4(0), vec3(f0), normalize(geometric), aggregateReceiver);
     diffuse += response.diffuse;

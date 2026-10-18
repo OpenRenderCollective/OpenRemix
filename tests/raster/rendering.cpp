@@ -1116,12 +1116,54 @@ namespace {
         target.forward->updateLighting(options);
         pixels = until("", true);
         const auto fullyBaked = target.forward->bakeController()->volume();
+        require(target.forward->statistics().clusteredLights == 0 &&
+                    target.forward->statistics().fullyBakedLights == 1,
+                "Fully static lights leave the clustered list while retaining fallback records");
         require(fullyBaked && fullyBaked->mixedLights &&
                     fullyBaked->mixedLights->directLighting.lights[0] ==
                         remix::forward::bake::DirectMode::Baked &&
                     !fullyBaked->mixedLights->retainsVisibility(0) &&
                     pixels[left] < 3 && pixels[right] > 80,
                 "Fully static direct lighting comes from the aggregate without mixed visibility data");
+        {
+          auto blueInfo = info;
+          blueInfo.hash = 9796;
+          blueInfo.isDynamic = 1;
+          blueInfo.radiance = {0, 0, 3};
+          remixapi_LightHandle blue{};
+          r.createLight(blueInfo, blue);
+          options.localShadows = false;
+          options.clusterLights = 1;
+          target.forward->updateLighting(options);
+          auto overflow = [&](bool submitBaked) {
+            camera(r);
+            r.drawRetained(nullptr);
+            if (submitBaked) r.drawLight(red);
+            r.drawLight(green);
+            r.drawLight(blue);
+            return target.render();
+          };
+          const auto withBakedTail = overflow(true);
+          require(target.forward->statistics().clusteredLights == 2 &&
+                      target.forward->statistics().fullyBakedLights == 1,
+                  "Light diagnostics distinguish mixed work from the immutable baked tail");
+          const auto withoutBakedTail = overflow(false);
+          require(target.forward->statistics().baking.active,
+                  "Omitting a fully baked runtime record preserves the immutable bake");
+          for (size_t component = 0; component < withBakedTail.size(); ++component)
+            require(std::abs(int(withBakedTail[component]) - int(withoutBakedTail[component])) <= 1,
+                    "Cluster overflow visits every mixed light without reevaluating the fully baked tail");
+          r.destroyLight(blue);
+          options.clusterLights = 0;
+          options.localShadows = localShadows;
+          target.forward->updateLighting(options);
+        }
+        camera(r);
+        r.drawInstance(instance(mesh)); // no chart; the fixture's probe bounds are at 10..11
+        r.drawLight(red);
+        pixels = target.render();
+        require(target.forward->statistics().baking.active && pixels[left] < 3 && pixels[right] > 80,
+                "An uncovered receiver keeps analytic light and frozen-world occlusion beside an active bake");
         options.debugView = 3;
         target.enableForward(options, true);
         pixels = render(false);

@@ -220,6 +220,14 @@ namespace remix::forward {
       }
       lights.push_back(light);
     }
+    const auto firstBaked = std::find_if(lights.begin(), lights.end(),
+        [](const auto &light) { return light.corners[2][3] > 1.5f; });
+    const auto mixedEnd = std::stable_partition(firstBaked, lights.end(),
+        [](const auto &light) { return light.corners[2][3] <= 1.5f; });
+    const uint32_t runtimeLights = uint32_t(mixedEnd - lights.begin());
+    // Zero preserves the ordinary full-list contract. Otherwise the prefix
+    // contains mixed/dynamic lights; the baked tail is only an uncovered fallback.
+    data.clusterInfo[1] = firstBaked == lights.end() ? 0 : runtimeLights + 1;
     data.target = {extent.width, extent.height, uint32_t(lights.size()),
                    uint32_t(options.shadows && sun.isDistant)};
     frame.staticSunDirty = sunCache.update(shadowPlanner.source(), data.target[3] != 0, data.shadows);
@@ -233,7 +241,7 @@ namespace remix::forward {
     step(cpu.lighting);
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physical, &properties);
-    data.clusterInfo[0] = clusterListCapacity(uint32_t(lights.size()), data.grid[3],
+    data.clusterInfo[0] = clusterListCapacity(runtimeLights, data.grid[3],
         properties.limits.maxStorageBufferRange, options.clusterLights);
     statistics.clusterLightCapacity = data.clusterInfo[0];
     const VkDeviceSize clusterBytes = VkDeviceSize(data.grid[3]) * (data.clusterInfo[0] + 1) * sizeof(uint32_t);
@@ -424,6 +432,8 @@ namespace remix::forward {
         }))};
     probes::dumpFrameData(".shadow-policy.bin", shadowPolicy, sizeof(shadowPolicy));
     statistics.lights = uint32_t(lights.size());
+    statistics.clusteredLights = runtimeLights;
+    statistics.fullyBakedLights = uint32_t(lights.size()) - runtimeLights;
     statistics.clusters = data.grid[3];
     statistics.geometryBytes = 0;
     for (const auto &[key, value] : geometries)

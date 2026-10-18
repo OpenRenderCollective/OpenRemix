@@ -9,10 +9,6 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
                 vec4 directIrradiance, vec4 surfaceLightmap, vec3 dielectricF0, vec3 receiverNormal,
                 bool aggregateReceiver) {
   Light light = lights[index];
-  // Fully static direct lighting belongs to the sampled lightmap/probe. Keep
-  // analytic fallback on receivers without a valid baked sample.
-  if (aggregateReceiver && light.corners[2].w > 1.5)
-    return BrdfLobes(vec3(0), vec3(0));
   bool aggregateDiffuse = aggregateReceiver && light.corners[2].w > .5;
   vec3 delta = light.positionRadius.xyz - p;
   float distance2 = max(dot(delta, delta), 1e-8), distance = sqrt(distance2);

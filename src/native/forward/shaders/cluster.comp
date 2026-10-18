@@ -26,7 +26,7 @@ void main() {
         maximum = max(maximum, p);
       }
   uint count = 0u, base = index * ClusterStride;
-  for (uint i = 0u; i < frame.target.z; ++i) {
+  for (uint i = 0u; i < ClusterLightCount; ++i) {
     vec3 center = (frame.view * vec4(lights[i].positionRadius.xyz, 1)).xyz;
     vec3 delta = center - clamp(center, minimum, maximum);
     float radius = lights[i].shaping.z;

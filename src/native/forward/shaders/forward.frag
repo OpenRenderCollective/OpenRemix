@@ -128,8 +128,10 @@ void main() {
   uint count = clusters[base];
   // Overflow remains correct: this cluster evaluates the full light array.
   // It is slower, but never silently loses illumination.
-  for (uint i = 0u; i < (count > ClusterCapacity ? frame.target.z : count); ++i) {
-    uint index = count > ClusterCapacity ? i : clusters[base + 1u + i];
+  bool linear;
+  uint lightCount = receiverLightCount(count, aggregateReceiver, linear);
+  for (uint i = 0u; i < lightCount; ++i) {
+    uint index = linear ? i : clusters[base + 1u + i];
     BrdfLobes local = localLightResponse(index, worldPosition, n, v, surface.rgb, roughness, metallic,
                                          directIrradiance, surfaceLightmap, vec3(.04), normalize(geometric),
                                          aggregateReceiver);

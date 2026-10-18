@@ -37,6 +37,8 @@ namespace remix {
       const auto statistics = forwardStatistics();
       ImGui::Text("Active MSAA: %ux | opaque draws: %u | lights: %u | clusters: %u",
                   statistics.samples, statistics.draws, statistics.lights, statistics.clusters);
+      ImGui::TextDisabled("Local light lists: %u clustered | %u baked fallback",
+                          statistics.clusteredLights, statistics.fullyBakedLights);
       auto &forward = settings.forward;
       int lightingView = int(forward.debugView);
       if (ui::Combo("Lighting view", &lightingView,

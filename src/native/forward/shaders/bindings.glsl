@@ -41,6 +41,14 @@ layout(set = 0, binding = 3, std430) readonly buffer Materials {
 layout(set = 0, binding = 4) uniform sampler2DArrayShadow sunShadow;
 #define ClusterCapacity frame.clusterInfo.x
 #define ClusterStride (ClusterCapacity + 1u)
+#define ClusterLightCount (frame.clusterInfo.y == 0u ? frame.target.z : frame.clusterInfo.y - 1u)
+// Only covered receivers may omit the fully baked tail. Cluster overflow still
+// visits every relevant light; uncovered receivers retain the complete fallback.
+uint receiverLightCount(uint count, bool aggregateReceiver, out bool linear) {
+  bool fallback = !aggregateReceiver && frame.clusterInfo.y != 0u;
+  linear = fallback || count > ClusterCapacity;
+  return fallback ? frame.target.z : count > ClusterCapacity ? ClusterLightCount : count;
+}
 float sliceDepth(uint slice) {
   return frame.depth.x * pow(frame.depth.y / frame.depth.x, float(slice) / float(frame.grid.z));
 }
