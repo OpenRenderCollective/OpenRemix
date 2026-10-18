@@ -47,6 +47,10 @@ when baked lighting is active; a failed bake instead displays its failure messag
    irradiance plus lower-resolution directionality against the current SH representation before
    replacing it. Require equal-energy, no-double-counting, wall-occlusion and moving-caster tests,
    followed by measured fresh-map bake time, GPU memory and close normal-mapped surface comparisons.
+   Geometry-emitter hints alone do not address maps dominated by explicit point/spot lights. Extend
+   aggregate ownership to those fixed emitters while retaining compact, selected per-light specular
+   visibility and moving-caster corrections; avoid restoring exhaustive evaluation for every baked
+   emitter. Validate this separately on maps with no texture-emission lights, including Steamlab.
    Supported live RTGI temporarily requests attributed static visibility instead of aggregate bake
    policies, because its analytic primary lighting cannot use aggregate irradiance for occlusion.
    Raster preferences remain intact when switching back. This is a correctness fallback; a compact
