@@ -142,3 +142,45 @@ bool bakedSunVisibility(vec3 position, vec3 normal, out float visibility) {
   visibility = clamp(visibility / total, 0, 1);
   return true;
 }
+
+uint localProbeWord(uint base, uint word) {
+  return bakeRecords[base + word / 4u][word % 4u];
+}
+bool localProbeMask(uint base, uint probe, uint light, out float visibility) {
+  uint low = localProbeWord(base, 4u + probe), end = localProbeWord(base, 5u + probe), high = end;
+  uint entries = 5u + bakeDimensions.w;
+  while (low < high) {
+    uint middle = low + (high - low) / 2u;
+    if (localProbeWord(base, entries + middle * 2u) < light) low = middle + 1u;
+    else high = middle;
+  }
+  if (low >= end || localProbeWord(base, entries + low * 2u) != light) return false;
+  visibility = uintBitsToFloat(localProbeWord(base, entries + low * 2u + 1u));
+  return true;
+}
+bool bakedLocalProbeVisibility(vec3 position, vec3 normal, uint capturedLight, out float visibility) {
+  uint table = uint(bakeSettings.w) / 2u;
+  if (capturedLight == 0u || table == 0u || localProbeWord(table, 0u) != 0x56504c52u ||
+      localProbeWord(table, 1u) != 1u || localProbeWord(table, 2u) != bakeDimensions.w) return false;
+  uvec3 base;
+  vec3 fraction;
+  if (!bakeCell(position, normal, base, fraction)) return false;
+  visibility = 0;
+  float total = 0;
+  for (uint corner = 0u; corner < 8u; ++corner) {
+    uvec3 upper = uvec3(corner & 1u, (corner >> 1u) & 1u, (corner >> 2u) & 1u);
+    uint index;
+    float weight = bakeProbeWeight(position, normal, base + upper, fraction, upper, index);
+    if (weight <= 0) continue;
+    float mask;
+    if (!localProbeMask(table, index, capturedLight - 1u, mask)) {
+      if (weight > 1e-6) return false;
+      continue;
+    }
+    visibility += weight * mask;
+    total += weight;
+  }
+  if (total < 1e-4) return false;
+  visibility = clamp(visibility / total, 0, 1);
+  return true;
+}

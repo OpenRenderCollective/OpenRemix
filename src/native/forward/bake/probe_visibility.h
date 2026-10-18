@@ -23,6 +23,9 @@ namespace remix::forward::bake {
     std::span<const uint32_t> offsets() const { return m_offsets; }
     std::span<const Entry> entries() const { return m_entries; }
     uint64_t bytes() const;
+    // Shader words: magic/version/probe count/entry count, offsets, then
+    // captured-light index and IEEE float visibility per entry; padded to vec4.
+    std::vector<uint32_t> words() const;
     static void validate(uint32_t probes, uint32_t lights, std::span<const uint32_t> offsets,
                          std::span<const Entry> entries, uint64_t byteBudget);
     static ProbeVisibility restore(uint32_t probes, uint32_t lights, std::span<const uint32_t> offsets,

@@ -15,6 +15,13 @@ void main() {
   if (index >= count)
     return;
   Query q = queries[index];
+  if (q.position.w >= 4) {
+    float value = 0;
+    uint light = q.position.w == 4 ? 1u : q.position.w == 5 ? 2u : 0u;
+    bool found = bakedLocalProbeVisibility(q.position.xyz, q.reflected.xyz, light, value);
+    results[index] = vec4(value, 0, 0, found ? 1 : 0);
+    return;
+  }
   if (q.position.w == 3) {
     float value = 0;
     bool found = bakedSunVisibility(q.position.xyz, q.reflected.xyz, value);

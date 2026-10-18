@@ -3,6 +3,7 @@
 #include "forward/bake/budget.h"
 #include "forward/bake/transport.h"
 #include "forward/bake/style_work.h"
+#include "forward/bake/probe_visibility.h"
 #include "forward/mixed/overflow.h"
 #include "forward/probes/evaluation.h"
 #include <atomic>
@@ -19,6 +20,10 @@ namespace remix::forward::bake {
     std::vector<Result> surfaces;
     std::unique_ptr<StyleWork> styles;
     std::vector<uint32_t> styleWords;
+    std::optional<ProbeVisibility> localProbes;
+    std::vector<VisibilityTask> localProbeTasks;
+    bool localProbesPlanned = false;
+    uint32_t localProbeNext = 0, localProbeReceived = 0;
     bool baseFinished = false;
     std::vector<Result> readback; // reused between completed frame slots; avoids clearing every batch
     std::vector<VisibilityResult> visibilityReadback;
@@ -71,7 +76,7 @@ namespace remix::forward::bake {
     bool initialized = false, prepared = false, failed = false;
     void prepareResources(VkPhysicalDevice physical, VkDevice device, const Config &config, float lightCutoff,
                           uint32_t queueFamily);
-    enum class Visibility { Local, Overflow, SurfaceSun, ProbeSun };
+    enum class Visibility { Local, Overflow, SurfaceSun, ProbeSun, ProbeLocal };
     bool consumeVisibility(uint32_t slot, uint32_t first, uint32_t count, Visibility kind);
     uint32_t count(Work work, const Config &config, uint32_t remaining, uint32_t samples,
                    uint32_t bounces = 1) {

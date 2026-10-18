@@ -32,6 +32,17 @@ namespace remix::forward::bake {
     }
   } // namespace
   bool Controller::Job::consumeVisibility(uint32_t slot, uint32_t first, uint32_t count, Visibility kind) {
+    if (kind == Visibility::ProbeLocal) {
+      if (!localProbes) return false;
+      overflowReadback.resize(count);
+      transport->readScalarVisibility(slot, overflowReadback);
+      try {
+        localProbes->observe(std::span(localProbeTasks).subspan(first, count), overflowReadback);
+        return true;
+      } catch (const std::invalid_argument &) {
+        return false;
+      }
+    }
     if (kind == Visibility::Overflow) {
       if (overflowReadback.size() < count)
         overflowReadback.resize(count);
@@ -105,6 +116,7 @@ namespace remix::forward::bake {
           specular = std::move(cached->specular);
           surfacePixels = std::move(cached->pixels);
           styleWords = std::move(cached->styles);
+          localProbes = std::move(cached->localProbes);
           surfaceReceived = cached->surfaceSamples;
           hasDirectDiffuse = cached->directDiffuse;
           hasSun = cached->sun;
@@ -236,8 +248,9 @@ namespace remix::forward::bake {
         job.transport->releaseBuildInputs();
       if (submission.count && submission.job == m_job && !job.failed) {
         const auto readBegin = std::chrono::steady_clock::now();
-        if (submission.visibility || submission.sun || submission.probeSun || submission.overflowVisibility) {
-          const auto kind = submission.probeSun ? Job::Visibility::ProbeSun
+        if (submission.visibility || submission.sun || submission.probeSun || submission.probeLocal || submission.overflowVisibility) {
+          const auto kind = submission.probeLocal ? Job::Visibility::ProbeLocal
+                          : submission.probeSun ? Job::Visibility::ProbeSun
                           : submission.overflowVisibility ? Job::Visibility::Overflow
                           : submission.visibility ? Job::Visibility::Local : Job::Visibility::SurfaceSun;
           if (!job.consumeVisibility(slot, submission.first, submission.count, kind)) {
@@ -300,7 +313,7 @@ namespace remix::forward::bake {
         if (submission.overflowVisibility)
           job.overflowTiming.readbackMs += readbackMs;
         job.readbackBytes += uint64_t(submission.count) *
-                             (submission.overflowVisibility ? sizeof(float) :
+                             (submission.overflowVisibility || submission.probeLocal ? sizeof(float) :
                               submission.visibility || submission.sun || submission.probeSun
                                   ? sizeof(VisibilityResult) : sizeof(Result));
         if (!submission.styled) (submission.radiance             ? job.captureReceived
@@ -309,6 +322,7 @@ namespace remix::forward::bake {
          : submission.visibility         ? job.visibilityReceived
          : submission.overflowVisibility ? job.overflowReceived
          : submission.probeSun           ? job.probeSunReceived
+         : submission.probeLocal         ? job.localProbeReceived
          : submission.sun                ? job.sunReceived
          : submission.surface            ? job.surfaceReceived
                                          : job.received) += submission.count;
@@ -316,7 +330,7 @@ namespace remix::forward::bake {
           if (submission.overflowVisibility)
             job.overflowTiming.gpuMs += *elapsed;
           const auto work = submission.reflectionGeometry                            ? Work::Geometry
-                            : submission.visibility || submission.overflowVisibility ? Work::Visibility
+                            : submission.visibility || submission.overflowVisibility || submission.probeLocal ? Work::Visibility
                             : submission.sun || submission.probeSun                  ? Work::Sun
                             : submission.reflectionSite                              ? Work::Site
                             : submission.radiance                                    ? Work::Reflection
@@ -366,7 +380,7 @@ namespace remix::forward::bake {
       job.probeSunPlanned = true;
     }
     if (job.probeSunReceived == job.probeSunTasks.size()) {
-      recordSurfaces(command, config);
+      recordProbeLocal(command, config);
       return;
     }
     if (job.probeSunNext < job.probeSunTasks.size()) {
@@ -689,10 +703,11 @@ namespace remix::forward::bake {
               VkPhysicalDeviceProperties limits;
               vkGetPhysicalDeviceProperties(physical, &limits);
               const uint64_t baseBytes = sizeof(GridHeader) + owner->grid.probes.size() * sizeof(Result);
-              if (baseBytes + 16 >= limits.limits.maxStorageBufferRange)
+              const uint64_t localBytes = owner->localProbes ? ((owner->localProbes->bytes() + 31) & ~uint64_t(15)) : 0;
+              if (baseBytes + localBytes + 16 >= limits.limits.maxStorageBufferRange)
                 throw std::length_error("No device storage range for attributed lighting");
               const uint64_t maximum = std::min(uint64_t(config.styleStorageMiB) << 20,
-                  uint64_t(limits.limits.maxStorageBufferRange) - baseBytes - 15);
+                  uint64_t(limits.limits.maxStorageBufferRange) - baseBytes - localBytes - 15);
               owner->styles = std::make_unique<StyleWork>(*owner->source, owner->surfaceLayout, owner->grid, maximum);
               owner->styles->takeSurfaces(owner->surfaces, owner->surfaceLayout.points.size());
             } else if (!samples || std::strcmp(samples, "1") != 0) {
@@ -760,7 +775,12 @@ namespace remix::forward::bake {
     const size_t baseBytes = sizeof(GridHeader) + grid.probes.size() * sizeof(Result);
     const size_t styleBytes = m_job->styleWords.size() * sizeof(uint32_t);
     volume->styledIndirect = styleBytes != 0;
-    const size_t bytes = (baseBytes + styleBytes + 15) & ~size_t(15);
+    const size_t localOffset = (baseBytes + styleBytes + 15) & ~size_t(15);
+    const auto localWords = m_job->localProbes ? m_job->localProbes->words() : std::vector<uint32_t>{};
+    const size_t localBytes = localWords.size() * sizeof(uint32_t);
+    const size_t bytes = localOffset + localBytes;
+    if (localBytes && (localOffset - sizeof(GridHeader)) / 16 >= (1u << 23))
+      throw std::length_error("Local probe table offset exceeds exact shader header encoding");
     const auto specular = probes::serialize(m_job->specular);
     probes::dumpPublishedData(".probes-published.bin", specular.data(), specular.size());
     const size_t surfaceBytes = m_job->surfacePixels.size() * sizeof(uint16_t);
@@ -850,6 +870,14 @@ namespace remix::forward::bake {
       header.settings[3] = 1;
       std::memcpy(data.data(), &header, sizeof(header));
       probes::dumpPublishedData(".styled-irradiance.bin", m_job->styleWords.data(), styleBytes);
+    }
+    if (localBytes) {
+      std::memcpy(data.data() + localOffset, localWords.data(), localBytes);
+      auto header = grid.header;
+      header.settings[3] = float(2 * ((localOffset - sizeof(GridHeader)) / 16) + uint32_t(styleBytes != 0));
+      std::memcpy(data.data(), &header, sizeof(header));
+      volume->content.grid = scene::fastHash(localWords.data(), localBytes, volume->content.grid) | 1;
+      probes::dumpPublishedData(".local-probe-visibility.bin", localWords.data(), localBytes);
     }
     volume->content.reflections = scene::fastHash(specular.data(), specular.size()) | 1;
     if (surfaceBytes)

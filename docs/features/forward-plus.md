@@ -1802,7 +1802,7 @@ Hashing is disabled when the variable is unset; cache hits do not produce fresh
 transport receipts. Cancelled jobs may leave only their initial record. Diagnostic
 write failures are reported but never fail an otherwise valid bake.
 
-Local-light probe visibility is being separated from aggregate RGB irradiance.
+Local-light probe visibility is separate from aggregate RGB irradiance.
 `bake::ProbeVisibility` provides a bounded, sparse probe-major table keyed by
 captured light index. Each entry retains a unit visibility fraction, independently
 of light colour, intensity or animation. Missing or untraced entries remain
@@ -1812,9 +1812,11 @@ layer supports arbitrary overlap without a four-channel assignment.
 relocated usable probe positions. A sweep on the widest spatial axis prunes
 distant pairs; a conservative cell-corner halo retains interpolation coverage.
 Stationary toggleable lights participate, moving lights do not. Pair-budget
-overflow returns no plan rather than partial coverage. These modules are not yet
-connected to bake scheduling or shader reconstruction, so the
-existing local-light shadow fallback remains active.
+overflow returns no plan rather than partial coverage. The controller schedules
+accepted pairs after usable probes and sunlight, using its measured visibility
+work budget. A 131072-pair ceiling bounds the additional trace work; larger plans
+retain shadow-map fallback. This is a current scalability limit, not a light-count
+limit in the storage format.
 
 `Transport::recordVisibilityTasks` accepts bounded batches of probe/light pairs
 against caller-owned relocated receiver positions. It writes directly to the
@@ -1827,6 +1829,16 @@ The bake cache accepts an optional completed local-probe visibility section.
 Offsets, sorted captured-light ownership, usable probe membership and finite unit
 fractions are validated before use. Untraced masks cannot replace a completed
 cache. Missing sections preserve unknown coverage, so existing bake files remain
-usable without implying local visibility. The controller does not yet produce or
-publish this section; enabling that work still requires runtime reconstruction
-and coverage gates.
+usable without implying local visibility. Controller jobs retain this data through
+cache reload and GPU publication. Algorithm revision 18 identifies the new bake
+work. The GPU buffer appends a versioned sparse table after probes and optional
+styled SH; settings.w encodes the table offset and the independent style flag.
+There is no additional descriptor or per-frame upload for the completed table.
+
+Uncharted receivers reconstruct per-light visibility using the same relocated,
+wall-aware weights as irradiance. Significant missing corners, absent light
+identity or changed emitter shape retain the complete shadow-map fallback.
+Matching probe masks compose with moving-caster shadows and current light colour
+and intensity. Existing chart masks remain authoritative for static surfaces.
+This does not yet replace analytic per-light direct lighting with aggregate probe
+SH, or remove all frozen-map preparation: uncovered receivers still need it.

@@ -34,7 +34,7 @@ namespace remix::forward::bake::cache {
   }
   namespace {
     // Bump whenever CPU planning, material transport or wire semantics change.
-    constexpr uint32_t algorithmRevision = 17; // probe alpha carries baked static sunlight visibility
+    constexpr uint32_t algorithmRevision = 18; // sparse local-light probe visibility and reconstruction
     void require(bool value) {
       if (!value)
         throw std::runtime_error("Invalid bake cache metadata");
@@ -386,6 +386,10 @@ namespace remix::forward::bake::cache {
         result.localProbes = ProbeVisibility::restore(uint32_t(result.grid.probes.size()),
             uint32_t(source->lights.size()), offsets, entries, maximum);
         localProbeOwners(result.grid, *source, *result.localProbes);
+        const uint64_t combined = sizeof(GridHeader) + result.grid.probes.size() * sizeof(Result) +
+            result.styles.size() * sizeof(uint32_t);
+        require(((combined + 15) & ~uint64_t(15)) + ((result.localProbes->bytes() + 31) & ~uint64_t(15))
+                <= device.storageRange);
       }
       input.finish();
       return std::optional<Snapshot>{std::move(result)};

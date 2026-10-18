@@ -1,9 +1,21 @@
 #include "forward/bake/probe_visibility.h"
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <stdexcept>
 
 namespace remix::forward::bake {
+  std::vector<uint32_t> ProbeVisibility::words() const {
+    validate(uint32_t(m_offsets.size() - 1), m_lights, m_offsets, m_entries, maximumBytes);
+    std::vector<uint32_t> result{0x56504c52u, 1u, uint32_t(m_offsets.size() - 1), uint32_t(m_entries.size())};
+    result.insert(result.end(), m_offsets.begin(), m_offsets.end());
+    for (const auto &entry : m_entries) {
+      result.push_back(entry.light);
+      result.push_back(std::bit_cast<uint32_t>(entry.visibility));
+    }
+    result.resize((result.size() + 3) & ~size_t(3));
+    return result;
+  }
   void ProbeVisibility::validate(uint32_t probes, uint32_t lights, std::span<const uint32_t> offsets,
                                  std::span<const Entry> entries, uint64_t byteBudget) {
     if (probes == UINT32_MAX || offsets.size() != uint64_t(probes) + 1 || offsets.size_bytes() > byteBudget ||

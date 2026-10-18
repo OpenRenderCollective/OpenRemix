@@ -1203,6 +1203,67 @@ namespace {
         pixels = render(false);
         require(pixels[left] > 20 && target.forward->statistics().staticShadowUpdates == 1,
                 "Map unload removes cached static occluders immediately");
+        // Freeze only the occluder: the visible receiver deliberately has no
+        // chart or membership in this bake. With both local map families off,
+        // its static direct occlusion must come from the probe volume.
+        sphere.position.x = 0;
+        r.updateLight(red, info);
+        options.baking.enabled = true;
+        options.baking.spacing = .125f;
+        options.baking.maxProbes = 8192;
+        options.baking.diskCache = true;
+        options.localShadows = false;
+        target.forward->updateLighting(options);
+        identity.instanceId = 9798;
+        blocker.pNext = &identity;
+        const uint64_t probeBlocker = r.createRetained(blocker);
+        base.instances = &probeBlocker;
+        base.instanceCount = 1;
+        ++base.revision;
+        request.chartCount = 0;
+        request.charts = nullptr;
+        ++request.chartRevision;
+        for (uint32_t c = 0; c < 3; ++c) {
+          request.bounds.minimum[c] = c == 2 ? .25f : -1.f;
+          request.bounds.maximum[c] = c == 2 ? .55f : 1.f;
+        }
+        publish();
+        pixels = until("", true);
+        std::printf("Local probe receiver %ux: blocked %u, clear %u\n", samples,
+                    unsigned(pixels[left]), unsigned(pixels[right]));
+        require(pixels[left] < 15 && pixels[right] > 80,
+                "Uncharted receivers use baked local probe occlusion with all realtime local maps disabled");
+        sphere.position.x = .1f;
+        r.updateLight(red, info);
+        pixels = render(false);
+        require(pixels[left] > 20,
+                "Changed emitter shape rejects probe masks and restores the ordinary direct fallback");
+        sphere.position.x = 0;
+        r.updateLight(red, info);
+        pixels = render(false);
+        require(pixels[left] < 15, "Restoring emitter shape reuses matching local probe visibility");
+        r.setBakeScene(nullptr);
+        for (uint32_t frame = 0; frame < remix::gpuFrameCount + 2; ++frame) render(false);
+        publish();
+        pixels = until("", true);
+        require(pixels[left] < 15 && pixels[right] > 80 &&
+                    std::strstr(target.forward->statistics().baking.status, "Cached lighting active"),
+                "Cached local probe masks reach the shader without transient sampling arrays");
+        options.localShadows = true;
+        target.forward->updateLighting(options);
+        const auto probeLit = pixels[right];
+        moving.mesh = black;
+        moving.transform.matrix[1][3] = 0;
+        identity.instanceId = 9799;
+        moving.pNext = &identity;
+        const auto probeActor = r.createRetained(moving);
+        pixels = render(false);
+        require(pixels[left] < 15 && pixels[right] < probeLit / 3,
+                "Baked local probe visibility composes with independent moving-object shadows");
+        r.destroyRetained(&probeActor, 1);
+        pixels = render(false);
+        require(pixels[left] < 15 && std::abs(int(pixels[right]) - int(probeLit)) < 4,
+                "Removing a moving caster restores the probe-lit receiver");
         require(errors.load() == 0, "Local shadow rendering is Vulkan validation clean");
         continue;
       }

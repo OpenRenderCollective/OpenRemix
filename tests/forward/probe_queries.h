@@ -1,5 +1,6 @@
 #pragma once
 #include "forward/probes/data.h"
+#include "forward/bake/probe_visibility.h"
 #include "gpu_fixture.h"
 #include "shaders/embedded.h"
 #include <cmath>
@@ -23,7 +24,10 @@ namespace remix::forward::test {
         {{0, 0, 0, 2}, {0, 0, 1, 0}}, {{.5f, 0, 0, 2}, {1, 0, 0, 0}},
         {{-.5f, .2f, 0, 2}, {0, 1, 0, 0}}, {{4, 0, 0, 2}, {0, 0, 1, 0}},
         {{0, 0, 0, 3}, {0, 0, 1, 0}}, {{.5f, 0, 0, 3}, {1, 0, 0, 0}},
-        {{-.5f, .2f, 0, 3}, {0, 1, 0, 0}}, {{4, 0, 0, 3}, {0, 0, 1, 0}}};
+        {{-.5f, .2f, 0, 3}, {0, 1, 0, 0}}, {{4, 0, 0, 3}, {0, 0, 1, 0}},
+        {{0, 0, 0, 4}, {0, 0, 1, 0}}, {{.5f, 0, 0, 4}, {1, 0, 0, 0}},
+        {{4, 0, 0, 4}, {0, 0, 1, 0}}, {{0, 0, 0, 5}, {0, 0, 1, 0}},
+        {{0, 0, 0, 6}, {0, 0, 1, 0}}};
     struct Gpu {
       VkDevice device;
       Buffer asset, input, output, sky;
@@ -68,8 +72,24 @@ namespace remix::forward::test {
       for (auto &moment : probe.moments)
         moment = skyCase == 3 ? Vec4{0, 0, 0, 16} : Vec4{100, 10000, skyCase == 1 ? 1.f : 0.f, 16};
     }
-    gpu.sky.create(fixture.physical, fixture.device, sizeof(sky), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    std::vector<bake::VisibilityTask> pairs;
+    std::vector<float> masks;
+    for (uint32_t probe = 0; probe < 8; ++probe) {
+      pairs.push_back({probe, 0, 0});
+      masks.push_back(float(probe) / 7.f);
+      if (probe != 0) {
+        pairs.push_back({probe, 1, 0});
+        masks.push_back(float(probe) / 7.f);
+      }
+    }
+    bake::ProbeVisibility local(8, 2, pairs, 4096);
+    local.observe(pairs, masks);
+    const auto localWords = local.words();
+    sky.header.settings[3] = float(2 * (sizeof(sky.probes) / 16));
+    gpu.sky.create(fixture.physical, fixture.device, sizeof(sky) + localWords.size() * sizeof(uint32_t),
+                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     gpu.sky.write(&sky, sizeof(sky));
+    gpu.sky.write(localWords.data(), localWords.size() * sizeof(uint32_t), sizeof(sky));
     bake::Grid reference;
     reference.header = sky.header;
     reference.probes.assign(std::begin(sky.probes), std::end(sky.probes));
@@ -150,6 +170,18 @@ namespace remix::forward::test {
     gpu.output.read(values, sizeof(values));
     for (uint32_t i = 0; i < count; ++i) {
       const auto &q = queries[i];
+      if (q.position[3] >= 4) {
+        auto localReference = reference;
+        for (auto &probe : localReference.probes) probe.irradiance[7][3] = 1;
+        if (q.position[3] == 5) localReference.probes[0].irradiance[7][3] = 0;
+        auto expected = bake::sampleSunVisibility(localReference, {q.position[0], q.position[1], q.position[2]},
+                                                   {q.reflected[0], q.reflected[1], q.reflected[2]});
+        if (q.position[3] == 6) expected.reset();
+        require((values[i][3] > .5f) == bool(expected), "Local probe masks preserve missing and stale identity fallback");
+        if (expected) require(std::abs(values[i][0] - *expected) < 2e-5f,
+                             "Sparse local masks match wall-aware and relocated CPU interpolation");
+        continue;
+      }
       if (q.position[3] == 3) {
         const auto expected = bake::sampleSunVisibility(reference, {q.position[0], q.position[1], q.position[2]},
                                                         {q.reflected[0], q.reflected[1], q.reflected[2]});

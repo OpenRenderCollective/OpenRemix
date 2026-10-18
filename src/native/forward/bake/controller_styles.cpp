@@ -11,7 +11,8 @@ namespace remix::forward::bake {
     if (!cacheFile.empty())
       cache::write(cacheFile, cacheKey,
                     {grid, surfaceLayout, *mixedLights, captures, specular, surfacePixels,
-                     surfaceReceived, hasDirectDiffuse, hasSun, styleWords}, cancellation.get_token());
+                     surfaceReceived, hasDirectDiffuse, hasSun, styleWords,
+                     localProbes ? &*localProbes : nullptr}, cancellation.get_token());
   }
   void Controller::recordStyles(VkCommandBuffer command, const Config &config) {
     auto &job = *m_job;

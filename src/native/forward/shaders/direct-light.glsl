@@ -22,6 +22,13 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
   baked = baked || cachedVisibility == 2u;
   if (!baked)
     baked = overflowLightVisibility(surfaceChart, uint(light.shaping.w), surfaceLightmap, surfaceBounds, visibility);
+  if (!baked && surfaceLightmap.w < .5) {
+    float probeVisibility;
+    if (bakedLocalProbeVisibility(p, receiverNormal, uint(light.shaping.w), probeVisibility)) {
+      baked = true;
+      visibility = probeVisibility;
+    }
+  }
   float moving = localShadowVisibility(light, p, receiverNormal, !baked);
   uint directChannel = lightChannel(surfaceDirectLights, uint(light.shaping.w));
   bool bakedDiffuse = directChannel < 4u && directIrradiance[min(directChannel, 3u)] >= 0;

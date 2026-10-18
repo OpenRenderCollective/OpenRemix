@@ -9,7 +9,10 @@ namespace remix::forward::bake {
   struct GridHeader {
     Vec4 originSpacing{};
     UInt4 dimensions{};
-    Vec4 settings{}; // surface bias, minimum distance variance, relocated-position flag, reserved
+    // CPU/cache: bias, variance, relocation flag, zero. Published GPU settings.w
+    // is an exact integer: bit0 styled-SH presence, remaining bits sparse local
+    // table offset in vec4 records relative to the probe-array start.
+    Vec4 settings{};
   };
   static_assert(sizeof(GridHeader) == 48);
   struct Grid {
