@@ -27,6 +27,7 @@ namespace remix::forward::mixed {
   // Use pages only when their allocated texels plus lookup texture are smaller
   // than today's compressed GPU representation. Dense compressed masks remain
   // available without changing cache format or dropping any chart/light pair.
+  // Candidate layouts contain metadata only; decode just the winning layout.
   std::optional<MaskPages> selectMaskPages(const Masks &masks, uint32_t charts,
                                          uint32_t maximumDimension, uint32_t maximumLayers,
                                          std::stop_token cancelled = {});

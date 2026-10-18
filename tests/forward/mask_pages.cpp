@@ -163,6 +163,25 @@ int main() {
   const auto compact = Masks::restore(constantEntries, constantBytes, layout, 100);
   require(!selectMaskPages(compact, uint32_t(layout.charts.size()), 1024, 256),
           "Already compact masks are not expanded into more expensive R8 pages");
+  // Tiny masks have four-byte payload padding in the compressed table. Sharing
+  // R8 pages can win here, exercising the selected-layout materialization path.
+  remix::forward::lightmap::Layout tinyLayout;
+  tinyLayout.charts = {{0, 0, 0, 1, 1}};
+  std::vector<Masks::Entry> tinyEntries;
+  std::vector<uint8_t> tinyBytes;
+  for (uint32_t light = 0; light < 4096; ++light) {
+    const auto encoded = mask::encode(std::vector<uint8_t>{uint8_t(light)}, 1, 1);
+    tinyEntries.push_back({0, light, uint32_t(tinyBytes.size()), 1, 1, encoded.encoding});
+    tinyBytes.insert(tinyBytes.end(), encoded.bytes.begin(), encoded.bytes.end());
+  }
+  const auto tiny = Masks::restore(tinyEntries, tinyBytes, tinyLayout, 4096);
+  const auto winning = selectMaskPages(tiny, 1, 1024, 256);
+  require(bool(winning), "Shared R8 pages eliminate per-mask payload padding when cheaper");
+  verify(tiny, *winning);
+  const auto explicitPages = packMaskPages(tiny, winning->size, 256, Masks::maximumBytes);
+  require(explicitPages && winning->texels == explicitPages->texels &&
+              winning->words(1) == explicitPages->words(1),
+          "Selected layout decodes exactly like explicit packing, including light identities");
   std::printf("Visibility pages: %zu masks, %u layers, %llu/%zu occupied texels; seven coincident lights preserved\n",
               entries.size(), pages->layers, static_cast<unsigned long long>(pages->occupiedTexels),
               pages->texels.size());

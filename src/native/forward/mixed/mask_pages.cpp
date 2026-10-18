@@ -80,72 +80,94 @@ namespace remix::forward::mixed {
           skyline.push_back(s);
       }
     }
+    struct PagePlan {
+      MaskPages pages;
+      std::vector<size_t> order;
+    };
+    std::optional<PagePlan> planPages(const Masks &masks, uint32_t pageSize,
+                                      uint32_t maximumLayers, uint64_t maximumBytes,
+                                      std::stop_token cancelled) {
+      check(cancelled);
+      if (!pageSize || !maximumLayers)
+        throw std::invalid_argument("Invalid visibility page limits");
+      PagePlan plan;
+      auto &result = plan.pages;
+      result.size = pageSize;
+      const auto entries = masks.entries();
+      if (entries.empty())
+        return plan;
+      const uint64_t pageBytes = uint64_t(pageSize) * pageSize;
+      const uint64_t tableBytes = uint64_t(entries.size()) * sizeof(MaskPages::Rectangle);
+      if (tableBytes > maximumBytes || pageBytes > maximumBytes - tableBytes)
+        return {};
+      const uint64_t limit = std::min(uint64_t(maximumLayers), (maximumBytes - tableBytes) / pageBytes);
+      auto &order = plan.order;
+      order.resize(entries.size());
+      std::iota(order.begin(), order.end(), 0);
+      for (const auto &entry : entries) {
+        check(cancelled);
+        if (entry.width > pageSize || entry.height > pageSize)
+          return {};
+        result.occupiedTexels += uint64_t(entry.width) * entry.height;
+      }
+      if (result.occupiedTexels > limit * pageBytes)
+        return {};
+      std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+        const auto &x = entries[a], &y = entries[b];
+        if (x.height != y.height) return x.height > y.height;
+        if (x.width != y.width) return x.width > y.width;
+        return std::tie(x.chart, x.light) < std::tie(y.chart, y.light);
+      });
+      std::vector<std::vector<Segment>> pages;
+      result.rectangles.reserve(entries.size());
+      for (const auto index : order) {
+        check(cancelled);
+        const auto &entry = entries[index];
+        auto p = find(pages, pageSize, entry.width, entry.height);
+        if (!p) {
+          if (pages.size() == limit)
+            return {};
+          p = Position{uint32_t(pages.size()), 0, 0};
+          pages.push_back({{0, 0, pageSize}});
+        }
+        occupy(pages[p->layer], *p, entry.width, entry.height);
+        result.rectangles.push_back({entry.chart, entry.light, p->layer, p->x, p->y,
+                                     entry.width, entry.height});
+      }
+      result.layers = uint32_t(pages.size());
+      return plan;
+    }
+    MaskPages decodePages(const Masks &masks, PagePlan plan, std::stop_token cancelled) {
+      auto &result = plan.pages;
+      const auto entries = masks.entries();
+      const auto &order = plan.order;
+      const uint32_t pageSize = result.size;
+      const uint64_t pageBytes = uint64_t(pageSize) * pageSize;
+      check(cancelled);
+      result.texels.resize(size_t(pageBytes * result.layers), 255);
+      for (size_t i = 0; i < order.size(); ++i) {
+        const auto &entry = entries[order[i]];
+        const auto &r = result.rectangles[i];
+        const auto bytes = masks.bytes().subspan(entry.offset);
+        for (uint32_t y = 0; y < r.height; ++y) {
+          check(cancelled);
+          const size_t offset = (size_t(r.layer) * pageSize + r.y + y) * pageSize + r.x;
+          for (uint32_t x = 0; x < r.width; ++x)
+            result.texels[offset + x] = mask::texel(bytes, r.width, entry.encoding, x, y);
+        }
+      }
+      std::sort(result.rectangles.begin(), result.rectangles.end(), [](const auto &a, const auto &b) {
+        return std::tie(a.chart, a.light) < std::tie(b.chart, b.light);
+      });
+      return std::move(result);
+    }
   } // namespace
   std::optional<MaskPages> packMaskPages(const Masks &masks, uint32_t pageSize,
                                        uint32_t maximumLayers, uint64_t maximumBytes,
                                        std::stop_token cancelled) {
-    check(cancelled);
-    if (!pageSize || !maximumLayers)
-      throw std::invalid_argument("Invalid visibility page limits");
-    MaskPages result;
-    result.size = pageSize;
-    const auto entries = masks.entries();
-    if (entries.empty())
-      return result;
-    const uint64_t pageBytes = uint64_t(pageSize) * pageSize;
-    const uint64_t tableBytes = uint64_t(entries.size()) * sizeof(MaskPages::Rectangle);
-    if (tableBytes > maximumBytes || pageBytes > maximumBytes - tableBytes)
-      return {};
-    const uint64_t limit = std::min(uint64_t(maximumLayers), (maximumBytes - tableBytes) / pageBytes);
-    std::vector<size_t> order(entries.size());
-    std::iota(order.begin(), order.end(), 0);
-    for (const auto &entry : entries) {
-      check(cancelled);
-      if (entry.width > pageSize || entry.height > pageSize)
-        return {};
-      result.occupiedTexels += uint64_t(entry.width) * entry.height;
-    }
-    if (result.occupiedTexels > limit * pageBytes)
-      return {};
-    std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
-      const auto &x = entries[a], &y = entries[b];
-      if (x.height != y.height) return x.height > y.height;
-      if (x.width != y.width) return x.width > y.width;
-      return std::tie(x.chart, x.light) < std::tie(y.chart, y.light);
-    });
-    std::vector<std::vector<Segment>> pages;
-    result.rectangles.reserve(entries.size());
-    for (const auto index : order) {
-      check(cancelled);
-      const auto &entry = entries[index];
-      auto p = find(pages, pageSize, entry.width, entry.height);
-      if (!p) {
-        if (pages.size() == limit)
-          return {};
-        p = Position{uint32_t(pages.size()), 0, 0};
-        pages.push_back({{0, 0, pageSize}});
-      }
-      occupy(pages[p->layer], *p, entry.width, entry.height);
-      result.rectangles.push_back({entry.chart, entry.light, p->layer, p->x, p->y,
-                                   entry.width, entry.height});
-    }
-    result.layers = uint32_t(pages.size());
-    result.texels.resize(size_t(pageBytes * result.layers), 255);
-    for (size_t i = 0; i < order.size(); ++i) {
-      const auto &entry = entries[order[i]];
-      const auto &r = result.rectangles[i];
-      const auto bytes = masks.bytes().subspan(entry.offset);
-      for (uint32_t y = 0; y < r.height; ++y) {
-        check(cancelled);
-        const size_t offset = (size_t(r.layer) * pageSize + r.y + y) * pageSize + r.x;
-        for (uint32_t x = 0; x < r.width; ++x)
-          result.texels[offset + x] = mask::texel(bytes, r.width, entry.encoding, x, y);
-      }
-    }
-    std::sort(result.rectangles.begin(), result.rectangles.end(), [](const auto &a, const auto &b) {
-      return std::tie(a.chart, a.light) < std::tie(b.chart, b.light);
-    });
-    return result;
+    auto plan = planPages(masks, pageSize, maximumLayers, maximumBytes, cancelled);
+    if (!plan) return {};
+    return decodePages(masks, std::move(*plan), cancelled);
   }
   std::optional<MaskPages> selectMaskPages(const Masks &masks, uint32_t charts,
                                          uint32_t maximumDimension, uint32_t maximumLayers,
@@ -154,20 +176,25 @@ namespace remix::forward::mixed {
     if (masks.entries().empty() || !maximumLayers)
       return {};
     uint64_t bestBytes = masks.words(charts).size() * 4ull; // R32_UINT lookup/payload
-    std::optional<MaskPages> best;
+    std::optional<PagePlan> best;
     for (uint32_t size = 64; size <= maximumDimension && size <= 32768; size *= 2) {
       if (uint64_t(size) * size >= Masks::maximumBytes)
         break;
-      auto candidate = packMaskPages(masks, size, std::min(maximumLayers, 65536u),
+      auto candidate = planPages(masks, size, std::min(maximumLayers, 65536u),
                                      Masks::maximumBytes, cancelled);
-      if (!candidate || !candidate->layers)
+      if (!candidate || !candidate->pages.layers)
         continue;
-      const uint64_t bytes = candidate->texels.size() + candidate->words(charts).size() * 4ull;
+      // Lookup size is fixed by chart/rectangle counts. Compare layouts without
+      // allocating images or decoding masks that will be discarded.
+      const auto &pages = candidate->pages;
+      const uint64_t bytes = uint64_t(size) * size * pages.layers +
+          (uint64_t(charts) * 2 + pages.rectangles.size() * 4ull) * sizeof(uint32_t);
       if (bytes < bestBytes && bytes <= Masks::maximumBytes) {
         bestBytes = bytes;
         best = std::move(candidate);
       }
     }
-    return best;
+    if (!best) return {};
+    return decodePages(masks, std::move(*best), cancelled);
   }
 } // namespace remix::forward::mixed
