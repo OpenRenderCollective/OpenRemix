@@ -1758,6 +1758,15 @@ world commands, reflections, water/exposure, and statistics publication. These
 are host elapsed milliseconds, separate from GPU pass timestamps and Present
 intervals. They use the existing completed-frame snapshot during asynchronous
 presentation and do not extend the public Remix ABI.
+Frame preparation additionally separates light selection, draw preparation,
+lighting records, uploads/bindings, material descriptors, and publication.
+
+Skinned draws reuse vertex/index buffers owned by their fenced frame slot.
+Every draw still deforms and uploads the current pose and recomputes its bounds;
+sharing a mesh does not share an actor's posed vertices. Unused buffer entries
+retire when the slot is next reused, and retained entries are included in buffer
+memory statistics. This avoids per-frame Vulkan allocation churn while keeping
+animated geometry and its shadow casters current.
 
 GPU lightmap denoising stages transfers through an OIDN-owned pinned host arena
 of at most 8 MiB, additional to chart scratch and device/model memory. Ordered

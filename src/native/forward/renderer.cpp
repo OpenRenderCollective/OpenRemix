@@ -132,6 +132,8 @@ namespace remix::forward {
     frame.staticCommands.clear();
     frame.terrainCommands.clear();
     frame.waterCommands.clear();
+    frame.posedGeometry.resize(frame.posedUsed);
+    frame.posedUsed = 0;
     frame.waterComposed = false;
     if (frame.pool)
       check(vkResetDescriptorPool(g.device, frame.pool, 0));
@@ -175,6 +177,7 @@ namespace remix::forward {
     step(cpu.liveScene);
     gpu::GpuScope uploadTime(command, "Forward+ frame uploads");
     m_gpu->prepareFrame(command, resources);
+    cpu.preparation = m_gpu->statistics.cpuRecording.preparation;
     uploadTime.close();
     step(cpu.frame);
     m_gpu->recordWorld(command);

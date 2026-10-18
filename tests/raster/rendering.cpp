@@ -2568,6 +2568,7 @@ namespace {
       require(render()[centre] > 100, "Explicit two-sided camera material remains visible");
     }
   }
+#include "forward_skinning.h"
   void forwardTests(const std::filesystem::path &directory) {
     cameraBackfaceTests();
     Target target;
@@ -3940,6 +3941,7 @@ int main(int argc, char **argv) {
   const std::filesystem::path directory(argv[1]);
   std::filesystem::create_directories(directory);
   if (argc>2 && std::strcmp(argv[2],"forward")==0) forwardTests(directory);
+  else if (argc>2 && std::strcmp(argv[2],"forward-skinning")==0) forwardSkinningTests();
   else if (argc>2 && std::strcmp(argv[2],"lighting-views")==0) lightingViewTests();
   else if (argc>2 && std::strcmp(argv[2],"no-oidn")==0) {
     require(remix::forward::lightmap::denoiserVersion() == 0,

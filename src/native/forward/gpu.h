@@ -88,6 +88,10 @@ namespace remix::forward {
       std::vector<Command> commands, staticCommands;
       std::vector<Command> terrainCommands;
       std::vector<Command> waterCommands;
+      // Rewritten only after this slot's fence. Poses remain fresh every draw;
+      // the buffers, rather than the animated vertex data, survive slot reuse.
+      std::vector<std::shared_ptr<Geometry>> posedGeometry;
+      uint32_t posedUsed = 0;
       bool waterComposed = false;
       bool waterMedium = false;
       std::array<bool, cascadeCount> staticSunDirty{};

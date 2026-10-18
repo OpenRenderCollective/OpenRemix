@@ -261,6 +261,13 @@ void serviceDevRequests() {
                       forward.bake, forward.liveScene, forward.frame, forward.world,
                       forward.reflections, forward.waterExposure, forward.publication);
         text += line;
+        const auto &preparation = forward.preparation;
+        std::snprintf(line, sizeof(line),
+                      "# Forward+ frame preparation ms: selection %.3f, draws %.3f, lighting %.3f, "
+                      "uploads/bindings %.3f, materials %.3f, publication %.3f\n",
+                      preparation.selection, preparation.draws, preparation.lighting,
+                      preparation.uploads, preparation.materials, preparation.publication);
+        text += line;
         std::snprintf(line, sizeof(line),
                       "# raster draws %llu, outside the view (not drawn) %llu, prepare %.3f ms, record %.3f ms\n",
                       (unsigned long long)breakdown.rasterDraws, (unsigned long long)breakdown.rasterCulledDraws,

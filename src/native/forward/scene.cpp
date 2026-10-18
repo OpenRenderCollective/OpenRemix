@@ -4,6 +4,7 @@
 #include "forward/probes/capture_dump.h"
 #include <algorithm>
 #include <bit>
+#include <chrono>
 #include <cmath>
 #include <limits>
 
@@ -15,8 +16,17 @@ namespace remix::forward {
       if (auto found = geometries.find(surface.get());
           found != geometries.end() && !found->second->source.expired())
         return found->second;
-    auto result = std::make_shared<Geometry>();
+    std::shared_ptr<Geometry> result;
+    if (skinned) {
+      auto &frame = frames[slot];
+      if (frame.posedUsed == frame.posedGeometry.size())
+        frame.posedGeometry.push_back(std::make_shared<Geometry>());
+      result = frame.posedGeometry[frame.posedUsed++];
+    } else {
+      result = std::make_shared<Geometry>();
+    }
     result->source = surface;
+    result->bounds = {};
     std::vector<scene::Vertex> vertices;
     auto input = std::span<const scene::Vertex>(surface->vertices);
     if (skinned) {
@@ -73,6 +83,13 @@ namespace remix::forward {
     return staticBounds;
   }
   void Renderer::Gpu::prepareFrame(VkCommandBuffer command, RasterRenderer &resources) {
+    Statistics::CpuRecording::Preparation cpu;
+    auto began = std::chrono::steady_clock::now();
+    auto step = [&](double &milliseconds) {
+      const auto now = std::chrono::steady_clock::now();
+      milliseconds = std::chrono::duration<double, std::milli>(now - began).count();
+      began = now;
+    };
     auto &frame = frames[slot];
     const auto sun = resources.light();
     frame.commands.clear();
@@ -89,6 +106,7 @@ namespace remix::forward {
                                            options.lightCutoff, options.localShadowDistance,
                                            options.sceneScale, resources.bakeScene(), seconds,
                                            options.localShadowFade);
+    step(cpu.selection);
     std::vector<DrawData> draws;
     std::vector<water::MaterialData> waterMaterials;
     Bounds casters;
@@ -125,6 +143,7 @@ namespace remix::forward {
     // descriptors or material records need preparing for this frame.
     if (options.shadows && sun.isDistant)
       casters.merge(frozenShadowBounds());
+    step(cpu.draws);
     auto &data = frame.data;
     data = {};
     if (const auto &volume = baking->volume(); volume && volume->styledIndirect && volume->mixedLights) {
@@ -207,6 +226,7 @@ namespace remix::forward {
     if ((refreshLocal || refreshSun) && shadowPlanner.source())
       for (const auto &draw : shadowPlanner.source()->draws)
         append(draw, frame.staticCommands, true);
+    step(cpu.lighting);
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physical, &properties);
     data.clusterInfo[0] = clusterListCapacity(uint32_t(lights.size()), data.grid[3],
@@ -350,6 +370,7 @@ namespace remix::forward {
                   .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                   .pImageInfo = &visibilityPages};
     vkUpdateDescriptorSets(device, 1, &writes[13], 0, nullptr);
+    step(cpu.uploads);
     std::unordered_map<const scene::Material *, VkDescriptorSet> materials;
     for (auto *commands : {&frame.commands, &frame.staticCommands, &frame.terrainCommands, &frame.waterCommands})
       for (auto &draw : *commands) {
@@ -377,6 +398,7 @@ namespace remix::forward {
                               .pImageInfo = &textures[i]};
         vkUpdateDescriptorSets(device, 5, textureWrites, 0, nullptr);
       }
+    step(cpu.materials);
     statistics.draws = uint32_t(frame.commands.size() + frame.terrainCommands.size() + frame.waterCommands.size());
     statistics.shadowedLights =
         uint32_t(std::count(shadowSelection.active.begin(), shadowSelection.active.end(), true));
@@ -411,11 +433,11 @@ namespace remix::forward {
                                  submitted.clusters.get(), submitted.skyConstants.get()})
         if (buffer)
           statistics.bufferBytes += buffer->allocationBytes;
-      for (const auto *commands : {&submitted.commands, &submitted.waterCommands})
-        for (const auto &draw : *commands)
-          if (draw.source.surface->bonesPerVertex)
-            statistics.bufferBytes +=
-                draw.geometry->vertices->allocationBytes + draw.geometry->indices->allocationBytes;
+      for (const auto &geometry : submitted.posedGeometry)
+        for (const auto *buffer : {geometry->vertices.get(), geometry->indices.get()})
+          if (buffer) statistics.bufferBytes += buffer->allocationBytes;
     }
+    step(cpu.publication);
+    statistics.cpuRecording.preparation = cpu;
   }
 } // namespace remix::forward

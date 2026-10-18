@@ -17,6 +17,10 @@ namespace remix::forward {
   }
   struct Statistics {
     struct CpuRecording {
+      struct Preparation {
+        double selection = 0, draws = 0, lighting = 0;
+        double uploads = 0, materials = 0, publication = 0;
+      } preparation;
       double bake = 0, liveScene = 0, frame = 0, world = 0;
       double reflections = 0, waterExposure = 0, publication = 0;
     } cpuRecording;
