@@ -48,3 +48,9 @@ Preparation remains about half a second in these controls. Do not extrapolate th
 small absolute saving into a major total bake or gameplay win. Prioritize remaining
 transport/denoise costs, other-map acceptance and actual live CPU/GPU behavior.
 Automatic cubemap doorway/receiver coverage and broader lighting QA remain open.
+
+Delivery
+Implementation16c6fdf pushed to the official feature branch. Packaged
+forwardplus-direct-style-occupancy-v1 and verified155files in GarrysModWithRTX2.
+Four protected user configuration hashes unchanged. Receipt:
+_work/reports/direct-style-occupancy-v1/deployment.json.
