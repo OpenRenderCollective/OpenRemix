@@ -44,6 +44,13 @@ namespace remix {
         << ", \"memoryBytes\": " << state.postProcessing.memoryBytes
         << ", \"meterFrames\": " << state.postProcessing.meterFrames
         << ", \"adapting\": " << (state.postProcessing.adapting ? "true" : "false") << '}'
+        << ",\n  \"authoredReflections\": {\"revision\": " << state.authoredReflections.revision
+        << ", \"pending\": " << (state.authoredReflections.pending ? "true" : "false")
+        << ", \"active\": " << (state.authoredReflections.active ? "true" : "false")
+        << ", \"rays\": " << state.authoredReflections.rays
+        << ", \"completed\": " << state.authoredReflections.completed
+        << ", \"reused\": " << state.authoredReflections.reused
+        << ", \"sceneReused\": " << (state.authoredReflections.sceneReused ? "true" : "false") << '}'
         << ",\n  \"metersPerUnit\": " << state.reflectionSceneScale
         << ",\n  \"resolution\": " << header.parameters[1] << ",\n  \"probes\": [";
     auto vector = [&](const auto &v) { out << '[' << v[0] << ", " << v[1] << ", " << v[2] << ']'; };

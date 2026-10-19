@@ -13,6 +13,7 @@ namespace remix::forward {
     viewModelSun.reset();
     viewModelLocalMaps.reset();
     waterPass.reset();
+    authoredReflections.reset();
     baking.reset();
     localMaps.reset();
     reflections.reset();
@@ -114,6 +115,7 @@ namespace remix::forward {
     next->baking =
         baking ? std::move(baking)
                : std::make_shared<bake::Controller>(physical, device, pipelines, hardwareRay, queueFamily);
+    next->authoredReflections = std::make_unique<probes::Authoring>(physical, device, pipelines, hardwareRay, queueFamily);
     next->baseTargetBytes = next->statistics.targetBytes;
     m_gpu = std::move(next);
   }
@@ -128,6 +130,7 @@ namespace remix::forward {
     g.slot = slot;
     g.postProcessing->selectFrame(slot);
     g.baking->selectFrame(slot);
+    g.authoredReflections->selectFrame(slot);
     if (g.reflections)
       g.reflections->selectFrame(slot);
     if (g.liveScene)
@@ -160,6 +163,9 @@ namespace remix::forward {
     gpu::GpuScope bakeTime(command, "Forward+ bake publication and transport");
     m_gpu->baking->record(command, resources, m_gpu->options.bakeConfiguration(m_gpu->giSupported),
                          m_gpu->options.lightCutoff);
+    const auto &baked = m_gpu->baking->volume();
+    m_gpu->authoredReflections->record(command, resources,
+        m_gpu->options.bakeConfiguration(m_gpu->giSupported), baked ? baked->hash : 0);
     bakeTime.close();
     step(cpu.bake);
     if (m_gpu->liveScene) {
@@ -196,7 +202,7 @@ namespace remix::forward {
       gpu::GpuScope reflectionTime(command, "Forward+ reflection resolve and composition", m_gpu->extent);
       m_gpu->reflections->record(
           command, m_gpu->slot, m_gpu->frames[m_gpu->slot].data, m_gpu->options,
-          m_gpu->baking->reflectionDescriptor(),
+          m_gpu->reflectionDescriptor(),
           {frame.skyConstants->descriptor(), m_gpu->baking->descriptor(), frame.skyImage},
           m_gpu->rayReflections.get());
     }
@@ -208,16 +214,19 @@ namespace remix::forward {
     m_gpu->statistics.baking = m_gpu->baking->statistics();
     const auto &volume = m_gpu->baking->volume();
     m_gpu->statistics.bakeContent = volume ? volume->content : bake::ContentHashes{};
-    m_gpu->statistics.reflectionProbes = volume ? volume->reflectionHeader : probes::Header{};
+    m_gpu->statistics.authoredReflections = m_gpu->authoredReflections->statistics();
+    const auto authoredHeader = m_gpu->authoredReflections->header();
+    m_gpu->statistics.reflectionProbes = authoredHeader ? *authoredHeader : volume ? volume->reflectionHeader : probes::Header{};
     m_gpu->statistics.reflectionSceneScale = volume ? volume->sceneScale : 1;
     const auto memory = m_gpu->baking->memory();
-    m_gpu->statistics.bufferBytes += memory.buffers;
-    m_gpu->statistics.targetBytes = m_gpu->baseTargetBytes + memory.images +
+    const auto authoredMemory = m_gpu->authoredReflections->memory();
+    m_gpu->statistics.bufferBytes += memory.buffers + authoredMemory.buffers;
+    m_gpu->statistics.targetBytes = m_gpu->baseTargetBytes + memory.images + authoredMemory.images +
                                     (m_gpu->waterPass ? m_gpu->waterPass->targetBytes() : 0) +
                                     m_gpu->viewModelTarget->bytes() +
                                     (m_gpu->viewModelSun ? m_gpu->viewModelSun->bytes() : 0) +
                                     (m_gpu->viewModelLocalMaps ? m_gpu->viewModelLocalMaps->memoryBytes() : 0);
-    m_gpu->statistics.accelerationBytes = memory.acceleration;
+    m_gpu->statistics.accelerationBytes = memory.acceleration + authoredMemory.acceleration;
     if (m_gpu->liveScene) {
       const auto live = m_gpu->liveScene->memory();
       m_gpu->statistics.bufferBytes += live.buffers;

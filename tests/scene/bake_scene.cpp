@@ -28,6 +28,58 @@ int main() {
   resources.setBakeScene(&info);
   require(resources.bakeScene() == original, "Unchanged requests reuse their captured inputs");
   require(original && original->ready && original->contentHash, "Ready snapshot has a content fingerprint");
+  {
+    remixapi_ReflectionVolumeEXT volume{};
+    volume.id = 7;
+    volume.priority = -2;
+    for (uint32_t c = 0; c < 3; ++c) {
+      volume.minimum[c] = -1;
+      volume.maximum[c] = 1;
+      volume.capture[c] = float(c + 1) * 10;
+      volume.worldToLocal[c][c] = 1;
+      volume.worldToLocal[c][3] = -volume.capture[c];
+    }
+    remixapi_ReflectionVolumesInfoEXT request{sizeof(request), REMIXAPI_REFLECTION_VOLUMES_VERSION_EXT,
+        info.sceneId, 1, 1, 0, &volume};
+    resources.setReflectionVolumes(&request);
+    const auto authored = resources.reflectionVolumes();
+    require(authored && authored->volumes.size() == 1 && authored->volumes[0].capture[0] == 10 &&
+                authored->volumes[0].priority == -2 && resources.bakeScene() == original &&
+                resources.bakeScene()->contentHash == original->contentHash,
+            "Authored reflection metadata does not invalidate frozen diffuse lighting");
+    ++request.revision;
+    resources.setReflectionVolumes(&request);
+    require(resources.reflectionVolumes() == authored, "Unchanged editor saves preserve reflection job ownership");
+    NativeResources frame;
+    resources.publishFrame(frame);
+    volume.capture[0] = 10.5f;
+    resources.setReflectionVolumes(&request);
+    require(frame.reflectionVolumes() == authored && authored->volumes[0].capture[0] == 10 &&
+                resources.reflectionVolumes()->volumes[0].capture[0] == 10.5f,
+            "Published reflection requests copy caller data and survive later editor changes");
+    const auto current = resources.reflectionVolumes();
+    volume.worldToLocal[0][0] = 2;
+    rejected([&] { resources.setReflectionVolumes(&request); });
+    require(resources.reflectionVolumes() == current, "Invalid transforms preserve the last valid authoring request");
+    volume.worldToLocal[0][0] = 1;
+    remixapi_ReflectionVolumeEXT duplicates[]{volume, volume};
+    request.volumeCount = 2; request.volumes = duplicates;
+    rejected([&] { resources.setReflectionVolumes(&request); });
+    request.volumeCount = 33;
+    rejected([&] { resources.setReflectionVolumes(&request); });
+    request.volumeCount = 1; request.volumes = &volume;
+    ++request.sceneId;
+    resources.setReflectionVolumes(&request);
+    require(!resources.reflectionVolumes(), "Another scene's volumes remain dormant instead of leaking across maps");
+    request.sceneId = info.sceneId;
+    request.volumeCount = 0; request.volumes = nullptr;
+    resources.setReflectionVolumes(&request);
+    require(resources.reflectionVolumes() && resources.reflectionVolumes()->volumes.empty(),
+            "An explicit empty authoring document differs from restoring automatic cubemaps");
+    resources.setReflectionVolumes(nullptr);
+    require(!resources.reflectionVolumes() && resources.bakeScene() == original,
+            "Restoring automatic reflections keeps diffuse bake ownership intact");
+  }
   require(original->draws.size() == 2 && original->draws[1].model[12] == 1000,
           "Only explicit authored membership, including offscreen geometry, enters the bake");
   require(original->draws[0].surface == original->draws[1].surface,

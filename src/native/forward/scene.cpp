@@ -435,7 +435,7 @@ namespace remix::forward {
           screen.depth.imageView ? options.ssrSteps : 0u,
           uint32_t(std::bit_width(std::max(extent.width, extent.height)))};
       waterPass->prepare(slot, parameters, waterMaterials,
-                          {baking->reflectionDescriptor(), frame.skyConstants->descriptor(), frame.skyImage,
+                          {reflectionDescriptor(), frame.skyConstants->descriptor(), frame.skyImage,
                            screen.depth, screen.normals, screen.color});
       const auto medium = waterPass->parameters(slot);
       const VkWriteDescriptorSet write{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,

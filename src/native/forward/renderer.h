@@ -39,6 +39,7 @@ namespace remix::forward {
     ray::Statistics rayGI;
     postfx::Statistics postProcessing;
     probes::Header reflectionProbes;
+    probes::AuthoringStatistics authoredReflections;
     float reflectionSceneScale = 1;
     remixapi_BakeStatisticsEXT baking{.structSize = sizeof(remixapi_BakeStatisticsEXT)};
   };

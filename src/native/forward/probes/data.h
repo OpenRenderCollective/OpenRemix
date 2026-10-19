@@ -31,6 +31,11 @@ namespace remix::forward::probes {
     ProjectionSpace worldToLocal = worldSpace;
     int32_t priority = 0; // larger values win only where their influence contains the receiver
   };
+  struct AuthoringStatistics {
+    uint64_t revision = 0;
+    uint32_t rays = 0, completed = 0, reused = 0;
+    bool pending = false, active = false, sceneReused = false;
+  };
   struct Data {
     Header header;
     // Per probe, successive mip levels; six faces at every level.
@@ -56,6 +61,7 @@ namespace remix::forward::probes {
   // Interior props are allowed; geometry substantially beyond a proxy lowers
   // its preference where another capture overlaps. Unknown distances are neutral.
   float projectionConfidence(const Capture &capture);
+  Record projectionRecord(const Capture &capture);
   Data filter(std::span<const Capture> captures, uint32_t samples = 128, std::stop_token cancelled = {});
   std::vector<std::byte> serialize(const Data &data);
   // CPU reference for the shader's box projection, cross-face bilinear

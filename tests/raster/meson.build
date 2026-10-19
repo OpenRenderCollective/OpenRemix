@@ -15,6 +15,8 @@ if get_option('gpu_tests')
     args : [meson.current_build_dir() / 'viewmodel-readback', 'viewmodel-lighting'], timeout : 120)
   test('Forward+ viewmodels inherit baked probes without live light work', raster_test,
     args : [meson.current_build_dir() / 'viewmodel-probe-readback', 'viewmodel-probes'], timeout : 120)
+  test('Forward+ authored cubemap edits preserve diffuse lighting and reuse captures', raster_test,
+    args : [meson.current_build_dir() / 'authored-reflections-readback', 'authored-reflections'], timeout : 120)
   test('Forward+ viewmodel SSR uses world guides with MSAA', raster_test,
     args : [meson.current_build_dir() / 'viewmodel-ssr-readback', 'viewmodel-ssr'], timeout : 120)
   test('Forward+ viewmodel environment reflections match world materials', raster_test,

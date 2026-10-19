@@ -39,7 +39,7 @@ namespace remix::forward {
            .dstBinding = 4, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
            .pImageInfo = &sun}};
       vkUpdateDescriptorSets(device, 2, overrides, 0, nullptr);
-      const auto reflectionProbes = baking->reflectionDescriptor();
+      const auto reflectionProbes = reflectionDescriptor();
       const auto skyConstants = frame.skyConstants->descriptor();
       const VkWriteDescriptorSet environment[] = {
           {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = frame.viewModelScene, .dstBinding = 12,

@@ -23,3 +23,8 @@ remixapi_GetBakeStatisticsEXT(remixapi_BakeStatisticsEXT *out) {
     return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
   }
 }
+
+extern "C" REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
+remixapi_SetReflectionVolumesEXT(const remixapi_ReflectionVolumesInfoEXT *info) {
+  return remix::api::resourceCall([&](auto &resources) { resources.setReflectionVolumes(info); });
+}

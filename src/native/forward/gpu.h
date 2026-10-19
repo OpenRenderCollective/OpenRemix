@@ -3,6 +3,7 @@
 #include "forward/bindings.h"
 #include "forward/highlight_selection.h"
 #include "forward/reflections.h"
+#include "forward/probes/authoring.h"
 #include "forward/renderer.h"
 #include "forward/resources.h"
 #include "forward/shadows/maps.h"
@@ -60,6 +61,10 @@ namespace remix::forward {
     VkPipeline terrainPipeline = VK_NULL_HANDLE, terrainLightmapPipeline = VK_NULL_HANDLE,
                giTerrainPipeline = VK_NULL_HANDLE, giTerrainLightmapPipeline = VK_NULL_HANDLE;
     std::shared_ptr<bake::Controller> baking;
+    std::unique_ptr<probes::Authoring> authoredReflections;
+    VkDescriptorBufferInfo reflectionDescriptor() const {
+      return authoredReflections->descriptor(baking->reflectionDescriptor());
+    }
     std::unique_ptr<shadows::Maps> localMaps;
     shadows::Planner shadowPlanner;
     shadows::Selection shadowSelection;

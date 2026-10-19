@@ -2013,7 +2013,7 @@ namespace {
                       split ? "Stitched curved" : curved ? "Curved" : "Planar", samples, ssr ? "on" : "off", unsigned(first[left + 1]), unsigned(first[right + 1]));
       }
   }
-  void viewModelLightingTests(bool probeTest = false, bool reflectionTest = false) {
+  void viewModelLightingTests(bool probeTest = false, bool reflectionTest = false, bool authoringTest = false) {
     for (bool ssr : {false, true})
       for (bool local : {false, true})
         for (uint32_t samples : {1u, 2u, 4u}) {
@@ -2216,6 +2216,93 @@ namespace {
                       "Viewmodel roughness uses the filtered cubemap mip chain");
               std::printf("Viewmodel environment %ux: metal %u, dielectric %u, rough %u\n",
                           samples, sharp, dielectric[centre], rough[centre]);
+            }
+            if (authoringTest) {
+              weapon.mesh = weaponMesh;
+              const auto baseline = target.forward->statistics();
+              const auto probe = baseline.reflectionProbes.probes[0];
+              remixapi_ReflectionVolumeEXT authored[2]{};
+              authored[0].id = 71;
+              for (uint32_t c = 0; c < 3; ++c) {
+                authored[0].minimum[c] = probe.minimum[c];
+                authored[0].maximum[c] = probe.maximum[c];
+                authored[0].capture[c] = probe.position[c];
+                authored[0].worldToLocal[c][c] = 1;
+              }
+              remixapi_ReflectionVolumesInfoEXT request{sizeof(request), REMIXAPI_REFLECTION_VOLUMES_VERSION_EXT,
+                  snapshot->sceneId, 1, 1, 0, authored};
+              auto waitForEdit = [&] {
+                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+                std::vector<uint8_t> image;
+                do {
+                  image = render(false, false, true, false);
+                  const auto state = target.forward->statistics().authoredReflections;
+                  if (state.active && !state.pending && state.revision == request.revision) return image;
+                  std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                } while (std::chrono::steady_clock::now() < deadline);
+                require(false, "Authored reflection publication completes without restarting the world bake");
+                return image;
+              };
+              r.setReflectionVolumes(&request);
+              const auto firstEdit = waitForEdit();
+              require(firstEdit[centre] > 40 && target.forward->statistics().authoredReflections.rays == 6*16*16,
+                      "Authored capture publishes visible viewmodel reflections through the production path");
+              authored[1] = authored[0]; authored[1].id = 72;
+              authored[1].capture[0] += .01f;
+              request.volumeCount = 2; ++request.revision;
+              r.setReflectionVolumes(&request);
+              waitForEdit();
+              require(target.forward->statistics().authoredReflections.reused == 1 &&
+                          target.forward->statistics().authoredReflections.sceneReused &&
+                          target.forward->statistics().authoredReflections.rays == 6*16*16,
+                      "Adding a capture reuses unchanged cubemaps and traces only the new origin");
+              authored[0].priority = 4;
+              for (auto &volume : authored) {
+                const float xmin = volume.minimum[0], xmax = volume.maximum[0];
+                volume.minimum[0] = volume.minimum[1]; volume.maximum[0] = volume.maximum[1];
+                volume.minimum[1] = -xmax; volume.maximum[1] = -xmin;
+                volume.worldToLocal[0][0] = volume.worldToLocal[1][1] = 0;
+                volume.worldToLocal[0][1] = 1; volume.worldToLocal[1][0] = -1;
+              }
+              ++request.revision;
+              r.setReflectionVolumes(&request);
+              const auto rotated = waitForEdit();
+              require(target.forward->statistics().authoredReflections.reused == 2 &&
+                          target.forward->statistics().authoredReflections.rays == 0 &&
+                          std::abs(int(rotated[centre])-int(firstEdit[centre])) <= 2,
+                      "Bounds rotation and priority edits reuse filtered radiance without tracing");
+              const float originalCaptureX = authored[1].capture[0];
+              authored[1].capture[0] += .01f;
+              ++request.revision;
+              r.setReflectionVolumes(&request);
+              const auto cancellationDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+              do {
+                require(render(false, false, true, false)[centre] > 40,
+                        "Pending capture edits retain the previously published reflection set");
+                const auto pending = target.forward->statistics().authoredReflections;
+                if (pending.pending && pending.rays > 0) break;
+              } while (std::chrono::steady_clock::now() < cancellationDeadline);
+              require(target.forward->statistics().authoredReflections.pending,
+                      "Cancellation fixture reaches a submitted reflection edit");
+              authored[1].capture[0] = originalCaptureX;
+              ++request.revision;
+              r.setReflectionVolumes(&request);
+              waitForEdit();
+              require(target.forward->statistics().authoredReflections.reused == 2 &&
+                          target.forward->statistics().authoredReflections.rays == 0,
+                      "A superseding edit cancels old work while reusing the last complete captures");
+              const auto after = target.forward->statistics();
+              require(r.bakeScene() == snapshot && after.baking.active &&
+                          after.baking.activeHash == baseline.baking.activeHash &&
+                          after.bakeContent.grid == baseline.bakeContent.grid &&
+                          after.bakeContent.surfaces == baseline.bakeContent.surfaces,
+                      "Authored reflection edits preserve completed diffuse probes and surface lightmaps");
+              request.volumeCount = 0; ++request.revision;
+              r.setReflectionVolumes(&request);
+              require(waitForEdit()[centre] < 5, "An empty authoring document suppresses local cubemaps");
+              r.setReflectionVolumes(nullptr);
+              require(render(false, false, true, false)[centre] > 40,
+                      "Restoring automatic placement immediately restores the original reflection buffer");
             }
             std::printf("Viewmodel probes %ux: overlay %u, world %u, analytic lights %u\n",
                         samples, probeWeapon[centre], probeWorld[centre], target.forward->statistics().lights);
@@ -4759,6 +4846,7 @@ int main(int argc, char **argv) {
   else if (argc>2 && std::strcmp(argv[2],"overflow-masks")==0) compactOcclusionTests(true, true);
   else if (argc>2 && std::strcmp(argv[2],"viewmodel-lighting")==0) viewModelLightingTests();
   else if (argc>2 && std::strcmp(argv[2],"viewmodel-probes")==0) viewModelLightingTests(true);
+  else if (argc>2 && std::strcmp(argv[2],"authored-reflections")==0) viewModelLightingTests(true, true, true);
   else if (argc>2 && std::strcmp(argv[2],"viewmodel-ssr")==0) reflectionTests(directory, false, false, false, 4, true);
   else if (argc>2 && std::strcmp(argv[2],"viewmodel-environment")==0) viewModelLightingTests(true, true);
   else if (argc>2 && std::strcmp(argv[2],"terrain-lighting")==0) terrainLightingTests();

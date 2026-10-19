@@ -194,6 +194,21 @@ namespace remix::forward::probes {
     // Positive weights keep normalized blending and HDR energy well-defined.
     return float(std::clamp(agreement / total, .05, 1.));
   }
+  Record projectionRecord(const Capture &capture) {
+    validate(capture);
+    Record record;
+    record.position[3] = projectionConfidence(capture);
+    record.minimum[3] = float(capture.priority);
+    record.worldToLocal = capture.worldToLocal;
+    for (uint32_t c = 0; c < 3; ++c) {
+      record.minimum[c] = capture.bounds.minimum[c];
+      record.maximum[c] = capture.bounds.maximum[c];
+      record.position[c] = capture.position[c];
+      record.influenceMinimum[c] = influence(capture).minimum[c];
+      record.influenceMaximum[c] = influence(capture).maximum[c];
+    }
+    return record;
+  }
   Data filter(std::span<const Capture> captures, uint32_t samples, std::stop_token cancelled) {
     if (cancelled.stop_requested())
       throw std::runtime_error("Reflection filtering superseded");
@@ -217,17 +232,7 @@ namespace remix::forward::probes {
     result.texels.resize(captures.size() * stride);
     for (uint32_t probe = 0; probe < captures.size(); ++probe) {
       const auto &capture = captures[probe];
-      auto &record = result.header.probes[probe];
-      record.position[3] = projectionConfidence(capture);
-      record.minimum[3] = float(capture.priority);
-      record.worldToLocal = capture.worldToLocal;
-      for (uint32_t c = 0; c < 3; ++c) {
-        record.minimum[c] = capture.bounds.minimum[c];
-        record.maximum[c] = capture.bounds.maximum[c];
-        record.position[c] = capture.position[c];
-        record.influenceMinimum[c] = influence(capture).minimum[c];
-        record.influenceMaximum[c] = influence(capture).maximum[c];
-      }
+      result.header.probes[probe] = projectionRecord(capture);
       std::copy(capture.radiance.begin(), capture.radiance.end(), result.texels.begin() + probe * stride);
       for (uint32_t level = 1; level < levels; ++level) {
         const uint32_t mipSize = size >> level, start = probe * stride + levelOffset(size, level);

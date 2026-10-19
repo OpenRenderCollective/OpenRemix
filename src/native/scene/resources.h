@@ -1,6 +1,8 @@
 #pragma once
 #include "scene/id_set.h"
 #include "scene/bake_scene.h"
+#include "scene/reflection_volumes.h"
+#include <remix/remix_reflection_ext.h>
 #include "scene/light_visibility.h"
 #include "scene/retained.h"
 #include "scene/temporal.h"
@@ -149,6 +151,11 @@ namespace remix {
     void destroyRetained(const uint64_t *handles, uint32_t count);
     void drawRetained(const float *sceneOrigin);
     void setBakeScene(const remixapi_BakeSceneInfoEXT *info);
+    void setReflectionVolumes(const remixapi_ReflectionVolumesInfoEXT *info);
+    std::shared_ptr<const scene::ReflectionVolumes> reflectionVolumes() const {
+      return m_bakeScene && m_reflectionVolumes && m_reflectionVolumes->sceneId == m_bakeScene->sceneId
+                 ? m_reflectionVolumes : nullptr;
+    }
     const std::shared_ptr<const scene::BakeScene> &bakeScene() const { return m_bakeScene; }
     // Authored definition dependencies, independent of this frame's light draw
     // list. Published frames retain the answer from their own publication.
@@ -340,6 +347,7 @@ namespace remix {
     std::unordered_map<uint64_t, LightDefinition> m_lights;
     uint64_t m_lightRevision = 0;
     std::shared_ptr<const scene::BakeScene> m_bakeScene;
+    std::shared_ptr<const scene::ReflectionVolumes> m_reflectionVolumes;
     std::vector<std::pair<uint64_t, uint64_t>> m_bakeInstances, m_bakeLights;
     std::optional<bool> m_publishedBakeLightsCurrent;
     struct BakeStyledDependency {

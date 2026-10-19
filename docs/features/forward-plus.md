@@ -2101,5 +2101,11 @@ The shared reflection sampler supports rigid world-to-projection frames and sign
 Projection and influence bounds use this local frame; capture positions and cube-face radiance stay in
 world space. Only the highest priority containing a receiver contributes, with existing spatial blending
 among captures at that priority. Automatic fits keep identity frames and priority zero. Native probe reports
-include the frame and priority, and the bounds workbench can import them. Editor saves are not yet applied
-to the runtime: adapter import and reflection-only refresh are still required.
+include the frame and priority, and the bounds workbench can import them. The optional
+`remixapi_SetReflectionVolumesEXT` authoring API publishes copied, scene-scoped volumes separately
+from frozen diffuse bake inputs. The adapter validates its map fingerprint and submits saved volumes.
+A reflection-only job retains the previous published set while edited captures are prepared. Bounds and
+priority edits reuse raw and filtered radiance; changed origins trace only their affected captures against
+reused scene acceleration. Submitted frames retain their transport and sampled reflection buffers until
+their own fences complete. A null request restores automatic placement, while an explicit empty request
+disables local cubemaps. Authoring overrides are not persisted in the automatic lighting cache.
