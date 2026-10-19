@@ -95,7 +95,7 @@ namespace remix::forward {
                                                        VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
                                                    .dynamicStateCount = 2,
                                                    .pDynamicStates = states};
-    enum class Pass { Opaque, Shadow, Composite, Terrain, Depth };
+    enum class Pass { Opaque, Shadow, Composite, Terrain, Depth, ViewModel };
     auto graphics = [&](VkShaderModule vs, VkShaderModule fs, VkRenderPass pass, Pass mode = Pass::Opaque) {
       const bool shadow = mode == Pass::Shadow, composite = mode == Pass::Composite;
       const bool terrain = mode == Pass::Terrain, depthOnly = mode == Pass::Depth;
@@ -144,7 +144,7 @@ namespace remix::forward {
       const VkPipelineColorBlendStateCreateInfo blend{
           .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
           .attachmentCount = shadow                                ? 0u
-                             : composite || terrain || !options.reflections() ? 1u
+                             : composite || terrain || mode == Pass::ViewModel || !options.reflections() ? 1u
                                                                    : 3u,
           .pAttachments = shadow ? nullptr : attachments};
       const VkGraphicsPipelineCreateInfo info{.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
@@ -170,6 +170,8 @@ namespace remix::forward {
       return result;
     };
     opaquePipeline = graphics(vertex, fragment, worldPass);
+    const auto viewModelFragment = modules.add(viewModelFragShader, sizeof(viewModelFragShader));
+    viewModelPipeline = graphics(vertex, viewModelFragment, viewModelTarget->pass(), Pass::ViewModel);
     lightmapPipeline = graphics(lightmapVertex, fragment, worldPass);
     depthPipeline = graphics(vertex, depthFragment, worldPass, Pass::Depth);
     depthLightmapPipeline = graphics(lightmapVertex, depthFragment, worldPass, Pass::Depth);

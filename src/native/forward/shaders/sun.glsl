@@ -19,9 +19,15 @@ float sunShadowVisibility(vec3 p, float depth, bool includeStatic) {
   for (int y = -1; y <= 1; ++y)
     for (int x = -1; x <= 1; ++x) {
       vec2 uv = coord + vec2(x, y) * texel;
+#ifdef VIEWMODEL_PASS
+      // The close-up cascade contains both world occluders and the weapon.
+      // Only this receiver pass can sample it; world shadows never see it.
+      visibility += texture(sunShadow, vec4(uv, 0, reference));
+#else
       float moving = texture(sunShadow, vec4(uv, cascade + 4, reference));
       float frozen = includeStatic ? texture(sunShadow, vec4(uv, cascade, reference)) : 1;
       visibility += min(moving, frozen);
+#endif
     }
   return visibility / 9;
 }

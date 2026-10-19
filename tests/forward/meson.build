@@ -1,6 +1,7 @@
 forward_policy_test = executable('remix-forward-policy-test', 'lighting.cpp',
   '../../src/native/forward/lighting.cpp', '../../src/native/runtime/settings.cpp',
   '../../src/native/forward/water/data.cpp',
+  '../../src/native/forward/viewmodel/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Forward+ cluster, cascade and configuration policy', forward_policy_test)
 cache_persistence_test = executable('remix-cache-persistence-test', 'cache_persistence.cpp',

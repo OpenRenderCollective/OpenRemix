@@ -18,6 +18,7 @@ namespace remix {
   } // namespace
 
   bool RasterRenderer::preparePipelines(bool tracing, bool forward, DrawOwner owner) {
+    if (forward) applyViewModel(1.f);
     bool ready = true;
     // Masked overlays (raster/mask.cpp): their coverage machinery and their
     // pipeline variants are compiled on first use, as for halos. A frame never

@@ -8,6 +8,7 @@
 #include "forward/shadows/maps.h"
 #include "forward/shadows/sun_cache.h"
 #include "forward/water/pass.h"
+#include "forward/viewmodel/target.h"
 #include "platform/gpu_frames.h"
 #include <chrono>
 #include <unordered_map>
@@ -43,6 +44,9 @@ namespace remix::forward {
     std::unique_ptr<Image> normalGuide, reflectanceGuide;
     std::unique_ptr<Reflections> reflections;
     std::unique_ptr<water::Pass> waterPass;
+    std::unique_ptr<viewmodel::Target> viewModelTarget;
+    std::unique_ptr<viewmodel::SunShadow> viewModelSun;
+    VkPipeline viewModelPipeline = VK_NULL_HANDLE;
     std::unique_ptr<postfx::Renderer> postProcessing;
     VkDescriptorSetLayout postLayout = VK_NULL_HANDLE;
     std::unique_ptr<ray::Reflections> rayReflections;
@@ -84,14 +88,19 @@ namespace remix::forward {
       VkDescriptorPool pool = VK_NULL_HANDLE;
       uint32_t poolCapacity = 0;
       VkDescriptorSet scene = VK_NULL_HANDLE, composite = VK_NULL_HANDLE;
+      VkDescriptorSet viewModelScene = VK_NULL_HANDLE;
       VkDescriptorSet giScene = VK_NULL_HANDLE;
       VkDescriptorSet waterRayScene = VK_NULL_HANDLE;
       std::unique_ptr<Buffer> constants, lights, draws, clusters, skyConstants;
+      std::unique_ptr<Buffer> viewModelConstants;
+      Matrix viewModelProjection = scene::identity();
       bool skyEnabled = false;
       VkDescriptorImageInfo skyImage{};
       std::vector<Command> commands, staticCommands;
       std::vector<Command> terrainCommands;
       std::vector<Command> waterCommands;
+      std::vector<Command> viewModelCommands;
+      std::vector<Command> viewModelCasters;
       // Rewritten only after this slot's fence. Poses remain fresh every draw;
       // the buffers, rather than the animated vertex data, survive slot reuse.
       std::vector<std::shared_ptr<Geometry>> posedGeometry;
@@ -111,6 +120,8 @@ namespace remix::forward {
     void prepareFrame(VkCommandBuffer command, RasterRenderer &resources);
     void recordWorld(VkCommandBuffer command);
     void recordWater(VkCommandBuffer command);
+    void recordViewModels(VkCommandBuffer command);
+    void prepareViewModelDescriptors();
     void recordExposure(VkCommandBuffer command, RasterRenderer &resources, float seconds);
     void drawLocalCasters(VkCommandBuffer command, uint32_t slot, uint32_t face, bool staticCasters);
     void drawGeometry(VkCommandBuffer command, bool terrain = false, bool depthOnly = false);

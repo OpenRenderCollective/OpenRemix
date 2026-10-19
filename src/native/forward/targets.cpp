@@ -230,10 +230,11 @@ namespace remix::forward {
         {2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
-        {5, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}};
+        {5, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+        {6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}};
     const VkDescriptorSetLayoutCreateInfo compositeInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .bindingCount = options.water ? 6u : 5u,
+        .bindingCount = uint32_t(std::size(compositeBindings)),
         .pBindings = compositeBindings};
     check(pipeline::createDescriptorSetLayout(device, &compositeInfo, nullptr, &compositeSetLayout));
     const VkDescriptorSetLayout sets[] = {sceneLayout, materialLayout};
@@ -252,7 +253,7 @@ namespace remix::forward {
       info.pSetLayouts = giSets;
       check(pipeline::createPipelineLayout(device, &info, nullptr, &giLayout));
     }
-    const VkPushConstantRange compositePush{VK_SHADER_STAGE_FRAGMENT_BIT, 0, 28};
+    const VkPushConstantRange compositePush{VK_SHADER_STAGE_FRAGMENT_BIT, 0, 32};
     postLayout = postfx::compositeLayout(device);
     const VkDescriptorSetLayout compositeSets[] = {compositeSetLayout, postLayout};
     const VkPipelineLayoutCreateInfo compositeLayoutInfo{.sType =

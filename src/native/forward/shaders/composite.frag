@@ -18,6 +18,7 @@ layout(set = 0, binding = 3, std140) uniform Sky {
   vec4 radiance, target;
 } sky;
 layout(set = 0, binding = 4) uniform sampler2D dome;
+layout(set = 0, binding = 6) uniform sampler2D viewModel;
 layout(push_constant) uniform Display {
   uint prism;
   uint encodeOutput;
@@ -26,6 +27,7 @@ layout(push_constant) uniform Display {
   uint background;
   uint gamma22;
   uint hardwareSrgb;
+  uint hasViewModel;
 } display;
 layout(location = 0) out vec4 result;
 #include "../../postfx/shaders/composite.glsl"
@@ -68,7 +70,8 @@ void main() {
   }
   ivec2 pixel = ivec2(gl_FragCoord.xy);
   vec4 color = texelFetch(hdr, pixel, 0);
-  if (color.a <= 0)
+  vec4 weapon = display.hasViewModel != 0u ? texelFetch(viewModel, pixel, 0) : vec4(0);
+  if (color.a <= 0 && weapon.a <= 0)
     discard; // retain the existing raster sky
   float depth = 1;
 #ifdef SINGLE_SAMPLE
@@ -79,7 +82,10 @@ void main() {
 #endif
   vec3 scene = color.rgb / max(color.a, 1e-6);
   if (display.hasReflections != 0u) scene += texelFetch(reflections,pixel,0).rgb;
-  vec3 mapped = tonemap(mediumColor(scene, depth));
-  result = vec4(mapped * color.a, color.a);
-  gl_FragDepth = depth;
+  scene = mediumColor(scene, depth);
+  float coverage = weapon.a + color.a * (1 - weapon.a);
+  vec3 combined = weapon.rgb + scene * color.a * (1 - weapon.a);
+  vec3 mapped = tonemap(combined / max(coverage, 1e-6));
+  result = vec4(mapped * coverage, coverage);
+  gl_FragDepth = weapon.a > 0 ? 0 : depth;
 }

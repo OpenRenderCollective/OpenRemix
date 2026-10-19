@@ -10,6 +10,7 @@ namespace remix::forward {
   Renderer::Renderer() = default;
   Renderer::~Renderer() = default;
   Renderer::Gpu::~Gpu() {
+    viewModelSun.reset();
     waterPass.reset();
     baking.reset();
     localMaps.reset();
@@ -23,11 +24,13 @@ namespace remix::forward {
       frame.staticCommands.clear();
       frame.terrainCommands.clear();
       frame.waterCommands.clear();
+      frame.viewModelCommands.clear();
+      frame.viewModelCasters.clear();
     }
     geometries.clear();
     for (auto handle : {opaquePipeline, lightmapPipeline, depthPipeline, depthLightmapPipeline,
                         shadowPipeline, localShadowPipeline,
-                        clusterPipeline, compositePipeline, giOpaquePipeline, giLightmapPipeline,
+                        clusterPipeline, compositePipeline, viewModelPipeline, giOpaquePipeline, giLightmapPipeline,
                         terrainPipeline, terrainLightmapPipeline, giTerrainPipeline, giTerrainLightmapPipeline})
       if (handle)
         pipeline::destroyPipeline(device, handle, nullptr);
@@ -97,6 +100,8 @@ namespace remix::forward {
       next->rayReflections = std::make_unique<ray::Reflections>();
       next->rayReflections->initialize(physical, device, *next->liveScene);
     }
+    next->viewModelTarget = std::make_unique<viewmodel::Target>();
+    next->viewModelTarget->initialize(physical, device, extent, next->samples);
     next->createPipelines(output);
     if (options.water) {
       next->waterPass = std::make_unique<water::Pass>();
@@ -133,6 +138,8 @@ namespace remix::forward {
     frame.staticCommands.clear();
     frame.terrainCommands.clear();
     frame.waterCommands.clear();
+    frame.viewModelCommands.clear();
+    frame.viewModelCasters.clear();
     frame.posedGeometry.resize(frame.posedUsed);
     frame.posedUsed = 0;
     frame.waterComposed = false;
@@ -194,6 +201,7 @@ namespace remix::forward {
     }
     step(cpu.reflections);
     m_gpu->recordWater(command);
+    m_gpu->recordViewModels(command);
     m_gpu->recordExposure(command, resources, seconds);
     step(cpu.waterExposure);
     m_gpu->statistics.baking = m_gpu->baking->statistics();
@@ -204,7 +212,9 @@ namespace remix::forward {
     const auto memory = m_gpu->baking->memory();
     m_gpu->statistics.bufferBytes += memory.buffers;
     m_gpu->statistics.targetBytes = m_gpu->baseTargetBytes + memory.images +
-                                    (m_gpu->waterPass ? m_gpu->waterPass->targetBytes() : 0);
+                                    (m_gpu->waterPass ? m_gpu->waterPass->targetBytes() : 0) +
+                                    m_gpu->viewModelTarget->bytes() +
+                                    (m_gpu->viewModelSun ? m_gpu->viewModelSun->bytes() : 0);
     m_gpu->statistics.accelerationBytes = memory.acceleration;
     if (m_gpu->liveScene) {
       const auto live = m_gpu->liveScene->memory();
@@ -225,7 +235,8 @@ namespace remix::forward {
   const Statistics &Renderer::statistics() const { return m_gpu->statistics; }
   const Options &Renderer::options() const { return m_gpu->options; }
   bool Renderer::owns(const scene::Draw &draw) const {
-    return accepts(draw) || acceptsSurfaceLayer(draw) || (m_gpu && m_gpu->waterPass && water::accepts(draw));
+    return accepts(draw) || acceptsViewModel(draw) || acceptsSurfaceLayer(draw) ||
+           (m_gpu && m_gpu->waterPass && water::accepts(draw));
   }
   void Renderer::updateLighting(const Options &options) {
     if (!m_gpu->options.sameTargets(options))

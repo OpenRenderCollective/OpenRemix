@@ -316,14 +316,21 @@ when baked lighting is active; a failed bake instead displays its failure messag
 
 ## Viewmodels and authored reflection bounds
 
-Forward+ viewmodels remain on the compatibility path. The next rendering change should keep
-their lit overlay separate from world depth, reflection guides and world shadow caster lists.
-Use the authored viewmodel camera correction for world-space shading, sample the existing world
-probes and dynamic shadow maps, and provide a separate self-shadow caster set visible only to
-viewmodel receivers. Composite into HDR after world water/reflections and before the shared
-exposure/display transform. Verify weapon changes, camera FOV, animation, MSAA, wall overlap,
-world-shadow reception and the absence of viewmodel shadows on world receivers. Do not enable
-the path by adding viewmodels to ordinary opaque commands: that would also add world casters.
+Opaque Forward+ viewmodels use an independent MSAA HDR/depth target. The authored camera
+correction retains physical world positions for the shared probe and material shaders. Composition
+overlays the weapon after world water/reflections and before the shared display transform; exposure
+continues to meter the world. World depth, reflection guides and ordinary shadow caster lists remain
+independent. Raster-only and otherwise unsupported attachments keep the compatibility overlay layer.
+
+Viewmodels have a dedicated close-up sun cascade. Its XY footprint follows weapon receiver bounds,
+while world caster bounds extend depth without reducing XY density. Relevant frozen and current
+world geometry plus weapon geometry cast into this map, sampled only by viewmodel receivers.
+This deliberate close-up static-caster pass is separate from the fully baked world's shadow policy.
+Targets allocate only when first needed and are queue ordered; posed geometry and constants retain
+frame-slot ownership. Continue with isolated local-light self-shadows, environment reflections,
+explicit baked-probe readback coverage and actual weapon/FOV/animation checks in GMod. The current
+sun/overlay fixtures cover MSAA, world and self shadowing, wall overlap, removal, fallback attachment
+ordering and unchanged world pixels; they do not establish complete live-game viewmodel parity.
 
 Lazy material replacements may change global mod generation without changing a map receiver.
 Retained replay preserves a receiver's revision when its mesh, original dependencies and resolved

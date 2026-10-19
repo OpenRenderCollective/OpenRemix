@@ -3,6 +3,7 @@
 #include "forward/highlight_selection.h"
 #include "forward/shadows/sun_cache.h"
 #include "forward/water/data.h"
+#include "forward/viewmodel/lighting.h"
 #include "runtime/settings.h"
 #include "scene/fixtures.h"
 #include <cmath>
@@ -13,6 +14,31 @@ using namespace remix::forward;
 using remix::test::require;
 
 int main() {
+  {
+    Bounds weapon, world;
+    weapon.include({-.3f, -.4f, 1});
+    weapon.include({.3f, .4f, 2});
+    world.include({-10000, -10000, -100});
+    world.include({10000, 10000, 100});
+    for (const auto direction : {Vec3{0, 0, 1}, Vec3{1, 2, 3}, Vec3{0, 1, 0}}) {
+      const auto projection = viewmodel::sunProjection(weapon, world, direction, 1024);
+      for (uint32_t corner = 0; corner < 8; ++corner) {
+        Vec3 p;
+        for (uint32_t c = 0; c < 3; ++c)
+          p[c] = corner & (1u << c) ? weapon.maximum[c] : weapon.minimum[c];
+        const auto q = transformPoint(projection, p);
+        require(std::abs(q[0]) < 1 && std::abs(q[1]) < 1 && q[2] > 0 && q[2] < 1,
+                "Close-up sun cascade contains every viewmodel receiver corner");
+      }
+    }
+    const auto close = viewmodel::sunProjection(weapon, weapon, {0, 0, 1}, 1024);
+    const auto extended = viewmodel::sunProjection(weapon, world, {0, 0, 1}, 1024);
+    require(close[0] == extended[0] && close[5] == extended[5],
+            "A large world caster extent cannot dilute viewmodel shadow texel density");
+    const auto offscreen = transformPoint(extended, {0, 0, -50});
+    require(offscreen[2] > 0 && offscreen[2] < 1,
+            "Close-up cascade depth retains upstream world occluders");
+  }
   {
     HighlightSelection selection;
     std::array<HighlightCandidate, 2> candidates{{{20, 1}, {10, 1}}};

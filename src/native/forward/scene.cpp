@@ -2,6 +2,7 @@
 #include "forward/gpu.h"
 #include "forward/light_response.h"
 #include "forward/material.h"
+#include "forward/viewmodel/lighting.h"
 #include "forward/probes/capture_dump.h"
 #include <algorithm>
 #include <bit>
@@ -99,6 +100,9 @@ namespace remix::forward {
     frame.staticCommands.clear();
     frame.terrainCommands.clear();
     frame.waterCommands.clear();
+    frame.viewModelCommands.clear();
+    frame.viewModelCasters.clear();
+    frame.viewModelScene = VK_NULL_HANDLE;
     frame.waterComposed = false;
     frame.waterMedium = false;
     auto sources = resources.sphereLights();
@@ -175,7 +179,8 @@ namespace remix::forward {
     std::vector<water::MaterialData> waterMaterials;
     Bounds casters;
     auto append = [&](const scene::Draw &draw, std::vector<Command> &commands, bool staticOnly, bool liquid = false) {
-      if (!(liquid ? water::accepts(draw) : accepts(draw) || (!staticOnly && acceptsSurfaceLayer(draw))))
+      if (!(liquid ? water::accepts(draw) : accepts(draw) ||
+            (!staticOnly && (acceptsSurfaceLayer(draw) || acceptsViewModel(draw)))))
         return;
       const uint32_t count = draw.indexCount ? draw.indexCount : uint32_t(draw.surface->indices.size());
       if (!count)
@@ -183,14 +188,14 @@ namespace remix::forward {
       Command out;
       out.geometry = geometry(draw);
       out.source = draw;
-      out.captured = !liquid && (staticOnly || shadowPlanner.captured(draw));
-      if (!staticOnly && !liquid)
+      out.captured = !liquid && !draw.viewModel && (staticOnly || shadowPlanner.captured(draw));
+      if (!staticOnly && !liquid && !draw.viewModel)
         if (const auto &volume = baking->volume(); volume && volume->surfaces)
           out.lightmap = volume->surfaces->find(draw);
       out.index = uint32_t(draws.size());
       out.count = count;
       out.worldBounds = transformBounds(out.geometry->bounds, draw.model);
-      if (!liquid) casters.merge(out.worldBounds);
+      if (!liquid && !draw.viewModel) casters.merge(out.worldBounds);
       if (liquid) {
         out.waterIndex = uint32_t(waterMaterials.size());
         waterMaterials.push_back(water::materialData(*draw.material, seconds));
@@ -201,8 +206,10 @@ namespace remix::forward {
     for (const auto &draw : resources.draws()) {
       const bool liquid = waterPass && water::accepts(draw);
       append(draw, liquid ? frame.waterCommands
+                   : draw.viewModel ? frame.viewModelCommands
                    : acceptsSurfaceLayer(draw) ? frame.terrainCommands : frame.commands, false, liquid);
     }
+    if (!frame.viewModelCommands.empty()) viewModelTarget->ensure();
     // Complete frozen bounds still fit the cascades even when no static draw
     // descriptors or material records need preparing for this frame.
     if (options.shadows && sun.isDistant)
@@ -345,6 +352,24 @@ namespace remix::forward {
     if ((refreshLocal || refreshSun) && shadowPlanner.source())
       for (const auto &draw : shadowPlanner.source()->draws)
         append(draw, frame.staticCommands, true);
+    if (!frame.viewModelCommands.empty() && data.target[3]) {
+      if (!viewModelSun) {
+        viewModelSun = std::make_unique<viewmodel::SunShadow>();
+        viewModelSun->initialize(physical, device, shadowPass, options.shadowResolution);
+      }
+      Bounds receivers;
+      for (const auto &draw : frame.viewModelCommands) receivers.merge(draw.worldBounds);
+      Bounds allCasters = casters;
+      allCasters.merge(receivers);
+      frame.viewModelProjection = viewmodel::sunProjection(receivers, allCasters, direction,
+                                                           options.shadowResolution);
+      if (shadowPlanner.source())
+        for (const auto &draw : shadowPlanner.source()->draws) {
+          if (!accepts(draw)) continue;
+          const auto bounds = transformBounds(geometry(draw)->bounds, draw.model);
+          if (intersectsClip(bounds, frame.viewModelProjection)) append(draw, frame.viewModelCasters, true);
+        }
+    }
     step(cpu.lighting);
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physical, &properties);
@@ -369,16 +394,17 @@ namespace remix::forward {
     probes::dumpFrameData(".draws.bin", draws.data(), draws.size() * sizeof(DrawData));
     probes::dumpFrameData(".lights.bin", lights.data(), lights.size() * sizeof(LightData));
     const uint32_t capacity = uint32_t(frame.commands.size() + frame.staticCommands.size() +
-                                      frame.terrainCommands.size() + frame.waterCommands.size()) + 2;
+                                      frame.terrainCommands.size() + frame.waterCommands.size() +
+                                      frame.viewModelCommands.size() + frame.viewModelCasters.size()) + 3;
     if (!frame.pool || frame.poolCapacity < capacity) {
       if (frame.pool)
         vkDestroyDescriptorPool(device, frame.pool, nullptr);
       frame.pool = VK_NULL_HANDLE;
       frame.poolCapacity = std::max(64u, capacity);
       const VkDescriptorPoolSize sizes[] = {
-          {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, options.water ? 3u : 2u},
-          {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4},
-          {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frame.poolCapacity * 5}};
+          {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4},
+          {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 8},
+          {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frame.poolCapacity * 5 + 16}};
       const VkDescriptorPoolCreateInfo info{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
                                             .maxSets = frame.poolCapacity,
                                             .poolSizeCount = 3,
@@ -443,6 +469,13 @@ namespace remix::forward {
                        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                        .pImageInfo = &images[i]};
     vkUpdateDescriptorSets(device, 8, writes, 0, nullptr);
+    const VkDescriptorImageInfo viewModelImage{sampler,
+        frame.viewModelCommands.empty() ? images[1].imageView : viewModelTarget->color(),
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    const VkWriteDescriptorSet viewModelWrite{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = frame.composite, .dstBinding = 6, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &viewModelImage};
+    vkUpdateDescriptorSets(device, 1, &viewModelWrite, 0, nullptr);
     const auto irradiance = baking->descriptor();
     writes[8] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                  .dstSet = frame.scene,
@@ -489,9 +522,11 @@ namespace remix::forward {
                   .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                   .pImageInfo = &visibilityPages};
     vkUpdateDescriptorSets(device, 1, &writes[13], 0, nullptr);
+    prepareViewModelDescriptors();
     step(cpu.uploads);
     std::unordered_map<const scene::Material *, VkDescriptorSet> materials;
-    for (auto *commands : {&frame.commands, &frame.staticCommands, &frame.terrainCommands, &frame.waterCommands})
+    for (auto *commands : {&frame.commands, &frame.staticCommands, &frame.terrainCommands,
+                           &frame.waterCommands, &frame.viewModelCommands, &frame.viewModelCasters})
       for (auto &draw : *commands) {
         const auto &material = draw.source.material;
         if (auto found = materials.find(material.get()); found != materials.end()) {
@@ -518,7 +553,8 @@ namespace remix::forward {
         vkUpdateDescriptorSets(device, 5, textureWrites, 0, nullptr);
       }
     step(cpu.materials);
-    statistics.draws = uint32_t(frame.commands.size() + frame.terrainCommands.size() + frame.waterCommands.size());
+    statistics.draws = uint32_t(frame.commands.size() + frame.terrainCommands.size() +
+                                frame.waterCommands.size() + frame.viewModelCommands.size());
     statistics.shadowedLights =
         uint32_t(std::count(shadowSelection.active.begin(), shadowSelection.active.end(), true));
     statistics.shadowOverflow = shadowSelection.overflow;
@@ -551,7 +587,8 @@ namespace remix::forward {
       statistics.bufferBytes += reflections->bufferBytes();
     for (const auto &submitted : frames) {
       for (const auto *buffer : {submitted.constants.get(), submitted.lights.get(), submitted.draws.get(),
-                                 submitted.clusters.get(), submitted.skyConstants.get()})
+                                 submitted.clusters.get(), submitted.skyConstants.get(),
+                                 submitted.viewModelConstants.get()})
         if (buffer)
           statistics.bufferBytes += buffer->allocationBytes;
       for (const auto &geometry : submitted.posedGeometry)

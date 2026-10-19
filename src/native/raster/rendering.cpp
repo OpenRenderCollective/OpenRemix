@@ -9,6 +9,9 @@ namespace remix {
   using namespace raster::detail;
 
   void RasterRenderer::prepare(VkCommandBuffer command, bool tracing, bool forward, DrawOwner owner) {
+    // Keep physical world positions for probe/shadow sampling. Forward+ uses
+    // independent overlay depth rather than shrinking the weapon into the eye.
+    if (forward) applyViewModel(1.f);
     auto &g = *m_gpu;
     m_profile = {};
     g.uploadBytes = 0;
@@ -93,10 +96,10 @@ namespace remix {
     m_profile.retirePathsMilliseconds = since(part);
     m_profile.retireMilliseconds = since(phase) - m_profile.refreshMilliseconds;
     phase = Clock::now();
-    auto layer = [](const Draw &d) {
+    auto layer = [forward](const Draw &d) {
       return d.ui                                          ? 3
              : d.camera == REMIXAPI_CAMERA_TYPE_SKY        ? 0
-             : d.camera == REMIXAPI_CAMERA_TYPE_VIEW_MODEL ? 2
+             : d.camera == REMIXAPI_CAMERA_TYPE_VIEW_MODEL || (forward && d.viewModel) ? 2
                                                            : 1;
     };
     auto distance = [&](const Draw &d) {

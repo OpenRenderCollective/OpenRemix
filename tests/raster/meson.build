@@ -11,6 +11,8 @@ if get_option('gpu_tests')
   test('Raster GPU pixel readback', raster_test, args : [meson.current_build_dir() / 'readback'], timeout : 90)
   test('Forward+ GPU lighting, MSAA and compatibility readback', raster_test,
     args : [meson.current_build_dir() / 'forward-readback', 'forward'], timeout : 120)
+  test('Forward+ viewmodel overlay lighting, world shadows and MSAA isolation', raster_test,
+    args : [meson.current_build_dir() / 'viewmodel-readback', 'viewmodel-lighting'], timeout : 120)
   test('Forward+ skinned frame slots preserve animated geometry and shadows', raster_test,
     args : [meson.current_build_dir() / 'forward-skinning-readback', 'forward-skinning'], timeout : 120)
   test('Forward+ lighting component isolation and MSAA', raster_test,

@@ -28,13 +28,15 @@ namespace remix::forward {
   DepthRange depthRange(const Matrix &projection);
   uint32_t depthSlice(float depth, const DepthRange &range);
   float sliceDepth(uint32_t slice, const DepthRange &range);
-  inline bool accepts(const scene::Draw &d) {
+  inline bool acceptsOpaque(const scene::Draw &d) {
     // Share ownership of a draw with the compatibility renderer explicitly.
     return d.traced() && !d.blend.enabled && !d.material->translucent && !d.material->transmission &&
            !d.decal && !d.cutGroup && !d.wireframe && d.depth && (!d.depthWriteOverride || d.depthWrite) &&
-           !d.viewModel && !d.spriteFlags && d.material->normalEncoding != 5 && d.blend.mask == 15 &&
+           !d.spriteFlags && d.material->normalEncoding != 5 && d.blend.mask == 15 &&
            (d.depthCompare == 1 || d.depthCompare == 3);
   }
+  inline bool accepts(const scene::Draw &d) { return !d.viewModel && acceptsOpaque(d); }
+  inline bool acceptsViewModel(const scene::Draw &d) { return d.viewModel && acceptsOpaque(d); }
   inline bool acceptsSurfaceLayer(const scene::Draw &d) {
     return d.decal && d.classification == REMIXAPI_INSTANCE_STATIC_EXT && d.traced() &&
            d.blend.enabled && d.blend.src == 6 && d.blend.dst == 7 && d.blend.op == 0 &&
