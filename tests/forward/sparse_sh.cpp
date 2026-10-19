@@ -160,6 +160,19 @@ int main() {
     const auto aBefore = a, bBefore = b;
     const auto combined = s::sumComponents(a, b, dimensions, allowed, 1u<<20);
     require(combined.has_value(), "Independent direct and indirect groups fit a combined publication");
+    s::Builder denseReference(dimensions, 1u<<20);
+    for (uint32_t style : {32u,97u}) {
+      auto sum = [](s::Coefficients a, const s::Coefficients &b) {
+        for (uint32_t c = 0; c < 9; ++c)
+          for (uint32_t channel = 0; channel < 3; ++channel) a[c][channel] += b[c][channel];
+        return a;
+      };
+      denseReference.addSampled(style, [&](uint32_t page, uint32_t x, uint32_t y) {
+        return sum(s::surface(a, style, page, x, y), s::surface(b, style, page, x, y));
+      }, [&](uint32_t probe) { return sum(s::probe(a, style, probe), s::probe(b, style, probe)); });
+    }
+    require(*combined == denseReference.serialize(),
+            "Occupancy-aware merge preserves exact dense traversal encoding, including probe-only styles");
     const uint32_t unionStyles[] = {32,97};
     s::validate(*combined, dimensions, unionStyles, 1u<<20);
     const auto overlap = s::surface(*combined, 32, 0, 0, 0);
@@ -183,6 +196,30 @@ int main() {
     auto malformed = b; malformed[1] = 999;
     refused([&] { s::sumComponents(a,malformed,dimensions,allowed,1u<<20); },
             "Malformed component payload cannot enter the merged table");
+  }
+  {
+    const s::Dimensions edgeDimensions{17,2,0};
+    s::Builder dense(edgeDimensions, 1u<<20), sparse(edgeDimensions, 1u<<20);
+    uint32_t denseCalls = 0, sparseCalls = 0;
+    auto value = [](uint32_t page, uint32_t x, uint32_t y) {
+      s::Coefficients c{};
+      if (page == 1 && x == 16 && y == 16) c[3][2] = -.375f;
+      return c;
+    };
+    dense.addSampled(32, [&](uint32_t page, uint32_t x, uint32_t y) {
+      ++denseCalls; return value(page,x,y);
+    }, [](uint32_t) { return s::Coefficients{}; });
+    sparse.addSampled(32, [&](uint32_t page, uint32_t x, uint32_t y) {
+      ++sparseCalls; return value(page,x,y);
+    }, [](uint32_t) { return s::Coefficients{}; }, {}, [](uint32_t tile) { return tile == 7; });
+    require(dense.serialize() == sparse.serialize() && denseCalls == 578 && sparseCalls == 1,
+            "Empty tiles skip callbacks while partial edge tiles preserve exact signed encoding across pages");
+    const auto before = sparse.serialize();
+    std::stop_source stop;
+    refused([&] { sparse.addSampled(97, value, [](uint32_t) { return s::Coefficients{}; },
+        stop.get_token(), [&](uint32_t) { stop.request_stop(); return false; }); },
+        "Cancellation while skipping black tiles still aborts publication");
+    require(sparse.serialize() == before, "Cancelled sparse traversal preserves completed components");
   }
   const uint64_t denseBytes = uint64_t(33) * 33 * 2 * 9 * 3 * sizeof(uint16_t);
   require(builder.bytes() < denseBytes, "Sparse tiles avoid storing unrelated empty atlas space");

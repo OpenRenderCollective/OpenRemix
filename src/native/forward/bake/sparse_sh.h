@@ -28,8 +28,11 @@ namespace remix::forward::bake::sparse {
     // failed/cancelled addition leaves every previously completed group intact.
     using SurfaceSample = std::function<Coefficients(uint32_t page, uint32_t x, uint32_t y)>;
     using ProbeSample = std::function<Coefficients(uint32_t probe)>;
+    // Optional conservative occupancy: false guarantees the entire surface tile
+    // is black. Tile indices follow page-major row order. Unknown means sample.
+    using SurfaceTilePresent = std::function<bool(uint32_t tile)>;
     void addSampled(uint32_t style, const SurfaceSample &surface, const ProbeSample &probe,
-                    std::stop_token cancelled = {});
+                    std::stop_token cancelled = {}, const SurfaceTilePresent &tilePresent = {});
     std::vector<uint32_t> serialize(std::stop_token cancelled = {}) const;
     uint64_t bytes() const;
     const Dimensions &dimensions() const { return m_dimensions; }

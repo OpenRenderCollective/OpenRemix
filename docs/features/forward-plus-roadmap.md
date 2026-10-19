@@ -404,3 +404,8 @@ Denoiser queue calibration now measures parallel CPU independently of serial
 CPU selection. Both measured margins remain required. Normal Construct controls
 show unchanged bake time; a validation diagnostic exercises the formerly excluded
 choice. Existing cache restoration is exact. See denoise-queue-selection-2026-10-20.txt.
+
+Sparse styled direct/indirect merging now skips tiles proven black in both
+validated input maps. Construct grouped preparation saves about227ms in paired
+warm controls, with exact validation screenshot/cache restoration. Cold-map and
+live performance gates remain open; see sparse-empty-tiles-2026-10-20.txt.

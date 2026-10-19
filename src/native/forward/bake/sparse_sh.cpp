@@ -78,7 +78,8 @@ namespace remix::forward::bake::sparse {
     }, [&](uint32_t probe) { return probeValues[probe].irradiance; }, token);
   }
   void Builder::addSampled(uint32_t style, const SurfaceSample &surface,
-                            const ProbeSample &probe, std::stop_token token) {
+                            const ProbeSample &probe, std::stop_token token,
+                            const SurfaceTilePresent &tilePresent) {
     check(style > 0 && style < 128 && surface && probe &&
           std::none_of(m_components.begin(), m_components.end(), [&](const auto &c) { return c.style == style; }));
     cancelled(token);
@@ -93,6 +94,7 @@ namespace remix::forward::bake::sparse {
     std::array<uint32_t, tileRecords * coefficientWords> block{};
     for (uint32_t tile = 0; tile < result.surface.size(); ++tile) {
       cancelled(token);
+      if (tilePresent && !tilePresent(tile)) continue;
       block.fill(0);
       const uint32_t page = tile / (wide * wide), tx = tile % wide, ty = tile / wide % wide;
       bool used = false;
@@ -246,7 +248,10 @@ namespace remix::forward::bake::sparse {
           return add(surfaceAt(first, ea, page, x, y), surfaceAt(second, eb, page, x, y));
         }, [&](uint32_t probe) {
           return add(probeAt(first, ea, probe), probeAt(second, eb, probe));
-        }, token);
+        }, token, [&](uint32_t tile) {
+          return (!ea.empty() && first[ea[1] + tile] != 0) ||
+                 (!eb.empty() && second[eb[1] + tile] != 0);
+        });
       }
       return builder.serialize(token);
     } catch (const std::length_error &) {

@@ -1,0 +1,45 @@
+Skip known-empty styled merge tiles - 2026-10-20
+
+Change
+Sparse direct/indirect group merging now supplies a conservative surface-tile
+occupancy callback to the streaming builder. Only when both validated input maps
+mark a tile black can the builder skip its texel callbacks and encoding. Occupied
+tiles retain the same decode/add/encode order, including quantization and signed
+coefficients. Probe traversal remains unchanged. Existing callers without occupancy
+retain exhaustive sampling. No dense atlas, new runtime setting, cache revision,
+shader or retained GPU allocation. Cancellation is checked even on skipped tiles;
+budget checks and publication remain all-or-nothing.
+
+Evidence
+Release build and four suites pass: sparse styled SH, grouped direct captures,
+bake-cache integrity and GPU surface/probe reconstruction. GPU checks use Vulkan
+validation and synchronization validation. Regression coverage compares the complete
+encoded merge with exhaustive traversal; it includes disjoint/overlapping support,
+probe-only styles, signed values, partial17x17 edge tiles on two pages, storage
+exhaustion and cancellation. The edge fixture reduces surface callbacks578->1 with
+identical serialized output. Malformed input validation remains before occupancy.
+
+Construct cache preparation, normal old/new/new/old controls:
+  grouped total ms: 942.741 / 710.589 / 695.308 / 916.179
+  paired means: old929.460 / new702.949, saving226.512ms (24.37%).
+  new merge stage:130.270 /129.169ms; composition remains unchanged.
+  whole replay seconds:7.796 /7.687 /7.719 /7.859.
+This is a grouped-preparation improvement, not24%less whole bake time or a frame-
+rate gain. Configuration:1080p MSAA4,4M texels,1024pages,256samples,3bounces,
+16 size32 reflection captures, same current Construct disk cache, validation off
+for normal timing. All published hashes match; normal images differ by at most one
+byte level, including old/old. Full fresh-bake determinism is not established.
+
+A separate validation-enabled warm run restores the same cache and matches the
+preceding validation baseline screenshot exactly. No reported validation errors
+or synchronization hazards. Private controls and receipts:
+_work/reports/sparse-empty-tiles-v1/comparison.json
+_work/reports/sparse-empty-tiles-validation-v1/comparison.json
+Native SHA256: 0d6a31058910cf703de1612507d8e6d7ea04488546b6b3f6db489d36874e781d
+
+Next work
+Direct composition remains roughly570ms in these normal controls. A conservative
+chart/style occupancy source could let it use the same streaming hook, but must
+cover seam donors, partial tiles and every independently controlled style. Measure
+before retaining it. Continue full cold-bake costs, other maps, automatic cubemap
+coverage and live gameplay performance. This change does not resolve those gates.
