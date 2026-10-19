@@ -43,3 +43,9 @@ chart/style occupancy source could let it use the same streaming hook, but must
 cover seam donors, partial tiles and every independently controlled style. Measure
 before retaining it. Continue full cold-bake costs, other maps, automatic cubemap
 coverage and live gameplay performance. This change does not resolve those gates.
+
+Delivery
+Implementation b414347 pushed to the official forward-plus-renderer branch.
+Packaged forwardplus-sparse-empty-tiles-v1 and verified155installed files in
+GarrysModWithRTX2. Four protected configuration hashes remain unchanged.
+Receipt: _work/reports/sparse-empty-tiles-v1/deployment.json.
