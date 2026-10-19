@@ -71,6 +71,14 @@ int main() {
               resources.bakeScene()->draws[0].material->tint[1] == 1,
           "Material replacement changes the fingerprint while old bake inputs stay frozen");
   const auto beforeMod = resources.bakeScene();
+  const auto weapon = material(resources, 90, .5f, .5f, .5f);
+  resources.setMaterialSourceHash(weapon, 900);
+  resources.addModMaterial(900, material(resources, 91, .25f, .25f, .25f));
+  resources.drawRetained(nullptr);
+  resources.finishFrame();
+  resources.setBakeScene(&info);
+  require(resources.bakeScene() == beforeMod,
+          "Loading an unrelated weapon replacement preserves the world bake snapshot");
   resources.setMaterialSourceHash(red, 10);
   const auto blue = material(resources, 11, 0, 0, 1);
   resources.addModMaterial(10, blue);

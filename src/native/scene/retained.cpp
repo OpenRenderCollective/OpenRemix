@@ -352,8 +352,23 @@ namespace remix {
       } leave{*this, e, m_staticEnabled};
       if (modsChanged || (resourcesChanged && e.watch) || stale) {
         const bool watch = e.watch;
+        // Mod loading is global, but the retained dependency is local. A newly
+        // requested weapon material must not invalidate unchanged world draws.
+        const bool onlyMods = modsChanged && !watch && !stale;
+        const auto previousRevision = e.revision;
+        const auto previousMesh = onlyMods ? e.mesh : nullptr;
+        const auto previousMaterials = onlyMods ? e.resolved : std::vector<std::shared_ptr<Material>>{};
+        std::vector<std::shared_ptr<Material>> previousShading;
+        if (onlyMods)
+          for (const auto &draw : e.records)
+            previousShading.push_back(draw.material);
         try {
           resolveRetained(e, false);
+          if (onlyMods && !e.watch && e.mesh == previousMesh && e.resolved == previousMaterials &&
+              previousShading.size() == e.records.size() &&
+              std::equal(previousShading.begin(), previousShading.end(), e.records.begin(),
+                         [](const auto &material, const Draw &draw) { return material == draw.material; }))
+            e.revision = previousRevision;
         } catch (...) {
           e.records.clear();
           e.resolved.clear();

@@ -65,7 +65,8 @@ namespace remix {
       auto it = m_materials.find(uint64_t(reinterpret_cast<uintptr_t>(handle)));
       if (it != m_materials.end()) {
         m_modMaterials[hash] = it->second;
-        m_modMerged.clear();
+        // Merged entries validate both source pointers on lookup. Loading an
+        // unrelated replacement must not change existing receiver identities.
         ++m_modGeneration;
       }
     }
@@ -90,7 +91,7 @@ namespace remix {
     void createMaterial(const remixapi_MaterialInfo &info, remixapi_MaterialHandle &handle);
     void setMaterialSourceHash(remixapi_MaterialHandle handle, uint64_t hash) {
       auto it = m_materials.find(uint64_t(reinterpret_cast<uintptr_t>(handle)));
-      if (it != m_materials.end()) {
+      if (it != m_materials.end() && it->second->sourceHash != hash) {
         it->second->sourceHash = hash;
         ++m_modGeneration;
       }

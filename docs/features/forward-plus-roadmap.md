@@ -314,6 +314,28 @@ when baked lighting is active; a failed bake instead displays its failure messag
    and notices, document settings and defaults, and repeat the integration smoke test from the delivered
    layout. Keep the upstream `main` branches and the user's feature-branch remotes intact.
 
+## Viewmodels and authored reflection bounds
+
+Forward+ viewmodels remain on the compatibility path. The next rendering change should keep
+their lit overlay separate from world depth, reflection guides and world shadow caster lists.
+Use the authored viewmodel camera correction for world-space shading, sample the existing world
+probes and dynamic shadow maps, and provide a separate self-shadow caster set visible only to
+viewmodel receivers. Composite into HDR after world water/reflections and before the shared
+exposure/display transform. Verify weapon changes, camera FOV, animation, MSAA, wall overlap,
+world-shadow reception and the absence of viewmodel shadows on world receivers. Do not enable
+the path by adding viewmodels to ordinary opaque commands: that would also add world casters.
+
+Lazy material replacements may change global mod generation without changing a map receiver.
+Retained replay preserves a receiver's revision when its mesh, original dependencies and resolved
+shading materials remain identical. Merged replacements retain their pointer-validated cache
+entries when unrelated replacements arrive. Actual receiver replacements still invalidate baking.
+
+The authored reflection reference contains 14 combined probe volumes, distinct from ordinary
+capture points. Its asymmetric corridor bounds and off-centre capture origins are useful test
+cases. Align corresponding rooms between the reference port and BSP before comparing bounds;
+do not treat their raw world coordinates as interchangeable. Keep capture position independent
+of volume centre, and assess doorway leakage and bevel tolerance before changing automatic bounds.
+
 ## Work discipline
 
 Each checkpoint records its changed files/commit, evidence, limits, and the next action. A failed
