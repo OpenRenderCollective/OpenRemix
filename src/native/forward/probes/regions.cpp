@@ -230,7 +230,7 @@ namespace remix::forward::probes {
     }
     return result;
   }
-  std::optional<Bounds> fitRegion(const scene::VisibilityPartition &partition, const Bounds &limit, Vec3 site,
+  std::vector<Bounds> fitRegionCandidates(const scene::VisibilityPartition &partition, const Bounds &limit, Vec3 site,
                                   float margin, std::stop_token cancelled, RegionTolerance tolerance) {
     check(cancelled);
     if (!valid(limit) || !std::isfinite(margin) || margin <= 0 || !std::isfinite(tolerance.detailDepth) ||
@@ -249,10 +249,11 @@ namespace remix::forward::probes {
     }
     if (!space.contains(initial))
       return {};
-    Bounds best = initial;
+    std::vector<Bounds> candidates;
+    Bounds fallback = initial;
     for (uint32_t c = 0; c < 3; ++c) {
-      best.minimum[c] += margin;
-      best.maximum[c] -= margin;
+      fallback.minimum[c] += margin;
+      fallback.maximum[c] -= margin;
     }
     std::array<uint32_t, 3> order{0, 1, 2};
     do {
@@ -289,14 +290,35 @@ namespace remix::forward::probes {
           candidate.minimum[c] += margin;
           candidate.maximum[c] -= margin;
         }
-        if (volume(candidate) > volume(best) && space.contains(candidate, tolerance))
-          best = candidate;
+        if (space.contains(candidate, tolerance))
+          candidates.push_back(candidate);
       }
     } while (std::next_permutation(order.begin(), order.end()));
     for (uint32_t c = 0; c < 3; ++c) {
-      if (best.minimum[c] >= best.maximum[c] || site[c] < best.minimum[c] || site[c] > best.maximum[c])
+      if (fallback.minimum[c] >= fallback.maximum[c] || site[c] < fallback.minimum[c] || site[c] > fallback.maximum[c])
         return {};
     }
-    return best;
+    if (candidates.empty()) candidates.push_back(fallback);
+    std::stable_sort(candidates.begin(), candidates.end(), [](const auto &a, const auto &b) {
+      return volume(a) > volume(b);
+    });
+    std::vector<Bounds> distinct;
+    for (const auto &candidate : candidates) {
+      const bool duplicate = std::any_of(distinct.begin(), distinct.end(), [&](const auto &other) {
+        double intersection = 1;
+        for (uint32_t c = 0; c < 3; ++c)
+          intersection *= std::max(0., double(std::min(candidate.maximum[c], other.maximum[c])) -
+                                               std::max(candidate.minimum[c], other.minimum[c]));
+        return intersection >= .95 * (volume(candidate) + volume(other) - intersection);
+      });
+      if (!duplicate) distinct.push_back(candidate);
+      if (distinct.size() == 3) break;
+    }
+    return distinct;
+  }
+  std::optional<Bounds> fitRegion(const scene::VisibilityPartition &partition, const Bounds &limit, Vec3 site,
+                                  float margin, std::stop_token cancelled, RegionTolerance tolerance) {
+    const auto candidates = fitRegionCandidates(partition, limit, site, margin, cancelled, tolerance);
+    return candidates.empty() ? std::nullopt : std::optional{candidates.front()};
   }
 } // namespace remix::forward::probes

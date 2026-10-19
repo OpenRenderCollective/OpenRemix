@@ -2094,3 +2094,5 @@ storage-buffer limit; it is a cap, not an unconditional allocation. Bakes can st
 exceed configured component/device capacity on unusually demanding content.
 
 Viewmodels trace the completed opaque world SSR hierarchy at their shaded fragment resolution, with the same roughness filtering and confidence blend into parallax probes or sky. They remain excluded from world reflection guides. Full-resolution opaque SSR is the default; Half and Quarter remain selectable.
+
+Automatic reflection fitting retains up to three distinct growth results per validated capture origin. Primary origins and uncovered-space candidates keep their existing slots; remaining slots let the geometry audit compare alternate room shapes within the same maximum of 160 candidates. Equivalent boxes are merged at 95% intersection-over-union. Every alternative uses the same whole-volume wall and detail-tolerance checks.

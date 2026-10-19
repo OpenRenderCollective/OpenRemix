@@ -82,7 +82,7 @@ namespace remix::forward::probes {
       second.minimum[axis] = middle;
       boxes.push_back(second);
     }
-    std::vector<FittedRegion> regions;
+    std::vector<FittedRegion> regions, alternatives;
     const bool fitted = scene.partition && scene.partition->closed;
     auto covered = [&](Vec3 position) {
       return std::any_of(regions.begin(), regions.end(), [&](const auto &capture) {
@@ -111,10 +111,11 @@ namespace remix::forward::probes {
       }
       for (auto index : spreadSites(assessed, budget, 4.f / scene.sceneScale, cancelled)) {
         const auto &site = assessed[index];
-        const auto region = fitRegion(*scene.partition, bounds, site.position, .001f / scene.sceneScale,
-                                      cancelled, {detailTolerance / scene.sceneScale});
-        if (region)
-          regions.push_back({*region, site});
+        const auto fits = fitRegionCandidates(*scene.partition, bounds, site.position, .001f / scene.sceneScale,
+                                               cancelled, {detailTolerance / scene.sceneScale});
+        if (!fits.empty()) regions.push_back({fits.front(), site});
+        for (size_t fit = 1; fit < fits.size(); ++fit)
+          alternatives.push_back({fits[fit], site});
       }
     }
     for (auto box : boxes) {
@@ -169,6 +170,12 @@ namespace remix::forward::probes {
       }
       const auto &p = grid.points[selected].position;
       regions.push_back({box, {{p[0], p[1], p[2]}, 0, 0}});
+    }
+    // Preserve origin coverage first. Remaining audit slots can compare shape
+    // alternatives without increasing the established budget (at most 160).
+    for (const auto &alternative : alternatives) {
+      if (regions.size() == budget + count) break;
+      regions.push_back(alternative);
     }
     return regions;
   }

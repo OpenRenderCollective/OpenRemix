@@ -47,6 +47,12 @@ namespace remix::forward::probes {
   // Optional detail tolerance permits bounded trim/clutter inside the proxy.
   // Several growth orders reduce the bias of greedy face expansion. This is
   // not a globally maximal room decomposition, especially for rotated rooms.
+  // Retain distinct growth results for the geometry audit. Largest volume comes
+  // first, but a narrower doorway-spanning fit must not hide room-shaped alternatives.
+  // At most three whole-volume-validated boxes, with the same capture origin.
+  std::vector<Bounds> fitRegionCandidates(const scene::VisibilityPartition &partition, const Bounds &limit,
+                                          Vec3 site, float margin, std::stop_token cancelled = {},
+                                          RegionTolerance tolerance = {});
   std::optional<Bounds> fitRegion(const scene::VisibilityPartition &partition, const Bounds &limit, Vec3 site,
                                   float margin, std::stop_token cancelled = {},
                                   RegionTolerance tolerance = {});

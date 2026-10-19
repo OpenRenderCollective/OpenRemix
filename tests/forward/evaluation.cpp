@@ -127,6 +127,39 @@ int main() {
   for (size_t i = 0; i < assessed.size(); ++i)
     require(std::abs(unitRegions[i].quality - assessed[i].quality) < 1e-6f,
             "Candidate geometry agreement is independent of world units");
+  // One capture sees two equally large empty boxes in an L-shaped room.
+  // Keep both until independent first-hit geometry can resolve the ambiguity.
+  const auto outer = box({-4, -3, -2}, {4, 3, 2});
+  const auto solid = box({0, 0, -2}, {4, 3, 2});
+  remix::scene::VisibilityPartition elbow;
+  elbow.closed = true;
+  elbow.clusterCount = 1;
+  elbow.leafClusters = {-1, 0};
+  elbow.nodes.resize(12);
+  for (uint32_t part = 0; part < 2; ++part)
+    for (uint32_t face = 0; face < 6; ++face) {
+      auto &node = elbow.nodes[part * 6 + face];
+      const auto &bounds = part ? solid : outer;
+      const uint32_t axis = face / 2;
+      node.plane[axis] = face & 1u ? -1.f : 1.f;
+      node.plane[3] = face & 1u ? -bounds.maximum[axis] : bounds.minimum[axis];
+      node.children[0] = face < 5 ? int32_t(part * 6 + face + 1) : part ? -1 : 6;
+      node.children[1] = part ? -2 : -1;
+    }
+  const Vec3 capture{-1, -2.5f, 0};
+  const auto shapes = p::fitRegionCandidates(elbow, outer, capture, .001f);
+  std::vector<p::FittedRegion> shapeCandidates;
+  for (const auto &shape : shapes) shapeCandidates.push_back({shape, {capture, 1, 3}});
+  p::ProjectionAudit shapeAudit(shapeCandidates);
+  const Bounds elbowRooms[]{box({-4, -3, -2}, {0, 3, 2}), box({0, -3, -2}, {4, 0, 2})};
+  require(shapeAudit.observe(0, geometry(shapeAudit, elbowRooms)), "Alternative shapes accept analytic room distances");
+  const auto shapeScores = shapeAudit.finish();
+  const auto choice = p::selectRegions(shapeScores, 1);
+  require(shapeScores.size() >= 2 && choice.size() == 1, "Shape alternatives reach the geometry selector");
+  std::printf("Elbow shape audit: primary %.4f, alternative %.4f, selected %zu\n",
+              shapeScores[0].quality, shapeScores[1].quality, choice.front());
+  require(choice.front() != 0 && shapeScores[choice.front()].quality > shapeScores[0].quality,
+          "Geometry can recover the room-shaped alternative discarded by largest-volume-only fitting");
   p::ProjectionAudit empty({});
   require(empty.rays().empty() && empty.finish().empty(), "Empty candidate work needs no GPU submission");
   bool bounded = false;

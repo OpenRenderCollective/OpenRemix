@@ -35,7 +35,7 @@ namespace remix::forward::bake::cache {
   }
   namespace {
     // Bump whenever CPU planning, material transport or wire semantics change.
-    constexpr uint32_t algorithmRevision = 20; // receiver-area integration at static sunlight edges
+    constexpr uint32_t algorithmRevision = 21; // geometry-audited alternative reflection region shapes
     void require(bool value) {
       if (!value)
         throw std::runtime_error("Invalid bake cache metadata");

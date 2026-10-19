@@ -3783,9 +3783,10 @@ namespace {
       for (uint32_t y = target.extent.height / 2; y < target.extent.height; ++y)
         for (uint32_t x = 0; x < target.extent.width; ++x) {
           const auto at = (y * target.extent.width + x) * 4;
-          count += image[at] > without[at] + 25 &&
-              (viewModel ? image[at] > 2 * image[at + 1] && image[at] > 2 * image[at + 2]
-                         : image[at + 1] < 8);
+          // The shared display transform adds green/blue to bright red.
+          // Require a new red-dominant reflection rather than a pure primary.
+          count += image[at] > without[at] + 25 && image[at] > 2 * image[at + 1] &&
+                   image[at] > 2 * image[at + 2];
         }
       return count;
     };

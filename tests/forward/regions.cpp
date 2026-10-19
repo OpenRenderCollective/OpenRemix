@@ -1,6 +1,7 @@
 #include "forward/probes/regions.h"
 #include "forward/probes/data.h"
 #include "forward/probes/selection.h"
+#include "forward/probes/placement.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -141,6 +142,29 @@ int main() {
   require(clutterFit && (clutterFit->maximum[0] < 3.9f || clutterFit->maximum[1] < 2.9f ||
                          clutterFit->maximum[2] < 1.9f),
           "Excessive interior solid volume exceeds the ignored-detail budget");
+  const auto corner = box({0, 0, -2}, {4, 3, 2});
+  const auto elbow = partition(&corner);
+  const auto elbowFits = p::fitRegionCandidates(elbow, room, {-1, -1, 0}, .001f);
+  require(elbowFits.size() >= 2 && elbowFits.size() <= 3,
+          "An L-shaped room retains distinct growth alternatives at one capture origin");
+  bool horizontal = false, vertical = false;
+  for (const auto &candidate : elbowFits) {
+    require(p::emptyRegion(elbow, candidate), "Every alternative retains whole-volume wall exclusion");
+    horizontal |= candidate.maximum[0] > 3.9f && candidate.maximum[1] < .01f;
+    vertical |= candidate.maximum[1] > 2.9f && candidate.maximum[0] < .01f;
+  }
+  require(horizontal && vertical, "Geometry assessment can choose either arm rather than only a volume winner");
+  require(p::fitRegionCandidates(splitRoom, room, {0, 0, 0}, .001f).size() == 1,
+          "Equivalent rectangular-room fits consume only one audit slot");
+  scene::BakeScene elbowScene;
+  elbowScene.hasBounds = true;
+  elbowScene.minimum = room.minimum;
+  elbowScene.maximum = room.maximum;
+  elbowScene.partition = std::make_shared<scene::VisibilityPartition>(elbow);
+  const std::vector<Vec3> elbowSites{{-1, -1, 0}};
+  const auto auditCandidates = p::fitCandidates(elbowScene, {}, 16, {}, 0, &elbowSites);
+  require(auditCandidates.size() >= 2 && auditCandidates.size() <= 144,
+          "Production placement passes shape alternatives to the audit within its existing budget");
   const auto wall = box({-.01f, -3, -2}, {.01f, 3, 2});
   const auto separated = partition(&wall);
   const auto leftInset = p::fitRegion(separated, room, {-2, 0, 0}, .01f);
