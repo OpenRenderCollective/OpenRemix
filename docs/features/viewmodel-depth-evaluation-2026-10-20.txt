@@ -1,0 +1,54 @@
+Viewmodel depth prepass evaluation (2026-10-20)
+
+Decision: do not enable this renderer trial. The deployed geometry-upload-reuse
+checkpoint remains the product default. No extra renderer toggle or unused
+pipeline is retained. The source patch and optional benchmark are archived in
+_work/reports/viewmodel-depth-evaluation-v1/prototype.patch.
+
+Motivation: live Crossfire measured about1.18ms in the viewmodel overlay,
+including its independent shadow passes. A cutout-aware depth pass might avoid
+repeated expensive shading in overlapping weapon/hand geometry. The trial reused
+the existing depth shader, the separate viewmodel depth attachment and the
+existing depthPrepass policy. Its timestamps nest inside the viewmodel scope.
+
+Evidence: standalone1920x1080 GPU timestamp benchmark, synthetic back-to-front
+quads,1x/4xMSAA, one/eight/sixteen layers. Four blocks off/on/on/off,40frames
+perblock, eight discarded warmup frames,32completed samples perblock. Every
+readback was identical across the modes. Readback/copy time is excluded from
+the viewmodel GPU scope. No shadows, SSR, baked probes or real weapon model in
+this benchmark: it cannot establish a real-game gain.
+
+Mean milliseconds perblock, off/on/on/off:
+MSAA1 layers1:  .059726 .084034 .130368 .123808
+MSAA1 layers8:  .465754 .232704 .240672 .922208
+MSAA1 layers16: 1.300244 .410560 .402528 2.076480
+MSAA4 layers1:  .076629 .185664 .237024 .174208
+MSAA4 layers8:  .492164 .266187 .317984 1.018240
+MSAA4 layers16: 1.135453 .477376 .544512 2.163168
+
+Heavy overdraw improves, but a single flat layer gets slower, and timings drift
+substantially across the run. Do not generalize these quads to actual weapon
+coverage. A private live Crossfire attempt exited before device creation, so it
+provided no timing data. Its result receipt remains crossfire-viewmodel-depth-trial.
+
+Test correction: the first extended cutout fixture used an orthographic camera
+and therefore did not enter the lit viewmodel correction path. The benchmark's
+missing viewmodel timing range exposed this. The first benchmark is invalid.
+Corrected benchmark uses world and viewmodel perspective cameras and checks all
+32timing samples. Existing SSR/environment viewmodel tests passed with the trial.
+A printf-only edit then failed to compile during the expanded cutout rerun, so
+that run does not establish corrected cutout parity for the prototype.
+
+Retained improvement: forward_depth.h now also tests actual perspective
+viewmodels, near red world geometry, cutout coverage, draw-order changes and
+MSAA1/2/4. It verifies that the existing world depth-prepass toggle preserves
+viewmodel overlay results. It is not proof of a future viewmodel prepass.
+
+Next: use representative weapon geometry/materials and a valid live or captured
+weapon workload before adopting a prepass or another overdraw strategy. Continue
+remaining CPU frame preparation and heavy Construct profiling; automatic cubemap
+coverage, lightmap/bake-time, mixed-shadow and editor requirements remain open.
+
+Verification retained: the expanded baseline GPU readback fixture passed with
+Vulkan validation and sync checks (viewmodel-depth-baseline-coverage-v1).
+All temporary renderer, timing-harness and benchmark CLI changes were removed.
