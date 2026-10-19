@@ -1938,6 +1938,23 @@ and intensity. Existing chart masks remain authoritative for static surfaces.
 This does not yet replace analytic per-light direct lighting with aggregate probe
 SH, or remove all frozen-map preparation: uncovered receivers still need it.
 
+## Direct emitter sample coverage
+
+Static local-light and sunlight visibility use randomly shifted strata across the
+emitter's sampling domain. The radial coordinate has one stratum per existing
+sample; an integer Weyl phase distributes azimuth without float ordinal drift.
+The same emitter geometry, PDFs, shaping and material-aware visibility remain in
+use. This reduces sampling variance without additional rays or a spatial blur.
+Indirect paths retain their ordinary random emitter sampling through the shared
+geometry evaluator.
+
+Sample ordinals are global within the receiver budget. Interleaved four-site
+sunlight groups still span the emitter, while coincident sites preserve the
+single-site stream exactly. Compact/full results and receiver batching keep the
+same sample identities. Shader hashes invalidate affected bake-cache keys;
+completed older caches are not silently interpreted as the new sample sequence.
+This does not remove finite-sample noise or replace receiver-area antialiasing.
+
 ## Receiver-area sunlight antialiasing
 
 Emitter sampling resolves finite light shapes but does not integrate a luxel's receiving area.

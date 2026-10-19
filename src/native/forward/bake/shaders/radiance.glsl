@@ -53,10 +53,10 @@ vec3 environment(vec3 direction) {
   vec2 uv = vec2(atan(d.z, d.x) / (2 * RayPi) + .5, acos(clamp(d.y, -1, 1)) / RayPi);
   return rayFrame.domeRadiance.rgb * sampleMap(rayFrame.control.x, uv, uvec3(1, 3, 1)).rgb;
 }
-bool sampleEmitter(RayLight light, vec3 p, inout uint seed, out vec3 direction, out float distance,
-                   out float weight) {
+bool sampleEmitterAt(RayLight light, vec3 p, vec2 samplePoint, out vec3 direction, out float distance,
+                     out float weight) {
   if (light.radiance.w > 0) {
-    float root = sqrt(random(seed)), v = random(seed);
+    float root = sqrt(samplePoint.x), v = samplePoint.y;
     vec3 point = light.corners[0].xyz * (1 - root) + light.corners[1].xyz * (root * (1 - v)) +
                  light.corners[2].xyz * (root * v);
     vec3 delta = point - p, normal = cross(light.corners[1].xyz - light.corners[0].xyz,
@@ -75,7 +75,7 @@ bool sampleEmitter(RayLight light, vec3 p, inout uint seed, out vec3 direction, 
       return false;
     float oneMinusCos = sphereOneMinusCos(d2, radius);
     vec3 axis = delta / sqrt(d2);
-    float offset = random(seed) * oneMinusCos, phi = 2 * RayPi * random(seed);
+    float offset = samplePoint.x * oneMinusCos, phi = 2 * RayPi * samplePoint.y;
     vec3 tangent = normalize(cross(abs(axis.z) < .99 ? vec3(0, 0, 1) : vec3(1, 0, 0), axis));
     direction = normalize(axis * (1 - offset) + sqrt(max(0, offset * (2 - offset))) *
                             (tangent * cos(phi) + cross(axis, tangent) * sin(phi)));
@@ -88,6 +88,14 @@ bool sampleEmitter(RayLight light, vec3 p, inout uint seed, out vec3 direction, 
   weight *= emitterConeWeight(light.directionCone.xyz, light.directionCone.w,
                                light.shaping.x, light.shaping.y, -direction);
   return weight > 0;
+}
+bool sampleEmitter(RayLight light, vec3 p, inout uint seed, out vec3 direction, out float distance,
+                   out float weight) {
+  if (light.radiance.w <= 0 &&
+      (dot(light.positionRadius.xyz - p, light.positionRadius.xyz - p) < 1e-12 || light.positionRadius.w <= 0))
+    return false;
+  float u = random(seed), v = random(seed);
+  return sampleEmitterAt(light, p, vec2(u, v), direction, distance, weight);
 }
 float emitterShadowDistance(RayLight light, float distance) {
   // Analytic spheres have no surface in the ray scene to self-intersect.

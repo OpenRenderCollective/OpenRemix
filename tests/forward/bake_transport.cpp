@@ -979,6 +979,17 @@ namespace {
                     evaluate(results[5], {0, 0, -1}, 1) == 0 &&
                     evaluate(results[8], {0, 0, -1}, 1) == 0,
                 "Direct irradiance uses the same embedded-emitter blockers as the mixed visibility mask");
+        fixture.begin();
+        transport.recordVisibility(fixture.command, 0, points, 64, true);
+        fixture.finish();
+        transport.read(0, results);
+        double maximumError = 0;
+        for (uint32_t i = 0; i < distances.size(); ++i)
+          maximumError = std::max(maximumError,
+              std::abs(results[i].irradiance[0][0] - spherePlaneVisibility(distances[i], .25)));
+        std::printf("Embedded sphere 64-sample maximum visibility error: %.6f\n", maximumError);
+        require(maximumError < .018,
+                "Low-sample embedded sphere penumbrae retain stratified solid-angle coverage");
       }
   }
   void emitterParity(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {

@@ -15,6 +15,13 @@ layout(local_size_x = 64) in;
 #define SAMPLE_START 0u
 #define SAMPLE_STEP 1u
 #endif
+// Randomly shifted strata cover the emitter with the existing ray budget.
+// Global ordinals also preserve the exact stream when receiver sites coincide;
+// interleaved four-site groups each span the emitter instead of one quadrant.
+vec2 visibilitySample(uint ordinal, vec2 shift) {
+  return fract(vec2((float(ordinal) + .5) / float(rayFrame.counts.z),
+                    float(ordinal * 0x61c88647u) * (1.0 / 4294967296.0)) + shift);
+}
 void basis(vec3 d, out float sh[9]) {
   sh[0] = .2820947918;
   sh[1] = .4886025119 * d.y;
@@ -113,12 +120,15 @@ void main() {
     vec3 axis = normalize(-rayFrame.sunDirection.xyz);
     float visible = 0;
     bool unoccluded = true;
+    float shiftU = random(seed), shiftV = random(seed);
+    vec2 sampleShift = vec2(shiftU, shiftV);
 #ifdef PARALLEL_BAKE
     seed ^= gl_LocalInvocationIndex * 747796405u;
 #endif
     for (uint sampleIndex = SAMPLE_START; sampleIndex < rayFrame.counts.z; sampleIndex += SAMPLE_STEP) {
-      vec3 direction = basisDirection(axis, mix(cos(rayFrame.sunDirection.w), 1, random(seed)),
-                                      2 * RayPi * random(seed));
+      vec2 samplePoint = visibilitySample(sampleIndex, sampleShift);
+      vec3 direction = basisDirection(axis, mix(cos(rayFrame.sunDirection.w), 1, samplePoint.x),
+                                      2 * RayPi * samplePoint.y);
       vec3 passing = visibility(origin, direction, rayFrame.trace.x, seed, medium);
       unoccluded = unoccluded && all(equal(passing, vec3(1)));
       float transmission = dot(passing, vec3(.2126, .7152, .0722));
@@ -151,13 +161,16 @@ void main() {
     float visibleWeight = 0, totalWeight = 0;
     bool unoccluded = true;
     seed ^= (light + 1u) * 747796405u;
+    float shiftU = random(seed), shiftV = random(seed);
+    vec2 sampleShift = vec2(shiftU, shiftV);
 #ifdef PARALLEL_BAKE
     seed ^= gl_LocalInvocationIndex * 747796405u;
 #endif
     for (uint sampleIndex = SAMPLE_START; sampleIndex < rayFrame.counts.z; sampleIndex += SAMPLE_STEP) {
       vec3 direction;
       float distance, weight;
-      if (sampleEmitter(rayLights[light], origin, seed, direction, distance, weight)) {
+      if (sampleEmitterAt(rayLights[light], origin, visibilitySample(sampleIndex, sampleShift),
+                          direction, distance, weight)) {
         totalWeight += weight;
         vec3 passing = visibility(origin, direction, emitterShadowDistance(rayLights[light], distance), seed, medium);
         // Luminance reduction and weighted accumulation may round below one
