@@ -304,6 +304,13 @@ namespace remix::forward::bake::cache {
                                d.storageRange};
     const auto hash = scene::fastHash(fields, sizeof(fields), content ^ shaders);
     auto raw = scene::fastHash(d.uuid.data(), d.uuid.size(), hash);
+    if (c.reflectionProbes) {
+      // Balanced interior seeds prevent diagonal-room slivers. Old captures
+      // retain their old proxy boxes, so reflection bakes need a new identity.
+      // Diffuse-only bakes keep their existing cache keys.
+      const uint32_t reflectionFit[] = {0x5245474eu, 1};
+      raw = scene::fastHash(reflectionFit, sizeof(reflectionFit), raw);
+    }
     if (c.styledIndirect) {
       const uint32_t styleCodec[] = {0x5354594cu, sparse::version};
       raw = scene::fastHash(styleCodec, sizeof(styleCodec), raw);

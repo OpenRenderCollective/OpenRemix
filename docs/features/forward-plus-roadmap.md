@@ -358,9 +358,11 @@ entries when unrelated replacements arrive. Actual receiver replacements still i
 
 The authored reflection reference contains 14 combined probe volumes, distinct from ordinary
 capture points. Its asymmetric corridor bounds and off-centre capture origins are useful test
-cases. Align corresponding rooms between the reference port and BSP before comparing bounds;
-do not treat their raw world coordinates as interchangeable. Keep capture position independent
-of volume centre, and assess doorway leakage and bevel tolerance before changing automatic bounds.
+cases. Geometry verification now matches the reference to hls00amrl with identity coordinates;
+the earlier hls01amrl comparison used the following map. Balanced interior seed competition fixes
+diagonal-room slivers without replacing the established fits or authored tie preference. Continue
+room-local visual comparisons and Construct coverage/doorway overlap work. Keep capture position
+independent of volume centre; the aligned reference does not establish complete automatic bounds.
 
 ## Work discipline
 

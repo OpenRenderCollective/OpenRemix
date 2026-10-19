@@ -1,0 +1,76 @@
+Automatic cubemap diagonal-room fitting (2026-10-20)
+
+Reference correspondence resolved
+The supplied hls2_c1p0 VMAP matches hls00amrl (the train map). Previous checks
+against hls01amrl used the following map. Entity transitions suggested this,
+and independent geometry comparison confirms identity coordinates: scale1,
+yaw0,translation0,14750vertices within0.25units across the complete map extent.
+The independent nearest-neighbour check finds14749/21103unique source vertices
+within0.25units, median source error0.002units. Small duplicate/rounding policy
+differences explain the one-vertex count difference. No guessed transform was
+imported. The source has additional edits and geometry, so matches are partial.
+Installed GMA extraction verified hls00 BSP CRC; extracted content stays local.
+
+Concrete failure
+At authored volume5's origin, the existing fitter found0.09x619.94x543.92 units
+while axial clearance was243units. Expanding axes individually from a tiny
+seed can chase a diagonal corridor to a corner and prevent the next axis from
+growing. The same failure is reproduced by a small four-plane diamond-room
+regression; that test fails with the original fitter.
+
+Change
+The established twelve face-growth variants remain. One extra variant starts
+from a balanced, strictly empty interior cube. A bounded24-step binary search
+finds that seed; one canonical face-growth order then expands it using the
+existing trim tolerance, cancellation and whole-volume checks. It enters the
+candidate list only when its volume exceeds the existing fits' face-search
+uncertainty. Existing rectangular fits and authored tie order remain stable.
+The final list still contains at most three distinct shapes per origin; the
+existing placement/audit work budgets and hard authored priorities remain.
+No extra shader, renderer switch, capture-origin generation or GPU-query pass.
+This adds CPU occupancy work; no bake-time reduction is claimed.
+
+A first version replaced every seed with the balanced seed. It disturbed an
+existing authored-preference regression through fit rounding. That version was
+replaced with the competing-variant approach; the original test was preserved.
+No global score weights or priority thresholds changed.
+
+Local map evidence
+All14authored origins are valid in the hls00 BSP. Largest-fit volume increases
+1344.015x at volume5 and7.328x at volume7. Best overlap/union with the authored
+boxes changes approximately0.000->0.078 and0.024->0.212 respectively. Most other
+best fits remain identical; one changes by0.2percent. Manual volumes include
+deliberate overlap and trim. Overlap measures resemblance; visual reflection
+quality still requires checks in game.
+The saved Construct corridor/room fixture keeps all four valid-site best boxes
+identical and still rejects its ceiling-solid origin. This does not fix the
+known Construct capture-selection/coverage omission or establish complete
+blending between its disconnected regions.
+
+Validation
+The new diamond-room regression fails before and passes after the change.
+Six tests pass, including room occupancy, parallax/filtering data, bounded
+geometry audit, cache integrity/identity, GPU oriented cubemap priorities and
+roughness, and live authored-capture reuse. Vulkan validation/sync enabled for
+GPU tests. Final log:cubemap-balanced-final-v4. Real-map fits pass the same
+production occupancy rules; no guessed volume overrides were installed.
+
+Cache/deployment
+Reflection-enabled bake identities include a new region-fitting tag, ensuring
+old cached proxy boxes do not silently survive this fix. The cache file format
+is unchanged. Diffuse-only cache identities remain unchanged. Reflection-enabled
+maps will need one fresh bake. This is a deterministic algorithm revision, not
+a response to walking around or changing weapons. Old cache files are retained.
+
+Local receipts
+_work/reports/portal-site-construct-v1/alignment-hls00-direct.json
+hls00-identity-verification.json, hls00-authored-volumes.json,
+hls00-authored-fits.json, hls00-authored-fits-balanced-v2.json,
+hls00-balanced-comparison-v2.json, construct-balanced-v2.json.
+The earlier hls01 alignment audits remain historical failed comparisons.
+
+Next
+Compare the newly fitted room shapes with captured reflections on hls00, assess
+uncovered doorways/selection on Construct, and use the aligned authored volumes
+for room-local comparisons. Bounds overlap and selection remain unfinished.
+Other renderer quality, bake-performance, CPU-frame and editor gates remain open.

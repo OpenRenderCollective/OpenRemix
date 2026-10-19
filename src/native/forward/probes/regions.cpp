@@ -246,8 +246,9 @@ namespace remix::forward::probes {
       }
     return result;
   }
-  std::vector<Bounds> fitRegionCandidates(const scene::VisibilityPartition &partition, const Bounds &limit, Vec3 site,
-                                  float margin, std::stop_token cancelled, RegionTolerance tolerance) {
+  std::vector<Bounds> fitRegionCandidates(const scene::VisibilityPartition &partition, const Bounds &limit,
+                                          Vec3 site, float margin, std::stop_token cancelled,
+                                          RegionTolerance tolerance) {
     check(cancelled);
     if (!valid(limit) || !std::isfinite(margin) || margin <= 0 || !std::isfinite(tolerance.detailDepth) ||
         tolerance.detailDepth < 0 || !std::isfinite(tolerance.maxIgnoredFraction) ||
@@ -265,70 +266,120 @@ namespace remix::forward::probes {
     }
     if (!space.contains(initial))
       return {};
+    // Establish a useful interior before extending individual faces. Starting
+    // every axis from a margin-sized seed can follow a diagonal room's centre
+    // line to its end, leaving only a sliver when the next axis expands.
+    float acceptedRadius = 2 * margin;
+    float rejectedRadius = std::numeric_limits<float>::max();
+    for (uint32_t c = 0; c < 3; ++c)
+      rejectedRadius = std::min({rejectedRadius, site[c] - limit.minimum[c], limit.maximum[c] - site[c]});
+    auto centred = [&](float radius) {
+      Bounds result = initial;
+      for (uint32_t c = 0; c < 3; ++c) {
+        result.minimum[c] = site[c] - radius;
+        result.maximum[c] = site[c] + radius;
+      }
+      return result;
+    };
+    if (space.contains(centred(rejectedRadius)))
+      acceptedRadius = rejectedRadius;
+    else
+      for (uint32_t step = 0; step < 24; ++step) {
+        check(cancelled);
+        const float middle = std::midpoint(acceptedRadius, rejectedRadius);
+        if (middle == acceptedRadius || middle == rejectedRadius ||
+            rejectedRadius - acceptedRadius < margin * .125f)
+          break;
+        if (space.contains(centred(middle)))
+          acceptedRadius = middle;
+        else
+          rejectedRadius = middle;
+      }
+    const Bounds balancedInitial = centred(acceptedRadius);
     std::vector<Bounds> candidates;
     Bounds fallback = initial;
     for (uint32_t c = 0; c < 3; ++c) {
       fallback.minimum[c] += margin;
       fallback.maximum[c] -= margin;
     }
+    auto grow = [&](Bounds candidate, const std::array<uint32_t, 3> &order,
+                    bool reverse) -> std::optional<Bounds> {
+      for (uint32_t pass = 0; pass < 2; ++pass)
+        for (uint32_t axis : order)
+          for (uint32_t face = 0; face < 2; ++face) {
+            check(cancelled);
+            const bool upper = (face != 0) ^ reverse;
+            auto &coordinate = upper ? candidate.maximum[axis] : candidate.minimum[axis];
+            const float start = coordinate, target = upper ? limit.maximum[axis] : limit.minimum[axis];
+            coordinate = target;
+            if (space.contains(candidate, tolerance))
+              continue;
+            float accepted = start, rejected = target;
+            for (uint32_t step = 0; step < 24; ++step) {
+              check(cancelled);
+              const float middle = std::midpoint(accepted, rejected);
+              if (middle == accepted || middle == rejected || std::abs(accepted - rejected) < margin * .125f)
+                break;
+              coordinate = middle;
+              if (space.contains(candidate, tolerance))
+                accepted = middle;
+              else
+                rejected = middle;
+            }
+            coordinate = accepted;
+          }
+      // Validate the published, inset box as well: shrinking a box can
+      // increase its occupied fraction past the detail budget.
+      for (uint32_t c = 0; c < 3; ++c) {
+        candidate.minimum[c] += margin;
+        candidate.maximum[c] -= margin;
+      }
+      if (space.contains(candidate, tolerance))
+        return candidate;
+      return std::nullopt;
+    };
     std::array<uint32_t, 3> order{0, 1, 2};
     do {
-      for (bool reverse : {false, true}) {
-        auto candidate = initial;
-        for (uint32_t pass = 0; pass < 2; ++pass)
-          for (uint32_t axis : order)
-            for (uint32_t face = 0; face < 2; ++face) {
-              check(cancelled);
-              const bool upper = (face != 0) ^ reverse;
-              auto &coordinate = upper ? candidate.maximum[axis] : candidate.minimum[axis];
-              const float start = coordinate, target = upper ? limit.maximum[axis] : limit.minimum[axis];
-              coordinate = target;
-              if (space.contains(candidate, tolerance))
-                continue;
-              float accepted = start, rejected = target;
-              for (uint32_t step = 0; step < 24; ++step) {
-                check(cancelled);
-                const float middle = std::midpoint(accepted, rejected);
-                if (middle == accepted || middle == rejected ||
-                    std::abs(accepted - rejected) < margin * .125f)
-                  break;
-                coordinate = middle;
-                if (space.contains(candidate, tolerance))
-                  accepted = middle;
-                else
-                  rejected = middle;
-              }
-              coordinate = accepted;
-            }
-        // Validate the published, inset box as well: shrinking a box can
-        // increase its occupied fraction past the detail budget.
-        for (uint32_t c = 0; c < 3; ++c) {
-          candidate.minimum[c] += margin;
-          candidate.maximum[c] -= margin;
-        }
-        if (space.contains(candidate, tolerance))
-          candidates.push_back(candidate);
-      }
+      for (bool reverse : {false, true})
+        if (auto candidate = grow(initial, order, reverse))
+          candidates.push_back(*candidate);
     } while (std::next_permutation(order.begin(), order.end()));
+    // Keep the established fits unless the balanced start adds more volume
+    // than their face-search uncertainty. This also preserves authored tie order.
+    if (auto candidate = grow(balancedInitial, {0, 1, 2}, false)) {
+      double previousUpperBound = 0;
+      for (auto existing : candidates) {
+        for (uint32_t c = 0; c < 3; ++c) {
+          existing.minimum[c] -= margin * .125f;
+          existing.maximum[c] += margin * .125f;
+        }
+        previousUpperBound = std::max(previousUpperBound, volume(existing));
+      }
+      if (volume(*candidate) > previousUpperBound)
+        candidates.push_back(*candidate);
+    }
     for (uint32_t c = 0; c < 3; ++c) {
-      if (fallback.minimum[c] >= fallback.maximum[c] || site[c] < fallback.minimum[c] || site[c] > fallback.maximum[c])
+      if (fallback.minimum[c] >= fallback.maximum[c] || site[c] < fallback.minimum[c] ||
+          site[c] > fallback.maximum[c])
         return {};
     }
-    if (candidates.empty()) candidates.push_back(fallback);
-    std::stable_sort(candidates.begin(), candidates.end(), [](const auto &a, const auto &b) {
-      return volume(a) > volume(b);
-    });
+    if (candidates.empty())
+      candidates.push_back(fallback);
+    std::stable_sort(candidates.begin(), candidates.end(),
+                     [](const auto &a, const auto &b) { return volume(a) > volume(b); });
     std::vector<Bounds> distinct;
     for (const auto &candidate : candidates) {
       const bool duplicate = std::any_of(distinct.begin(), distinct.end(), [&](const auto &other) {
         double intersection = 1;
         for (uint32_t c = 0; c < 3; ++c)
           intersection *= std::max(0., double(std::min(candidate.maximum[c], other.maximum[c])) -
-                                               std::max(candidate.minimum[c], other.minimum[c]));
+                                           std::max(candidate.minimum[c], other.minimum[c]));
         return intersection >= .95 * (volume(candidate) + volume(other) - intersection);
       });
-      if (!duplicate) distinct.push_back(candidate);
-      if (distinct.size() == 3) break;
+      if (!duplicate)
+        distinct.push_back(candidate);
+      if (distinct.size() == 3)
+        break;
     }
     return distinct;
   }

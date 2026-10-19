@@ -309,6 +309,24 @@ int main(int argc, char **argv) {
   const auto obliqueSites = p::regionSites(angled, box({-3, -3, -3}, {3, 3, 3}), .05f, 64);
   require(!obliqueSites.empty() && obliqueSites[0].position[0] + obliqueSites[0].position[1] > .1f,
           "Oblique cell bounds cannot approve an origin on the solid boundary");
+  scene::VisibilityPartition diamond;
+  diamond.closed = true;
+  diamond.clusterCount = 1;
+  diamond.leafClusters = {-1, 0};
+  const std::array<remix::forward::Vec4, 4> walls = {
+      {{1, 1, 0, 2}, {1, -1, 0, 2}, {-1, 1, 0, 2}, {-1, -1, 0, 2}}};
+  for (uint32_t i = 0; i < walls.size(); ++i) {
+    scene::VisibilityPartition::Node node{};
+    std::copy(walls[i].begin(), walls[i].end(), node.plane);
+    node.children[0] = -1;
+    node.children[1] = i + 1 == walls.size() ? -2 : int32_t(i + 1);
+    diamond.nodes.push_back(node);
+  }
+  const auto balanced = p::fitRegion(diamond, box({-3, -3, -1}, {3, 3, 1}), {0, 0, 0}, .01f);
+  require(balanced && p::emptyRegion(diamond, *balanced) &&
+              balanced->maximum[0] - balanced->minimum[0] > 1.9f &&
+              balanced->maximum[1] - balanced->minimum[1] > 1.9f,
+          "A broad diagonal room cannot collapse to a margin-wide axis-growth sliver");
   auto cyclic = angled;
   cyclic.nodes[0] = {{1, 0, 0, 0}, {0, -2}, {0, 0}};
   require(!p::emptyRegion(cyclic, box({1, -1, -1}, {2, 1, 1})),

@@ -47,6 +47,8 @@ namespace remix::forward::probes {
   // Optional detail tolerance permits bounded trim/clutter inside the proxy.
   // Several growth orders reduce the bias of greedy face expansion. This is
   // not a globally maximal room decomposition, especially for rotated rooms.
+  // One balanced interior seed also competes when it improves the existing
+  // boxes beyond their face-search uncertainty, avoiding diagonal slivers.
   // Retain distinct growth results for the geometry audit. Largest volume comes
   // first, but a narrower doorway-spanning fit must not hide room-shaped alternatives.
   // At most three whole-volume-validated boxes, with the same capture origin.
