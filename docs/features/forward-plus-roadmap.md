@@ -419,3 +419,9 @@ alone does not explain the authored-volume mismatch:13/14 reference boxes still
 exceed8% solid/outside partition volume. Keep runtime fitting unchanged until a
 receiver-domain/wall-separation approach passes real-map coverage; see
 cubemap-exact-occupancy-2026-10-20.txt.
+
+Construct alternative-audit controls reject both spare-slot spreading and full
+shape expansion:208vs144 boxes with unchanged49,536rays selects identical captures
+and image; spreading regresses surface coverage. Neither runtime trial remains.
+Do not repeat scheduling changes without a new fitting/receiver-quality objective;
+see cubemap-alternative-budget-2026-10-20.txt.

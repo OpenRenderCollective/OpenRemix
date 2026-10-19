@@ -1,0 +1,58 @@
+Cubemap alternative audit budget investigation - 2026-10-20
+
+Question
+Are useful room/corridor projection shapes discarded before geometry assessment
+because the bounded audit fills spare slots in input-origin order?
+
+Baseline
+Current Construct fit/audit uses144boxes from129unique origins. The15alternative
+slots come from the first10origins with alternatives. A saved CPU fixture exposes
+more shapes, but its fitting bounds/parameters are not an exact runtime substitute;
+use actual GPU-audited runtime comparisons for the conclusions below.
+
+Trial1: spread spare slots using the existing site-spreading policy
+The same144box/129origin budget audits alternatives across more of the map.
+None of the newly audited alternatives enters the final16captures. The old
+selected alternative143is displaced by primary53. Equal-area planar brush-surface
+coverage inside the common candidate domain falls53.425->52.628percent at16samples
+per triangle and53.511->52.688percent at64samples. This surrogate excludes sky,
+nodraw and displacements, uses0.05m receiver margin and is not reflection quality
+or visibility validation. The regression and lack of a selected new alternative
+do not justify retaining the change. Removed the runtime scheduling trial.
+
+Trial2: assess all fitted shapes while separating origin and record budgets
+The audit already reuses identical origins' first-hit rays. A temporary prototype
+kept the existing160unique-origin cap, allowed at most416CPU shape records
+(128primary fits with up to3shapes each plus32grid fallbacks) and retained every
+available alternative. Actual Construct produces208boxes from129origins. Both
+baseline and prototype trace exactly49,536rays. Every original candidate identity
+is preserved as an unchanged prefix. Final16capture identities are identical,
+and the final screenshot is pixel-identical. The omitted horizontal corridor
+shape at origin[-1312,-2488,-192] gets agreement0.72076 rather than its primary's
+0.66976, but still is not selected. Auditing it does not solve coverage.
+
+Both cold runs complete successfully (baseline32.266s, full-shape32.109s); these
+single observations are not a bake-performance claim. Diagnostic configuration:
+1080p MSAA4,4Mtexels,1024pages,64samples,1bounce,16size32captures,SSRoff,
+manual exposure1,cache disabled. This is a geometry-selection experiment, not
+normal-quality full renderer acceptance. The prototype's geometry/budget and room
+fitting suites pass, including shared-origin ray counts and independent caps.
+
+Decision
+Remove both runtime trials, new budget constants and prototype-only assertions.
+No cache revision, dependency, option, new retained rendering path or deployment.
+The installed direct-style-occupancy package stays current. More alternatives and
+spare-slot redistribution are not the next useful change under the present fitting
+and scoring policy. Do not repeat these experiments without a new fitting or
+receiver-quality objective. Investigate receiver-local projection error and
+wall/doorway influence coverage instead of trying more arbitrary volume weights.
+The broader cubemap, performance and lighting delivery gates remain open.
+
+Private reproducible evidence
+_work/reports/cubemap-spread-alternatives-v1/{old,new,rejected.patch}
+_work/reports/cubemap-spread-alternatives-v1/receiver-coverage.json
+_work/reports/cubemap-all-alternatives-v1/{new,comparison.json,rejected.patch}
+_work/reports/run-cubemap-spread-alternatives-v1.py
+_work/reports/run-cubemap-all-alternatives-v1.py
+_work/reports/compare-cubemap-spread-coverage-v1.py
+No extracted map content is committed.
