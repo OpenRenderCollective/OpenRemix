@@ -1,4 +1,5 @@
 #include "forward/probes/regions.h"
+#include "partition_fixture.h"
 #include "forward/probes/data.h"
 #include "forward/probes/selection.h"
 #include "forward/probes/placement.h"
@@ -74,7 +75,9 @@ namespace {
     return result;
   }
 } // namespace
-int main() {
+int main(int argc, char **argv) {
+  if (argc == 3 && std::string_view(argv[1]) == "--partition-fixture")
+    return remix::forward::test::partitionFixture(argv[2]);
   auto splitRoom = partition();
   const auto interior = box({-3.99f, -2.99f, -1.99f}, {3.99f, 2.99f, 1.99f});
   require(p::emptyRegion(splitRoom, interior), "Artificial empty visleaf splits do not become room walls");
