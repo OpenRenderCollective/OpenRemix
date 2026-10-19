@@ -1960,3 +1960,26 @@ Atlas page sizes, total texel budget and chart density are unchanged. This is ad
 shadows entirely missed by the original receiver centres may remain undetected. Four spatial sites
 also retain finite quadrature error. Local emitter transport supports the same grouped-site protocol,
 but local-light and overflow controller refinement remain separate work.
+
+### Grouped controllable direct composition (integration in progress)
+
+`bake::groupStyledDirect` combines already captured unit-direct SH with each
+stationary style's authored radiance. Permanent lights remain separate. The
+input ownership manifest must be the final positive chart/light manifest, and
+probe pairs must describe complete planner-selected light volumes. Missing
+surface fields, missing/unreceived probe volumes and storage limits decline an
+entire style; independently complete styles remain available. Declined styles
+must retain their per-light runtime response.
+
+The compositor emits the existing sparse RGB SH format, separate from styled
+indirect irradiance. `sparse::Builder::addSampled` encodes one 16x16 tile at a time
+through immutable surface/probe callbacks. Existing dense callers use that same
+encoder. Exceptions and cancellation cannot append a partial component. No new
+ray transport, shader layout or public Remix ABI is introduced by this step.
+
+Runtime publication and cache integration remain pending. Before suppressing a
+style's analytic diffuse, its complete component must be published and its live
+members must agree on the scalar envelope ratio from `styleScales`. Invalid,
+changed or non-scalar groups must disable their grouped contribution and keep
+analytic fallback. Moving-shadow corrections and specular visibility remain
+per-light and must use the same proven coverage and live weights.

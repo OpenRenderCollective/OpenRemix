@@ -21,12 +21,12 @@ namespace remix::forward::bake::sparse {
       check(uint64_t(d.pageSize) * d.pageSize * d.pages <= UINT32_MAX);
     }
     using Record = std::array<uint32_t, coefficientWords>;
-    Record encode(const Result &value) {
+    Record encode(const Coefficients &value) {
       Record record{};
       for (uint32_t coefficient = 0; coefficient < 9; ++coefficient)
         for (uint32_t channel = 0; channel < 3; ++channel) {
           const uint32_t index = coefficient * 3 + channel;
-          const uint16_t bits = half::encode(value.irradiance[coefficient][channel]);
+          const uint16_t bits = half::encode(value[coefficient][channel]);
           record[index / 2] |= uint32_t(bits) << ((index & 1u) * 16);
         }
       return record;
@@ -72,11 +72,20 @@ namespace remix::forward::bake::sparse {
   }
   void Builder::add(uint32_t style, const lightmap::Layout &layout, std::span<const Result> surfaces,
                      std::span<const Result> probeValues, std::stop_token token) {
-    check(style > 0 && style < 128 &&
-          std::none_of(m_components.begin(), m_components.end(), [&](const auto &c) { return c.style == style; }));
     check(layout.pageSize == m_dimensions.pageSize && layout.pages == m_dimensions.pages &&
           layout.owners.size() == uint64_t(layout.pageSize) * layout.pageSize * layout.pages &&
           surfaces.size() == layout.points.size() && probeValues.size() == m_dimensions.probes);
+    addSampled(style, [&](uint32_t page, uint32_t x, uint32_t y) {
+      const uint32_t owner = layout.owners[(size_t(page) * layout.pageSize + y) * layout.pageSize + x];
+      if (owner == lightmap::unowned) return Coefficients{};
+      check(owner < surfaces.size());
+      return surfaces[owner].irradiance;
+    }, [&](uint32_t probe) { return probeValues[probe].irradiance; }, token);
+  }
+  void Builder::addSampled(uint32_t style, const SurfaceSample &surface,
+                            const ProbeSample &probe, std::stop_token token) {
+    check(style > 0 && style < 128 && surface && probe &&
+          std::none_of(m_components.begin(), m_components.end(), [&](const auto &c) { return c.style == style; }));
     cancelled(token);
     const uint64_t available = m_maximumBytes / 4 - bytes() / 4;
     const uint64_t maps = surfaceBlocks(m_dimensions) + m_dimensions.probes;
@@ -85,7 +94,7 @@ namespace remix::forward::bake::sparse {
     result.style = style;
     result.surface.resize(size_t(surfaceBlocks(m_dimensions)));
     result.probes.resize(m_dimensions.probes);
-    const uint32_t wide = tiles(layout.pageSize);
+    const uint32_t wide = tiles(m_dimensions.pageSize);
     std::array<uint32_t, tileRecords * coefficientWords> block{};
     for (uint32_t tile = 0; tile < result.surface.size(); ++tile) {
       cancelled(token);
@@ -94,11 +103,8 @@ namespace remix::forward::bake::sparse {
       bool used = false;
       for (uint32_t y = 0; y < tileSide; ++y) for (uint32_t x = 0; x < tileSide; ++x) {
         const uint32_t px = tx * tileSide + x, py = ty * tileSide + y;
-        if (px >= layout.pageSize || py >= layout.pageSize) continue;
-        const uint32_t owner = layout.owners[(size_t(page) * layout.pageSize + py) * layout.pageSize + px];
-        if (owner == lightmap::unowned) continue;
-        check(owner < surfaces.size());
-        const auto record = encode(surfaces[owner]);
+        if (px >= m_dimensions.pageSize || py >= m_dimensions.pageSize) continue;
+        const auto record = encode(surface(page, px, py));
         used |= !black(record);
         std::copy(record.begin(), record.end(), block.begin() + (y * tileSide + x) * coefficientWords);
       }
@@ -106,9 +112,9 @@ namespace remix::forward::bake::sparse {
       result.surface[tile] = uint32_t(result.coefficients.size() / coefficientWords) + 1;
       append(result, block, available);
     }
-    for (uint32_t index = 0; index < probeValues.size(); ++index) {
+    for (uint32_t index = 0; index < m_dimensions.probes; ++index) {
       if ((index & 255u) == 0) cancelled(token);
-      const auto record = encode(probeValues[index]);
+      const auto record = encode(probe(index));
       if (black(record)) continue;
       result.probes[index] = uint32_t(result.coefficients.size() / coefficientWords) + 1;
       append(result, record, available);

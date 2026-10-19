@@ -166,3 +166,11 @@ if get_option('gpu_tests')
     cpp_args : test_cpp_args)
   test('Sparse styled GPU surface and probe reconstruction', sparse_style_gpu_test, timeout : 120)
 endif
+
+forward_styled_direct_test = executable('remix-forward-styled-direct-test', 'styled_direct.cpp', '../../src/native/forward/lighting.cpp',
+  '../../src/native/forward/bake/styled_direct.cpp', '../../src/native/forward/bake/sparse_sh.cpp',
+  '../../src/native/forward/bake/styles.cpp', '../../src/native/forward/bake/probe_visibility.cpp',
+  '../../src/native/forward/bake/probe_visibility_gpu.cpp',
+  '../../src/native/forward/mixed/directional_fields.cpp', '../../src/native/forward/mixed/directional_field.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Grouped styled direct reuses complete surface and probe captures', forward_styled_direct_test)

@@ -55,6 +55,12 @@ weights engine agnostic. Preserve per-light specular visibility, moving-caster c
 cache restoration and unknown-coverage fallback. Use exported response counts to distinguish
 this remaining work from selected highlights; fewer clustered lights alone does not prove a
 frame-time improvement.
+The CPU `groupStyledDirect` compositor now reuses completed per-light surface and probe
+SH without launching style-specific rays or allocating dense all-map RGB workspaces.
+It declines complete style groups on missing coverage or storage exhaustion. Signed
+coefficients, seven-owner overlap and independent group failures have CPU coverage.
+Publication, cache identity and runtime selection are not connected to this compositor
+yet; this does not close the controllable-direct or Construct performance gate.
 
 Consolidate policy while finishing this work. Runtime response classification now has one named-input
 decision point for aggregate ownership, required mixed responses, shadow selection and independent

@@ -2,6 +2,7 @@
 #include "forward/bake/styles.h"
 #include "forward/lightmap/layout.h"
 #include <span>
+#include <functional>
 
 namespace remix::forward::bake::sparse {
   constexpr uint32_t magic = 0x48535352, version = 1, tileSide = 16;
@@ -22,6 +23,12 @@ namespace remix::forward::bake::sparse {
     Builder(Dimensions dimensions, uint64_t maximumBytes);
     void add(uint32_t style, const lightmap::Layout &layout, std::span<const Result> surfaces,
              std::span<const Result> probes, std::stop_token cancelled = {});
+    // Streaming source: at most one 16x16 encoding tile is materialized. A
+    // failed/cancelled addition leaves every previously completed group intact.
+    using SurfaceSample = std::function<Coefficients(uint32_t page, uint32_t x, uint32_t y)>;
+    using ProbeSample = std::function<Coefficients(uint32_t probe)>;
+    void addSampled(uint32_t style, const SurfaceSample &surface, const ProbeSample &probe,
+                    std::stop_token cancelled = {});
     std::vector<uint32_t> serialize(std::stop_token cancelled = {}) const;
     uint64_t bytes() const;
     const Dimensions &dimensions() const { return m_dimensions; }
