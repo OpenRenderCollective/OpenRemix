@@ -14,7 +14,10 @@ namespace remix::forward::probes {
       return std::all_of(v.begin(), v.end(), [](float x) { return std::isfinite(x); });
     }
     void validate(const Capture &capture) {
-      if (!capture.bounds.valid || !finite(capture.position) || !finite(capture.bounds.minimum) ||
+      if (!validProjectionSpace(capture.worldToLocal) || capture.priority < -32768 || capture.priority > 32767)
+        throw std::invalid_argument("Invalid reflection projection frame or priority");
+      const auto origin = projectionPoint(capture.worldToLocal, capture.position);
+      if (!finite(origin) || !capture.bounds.valid || !finite(capture.position) || !finite(capture.bounds.minimum) ||
           !finite(capture.bounds.maximum) || capture.resolution < 8 || capture.resolution > 128 ||
           !std::has_single_bit(capture.resolution))
         throw std::invalid_argument("Invalid reflection capture bounds or resolution");
@@ -31,8 +34,8 @@ namespace remix::forward::probes {
         if (capture.bounds.minimum[c] >= capture.bounds.maximum[c] ||
             !std::isfinite(capture.bounds.maximum[c] - capture.bounds.minimum[c]) ||
             !std::isfinite(capture.bounds.maximum[c] + capture.bounds.minimum[c]) ||
-            capture.position[c] < capture.bounds.minimum[c] ||
-            capture.position[c] > capture.bounds.maximum[c])
+            origin[c] < capture.bounds.minimum[c] ||
+            origin[c] > capture.bounds.maximum[c])
           throw std::invalid_argument("Reflection capture origin must lie inside its volume");
     }
     const Bounds &influence(const Capture &capture) {
@@ -161,19 +164,20 @@ namespace remix::forward::probes {
     if (!size || capture.radiance.size() != 6ull * size * size)
       return 1;
     double agreement = 0, total = 0;
+    const auto origin = projectionPoint(capture.worldToLocal, capture.position);
     for (uint32_t face = 0; face < 6; ++face)
       for (uint32_t y = 0; y < size; ++y)
         for (uint32_t x = 0; x < size; ++x) {
           const float u = 2 * (float(x) + .5f) / size - 1;
           const float v = 2 * (float(y) + .5f) / size - 1;
-          const auto ray = direction(face, u, v);
+          const auto ray = projectionDirection(capture.worldToLocal, direction(face, u, v));
           const double weight = std::pow(1. + double(u) * u + double(v) * v, -1.5);
           float exit = std::numeric_limits<float>::max();
           for (uint32_t axis = 0; axis < 3; ++axis)
             if (std::abs(ray[axis]) > 1e-10f) {
               const float plane = ray[axis] > 0 ? capture.bounds.maximum[axis]
                                                 : capture.bounds.minimum[axis];
-              exit = std::min(exit, (plane - capture.position[axis]) / ray[axis]);
+              exit = std::min(exit, (plane - origin[axis]) / ray[axis]);
             }
           const float distance = capture.radiance[(face * size + y) * size + x][3];
           // The cube-map Jacobian avoids giving face corners disproportionate
@@ -215,6 +219,8 @@ namespace remix::forward::probes {
       const auto &capture = captures[probe];
       auto &record = result.header.probes[probe];
       record.position[3] = projectionConfidence(capture);
+      record.minimum[3] = float(capture.priority);
+      record.worldToLocal = capture.worldToLocal;
       for (uint32_t c = 0; c < 3; ++c) {
         record.minimum[c] = capture.bounds.minimum[c];
         record.maximum[c] = capture.bounds.maximum[c];
@@ -260,24 +266,32 @@ namespace remix::forward::probes {
     const uint32_t low = uint32_t(lod), high = std::min(low + 1, parameters[2] - 1);
     Vec3 result{};
     float total = 0;
+    float priority = -std::numeric_limits<float>::infinity();
     for (uint32_t probe = 0; probe < parameters[0]; ++probe) {
       const auto &record = data.header.probes[probe];
+      const auto localPosition = projectionPoint(record.worldToLocal, position);
+      const auto localRay = projectionDirection(record.worldToLocal, reflected);
       bool inside = true;
       float exitDistance = std::numeric_limits<float>::max(), edge = 1;
       float smallestHalf = std::numeric_limits<float>::max();
       for (uint32_t c = 0; c < 3; ++c) {
-        inside &= position[c] >= record.influenceMinimum[c] && position[c] <= record.influenceMaximum[c];
+        inside &= localPosition[c] >= record.influenceMinimum[c] && localPosition[c] <= record.influenceMaximum[c];
         const float center = (record.influenceMinimum[c] + record.influenceMaximum[c]) * .5f;
         const float half = (record.influenceMaximum[c] - record.influenceMinimum[c]) * .5f;
         smallestHalf = std::min(smallestHalf, half);
-        edge = std::min(edge, 1 - std::abs((position[c] - center) / half));
-        if (std::abs(reflected[c]) > 1e-10f) {
-          const float plane = reflected[c] > 0 ? record.maximum[c] : record.minimum[c];
-          exitDistance = std::min(exitDistance, (plane - position[c]) / reflected[c]);
+        edge = std::min(edge, 1 - std::abs((localPosition[c] - center) / half));
+        if (std::abs(localRay[c]) > 1e-10f) {
+          const float plane = localRay[c] > 0 ? record.maximum[c] : record.minimum[c];
+          exitDistance = std::min(exitDistance, (plane - localPosition[c]) / localRay[c]);
         }
       }
-      if (!inside)
+      if (!inside || record.minimum[3] < priority)
         continue;
+      if (record.minimum[3] > priority) {
+        priority = record.minimum[3];
+        result = {};
+        total = 0;
+      }
       Vec3 corrected;
       for (uint32_t c = 0; c < 3; ++c)
         corrected[c] = position[c] + reflected[c] * exitDistance - record.position[c];

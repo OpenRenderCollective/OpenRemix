@@ -21,6 +21,7 @@ OPTIMIZED = {'pathtrace'}
 INLINED = {'bake'}
 BACKENDS = {
     'style_test': ('forward::test::style_input', 'vulkan1.1', ('query',)),
+    'probe_test': ('forward::test::probe_input', 'vulkan1.1', ('reflection',)),
     'mask_test': ('forward::test::mask_input', 'vulkan1.1', ('decode',)),
     'water_ray': ('forward::water::hardware', 'vulkan1.2', ('frag',)),
     'water_test': ('forward::test::water_input', 'vulkan1.1', ('vert', 'frag', 'query', 'depth')),
@@ -39,6 +40,8 @@ BACKENDS = {
 
 
 def shader_directory(backend):
+    if backend == 'probe_test':
+        return ROOT / 'tests/forward/probe_shaders'
     if backend == 'style_test':
         return ROOT / 'tests/forward/style_shaders'
     if backend == 'mask_test':
@@ -63,6 +66,8 @@ def shader_directory(backend):
 def defines_for(backend, stage, stages):
     """Preprocessor defines and source file of one embedded stage."""
     directory = shader_directory(backend)
+    if backend == 'probe_test':
+        return [], directory / 'reflection.comp'
     defines = ['-DTEMPORAL=1'] if stage in ('temporal', 'temporalTransparency', 'confidence') else []
     if backend == 'water_test':
         return [], directory / (stage + '.comp' if stage in ('query', 'depth') else 'input.' + stage)

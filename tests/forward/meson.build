@@ -49,6 +49,10 @@ forward_regions_test = executable('remix-forward-regions-test', 'regions.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('BSP reflection region occupancy and room fitting', forward_regions_test)
 if get_option('gpu_tests')
+  forward_probe_sampling_test = executable('remix-forward-probe-sampling-test', 'probe_sampling.cpp',
+    include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+    cpp_args : test_cpp_args)
+  test('GPU oriented cubemap projection, priorities and roughness', forward_probe_sampling_test, timeout : 60)
   forward_mask_decode_test = executable('remix-forward-mask-decode-test', 'mask_decode.cpp',
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)

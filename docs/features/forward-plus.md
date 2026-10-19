@@ -2096,3 +2096,10 @@ exceed configured component/device capacity on unusually demanding content.
 Viewmodels trace the completed opaque world SSR hierarchy at their shaded fragment resolution, with the same roughness filtering and confidence blend into parallax probes or sky. They remain excluded from world reflection guides. Full-resolution opaque SSR is the default; Half and Quarter remain selectable.
 
 Automatic reflection fitting retains up to three distinct growth results per validated capture origin. Primary origins and uncovered-space candidates keep their existing slots; remaining slots let the geometry audit compare alternate room shapes within the same maximum of 160 candidates. Equivalent boxes are merged at 95% intersection-over-union. Every alternative uses the same whole-volume wall and detail-tolerance checks.
+
+The shared reflection sampler supports rigid world-to-projection frames and signed overlap priorities.
+Projection and influence bounds use this local frame; capture positions and cube-face radiance stay in
+world space. Only the highest priority containing a receiver contributes, with existing spatial blending
+among captures at that priority. Automatic fits keep identity frames and priority zero. Native probe reports
+include the frame and priority, and the bounds workbench can import them. Editor saves are not yet applied
+to the runtime: adapter import and reflection-only refresh are still required.

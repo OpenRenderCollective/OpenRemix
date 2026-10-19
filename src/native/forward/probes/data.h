@@ -1,6 +1,7 @@
 #pragma once
 #include "forward/bake/data.h"
 #include "forward/bake/grid.h"
+#include "forward/probes/space.h"
 #include <optional>
 #include <span>
 #include <stop_token>
@@ -11,13 +12,14 @@ namespace remix::forward::probes {
     // position.w: captured solid-angle agreement with the projection box.
     // Zero is the legacy/unknown value and keeps the original blend weight.
     Vec4 minimum{}, maximum{}, influenceMinimum{}, influenceMaximum{}, position{};
+    ProjectionSpace worldToLocal = worldSpace; // minimum.w stores signed overlap priority
   };
   struct Header {
     // probe count, base resolution, mip count, texels per probe
     std::array<uint32_t, 4> parameters{};
     std::array<Record, maxProbes> probes{};
   };
-  static_assert(sizeof(Record) == 80 && sizeof(Header) == 2576);
+  static_assert(sizeof(Record) == 128 && sizeof(Header) == 4112);
   struct Capture {
     Bounds bounds;
     Vec3 position{};
@@ -26,6 +28,8 @@ namespace remix::forward::probes {
     std::vector<Vec4> radiance;
     // Optional receiver/blend bounds, independent of the parallax proxy.
     Bounds influence{};
+    ProjectionSpace worldToLocal = worldSpace;
+    int32_t priority = 0; // larger values win only where their influence contains the receiver
   };
   struct Data {
     Header header;

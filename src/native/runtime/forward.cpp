@@ -59,7 +59,12 @@ namespace remix {
       vector(probe.influenceMinimum);
       out << ", \"influenceMaximum\": ";
       vector(probe.influenceMaximum);
-      out << '}';
+      out << ", \"priority\": " << int32_t(probe.minimum[3]) << ", \"worldToLocal\": [";
+      for (uint32_t row = 0; row < 3; ++row) {
+        const auto &r = probe.worldToLocal[row];
+        out << (row ? "," : "") << '[' << r[0] << ',' << r[1] << ',' << r[2] << ',' << r[3] << ']';
+      }
+      out << "]}";
     }
     out << "\n  ]\n}\n";
     return out.str();

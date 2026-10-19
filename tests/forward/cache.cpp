@@ -358,6 +358,26 @@ int main(int argc, char **argv) {
     require(bool(bc::read(relocationFile, relocationKey, source, relocationConfig, device)),
             "Failed relocation writes preserve the previously completed cache");
   }
+  {
+    const auto originalCaptures = data.captures;
+    const auto originalSpecular = data.specular;
+    auto &oriented = data.captures[0];
+    oriented.worldToLocal = {{{0, 1, 0, -20}, {-1, 0, 0, 10}, {0, 0, 1, -30}}};
+    oriented.position = {10, 20.25f, 30};
+    oriented.priority = -12;
+    data.specular = f::probes::filter(data.captures, 8);
+    require(save(), "Oriented captures and signed priorities can be cached");
+    const auto roundtrip = load();
+    require(roundtrip && roundtrip->captures[0].worldToLocal == oriented.worldToLocal &&
+                roundtrip->captures[0].priority == -12 && roundtrip->captures[0].position == oriented.position &&
+                roundtrip->specular.header.probes[0].worldToLocal == oriented.worldToLocal &&
+                roundtrip->specular.header.probes[0].minimum[3] == -12,
+            "Cached projection frames, priorities and independent capture origins round-trip exactly");
+    data.specular.header.probes[0].worldToLocal[0][0] = 2;
+    require(!save(), "Mismatched cached projection frames cannot replace a valid cache");
+    data.captures = originalCaptures;
+    data.specular = originalSpecular;
+  }
   const float confidence = data.specular.header.probes[0].position[3];
   data.specular.header.probes[0].position[3] = 0;
   require(save(), "A legacy cache without projection confidence is saved");
@@ -404,7 +424,7 @@ int main(int argc, char **argv) {
   require(save() && !load(), "Nonfinite atlas coefficients are refused before GPU upload");
   data.pixels[0] = 0x3c00;
   data.specular.header.parameters[0] = 2;
-  require(save() && !load(), "Reflection lookup counts must match their captured data");
+  require(!save(), "Mismatched reflection lookup counts are refused before replacing the cache");
   data.specular.header.parameters[0] = 1;
   data.layout.charts[0].page = 2;
   require(save() && !load(), "Even a checksummed payload must obey atlas bounds");

@@ -94,6 +94,44 @@ int main() {
     require(value && std::abs((*value)[0] - 2) < 1e-5f && std::abs((*value)[1] - 1) < 1e-5f,
             "Overlapping probes blend once and preserve HDR energy through every roughness mip");
   }
+  // Rotate a narrow box 90 degrees about a translated center. Its capture
+  // remains off-center in world space; the captured directions do not rotate.
+  auto oriented = source;
+  oriented.bounds.minimum = {-2, -.5f, -1};
+  oriented.bounds.maximum = {2, .5f, 1};
+  oriented.worldToLocal = {{{0, 1, 0, -20}, {-1, 0, 0, 10}, {0, 0, 1, -30}}};
+  oriented.position = {10, 20.25f, 30};
+  const auto orientedData = p::filter({&oriented, 1}, 64);
+  require(p::sample(orientedData, {10, 21.5f, 30}, {1, 0, 0}, 0).has_value() &&
+              !p::sample(orientedData, {11, 20, 30}, {1, 0, 0}, 0),
+          "Rotated influence uses local bounds instead of a world AABB");
+  // Analytic +X exit of the rotated box is x=10.5. Reflection direction from
+  // off-center capture to (10.5,21.5,30) stays in the world cubemap frame.
+  const auto actual = p::sample(orientedData, {10, 21.5f, 30}, {1, 0, 0}, 0);
+  const auto expected = p::sample(data, {0, 0, 0}, {.5f, 1.25f, 0}, 0);
+  require(actual && expected && std::abs((*actual)[0]-(*expected)[0]) < 1e-5f,
+          "Oriented parallax samples a world-space hit direction from the independent capture origin");
+  auto invalidFrame = oriented;
+  invalidFrame.worldToLocal[0][1] = 2;
+  bool rejectedFrame = false;
+  try { p::filter({&invalidFrame, 1}, 64); } catch (const std::invalid_argument &) { rejectedFrame = true; }
+  require(rejectedFrame, "Projection transforms reject scaling instead of distorting ray distances");
+  constants[1].priority = 4;
+  constants[1].influence.minimum = {-.25f, -.25f, -.25f};
+  constants[1].influence.maximum = {.25f, .25f, .25f};
+  constants[1].influence.valid = true;
+  const auto prioritized = p::filter(constants, 64);
+  const auto priorityInside = p::sample(prioritized, {0, 0, 0}, {1, 0, 0}, .4f);
+  const auto priorityOutside = p::sample(prioritized, {.5f, 0, 0}, {1, 0, 0}, .4f);
+  require(priorityInside && (*priorityInside)[0] < 1e-5f && std::abs((*priorityInside)[1]-2) < 1e-5f &&
+              priorityOutside && std::abs((*priorityOutside)[0]-4) < 1e-5f && (*priorityOutside)[1] < 1e-5f,
+          "Highest containing priority wins; leaving its influence restores the lower-priority capture");
+  std::swap(constants[0], constants[1]);
+  const auto reversed = p::sample(p::filter(constants, 64), {0, 0, 0}, {1, 0, 0}, .4f);
+  require(reversed && (*reversed) == (*priorityInside), "Overlap priority is independent of capture ordering");
+  std::swap(constants[0], constants[1]);
+  constants[1].priority = 0;
+  constants[1].influence = {};
   // Both volumes touch the same floor. Box-edge distance is zero for every
   // floor receiver, so it cannot distinguish the nearby and distant captures.
   constants[0].position = {-.5f, 0, 0};

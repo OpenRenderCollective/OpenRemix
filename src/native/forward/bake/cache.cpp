@@ -35,7 +35,7 @@ namespace remix::forward::bake::cache {
   }
   namespace {
     // Bump whenever CPU planning, material transport or wire semantics change.
-    constexpr uint32_t algorithmRevision = 21; // geometry-audited alternative reflection region shapes
+    constexpr uint32_t algorithmRevision = 22; // oriented reflection projection frames and overlap priorities
     void require(bool value) {
       if (!value)
         throw std::runtime_error("Invalid bake cache metadata");
@@ -202,13 +202,18 @@ namespace remix::forward::bake::cache {
         capture.influence.minimum = input.pod<Vec3>();
         capture.influence.maximum = input.pod<Vec3>();
         capture.position = input.pod<Vec3>();
+        capture.worldToLocal = input.pod<probes::ProjectionSpace>();
+        capture.priority = input.pod<int32_t>();
+        require(probes::validProjectionSpace(capture.worldToLocal) &&
+                capture.priority >= -32768 && capture.priority <= 32767);
+        const auto localOrigin = probes::projectionPoint(capture.worldToLocal, capture.position);
         capture.resolution = input.pod<uint32_t>();
         bounds(capture.bounds);
         bounds(capture.influence);
         finite(capture.position);
         for (uint32_t c = 0; c < 3; ++c)
-          require(capture.position[c] >= capture.bounds.minimum[c] &&
-                  capture.position[c] <= capture.bounds.maximum[c]);
+          require(localOrigin[c] >= capture.bounds.minimum[c] &&
+                  localOrigin[c] <= capture.bounds.maximum[c]);
         require(capture.resolution == config.reflectionResolution);
         const uint64_t pixels = 6ull * capture.resolution * capture.resolution;
         capture.radiance = input.array<Vec4>(pixels);
@@ -233,6 +238,7 @@ namespace remix::forward::bake::cache {
         const auto &record = data.header.probes[i];
         const auto &capture = result.captures[i];
         const auto &influence = capture.influence.valid ? capture.influence : capture.bounds;
+        require(record.worldToLocal == capture.worldToLocal && record.minimum[3] == float(capture.priority));
         finite(record.minimum);
         finite(record.maximum);
         finite(record.position);
@@ -454,6 +460,15 @@ namespace remix::forward::bake::cache {
     std::filesystem::path temporary;
     try {
       detail::check(cancelled);
+      require(view.captures.size() <= probes::maxProbes &&
+              view.specular.header.parameters[0] == view.captures.size());
+      for (size_t i = 0; i < view.captures.size(); ++i) {
+        const auto &capture = view.captures[i];
+        const auto &record = view.specular.header.probes[i];
+        require(probes::validProjectionSpace(capture.worldToLocal) &&
+                capture.priority >= -32768 && capture.priority <= 32767 &&
+                record.worldToLocal == capture.worldToLocal && record.minimum[3] == float(capture.priority));
+      }
       require(view.directionals.empty() || view.directionalAttempted);
       require(!view.directionalAttempted || view.directDiffuse);
       const auto directionalBudget = view.directionalAttempted
@@ -531,6 +546,8 @@ namespace remix::forward::bake::cache {
         output.pod(capture.influence.minimum);
         output.pod(capture.influence.maximum);
         output.pod(capture.position);
+        output.pod(capture.worldToLocal);
+        output.pod(capture.priority);
         output.pod(capture.resolution);
         output.array(capture.radiance);
       }
