@@ -2084,7 +2084,9 @@ exponent so bright constant lighting does not erase weaker higher-order bands.
 The encoder retains the previous 65000 HDR input clamp. Channel rounding is bounded
 by half a quantization step, with a minimum step of 2^-22. CPU and shader decoding
 use identical signed extraction and exponent construction. Validation rejects
-noncanonical encodings and old table versions. Styled-indirect cache identities
+noncanonical encodings and old table versions. Integer normalization and range
+checks match the decode/re-encode reference without repeating float quantization
+for each cached coefficient. This changes neither encoded bytes nor cache keys. Styled-indirect cache identities
 include the codec version; unchanged non-styled captures keep their existing keys.
 Groups are summed and encoded on the preparation worker without a dense atlas
 workspace. The runtime component budget is 256 MiB and also respects the device

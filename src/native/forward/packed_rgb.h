@@ -38,4 +38,20 @@ namespace remix::forward {
     }
     return value;
   }
+  // Exact canonicality check, equivalent to pack(unpack(word)) == word.
+  // Encoding never emits -256, denormalized mantissas above exponent zero,
+  // or exponent 31. At exponent 30 the HDR clamp rounds to at most 254.
+  inline bool canonicalSignedRgb(uint32_t word) noexcept {
+    const uint32_t exponent = word >> 27;
+    if (exponent > 30) return false;
+    uint32_t largest = 0;
+    for (uint32_t channel = 0; channel < 3; ++channel) {
+      const uint32_t bits = (word >> (channel * 9)) & 511u;
+      if (bits == 256) return false;
+      largest = std::max(largest, bits >= 256 ? 512 - bits : bits);
+    }
+    if (largest == 0) return exponent == 0;
+    return (exponent == 0 || largest >= 128) && (exponent < 30 || largest <= 254);
+  }
+
 }

@@ -184,7 +184,7 @@ namespace remix::forward::bake::sparse {
         const size_t offset = e[3] + size_t(record) * coefficientWords;
         for (uint32_t coefficient = 0; coefficient < 9; ++coefficient) {
           const uint32_t word = words[offset + coefficient];
-          check(packSignedRgb(unpackSignedRgb(word)) == word);
+          check(canonicalSignedRgb(word));
         }
       }
     }

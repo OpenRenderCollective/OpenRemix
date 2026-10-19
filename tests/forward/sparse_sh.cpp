@@ -38,6 +38,25 @@ int main() {
       require(packSignedRgb(decoded) == packed, "Packed SH has a canonical stable representation");
     }
 
+  auto checkCanonical = [&](uint32_t word) {
+    require(canonicalSignedRgb(word) == (packSignedRgb(unpackSignedRgb(word)) == word),
+            "Integer validation accepts exactly the original codec's canonical words");
+  };
+  for (uint32_t exponent = 0; exponent < 32; ++exponent)
+    for (uint32_t mantissa = 0; mantissa < 512; ++mantissa)
+      for (uint32_t channel = 0; channel < 3; ++channel) {
+        const uint32_t neighbours = ((mantissa * 37) & 511u) | (((mantissa * 71) & 511u) << 9);
+        checkCanonical((exponent << 27) | (mantissa << (channel * 9)));
+        checkCanonical((exponent << 27) | (mantissa << 18) | neighbours);
+      }
+  uint32_t randomWord = 0x12345678;
+  for (uint32_t i = 0; i < 1000000; ++i) {
+    randomWord ^= randomWord << 13; randomWord ^= randomWord >> 17; randomWord ^= randomWord << 5;
+    checkCanonical(randomWord);
+  }
+  require(!canonicalSignedRgb(1u << 27) && !canonicalSignedRgb(256) && canonicalSignedRgb(0),
+          "Noncanonical black and forbidden signed mantissas remain rejected");
+
   lm::Layout layout;
   layout.pageSize = 33;
   layout.pages = 2;
