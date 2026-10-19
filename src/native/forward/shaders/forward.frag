@@ -66,6 +66,14 @@ void main() {
   gl_FragDepth = min(length(worldPosition - lightPosition.xyz) / lightPosition.w, 1);
 #endif
 #ifndef SHADOW_PASS
+  if (LightingView == 4u) {
+    result = vec4(surface.rgb, m.pbr.w > .5 ? surface.a : 1);
+#ifdef REFLECTION_GUIDES
+    outNormalRoughness = vec4(0, 0, 1, 1);
+    outReflectance = vec4(0);
+#endif
+    return;
+  }
   vec4 emissionTexel = (m.maps.x & 8u) != 0u ? texture(emissionMap, uv) : vec4(1);
   vec3 emitted;
   float reflected;
@@ -76,7 +84,7 @@ void main() {
   vec3 n = dot(worldNormal, worldNormal) > 1e-10 ? normalize(worldNormal) : normalize(geometric);
   if (dot(n, v) < 0)
     n = -n;
-  n = mappedNormal(m, uv, worldPosition, n, v);
+  if (LightingView != 5u) n = mappedNormal(m, uv, worldPosition, n, v);
   float roughness =
       (m.maps.x & 1u) != 0u ? mapValue(texture(roughnessMap, uv), m.remap[0], m.maps.z) : m.pbr.x;
   float metallic = (m.maps.x & 2u) != 0u ? mapValue(texture(metallicMap, uv), m.remap[1], m.maps.w) : m.pbr.y;
@@ -93,7 +101,7 @@ void main() {
   vec4 surfaceLighting = vec4(0);
   bool charted = surfaceIrradiance(surfaceLightmap, n, surfaceLighting);
   uint debugView = LightingView;
-  if (debugView == 1u) {
+  if (debugView == 1u || debugView == 5u) {
     // Neutral irradiance: exclude albedo, metallic, emission and reflections.
     vec3 indirect = charted ? surfaceLighting.rgb / Pi
                            : bakedIrradiance(worldPosition, n, irradiance) ? irradiance / Pi : ambient;

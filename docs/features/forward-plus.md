@@ -499,8 +499,13 @@ MSAA, water enablement, shadow-map resolution, SSR enablement or SSR resolution 
 background.
 
 The Rendering panel's Lighting view and `rtx.native.forward.debugView` isolate opaque-world components:
-0 is normal shaded output, 1 is neutral baked indirect irradiance (or probe/ambient fallback), 2 is
-material-weighted direct diffuse, and 3 is direct specular. Diagnostic views exclude emission and
+0 is normal shaded output, 1 is neutral baked irradiance (or probe/ambient fallback), 2 is
+material-weighted analytic direct diffuse, 3 is direct specular, 4 is unlit albedo, and 5 is neutral baked irradiance
+evaluated with the mesh normals instead of normal maps.
+Baked irradiance includes direct contributions already aggregated into the lightmap or
+probe table; analytic diffuse shows the remaining per-light response. Albedo includes
+material texture and vertex tint but excludes lighting and normal-map response.
+Diagnostic views exclude emission and
 reflection composition; water, compatibility effects and UI retain their ordinary paths. Switching
 views prepares a specialized shader while retaining the active bake; normal shading compiles out
 diagnostic branches. Exposure/display mapping still applies. These views locate an artifact's lighting

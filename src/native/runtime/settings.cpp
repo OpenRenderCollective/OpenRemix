@@ -116,7 +116,7 @@ namespace remix::config {
         result.push_back(scalar("rtx.native.forward.autoExposureMinEv", FIELD(forward.autoExposureMinEv), -24, 0));
         result.push_back(scalar("rtx.native.forward.autoExposureMaxEv", FIELD(forward.autoExposureMaxEv), 0, 24));
         result.push_back(scalar("rtx.native.forward.clusterLights", FIELD(forward.clusterLights), 0, 1024));
-        result.push_back(scalar("rtx.native.forward.debugView", FIELD(forward.debugView), 0, 3));
+        result.push_back(scalar("rtx.native.forward.debugView", FIELD(forward.debugView), 0, 5));
         result.push_back(scalar("rtx.native.forward.lightCutoff", FIELD(forward.lightCutoff), .000001, 10));
         result.push_back(scalar("rtx.native.forward.shadows", FIELD(forward.shadows), 0, 1));
         result.push_back(scalar("rtx.native.forward.localShadows", FIELD(forward.localShadows), 0, 1));
