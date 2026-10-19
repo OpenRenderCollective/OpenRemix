@@ -1,0 +1,53 @@
+Shared GGX cubemap filter samples (2026-10-20)
+
+Change
+The CPU cubemap roughness filter now constructs its scalar GGX/Hammersley sample
+terms once per mip level and reuses them for every face texel and capture. Before,
+radical inversion, two square roots and sine/cosine were repeated at every output
+texel. Tangent-frame construction, direction-dependent reflection, seam-aware
+bilinear lookups, accumulation order, roughness, sample count and normalization
+are unchanged. Multiplications are deliberately not reassociated into combined
+coefficients; rounding can otherwise move a cubemap lookup across an edge.
+
+Storage and ownership
+Tables are local to filter(), read-only during convolution and released on return.
+At the normal 128 samples and maximum 128-face resolution, entries occupy 14 KiB
+plus small vector metadata; the API maximum 4096 samples uses 448 KiB. No global
+cache, new thread, setting or retained bake allocation. Existing cancellation and
+input validation remain. No bake cache revision or required rebake.
+
+Differential verification
+A private copy of the preceding scalar implementation was compiled alongside the
+new implementation. All serialized headers and texels match exactly for sample
+counts 1, 7, 128 and 4096 at size 8, an eight-capture size-64 directional/HDR fixture,
+and saved Construct capture radiance (16 captures, size 32). Saved raw dumps do
+not contain projection bounds; the comparison uses identical test bounds in both
+paths and does not assess fitting or room coverage. No extracted content is added
+to the repository. Real-map filtering output equality is not full-bake determinism.
+Private source, baseline and logs: _work/reports/probe-filter-samples-v1.
+
+Timing: alternating old/new/new/old, 128 samples
+Clang /O2, same compiler as native renderer:
+  Synthetic 8 x size64: 494.894 / 277.278 / 277.458 / 494.232 ms
+  Saved Construct 16 x size32: 251.605 / 144.414 / 144.487 / 251.757 ms
+MSVC /O2 independent control, synthetic:
+  402.559 / 297.378 / 298.942 / 408.026 ms
+Byte comparisons occur outside measured filter intervals. This is about 43 percent
+less filtering time on the saved Construct input, roughly 107 ms absolute. It is
+not 43 percent less map bake time or a live frame-rate improvement. Tracing,
+visibility, denoising and encoding costs remain separate.
+
+Tests and delivery
+Native release build passed. Three existing regression suites passed with Vulkan
+validation/synchronization enabled where applicable: reflection probe parallax,
+filtering and packed data; GPU oriented projection/priorities/roughness; viewmodel
+environment reflection parity. No failures. Log: meson-logs/probe-filter-samples-v1.txt.
+Packaged forwardplus-probe-filter-samples-v1, deployed and verified in the testing
+install. Four protected user configuration hashes are unchanged. Native SHA256:
+d4557838da8742c10fcf58544e369a5de365b0b83967872f33ba8a498e7272a4
+
+Next work
+Measure remaining map-scale preparation, tracing and encoding costs rather than
+extrapolating this small filtering saving. Recover live profiling using distinct
+startup evidence. Construct receiver-domain/cubemap coverage, lighting acceptance
+and the other renderer roadmap gates remain open.

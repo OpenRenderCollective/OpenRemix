@@ -83,19 +83,33 @@ namespace remix::forward::probes {
       bits = ((bits & 0x00ff00ffu) << 8) | ((bits & 0xff00ff00u) >> 8);
       return float(bits) * (1.f / 4294967296.f);
     }
-    Vec3 prefilter(const Capture &capture, Vec3 n, float roughness, uint32_t samples) {
-      const Vec3 up = std::abs(n[2]) < .99f ? Vec3{0, 0, 1} : Vec3{1, 0, 0};
-      const Vec3 tangent = normalized(cross(up, n)), bitangent = cross(n, tangent);
+    struct FilterSample {
+      float sine, cosine, cosPhi, sinPhi;
+    };
+    std::vector<FilterSample> filterSamples(float roughness, uint32_t count) {
       const float alpha = roughness * roughness, alphaSquared = alpha * alpha;
-      Vec3 result{};
-      float total = 0;
-      for (uint32_t i = 0; i < samples; ++i) {
-        const float phi = 2 * pi * float(i) / samples, xi = radicalInverse(i);
+      std::vector<FilterSample> result;
+      result.reserve(count);
+      for (uint32_t i = 0; i < count; ++i) {
+        const float phi = 2 * pi * float(i) / count, xi = radicalInverse(i);
         const float cosine = std::sqrt((1 - xi) / (1 + (alphaSquared - 1) * xi));
         const float sine = std::sqrt(std::max(0.f, 1 - cosine * cosine));
+        result.push_back({sine, cosine, std::cos(phi), std::sin(phi)});
+      }
+      return result;
+    }
+    Vec3 prefilter(const Capture &capture, Vec3 n, std::span<const FilterSample> samples) {
+      const Vec3 up = std::abs(n[2]) < .99f ? Vec3{0, 0, 1} : Vec3{1, 0, 0};
+      const Vec3 tangent = normalized(cross(up, n)), bitangent = cross(n, tangent);
+      Vec3 result{};
+      float total = 0;
+      for (const auto &sample : samples) {
         Vec3 h{};
+        // Keep the original multiplication order: factoring sine*cosPhi into
+        // one coefficient changes rounding and can move a cube-face lookup.
         for (uint32_t c = 0; c < 3; ++c)
-          h[c] = tangent[c] * sine * std::cos(phi) + bitangent[c] * sine * std::sin(phi) + n[c] * cosine;
+          h[c] = tangent[c] * sample.sine * sample.cosPhi +
+                 bitangent[c] * sample.sine * sample.sinPhi + n[c] * sample.cosine;
         Vec3 light{};
         for (uint32_t c = 0; c < 3; ++c)
           light[c] = 2 * dot(n, h) * h[c] - n[c];
@@ -244,6 +258,11 @@ namespace remix::forward::probes {
     const uint32_t levels = std::bit_width(size), stride = levelOffset(size, levels);
     result.header.parameters = {uint32_t(captures.size()), size, levels, stride};
     result.texels.resize(captures.size() * stride);
+    // GGX quadrature depends only on mip roughness and sample count, not on
+    // probe radiance or output direction. Share its expensive scalar work.
+    std::vector<std::vector<FilterSample>> quadrature(levels);
+    for (uint32_t level = 1; level < levels; ++level)
+      quadrature[level] = filterSamples(float(level) / (levels - 1), samples);
     for (uint32_t probe = 0; probe < captures.size(); ++probe) {
       const auto &capture = captures[probe];
       result.header.probes[probe] = projectionRecord(capture);
@@ -257,7 +276,7 @@ namespace remix::forward::probes {
                 throw std::runtime_error("Reflection filtering superseded");
               const auto n =
                   direction(face, 2 * (float(x) + .5f) / mipSize - 1, 2 * (float(y) + .5f) / mipSize - 1);
-              const auto color = prefilter(capture, n, float(level) / (levels - 1), samples);
+              const auto color = prefilter(capture, n, quadrature[level]);
               result.texels[start + (face * mipSize + y) * mipSize + x] = {color[0], color[1], color[2], 0};
             }
       }
