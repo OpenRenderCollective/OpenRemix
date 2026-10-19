@@ -326,6 +326,13 @@ namespace remix::forward::bake::cache {
       raw = scene::fastHash(aggregateShader, sizeof(aggregateShader), raw);
       raw = scene::fastHash(aggregateParallelShader, sizeof(aggregateParallelShader), raw);
     }
+    // Grouped direct is derived from existing captures. Only the all-analytic
+    // policy needs new probe coefficients; aggregate policies already retain them.
+    if (c.groupedStyledDirect && !std::any_of(policy.lights.begin(), policy.lights.end(),
+          [](DirectMode mode) { return aggregatesDiffuse(mode) && retainsVisibility(mode); })) {
+      const uint32_t groupedProbeVersion[] = {0x47525044u, 1};
+      raw = scene::fastHash(groupedProbeVersion, sizeof(groupedProbeVersion), raw);
+    }
     if (c.styledIndirect) {
       const uint32_t styles[] = {sparse::magic, sparse::version, c.styleStorageMiB};
       raw = scene::fastHash(styles, sizeof(styles), raw);

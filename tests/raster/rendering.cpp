@@ -4452,6 +4452,7 @@ int main(int argc, char **argv) {
   }
   else if (argc>2 && std::strcmp(argv[2],"finite-cone")==0) finiteConeLightingTests();
   else if (argc>2 && std::strcmp(argv[2],"styled-indirect")==0) styledIndirectTests();
+  else if (argc>2 && std::strcmp(argv[2],"styled-direct")==0) styledIndirectTests(true);
   else if (argc>2 && std::strcmp(argv[2],"local-shadow-plane")==0) localShadowPlaneTests();
   else if (argc>2 && std::strcmp(argv[2],"auto-exposure")==0) autoExposureTests();
   else if (argc>2 && std::strcmp(argv[2],"styled-mixed")==0) mixedLightingTests(true, true, true);

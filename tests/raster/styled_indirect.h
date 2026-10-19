@@ -1,5 +1,5 @@
 // Included beside the readback Target fixture in rendering.cpp.
-void styledIndirectTests() {
+void styledIndirectTests(bool directGroups = false) {
   for (uint32_t samples : {1u, 2u, 4u}) {
     Target target(64, 64, true);
     auto &r = target.raster;
@@ -8,7 +8,13 @@ void styledIndirectTests() {
     options.ambient = 0;
     options.debugView = 1; // Indirect only: live direct/specular cannot satisfy this test.
     options.shadows = options.localShadows = options.ssr = false;
-    options.baking.styledIndirect = true;
+    options.baking.styledIndirect = !directGroups;
+    options.baking.groupedStyledDirect = directGroups;
+    if (directGroups) {
+      options.bakedLightingPreview = true;
+      options.bakedHighlightLights = 0;
+      options.localShadowLights = 0;
+    }
     options.baking.denoiseLightmaps = false; // Raw linear reconstruction is checked here.
     options.baking.styleStorageMiB = 1;
     options.baking.lightmapFitBudget = false;
@@ -87,7 +93,10 @@ void styledIndirectTests() {
         const auto &stats = target.forward->statistics().baking;
         if (stats.state == REMIXAPI_BAKE_FAILED_EXT) std::fprintf(stderr, "%s\n", stats.status);
         require(stats.state != REMIXAPI_BAKE_FAILED_EXT, "Attributed map bake succeeds");
-        if (stylePhase ? std::strstr(stats.status, "Styled indirect") != nullptr : bool(stats.active)) return image;
+        const bool requested = !stylePhase ? bool(stats.active) : directGroups
+            ? stats.state == REMIXAPI_BAKE_TRACING_EXT
+            : std::strstr(stats.status, "Styled indirect") != nullptr;
+        if (requested) return image;
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
       } while (std::chrono::steady_clock::now() < deadline);
       require(false, "Attributed map bake reaches its requested phase");
@@ -110,11 +119,17 @@ void styledIndirectTests() {
     const size_t at = (32 * 64 + 32) * 4;
     const auto frozen = r.bakeScene();
     const auto volume = target.forward->bakeController()->volume();
-    require(volume && volume->styledIndirect && off[at] < 3,
+    require(volume && volume->styledLighting && off[at] < 3,
             "Initially-off attributed map publishes style storage without residual indirect glow");
+    if (directGroups)
+      require(volume->groupedStyles == std::vector<uint32_t>{32},
+              "Complete grouped direct publication retains its independent style identity");
     set(1);
     auto on = render(true);
     const auto lit = on[at];
+    if (directGroups)
+      require(target.forward->statistics().analyticLights == 0 && target.forward->statistics().clusteredLights == 0,
+              "Covered grouped direct receivers need no analytic light without highlights or moving corrections");
     require(lit > 8 && r.bakeScene() == frozen, "Surface indirect follows live style without rebaking");
     set(.5f);
     const auto partial = render(true);
@@ -125,6 +140,14 @@ void styledIndirectTests() {
     const auto probeOn = render(false);
     set(0);
     const auto probeOff = render(false);
+    if (directGroups) {
+      light.radiance = {8, 32, 4}; // Not one scalar multiple of the captured envelope.
+      r.updateLight(live, light);
+      publish();
+      require(render(true)[at] < 3 && target.forward->statistics().analyticLights == 1 &&
+                  r.bakeScene() == frozen,
+              "A non-scalar live colour disables grouped diffuse and restores analytic fallback without rebaking");
+    }
     require(probeOn[at] > 8 && probeOff[at] < 3, "Dynamic receiver probes follow the same live style");
     set(1);
     r.setBakeScene(nullptr);
@@ -132,10 +155,36 @@ void styledIndirectTests() {
     publish();
     const auto cached = until();
     require(std::strstr(target.forward->statistics().baking.status, "Cached") &&
-            cached == on && target.forward->bakeController()->volume()->styledIndirect,
+            cached == on && target.forward->bakeController()->volume()->styledLighting,
             "Attributed cache reload preserves exact surface pixels and runtime style ownership");
-    std::printf("Styled indirect %ux: surface %u/%u/%u, probe %u/%u; cache and cancellation passed\n",
-                samples, unsigned(off[at]), unsigned(partial[at]), unsigned(lit),
+    if (directGroups) {
+      options.debugView = 0;
+      options.localShadows = true;
+      options.localShadowLights = 1;
+      options.localShadowFade = 0;
+      target.enableForward(options, true);
+      const auto clear = render(true);
+      remixapi_InstanceIdentityEXT movingId{};
+      movingId.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+      movingId.instanceId = 18007;
+      movingId.classification = REMIXAPI_INSTANCE_DYNAMIC_EXT;
+      movingId.rasterVisible = 0;
+      auto blocker = instance(mesh, -.5f);
+      blocker.pNext = &movingId;
+      blocker.transform.matrix[0][0] = blocker.transform.matrix[1][1] = .4f;
+      const auto moving = r.createRetained(blocker);
+      const auto shadow = render(true);
+      require(clear[at] > 8 && shadow[at] < clear[at] / 3 &&
+                  target.forward->statistics().staticShadowUpdates == 0,
+              "A grouped controllable light subtracts only its moving-caster contribution from the lightmap");
+      r.destroyRetained(&moving, 1);
+      require(std::abs(int(render(true)[at]) - int(clear[at])) <= 2,
+              "Removing the moving caster restores the grouped direct contribution");
+      set(0);
+      require(render(true)[at] < 3, "The mixed grouped light still switches fully off");
+    }
+    std::printf("Styled %s %ux: surface %u/%u/%u, probe %u/%u; cache and cancellation passed\n",
+                directGroups ? "direct" : "indirect", samples, unsigned(off[at]), unsigned(partial[at]), unsigned(lit),
                 unsigned(probeOff[at]), unsigned(probeOn[at]));
     require(errors.load() == 0, "Attributed map publication is Vulkan validation clean");
   }

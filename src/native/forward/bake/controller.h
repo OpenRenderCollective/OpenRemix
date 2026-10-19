@@ -17,7 +17,8 @@ namespace remix::forward::bake {
   struct Volume {
     uint64_t hash = 0;
     ContentHashes content;
-    bool directDiffuse = false, styledIndirect = false;
+    bool directDiffuse = false, styledLighting = false;
+    std::vector<uint32_t> groupedStyles; // complete direct groups, separate from permanent aggregate policy
     scene::DistantLight sun; // shape provenance for matching surface/probe static sunlight
     probes::Header reflectionHeader;
     float sceneScale = 1;

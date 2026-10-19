@@ -1977,9 +1977,25 @@ through immutable surface/probe callbacks. Existing dense callers use that same
 encoder. Exceptions and cancellation cannot append a partial component. No new
 ray transport, shader layout or public Remix ABI is introduced by this step.
 
-Runtime publication and cache integration remain pending. Before suppressing a
-style's analytic diffuse, its complete component must be published and its live
-members must agree on the scalar envelope ratio from `styleScales`. Invalid,
-changed or non-scalar groups must disable their grouped contribution and keep
-analytic fallback. Moving-shadow corrections and specular visibility remain
-per-light and must use the same proven coverage and live weights.
+`rtx.native.forward.experimentalGroupedStyledDirect=1` connects this compositor
+to preparation-worker publication when complete indexed directional fields are
+enabled. It remains off by default. Cached layouts reconstruct chart ownership
+from immutable rectangles, so transient receiver arrays are unnecessary. Derived
+groups share the existing probe buffer and fit its device storage range after
+reserving base probes and local visibility. The original cache stores its captures
+unchanged; derived RGB is rebuilt after validated reload. Aggregate-policy cache
+keys are preserved. An analytic-only policy gets a capability key for directional
+probe capture. No new private cache payload format is introduced.
+
+A style skips analytic diffuse only when its complete component is published and
+its live members agree on the scalar envelope ratio from `styleScales`. Invalid,
+changed, missing or non-scalar groups contribute no grouped RGB and retain their
+per-light response. Moving-shadow corrections and specular visibility remain
+per-light with existing fades. Live GI disables this derived path.
+
+Combining grouped direct with optional styled-indirect SH is not connected yet:
+when indirect components exist, they remain authoritative and direct grouping is
+skipped. GPU coverage includes toggles, dynamic probes, non-scalar fallback,
+moving-caster subtraction, cache reload and cancellation at 1x/2x/4x MSAA.
+Map visual acceptance remains open; keep this option experimental until the
+observed bright-patch differences and broader interior/moving-object cases pass.

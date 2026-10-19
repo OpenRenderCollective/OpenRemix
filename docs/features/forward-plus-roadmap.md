@@ -59,8 +59,14 @@ The CPU `groupStyledDirect` compositor now reuses completed per-light surface an
 SH without launching style-specific rays or allocating dense all-map RGB workspaces.
 It declines complete style groups on missing coverage or storage exhaustion. Signed
 coefficients, seven-owner overlap and independent group failures have CPU coverage.
-Publication, cache identity and runtime selection are not connected to this compositor
-yet; this does not close the controllable-direct or Construct performance gate.
+Worker publication and runtime selection now consume complete direct groups behind
+`experimentalGroupedStyledDirect`. Aggregate caches retain their existing identity;
+groups are derived again after validated reload, while analytic-only probe capture
+uses a capability key. Scalar toggles, non-scalar fallback, moving shadows, dynamic
+probes, cache reload and cancellation have GPU coverage. Combining direct groups
+with optional styled-indirect groups and broader map visual acceptance remain open.
+The Construct image comparison exposes bright patches that must be diagnosed before
+rollout; reduced analytic counts and lower GPU time do not close this quality gate.
 
 Consolidate policy while finishing this work. Runtime response classification now has one named-input
 decision point for aggregate ownership, required mixed responses, shadow selection and independent

@@ -178,6 +178,7 @@ namespace remix::forward::bake {
                 mixedLights->charts, mixedLights->directCharts);
           dumpReceiverReport(*source, surfaceLayout, surfacePixels, grid, cancellation.get_token());
           prepareSurfaceStorage();
+          prepareGroupedStyles(properties.limits.maxStorageBufferRange, config);
           cacheHit = filtering = true;
           return;
         }
@@ -896,6 +897,9 @@ namespace remix::forward::bake {
                   physical, device, owner->source, owner->surfaceLayout, owner->cancellation.get_token(),
                   owner->mixedLights->charts, owner->mixedLights->directCharts);
             owner->prepareSurfaceStorage();
+            VkPhysicalDeviceProperties groupLimits;
+            vkGetPhysicalDeviceProperties(physical, &groupLimits);
+            if (!owner->styles) owner->prepareGroupedStyles(groupLimits.limits.maxStorageBufferRange, config);
             owner->baseFinished = true;
             owner->filtering = !owner->styles;
           });
@@ -950,8 +954,10 @@ namespace remix::forward::bake {
     volume->mixedLights = std::make_shared<mixed::Bindings>(m_job->mixedLights->lights);
     mixed::dumpOwnership(*m_job->mixedLights, m_job->surfaceLayout);
     const size_t baseBytes = sizeof(GridHeader) + grid.probes.size() * sizeof(Result);
-    const size_t styleBytes = m_job->styleWords.size() * sizeof(uint32_t);
-    volume->styledIndirect = styleBytes != 0;
+    const auto &publishedStyles = m_job->groupedStyles.styles.empty() ? m_job->styleWords : m_job->groupedStyles.words;
+    const size_t styleBytes = publishedStyles.size() * sizeof(uint32_t);
+    volume->styledLighting = styleBytes != 0;
+    volume->groupedStyles = m_job->groupedStyles.styles;
     const size_t localOffset = (baseBytes + styleBytes + 15) & ~size_t(15);
     const auto localWords = m_job->localProbes ? m_job->localProbes->words() : std::vector<uint32_t>{};
     const size_t localBytes = localWords.size() * sizeof(uint32_t);
@@ -1032,12 +1038,12 @@ namespace remix::forward::bake {
     probes::dumpPublishedData(".irradiance-published.bin", data.data(), baseBytes);
     volume->content.grid = scene::fastHash(data.data(), baseBytes) | 1;
     if (styleBytes) {
-      volume->content.styledIndirect = scene::fastHash(m_job->styleWords.data(), styleBytes) | 1;
-      std::memcpy(data.data() + baseBytes, m_job->styleWords.data(), styleBytes);
+      volume->content.styledIndirect = scene::fastHash(publishedStyles.data(), styleBytes) | 1;
+      std::memcpy(data.data() + baseBytes, publishedStyles.data(), styleBytes);
       auto header = grid.header;
       header.settings[3] = 1;
       std::memcpy(data.data(), &header, sizeof(header));
-      probes::dumpPublishedData(".styled-irradiance.bin", m_job->styleWords.data(), styleBytes);
+      probes::dumpPublishedData(".styled-irradiance.bin", publishedStyles.data(), styleBytes);
     }
     if (localBytes) {
       std::memcpy(data.data() + localOffset, localWords.data(), localBytes);
@@ -1284,7 +1290,7 @@ namespace remix::forward::bake {
         if (!m_job) {
           if (!config.samples || config.samples > 8192 || !config.bounces || config.bounces > 8 ||
               !config.batch || config.batch > 1024 ||
-              (config.styledIndirect && (!config.styleStorageMiB || config.styleStorageMiB > 512)))
+              ((config.styledIndirect || config.groupedStyledDirect) && (!config.styleStorageMiB || config.styleStorageMiB > 512)))
             throw std::invalid_argument("Invalid bake batch settings");
           auto job = std::make_shared<Job>();
           job->source = source;

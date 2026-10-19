@@ -130,6 +130,20 @@ namespace remix::forward {
       highlightSelection.reset();
       highlightSource = bindings;
     }
+    std::vector<bake::StyleScale> liveStyles;
+    std::array<uint8_t, 128> groupedStyles{};
+    if (publishedBake && publishedBake->styledLighting && bindings) {
+      liveStyles = bake::styleScales(*bindings->source, sources);
+      for (const auto &scale : liveStyles)
+        if (scale.status == bake::StyleStatus::Ready &&
+            std::binary_search(publishedBake->groupedStyles.begin(), publishedBake->groupedStyles.end(), scale.style))
+          groupedStyles[scale.style] = 1;
+    }
+    const auto grouped = [&](uint32_t captured) {
+      if (giSupported || !bindings || captured >= bindings->source->lights.size()) return false;
+      const auto style = bindings->source->lights[captured].style;
+      return style < groupedStyles.size() && groupedStyles[style] != 0;
+    };
     std::vector<float> highlightWeights;
     std::vector<HighlightCandidate> highlightCandidates;
     if (options.bakedLightingPreviewActive(giSupported) && bindings) {
@@ -138,7 +152,7 @@ namespace remix::forward {
       std::vector<float> priorities(bindings->source->lights.size(), 0);
       for (uint32_t i = 0; i < sources.size(); ++i) {
         const auto captured = capturedLights[i];
-        if (captured == mixed::none || !bindings->bakedDiffuse(captured) ||
+        if (captured == mixed::none || (!bindings->bakedDiffuse(captured) && !grouped(captured)) ||
             !bindings->retainsVisibility(captured) || bindings->source->lights[captured].bakeHint ==
                 REMIXAPI_LIGHT_BAKING_REQUIRE_MIXED_EXT) continue;
         const auto &source = sources[i];
@@ -196,8 +210,8 @@ namespace remix::forward {
     step(cpu.draws);
     auto &data = frame.data;
     data = {};
-    if (const auto &volume = baking->volume(); volume && volume->styledIndirect && volume->mixedLights) {
-      for (const auto &scale : bake::styleScales(*volume->mixedLights->source, sources))
+    if (const auto &volume = baking->volume(); volume && volume->styledLighting && volume->mixedLights) {
+      for (const auto &scale : liveStyles)
         if (scale.status == bake::StyleStatus::Ready)
           data.styleScales[scale.style / 4][scale.style % 4] = scale.value;
     }
@@ -277,7 +291,7 @@ namespace remix::forward {
         if (captured != mixed::none) {
           light.shaping[3] = float(captured + 1);
           const auto &bindings = *publishedBake->mixedLights;
-          responseInput.aggregate = bindings.bakedDiffuse(captured);
+          responseInput.aggregate = bindings.bakedDiffuse(captured) || grouped(captured);
           responseInput.attributed = bindings.retainsVisibility(captured);
           responseInput.requireMixed = bindings.source->lights[captured].bakeHint ==
                                     REMIXAPI_LIGHT_BAKING_REQUIRE_MIXED_EXT;

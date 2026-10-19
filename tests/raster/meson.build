@@ -55,6 +55,9 @@ if get_option('gpu_tests')
     args : [meson.current_build_dir() / 'styled-mixed-readback', 'styled-mixed'], timeout : 180)
     test('Forward+ styled indirect surfaces, dynamic probes, cache and cancellation', raster_test,
       args : [meson.current_build_dir() / 'styled-indirect-readback', 'styled-indirect'], timeout : 180)
+  test('Forward+ grouped controllable direct surfaces, probes, cache and cancellation', raster_test,
+    args : [meson.current_build_dir() / 'styled-direct-readback', 'styled-direct'],
+    env : ['REMIX_DEBUG_DIRECTIONAL_FIELDS=1'], timeout : 180)
   test('Forward+ per-light static visibility and live specular', raster_test,
     args : [meson.current_build_dir() / 'mixed-readback', 'mixed'], timeout : 180)
   test('Forward+ compact static occlusion and mixed-light overflow', raster_test,

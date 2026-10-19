@@ -70,6 +70,11 @@ int main() {
   value = bake::sparse::probe(grouped.words, 127, 0);
   require(value[0][1] == 12 && value[1][1] == -2 && value[0][0] == 0,
           "Probe coefficients use the same independently attributed colour envelope");
+  auto cachedLayout = layout;
+  cachedLayout.points.clear(); cachedLayout.pointCharts.clear(); cachedLayout.owners.clear();
+  const auto restored = bake::groupStyledDirect(source, cachedLayout, owners, complete, visibility, 1u<<20);
+  require(restored.words == grouped.words,
+          "Cache layouts without transient receiver arrays rebuild the exact grouped publication");
   const auto incomplete = bake::groupStyledDirect(source, layout, owners, fields(true), visibility, 1u<<20);
   require(incomplete.styles == std::vector<uint32_t>{127} && incomplete.declined.size() == 1 &&
           incomplete.declined[0].reason == bake::StyledDirectDecline::SurfaceCoverage,

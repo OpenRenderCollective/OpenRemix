@@ -61,6 +61,7 @@ namespace remix::forward {
       // Live GI replaces aggregate irradiance and evaluates primary lights
       // analytically. Preserve their attributed static visibility in that mode.
       if (liveGiActive) {
+        config.groupedStyledDirect = false;
         config.aggregateDiffuse = false;
         config.fullyBakedLights = false;
         config.bakedGeometryLights = false;

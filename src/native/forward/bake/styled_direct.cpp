@@ -26,8 +26,6 @@ namespace remix::forward::bake {
       uint64_t maximumBytes, std::stop_token cancelled) {
     check(cancelled);
     require(source.lights.size() < (1u << 24) && layout.charts.size() < UINT32_MAX &&
-        layout.pointCharts.size() == layout.points.size() &&
-        layout.owners.size() == uint64_t(layout.pageSize) * layout.pageSize * layout.pages &&
         !probes.offsets().empty());
     mixed::DirectionalFields::validate(directionals, uint32_t(layout.charts.size()),
                                        uint32_t(source.lights.size()), directionals.size_bytes());
@@ -56,9 +54,23 @@ namespace remix::forward::bake {
       chartLights[chart].push_back(light);
       surfaceCoverage[emitter.style] &= mixed::DirectionalFields::sample(directionals, chart, light, 0, 0).has_value();
     }
-    for (uint32_t pixelOwner : layout.owners)
-      require(pixelOwner == lightmap::unowned ||
-              (pixelOwner < layout.pointCharts.size() && layout.pointCharts[pixelOwner] < layout.charts.size()));
+    // Cached layouts intentionally omit transient surface receivers. Captured
+    // fields already include receiver coverage and seam donors; reconstruct
+    // only their immutable atlas rectangles, not world samples or RGB arrays.
+    std::vector<uint32_t> chartAtPixel(uint64_t(layout.pageSize) * layout.pageSize * layout.pages,
+                                      lightmap::unowned);
+    for (uint32_t chart = 0; chart < layout.charts.size(); ++chart) {
+      check(cancelled);
+      const auto &r = layout.charts[chart];
+      require(r.page < layout.pages && r.width && r.height && r.width <= layout.pageSize &&
+              r.height <= layout.pageSize && r.x <= layout.pageSize - r.width && r.y <= layout.pageSize - r.height);
+      for (uint32_t y = r.y; y < r.y + r.height; ++y)
+        for (uint32_t x = r.x; x < r.x + r.width; ++x) {
+          auto &owner = chartAtPixel[(size_t(r.page) * layout.pageSize + y) * layout.pageSize + x];
+          require(owner == lightmap::unowned);
+          owner = chart;
+        }
+    }
     for (const auto &light : source.lights)
       for (float radiance : light.radiance) require(std::isfinite(radiance) && radiance >= 0);
     sparse::Builder builder({layout.pageSize, layout.pages, uint32_t(probes.offsets().size() - 1)}, maximumBytes);
@@ -83,9 +95,8 @@ namespace remix::forward::bake {
       try {
         builder.addSampled(style, [&](uint32_t page, uint32_t x, uint32_t y) {
           sparse::Coefficients sum{};
-          const uint32_t point = layout.owners[(size_t(page) * layout.pageSize + y) * layout.pageSize + x];
-          if (point == lightmap::unowned) return sum;
-          const uint32_t chart = layout.pointCharts[point];
+          const uint32_t chart = chartAtPixel[(size_t(page) * layout.pageSize + y) * layout.pageSize + x];
+          if (chart == lightmap::unowned) return sum;
           const auto &rectangle = layout.charts[chart];
           require(rectangle.page == page && rectangle.width && rectangle.height);
           const auto localX = uint32_t(std::clamp<int64_t>(int64_t(x) - rectangle.x, 0, rectangle.width - 1));

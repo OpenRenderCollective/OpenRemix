@@ -3,6 +3,7 @@
 #include "forward/bake/budget.h"
 #include "forward/bake/transport.h"
 #include "forward/bake/style_work.h"
+#include "forward/bake/styled_direct.h"
 #include "forward/bake/probe_visibility.h"
 #include "forward/bake/sun_antialiasing.h"
 #include "forward/mixed/overflow.h"
@@ -27,11 +28,13 @@ namespace remix::forward::bake {
     lightmap::Layout surfaceLayout;
     std::vector<Result> surfaces;
     std::unique_ptr<StyleWork> styles;
-    std::vector<uint32_t> styleWords;
+    std::vector<uint32_t> styleWords; // original indirect-only cache data
+    StyledDirectGroups groupedStyles; // disposable derived publication data
+    void prepareGroupedStyles(uint64_t storageRange, const Config &config);
     std::optional<ProbeVisibility> localProbes;
     std::vector<VisibilityTask> localProbeTasks;
     bool localProbesPlanned = false;
-    void prepareProbeVisibility(uint64_t storageRange, float cutoff);
+    void prepareProbeVisibility(uint64_t storageRange, float cutoff, bool groupedDirect);
     uint32_t localProbeNext = 0, localProbeReceived = 0;
     bool baseFinished = false;
     std::vector<Result> readback; // reused between completed frame slots; avoids clearing every batch

@@ -1,6 +1,7 @@
 #include "forward/bake/job.h"
 #include "forward/bake/cache.h"
 #include "forward/bake/storage_options.h"
+#include "forward/mixed/directional_links.h"
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -9,6 +10,28 @@
 #include <new>
 
 namespace remix::forward::bake {
+  void Controller::Job::prepareGroupedStyles(uint64_t storageRange, const Config &config) {
+    if (!config.groupedStyledDirect || !directionalFieldsRequested() || !completeDirectionals ||
+        !localProbes || !localProbes->directional() || styleIds(*source).empty()) return;
+    // Until composition with indirect groups is connected, preserve that
+    // existing feature exactly rather than replacing or duplicating its SH.
+    if (!styleWords.empty()) return;
+    const uint64_t reserved = sizeof(GridHeader) + grid.probes.size() * sizeof(Result) +
+                               localProbes->gpuBytes() + 15;
+    if (reserved + sparse::headerWords * 4 > storageRange) return;
+    const auto began = std::chrono::steady_clock::now();
+    const uint64_t budget = std::min(uint64_t(config.styleStorageMiB) << 20, storageRange - reserved);
+    try {
+      const auto owners = mixed::positiveDirectionalLinks(*mixedLights, cancellation.get_token());
+      groupedStyles = groupStyledDirect(*source, surfaceLayout, owners, directionalWords,
+                                         *localProbes, budget, cancellation.get_token());
+    } catch (const std::bad_alloc &) {
+      groupedStyles = {}; // Optional derivation; the original cache and runtime path remain valid.
+    }
+    std::fprintf(stderr, "Forward grouped styled direct: %zu groups, %zu declined, %zu bytes, %.3f ms\n",
+                 groupedStyles.styles.size(), groupedStyles.declined.size(), groupedStyles.words.size() * 4,
+                 std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count());
+  }
   void Controller::Job::prepareSurfaceStorage() {
     const char *override = std::getenv("REMIX_DEBUG_UNIFIED_MASKS");
     if (surfacePixels.empty()) return;

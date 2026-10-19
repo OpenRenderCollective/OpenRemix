@@ -7,9 +7,9 @@
 #include <stdexcept>
 
 namespace remix::forward::bake {
-  void Controller::Job::prepareProbeVisibility(uint64_t storageRange, float cutoff) {
+  void Controller::Job::prepareProbeVisibility(uint64_t storageRange, float cutoff, bool groupedDirect) {
     const auto &policy = mixedLights->lights.directLighting;
-    const bool directional = std::any_of(policy.lights.begin(), policy.lights.end(), [](DirectMode mode) {
+    const bool directional = groupedDirect || std::any_of(policy.lights.begin(), policy.lights.end(), [](DirectMode mode) {
       return aggregatesDiffuse(mode) && retainsVisibility(mode);
     });
     const auto storage = probeVisibilityBudget(uint32_t(grid.probes.size()), uint32_t(source->lights.size()),
@@ -48,7 +48,7 @@ namespace remix::forward::bake {
       static std::atomic<uint64_t> generation = 0;
       job.localProbesPlanned = true;
       job.ticket = m_pipelines->prepare("forward-probe-volumes-" + std::to_string(++generation),
-          [owner, range, cutoff] { owner->prepareProbeVisibility(range, cutoff); });
+          [owner, range, cutoff, grouped = config.groupedStyledDirect] { owner->prepareProbeVisibility(range, cutoff, grouped); });
       status(REMIXAPI_BAKE_PREPARING_EXT, "Planning local probe light volumes");
       return;
     }

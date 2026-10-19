@@ -60,6 +60,17 @@ int main(int argc, char **argv) {
     require(bc::key(source->contentHash, changed, .001f, device) != identity,
             "Every bake quality field participates in disk cache identity");
   };
+  {
+    auto grouped = config;
+    grouped.groupedStyledDirect = true;
+    require(bc::key(source->contentHash, grouped, .001f, device) != identity,
+            "An analytic-only cache needs a distinct capability for directional probe capture");
+    f::bake::DirectPolicy aggregate;
+    aggregate.lights.assign(source->lights.size(), f::bake::DirectMode::BakedMixed);
+    require(bc::key(source->contentHash, grouped, .001f, device, aggregate) ==
+                bc::key(source->contentHash, config, .001f, device, aggregate),
+            "Grouped publication reuses aggregate caches that already retain directional probes");
+  }
   qualityKey([](auto &c) { c.directDiffuse = !c.directDiffuse; });
   qualityKey([](auto &c) { c.aggregateDiffuse = !c.aggregateDiffuse; });
   qualityKey([](auto &c) { c.fullyBakedLights = !c.fullyBakedLights; });
