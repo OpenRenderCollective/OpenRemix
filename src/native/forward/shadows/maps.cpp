@@ -9,7 +9,7 @@ namespace remix::forward::shadows {
       vkDestroyImageView(m_device, view, nullptr);
   }
   void Maps::initialize(VkPhysicalDevice physical, VkDevice device, VkRenderPass pass, uint32_t count,
-                        uint32_t resolution) {
+                        uint32_t resolution, bool staticCache) {
     m_device = device;
     m_pass = pass;
     m_count = std::min(count, maximumLights);
@@ -19,6 +19,7 @@ namespace remix::forward::shadows {
     const auto usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
                        VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     for (auto *image : {&m_static, &m_dynamic}) {
+      if (image == &m_static && !staticCache) continue;
       image->create(physical, device, extent, VK_FORMAT_D32_SFLOAT, usage, VK_SAMPLE_COUNT_1_BIT,
                     VK_IMAGE_ASPECT_DEPTH_BIT, m_layers);
       for (uint32_t layer = 0; layer < m_layers; ++layer) {
@@ -45,6 +46,7 @@ namespace remix::forward::shadows {
   }
   void Maps::initializeLayouts(VkCommandBuffer command) {
     for (const auto *image : {&m_static, &m_dynamic}) {
+      if (!image->handle) continue;
       VkImageMemoryBarrier barrier{.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
                                    .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
                                    .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
@@ -81,10 +83,11 @@ namespace remix::forward::shadows {
       if (!selection.active[slot])
         continue;
       for (bool staticCasters : {true, false}) {
+        if (staticCasters && !m_static.handle) continue;
         if (staticCasters && !selection.dirty[slot])
           continue;
         for (uint32_t face = 0; face < faces; ++face) {
-          const auto target = m_targets[(staticCasters ? 0 : m_layers) + slot * faces + face];
+          const auto target = m_targets[(!staticCasters && m_static.handle ? m_layers : 0) + slot * faces + face];
           const VkRenderPassBeginInfo begin{.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
                                             .renderPass = m_pass,
                                             .framebuffer = target,

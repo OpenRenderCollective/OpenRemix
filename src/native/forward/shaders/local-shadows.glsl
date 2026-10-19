@@ -1,6 +1,9 @@
 #include "cube.glsl"
 layout(set = 0, binding = 7) uniform sampler2DArrayShadow staticLocalShadows;
 layout(set = 0, binding = 8) uniform sampler2DArrayShadow dynamicLocalShadows;
+#ifdef VIEWMODEL_PASS
+layout(set = 0, binding = 11) uniform sampler2DArrayShadow viewModelLocalShadows;
+#endif
 
 float localShadowVisibility(Light light, vec3 position, vec3 receiverNormal, bool includeStatic) {
   uint tag = uint(light.corners[0].w);
@@ -35,6 +38,9 @@ float localShadowVisibility(Light light, vec3 position, vec3 receiverNormal, boo
       float reference = clamp((receiver - frame.localSettings.y) / origin.w, 0, 1);
       vec4 coordinate = vec4(adjacent.xy * .5 + .5, float(slot * 6u) + adjacent.z, reference);
       float moving = texture(dynamicLocalShadows, coordinate);
+#ifdef VIEWMODEL_PASS
+      if (frame.clusterInfo.w != 0u) moving = min(moving, texture(viewModelLocalShadows, coordinate));
+#endif
       float fixedVisibility = includeStatic ? texture(staticLocalShadows, coordinate) : 1;
       visibility += min(moving, fixedVisibility);
     }

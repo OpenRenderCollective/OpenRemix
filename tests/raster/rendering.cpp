@@ -2013,152 +2013,215 @@ namespace {
                       split ? "Stitched curved" : curved ? "Curved" : "Planar", samples, ssr ? "on" : "off", unsigned(first[left + 1]), unsigned(first[right + 1]));
       }
   }
-  void viewModelLightingTests() {
+  void viewModelLightingTests(bool probeTest = false) {
     for (bool ssr : {false, true})
-      for (uint32_t samples : {1u, 2u, 4u}) {
-        Target target;
-        auto &r = target.raster;
-        remix::forward::Options options;
-        options.samples = samples;
-        options.ssr = ssr;
-        options.baking.enabled = false;
-        options.ambient = 0;
-        options.shadowResolution = 256;
-        options.shadowDistance = 20;
-        options.sceneScale = 1;
-        target.enableForward(options);
-        auto matte = [&](uint64_t hash, remixapi_Float3D color) {
-          remixapi_MaterialInfoOpaqueEXT opaque{};
-          opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
-          opaque.albedoConstant = color;
-          opaque.opacityConstant = 1;
-          opaque.roughnessConstant = 1;
-          opaque.alphaTestType = 7;
-          remixapi_MaterialInfo info{};
-          info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
-          info.hash = hash;
-          info.pNext = &opaque;
-          remixapi_MaterialHandle handle;
-          r.createMaterial(info, handle);
-          return handle;
-        };
-        const auto wallMesh = quad(r, 13000, matte(13001, {.5f, .5f, .5f}));
-        const auto weaponMesh = quad(r, 13002, matte(13003, {1, .05f, .05f}));
-        const auto overlayMesh = quad(r, 13006, matte(13007, {0, 0, 1}));
-        auto wall = instance(wallMesh, 7.5f); // quad vertices contribute another .5
-        wall.transform.matrix[0][0] = wall.transform.matrix[1][1] = 20;
-        wall.doubleSided = 1;
-        auto weapon = instance(weaponMesh, 1.5f);
-        weapon.transform.matrix[0][0] = weapon.transform.matrix[1][1] = .5f;
-        weapon.categoryFlags = REMIXAPI_INSTANCE_CATEGORY_BIT_VIEW_MODEL;
-        weapon.doubleSided = 1;
-        remixapi_InstanceIdentityEXT hidden{};
-        hidden.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
-        hidden.instanceId = 13005;
-        hidden.classification = REMIXAPI_INSTANCE_DYNAMIC_EXT;
-        hidden.rasterVisible = 0;
-        auto blocker = instance(wallMesh, .5f);
-        blocker.transform.matrix[0][0] = blocker.transform.matrix[1][1] = .3f;
-        blocker.doubleSided = 1;
-        blocker.pNext = &hidden;
-        remixapi_LightInfoDistantEXT distant{};
-        distant.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT;
-        distant.direction = {0, 0, 1};
-        remixapi_LightInfo info{};
-        info.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
-        info.pNext = &distant;
-        info.hash = 13004;
-        info.radiance = {4, 4, 4};
-        remixapi_LightHandle sun;
-        r.createLight(info, sun);
-        auto cameras = [&] {
-          remixapi_CameraInfoParameterizedEXT parameters{};
-          parameters.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO_PARAMETERIZED_EXT;
-          parameters.aspect = 1;
-          parameters.fovYInDegrees = 90;
-          parameters.nearPlane = .05f;
-          parameters.farPlane = 100;
-          parameters.right = {1, 0, 0};
-          parameters.up = {0, 1, 0};
-          parameters.forward = {0, 0, 1};
-          remixapi_CameraInfo camera{};
-          camera.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO;
-          camera.pNext = &parameters;
-          for (auto type : {REMIXAPI_CAMERA_TYPE_WORLD, REMIXAPI_CAMERA_TYPE_VIEW_MODEL}) {
-            camera.type = type;
-            r.setupCamera(camera);
+      for (bool local : {false, true})
+        for (uint32_t samples : {1u, 2u, 4u}) {
+          if (probeTest && (!local || ssr || samples == 2)) continue;
+          Target target(64, 64, probeTest);
+          auto &r = target.raster;
+          remix::forward::Options options;
+          options.samples = samples;
+          options.ssr = ssr;
+          options.baking.enabled = probeTest;
+          options.baking.aggregateDiffuse = true;
+          options.baking.maxProbes = 128;
+          options.baking.spacing = .5f;
+          options.baking.samples = options.baking.batch = 64;
+          options.baking.bounces = 1;
+          options.baking.reflectionProbes = 0;
+          options.baking.lightmapTexels = 1024;
+          options.baking.lightmapPageSize = 32;
+          options.baking.diskCache = false;
+          options.baking.denoiseLightmaps = false;
+          options.ambient = 0;
+          options.shadowResolution = 256;
+          options.shadowDistance = 20;
+          options.localShadowLights = 1;
+          options.localShadowResolution = 256;
+          options.localShadowFade = 0;
+          options.sceneScale = 1;
+          target.enableForward(options);
+          auto matte = [&](uint64_t hash, remixapi_Float3D color) {
+            remixapi_MaterialInfoOpaqueEXT opaque{};
+            opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+            opaque.albedoConstant = color;
+            opaque.opacityConstant = 1;
+            opaque.roughnessConstant = 1;
+            opaque.alphaTestType = 7;
+            remixapi_MaterialInfo info{};
+            info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+            info.hash = hash;
+            info.pNext = &opaque;
+            remixapi_MaterialHandle handle;
+            r.createMaterial(info, handle);
+            return handle;
+          };
+          const auto wallMesh = quad(r, 13000, matte(13001, {.5f, .5f, .5f}));
+          const auto weaponMesh = quad(r, 13002, matte(13003, {1, .05f, .05f}));
+          const auto overlayMesh = quad(r, 13006, matte(13007, {0, 0, 1}));
+          auto wall = instance(wallMesh, 7.5f); // quad vertices contribute another .5
+          wall.transform.matrix[0][0] = wall.transform.matrix[1][1] = 20;
+          wall.doubleSided = 1;
+          auto weapon = instance(weaponMesh, 1.5f);
+          weapon.transform.matrix[0][0] = weapon.transform.matrix[1][1] = .5f;
+          weapon.categoryFlags = REMIXAPI_INSTANCE_CATEGORY_BIT_VIEW_MODEL;
+          weapon.doubleSided = 1;
+          remixapi_InstanceIdentityEXT hidden{};
+          hidden.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+          hidden.instanceId = 13005;
+          hidden.classification = REMIXAPI_INSTANCE_DYNAMIC_EXT;
+          hidden.rasterVisible = 0;
+          auto blocker = instance(wallMesh, .5f);
+          blocker.transform.matrix[0][0] = blocker.transform.matrix[1][1] = .3f;
+          blocker.doubleSided = 1;
+          blocker.pNext = &hidden;
+          remixapi_LightInfoDistantEXT distant{};
+          distant.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT;
+          distant.direction = {0, 0, 1};
+          remixapi_LightInfoSphereEXT sphere{};
+          sphere.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT;
+          sphere.radius = .2f;
+          remixapi_LightInfo info{};
+          info.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+          info.pNext = &distant;
+          info.hash = 13004;
+          info.radiance = {4, 4, 4};
+          if (local) {
+            info.pNext = &sphere;
+            info.radiance = {100, 100, 100};
           }
-        };
-        auto render = [&](bool shadow, bool behindWall, bool drawWeapon, bool lit,
-                           bool selfShadow = false, bool compatibilityOverlay = false) {
-          cameras();
-          auto backdrop = wall;
-          if (behindWall) backdrop.transform.matrix[2][3] = .5f;
-          r.drawInstance(backdrop);
-          if (drawWeapon) r.drawInstance(weapon);
-          if (shadow) r.drawInstance(blocker);
-          if (selfShadow) {
-            auto selfCaster = blocker;
-            selfCaster.categoryFlags = REMIXAPI_INSTANCE_CATEGORY_BIT_VIEW_MODEL;
-            r.drawInstance(selfCaster);
+          remixapi_LightHandle sun;
+          r.createLight(info, sun);
+          remixapi_InstanceIdentityEXT staticIdentity{};
+          staticIdentity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+          staticIdentity.instanceId = 13008;
+          staticIdentity.classification = REMIXAPI_INSTANCE_STATIC_EXT;
+          staticIdentity.rasterVisible = 1;
+          if (probeTest) {
+            wall.pNext = &staticIdentity;
+            const uint64_t handle = r.createRetained(wall);
+            remixapi_BakeSceneBoundsInfoEXT request{};
+            request.scene = {sizeof(request), REMIXAPI_BAKE_SCENE_BOUNDS_VERSION_EXT, 130, 1, 1,
+                REMIXAPI_BAKE_SCENE_READY_EXT, 1, 1, &handle, &sun};
+            for (uint32_t c = 0; c < 3; ++c) {
+              request.minimum[c] = c == 2 ? 1.f : -.6f;
+              request.maximum[c] = c == 2 ? 3.f : .6f;
+            }
+            r.setBakeScene(&request.scene);
           }
-          if (compatibilityOverlay) {
-            auto rasterOnly = hidden;
-            rasterOnly.classification = REMIXAPI_INSTANCE_RASTER_ONLY_EXT;
-            rasterOnly.rasterVisible = 1;
-            auto overlay = weapon;
-            overlay.mesh = overlayMesh;
-            overlay.pNext = &rasterOnly;
-            overlay.transform.matrix[0][0] = overlay.transform.matrix[1][1] = .2f;
-            r.drawInstance(overlay);
-          }
-          if (lit) r.drawLight(sun);
-          return target.render();
-        };
-        const size_t centre = (32 * 64 + 32) * 4;
-        const auto bright = render(false, false, true, true);
-        const auto dark = render(true, false, true, true);
-        require(bright[centre] > bright[centre + 1] * 1.4f && bright[centre] > 40,
-                "Viewmodel uses lit PBR shading rather than compatibility colour");
-        require(dark[centre] < bright[centre] * .6f,
-                "World dynamic casters shadow the isolated viewmodel receiver");
-        const auto selfShadowed = render(false, false, true, true, true);
-        require(selfShadowed[centre] < bright[centre] * .6f,
-                "Dedicated close-up cascade supplies viewmodel self shadows");
-        // Keep the physically occluded weapon visible through ambient light;
-        // overlay ordering is independent of whether the wall blocks its sun.
-        options.ambient = .2f;
-        target.forward->updateLighting(options);
-        const auto overlay = render(false, true, true, true);
-        require(overlay[centre] > overlay[centre + 1] * 1.4f,
-                "Viewmodel remains over world geometry even when physically behind it");
-        options.ambient = 0;
-        target.forward->updateLighting(options);
-        const auto unlit = render(false, false, true, false);
-        require(unlit[centre] < 5 && unlit[centre + 1] < 5,
-                "Viewmodel does not remain fullbright without lighting");
-        const auto fallback = render(false, true, true, true, false, true);
-        require(fallback[centre+2] > 200 && fallback[centre] < 5,
-                "Raster-only viewmodel attachments retain their overlay layer after camera correction");
-        const auto world = render(false, false, false, true);
-        require(std::abs(int(world[centre]) - int(world[centre+1])) < 3,
-                "Removing the weapon cannot leave a stale overlay in a reused frame slot");
-        const auto weaponAgain = render(false, false, true, true);
-        const auto isolated = render(false, false, true, true, true);
-        for (uint32_t y = 0; y < 64; ++y)
-          for (uint32_t x = 0; x < 64; ++x) {
-            if (x >= 23 && x <= 40 && y >= 23 && y <= 40) continue;
-            const size_t pixel = (y * 64 + x) * 4;
+          auto cameras = [&] {
+            remixapi_CameraInfoParameterizedEXT parameters{};
+            parameters.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO_PARAMETERIZED_EXT;
+            parameters.aspect = 1;
+            parameters.fovYInDegrees = 90;
+            parameters.nearPlane = .05f;
+            parameters.farPlane = 100;
+            parameters.right = {1, 0, 0};
+            parameters.up = {0, 1, 0};
+            parameters.forward = {0, 0, 1};
+            remixapi_CameraInfo camera{};
+            camera.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO;
+            camera.pNext = &parameters;
+            for (auto type : {REMIXAPI_CAMERA_TYPE_WORLD, REMIXAPI_CAMERA_TYPE_VIEW_MODEL}) {
+              camera.type = type;
+              r.setupCamera(camera);
+            }
+          };
+          auto render = [&](bool shadow, bool behindWall, bool drawWeapon, bool lit,
+                             bool selfShadow = false, bool compatibilityOverlay = false) {
+            cameras();
+            auto backdrop = wall;
+            if (behindWall) backdrop.transform.matrix[2][3] = .5f;
+            r.drawInstance(backdrop);
+            if (drawWeapon) r.drawInstance(weapon);
+            if (shadow) r.drawInstance(blocker);
+            if (selfShadow) {
+              auto selfCaster = blocker;
+              selfCaster.categoryFlags = REMIXAPI_INSTANCE_CATEGORY_BIT_VIEW_MODEL;
+              r.drawInstance(selfCaster);
+            }
+            if (compatibilityOverlay) {
+              auto rasterOnly = hidden;
+              rasterOnly.classification = REMIXAPI_INSTANCE_RASTER_ONLY_EXT;
+              rasterOnly.rasterVisible = 1;
+              auto overlay = weapon;
+              overlay.mesh = overlayMesh;
+              overlay.pNext = &rasterOnly;
+              overlay.transform.matrix[0][0] = overlay.transform.matrix[1][1] = .2f;
+              r.drawInstance(overlay);
+            }
+            if (lit) r.drawLight(sun);
+            return target.render();
+          };
+          const size_t centre = (32 * 64 + 32) * 4;
+          if (probeTest) {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+            do {
+              render(false, false, true, false);
+              require(target.forward->statistics().baking.state != REMIXAPI_BAKE_FAILED_EXT,
+                      target.forward->statistics().baking.status);
+            } while (!target.forward->statistics().baking.active && std::chrono::steady_clock::now() < deadline);
+            require(target.forward->statistics().baking.active, "Viewmodel probe fixture completes its bake");
+            const auto snapshot = r.bakeScene();
+            const auto probeWeapon = render(false, false, true, false);
+            weapon.categoryFlags = 0;
+            const auto probeWorld = render(false, false, true, false);
+            weapon.categoryFlags = REMIXAPI_INSTANCE_CATEGORY_BIT_VIEW_MODEL;
+            require(probeWeapon[centre] > 40 && probeWeapon[centre] > 1.4f * probeWeapon[centre+1],
+                    "Baked probes light the viewmodel with no live lights or ambient fallback");
             for (uint32_t c = 0; c < 3; ++c)
-              require(std::abs(int(world[pixel + c]) - int(weaponAgain[pixel + c])) <= 1,
-                      "Viewmodel cannot cast shadows or alter world reflection guides");
-            for (uint32_t c = 0; c < 3; ++c)
-              require(std::abs(int(world[pixel + c]) - int(isolated[pixel + c])) <= 1,
-                      "Self-shadow casters affect only viewmodel receivers");
+              require(std::abs(int(probeWeapon[centre+c]) - int(probeWorld[centre+c])) <= 2,
+                      "Viewmodel and main-world receivers sample identical baked probe lighting");
+            require(r.bakeScene() == snapshot && target.forward->statistics().baking.active,
+                    "Viewmodel ownership changes preserve active map lighting and its bake snapshot");
+            std::printf("Viewmodel probes %ux: overlay %u, world %u, analytic lights %u\n",
+                        samples, probeWeapon[centre], probeWorld[centre], target.forward->statistics().lights);
+            continue;
           }
-        std::printf("Viewmodel %ux SSR %u: lit %u, world-shadowed %u, overlay %u\n",
-                    samples, unsigned(ssr), bright[centre], dark[centre], overlay[centre]);
-      }
+          const auto bright = render(false, false, true, true);
+          const auto dark = render(true, false, true, true);
+          require(bright[centre] > bright[centre + 1] * 1.4f && bright[centre] > 40,
+                  "Viewmodel uses lit PBR shading rather than compatibility colour");
+          require(dark[centre] < bright[centre] * .6f,
+                  "World dynamic casters shadow the isolated viewmodel receiver");
+          const auto selfShadowed = render(false, false, true, true, true);
+          require(selfShadowed[centre] < bright[centre] * .6f,
+                  "Isolated sun or local maps supply viewmodel self shadows");
+          // Keep the physically occluded weapon visible through ambient light;
+          // overlay ordering is independent of whether the wall blocks its sun.
+          options.ambient = .2f;
+          target.forward->updateLighting(options);
+          const auto overlay = render(false, true, true, true);
+          require(overlay[centre] > overlay[centre + 1] * 1.4f,
+                  "Viewmodel remains over world geometry even when physically behind it");
+          options.ambient = 0;
+          target.forward->updateLighting(options);
+          const auto unlit = render(false, false, true, false);
+          require(unlit[centre] < 5 && unlit[centre + 1] < 5,
+                  "Viewmodel does not remain fullbright without lighting");
+          const auto fallback = render(false, true, true, true, false, true);
+          require(fallback[centre+2] > 200 && fallback[centre] < 5,
+                  "Raster-only viewmodel attachments retain their overlay layer after camera correction");
+          const auto world = render(false, false, false, true);
+          require(std::abs(int(world[centre]) - int(world[centre+1])) < 3,
+                  "Removing the weapon cannot leave a stale overlay in a reused frame slot");
+          const auto weaponAgain = render(false, false, true, true);
+          const auto isolated = render(false, false, true, true, true);
+          for (uint32_t y = 0; y < 64; ++y)
+            for (uint32_t x = 0; x < 64; ++x) {
+              if (x >= 23 && x <= 40 && y >= 23 && y <= 40) continue;
+              const size_t pixel = (y * 64 + x) * 4;
+              for (uint32_t c = 0; c < 3; ++c)
+                require(std::abs(int(world[pixel + c]) - int(weaponAgain[pixel + c])) <= 1,
+                        "Viewmodel cannot cast shadows or alter world reflection guides");
+              for (uint32_t c = 0; c < 3; ++c)
+                require(std::abs(int(world[pixel + c]) - int(isolated[pixel + c])) <= 1,
+                        "Self-shadow casters affect only viewmodel receivers");
+            }
+          std::printf("Viewmodel %ux SSR %u local %u: lit %u, world-shadowed %u, overlay %u\n",
+                      samples, unsigned(ssr), unsigned(local), bright[centre], dark[centre], overlay[centre]);
+        }
   }
   void terrainLightingTests(bool decal = false) {
     for (bool ssr : {false, true})
@@ -4620,6 +4683,7 @@ int main(int argc, char **argv) {
   else if (argc>2 && std::strcmp(argv[2],"overflow-specular")==0) compactOcclusionTests(true);
   else if (argc>2 && std::strcmp(argv[2],"overflow-masks")==0) compactOcclusionTests(true, true);
   else if (argc>2 && std::strcmp(argv[2],"viewmodel-lighting")==0) viewModelLightingTests();
+  else if (argc>2 && std::strcmp(argv[2],"viewmodel-probes")==0) viewModelLightingTests(true);
   else if (argc>2 && std::strcmp(argv[2],"terrain-lighting")==0) terrainLightingTests();
   else if (argc>2 && std::strcmp(argv[2],"decal-lighting")==0) terrainLightingTests(true);
   else if (argc>2 && std::strcmp(argv[2],"clear-visibility")==0) clearVisibilityTests();

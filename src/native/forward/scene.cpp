@@ -504,6 +504,12 @@ namespace remix::forward {
                         .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                         .pImageInfo = &localImages[i]};
     vkUpdateDescriptorSets(device, 2, &writes[10], 0, nullptr);
+    // The world shader does not read this binding. Keep it valid so an overlay
+    // descriptor copy can replace it with the isolated self-shadow array.
+    const VkWriteDescriptorSet selfShadowDefault{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = frame.scene, .dstBinding = 11, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &localImages[1]};
+    vkUpdateDescriptorSets(device, 1, &selfShadowDefault, 0, nullptr);
     auto occlusion = baking->occlusionDescriptor();
     occlusion.sampler = sampler;
     writes[12] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,

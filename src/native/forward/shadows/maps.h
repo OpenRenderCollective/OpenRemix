@@ -9,8 +9,9 @@ namespace remix::forward::shadows {
   class Maps {
   public:
     ~Maps();
+    // Self-only casters need no frozen layer; staticView() is then null.
     void initialize(VkPhysicalDevice physical, VkDevice device, VkRenderPass pass, uint32_t count,
-                    uint32_t resolution);
+                    uint32_t resolution, bool staticCache = true);
     using Draw = std::function<void(uint32_t slot, uint32_t face, bool staticCasters)>;
     void record(VkCommandBuffer command, const Selection &selection, const Draw &draw);
     VkImageView staticView() const { return m_static.view; }

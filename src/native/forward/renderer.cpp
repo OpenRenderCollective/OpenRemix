@@ -11,6 +11,7 @@ namespace remix::forward {
   Renderer::~Renderer() = default;
   Renderer::Gpu::~Gpu() {
     viewModelSun.reset();
+    viewModelLocalMaps.reset();
     waterPass.reset();
     baking.reset();
     localMaps.reset();
@@ -214,7 +215,8 @@ namespace remix::forward {
     m_gpu->statistics.targetBytes = m_gpu->baseTargetBytes + memory.images +
                                     (m_gpu->waterPass ? m_gpu->waterPass->targetBytes() : 0) +
                                     m_gpu->viewModelTarget->bytes() +
-                                    (m_gpu->viewModelSun ? m_gpu->viewModelSun->bytes() : 0);
+                                    (m_gpu->viewModelSun ? m_gpu->viewModelSun->bytes() : 0) +
+                                    (m_gpu->viewModelLocalMaps ? m_gpu->viewModelLocalMaps->memoryBytes() : 0);
     m_gpu->statistics.accelerationBytes = memory.acceleration;
     if (m_gpu->liveScene) {
       const auto live = m_gpu->liveScene->memory();

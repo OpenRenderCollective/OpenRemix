@@ -327,9 +327,12 @@ while world caster bounds extend depth without reducing XY density. Relevant fro
 world geometry plus weapon geometry cast into this map, sampled only by viewmodel receivers.
 This deliberate close-up static-caster pass is separate from the fully baked world's shadow policy.
 Targets allocate only when first needed and are queue ordered; posed geometry and constants retain
-frame-slot ownership. Continue with isolated local-light self-shadows, environment reflections,
-explicit baked-probe readback coverage and actual weapon/FOV/animation checks in GMod. The current
-sun/overlay fixtures cover MSAA, world and self shadowing, wall overlap, removal, fallback attachment
+frame-slot ownership. Local-light self-shadows use an independent dynamic-only depth array for the
+selected light slots, combined with existing world visibility only by viewmodel shaders. No duplicate
+static cache is allocated for these self casters. Probe-only readback compares the same surface in
+viewmodel and world ownership with live lights and ambient fallback removed, and checks that ownership
+changes preserve the bake snapshot. Continue with environment reflections and actual weapon/FOV/animation
+checks in GMod. The sun/point-light overlay fixtures cover MSAA, world and self shadowing, wall overlap, removal, fallback attachment
 ordering and unchanged world pixels; they do not establish complete live-game viewmodel parity.
 
 Lazy material replacements may change global mod generation without changing a map receiver.

@@ -46,6 +46,7 @@ namespace remix::forward {
     std::unique_ptr<water::Pass> waterPass;
     std::unique_ptr<viewmodel::Target> viewModelTarget;
     std::unique_ptr<viewmodel::SunShadow> viewModelSun;
+    std::unique_ptr<shadows::Maps> viewModelLocalMaps;
     VkPipeline viewModelPipeline = VK_NULL_HANDLE;
     std::unique_ptr<postfx::Renderer> postProcessing;
     VkDescriptorSetLayout postLayout = VK_NULL_HANDLE;
