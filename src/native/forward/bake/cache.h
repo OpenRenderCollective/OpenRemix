@@ -38,6 +38,7 @@ namespace remix::forward::bake::cache {
     const ProbeVisibility *localProbes = nullptr;
     bool directionalAttempted = false;
     std::span<const uint32_t> directionals{}; // empty after a whole-replacement budget decline
+    uint64_t directionalBudget = 0; // zero on write selects the current layout allowance
   };
   struct Snapshot {
     Grid grid;
@@ -52,6 +53,7 @@ namespace remix::forward::bake::cache {
     bool directDiffuse = false, sun = false;
     bool directionalAttempted = false;
     std::vector<uint32_t> directionals;
+    uint64_t directionalBudget = 0;
   };
   // Misses, corruption, incompatible versions and unavailable files fall back
   // to tracing. Neither operation publishes resources or performs GPU work.

@@ -27,10 +27,19 @@ persistence. It reuses retained samples, traces additional positive owners one f
 preserves seam donors and refuses incomplete export. Cache import validates the exact owner
 manifest and chart rectangles. Publication preserves complete coverage before comparing memory.
 Seven-owner runtime tests exercise cancellation, an independently blackened owner outside the
-four legacy channels, exact cached restoration and 1x/2x/4x MSAA. The normal path still uses the
-legacy atlas; these synthetic gates do not establish map-scale performance or selected-probe
-completeness. Finish those gates before making fully baked lighting the default, and remove the
+four legacy channels, exact cached restoration and 1x/2x/4x MSAA. Selected aggregate tests also
+exercise the extra owner's moving-shadow correction on charted surfaces and a separate dynamic
+probe-lit receiver at 1x/4x MSAA. Controlled black correction fields preserve shared aggregate RGB
+while isolating the selected response, and exact cache restoration removes that intervention.
+The normal path still uses the legacy atlas; these synthetic gates do not establish map-scale
+performance or complete selected-probe availability on larger maps. Finish those gates before
+making fully baked lighting the default, and remove the
 redundant legacy directional scratch/cache layers when the migration can preserve fallback behavior.
+Batch several complete directional fields within a bounded staging window instead of advancing
+through a preparation ticket and fenced presentation cycle for every field. Preserve deterministic
+sampling, indexed receipt ownership, cancellation and all-or-nothing publication. Measure bake GPU
+time separately from wall time; normal scene rendering and presentation must not be mislabeled as
+ray-tracing work. Recheck cache restoration and image parity on the same saved maps after batching.
 Toggleable/styled components must remain independently controllable instead of joining permanent
 aggregate RGB. Check water, displacement layers and live-GI transitions, then measure Crossfire,
 Construct, c1a0/c1a0d and Steamlab with identical quality and fixed camera positions. Default rollout

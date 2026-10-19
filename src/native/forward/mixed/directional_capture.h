@@ -11,7 +11,7 @@ namespace remix::forward::mixed {
   public:
     using Link = DirectionalLink;
     DirectionalCapture(const lightmap::Layout &layout, uint32_t lights, std::span<const Link> links,
-                       uint64_t stagingBudget, uint64_t storageBudget = DirectionalFields::maximumBytes,
+                       uint64_t stagingBudget, uint64_t storageBudget = DirectionalFields::defaultBytes,
                        std::stop_token cancelled = {});
     bool done() const { return m_next == m_links.size(); }
     uint32_t begin(std::stop_token cancelled = {});

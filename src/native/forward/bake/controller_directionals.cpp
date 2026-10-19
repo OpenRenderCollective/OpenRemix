@@ -7,21 +7,48 @@
 #include <stdexcept>
 
 namespace remix::forward::bake {
+  namespace {
+    using Clock = std::chrono::steady_clock;
+    struct CpuTime {
+      double &total;
+      Clock::time_point began = Clock::now();
+      bool active = true;
+      void finish() {
+        if (active) total += std::chrono::duration<double, std::milli>(Clock::now() - began).count();
+        active = false;
+      }
+      ~CpuTime() { finish(); }
+    };
+  }
+  void Controller::Job::logDirectionalTiming() const {
+    const auto &timing = directionalTiming;
+    std::fprintf(stderr, "Forward directional capture timing: wall_ms=%.3f worker_ms=%.3f submission_ms=%.3f "
+                         "readback_ms=%.3f gpu_ms=%.3f batches=%llu budget_bytes=%llu timestamps=%u\n",
+        std::chrono::duration<double, std::milli>(Clock::now() - timing.began).count(),
+        timing.workerMs, timing.submissionMs, timing.readbackMs, timing.gpuMs,
+        static_cast<unsigned long long>(timing.batches), static_cast<unsigned long long>(directionalBudget),
+        unsigned(transport->timingSupported()));
+  }
   void Controller::Job::advanceDirectionals(bool finish) {
+    CpuTime worker{directionalTiming.workerMs};
     const auto cancelled = cancellation.get_token();
     const auto decline = [&] {
       directionalCapture.reset();
       directionalWords.clear();
       completeDirectionals = false;
+      worker.finish();
+      logDirectionalTiming();
     };
     try {
       if (!directionalAttempted) {
         directionalAttempted = true;
+        directionalTiming.began = Clock::now();
+        directionalBudget = mixed::directionalStorageBudget(surfaceLayout);
         const auto links = mixed::positiveDirectionalLinks(*mixedLights, cancelled);
         directionalFields = uint32_t(links.size());
         directionalCapture = std::make_unique<mixed::DirectionalCapture>(surfaceLayout,
             uint32_t(source->lights.size()), links, 256ull << 20,
-            mixed::DirectionalFields::maximumBytes, cancelled);
+            directionalBudget, cancelled);
       }
       for (;;) {
         if (finish) {
@@ -40,6 +67,8 @@ namespace remix::forward::bake {
                        directionalFields, directionalReusedFields,
                        static_cast<unsigned long long>(directionalTracedPoints),
                        directionalWords.size() * sizeof(uint32_t));
+          worker.finish();
+          logDirectionalTiming();
           return;
         }
         directionalCount = directionalCapture->begin(cancelled);
@@ -96,6 +125,7 @@ namespace remix::forward::bake {
       return;
     }
     if (job.directionalNext < job.directionalCount) {
+      CpuTime submissionTime{job.directionalTiming.submissionMs};
       auto &submission = m_submissions[m_slot];
       if (submission.job) throw std::logic_error("Directional field slot reused before its fence");
       const auto count = job.count(Work::Visibility, config,
@@ -111,6 +141,7 @@ namespace remix::forward::bake {
       submission.count = count;
       job.directionalNext += count;
       job.directionalTracedPoints += count;
+      ++job.directionalTiming.batches;
     }
     char progress[128];
     std::snprintf(progress, sizeof(progress), "Baking attributed light %u/%u (%u/%u samples)",

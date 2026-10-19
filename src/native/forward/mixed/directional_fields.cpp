@@ -5,6 +5,13 @@
 #include <stdexcept>
 
 namespace remix::forward::mixed {
+  uint64_t directionalStorageBudget(const lightmap::Layout &layout) {
+    if (layout.pageSize > 4096 || layout.pages > 256)
+      throw std::invalid_argument("Invalid directional storage layout");
+    const uint64_t replaced = uint64_t(layout.pageSize) * layout.pageSize * layout.pages *
+        lightmap::irradianceLayers * 4 * sizeof(uint16_t);
+    return std::clamp(replaced, DirectionalFields::defaultBytes, DirectionalFields::maximumBytes);
+  }
   namespace {
     void require(bool valid) {
       if (!valid) throw std::invalid_argument("Invalid directional surface table");
@@ -19,7 +26,7 @@ namespace remix::forward::mixed {
   }
   DirectionalFields::DirectionalFields(uint32_t charts, uint32_t lights, uint64_t budget)
       : m_charts(charts), m_lights(lights), m_budget(budget) {
-    require(charts < UINT32_MAX && lights < (1u << 24) && budget <= uint64_t(UINT32_MAX) * 4);
+    require(charts < UINT32_MAX && lights < (1u << 24) && budget <= maximumBytes);
     if (bytes() > budget) throw std::length_error("Directional surface directory exceeds budget");
   }
   uint64_t DirectionalFields::bytes() const {
@@ -87,7 +94,7 @@ namespace remix::forward::mixed {
   }
   void DirectionalFields::validate(std::span<const uint32_t> words, uint32_t charts, uint32_t lights,
                                     uint64_t budget) {
-    require(words.size() >= headerWords && words.size_bytes() <= budget && words.size() <= UINT32_MAX &&
+    require(budget <= maximumBytes && words.size() >= headerWords && words.size_bytes() <= budget && words.size() <= UINT32_MAX &&
         charts < UINT32_MAX && lights < (1u << 24));
     require(words[0] == magic && words[1] == version && words[2] == charts && words[3] == lights &&
         words[5] == headerWords && words[6] == uint64_t(headerWords) + charts + 1 &&

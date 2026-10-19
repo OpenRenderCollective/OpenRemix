@@ -358,7 +358,8 @@ namespace remix::forward::bake::cache {
       require(source && source->ready);
       Snapshot result;
       const auto flags = input.pod<uint32_t>();
-      require(flags <= 127 && (!(flags & 64) || (flags & 1)) && (!(flags & 32) || (flags & 16)) &&
+      require(flags <= 255 && (!(flags & 128) || (flags & 64)) &&
+              (!(flags & 64) || (flags & 1)) && (!(flags & 32) || (flags & 16)) &&
               (!(flags & 8) || config.styledIndirect) && (!(flags & 1) || config.directDiffuse) &&
               (!(flags & 2) || source->sun.isDistant));
       result.directDiffuse = (flags & 1) != 0;
@@ -423,7 +424,9 @@ namespace remix::forward::bake::cache {
       }
       result.directionalAttempted = (flags & 64) != 0;
       if (result.directionalAttempted) {
-        result.directionals = input.array<uint32_t>(mixed::DirectionalFields::maximumBytes / 4);
+        result.directionalBudget = (flags & 128) ? input.pod<uint64_t>() : mixed::DirectionalFields::defaultBytes;
+        require(result.directionalBudget > 0 && result.directionalBudget <= mixed::directionalStorageBudget(layout));
+        result.directionals = input.array<uint32_t>(result.directionalBudget / 4);
         if (!result.directionals.empty())
           mixed::validateDirectionalCoverage(result.directionals, result.mixed, layout, cancelled);
       }
@@ -442,6 +445,11 @@ namespace remix::forward::bake::cache {
       detail::check(cancelled);
       require(view.directionals.empty() || view.directionalAttempted);
       require(!view.directionalAttempted || view.directDiffuse);
+      const auto directionalBudget = view.directionalAttempted
+          ? (view.directionalBudget ? view.directionalBudget : mixed::directionalStorageBudget(view.layout)) : 0;
+      require(!view.directionalAttempted ||
+          (directionalBudget > 0 && directionalBudget <= mixed::directionalStorageBudget(view.layout)));
+      require(view.directionals.size_bytes() <= directionalBudget);
       if (!view.directionals.empty())
         mixed::validateDirectionalCoverage(view.directionals, view.mixed, view.layout, cancelled);
       if (view.localProbes) {
@@ -473,7 +481,7 @@ namespace remix::forward::bake::cache {
       output.pod(uint32_t(view.directDiffuse) | uint32_t(view.sun) << 1 | uint32_t(hasPolicy) << 2 |
                  uint32_t(!view.styles.empty()) << 3 | uint32_t(view.localProbes != nullptr) << 4 |
                  uint32_t(view.localProbes && view.localProbes->directional()) << 5 |
-                 uint32_t(view.directionalAttempted) << 6);
+                 uint32_t(view.directionalAttempted) << 6 | uint32_t(view.directionalAttempted) << 7);
       output.pod(view.surfaceSamples);
       output.pod(view.grid.header);
       output.array(view.grid.probes);
@@ -524,7 +532,10 @@ namespace remix::forward::bake::cache {
         output.array(view.localProbes->entries());
         if (view.localProbes->directional()) output.array(view.localProbes->direct());
       }
-      if (view.directionalAttempted) output.array(view.directionals);
+      if (view.directionalAttempted) {
+        output.pod(directionalBudget);
+        output.array(view.directionals);
+      }
       output.finish();
       detail::check(cancelled);
       replace(temporary, file);

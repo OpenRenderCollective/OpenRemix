@@ -169,15 +169,17 @@ int main(int argc, char **argv) {
       return fields.words();
     };
     auto words = encode(7);
+    uint64_t requestedBudget = 0;
     const auto saveDirectional = [&](bool attempted = true) {
       return bc::write(directionalFile, identity,
           {data.grid, data.layout, wide, data.captures, data.specular, data.pixels,
-           data.surfaceSamples, data.directDiffuse, data.sun, {}, nullptr, attempted, words});
+           data.surfaceSamples, data.directDiffuse, data.sun, {}, nullptr, attempted, words, requestedBudget});
     };
     const auto loadDirectional = [&] { return bc::read(directionalFile, identity, wideSource, config, device); };
     require(saveDirectional(), "Complete fields beyond four owners are persisted");
     const auto imported = loadDirectional();
     require(imported && imported->directionalAttempted && imported->directionals == words &&
+                imported->directionalBudget == f::mixed::directionalStorageBudget(data.layout) &&
                 f::mixed::DirectionalFields::sample(imported->directionals, 0, 6, 2, 2)->front() == 0,
             "Cache round trip preserves every signed field and explicit known-black seventh owner");
     std::vector<char> original;
@@ -185,14 +187,7 @@ int main(int argc, char **argv) {
       std::ifstream input(directionalFile, std::ios::binary);
       original.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
     }
-    const auto replaceTail = [&](const std::vector<uint32_t> &replacement) {
-      auto damaged = original;
-      damaged.resize(original.size() - words.size() * sizeof(uint32_t) - sizeof(uint64_t));
-      const uint64_t count = replacement.size();
-      const size_t start = damaged.size();
-      damaged.resize(start + sizeof(count) + replacement.size() * sizeof(uint32_t));
-      std::memcpy(damaged.data() + start, &count, sizeof(count));
-      std::memcpy(damaged.data() + start + sizeof(count), replacement.data(), replacement.size() * sizeof(uint32_t));
+    const auto commitDamaged = [&](std::vector<char> &damaged) {
       bc::detail::Header header;
       std::memcpy(&header, damaged.data(), sizeof(header));
       header.bytes = damaged.size() - sizeof(header);
@@ -201,11 +196,41 @@ int main(int argc, char **argv) {
       std::ofstream output(directionalFile, std::ios::binary | std::ios::trunc);
       output.write(damaged.data(), std::streamsize(damaged.size()));
     };
+    const size_t budgetOffset = original.size() - words.size() * sizeof(uint32_t) - 2 * sizeof(uint64_t);
+    auto legacy = original;
+    legacy.erase(legacy.begin() + budgetOffset, legacy.begin() + budgetOffset + sizeof(uint64_t));
+    uint32_t flags;
+    std::memcpy(&flags, legacy.data() + sizeof(bc::detail::Header), sizeof(flags));
+    flags &= ~128u;
+    std::memcpy(legacy.data() + sizeof(bc::detail::Header), &flags, sizeof(flags));
+    commitDamaged(legacy);
+    const auto legacyImport = loadDirectional();
+    require(legacyImport && legacyImport->directionalBudget == f::mixed::DirectionalFields::defaultBytes &&
+                legacyImport->directionals == words,
+            "Earlier optional directional payloads import with their original 128 MiB allowance");
+    auto invalidBudget = original;
+    const uint64_t excessive = f::mixed::directionalStorageBudget(data.layout) + 1;
+    std::memcpy(invalidBudget.data() + budgetOffset, &excessive, sizeof(excessive));
+    commitDamaged(invalidBudget);
+    require(!loadDirectional(), "Checksummed cache budget cannot exceed its atlas-derived allowance");
+    const auto replaceTail = [&](const std::vector<uint32_t> &replacement) {
+      auto damaged = original;
+      damaged.resize(original.size() - words.size() * sizeof(uint32_t) - sizeof(uint64_t));
+      const uint64_t count = replacement.size();
+      const size_t start = damaged.size();
+      damaged.resize(start + sizeof(count) + replacement.size() * sizeof(uint32_t));
+      std::memcpy(damaged.data() + start, &count, sizeof(count));
+      std::memcpy(damaged.data() + start + sizeof(count), replacement.data(), replacement.size() * sizeof(uint32_t));
+      commitDamaged(damaged);
+    };
     replaceTail(encode(6));
     require(!loadDirectional(), "Checksummed codec-valid cache with missing ownership is rejected on import");
     replaceTail(encode(7, true));
     require(!loadDirectional(), "Checksummed cache cannot substitute another chart rectangle");
     require(saveDirectional(), "Valid complete capture restores the cache after malformed import tests");
+    requestedBudget = words.size() * sizeof(uint32_t) - 4;
+    require(!saveDirectional(), "Writer enforces the actual attempted encoded budget");
+    requestedBudget = 0;
     require(!saveDirectional(false) && loadDirectional()->directionals == words,
             "Unattempted capture cannot publish complete fields or replace valid cached data");
     words = encode(6);

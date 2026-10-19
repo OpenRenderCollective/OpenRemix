@@ -11,8 +11,8 @@ namespace remix::forward::mixed {
   class DirectionalFields {
   public:
     static constexpr uint32_t magic = 0x48534452u, version = 1, headerWords = 12, entryWords = 8;
-    static constexpr uint64_t maximumBytes = 128ull << 20;
-    DirectionalFields(uint32_t charts, uint32_t lights, uint64_t budget = maximumBytes);
+    static constexpr uint64_t defaultBytes = 128ull << 20, maximumBytes = 512ull << 20;
+    DirectionalFields(uint32_t charts, uint32_t lights, uint64_t budget = defaultBytes);
     bool add(uint32_t chart, uint32_t light, const lightmap::Allocation &rectangle,
              std::span<const directional::Field> fields, std::stop_token cancelled = {});
     uint64_t bytes() const;
@@ -36,6 +36,9 @@ namespace remix::forward::mixed {
   // modifying source pixels or advertising additional, untraced light owners.
   // Budget failure declines the entire replacement, never a subset of owners.
   std::optional<DirectionalFields> retainedDirectionals(const Plan &plan, const lightmap::Layout &layout,
-      std::span<const uint16_t> pixels, uint64_t budget = DirectionalFields::maximumBytes,
+      std::span<const uint16_t> pixels, uint64_t budget = DirectionalFields::defaultBytes,
       std::stop_token cancelled = {});
+  // Complete fields replace nine RGBA16F atlas layers. Reuse that storage
+  // allowance on large maps, with a small-map floor and a bounded hard cap.
+  uint64_t directionalStorageBudget(const lightmap::Layout &layout);
 }

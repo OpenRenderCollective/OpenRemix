@@ -144,8 +144,10 @@ namespace remix::forward::bake {
       if (!cacheFile.empty()) {
         auto cached = cache::read(cacheFile, cacheKey, source, config, deviceIdentity,
                                   cancellation.get_token(), directLighting);
-        if (cached && directionalFieldsRequested() && cached->directDiffuse && !cached->directionalAttempted)
-          cached.reset(); // Only the requested capability needs a one-time upgrade.
+        if (cached && directionalFieldsRequested() && cached->directDiffuse &&
+            (!cached->directionalAttempted || (cached->directionals.empty() &&
+             cached->directionalBudget < mixed::directionalStorageBudget(cached->layout))))
+          cached.reset(); // Upgrade only a missing capability or a smaller declined budget.
         if (!cancellation.stop_requested())
           cache::recordLookup(cacheFile, cacheKey, source->contentHash,
                                cache::key(0, config, lightCutoff, deviceIdentity, directLighting), bool(cached));
@@ -159,6 +161,7 @@ namespace remix::forward::bake {
           styleWords = std::move(cached->styles);
           localProbes = std::move(cached->localProbes);
           directionalAttempted = cached->directionalAttempted;
+          directionalBudget = cached->directionalBudget;
           completeDirectionals = !cached->directionals.empty();
           directionalWords = std::move(cached->directionals);
           surfaceReceived = cached->surfaceSamples;
@@ -360,6 +363,7 @@ namespace remix::forward::bake {
         const double readbackMs =
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - readBegin).count();
         job.readbackMs += readbackMs;
+        if (submission.directionalField) job.directionalTiming.readbackMs += readbackMs;
         if (submission.overflowVisibility)
           job.overflowTiming.readbackMs += readbackMs;
         job.readbackBytes += uint64_t(submission.count) *
@@ -382,6 +386,7 @@ namespace remix::forward::bake {
          : submission.surface            ? job.surfaceReceived
                                          : job.received) += submission.count;
         if (const auto elapsed = job.transport->elapsed(slot)) {
+          if (submission.directionalField) job.directionalTiming.gpuMs += *elapsed;
           if (submission.sunAntialiasing) job.sunAntialiasingGpuMs += *elapsed;
           if (submission.overflowVisibility)
             job.overflowTiming.gpuMs += *elapsed;
@@ -989,9 +994,10 @@ namespace remix::forward::bake {
         unsigned(visibility.indexed), static_cast<unsigned long long>(visibility.legacyAllocation),
         static_cast<unsigned long long>(visibility.totalAllocation),
         static_cast<unsigned long long>(visibility.convertedTexels), visibility.maximumError);
-    std::fprintf(stderr, "Forward indexed directionality: %u, %zu bytes, table word %u, %u atlas layers\n",
+    std::fprintf(stderr, "Forward indexed directionality: %u, %zu bytes, table word %u, %u atlas layers, coverage=%s\n",
         unsigned(visibility.indexedDirect), visibility.indexedDirect ? m_job->directionalWords.size() * sizeof(uint32_t) : 0,
-        visibility.directionalOffset, surfaceLayers);
+        visibility.directionalOffset, surfaceLayers,
+        visibility.indexedDirect ? (m_job->completeDirectionals ? "complete" : "retained") : "legacy");
     const auto &maskCosts = m_job->mixedLights->masks.candidateCosts();
     if (maskCosts.candidates)
       probes::dumpPublishedData(".overflow-mask-costs.bin", &maskCosts, sizeof(maskCosts));

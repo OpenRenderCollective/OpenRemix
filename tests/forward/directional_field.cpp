@@ -30,6 +30,22 @@ namespace {
 #include "directional_capture_cases.h"
 int main() {
   directionalCaptureTests();
+  {
+    remix::forward::lightmap::Layout layout;
+    layout.pageSize = 64; layout.pages = 1;
+    require(remix::forward::mixed::directionalStorageBudget(layout) == (128ull << 20),
+            "Small maps keep the bounded directional floor");
+    layout.pageSize = 1024; layout.pages = 4;
+    require(remix::forward::mixed::directionalStorageBudget(layout) == (288ull << 20),
+            "Four atlas pages can reuse exactly the nine replaced RGBA16F layers");
+    layout.pageSize = 4096;
+    require(remix::forward::mixed::directionalStorageBudget(layout) == (512ull << 20),
+            "Large atlas layouts cannot exceed the directional hard cap");
+    layout.pages = 257;
+    rejects([&] { (void)remix::forward::mixed::directionalStorageBudget(layout); });
+    rejects([&] { remix::forward::mixed::DirectionalFields fields(1, 1,
+        remix::forward::mixed::DirectionalFields::maximumBytes + 1); });
+  }
   std::vector<field::Field> values(16 * 16);
   const auto black = roundTrip(values, 16, 16);
   require(black.encoding == field::tiled && black.words == std::vector<uint32_t>(4),

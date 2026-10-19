@@ -11,7 +11,7 @@ namespace remix::forward::mixed {
     };
     require(plan.lights.source && plan.charts.size() == layout.charts.size());
     DirectionalFields::validate(words, uint32_t(layout.charts.size()),
-        uint32_t(plan.lights.source->lights.size()), DirectionalFields::maximumBytes);
+        uint32_t(plan.lights.source->lights.size()), directionalStorageBudget(layout));
     const auto links = positiveDirectionalLinks(plan, cancelled);
     require(words[4] == links.size());
     for (size_t i = 0; i < links.size(); ++i) {

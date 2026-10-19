@@ -7,7 +7,7 @@ namespace remix::forward::bake::cache {
     View view(const Snapshot &s) {
       return {s.grid, s.layout, s.mixed, s.captures, s.specular, s.pixels,
               s.surfaceSamples, s.directDiffuse, s.sun, s.styles,
-              s.localProbes ? &*s.localProbes : nullptr, s.directionalAttempted, s.directionals};
+              s.localProbes ? &*s.localProbes : nullptr, s.directionalAttempted, s.directionals, s.directionalBudget};
     }
     template <typename T> uint64_t storage(const std::vector<T> &v) {
       return uint64_t(v.capacity()) * sizeof(T);

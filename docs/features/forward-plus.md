@@ -178,8 +178,10 @@ positive chart/light links beyond the four retained channels. The controller
 reuses existing retained samples, then traces additional fields one at a time
 through the same hardware transport. Each field drains its fenced readbacks
 before encoding or advancing; there is no expanded all-map coefficient array.
-Manifest storage is bounded to 128 MiB, field staging to 256 MiB and encoded
-output to 128 MiB. These are separate budgets, not a total memory guarantee.
+Manifest storage is bounded to 128 MiB and field staging to 256 MiB. Encoded
+output has a 128 MiB floor and can reuse the allowance of the nine RGBA16F
+atlas layers it replaces, up to a 512 MiB hard cap. These are separate budgets,
+not a total memory guarantee. Retained-only conversion keeps its 128 MiB cap.
 Cancellation never publishes unfinished fields. Budget exhaustion declines the
 whole optional replacement. Unknown visibility remains unknown.
 
@@ -1092,8 +1094,10 @@ distinguishes a recorded memory-budget decline from an unattempted older cache.
 Import verifies the exact positive-owner manifest and each chart rectangle as
 well as codec validity. Enabling the directional developer path upgrades an
 older direct-light cache once; ordinary/default cache reuse is unchanged.
-The extension preserves the radiance identity and uses an optional payload flag
-rather than globally invalidating existing caches.
+The extension preserves the radiance identity and uses optional payload flags
+rather than globally invalidating existing caches. The attempted byte allowance
+is stored as well: an older declined capture can retry once when the replacement
+allowance grows. A decline at the current allowance remains reusable.
 
 Loading checks the version, identity, exact file length and payload checksum before using array counts.
 Counts, atlas rectangles, UVs, light indices and numeric values are validated before upload; file

@@ -46,6 +46,9 @@ if get_option('gpu_tests')
   test('Forward+ seven-owner directional capture, cache, cancellation and MSAA', raster_test,
     args : [meson.current_build_dir() / 'indexed-directional-readback', 'indexed-directionals'],
     env : ['REMIX_DEBUG_DIRECTIONAL_FIELDS=1'], timeout : 180)
+  test('Forward+ selected aggregate corrections beyond four on surfaces and dynamic probes', raster_test,
+    args : [meson.current_build_dir() / 'selected-directional-readback', 'selected-directionals'],
+    env : ['REMIX_DEBUG_DIRECTIONAL_FIELDS=1'], timeout : 240)
   test('Forward+ finite cone direct lighting and analytic rejection', raster_test,
     args : [meson.current_build_dir() / 'finite-cone-readback', 'finite-cone'], timeout : 120)
   test('Forward+ styled baked visibility, toggles, mixed shadows and cache', raster_test,

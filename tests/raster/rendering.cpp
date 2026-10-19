@@ -1677,6 +1677,7 @@ namespace {
     }
   }
 #include "indexed_directionals.h"
+#include "selected_directionals.h"
   void chartIsolationReadback(Target &target, const remix::forward::Options &options) {
     namespace lm = remix::forward::lightmap;
     // Poison unused atlas space magenta; the two tightly packed charts contain
@@ -4441,6 +4442,7 @@ int main(int argc, char **argv) {
   else if (argc>2 && std::strcmp(argv[2],"baked-direct")==0) mixedLightingTests(true, true);
   else if (argc>2 && std::strcmp(argv[2],"aggregate-direct")==0) mixedLightingTests(true, true, false, true);
   else if (argc>2 && std::strcmp(argv[2],"indexed-directionals")==0) indexedDirectionalTests();
+  else if (argc>2 && std::strcmp(argv[2],"selected-directionals")==0) selectedDirectionalTests();
   else if (argc>2 && std::strcmp(argv[2],"finite-cone")==0) finiteConeLightingTests();
   else if (argc>2 && std::strcmp(argv[2],"styled-indirect")==0) styledIndirectTests();
   else if (argc>2 && std::strcmp(argv[2],"local-shadow-plane")==0) localShadowPlaneTests();

@@ -28,7 +28,7 @@ namespace remix::forward::bake {
     size_t owners = 0;
     try {
       const auto fields = mixed::retainedDirectionals(*mixedLights, surfaceLayout, surfacePixels,
-          mixed::DirectionalFields::maximumBytes, cancellation.get_token());
+          mixed::DirectionalFields::defaultBytes, cancellation.get_token());
       if (fields) {
         owners = fields->size();
         // An empty directory can also replace the otherwise unused nine
@@ -69,6 +69,7 @@ namespace remix::forward::bake {
     snapshot->styles = std::move(styleWords);
     snapshot->localProbes = std::move(localProbes);
     snapshot->directionalAttempted = directionalAttempted;
+    snapshot->directionalBudget = directionalBudget;
     if (completeDirectionals) snapshot->directionals = std::move(directionalWords);
     snapshot->surfaceSamples = surfaceReceived;
     snapshot->directDiffuse = hasDirectDiffuse;

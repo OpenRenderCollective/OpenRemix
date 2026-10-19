@@ -12,6 +12,7 @@
 #include "forward/mixed/directional_capture.h"
 #include "forward/probes/evaluation.h"
 #include <atomic>
+#include <chrono>
 #include <filesystem>
 
 namespace remix::forward::bake::cache { struct Snapshot; }
@@ -50,6 +51,13 @@ namespace remix::forward::bake {
     uint32_t directionalField = 0, directionalFields = 0;
     uint32_t directionalReusedFields = 0;
     uint64_t directionalTracedPoints = 0;
+    uint64_t directionalBudget = 0;
+    struct DirectionalTiming {
+      std::chrono::steady_clock::time_point began;
+      double workerMs = 0, submissionMs = 0, readbackMs = 0, gpuMs = 0;
+      uint64_t batches = 0;
+    } directionalTiming;
+    void logDirectionalTiming() const;
     void advanceDirectionals(bool finish);
     void prepareSurfaceStorage();
     std::vector<Vec4> visibility;
