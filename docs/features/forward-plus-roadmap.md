@@ -55,10 +55,12 @@ Construct, c1a0/c1a0d and Steamlab with identical quality and fixed camera posit
 requires measured steady-state GPU improvement and visual checks of highlights, wall occlusion and
 moving shadows, not just a smaller clustered-light counter.
 
-Complete controllable fixed-light groups now replace per-light analytic diffuse behind
-the experimental option. Validate independently scaled direct and indirect groups
-across more maps before enabling them by default; keep them separate from permanent aggregate RGB. Keep arbitrary style identities and runtime
-weights engine agnostic. Preserve per-light specular visibility, moving-caster corrections,
+Complete controllable fixed-light groups replace per-light analytic diffuse under
+the canonical baked-lighting policy. Runtime profiles enable baked lighting and
+styled indirect components; low-level transport callers retain explicit controls.
+Validate independently scaled groups across more maps and keep them separate from
+permanent aggregate RGB. Keep arbitrary style identities and runtime weights
+engine agnostic. Preserve per-light specular visibility, moving-caster corrections,
 cache restoration and unknown-coverage fallback. Use exported response counts to distinguish
 this remaining work from selected highlights; fewer clustered lights alone does not prove a
 frame-time improvement.
@@ -145,12 +147,12 @@ lighting. Keep authored overrides optional; improving automatic fitting remains 
 | --- | --- | --- |
 | Modular forward PBR, clustered lights and 1x/2x/4x MSAA | Implemented | Refresh current-build engine coverage through the integration milestone below |
 | World-metric surface charts, atlas budgets and irradiance probes | Implemented; warped boundary fans, modulating decals and lit displacement paint layers supported | Inspect connected-face continuity, seam donors, close decal receivers, indirect noise and budget coarsening |
-| Dynamic receiver agreement with surface lightmaps | Budget-fitted grid, bounded recovery of BSP-solid slots, shared-position receiver diagnostics, static sun visibility and sparse local-light visibility; experimental aggregate direct grid lighting and moving corrections tested; sparse attributed unit-direct probe SH now supplies aggregate corrections with the same receiver stencil as baked irradiance, with scalar-only fallback/cache compatibility | Close room-scale/deferred-light coverage and strict attributed reconstruction gaps; validate moving actors across maps using CS2, Half-Life: Alyx and s&box as references |
+| Dynamic receiver agreement with surface lightmaps | Budget-fitted grid, bounded recovery of BSP-solid slots, shared-position receiver diagnostics, static sun visibility and sparse local-light visibility; aggregate direct grid lighting and moving corrections tested; sparse attributed unit-direct probe SH now supplies aggregate corrections with the same receiver stencil as baked irradiance, with scalar-only fallback/cache compatibility | Close room-scale/deferred-light coverage and strict attributed reconstruction gaps; validate moving actors across maps using CS2, Half-Life: Alyx and s&box as references |
 | Soft finite emitters, attributed direct diffuse and live specular | Implemented | Compare visible penumbrae and light separation in the live engine |
 | Receiver-area antialiasing of baked direct shadows | Adaptive sunlight edge refinement integrated; grouped-site local transport available | Integrate local/overflow refinement, improve subpixel coverage detection and inspect more maps/views |
-| Aggregate fully static diffuse and compact directional lightmaps | Controller integration retains attributed masks/SH beside aggregate RGB; surface/probe publication, moving shadows and cache reload tested at 1x/2x/4x MSAA; definition edits/removal invalidate stale data until recapture; experimental fully baked policy skips per-light response on covered receivers and retains analytic fallback; optional adapter bake hints preserve mixed requirements and identify sphere-shaped surface emission; covered receivers cluster only the mixed/dynamic prefix, with the complete light tail retained for uncovered fallback; default remains legacy | All-mixed aggregate alone did not improve steady-state cost; fully baked policy changes specular/moving-shadow semantics and now prioritizes mixed-shadow slots with timed fades and retains spare fallback coverage; still needs broader live receiver coverage and water/probe/RT parity and broader-map quality before rollout |
+| Aggregate fully static diffuse and compact directional lightmaps | Controller integration retains attributed masks/SH beside aggregate RGB; surface/probe publication, moving shadows and cache reload tested at 1x/2x/4x MSAA; definition edits/removal invalidate stale data until recapture; the default runtime baked policy bounds per-light corrections/highlights on covered receivers and retains analytic fallback; optional adapter bake hints preserve mixed requirements and identify sphere-shaped surface emission; covered receivers cluster only the mixed/dynamic prefix, with the complete light tail retained for uncovered fallback; runtime profiles enable the canonical policy | Earlier all-mixed aggregate alone did not improve steady-state cost; current policy selects mixed slots and independent highlights with timed fades, retains fallback coverage and skips proven-empty moving-map corrections. Broader live receiver coverage, water/probe/RT parity and map quality acceptance remain open |
 | Dynamic-object shadows combined with baked static shadows | Implemented; captured static casters excluded; overflow audits classify constant visibility and retain bounded-error palette masks within a memory budget | Confirm retained coverage across maps and bake quality settings; budget-exhausted overflow still requires realtime shadow capacity/range; live receivers, characters and static membership after map changes |
-| Indexed visibility storage beyond four channels | Primary and overflow visibility share indexed scalar records, using shared R8 pages or compressed masks; publication can omit the legacy visibility layer when total GPU allocations shrink; worker conversion preserves cache identity and source layout | Storage does not reduce visibility ray counts; finish automatic mixed selection and aggregate diffuse integration to address dense-map bake time |
+| Indexed visibility storage beyond four channels | Primary and overflow visibility share indexed scalar records, using shared R8 pages or compressed masks; publication can omit the legacy visibility layer when total GPU allocations shrink; worker conversion preserves cache identity and source layout | Storage does not reduce visibility ray counts; broaden map-level latency/coverage validation of the integrated mixed-selection and aggregate policy |
 | Automatic parallax cubemap bounds with tolerance for room details | Coverage-based selection and optional 32-capture capacity; receiver bounds contact nearby axis-aligned room surfaces independently of inset projection boxes | Limited budgets still leave rooms uncovered; review transitions, rotated rooms and reflection leaks across multiple maps |
 | Rough SSR, optional hardware reflections and live GI | Implemented | Refresh actual-engine toggles and shared-scene lifetime coverage; continue measured performance work where needed |
 | Shared USD/PBR material replacements | Implemented; plain Source roughness fallback corrected | Refresh late material arrival and broader material/BRDF parity in the current engine build |
@@ -176,7 +178,11 @@ and a spinner through stages without a known total, including finalization. Prob
 completion is not treated as overall bake completion. The indicator disappears
 when baked lighting is active; a failed bake instead displays its failure message.
 
-## Next milestones, in order
+## Delivery milestones and checkpoint history
+
+The current defaults are described above. These milestones also retain earlier
+implementation checkpoints; their superseded stages are not separate default
+renderer paths. Open acceptance work remains part of each milestone.
 
 1. **Replace exhaustive overflow baking.** Complete indexed static local-light visibility for probe
    receivers; static sun visibility already uses the shared probe interpolation, with moving-caster
@@ -190,10 +196,10 @@ when baked lighting is active; a failed bake instead displays its failure messag
    from scalar masks: exactly black fields share index zero, while signed nonzero fields use nine
    amplitude-scaled half coefficients. CPU/cache values stay full precision, with unchanged trace
    work, pair selection and coverage rules. CPU bounds/cache tests and shader compilation pass;
-   GPU interpolation, mixed-shadow image checks and performance validation remain required before
-   shipping this encoding. Surface corrections still use the four retained owners; the shared unit
-   record type does not itself remove that limit. This still needs cross-map normal-mapped actor comparisons and measured
-   preparation/runtime costs before default rollout. Select mixed lights
+   GPU interpolation, mixed-shadow images and cache restoration are now covered by the indexed
+   surface/probe tests described above. The four-owner adapter remains a compatibility fallback,
+   while the normal runtime uses indexed directional fields beyond that limit. Cross-map
+   normal-mapped actor comparisons and preparation/runtime acceptance remain open. Select mixed lights
    automatically from legacy inputs, preserving important emitters and reusing mask channels where
    receiver coverage permits. Define a correct fallback for overlapping mixed lights instead of
    silently losing their shadows. Keep camera-dependent specular visibility and dynamic-object
@@ -248,7 +254,7 @@ when baked lighting is active; a failed bake instead displays its failure messag
    `bakedHighlightLights` (0..32) and `bakedHighlightFade` (0..10 seconds)
    control that budget and fade independently of shadow maps. Pure baked geometry emitters still
    omit analytic highlights. Camera-distance/influence ranking is an initial approximation; test
-   live-map highlights, leakage and frame cost before changing the default lighting policy.
+   live-map highlights, leakage and frame cost before expanding quality acceptance.
    Transport uses a separate 112-byte light contract, preserving its existing shaders and cache
    identity when the runtime light contract grows to carry independent response weights.
    First-bake denoising still competes with rendering. The replay host can isolate that contention

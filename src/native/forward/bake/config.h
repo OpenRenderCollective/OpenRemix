@@ -4,15 +4,15 @@ namespace remix::forward::bake {
   struct Config {
     bool enabled = true;
     bool directDiffuse = true;
-    // Experimental profile control, not exposed in F12. Automatic map use
-    // waits for full-map quality/performance acceptance.
+    // Low-level transport/comparison controls. Options::bakeConfiguration
+    // derives aggregate/grouped policy when runtime baked lighting is enabled.
     bool aggregateDiffuse = false;
     bool fullyBakedLights = false; // experimental: static lights have no per-light baked-receiver work
     bool bakedGeometryLights = false; // experimental: retain explicit lights as mixed, fully bake emitting geometry
     bool antialiasSun = true; // bounded receiver-area refinement at detected shadow edges
     bool diskCache = true;
     bool denoiseLightmaps = true; // OIDN RTLightmap where available; unsupported builds retain raw transport
-    bool styledIndirect = false; // attributed surface/probe components; enable after map-level validation
+    bool styledIndirect = false; // runtime profiles enable attributed components; low-level callers opt in
     bool groupedStyledDirect = false; // derive controllable direct groups from completed captures
     uint32_t styleStorageMiB = 128; // encoded sparse SH, also bounded by device storage range
     bool relocateProbes = true; // bounded recovery of otherwise unused BSP-solid slots

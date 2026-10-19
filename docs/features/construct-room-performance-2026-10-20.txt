@@ -1,0 +1,81 @@
+Construct room performance and geometry checks (2026-10-20)
+
+Scope
+Extend the cab9a2f empty-moving-map optimization check to Construct's white room
+and adjacent brick hall. White camera: -2800 -4200 -64, angles 0 45 0. Hall camera:
+-2300 -1600 -80, angles -20 180 0. Both camera origins were checked against the BSP
+and lie in non-solid clustered leaves. The room contains 30 authored named/style 32
+lights; the replay enables their full-on immutable envelopes and runtime weights.
+This is not a live Source button/toggle or entity test.
+
+Same conditions as the preceding map controls: 1920x1080, MSAA4, manual exposure 1,
+full-scale SSR, 4M surface texel budget, 1024 atlas pages, 256 samples/3 bounces and
+16 cubemaps at size 32. Static VMT/replacement replay; no engine entities, particles,
+material proxies, UI or viewmodel. One current-build cold cache seed, then
+old/new/new/old controls at each view. Baseline d612a22 versus current cab9a2f.
+Each control collects 2048 distinct GPU samples after at least 128 frames AND 8
+seconds warmup. Companion CPU snapshots are filtered to the same host observation
+interval, not joined as exact GPU frames.
+
+GPU mean milliseconds, old-A / new-A / new-B / old-B
+  White room: 4.331 /2.985 /3.025 /4.442  (31.50 percent lower pair mean)
+  Brick hall: 2.438 /2.110 /2.134 /2.273  (9.91 percent lower pair mean)
+Host submission/Present means
+  White room: 4.316 /2.973 /3.012 /4.425 ms
+  Brick hall: 2.427 /2.100 /2.123 /2.262 ms
+The hall controls vary more than the white-room controls. These are measured
+static-view results, not a claim of matching live-game FPS improvement.
+
+Cache and image verification
+All eight timed controls hit the same cache, retain the same bake identity and
+identical published content hashes. Current reports show 136 local source lights,
+16 selected highlights,0 analytic lights,0 current world caster draws and 4 empty
+moving shadow maps. Static-shadow/sun/caster preparation updates remain 0.
+All four white-room screenshots match exactly. Hall new-A differs from old-A at
+one pixel only: (815,1064), red 45->46; green 43/blue 40/alpha 255 unchanged. New-B and
+old-B match old-A exactly. Thus exact repeatability is not established for that
+single threshold pixel; no cause is assigned to it. Preserve the discrepancy
+rather than describing all Construct images as bit-identical.
+
+The cold seed first reports active lighting at 47.38 seconds on its replay clock;
+main OIDN 13.008s, styled indirect OIDN 2.621s. Whole seed run 65.078s includes startup,
+warmup, measurement and shutdown. This is an observation, not a controlled bake
+speed comparison, and none of those whole-run seconds are labeled ray time.
+There is one shared private seed cache, not a copy per view/control.
+
+Separate geometry artifact
+The white-room image contains a tree-shaped patch against the wall at upper right.
+It remains in albedo-only view. Two additional albedo/no-bake controls differ only
+in OPENREMIX_PROXY_SKY_TRACE=1/0. Disabling the merged sky geometry removes the
+patch: 8488 changed pixels, bounding rectangle [1822,385,1919,550], max channel delta 161.
+Both controls were visually inspected. These unlit/no-bake controls are diagnostic,
+not performance comparisons and not settings deployed to the game.
+This localizes that artifact to merged 3D-skybox geometry, not lighting/reflections.
+The wrapper clips transformed sky world polygons against playable BSP regions;
+static sky props currently test only their transformed origin before keeping the
+whole model. The exact offending prop/triangle and safe clipping fix remain to be
+established. Do not disable sky geometry as a product workaround or enlarge
+cubemap bounds to address this tree. This does not explain all earlier ceiling
+lighting artifacts reported by the user.
+
+Documentation cleanup
+Corrected stale claims that runtime defaults were still legacy/experimental or
+surface correction ownership was limited to four. Runtime settings enable canonical
+baked lighting and styled indirect; Options::bakeConfiguration derives aggregate,
+geometry-emitter and grouped-direct behavior. Raw bake Config keeps explicit
+low-level controls for callers/tests. Header comments now distinguish these levels.
+No settings, defaults, binaries, caches or runtime behavior change in this cleanup.
+
+Receipts and remaining work
+_work/reports/construct-room-performance-v1/comparison.json and per-case settings,
+run receipts, logs, host/GPU samples, content reports and screenshots.
+Albedo check: construct-white-albedo-v1. Geometry controls and exact changed-pixel
+receipt: construct-white-sky-geometry-v1. All related run/summarizer scripts are
+under _work/reports. Nine main runs plus three albedo diagnostics exited 0; no user
+game was stopped. Installed renderer remains cab9a2f, native SHA256:
+ac4c386a7caedc3b68e92bb445e008e092bada8827519971bc97071e8a881bb3
+
+Next: repair sky-prop intrusion with preserved attributes/replacement semantics;
+continue automatic cubemap receiver-domain work and exact Construct lighting
+reproduction. Live-game startup, entity/viewmodel performance and quality acceptance
+remain open. Current fully-on snapshots do not establish native engine toggle parity.
