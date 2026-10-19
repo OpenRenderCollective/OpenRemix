@@ -1,0 +1,49 @@
+Forward+ draw upload scratch reuse (2026-10-20)
+
+Change
+Keep one CPU-only DrawData vector in Renderer::Gpu. Each preparation clears its
+active records and reserves for current submitted draws, then runs the existing
+material packing, lightmap-owner edits and static-caster append logic. Capacity
+survives the next preparation. Previously a fresh vector repeatedly grew and
+copied the draw table, then freed it, every frame.
+
+Ownership and limits
+Preparation is serial on the renderer thread. Buffer::write synchronously copies
+the complete active range into the selected frame slot's own buffer. GPU frames
+never reference scratch storage. No scene owners are retained by DrawData. The
+vector retains its high-water capacity until renderer destruction; this trades
+host memory for fewer allocations. This is one CPU copy, not one per GPU frame.
+Current geometry, material, shader, bake identities and cache formats are unchanged.
+
+Verification
+Native release build passed. Existing Vulkan validation/synchronization readbacks
+passed: GPU lighting/MSAA/compatibility; skinned frame slots and shadows (includes
+transient geometry and changing draw counts); viewmodel environment reflections.
+Three tests, zero failures. Log: meson-logs/draw-scratch-v1.txt.
+
+Controlled packing experiment
+MSVC /O2, actual 272-byte DrawData records. 512 frames cycle draw counts
+4096/8192/257/0/6000/64; 1,594,053 records per pass. Both paths copy to a separate
+upload destination, compare every active byte, and consume a checksum. Alternating
+fresh/reuse/reuse/fresh results:
+  fresh: 356.455 ms, 8206 allocations, 1,820,769,088 cumulative allocated bytes
+  reuse:  49.569 ms,    2 allocations,     3,342,336 cumulative allocated bytes
+  reuse:  49.562 ms,    0 allocations,             0 cumulative allocated bytes
+  fresh: 339.431 ms, 8206 allocations, 1,820,769,088 cumulative allocated bytes
+Reuse retains 2,228,224 bytes in this workload. Outputs/checksums match. Cumulative
+allocated bytes describe churn, not peak memory. This isolates table construction
+and upload copying, not full material computation, GPU work or engine frame time.
+It is not an in-game FPS claim. Private source/executable/results are retained in
+_work/reports/draw-scratch-benchmark-v1.
+
+Delivery
+Packaged forwardplus-draw-scratch-v1 and deployed to GarrysModWithRTX2. Deployment
+verification passed; addonnomount.txt, config.cfg, gameinfo.txt and runtime state
+hashes are unchanged. Native SHA256:
+95970c8a5bf57acce36911f6d3da6c1d75db4d8280d1cb3b7e9a6ffea4366717
+
+Remaining
+Representative live CPU/GPU measurements and startup diagnosis remain open.
+This does not resolve Construct lighting/cubemap coverage or the other roadmap
+quality gates. Prefer further measured reductions in recurring draw work over
+adding speculative renderer switches.

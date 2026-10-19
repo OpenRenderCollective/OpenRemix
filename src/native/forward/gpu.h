@@ -117,6 +117,10 @@ namespace remix::forward {
       FrameData data;
     };
     std::array<Frame, gpuFrameCount> frames;
+    // CPU-only upload scratch. prepareFrame runs serially and Buffer::write
+    // copies these records before returning; no submitted frame retains them.
+    // Reuse capacity rather than reallocating/copying the draw table every frame.
+    std::vector<DrawData> drawScratch;
     std::unordered_map<const scene::Surface *, std::shared_ptr<Geometry>> geometries;
     // Finished immutable uploads can back a later transient mesh. Commands keep
     // their own references until their frame fence has completed.

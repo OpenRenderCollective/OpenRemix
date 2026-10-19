@@ -119,7 +119,9 @@ namespace remix::forward {
              options.bakedHighlightLights, seconds, options.bakedHighlightFade))
       highlightWeights[highlight.key] = highlight.value;
     step(cpu.selection);
-    std::vector<DrawData> draws;
+    auto &draws = drawScratch;
+    draws.clear();
+    draws.reserve(resources.draws().size());
     std::vector<water::MaterialData> waterMaterials;
     Bounds casters;
     auto append = [&](const scene::Draw &draw, std::vector<Command> &commands, bool staticOnly, bool liquid = false) {
