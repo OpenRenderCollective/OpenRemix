@@ -18,13 +18,23 @@ namespace remix::forward::bake {
                                localProbes->gpuBytes() + 15;
     if (reserved + sparse::headerWords * 4 > storageRange) return;
     const auto began = std::chrono::steady_clock::now();
+    auto stageBegan = began;
+    double compositionMs = 0, reportMs = 0, mergeMs = 0;
+    auto finishStage = [&] {
+      const auto now = std::chrono::steady_clock::now();
+      const double milliseconds = std::chrono::duration<double, std::milli>(now - stageBegan).count();
+      stageBegan = now;
+      return milliseconds;
+    };
     const uint64_t budget = std::min(uint64_t(config.styleStorageMiB) << 20, storageRange - reserved);
     try {
       const auto owners = mixed::positiveDirectionalLinks(*mixedLights, cancellation.get_token());
       groupedStyles = groupStyledDirect(*source, surfaceLayout, owners, directionalWords,
                                          *localProbes, budget, cancellation.get_token());
+      compositionMs = finishStage();
       dumpGroupedDirectReport(*source, surfaceLayout, surfacePixels, grid, directionalWords,
                                 groupedStyles, cancellation.get_token());
+      reportMs = finishStage();
       if (!styleWords.empty() && !groupedStyles.styles.empty()) {
         auto combined = sparse::sumComponents(styleWords, groupedStyles.words,
             {surfaceLayout.pageSize, surfaceLayout.pages, uint32_t(grid.probes.size())},
@@ -36,13 +46,16 @@ namespace remix::forward::bake {
           groupedStyles.styles.clear();
           groupedStyles.words.clear(); // Existing indirect data remains authoritative.
         }
+        mergeMs = finishStage();
       }
     } catch (const std::bad_alloc &) {
       groupedStyles = {}; // Optional derivation; the original cache and runtime path remain valid.
     }
-    std::fprintf(stderr, "Forward grouped styled direct: %zu groups, %zu declined, %zu bytes, %.3f ms\n",
+    std::fprintf(stderr, "Forward grouped styled direct: %zu groups, %zu declined, %zu bytes, %.3f ms"
+                         " (composition_ms=%.3f report_ms=%.3f merge_ms=%.3f)\n",
                  groupedStyles.styles.size(), groupedStyles.declined.size(), groupedStyles.words.size() * 4,
-                 std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count());
+                 std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count(),
+                 compositionMs, reportMs, mergeMs);
   }
   void Controller::Job::prepareSurfaceStorage() {
     const char *override = std::getenv("REMIX_DEBUG_UNIFIED_MASKS");

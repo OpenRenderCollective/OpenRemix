@@ -1,0 +1,38 @@
+Grouped lighting preparation costs - 2026-10-20
+
+Investigation
+Construct grouped direct-light composition plus indirect merge costs about one
+second during both fresh baking and cache restoration. A trial resolved each
+chart/light field once rather than binary-searching the sparse directory for every
+texel. Correctness tests passed, but normal warm old/new/new/old totals were
+919.545 / 894.783 / 973.322 / 962.665 ms. This does not demonstrate a convincing
+improvement. The field-view API, compositor changes and associated trial assertions
+were removed. Private patch and controls: _work/reports/grouped-field-views-v1.
+All four controls restore identical published hashes. Their images differ by at
+most one display level, including old/old; exact frame equality is not established.
+
+Retained profiling
+The existing grouped-lighting log now separates composition_ms, report_ms and
+merge_ms while retaining its total. No new runtime setting, storage or rendering
+path. A validation-enabled Construct cache reload measured total1233.069ms:
+composition705.981ms, optional report0.005ms, merge527.081ms. Validation timings
+are not comparable to the normal controls above. Directory search alone is not an
+adequate target: sparse composition and indirect merging both deserve measurement.
+Published hashes and screenshot match the preceding validation-enabled baseline
+exactly; no reported validation or synchronization errors.
+
+Release build and three relevant suites pass: lossless directional fields,
+grouped direct captures and bake-cache integrity. Final retained code adds only
+timing breakdowns; the speculative optimization is absent. Private results:
+_work/reports/grouped-stage-timing-v1/comparison.json. The testing install remains
+on the verified independent-denoiser-queue package; no new rendering policy has
+been deployed in this checkpoint.
+
+Next work
+The sparse builder currently samples and encodes every texel in every tile before
+learning that an entire tile is black. Investigate bounded tile-aware composition
+and merging using known occupancy, preserving exact encoding, signed coefficients,
+partial edge tiles, independent style coverage and all-or-nothing budget failure.
+Measure against actual Construct cache restoration and cold baking before retaining
+an implementation. Automatic cubemap coverage, lighting QA and live performance
+remain required; this investigation does not claim an FPS or bake-time speedup.
