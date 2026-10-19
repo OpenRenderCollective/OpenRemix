@@ -413,3 +413,9 @@ live performance gates remain open; see sparse-empty-tiles-2026-10-20.txt.
 Grouped direct composition now marks conservative per-style chart tile occupancy,
 including full captured rectangles/seam donors. Construct paired composition mean
 559->391ms; validation cache/image remains exact. See direct-style-occupancy-2026-10-20.txt.
+
+Exact offline BSP half-space intersections confirm that conservative clipping
+alone does not explain the authored-volume mismatch:13/14 reference boxes still
+exceed8% solid/outside partition volume. Keep runtime fitting unchanged until a
+receiver-domain/wall-separation approach passes real-map coverage; see
+cubemap-exact-occupancy-2026-10-20.txt.

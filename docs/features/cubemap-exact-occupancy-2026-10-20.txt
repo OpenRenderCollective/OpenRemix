@@ -1,0 +1,72 @@
+Exact occupancy diagnostic for authored cubemap bounds - 2026-10-20
+
+Question
+Does conservative AABB clipping through oblique BSP planes explain why the14
+aligned hls00 authored combined-volume boxes fail current occupancy policy?
+
+Method
+Offline diagnostic carries the complete signed root-to-leaf plane path for each
+solid/outside fragment reached by the production-style AABB traversal. For each
+fragment, a normalized-plane linear program finds its largest inscribed sphere
+inside the query box. Positive-interior intersections are reconstructed from all
+halfspaces and measured by convex hull volume. Query coordinates use float32,
+matching the native fixture input. No runtime fitter or cache identity changed.
+SciPy1.15.3 performs the offline LP/intersection/hull work; this is not proposed as
+a runtime dependency or a new user-facing tool.
+
+An independent seeded100,000-point BSP classification per authored box checks the
+volume sums without using fragment hulls. All14 agree within1.64standard errors.
+This validates the partition-volume calculation, not the original author's intent
+or exact physical/visual parity between the edited Source2 port and Source1 BSP.
+
+Results: rejected-volume fraction of each authored box
+  Index    AABB estimate    Exact volume    Empty AABB fragments
+   0        16.37%        15.99%        0/25
+   1        63.89%        58.03%        0/150
+   2        13.55%        13.54%        0/20
+   3        57.36%        25.41%        2/45
+   4        25.91%        25.89%        0/39
+   5        81.58%        61.66%        0/22
+   6        13.90%        13.75%        0/18
+   7        73.86%        55.98%        2/146
+   8        16.34%        10.36%        0/13
+   9        77.79%        65.83%        0/21
+  10        16.44%        15.88%        0/36
+  11        46.87%        36.72%        0/8
+  12         1.88%         1.20%        0/7
+  13        42.71%        41.80%        0/64
+
+Only4of614approximate solid/outside fragments have no positive exact interior.
+Exact clipping materially reduces some volume estimates (notably index3), but13
+of14boxes still exceed the current8percent ignored-volume allowance. Therefore
+exact clipping alone cannot admit those13boxes under the established policy.
+Index12 has only1.20percent exact solid/outside volume but includes broad boundary
+fragments that fail the existing two-thin/interior-axis detail classifier. Low
+volume alone does not establish that relaxing that classifier is safe.
+
+Important interpretation
+Negative-cluster leaves mean solid OR outside/nonplayable partition space here;
+these fractions are not a measurement of visible solid mesh volume. They do not
+show the hand-authored boxes are wrong. Authoring boxes can intentionally enclose
+walls, trim or nonplayable space. Previously verified common geometry/alignment
+also does not prove that every surface of the edited port matches this BSP.
+This is geometric evidence, not a rendered quality or performance acceptance test.
+
+Decision and next work
+Do not replace conservative fitting with an expensive exact polyhedron solver on
+the assumption it fixes coverage; the reference comparison contradicts that.
+Do not arbitrarily increase allowed solid volume to match these boxes. Keep this
+checkpoint diagnostic-only. The useful next fit must distinguish enclosure used
+for parallax projection from where actual room receivers can safely blend, and
+must check wall-separated receivers/doorway coverage rather than whole-box empty
+volume alone. Test proposed receiver-domain representation on Construct and the
+aligned reference before adding runtime searches or relaxing bounds.
+
+Private reproducible evidence
+_work/reports/diagnose-cubemap-solid-intersections-v1.py
+_work/reports/verify-cubemap-solid-fractions-v1.py
+_work/reports/cubemap-solid-intersections-v1/report.json
+_work/reports/cubemap-solid-intersections-v1/independent-point-check.json
+Extracted map content stays local. The testing install remains on16c6fdf's verified
+direct-style-occupancy package. Automatic cubemap quality, live performance and
+broader renderer delivery requirements remain open.
