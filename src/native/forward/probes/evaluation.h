@@ -5,6 +5,7 @@
 namespace remix::forward::probes {
   // Stream geometry-only readback into one small assessment per fitted region.
   // No lighting samples or full-resolution cubemaps are allocated for candidates.
+  // Identical origins share queries, while each fit retains independent statistics.
   class ProjectionAudit {
   public:
     static constexpr uint32_t resolution = 8, maximumCandidates = 160;
@@ -16,10 +17,20 @@ namespace remix::forward::probes {
   private:
     struct Statistics {
       double agreement = 0, total = 0, missed = 0, back = 0;
+      double nearer = 0, farther = 0, residual = 0;
+    };
+    struct RegionStatistics {
+      Statistics total;
+      std::array<Statistics, 6> faces;
+    };
+    struct Origin {
+      Vec3 position;
+      std::vector<size_t> regions;
     };
     std::vector<FittedRegion> m_regions;
     std::vector<bake::Point> m_rays;
-    std::vector<Statistics> m_statistics;
+    std::vector<RegionStatistics> m_statistics;
+    std::vector<Origin> m_origins;
     std::vector<uint8_t> m_seen;
     uint32_t m_completed = 0;
     std::stop_token m_cancelled;

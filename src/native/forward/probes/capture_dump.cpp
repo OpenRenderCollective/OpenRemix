@@ -42,7 +42,18 @@ namespace remix::forward::probes {
         output << ",\"evaluated\":" << (region.geometryEvaluated ? "true" : "false")
                << ",\"agreement\":" << region.quality << ",\"missFraction\":" << region.missFraction
                << ",\"backfaceFraction\":" << region.backfaceFraction
-               << ",\"selected\":" << (selected ? "true" : "false") << '}';
+               << ",\"selected\":" << (selected ? "true" : "false") << ",\"faces\":[";
+        for (size_t face = 0; face < region.faces.size(); ++face) {
+          const auto &audit = region.faces[face];
+          output << (face ? "," : "") << "{\"solidAngleFraction\":" << audit.solidAngleFraction
+                 << ",\"supportFraction\":" << audit.supportFraction
+                 << ",\"nearFraction\":" << audit.nearFraction
+                 << ",\"farFraction\":" << audit.farFraction
+                 << ",\"missFraction\":" << audit.missFraction
+                 << ",\"backfaceFraction\":" << audit.backfaceFraction
+                 << ",\"meanRelativeResidual\":" << audit.meanRelativeResidual << '}';
+        }
+        output << "]}";
       }
       output << "\n]}\n";
     } catch (const std::exception &error) {

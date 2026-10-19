@@ -3,11 +3,17 @@
 #include <span>
 
 namespace remix::forward::probes {
+  struct ProjectionFaceAudit {
+    // Directions are grouped by the first proxy face they cross: +X,-X,+Y,-Y,+Z,-Z.
+    float solidAngleFraction = 0, supportFraction = 0, nearFraction = 0, farFraction = 0;
+    float missFraction = 0, backfaceFraction = 0, meanRelativeResidual = 0;
+  };
   struct FittedRegion {
     Bounds bounds;
     RegionSite site;
     float quality = 1, missFraction = 0, backfaceFraction = 0;
     bool geometryEvaluated = false;
+    std::array<ProjectionFaceAudit, 6> faces{};
   };
   // Spread a bounded fitting budget across validated origins, weighting distance
   // by capped clearance. Input order resolves ties within an enclosure class.

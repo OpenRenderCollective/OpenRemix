@@ -103,15 +103,34 @@ int main() {
     require(std::abs(reordered[i].quality - assessed[i].quality) < 1e-6f,
             "Geometry preference is independent of batch boundaries and "
             "completion order");
+  const std::vector<p::FittedRegion> repeatedOrigins = {candidates[1], candidates[0], candidates[1]};
+  p::ProjectionAudit repeated(repeatedOrigins);
+  require(repeated.rays().size() == 2 * 6 * 8 * 8,
+          "Interleaved duplicate origins preserve one query set per distinct position");
+  const auto repeatedValues = geometry(repeated, rooms);
+  const uint32_t split = 417;
+  require(repeated.observe(split, std::span(repeatedValues).subspan(split)) &&
+              repeated.observe(0, std::span(repeatedValues).first(split)),
+          "Shared queries accept out-of-order batches crossing an origin boundary");
+  const auto repeatedResult = repeated.finish();
+  require(repeatedResult[0].quality == assessed[1].quality &&
+              repeatedResult[1].quality == assessed[0].quality &&
+              repeatedResult[2].quality == assessed[1].quality,
+          "Shared readbacks reach all original indices without changing the scores");
   p::ProjectionAudit misses(candidates);
   auto missValues = values;
   for (auto &value : missValues)
     value.statistics[1] = 1;
   require(misses.observe(0, missValues), "Distance-cap misses retain their explicit flags");
-  for (const auto &region : misses.finish())
+  for (const auto &region : misses.finish()) {
     require(region.quality == .05f && std::abs(region.missFraction - 1) < 1e-6f,
             "A miss cannot masquerade as a supporting wall even at an "
             "identical reported distance");
+    for (const auto &face : region.faces)
+      require(face.solidAngleFraction == 0 || (std::abs(face.missFraction - 1) < 1e-6f &&
+                  face.meanRelativeResidual == 0 && face.nearFraction == 0 && face.farFraction == 0),
+              "An all-miss face does not invent finite-hit geometry residuals");
+  }
   auto scaled = candidates;
   for (auto &region : scaled) {
     for (auto *v : {&region.bounds.minimum, &region.bounds.maximum, &region.site.position})
@@ -124,9 +143,14 @@ int main() {
     value.irradiance[0][3] *= 40;
   require(units.observe(0, scaledValues), "Scaled geometry queries are valid");
   const auto unitRegions = units.finish();
-  for (size_t i = 0; i < assessed.size(); ++i)
+  for (size_t i = 0; i < assessed.size(); ++i) {
     require(std::abs(unitRegions[i].quality - assessed[i].quality) < 1e-6f,
             "Candidate geometry agreement is independent of world units");
+    for (size_t face = 0; face < 6; ++face)
+      require(std::abs(unitRegions[i].faces[face].meanRelativeResidual -
+                  assessed[i].faces[face].meanRelativeResidual) < 1e-6f,
+              "Face residuals remain comparable between Source units and metres");
+  }
   // One capture sees two equally large empty boxes in an L-shaped room.
   // Keep both until independent first-hit geometry can resolve the ambiguity.
   const auto outer = box({-4, -3, -2}, {4, 3, 2});
@@ -160,6 +184,50 @@ int main() {
               shapeScores[0].quality, shapeScores[1].quality, choice.front());
   require(choice.front() != 0 && shapeScores[choice.front()].quality > shapeScores[0].quality,
           "Geometry can recover the room-shaped alternative discarded by largest-volume-only fitting");
+  require(shapeAudit.rays().size() == 6 * 8 * 8,
+          "Shape alternatives at the same capture origin trace geometry only once");
+  for (size_t i = 0; i < shapeCandidates.size(); ++i) {
+    p::ProjectionAudit separate({shapeCandidates[i]});
+    require(separate.observe(0, geometry(separate, elbowRooms)), "Independent alternative accepts geometry");
+    const auto single = separate.finish().front();
+    require(single.quality == shapeScores[i].quality && single.missFraction == shapeScores[i].missFraction,
+            "Sharing first-hit rays preserves the independent candidate score exactly");
+    double total = 0;
+    for (size_t face = 0; face < 6; ++face) {
+      const auto &a = single.faces[face], &b = shapeScores[i].faces[face];
+      require(a.solidAngleFraction == b.solidAngleFraction && a.nearFraction == b.nearFraction &&
+                  a.farFraction == b.farFraction && a.meanRelativeResidual == b.meanRelativeResidual,
+              "Shared origins retain each projection box's independent per-face residuals");
+      total += a.solidAngleFraction;
+    }
+    require(std::abs(total - 1) < 1e-6, "Projection-face weights cover the full solid angle");
+  }
+  const std::vector<p::FittedRegion> rectangular = {{box({-1,-1,-1},{1,1,1}), {{0,0,0},1,3}}};
+  const Bounds rectangleRooms[] = {rectangular.front().bounds};
+  p::ProjectionAudit rectangle(rectangular);
+  auto rectangleValues = geometry(rectangle, rectangleRooms);
+  require(rectangle.observe(0, rectangleValues), "Exact box geometry accepts all face queries");
+  const auto rectangleResult = rectangle.finish();
+  for (const auto &face : rectangleResult.front().faces)
+    require(std::abs(face.solidAngleFraction - 1.f/6) < 1e-6f && face.supportFraction == 1 &&
+                face.nearFraction == 0 && face.farFraction == 0 && std::abs(face.meanRelativeResidual) < 1e-6f,
+            "A matching rectangular room reports zero face residuals");
+  p::ProjectionAudit clutter(rectangular);
+  for (auto &value : rectangleValues) value.irradiance[0][3] *= .5f;
+  require(clutter.observe(0, rectangleValues), "Near geometry remains valid inside the proxy");
+  const auto clutterResult = clutter.finish();
+  for (const auto &face : clutterResult.front().faces)
+    require(face.supportFraction == 1 && face.nearFraction == 1 && face.farFraction == 0 &&
+                std::abs(face.meanRelativeResidual + .5f) < 1e-6f,
+            "Nearer props have negative residuals without changing existing agreement policy");
+  p::ProjectionAudit shortBox(rectangular);
+  for (auto &value : rectangleValues) value.irradiance[0][3] *= 4;
+  require(shortBox.observe(0, rectangleValues), "Beyond-proxy wall queries remain valid");
+  const auto shortBoxResult = shortBox.finish();
+  for (const auto &face : shortBoxResult.front().faces)
+    require(face.supportFraction == 0 && face.nearFraction == 0 && face.farFraction == 1 &&
+                std::abs(face.meanRelativeResidual - 1) < 1e-6f,
+            "A box stopping short of a wall has positive residuals, distinct from clutter");
   p::ProjectionAudit empty({});
   require(empty.rays().empty() && empty.finish().empty(), "Empty candidate work needs no GPU submission");
   bool bounded = false;

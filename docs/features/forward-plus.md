@@ -336,7 +336,9 @@ bounds down each BSP path. Artificial empty-leaf splits do not become room bound
 fits share one capture. A bounded shortlist spreads fitting work across origins using distance weighted
 by clearance, capped at four metres. Up to 128 primary fits and 32 grid fallback fits form a bounded
 candidate list. On closed BSP maps, geometry-only hardware queries assess six 8x8 directional faces per
-candidate before lighting is traced. They reuse the captured scene and material-aware traversal, report
+distinct capture origin before lighting is traced. Alternative fits at an identical origin share those
+first-hit readbacks; their projection distances and scores are still assessed independently. They reuse
+the captured scene and material-aware traversal, report
 first-hit distance and explicit backface/miss flags, and skip lighting and medium classification. A miss
 does not count as a supporting wall merely because its distance reaches the trace cap.
 
@@ -352,6 +354,12 @@ This remains a sampled, greedy policy, not optimal room or receiver coverage. It
 through walls, fix a doorway's low projection box, or guarantee capture visibility at every receiver.
 Capture origins always require strict empty-space clearance. Optional `REMIX_DEBUG_PROBE_CANDIDATES`
 names a fresh JSON report of all fits, geometry agreement, miss/backface fractions and selected origins.
+Its `faces` array follows +X, -X, +Y, -Y, +Z, -Z, grouping queries by the first projection face they cross.
+Each face reports its solid-angle share, support, near/far hit fractions, misses and backfaces. Hits
+within 5% of the proxy exit are neither near nor far. A positive `meanRelativeResidual` means geometry
+lies beyond the proxy; a negative value identifies nearer geometry inside it, including props. Residuals
+are normalized by proxy exit distance, clamped to [-1,4] per hit, and averaged over hits only; faces
+without hits report zero. These measurements do not change selection or permit growth through walls.
 
 The default fit tolerates small solid details rather than shrinking an entire face around a ceiling bevel.
 Touching solid fragments are merged when their union nearly fills its bounding box, reassembling
