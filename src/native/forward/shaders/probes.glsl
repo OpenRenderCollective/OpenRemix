@@ -25,12 +25,11 @@ vec3 probeTexel(uint start, uint size, uint face, ivec2 pixel) {
   return probeTexels[start + (face * size + uint(pixel.y)) * size + uint(pixel.x)].rgb;
 }
 vec3 probeMip(uint probe, uint level, vec3 ray) {
-  uint start = probe * probeParameters.w;
-  for (uint i = 0; i < level; ++i) {
-    uint size = probeParameters.y >> i;
-    start += 6u * size * size;
-  }
   uint size = probeParameters.y >> level;
+  // Six faces per level, each one quarter the preceding level's area.
+  // Their geometric sum is 8 * (baseArea - levelArea); sizes are powers of two.
+  uint start = probe * probeParameters.w +
+      8u * (probeParameters.y * probeParameters.y - size * size);
   vec3 projected = cubeProjection(ray);
   vec2 pixel = (projected.xy * .5 + .5) * float(size) - .5;
   ivec2 base = ivec2(floor(pixel));

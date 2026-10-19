@@ -5,7 +5,7 @@
 using namespace remix;
 using namespace remix::forward;
 using namespace remix::forward::test;
-int main() try {
+void samplingCase(uint32_t resolution) {
   Fixture fixture(false);
   struct Gpu {
     VkDevice device;
@@ -27,13 +27,14 @@ int main() try {
     capture.bounds.include({2, .5f, 1});
     capture.worldToLocal = {{{0, 1, 0, -20}, {-1, 0, 0, 10}, {0, 0, 1, -30}}};
     capture.position = {10, 20.25f, 30};
-    capture.resolution = 8;
-    capture.radiance.resize(6*8*8);
+    capture.resolution = resolution;
+    capture.radiance.resize(6*resolution*resolution);
     for (uint32_t face = 0; face < 6; ++face)
-      for (uint32_t y = 0; y < 8; ++y)
-        for (uint32_t x = 0; x < 8; ++x) {
-          const auto ray = probes::direction(face, 2*(float(x)+.5f)/8-1, 2*(float(y)+.5f)/8-1);
-          capture.radiance[(face*8+y)*8+x] = {1+ray[0], 1+ray[1], 1+ray[2], 0};
+      for (uint32_t y = 0; y < resolution; ++y)
+        for (uint32_t x = 0; x < resolution; ++x) {
+          const auto ray = probes::direction(face, 2*(float(x)+.5f)/resolution-1,
+                                            2*(float(y)+.5f)/resolution-1);
+          capture.radiance[(face*resolution+y)*resolution+x] = {1+ray[0], 1+ray[1], 1+ray[2], 0};
         }
   }
   captures[1].priority = 7;
@@ -50,13 +51,14 @@ int main() try {
   const auto bytes = probes::serialize(data);
   struct Query { Vec4 position, direction; };
   std::vector<Query> queries;
-  for (float roughness : {0.f, .3f, 1.f})
+  const uint32_t steps = 2 * (data.header.parameters[2] - 1);
+  for (uint32_t step = 0; step <= steps; ++step)
     for (float x : {9.f, 9.5f, 9.9f, 10.f, 10.2f, 10.5f, 11.f})
       for (float y : {17.f, 18.f, 19.f, 19.5f, 20.f, 20.2f, 21.f, 22.f, 23.f})
         for (float z : {29.f, 30.f, 31.f})
           for (Vec3 ray : {Vec3{1, 0, 0}, Vec3{0, 1, 1}, Vec3{-1, .2f, 1}})
             queries.push_back(
-                {{x, y, z, roughness}, {ray[0], ray[1], ray[2], 0}});
+                {{x, y, z, float(step) / steps}, {ray[0], ray[1], ray[2], 0}});
   const VkDescriptorSetLayoutBinding bindings[] = {
       {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
       {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
@@ -120,9 +122,13 @@ int main() try {
               "GPU oriented parallax, priorities and roughness match CPU reference");
   }
   require(validationErrors == 0, "Oriented reflection sampling is Vulkan validation clean");
-  std::printf("Oriented reflection GPU sampling: %u translated, rotated, "
+  std::printf("Oriented reflection GPU sampling at %u: %u translated, rotated, "
               "priority, feather and roughness queries passed\n",
-              count);
+              resolution, count);
+}
+int main() try {
+  for (uint32_t resolution : {8u, 16u, 32u, 64u, 128u})
+    samplingCase(resolution);
 } catch (VkResult error) {
   std::fprintf(stderr, "GPU reflection sampling failed: %d\n", int(error));
   return 1;
