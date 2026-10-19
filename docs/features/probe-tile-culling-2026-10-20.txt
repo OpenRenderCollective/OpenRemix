@@ -57,3 +57,9 @@ map probe storage/cache and mask capacity together, compare bounded local lists
 against global traversal at larger counts, and validate missing-corridor/doorway
 coverage and authored priorities. Small/fully-overlapping probe sets and live weapon
 performance need broader profiling. Keep bake latency and memory explicit.
+
+Delivery
+Implementation159a7e0 pushed to the official feature branch. Packaged
+forwardplus-probe-tiles-v3 and verified155files in GarrysModWithRTX2.
+Four protected configuration hashes unchanged. Receipt:
+_work/reports/probe-tile-release-warm-v1/deployment.json.
