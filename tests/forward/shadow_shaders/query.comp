@@ -1,0 +1,33 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+// Only the fields consumed by the production lookup functions are needed here.
+layout(set = 0, binding = 0, std140) uniform Parameters {
+  vec4 localPositions[3];
+  vec4 localSettings;
+  uvec4 clusterInfo;
+  mat4 shadows[4];
+  vec4 splits;
+  uvec4 target;
+} frame;
+struct Light { vec4 corners[4]; };
+layout(set = 0, binding = 3) uniform sampler2DArrayShadow sunShadow;
+#include "../../../src/native/forward/shaders/local-shadows.glsl"
+#include "../../../src/native/forward/shaders/sun-shadows.glsl"
+struct Query { vec4 position, normal; uvec4 control; };
+layout(set = 0, binding = 1, std430) readonly buffer Queries { Query queries[]; };
+layout(set = 0, binding = 2, std430) writeonly buffer Answers { vec4 answers[]; };
+layout(push_constant) uniform Count { uint count; } inputData;
+layout(local_size_x = 64) in;
+void main() {
+  uint index = gl_GlobalInvocationID.x;
+  if (index >= inputData.count) return;
+  Query query = queries[index];
+  bool fixedVisibility = query.control.y != 0;
+  Light light;
+  light.corners[0] = vec4(0, 0, 0, query.control.x + 1u);
+  light.corners[1] = vec4(0);
+  float visibility = query.control.z == 0u
+      ? localShadowVisibility(light, query.position.xyz, query.normal.xyz, fixedVisibility)
+      : sunShadowVisibility(query.position.xyz, query.position.w, fixedVisibility);
+  answers[index] = vec4(visibility, 0, 0, 1);
+}

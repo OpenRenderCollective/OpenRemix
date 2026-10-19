@@ -1,3 +1,4 @@
+#include "shadow-filter.glsl"
 #include "cube.glsl"
 layout(set = 0, binding = 7) uniform sampler2DArrayShadow staticLocalShadows;
 layout(set = 0, binding = 8) uniform sampler2DArrayShadow dynamicLocalShadows;
@@ -18,10 +19,15 @@ float localShadowVisibility(Light light, vec3 position, vec3 receiverNormal, boo
     return 1;
   float plane = dot(receiverNormal, ray);
   vec3 projected = cubeProjection(ray);
+  vec2 receiverPixel = (projected.xy * .5 + .5) * frame.localSettings.x - .5;
+  vec2 base = floor(receiverPixel) - 1;
+  vec4 weightsX = shadowTentWeights(fract(receiverPixel.x));
+  vec4 weightsY = shadowTentWeights(fract(receiverPixel.y));
   float visibility = 0;
-  for (int y = -1; y <= 1; ++y)
-    for (int x = -1; x <= 1; ++x) {
-      vec2 tap = projected.xy + vec2(x, y) * (2 / frame.localSettings.x);
+  for (int y = 0; y < 4; ++y)
+    for (int x = 0; x < 4; ++x) {
+      float weight = weightsX[x] * weightsY[y];
+      vec2 tap = (base + vec2(x, y) + .5) * (2 / frame.localSettings.x) - 1;
       // Reproject every tap across cube seams rather than clamp the old face.
       vec3 adjacent = cubeProjection(cubeDirection(uint(projected.z), tap));
       // The nearest depth sample lies on a different ray. Comparing its
@@ -34,7 +40,7 @@ float localShadowVisibility(Light light, vec3 position, vec3 receiverNormal, boo
       vec3 direction = normalize(cubeDirection(uint(adjacent.z), centre));
       float denominator = dot(receiverNormal, direction);
       float receiver = abs(denominator) > 1e-7 ? plane / denominator : -1;
-      if (receiver <= 0) { visibility += 1; continue; }
+      if (receiver <= 0) { visibility += weight; continue; }
       float reference = clamp((receiver - frame.localSettings.y) / origin.w, 0, 1);
       vec4 coordinate = vec4(adjacent.xy * .5 + .5, float(slot * 6u) + adjacent.z, reference);
       float moving = texture(dynamicLocalShadows, coordinate);
@@ -42,8 +48,8 @@ float localShadowVisibility(Light light, vec3 position, vec3 receiverNormal, boo
       if ((frame.clusterInfo.w & 1u) != 0u) moving = min(moving, texture(viewModelLocalShadows, coordinate));
 #endif
       float fixedVisibility = includeStatic ? texture(staticLocalShadows, coordinate) : 1;
-      visibility += min(moving, fixedVisibility);
+      visibility += weight * min(moving, fixedVisibility);
     }
   // Selection fades shadowing, never the light's radiance or baked visibility.
-  return mix(visibility / 9, 1, clamp(light.corners[1].w, 0, 1));
+  return mix(visibility, 1, clamp(light.corners[1].w, 0, 1));
 }

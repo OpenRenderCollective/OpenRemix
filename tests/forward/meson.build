@@ -49,6 +49,10 @@ forward_regions_test = executable('remix-forward-regions-test', 'regions.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('BSP reflection region occupancy and room fitting', forward_regions_test)
 if get_option('gpu_tests')
+  shadow_filter_test = executable('remix-forward-shadow-filter-test', 'shadow_filter.cpp',
+    include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+    cpp_args : test_cpp_args)
+  test('Fractional point and sun shadow filtering with receiver-plane and baked exclusion', shadow_filter_test, timeout : 60)
   forward_probe_sampling_test = executable('remix-forward-probe-sampling-test', 'probe_sampling.cpp',
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)
