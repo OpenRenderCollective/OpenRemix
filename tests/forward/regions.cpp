@@ -134,6 +134,10 @@ int main(int argc, char **argv) {
   bevel.nodes[6] = {{1, 0, 1, 5.7f}, {-1, -2}, {0, 0}};
   const auto bevelStrict = p::fitRegion(bevel, room, {0, 0, 0}, .01f);
   const auto bevelTolerant = p::fitRegion(bevel, room, {0, 0, 0}, .01f, {}, tolerance);
+  p::RegionQuery bevelQuery(bevel);
+  require(!bevelQuery.contains(room) && bevelQuery.contains(room, tolerance) &&
+              !bevelQuery.contains(room, {-1}),
+          "Reference-bound queries share fitting trim tolerance and reject invalid settings");
   require(bevelStrict && bevelTolerant &&
               (bevelStrict->maximum[0] < 3.9f || bevelStrict->maximum[2] < 1.9f) &&
               bevelTolerant->maximum[0] > 3.9f && bevelTolerant->maximum[2] > 1.9f,

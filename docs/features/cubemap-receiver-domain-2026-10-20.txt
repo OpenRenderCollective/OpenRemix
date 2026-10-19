@@ -1,0 +1,51 @@
+Cubemap receiver-domain comparison (2026-10-20)
+
+Question: are missing overlaps mainly caused by rejecting a partial feather
+expansion when a nearby wall blocks the full requested width?
+
+Trial and result
+A bounded wall-contact/partial-growth trial passed synthetic axis/oblique wall
+cases. It added exact-plane candidates and bounded bisection while retaining
+whole-volume occupancy. The reference map changed influence volumes by at most
+about0.041percent. Using the same14authored capture origins and their largest
+automatic fits, covered BSP vertices inside the authored reference domain stayed
+1605/3476 and positive influence-overlap pairs stayed19. Construct's saved five
+sites retained identical projection and influence bounds (four valid, one solid).
+This is geometric coverage, not screen-space coverage or visual quality.
+
+Decision: remove the runtime trial. No extra searches, renderer path, policy
+switch or bake-cache revision is retained for this result. Installed renderer
+remains9202b73/af36a66. The before/after fixtures, source snapshot and patch are
+local in _work/reports/cubemap-partial-overlap-v1. An initial JSON serialization
+failed on a NumPy scalar; the final comparison receipt stores ordinary integers.
+
+Larger mismatch found
+All14authored combined-volume origins are valid in the correctly aligned hls00
+BSP. All14authored boxes fail strict occupancy AND the current0.5m detail policy
+(default8percent ignored-volume allowance). This directly shows that the current
+whole-volume fitting policy does not admit these reference boxes as stored.
+It does not establish perfect one-to-one geometry/volume semantics across the
+edited Source2 port and BSP. Their common geometry was verified previously.
+
+The renderer already stores separate projection and influence boxes. Automatic
+placement currently derives both from conservative empty regions. More feather
+searches cannot bridge that representation difference. Next compare enclosing
+projection estimates with the aligned room geometry, and establish receiver
+visibility/wall-separation tests before expanding influence. Preserve authored
+priority semantics and bounded candidate/GPU work. Do not relax occupancy with
+arbitrary thresholds merely to match the manual boxes.
+
+Retained implementation
+RegionQuery has an explicit tolerance overload for reference-bound assessment;
+the original strict query and its runtime callers are unchanged. The new query
+rejects invalid tolerance values and uses the same occupancy/detail classifier
+as fitting. The existing partition fixture now emits influence boxes, strict
+search-bound occupancy and detail-compatible occupancy. Input format is unchanged.
+No extracted map content is committed. A bevel regression checks strict versus
+tolerant queries and invalid settings; room fitting regressions pass.
+
+Remaining scope
+Automatic Construct selection/doorway coverage and full blending remain open,
+as do live visual checks, CPU/frame performance, bake-time improvements, broader
+shadow checks and authoring-tool work. This diagnostic checkpoint completes none
+of those broader gates.

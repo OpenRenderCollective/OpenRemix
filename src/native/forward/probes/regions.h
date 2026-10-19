@@ -23,6 +23,7 @@ namespace remix::forward::probes {
     explicit RegionQuery(const scene::VisibilityPartition &partition, std::stop_token cancelled = {});
     ~RegionQuery();
     bool contains(const Bounds &bounds);
+    bool contains(const Bounds &bounds, RegionTolerance tolerance);
 
   private:
     struct State;

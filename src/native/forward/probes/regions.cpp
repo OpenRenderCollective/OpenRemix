@@ -182,6 +182,13 @@ namespace remix::forward::probes {
   bool RegionQuery::contains(const Bounds &bounds) {
     return m_state->space.contains(bounds);
   }
+  bool RegionQuery::contains(const Bounds &bounds, RegionTolerance tolerance) {
+    if (!std::isfinite(tolerance.detailDepth) || tolerance.detailDepth < 0 ||
+        !std::isfinite(tolerance.maxIgnoredFraction) || tolerance.maxIgnoredFraction < 0 ||
+        tolerance.maxIgnoredFraction > .25f)
+      return false;
+    return m_state->space.contains(bounds, tolerance);
+  }
   bool emptyRegion(const scene::VisibilityPartition &partition, const Bounds &bounds) {
     return EmptySpace(partition).contains(bounds);
   }

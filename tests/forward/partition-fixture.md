@@ -30,3 +30,9 @@ raw map model bounds can include a distant skybox.
 The reader rejects malformed sizes, cycles reachable from the root, invalid
 indices, nonfinite coordinates and invalid bounds before fitting. Counts and file
 size are bounded. Fixture input does not bypass occupancy checks.
+The JSON output also includes each fitted box's `influence` bounds, using the
+production default 0.5-metre feather width and detail tolerance. The top-level
+`searchBoundsEmpty` and `searchBoundsDetailCompatible` flags assess the supplied
+search box with strict occupancy and the same 0.5-metre detail policy. These help
+compare enclosing authored volumes with conservative automatic fits; they do not
+establish capture visibility or reflection quality.

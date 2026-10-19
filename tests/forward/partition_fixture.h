@@ -101,8 +101,11 @@ namespace remix::forward::test {
     uint32_t classes[4]{};
     for (const auto &site : automatic)
       ++classes[std::min(site.enclosedAxes, 3u)];
-    std::printf("{\"nodes\":%u,\"leaves\":%u,\"automaticClasses\":[%u,%u,%u,%u],\"sites\":[", counts[0],
-                counts[1], classes[0], classes[1], classes[2], classes[3]);
+    probes::RegionQuery query(partition);
+    std::printf("{\"nodes\":%u,\"leaves\":%u,\"automaticClasses\":[%u,%u,%u,%u],"
+                "\"searchBoundsEmpty\":%s,\"searchBoundsDetailCompatible\":%s,\"sites\":[", counts[0],
+                counts[1], classes[0], classes[1], classes[2], classes[3], query.contains(limit) ? "true" : "false",
+                query.contains(limit, {.5f / scale}) ? "true" : "false");
     for (uint32_t i = 0; i < sites.size(); ++i) {
       const auto site = probes::regionSite(partition, sites[i], .05f / scale, 64.f / scale);
       std::printf("%s{\"position\":[%.9g,%.9g,%.9g],\"valid\":%s", i ? "," : "", sites[i][0], sites[i][1],
@@ -123,11 +126,14 @@ namespace remix::forward::test {
                     site->enclosedAxes);
         const auto boxes =
             probes::fitRegionCandidates(partition, limit, site->position, .001f / scale, {}, {.5f / scale});
-        for (uint32_t j = 0; j < boxes.size(); ++j) {
-          const auto &b = boxes[j];
+        auto printBox = [](const Bounds &b, uint32_t j) {
           std::printf("%s[[%.9g,%.9g,%.9g],[%.9g,%.9g,%.9g]]", j ? "," : "", b.minimum[0], b.minimum[1],
                       b.minimum[2], b.maximum[0], b.maximum[1], b.maximum[2]);
-        }
+        };
+        for (uint32_t j = 0; j < boxes.size(); ++j) printBox(boxes[j], j);
+        std::printf("],\"influence\":[");
+        for (uint32_t j = 0; j < boxes.size(); ++j)
+          printBox(probes::receiverRegion(partition, boxes[j], .002f / scale, {}, {.5f / scale}, .5f / scale), j);
         std::printf("]");
       }
       std::printf("}");
