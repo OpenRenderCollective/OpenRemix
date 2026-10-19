@@ -76,7 +76,8 @@ namespace remix::forward::mixed {
   }
   VisibilityPublication prepareVisibility(VkPhysicalDevice physical, VkDevice device,
       const Plan &plan, const lightmap::Layout &layout, std::span<const uint16_t> pixels,
-      bool allowPages, const UnifiedMasks *unified, std::span<const uint32_t> directional) {
+      bool allowPages, const UnifiedMasks *unified, std::span<const uint32_t> directional,
+      bool preferCompleteDirectionals) {
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physical, &properties);
     VkFormatProperties format;
@@ -95,7 +96,12 @@ namespace remix::forward::mixed {
             properties.limits, allowPages, masksIndexed ? Masks::maximumPublishedBytes : Masks::maximumBytes,
             directIndexed ? directional : std::span<const uint32_t>{});
         next.totalAllocation += atlasAllocation(device, layout, masksIndexed, directIndexed);
-        if (next.totalAllocation >= legacy.totalAllocation) continue;
+        // A complete capture can contain owners absent from the four-channel
+        // atlas. Compare memory within equivalent coverage; a smaller legacy
+        // allocation must not silently discard those additional baked fields.
+        if (preferCompleteDirectionals && legacy.indexedDirect && !directIndexed) continue;
+        if (next.totalAllocation >= legacy.totalAllocation &&
+            !(preferCompleteDirectionals && directIndexed && !legacy.indexedDirect)) continue;
         next.indexed = masksIndexed;
         next.indexedDirect = directIndexed;
         next.legacyAllocation = baseline;

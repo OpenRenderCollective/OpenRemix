@@ -11,6 +11,8 @@ namespace {
   std::unique_ptr<const cache::Snapshot> snapshot(uint16_t marker) {
     auto data = std::make_unique<cache::Snapshot>();
     data->pixels.resize(128, marker);
+    data->directionalAttempted = true;
+    data->directionals.resize(16, marker);
     return data;
   }
 }
@@ -21,12 +23,18 @@ int main() {
   withScratch.layout.points.resize(128);
   require(cache::Persistence::retainedCharge(withScratch) >= emptyCharge + 128 * sizeof(Point),
           "Admission accounts for accidentally retained sampling scratch as well as encoded pixels");
+  const auto scratchCharge = cache::Persistence::retainedCharge(withScratch);
+  withScratch.directionals.resize(128);
+  require(cache::Persistence::retainedCharge(withScratch) >= scratchCharge + 128 * sizeof(uint32_t),
+          "Complete directional payloads participate in background writer admission");
   std::promise<void> started, release;
   auto released = release.get_future().share();
   std::vector<uint64_t> written;
   cache::Persistence writer(2 * charge, [&](const auto &, uint64_t key, const cache::View &data) {
     require(data.pixels.size() == 128 && data.pixels.front() == key,
             "The writer owns the completed snapshot independently of its submitting caller");
+    require(data.directionalAttempted && data.directionals.size() == 16 && data.directionals.front() == key,
+            "Directional capability and payload survive asynchronous snapshot ownership transfer");
     if (key == 1) {
       started.set_value();
       released.wait();

@@ -23,7 +23,7 @@ namespace remix::forward::bake {
         unsigned(bool(unifiedMasks)));
     // The codec reduces memory, but its indexed shader lookup still needs
     // matched performance acceptance. Keep it opt-in until that gate passes.
-    if (!directionalFieldsRequested()) return;
+    if (!directionalFieldsRequested() || completeDirectionals) return;
     const auto directBegan = std::chrono::steady_clock::now();
     size_t owners = 0;
     try {
@@ -68,6 +68,8 @@ namespace remix::forward::bake {
     snapshot->pixels = std::move(surfacePixels);
     snapshot->styles = std::move(styleWords);
     snapshot->localProbes = std::move(localProbes);
+    snapshot->directionalAttempted = directionalAttempted;
+    if (completeDirectionals) snapshot->directionals = std::move(directionalWords);
     snapshot->surfaceSamples = surfaceReceived;
     snapshot->directDiffuse = hasDirectDiffuse;
     snapshot->sun = hasSun;

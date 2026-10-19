@@ -7,7 +7,7 @@ namespace remix::forward::bake::cache {
     View view(const Snapshot &s) {
       return {s.grid, s.layout, s.mixed, s.captures, s.specular, s.pixels,
               s.surfaceSamples, s.directDiffuse, s.sun, s.styles,
-              s.localProbes ? &*s.localProbes : nullptr};
+              s.localProbes ? &*s.localProbes : nullptr, s.directionalAttempted, s.directionals};
     }
     template <typename T> uint64_t storage(const std::vector<T> &v) {
       return uint64_t(v.capacity()) * sizeof(T);
@@ -20,7 +20,7 @@ namespace remix::forward::bake::cache {
         storage(s.layout.receiverSamples) + storage(s.layout.footprints) + storage(s.layout.sampleCenters) +
         storage(s.layout.owners) + storage(s.mixed.charts) + storage(s.mixed.directCharts) +
         storage(s.mixed.tasks) + storage(s.mixed.remaining) + storage(s.mixed.next) +
-        storage(s.captures) + storage(s.specular.texels);
+        storage(s.captures) + storage(s.specular.texels) + storage(s.directionals);
     for (const auto &remaining : s.mixed.remaining) bytes += storage(remaining);
     for (const auto &mapping : s.layout.mappings) bytes += storage(mapping.texcoords);
     for (const auto &capture : s.captures) bytes += storage(capture.radiance);

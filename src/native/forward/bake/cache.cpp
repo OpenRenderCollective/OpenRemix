@@ -3,6 +3,7 @@
 #include "forward/bake/cache_io.h"
 #include "forward/bake/shaders/embedded.h"
 #include "forward/lightmap/denoise.h"
+#include "forward/mixed/directional_coverage.h"
 #include <cmath>
 #include <chrono>
 #include <mutex>
@@ -357,7 +358,8 @@ namespace remix::forward::bake::cache {
       require(source && source->ready);
       Snapshot result;
       const auto flags = input.pod<uint32_t>();
-      require(flags <= 63 && (!(flags & 32) || (flags & 16)) && (!(flags & 8) || config.styledIndirect) && (!(flags & 1) || config.directDiffuse) &&
+      require(flags <= 127 && (!(flags & 64) || (flags & 1)) && (!(flags & 32) || (flags & 16)) &&
+              (!(flags & 8) || config.styledIndirect) && (!(flags & 1) || config.directDiffuse) &&
               (!(flags & 2) || source->sun.isDistant));
       result.directDiffuse = (flags & 1) != 0;
       result.sun = (flags & 2) != 0;
@@ -419,6 +421,12 @@ namespace remix::forward::bake::cache {
         require(((combined + 15) & ~uint64_t(15)) + result.localProbes->gpuBytes()
                 <= device.storageRange);
       }
+      result.directionalAttempted = (flags & 64) != 0;
+      if (result.directionalAttempted) {
+        result.directionals = input.array<uint32_t>(mixed::DirectionalFields::maximumBytes / 4);
+        if (!result.directionals.empty())
+          mixed::validateDirectionalCoverage(result.directionals, result.mixed, layout, cancelled);
+      }
       input.finish();
       return std::optional<Snapshot>{std::move(result)};
     } catch (const std::exception &error) {
@@ -432,6 +440,10 @@ namespace remix::forward::bake::cache {
     std::filesystem::path temporary;
     try {
       detail::check(cancelled);
+      require(view.directionals.empty() || view.directionalAttempted);
+      require(!view.directionalAttempted || view.directDiffuse);
+      if (!view.directionals.empty())
+        mixed::validateDirectionalCoverage(view.directionals, view.mixed, view.layout, cancelled);
       if (view.localProbes) {
         require(view.mixed.lights.source != nullptr);
         localProbeOwners(view.grid, *view.mixed.lights.source, *view.localProbes);
@@ -460,7 +472,8 @@ namespace remix::forward::bake::cache {
       }
       output.pod(uint32_t(view.directDiffuse) | uint32_t(view.sun) << 1 | uint32_t(hasPolicy) << 2 |
                  uint32_t(!view.styles.empty()) << 3 | uint32_t(view.localProbes != nullptr) << 4 |
-                 uint32_t(view.localProbes && view.localProbes->directional()) << 5);
+                 uint32_t(view.localProbes && view.localProbes->directional()) << 5 |
+                 uint32_t(view.directionalAttempted) << 6);
       output.pod(view.surfaceSamples);
       output.pod(view.grid.header);
       output.array(view.grid.probes);
@@ -511,6 +524,7 @@ namespace remix::forward::bake::cache {
         output.array(view.localProbes->entries());
         if (view.localProbes->directional()) output.array(view.localProbes->direct());
       }
+      if (view.directionalAttempted) output.array(view.directionals);
       output.finish();
       detail::check(cancelled);
       replace(temporary, file);

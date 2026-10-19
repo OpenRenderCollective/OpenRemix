@@ -21,14 +21,16 @@ Completion requires scalable attributed surface corrections beyond the four reta
 known probe coverage for selected corrections, and a bounded fallback for uncovered receivers.
 The direct-work scheduler now uses immutable sparse chart offsets and explicit output tags;
 its existing four-slot adapter runs through the same batching code. Arbitrary overlap, batch
-boundaries and 32-bit task-count overflow have CPU coverage. The collector and cache still retain
-four surface owners: connect bounded streamed field collection and persistence before treating
-the scheduler change as increased published lighting coverage.
-A field-major collector now accepts hardware readbacks into one chart/light at a time and
-encodes them as indexed directional fields. It validates the complete manifest and receiver
-ownership, preserves seam donors, and refuses export after incomplete receipts or budget failure.
-Wire this collector into the controller and cache before enabling additional owners in game;
-the existing collector still writes the four-slot atlas.
+boundaries and 32-bit task-count overflow have CPU coverage. The opt-in indexed directional path
+now connects bounded field collection to controller submission/readback, publication and cache
+persistence. It reuses retained samples, traces additional positive owners one field at a time,
+preserves seam donors and refuses incomplete export. Cache import validates the exact owner
+manifest and chart rectangles. Publication preserves complete coverage before comparing memory.
+Seven-owner runtime tests exercise cancellation, an independently blackened owner outside the
+four legacy channels, exact cached restoration and 1x/2x/4x MSAA. The normal path still uses the
+legacy atlas; these synthetic gates do not establish map-scale performance or selected-probe
+completeness. Finish those gates before making fully baked lighting the default, and remove the
+redundant legacy directional scratch/cache layers when the migration can preserve fallback behavior.
 Toggleable/styled components must remain independently controllable instead of joining permanent
 aggregate RGB. Check water, displacement layers and live-GI transitions, then measure Crossfire,
 Construct, c1a0/c1a0d and Steamlab with identical quality and fixed camera positions. Default rollout

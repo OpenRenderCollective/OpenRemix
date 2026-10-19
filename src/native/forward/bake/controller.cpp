@@ -1,4 +1,5 @@
 #include "forward/bake/job.h"
+#include "forward/bake/storage_options.h"
 #include "forward/bake/budget.h"
 #include "forward/bake/cache.h"
 #include "forward/bake/cache_persistence.h"
@@ -81,6 +82,15 @@ namespace remix::forward::bake {
       visibilityReadback.resize(count);
     const auto results = std::span(visibilityReadback).first(count);
     transport->readVisibility(slot, results);
+    if (kind == Visibility::DirectionalField) {
+      if (!directionalCapture) return false;
+      try {
+        directionalCapture->observe(first, results, cancellation.get_token());
+        return true;
+      } catch (const std::invalid_argument &) {
+        return false;
+      }
+    }
     const auto directBatch = kind == Visibility::Direct ? directWork->batch(first, count)
                                                        : std::vector<VisibilityTask>{};
     for (uint32_t i = 0; i < count; ++i) {
@@ -134,6 +144,8 @@ namespace remix::forward::bake {
       if (!cacheFile.empty()) {
         auto cached = cache::read(cacheFile, cacheKey, source, config, deviceIdentity,
                                   cancellation.get_token(), directLighting);
+        if (cached && directionalFieldsRequested() && cached->directDiffuse && !cached->directionalAttempted)
+          cached.reset(); // Only the requested capability needs a one-time upgrade.
         if (!cancellation.stop_requested())
           cache::recordLookup(cacheFile, cacheKey, source->contentHash,
                                cache::key(0, config, lightCutoff, deviceIdentity, directLighting), bool(cached));
@@ -146,6 +158,9 @@ namespace remix::forward::bake {
           surfacePixels = std::move(cached->pixels);
           styleWords = std::move(cached->styles);
           localProbes = std::move(cached->localProbes);
+          directionalAttempted = cached->directionalAttempted;
+          completeDirectionals = !cached->directionals.empty();
+          directionalWords = std::move(cached->directionals);
           surfaceReceived = cached->surfaceSamples;
           hasDirectDiffuse = cached->directDiffuse;
           hasSun = cached->sun;
@@ -278,11 +293,13 @@ namespace remix::forward::bake {
         job.transport->releaseBuildInputs();
       if (submission.count && submission.job == m_job && !job.failed) {
         const auto readBegin = std::chrono::steady_clock::now();
-        if (submission.visibility || submission.direct || submission.sun || submission.probeSun || submission.probeLocal || submission.overflowVisibility) {
+        if (submission.visibility || submission.direct || submission.directionalField || submission.sun ||
+            submission.probeSun || submission.probeLocal || submission.overflowVisibility) {
           const auto kind = submission.probeLocal ? Job::Visibility::ProbeLocal
                           : submission.probeSun ? Job::Visibility::ProbeSun
                           : submission.overflowVisibility ? Job::Visibility::Overflow
                           : submission.visibility ? Job::Visibility::Local
+                          : submission.directionalField ? Job::Visibility::DirectionalField
                           : submission.direct ? Job::Visibility::Direct
                           : submission.sunAntialiasing ? Job::Visibility::SurfaceSunAntialiasing
                           : Job::Visibility::SurfaceSun;
@@ -348,12 +365,14 @@ namespace remix::forward::bake {
         job.readbackBytes += uint64_t(submission.count) *
                              (submission.overflowVisibility || submission.visibility ||
                               (submission.probeLocal && !job.localProbes->directional()) ? sizeof(float) :
-                              submission.direct || submission.sun || submission.probeSun || submission.probeLocal
+                              submission.direct || submission.directionalField || submission.sun ||
+                              submission.probeSun || submission.probeLocal
                                   ? sizeof(VisibilityResult) : sizeof(Result));
         if (!submission.styled) (submission.radiance             ? job.captureReceived
          : submission.reflectionGeometry ? job.geometryReceived
          : submission.reflectionSite     ? job.siteReceived
          : submission.visibility         ? job.visibilityReceived
+         : submission.directionalField   ? job.directionalReceived
          : submission.direct             ? job.directReceived
          : submission.overflowVisibility ? job.overflowReceived
          : submission.probeSun           ? job.probeSunReceived
@@ -367,7 +386,8 @@ namespace remix::forward::bake {
           if (submission.overflowVisibility)
             job.overflowTiming.gpuMs += *elapsed;
           const auto work = submission.reflectionGeometry                            ? Work::Geometry
-                            : submission.visibility || submission.direct || submission.overflowVisibility || submission.probeLocal ? Work::Visibility
+                            : submission.visibility || submission.direct || submission.directionalField ||
+                              submission.overflowVisibility || submission.probeLocal     ? Work::Visibility
                             : submission.sun || submission.probeSun                  ? Work::Sun
                             : submission.reflectionSite                              ? Work::Site
                             : submission.radiance                                    ? Work::Reflection
@@ -630,7 +650,7 @@ namespace remix::forward::bake {
         job.overflowAudit.reset();
     }
     if (job.overflowFinished) {
-      recordSun(command, config);
+      recordDirectionals(command, config);
       return;
     }
     if (!job.overflowAudit) {
@@ -951,7 +971,9 @@ namespace remix::forward::bake {
     auto visibility = mixed::prepareVisibility(m_physical, m_device, *m_job->mixedLights,
         m_job->surfaceLayout, m_job->surfacePixels,
         !pageOverride || std::strcmp(pageOverride, "0") != 0,
-        m_job->unifiedMasks ? &*m_job->unifiedMasks : nullptr, m_job->directionalWords);
+        m_job->unifiedMasks ? &*m_job->unifiedMasks : nullptr,
+        directionalFieldsRequested() ? std::span<const uint32_t>(m_job->directionalWords) : std::span<const uint32_t>{},
+        directionalFieldsRequested() && m_job->completeDirectionals);
     auto &visibilityPages = visibility.pages;
     auto &occlusion = visibility.lookup;
     const auto compressedAllocation = visibility.compressedAllocation;

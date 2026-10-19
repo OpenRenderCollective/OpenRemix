@@ -17,7 +17,11 @@ namespace remix::forward::mixed {
   };
   // Chooses complete replacements before upload. All candidate image memory is
   // queried unbound; only the winning lookup/pages receive GPU allocations.
+  // Complete captures preserve extra baked ownership before minimizing memory
+  // among equivalent candidates. Device/allocation limits can still decline
+  // the entire indexed replacement and retain ordinary shading.
   VisibilityPublication prepareVisibility(VkPhysicalDevice physical, VkDevice device,
       const Plan &plan, const lightmap::Layout &layout, std::span<const uint16_t> pixels,
-      bool allowPages, const UnifiedMasks *unified, std::span<const uint32_t> directional = {});
+      bool allowPages, const UnifiedMasks *unified, std::span<const uint32_t> directional = {},
+      bool preferCompleteDirectionals = false);
 }

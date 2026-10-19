@@ -1,4 +1,5 @@
 #include "forward/bake/cache.h"
+#include "forward/mixed/directional_fields.h"
 #include "forward/bake/cache_io.h"
 #include "forward/bake/sparse_sh.h"
 #include "scene/fixtures.h"
@@ -138,6 +139,90 @@ int main(int argc, char **argv) {
               restored->grid.probes[3].irradiance[8][3] == data.grid.probes[3].irradiance[8][3],
           "Probe static sunlight visibility survives the disk cache without a second allocation");
   require(!restored->localProbes, "Existing caches without local probe masks remain explicitly uncovered");
+  require(!restored->directionalAttempted && restored->directionals.empty(),
+          "Old cache payloads remain readable without claiming complete directional capture");
+  {
+    auto wideSource = std::make_shared<scene::BakeScene>(*source);
+    for (uint32_t light = 2; light < 7; ++light) {
+      auto extra = wideSource->lights[0];
+      extra.id = 17 + light;
+      wideSource->lights.push_back(extra);
+    }
+    auto wide = data.mixed;
+    wide.lights.source = wideSource;
+    for (uint32_t light = 2; light < 7; ++light)
+      wide.lights.identities.emplace(wideSource->lights[light].id, light);
+    wide.occlusion = f::mixed::Occlusion(1, 7);
+    wide.occlusion.mark(0, 0, f::mixed::Visibility::Clear);
+    for (uint32_t light = 2; light < 7; ++light)
+      wide.occlusion.mark(0, light, f::mixed::Visibility::Clear);
+    const auto directionalFile = root / "complete-directionals.bake";
+    const auto encode = [&](uint32_t count, bool wrongRectangle = false) {
+      f::mixed::DirectionalFields fields(1, 7);
+      auto rectangle = data.layout.charts[0];
+      if (wrongRectangle) --rectangle.width;
+      std::vector<f::mixed::directional::Field> values(rectangle.width * rectangle.height);
+      for (uint32_t light = 0; light < count; ++light) {
+        for (auto &value : values) value.fill(light == 6 ? 0 : (light & 1 ? 0xb400 : 0x3800));
+        require(fields.add(0, light, rectangle, values), "Seven-light cache fixture fits its storage budget");
+      }
+      return fields.words();
+    };
+    auto words = encode(7);
+    const auto saveDirectional = [&](bool attempted = true) {
+      return bc::write(directionalFile, identity,
+          {data.grid, data.layout, wide, data.captures, data.specular, data.pixels,
+           data.surfaceSamples, data.directDiffuse, data.sun, {}, nullptr, attempted, words});
+    };
+    const auto loadDirectional = [&] { return bc::read(directionalFile, identity, wideSource, config, device); };
+    require(saveDirectional(), "Complete fields beyond four owners are persisted");
+    const auto imported = loadDirectional();
+    require(imported && imported->directionalAttempted && imported->directionals == words &&
+                f::mixed::DirectionalFields::sample(imported->directionals, 0, 6, 2, 2)->front() == 0,
+            "Cache round trip preserves every signed field and explicit known-black seventh owner");
+    std::vector<char> original;
+    {
+      std::ifstream input(directionalFile, std::ios::binary);
+      original.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+    }
+    const auto replaceTail = [&](const std::vector<uint32_t> &replacement) {
+      auto damaged = original;
+      damaged.resize(original.size() - words.size() * sizeof(uint32_t) - sizeof(uint64_t));
+      const uint64_t count = replacement.size();
+      const size_t start = damaged.size();
+      damaged.resize(start + sizeof(count) + replacement.size() * sizeof(uint32_t));
+      std::memcpy(damaged.data() + start, &count, sizeof(count));
+      std::memcpy(damaged.data() + start + sizeof(count), replacement.data(), replacement.size() * sizeof(uint32_t));
+      bc::detail::Header header;
+      std::memcpy(&header, damaged.data(), sizeof(header));
+      header.bytes = damaged.size() - sizeof(header);
+      header.checksum = scene::hashBytes(damaged.data() + sizeof(header), header.bytes, 1469598103934665603ull);
+      std::memcpy(damaged.data(), &header, sizeof(header));
+      std::ofstream output(directionalFile, std::ios::binary | std::ios::trunc);
+      output.write(damaged.data(), std::streamsize(damaged.size()));
+    };
+    replaceTail(encode(6));
+    require(!loadDirectional(), "Checksummed codec-valid cache with missing ownership is rejected on import");
+    replaceTail(encode(7, true));
+    require(!loadDirectional(), "Checksummed cache cannot substitute another chart rectangle");
+    require(saveDirectional(), "Valid complete capture restores the cache after malformed import tests");
+    require(!saveDirectional(false) && loadDirectional()->directionals == words,
+            "Unattempted capture cannot publish complete fields or replace valid cached data");
+    words = encode(6);
+    require(!saveDirectional(), "A valid codec with an omitted positive owner is not complete coverage");
+    words = encode(7, true);
+    require(!saveDirectional(), "Codec-valid fields must match exact chart rectangles");
+    words = encode(7);
+    words.back() ^= 0xffffffffu;
+    require(!saveDirectional(), "Malformed field payload cannot replace a completed cache");
+    words.clear();
+    require(saveDirectional(), "Whole-replacement memory decline is an explicit cache outcome");
+    const auto declined = loadDirectional();
+    require(declined && declined->directionalAttempted && declined->directionals.empty(),
+            "Declined capture remains distinct from old unattempted cache data");
+    require(saveDirectional(false), "Legacy payload can replace the optional extension");
+    require(!loadDirectional()->directionalAttempted, "Absent optional extension remains explicitly unattempted");
+  }
   {
     const f::bake::VisibilityTask pairs[] = {{0, 0, 0}, {0, 1, 0}, {7, 1, 0}};
     const float values[] = {0, .375f, 1};

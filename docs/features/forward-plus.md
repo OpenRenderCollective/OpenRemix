@@ -173,6 +173,23 @@ their nine directional coefficients. This preserves the same emitter samples, bl
 and mask encoding. It does not remove the per-texel/per-light visibility workload: the four retained
 direct-light channels and separate overflow masks remain a scalability limitation.
 
+`REMIX_DEBUG_DIRECTIONAL_FIELDS=1` enables complete directional capture for known
+positive chart/light links beyond the four retained channels. The controller
+reuses existing retained samples, then traces additional fields one at a time
+through the same hardware transport. Each field drains its fenced readbacks
+before encoding or advancing; there is no expanded all-map coefficient array.
+Manifest storage is bounded to 128 MiB, field staging to 256 MiB and encoded
+output to 128 MiB. These are separate budgets, not a total memory guarantee.
+Cancellation never publishes unfinished fields. Budget exhaustion declines the
+whole optional replacement. Unknown visibility remains unknown.
+
+Complete capture publication preserves additional baked owners even when their
+table is larger than the four-channel atlas, then minimizes allocation among
+equivalent complete options. Device limits or allocation failure can still
+retain ordinary shading. This developer path remains opt-in pending map-scale
+performance and selected-probe coverage acceptance; it does not enable fully
+baked lighting by default.
+
 Published scalar masks can use a pooled R8 texture array. `mixed/mask_pages.*` packs
 chart/light rectangles into shared layers, retaining an independent lookup for each
 captured light. Layer ownership is local to a rectangle rather than one layer per
@@ -1069,6 +1086,14 @@ It stores no resource handles, GPU pointers or surface-sampling work lists. Relo
 geometry against the current frozen source and uses the ordinary fenced volume upload/publication.
 The status begins `Cached lighting active` on a hit. Hardware ray-query support is still required
 by the current bake controller, even on a disk hit.
+
+An optional cache capability stores complete surface directional fields and
+distinguishes a recorded memory-budget decline from an unattempted older cache.
+Import verifies the exact positive-owner manifest and each chart rectangle as
+well as codec validity. Enabling the directional developer path upgrades an
+older direct-light cache once; ordinary/default cache reuse is unchanged.
+The extension preserves the radiance identity and uses an optional payload flag
+rather than globally invalidating existing caches.
 
 Loading checks the version, identity, exact file length and payload checksum before using array counts.
 Counts, atlas rectangles, UVs, light indices and numeric values are validated before upload; file

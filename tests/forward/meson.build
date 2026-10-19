@@ -104,6 +104,8 @@ forward_cache_test = executable('remix-forward-cache-test', 'cache.cpp',
   '../../src/native/forward/lightmap/data.cpp', '../../src/native/forward/mixed/data.cpp',
   '../../src/native/forward/mixed/occlusion.cpp', '../../src/native/forward/mixed/masks.cpp', '../../src/native/forward/mixed/mask_codec.cpp', '../../src/native/forward/mixed/mask_palette.cpp',
   '../../src/native/forward/lighting.cpp',
+  '../../src/native/forward/mixed/directional_links.cpp', '../../src/native/forward/mixed/directional_coverage.cpp',
+  '../../src/native/forward/mixed/directional_fields.cpp', '../../src/native/forward/mixed/directional_field.cpp',
   include_directories : test_includes, link_with : [scene_library, lightmap_denoise_library], cpp_args : test_cpp_args)
 test('Bake cache identity, payload integrity and mixed light ownership', forward_cache_test,
   args : [meson.current_build_dir() / 'cache'])

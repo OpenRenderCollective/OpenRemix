@@ -9,6 +9,7 @@
 #include "forward/mixed/direct_work.h"
 #include "forward/mixed/unified_masks.h"
 #include "forward/mixed/directional_fields.h"
+#include "forward/mixed/directional_capture.h"
 #include "forward/probes/evaluation.h"
 #include <atomic>
 #include <filesystem>
@@ -43,6 +44,13 @@ namespace remix::forward::bake {
     std::shared_ptr<mixed::Plan> mixedLights;
     std::optional<mixed::UnifiedMasks> unifiedMasks;
     std::vector<uint32_t> directionalWords;
+    std::unique_ptr<mixed::DirectionalCapture> directionalCapture;
+    bool directionalAttempted = false, completeDirectionals = false;
+    uint32_t directionalNext = 0, directionalReceived = 0, directionalCount = 0;
+    uint32_t directionalField = 0, directionalFields = 0;
+    uint32_t directionalReusedFields = 0;
+    uint64_t directionalTracedPoints = 0;
+    void advanceDirectionals(bool finish);
     void prepareSurfaceStorage();
     std::vector<Vec4> visibility;
     std::vector<lightmap::Direct> direct;
@@ -95,7 +103,9 @@ namespace remix::forward::bake {
     bool initialized = false, prepared = false, failed = false;
     void prepareResources(VkPhysicalDevice physical, VkDevice device, const Config &config, float lightCutoff,
                           uint32_t queueFamily);
-    enum class Visibility { Local, Direct, Overflow, SurfaceSun, SurfaceSunAntialiasing, ProbeSun, ProbeLocal };
+    enum class Visibility {
+      Local, Direct, DirectionalField, Overflow, SurfaceSun, SurfaceSunAntialiasing, ProbeSun, ProbeLocal
+    };
     bool consumeVisibility(uint32_t slot, uint32_t first, uint32_t count, Visibility kind);
     uint32_t count(Work work, const Config &config, uint32_t remaining, uint32_t samples,
                    uint32_t bounces = 1) {
