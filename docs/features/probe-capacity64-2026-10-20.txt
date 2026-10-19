@@ -84,3 +84,9 @@ Live weapon/water and more-map profiling, default-budget acceptance, independent
 reflection rebakes, room-bound fitting/overlap quality and the broader lighting,
 bake-time and gameplay-performance gates remain open. Do not repeat the already
 rejected audit-order/score experiments without a new receiver-quality objective.
+
+Delivery
+Native340acd5 and adapter f8e77a2 pushed to their official feature branches.
+Matching runtime package forwardplus-probe-capacity64-v1 is ready. Deployment
+was deferred because five gmod_win64 processes were running; no game was stopped
+and no installed binaries or user settings were changed at this checkpoint.
