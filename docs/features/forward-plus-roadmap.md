@@ -425,3 +425,10 @@ shape expansion:208vs144 boxes with unchanged49,536rays selects identical captur
 and image; spreading regresses surface coverage. Neither runtime trial remains.
 Do not repeat scheduling changes without a new fitting/receiver-quality objective;
 see cubemap-alternative-budget-2026-10-20.txt.
+
+Construct corridor candidates rank50/53 under the reproduced current selector,
+beyond the32capture runtime cap. A two-sided wall-support score changes only1/16
+selections and leaves sampled receiver coverage unchanged. Next investigate bounded
+per-tile probe assignment/larger map sets or local residency versus a receiver-aware
+fixed budget; do not simply enlarge the per-fragment global scan. See
+cubemap-selection-capacity-2026-10-20.txt.

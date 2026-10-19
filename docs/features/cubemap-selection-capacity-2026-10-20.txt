@@ -1,0 +1,65 @@
+Cubemap boundary support and selection capacity - 2026-10-20
+
+Question
+Does the one-sided geometry agreement score overvalue oversized proxy boxes, and
+would stricter wall support fix the missing Construct corridor coverage?
+
+Offline reproduction
+Used the208GPU-audited candidate shapes from the preceding full-shape experiment.
+A CPU reproduction of current marginal-volume subtraction, enclosure priority,
+5percent duplicate tolerance and meaningful-score tie rule reproduces the native
+final16candidate identities exactly before testing a different score.
+
+Existing agreement counts any non-missed hit at or before1.05times the box exit.
+The alternative score subtracts the recorded near-hit fraction from support,
+weighted by face solid angle, leaving approximately +/-5percent wall agreement.
+It reuses existing audit data and traces no new rays. This is a diagnostic score,
+not a committed runtime selection policy.
+
+Result
+Fifteen of16selected identities remain the same. Candidate143changes to156.
+At16and64equal-area samples/triangle, planar receiver coverage inside the shared
+candidate domain is identical between scores:53.1209percent and53.2151percent,
+respectively. Sky/nodraw/displacements are excluded and receiver margin is0.05m.
+This surrogate does not measure parallax image quality, view importance or wall
+visibility. Equal coverage does not establish equivalent reflection appearance.
+Do not retain the score change based on these results.
+
+The corridor primary scores and two-sided support are:
+  candidate82: existing0.590585, boundary0.304066
+  candidate87: existing0.669758, boundary0.552230
+  candidate183 (87's alternative): existing0.720761, boundary0.720761
+None is selected with16captures by either metric.
+
+Capacity finding
+Extending only the offline selection count to24and32still excludes these corridor
+origins. The complete current-score ordering has59nonduplicate accepted shapes;
+candidate87is50th and candidate82is53rd. Alternative183is redundant after the
+chosen union and is not selected. Runtime maximum is32captures. Therefore, under
+the current selector these valid corridor origins cannot reach the active set
+merely by increasing the existing user setting to its maximum. This is a concrete
+capacity/selection-policy limitation, not proof that every fitted corridor box is
+visually good or that capacity alone explains all cubemap defects.
+
+Next engineering task
+Investigate bounded per-tile/per-cluster probe assignment with a larger map probe
+set, or bounded local residency, before increasing a global per-fragment scan.
+The current small global atlas/header and selection budget must be treated as an
+integration constraint. Keep atlas memory, bake rays, cache migration and shader
+work explicit; measure steady-state GPU costs and doorway/fade behavior. Preserve
+authored priorities and independent capture points. This can address small rooms
+losing to large distant volumes without forcing particular map coordinates into
+selection. Compare against a receiver-aware fixed-budget policy before selecting
+the final design. Existing automatic enclosure/overlap quality remains open too.
+
+No runtime source, shader, setting, cache or deployment changes in this checkpoint.
+Installed package remains forwardplus-direct-style-occupancy-v1. No performance
+or rendered-quality improvement is claimed from the offline score experiment.
+
+Private reproducible evidence
+_work/reports/diagnose-cubemap-boundary-support-v1.py
+_work/reports/compare-cubemap-boundary-support-v1.py
+_work/reports/cubemap-boundary-support-v1/report.json
+_work/reports/cubemap-boundary-support-v1/receiver-coverage.json
+_work/reports/cubemap-boundary-support-v1/budget-ranks.json
+The baseline match is an essential control; future scorer changes must retain it.
