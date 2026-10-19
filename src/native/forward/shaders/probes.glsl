@@ -42,7 +42,13 @@ vec3 probeMip(uint probe, uint level, vec3 ray) {
   }
   return result;
 }
+// Only screen-space compute uses a tile mask. Water and viewmodels retain
+// their original contiguous walk without adding mask work to those stages.
+#ifdef PROBE_TILE_CANDIDATES
+bool probeRadianceMasked(vec3 position, vec3 reflected, float roughness, uint candidates, out vec3 result) {
+#else
 bool probeRadiance(vec3 position, vec3 reflected, float roughness, out vec3 result) {
+#endif
   result = vec3(0);
   if (probeParameters.x == 0u || dot(reflected, reflected) < 1e-10)
     return false;
@@ -50,7 +56,14 @@ bool probeRadiance(vec3 position, vec3 reflected, float roughness, out vec3 resu
   float lod = clamp(roughness, 0, 1) * float(probeParameters.z - 1u), total = 0;
   float priority = -3.402823e38;
   uint low = uint(lod), high = min(low + 1u, probeParameters.z - 1u);
+#ifdef PROBE_TILE_CANDIDATES
+  while (candidates != 0u) {
+    uint probe = uint(findLSB(candidates));
+    candidates &= candidates - 1u;
+    if (probe >= probeParameters.x) break;
+#else
   for (uint probe = 0; probe < probeParameters.x; ++probe) {
+#endif
     ReflectionProbe record = probes[probe];
     vec3 localPosition, localRay;
     for (uint c = 0u; c < 3u; ++c) {

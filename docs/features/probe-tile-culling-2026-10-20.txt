@@ -1,0 +1,59 @@
+Workgroup-local reflection probe culling - 2026-10-20
+
+Change
+The8x8screen-space reflection filter now constructs a conservative probe mask
+shared by its64invocations. Reconstructed, receiver-biased world positions bound
+actual surfaces in the tile. Each probe tests that AABB against its oriented
+influence bounds using affine support intervals with a float-error guard. Only
+proven separation rejects a probe. Invalid positions fail open to a full scan;
+empty/sky/partial workgroups participate before divergent returns.
+
+One32bit mask matches the existing32probe storage contract. Set bits are consumed
+in original ascending order. Per-pixel containment, authored priority, parallax,
+roughness and feather blending remain authoritative and unchanged. No extra GPU
+pass, persistent candidate list, descriptor, public ABI, cache format or setting.
+About1KiB shared receiver scratch per workgroup. Water/viewmodel shaders retain
+the original contiguous probe walk via a compile-time variant of the shared body;
+no duplicate shading implementation or runtime feature switch is introduced.
+
+Verification
+Release build passes. Eight GPU/integration suites pass with Vulkan validation
+and synchronization checking: oriented probe sampling, viewmodelSSR, viewmodel
+environment materials, SSR/MSAA guides, SSR/probe blending, sky fallback, hardware
+reflection transport and water environment lighting. The sampling fixture includes
+all32mask positions, distant translated volumes, oriented boxes, priorities,
+roughness, boundaries and partial workgroups. Six shader backends regenerate,
+compare and validate. Byte-level stage comparison confirms only forward ssrFilter
+changes in production; water and water-ray stages are identical to baseline.
+A shared-helper cleanup initially exposed4argument callers during regeneration;
+the final compile-time variants preserve those callers and all checks pass.
+
+Matched warm controls: old/new/new/old,2048distinct GPU frames per run after8s
+warmup,1080pMSAA4,manual exposure1,full SSR,4Mtexels,16size32captures.
+Construct reflection pass ms:
+  .312979 / .303516 / .303359 / .312701
+  paired means .312840 -> .303437 (about9.4microseconds,3.01percent lower).
+Crossfire reflection pass ms:
+  0.249921 / 0.248319 / 0.247395 / 0.250761
+  paired means .250341 -> .247857 (about2.5microseconds,.99percent lower).
+Whole-frame paired means vary about+.5percent benefit on Construct and-.33percent
+on Crossfire; these small opposing changes do not establish a gameplay FPS gain.
+Every control has identical screenshots and published bake hashes. Existing disk
+bakes restore. The final scoped compute module is byte-identical to the timed
+module; other production stages are restored byte-identically to baseline.
+Private controls: probe-tile-final-performance-v1/comparison.json and
+probe-tile-final-crossfire-v1/comparison.json under _work/reports; module/stage
+identity receipts accompany the Construct report. Earlier trials remain separate.
+
+Final scoped runtime validation reload also matches its prior Construct screenshot
+and hashes exactly with no reported validation errors/synchronization hazards:
+_work/reports/probe-tile-release-warm-v1/comparison.json.
+Native SHA256:0789643e0077e1065e3ac66d6e114ada9852c64a7437526055ecd2e23c995f2a
+
+Remaining scope
+This establishes the lookup primitive, not better automatic bounds or more room
+coverage. Runtime capacity remains32and default selection unchanged. Next extend
+map probe storage/cache and mask capacity together, compare bounded local lists
+against global traversal at larger counts, and validate missing-corridor/doorway
+coverage and authored priorities. Small/fully-overlapping probe sets and live weapon
+performance need broader profiling. Keep bake latency and memory explicit.

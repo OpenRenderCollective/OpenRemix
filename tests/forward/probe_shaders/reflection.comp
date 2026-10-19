@@ -1,7 +1,9 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
 #define PROBE_BINDING 0
+#define PROBE_TILE_CANDIDATES
 #include "../../../src/native/forward/shaders/probes.glsl"
+#include "../../../src/native/forward/shaders/probe-tiles.glsl"
 struct Query { vec4 position, direction; };
 layout(set = 0, binding = 1, std430) readonly buffer Queries { Query queries[]; };
 layout(set = 0, binding = 2, std430) writeonly buffer Answers { vec4 answers[]; };
@@ -9,9 +11,11 @@ layout(push_constant) uniform Count { uint count; } inputData;
 layout(local_size_x = 64) in;
 void main() {
   uint index = gl_GlobalInvocationID.x;
-  if (index >= inputData.count) return;
-  Query query = queries[index];
+  bool inBounds = index < inputData.count;
+  Query query = inBounds ? queries[index] : Query(vec4(0), vec4(0));
+  uint mask = probeTileCandidates(query.position.xyz, inBounds);
+  if (!inBounds) return;
   vec3 radiance;
-  bool valid = probeRadiance(query.position.xyz, query.direction.xyz, query.position.w, radiance);
+  bool valid = probeRadianceMasked(query.position.xyz, query.direction.xyz, query.position.w, mask, radiance);
   answers[index] = vec4(radiance, valid ? 1 : 0);
 }

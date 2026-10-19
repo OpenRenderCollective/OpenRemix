@@ -432,3 +432,10 @@ selections and leaves sampled receiver coverage unchanged. Next investigate boun
 per-tile probe assignment/larger map sets or local residency versus a receiver-aware
 fixed budget; do not simply enlarge the per-fragment global scan. See
 cubemap-selection-capacity-2026-10-20.txt.
+
+Workgroup-local probe candidate masks now cull the screen-space reflection
+filter conservatively. Oriented/priority/roughness/partial-group tests pass; matched
+Construct/Crossfire screenshots remain exact, reflection pass saves~9/~2.5us.
+Other production shader stages retain original walks. This does not raise32probe
+capacity or fix missing rooms; next coordinate larger storage/cache/masks and
+profile bounded lists. See probe-tile-culling-2026-10-20.txt.

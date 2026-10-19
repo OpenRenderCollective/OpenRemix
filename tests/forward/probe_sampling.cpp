@@ -21,7 +21,7 @@ void samplingCase(uint32_t resolution) {
       if (setLayout) vkDestroyDescriptorSetLayout(device, setLayout, nullptr);
     }
   } gpu{fixture.device};
-  probes::Capture captures[3];
+  std::vector<probes::Capture> captures(3);
   for (auto &capture : captures) {
     capture.bounds.include({-2, -.5f, -1});
     capture.bounds.include({2, .5f, 1});
@@ -47,6 +47,14 @@ void samplingCase(uint32_t resolution) {
   captures[2].influence.include({.25f, .5f, 1});
   for (auto &pixel : captures[2].radiance)
     pixel = {0, 0, 3, 0};
+  if (resolution == 8) {
+    captures.resize(32);
+    for (uint32_t i = 3; i < captures.size(); ++i) {
+      captures[i] = captures[0];
+      captures[i].position[0] += 1000.f * i;
+      captures[i].worldToLocal[1][3] += 1000.f * i;
+    }
+  }
   const auto data = probes::filter(captures, 64);
   const auto bytes = probes::serialize(data);
   struct Query { Vec4 position, direction; };
@@ -59,6 +67,15 @@ void samplingCase(uint32_t resolution) {
           for (Vec3 ray : {Vec3{1, 0, 0}, Vec3{0, 1, 1}, Vec3{-1, .2f, 1}})
             queries.push_back(
                 {{x, y, z, float(step) / steps}, {ray[0], ray[1], ray[2], 0}});
+  if (resolution == 8) {
+    while (queries.size() % 64) queries.push_back(queries.front());
+    for (uint32_t probe = 3; probe < captures.size(); ++probe)
+      for (uint32_t lane = 0; lane < 64; ++lane) {
+        const auto &p = captures[probe].position;
+        queries.push_back({{p[0],p[1],p[2],float(lane)/63}, {1,.2f,.1f,0}});
+      }
+    queries.push_back(queries.front()); // partial final workgroup participates in every barrier
+  }
   const VkDescriptorSetLayoutBinding bindings[] = {
       {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
       {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
