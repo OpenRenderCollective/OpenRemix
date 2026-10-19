@@ -35,8 +35,8 @@ namespace remix::forward {
            !d.viewModel && !d.spriteFlags && d.material->normalEncoding != 5 && d.blend.mask == 15 &&
            (d.depthCompare == 1 || d.depthCompare == 3);
   }
-  inline bool acceptsTerrainLayer(const scene::Draw &d) {
-    return d.terrain && d.decal && d.classification == REMIXAPI_INSTANCE_STATIC_EXT && d.traced() &&
+  inline bool acceptsSurfaceLayer(const scene::Draw &d) {
+    return d.decal && d.classification == REMIXAPI_INSTANCE_STATIC_EXT && d.traced() &&
            d.blend.enabled && d.blend.src == 6 && d.blend.dst == 7 && d.blend.op == 0 &&
            d.blend.mask == 15 && !d.material->translucent && !d.material->transmission &&
            !d.cutGroup && !d.wireframe && d.depth && !d.viewModel && !d.spriteFlags &&

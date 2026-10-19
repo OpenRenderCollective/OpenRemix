@@ -25,7 +25,7 @@ namespace remix::forward {
     data.uv = {1.f / m.columns, 1.f / m.rows, float(frame % m.columns) / m.columns,
                float(frame / m.columns) / m.rows};
     data.pbr = {m.roughness, m.metallic, m.normalTexture && m.normalTexture->pixels.twoChannel ? 1.f : 0.f,
-                acceptsTerrainLayer(draw) ? 1.f : 0.f};
+                acceptsSurfaceLayer(draw) ? 1.f : 0.f};
     std::copy_n(m.emission, 3, data.emission.begin());
     if (m.selfIllumination)
       data.emission[3] = m.selfIlluminationScale;

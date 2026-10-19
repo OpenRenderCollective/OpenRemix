@@ -174,3 +174,8 @@ forward_styled_direct_test = executable('remix-forward-styled-direct-test', 'sty
   '../../src/native/forward/mixed/directional_fields.cpp', '../../src/native/forward/mixed/directional_field.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Grouped styled direct reuses complete surface and probe captures', forward_styled_direct_test)
+
+forward_decal_test = executable('remix-forward-decal-test', 'decal.cpp',
+  '../../src/native/forward/lightmap/decal.cpp', '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Decals borrow receiver chart coordinates and light ownership', forward_decal_test)

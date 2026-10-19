@@ -2013,7 +2013,7 @@ namespace {
                       split ? "Stitched curved" : curved ? "Curved" : "Planar", samples, ssr ? "on" : "off", unsigned(first[left + 1]), unsigned(first[right + 1]));
       }
   }
-  void terrainLightingTests() {
+  void terrainLightingTests(bool decal = false) {
     for (bool ssr : {false, true})
       for (uint32_t samples : {1u, 2u, 4u}) {
         Target target(64, 64, true);
@@ -2057,7 +2057,7 @@ namespace {
         layerIdentity.pNext = &blend;
         auto layer = instance(layerMesh, -.001f);
         layer.pNext = &layerIdentity;
-        layer.categoryFlags = REMIXAPI_INSTANCE_CATEGORY_BIT_TERRAIN | REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_STATIC;
+        layer.categoryFlags = (decal ? 0 : REMIXAPI_INSTANCE_CATEGORY_BIT_TERRAIN) | REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_STATIC;
         const auto layerHandle = r.createRetained(layer);
         require(target.forward->owns(r.retained(layerHandle)->records[0]),
                 "Tagged terrain paint belongs to lit Forward+ rather than unlit compatibility rendering");
@@ -2092,7 +2092,7 @@ namespace {
           request.bounds.maximum[c] = 11;
         }
         request.chartRevision = 1;
-        request.chartCount = 2;
+        request.chartCount = decal ? 1 : 2;
         request.charts = charts;
         r.setBakeScene(&request.bounds.scene);
         auto render = [&](bool paint) {
@@ -4473,6 +4473,7 @@ int main(int argc, char **argv) {
   else if (argc>2 && std::strcmp(argv[2],"overflow-specular")==0) compactOcclusionTests(true);
   else if (argc>2 && std::strcmp(argv[2],"overflow-masks")==0) compactOcclusionTests(true, true);
   else if (argc>2 && std::strcmp(argv[2],"terrain-lighting")==0) terrainLightingTests();
+  else if (argc>2 && std::strcmp(argv[2],"decal-lighting")==0) terrainLightingTests(true);
   else if (argc>2 && std::strcmp(argv[2],"clear-visibility")==0) clearVisibilityTests();
   else if (argc>2 && std::strcmp(argv[2],"mixed-sun")==0) sunLightingTests();
   else if (argc>2 && std::strcmp(argv[2],"probe-blend")==0) reflectionTests(directory, true);

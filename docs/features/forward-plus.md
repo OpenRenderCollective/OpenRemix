@@ -2040,3 +2040,21 @@ individual captured contributions at bounded triangle-centre samples, including
 opposite vertex-normal orientations. It reports emitter-horizon clipping separately.
 Materials, normal maps, runtime range fade and moving shadows are excluded. This
 read-only diagnostic does not change bake inputs or published lighting.
+
+## Static decal receiver lighting
+
+Static source-over decals share the HDR surface-layer pass with terrain paint.
+At bake publication, `lightmap/decal` clips decal triangles against nearby mapped
+opaque receiver triangles. A temporary bounds tree limits candidate searches.
+The generated vertices retain decal texture coordinates and vertex alpha while
+borrowing receiver atlas UVs, page/chart IDs, sampling bounds and mixed-light
+ownership. Chart crossings split geometry rather than interpolate page IDs.
+No decal charts, bake rays or full-screen lighting targets are allocated.
+Derived geometry is reconstructed from validated cache data as well as fresh bakes.
+
+Projection requires matching facing and a receiver within five millimetres in
+scene units. Unmapped static paint uses the normal probe/analytic fallback.
+Decals remain excluded from opaque shadow casters and depth writes; their colour
+is blended over the lit receiver before display mapping. Modulating decals retain
+their compatibility multiply path. Runtime dynamic decals still require receiver
+tracking and remain on the compatibility renderer.

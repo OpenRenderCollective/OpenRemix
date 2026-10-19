@@ -341,16 +341,16 @@ int main() {
     paint.classification = REMIXAPI_INSTANCE_STATIC_EXT;
     paint.blend.src = 6;
     paint.blend.dst = 7;
-    require(acceptsTerrainLayer(paint) && !accepts(paint),
+    require(acceptsSurfaceLayer(paint) && !accepts(paint),
             "Explicit static terrain paint receives lighting without becoming an opaque caster");
     paint.terrain = false;
-    require(!acceptsTerrainLayer(paint), "Ordinary decals retain compatibility ownership");
+    require(acceptsSurfaceLayer(paint), "Static source-over decals receive surface lighting");
     paint.terrain = true;
     paint.classification = REMIXAPI_INSTANCE_DYNAMIC_EXT;
-    require(!acceptsTerrainLayer(paint), "Dynamic decals cannot inherit static terrain lighting");
+    require(!acceptsSurfaceLayer(paint), "Dynamic decals retain compatibility ownership until receiver tracking is available");
     paint.classification = REMIXAPI_INSTANCE_STATIC_EXT;
     paint.blend.dst = 1;
-    require(!acceptsTerrainLayer(paint), "Additive layers do not become terrain source-over paint");
+    require(!acceptsSurfaceLayer(paint), "Additive layers do not become terrain source-over paint");
   }
   draw.blend.enabled = false;
   draw.cutGroup = 1;
@@ -544,7 +544,9 @@ int main() {
   require(remix::forward::bake::Config{}.denoiseLightmaps,
           "New bake configurations request indirect lightmap denoising by default");
   require(settings.forward.debugView == 0 &&
-              config::set(settings, "rtx.native.forward.debugView", "4") == config::SetResult::Invalid &&
+              config::set(settings, "rtx.native.forward.debugView", "6") == config::SetResult::Invalid &&
+              config::set(settings, "rtx.native.forward.debugView", "4") == config::SetResult::Success &&
+              config::set(settings, "rtx.native.forward.debugView", "5") == config::SetResult::Success &&
               config::set(settings, "rtx.native.forward.debugView", "2") == config::SetResult::Success,
           "Lighting diagnostics default off and reject unknown modes");
   changed = settings.forward;

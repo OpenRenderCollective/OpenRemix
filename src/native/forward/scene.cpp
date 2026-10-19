@@ -175,7 +175,7 @@ namespace remix::forward {
     std::vector<water::MaterialData> waterMaterials;
     Bounds casters;
     auto append = [&](const scene::Draw &draw, std::vector<Command> &commands, bool staticOnly, bool liquid = false) {
-      if (!(liquid ? water::accepts(draw) : accepts(draw) || (!staticOnly && acceptsTerrainLayer(draw))))
+      if (!(liquid ? water::accepts(draw) : accepts(draw) || (!staticOnly && acceptsSurfaceLayer(draw))))
         return;
       const uint32_t count = draw.indexCount ? draw.indexCount : uint32_t(draw.surface->indices.size());
       if (!count)
@@ -201,7 +201,7 @@ namespace remix::forward {
     for (const auto &draw : resources.draws()) {
       const bool liquid = waterPass && water::accepts(draw);
       append(draw, liquid ? frame.waterCommands
-                   : acceptsTerrainLayer(draw) ? frame.terrainCommands : frame.commands, false, liquid);
+                   : acceptsSurfaceLayer(draw) ? frame.terrainCommands : frame.commands, false, liquid);
     }
     // Complete frozen bounds still fit the cascades even when no static draw
     // descriptors or material records need preparing for this frame.

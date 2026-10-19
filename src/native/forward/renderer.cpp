@@ -225,7 +225,7 @@ namespace remix::forward {
   const Statistics &Renderer::statistics() const { return m_gpu->statistics; }
   const Options &Renderer::options() const { return m_gpu->options; }
   bool Renderer::owns(const scene::Draw &draw) const {
-    return accepts(draw) || acceptsTerrainLayer(draw) || (m_gpu && m_gpu->waterPass && water::accepts(draw));
+    return accepts(draw) || acceptsSurfaceLayer(draw) || (m_gpu && m_gpu->waterPass && water::accepts(draw));
   }
   void Renderer::updateLighting(const Options &options) {
     if (!m_gpu->options.sameTargets(options))

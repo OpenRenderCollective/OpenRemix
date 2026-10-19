@@ -69,6 +69,8 @@ if get_option('gpu_tests')
     args : [meson.current_build_dir() / 'overflow-specular-readback', 'overflow-specular'], timeout : 180)
   test('Forward+ sparse partial overflow masks retain exposed metallic lighting', raster_test,
     args : [meson.current_build_dir() / 'overflow-mask-readback', 'overflow-masks'], timeout : 180)
+  test('Forward+ decals inherit receiver lightmaps without allocating charts', raster_test,
+    args : [meson.current_build_dir() / 'decal-readback', 'decal-lighting'], timeout : 180)
   test('Forward+ terrain paint inherits lighting, coverage and baked shadows', raster_test,
     args : [meson.current_build_dir() / 'terrain-readback', 'terrain-lighting'], timeout : 180)
   test('Forward+ compact clear visibility and realtime caster shadows', raster_test,

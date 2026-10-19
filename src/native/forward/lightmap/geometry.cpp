@@ -1,12 +1,23 @@
 #include "forward/lightmap/geometry.h"
+#include "forward/lightmap/decal.h"
 #include <remix/remix_native_ext.h>
+#include <cstdio>
 namespace remix::forward::lightmap {
   Geometry::Geometry(VkPhysicalDevice physical, VkDevice device,
                      std::shared_ptr<const scene::BakeScene> source, const Layout &layout,
                      std::stop_token cancelled, std::span<const bake::UInt4> lightChannels,
                      std::span<const bake::UInt4> directChannels)
       : m_source(std::move(source)) {
-    for (auto &mesh : meshes(*m_source, layout, cancelled, lightChannels, directChannels)) {
+    auto mapped = meshes(*m_source, layout, cancelled, lightChannels, directChannels);
+    auto paint = decalMeshes(*m_source, mapped, cancelled);
+    if (!paint.empty()) {
+      size_t triangles = 0;
+      for (const auto &mesh : paint) triangles += mesh.indices.size() / 3;
+      std::fprintf(stderr, "Forward decal receivers: %zu overlays, %zu triangles, reused atlas charts\n",
+                   paint.size(), triangles);
+    }
+    for (auto &mesh : paint) mapped.push_back(std::move(mesh));
+    for (auto &mesh : mapped) {
       Entry entry;
       entry.draw = mesh.draw;
       entry.count = uint32_t(mesh.indices.size());
