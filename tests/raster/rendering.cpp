@@ -1174,6 +1174,10 @@ namespace {
         pixels = until("", true);
         require(specularPeak(pixels) > 0 && pixels[left] < 3 &&
                     target.forward->statistics().clusteredLights == 1 &&
+                    target.forward->statistics().selectedAggregateLights == 1 &&
+                    target.forward->statistics().analyticLights == 0 &&
+                    target.forward->statistics().aggregateLights == 0 &&
+                    target.forward->statistics().requiredMixedLights == 0 &&
                     target.forward->statistics().shadowedLights == 0,
                 "Independent preview highlights retain baked specular without any shadow-map slots");
         const auto independentHighlight = pixels;

@@ -827,6 +827,11 @@ driver-reported values as implementation-specific, not portable occupancy estima
 For inspection, `probes.request` in the profile directory writes `probes.json`
 from the published frame's immutable metadata. It lists the active content hash,
 world-unit scale, resolution, origins, projection boxes and influence boxes.
+Its `rendering` object also separates clustered analytic, aggregate and selected
+aggregate light counts. Their sum is `clusteredLights`; the remaining records
+are `bakedFallbackLights`. `requiredMixedLights` is a subset of clustered lights
+whose captured host definition explicitly requires a mixed response. These are
+CPU response classifications, not measurements of per-pixel light evaluations.
 The additive `contentHashes` object fingerprints the exact packed grid,
 reflection and surface-atlas payloads at publication. `captureRadiance` separately
 fingerprints the raw cubemap RGB samples before filtering, excluding hit distances.

@@ -30,6 +30,8 @@ namespace remix::forward {
     uint32_t staticCasterPreparations = 0;
     uint32_t clusterLightCapacity = clusterCapacity;
     uint32_t clusteredLights = 0, fullyBakedLights = 0;
+    uint32_t analyticLights = 0, aggregateLights = 0, selectedAggregateLights = 0;
+    uint32_t requiredMixedLights = 0; // Clustered subset whose host requests a mixed response.
     uint64_t targetBytes = 0, geometryBytes = 0, bufferBytes = 0;
     uint64_t accelerationBytes = 0;
     bake::ContentHashes bakeContent;

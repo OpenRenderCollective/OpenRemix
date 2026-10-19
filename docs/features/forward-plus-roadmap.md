@@ -48,6 +48,14 @@ Construct, c1a0/c1a0d and Steamlab with identical quality and fixed camera posit
 requires measured steady-state GPU improvement and visual checks of highlights, wall occlusion and
 moving shadows, not just a smaller clustered-light counter.
 
+Controllable fixed lights still retain per-light analytic diffuse. Finish independently
+scaled baked direct groups for these lights, alongside the existing styled indirect groups,
+without adding them to permanent aggregate RGB. Keep arbitrary style identities and runtime
+weights engine agnostic. Preserve per-light specular visibility, moving-caster corrections,
+cache restoration and unknown-coverage fallback. Use exported response counts to distinguish
+this remaining work from selected highlights; fewer clustered lights alone does not prove a
+frame-time improvement.
+
 Consolidate policy while finishing this work. Runtime response classification now has one named-input
 decision point for aggregate ownership, required mixed responses, shadow selection and independent
 highlight fades. Retain the exhaustive mode as a comparison/fallback until the default passes those

@@ -250,6 +250,8 @@ namespace remix::forward {
         std::any_of(bindings->directLighting.lights.begin(), bindings->directLighting.lights.end(),
                     bake::aggregatesDiffuse);
     std::vector<uint8_t> unitDirectNeeded(selectDirectOwners ? bindings->source->lights.size() : 0);
+    statistics.analyticLights = statistics.aggregateLights = statistics.selectedAggregateLights = 0;
+    statistics.requiredMixedLights = 0;
     for (uint32_t sourceIndex = 0; sourceIndex < sources.size(); ++sourceIndex) {
       const auto &source = sources[sourceIndex];
       const float radius = influenceRadius(source, options.lightCutoff);
@@ -282,6 +284,14 @@ namespace remix::forward {
         }
       }
       const auto response = lightResponse(responseInput);
+      switch (response.mode) {
+      case LightResponse::Analytic: ++statistics.analyticLights; break;
+      case LightResponse::Aggregate: ++statistics.aggregateLights; break;
+      case LightResponse::SelectedAggregate: ++statistics.selectedAggregateLights; break;
+      case LightResponse::BakedFallback: break;
+      }
+      if (response.mode != LightResponse::BakedFallback && responseInput.requireMixed)
+        ++statistics.requiredMixedLights;
       if (captured < unitDirectNeeded.size())
         unitDirectNeeded[captured] |= needsUnitDirect(response.mode, responseInput.shadowSelected,
                                                      responseInput.shadowWeight);
