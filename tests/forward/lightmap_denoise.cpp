@@ -331,6 +331,16 @@ int main() try {
         probeBytes += uint64_t(group.width) * group.height * 3 * 9 * sizeof(float) * batch.size();
     require(variedProbes.size() == 3 && probeBytes <= (8u << 20),
             "Three chart-size bins share one bounded calibration input budget");
+    auto strips = probeLayout;
+    strips.charts.assign(600, {0, 0, 0, 256, 16});
+    std::vector<std::vector<uint32_t>> stripPoints(600, {0});
+    const auto stripProbes = lightmap::denoising::deviceProbePlan(strips, stripPoints, 16);
+    require(stripProbes.size() == 1 && stripProbes[0].width == 256 &&
+                stripProbes[0].height == 16 && stripProbes[0].population == 600,
+            "Narrow charts receive measured device selection within the same padded pixel budget");
+    strips.charts.assign(600, {0, 0, 0, 1024, 17});
+    require(lightmap::denoising::deviceProbePlan(strips, stripPoints, 16).empty(),
+            "Network alignment counts toward the maximum calibration chart work");
     auto tiny = probeLayout;
     tiny.charts.resize(600);
     std::vector<std::vector<uint32_t>> tinyPoints(600, {0});

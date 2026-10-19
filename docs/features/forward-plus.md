@@ -1889,6 +1889,16 @@ larger than the arena and pinned-allocation failures retain pageable transfers.
 The denoiser's quality, chart isolation and nine signed SH bands are unchanged;
 this transfer optimization does not invalidate existing bake caches.
 
+Chart-heavy CUDA workloads can calibrate CPU and ordinary-device filtering on bounded,
+representative chart groups before choosing a device. Eligibility uses padded chart area
+(up to 16384 pixels), so long narrow charts can participate alongside square charts.
+Calibration requires at least 512 usable charts and one million padded pixels, with
+at least 75% of the work inside that per-chart limit. Trial filtering uses copied fields
+and never mutates captured lighting. CPU must project at least a 35% advantage; explicit
+`OIDN_DEFAULT_DEVICE` overrides, smaller workloads and unavailable calibration retain the
+ordinary selection. Input/output buffers and sampling budgets remain unchanged. This
+execution policy does not invalidate completed bake caches.
+
 For fresh-bake consistency investigations, `REMIX_DEBUG_BAKE_PHASE_HASHES` names
 an optional JSONL receipt file. `transport` records completed CPU readbacks before
 filtering; `filtered` records the data after reflection and optional neural

@@ -10,7 +10,8 @@ namespace remix::forward::lightmap::denoising {
   };
   // Representative small-chart groups, with at most eight MiB of packed input.
   // Require 512 usable charts and one million padded pixels, with at least
-  // 75% of padded work in charts no larger than 128x128. Other workloads keep
+  // 75% of padded work in charts of at most 16384 pixels, including narrow
+  // strips. The limit applies after network alignment. Other workloads keep
   // OIDN's ordinary device choice.
   std::vector<DeviceProbe> deviceProbePlan(const Layout &layout,
       std::span<const std::vector<uint32_t>> chartPoints, uint32_t alignment);

@@ -12,10 +12,10 @@
 
 namespace remix::forward::lightmap::denoising {
   namespace {
-    constexpr uint32_t minimumCharts = 512, maximumExtent = 128, chartsPerProbe = 16;
-    constexpr uint64_t minimumPixels = 1u << 20;
+    constexpr uint32_t minimumCharts = 512, chartsPerProbe = 16;
+    constexpr uint64_t minimumPixels = 1u << 20, maximumChartPixels = 128u * 128;
     uint32_t sizeBin(uint64_t pixels) { return pixels <= 512 ? 0 : pixels <= 2048 ? 1 : 2; }
-  }
+  } // namespace
   std::vector<DeviceProbe> deviceProbePlan(const Layout &layout,
       std::span<const std::vector<uint32_t>> chartPoints, uint32_t alignment) {
     if (chartPoints.size() != layout.charts.size())
@@ -30,10 +30,14 @@ namespace remix::forward::lightmap::denoising {
       const auto &a = layout.charts[i];
       const uint32_t width = alignedExtent(a.width, alignment), height = alignedExtent(a.height, alignment);
       const uint64_t pixels = uint64_t(width) * height;
-      if (!pixels) throw std::invalid_argument("Empty device probe chart");
+      if (!pixels)
+        throw std::invalid_argument("Empty device probe chart");
       totalPixels += pixels;
       ++count;
-      if (width > maximumExtent || height > maximumExtent) continue;
+      // A narrow strip can exceed 128 pixels along one axis while retaining
+      // the same bounded image work and storage as an eligible square chart.
+      if (pixels > maximumChartPixels)
+        continue;
       smallPixels += pixels;
       const uint32_t bin = sizeBin(pixels);
       bins[bin][{width, height}].push_back(i);
