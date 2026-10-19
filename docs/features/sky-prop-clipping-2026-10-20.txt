@@ -48,3 +48,12 @@ not explain every previously reported Construct lighting spot. Continue automati
 cubemap receiver-domain/doorway coverage, broader lighting QA, cold-bake costs
 and live weapon/entity performance checks. Existing intermittent pre-device game
 exit and the separate Vulkan failure remain unresolved.
+
+Obsolete diagnostic bake cleanup
+After verifying no game/replay process was running, removed the exact private
+pre-fix Construct cache payload b4ef958136b24958.bake (930,092,452 bytes).
+Recorded its SHA256 and provenance before removal. The replacement payload
+fc8e5eb95112971c.bake remains present with unchanged SHA256
+589b4bd42001fb14d65afdfb8d5f62f4d07adfb0eb1cd46a91c171070ff98938.
+Historical screenshots/timing reports and installed game caches remain intact.
+Receipt: _work/reports/construct-room-performance-v1/obsolete-bake-cleanup.json.
