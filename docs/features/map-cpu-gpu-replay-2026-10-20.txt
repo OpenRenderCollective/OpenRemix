@@ -1,0 +1,77 @@
+Controlled static map CPU/GPU replay comparison (2026-10-20)
+
+Purpose and conditions
+Check whether the recent draw-constant/scratch changes improve representative
+static-map execution, rather than extrapolating isolated packing benchmarks.
+Baseline: forwardplus-balanced-cubemap-fit-v1. Current: native d612a22, including
+655ee74 draw constants, ecf1ed9 draw scratch and shared GGX filter terms. The GGX
+change does not execute in these warm-cache steady-state windows.
+The wrapper diagnostic host now exports .host.csv (aa9c1e4), with CPU attempt
+identities and separate wall/record/fence/setup breakdowns. It rejects duplicate
+completed snapshots and queries which straddle a CPU attempt change. Older runtimes
+without these APIs keep GPU-only measurements. The two existing replay settings
+and GPU timing-window tests pass; ten actual replay launches validate the CSV path.
+No installed game DLL is changed by this diagnostic-tool checkpoint.
+
+1920x1080 render/output, MSAA4, frozen animation, manual exposure1, surface budget
+4M texels, 1024 atlas pages, 256 samples, 3 bounces, 16 cubemaps at face size32,
+full-scale SSR, no live RT GI/reflections, shared replacement-mod directory.
+Default replay first-spawn camera/FOV65 is fixed per map. No viewmodel, engine
+entities, particles, UI or material proxies are present. This is not the live
+GMod workload or a benchmark of every shipped quality setting.
+
+For each map: current-build cold cache seed, then old/new/new/old warm-cache
+controls. Every timed control reports a cache hit, the same bake identity and
+identical published content hashes. 1024 distinct completed GPU frames follow
+at least128 warmup frames and3 warmup seconds. CPU rows are filtered by readiness,
+backend, bake hash and the GPU report's host observation interval. Every control
+has1024 unique completed CPU rows in that interval. CPU/GPU rows are not paired
+as exact frames; GPU queries are delayed. CPU setup can include handoff/waiting.
+No sum of nested phases is presented as render-thread CPU computation.
+
+Mean milliseconds (old-A / new-A / new-B / old-B)
+Map        GPU                         Host submission + Present       CPU record
+Crossfire  2.634 /2.612 /2.618 /2.596    2.620 /2.599 /2.598 /2.582       .906 /.802 /.966 /.901
+c1a0       2.246 /2.145 /2.154 /2.332    2.232 /2.131 /2.140 /2.318       .647 /.631 /.640 /.655
+
+Crossfire's repeats overlap: the initial CPU recording reduction does not survive
+both new-build trials. Do not advertise a stable FPS improvement. c1a0's new-build
+runs are lower here, but GPU time also changes although shaders/baked inputs are
+unchanged. Clock/driver/system variation has not been eliminated; this small
+sequence does not attribute the GPU difference to the CPU edits. Retain the exact
+allocation/packet results as evidence of reduced work, not a universal FPS claim.
+
+GPU costs and next action
+Current Crossfire opaque world including depth:2.256/2.263ms of2.612/2.618ms total;
+reflection resolve .256ms. Current c1a0 opaque including depth:1.701/1.709ms of
+2.145/2.154ms total; depth .266/.292ms and reflection .345/.345ms.
+Opaque world is the dominant measured GPU scope. Depth is nested within it.
+The active reports retain456/175 source lights, respectively, but only16 clustered
+selected highlights, zero analytic lights, zero static-shadow updates, zero
+static-sun updates and zero static-caster preparations. Retained light count is
+not the number of analytic lights evaluated per receiver. Do not add another
+light-tiling system based solely on the retained count; clustering already exists.
+Next GPU experiments should isolate opaque material/lightmap shading and depth
+costs with matching output controls. Live entity/viewmodel CPU/GPU costs still
+need the separate engine startup investigation; these static views cannot resolve
+the reported worst-case gameplay performance or Construct white-room behavior.
+
+Image and lifecycle verification
+All eight timed screenshots match the first control on their map exactly in every
+pixel/channel. Every compared bake content hash matches. Both current snapshots
+were also visually inspected; image equality is not a claim that all lighting or
+cubemap quality issues are fixed. All ten owned replay processes exited0. No user
+game was stopped. Cache events: two initial misses, eight hits, no cache failures.
+
+Reproduction and receipts
+_work/reports/run-replay-cpu-map-pair-v1.py
+_work/reports/summarize-replay-cpu-map-pair-v1.py
+_work/reports/replay-cpu-map-pair-v1/comparison.json
+Each case retains settings, run receipt, host CSV, raw GPU samples, timing summary,
+probe/content hashes, log and screenshot. Shared private cache retains the two
+seed bakes for follow-up controlled experiments. Installed renderer remainsd612a22;
+Construct coverage, lighting quality and all other delivery gates remain open.
+
+before-a native SHA256: d1c82e5a40b6665d04a1f1152405e2436968c5ffc2bddf8bb48f84b71e4498d4
+
+after-a native SHA256: d4557838da8742c10fcf58544e369a5de365b0b83967872f33ba8a498e7272a4
