@@ -142,6 +142,9 @@ namespace remix {
                           "Higher values finish first bakes faster and can reduce frame rate while baking.\n"
                           "Zero uses the fixed bakeBatch setting. Scheduling edits preserve baked lighting.");
       ui::DragFloat("Bake probe spacing (m)", &forward.baking.spacing, .1f, .1f, 100);
+      if (statistics.irradianceGrid.slots)
+        ImGui::Text("Active probe grid: %.2f m, %u / %u usable", statistics.irradianceGrid.spacingMetres,
+                    statistics.irradianceGrid.usable, statistics.irradianceGrid.slots);
       ui::Checkbox("Antialias baked sunlight edges", &forward.baking.antialiasSun);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Refines detected static sun-shadow edges across each luxel's surface area.\n"

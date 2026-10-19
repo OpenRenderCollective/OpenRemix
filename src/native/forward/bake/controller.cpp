@@ -973,6 +973,9 @@ namespace remix::forward::bake {
       volume->content.captureRadiance = captured | 1;
     }
     volume->sceneScale = m_source->sceneScale;
+    volume->irradianceHeader = grid.header;
+    volume->usableIrradianceProbes = uint32_t(std::count_if(
+        grid.probes.begin(), grid.probes.end(), [](const Result &probe) { return probe.statistics[3] >= .5f; }));
     volume->mixedLights = std::make_shared<mixed::Bindings>(m_job->mixedLights->lights);
     mixed::dumpOwnership(*m_job->mixedLights, m_job->surfaceLayout);
     const size_t baseBytes = sizeof(GridHeader) + grid.probes.size() * sizeof(Result);

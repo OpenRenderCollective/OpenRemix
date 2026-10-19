@@ -54,6 +54,11 @@ namespace remix {
         << ", \"completed\": " << state.authoredReflections.completed
         << ", \"reused\": " << state.authoredReflections.reused
         << ", \"sceneReused\": " << (state.authoredReflections.sceneReused ? "true" : "false") << '}'
+        << ",\n  \"irradianceGrid\": {\"spacingMetres\": " << state.irradianceGrid.spacingMetres
+        << ", \"dimensions\": [" << state.irradianceGrid.dimensions[0] << ", "
+        << state.irradianceGrid.dimensions[1] << ", " << state.irradianceGrid.dimensions[2]
+        << "], \"slots\": " << state.irradianceGrid.slots << ", \"usable\": "
+        << state.irradianceGrid.usable << '}'
         << ",\n  \"metersPerUnit\": " << state.reflectionSceneScale
         << ",\n  \"resolution\": " << header.parameters[1] << ",\n  \"probes\": [";
     auto vector = [&](const auto &v) { out << '[' << v[0] << ", " << v[1] << ", " << v[2] << ']'; };

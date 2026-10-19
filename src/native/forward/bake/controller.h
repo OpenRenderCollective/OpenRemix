@@ -21,6 +21,8 @@ namespace remix::forward::bake {
     std::vector<uint32_t> groupedStyles; // complete direct groups, separate from permanent aggregate policy
     scene::DistantLight sun; // shape provenance for matching surface/probe static sunlight
     probes::Header reflectionHeader;
+    GridHeader irradianceHeader;
+    uint32_t usableIrradianceProbes = 0;
     float sceneScale = 1;
     std::array<uint32_t, 4> occlusionParameters{}; // stride + compact-atlas flag, charts, width, indexed-mask tail
     uint32_t surfaceDirectOffset = 0; // sparse directional table in the R32_UINT lookup; zero keeps atlas SH

@@ -41,6 +41,11 @@ namespace remix::forward {
     postfx::Statistics postProcessing;
     probes::Header reflectionProbes;
     probes::AuthoringStatistics authoredReflections;
+    struct IrradianceGrid {
+      std::array<uint32_t, 3> dimensions{};
+      uint32_t slots = 0, usable = 0;
+      float spacingMetres = 0;
+    } irradianceGrid;
     float reflectionSceneScale = 1;
     remixapi_BakeStatisticsEXT baking{.structSize = sizeof(remixapi_BakeStatisticsEXT)};
   };

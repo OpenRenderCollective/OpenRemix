@@ -215,6 +215,15 @@ namespace remix::forward {
     m_gpu->statistics.baking = m_gpu->baking->statistics();
     const auto &volume = m_gpu->baking->volume();
     m_gpu->statistics.bakeContent = volume ? volume->content : bake::ContentHashes{};
+    auto &irradiance = m_gpu->statistics.irradianceGrid;
+    irradiance = {};
+    if (volume) {
+      const auto &header = volume->irradianceHeader;
+      std::copy_n(header.dimensions.begin(), 3, irradiance.dimensions.begin());
+      irradiance.slots = header.dimensions[3];
+      irradiance.usable = volume->usableIrradianceProbes;
+      irradiance.spacingMetres = header.originSpacing[3] * volume->sceneScale;
+    }
     m_gpu->statistics.authoredReflections = m_gpu->authoredReflections->statistics();
     const auto authoredHeader = m_gpu->authoredReflections->header();
     m_gpu->statistics.reflectionProbes = authoredHeader ? *authoredHeader : volume ? volume->reflectionHeader : probes::Header{};
