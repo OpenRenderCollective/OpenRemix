@@ -501,7 +501,7 @@ water exits and disabled-pass compatibility at 1x, 2x and 4x with ray-tracing fe
 | `lightmapDenoise` | 1 | Offline OIDN RTLightmap filtering of indirect surface SH where available; raw fallback without OIDN |
 | `bakeSunAntialiasing` | 1 | Adaptive receiver-area sampling at detected baked sunlight shadow edges |
 | `experimentalAggregateDiffuse` | 0 | Developer profile experiment: aggregate fixed-light diffuse while retaining attributed visibility and mixed-shadow corrections |
-| `ssrScale` | 2 | Reflection resolution divisor: 1, 2 or 4 |
+| `ssrScale` | 1 | Reflection resolution divisor: 1, 2 or 4 |
 | `ssrSteps` | 128 | Maximum depth traversal iterations per reflection ray, 16 to 512 |
 | `ssrDistance` | 50 | Maximum reflection ray distance in metres |
 | `ssrThickness` | 0.15 | Depth hit tolerance in metres |
@@ -2092,3 +2092,5 @@ Groups are summed and encoded on the preparation worker without a dense atlas
 workspace. The runtime component budget is 256 MiB and also respects the device
 storage-buffer limit; it is a cap, not an unconditional allocation. Bakes can still
 exceed configured component/device capacity on unusually demanding content.
+
+Viewmodels trace the completed opaque world SSR hierarchy at their shaded fragment resolution, with the same roughness filtering and confidence blend into parallax probes or sky. They remain excluded from world reflection guides. Full-resolution opaque SSR is the default; Half and Quarter remain selectable.

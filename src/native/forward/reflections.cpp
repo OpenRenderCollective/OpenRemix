@@ -392,7 +392,7 @@ namespace remix::forward {
     imageBarrier(command, g.filtered->handle, 1, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                  VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
                  VK_ACCESS_SHADER_READ_BIT);
-    if (options.water && g.screenSpace)
+    if (g.screenSpace)
       for (auto *image : {g.depth.get(), g.normals.get(), g.color.get()})
         imageBarrier(command, image->handle, image == g.normals.get() ? 1u : g.levels,
                      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,

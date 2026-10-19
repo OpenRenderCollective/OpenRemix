@@ -40,7 +40,7 @@ namespace remix::forward {
     float rtGIDistance = 50;         // metres
     float rtReflectionDistance = 50; // metres
     uint32_t rtReflectionBounces = 2, rtTextureResolution = 256;
-    uint32_t ssrScale = 2;
+    uint32_t ssrScale = 1;
     uint32_t ssrSteps = 128;
     float ssrDistance = 50;    // metres
     float ssrThickness = .15f; // metres, single-layer screen depth tolerance

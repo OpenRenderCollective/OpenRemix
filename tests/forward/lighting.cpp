@@ -412,6 +412,7 @@ int main() {
           "Reject non-power-of-two shadow map");
   require(config::set(settings, "rtx.native.forward.lightCutoff", "nan") == config::SetResult::Invalid,
           "Reject nonfinite light cutoff");
+  require(Options{}.ssrScale == 1, "SSR defaults to full resolution");
   require(config::set(settings, "rtx.native.forward.ssrScale", "3") == config::SetResult::Invalid,
           "Reject unsupported reflection resolution");
   require(config::set(settings, "rtx.native.forward.ssrScale", "4") == config::SetResult::Success &&

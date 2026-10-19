@@ -93,7 +93,7 @@ namespace remix::forward {
       VkDescriptorSet giScene = VK_NULL_HANDLE;
       VkDescriptorSet waterRayScene = VK_NULL_HANDLE;
       std::unique_ptr<Buffer> constants, lights, draws, clusters, skyConstants;
-      std::unique_ptr<Buffer> viewModelConstants;
+      std::unique_ptr<Buffer> viewModelConstants, viewModelReflectionConstants;
       Matrix viewModelProjection = scene::identity();
       bool skyEnabled = false;
       VkDescriptorImageInfo skyImage{};

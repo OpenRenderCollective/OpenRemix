@@ -402,9 +402,9 @@ namespace remix::forward {
       frame.pool = VK_NULL_HANDLE;
       frame.poolCapacity = std::max(64u, capacity);
       const VkDescriptorPoolSize sizes[] = {
-          {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 6},
+          {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 7},
           {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 10},
-          {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frame.poolCapacity * 5 + 16}};
+          {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frame.poolCapacity * 5 + 19}};
       const VkDescriptorPoolCreateInfo info{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
                                             .maxSets = frame.poolCapacity,
                                             .poolSizeCount = 3,
@@ -594,7 +594,7 @@ namespace remix::forward {
     for (const auto &submitted : frames) {
       for (const auto *buffer : {submitted.constants.get(), submitted.lights.get(), submitted.draws.get(),
                                  submitted.clusters.get(), submitted.skyConstants.get(),
-                                 submitted.viewModelConstants.get()})
+                                 submitted.viewModelConstants.get(), submitted.viewModelReflectionConstants.get()})
         if (buffer)
           statistics.bufferBytes += buffer->allocationBytes;
       for (const auto &geometry : submitted.posedGeometry)

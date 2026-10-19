@@ -1,5 +1,6 @@
 #include "forward/gpu.h"
 #include <algorithm>
+#include <bit>
 #include <limits>
 
 namespace remix::forward {
@@ -48,6 +49,35 @@ namespace remix::forward {
           {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = frame.viewModelScene, .dstBinding = 14,
            .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &frame.skyImage}};
       vkUpdateDescriptorSets(device, 3, environment, 0, nullptr);
+      // Borrow the completed world hierarchy; viewmodels never enter these guides.
+      struct ScreenData {
+        Matrix inverseCamera;
+        Vec4 trace;
+        std::array<uint32_t, 4> config;
+      };
+      static_assert(sizeof(ScreenData) == 96);
+      const auto screen = reflections ? reflections->screenInputs() : Reflections::ScreenInputs{};
+      const ScreenData screenData{scene::inverse(data.camera),
+          {options.ssrDistance / options.sceneScale, options.ssrThickness / options.sceneScale,
+           .002f / options.sceneScale, options.ssrRoughness},
+          {uint32_t(samples), options.ssrScale, options.ssr && screen.depth.imageView ? options.ssrSteps : 0u,
+           uint32_t(std::bit_width(std::max(extent.width, extent.height)))}};
+      ensure(frame.viewModelReflectionConstants, sizeof(ScreenData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+      frame.viewModelReflectionConstants->write(&screenData, sizeof(screenData));
+      const auto screenConstants = frame.viewModelReflectionConstants->descriptor();
+      const VkWriteDescriptorSet screenBuffer{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+          .dstSet = frame.viewModelScene, .dstBinding = 15, .descriptorCount = 1,
+          .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = &screenConstants};
+      vkUpdateDescriptorSets(device, 1, &screenBuffer, 0, nullptr);
+      const VkDescriptorImageInfo guides[]{screen.depth.imageView ? screen.depth : frame.skyImage,
+          screen.normals.imageView ? screen.normals : frame.skyImage,
+          screen.color.imageView ? screen.color : frame.skyImage};
+      VkWriteDescriptorSet screenImages[3];
+      for (uint32_t i = 0; i < 3; ++i)
+        screenImages[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = frame.viewModelScene, .dstBinding = 16 + i, .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &guides[i]};
+      vkUpdateDescriptorSets(device, 3, screenImages, 0, nullptr);
       if (localShadows) {
         const VkDescriptorImageInfo self{shadowSampler, viewModelLocalMaps->dynamicView(),
             VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};

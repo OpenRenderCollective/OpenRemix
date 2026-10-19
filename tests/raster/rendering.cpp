@@ -3519,7 +3519,7 @@ namespace {
         "Forward+ GPU readback: local lights, sun shadows, MSAA, frame slots and compatibility HUD passed");
   }
   void reflectionTests(const std::filesystem::path &directory, bool baked = false, bool hardware = false,
-                       bool environment = false, uint32_t environmentSamples = 4) {
+                       bool environment = false, uint32_t environmentSamples = 4, bool viewModel = false) {
     // Odd dimensions exercise hierarchy tails as well as half-resolution SSR.
     Target target(hardware ? 191 : 95, hardware ? 127 : 79, baked || hardware);
     auto &r = target.raster;
@@ -3623,9 +3623,15 @@ namespace {
       camera.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO;
       camera.pNext = &parameters;
       r.setupCamera(camera);
+      if (viewModel) {
+        camera.type = REMIXAPI_CAMERA_TYPE_VIEW_MODEL;
+        r.setupCamera(camera);
+      }
       if (environmentLight)
         r.drawLight(environmentLight);
-      r.drawInstance(instance(receiver ? receiver : rough ? roughFloor : floor));
+      auto reflectionReceiver = instance(receiver ? receiver : rough ? roughFloor : floor);
+      if (viewModel) reflectionReceiver.categoryFlags = REMIXAPI_INSTANCE_CATEGORY_BIT_VIEW_MODEL;
+      r.drawInstance(reflectionReceiver);
       // Exercise the resolved material, where USD replacements can author
       // roughness beyond the legacy translucent API's fixed smooth value.
       if (receiver == waterFloor) r.draws().back().material->roughness = waterRoughness;
@@ -3777,10 +3783,33 @@ namespace {
       for (uint32_t y = target.extent.height / 2; y < target.extent.height; ++y)
         for (uint32_t x = 0; x < target.extent.width; ++x) {
           const auto at = (y * target.extent.width + x) * 4;
-          count += image[at] > without[at] + 25 && image[at + 1] < 8;
+          count += image[at] > without[at] + 25 &&
+              (viewModel ? image[at] > 2 * image[at + 1] && image[at] > 2 * image[at + 2]
+                         : image[at + 1] < 8);
         }
       return count;
     };
+    if (viewModel) {
+      options.baking.enabled = false;
+      options.baking.reflectionProbes = 0;
+      options.water = false; // SSR guide synchronization must not depend on water.
+      for (uint32_t samples : {1u, 2u, 4u}) {
+        options.samples = samples;
+        options.ssr = true;
+        target.enableForward(options);
+        const auto reflected = drawScene();
+        save("viewmodel-ssr.ppm", reflected);
+        std::printf("Viewmodel SSR %ux: %zu reflected pixels\n", samples, reflectedPixels(reflected));
+        require(reflectedPixels(reflected) > 12, "Viewmodels trace the completed world SSR guides");
+        require(reflectedPixels(drawScene(true)) < 3, "Rough viewmodels reject sharp screen transport");
+        require(reflectedPixels(drawScene(false, false)) < 3, "Removed world emitters leave no stale viewmodel SSR");
+        options.ssr = false;
+        target.enableForward(options);
+        require(reflectedPixels(drawScene()) < 3, "Disabling SSR removes viewmodel screen transport");
+      }
+      require(errors.load() == 0, "Viewmodel SSR is Vulkan validation clean");
+      return;
+    }
     if (hardware) {
       options.rtReflections = true; options.ssr = false;
       options.baking.enabled = false; options.baking.reflectionProbes = 0;
@@ -4729,6 +4758,7 @@ int main(int argc, char **argv) {
   else if (argc>2 && std::strcmp(argv[2],"overflow-masks")==0) compactOcclusionTests(true, true);
   else if (argc>2 && std::strcmp(argv[2],"viewmodel-lighting")==0) viewModelLightingTests();
   else if (argc>2 && std::strcmp(argv[2],"viewmodel-probes")==0) viewModelLightingTests(true);
+  else if (argc>2 && std::strcmp(argv[2],"viewmodel-ssr")==0) reflectionTests(directory, false, false, false, 4, true);
   else if (argc>2 && std::strcmp(argv[2],"viewmodel-environment")==0) viewModelLightingTests(true, true);
   else if (argc>2 && std::strcmp(argv[2],"terrain-lighting")==0) terrainLightingTests();
   else if (argc>2 && std::strcmp(argv[2],"decal-lighting")==0) terrainLightingTests(true);
