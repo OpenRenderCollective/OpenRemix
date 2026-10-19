@@ -75,6 +75,10 @@ namespace remix {
                           "Frozen depth maps are fallback shadows for receivers without a matching lightmap.\n"
                           "Static sun cascades are reused until their projection or frozen scene changes.");
       ImGui::Text("Frozen caster draws prepared this frame: %u", statistics.staticCasterPreparations);
+      ImGui::Text("Geometry uploads: %llu created, %llu reused | spare buffers %.2f MiB",
+                  static_cast<unsigned long long>(statistics.rigidUploadCreates),
+                  static_cast<unsigned long long>(statistics.rigidUploadReuses),
+                  statistics.spareGeometryBytes / 1048576.0);
       ui::Checkbox("Screen-space reflections", &forward.ssr);
       ui::Checkbox("Water refraction and reflections", &forward.water);
       if (ImGui::IsItemHovered())

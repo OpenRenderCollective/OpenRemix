@@ -104,7 +104,66 @@ void forwardSkinningTests() {
         target.render();
       }
       require(emptySlots() <= emptyBytes, "Unused pose buffers retire after their owning slots complete");
+      const auto previousReuses = target.forward->statistics().rigidUploadReuses;
+      const uint32_t vertexColors[] = {0xffffffff, 0xff808080};
+      remixapi_MeshHandle coloredReferences[2][2];
+      for (uint32_t color = 0; color < 2; ++color)
+        for (uint32_t tint = 0; tint < 2; ++tint)
+          coloredReferences[color][tint] = quad(referenceResources, 98700 + color * 2 + tint,
+                                               color ? referenceRed : referenceWhite, vertexColors[tint]);
+      // Source can submit already-posed vertices as a new rigid mesh each
+      // frame. Release its API handle immediately; queued frames must keep
+      // their data, and only fully retired uploads may be overwritten by
+      // subsequent meshes.
+      const auto transientBegan = std::chrono::steady_clock::now();
+      for (uint32_t step = 0; step < 24; ++step) {
+        auto render = [&](bool transient) {
+          auto &output = transient ? target : referenceTarget;
+          auto &resources = output.raster;
+          camera(resources);
+          if (shadows) {
+            resources.drawLight(transient ? local : referenceLight);
+            resources.drawInstance(
+                instance(transient ? receiver : rigid[0], .4f));
+          }
+          for (uint32_t actor = 0; actor < step % 4; ++actor) {
+            const uint32_t color = (actor + step) % 2;
+            const uint32_t tint = (actor + step / 2) % 2;
+            const auto mesh =
+                transient ? quad(resources, 98600 + step * 4 + actor,
+                                 color ? red : white, vertexColors[tint])
+                          : coloredReferences[color][tint];
+            auto draw = instance(mesh, .25f);
+            draw.transform.matrix[0][0] = draw.transform.matrix[1][1] =
+                step % 2 ? .125f : .25f;
+            draw.transform.matrix[0][3] = (float(actor) - 1) * .5f;
+            draw.transform.matrix[1][3] = step % 3 ? -.25f : .25f;
+            resources.drawInstance(draw);
+            if (transient)
+              resources.destroyMesh(mesh);
+          }
+          return output.render();
+        };
+        require(render(true) == render(false),
+                "Retired rigid uploads preserve current vertices, materials "
+                "and shadows across frame slots");
+        require(target.forward->statistics().spareGeometryBytes <=
+                    8 * 1024 * 1024,
+                "Retired upload storage remains bounded");
+      }
+      require(target.forward->statistics().rigidUploadReuses > previousReuses,
+              "Transient meshes actually exercise retired upload reuse");
+      std::printf(
+          "Transient upload fixture: MSAA %u, shadows %u, %.3f ms, %llu reused "
+          "uploads\n",
+          samples, unsigned(shadows),
+          std::chrono::duration<double, std::milli>(
+              std::chrono::steady_clock::now() - transientBegan)
+              .count(),
+          static_cast<unsigned long long>(
+              target.forward->statistics().rigidUploadReuses - previousReuses));
     }
   }
-  std::puts("Forward+ skinned frame-slot reuse matches rigid pose references at 1x/2x/4x MSAA");
+  std::puts("Forward+ skinned frame-slot reuse matches rigid pose references "
+            "at 1x/2x/4x MSAA");
 }

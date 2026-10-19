@@ -118,6 +118,10 @@ namespace remix::forward {
     };
     std::array<Frame, gpuFrameCount> frames;
     std::unordered_map<const scene::Surface *, std::shared_ptr<Geometry>> geometries;
+    // Finished immutable uploads can back a later transient mesh. Commands keep
+    // their own references until their frame fence has completed.
+    std::vector<std::shared_ptr<Geometry>> spareGeometry;
+    uint64_t spareGeometryBytes = 0;
 
     ~Gpu();
     void createLayouts();
@@ -135,6 +139,8 @@ namespace remix::forward {
     void prepareSky(VkCommandBuffer command, RasterRenderer &resources);
     void display(VkCommandBuffer command, bool background);
     std::shared_ptr<Geometry> geometry(const scene::Draw &draw);
+    void retireGeometry();
+    std::shared_ptr<Geometry> takeGeometry(size_t vertexBytes, size_t indexBytes);
     const Bounds &frozenShadowBounds();
     VkDescriptorSet allocate(Frame &frame, VkDescriptorSetLayout layout);
     void ensure(std::unique_ptr<Buffer> &buffer, VkDeviceSize bytes, VkBufferUsageFlags usage,

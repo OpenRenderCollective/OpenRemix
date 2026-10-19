@@ -13,62 +13,6 @@
 #include <limits>
 
 namespace remix::forward {
-  std::shared_ptr<Renderer::Gpu::Geometry> Renderer::Gpu::geometry(const scene::Draw &draw) {
-    const auto &surface = draw.surface;
-    const bool skinned = surface->bonesPerVertex != 0;
-    if (!skinned)
-      if (auto found = geometries.find(surface.get());
-          found != geometries.end() && !found->second->source.expired())
-        return found->second;
-    std::shared_ptr<Geometry> result;
-    if (skinned) {
-      auto &frame = frames[slot];
-      if (frame.posedUsed == frame.posedGeometry.size())
-        frame.posedGeometry.push_back(std::make_shared<Geometry>());
-      result = frame.posedGeometry[frame.posedUsed++];
-    } else {
-      result = std::make_shared<Geometry>();
-    }
-    result->source = surface;
-    result->bounds = {};
-    std::vector<scene::Vertex> vertices;
-    auto input = std::span<const scene::Vertex>(surface->vertices);
-    if (skinned) {
-      vertices = surface->vertices;
-      std::vector<Matrix> normals;
-      normals.reserve(draw.bones->size());
-      for (const auto &bone : *draw.bones)
-        normals.push_back(normalMatrix(bone));
-      for (size_t i = 0; i < vertices.size(); ++i) {
-        auto &vertex = vertices[i];
-        std::fill_n(vertex.position, 3, 0.f);
-        std::fill_n(vertex.normal, 3, 0.f);
-        const auto &original = surface->vertices[i];
-        for (uint32_t b = 0; b < surface->bonesPerVertex; ++b) {
-          const size_t index = i * surface->bonesPerVertex + b;
-          const uint32_t bone = surface->bones[index];
-          const auto p = transformPoint((*draw.bones)[bone],
-                                        {original.position[0], original.position[1], original.position[2]});
-          const auto n =
-              transformVector(normals[bone], {original.normal[0], original.normal[1], original.normal[2]});
-          for (int c = 0; c < 3; ++c) {
-            vertex.position[c] += p[c] * surface->weights[index];
-            vertex.normal[c] += n[c] * surface->weights[index];
-          }
-        }
-      }
-      input = vertices;
-    }
-    for (const auto &vertex : input)
-      result->bounds.include({vertex.position[0], vertex.position[1], vertex.position[2]});
-    ensure(result->vertices, input.size_bytes(), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-    result->vertices->write(input.data(), input.size_bytes());
-    ensure(result->indices, surface->indices.size() * sizeof(uint32_t), VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-    result->indices->write(surface->indices.data(), surface->indices.size() * sizeof(uint32_t));
-    if (!skinned)
-      geometries[surface.get()] = result;
-    return result;
-  }
   const Bounds &Renderer::Gpu::frozenShadowBounds() {
     const auto &source = shadowPlanner.source();
     if (!source) {
@@ -584,7 +528,8 @@ namespace remix::forward {
     statistics.clusteredLights = runtimeLights;
     statistics.fullyBakedLights = uint32_t(lights.size()) - runtimeLights;
     statistics.clusters = data.grid[3];
-    statistics.geometryBytes = 0;
+    statistics.geometryBytes = spareGeometryBytes;
+    statistics.spareGeometryBytes = spareGeometryBytes;
     for (const auto &[key, value] : geometries)
       statistics.geometryBytes += value->vertices->allocationBytes + value->indices->allocationBytes;
     statistics.bufferBytes = statistics.geometryBytes;

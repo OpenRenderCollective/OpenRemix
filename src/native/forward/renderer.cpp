@@ -30,6 +30,7 @@ namespace remix::forward {
       frame.viewModelCasters.clear();
     }
     geometries.clear();
+    spareGeometry.clear();
     for (auto handle : {opaquePipeline, lightmapPipeline, depthPipeline, depthLightmapPipeline,
                         shadowPipeline, localShadowPipeline,
                         clusterPipeline, compositePipeline, viewModelPipeline, giOpaquePipeline, giLightmapPipeline,
@@ -149,7 +150,7 @@ namespace remix::forward {
     frame.waterComposed = false;
     if (frame.pool)
       check(vkResetDescriptorPool(g.device, frame.pool, 0));
-    std::erase_if(g.geometries, [](const auto &entry) { return entry.second->source.expired(); });
+    g.retireGeometry();
   }
   void Renderer::prepare(VkCommandBuffer command, RasterRenderer &resources, float seconds) {
     Statistics::CpuRecording cpu;

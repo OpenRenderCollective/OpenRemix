@@ -60,8 +60,9 @@ API DLL and no proxy. A bounded Win32 debug-event capture reached Vulkan startup
 and client/server module loading; no performance data taken under the debugger.
 The harness then omitted its explicit redirected standard handles and startup
 window override. Seven consecutive normal starts completed useful measurements.
-This is a working harness condition, not proof of which startup flag caused the
-intermittent quit. No global overlays, Steam settings or user files were changed.
+That launch condition produced seven successful starts, but a later unchanged
+launch quit before device creation again. The startup condition is unresolved;
+it is not proof that a particular flag caused or fixed the intermittent quit. No global overlays, Steam settings or user files were changed.
 
 Same Crossfire camera, native/proxy binaries, 1080p output, 4x MSAA Forward+,
 full-resolution SSR default, no addons/workshop. Both Forward+ on/off cases used
@@ -98,8 +99,9 @@ Camera(456,318,-163), angles(0,180,0), FOV90: reception room from entry doorway.
 Host mean7.531ms, GPU3.386ms, CPU record2.931ms, fence wait0.003ms.
 The saved timing snapshot shows frame preparation1.852ms, of which draw
 preparation1.661ms; selection0.082ms, lighting0.020ms. A longest-interval record
-attributes7.24ms to the native render thread (setup4.31, record2.97), so do not
-assign the CPU gap to Source alone. Investigate native setup and static draw
+reports7.24ms of combined native work (setup4.31, record2.97), so do not
+assign the CPU gap to Source alone. Follow-up code inspection found that setup
+includes API-thread handoff work; it is not all render-thread elapsed time. Investigate native setup and static draw
 preparation before a generic GPU-light optimization. GPU is not saturated here.
 Cold first publication60.219s, including engine startup. This is not a controlled
 cold-bake before/after test. Baked atlas3942021texels, four pages,1991probes.

@@ -1,0 +1,76 @@
+Transient geometry upload reuse (2026-10-20)
+
+Problem and change
+Forward+ cached immutable meshes while their source surfaces lived, then freed
+their two Vulkan upload buffers. Clients such as Source can submit already-posed
+vertices through new rigid mesh handles repeatedly. That path allocated and
+mapped fresh vertex/index buffers rather than reusing retired uploads.
+
+geometry_uploads.cpp now owns this logic separately from frame preparation.
+Existing live mesh cache hits and bone-skinned frame-slot uploads are unchanged.
+Retired cache entries enter a spare list only when the source has expired and
+the geometry has no remaining frame owners. The frame fence contract of
+selectFrame remains required. A cache miss chooses the smallest fitting pair,
+rewrites both buffers and recomputes bounds. A new larger mesh still allocates.
+Spare storage is capped at8MiB of actual allocations and32entries, evicting
+oldest spare entries as needed. It is included in reported geometry memory.
+UI counters expose created/reused rigid uploads and current spare storage.
+No lightmap format, shader, bake key, host identity or shadow ownership changes.
+
+Evidence and limits
+The clean c1a0 CPU sample resolved native instruction offsets through the
+matching build's DIA symbols. It included RasterRenderer::prepare, geometry,
+Buffer::write, captured/lightmap lookup and driver/kernel activity. This sample
+is attribution evidence, not a precise allocation cost or FPS measurement.
+An earlier sample overlapped screenshot PNG compression and is excluded as a
+normal-rendering sample. Diagnostic sampling suspends threads and is excluded
+from steady-state comparisons. It runs separately from screenshot/probe dumps.
+
+The extended GPU fixture releases transient mesh API handles immediately after
+submission, varies actor count/order, transforms, materials and vertex colours,
+and compares every pixel to separately retained reference meshes. It exercises
+local shadows and1x/2x/4xMSAA over more frames than the renderer's fenced slots.
+Each of the six cases records31actual reused uploads, and checks spare memory
+stays within its cap. Existing bone-skinned tests remain. GPU readback waits for
+completion; this is not a test of simultaneous GPU readbacks in flight.
+
+Controlled fixture timing, complete24-step sequences including reference draws
+and pixel readbacks, milliseconds (not individual frame times):
+MSAA shadows   reuse first   no reuse first   reuse second   no reuse second
+1    off          30.275        41.579          13.976          39.148
+1    on           44.168        51.105          15.468          51.080
+2    off          33.572        39.234          14.431          40.663
+2    on           43.893        55.489          15.855          54.157
+4    off          45.282        59.936          14.302          69.703
+4    on           72.940        91.717          15.797          88.845
+
+There is substantial absolute variation. Both reuse runs were faster in every
+case; no game-wide speedup is inferred from this small synthetic workload.
+The no-reuse controls temporarily set spare capacity to0 and skipped only the
+assertion requiring reuse. Pixel/shadow comparisons still ran. Those control
+changes were restored; there is no extra reference toggle or unused old path in
+production. Source snapshots and raw logs are archived under _work/reports/
+geometry-reuse-reference-v1 and-v2 and Meson geometry-*-v1/v2/v3 logs.
+
+The live c1a0 trial exited0 before device creation and produced no timing data.
+The same pre-device quit has occurred without the proxy. Removing startup
+stdio/window overrides did not permanently fix it. Do not claim a live c1a0
+improvement or a fix for the reported worst-case slowdown from this checkpoint.
+
+Accounting correction
+Native frame setup includes caller handoff work as well as render-side setup.
+The previously quoted4.31ms setup is not exclusively render-thread elapsed.
+The live profiling report has been corrected. The2.93ms c1a0 record mean remains
+valid; draw preparation is still worth investigating after upload reuse.
+
+Next
+Obtain matched live measurements when the private engine starts normally;
+profile remaining setup/draw work separately, and measure the heavy Construct
+room. The viewmodel overdraw/depth-prepass trial remains pending. Automatic
+cubemap room bounds, broader mixed-shadow checks, remaining bake-time and
+editor requirements remain open. This checkpoint does not complete the roadmap.
+
+Final verification: four GPU tests passed with Vulkan validation and sync checks:
+lighting/MSAA compatibility; viewmodel SSR; viewmodel environment reflections;
+skinned and transient mesh frame-slot lifetime. Log geometry-reuse-final-v4.
+Temporary zero-cap/reference-assertion controls are absent from final sources.
