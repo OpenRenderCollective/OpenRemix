@@ -16,7 +16,7 @@ namespace remix::forward {
     const auto &radiance = dome.enabled ? dome.radiance : resources.skyRadiance();
     std::copy(radiance.begin(), radiance.end(), data.radiance.begin());
     data.radiance[3] = dome.enabled ? 1.f : 0.f;
-    data.target = {float(extent.width), float(extent.height), 0, 0};
+    data.target = {float(extent.width), float(extent.height), .002f / options.sceneScale, 0};
     probes::dumpFrameData(".sky-frame.bin", &data, sizeof(data));
     ensure(frame.skyConstants, sizeof(data),
            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |

@@ -39,7 +39,7 @@ float localShadowVisibility(Light light, vec3 position, vec3 receiverNormal, boo
       vec4 coordinate = vec4(adjacent.xy * .5 + .5, float(slot * 6u) + adjacent.z, reference);
       float moving = texture(dynamicLocalShadows, coordinate);
 #ifdef VIEWMODEL_PASS
-      if (frame.clusterInfo.w != 0u) moving = min(moving, texture(viewModelLocalShadows, coordinate));
+      if ((frame.clusterInfo.w & 1u) != 0u) moving = min(moving, texture(viewModelLocalShadows, coordinate));
 #endif
       float fixedVisibility = includeStatic ? texture(staticLocalShadows, coordinate) : 1;
       visibility += min(moving, fixedVisibility);

@@ -15,6 +15,8 @@ if get_option('gpu_tests')
     args : [meson.current_build_dir() / 'viewmodel-readback', 'viewmodel-lighting'], timeout : 120)
   test('Forward+ viewmodels inherit baked probes without live light work', raster_test,
     args : [meson.current_build_dir() / 'viewmodel-probe-readback', 'viewmodel-probes'], timeout : 120)
+  test('Forward+ viewmodel environment reflections match world materials', raster_test,
+    args : [meson.current_build_dir() / 'viewmodel-environment-readback', 'viewmodel-environment'], timeout : 120)
   test('Forward+ skinned frame slots preserve animated geometry and shadows', raster_test,
     args : [meson.current_build_dir() / 'forward-skinning-readback', 'forward-skinning'], timeout : 120)
   test('Forward+ lighting component isolation and MSAA', raster_test,

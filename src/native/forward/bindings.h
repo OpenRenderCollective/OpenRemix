@@ -6,7 +6,7 @@
 namespace remix::forward {
   struct SkyData {
     Matrix inverseProjection, viewToDome;
-    Vec4 radiance{}, target{};
+    Vec4 radiance{}, target{}; // target.z: world-unit reflection receiver bias
   };
   static_assert(sizeof(SkyData) == 160);
   // std140/std430 contracts mirrored by shaders/bindings.glsl. Keep whole
@@ -23,7 +23,7 @@ namespace remix::forward {
     Vec4 localSettings{}; // local resolution, local radial bias, sun bias (scene units), baked direct enabled
     std::array<Vec4, 32> styleScales{}; // current/authored envelope scalar, indexed by adapter-assigned group ID
     std::array<uint32_t, 4> occlusion{}; // words per chart, chart count, texture width, indexed-mask tail
-    // Capacity; zero or mixed-prefix length + 1; sparse SH word; viewmodel local self-shadow flag.
+    // Capacity; zero or mixed-prefix length + 1; sparse SH word; viewmodel flags (local shadows, reflections).
     std::array<uint32_t, 4> clusterInfo{};
   };
   struct LightData {

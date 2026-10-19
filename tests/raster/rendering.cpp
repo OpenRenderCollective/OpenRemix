@@ -2013,7 +2013,7 @@ namespace {
                       split ? "Stitched curved" : curved ? "Curved" : "Planar", samples, ssr ? "on" : "off", unsigned(first[left + 1]), unsigned(first[right + 1]));
       }
   }
-  void viewModelLightingTests(bool probeTest = false) {
+  void viewModelLightingTests(bool probeTest = false, bool reflectionTest = false) {
     for (bool ssr : {false, true})
       for (bool local : {false, true})
         for (uint32_t samples : {1u, 2u, 4u}) {
@@ -2029,7 +2029,8 @@ namespace {
           options.baking.spacing = .5f;
           options.baking.samples = options.baking.batch = 64;
           options.baking.bounces = 1;
-          options.baking.reflectionProbes = 0;
+          options.baking.reflectionProbes = reflectionTest ? 1 : 0;
+          options.baking.reflectionResolution = 16;
           options.baking.lightmapTexels = 1024;
           options.baking.lightmapPageSize = 32;
           options.baking.diskCache = false;
@@ -2042,12 +2043,13 @@ namespace {
           options.localShadowFade = 0;
           options.sceneScale = 1;
           target.enableForward(options);
-          auto matte = [&](uint64_t hash, remixapi_Float3D color) {
+          auto matte = [&](uint64_t hash, remixapi_Float3D color, float metallic = 0, float roughness = 1) {
             remixapi_MaterialInfoOpaqueEXT opaque{};
             opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
             opaque.albedoConstant = color;
             opaque.opacityConstant = 1;
-            opaque.roughnessConstant = 1;
+            opaque.roughnessConstant = roughness;
+            opaque.metallicConstant = metallic;
             opaque.alphaTestType = 7;
             remixapi_MaterialInfo info{};
             info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
@@ -2058,7 +2060,8 @@ namespace {
             return handle;
           };
           const auto wallMesh = quad(r, 13000, matte(13001, {.5f, .5f, .5f}));
-          const auto weaponMesh = quad(r, 13002, matte(13003, {1, .05f, .05f}));
+          const auto weaponMesh = quad(r, 13002, reflectionTest ? matte(13003, {1, 1, 1}, 1, .04f)
+                                                               : matte(13003, {1, .05f, .05f}));
           const auto overlayMesh = quad(r, 13006, matte(13007, {0, 0, 1}));
           auto wall = instance(wallMesh, 7.5f); // quad vertices contribute another .5
           wall.transform.matrix[0][0] = wall.transform.matrix[1][1] = 20;
@@ -2100,10 +2103,34 @@ namespace {
           staticIdentity.rasterVisible = 1;
           if (probeTest) {
             wall.pNext = &staticIdentity;
-            const uint64_t handle = r.createRetained(wall);
+            uint64_t handles[] = {r.createRetained(wall), 0};
+            if (reflectionTest) {
+              remixapi_MaterialInfoOpaqueEXT opaque{};
+              opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+              opaque.albedoConstant = {0, 0, 0};
+              opaque.opacityConstant = 1;
+              opaque.roughnessConstant = 1;
+              opaque.alphaTestType = 7;
+              remixapi_MaterialInfo glow{};
+              glow.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+              glow.pNext = &opaque;
+              glow.hash = 13010;
+              glow.emissiveIntensity = 2;
+              glow.emissiveColorConstant = {1, 0, 0};
+              remixapi_MaterialHandle material;
+              r.createMaterial(glow, material);
+              auto emitter = instance(quad(r, 13011, material), -.5f);
+              emitter.doubleSided = 1;
+              emitter.transform.matrix[0][0] = emitter.transform.matrix[1][1] = 4;
+              auto identity = staticIdentity;
+              identity.instanceId = 13009;
+              emitter.pNext = &identity;
+              handles[1] = r.createRetained(emitter);
+            }
             remixapi_BakeSceneBoundsInfoEXT request{};
             request.scene = {sizeof(request), REMIXAPI_BAKE_SCENE_BOUNDS_VERSION_EXT, 130, 1, 1,
-                REMIXAPI_BAKE_SCENE_READY_EXT, 1, 1, &handle, &sun};
+                REMIXAPI_BAKE_SCENE_READY_EXT, reflectionTest ? 2u : 1u, reflectionTest ? 0u : 1u,
+                handles, reflectionTest ? nullptr : &sun};
             for (uint32_t c = 0; c < 3; ++c) {
               request.minimum[c] = c == 2 ? 1.f : -.6f;
               request.maximum[c] = c == 2 ? 3.f : .6f;
@@ -2175,6 +2202,21 @@ namespace {
                       "Viewmodel and main-world receivers sample identical baked probe lighting");
             require(r.bakeScene() == snapshot && target.forward->statistics().baking.active,
                     "Viewmodel ownership changes preserve active map lighting and its bake snapshot");
+            if (reflectionTest) {
+              const auto sharp = probeWeapon[centre];
+              weapon.mesh = quad(r, 13012, matte(13013, {0, 0, 0}, 0, .04f));
+              const auto dielectric = render(false, false, true, false);
+              weapon.mesh = quad(r, 13014, matte(13015, {1, 1, 1}, 1, 1));
+              const auto rough = render(false, false, true, false);
+              require(target.forward->statistics().reflectionProbes.parameters[0] > 0,
+                      "Viewmodel environment fixture publishes a baked cubemap");
+              require(sharp > 1.4f * dielectric[centre] && dielectric[centre] > 3,
+                      "Viewmodel environment reflections obey metallic and dielectric Fresnel weights");
+              require(rough[centre] < sharp && rough[centre] > 3,
+                      "Viewmodel roughness uses the filtered cubemap mip chain");
+              std::printf("Viewmodel environment %ux: metal %u, dielectric %u, rough %u\n",
+                          samples, sharp, dielectric[centre], rough[centre]);
+            }
             std::printf("Viewmodel probes %ux: overlay %u, world %u, analytic lights %u\n",
                         samples, probeWeapon[centre], probeWorld[centre], target.forward->statistics().lights);
             continue;
@@ -3668,7 +3710,10 @@ namespace {
       auto addedBlue = [&](const std::vector<uint8_t> &image) {
         size_t count = 0;
         for (size_t i = 0; i < image.size(); i += 4)
-          count += without[i + 2] < 8 && image[i + 2] > 40 && image[i] < 8;
+          // Shared Prism compresses saturated blue into small red/green
+          // components. Test blue dominance rather than a pure RGB primary.
+          count += without[i + 2] < 8 && image[i + 2] > 40 &&
+                   image[i + 2] > 4 * image[i] && image[i + 2] > 4 * image[i + 1];
         return count;
       };
       const auto lit = drawScene(false, false);
@@ -4684,6 +4729,7 @@ int main(int argc, char **argv) {
   else if (argc>2 && std::strcmp(argv[2],"overflow-masks")==0) compactOcclusionTests(true, true);
   else if (argc>2 && std::strcmp(argv[2],"viewmodel-lighting")==0) viewModelLightingTests();
   else if (argc>2 && std::strcmp(argv[2],"viewmodel-probes")==0) viewModelLightingTests(true);
+  else if (argc>2 && std::strcmp(argv[2],"viewmodel-environment")==0) viewModelLightingTests(true, true);
   else if (argc>2 && std::strcmp(argv[2],"terrain-lighting")==0) terrainLightingTests();
   else if (argc>2 && std::strcmp(argv[2],"decal-lighting")==0) terrainLightingTests(true);
   else if (argc>2 && std::strcmp(argv[2],"clear-visibility")==0) clearVisibilityTests();

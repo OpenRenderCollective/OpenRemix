@@ -402,8 +402,8 @@ namespace remix::forward {
       frame.pool = VK_NULL_HANDLE;
       frame.poolCapacity = std::max(64u, capacity);
       const VkDescriptorPoolSize sizes[] = {
-          {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 4},
-          {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 8},
+          {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 6},
+          {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 10},
           {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frame.poolCapacity * 5 + 16}};
       const VkDescriptorPoolCreateInfo info{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
                                             .maxSets = frame.poolCapacity,

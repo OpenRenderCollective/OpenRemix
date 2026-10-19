@@ -15,6 +15,9 @@
 #include "occlusion.glsl"
 #include "local-shadows.glsl"
 #include "sun.glsl"
+#ifdef VIEWMODEL_PASS
+#include "../viewmodel/shaders/reflections.glsl"
+#endif
 #ifdef LIVE_GI
 #include "gi.glsl"
 #endif
@@ -147,6 +150,9 @@ void main() {
     color += directLightComponent(local, debugView);
   }
   if (debugView == 0u) color += emitted;
+#ifdef VIEWMODEL_PASS
+  if (debugView == 0u) color += viewModelReflection(worldPosition, n, v, surface.rgb, roughness, metallic);
+#endif
   result = vec4(min(max(color, vec3(0)), vec3(65000)), m.pbr.w > .5 ? surface.a : 1);
 #ifdef REFLECTION_GUIDES
   outNormalRoughness = vec4(n, roughness);

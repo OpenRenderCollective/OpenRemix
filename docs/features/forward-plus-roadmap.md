@@ -331,8 +331,12 @@ frame-slot ownership. Local-light self-shadows use an independent dynamic-only d
 selected light slots, combined with existing world visibility only by viewmodel shaders. No duplicate
 static cache is allocated for these self casters. Probe-only readback compares the same surface in
 viewmodel and world ownership with live lights and ambient fallback removed, and checks that ownership
-changes preserve the bake snapshot. Continue with environment reflections and actual weapon/FOV/animation
-checks in GMod. The sun/point-light overlay fixtures cover MSAA, world and self shadowing, wall overlap, removal, fallback attachment
+changes preserve the bake snapshot. Viewmodel environment reflections reuse the world's published
+parallax cubemaps, roughness mips, Fresnel response and visibility-filtered sky fallback. They remain
+independent of world SSR guides and use the existing reflection-enable policy. Metal/dielectric/rough
+surface readback compares this path with world shading without live lights. Continue with actual
+weapon/FOV/animation checks and GPU profiling in GMod. The sun/point-light overlay fixtures cover
+MSAA, world and self shadowing, wall overlap, removal, fallback attachment
 ordering and unchanged world pixels; they do not establish complete live-game viewmodel parity.
 
 Lazy material replacements may change global mod generation without changing a map receiver.

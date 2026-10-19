@@ -15,7 +15,7 @@ namespace remix::forward {
         viewModelLocalMaps->initialize(physical, device, shadowPass, options.localShadowLights,
                                        options.localShadowResolution, false);
       }
-      viewModelData.clusterInfo[3] = uint32_t(localShadows);
+      viewModelData.clusterInfo[3] = uint32_t(localShadows) | (uint32_t(options.reflections()) << 1);
       viewModelData.shadows.fill(frame.viewModelProjection);
       viewModelData.splits.fill(std::numeric_limits<float>::max());
       ensure(frame.viewModelConstants, sizeof(FrameData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
@@ -38,6 +38,16 @@ namespace remix::forward {
            .dstBinding = 4, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
            .pImageInfo = &sun}};
       vkUpdateDescriptorSets(device, 2, overrides, 0, nullptr);
+      const auto reflectionProbes = baking->reflectionDescriptor();
+      const auto skyConstants = frame.skyConstants->descriptor();
+      const VkWriteDescriptorSet environment[] = {
+          {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = frame.viewModelScene, .dstBinding = 12,
+           .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &reflectionProbes},
+          {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = frame.viewModelScene, .dstBinding = 13,
+           .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = &skyConstants},
+          {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = frame.viewModelScene, .dstBinding = 14,
+           .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &frame.skyImage}};
+      vkUpdateDescriptorSets(device, 3, environment, 0, nullptr);
       if (localShadows) {
         const VkDescriptorImageInfo self{shadowSampler, viewModelLocalMaps->dynamicView(),
             VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
