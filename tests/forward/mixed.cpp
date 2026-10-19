@@ -2,6 +2,7 @@
 #include "forward/mixed/data.h"
 #include "forward/mixed/direct_work.h"
 #include "forward/mixed/ownership.h"
+#include "forward/mixed/directional_links.h"
 #include "forward/mixed/emitter_bounds.h"
 #include "forward/mixed/overflow.h"
 #include "forward/ray/capture.h"
@@ -37,6 +38,8 @@ int main() {
       for (uint32_t x = 0; x < 3; ++x) layout.owners[y * 16 + x] = y * 3 + x;
     const float values[] = {.1f, .2f, .3f, .4f, .5f, .6f};
     require(plan.masks.add(0, 3, layout, values), "Ownership fixture retains its partial mask");
+    require(m::positiveDirectionalLinks(plan) == std::vector<m::DirectionalLink>{{0,0},{0,1},{0,2},{0,3},{0,4}},
+            "Directional manifest deduplicates retained, partial and clear ownership beyond four");
     const auto summary = m::summarizeOwnership(plan, layout);
     require(summary.retainedPairs == 2 && summary.knownPositivePairs == 5 &&
                 summary.chartsByRetainedCount[2] == 1 && summary.clearPairs == 1 &&
@@ -52,6 +55,37 @@ int main() {
     try { (void)m::summarizeOwnership(plan, layout, cancelled.get_token()); }
     catch (const std::runtime_error &) { stopped = true; }
     require(stopped, "Ownership analysis obeys cancellation");
+  }
+
+  {
+    auto source = std::make_shared<scene::BakeScene>();
+    source->lights.resize(35);
+    m::Plan plan;
+    plan.lights.source = source;
+    plan.charts.assign(2, {m::none, m::none, m::none, m::none});
+    plan.directCharts = plan.charts;
+    plan.occlusion = m::Occlusion(2, 35);
+    for (auto light : {0u, 15u, 16u, 31u, 34u})
+      plan.occlusion.mark(1, light, m::Visibility::Clear);
+    plan.occlusion.mark(0, 16, m::Visibility::Blocked);
+    require(m::positiveDirectionalLinks(plan) ==
+                std::vector<m::DirectionalLink>{{1,0},{1,15},{1,16},{1,31},{1,34}},
+            "Clear ownership crosses packed word boundaries without inventing blocked or unknown pairs");
+    bool limited = false;
+    try { (void)m::positiveDirectionalLinks(plan, {}, 4 * sizeof(m::DirectionalLink)); }
+    catch (const std::length_error &) { limited = true; }
+    require(limited, "Manifest exhaustion refuses the whole graph instead of publishing a subset");
+    std::stop_source cancelled;
+    cancelled.request_stop();
+    bool stopped = false;
+    try { (void)m::positiveDirectionalLinks(plan, cancelled.get_token()); }
+    catch (const std::runtime_error &) { stopped = true; }
+    require(stopped, "Directional ownership observes cancellation before allocating work");
+    plan.directCharts[0][0] = 35;
+    bool rejected = false;
+    try { (void)m::positiveDirectionalLinks(plan); }
+    catch (const std::invalid_argument &) { rejected = true; }
+    require(rejected, "Malformed ownership cannot produce a partial capture manifest");
   }
 
   require(m::Masks::maximumBytes == (16u << 20), "Visibility coverage keeps the sixteen MiB encoded budget");

@@ -1,5 +1,6 @@
 #pragma once
 #include "forward/mixed/directional_fields.h"
+#include "forward/mixed/directional_links.h"
 
 namespace remix::forward::mixed {
   // Field-major readback collection: only one chart/light's samples are staged.
@@ -8,7 +9,7 @@ namespace remix::forward::mixed {
   // The caller must finish all in-flight receipts before advancing a field.
   class DirectionalCapture {
   public:
-    struct Link { uint32_t chart, light; };
+    using Link = DirectionalLink;
     DirectionalCapture(const lightmap::Layout &layout, uint32_t lights, std::span<const Link> links,
                        uint64_t stagingBudget, uint64_t storageBudget = DirectionalFields::maximumBytes,
                        std::stop_token cancelled = {});

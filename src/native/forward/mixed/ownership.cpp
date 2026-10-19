@@ -1,4 +1,5 @@
 #include "forward/mixed/ownership.h"
+#include "forward/mixed/directional_links.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -20,11 +21,8 @@ namespace remix::forward::mixed {
     result.allocatedDirectionalBytes =
         uint64_t(layout.pageSize) * layout.pageSize * layout.pages * channels * pairBytes;
     std::vector<std::vector<uint32_t>> positive(layout.charts.size());
-    for (const auto &entry : plan.masks.entries()) {
-      if (entry.chart >= positive.size() || entry.light >= lights)
-        throw std::invalid_argument("Invalid sparse mask ownership");
-      positive[entry.chart].push_back(entry.light);
-    }
+    for (const auto &link : positiveDirectionalLinks(plan, cancelled))
+      positive[link.chart].push_back(link.light);
     for (size_t chart = 0; chart < layout.charts.size(); ++chart) {
       if (cancelled.stop_requested()) throw std::runtime_error("Ownership report cancelled");
       const auto &allocation = layout.charts[chart];
@@ -37,18 +35,9 @@ namespace remix::forward::mixed {
         for (const auto light : *owners) {
           if (light == none) continue;
           if (light >= lights) throw std::invalid_argument("Invalid direct-light owner");
-          positive[chart].push_back(light);
           retained += owners == &plan.directCharts[chart];
         }
-      for (uint32_t light = 0; light < lights; ++light) {
-        if ((light & 1023u) == 0 && cancelled.stop_requested())
-          throw std::runtime_error("Ownership report cancelled");
-        if (plan.occlusion.state(uint32_t(chart), light) == Visibility::Clear)
-          positive[chart].push_back(light);
-      }
-      auto &known = positive[chart];
-      std::sort(known.begin(), known.end());
-      known.erase(std::unique(known.begin(), known.end()), known.end());
+      const auto &known = positive[chart];
       const uint32_t clear = uint32_t(std::count_if(known.begin(), known.end(), [&](uint32_t light) {
         return plan.occlusion.state(uint32_t(chart), light) == Visibility::Clear;
       }));
