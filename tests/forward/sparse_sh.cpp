@@ -1,5 +1,6 @@
 #include "forward/bake/sparse_sh.h"
 #include "forward/half.h"
+#include "forward/packed_rgb.h"
 #include "forward/lightmap/data.h"
 #include <algorithm>
 #include <cmath>
@@ -23,6 +24,20 @@ namespace {
   }
 }
 int main() {
+  for (int exponent = -24; exponent <= 16; ++exponent)
+    for (uint32_t sample = 0; sample < 1000; ++sample) {
+      const float amplitude = std::ldexp(1.f, exponent);
+      const std::array<float,3> original{amplitude * float(sample) / 999,
+          -amplitude * float((sample * 37) % 1000) / 999, amplitude * .0031f};
+      const auto packed = packSignedRgb(original);
+      const auto decoded = unpackSignedRgb(packed);
+      const float step = std::ldexp(1.f, int(packed >> 27) - 22);
+      for (uint32_t c = 0; c < 3; ++c)
+        require(std::abs(decoded[c] - std::clamp(original[c], -65000.f, 65000.f)) <= step * .5001f,
+                "Signed HDR RGB stays within half a quantization step for each channel");
+      require(packSignedRgb(decoded) == packed, "Packed SH has a canonical stable representation");
+    }
+
   lm::Layout layout;
   layout.pageSize = 33;
   layout.pages = 2;
@@ -56,16 +71,25 @@ int main() {
       for (uint32_t coefficient = 0; coefficient < 9; ++coefficient)
         for (uint32_t channel = 0; channel < 3; ++channel) {
           const auto index = (((page * lm::atlasLayers + coefficient) * 33 + y) * 33 + x) * 4 + channel;
-          require(value[coefficient][channel] == forward::half::decode(dense[index]),
-                  "Sparse surface samples preserve the dense atlas half values, donors and page boundaries");
+          float largest = 0;
+          for (uint32_t c = 0; c < 3; ++c)
+            largest = std::max(largest, std::abs(forward::half::decode(dense[index - channel + c])));
+          require(std::abs(value[coefficient][channel] - forward::half::decode(dense[index])) <=
+                      std::max(2e-7f, largest / 255 + largest * .0005f),
+                  "Packed surface SH preserves donors/page boundaries within the shared-exponent error bound");
         }
     }
   for (uint32_t index = 0; index < 5; ++index) {
     const auto value = s::probe(data, 32, index);
     for (uint32_t coefficient = 0; coefficient < 9; ++coefficient)
-      for (uint32_t channel = 0; channel < 3; ++channel)
-        require(value[coefficient][channel] == forward::half::decode(forward::half::encode(probes[index].irradiance[coefficient][channel])),
-                "Sparse probe records preserve signed coefficients without repeated geometry metadata");
+      for (uint32_t channel = 0; channel < 3; ++channel) {
+        float largest = 0;
+        for (uint32_t c = 0; c < 3; ++c)
+          largest = std::max(largest, std::abs(std::clamp(probes[index].irradiance[coefficient][c], -65000.f, 65000.f)));
+        require(std::abs(value[coefficient][channel] - std::clamp(probes[index].irradiance[coefficient][channel], -65000.f, 65000.f)) <=
+                    std::max(2e-7f, largest / 255),
+                "Packed probe SH preserves signed coefficients within its error bound");
+      }
   }
   require(s::probe(data, 97, 0) == s::Coefficients{} && s::probe(data, 32, 5) == s::Coefficients{},
           "Absent style groups and out-of-range probe addresses contribute zero");
@@ -164,13 +188,13 @@ int main() {
     refused([&] { s::validate(copy, dimensions, style, 1u << 20); }, "Malformed cache data is refused before GPU upload");
   };
   corrupt([](auto &v) { v.pop_back(); });
-  corrupt([](auto &v) { v[1] = 2; });
+  corrupt([](auto &v) { v[1] = 1; });
   corrupt([](auto &v) { v[4] = UINT32_MAX; });
   corrupt([](auto &v) { v[12 + 1] = UINT32_MAX; });
   corrupt([](auto &v) { v[12 + 4] = UINT32_MAX; });
   corrupt([](auto &v) { v[v[13]] = UINT32_MAX; });
-  corrupt([](auto &v) { v[v[15]] = 0x7c00u; });
-  corrupt([](auto &v) { v[v[15] + 13] |= 0x10000u; });
+  corrupt([](auto &v) { v[v[15]] = 0xffffffffu; });
+  corrupt([](auto &v) { v[v[15]] = 1u << 27; });
   refused([&] { s::validate(data, dimensions, style, data.size() * sizeof(uint32_t) - 1); }, "Cache data obeys the device/storage byte limit");
   s::Builder ordered(dimensions, 2u << 20), reversed(dimensions, 2u << 20);
   const std::vector<b::Result> blackResults(6), blackProbes(5);

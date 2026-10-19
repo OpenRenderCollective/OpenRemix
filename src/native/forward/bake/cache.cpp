@@ -297,6 +297,10 @@ namespace remix::forward::bake::cache {
                                d.storageRange};
     const auto hash = scene::fastHash(fields, sizeof(fields), content ^ shaders);
     auto raw = scene::fastHash(d.uuid.data(), d.uuid.size(), hash);
+    if (c.styledIndirect) {
+      const uint32_t styleCodec[] = {0x5354594cu, sparse::version};
+      raw = scene::fastHash(styleCodec, sizeof(styleCodec), raw);
+    }
     if (c.aggregateDiffuse) {
       const uint32_t aggregate[] = {0x41474752u, 2}; // attributed directional probe corrections
       raw = scene::fastHash(aggregate, sizeof(aggregate), raw);

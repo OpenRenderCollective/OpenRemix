@@ -253,7 +253,7 @@ int main() try {
         const float error = std::abs(values[i][c]-expected[c]);
         maximumError = std::max(maximumError,error);
         if (error >= 2e-5f) std::fprintf(stderr,"Sparse query %zu mode%u channel%u expected%.9g actual%.9g\n",i,q.control[0],c,expected[c],values[i][c]);
-        require(error < 2e-5f,"Production sparse shader agrees with half-decoded surface/probe reconstruction");
+        require(error < 2e-5f,"Production sparse shader agrees with packed surface/probe reconstruction");
       }
     }
   }

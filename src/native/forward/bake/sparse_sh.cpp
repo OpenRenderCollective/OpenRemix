@@ -1,6 +1,6 @@
 #include "forward/bake/sparse_sh.h"
 #include "forward/bake/spherical_harmonics.h"
-#include "forward/half.h"
+#include "forward/packed_rgb.h"
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
@@ -24,15 +24,11 @@ namespace remix::forward::bake::sparse {
     Record encode(const Coefficients &value) {
       Record record{};
       for (uint32_t coefficient = 0; coefficient < 9; ++coefficient)
-        for (uint32_t channel = 0; channel < 3; ++channel) {
-          const uint32_t index = coefficient * 3 + channel;
-          const uint16_t bits = half::encode(value[coefficient][channel]);
-          record[index / 2] |= uint32_t(bits) << ((index & 1u) * 16);
-        }
+        record[coefficient] = packSignedRgb({value[coefficient][0], value[coefficient][1], value[coefficient][2]});
       return record;
     }
     bool black(const Record &value) {
-      return std::all_of(value.begin(), value.end(), [](uint32_t word) { return (word & 0x7fff7fffu) == 0; });
+      return std::all_of(value.begin(), value.end(), [](uint32_t word) { return word == 0; });
     }
     uint64_t componentWords(const Component &c) { return entryWords + c.surface.size() + c.probes.size() + c.coefficients.size(); }
     void append(Component &c, std::span<const uint32_t> block, uint64_t availableWords) {
@@ -53,11 +49,10 @@ namespace remix::forward::bake::sparse {
       Coefficients result{};
       if (e.empty() || record == 0) return result;
       const size_t base = e[3] + size_t(record - 1) * coefficientWords;
-      for (uint32_t coefficient = 0; coefficient < 9; ++coefficient)
-        for (uint32_t channel = 0; channel < 3; ++channel) {
-          const uint32_t index = coefficient * 3 + channel;
-          result[coefficient][channel] = half::decode(uint16_t(words[base + index / 2] >> ((index & 1u) * 16)));
-        }
+      for (uint32_t coefficient = 0; coefficient < 9; ++coefficient) {
+        const auto rgb = unpackSignedRgb(words[base + coefficient]);
+        std::copy(rgb.begin(), rgb.end(), result[coefficient].begin());
+      }
       return result;
     }
   } // namespace
@@ -187,9 +182,10 @@ namespace remix::forward::bake::sparse {
       check(records == e[4]);
       for (uint32_t record = 0; record < e[4]; ++record) {
         const size_t offset = e[3] + size_t(record) * coefficientWords;
-        for (uint32_t value = 0; value < 27; ++value)
-          check(((words[offset + value / 2] >> ((value & 1u) * 16)) & 0x7c00u) != 0x7c00u);
-        check((words[offset + 13] & 0xffff0000u) == 0);
+        for (uint32_t coefficient = 0; coefficient < 9; ++coefficient) {
+          const uint32_t word = words[offset + coefficient];
+          check(packSignedRgb(unpackSignedRgb(word)) == word);
+        }
       }
     }
     check(cursor == words.size());

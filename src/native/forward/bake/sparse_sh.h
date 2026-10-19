@@ -6,8 +6,8 @@
 #include <optional>
 
 namespace remix::forward::bake::sparse {
-  constexpr uint32_t magic = 0x48535352, version = 1, tileSide = 16;
-  constexpr uint32_t headerWords = 12, entryWords = 8, coefficientWords = 14;
+  constexpr uint32_t magic = 0x48535352, version = 2, tileSide = 16;
+  constexpr uint32_t headerWords = 12, entryWords = 8, coefficientWords = 9;
   using Coefficients = std::array<Vec4, 9>; // RGB only; alpha/geometry never belongs to a style
   struct Dimensions {
     uint32_t pageSize = 0, pages = 0, probes = 0;

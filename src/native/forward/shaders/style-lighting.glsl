@@ -9,14 +9,14 @@ uint styleWord(uint offset) {
 }
 bool styledLightingAvailable() {
   if ((floatBitsToUint(bakeSettings.w) & 1u) == 0u) return false;
-  return styleWord(0u) == 0x48535352u && styleWord(1u) == 1u;
+  return styleWord(0u) == 0x48535352u && styleWord(1u) == 2u;
 }
 vec3 styledCoefficient(uint pool, uint record, uint coefficient) {
   if (record == 0u) return vec3(0);
-  uint first = pool + (record - 1u) * 14u + coefficient * 3u / 2u;
-  vec2 a = unpackHalf2x16(styleWord(first));
-  vec2 b = unpackHalf2x16(styleWord(first + 1u));
-  return (coefficient & 1u) == 0u ? vec3(a, b.x) : vec3(a.y, b);
+  uint word = styleWord(pool + (record - 1u) * 9u + coefficient);
+  float step = uintBitsToFloat(((word >> 27u) + 105u) << 23u);
+  return vec3(bitfieldExtract(int(word), 0, 9), bitfieldExtract(int(word), 9, 9),
+              bitfieldExtract(int(word), 18, 9)) * step;
 }
 vec3 styledProbeIrradiance(uint index, float sh[9]) {
   vec3 result = vec3(0);
