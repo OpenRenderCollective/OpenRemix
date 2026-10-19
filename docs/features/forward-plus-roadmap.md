@@ -352,6 +352,12 @@ of volume centre, and assess doorway leakage and bevel tolerance before changing
 
 ## Work discipline
 
+New standalone tooling should prefer C#. The current native Qt cubemap workbench remains usable;
+a larger Hammer-like editor for authored Remix replacement layers is a later project. Its future
+design should retain independent capture points, oriented volumes, live publication and portable
+authoring documents. Do not expand that editor project at the expense of the renderer quality and
+performance gates above.
+
 Each checkpoint records its changed files/commit, evidence, limits, and the next action. A failed
 experiment remains a failed experiment. A running process is tracked by its actual handle until it
 finishes. Performance improvements include before/after configuration and output comparisons.

@@ -88,6 +88,24 @@ int main() {
           "Receiver influence reaches the room's actual surfaces without altering its inset projection");
   require(fit->minimum[2] > room.minimum[2] && receivers.minimum[2] == room.minimum[2],
           "A real floor excluded by the proxy inset is included in receiver influence");
+  const auto leftProxy = box({-3.9f, -2.9f, -1.9f}, {-.1f, 2.9f, 1.9f});
+  const auto rightProxy = box({.1f, -2.9f, -1.9f}, {3.9f, 2.9f, 1.9f});
+  const auto overlapLeft =
+      p::receiverRegion(splitRoom, leftProxy, .02f, {}, {}, .5f);
+  const auto overlapRight =
+      p::receiverRegion(splitRoom, rightProxy, .02f, {}, {}, .5f);
+  require(overlapLeft.maximum[0] > overlapRight.minimum[0] &&
+              p::emptyRegion(splitRoom, overlapLeft) &&
+              p::emptyRegion(splitRoom, overlapRight),
+          "Receiver influence overlaps across an artificial empty-space split");
+  const auto overlapWall = box({-.05f, -3, -2}, {.05f, 3, 2});
+  const auto divided = partition(&overlapWall);
+  const auto blockedOverlap =
+      p::receiverRegion(divided, leftProxy, .02f, {}, {.5f}, .5f);
+  require(
+      blockedOverlap.maximum[0] < overlapWall.minimum[0] &&
+          p::emptyRegion(divided, blockedOverlap),
+      "Overlap does not cross a full wall even inside the detail tolerance");
   for (uint32_t c = 0; c < 3; ++c)
     require(std::abs(fit->minimum[c] - room.minimum[c]) < .03f &&
                 std::abs(fit->maximum[c] - room.maximum[c]) < .03f,

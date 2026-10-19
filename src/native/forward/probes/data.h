@@ -10,7 +10,9 @@ namespace remix::forward::probes {
   constexpr uint32_t maxProbes = 32;
   struct Record {
     // position.w: captured solid-angle agreement with the projection box.
-    // Zero is the legacy/unknown value and keeps the original blend weight.
+    // maximum.w/influenceMinimum.w/influenceMaximum.w: inverse XYZ feather
+    // widths. Zero is the legacy/unknown value and keeps the original blend
+    // weight.
     Vec4 minimum{}, maximum{}, influenceMinimum{}, influenceMaximum{}, position{};
     ProjectionSpace worldToLocal = worldSpace; // minimum.w stores signed overlap priority
   };
@@ -30,6 +32,8 @@ namespace remix::forward::probes {
     Bounds influence{};
     ProjectionSpace worldToLocal = worldSpace;
     int32_t priority = 0; // larger values win only where their influence contains the receiver
+    float blendDistance =
+        0; // scene units; zero derives a 20%-of-half-extent edge band
   };
   struct AuthoringStatistics {
     uint64_t revision = 0;

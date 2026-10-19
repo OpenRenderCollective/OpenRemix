@@ -66,6 +66,16 @@ namespace remix {
       vector(probe.influenceMinimum);
       out << ", \"influenceMaximum\": ";
       vector(probe.influenceMaximum);
+      out << ", \"featherDistance\": ";
+      forward::Vec3 widths;
+      const forward::Vec3 inverse{probe.maximum[3], probe.influenceMinimum[3],
+                                  probe.influenceMaximum[3]};
+      for (uint32_t c = 0; c < 3; ++c)
+        widths[c] =
+            inverse[c] > 0
+                ? 1 / inverse[c]
+                : (probe.influenceMaximum[c] - probe.influenceMinimum[c]) * .1f;
+      vector(widths);
       out << ", \"priority\": " << int32_t(probe.minimum[3]) << ", \"worldToLocal\": [";
       for (uint32_t row = 0; row < 3; ++row) {
         const auto &r = probe.worldToLocal[row];

@@ -154,11 +154,15 @@ int main() {
       previous = (*value)[0];
     }
     auto scaled = floorBlend;
-    for (auto &record : scaled.header.probes)
+    for (auto &record : scaled.header.probes) {
       for (auto *coordinate : {&record.minimum, &record.maximum, &record.influenceMinimum,
                                &record.influenceMaximum, &record.position})
         for (uint32_t axis = 0; axis < 3; ++axis)
           (*coordinate)[axis] *= 40;
+      record.maximum[3] /= 40;
+      record.influenceMinimum[3] /= 40;
+      record.influenceMaximum[3] /= 40;
+    }
     const auto scaledLeft = p::sample(scaled, {-20, 0, -40}, {0, 0, 1}, roughness);
     require(scaledLeft && std::abs((*scaledLeft)[0] - (*left)[0]) < 1e-5f,
             "Reflection blend weights are independent of world coordinate units");
@@ -166,6 +170,45 @@ int main() {
                 roughness, (*left)[0], (*left)[1], (*right)[0], (*right)[1]);
   }
   auto supported = source;
+  std::array<p::Capture, 2> overlapCaptures{constants[0], constants[1]};
+  overlapCaptures[0].bounds = {};
+  overlapCaptures[0].bounds.include({-2, -1, -1});
+  overlapCaptures[0].bounds.include({.5f, 1, 1});
+  overlapCaptures[0].position = {-1, 0, 0};
+  overlapCaptures[1].bounds = {};
+  overlapCaptures[1].bounds.include({-.5f, -1, -1});
+  overlapCaptures[1].bounds.include({2, 1, 1});
+  overlapCaptures[1].position = {1, 0, 0};
+  for (auto &capture : overlapCaptures) {
+    capture.influence = {};
+    capture.priority = 0;
+    capture.blendDistance = .5f;
+  }
+  const auto overlapData = p::filter(overlapCaptures, 64);
+  const auto floorEntry = p::sample(overlapData, {-.4f, 0, -1}, {0, 0, 1}, 0);
+  require(
+      floorEntry && (*floorEntry)[1] < .15f,
+      "A common floor does not erase the entering capture's side feather band");
+  float previousRed = 5;
+  for (int step = 0; step <= 200; ++step) {
+    const float x = -.55f + step * .0055f;
+    const auto value = p::sample(overlapData, {x, 0, 0}, {0, 0, 1}, .3f);
+    require(value && (*value)[0] <= previousRed + 1e-5f &&
+                std::abs((*value)[0] - previousRed) <
+                    .1f + (step == 0 ? 5.f : 0.f),
+            "Feather bands blend overlapping captures continuously at entry, "
+            "core and exit");
+    require(std::abs((*value)[0] / 4 + (*value)[1] / 2 - 1) < 1e-5f,
+            "Overlapping feather weights preserve linear HDR energy");
+    previousRed = (*value)[0];
+  }
+  auto legacyBlend = overlapData;
+  for (auto &record : legacyBlend.header.probes)
+    record.maximum[3] = record.influenceMinimum[3] =
+        record.influenceMaximum[3] = 0;
+  require(
+      p::sample(legacyBlend, {0, 0, 0}, {0, 0, 1}, 0).has_value(),
+      "Legacy cache metadata derives an edge width without retracing lighting");
   const auto depthRays = p::rays(supported);
   for (size_t i = 0; i < supported.radiance.size(); ++i) {
     const auto &d = depthRays[i].normal;

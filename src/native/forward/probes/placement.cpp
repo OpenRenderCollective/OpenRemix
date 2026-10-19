@@ -27,6 +27,25 @@ namespace remix::forward::probes {
       return bounds;
     }
   } // namespace
+  void configureInfluence(const scene::BakeScene &scene,
+                          std::span<Capture> captures, float detailTolerance,
+                          std::stop_token cancelled) {
+    if (!std::isfinite(scene.sceneScale) || scene.sceneScale <= 0 ||
+        !std::isfinite(detailTolerance) || detailTolerance < 0)
+      throw std::invalid_argument(
+          "Invalid reflection influence scale or tolerance");
+    const float distance = .5f / scene.sceneScale;
+    for (auto &capture : captures) {
+      if (cancelled.stop_requested())
+        throw std::runtime_error("Reflection influence preparation superseded");
+      capture.blendDistance = distance;
+      if (scene.partition && scene.partition->closed &&
+          capture.worldToLocal == worldSpace)
+        capture.influence = receiverRegion(
+            *scene.partition, capture.bounds, .002f / scene.sceneScale,
+            cancelled, {detailTolerance / scene.sceneScale}, distance);
+    }
+  }
   std::vector<Vec3> candidateSites(const scene::BakeScene &scene, const bake::Grid &grid, uint32_t count,
                                    std::stop_token cancelled) {
     if (!count || !scene.partition || !scene.partition->closed)
@@ -188,12 +207,10 @@ namespace remix::forward::probes {
     for (auto index : selectRegions(regions, count, cancelled)) {
       const auto &region = regions[index];
       Capture capture{region.bounds, region.site.position, resolution, {}, region.bounds};
-      if (scene.partition && scene.partition->closed)
-        capture.influence = receiverRegion(*scene.partition, region.bounds, .002f / scene.sceneScale,
-                                           cancelled, {detailTolerance / scene.sceneScale});
       capture.radiance.resize(rays(capture).size());
       captures.push_back(std::move(capture));
     }
+    configureInfluence(scene, captures, detailTolerance, cancelled);
     return captures;
   }
   std::vector<Capture> place(const scene::BakeScene &scene, const bake::Grid &grid, uint32_t count,

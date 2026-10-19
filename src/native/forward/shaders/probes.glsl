@@ -76,10 +76,15 @@ bool probeRadiance(vec3 position, vec3 reflected, float roughness, out vec3 resu
     vec3 corrected = position + reflected * exitDistance - record.position.xyz;
     if (exitDistance <= 0 || dot(corrected, corrected) < 1e-10)
       corrected = reflected;
-    vec3 center = (record.influenceMinimum.xyz + record.influenceMaximum.xyz) * .5;
     vec3 halfSize = (record.influenceMaximum.xyz - record.influenceMinimum.xyz) * .5;
-    vec3 distance = abs((localPosition - center) / halfSize);
-    float edge = 1 - max(max(distance.x, distance.y), distance.z);
+    vec3 inverseWidth = vec3(record.maximum.w, record.influenceMinimum.w, record.influenceMaximum.w);
+    inverseWidth = mix(1 / (halfSize * .2), inverseWidth, greaterThan(inverseWidth, vec3(0)));
+    vec3 distance = min(localPosition - record.influenceMinimum.xyz, record.influenceMaximum.xyz - localPosition);
+    vec3 edgeFade = clamp(distance * inverseWidth, 0, 1);
+    // Independent axis bands retain doorway fades on a shared solid floor.
+    // A finite edge limit preserves normalized energy at exact wall corners.
+    edgeFade = max(edgeFade * edgeFade * (3 - 2 * edgeFade), vec3(1e-4));
+    float edge = edgeFade.x * edgeFade.y * edgeFade.z;
     // Shared floor/wall faces have identical zero edge fade. Prefer nearby
     // captures there as well, with a finite core relative to the room size.
     vec3 offset = position - record.position.xyz;
@@ -88,9 +93,10 @@ bool probeRadiance(vec3 position, vec3 reflected, float roughness, out vec3 resu
     // Prefer captures whose recorded geometry supports their projection box.
     // Legacy/unknown metadata is neutral; normalization preserves a sole probe.
     float confidence = record.position.w > 0 ? record.position.w : 1;
-    float weight = confidence * pow(max(.001, edge), 2) / max(dot(offset, offset), coreSquared);
-    result +=
-        mix(probeMip(probe, low, corrected), probeMip(probe, high, corrected), lod - float(low)) * weight;
+    float spatialWeight = confidence / max(dot(offset, offset), coreSquared);
+    float weight = spatialWeight * edge;
+    vec3 radiance = mix(probeMip(probe, low, corrected), probeMip(probe, high, corrected), lod - float(low));
+    result += radiance * weight;
     total += weight;
   }
   if (total == 0)

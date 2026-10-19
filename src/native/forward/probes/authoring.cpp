@@ -39,6 +39,7 @@ namespace remix::forward::probes {
         capture.worldToLocal = volume.worldToLocal;
         capture.position = volume.capture;
         capture.priority = volume.priority;
+        capture.blendDistance = .5f / source->sceneScale;
         capture.resolution = config.reflectionResolution;
         capture.radiance.resize(6ull * capture.resolution * capture.resolution);
         int32_t oldIndex = -1;

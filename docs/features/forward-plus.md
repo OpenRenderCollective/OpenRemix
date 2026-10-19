@@ -393,15 +393,26 @@ lookups remap bilinear taps across face boundaries and interpolate between rough
 storage-buffer layout avoids cube-array and descriptor-indexing requirements. Face orientation follows
 the [Vulkan cube-map selection convention](https://github.khronos.org/Vulkan-Site/spec/latest/chapters/textures.html).
 Parallax proxy bounds and receiver influence bounds are separate fields in the private CPU/GPU layout.
-Placement initially uses the same fitted box for both; future authored volumes can tune them independently.
+Automatic receivers snap to nearby room surfaces, then attempt up to half a metre of overlap per face.
+Every growth passes whole-volume BSP occupancy with the existing bounded trim tolerance. Full walls
+remain barriers; a maximal room box may have no legal expansion. Authored volumes retain their explicit bounds.
 For each eligible receiver, the reflected ray intersects the proxy box; the vector from capture origin to
 that hit supplies the corrected lookup direction. Receivers beyond a proxy face use the original ray
 when its box exit is behind them, avoiding a reversed lookup. Influence bounds determine overlap weights.
-Overlapping volumes blend before the single specular weight. Their weights combine the box-edge
-fade with inverse squared distance to the capture. A finite core, one tenth of the shortest influence
+Equal-priority overlapping volumes blend before the single specular weight. Their weights combine
+independent smooth XYZ edge bands with inverse squared distance to the capture. Edge widths default
+to half a metre in scene units, capped at each axis's half-extent. Multiplying axis bands preserves a
+doorway transition when both captures share the same floor; a minimum per-axis factor of `1e-4`
+keeps exact floor/wall/corner normalization finite. The interior stays at full edge weight. A finite
+core, one tenth of the shortest influence
 half-extent, prevents a singularity at the capture origin. Capture distance keeps spatial preference
 on shared floors and walls, where every touching box has the same minimum edge fade. Normalized
-weights preserve HDR brightness and are independent of the world's coordinate units.
+weights preserve HDR brightness and are independent of the world's coordinate units. Highest-containing
+priority remains a hard selection policy; cross-priority transition authoring is separate work.
+Inverse widths occupy existing private record padding, without changing the 128-byte record or adding
+images. Legacy zero-width metadata derives a room-relative band. Cache restoration derives current
+influence/width metadata from retained captures and the BSP without retracing or filtering their radiance,
+or invalidating diffuse lightmaps. Probe reports expose `featherDistance` XYZ in the reported host units.
 
 Irradiance and reflection assets publish together only for their matching input/settings generation.
 Map replacement, cancellation, disable and in-flight descriptor ownership follow the same controller.

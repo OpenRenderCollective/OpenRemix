@@ -21,7 +21,7 @@ int main() try {
       if (setLayout) vkDestroyDescriptorSetLayout(device, setLayout, nullptr);
     }
   } gpu{fixture.device};
-  probes::Capture captures[2];
+  probes::Capture captures[3];
   for (auto &capture : captures) {
     capture.bounds.include({-2, -.5f, -1});
     capture.bounds.include({2, .5f, 1});
@@ -40,15 +40,23 @@ int main() try {
   captures[1].influence.include({-.25f, -.25f, -.25f});
   captures[1].influence.include({.25f, .25f, .25f});
   for (auto &pixel : captures[1].radiance) pixel = {4, 0, 0, 0};
+  captures[2].position = {10, 19, 30};
+  captures[2].blendDistance = .3f;
+  captures[2].influence.include({-2, -.5f, -1});
+  captures[2].influence.include({.25f, .5f, 1});
+  for (auto &pixel : captures[2].radiance)
+    pixel = {0, 0, 3, 0};
   const auto data = probes::filter(captures, 64);
   const auto bytes = probes::serialize(data);
   struct Query { Vec4 position, direction; };
   std::vector<Query> queries;
   for (float roughness : {0.f, .3f, 1.f})
     for (float x : {9.f, 9.5f, 9.9f, 10.f, 10.2f, 10.5f, 11.f})
-      for (float y : {17.f, 18.f, 19.f, 20.f, 20.2f, 21.f, 22.f, 23.f})
-        for (Vec3 ray : {Vec3{1, 0, 0}, Vec3{0, 1, 1}, Vec3{-1, .2f, 1}})
-          queries.push_back({{x, y, 30, roughness}, {ray[0], ray[1], ray[2], 0}});
+      for (float y : {17.f, 18.f, 19.f, 19.5f, 20.f, 20.2f, 21.f, 22.f, 23.f})
+        for (float z : {29.f, 30.f, 31.f})
+          for (Vec3 ray : {Vec3{1, 0, 0}, Vec3{0, 1, 1}, Vec3{-1, .2f, 1}})
+            queries.push_back(
+                {{x, y, z, roughness}, {ray[0], ray[1], ray[2], 0}});
   const VkDescriptorSetLayoutBinding bindings[] = {
       {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
       {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
@@ -112,7 +120,9 @@ int main() try {
               "GPU oriented parallax, priorities and roughness match CPU reference");
   }
   require(validationErrors == 0, "Oriented reflection sampling is Vulkan validation clean");
-  std::printf("Oriented reflection GPU sampling: %u translated, rotated, priority and roughness queries passed\n", count);
+  std::printf("Oriented reflection GPU sampling: %u translated, rotated, "
+              "priority, feather and roughness queries passed\n",
+              count);
 } catch (VkResult error) {
   std::fprintf(stderr, "GPU reflection sampling failed: %d\n", int(error));
   return 1;

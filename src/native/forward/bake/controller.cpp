@@ -157,6 +157,14 @@ namespace remix::forward::bake {
           mixedLights = std::make_shared<mixed::Plan>(std::move(cached->mixed));
           captures = std::move(cached->captures);
           specular = std::move(cached->specular);
+          // Influence and edge bands are derived metadata, not baked lighting.
+          // Apply current overlap to retained captures without invalidating a
+          // hit.
+          probes::configureInfluence(*source, captures,
+                                     config.reflectionDetailTolerance,
+                                     cancellation.get_token());
+          for (size_t i = 0; i < captures.size(); ++i)
+            specular.header.probes[i] = probes::projectionRecord(captures[i]);
           surfacePixels = std::move(cached->pixels);
           styleWords = std::move(cached->styles);
           localProbes = std::move(cached->localProbes);

@@ -185,13 +185,18 @@ namespace remix::forward::probes {
   bool emptyRegion(const scene::VisibilityPartition &partition, const Bounds &bounds) {
     return EmptySpace(partition).contains(bounds);
   }
-  Bounds receiverRegion(const scene::VisibilityPartition &partition, const Bounds &projection,
-                         float snapDistance, std::stop_token cancelled, RegionTolerance tolerance) {
+  Bounds receiverRegion(const scene::VisibilityPartition &partition,
+                        const Bounds &projection, float snapDistance,
+                        std::stop_token cancelled, RegionTolerance tolerance,
+                        float overlapDistance) {
     check(cancelled);
-    if (!valid(projection) || !std::isfinite(snapDistance) || snapDistance < 0)
+    if (!valid(projection) || !std::isfinite(snapDistance) ||
+        snapDistance < 0 || !std::isfinite(overlapDistance) ||
+        overlapDistance < 0)
       throw std::invalid_argument("Invalid reflection receiver bounds");
     EmptySpace space(partition, cancelled);
-    if (!snapDistance || !space.contains(projection, tolerance))
+    if ((!snapDistance && !overlapDistance) ||
+        !space.contains(projection, tolerance))
       return projection;
     std::array<std::vector<float>, 6> candidates;
     for (const auto &node : partition.nodes) {
@@ -228,6 +233,17 @@ namespace remix::forward::probes {
         }
       }
     }
+    // Only grow into wholly compatible space. Six bounded occupancy checks add
+    // overlap at open interfaces; a nearby wall is never a reason to ignore it.
+    if (overlapDistance > 0)
+      for (uint32_t face = 0; face < 6; ++face) {
+        check(cancelled);
+        auto candidate = result;
+        (face & 1u ? candidate.maximum : candidate.minimum)[face / 2] +=
+            (face & 1u ? 1.f : -1.f) * overlapDistance;
+        if (space.contains(candidate, tolerance))
+          result = candidate;
+      }
     return result;
   }
   std::vector<Bounds> fitRegionCandidates(const scene::VisibilityPartition &partition, const Bounds &limit, Vec3 site,

@@ -14,7 +14,9 @@ namespace remix::forward::probes {
       return std::all_of(v.begin(), v.end(), [](float x) { return std::isfinite(x); });
     }
     void validate(const Capture &capture) {
-      if (!validProjectionSpace(capture.worldToLocal) || capture.priority < -32768 || capture.priority > 32767)
+      if (!validProjectionSpace(capture.worldToLocal) ||
+          capture.priority < -32768 || capture.priority > 32767 ||
+          !std::isfinite(capture.blendDistance) || capture.blendDistance < 0)
         throw std::invalid_argument("Invalid reflection projection frame or priority");
       const auto origin = projectionPoint(capture.worldToLocal, capture.position);
       if (!finite(origin) || !capture.bounds.valid || !finite(capture.position) || !finite(capture.bounds.minimum) ||
@@ -207,6 +209,18 @@ namespace remix::forward::probes {
       record.influenceMinimum[c] = influence(capture).minimum[c];
       record.influenceMaximum[c] = influence(capture).maximum[c];
     }
+    Vec3 inverseWidth;
+    for (uint32_t c = 0; c < 3; ++c) {
+      const float half =
+          (record.influenceMaximum[c] - record.influenceMinimum[c]) * .5f;
+      const float width = capture.blendDistance > 0
+                              ? std::min(capture.blendDistance, half)
+                              : half * .2f;
+      inverseWidth[c] = 1 / std::max(width, 1e-20f);
+    }
+    record.maximum[3] = inverseWidth[0];
+    record.influenceMinimum[3] = inverseWidth[1];
+    record.influenceMaximum[3] = inverseWidth[2];
     return record;
   }
   Data filter(std::span<const Capture> captures, uint32_t samples, std::stop_token cancelled) {
@@ -278,13 +292,23 @@ namespace remix::forward::probes {
       const auto localRay = projectionDirection(record.worldToLocal, reflected);
       bool inside = true;
       float exitDistance = std::numeric_limits<float>::max(), edge = 1;
+      const Vec3 inverseWidth{record.maximum[3], record.influenceMinimum[3],
+                              record.influenceMaximum[3]};
       float smallestHalf = std::numeric_limits<float>::max();
       for (uint32_t c = 0; c < 3; ++c) {
         inside &= localPosition[c] >= record.influenceMinimum[c] && localPosition[c] <= record.influenceMaximum[c];
-        const float center = (record.influenceMinimum[c] + record.influenceMaximum[c]) * .5f;
         const float half = (record.influenceMaximum[c] - record.influenceMinimum[c]) * .5f;
         smallestHalf = std::min(smallestHalf, half);
-        edge = std::min(edge, 1 - std::abs((localPosition[c] - center) / half));
+        const float distance =
+            std::min(localPosition[c] - record.influenceMinimum[c],
+                     record.influenceMaximum[c] - localPosition[c]);
+        const float inverse =
+            inverseWidth[c] > 0 ? inverseWidth[c] : 1 / (half * .2f);
+        const float t = std::clamp(distance * inverse, 0.f, 1.f);
+        // Multiply independent face bands: a shared floor must not suppress
+        // feathering at a doorway. The small finite boundary weight cancels
+        // between touching captures and avoids black/undefined corner weights.
+        edge *= std::max(t * t * (3 - 2 * t), 1e-4f);
         if (std::abs(localRay[c]) > 1e-10f) {
           const float plane = localRay[c] > 0 ? record.maximum[c] : record.minimum[c];
           exitDistance = std::min(exitDistance, (plane - localPosition[c]) / localRay[c]);
@@ -317,10 +341,13 @@ namespace remix::forward::probes {
         offset[c] = position[c] - record.position[c];
       const float coreSquared = std::max(.01f * smallestHalf * smallestHalf, 1e-20f);
       const float confidence = record.position[3] > 0 ? record.position[3] : 1;
-      const float weight = confidence * std::pow(std::max(.001f, edge), 2.f) /
-                           std::max(dot(offset, offset), coreSquared);
-      for (uint32_t c = 0; c < 3; ++c)
-        result[c] += weight * std::lerp(a[c], b[c], lod - low);
+      const float spatialWeight =
+          confidence / std::max(dot(offset, offset), coreSquared);
+      const float weight = spatialWeight * edge;
+      for (uint32_t c = 0; c < 3; ++c) {
+        const float radiance = std::lerp(a[c], b[c], lod - low);
+        result[c] += weight * radiance;
+      }
       total += weight;
     }
     if (!total)
