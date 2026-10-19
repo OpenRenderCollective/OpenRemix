@@ -14,9 +14,6 @@ namespace remix::forward::bake {
   void Controller::Job::prepareGroupedStyles(uint64_t storageRange, const Config &config) {
     if (!config.groupedStyledDirect || !directionalFieldsRequested() || !completeDirectionals ||
         !localProbes || !localProbes->directional() || styleIds(*source).empty()) return;
-    // Until composition with indirect groups is connected, preserve that
-    // existing feature exactly rather than replacing or duplicating its SH.
-    if (!styleWords.empty()) return;
     const uint64_t reserved = sizeof(GridHeader) + grid.probes.size() * sizeof(Result) +
                                localProbes->gpuBytes() + 15;
     if (reserved + sparse::headerWords * 4 > storageRange) return;
@@ -28,6 +25,18 @@ namespace remix::forward::bake {
                                          *localProbes, budget, cancellation.get_token());
       dumpGroupedDirectReport(*source, surfaceLayout, surfacePixels, grid, directionalWords,
                                 groupedStyles, cancellation.get_token());
+      if (!styleWords.empty() && !groupedStyles.styles.empty()) {
+        auto combined = sparse::sumComponents(styleWords, groupedStyles.words,
+            {surfaceLayout.pageSize, surfaceLayout.pages, uint32_t(grid.probes.size())},
+            styleIds(*source), budget, cancellation.get_token());
+        if (combined) groupedStyles.words = std::move(*combined);
+        else {
+          for (uint32_t style : groupedStyles.styles)
+            groupedStyles.declined.push_back({style, StyledDirectDecline::Storage});
+          groupedStyles.styles.clear();
+          groupedStyles.words.clear(); // Existing indirect data remains authoritative.
+        }
+      }
     } catch (const std::bad_alloc &) {
       groupedStyles = {}; // Optional derivation; the original cache and runtime path remain valid.
     }

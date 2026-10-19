@@ -12,15 +12,19 @@ namespace remix::forward::bake {
     auto &work = *job.styles;
     if (work.received()) {
       const auto owner = m_job;
+      VkPhysicalDeviceProperties properties;
+      vkGetPhysicalDeviceProperties(m_physical, &properties);
+      const auto storageRange = properties.limits.maxStorageBufferRange;
       job.finishStage.store(Job::FinishStage::Styles, std::memory_order_relaxed);
       job.ticket = m_pipelines->prepare(
           "forward-style-" + std::to_string(++styleGeneration),
-          [owner, config] {
+          [owner, config, storageRange] {
             owner->styles->encode(owner->surfaceLayout, config.denoiseLightmaps,
                                   owner->cancellation.get_token());
             if (owner->styles->complete()) {
               owner->styleWords = owner->styles->finish(owner->cancellation.get_token());
               owner->styles.reset();
+              owner->prepareGroupedStyles(storageRange, config);
               owner->filtering = true;
             }
           });

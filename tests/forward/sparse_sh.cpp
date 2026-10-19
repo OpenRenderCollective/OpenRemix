@@ -91,6 +91,56 @@ int main() {
   }
   for (uint32_t c = 0; c < 3; ++c)
     require(std::abs(crossing[c] - average[c]) < 1e-6f, "Bilinear filtering crosses sparse tile boundaries continuously");
+  {
+    const s::Dimensions dimensions{32,1,1};
+    const uint32_t allowed[] = {32,97,127};
+    auto red = [] {
+      s::Coefficients c{}; c[0][0] = 1; c[2][0] = -.25f; return c;
+    };
+    auto green = [] {
+      s::Coefficients c{}; c[0][1] = 2; c[2][1] = -.5f; return c;
+    };
+    s::Builder indirect(dimensions, 1u<<20), direct(dimensions, 1u<<20), disjoint(dimensions, 1u<<20);
+    indirect.addSampled(32, [&](uint32_t, uint32_t x, uint32_t y) {
+      return x < 16 && y < 16 ? red() : s::Coefficients{};
+    }, [&](uint32_t) { return red(); });
+    direct.addSampled(32, [&](uint32_t, uint32_t x, uint32_t y) {
+      if (x >= 16 && y >= 16) return green();
+      s::Coefficients c{}; if (x == 0 && y == 0) c[0][0] = 3; return c;
+    }, [&](uint32_t) { return green(); });
+    direct.addSampled(97, [](uint32_t, uint32_t, uint32_t) { return s::Coefficients{}; },
+        [](uint32_t) { s::Coefficients c{}; c[0][2] = 4; return c; });
+    disjoint.addSampled(32, [&](uint32_t, uint32_t x, uint32_t y) {
+      return x >= 16 && y >= 16 ? green() : s::Coefficients{};
+    }, [&](uint32_t) { return green(); });
+    const auto a = indirect.serialize(), b = direct.serialize(), c = disjoint.serialize();
+    const auto aBefore = a, bBefore = b;
+    const auto combined = s::sumComponents(a, b, dimensions, allowed, 1u<<20);
+    require(combined.has_value(), "Independent direct and indirect groups fit a combined publication");
+    const uint32_t unionStyles[] = {32,97};
+    s::validate(*combined, dimensions, unionStyles, 1u<<20);
+    const auto overlap = s::surface(*combined, 32, 0, 0, 0);
+    require(overlap[0][0] == 4 && overlap[2][0] == -.25f,
+            "Surface direct and indirect signed SH add exactly once");
+    const auto probe = s::probe(*combined, 32, 0);
+    require(probe[0][0] == 1 && probe[0][1] == 2 && probe[2][0] == -.25f && probe[2][1] == -.5f &&
+                s::probe(*combined, 97, 0)[0][2] == 4 && s::probe(*combined, 127, 0) == s::Coefficients{},
+            "Independent probe styles preserve signed sums, membership and known zero");
+    require(s::surface(*combined, 32, 0, 31, 31)[0][1] == 2,
+            "Merged sparse support includes direct-only tiles");
+    require(!s::sumComponents(a, c, dimensions, allowed, std::max(a.size(),c.size()) * 4),
+            "Combined storage exhaustion declines the whole replacement");
+    require(a == aBefore && b == bBefore, "Combination never mutates either captured component");
+    std::stop_source stop; stop.request_stop();
+    refused([&] { s::sumComponents(a,b,dimensions,allowed,1u<<20,stop.get_token()); },
+            "Cancelled combination exposes no replacement");
+    const uint32_t wrongStyles[] = {32};
+    refused([&] { s::sumComponents(a,b,dimensions,wrongStyles,1u<<20); },
+            "Unexpected style identities reject before publication");
+    auto malformed = b; malformed[1] = 999;
+    refused([&] { s::sumComponents(a,malformed,dimensions,allowed,1u<<20); },
+            "Malformed component payload cannot enter the merged table");
+  }
   const uint64_t denseBytes = uint64_t(33) * 33 * 2 * 9 * 3 * sizeof(uint16_t);
   require(builder.bytes() < denseBytes, "Sparse tiles avoid storing unrelated empty atlas space");
   s::Builder tight(dimensions, builder.bytes());

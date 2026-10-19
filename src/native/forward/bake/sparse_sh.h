@@ -3,6 +3,7 @@
 #include "forward/lightmap/layout.h"
 #include <span>
 #include <functional>
+#include <optional>
 
 namespace remix::forward::bake::sparse {
   constexpr uint32_t magic = 0x48535352, version = 1, tileSide = 16;
@@ -47,6 +48,12 @@ namespace remix::forward::bake::sparse {
   Coefficients probe(std::span<const uint32_t> words, uint32_t style, uint32_t index);
   Coefficients surface(std::span<const uint32_t> words, uint32_t style,
                        uint32_t page, uint32_t x, uint32_t y);
+  // Add independently captured components with matching dimensions/style IDs.
+  // Inputs are validated and remain unchanged. The result is all-or-nothing:
+  // storage exhaustion returns nullopt, so the caller can retain its old table.
+  std::optional<std::vector<uint32_t>> sumComponents(std::span<const uint32_t> first,
+      std::span<const uint32_t> second, Dimensions dimensions, std::span<const uint32_t> allowedStyles,
+      uint64_t maximumBytes, std::stop_token cancelled = {});
   Vec3 surfaceIrradiance(std::span<const uint32_t> words, std::span<const StyleScale> scales,
                          Vec4 coordinate, Vec3 normal);
 } // namespace remix::forward::bake::sparse

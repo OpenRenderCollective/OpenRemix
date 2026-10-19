@@ -1,5 +1,8 @@
 // Included beside the readback Target fixture in rendering.cpp.
-void styledIndirectTests(bool directGroups = false) {
+std::array<uint8_t, 3> styledIndirectTests(bool directGroups = false, bool includeIndirect = false, uint32_t emitterCount = 1) {
+  require(emitterCount > 0 && emitterCount <= 7, "Styled fixture fits the mixed-shadow slot budget");
+  std::array<uint8_t, 3> litBySample{};
+  uint32_t sampleOrdinal = 0;
   for (uint32_t samples : {1u, 2u, 4u}) {
     Target target(64, 64, true);
     auto &r = target.raster;
@@ -8,7 +11,7 @@ void styledIndirectTests(bool directGroups = false) {
     options.ambient = 0;
     options.debugView = 1; // Indirect only: live direct/specular cannot satisfy this test.
     options.shadows = options.localShadows = options.ssr = false;
-    options.baking.styledIndirect = !directGroups;
+    options.baking.styledIndirect = !directGroups || includeIndirect;
     options.baking.groupedStyledDirect = directGroups;
     if (directGroups) {
       options.bakedLightingPreview = true;
@@ -53,13 +56,25 @@ void styledIndirectTests(bool directGroups = false) {
     remixapi_LightInfo light{};
     light.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
     light.pNext = &sphere;
-    light.hash = 18004;
-    light.radiance = {32, 8, 2};
-    remixapi_LightHandle authored, live;
-    r.createLight(light, authored);
-    light.hash = 18005;
-    light.radiance = {};
-    r.createLight(light, live);
+    std::vector<remixapi_LightHandle> liveLights;
+    std::vector<remixapi_BakeStyledLightEXT> styled;
+    for (uint32_t i = 0; i < emitterCount; ++i) {
+      light.hash = 18004 + i * 100;
+      light.radiance = {32.f / emitterCount, 8.f / emitterCount, 2.f / emitterCount};
+      remixapi_LightHandle authored, live;
+      r.createLight(light, authored);
+      light.hash = 18005 + i * 100;
+      light.radiance = {};
+      r.createLight(light, live);
+      liveLights.push_back(live);
+      styled.push_back({authored, live, 32, 0});
+    }
+    auto updateLive = [&] {
+      for (uint32_t i = 0; i < emitterCount; ++i) {
+        light.hash = 18005 + i * 100;
+        r.updateLight(liveLights[i], light);
+      }
+    };
     remixapi_BakeSceneStyledLightsInfoEXT request{};
     auto &base = request.reflections.surfaces.bounds.scene;
     base = {sizeof(request), REMIXAPI_BAKE_SCENE_STYLED_LIGHTS_VERSION_EXT, 18006, 1, 1,
@@ -74,15 +89,14 @@ void styledIndirectTests(bool directGroups = false) {
     request.reflections.surfaces.chartRevision = 1;
     request.reflections.surfaces.chartCount = 1;
     request.reflections.surfaces.charts = &chart;
-    const remixapi_BakeStyledLightEXT styled{authored, live, 32, 0};
-    request.styledLightCount = 1;
-    request.styledLights = &styled;
+    request.styledLightCount = uint32_t(styled.size());
+    request.styledLights = styled.data();
     auto publish = [&] { r.setBakeScene(&base); };
     auto render = [&](bool charted) {
       camera(r);
       if (charted) r.drawRetained(nullptr);
       else r.drawInstance(instance(mesh)); // Same receiver, through dynamic probe reconstruction.
-      r.drawLight(live);
+      for (auto live : liveLights) r.drawLight(live);
       return target.render();
     };
     auto until = [&](bool stylePhase = false) {
@@ -103,8 +117,8 @@ void styledIndirectTests(bool directGroups = false) {
       return image;
     };
     auto set = [&](float value) {
-      light.radiance = {32 * value, 8 * value, 2 * value};
-      r.updateLight(live, light);
+      light.radiance = {32 * value / emitterCount, 8 * value / emitterCount, 2 * value / emitterCount};
+      updateLive();
       publish();
     };
     publish();
@@ -127,6 +141,7 @@ void styledIndirectTests(bool directGroups = false) {
     set(1);
     auto on = render(true);
     const auto lit = on[at];
+    litBySample[sampleOrdinal++] = lit;
     if (directGroups)
       require(target.forward->statistics().analyticLights == 0 && target.forward->statistics().clusteredLights == 0,
               "Covered grouped direct receivers need no analytic light without highlights or moving corrections");
@@ -141,10 +156,10 @@ void styledIndirectTests(bool directGroups = false) {
     set(0);
     const auto probeOff = render(false);
     if (directGroups) {
-      light.radiance = {8, 32, 4}; // Not one scalar multiple of the captured envelope.
-      r.updateLight(live, light);
+      light.radiance = {8.f / emitterCount, 32.f / emitterCount, 4.f / emitterCount};
+      updateLive(); // Not one scalar multiple of the captured envelope.
       publish();
-      require(render(true)[at] < 3 && target.forward->statistics().analyticLights == 1 &&
+      require(render(true)[at] < 3 && target.forward->statistics().analyticLights == emitterCount &&
                   r.bakeScene() == frozen,
               "A non-scalar live colour disables grouped diffuse and restores analytic fallback without rebaking");
     }
@@ -160,7 +175,7 @@ void styledIndirectTests(bool directGroups = false) {
     if (directGroups) {
       options.debugView = 0;
       options.localShadows = true;
-      options.localShadowLights = 1;
+      options.localShadowLights = emitterCount;
       options.localShadowFade = 0;
       target.enableForward(options, true);
       const auto clear = render(true);
@@ -174,18 +189,23 @@ void styledIndirectTests(bool directGroups = false) {
       blocker.transform.matrix[0][0] = blocker.transform.matrix[1][1] = .4f;
       const auto moving = r.createRetained(blocker);
       const auto shadow = render(true);
-      require(clear[at] > 8 && shadow[at] < clear[at] / 3 &&
+      require(clear[at] > 8 && (includeIndirect ? shadow[at] > 3 && shadow[at] + 3 < clear[at]
+                                               : shadow[at] < clear[at] / 3) &&
                   target.forward->statistics().staticShadowUpdates == 0,
               "A grouped controllable light subtracts only its moving-caster contribution from the lightmap");
+      std::printf("Styled mixed %ux, %u emitters: clear %u, shadow %u, static updates %u\n",
+                  samples, emitterCount, unsigned(clear[at]), unsigned(shadow[at]),
+                  target.forward->statistics().staticShadowUpdates);
       r.destroyRetained(&moving, 1);
       require(std::abs(int(render(true)[at]) - int(clear[at])) <= 2,
               "Removing the moving caster restores the grouped direct contribution");
       set(0);
       require(render(true)[at] < 3, "The mixed grouped light still switches fully off");
     }
-    std::printf("Styled %s %ux: surface %u/%u/%u, probe %u/%u; cache and cancellation passed\n",
-                directGroups ? "direct" : "indirect", samples, unsigned(off[at]), unsigned(partial[at]), unsigned(lit),
+    std::printf("Styled %s %ux, %u emitters: surface %u/%u/%u, probe %u/%u; cache and cancellation passed\n",
+                includeIndirect ? "combined" : directGroups ? "direct" : "indirect", samples, emitterCount, unsigned(off[at]), unsigned(partial[at]), unsigned(lit),
                 unsigned(probeOff[at]), unsigned(probeOn[at]));
     require(errors.load() == 0, "Attributed map publication is Vulkan validation clean");
   }
+  return litBySample;
 }

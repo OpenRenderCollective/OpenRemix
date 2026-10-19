@@ -194,18 +194,68 @@ namespace remix::forward::bake::sparse {
     }
     check(cursor == words.size());
   }
+  namespace {
+    Coefficients probeAt(std::span<const uint32_t> words, std::span<const uint32_t> e, uint32_t index) {
+      if (e.empty() || index >= words[6]) return {};
+      return decode(words, e, words[e[2] + index]);
+    }
+    Coefficients surfaceAt(std::span<const uint32_t> words, std::span<const uint32_t> e,
+                            uint32_t page, uint32_t x, uint32_t y) {
+      if (e.empty() || page >= words[5] || x >= words[4] || y >= words[4]) return {};
+      const uint32_t wide = tiles(words[4]);
+      const uint32_t tile = (page * wide + y / tileSide) * wide + x / tileSide;
+      const uint32_t base = words[e[1] + tile];
+      return decode(words, e, base ? base + (y % tileSide) * tileSide + x % tileSide : 0);
+    }
+    Coefficients add(Coefficients first, const Coefficients &second) {
+      for (uint32_t c = 0; c < 9; ++c)
+        for (uint32_t rgb = 0; rgb < 3; ++rgb) first[c][rgb] += second[c][rgb];
+      return first;
+    }
+    std::vector<uint32_t> componentStyles(std::span<const uint32_t> words, Dimensions dimensions,
+                                           std::span<const uint32_t> allowed) {
+      if (words.empty()) return {};
+      check(words.size() >= headerWords && words[3] <= 127 &&
+              words[3] <= (words.size() - headerWords) / entryWords);
+      std::vector<uint32_t> styles;
+      for (uint32_t i = 0; i < words[3]; ++i) styles.push_back(words[headerWords + i * entryWords]);
+      validate(words, dimensions, styles, words.size_bytes());
+      check(std::includes(allowed.begin(), allowed.end(), styles.begin(), styles.end()));
+      return styles;
+    }
+  }
   Coefficients probe(std::span<const uint32_t> words, uint32_t style, uint32_t index) {
-    const auto e = entry(words, style);
-    if (e.empty() || index >= words[6]) return {};
-    return decode(words, e, words[e[2] + index]);
+    return probeAt(words, entry(words, style), index);
   }
   Coefficients surface(std::span<const uint32_t> words, uint32_t style, uint32_t page, uint32_t x, uint32_t y) {
-    const auto e = entry(words, style);
-    if (e.empty() || page >= words[5] || x >= words[4] || y >= words[4]) return {};
-    const uint32_t wide = tiles(words[4]);
-    const uint32_t tile = (page * wide + y / tileSide) * wide + x / tileSide;
-    const uint32_t base = words[e[1] + tile];
-    return decode(words, e, base ? base + (y % tileSide) * tileSide + x % tileSide : 0);
+    return surfaceAt(words, entry(words, style), page, x, y);
+  }
+  std::optional<std::vector<uint32_t>> sumComponents(std::span<const uint32_t> first,
+      std::span<const uint32_t> second, Dimensions dimensions, std::span<const uint32_t> allowedStyles,
+      uint64_t maximumBytes, std::stop_token token) {
+    cancelled(token);
+    check(std::is_sorted(allowedStyles.begin(), allowedStyles.end()) &&
+          std::adjacent_find(allowedStyles.begin(), allowedStyles.end()) == allowedStyles.end() &&
+          (allowedStyles.empty() || (allowedStyles.front() > 0 && allowedStyles.back() < 128)));
+    const auto a = componentStyles(first, dimensions, allowedStyles);
+    const auto b = componentStyles(second, dimensions, allowedStyles);
+    try {
+      Builder builder(dimensions, maximumBytes);
+      // Cache each entry once per group, not once per texel.
+      for (uint32_t style : allowedStyles) {
+        cancelled(token);
+        if (!std::binary_search(a.begin(), a.end(), style) && !std::binary_search(b.begin(), b.end(), style)) continue;
+        const auto ea = entry(first, style), eb = entry(second, style);
+        builder.addSampled(style, [&](uint32_t page, uint32_t x, uint32_t y) {
+          return add(surfaceAt(first, ea, page, x, y), surfaceAt(second, eb, page, x, y));
+        }, [&](uint32_t probe) {
+          return add(probeAt(first, ea, probe), probeAt(second, eb, probe));
+        }, token);
+      }
+      return builder.serialize(token);
+    } catch (const std::length_error &) {
+      return {};
+    }
   }
   Vec3 surfaceIrradiance(std::span<const uint32_t> words, std::span<const StyleScale> scales,
                           Vec4 coordinate, Vec3 normal) {

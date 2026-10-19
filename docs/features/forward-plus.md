@@ -1993,9 +1993,13 @@ changed, missing or non-scalar groups contribute no grouped RGB and retain their
 per-light response. Moving-shadow corrections and specular visibility remain
 per-light with existing fades. Live GI disables this derived path.
 
-Combining grouped direct with optional styled-indirect SH is not connected yet:
-when indirect components exist, they remain authoritative and direct grouping is
-skipped. GPU coverage includes toggles, dynamic probes, non-scalar fallback,
+Grouped direct and optional styled-indirect SH are combined into one sparse table
+on the preparation worker. Each group shares its live scalar weight; moving-caster
+corrections subtract only direct light and preserve indirect illumination. The
+compositor streams tiles without a dense atlas workspace. If the combined table
+exceeds its budget, publication retains the original indirect table and analytic
+direct fallback. Original cache data remains unchanged. GPU coverage includes
+one and seven overlapping emitters, toggles, dynamic probes, non-scalar fallback,
 moving-caster subtraction, cache reload and cancellation at 1x/2x/4x MSAA.
 Styled surface lookup rounds interpolated page IDs to the nearest layer, matching
 texture-array sampling. Truncation can select the previous page even when all
@@ -2005,7 +2009,7 @@ The localized Construct bright-patch regression is resolved. Broader map visual
 acceptance remains open, so the option stays experimental.
 
 With `REMIX_DEBUG_BAKE_RECEIVERS` enabled, grouped publication also writes a
-`.grouped-direct.json` sidecar. It compares authored full-on grouped RGB SH against
+`.grouped-direct.json` sidecar. It compares the direct candidate before optional indirect combination against
 individual captured contributions at bounded triangle-centre samples, including
 opposite vertex-normal orientations. It reports emitter-horizon clipping separately.
 Materials, normal maps, runtime range fade and moving shadows are excluded. This

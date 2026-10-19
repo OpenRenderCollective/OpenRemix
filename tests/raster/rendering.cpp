@@ -4453,6 +4453,13 @@ int main(int argc, char **argv) {
   else if (argc>2 && std::strcmp(argv[2],"finite-cone")==0) finiteConeLightingTests();
   else if (argc>2 && std::strcmp(argv[2],"styled-indirect")==0) styledIndirectTests();
   else if (argc>2 && std::strcmp(argv[2],"styled-direct")==0) styledIndirectTests(true);
+  else if (argc>2 && std::strcmp(argv[2],"styled-combined")==0) {
+    const auto one = styledIndirectTests(true, true);
+    const auto seven = styledIndirectTests(true, true, 7);
+    for (uint32_t i = 0; i < one.size(); ++i)
+      require(std::abs(int(one[i]) - int(seven[i])) <= 2,
+              "Splitting the same authored power across seven overlapping emitters preserves grouped energy");
+  }
   else if (argc>2 && std::strcmp(argv[2],"local-shadow-plane")==0) localShadowPlaneTests();
   else if (argc>2 && std::strcmp(argv[2],"auto-exposure")==0) autoExposureTests();
   else if (argc>2 && std::strcmp(argv[2],"styled-mixed")==0) mixedLightingTests(true, true, true);

@@ -48,9 +48,9 @@ Construct, c1a0/c1a0d and Steamlab with identical quality and fixed camera posit
 requires measured steady-state GPU improvement and visual checks of highlights, wall occlusion and
 moving shadows, not just a smaller clustered-light counter.
 
-Controllable fixed lights still retain per-light analytic diffuse. Finish independently
-scaled baked direct groups for these lights, alongside the existing styled indirect groups,
-without adding them to permanent aggregate RGB. Keep arbitrary style identities and runtime
+Complete controllable fixed-light groups now replace per-light analytic diffuse behind
+the experimental option. Validate independently scaled direct and indirect groups
+across more maps before enabling them by default; keep them separate from permanent aggregate RGB. Keep arbitrary style identities and runtime
 weights engine agnostic. Preserve per-light specular visibility, moving-caster corrections,
 cache restoration and unknown-coverage fallback. Use exported response counts to distinguish
 this remaining work from selected highlights; fewer clustered lights alone does not prove a
@@ -63,8 +63,10 @@ Worker publication and runtime selection now consume complete direct groups behi
 `experimentalGroupedStyledDirect`. Aggregate caches retain their existing identity;
 groups are derived again after validated reload, while analytic-only probe capture
 uses a capability key. Scalar toggles, non-scalar fallback, moving shadows, dynamic
-probes, cache reload and cancellation have GPU coverage. Combining direct groups
-with optional styled-indirect groups and broader map visual acceptance remain open.
+probes, cache reload and cancellation have GPU coverage. Direct groups now combine with optional styled-indirect groups in one bounded sparse
+table. GPU coverage includes seven overlapping emitters with preserved total energy
+and moving shadows that retain indirect illumination. Construct fresh-bake and cache
+reload images agree exactly. Broader map visual acceptance remains open.
 The localized Construct bright patches were traced to interpolated atlas page IDs
 being truncated into the preceding page. CPU and GPU samplers now round to the
 nearest layer, with a failing-before/passing-after boundary regression. Broader
