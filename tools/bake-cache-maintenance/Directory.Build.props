@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <BaseOutputPath>$(MSBuildThisFileDirectory)../../_work/build/bake-cache-maintenance/bin/</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)../../_work/build/bake-cache-maintenance/obj/</BaseIntermediateOutputPath>
+  </PropertyGroup>
+</Project>
