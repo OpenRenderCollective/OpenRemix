@@ -1,0 +1,770 @@
+{
+  "forward-inherit-stdio": {
+    "receipt": {
+      "inheritStdio": true,
+      "passiveWindow": false,
+      "backend": "forwardplus",
+      "ssr": "1",
+      "args": [
+        "D:\\garrys-mod-rtx-remixed-2\\_work\\staging\\gmod-profile-20261018\\gmod_win64.exe",
+        "-game",
+        "garrysmod",
+        "-insecure",
+        "-noaddons",
+        "-noworkshop",
+        "-novid",
+        "-windowed",
+        "-w",
+        "1920",
+        "-h",
+        "1080",
+        "-condebug",
+        "-conclearlog",
+        "+sv_lan",
+        "1",
+        "+fps_max",
+        "0",
+        "+mat_vsync",
+        "0",
+        "+map",
+        "crossfire"
+      ],
+      "nativeSha256": "91cc2eabc6d313318b8ea0ea5e519158f521f146dbbee8c3f89f148f538fce6e",
+      "readySeconds": 19.265999999945052,
+      "seconds": 44.57799999997951,
+      "freshEngineConsole": true,
+      "ownedTerminationReason": "measurement complete",
+      "pid": 93268,
+      "exit": 1,
+      "stageCameraRestored": true
+    },
+    "summary": {
+      "hostSamples": 3835,
+      "freshGpuSamples": 3835,
+      "durationSeconds": 21.043,
+      "host": {
+        "hostMs": {
+          "mean": 5.489337444589309,
+          "median": 5.2428,
+          "p95": 8.401689999999999,
+          "p99": 14.716633999999999
+        },
+        "cpuRecordMs": {
+          "mean": 1.9350461538461539,
+          "median": 1.8869,
+          "p95": 2.42386,
+          "p99": 2.760989999999999
+        },
+        "cpuFenceMs": {
+          "mean": 1.2780498305084746,
+          "median": 1.1779,
+          "p95": 2.75716,
+          "p99": 3.265773999999998
+        }
+      },
+      "gpu": {
+        "gpuMs": {
+          "mean": 5.400387880052151,
+          "median": 5.115424,
+          "p95": 6.8226368,
+          "p99": 7.350633599999999
+        },
+        "opaqueMs": {
+          "mean": 3.3867490294654496,
+          "median": 3.277824,
+          "p95": 4.381696,
+          "p99": 5.178142719999995
+        },
+        "clusterMs": {
+          "mean": 0.0391750258148631,
+          "median": 0.028672,
+          "p95": 0.032768,
+          "p99": 0.4952191999999981
+        },
+        "localShadowMs": {
+          "mean": 0.14492897627118645,
+          "median": 0.090112,
+          "p95": 0.431104,
+          "p99": 0.8229273599999994
+        },
+        "sunShadowMs": {
+          "mean": 0.08336902842242504,
+          "median": 0.054272,
+          "p95": 0.361472,
+          "p99": 0.6099558399999998
+        },
+        "reflectionMs": {
+          "mean": 0.419980658148631,
+          "median": 0.349184,
+          "p95": 0.7144832,
+          "p99": 1.19977984
+        },
+        "depthMs": {
+          "mean": 0.3861016698826597,
+          "median": 0.395264,
+          "p95": 0.928768,
+          "p99": 1.2484403199999965
+        },
+        "viewmodelMs": {
+          "mean": 1.1827870623207302,
+          "median": 0.992672,
+          "p95": 1.8403935999999985,
+          "p99": 2.41379968
+        },
+        "viewmodelSunShadowMs": {
+          "mean": 0.12516884693611474,
+          "median": 0.096256,
+          "p95": 0.362496,
+          "p99": 0.5082316799999997
+        },
+        "viewmodelLocalShadowMs": {
+          "mean": 0.11835001825293351,
+          "median": 0.088064,
+          "p95": 0.364544,
+          "p99": 0.7090643199999966
+        }
+      }
+    }
+  },
+  "forward-inherit-ssr-off": {
+    "receipt": {
+      "inheritStdio": true,
+      "passiveWindow": false,
+      "backend": "forwardplus",
+      "ssr": "0",
+      "args": [
+        "D:\\garrys-mod-rtx-remixed-2\\_work\\staging\\gmod-profile-20261018\\gmod_win64.exe",
+        "-game",
+        "garrysmod",
+        "-insecure",
+        "-noaddons",
+        "-noworkshop",
+        "-novid",
+        "-windowed",
+        "-w",
+        "1920",
+        "-h",
+        "1080",
+        "-condebug",
+        "-conclearlog",
+        "+sv_lan",
+        "1",
+        "+fps_max",
+        "0",
+        "+mat_vsync",
+        "0",
+        "+map",
+        "crossfire"
+      ],
+      "nativeSha256": "91cc2eabc6d313318b8ea0ea5e519158f521f146dbbee8c3f89f148f538fce6e",
+      "readySeconds": 17.203000000095926,
+      "seconds": 42.53100000007544,
+      "freshEngineConsole": true,
+      "ownedTerminationReason": "measurement complete",
+      "pid": 94200,
+      "exit": 1,
+      "stageCameraRestored": true
+    },
+    "summary": {
+      "hostSamples": 4094,
+      "freshGpuSamples": 4094,
+      "durationSeconds": 21.366,
+      "host": {
+        "hostMs": {
+          "mean": 5.220306350757205,
+          "median": 4.9638,
+          "p95": 8.17964,
+          "p99": 14.427908000000015
+        },
+        "cpuRecordMs": {
+          "mean": 1.8590285784074254,
+          "median": 1.80185,
+          "p95": 2.36461,
+          "p99": 2.7524000000000015
+        },
+        "cpuFenceMs": {
+          "mean": 1.186985979482169,
+          "median": 1.1227,
+          "p95": 2.67091,
+          "p99": 3.1780460000000015
+        }
+      },
+      "gpu": {
+        "gpuMs": {
+          "mean": 5.111311452857841,
+          "median": 4.881792,
+          "p95": 6.534552,
+          "p99": 7.024866560000002
+        },
+        "opaqueMs": {
+          "mean": 3.1956503761602346,
+          "median": 3.137536,
+          "p95": 4.0216064,
+          "p99": 4.559544320000004
+        },
+        "clusterMs": {
+          "mean": 0.04208028138739619,
+          "median": 0.028672,
+          "p95": 0.03559679999999999,
+          "p99": 0.5059276800000001
+        },
+        "localShadowMs": {
+          "mean": 0.1427869702002931,
+          "median": 0.08704,
+          "p95": 0.5185023999999999,
+          "p99": 0.6535987200000006
+        },
+        "sunShadowMs": {
+          "mean": 0.05299997264289204,
+          "median": 0.039936,
+          "p95": 0.049152,
+          "p99": 0.370688
+        },
+        "reflectionMs": {
+          "mean": 0.36016280605764533,
+          "median": 0.299008,
+          "p95": 0.655608,
+          "p99": 1.091850240000003
+        },
+        "depthMs": {
+          "mean": 0.1970334577430386,
+          "median": 0.070656,
+          "p95": 0.567296,
+          "p99": 0.9053593600000004
+        },
+        "viewmodelMs": {
+          "mean": 1.1690165510503174,
+          "median": 0.965632,
+          "p95": 1.8763264,
+          "p99": 2.3643456000000005
+        },
+        "viewmodelSunShadowMs": {
+          "mean": 0.11102571177332682,
+          "median": 0.083968,
+          "p95": 0.3444223999999999,
+          "p99": 0.505856
+        },
+        "viewmodelLocalShadowMs": {
+          "mean": 0.09124128578407426,
+          "median": 0.074752,
+          "p95": 0.100352,
+          "p99": 0.5171555200000124
+        }
+      }
+    }
+  },
+  "forward-hidden-viewmodel": {
+    "receipt": {
+      "noViewmodel": true,
+      "nativeResolution": false,
+      "inheritStdio": true,
+      "passiveWindow": false,
+      "backend": "forwardplus",
+      "ssr": "1",
+      "args": [
+        "D:\\garrys-mod-rtx-remixed-2\\_work\\staging\\gmod-profile-20261018\\gmod_win64.exe",
+        "-game",
+        "garrysmod",
+        "-insecure",
+        "-noaddons",
+        "-noworkshop",
+        "-novid",
+        "-windowed",
+        "-w",
+        "1920",
+        "-h",
+        "1080",
+        "-condebug",
+        "-conclearlog",
+        "+sv_lan",
+        "1",
+        "+fps_max",
+        "0",
+        "+mat_vsync",
+        "0",
+        "+map",
+        "crossfire"
+      ],
+      "nativeSha256": "91cc2eabc6d313318b8ea0ea5e519158f521f146dbbee8c3f89f148f538fce6e",
+      "readySeconds": 15.187999999965541,
+      "seconds": 40.5,
+      "freshEngineConsole": true,
+      "ownedTerminationReason": "measurement complete",
+      "pid": 94608,
+      "exit": 1,
+      "stageCameraRestored": true
+    },
+    "summary": {
+      "hostSamples": 4744,
+      "freshGpuSamples": 4744,
+      "durationSeconds": 20.626,
+      "host": {
+        "hostMs": {
+          "mean": 4.348255796795953,
+          "median": 4.0647,
+          "p95": 6.964594999999993,
+          "p99": 12.897741999999985
+        },
+        "cpuRecordMs": {
+          "mean": 1.5475539418212478,
+          "median": 1.476,
+          "p95": 2.0569399999999995,
+          "p99": 2.5774159999999946
+        },
+        "cpuFenceMs": {
+          "mean": 0.6066778667790894,
+          "median": 0.5609500000000001,
+          "p95": 1.5408799999999985,
+          "p99": 2.1752569999999998
+        }
+      },
+      "gpu": {
+        "gpuMs": {
+          "mean": 4.1331996492411465,
+          "median": 4.061104,
+          "p95": 5.1521104,
+          "p99": 5.7749580799999976
+        },
+        "opaqueMs": {
+          "mean": 3.3016164586846544,
+          "median": 3.259392,
+          "p95": 4.114432,
+          "p99": 4.699709439999998
+        },
+        "clusterMs": {
+          "mean": 0.03820424283305228,
+          "median": 0.016736,
+          "p95": 0.04520639999999961,
+          "p99": 0.5275148799999999
+        },
+        "localShadowMs": {
+          "mean": 0.15821749747048905,
+          "median": 0.089088,
+          "p95": 0.41968639999999946,
+          "p99": 0.8437657599999979
+        },
+        "sunShadowMs": {
+          "mean": 0.0621594671163575,
+          "median": 0.040576,
+          "p95": 0.28717279999999795,
+          "p99": 0.5250620799999985
+        },
+        "reflectionMs": {
+          "mean": 0.4138741112984823,
+          "median": 0.35328,
+          "p95": 0.710016,
+          "p99": 1.1297446399999997
+        },
+        "depthMs": {
+          "mean": 0.22568623271500843,
+          "median": 0.09728,
+          "p95": 0.62976,
+          "p99": 0.9599180799999982
+        },
+        "viewmodelMs": {
+          "mean": 0.0,
+          "median": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "viewmodelSunShadowMs": {
+          "mean": 0.0,
+          "median": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "viewmodelLocalShadowMs": {
+          "mean": 0.0,
+          "median": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        }
+      }
+    }
+  },
+  "pathtrace-inherit-control": {
+    "receipt": {
+      "inheritStdio": true,
+      "passiveWindow": false,
+      "backend": "pathtrace",
+      "ssr": "1",
+      "args": [
+        "D:\\garrys-mod-rtx-remixed-2\\_work\\staging\\gmod-profile-20261018\\gmod_win64.exe",
+        "-game",
+        "garrysmod",
+        "-insecure",
+        "-noaddons",
+        "-noworkshop",
+        "-novid",
+        "-windowed",
+        "-w",
+        "1920",
+        "-h",
+        "1080",
+        "-condebug",
+        "-conclearlog",
+        "+sv_lan",
+        "1",
+        "+fps_max",
+        "0",
+        "+mat_vsync",
+        "0",
+        "+map",
+        "crossfire"
+      ],
+      "nativeSha256": "91cc2eabc6d313318b8ea0ea5e519158f521f146dbbee8c3f89f148f538fce6e",
+      "readySeconds": 47.84299999999348,
+      "seconds": 73.26500000001397,
+      "freshEngineConsole": true,
+      "ownedTerminationReason": "measurement complete",
+      "pid": 91348,
+      "exit": 1,
+      "stageCameraRestored": true
+    },
+    "summary": {
+      "hostSamples": 4408,
+      "freshGpuSamples": 3927,
+      "durationSeconds": 19.997,
+      "host": {
+        "hostMs": {
+          "mean": 4.537595349364791,
+          "median": 4.31825,
+          "p95": 6.210324999999999,
+          "p99": 11.577823000000002
+        },
+        "cpuRecordMs": {
+          "mean": 0.7743382713248639,
+          "median": 0.7577,
+          "p95": 0.9523949999999999,
+          "p99": 1.0792670000000004
+        },
+        "cpuFenceMs": {
+          "mean": 0.018150181488203267,
+          "median": 0.0036,
+          "p95": 0.0054,
+          "p99": 0.5813360000000044
+        }
+      },
+      "gpu": {
+        "gpuMs": {
+          "mean": 4.173667895085307,
+          "median": 4.090368,
+          "p95": 5.3429152,
+          "p99": 5.680259839999999
+        },
+        "opaqueMs": {
+          "mean": 0.0,
+          "median": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "clusterMs": {
+          "mean": 0.0,
+          "median": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "localShadowMs": {
+          "mean": 0.0,
+          "median": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sunShadowMs": {
+          "mean": 0.0,
+          "median": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "reflectionMs": {
+          "mean": 0.0,
+          "median": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "depthMs": {
+          "mean": 0.0,
+          "median": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "viewmodelMs": {
+          "mean": 0.0,
+          "median": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "viewmodelSunShadowMs": {
+          "mean": 0.0,
+          "median": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "viewmodelLocalShadowMs": {
+          "mean": 0.0,
+          "median": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        }
+      }
+    }
+  },
+  "pathtrace-native-aa-verified": {
+    "receipt": {
+      "nativeResolution": true,
+      "inheritStdio": true,
+      "passiveWindow": false,
+      "backend": "pathtrace",
+      "ssr": "1",
+      "args": [
+        "D:\\garrys-mod-rtx-remixed-2\\_work\\staging\\gmod-profile-20261018\\gmod_win64.exe",
+        "-game",
+        "garrysmod",
+        "-insecure",
+        "-noaddons",
+        "-noworkshop",
+        "-novid",
+        "-windowed",
+        "-w",
+        "1920",
+        "-h",
+        "1080",
+        "-condebug",
+        "-conclearlog",
+        "+sv_lan",
+        "1",
+        "+fps_max",
+        "0",
+        "+mat_vsync",
+        "0",
+        "+map",
+        "crossfire"
+      ],
+      "nativeSha256": "91cc2eabc6d313318b8ea0ea5e519158f521f146dbbee8c3f89f148f538fce6e",
+      "readySeconds": 47.68700000003446,
+      "seconds": 73.01500000001397,
+      "freshEngineConsole": true,
+      "ownedTerminationReason": "measurement complete",
+      "pid": 84712,
+      "exit": 1,
+      "stageCameraRestored": true
+    },
+    "summary": {
+      "hostSamples": 2125,
+      "freshGpuSamples": 2053,
+      "durationSeconds": 19.994,
+      "host": {
+        "hostMs": {
+          "mean": 9.412867623529412,
+          "median": 9.3588,
+          "p95": 13.1329,
+          "p99": 17.485003999999947
+        },
+        "cpuRecordMs": {
+          "mean": 0.8513103529411765,
+          "median": 0.8464,
+          "p95": 0.97608,
+          "p99": 1.0386919999999995
+        },
+        "cpuFenceMs": {
+          "mean": 0.1111288,
+          "median": 0.0042,
+          "p95": 0.48919999999999964,
+          "p99": 2.8662559999999697
+        }
+      },
+      "gpu": {
+        "gpuMs": {
+          "mean": 8.843359470043838,
+          "median": 8.632512,
+          "p95": 10.4508096,
+          "p99": 11.74140928
+        },
+        "opaqueMs": {
+          "mean": 0.0,
+          "median": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "clusterMs": {
+          "mean": 0.0,
+          "median": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "localShadowMs": {
+          "mean": 0.0,
+          "median": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "sunShadowMs": {
+          "mean": 0.0,
+          "median": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "reflectionMs": {
+          "mean": 0.0,
+          "median": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "depthMs": {
+          "mean": 0.0,
+          "median": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "viewmodelMs": {
+          "mean": 0.0,
+          "median": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "viewmodelSunShadowMs": {
+          "mean": 0.0,
+          "median": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "viewmodelLocalShadowMs": {
+          "mean": 0.0,
+          "median": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        }
+      }
+    }
+  },
+  "c1a0-default-live": {
+    "receipt": {
+      "map": "c1a0",
+      "noViewmodel": false,
+      "nativeResolution": false,
+      "inheritStdio": true,
+      "passiveWindow": false,
+      "backend": "forwardplus",
+      "ssr": "1",
+      "args": [
+        "D:\\garrys-mod-rtx-remixed-2\\_work\\staging\\gmod-profile-20261018\\gmod_win64.exe",
+        "-game",
+        "garrysmod",
+        "-insecure",
+        "-noaddons",
+        "-noworkshop",
+        "-novid",
+        "-windowed",
+        "-w",
+        "1920",
+        "-h",
+        "1080",
+        "-condebug",
+        "-conclearlog",
+        "+sv_lan",
+        "1",
+        "+fps_max",
+        "0",
+        "+mat_vsync",
+        "0",
+        "+map",
+        "c1a0"
+      ],
+      "nativeSha256": "91cc2eabc6d313318b8ea0ea5e519158f521f146dbbee8c3f89f148f538fce6e",
+      "readySeconds": 60.21900000004098,
+      "seconds": 85.57799999997951,
+      "freshEngineConsole": true,
+      "ownedTerminationReason": "measurement complete",
+      "pid": 97312,
+      "exit": 1,
+      "stageCameraRestored": true
+    },
+    "summary": {
+      "hostSamples": 2971,
+      "freshGpuSamples": 2971,
+      "durationSeconds": 22.365,
+      "host": {
+        "hostMs": {
+          "mean": 7.531098014136655,
+          "median": 7.45,
+          "p95": 10.660599999999999,
+          "p99": 12.699110000000031
+        },
+        "cpuRecordMs": {
+          "mean": 2.9308089868731066,
+          "median": 2.8573,
+          "p95": 3.68005,
+          "p99": 4.198770000000003
+        },
+        "cpuFenceMs": {
+          "mean": 0.002787478963312016,
+          "median": 0.0025,
+          "p95": 0.0036,
+          "p99": 0.0111
+        }
+      },
+      "gpu": {
+        "gpuMs": {
+          "mean": 3.3859986482665767,
+          "median": 3.288032,
+          "p95": 3.7107520000000003,
+          "p99": 4.180185600000004
+        },
+        "opaqueMs": {
+          "mean": 2.1206871114102994,
+          "median": 2.039808,
+          "p95": 2.458112,
+          "p99": 2.5537536000000007
+        },
+        "clusterMs": {
+          "mean": 0.016944942443621675,
+          "median": 0.016928,
+          "p95": 0.017792,
+          "p99": 0.018473600000000007
+        },
+        "localShadowMs": {
+          "mean": 0.1035666913497139,
+          "median": 0.103424,
+          "p95": 0.10752,
+          "p99": 0.111616
+        },
+        "sunShadowMs": {
+          "mean": 0.014333318074722316,
+          "median": 0.014336,
+          "p95": 0.01536,
+          "p99": 0.015852800000000045
+        },
+        "reflectionMs": {
+          "mean": 0.3411049747559744,
+          "median": 0.325216,
+          "p95": 0.521952,
+          "p99": 0.671232
+        },
+        "depthMs": {
+          "mean": 0.1276880780881858,
+          "median": 0.126976,
+          "p95": 0.149504,
+          "p99": 0.167936
+        },
+        "viewmodelMs": {
+          "mean": 0.6954799111410299,
+          "median": 0.649216,
+          "p95": 1.0278559999999999,
+          "p99": 1.1066528
+        },
+        "viewmodelSunShadowMs": {
+          "mean": 0.0,
+          "median": 0.0,
+          "p95": 0.0,
+          "p99": 0.0
+        },
+        "viewmodelLocalShadowMs": {
+          "mean": 0.09139583439919219,
+          "median": 0.080352,
+          "p95": 0.089008,
+          "p99": 0.454656
+        }
+      }
+    }
+  }
+}

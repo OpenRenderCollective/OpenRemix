@@ -51,3 +51,66 @@ those controls, then repeat light-heavy Construct camera and c1a0. Do not claim
 clustering or static shadow work is the bottleneck from this Crossfire pose.
 Automatic cubemap room coverage, broader moving shadow QA and remaining roadmap
 gates remain open. No new shadow/reflection technique becomes the default here.
+
+Matched live controls (2026-10-20 follow-up)
+
+Startup isolation:
+The private stage exited0 before a fresh console even with the original shader
+API DLL and no proxy. A bounded Win32 debug-event capture reached Vulkan startup
+and client/server module loading; no performance data taken under the debugger.
+The harness then omitted its explicit redirected standard handles and startup
+window override. Seven consecutive normal starts completed useful measurements.
+This is a working harness condition, not proof of which startup flag caused the
+intermittent quit. No global overlays, Steam settings or user files were changed.
+
+Same Crossfire camera, native/proxy binaries, 1080p output, 4x MSAA Forward+,
+full-resolution SSR default, no addons/workshop. Both Forward+ on/off cases used
+published input hash7876452043270055778. Averages in milliseconds:
+
+Case                               Host       GPU
+Forward+ default                    5.489     5.400
+Forward+ SSR disabled               5.220     5.111
+Forward+ weapon/hands hidden        4.348     4.133
+Pathtrace default, 960x540 internal  4.538     4.174
+Pathtrace native-aa, 1920x1080       9.413     8.843
+
+These are single sequential controls, not repeated crossover trials. Do not
+claim small differences are stable improvements. The two pathtrace modes use
+DLSS ray reconstruction; Forward+ has a different quality/cost distribution.
+Native-aa was verified from observed render/output dimensions, not just config.
+One attempt used a numeric quality value rejected by the setting parser and
+still rendered960x540. It is explicitly excluded from comparisons. The harness
+now rejects native-resolution runs whose observed dimensions do not match.
+CSV parsing also excludes the final partial row left by owned-process termination.
+
+Forward+ default inclusive viewmodel mean1.183ms (sun self0.125, local self0.118),
+world opaque3.387ms (depth0.386), reflection0.420, clustering0.039. Child scopes
+are included in parent scopes. Hiding weapon and hands gives viewmodel scope0
+and about1.27ms lower total GPU cost, consistent with that scope. The shader
+path, including probe/reflection work and viewmodel overdraw, is a better target
+for this pose than clustering. No viewmodel feature was disabled in the product.
+Possible next bounded trial: reuse cutout-aware depth shading for a viewmodel
+prepass, with GPU image equivalence, MSAA/cutout/overlay tests and a paired live
+control. Reject it if extra draws cost more than saved fragment shading.
+
+Additional map, c1a0:
+Camera(456,318,-163), angles(0,180,0), FOV90: reception room from entry doorway.
+Host mean7.531ms, GPU3.386ms, CPU record2.931ms, fence wait0.003ms.
+The saved timing snapshot shows frame preparation1.852ms, of which draw
+preparation1.661ms; selection0.082ms, lighting0.020ms. A longest-interval record
+attributes7.24ms to the native render thread (setup4.31, record2.97), so do not
+assign the CPU gap to Source alone. Investigate native setup and static draw
+preparation before a generic GPU-light optimization. GPU is not saturated here.
+Cold first publication60.219s, including engine startup. This is not a controlled
+cold-bake before/after test. Baked atlas3942021texels, four pages,1991probes.
+
+Raw cases, screenshots, camera logs, fresh logs, CSV and result receipts:
+D:/garrys-mod-rtx-remixed-2/_work/reports/live-crossfire-pass-ab-v1/
+Tracked numeric receipts: live-renderer-controls-2026-10-20.json.
+All owned test games terminated and camera scripts restored. Testing install
+remains the verified50294d6/af36a66 checkpoint. No product changes this follow-up.
+
+Next priorities from evidence: c1a0 native CPU setup/static draw preparation;
+viewmodel shading/overdraw trial; heavy Construct room measurements. Maintain
+outstanding automatic cubemap bounds/overlap, broader moving-shadow quality,
+remaining lightmap/bake-time and authoring-tool gates. Scope is not complete.
