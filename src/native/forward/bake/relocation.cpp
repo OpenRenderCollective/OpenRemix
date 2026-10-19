@@ -8,6 +8,7 @@
 namespace remix::forward::bake {
   uint32_t relocate(Grid &grid, const scene::BakeScene &scene, const lightmap::Layout &layout,
                      std::stop_token cancelled) {
+    if (indexed(grid.header)) throw std::invalid_argument("Relocate probes before compacting their lattice");
     if (!scene.partition || !scene.partition->closed || layout.points.empty()) return 0;
     const auto &h = grid.header;
     if (grid.points.size() != h.dimensions[3] || grid.probes.size() != grid.points.size() ||
@@ -71,7 +72,7 @@ namespace remix::forward::bake {
     auto &probe = grid.probes[index];
     probe = value;
     if (grid.header.settings[2] > .5f) {
-      uint32_t coordinate = index;
+      uint32_t coordinate = indexed(grid.header) ? grid.nodes.at(index) : index;
       for (uint32_t c = 0; c < 3; ++c) {
         const float original = grid.header.originSpacing[c] +
                                (coordinate % grid.header.dimensions[c]) * grid.header.originSpacing[3];

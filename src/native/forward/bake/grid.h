@@ -10,8 +10,9 @@ namespace remix::forward::lightmap {
 namespace remix::forward::bake {
   struct GridHeader {
     Vec4 originSpacing{};
+    // XYZ virtual lattice dimensions; W stored record count, which can be smaller.
     UInt4 dimensions{};
-    // CPU/cache: bias, variance, relocation flag, zero. Published GPU settings.w
+    // CPU/cache: bias, variance, addressing flags (1 relocated, 2 indexed), zero. Published GPU settings.w
     // contains uint32 bits (not a numeric float): bit0 styled-SH presence, remaining bits sparse local
     // table offset in vec4 records relative to the probe-array start.
     Vec4 settings{};
@@ -27,8 +28,19 @@ namespace remix::forward::bake {
     std::vector<Point> points;
     std::vector<uint32_t> tasks;
     std::vector<Result> probes;
+    // Optional virtual lattice node -> compact record + 1; zero has no probe.
+    // nodes is the inverse, used only by CPU placement/relocation bookkeeping.
+    std::vector<uint32_t> lookup, nodes;
   };
+  inline bool indexed(const GridHeader &header) { return header.settings[2] >= 2; }
+  constexpr uint32_t maximumGridNodes = 1u << 20;
+  inline size_t lookupBytes(const Grid &grid) { return (grid.lookup.size() * sizeof(uint32_t) + 15) & ~size_t(15); }
+  inline size_t gridBytes(const Grid &grid) {
+    return sizeof(GridHeader) + grid.probes.size() * sizeof(Result) + lookupBytes(grid);
+  }
   Grid place(const scene::BakeScene &scene, const Config &config);
+  Grid placeSparse(const scene::BakeScene &scene, const Config &config, const lightmap::Layout &layout,
+                   std::stop_token cancelled = {});
   // Reuse untraced solid/outside slots near chart receivers. Each axis remains
   // within .45 cell widths of its original node; the allocation never grows.
   uint32_t relocate(Grid &grid, const scene::BakeScene &scene, const lightmap::Layout &layout,

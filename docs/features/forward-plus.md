@@ -513,7 +513,7 @@ water exits and disabled-pass compatibility at 1x, 2x and 4x with ray-tracing fe
 | `waterThickness` | 0.15 | Screen refraction hit tolerance in metres |
 | `lightCutoff` | 0.001 | Contribution threshold used to bound local-light influence |
 | `ssr` | 1 | Enable current-frame screen-space reflections |
-| `reflectionProbes` | 16 | Maximum baked box-projected cubemaps, 0 to 64 |
+| `reflectionProbes` | 64 | Maximum baked box-projected cubemaps, 0 to 64 |
 | `reflectionResolution` | 32 | Power-of-two cube face size, 8 to 128 |
 | `lightmapPageSize` | 1024 | Maximum power-of-two surface atlas page size, 64 to 4096 |
 | `lightmapTexels` | 4194304 | Surface atlas texel budget, including padding and unused page space |
@@ -555,6 +555,27 @@ Backend values are stable: raster 0, pathtrace 1, forwardplus 2. Native capabili
 bit positions. Forward+ has independent preparation and settings; selecting it never implicitly selects
 path tracing. Rendering options apply at a preparation boundary, and the previous renderer remains usable
 while a changed forward target is prepared.
+
+## Irradiance probe storage
+
+With a closed host visibility partition, the irradiance lattice uses a compact
+record directory. Solid and outside nodes have a zero directory entry instead
+of an allocated SH record. Placement fits the stored-record budget, including
+relocated receivers, with at most eight finer-spacing trials. The virtual lattice
+is bounded to eight times that budget and at most one million nodes. Hosts without
+a closed partition retain dense coverage.
+
+CPU and GPU sampling resolve the same directory before evaluating distance
+moments, directional SH, sun visibility and attributed local lighting. Styled
+coefficients and local visibility tables address physical records. Directory
+padding is included in all shared-buffer storage limits. The active grid report
+and Rendering panel show actual spacing and usable records; requested spacing
+can still be coarsened to fit the budget.
+
+This removes empty record allocations, but retains a single lattice spacing.
+Local adaptive refinement and transitions between resolutions remain unfinished.
+The changed placement policy uses a new bake-cache identity and needs one fresh
+bake; dense payload decoding remains available for legacy data.
 
 ## Offline lightmap denoising
 
@@ -845,8 +866,8 @@ The fitter receives the validated list, then fills remaining capacity from
 already-tested irradiance probes. A low budget can still leave particular rooms
 uncovered; larger maps can use a budget of 64 captures without changing irradiance-grid density.
 The screen-space filter uses a two-word tile mask to reject irrelevant captures. Larger sets still
-increase capture/storage work and untiled water/viewmodel lookups. The default remains 16 pending
-broader profiling. Device storage limits can reduce the actual count (for example, 63 size-128
+increase capture/storage work and untiled water/viewmodel lookups. The default budget is 64;
+explicit profile values still apply. Device storage limits can reduce the actual count (for example, 63 size-128
 captures within a 128-MiB storage-buffer limit). Existing up-to-32-capture disk payloads retain their
 historical layout; larger sets use an extended header. This does not make concave rooms rectangular.
 

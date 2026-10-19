@@ -14,7 +14,7 @@ namespace remix::forward::bake {
   void Controller::Job::prepareGroupedStyles(uint64_t storageRange, const Config &config) {
     if (!config.groupedStyledDirect || !directionalFieldsRequested() || !completeDirectionals ||
         !localProbes || !localProbes->directional() || styleIds(*source).empty()) return;
-    const uint64_t reserved = sizeof(GridHeader) + grid.probes.size() * sizeof(Result) +
+    const uint64_t reserved = gridBytes(grid) +
                                localProbes->gpuBytes() + 15;
     if (reserved + sparse::headerWords * 4 > storageRange) return;
     const auto began = std::chrono::steady_clock::now();
@@ -97,6 +97,7 @@ namespace remix::forward::bake {
     snapshot->grid.header = grid.header;
     snapshot->grid.probes = std::move(grid.probes);
     snapshot->grid.tasks = std::move(grid.tasks);
+    snapshot->grid.lookup = std::move(grid.lookup);
     // Keep only serialized allocations/mappings, never transient sample arrays.
     snapshot->layout.pageSize = surfaceLayout.pageSize;
     snapshot->layout.pages = surfaceLayout.pages;

@@ -443,6 +443,16 @@ See probe-tile-culling-2026-10-20.txt.
 Reflection storage, two-word masks, cache headers and authoring now support64.
 Construct selects54captures including the previously omitted local origins;
 Crossfire selects64. Existing16capture caches retain exact visible output.
-Default16is unchanged pending live/broader acceptance. Larger sets add small
-measured reflection cost, not an FPS win, and automatic room bounds remain open.
+That checkpoint retained default16; the current default budget is64 to improve
+room coverage. Explicit saved budgets remain respected. Larger sets are a quality
+choice, not an FPS win, and automatic room bounds remain open.
 See probe-capacity64-2026-10-20.txt for limits and tests.
+
+Irradiance records now use sparse lattice addressing when the host supplies a
+closed visibility partition. Empty nodes use zero directory entries, placement
+fits the physical-record budget, and CPU/GPU reconstruction, relocation, styles,
+local visibility and persistent storage share the same addressing. The active
+diagnostics expose actual density. Dense hosts retain their complete coverage.
+This is still a single-resolution lattice: local adaptive refinement, resolution
+transitions and real moving-prop comparisons against dense reference fields remain
+the next probe-quality work.

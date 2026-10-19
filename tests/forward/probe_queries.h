@@ -10,7 +10,7 @@ namespace remix::forward::test {
   // A host-visible storage buffer supplies the same packed asset that the
   // frame-boundary uploader will copy to device memory.
   inline void probeQueries(Fixture &fixture, const probes::Data &data, uint32_t skyCase = 0,
-                            bool directional = false) {
+                            bool directional = false, bool indexed = false) {
     // Sky cases: open, closed, unusable, and hidden behind a distance boundary.
     struct Query {
       Vec4 position, reflected;
@@ -106,21 +106,25 @@ namespace remix::forward::test {
       local.observe(pairs, results);
     } else local.observe(pairs, masks);
     const auto localWords = local.words();
+    const uint32_t lookup[] = {8, 7, 6, 5, 4, 3, 2, 1};
+    if (indexed) sky.header.settings[2] += 2;
     // Exercise offsets beyond the old 128 MiB numeric-float limit on capable devices.
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(fixture.physical, &properties);
     const size_t largeOffset = sizeof(bake::GridHeader) + (size_t(1) << 27) + 16;
     const bool large = skyCase == 4 && directional &&
         largeOffset + localWords.size() * sizeof(uint32_t) <= properties.limits.maxStorageBufferRange;
-    const size_t localOffset = large ? largeOffset : sizeof(sky);
+    const size_t localOffset = large ? largeOffset : sizeof(sky) + (indexed ? sizeof(lookup) : 0);
     sky.header.settings[3] = bake::publicationSettings((localOffset - sizeof(bake::GridHeader)) / 16, large);
     gpu.sky.create(fixture.physical, fixture.device, localOffset + localWords.size() * sizeof(uint32_t),
                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     gpu.sky.write(&sky, sizeof(sky));
+    if (indexed) gpu.sky.write(lookup, sizeof(lookup), sizeof(sky));
     gpu.sky.write(localWords.data(), localWords.size() * sizeof(uint32_t), localOffset);
     bake::Grid reference;
     reference.header = sky.header;
     reference.probes.assign(std::begin(sky.probes), std::end(sky.probes));
+    if (indexed) reference.lookup.assign(std::begin(lookup), std::end(lookup));
     gpu.input.create(fixture.physical, fixture.device, sizeof(queries), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     gpu.input.write(queries, sizeof(queries));
     gpu.output.create(fixture.physical, fixture.device, std::size(queries) * sizeof(Vec4),

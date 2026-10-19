@@ -132,8 +132,13 @@ namespace remix::forward::bake {
         weight *= upper ? fraction[c] : 1 - fraction[c];
         delta[c] = position[c] - (h.originSpacing[c] + coordinate[c] * h.originSpacing[3]);
       }
-      const auto &probe =
-          grid.probes[(coordinate[2] * h.dimensions[1] + coordinate[1]) * h.dimensions[0] + coordinate[0]];
+      uint32_t index = (coordinate[2] * h.dimensions[1] + coordinate[1]) * h.dimensions[0] + coordinate[0];
+      if (indexed(h)) {
+        const auto record = grid.lookup.at(index);
+        if (!record) continue;
+        index = record - 1;
+      }
+      const auto &probe = grid.probes[index];
       if (h.settings[2] > .5f)
         for (uint32_t c = 0; c < 3; ++c) delta[c] -= probe.irradiance[c][3];
       if (probe.statistics[3] < .5f || weight <= 0)

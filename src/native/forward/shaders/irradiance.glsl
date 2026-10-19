@@ -21,6 +21,11 @@ vec4 bakeProbeMoment(uint index, uint face) {
 vec4 bakeProbeStatistics(uint index) {
   return uintBitsToFloat(bakeRecords[index * 16u + 15u]);
 }
+uint bakeDirectoryRecords() {
+  if (bakeSettings.z < 1.5) return 0u;
+  uint nodes = bakeDimensions.x * bakeDimensions.y * bakeDimensions.z;
+  return (nodes + 3u) / 4u;
+}
 #ifdef STYLED_BAKE
 vec3 styledProbeIrradiance(uint index, float sh[9]);
 #endif
@@ -40,6 +45,11 @@ float bakeProbeWeight(vec3 position, vec3 normal, uvec3 coordinate, vec3 fractio
   vec3 factors = mix(1 - fraction, fraction, vec3(upper));
   float weight = factors.x * factors.y * factors.z;
   index = (coordinate.z * bakeDimensions.y + coordinate.y) * bakeDimensions.x + coordinate.x;
+  if (bakeSettings.z >= 1.5) {
+    uint record = bakeRecords[bakeDimensions.w * 16u + index / 4u][index % 4u];
+    index = record == 0u ? 0u : record - 1u;
+    if (record == 0u) return 0;
+  }
   if (bakeProbeStatistics(index).w < .5 || weight <= 0)
     return 0;
   vec3 delta = position - (bakeOriginSpacing.xyz + vec3(coordinate) * bakeOriginSpacing.w);

@@ -33,6 +33,14 @@ int main() {
   require(grid.header.originSpacing[3] < config.spacing / scene.sceneScale * 2,
           "Budget fitting avoids the former full doubling of probe spacing");
   {
+    const lightmap::Layout layout;
+    const auto plain = bake::placeSparse(scene, config, layout);
+    require(!bake::indexed(plain.header) && plain.lookup.empty() &&
+                plain.header.originSpacing == grid.header.originSpacing &&
+                plain.header.dimensions == grid.header.dimensions && plain.tasks == grid.tasks,
+            "Hosts without a closed spatial partition retain complete dense probe coverage");
+  }
+  {
     scene::BakeScene cube;
     cube.sceneScale = 1;
     cube.hasBounds = true;
@@ -114,6 +122,54 @@ int main() {
   require(grid.tasks.size() < grid.points.size(), "Solid BSP leaves consume no tracing work");
   for (const auto index : grid.tasks)
     require(grid.points[index].position[0] >= 0, "Every queued probe occupies a playable leaf");
+  {
+    const auto dense = grid;
+    lightmap::Layout layout;
+    auto compact = bake::placeSparse(scene, config, layout);
+    require(bake::indexed(compact.header) && compact.points.size() <= config.maxProbes &&
+                compact.tasks.size() == compact.points.size() && compact.lookup.size() > compact.points.size(),
+            "Sparse BSP grids budget stored records instead of empty lattice slots");
+    require(compact.header.originSpacing[3] < dense.header.originSpacing[3],
+            "Recovered empty slots provide a finer physical lattice within the same record budget");
+    compact.header.settings[2] = 3;
+    compact.points.back().position[0] += compact.header.originSpacing[3] * .1f;
+    auto expanded = compact;
+    expanded.header.settings[2] -= 2;
+    expanded.header.dimensions[3] = uint32_t(compact.lookup.size());
+    expanded.probes.assign(compact.lookup.size(), {});
+    expanded.lookup.clear();
+    for (uint32_t i = 0; i < compact.probes.size(); ++i) {
+      bake::Result value;
+      value.statistics[3] = 1;
+      value.irradiance[0] = {float(i % 7), float(i % 11), 1, 0};
+      value.irradiance[7][3] = 1;
+      value.irradiance[8][3] = float(i % 5) / 4;
+      for (auto &moment : value.moments) moment = {100000, 1e10f, 0, 1};
+      bake::storeProbe(compact, i, value);
+      expanded.probes[compact.nodes[i]] = compact.probes[i];
+      require(compact.lookup[compact.nodes[i]] == i + 1,
+              "Compacted records preserve the inverse lattice mapping for relocated origins");
+    }
+    require(std::abs(compact.probes.back().irradiance[0][3] - compact.header.originSpacing[3] * .1f) < .001f,
+            "Relocation offsets use virtual node coordinates instead of compact record indices");
+    for (float x : {-100.f, 0.f, 50.f, 200.f})
+      for (Vec3 normal : {Vec3{0, 0, 1}, Vec3{1, 0, 0}}) {
+        const Vec3 position{x, 11, 7};
+        const auto a = bake::sample(compact, position, normal), b = bake::sample(expanded, position, normal);
+        require(bool(a) == bool(b), "Missing compact corners preserve dense-grid fallback coverage");
+        if (a) for (uint32_t c = 0; c < 3; ++c)
+          require(std::abs((*a)[c] - (*b)[c]) < 1e-6f, "Sparse addressing preserves irradiance weights");
+        require(bake::sampleSunVisibility(compact, position, normal) ==
+                    bake::sampleSunVisibility(expanded, position, normal),
+                "Sparse addressing preserves independent sun visibility");
+      }
+    std::stop_source stop;
+    stop.request_stop();
+    bool refused = false;
+    try { bake::placeSparse(scene, config, layout, stop.get_token()); }
+    catch (const std::runtime_error &) { refused = true; }
+    require(refused, "Superseded sparse fitting stops before allocating a lattice");
+  }
   {
     // Two playable regions separated by a solid slab: a receiver can rescue
     // an otherwise untraced lattice node without moving the existing probes.

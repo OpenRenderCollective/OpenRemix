@@ -1,11 +1,11 @@
-// Optional sparse RGB SH follows the immutable probe array in binding 5.
+// Optional sparse RGB SH follows the probe array and any lattice directory in binding 5.
 // No extra descriptor or per-style geometry is needed. Frame weights remain
 // per submission; shared volume buffers are never changed by a live toggle.
 #ifndef STYLE_SCALE
 #define STYLE_SCALE(style) frame.styleScales[(style) / 4u][(style) % 4u]
 #endif
 uint styleWord(uint offset) {
-  return bakeRecords[bakeDimensions.w * 16u + offset / 4u][offset % 4u];
+  return bakeRecords[bakeDimensions.w * 16u + bakeDirectoryRecords() + offset / 4u][offset % 4u];
 }
 bool styledLightingAvailable() {
   if ((floatBitsToUint(bakeSettings.w) & 1u) == 0u) return false;

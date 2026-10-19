@@ -618,6 +618,61 @@ int main(int argc, char **argv) {
     data.grid.header.settings[3] = 0;
   }
   {
+    auto indexed = data.grid;
+    indexed.header.dimensions = {4, 2, 2, 8};
+    indexed.header.settings[2] = 2;
+    indexed.lookup.resize(16);
+    for (uint32_t row = 0; row < 4; ++row) {
+      indexed.lookup[row * 4] = 8 - row * 2;
+      indexed.lookup[row * 4 + 3] = 7 - row * 2;
+    }
+    const auto sparseFile = root / "indexed-grid.bake";
+    auto saveIndexed = [&] {
+      return bc::write(sparseFile, identity,
+          {indexed, data.layout, data.mixed, data.captures, data.specular, data.pixels,
+           data.surfaceSamples, data.directDiffuse, data.sun});
+    };
+    require(saveIndexed(), "Sparse lattice directories serialize separately from compact probe records");
+    const auto restored = bc::read(sparseFile, identity, source, config, device);
+    require(restored && restored->grid.lookup == indexed.lookup && restored->grid.nodes.size() == 8 &&
+                restored->grid.header.dimensions == indexed.header.dimensions,
+            "Sparse cache restore preserves holes, dimensions and permuted physical records");
+    for (uint32_t i = 0; i < restored->grid.nodes.size(); ++i)
+      require(restored->grid.lookup[restored->grid.nodes[i]] == i + 1,
+              "A restored directory has one canonical virtual owner per record");
+    auto constrained = device;
+    constrained.storageRange = uint32_t(sizeof(f::bake::GridHeader) + indexed.probes.size() * sizeof(f::bake::Result) + 32);
+    require(!bc::read(sparseFile, identity, source, config, constrained),
+            "Combined physical records and padded directory obey the device storage limit");
+    std::ifstream input(sparseFile, std::ios::binary);
+    const std::vector<char> original((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+    input.close();
+    const size_t lookupOffset = sizeof(bc::detail::Header) + 2 * sizeof(uint32_t) + sizeof(f::bake::GridHeader) +
+        3 * sizeof(uint64_t) + indexed.probes.size() * sizeof(f::bake::Result) + indexed.tasks.size() * sizeof(uint32_t);
+    for (auto change : {std::pair{0u, 0u}, std::pair{1u, 8u}, std::pair{1u, 9u}}) {
+      auto damaged = original;
+      std::memcpy(damaged.data() + lookupOffset + change.first * sizeof(uint32_t), &change.second, sizeof(uint32_t));
+      bc::detail::Header header;
+      std::memcpy(&header, damaged.data(), sizeof(header));
+      header.checksum = scene::hashBytes(damaged.data() + sizeof(header), header.bytes, 1469598103934665603ull);
+      std::memcpy(damaged.data(), &header, sizeof(header));
+      std::ofstream output(sparseFile, std::ios::binary | std::ios::trunc);
+      output.write(damaged.data(), std::streamsize(damaged.size()));
+      output.close();
+      require(!bc::read(sparseFile, identity, source, config, device),
+              "Even checksummed sparse directories reject orphaned, duplicate and invalid record owners");
+    }
+    require(saveIndexed(), "A valid sparse directory repairs a corrupted payload atomically");
+    indexed.lookup[1] = indexed.lookup[0];
+    require(!saveIndexed(), "Repeated compact owners cannot replace a completed cache");
+    indexed.lookup[1] = 9;
+    require(!saveIndexed(), "Out-of-range compact records are rejected before persistence");
+    indexed.lookup[1] = 0;
+    indexed.lookup[0] = 0;
+    require(!saveIndexed() && bc::read(sparseFile, identity, source, config, device),
+            "Orphan compact records are rejected while preserving the previous valid cache");
+  }
+  {
     bc::recordLookup(file, identity, source->contentHash, 123, true);
     bc::recordLookup(file, identity, source->contentHash, 123, false);
     bc::recordLookup(root / "missing.bake", identity + 1, source->contentHash, 124, false);

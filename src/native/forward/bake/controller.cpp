@@ -195,10 +195,13 @@ namespace remix::forward::bake {
     if (cancellation.stop_requested())
       throw std::runtime_error("Bake preparation superseded");
     auto placement = config;
+    const uint64_t directoryReserve = source->partition && source->partition->closed
+        ? uint64_t(maximumGridNodes) * sizeof(uint32_t) : 0;
+    if (properties.limits.maxStorageBufferRange <= sizeof(GridHeader) + directoryReserve)
+      throw std::invalid_argument("Irradiance directory exceeds device storage range");
     placement.maxProbes =
         std::min(placement.maxProbes,
-                 uint32_t((properties.limits.maxStorageBufferRange - sizeof(GridHeader)) / sizeof(Result)));
-    grid = place(*source, placement);
+                 uint32_t((properties.limits.maxStorageBufferRange - sizeof(GridHeader) - directoryReserve) / sizeof(Result)));
     lightmap::Options atlas;
     // Vertex UVs address texel centres and carry explicit chart clamp bounds.
     // The outward-rounded chart grid already contains its bilinear footprint.
@@ -211,12 +214,7 @@ namespace remix::forward::bake {
     if (atlas.pageSize > properties.limits.maxImageDimension2D)
       throw std::invalid_argument("Surface lightmap page exceeds device limit");
     surfaceLayout = lightmap::fit(*source, atlas, cancellation.get_token());
-    if (config.relocateProbes) {
-      const auto relocated = relocate(grid, *source, surfaceLayout, cancellation.get_token());
-      if (std::getenv("REMIX_DEBUG_BAKE_RECEIVERS"))
-        std::fprintf(stderr, "Forward probe relocation: %u slots, %zu/%zu trace origins\n",
-                     relocated, grid.tasks.size(), grid.points.size());
-    }
+    grid = placeSparse(*source, placement, surfaceLayout, cancellation.get_token());
     surfaces.resize(surfaceLayout.points.size());
     Options options;
     options.directLighting = directLighting;
@@ -902,7 +900,7 @@ namespace remix::forward::bake {
             if (config.styledIndirect && !styleIds(*owner->source).empty()) {
               VkPhysicalDeviceProperties limits;
               vkGetPhysicalDeviceProperties(physical, &limits);
-              const uint64_t baseBytes = sizeof(GridHeader) + owner->grid.probes.size() * sizeof(Result);
+              const uint64_t baseBytes = gridBytes(owner->grid);
               const uint64_t localBytes = owner->localProbes ? owner->localProbes->gpuBytes() : 0;
               if (baseBytes + localBytes + 16 >= limits.limits.maxStorageBufferRange)
                 throw std::length_error("No device storage range for attributed lighting");
@@ -978,7 +976,7 @@ namespace remix::forward::bake {
         grid.probes.begin(), grid.probes.end(), [](const Result &probe) { return probe.statistics[3] >= .5f; }));
     volume->mixedLights = std::make_shared<mixed::Bindings>(m_job->mixedLights->lights);
     mixed::dumpOwnership(*m_job->mixedLights, m_job->surfaceLayout);
-    const size_t baseBytes = sizeof(GridHeader) + grid.probes.size() * sizeof(Result);
+    const size_t baseBytes = gridBytes(grid);
     const auto &publishedStyles = m_job->groupedStyles.styles.empty() ? m_job->styleWords : m_job->groupedStyles.words;
     const size_t styleBytes = publishedStyles.size() * sizeof(uint32_t);
     volume->styledLighting = styleBytes != 0;
@@ -1055,6 +1053,9 @@ namespace remix::forward::bake {
     std::vector<std::byte> data(bytes);
     std::memcpy(data.data(), &grid.header, sizeof(GridHeader));
     std::memcpy(data.data() + sizeof(GridHeader), grid.probes.data(), grid.probes.size() * sizeof(Result));
+    if (!grid.lookup.empty())
+      std::memcpy(data.data() + sizeof(GridHeader) + grid.probes.size() * sizeof(Result),
+                  grid.lookup.data(), grid.lookup.size() * sizeof(uint32_t));
     // Hash once at publication, before releasing staging data. Diagnostics can
     // then distinguish input identity from changes in the actual baked result
     // without a GPU readback or a mutable worker-state dependency.

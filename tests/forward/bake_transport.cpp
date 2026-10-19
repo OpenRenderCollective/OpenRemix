@@ -1694,6 +1694,8 @@ namespace {
     test::probeQueries(fixture, extended, 4); // bounded probe relocation
     test::probeQueries(fixture, extended, 0, true);
     test::probeQueries(fixture, extended, 4, true);
+    test::probeQueries(fixture, extended, 0, false, true);
+    test::probeQueries(fixture, extended, 4, true, true);
     TransportLight lamp;
     lamp.positionRadius = {0, 0, 0, .4f};
     lamp.radiance = {5, 5, 5, 0};

@@ -17,7 +17,7 @@ forward_denoise_test = executable('remix-forward-lightmap-denoise-test', 'lightm
 test('Offline lightmap denoising preserves directional SH and chart isolation', forward_denoise_test,
   timeout : 120)
 forward_grid_test = executable('remix-forward-grid-test', 'grid.cpp',
-  '../../src/native/forward/bake/grid.cpp', '../../src/native/forward/bake/relocation.cpp',
+  '../../src/native/forward/bake/grid.cpp', '../../src/native/forward/bake/sparse_grid.cpp', '../../src/native/forward/bake/relocation.cpp',
   '../../src/native/forward/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Irradiance grid placement and visibility reconstruction', forward_grid_test)
@@ -178,6 +178,8 @@ if get_option('gpu_tests')
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)
   test('Sparse styled GPU surface and probe reconstruction', sparse_style_gpu_test, timeout : 120)
+  test('Indexed irradiance GPU holes, record permutations and styled reconstruction',
+       sparse_style_gpu_test, args : ['indexed'], timeout : 120)
 endif
 
 forward_styled_direct_test = executable('remix-forward-styled-direct-test', 'styled_direct.cpp', '../../src/native/forward/lighting.cpp',

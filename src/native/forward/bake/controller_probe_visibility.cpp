@@ -12,8 +12,9 @@ namespace remix::forward::bake {
     const bool directional = groupedDirect || std::any_of(policy.lights.begin(), policy.lights.end(), [](DirectMode mode) {
       return aggregatesDiffuse(mode) && retainsVisibility(mode);
     });
+    if (lookupBytes(grid) >= storageRange) return;
     const auto storage = probeVisibilityBudget(uint32_t(grid.probes.size()), uint32_t(source->lights.size()),
-                                               storageRange, directional);
+                                               storageRange - lookupBytes(grid), directional);
     if (!storage.pairs) return;
     auto plan = planProbeVisibility(grid, source->lights, cutoff, storage.pairs, cancellation.get_token(), policy);
     if (plan && !plan->tasks.empty()) {

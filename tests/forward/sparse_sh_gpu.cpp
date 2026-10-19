@@ -15,7 +15,7 @@ using namespace remix::forward::test;
 namespace b = remix::forward::bake;
 namespace s = b::sparse;
 namespace lm = remix::forward::lightmap;
-int main() try {
+int main(int argc, char **) try {
   Fixture fixture(false);
   struct Gpu {
     VkDevice device;
@@ -61,6 +61,15 @@ int main() try {
   base.header.originSpacing = {-1,-1,-1,2};
   base.header.dimensions = {2,2,2,8};
   base.header.settings = {.05f,.0001f,1,0};
+  if (argc > 1) {
+    base.header.dimensions = {3, 3, 3, 8};
+    base.header.settings[2] = 3;
+    base.lookup.resize(27);
+    for (uint32_t corner = 0; corner < 8; ++corner) {
+      const auto x = (corner & 1) * 2, y = ((corner >> 1) & 1) * 2, z = ((corner >> 2) & 1) * 2;
+      base.lookup[(z * 3 + y) * 3 + x] = 8 - corner;
+    }
+  }
   base.probes.resize(8);
   std::vector<b::Result> probe32(8), probe97(8);
   for (uint32_t i = 0; i < 8; ++i) {
@@ -79,10 +88,13 @@ int main() try {
   const auto words = builder.serialize();
   const uint32_t styles[] = {32,97};
   s::validate(words, {33,2,8}, styles, 4u << 20);
-  const size_t baseBytes = sizeof(b::GridHeader) + base.probes.size() * sizeof(b::Result);
+  const size_t baseBytes = b::gridBytes(base);
   std::vector<std::byte> encoded((baseBytes + words.size() * 4 + 15) / 16 * 16);
   std::memcpy(encoded.data(), &base.header, sizeof(base.header));
   std::memcpy(encoded.data() + sizeof(base.header), base.probes.data(), base.probes.size() * sizeof(b::Result));
+  if (!base.lookup.empty())
+    std::memcpy(encoded.data() + sizeof(base.header) + base.probes.size() * sizeof(b::Result),
+                base.lookup.data(), base.lookup.size() * sizeof(uint32_t));
   std::memcpy(encoded.data() + baseBytes, words.data(), words.size() * 4);
   gpu.grid.create(fixture.physical, fixture.device, encoded.size(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   gpu.grid.write(encoded.data(), encoded.size());
@@ -104,7 +116,7 @@ int main() try {
   }
   for (uint32_t i = 0; i < 8; ++i) for (const auto &n : normals)
     queries.push_back({{}, {n[0],n[1],n[2],0}, {1,i,0,0}});
-  for (float x : {-.5f,0.f,.5f,4.f}) for (const auto &n : normals)
+  for (float x : {-.5f,0.f,.5f,1.f,2.f,4.f}) for (const auto &n : normals)
     queries.push_back({{x,0,0,0}, {n[0],n[1],n[2],0}, {2,0,0,0}});
   queries.push_back({{.5f,.5f,-1,1}, {0,0,1,0}, {0,0,0,0}});
   queries.push_back({{.5f,.5f,0,0}, {0,0,1,0}, {0,0,0,0}});
