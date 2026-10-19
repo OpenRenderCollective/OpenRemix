@@ -1,0 +1,50 @@
+Placed sky-prop clipping checkpoint - 2026-10-20
+
+Outcome
+The Construct white-room tree-shaped intrusion was geometry, not a lightmap or
+reflection artifact. The Source adapter clipped sky world polygons against
+playable BSP space, but tested only each sky prop's origin. Large model cards
+could therefore extend into the playable room from an outside origin.
+
+Wrapper commit a1b11bf clips placed prop triangles using the same BSP partition,
+then restores model-space positions/normals and interpolated vertex attributes.
+Unchanged triangles retain exact attributes. Material/replacement lookup and
+placement transforms are preserved. Per-placement mesh ownership and destruction
+are explicit; temporary full vertex attributes are released after map loading.
+This Source-specific policy remains in the adapter, not the native renderer.
+
+Evidence
+All 16 wrapper tests pass, including rotated/nonuniform placements, winding,
+interpolation, unchanged/removed geometry and malformed input handling.
+Construct retains all 157 sky props; three placements need clipped meshes and
+no models fail loading. The large tree intrusion disappears in unlit and shaded
+captures. Compared with disabling sky geometry, only two boundary pixels remain
+different (maximum nine byte levels), versus 8,488 pixels before the fix.
+An outside capture confirms foliage remains enabled.
+
+A fresh Construct bake and two warm reloads have identical published content
+hashes and pixel-identical shaded images. Changed actual geometry correctly
+changes the bake input hash to 15365796088336057046 and cache key to
+18198587294272886556. Crossfire retains its previous cache and renders pixel-
+identically to the prior native checkpoint. Vulkan validation and synchronization
+checks report no validation errors or synchronization hazards in these runs.
+Fresh-bake timings were collected with validation enabled and are not comparable
+with earlier performance measurements; no bake-speed improvement is claimed.
+
+Deployment
+Installed and verified 155 files in
+E:/SteamLibrary/steamapps/common/GarrysModWithRTX2.
+Proxy SHA256: 57ecc53f035b6366ebc7661a9a7b3ccf6340b85bc263fff77bb5f078285ce9f9
+Native SHA256: ac4c386a7caedc3b68e92bb445e008e092bada8827519971bc97071e8a881bb3
+All four protected game/configuration files have unchanged hashes.
+Private receipts: _work/reports/sky-prop-clipped-final-warm-v1/deployment.json
+and _work/reports/sky-prop-clipped-bake-v1/comparison.json.
+
+Limits and next work
+Two edge pixels and live-game visual acceptance remain open. Authored full-mesh
+replacements are not re-clipped after native replacement resolution; preservation
+of lookup identity does not establish replacement-geometry parity. This fix does
+not explain every previously reported Construct lighting spot. Continue automatic
+cubemap receiver-domain/doorway coverage, broader lighting QA, cold-bake costs
+and live weapon/entity performance checks. Existing intermittent pre-device game
+exit and the separate Vulkan failure remain unresolved.

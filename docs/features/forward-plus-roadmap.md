@@ -393,3 +393,9 @@ Each checkpoint records its changed files/commit, evidence, limits, and the next
 experiment remains a failed experiment. A running process is tracked by its actual handle until it
 finishes. Performance improvements include before/after configuration and output comparisons.
 Milestones close against their stated gates; newly useful features do not replace unfinished gates.
+
+Construct sky-prop clipping now removes the reproduced white-room tree intrusion
+without disabling sky props. The adapter clips placed triangles, rather than only
+testing model origins. Fresh/warm bake parity and unchanged Crossfire cache/output
+are verified; two edge pixels, full replacement meshes and live acceptance remain
+open. See sky-prop-clipping-2026-10-20.txt.
