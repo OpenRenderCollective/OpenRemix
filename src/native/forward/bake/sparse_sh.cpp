@@ -211,7 +211,11 @@ namespace remix::forward::bake::sparse {
                           Vec4 coordinate, Vec3 normal) {
     Vec3 result{};
     if (words.size() < headerWords || coordinate[3] < .5f || words[4] == 0 ||
-        coordinate[2] < 0 || coordinate[2] >= words[5]) return result;
+        !(coordinate[2] >= 0 && coordinate[2] < words[5])) return result;
+    // Vertex interpolation can put a constant integer page just below itself.
+    // Match texture-array layer selection instead of truncating into a neighbour.
+    const auto page = uint32_t(std::floor(coordinate[2] + .5f));
+    if (page >= words[5]) return result;
     const float x = std::clamp(coordinate[0] * words[4] - .5f, 0.f, float(words[4] - 1));
     const float y = std::clamp(coordinate[1] * words[4] - .5f, 0.f, float(words[4] - 1));
     const uint32_t x0 = uint32_t(x), y0 = uint32_t(y),
@@ -219,10 +223,10 @@ namespace remix::forward::bake::sparse {
     const auto sh = irradianceBasis(normalized(normal));
     for (const auto &scale : scales) {
       if (scale.status != StyleStatus::Ready || scale.value == 0) continue;
-      const auto a = surface(words, scale.style, uint32_t(coordinate[2]), x0, y0);
-      const auto b = surface(words, scale.style, uint32_t(coordinate[2]), x1, y0);
-      const auto c = surface(words, scale.style, uint32_t(coordinate[2]), x0, y1);
-      const auto d = surface(words, scale.style, uint32_t(coordinate[2]), x1, y1);
+      const auto a = surface(words, scale.style, page, x0, y0);
+      const auto b = surface(words, scale.style, page, x1, y0);
+      const auto c = surface(words, scale.style, page, x0, y1);
+      const auto d = surface(words, scale.style, page, x1, y1);
       for (uint32_t coefficient = 0; coefficient < 9; ++coefficient)
         for (uint32_t channel = 0; channel < 3; ++channel)
           result[channel] += scale.value * sh[coefficient] *

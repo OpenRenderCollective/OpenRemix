@@ -99,6 +99,7 @@ namespace remix::forward::bake {
           }
           for (uint32_t c = 0; c < 4; ++c) coordinate[c] += vertex.coordinate[c] / 3;
         }
+        receiver.coordinate = coordinate;
         receiver.chart = uint32_t(mesh.vertices[mesh.indices[first]].coordinate[3]) - 1;
         receiver.normal = normalized(receiver.normal);
         if (source.partition && source.partition->closed) {

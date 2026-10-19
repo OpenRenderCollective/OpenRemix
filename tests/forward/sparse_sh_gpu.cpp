@@ -97,6 +97,11 @@ int main() try {
       queries.push_back({coordinate, {n[0],n[1],n[2],0}, {0,0,0,0}});
       queries.push_back({coordinate, {n[0],n[1],n[2],0}, {3,0,0,0}});
     }
+  for (float page : {std::nextafter(1.f, 0.f), std::nextafter(1.f, 2.f)}) {
+    const Vec4 coordinate{8.5f/33, 8.5f/33, page, 1};
+    queries.push_back({coordinate, {0,0,1,0}, {0,0,0,0}});
+    queries.push_back({coordinate, {0,0,1,0}, {3,0,0,0}});
+  }
   for (uint32_t i = 0; i < 8; ++i) for (const auto &n : normals)
     queries.push_back({{}, {n[0],n[1],n[2],0}, {1,i,0,0}});
   for (float x : {-.5f,0.f,.5f,4.f}) for (const auto &n : normals)

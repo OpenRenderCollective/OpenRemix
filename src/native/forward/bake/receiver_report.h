@@ -7,6 +7,7 @@ namespace remix::forward::bake {
     uint32_t chart = 0, draw = 0;
     int32_t cluster = -2; // unknown without a closed BSP; -1 is solid/outside
     Vec3 position{}, normal{}, surface{}, probe{};
+    Vec4 coordinate{};
     bool covered = false;
   };
   // Bounded, deterministic triangle-centre samples of the same published
@@ -14,6 +15,10 @@ namespace remix::forward::bake {
   std::vector<ReceiverComparison> compareReceivers(const scene::BakeScene &source,
       const lightmap::Layout &layout, std::span<const uint16_t> pixels, const Grid &grid,
       uint32_t maximumSamples = 8192, std::stop_token cancelled = {});
+  struct StyledDirectGroups;
+  void dumpGroupedDirectReport(const scene::BakeScene &source, const lightmap::Layout &layout,
+      std::span<const uint16_t> pixels, const Grid &grid, std::span<const uint32_t> directionals,
+      const StyledDirectGroups &groups, std::stop_token cancelled = {}) noexcept;
   // Optional worker-side diagnostic, also usable after an exact cache hit.
   // REMIX_DEBUG_BAKE_RECEIVERS names a fresh JSON file. Failures never fail baking.
   void dumpReceiverReport(const scene::BakeScene &source, const lightmap::Layout &layout,

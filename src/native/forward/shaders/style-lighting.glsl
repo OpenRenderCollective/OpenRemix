@@ -42,11 +42,15 @@ vec3 styledSurfaceIrradiance(vec4 coordinate, float sh[9]) {
   vec3 result = vec3(0);
   if (coordinate.w < .5 || !styledLightingAvailable()) return result;
   uint size = styleWord(4u), pages = styleWord(5u);
-  if (size == 0u || coordinate.z < 0 || coordinate.z >= float(pages)) return result;
+  if (size == 0u || !(coordinate.z >= 0 && coordinate.z < float(pages))) return result;
+  // Perspective interpolation can put an integer layer just below itself.
+  // Use the same nearest-layer rule as the surface texture array.
+  uint page = uint(floor(coordinate.z + .5));
+  if (page >= pages) return result;
   vec2 q = clamp(coordinate.xy * float(size) - .5, vec2(0), vec2(size - 1u));
   uvec2 lower = uvec2(q), upper = min(lower + 1u, uvec2(size - 1u));
   vec2 fraction = q - vec2(lower);
-  uint wide = (size + 15u) / 16u, page = uint(coordinate.z);
+  uint wide = (size + 15u) / 16u;
   for (uint group = 0u; group < styleWord(3u); ++group) {
     uint entry = 12u + group * 8u;
     float scale = STYLE_SCALE(styleWord(entry));

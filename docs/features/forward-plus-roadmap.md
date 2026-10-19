@@ -65,8 +65,10 @@ groups are derived again after validated reload, while analytic-only probe captu
 uses a capability key. Scalar toggles, non-scalar fallback, moving shadows, dynamic
 probes, cache reload and cancellation have GPU coverage. Combining direct groups
 with optional styled-indirect groups and broader map visual acceptance remain open.
-The Construct image comparison exposes bright patches that must be diagnosed before
-rollout; reduced analytic counts and lower GPU time do not close this quality gate.
+The localized Construct bright patches were traced to interpolated atlas page IDs
+being truncated into the preceding page. CPU and GPU samplers now round to the
+nearest layer, with a failing-before/passing-after boundary regression. Broader
+interior and moving-object visual acceptance is still required before rollout.
 
 Consolidate policy while finishing this work. Runtime response classification now has one named-input
 decision point for aggregate ownership, required mixed responses, shadow selection and independent

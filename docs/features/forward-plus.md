@@ -1997,5 +1997,16 @@ Combining grouped direct with optional styled-indirect SH is not connected yet:
 when indirect components exist, they remain authoritative and direct grouping is
 skipped. GPU coverage includes toggles, dynamic probes, non-scalar fallback,
 moving-caster subtraction, cache reload and cancellation at 1x/2x/4x MSAA.
-Map visual acceptance remains open; keep this option experimental until the
-observed bright-patch differences and broader interior/moving-object cases pass.
+Styled surface lookup rounds interpolated page IDs to the nearest layer, matching
+texture-array sampling. Truncation can select the previous page even when all
+triangle vertices carry the same integer ID. The CPU reference uses the same rule;
+GPU queries immediately above and below an integer page boundary cover it.
+The localized Construct bright-patch regression is resolved. Broader map visual
+acceptance remains open, so the option stays experimental.
+
+With `REMIX_DEBUG_BAKE_RECEIVERS` enabled, grouped publication also writes a
+`.grouped-direct.json` sidecar. It compares authored full-on grouped RGB SH against
+individual captured contributions at bounded triangle-centre samples, including
+opposite vertex-normal orientations. It reports emitter-horizon clipping separately.
+Materials, normal maps, runtime range fade and moving shadows are excluded. This
+read-only diagnostic does not change bake inputs or published lighting.

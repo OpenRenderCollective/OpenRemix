@@ -1,5 +1,6 @@
 #include "forward/bake/job.h"
 #include "forward/bake/cache.h"
+#include "forward/bake/receiver_report.h"
 #include "forward/bake/storage_options.h"
 #include "forward/mixed/directional_links.h"
 #include <algorithm>
@@ -25,6 +26,8 @@ namespace remix::forward::bake {
       const auto owners = mixed::positiveDirectionalLinks(*mixedLights, cancellation.get_token());
       groupedStyles = groupStyledDirect(*source, surfaceLayout, owners, directionalWords,
                                          *localProbes, budget, cancellation.get_token());
+      dumpGroupedDirectReport(*source, surfaceLayout, surfacePixels, grid, directionalWords,
+                                groupedStyles, cancellation.get_token());
     } catch (const std::bad_alloc &) {
       groupedStyles = {}; // Optional derivation; the original cache and runtime path remain valid.
     }

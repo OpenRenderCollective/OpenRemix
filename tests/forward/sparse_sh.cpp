@@ -71,6 +71,13 @@ int main() {
           "Absent style groups and out-of-range probe addresses contribute zero");
   const b::StyleScale on[] = {{32, 1, b::StyleStatus::Ready}};
   const b::StyleScale off[] = {{32, 0, b::StyleStatus::Ready}};
+  const Vec4 pageOne{.5f / 33, .5f / 33, 1, 1};
+  auto belowPage = pageOne;
+  belowPage[2] = std::nextafter(1.f, 0.f);
+  const auto onPageOne = s::surfaceIrradiance(data, on, pageOne, {0,0,1});
+  require(onPageOne[0] > 0 && onPageOne ==
+              s::surfaceIrradiance(data, on, belowPage, {0,0,1}),
+          "Interpolated integer page IDs must round to their own page instead of leaking the previous page");
   const Vec4 centre{15.5f/33, 15.5f/33, 0, 1};
   require(s::surfaceIrradiance(data, on, centre, {0,0,1})[0] < 0,
           "Negative SH reconstruction remains signed until base lighting is combined");
