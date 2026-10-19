@@ -409,3 +409,7 @@ Sparse styled direct/indirect merging now skips tiles proven black in both
 validated input maps. Construct grouped preparation saves about227ms in paired
 warm controls, with exact validation screenshot/cache restoration. Cold-map and
 live performance gates remain open; see sparse-empty-tiles-2026-10-20.txt.
+
+Grouped direct composition now marks conservative per-style chart tile occupancy,
+including full captured rectangles/seam donors. Construct paired composition mean
+559->391ms; validation cache/image remains exact. See direct-style-occupancy-2026-10-20.txt.

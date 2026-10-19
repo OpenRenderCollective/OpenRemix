@@ -1,0 +1,50 @@
+Conservative chart/style occupancy - 2026-10-20
+
+Change
+Grouped direct composition now marks the atlas tiles intersecting captured chart
+rectangles owned by the current controllable light group. All other tiles are
+known black for that group and use the streaming builder's existing skip hook.
+The entire rectangle is retained, including captured seam donors. Marking uses
+immutable chart/light ownership, not camera culling or light visibility guesses.
+Missing capture/probe coverage still declines the whole group before composition.
+Nonempty tile sampling, light order, signed SH, quantization and probes are unchanged.
+
+One byte per atlas tile is temporary for one group at a time:16KiB for Construct's
+four1024pages, at most16MiB within existing dimension limits. No global state,
+retained bake/GPU allocation, shader, new setting or cache-key/format change.
+All chart rectangles and owner identities retain their existing validation; skip
+traversal retains cancellation and all-or-nothing budget behavior.
+
+Verification
+Release build and three suites pass: grouped direct captures, sparse styled SH,
+and bake-cache integrity. An exhaustive-reference fixture compares complete encoded
+output for independent styles, negative coefficients, a chart crossing four tiles,
+a second page's partial33x33edge tile and probe contributions. Existing tests cover
+seven overlapping lights, missing coverage, storage exhaustion and cancellation.
+
+Normal Construct warm old/new/new/old, same cache and camera:
+  total grouped ms:711.232 /488.114 /579.397 /682.874
+  composition ms:563.258 /360.117 /421.729 /555.246
+  merge ms:147.961 /127.980 /157.650 /127.618
+  paired composition mean559.252->390.923ms (30.10% lower).
+  paired total mean697.053->533.756ms, saving163.298ms (23.43% lower).
+The merge code is unchanged; its variation is not an attributed improvement.
+Configuration:1080p MSAA4,4M texels,1024pages,256samples,3bounces,16 size32
+reflection captures, validation off for timing. These are preparation measurements,
+not a whole-cold-bake percentage or live FPS improvement. No new cold-bake timing
+claim. All published hashes match. Normal images differ by at most one byte level,
+including old/old, so these controls do not establish exact frame determinism.
+
+A separate validation/synchronization-enabled cache reload matches the prior
+validation baseline's screenshot exactly, with identical published hashes and no
+reported validation errors or synchronization hazards. No rebake is required.
+Private controls:
+_work/reports/direct-style-occupancy-v1/comparison.json
+_work/reports/direct-style-occupancy-validation-v1/comparison.json
+Native SHA256: 051e6a98821c0479a5100f3b3b302f0d908d8592506643df2f97789d83957389
+
+Remaining work
+Preparation remains about half a second in these controls. Do not extrapolate this
+small absolute saving into a major total bake or gameplay win. Prioritize remaining
+transport/denoise costs, other-map acceptance and actual live CPU/GPU behavior.
+Automatic cubemap doorway/receiver coverage and broader lighting QA remain open.

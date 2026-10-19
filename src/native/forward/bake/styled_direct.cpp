@@ -93,6 +93,22 @@ namespace remix::forward::bake {
         continue;
       }
       try {
+        // Captured chart rectangles include their seam donors. Keep every tile
+        // intersecting a chart owned by this style; only unrelated tiles are
+        // proven black. Reuse no world-space or transient receiver assumptions.
+        const uint32_t wide = (layout.pageSize + sparse::tileSide - 1) / sparse::tileSide;
+        std::vector<uint8_t> occupied(size_t(wide) * wide * layout.pages);
+        for (uint32_t chart = 0; chart < chartLights.size(); ++chart) {
+          check(cancelled);
+          const auto &lights = chartLights[chart];
+          if (std::none_of(lights.begin(), lights.end(), [&](uint32_t light) {
+                return source.lights[light].style == style;
+              })) continue;
+          const auto &r = layout.charts[chart];
+          for (uint32_t y = r.y / sparse::tileSide; y <= (r.y + r.height - 1) / sparse::tileSide; ++y)
+            for (uint32_t x = r.x / sparse::tileSide; x <= (r.x + r.width - 1) / sparse::tileSide; ++x)
+              occupied[(size_t(r.page) * wide + y) * wide + x] = 1;
+        }
         builder.addSampled(style, [&](uint32_t page, uint32_t x, uint32_t y) {
           sparse::Coefficients sum{};
           const uint32_t chart = chartAtPixel[(size_t(page) * layout.pageSize + y) * layout.pageSize + x];
@@ -115,7 +131,7 @@ namespace remix::forward::bake {
           for (uint32_t light : lights)
             if (const auto field = probes.sampleDirect(probe, light)) add(sum, *field, source.lights[light]);
           return sum;
-        }, cancelled);
+        }, cancelled, [&](uint32_t tile) { return occupied[tile] != 0; });
         result.styles.push_back(style);
       } catch (const std::length_error &) {
         result.declined.push_back({style, StyledDirectDecline::Storage});

@@ -119,6 +119,51 @@ int main() {
             bake::sparse::probe(seven.words, 32, 0)[0][0] == 28,
             "All seven overlapping emitters join the group without legacy four-owner truncation");
   }
+  {
+    scene::BakeScene edgeSource;
+    edgeSource.lights.resize(2);
+    edgeSource.lights[0].style = 32; edgeSource.lights[0].radiance[0] = 1;
+    edgeSource.lights[1].style = 127; edgeSource.lights[1].radiance[1] = 1;
+    lightmap::Layout edgeLayout;
+    edgeLayout.pageSize = 33; edgeLayout.pages = 2;
+    edgeLayout.charts = {{0,15,15,3,3}, {1,32,32,1,1}};
+    const std::vector<mixed::DirectionalLink> links{{0,0},{1,1}};
+    mixed::DirectionalFields table(2,2);
+    for (uint32_t chart = 0; chart < 2; ++chart) {
+      std::vector<mixed::directional::Field> values(chart ? 1 : 9);
+      for (auto &field : values) {
+        field[0] = half::encode(chart ? 3.f : 2.f);
+        field[chart ? 2 : 1] = half::encode(chart ? -.75f : -.5f);
+      }
+      require(table.add(chart,chart,edgeLayout.charts[chart],values), "Edge fields fit");
+    }
+    const std::vector<bake::VisibilityTask> tasks{{0,0,0},{0,1,0}};
+    bake::ProbeVisibility probes(1,2,tasks,4096,true);
+    std::vector<bake::VisibilityResult> values(2);
+    for (uint32_t light = 0; light < 2; ++light) {
+      values[light].visibility = 1;
+      values[light].irradiance[0] = light ? 3.f : 2.f;
+      values[light].irradiance[light ? 2 : 1] = light ? -.75f : -.5f;
+    }
+    probes.observe(tasks,values);
+    const auto grouped = bake::groupStyledDirect(edgeSource,edgeLayout,links,table.words(),probes,1u<<20);
+    bake::sparse::Builder exhaustive({33,2,1},1u<<20);
+    for (uint32_t light = 0; light < 2; ++light) {
+      auto expected = [&] {
+        bake::sparse::Coefficients c{};
+        c[0][light] = light ? 3.f : 2.f;
+        c[light ? 2 : 1][light] = light ? -.75f : -.5f;
+        return c;
+      };
+      exhaustive.addSampled(light ? 127 : 32, [&](uint32_t page,uint32_t x,uint32_t y) {
+        const auto &r = edgeLayout.charts[light];
+        return page == r.page && x >= r.x && x < r.x+r.width && y >= r.y && y < r.y+r.height
+            ? expected() : bake::sparse::Coefficients{};
+      }, [&](uint32_t) { return expected(); });
+    }
+    require(grouped.words == exhaustive.serialize(),
+            "Style occupancy preserves exact signed chart edges, cross-tile donors, pages and independent probes");
+  }
   auto stop = std::stop_source{}; stop.request_stop();
   rejects([&] { bake::groupStyledDirect(source, layout, owners, complete, visibility, 1u<<20, stop.get_token()); });
   owners.push_back(owners.back());
