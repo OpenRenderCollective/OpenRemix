@@ -736,6 +736,9 @@ void RemixNativeRuntime::presented() {
         fail(result);
     } catch (VkResult result) {
       fail(result);
+    } catch (const std::exception &error) {
+      SDL_Log("OpenRemix asynchronous frame failed: %s", error.what());
+      fail();
     } catch (...) {
       fail();
     }
@@ -971,6 +974,9 @@ void RemixNativeRuntime::presented() {
       return result == VK_SUCCESS ? REMIXAPI_ERROR_CODE_SUCCESS : fail(result);
     } catch (VkResult result) {
       return fail(result);
+    } catch (const std::exception &error) {
+      SDL_Log("OpenRemix synchronous frame failed: %s", error.what());
+      return fail();
     } catch (...) {
       return fail();
     }

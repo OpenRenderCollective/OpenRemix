@@ -1,0 +1,53 @@
+Live Crossfire profiling and diagnostic lifetime checkpoint (2026-10-20)
+
+Configuration: RTX 4090, i9-13900K, 1920x1080, MSAA4, full-resolution SSR,
+4M lightmap budget, 256 samples, three bounces, fully baked default.
+Private staged engine, no addons/workshop, fixed Crossfire camera:
+(32,320,-1776), angles (0,121.998,0), FOV90.
+Native ad20ff3 plus exception logging; wrapper 5470145 plus startup diagnostics.
+
+Valid run: live-crossfire-runtime-error-v4. After bake publication and five
+seconds settling: 20.806 seconds, 3835 host rows, 3503 fresh GPU readbacks.
+Host mean/median/p95: 5.427/5.122/8.630 ms.
+GPU mean/median/p95: 5.283/5.046/6.554 ms.
+CPU record mean 1.992 ms; fence wait 1.108 ms. These overlap GPU execution.
+GPU inclusive scopes, means: opaque 3.351 ms, reflection 0.431 ms,
+local shadows 0.129 ms, sun shadows 0.073 ms, clustering 0.033 ms.
+Child scopes must not be added to their inclusive parents.
+454 captured lights, 16 clustered, zero analytic lights, zero static shadow
+updates, zero static sun updates, zero static caster preparations.
+HUD screenshot showed 179 FPS. This pose does not reproduce the reported
+worst-case 60 FPS and cannot establish performance in other rooms/maps.
+
+Cold live bake became ready at 78.219 seconds. GPU budget contention, engine
+startup and CPU filtering are included; this is not a controlled bake A/B.
+Raw receipts remain under wrapper _work/reports/live-crossfire-runtime-error-v4.
+
+Failures kept separate: intermittent engine startup exits before SetMode and
+before any fresh engine console. Changing SW_HIDE to SW_SHOWNOACTIVATE did
+not fix this. Successful-start v3 encountered generic Vulkan failure -13 and
+stopped advancing native presentations; its stale timings are invalid.
+The native runtime now logs standard exception messages before its existing
+failure handling. The fatal rendering condition has not been reproduced or fixed.
+
+A separate failed startup produced Windows Application event 1000:
+PID93860, shaderapidx9.dll_unloaded, c0000005, RVA0x7dc7. Matching build
+symbols place this inside profilerThread. Detached polling workers could run
+after the host unloaded the proxy. Workers now use interruptible event waits,
+are joined before IAppSystem Shutdown, and hook code is pinned before publishing
+persistent import/vtable callbacks. No waiting is added to DllMain.
+A regression fixture releases the host DLL reference while workers are alive,
+then verifies retained callable code and prompt joined shutdown. All 15 proxy
+tests pass. Post-fix early startup exit was clean; the underlying early quit
+remains unresolved.
+
+CSV diagnostics now record Present status, depth and viewmodel scopes, and
+refuse to mark failed presentations as available GPU samples. Optional recording
+remains disabled by default. Engine Init/Connect return values are logged.
+
+Next: resolve isolated engine startup before matched live SSR on/off and
+pathtrace control measurements. Investigate opaque/viewmodel shading cost using
+those controls, then repeat light-heavy Construct camera and c1a0. Do not claim
+clustering or static shadow work is the bottleneck from this Crossfire pose.
+Automatic cubemap room coverage, broader moving shadow QA and remaining roadmap
+gates remain open. No new shadow/reflection technique becomes the default here.
