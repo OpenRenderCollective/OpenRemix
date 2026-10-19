@@ -4,6 +4,10 @@ forward_policy_test = executable('remix-forward-policy-test', 'lighting.cpp',
   '../../src/native/forward/viewmodel/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Forward+ cluster, cascade and configuration policy', forward_policy_test)
+material_constants_test = executable('remix-forward-material-constants-test', 'material_constants.cpp',
+  '../../src/native/forward/material.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Forward+ draw constants preserve transforms and sRGB byte factors', material_constants_test)
 cache_persistence_test = executable('remix-cache-persistence-test', 'cache_persistence.cpp',
   include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
   cpp_args : test_cpp_args)

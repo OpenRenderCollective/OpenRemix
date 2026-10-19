@@ -1,0 +1,57 @@
+Forward+ draw-constant CPU packing (2026-10-20)
+
+Changes
+normalMatrix now handles an exact identity linear transform and finite translation
+directly, preserving the complete inverse transpose. Other transforms still use
+the existing pivoted inverse, including singular-transform rejection. No inverse
+approximation, tolerance-based classification or general affine rewrite.
+
+Byte blend-factor RGB conversion uses a process-local immutable256entryfloat
+table (1KiB), initialized from the original sRGB formula. Alpha remains linear.
+This removes repeated exponentiation while preserving all256RGB input values.
+The272byte DrawData layout, material replacement path, shaders, bake identities
+and cache formats are unchanged. No renderer switch or extra mutable cache.
+
+Verification
+New CPU tests compare343translation combinations (including signed zero, large
+coordinates and float maximum), one-component scale/shear/projective variations,
+rotation, singular rejection, and permutations covering all256values in all four
+colour-factor channels. Equality is exact float-value equality; signed zero has
+its normal arithmetic equality. GPU lighting/MSAA, skinned/transient frame-slot
+geometry and viewmodel environment tests also pass before the final byte-table
+addition; the final combined check is recorded separately below.
+
+Benchmarks and scope
+Clang-cl CPU normalMatrix benchmark:1048576calls perblock, reference/fast/fast/
+reference ordering, identical observable checksums. Translation45.575/5.030/
+5.021/45.449ms. Scale/shear45.910/47.937/48.114/45.865ms. The dispatch check has
+about4-5percent call-level overhead for general transforms; it is retained in the
+reported tradeoff rather than described as universally faster normal math.
+
+A separate MSVC/O2 standalone complete-packet control compiles the old material
+implementation from821e719 under a reference namespace and the current one with
+the same compiler. Before timing, all1024input packets match byte-for-byte.
+1048576packets perblock, reference/optimized/optimized/reference:
+- Translated draws:82.555/19.041/18.934/82.535ms.
+- Scaled/sheared draws:83.120/58.840/58.844/82.957ms.
+The byte-table gain offsets the normal-dispatch cost in these complete-packet
+controls. This standalone compiler/control does not establish production game
+FPS. Raw sources/build/logs:_work/reports/material-constants-benchmark-v1;
+normal-only logs:normal-matrix-benchmark-v2.log.
+
+Expected scale
+The saved time is tens of nanoseconds per packet in these controls. This is a
+small CPU improvement, not a solution to the multi-millisecond c1a0 setup/record
+cost or reported worst-case performance. No live-frame improvement is claimed.
+
+Cubemap follow-up
+The existing one-sided projection-confidence score deliberately tolerates nearer
+props. It alone cannot justify growing projection boxes to enclose more room
+geometry. Receiver visibility and structural projection error still need separate
+validation. No new cubemap fitting or influence behavior is introduced here.
+Continue that work and the remaining CPU/frame, shadow, bake-time and editor
+gates; the full project remains incomplete.
+
+Final verification: all four CPU/GPU checks passed (draw-constants-final-v4),
+with Vulkan validation/sync enabled for GPU readback. This includes the byte-table
+addition. No new bake-cache revision or reflection policy was introduced.
