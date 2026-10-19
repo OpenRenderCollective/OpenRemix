@@ -1,4 +1,4 @@
-void finiteConeLightingTests() {
+void finiteConeLightingTests(bool aggregate = false) {
   for (uint32_t samples : {1u, 2u, 4u}) {
     Target target(64, 64, true);
     auto &r = target.raster;
@@ -17,6 +17,12 @@ void finiteConeLightingTests() {
     options.baking.lightmapPageSize = 64;
     options.baking.lightmapTexels = 4096;
     options.baking.diskCache = false;
+    if (aggregate) {
+      options.debugView = 0; // Shared irradiance plus its selected moving-shadow correction.
+      options.baking.aggregateDiffuse = options.selectedBakedLights = options.localShadows = true;
+      options.localShadowLights = 1;
+      options.localShadowFade = 0;
+    }
     target.enableForward(options);
     const auto mesh = quad(r, 98400, material(r, 98401, 1, 1, 1));
     remixapi_InstanceIdentityEXT identity{};
@@ -73,6 +79,29 @@ void finiteConeLightingTests() {
     require(target.forward->statistics().baking.active, "Finite cone direct lighting publishes");
     const size_t centre = (32 * 64 + 32) * 4;
     const auto integrated = pixels[centre];
+    if (aggregate) {
+      require(integrated > 5 && target.forward->bakeController()->volume()->surfaceDirectOffset != 0,
+              "Indexed aggregate retains finite-emitter energy outside the analytic centre cone");
+      const auto black = quad(r, 98410, material(r, 98411, 0, 0, 0));
+      auto moving = instance(black, -.4f);
+      moving.doubleSided = 1;
+      moving.transform.matrix[0][0] = moving.transform.matrix[1][1] = .5f;
+      identity.instanceId = 98412;
+      identity.classification = REMIXAPI_INSTANCE_DYNAMIC_EXT;
+      identity.rasterVisible = 0;
+      moving.pNext = &identity;
+      const auto actor = r.createRetained(moving);
+      pixels = render(true);
+      std::printf("Indexed aggregate cone %ux: clear %u, moving %u\n", samples,
+                  unsigned(integrated), unsigned(pixels[centre]));
+      require(pixels[centre] < integrated / 3,
+              "Moving shadows still fetch captured corrections when the analytic cone response is zero");
+      r.destroyRetained(&actor, 1);
+      require(std::abs(int(render(true)[centre]) - int(integrated)) <= 1,
+              "Removing the cone caster restores the clear aggregate without requiring a unit-field lookup");
+      require(errors.load() == 0, "Indexed aggregate cone correction is validation clean");
+      continue;
+    }
     pixels = render(false);
     std::printf("Finite cone %ux: retained %u, analytic centre %u\n", samples,
                 unsigned(integrated), unsigned(pixels[centre]));

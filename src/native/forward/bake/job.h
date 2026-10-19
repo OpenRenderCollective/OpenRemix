@@ -31,6 +31,7 @@ namespace remix::forward::bake {
     std::optional<ProbeVisibility> localProbes;
     std::vector<VisibilityTask> localProbeTasks;
     bool localProbesPlanned = false;
+    void prepareProbeVisibility(uint64_t storageRange, float cutoff);
     uint32_t localProbeNext = 0, localProbeReceived = 0;
     bool baseFinished = false;
     std::vector<Result> readback; // reused between completed frame slots; avoids clearing every batch

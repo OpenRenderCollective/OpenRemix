@@ -317,7 +317,7 @@ namespace remix::forward::bake::cache {
       if (std::any_of(policy.lights.begin(), policy.lights.end(), [](DirectMode mode) {
             return aggregatesDiffuse(mode) && retainsVisibility(mode);
           })) {
-        const uint32_t probeDirectVersion = 1;
+        const uint32_t probeDirectVersion = 2; // Whole correction volumes use the actual storage allowance.
         raw = scene::fastHash(&probeDirectVersion, sizeof(probeDirectVersion), raw);
       }
       const uint32_t policyVersion = 1;

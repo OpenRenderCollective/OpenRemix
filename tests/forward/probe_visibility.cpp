@@ -1,5 +1,6 @@
 #include "forward/bake/probe_visibility.h"
 #include "forward/bake/probe_visibility_plan.h"
+#include "forward/bake/probe_visibility_budget.h"
 #include "forward/bake/spherical_harmonics.h"
 #include <algorithm>
 #include <array>
@@ -27,6 +28,44 @@ namespace {
   }
 } // namespace
 int main() {
+  {
+    const auto scalar = probeVisibilityBudget(32768, 512, 128ull << 20, false);
+    const auto direct = probeVisibilityBudget(32768, 512, 128ull << 20, true);
+    require(scalar.bytes == ProbeVisibility::maximumBytes && scalar.pairs == 131072,
+            "Scalar-only bakes retain their existing bounded work policy");
+    const uint64_t offsets = 32769ull * sizeof(uint32_t);
+    require(direct.bytes == ProbeVisibility::maximumBytes && direct.pairs > scalar.pairs &&
+                offsets + uint64_t(direct.pairs) * (sizeof(ProbeVisibility::Entry) + sizeof(ProbeVisibility::Direct))
+                    <= direct.bytes &&
+                offsets + uint64_t(direct.pairs + 1) * (sizeof(ProbeVisibility::Entry) + sizeof(ProbeVisibility::Direct))
+                    > direct.bytes,
+            "Directional capacity fills the actual storage allowance without truncating its stride");
+    require(probeVisibilityBudget(32768, 512, 16ull << 20, true).pairs == 0 &&
+                probeVisibilityBudget(8, 0, UINT64_MAX, true).pairs == 0 &&
+                probeVisibilityBudget(UINT32_MAX - 1, 1, UINT64_MAX, true).pairs == 0,
+            "Grid, lookup overhead and absent lights cannot underflow into an enormous pair budget");
+    rejects([&] { probeVisibilityBudget(UINT32_MAX, 1, UINT64_MAX, true); });
+    rejects([&] { probeVisibilityBudget(8, 1u << 24, UINT64_MAX, true); });
+    Grid grid;
+    grid.header.originSpacing = {0, 0, 0, .1f};
+    grid.probes.resize(32768); grid.points.resize(32768);
+    for (uint32_t i = 0; i < grid.probes.size(); ++i) {
+      grid.probes[i].statistics[3] = 1;
+      grid.points[i].position = {float(i % 32) * .1f, float(i / 32 % 32) * .1f, float(i / 1024) * .1f, 0};
+    }
+    std::vector<remix::scene::SphereLight> lights(5);
+    for (auto &light : lights) {
+      light.position[0] = light.position[1] = light.position[2] = -1;
+      light.radius = 1;
+      light.radiance[0] = light.radiance[1] = light.radiance[2] = 100;
+    }
+    const auto oldPlan = planProbeVisibility(grid, lights, .001f, scalar.pairs);
+    const auto complete = planProbeVisibility(grid, lights, .001f, direct.pairs);
+    require(oldPlan && oldPlan->selectedLights == 4 && oldPlan->deferredLights == 1 &&
+                complete && complete->selectedLights == 5 && complete->deferredLights == 0 &&
+                complete->tasks.size() == 5 * grid.probes.size(),
+            "Storage-backed directional planning retains whole volumes beyond the old 131072-pair cap");
+  }
   {
     const UnitDirect golden{1, -1, .5f, -.5f, 0, -0.f, .25f, -.25f, 1};
     const auto packed = packUnitDirect(golden);

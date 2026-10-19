@@ -1878,8 +1878,12 @@ index as a deterministic tie break. It never truncates one selected light's prob
 coverage. Deferred lights remain unknown and retain shadow-map fallback. This
 maximizes the number of covered lights within the budget; it does not rank their
 visual importance. The controller schedules selected pairs after usable probes
-and sunlight, using its measured visibility work budget. A 131072-pair ceiling
-bounds additional trace work without rejecting every light on a large map.
+and sunlight, using its measured visibility work budget. Planning runs on the
+preparation worker. Aggregate directional correction volumes fill the available
+64 MiB CPU table allowance after reserving the shared grid and worst-case GPU
+lookup directory within the device storage-buffer range. Whole volumes are still
+selected atomically; per-dispatch ray and time limits bound tracing latency.
+Ordinary scalar visibility retains its 131072-pair work ceiling.
 
 `Transport::recordVisibilityTasks` accepts bounded batches of probe/light pairs
 against caller-owned relocated receiver positions. It writes directly to the
@@ -1895,7 +1899,9 @@ cache. Missing sections preserve unknown coverage, so existing bake files remain
 usable without implying local visibility. Controller jobs retain this data through
 cache reload and GPU publication. Algorithm revision 19 identifies complete
 per-light selection under the work budget. The new policy needs a fresh bake;
-unchanged-policy reloads reuse the completed table. The initial runtime path used
+unchanged-policy reloads reuse the completed table. Aggregate mixed correction
+policies additionally hash probe-direct version 2 so older limited-volume caches
+are rebuilt once; ordinary scalar-policy keys are unchanged. The initial runtime path used
 revision 18. The GPU buffer appends a versioned sparse table after probes and optional
 styled SH; settings.w encodes the table offset and the independent style flag.
 There is no additional descriptor or per-frame upload for the completed table.
