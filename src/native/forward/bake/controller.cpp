@@ -962,8 +962,6 @@ namespace remix::forward::bake {
     const auto localWords = m_job->localProbes ? m_job->localProbes->words() : std::vector<uint32_t>{};
     const size_t localBytes = localWords.size() * sizeof(uint32_t);
     const size_t bytes = localOffset + localBytes;
-    if (localBytes && (localOffset - sizeof(GridHeader)) / 16 >= (1u << 23))
-      throw std::length_error("Local probe table offset exceeds exact shader header encoding");
     const auto specular = probes::serialize(m_job->specular);
     probes::dumpPublishedData(".probes-published.bin", specular.data(), specular.size());
     probes::dumpPublishedData(".surfaces-published.bin", m_job->surfacePixels.data(), m_job->surfacePixels.size() * sizeof(uint16_t));
@@ -1041,14 +1039,14 @@ namespace remix::forward::bake {
       volume->content.styledIndirect = scene::fastHash(publishedStyles.data(), styleBytes) | 1;
       std::memcpy(data.data() + baseBytes, publishedStyles.data(), styleBytes);
       auto header = grid.header;
-      header.settings[3] = 1;
+      header.settings[3] = publicationSettings(0, true);
       std::memcpy(data.data(), &header, sizeof(header));
       probes::dumpPublishedData(".styled-irradiance.bin", publishedStyles.data(), styleBytes);
     }
     if (localBytes) {
       std::memcpy(data.data() + localOffset, localWords.data(), localBytes);
       auto header = grid.header;
-      header.settings[3] = float(2 * ((localOffset - sizeof(GridHeader)) / 16) + uint32_t(styleBytes != 0));
+      header.settings[3] = publicationSettings((localOffset - sizeof(GridHeader)) / 16, styleBytes != 0);
       std::memcpy(data.data(), &header, sizeof(header));
       volume->content.grid = scene::fastHash(localWords.data(), localBytes, volume->content.grid) | 1;
       probes::dumpPublishedData(".local-probe-visibility.bin", localWords.data(), localBytes);

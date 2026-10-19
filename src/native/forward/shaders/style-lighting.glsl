@@ -8,7 +8,7 @@ uint styleWord(uint offset) {
   return bakeRecords[bakeDimensions.w * 16u + offset / 4u][offset % 4u];
 }
 bool styledLightingAvailable() {
-  if ((uint(bakeSettings.w) & 1u) == 0u) return false;
+  if ((floatBitsToUint(bakeSettings.w) & 1u) == 0u) return false;
   return styleWord(0u) == 0x48535352u && styleWord(1u) == 1u;
 }
 vec3 styledCoefficient(uint pool, uint record, uint coefficient) {

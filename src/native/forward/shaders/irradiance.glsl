@@ -216,7 +216,7 @@ float localProbeDirect(uint indices, uint records, uint entry, float sh[9]) {
 bool bakedLocalProbeResponse(vec3 position, vec3 normal, vec3 shadingNormal, uint capturedLight,
                               bool directional, out float visibility, out float unitDiffuse) {
   unitDiffuse = -1;
-  uint table = uint(bakeSettings.w) / 2u;
+  uint table = floatBitsToUint(bakeSettings.w) / 2u;
   if (capturedLight == 0u || table == 0u || localProbeWord(table, 0u) != 0x56504c52u ||
       localProbeWord(table, 2u) != bakeDimensions.w) return false;
   uint direct = 0u;

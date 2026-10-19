@@ -201,7 +201,7 @@ int main() try {
     weights[97/4][97%4] = scenario[1];
     gpu.weights.write(weights.data(),sizeof(weights));
     auto header = base.header;
-    header.settings[3] = scenario[2];
+    header.settings[3] = b::publicationSettings(0, scenario[2] != 0);
     gpu.grid.write(&header,sizeof(header));
     const b::StyleScale scales[] = {{32,scenario[2] ? scenario[0] : 0,b::StyleStatus::Ready},
                                    {97,scenario[2] ? scenario[1] : 0,b::StyleStatus::Ready}};

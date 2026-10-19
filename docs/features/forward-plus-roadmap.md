@@ -71,6 +71,10 @@ The localized Construct bright patches were traced to interpolated atlas page ID
 being truncated into the preceding page. CPU and GPU samplers now round to the
 nearest layer, with a failing-before/passing-after boundary regression. Broader
 interior and moving-object visual acceptance is still required before rollout.
+The private GPU probe-table header now preserves integer offset bits beyond the
+old numeric-float precision ceiling; larger styled tables can publish without
+changing the saved cache format. Continue receiver-edge and bright-patch sampling
+quality work alongside broader map validation.
 
 Consolidate policy while finishing this work. Runtime response classification now has one named-input
 decision point for aggregate ownership, required mixed responses, shadow selection and independent

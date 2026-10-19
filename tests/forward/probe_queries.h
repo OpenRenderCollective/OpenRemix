@@ -106,11 +106,18 @@ namespace remix::forward::test {
       local.observe(pairs, results);
     } else local.observe(pairs, masks);
     const auto localWords = local.words();
-    sky.header.settings[3] = float(2 * (sizeof(sky.probes) / 16));
-    gpu.sky.create(fixture.physical, fixture.device, sizeof(sky) + localWords.size() * sizeof(uint32_t),
+    // Exercise offsets beyond the old 128 MiB numeric-float limit on capable devices.
+    VkPhysicalDeviceProperties properties;
+    vkGetPhysicalDeviceProperties(fixture.physical, &properties);
+    const size_t largeOffset = sizeof(bake::GridHeader) + (size_t(1) << 27) + 16;
+    const bool large = skyCase == 4 && directional &&
+        largeOffset + localWords.size() * sizeof(uint32_t) <= properties.limits.maxStorageBufferRange;
+    const size_t localOffset = large ? largeOffset : sizeof(sky);
+    sky.header.settings[3] = bake::publicationSettings((localOffset - sizeof(bake::GridHeader)) / 16, large);
+    gpu.sky.create(fixture.physical, fixture.device, localOffset + localWords.size() * sizeof(uint32_t),
                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     gpu.sky.write(&sky, sizeof(sky));
-    gpu.sky.write(localWords.data(), localWords.size() * sizeof(uint32_t), sizeof(sky));
+    gpu.sky.write(localWords.data(), localWords.size() * sizeof(uint32_t), localOffset);
     bake::Grid reference;
     reference.header = sky.header;
     reference.probes.assign(std::begin(sky.probes), std::end(sky.probes));

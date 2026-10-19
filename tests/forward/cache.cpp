@@ -12,6 +12,12 @@ namespace bc = remix::forward::bake::cache;
 namespace f = remix::forward;
 int main(int argc, char **argv) {
   require(argc == 2, "Supply a scratch directory");
+  for (size_t offset : {size_t(0), size_t((1u << 23) - 1), size_t(1u << 23), size_t((1u << 24) + 1)})
+    for (bool styled : {false, true}) {
+      const auto bits = std::bit_cast<uint32_t>(f::bake::publicationSettings(offset, styled));
+      require(bits / 2 == offset && bool(bits & 1) == styled,
+              "Published local offsets and style flags retain exact uint32 bits beyond float precision");
+    }
   const auto root = std::filesystem::path(argv[1]) / ("case-" + std::to_string(std::random_device{}()));
   std::filesystem::create_directories(root);
   const auto file = root / "lighting.bake";

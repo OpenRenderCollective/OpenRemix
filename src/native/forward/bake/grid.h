@@ -2,6 +2,8 @@
 #include "forward/bake/config.h"
 #include "forward/bake/data.h"
 #include <optional>
+#include <bit>
+#include <stdexcept>
 namespace remix::forward::lightmap {
   struct Layout;
 }
@@ -10,11 +12,16 @@ namespace remix::forward::bake {
     Vec4 originSpacing{};
     UInt4 dimensions{};
     // CPU/cache: bias, variance, relocation flag, zero. Published GPU settings.w
-    // is an exact integer: bit0 styled-SH presence, remaining bits sparse local
+    // contains uint32 bits (not a numeric float): bit0 styled-SH presence, remaining bits sparse local
     // table offset in vec4 records relative to the probe-array start.
     Vec4 settings{};
   };
   static_assert(sizeof(GridHeader) == 48);
+  inline float publicationSettings(size_t localTableRecords, bool styled) {
+    if (localTableRecords >= (uint64_t(1) << 31))
+      throw std::length_error("Local probe table offset exceeds uint32 header encoding");
+    return std::bit_cast<float>(uint32_t(localTableRecords * 2) | uint32_t(styled));
+  }
   struct Grid {
     GridHeader header;
     std::vector<Point> points;

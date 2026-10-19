@@ -1908,7 +1908,11 @@ unchanged-policy reloads reuse the completed table. Aggregate mixed correction
 policies additionally hash probe-direct version 2 so older limited-volume caches
 are rebuilt once; ordinary scalar-policy keys are unchanged. The initial runtime path used
 revision 18. The GPU buffer appends a versioned sparse table after probes and optional
-styled SH; settings.w encodes the table offset and the independent style flag.
+styled SH; settings.w carries uint32 bits for the table offset and the independent
+style flag. It is bit-cast rather than numerically converted to a float, so larger
+styled tables do not lose the flag or impose a 128 MiB offset ceiling. Device
+storage-buffer limits still apply. The CPU/cache header keeps this field zero;
+only the completed GPU publication receives the packed bits.
 There is no additional descriptor or per-frame upload for the completed table.
 
 GPU encoding lives in `bake/probe_visibility_gpu.cpp`, separately from CPU table
