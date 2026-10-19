@@ -85,7 +85,7 @@ namespace remix::forward::bake {
     if (kind == Visibility::DirectionalField) {
       if (!directionalCapture) return false;
       try {
-        directionalCapture->observe(first, results, cancellation.get_token());
+        directionalCapture->observe(std::span(directionalPending).subspan(first, count), results, cancellation.get_token());
         return true;
       } catch (const std::invalid_argument &) {
         return false;

@@ -175,10 +175,14 @@ direct-light channels and separate overflow masks remain a scalability limitatio
 
 `REMIX_DEBUG_DIRECTIONAL_FIELDS=1` enables complete directional capture for known
 positive chart/light links beyond the four retained channels. The controller
-reuses existing retained samples, then traces additional fields one at a time
-through the same hardware transport. Each field drains its fenced readbacks
-before encoding or advancing; there is no expanded all-map coefficient array.
-Manifest storage is bounded to 128 MiB and field staging to 256 MiB. Encoded
+reuses existing retained samples, then groups up to 256 complete fields into a
+bounded transport window. Its soft point target is the existing transport
+capacity; dispatches still obey the ordinary sample-work and GPU-time budgets.
+Sparse receipt indices preserve ownership around reused samples and across
+out-of-order frame slots. Each window drains its fenced readbacks before
+encoding its rectangles or advancing; there is no expanded all-map coefficient
+array. Shader sample seeds remain independent of dispatch order.
+Manifest storage is bounded to 128 MiB and window staging to 256 MiB. Encoded
 output has a 128 MiB floor and can reuse the allowance of the nine RGBA16F
 atlas layers it replaces, up to a 512 MiB hard cap. These are separate budgets,
 not a total memory guarantee. Retained-only conversion keeps its 128 MiB cap.

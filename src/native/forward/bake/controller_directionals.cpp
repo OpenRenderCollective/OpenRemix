@@ -52,12 +52,13 @@ namespace remix::forward::bake {
       }
       for (;;) {
         if (finish) {
+          const auto fields = uint32_t(directionalCapture->window().size());
           if (!directionalCapture->finish(cancelled)) {
             std::fprintf(stderr, "Forward complete directional capture declined: encoded storage budget\n");
             decline();
             return;
           }
-          ++directionalField;
+          directionalField += fields;
         }
         if (directionalCapture->done()) {
           directionalWords = directionalCapture->words(cancelled);
@@ -71,31 +72,41 @@ namespace remix::forward::bake {
           logDirectionalTiming();
           return;
         }
-        directionalCount = directionalCapture->begin(cancelled);
+        // Bound latency and staging independently of the map's total overlap.
+        const auto samples = directionalCapture->beginWindow(
+            Budget::maximumPoints, mixed::DirectionalCapture::maximumWindowFields, cancelled);
+        directionalPending.clear();
+        directionalPending.reserve(samples);
         directionalNext = directionalReceived = 0;
         finish = true;
-        if (!directionalCount) continue;
-        // Existing retained fields already have the same unit-radiance HWRT
-        // samples. Reuse them rather than tracing the first four owners again.
-        const auto first = directionalCapture->batch(0, 1).front();
-        const auto chart = surfaceLayout.pointCharts[first.point];
-        const auto &owners = mixedLights->directCharts[chart];
-        const auto owner = std::find(owners.begin(), owners.end(), first.light);
-        if (owner == owners.end() || direct.empty()) return;
-        const auto channel = size_t(owner - owners.begin());
-        ++directionalReusedFields;
-        constexpr uint32_t batchSize = 4096;
-        for (uint32_t offset = 0; offset < directionalCount;) {
-          const auto tasks = directionalCapture->batch(offset, std::min(batchSize, directionalCount - offset));
-          std::vector<VisibilityResult> values(tasks.size());
-          for (size_t i = 0; i < tasks.size(); ++i) {
-            values[i].visibility = 1; // SH is independently retained, including black fields.
-            for (uint32_t c = 0; c < lightmap::irradianceLayers; ++c)
-              values[i].irradiance[c] = direct[tasks[i].point][c][channel];
+        for (const auto &field : directionalCapture->window()) {
+          if (!field.count) continue;
+          const auto &owners = mixedLights->directCharts[field.owner.chart];
+          const auto owner = std::find(owners.begin(), owners.end(), field.owner.light);
+          if (owner == owners.end() || direct.empty()) {
+            for (uint32_t i = 0; i < field.count; ++i) directionalPending.push_back(field.first + i);
+            continue;
           }
-          directionalCapture->observe(offset, values, cancelled);
-          offset += uint32_t(tasks.size());
+          // Reuse retained unit samples, including known-black responses.
+          const auto channel = size_t(owner - owners.begin());
+          ++directionalReusedFields;
+          constexpr uint32_t batchSize = 4096;
+          for (uint32_t offset = 0; offset < field.count;) {
+            const auto first = field.first + offset;
+            const auto tasks = directionalCapture->batch(first, std::min(batchSize, field.count - offset));
+            std::vector<VisibilityResult> values(tasks.size());
+            for (size_t i = 0; i < tasks.size(); ++i) {
+              values[i].visibility = 1; // SH remains independent of scalar visibility.
+              for (uint32_t c = 0; c < lightmap::irradianceLayers; ++c)
+                values[i].irradiance[c] = direct[tasks[i].point][c][channel];
+            }
+            directionalCapture->observe(first, values, cancelled);
+            offset += uint32_t(tasks.size());
+          }
         }
+        directionalCount = uint32_t(directionalPending.size());
+        if (directionalCount) return;
+
       }
     } catch (const std::length_error &error) {
       std::fprintf(stderr, "Forward complete directional capture declined: %s\n", error.what());
@@ -114,7 +125,7 @@ namespace remix::forward::bake {
       return;
     }
     // The controller checks the worker ticket before entering this method.
-    // A field advances only after every submitted receipt has been consumed.
+    // A window advances only after every submitted receipt has been consumed.
     if (!job.directionalAttempted || job.directionalReceived == job.directionalCount) {
       static std::atomic<uint64_t> generation = 0;
       const auto owner = m_job;
@@ -127,12 +138,12 @@ namespace remix::forward::bake {
     if (job.directionalNext < job.directionalCount) {
       CpuTime submissionTime{job.directionalTiming.submissionMs};
       auto &submission = m_submissions[m_slot];
-      if (submission.job) throw std::logic_error("Directional field slot reused before its fence");
+      if (submission.job) throw std::logic_error("Directional window slot reused before its fence");
       const auto count = job.count(Work::Visibility, config,
           job.directionalCount - job.directionalNext, config.samples);
       std::vector<VisibilityPoint> points;
       points.reserve(count);
-      for (const auto &task : job.directionalCapture->batch(job.directionalNext, count))
+      for (const auto &task : job.directionalCapture->batch(std::span(job.directionalPending).subspan(job.directionalNext, count)))
         points.push_back({job.surfaceLayout.points[task.point], task.light});
       job.transport->recordVisibility(command, m_slot, points, config.samples, true);
       submission.job = m_job;
@@ -144,8 +155,9 @@ namespace remix::forward::bake {
       ++job.directionalTiming.batches;
     }
     char progress[128];
-    std::snprintf(progress, sizeof(progress), "Baking attributed light %u/%u (%u/%u samples)",
-        job.directionalField + 1, job.directionalFields, job.directionalReceived, job.directionalCount);
+    std::snprintf(progress, sizeof(progress), "Baking attributed light fields %u-%u/%u (%u/%u samples)",
+        job.directionalField + 1, job.directionalField + uint32_t(job.directionalCapture->window().size()),
+        job.directionalFields, job.directionalReceived, job.directionalCount);
     status(REMIXAPI_BAKE_TRACING_EXT, progress);
   }
 }

@@ -1,5 +1,7 @@
 // Included after World. Exercise real transport -> streamed collection -> indexed fields.
-void directionalCaptureGpuTests(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
+// Keep the fixture out of the large transport main; Clang 19's loop-strength
+// reduction crashes when this additional mixed-dispatch check is inlined there.
+[[gnu::noinline]] void directionalCaptureGpuTests(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
   const auto receiver = world.wall(world.material({}), 0, 2);
   const auto blocker = world.quad(world.material({}),
       {{{-3, -3, -.5f}, {0, -3, -.5f}, {0, 3, -.5f}, {-3, 3, -.5f}}});
@@ -25,7 +27,7 @@ void directionalCaptureGpuTests(test::Fixture &fixture, pipeline::Service &pipel
   mixed::DirectionalCapture capture(layout, 7, links, 4096);
   bake::Transport transport;
   bake::Options options;
-  options.textureResolution = 32; options.batchPoints = 2; options.queueFamily = fixture.family;
+  options.textureResolution = 32; options.batchPoints = 14; options.queueFamily = fixture.family;
   auto prepared = pipelines.prepare("streamed-directional-capture-test", [&] {
     transport.initialize(fixture.physical, fixture.device, source, options);
   });
@@ -53,6 +55,30 @@ void directionalCaptureGpuTests(test::Fixture &fixture, pipeline::Service &pipel
     require(capture.finish(), "A complete hardware field fits the indexed publication budget");
   }
   const auto words = capture.words();
+  {
+    mixed::DirectionalCapture windowed(layout, 7, links, 4096);
+    require(windowed.beginWindow(14) == 14 && windowed.window().size() == 7,
+            "One hardware window contains seven independent chart/light owners");
+    std::vector<uint32_t> indices;
+    for (uint32_t i = 14; i > 0; --i) indices.push_back(i - 1);
+    const auto tasks = windowed.batch(indices);
+    std::vector<bake::VisibilityPoint> points;
+    for (const auto &task : tasks) points.push_back({layout.points[task.point], task.light});
+    fixture.begin(); transport.recordVisibility(fixture.command, 0, points, 1024, true); fixture.finish();
+    std::vector<bake::VisibilityResult> results(points.size());
+    transport.readVisibility(0, results);
+    for (size_t i = 0; i < tasks.size(); ++i) {
+      const auto &expected = reference[tasks[i].light][tasks[i].point];
+      require(results[i].visibility == expected.visibility,
+              "Reordering receivers/lights across hardware batches preserves visibility exactly");
+      for (uint32_t c = 0; c < 9; ++c)
+        require(results[i].irradiance[c] == expected.irradiance[c],
+                "Hardware sample seeds and signed coefficients are independent of dispatch order");
+    }
+    windowed.observe(indices, results);
+    require(windowed.finish() && windowed.words() == words,
+            "One reversed mixed-light GPU dispatch encodes exactly the serial field reference");
+  }
   mixed::DirectionalFields::validate(words, 1, 7, mixed::DirectionalFields::maximumBytes);
   for (uint32_t light = 0; light < 7; ++light)
     for (uint32_t point = 0; point < 2; ++point) {

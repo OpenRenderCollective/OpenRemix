@@ -46,6 +46,7 @@ namespace remix::forward::bake {
     std::optional<mixed::UnifiedMasks> unifiedMasks;
     std::vector<uint32_t> directionalWords;
     std::unique_ptr<mixed::DirectionalCapture> directionalCapture;
+    std::vector<uint32_t> directionalPending; // local sample indices not already supplied by retained fields
     bool directionalAttempted = false, completeDirectionals = false;
     uint32_t directionalNext = 0, directionalReceived = 0, directionalCount = 0;
     uint32_t directionalField = 0, directionalFields = 0;
