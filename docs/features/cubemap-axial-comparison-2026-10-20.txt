@@ -1,0 +1,45 @@
+Cubemap axial projection comparison (2026-10-20)
+
+Question
+Can the six axial first-solid distances already used for capture-site ranking
+replace whole-volume fitting and recover the user's authored room bounds?
+
+Method
+Use the verified identity-aligned hls00amrl BSP and all 14 combined probe volume
+origins from hls2_c1p0.vmap. Traverse BSP segment intervals near-first, using the
+same solid/outside-leaf policy as sites.cpp. Each ray is capped at 64 metres,
+matching site assessment. Form one box from the six distances. Compare its
+intersection-over-union with the authored box against the largest current
+balanced fit. This measures geometric agreement only, not reflection quality.
+No map or extracted Valve content is committed.
+
+Results
+Mean box IoU: current balanced fit 0.222870; axial estimate 0.289612.
+Twelve sites improve and two regress (comparison tolerance 0.0001).
+The modest aggregate improvement hides large errors. At site 11, the positive-Y
+face overshoots the authored face by 2139 Source units; at site 8, positive Y is
+2447.7 units beyond the authored face. A doorway or open axial direction does
+not provide a room boundary. Site 13 regresses from 0.463 to 0.294 IoU.
+The authored volume is a reference, not a claim of perfect geometric room truth.
+
+Decision
+Do not replace production fitting with this six-ray box or enlarge receiver
+influence to match it. No renderer path, setting, cache revision or rebake is
+introduced. Preserve the separate projection/influence representation. The next
+geometry experiment must demonstrate both room enclosure and receiver visibility
+across doorways/walls; aggregate box volume or mean IoU alone is insufficient.
+A bounded candidate must compete with the existing fit, retain authored priority,
+and show real Construct receiver coverage gain before changing the default.
+
+Reproduction
+Local script: _work/reports/compare-cubemap-axial-reference.py
+Inputs: portal-site-construct-v1/hls00amrl.bsp,
+hls00-authored-volumes.json and hls00-authored-fits-balanced-v2.json.
+Output: _work/reports/cubemap-axial-reference-v1/comparison.json.
+The script is a private reference analysis, not a second production BSP reader.
+
+Other verification in this checkpoint
+Official main is already contained in both feature branches. A private c1a0
+startup debugger bootstrap also exited before renderer initialization and before
+detach; it produced no valid performance data. Its failure is not a GPU timing.
+Installed renderer remains 655ee74 / wrapper af36a66.

@@ -363,6 +363,10 @@ the earlier hls01amrl comparison used the following map. Balanced interior seed 
 diagonal-room slivers without replacing the established fits or authored tie preference. Continue
 room-local visual comparisons and Construct coverage/doorway overlap work. Keep capture position
 independent of volume centre; the aligned reference does not establish complete automatic bounds.
+A six-axial-ray projection trial improved mean reference-box IoU only from 0.223 to 0.290
+and still crossed doorway boundaries by over 2000 Source units at individual sites. It is not
+a production replacement. Next candidates must establish receiver visibility and room enclosure
+separately, with actual Construct coverage gains; see cubemap-axial-comparison-2026-10-20.txt.
 
 ## Work discipline
 
