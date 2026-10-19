@@ -1,6 +1,8 @@
 #include "forward/lightmap/denoise.h"
 #include "forward/lightmap/denoise_device.h"
 #include "forward/lightmap/denoise_chart.h"
+#include "denoise_benchmark.h"
+#include <string_view>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -309,7 +311,13 @@ namespace {
                 static_cast<unsigned long long>(statistics.peakHostBytes));
   }
 } // namespace
-int main() try {
+int main(int argc, char **argv) try {
+#ifdef REMIX_OIDN
+  if (argc == 2 && std::string_view(argv[1]) == "--cpu-benchmark") {
+    remix::forward::test::denoiseBenchmark();
+    return 0;
+  }
+#endif
   {
     lightmap::Layout probeLayout;
     probeLayout.charts.resize(4096, {0, 0, 0, 16, 16});
