@@ -75,6 +75,10 @@ namespace remix::forward::lightmap::denoising {
     // Require a substantial measured margin before overriding the normal device.
     return std::isfinite(cpu) && std::isfinite(ordinary) && cpu > 0 && ordinary > 0 && cpu < ordinary * .65;
   }
+  bool preferCpuQueues(double parallel, double serial, double ordinary) {
+    return preferCpuDevice(parallel, ordinary) && std::isfinite(serial) && serial > 0 &&
+           parallel < serial * .75;
+  }
 #ifdef REMIX_OIDN
   namespace {
     struct ProbeBatch {
@@ -191,14 +195,17 @@ namespace remix::forward::lightmap::denoising {
       DeviceChoice choice{cpu ? FilterDevice::Cpu : FilterDevice::Default};
       // Keep explicit thread limits and small machines on the established path.
       // Four devices share at most 32 nominal worker slots. Require a measured
-      // 25% margin on copied real charts before paying their additional storage.
+      // 25% margin over serial CPU and 35% over the ordinary device before
+      // paying their additional storage. Measure independently of serial CPU
+      // selection: serial can lose to CUDA while parallel CPU still wins.
       const uint32_t hardware = std::min(32u, std::thread::hardware_concurrency());
-      if (cpu && hardware >= 16 && !std::getenv("OIDN_NUM_THREADS")) {
+      if (hardware >= 16 && !std::getenv("OIDN_NUM_THREADS")) {
         try {
           statistics.parallelCpuEstimateSeconds =
               measureCpuQueues(batches, hardware / 4, requiredCapacity, transfers, cancelled);
-          if (statistics.parallelCpuEstimateSeconds > 0 &&
-              statistics.parallelCpuEstimateSeconds < statistics.cpuEstimateSeconds * .75) {
+          if (preferCpuQueues(statistics.parallelCpuEstimateSeconds, statistics.cpuEstimateSeconds,
+                              statistics.defaultEstimateSeconds)) {
+            choice.device = FilterDevice::Cpu;
             choice.cpuQueues = 4;
             choice.cpuThreads = hardware / 4;
           }

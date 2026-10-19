@@ -16,6 +16,7 @@ namespace remix::forward::lightmap::denoising {
   std::vector<DeviceProbe> deviceProbePlan(const Layout &layout,
       std::span<const std::vector<uint32_t>> chartPoints, uint32_t alignment);
   bool preferCpuDevice(double cpu, double ordinary);
+  bool preferCpuQueues(double parallel, double serial, double ordinary);
 #ifdef REMIX_OIDN
   struct DeviceChoice {
     FilterDevice device = FilterDevice::Default;

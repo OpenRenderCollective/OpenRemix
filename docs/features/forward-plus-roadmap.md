@@ -399,3 +399,8 @@ without disabling sky props. The adapter clips placed triangles, rather than onl
 testing model origins. Fresh/warm bake parity and unchanged Crossfire cache/output
 are verified; two edge pixels, full replacement meshes and live acceptance remain
 open. See sky-prop-clipping-2026-10-20.txt.
+
+Denoiser queue calibration now measures parallel CPU independently of serial
+CPU selection. Both measured margins remain required. Normal Construct controls
+show unchanged bake time; a validation diagnostic exercises the formerly excluded
+choice. Existing cache restoration is exact. See denoise-queue-selection-2026-10-20.txt.

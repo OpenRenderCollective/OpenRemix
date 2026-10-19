@@ -1,0 +1,45 @@
+Independent denoiser queue selection - 2026-10-20
+
+Issue and change
+The four-queue CPU trial was conditional on serial CPU first beating the ordinary
+CUDA device by 35 percent. This excluded workloads where parallel CPU wins but
+serial CPU narrowly misses that margin. Eligible chart-heavy workloads on machines
+with at least 16 logical processors now measure the parallel candidate independently.
+Selection still requires parallel CPU to beat ordinary device by 35 percent and
+serial CPU by 25 percent. Explicit device/thread overrides, bounded copied packets,
+error fallback, cancellation and disjoint chart ownership are unchanged. No new
+setting, cache format or cache-key change. The native policy is engine agnostic.
+
+Evidence and limits
+Release build and both default-device/forced-CPU denoiser regression runs pass.
+Tests include the serial-misses/parallel-wins decision and insufficient-margin,
+invalid timing, exact serial/parallel output, isolation, metadata and cancellation.
+
+Construct normal cold replay, old/new/new/old, same current Source geometry:
+main OIDN seconds: 12.937 / 12.986 / 12.979 / 12.935
+first active seconds: 46.96 / 46.25 / 46.80 / 46.10
+whole replay seconds: 50.578 / 49.890 / 50.485 / 49.656
+All four select four CPU queues already. This shows no meaningful normal bake-time
+improvement. The paired images differ by at most one byte level; old/old also does,
+so fresh transport output is not bit deterministic. No broad exact-bake claim.
+Configuration: 1920x1080, MSAA4, 4M texels, 1024 pages, 256 samples, three bounces,
+16 size32 reflection captures, cache disabled, validation disabled for timing.
+Private controls: _work/reports/denoise-independent-queues-v1/comparison.json.
+
+Validation-enabled diagnostic exercises the newly reachable choice on real map
+charts: serial estimate17.326s vs CUDA26.168s misses the35% margin; parallel8.330s
+qualifies. Actual main OIDN12.325s uses four CPU queues. Earlier validation run
+selected CUDA and took27.051s. These are separate diagnostic runs, not a controlled
+speedup measurement. Styled indirect retains CUDA because parallel CPU fails the
+required margin. Validation/synchronization runs contain no reported validation
+errors or synchronization hazards.
+
+Existing Construct cache restores all published content hashes and its screenshot
+exactly. Private receipt: denoise-independent-queues-warm-v1/comparison.json.
+Native SHA256: d10ed09f769ed8f9e967f04e27e707381651cd1cfa39e7e9abf5eebc85a51b4e
+
+Remaining work
+Measure lower-sample transport and remaining bake stages without trading away
+lighting quality. Normal Construct main denoising remains about13s, not eliminated.
+Automatic cubemap enclosure/coverage, live-game performance and broader lighting
+visual acceptance remain open. This checkpoint does not improve steady-state FPS.

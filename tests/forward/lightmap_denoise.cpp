@@ -451,6 +451,13 @@ int main(int argc, char **argv) try {
     points.resize(600, {0});
     require(lightmap::denoising::deviceProbePlan(probeLayout, points, 16).empty(),
             "Large-image workloads retain the default device");
+    require(lightmap::denoising::preferCpuQueues(10, 17, 25) &&
+                !lightmap::denoising::preferCpuDevice(17, 25) &&
+                !lightmap::denoising::preferCpuQueues(13, 17, 25) &&
+                !lightmap::denoising::preferCpuQueues(10, 20, 15) &&
+                !lightmap::denoising::preferCpuQueues(0, 17, 25) &&
+                !lightmap::denoising::preferCpuQueues(10, std::numeric_limits<double>::infinity(), 25),
+            "Parallel device selection compares measured CPU queues with both serial CPU and default");
     require(lightmap::denoising::preferCpuDevice(1, 2) &&
                 !lightmap::denoising::preferCpuDevice(1.5, 2) &&
                 !lightmap::denoising::preferCpuDevice(0, 2) &&
