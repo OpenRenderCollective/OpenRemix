@@ -15,7 +15,7 @@ Finish the baked runtime before adding renderer features. Ordinary fixed lights 
 direct and indirect diffuse through surface lightmaps and probe volumes. Covered receivers should
 evaluate only bounded mixed-shadow corrections and independently selected direct highlights;
 uncaptured, moving and controllable lights must retain their correct response. Static geometry must
-not re-enter moving-caster passes. The current default is still exhaustive and does not meet this goal.
+not re-enter moving-caster passes. Runtime profiles now select the consolidated baked policy; analytic comparison remains available.
 
 Completion requires scalable attributed surface corrections beyond the four retained SH owners,
 known probe coverage for selected corrections, and a bounded fallback for uncovered receivers.
@@ -31,12 +31,12 @@ four legacy channels, exact cached restoration and 1x/2x/4x MSAA. Selected aggre
 exercise the extra owner's moving-shadow correction on charted surfaces and a separate dynamic
 probe-lit receiver at 1x/4x MSAA. Controlled black correction fields preserve shared aggregate RGB
 while isolating the selected response, and exact cache restoration removes that intervention.
-The normal path still uses the legacy atlas. Aggregate probe correction planning now fills its
+The normal path now uses complete indexed directional capture. Aggregate probe correction planning now fills its
 existing storage allowance instead of imposing the scalar trace-count ceiling; whole light volumes
 remain atomic, and planning runs on the preparation worker. Complete probe availability on one
 measured map does not establish map-scale performance or coverage on other maps. Finish those gates before
-making fully baked lighting the default, and remove the
-redundant legacy directional scratch/cache layers when the migration can preserve fallback behavior.
+expanding rollout acceptance, and remove redundant legacy directional scratch/cache layers
+only when migration preserves fallback behavior.
 Complete directional capture now batches bounded windows of fields with sparse receipt indices,
 retained-sample reuse, cancellation and all-or-nothing publication. CPU and hardware tests preserve
 the serial coefficients and encoded fields under reordered dispatches. Keep extending saved-map
@@ -59,8 +59,8 @@ The CPU `groupStyledDirect` compositor now reuses completed per-light surface an
 SH without launching style-specific rays or allocating dense all-map RGB workspaces.
 It declines complete style groups on missing coverage or storage exhaustion. Signed
 coefficients, seven-owner overlap and independent group failures have CPU coverage.
-Worker publication and runtime selection now consume complete direct groups behind
-`experimentalGroupedStyledDirect`. Aggregate caches retain their existing identity;
+Worker publication and runtime selection consume complete direct groups through the
+canonical baked-lighting policy. The experimental control remains a lower-level comparison. Aggregate caches retain their existing identity;
 groups are derived again after validated reload, while analytic-only probe capture
 uses a capability key. Scalar toggles, non-scalar fallback, moving shadows, dynamic
 probes, cache reload and cancellation have GPU coverage. Direct groups now combine with optional styled-indirect groups in one bounded sparse
@@ -214,19 +214,19 @@ when baked lighting is active; a failed bake instead displays its failure messag
    Unselected fixed lights retain aggregate diffuse and environment reflections; uncovered receivers
    retain the full analytic fallback. Styled/moving lights and adapter-required mixed lights are
    exempt. This reuses attributed bake data and does not reduce its preparation cost. Broader quality,
-   independent specular selection and cheaper on-demand correction visibility remain open; leave the
-   option off by default until those tradeoffs are accepted in live maps.
-   F12 exposes a single default-off **Baked lighting preview (experimental)** control. It derives
+   independent specular selection and cheaper on-demand correction visibility remain useful comparisons.
+   Keep that lower-level option disabled; the canonical policy uses independent highlights.
+   F12 now exposes the default-on **Use baked lighting** control. It derives
    aggregate diffuse, baked geometry emitters and selected mixed responses without overwriting
    the underlying profile preferences. Map baking and baked direct diffuse must be enabled;
-   supported live GI temporarily pauses the preview. Disabling it restores the requested policy.
-   The UI explicitly describes omitted direct highlights and moving-object shadows. This is a
-   comparison tool for the unfinished baked-light policy, not the final quality default.
-   The preview independently selects up to 16 attributed fixed-light highlights, with timed fades
+   supported live GI temporarily pauses baked lighting. Disabling it restores the requested policy.
+   Profiles migrate legacy preview settings to the canonical `bakedLighting` control;
+   explicit canonical zero retains analytic comparison.
+   The runtime independently selects up to 16 attributed fixed-light highlights, with timed fades
    and captured-emitter keys rather than potentially shared adapter light IDs. A separate GPU
    highlight weight preserves mixed-shadow strength when the selections differ. Outgoing highlights
-   retain their bounded assignments until their weight reaches zero. The experimental profile keys
-   `experimentalBakedHighlightLights` (0..32) and `experimentalBakedHighlightFade` (0..10 seconds)
+   retain their bounded assignments until their weight reaches zero. Canonical profile keys
+   `bakedHighlightLights` (0..32) and `bakedHighlightFade` (0..10 seconds)
    control that budget and fade independently of shadow maps. Pure baked geometry emitters still
    omit analytic highlights. Camera-distance/influence ranking is an initial approximation; test
    live-map highlights, leakage and frame cost before changing the default lighting policy.

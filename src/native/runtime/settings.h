@@ -11,7 +11,8 @@
 namespace remix::config {
   struct Settings {
     TraceOptions trace;
-    forward::Options forward{.autoExposure = true};
+    forward::Options forward{.autoExposure = true, .bakedLighting = true,
+                             .baking = {.styledIndirect = true, .styleStorageMiB = 256}};
     uint32_t backend = Backend::PathTrace;
     bool vsync = false;
     std::array<float, 4> clearColor = {0.025f, 0.035f, 0.055f, 1.f};

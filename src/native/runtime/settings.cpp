@@ -172,11 +172,11 @@ namespace remix::config {
                                 FIELD(forward.baking.aggregateDiffuse), 0, 1));
         result.push_back(scalar("rtx.native.forward.experimentalSelectedBakedLights",
                                 FIELD(forward.selectedBakedLights), 0, 1));
-        result.push_back(scalar("rtx.native.forward.experimentalBakedLightingPreview",
-                                FIELD(forward.bakedLightingPreview), 0, 1));
-        result.push_back(scalar("rtx.native.forward.experimentalBakedHighlightLights",
+        result.push_back(scalar("rtx.native.forward.bakedLighting",
+                                FIELD(forward.bakedLighting), 0, 1));
+        result.push_back(scalar("rtx.native.forward.bakedHighlightLights",
                                 FIELD(forward.bakedHighlightLights), 0, 32));
-        result.push_back(scalar("rtx.native.forward.experimentalBakedHighlightFade",
+        result.push_back(scalar("rtx.native.forward.bakedHighlightFade",
                                 FIELD(forward.bakedHighlightFade), 0, 10));
         result.push_back(scalar("rtx.native.forward.experimentalFullyBakedLights",
                                 FIELD(forward.baking.fullyBakedLights), 0, 1));
@@ -445,9 +445,16 @@ namespace remix::config {
       }();
       return entries;
     }
+    std::string_view canonicalKey(std::string_view key) {
+      if (key == "rtx.native.forward.experimentalBakedLightingPreview") return "rtx.native.forward.bakedLighting";
+      if (key == "rtx.native.forward.experimentalBakedHighlightLights") return "rtx.native.forward.bakedHighlightLights";
+      if (key == "rtx.native.forward.experimentalBakedHighlightFade") return "rtx.native.forward.bakedHighlightFade";
+      return key;
+    }
   } // namespace
 
   SetResult set(Settings &settings, std::string_view key, std::string_view value) {
+    key = canonicalKey(key);
     for (const auto &entry : registry())
       if (entry.key == key)
         return entry.write(settings, value) ? SetResult::Success : SetResult::Invalid;
@@ -488,6 +495,7 @@ namespace remix::config {
     UnknownSettings extra;
     std::vector<std::string> notices;
     std::set<std::string> seen;
+    std::map<std::string, std::string> legacy;
     bool version = false;
     size_t line = 0;
     while (!text.empty()) {
@@ -512,6 +520,15 @@ namespace remix::config {
         version = true;
         continue;
       }
+      if (canonicalKey(key) != key) {
+        Settings checked;
+        if (set(checked, key, value) != SetResult::Success) {
+          error = "Invalid value for " + std::string(key);
+          return false;
+        }
+        legacy.emplace(key, value);
+        continue;
+      }
       const auto result = set(next, key, value);
       if (result == SetResult::Invalid) {
         error = "Invalid value for " + std::string(key);
@@ -530,6 +547,17 @@ namespace remix::config {
     if (!version) {
       error = "Missing profile.version";
       return false;
+    }
+    for (const auto &[key, value] : legacy) {
+      const auto canonical = canonicalKey(key);
+      if (seen.contains(std::string(canonical))) continue;
+      if (canonical == "rtx.native.forward.bakedLighting") {
+        // Preview-off was the old default, not an opt-out from the completed
+        // runtime policy. A canonical zero remains an explicit comparison mode.
+        next.forward.baking.styledIndirect = true;
+        if (next.forward.baking.styleStorageMiB == 128) next.forward.baking.styleStorageMiB = 256;
+        notices.push_back("Migrated baked preview to default baked lighting with controllable indirect components; use rtx.native.forward.bakedLighting=0 for analytic comparison");
+      } else set(next, canonical, value);
     }
     if (!validate(next, error))
       return false;

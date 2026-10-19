@@ -128,30 +128,31 @@ int main() {
   }
   {
     Options options;
-    options.baking.fullyBakedLights = true; // A custom profile must survive preview on/off.
+    options.baking.fullyBakedLights = true; // A custom profile must survive baked mode on/off.
     options.baking.samples = 37;
     const auto requested = options.baking;
     auto expected = requested;
     expected.aggregateDiffuse = true;
     expected.fullyBakedLights = false;
     expected.bakedGeometryLights = true;
+    expected.groupedStyledDirect = true;
     const auto ordinary = options;
-    options.bakedLightingPreview = true;
+    options.bakedLighting = true;
     require(options.bakeConfiguration(false) == expected && options.baking == requested &&
                 options.selectBakedLights(false) && options.sameTargets(ordinary),
-            "Preview derives aggregate/geometry/selected lighting without changing quality, preferences or targets");
-    require(!options.selectBakedLights(true) && !options.bakedLightingPreviewActive(true),
-            "Supported live GI pauses the preview and its selected responses");
+            "Baked mode derives aggregate/geometry/selected lighting without changing quality, preferences or targets");
+    require(!options.selectBakedLights(true) && !options.bakedLightingActive(true),
+            "Supported live GI pauses baked mode and its selected responses");
     options.baking.directDiffuse = false;
-    require(!options.bakedLightingPreviewActive(false) && options.bakeConfiguration(false) == options.baking,
-            "Preview pauses when baked direct diffuse is disabled");
+    require(!options.bakedLightingActive(false) && options.bakeConfiguration(false) == options.baking,
+            "Baked mode pauses when baked direct diffuse is disabled");
     options.baking = requested;
     options.baking.enabled = false;
-    require(!options.bakedLightingPreviewActive(false), "Preview does not implicitly enable map baking");
+    require(!options.bakedLightingActive(false), "Baked mode does not implicitly enable map baking");
     options.baking = requested;
-    options.bakedLightingPreview = false;
+    options.bakedLighting = false;
     require(options.bakeConfiguration(false) == requested && !options.selectBakedLights(false),
-            "Disabling preview restores the exact requested custom lighting policy");
+            "Disabling baked mode restores the exact requested custom lighting policy");
   }
   {
     Options options;
@@ -492,13 +493,33 @@ int main() {
                   config::SetResult::Success && settings.forward.bakedHighlightLights == 32 &&
               config::set(settings, "rtx.native.forward.experimentalBakedHighlightFade", "1.5") ==
                   config::SetResult::Success && settings.forward.bakedHighlightFade == 1.5f,
-          "Preview highlight budget and duration persist independently of shadow settings");
-  require(!settings.forward.bakedLightingPreview &&
+          "Highlight budget and duration persist independently of shadow settings");
+  require(config::Settings{}.forward.bakedLighting && config::Settings{}.forward.baking.styledIndirect &&
+              config::Settings{}.forward.baking.styleStorageMiB == 256 &&
               config::set(settings, "rtx.native.forward.experimentalBakedLightingPreview", "1") ==
-                  config::SetResult::Success && settings.forward.bakedLightingPreview &&
+                  config::SetResult::Success && settings.forward.bakedLighting &&
               config::set(settings, "rtx.native.forward.experimentalBakedLightingPreview", "0") ==
-                  config::SetResult::Success && !settings.forward.bakedLightingPreview,
-          "Grouped baked preview persists independently without changing the default");
+                  config::SetResult::Success && !settings.forward.bakedLighting,
+          "Baked lighting defaults on in runtime profiles and the legacy key remains reversible");
+  {
+    config::Settings migrated;
+    config::UnknownSettings extra;
+    std::vector<std::string> notices;
+    std::string problem;
+    require(config::parse("profile.version=1\nrtx.native.forward.experimentalBakedLightingPreview=0\n"
+                           "rtx.native.forward.styledIndirect=0\nrtx.native.forward.styleStorageMiB=128\n",
+                           migrated, extra, notices, problem) && migrated.forward.bakedLighting &&
+                migrated.forward.baking.styledIndirect && migrated.forward.baking.styleStorageMiB == 256 && !notices.empty(),
+            "Old preview-off defaults migrate to completed baked lighting");
+    require(config::parse("profile.version=1\nrtx.native.forward.bakedLighting=0\n"
+                           "rtx.native.forward.experimentalBakedLightingPreview=1\n",
+                           migrated, extra, notices, problem) && !migrated.forward.bakedLighting,
+            "Canonical analytic opt-out wins over the legacy preview alias regardless of order");
+    const auto saved = config::serialize(migrated);
+    require(saved.find("experimentalBakedLightingPreview") == std::string::npos &&
+                saved.find("rtx.native.forward.bakedLighting = 0") != std::string::npos,
+            "Profiles save one canonical runtime policy and preserve explicit opt-out");
+  }
   require(!settings.forward.selectedBakedLights &&
               config::set(settings, "rtx.native.forward.experimentalSelectedBakedLights", "1") ==
                   config::SetResult::Success && settings.forward.selectedBakedLights &&

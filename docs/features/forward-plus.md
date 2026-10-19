@@ -173,8 +173,9 @@ their nine directional coefficients. This preserves the same emitter samples, bl
 and mask encoding. It does not remove the per-texel/per-light visibility workload: the four retained
 direct-light channels and separate overflow masks remain a scalability limitation.
 
-`REMIX_DEBUG_DIRECTIONAL_FIELDS=1` enables complete directional capture for known
-positive chart/light links beyond the four retained channels. The controller
+Complete directional capture is enabled by default for known
+positive chart/light links beyond the four retained channels. The developer override
+`REMIX_DEBUG_DIRECTIONAL_FIELDS=0` retains the legacy storage comparison. The controller
 reuses existing retained samples, then groups up to 256 complete fields into a
 bounded transport window. Its soft point target is the existing transport
 capacity; dispatches still obey the ordinary sample-work and GPU-time budgets.
@@ -223,10 +224,22 @@ Caches store explicit ownership, reject aggregate/mixed owner conflicts and requ
 expected policy; empty-policy entries keep the legacy layout and key. Aggregate matching also
 requires unchanged radiance, while mixed unit-radiance data can follow colour changes. A shared
 source identity cannot ambiguously span both ownership policies.
-The ordinary map controller still defaults to the legacy policy. The optional baked-lighting preview
-integrates aggregate diffuse, bounded mixed-shadow responses and independently selected highlights.
-Completing surface/probe correction coverage and cross-map quality checks remains necessary before
-making that policy the default.
+Runtime profiles default to `rtx.native.forward.bakedLighting=1`. Fixed-light diffuse
+comes from the surface lightmaps and probe volumes; independently selected highlights
+and moving-caster corrections remain bounded. Controllable lights use independent
+baked RGB groups rather than permanent aggregate RGB. Uncovered or invalid groups
+retain their analytic response. Low-level renderer callers retain explicit policy
+control; `bakedLighting=0` restores the requested comparison policy. Live GI suspends
+aggregate lighting while it supplies primary illumination.
+
+F12 exposes **Use baked lighting**. The canonical highlight controls are
+`bakedHighlightLights` and `bakedHighlightFade`. Former experimental names remain
+accepted by the configuration API, but profiles save only canonical names. On loading
+an old preview profile without the canonical control, preview-off (the former
+default) migrates to baked lighting with controllable indirect components. The former
+128 MiB component default becomes 256 MiB; other custom budgets are preserved.
+A canonical `bakedLighting=0` wins over legacy aliases regardless of file order.
+Normal sample, bounce and atlas quality controls remain independent.
 
 Retained unit-direct lightmaps contain nine RGBA coefficient layers. Geometry keeps a compact union
 of its captured direct owners. Frame preparation marks a draw as needing those fields when an owner
@@ -2003,9 +2016,10 @@ through immutable surface/probe callbacks. Existing dense callers use that same
 encoder. Exceptions and cancellation cannot append a partial component. No new
 ray transport, shader layout or public Remix ABI is introduced by this step.
 
-`rtx.native.forward.experimentalGroupedStyledDirect=1` connects this compositor
-to preparation-worker publication when complete indexed directional fields are
-enabled. It remains off by default. Cached layouts reconstruct chart ownership
+The canonical baked-lighting policy connects this compositor to preparation-worker
+publication with complete indexed directional fields. The lower-level
+`experimentalGroupedStyledDirect` control remains available for policy comparisons
+when the canonical mode is disabled. Cached layouts reconstruct chart ownership
 from immutable rectangles, so transient receiver arrays are unnecessary. Derived
 groups share the existing probe buffer and fit its device storage range after
 reserving base probes and local visibility. The original cache stores its captures
@@ -2058,3 +2072,21 @@ Decals remain excluded from opaque shadow casters and depth writes; their colour
 is blended over the lit receiver before display mapping. Modulating decals retain
 their compatibility multiply path. Runtime dynamic decals still require receiver
 tracking and remain on the compatibility renderer.
+
+## Compact controllable irradiance storage
+
+Sparse styled SH uses format version 2. Each signed RGB coefficient stores three
+nine-bit mantissas and one shared five-bit power-of-two exponent in a uint32.
+All nine SH coefficients remain; only their representation changes. A record is
+36 bytes instead of 56 bytes of paired half values. Each coefficient has its own
+exponent so bright constant lighting does not erase weaker higher-order bands.
+
+The encoder retains the previous 65000 HDR input clamp. Channel rounding is bounded
+by half a quantization step, with a minimum step of 2^-22. CPU and shader decoding
+use identical signed extraction and exponent construction. Validation rejects
+noncanonical encodings and old table versions. Styled-indirect cache identities
+include the codec version; unchanged non-styled captures keep their existing keys.
+Groups are summed and encoded on the preparation worker without a dense atlas
+workspace. The runtime component budget is 256 MiB and also respects the device
+storage-buffer limit; it is a cap, not an unconditional allocation. Bakes can still
+exceed configured component/device capacity on unusually demanding content.

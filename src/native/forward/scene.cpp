@@ -146,7 +146,7 @@ namespace remix::forward {
     };
     std::vector<float> highlightWeights;
     std::vector<HighlightCandidate> highlightCandidates;
-    if (options.bakedLightingPreviewActive(giSupported) && bindings) {
+    if (options.bakedLightingActive(giSupported) && bindings) {
       // Captured indices distinguish emitters even when the adapter shares IDs.
       // Merge repeated submissions of the same captured emitter before selection.
       std::vector<float> priorities(bindings->source->lights.size(), 0);
@@ -284,7 +284,7 @@ namespace remix::forward {
       responseInput.selectedOnly = options.selectBakedLights(giSupported);
       responseInput.shadowSelected = shadowSlot != UINT32_MAX;
       responseInput.shadowWeight = responseInput.shadowSelected ? shadowSelection.strength[shadowSlot] : 0;
-      responseInput.independentHighlights = options.bakedLightingPreviewActive(giSupported);
+      responseInput.independentHighlights = options.bakedLightingActive(giSupported);
       const auto captured = capturedLights[sourceIndex];
       if (captured < highlightWeights.size()) responseInput.highlightWeight = highlightWeights[captured];
       if (publishedBake && publishedBake->mixedLights) {

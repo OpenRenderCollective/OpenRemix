@@ -45,10 +45,10 @@ if get_option('gpu_tests')
     args : [meson.current_build_dir() / 'aggregate-direct-readback', 'aggregate-direct'], timeout : 180)
   test('Forward+ seven-owner directional capture, cache, cancellation and MSAA', raster_test,
     args : [meson.current_build_dir() / 'indexed-directional-readback', 'indexed-directionals'],
-    env : ['REMIX_DEBUG_DIRECTIONAL_FIELDS=1'], timeout : 180)
+    timeout : 180)
   test('Forward+ selected aggregate corrections beyond four on surfaces and dynamic probes', raster_test,
     args : [meson.current_build_dir() / 'selected-directional-readback', 'selected-directionals'],
-    env : ['REMIX_DEBUG_DIRECTIONAL_FIELDS=1'], timeout : 240)
+    timeout : 240)
   test('Forward+ finite cone direct lighting and analytic rejection', raster_test,
     args : [meson.current_build_dir() / 'finite-cone-readback', 'finite-cone'], timeout : 120)
   test('Forward+ styled baked visibility, toggles, mixed shadows and cache', raster_test,
@@ -57,10 +57,10 @@ if get_option('gpu_tests')
       args : [meson.current_build_dir() / 'styled-indirect-readback', 'styled-indirect'], timeout : 180)
   test('Forward+ grouped controllable direct surfaces, probes, cache and cancellation', raster_test,
     args : [meson.current_build_dir() / 'styled-direct-readback', 'styled-direct'],
-    env : ['REMIX_DEBUG_DIRECTIONAL_FIELDS=1'], timeout : 180)
+    timeout : 180)
   test('Forward+ combined controllable direct and indirect surfaces, probes and cache', raster_test,
     args : [meson.current_build_dir() / 'styled-combined-readback', 'styled-combined'],
-    env : ['REMIX_DEBUG_DIRECTIONAL_FIELDS=1'], timeout : 180)
+    timeout : 180)
   test('Forward+ per-light static visibility and live specular', raster_test,
     args : [meson.current_build_dir() / 'mixed-readback', 'mixed'], timeout : 180)
   test('Forward+ compact static occlusion and mixed-light overflow', raster_test,

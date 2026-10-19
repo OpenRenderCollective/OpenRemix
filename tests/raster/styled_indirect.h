@@ -14,7 +14,7 @@ std::array<uint8_t, 3> styledIndirectTests(bool directGroups = false, bool inclu
     options.baking.styledIndirect = !directGroups || includeIndirect;
     options.baking.groupedStyledDirect = directGroups;
     if (directGroups) {
-      options.bakedLightingPreview = true;
+      options.bakedLighting = true;
       options.bakedHighlightLights = 0;
       options.localShadowLights = 0;
     }

@@ -8,7 +8,7 @@ namespace remix::forward::bake {
   inline bool directionalFieldsRequested() {
     static const bool requested = [] {
       const auto value = std::getenv("REMIX_DEBUG_DIRECTIONAL_FIELDS");
-      return value && std::strcmp(value, "1") == 0;
+      return !value || std::strcmp(value, "0") != 0;
     }();
     return requested;
   }
