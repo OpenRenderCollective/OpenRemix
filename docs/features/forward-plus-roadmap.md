@@ -23,7 +23,7 @@ The direct-work scheduler now uses immutable sparse chart offsets and explicit o
 its existing four-slot adapter runs through the same batching code. Arbitrary overlap, batch
 boundaries and 32-bit task-count overflow have CPU coverage. The opt-in indexed directional path
 now connects bounded field collection to controller submission/readback, publication and cache
-persistence. It reuses retained samples, traces additional positive owners one field at a time,
+persistence. It reuses retained samples and traces additional positive owners in bounded field windows,
 preserves seam donors and refuses incomplete export. Cache import validates the exact owner
 manifest and chart rectangles. Publication preserves complete coverage before comparing memory.
 Seven-owner runtime tests exercise cancellation, an independently blackened owner outside the
@@ -31,8 +31,10 @@ four legacy channels, exact cached restoration and 1x/2x/4x MSAA. Selected aggre
 exercise the extra owner's moving-shadow correction on charted surfaces and a separate dynamic
 probe-lit receiver at 1x/4x MSAA. Controlled black correction fields preserve shared aggregate RGB
 while isolating the selected response, and exact cache restoration removes that intervention.
-The normal path still uses the legacy atlas; these synthetic gates do not establish map-scale
-performance or complete selected-probe availability on larger maps. Finish those gates before
+The normal path still uses the legacy atlas. Aggregate probe correction planning now fills its
+existing storage allowance instead of imposing the scalar trace-count ceiling; whole light volumes
+remain atomic, and planning runs on the preparation worker. Complete probe availability on one
+measured map does not establish map-scale performance or coverage on other maps. Finish those gates before
 making fully baked lighting the default, and remove the
 redundant legacy directional scratch/cache layers when the migration can preserve fallback behavior.
 Complete directional capture now batches bounded windows of fields with sparse receipt indices,
