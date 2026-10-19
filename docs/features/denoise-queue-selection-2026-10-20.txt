@@ -43,3 +43,9 @@ Measure lower-sample transport and remaining bake stages without trading away
 lighting quality. Normal Construct main denoising remains about13s, not eliminated.
 Automatic cubemap enclosure/coverage, live-game performance and broader lighting
 visual acceptance remain open. This checkpoint does not improve steady-state FPS.
+
+Delivery
+Implementation fe5a7ea pushed to the official forward-plus-renderer branch.
+Packaged forwardplus-independent-denoise-queues-v1, deployed and verified155files
+in GarrysModWithRTX2. All four protected user configuration hashes are unchanged.
+Deployment receipt: _work/reports/denoise-independent-queues-v1/deployment.json.
