@@ -26,7 +26,8 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
     return BrdfLobes(vec3(0), vec3(0));
   uint directChannel = lightChannel(surfaceDirectLights, uint(light.shaping.w));
   bool bakedDiffuse = directChannel < 4u && directIrradiance[min(directChannel, 3u)] >= 0;
-  bool probeCorrection = aggregateDiffuse && light.corners[0].w > 0 && light.corners[1].w < 1;
+  bool movingShadow = movingLocalShadowRequired(light);
+  bool probeCorrection = aggregateDiffuse && movingShadow;
   float attributedDiffuse = bakedDiffuse ? directIrradiance[min(directChannel, 3u)] : 0;
   if (indexedSurfaceDirect() && (!aggregateDiffuse || probeCorrection))
     bakedDiffuse = surfaceDirectionalField(surfaceChart, uint(light.shaping.w), surfaceLightmap, n, attributedDiffuse);
@@ -64,7 +65,9 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
     return BrdfLobes(vec3(0), vec3(0));
   if (!bakedDiffuse && visibility <= 0)
     return BrdfLobes(vec3(0), vec3(0));
-  float moving = localShadowVisibility(light, p, receiverNormal, !baked);
+  // A covered bake already contains static visibility. Without a moving
+  // caster, its correction is exactly zero: neither unit SH nor PCF is needed.
+  float moving = baked && !movingShadow ? 1 : localShadowVisibility(light, p, receiverNormal, !baked);
   if (moving <= 0 && !aggregateDiffuse)
     return BrdfLobes(vec3(0), vec3(0));
   float solidAngle;

@@ -31,7 +31,9 @@ namespace remix::forward {
     // xyz triangle; [0].w shadow slot + 1, [1].w unshadowed blend,
     // [2].w: LightResponse (runtime packing only; see light_response.h).
     std::array<Vec4, 3> corners{};
-    Vec4 responseWeights{1, 0, 0, 0}; // x: selected highlight fade, independent of shadow strength
+    // x: selected highlight fade; y: proven empty world moving-caster map.
+    // Static visibility and viewmodel self casters remain independent.
+    Vec4 responseWeights{1, 0, 0, 0};
   };
   struct DrawData {
     Matrix model, normal;

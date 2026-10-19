@@ -66,6 +66,10 @@ namespace remix::forward {
       vkCmdDrawIndexed(command, draw.count, 1, draw.source.firstIndex, draw.source.vertexOffset, 0);
     }
   }
+  bool Renderer::Gpu::castsLocalShadow(const Command &draw, uint32_t lightSlot, bool staticCasters) const {
+    return (staticCasters || !draw.captured) &&
+           shadows::intersects(draw.worldBounds, shadowSelection.views[lightSlot]);
+  }
   void Renderer::Gpu::drawLocalCasters(VkCommandBuffer command, uint32_t lightSlot, uint32_t face,
                                        bool staticCasters) {
     const auto &frame = frames[slot];
@@ -73,8 +77,7 @@ namespace remix::forward {
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, localShadowPipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &frame.scene, 0, nullptr);
     for (const auto &draw : commands) {
-      if ((!staticCasters && draw.captured) ||
-          !shadows::intersects(draw.worldBounds, shadowSelection.views[lightSlot]))
+      if (!castsLocalShadow(draw, lightSlot, staticCasters))
         continue;
       vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 1, 1, &draw.material, 0,
                               nullptr);

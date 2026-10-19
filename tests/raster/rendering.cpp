@@ -1376,6 +1376,9 @@ namespace {
         const auto lit = pixels[right];
         require(target.forward->statistics().staticShadowUpdates == 0,
                 "Repeated frames reuse cached static maps");
+        require(target.forward->statistics().shadowedLights > 0 &&
+                    target.forward->statistics().emptyMovingShadowMaps == target.forward->statistics().shadowedLights,
+                "Frozen-only receivers prove their moving shadow maps empty");
         // An actor can settle into STATIC classification without belonging to
         // the authored bake. It still needs a moving-caster shadow map.
         auto moving = instance(black, -.4f);
@@ -1387,6 +1390,9 @@ namespace {
         moving.pNext = &identity;
         const auto actor = r.createRetained(moving);
         pixels = render(false);
+        require(target.forward->statistics().liveCasters > 0 &&
+                    target.forward->statistics().emptyMovingShadowMaps < target.forward->statistics().shadowedLights,
+                "An unbaked actor immediately disables the empty-map shortcut");
         const size_t adjacent = (27 * 64 + 48) * 4;
         std::printf("Local shadow %ux: lit %u, moving %u, adjacent %u\n", samples, unsigned(lit),
                     unsigned(pixels[right]), unsigned(pixels[adjacent]));
@@ -1407,6 +1413,8 @@ namespace {
         pixels = render(false);
         require(std::abs(int(pixels[right]) - int(lit)) < 4,
                 "Caster removal clears its shadow on the next frame");
+        require(target.forward->statistics().emptyMovingShadowMaps == target.forward->statistics().shadowedLights,
+                "Caster removal restores the empty-map proof on the next frame");
         moving.transform.matrix[1][3] = 0;
         moving.mesh = quad(r, 9791, material(r, 9792, 0, 0, 0, 1, nullptr, 0));
         identity.instanceId = 9793;

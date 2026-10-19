@@ -1,0 +1,89 @@
+Skip mixed corrections for empty moving-shadow maps (2026-10-20)
+
+Delivered behavior
+A fully baked receiver no longer reads per-light diffuse correction coefficients
+or filters a moving shadow map when that light has no relevant current world
+casters. Static light visibility, analytic fallback and independent selected
+specular highlights remain. Viewmodel self casters remain independent: an empty
+world map does not imply that a weapon's own shadow map is empty.
+
+Implementation
+Move/reuse the existing captured-caster count during preparation. With only
+captured draws, every active world moving map is empty without another geometry
+traversal. With current objects present, assess each active light using the same
+castsLocalShadow predicate as actual shadow drawing (capture ownership plus
+conservative light-volume intersection). Camera visibility is not part of that
+predicate, so hidden/offscreen props still prevent the shortcut. An object merely
+classified STATIC but absent from the bake also remains a current caster.
+An unused component of the existing private LightData responseWeights carries
+the per-frame empty-map fact. Packet size, descriptors, public ABI and cache format
+are unchanged. No new textures, ray work, renderer setting or experimental path.
+
+The shader's movingLocalShadowRequired also accounts for slot/fade and weapon self
+shadows. Aggregate receivers skip unit-SH lookups when no correction is possible.
+A proven baked visibility response can then bypass local PCF. Unknown static
+visibility keeps its original fallback shadow sampling. Shadow maps continue to
+clear/transition and static caches retain normal ownership; this is not an unsafe
+assumption that every receiver has bake coverage. Legacy four-channel unit-direct
+fetch selection uses the same world-empty information. No bake invalidation or
+quality reduction is required. Filtering quality for nonempty maps is unchanged.
+
+Final controlled map measurements
+Native baseline d612a22, same frozen maps/material replacements, shared validated
+warm cache, 1920x1080, MSAA4, manual exposure1, full-scale SSR, no live RT GI or
+reflections. Same surface budget 4M, 1024 atlas pages, 256 samples/3 bounces and
+16 cubemaps at size 32 as the earlier controlled replay. Old/new/new/old per map,
+each 2048 distinct GPU samples after 128 frames AND 8 seconds warmup.
+Mean GPU milliseconds, old-A / new-A / new-B / old-B:
+  Crossfire: 2.694 / 2.443 / 2.445 / 2.693  (9.26 percent lower pair mean)
+  c1a0:     2.297 / 1.774 / 1.765 / 2.307  (23.14 percent lower pair mean)
+Host submission/Present means:
+  Crossfire: 2.683 / 2.433 / 2.434 / 2.682 ms
+  c1a0:     2.287 / 1.763 / 1.755 / 2.297 ms
+CPU record changes are small, not the source of the large c1a0 frame reduction.
+These static replays omit engine entities, particles, UI, material proxies and
+viewmodels. Results do not establish a matching live-game FPS improvement.
+
+All eight final controls load cached lighting, retain identical bake/content
+hashes, and produce pixel-identical screenshots. Each has 2048 unique CPU snapshots
+in the selected steady observation interval; CPU/GPU samples are not paired exact
+frames. Current reports show Crossfire 347 captured caster draws, c1a0 192, zero
+current world caster draws, and four proven-empty world moving maps on each.
+Both retain 16 selected highlights and zero static-shadow/caster preparation updates.
+No lower light, shadow, sampling or resolution budgets are used to obtain the gain.
+
+Rejected/earlier trials
+The first per-tap dynamic-texture branch passed rendering tests but regressed
+Crossfire (old 2.620/2.631, new 3.165/2.835 ms); it is removed. The next call-level
+correction trial improved c1a0 but gave mixed short-warmup Crossfire results. Final
+code reuses the existing caster count, and the final acceptance measurement uses
+the longer warmup above. Do not assign differences between these trial protocols
+to one isolated cause. Patches/results are retained locally in
+empty-moving-shadow-filter-v1 and empty-moving-shadow-corrections-v2; no failed
+trial switch or alternate production implementation remains.
+
+Validation and delivery
+Ten distinct relevant rendering tests pass on the final implementation, including
+local shadows/cached visibility, planar unbaked point lights, aggregate corrections,
+selected corrections beyond four with dynamic probes, viewmodel shadows, water,
+live GI and three styled/controllable lighting suites. New assertions verify that
+actor creation disables and removal restores the empty-map fact alongside existing
+pixel shadow checks, including an actor excluded from the authored static bake.
+Vulkan validation/synchronization is enabled. Embedded shaders regenerate/check
+successfully for forward, live_gi, water and water_ray.
+Logs: empty-moving-shadows-v3, empty-moving-shadows-final-v3 and
+empty-moving-shadows-styles-v4 under the build's meson-logs directory.
+Package forwardplus-empty-moving-shadows-v1 deployed and verified in
+GarrysModWithRTX2. Protected user configuration hashes are unchanged; wrapper DLL
+is unchanged. Native build/package/install SHA256:
+ac4c386a7caedc3b68e92bb445e008e092bada8827519971bc97071e8a881bb3
+
+Evidence and next work
+_work/reports/empty-moving-shadow-final-v3 retains all eight run receipts, configs,
+GPU/CPU samples, screenshots, content reports, comparison.json and deployment.json.
+Run/summarizer scripts use the same folder name under _work/reports. Shared seed
+bakes remain in replay-cpu-map-pair-v1/cache for follow-up comparisons. All owned
+benchmark and test processes are terminal. No user game was stopped.
+Measure real Construct/weapon/entity workloads once engine startup is reliable.
+Automatic cubemap receiver domains, Construct lighting acceptance, other maps and
+the broader delivery roadmap remain open. This checkpoint does not complete them.

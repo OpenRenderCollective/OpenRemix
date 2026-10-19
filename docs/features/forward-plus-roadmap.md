@@ -16,6 +16,13 @@ direct and indirect diffuse through surface lightmaps and probe volumes. Covered
 evaluate only bounded mixed-shadow corrections and independently selected direct highlights;
 uncaptured, moving and controllable lights must retain their correct response. Static geometry must
 not re-enter moving-caster passes. Runtime profiles now select the consolidated baked policy; analytic comparison remains available.
+Selected local-light corrections now skip unit-SH/PCF work when the actual current
+world caster set proves a light's moving map empty. Static visibility fallback and
+viewmodel self shadows remain independent. Captured-caster counts are reused;
+hidden or unbaked actors disable the shortcut. Two-map warm replay controls show
+pixel-identical output and lower GPU time; live gameplay acceptance remains open.
+See `empty-moving-shadows-2026-10-20.txt` for controls and limits.
+
 
 Completion requires scalable attributed surface corrections beyond the four retained SH owners,
 known probe coverage for selected corrections, and a bounded fallback for uncovered receivers.

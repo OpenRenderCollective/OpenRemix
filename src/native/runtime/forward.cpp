@@ -37,6 +37,9 @@ namespace remix {
         << ", \"clusters\": " << state.clusters << ", \"clusterCapacity\": " << state.clusterLightCapacity
         << ", \"staticShadowUpdates\": " << state.staticShadowUpdates
         << ", \"staticSunUpdates\": " << state.staticSunUpdates
+        << ", \"capturedCasters\": " << state.capturedCasters
+        << ", \"liveCasters\": " << state.liveCasters
+        << ", \"emptyMovingShadowMaps\": " << state.emptyMovingShadowMaps
         << ", \"staticCasterPreparations\": " << state.staticCasterPreparations << '}'
         << ",\n  \"exposure\": {\"current\": " << state.postProcessing.exposure
         << ", \"target\": " << state.postProcessing.target << ", \"limit\": " << state.postProcessing.limit

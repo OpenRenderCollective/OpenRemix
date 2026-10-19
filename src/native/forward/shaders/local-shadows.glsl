@@ -6,6 +6,14 @@ layout(set = 0, binding = 8) uniform sampler2DArrayShadow dynamicLocalShadows;
 layout(set = 0, binding = 11) uniform sampler2DArrayShadow viewModelLocalShadows;
 #endif
 
+bool movingLocalShadowRequired(Light light) {
+  bool casters = light.responseWeights.y < .5;
+#ifdef VIEWMODEL_PASS
+  casters = casters || (frame.clusterInfo.w & 1u) != 0u;
+#endif
+  return casters && light.corners[0].w > 0 && light.corners[1].w < 1;
+}
+
 float localShadowVisibility(Light light, vec3 position, vec3 receiverNormal, bool includeStatic) {
   uint tag = uint(light.corners[0].w);
   if (tag == 0u)

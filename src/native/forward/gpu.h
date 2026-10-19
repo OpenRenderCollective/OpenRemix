@@ -137,6 +137,7 @@ namespace remix::forward {
     void recordViewModels(VkCommandBuffer command);
     void prepareViewModelDescriptors();
     void recordExposure(VkCommandBuffer command, RasterRenderer &resources, float seconds);
+    bool castsLocalShadow(const Command &draw, uint32_t slot, bool staticCasters) const;
     void drawLocalCasters(VkCommandBuffer command, uint32_t slot, uint32_t face, bool staticCasters);
     void drawGeometry(VkCommandBuffer command, bool terrain = false, bool depthOnly = false);
     void drawSunCasters(VkCommandBuffer command, uint32_t cascade, bool staticCasters);

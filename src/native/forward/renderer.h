@@ -27,7 +27,7 @@ namespace remix::forward {
     uint32_t samples = 1, lights = 0, draws = 0, clusters = 0;
     uint32_t shadowedLights = 0, shadowOverflow = 0, staticShadowUpdates = 0;
     uint32_t staticSunUpdates = 0, capturedCasters = 0, liveCasters = 0;
-    uint32_t staticCasterPreparations = 0;
+    uint32_t staticCasterPreparations = 0, emptyMovingShadowMaps = 0;
     uint32_t clusterLightCapacity = clusterCapacity;
     uint32_t clusteredLights = 0, fullyBakedLights = 0;
     uint32_t analyticLights = 0, aggregateLights = 0, selectedAggregateLights = 0;
