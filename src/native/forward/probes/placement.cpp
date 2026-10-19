@@ -118,6 +118,9 @@ namespace remix::forward::probes {
     const auto &sites = validatedSites ? *validatedSites : generated;
     // Keep expensive BSP fitting bounded even when a map uses more captures.
     const uint32_t budget = std::clamp(count * 8, 32u, 128u);
+    // Larger resident sets do not expand the total geometry-audit cap. Up to
+    // 128 fitted origins leave the same bounded room for grid fallbacks.
+    const uint32_t auditLimit = budget + std::min(count, 32u);
     if (fitted) {
       std::vector<RegionSite> assessed;
       std::set<Vec3> seen;
@@ -138,7 +141,7 @@ namespace remix::forward::probes {
       }
     }
     for (auto box : boxes) {
-      if (regions.size() == budget + count)
+      if (regions.size() == auditLimit)
         break;
       Vec3 center;
       for (uint32_t c = 0; c < 3; ++c)
@@ -193,7 +196,7 @@ namespace remix::forward::probes {
     // Preserve origin coverage first. Remaining audit slots can compare shape
     // alternatives without increasing the established budget (at most 160).
     for (const auto &alternative : alternatives) {
-      if (regions.size() == budget + count) break;
+      if (regions.size() == auditLimit) break;
       regions.push_back(alternative);
     }
     return regions;

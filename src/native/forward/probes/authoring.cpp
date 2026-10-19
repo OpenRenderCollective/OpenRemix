@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <stop_token>
 #include <stdexcept>
+#include <stdexcept>
 #include <unordered_set>
 
 namespace remix::forward::probes {
@@ -29,6 +30,11 @@ namespace remix::forward::probes {
     bool prepared = false, filtering = false, sceneReused = false;
     void prepare(const std::shared_ptr<Job> &prior, const std::shared_ptr<const scene::BakeScene> &source,
                   VkPhysicalDevice physical, VkDevice device, uint32_t family, const bake::Config &config) {
+      VkPhysicalDeviceProperties properties;
+      vkGetPhysicalDeviceProperties(physical, &properties);
+      if (request->volumes.size() > storageCapacity(config.reflectionResolution,
+                                                  properties.limits.maxStorageBufferRange))
+        throw std::length_error("Authored reflection set exceeds GPU storage range");
       for (size_t index = 0; index < request->volumes.size(); ++index) {
         if (cancellation.stop_requested()) throw std::runtime_error("Reflection edit superseded");
         const auto &volume = request->volumes[index];

@@ -12,7 +12,7 @@ struct ReflectionProbe {
 };
 layout(set = PROBE_SET, binding = PROBE_BINDING, std430) readonly buffer ReflectionProbes {
   uvec4 probeParameters;
-  ReflectionProbe probes[32];
+  ReflectionProbe probes[64];
   vec4 probeTexels[];
 };
 #include "cube.glsl"
@@ -45,7 +45,7 @@ vec3 probeMip(uint probe, uint level, vec3 ray) {
 // Only screen-space compute uses a tile mask. Water and viewmodels retain
 // their original contiguous walk without adding mask work to those stages.
 #ifdef PROBE_TILE_CANDIDATES
-bool probeRadianceMasked(vec3 position, vec3 reflected, float roughness, uint candidates, out vec3 result) {
+bool probeRadianceMasked(vec3 position, vec3 reflected, float roughness, uvec2 candidates, out vec3 result) {
 #else
 bool probeRadiance(vec3 position, vec3 reflected, float roughness, out vec3 result) {
 #endif
@@ -57,9 +57,10 @@ bool probeRadiance(vec3 position, vec3 reflected, float roughness, out vec3 resu
   float priority = -3.402823e38;
   uint low = uint(lod), high = min(low + 1u, probeParameters.z - 1u);
 #ifdef PROBE_TILE_CANDIDATES
-  while (candidates != 0u) {
-    uint probe = uint(findLSB(candidates));
-    candidates &= candidates - 1u;
+  while (any(notEqual(candidates, uvec2(0)))) {
+    uint word = candidates.x != 0u ? 0u : 1u;
+    uint probe = word * 32u + uint(findLSB(candidates[word]));
+    candidates[word] &= candidates[word] - 1u;
     if (probe >= probeParameters.x) break;
 #else
   for (uint probe = 0; probe < probeParameters.x; ++probe) {

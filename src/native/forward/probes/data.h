@@ -7,7 +7,7 @@
 #include <stop_token>
 
 namespace remix::forward::probes {
-  constexpr uint32_t maxProbes = 32;
+  constexpr uint32_t maxProbes = 64;
   struct Record {
     // position.w: captured solid-angle agreement with the projection box.
     // maximum.w/influenceMinimum.w/influenceMaximum.w: inverse XYZ feather
@@ -21,7 +21,7 @@ namespace remix::forward::probes {
     std::array<uint32_t, 4> parameters{};
     std::array<Record, maxProbes> probes{};
   };
-  static_assert(sizeof(Record) == 128 && sizeof(Header) == 4112);
+  static_assert(sizeof(Record) == 128 && sizeof(Header) == 8208);
   struct Capture {
     Bounds bounds;
     Vec3 position{};
@@ -62,6 +62,8 @@ namespace remix::forward::probes {
                              uint32_t resolution, std::stop_token cancelled = {}, float detailTolerance = .5f,
                              const std::vector<Vec3> *validatedSites = nullptr);
   uint32_t levelOffset(uint32_t resolution, uint32_t level);
+  // Bounded by both table capacity and the complete GPU header/mip footprint.
+  uint32_t storageCapacity(uint32_t resolution, uint64_t maximumBytes);
   // Interior props are allowed; geometry substantially beyond a proxy lowers
   // its preference where another capture overlaps. Unknown distances are neutral.
   float projectionConfidence(const Capture &capture);

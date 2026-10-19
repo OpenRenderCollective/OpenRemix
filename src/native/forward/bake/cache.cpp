@@ -4,6 +4,7 @@
 #include "forward/bake/shaders/embedded.h"
 #include "forward/lightmap/denoise.h"
 #include "forward/mixed/directional_coverage.h"
+#include <algorithm>
 #include <cmath>
 #include <chrono>
 #include <mutex>
@@ -34,7 +35,16 @@ namespace remix::forward::bake::cache {
     } catch (...) {} // Profiling must not make an otherwise valid bake fail.
   }
   namespace {
-    // Bump whenever CPU planning, material transport or wire semantics change.
+    // Disk headers use whole 32-record blocks, independent of GPU capacity.
+    // This preserves every old <=32-capture payload, and keeps larger payloads
+    // stable if the GPU table grows again. The preceding count defines the size.
+    constexpr uint32_t probeHeaderBlockSlots = 32;
+    using ProbeHeaderBlock = std::array<probes::Record, probeHeaderBlockSlots>;
+    static_assert(sizeof(ProbeHeaderBlock) == 4096 && probes::maxProbes % probeHeaderBlockSlots == 0);
+    uint32_t probeHeaderBlocks(uint32_t count) {
+      return std::max(1u, (count + probeHeaderBlockSlots - 1) / probeHeaderBlockSlots);
+    }
+    // Bump whenever incompatible planning, transport or wire semantics change.
     constexpr uint32_t algorithmRevision = 22; // oriented reflection projection frames and overlap priorities
     void require(bool value) {
       if (!value)
@@ -225,7 +235,11 @@ namespace remix::forward::bake::cache {
         }
       }
       auto &data = result.specular;
-      data.header = input.pod<probes::Header>();
+      data.header.parameters = input.pod<UInt4>();
+      for (uint32_t block = 0; block < probeHeaderBlocks(count); ++block) {
+        const auto stored = input.pod<ProbeHeaderBlock>();
+        std::copy(stored.begin(), stored.end(), data.header.probes.begin() + block * probeHeaderBlockSlots);
+      }
       const uint32_t size = count ? config.reflectionResolution : 0;
       const uint32_t levels = uint32_t(std::bit_width(size));
       const uint32_t stride = size ? probes::levelOffset(size, levels) : 0;
@@ -559,7 +573,13 @@ namespace remix::forward::bake::cache {
         output.pod(capture.resolution);
         output.array(capture.radiance);
       }
-      output.pod(view.specular.header);
+      output.pod(view.specular.header.parameters);
+      for (uint32_t block = 0; block < probeHeaderBlocks(uint32_t(view.captures.size())); ++block) {
+        ProbeHeaderBlock stored;
+        std::copy_n(view.specular.header.probes.begin() + block * probeHeaderBlockSlots,
+                    stored.size(), stored.begin());
+        output.pod(stored);
+      }
       output.array(view.specular.texels);
       output.array(view.pixels);
       if (!view.styles.empty()) output.array(view.styles);

@@ -48,7 +48,7 @@ void samplingCase(uint32_t resolution) {
   for (auto &pixel : captures[2].radiance)
     pixel = {0, 0, 3, 0};
   if (resolution == 8) {
-    captures.resize(32);
+    captures.resize(probes::maxProbes);
     for (uint32_t i = 3; i < captures.size(); ++i) {
       captures[i] = captures[0];
       captures[i].position[0] += 1000.f * i;

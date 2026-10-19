@@ -817,14 +817,18 @@ namespace remix::forward::bake {
     if (!job.capturePlanned) {
       job.capturePlanned = true;
       const auto owner = m_job;
+      VkPhysicalDeviceProperties properties;
+      vkGetPhysicalDeviceProperties(m_physical, &properties);
+      const uint32_t captureCount = std::min(config.reflectionProbes,
+          probes::storageCapacity(config.reflectionResolution, properties.limits.maxStorageBufferRange));
       job.ticket =
-          m_pipelines->prepare("forward-probe-selection-" + std::to_string(++generation), [owner, config] {
+          m_pipelines->prepare("forward-probe-selection-" + std::to_string(++generation), [owner, config, captureCount] {
             if (owner->projectionAudit) {
               owner->candidateRegions = owner->projectionAudit->finish();
               owner->projectionAudit.reset();
             }
             owner->captures = probes::captureCandidates(
-                *owner->source, owner->candidateRegions, config.reflectionProbes, config.reflectionResolution,
+                *owner->source, owner->candidateRegions, captureCount, config.reflectionResolution,
                 owner->cancellation.get_token(), config.reflectionDetailTolerance);
             probes::dumpCandidates(owner->source->contentHash, owner->candidateRegions, owner->captures);
             releaseStorage(owner->candidateRegions);

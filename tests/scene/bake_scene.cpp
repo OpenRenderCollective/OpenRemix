@@ -62,10 +62,16 @@ int main() {
     rejected([&] { resources.setReflectionVolumes(&request); });
     require(resources.reflectionVolumes() == current, "Invalid transforms preserve the last valid authoring request");
     volume.worldToLocal[0][0] = 1;
+    std::vector<remixapi_ReflectionVolumeEXT> full(REMIXAPI_REFLECTION_VOLUMES_MAX_EXT, volume);
+    for (uint32_t i = 0; i < full.size(); ++i) full[i].id = i + 1;
+    request.volumeCount = uint32_t(full.size()); request.volumes = full.data();
+    resources.setReflectionVolumes(&request);
+    require(resources.reflectionVolumes()->volumes.size() == full.size() && resources.bakeScene() == original,
+            "The complete authored quota preserves all volume identities without invalidating diffuse lighting");
     remixapi_ReflectionVolumeEXT duplicates[]{volume, volume};
     request.volumeCount = 2; request.volumes = duplicates;
     rejected([&] { resources.setReflectionVolumes(&request); });
-    request.volumeCount = 33;
+    request.volumeCount = REMIXAPI_REFLECTION_VOLUMES_MAX_EXT + 1;
     rejected([&] { resources.setReflectionVolumes(&request); });
     request.volumeCount = 1; request.volumes = &volume;
     ++request.sceneId;

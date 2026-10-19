@@ -1,0 +1,86 @@
+64-capture reflection storage and authoring - 2026-10-20
+
+Implementation
+Automatic capture budget, public authoring quota and GPU table now support64.
+The screen-space filter uses two32bit mask words across its existing64threads;
+slot order, oriented containment, priorities, roughness and feathering remain.
+The private GPU header is8208bytes. Public record/request layouts and extension
+version are unchanged; increasing the authoring quota is additive.
+Editor export and the Source sidecar decoder support64volumes with the matching
+SDK/runtime. Stale SDK quotas fail the adapter interoperability test.
+
+Disk headers use whole32record blocks selected by the preceding capture count,
+independent of GPU table capacity. Up-to32capture payloads keep their historical
+bytes/layout;33..64use two blocks. Existing cache keys remain valid at unchanged
+settings. Larger GPU-header content hashes can differ without a rebake; raw
+capture inputs/radiance and visible output remain authoritative comparisons.
+Changing the requested budget creates a distinct cache entry and can require a
+fresh bake. Old entries are retained.
+
+Automatic selection observes the device's complete header/mip storage footprint.
+For example, a128MiB storage range fits63size128captures, not64. Authored requests
+which exceed device storage are rejected before tracing rather than silently
+truncating; the existing valid set is retained when editing at unchanged settings.
+The geometry audit stays capped at160candidates and128primary fit sites. Larger
+capture counts do not expand that audit cap.
+
+Default remains16. UI/config accept rtx.native.forward.reflectionProbes up to64.
+Water/viewmodel fragment paths retain their contiguous walk; larger global sets
+still need live performance checks. No lightmap page, density or PBR policy change.
+
+Construct evidence
+A64budget selects54captures, including the previously omitted origins
+[-2784,-2592,-192] and[-1312,-2488,-192] at slots44and42. This is more local capture
+coverage, not proof that their boxes perfectly match room geometry. The connector
+floor point[-2000,-2488,-255.99] changes from no containing influence to capture24.
+Some nearby receiver points already had a larger containing probe at budget16;
+do not describe the entire area as previously unlit or reflection-free.
+Capture audit traces51,840rays, within the unchanged61,440ray ceiling.
+At size32,54filtered captures occupy about6.76MiB before allocator rounding;
+64would occupy about8.01MiB. Default16adds only4KiB metadata versus the old table.
+
+Current-build warm16/64/64/16,2048GPU frames after8s warmup,1080pMSAA4:
+  reflection ms .305104 / .309533 / .309321 / .304535
+  paired means .304819 -> .309427, adding about4.6microseconds.
+  whole GPU means2.94609 ->2.97100ms in this static view.
+Fresh64first active48.53s; whole replay65.875s includes startup/warmup/measurement.
+There is no matched fresh16control here, so no whole-bake speedup/cost percentage.
+The old16cache renders pixel-identically after upgrade. New54capture cold/warm
+published hashes match exactly, including under Vulkan/synchronization validation.
+
+Crossfire evidence
+A64budget selects64captures; cold first active56.53s. Old16cache image remains
+pixel-identical after upgrade; new64cache restores identical published hashes.
+Single warm controls show reflection .248979ms at16 and .256377ms at64. Other
+passes also vary, so this is not an isolated whole-frame or gameplay FPS estimate.
+Default16is retained. Larger sets are a coverage/quality option, not a speedup.
+
+Visual limits and checks
+Actual Construct corridor camera[-2784,-2400,-192] was inspected at both budgets
+with SSR disabled. Changes are modest on these rough/dark surfaces; full parallax
+and doorway acceptance is still open. Earlier camera atY=-3000was in the adjacent
+white room and must not substitute for this check. No automatic fitting or scoring
+algorithm is declared solved by raising capacity.
+
+Tests
+Fifteen distinct native suites pass across this checkpoint; the final13suite run
+includes full public-quota ownership, GPU sampling through slot63, unmasked last-
+slot transport, authored edits, viewmodels, SSR/MSAA, sky, water and hardware rays.
+Storage boundaries and exact cache round trips at32/33/64have CPU coverage.
+All16adapter suites and8editor data tests pass, including64export/decode and65
+rejection. Six shader backends regenerate, compare and validate. Final legacy32-
+record and extended64-record payloads restore under Vulkan validation with no
+reported validation errors or synchronization hazards.
+
+Private evidence
+_work/reports/probe-capacity64-map-v1/{comparison,receiver-membership}.json
+_work/reports/probe-capacity64-crossfire-v1/comparison.json
+_work/reports/probe-capacity64-corridor-v2
+_work/reports/probe-capacity64-validated-v1/comparison.json
+Native SHA256:68e54e6fedfbd30d88de2924596671eb8f5c9ec02dbc71c8e5b8d31cdc8304f9
+
+Remaining work
+Live weapon/water and more-map profiling, default-budget acceptance, independent
+reflection rebakes, room-bound fitting/overlap quality and the broader lighting,
+bake-time and gameplay-performance gates remain open. Do not repeat the already
+rejected audit-order/score experiments without a new receiver-quality objective.

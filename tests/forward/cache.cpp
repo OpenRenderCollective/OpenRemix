@@ -152,6 +152,26 @@ int main(int argc, char **argv) {
               f::probes::serialize(restored->specular) == f::probes::serialize(data.specular) &&
               restored->surfaceSamples == 25 && restored->directDiffuse,
           "Atlas, reflection data and direct-light policy survive the cache round trip");
+  for (uint32_t count : {32u, 33u, 64u}) {
+    auto extendedConfig = config;
+    extendedConfig.reflectionProbes = 64;
+    const auto extendedKey = bc::key(source->contentHash, extendedConfig, .001f, device);
+    const auto extendedFile = root / ("reflection-" + std::to_string(count) + ".bake");
+    std::vector<f::probes::Capture> captures(count, capture);
+    for (uint32_t i = 0; i < count; ++i) {
+      captures[i].priority = int32_t(i);
+      for (auto &pixel : captures[i].radiance) pixel[0] = float(i + 1);
+    }
+    const auto specular = f::probes::filter(captures, 8);
+    require(bc::write(extendedFile, extendedKey,
+        {data.grid,data.layout,data.mixed,captures,specular,data.pixels,
+         data.surfaceSamples,data.directDiffuse,data.sun}), "Extended reflection headers can be saved");
+    const auto extended = bc::read(extendedFile,extendedKey,source,extendedConfig,device);
+    require(extended && extended->captures.size() == count &&
+                f::probes::serialize(extended->specular) == f::probes::serialize(specular) &&
+                extended->specular.header.probes[count-1].minimum[3] == float(count-1),
+            "Extended capture caches preserve second-word slots, radiance and priorities exactly");
+  }
   require(restored->grid.probes[3].irradiance[7][3] == 1 &&
               restored->grid.probes[3].irradiance[8][3] == data.grid.probes[3].irradiance[8][3],
           "Probe static sunlight visibility survives the disk cache without a second allocation");

@@ -1,12 +1,12 @@
 // Receiver positions for one 8x8 reflection workgroup. No persistent GPU list
 // or additional pass is needed. All invocations participate before early exits.
-// One bit per probe matches the current 32-record storage contract.
+// One bit per probe matches the current 64-record storage contract.
 shared vec4 probeTilePoints[64];
 shared vec4 probeTileMinimum;
 shared vec3 probeTileMaximum;
-shared uint probeTileMask;
-uint probeTileCandidates(vec3 position, bool valid) {
-  if (probeParameters.x == 0u) return 0u; // uniform across the workgroup
+shared uint probeTileMask[2];
+uvec2 probeTileCandidates(vec3 position, bool valid) {
+  if (probeParameters.x == 0u) return uvec2(0); // uniform across the workgroup
   uint lane = gl_LocalInvocationIndex;
   bool finitePosition = !any(isnan(position)) && !any(isinf(position));
   probeTilePoints[lane] = vec4(valid && finitePosition ? position : vec3(0),
@@ -25,7 +25,8 @@ uint probeTileCandidates(vec3 position, bool valid) {
     }
     probeTileMinimum = vec4(low, status);
     probeTileMaximum = high;
-    probeTileMask = status < 0 ? 0xffffffffu : 0u;
+    probeTileMask[0] = status < 0 ? 0xffffffffu : 0u;
+    probeTileMask[1] = probeTileMask[0];
   }
   barrier();
   if (probeTileMinimum.w > 0 && lane < probeParameters.x) {
@@ -44,8 +45,8 @@ uint probeTileCandidates(vec3 position, bool valid) {
       intersects = intersects && !(localCenter + radius + guard < record.influenceMinimum[c] ||
                                    localCenter - radius - guard > record.influenceMaximum[c]);
     }
-    if (intersects) atomicOr(probeTileMask, 1u << lane);
+    if (intersects) atomicOr(probeTileMask[lane / 32u], 1u << (lane % 32u));
   }
   barrier();
-  return probeTileMask;
+  return uvec2(probeTileMask[0], probeTileMask[1]);
 }

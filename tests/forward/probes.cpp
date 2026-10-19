@@ -26,6 +26,12 @@ namespace {
   }
 } // namespace
 int main() {
+  require(p::storageCapacity(128, 128ull << 20) == 63 &&
+              p::storageCapacity(32, 128ull << 20) == 64 &&
+              p::storageCapacity(8, sizeof(p::Header)) == 0 &&
+              p::storageCapacity(8, sizeof(p::Header)-1) == 0,
+          "Probe count respects the full header and mip storage range at capacity boundaries");
+
   for (uint32_t face = 0; face < 6; ++face)
     for (float u : {-.9f, 0.f, .9f})
       for (float v : {-.9f, 0.f, .9f}) {

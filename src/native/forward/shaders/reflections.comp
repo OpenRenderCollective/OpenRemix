@@ -142,7 +142,7 @@ void main() {
   vec2 uv = (vec2(pixel) + .5) / vec2(frame.target.xy);
   vec3 position = valid ? worldPosition(uv, depth) : vec3(0);
   vec3 normal = valid ? reflectionUnit(guide.xyz) : vec3(0);
-  uint probeMask = probeTileCandidates(fma(normal, vec3(frame.trace.z), position), valid);
+  uvec2 probeMask = probeTileCandidates(fma(normal, vec3(frame.trace.z), position), valid);
   if (!inBounds) return;
   if (!valid) {
     imageStore(outRadiance, pixel, vec4(0));

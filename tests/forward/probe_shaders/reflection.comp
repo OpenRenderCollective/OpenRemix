@@ -13,7 +13,7 @@ void main() {
   uint index = gl_GlobalInvocationID.x;
   bool inBounds = index < inputData.count;
   Query query = inBounds ? queries[index] : Query(vec4(0), vec4(0));
-  uint mask = probeTileCandidates(query.position.xyz, inBounds);
+  uvec2 mask = probeTileCandidates(query.position.xyz, inBounds);
   if (!inBounds) return;
   vec3 radiance;
   bool valid = probeRadianceMasked(query.position.xyz, query.direction.xyz, query.position.w, mask, radiance);

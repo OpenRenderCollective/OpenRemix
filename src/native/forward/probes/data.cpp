@@ -175,6 +175,13 @@ namespace remix::forward::probes {
       result += 6 * (resolution >> i) * (resolution >> i);
     return result;
   }
+  uint32_t storageCapacity(uint32_t resolution, uint64_t maximumBytes) {
+    if (resolution < 8 || resolution > 128 || !std::has_single_bit(resolution))
+      throw std::invalid_argument("Invalid reflection storage resolution");
+    if (maximumBytes < sizeof(Header)) return 0;
+    const uint64_t stride = uint64_t(levelOffset(resolution, std::bit_width(resolution))) * sizeof(Vec4);
+    return uint32_t(std::min<uint64_t>(maxProbes, (maximumBytes - sizeof(Header)) / stride));
+  }
   float projectionConfidence(const Capture &capture) {
     const uint32_t size = capture.resolution;
     if (!size || capture.radiance.size() != 6ull * size * size)

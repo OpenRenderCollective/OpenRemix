@@ -2,7 +2,7 @@
 #pragma once
 #include "remix_c.h"
 #define REMIXAPI_REFLECTION_VOLUMES_VERSION_EXT 1
-#define REMIXAPI_REFLECTION_VOLUMES_MAX_EXT 32
+#define REMIXAPI_REFLECTION_VOLUMES_MAX_EXT 64
 
 typedef struct remixapi_ReflectionVolumeEXT {
   uint64_t id; // nonzero, stable within this scene
