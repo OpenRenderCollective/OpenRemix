@@ -2001,22 +2001,25 @@ Only that contrast band receives additional work. The setting and F12 checkbox a
 `rtx.native.forward.bakeSunAntialiasing` and **Antialias baked sunlight edges**.
 
 `lightmap/receiver_sampler` clips every covering triangle to the luxel footprint, selects triangles
-by covered area and reconstructs four actual world positions with their surface normals. It reuses
+by covered area and reconstructs sixteen actual world positions with their surface normals. It reuses
 one chart's geometry and scratch rather than retaining expanded origins for the whole atlas.
 Verified seam-extension donors keep their original positions. No sampling plane is extrapolated
 past the chart's actual geometry, including bent or displaced triangles.
 
-The sample-parallel transport distributes at most 64 additional sunlight rays across those four
-sites, rather than tracing four complete emitter batches. Each site has its own containing medium.
+The sample-parallel transport distributes at most 64 additional sunlight rays across those sites,
+rather than tracing a complete emitter batch at every position. Budgets below sixteen rays retain
+four sites; other budgets round down to a balanced multiple of sixteen. Each site has its own containing medium.
 Visibility and unit direct SH use the same rays and retain deterministic receiver identities across
 batch boundaries and frame slots. Ordinary probes and reflection queries retain their single origins.
 The controller publishes only after all refinement readbacks finish; reflection capture and atlas
 encoding follow it. Finished caches retain the filtered values, with no refinement on a cache hit.
 
-The setting participates in cache identity; algorithm revision 20 replaces older lighting results.
+The sunlight refinement policy participates in cache identity. Sixteen-site refinement replaces
+older four-site results when enabled with at least sixteen samples; disabled and lower-budget
+policies retain their existing identity.
 Atlas page sizes, total texel budget and chart density are unchanged. This is adaptive sampling:
-shadows entirely missed by the original receiver centres may remain undetected. Four spatial sites
-also retain finite quadrature error. Local emitter transport supports the same grouped-site protocol,
+shadows entirely missed by the original receiver centres may remain undetected. Spatial integration
+also retains finite quadrature error. Local emitter transport keeps its four-site grouped protocol,
 but local-light and overflow controller refinement remain separate work.
 
 ### Grouped controllable direct composition (integration in progress)

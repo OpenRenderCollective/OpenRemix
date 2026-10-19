@@ -726,6 +726,25 @@ namespace {
       transport.read(0, duplicateResults);
       require(std::memcmp(results, duplicateResults, sizeof(results)) == 0,
               "Duplicated receiver sites preserve the original sun sample stream and result exactly");
+      std::array<bake::Point, 48> sixteenSites;
+      for (uint32_t receiver = 0; receiver < 3; ++receiver)
+        std::fill_n(sixteenSites.begin() + receiver * 16, 16, sunPoints[receiver]);
+      fixture.begin();
+      transport.recordSurfaceSun(fixture.command, 0, sixteenSites, 1024, true, 16);
+      fixture.finish();
+      transport.read(0, duplicateResults);
+      require(std::memcmp(results, duplicateResults, sizeof(results)) == 0,
+              "Sixteen coincident origins retain exact sun streams, SH and total sample counts");
+      std::array<bake::Point, 16> fractionalSites;
+      for (uint32_t site = 0; site < 16; ++site)
+        fractionalSites[site] = sunPoints[site < 7 ? 0 : 2];
+      fixture.begin();
+      transport.recordSurfaceSun(fixture.command, 1, fractionalSites, 64, true, 16);
+      fixture.finish();
+      bake::Result fractionalResult;
+      transport.read(1, {&fractionalResult, 1});
+      require(fractionalResult.irradiance[0][0] == 9.f / 16 && fractionalResult.statistics[2] == 64,
+              "Sixteen sunlight origins resolve sub-quarter coverage with only sixty-four total rays");
       const bake::Point crossing[] = {sunPoints[0], sunPoints[2], sunPoints[0], sunPoints[2]};
       fixture.begin();
       transport.recordSurfaceSun(fixture.command, 1, crossing, 1024, true);
@@ -746,6 +765,13 @@ namespace {
       require(integrated.irradiance[0][0] > .45f && integrated.irradiance[0][0] < .55f &&
                   integrated.statistics[2] == 1024,
               "Local emitter visibility integrates receiver area without multiplying the sample budget");
+      bool sixteenRejected = false;
+      try {
+        transport.recordSurfaceSun(fixture.command, 0, fractionalSites, 8, true, 16);
+      } catch (const std::invalid_argument &) {
+        sixteenRejected = true;
+      }
+      require(sixteenRejected, "Sixteen-origin sunlight refuses insufficient per-origin samples");
       bool partialRejected = false, unbalancedRejected = false;
       try {
         transport.recordSurfaceSun(fixture.command, 0, std::span(crossing).first(3), 1024);

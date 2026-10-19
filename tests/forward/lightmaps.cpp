@@ -1,10 +1,11 @@
+#include "forward/bake/sun_antialiasing.h"
 #include "forward/lightmap/data.h"
 #include "forward/lightmap/layout.h"
 #include "forward/lightmap/packing.h"
 #include "forward/lightmap/receiver_footprint.h"
 #include "forward/lightmap/receiver_sampler.h"
-#include "forward/bake/sun_antialiasing.h"
 #include "scene/fixtures.h"
+#include "sun_coverage.h"
 #include <cmath>
 #include <cstring>
 #include <stdexcept>
@@ -165,6 +166,9 @@ int main() {
   require(center, "Barycentric texel positions follow nonuniform instance transforms");
   {
     lm::ReceiverSampler sampler(scene, layout);
+    for (uint32_t i = 0; i < layout.points.size(); ++i)
+      if (std::abs(layout.points[i].position[0] - 10) < 1e-5 && std::abs(layout.points[i].position[1]) < 1e-5)
+        sunlightCoverage(sampler, i);
     bool crossesDiagonal = false;
     for (uint32_t i = 0; i < layout.points.size(); ++i) {
       const auto sites = sampler.sample(i), repeated = sampler.sample(i);
@@ -191,10 +195,17 @@ int main() {
     remix::forward::bake::SunAntialiasing edges(scene, layout, clear);
     require(edges.count() > 0 && edges.count() < layout.points.size(),
             "Sunlight refinement is restricted to the detected contrast band");
+    remix::forward::bake::SunAntialiasing lowBudget(scene, layout, clear, {}, 4);
+    require(lowBudget.siteCount() == 4 &&
+                lowBudget.sites(0, lowBudget.count()).size() == lowBudget.count() * 4,
+            "Low sample budgets retain four sunlight origins");
+    std::array<remix::forward::bake::Point, 8> invalidSites;
+    refused([&] { sampler.sample(0, invalidSites); });
+    refused([&] { remix::forward::bake::SunAntialiasing invalid(scene, layout, clear, {}, 8); });
     const auto all = edges.sites(0, edges.count());
     for (uint32_t i = 0; i < edges.count(); ++i) {
       const auto one = edges.sites(i, 1);
-      require(std::memcmp(one.data(), all.data() + i * 4, one.size() * sizeof(one[0])) == 0,
+      require(std::memcmp(one.data(), all.data() + i * edges.siteCount(), one.size() * sizeof(one[0])) == 0,
               "Adaptive sunlight sites retain identity across batch boundaries");
     }
     refused([&] { edges.sites(edges.count(), 1); });

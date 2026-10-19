@@ -55,12 +55,19 @@ namespace remix::forward::lightmap {
     m_chart = chartIndex;
   }
   std::array<bake::Point, 4> ReceiverSampler::sample(uint32_t index) {
+    std::array<bake::Point, 4> result;
+    sample(index, result);
+    return result;
+  }
+  void ReceiverSampler::sample(uint32_t index, std::span<bake::Point> result) {
+    if (result.size() != 4 && result.size() != 16)
+      throw std::invalid_argument("Receiver quadrature requires four or sixteen sites");
     const auto &centre = m_layout.points.at(index);
-    std::array<bake::Point, 4> result{centre, centre, centre, centre};
+    std::fill(result.begin(), result.end(), centre);
     // Verified seam extension donors already belong to neighbouring geometry.
     // Preserve their actual origins rather than remapping through another face.
     if (!m_layout.receiverSamples.empty() && !m_layout.receiverSamples[index])
-      return result;
+      return;
     const auto chartIndex = m_layout.pointCharts[index];
     if (chartIndex != m_chart)
       prepare(chartIndex);
@@ -86,7 +93,7 @@ namespace remix::forward::lightmap {
     }
     if (m_hits.empty()) {
       ++m_fallbackCount;
-      return result; // subtexel donor retains its actual surface origin
+      return; // subtexel donor retains its actual surface origin
     }
     // Stable receiver-only quadrature: changing lights, chunks or frame slots
     // cannot move these sites. All covering triangles participate by area.
@@ -96,9 +103,13 @@ namespace remix::forward::lightmap {
     seed ^= seed >> 15;
     const double shiftU = double(seed & 65535u) / 65536.;
     const double shiftV = double(seed >> 16) / 65536.;
-    constexpr double strataV[] = {.125, .625, .375, .875};
-    for (uint32_t site = 0; site < 4; ++site) {
-      double target = (site + shiftU) * .25 * totalArea;
+    const uint32_t count = uint32_t(result.size());
+    for (uint32_t site = 0; site < count; ++site) {
+      double target = (site + shiftU) / count * totalArea;
+      uint32_t reversed = 0;
+      for (uint32_t bit = 1; bit < count; bit <<= 1)
+        reversed = (reversed << 1) | uint32_t((site & bit) != 0);
+      const double stratumV = (reversed + .5) / count;
       const Hit *selected = &m_hits.back();
       for (const auto &hit : m_hits) {
         if (target < hit.footprint.area() || &hit == &m_hits.back()) {
@@ -109,7 +120,7 @@ namespace remix::forward::lightmap {
       }
       const auto point = selected->footprint.sample(
           std::clamp(target / selected->footprint.area(), 0., std::nextafter(1., 0.)),
-          std::fmod(strataV[site] + shiftV, 1.));
+          std::fmod(stratumV + shiftV, 1.));
       const auto &triangle = m_triangles[selected->triangle];
       const double weights[] = {edge(triangle.uv[1], triangle.uv[2], point) / triangle.area,
                                 edge(triangle.uv[2], triangle.uv[0], point) / triangle.area,
@@ -127,7 +138,6 @@ namespace remix::forward::lightmap {
       n = normalized(n);
       std::copy(n.begin(), n.end(), result[site].normal.begin());
     }
-    return result;
   }
   uint64_t ReceiverSampler::memoryBytes() const {
     return m_triangles.capacity() * sizeof(Triangle) + m_hits.capacity() * sizeof(Hit);

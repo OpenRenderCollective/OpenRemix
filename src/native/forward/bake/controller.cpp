@@ -513,24 +513,28 @@ namespace remix::forward::bake {
     if (!job.sunAntialiasingPlanned) {
       job.sunAntialiasingPlanned = true;
       const auto owner = m_job;
-      job.ticket = m_pipelines->prepare("forward-sun-edges-" + std::to_string(++generation), [owner] {
-        const auto begin = std::chrono::steady_clock::now();
-        owner->sunAntialiasing = std::make_unique<SunAntialiasing>(
-            *owner->source, owner->surfaceLayout, owner->sun, owner->cancellation.get_token());
-        owner->sunAntialiasingCpuMs +=
-            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
-        if (std::getenv("REMIX_DEBUG_BAKE_CAPTURE_PREFIX")) {
-          std::fprintf(stderr, "Sunlight edge refinement: %u/%zu receivers, %llu metadata bytes\n",
-                       owner->sunAntialiasing->count(), owner->sun.size(),
-                       static_cast<unsigned long long>(owner->sunAntialiasing->memoryBytes()));
-          const auto points = owner->sunAntialiasing->receivers();
-          probes::dumpTransportData(".sun-edge-ids.bin", points.data(), points.size_bytes());
-          std::vector<lightmap::Sun> before;
-          before.reserve(points.size());
-          for (const auto point : points) before.push_back(owner->sun[point]);
-          probes::dumpTransportData(".sun-edges-before.bin", before.data(), before.size() * sizeof(before[0]));
-        }
-      });
+      job.ticket = m_pipelines->prepare(
+          "forward-sun-edges-" + std::to_string(++generation),
+          [owner, sites = config.samples >= 16 ? 16u : 4u] {
+            const auto begin = std::chrono::steady_clock::now();
+            owner->sunAntialiasing = std::make_unique<SunAntialiasing>(
+                *owner->source, owner->surfaceLayout, owner->sun, owner->cancellation.get_token(), sites);
+            owner->sunAntialiasingCpuMs +=
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
+            if (std::getenv("REMIX_DEBUG_BAKE_CAPTURE_PREFIX")) {
+              std::fprintf(stderr, "Sunlight edge refinement: %u/%zu receivers, %llu metadata bytes\n",
+                           owner->sunAntialiasing->count(), owner->sun.size(),
+                           static_cast<unsigned long long>(owner->sunAntialiasing->memoryBytes()));
+              const auto points = owner->sunAntialiasing->receivers();
+              probes::dumpTransportData(".sun-edge-ids.bin", points.data(), points.size_bytes());
+              std::vector<lightmap::Sun> before;
+              before.reserve(points.size());
+              for (const auto point : points)
+                before.push_back(owner->sun[point]);
+              probes::dumpTransportData(".sun-edges-before.bin", before.data(),
+                                        before.size() * sizeof(before[0]));
+            }
+          });
       status(REMIXAPI_BAKE_PREPARING_EXT, "Finding sunlight shadow edges");
       return;
     }
@@ -554,12 +558,16 @@ namespace remix::forward::bake {
     if (job.sunAntialiasingNext < job.sunAntialiasing->count()) {
       auto &submission = m_submissions[m_slot];
       if (submission.job) throw std::logic_error("Sunlight edge slot reused before its fence");
-      const uint32_t samples = std::min(config.samples / 4, 16u) * 4;
-      const uint32_t count = std::min(Budget::maximumPoints / 4,
+      const uint32_t sitesPerReceiver = job.sunAntialiasing->siteCount();
+      const uint32_t samples =
+          std::min(config.samples / sitesPerReceiver, 64u / sitesPerReceiver) * sitesPerReceiver;
+      const uint32_t count = std::min(
+          Budget::maximumPoints / job.sunAntialiasing->siteCount(),
           job.count(Work::Sun, config, job.sunAntialiasing->count() - job.sunAntialiasingNext, samples));
       const auto begin = std::chrono::steady_clock::now();
       const auto sites = job.sunAntialiasing->sites(job.sunAntialiasingNext, count);
-      job.transport->recordSurfaceSun(command, m_slot, sites, samples, config.directDiffuse);
+      job.transport->recordSurfaceSun(command, m_slot, sites, samples, config.directDiffuse,
+                                      job.sunAntialiasing->siteCount());
       job.sunAntialiasingCpuMs +=
           std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - begin).count();
       submission.job = m_job;

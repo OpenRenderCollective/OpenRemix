@@ -128,12 +128,12 @@ namespace remix::forward::bake {
     // Same result layout as local visibility/direct SH, using the distant disc.
     void recordSun(VkCommandBuffer command, uint32_t slot, std::span<const Point> points,
                    uint32_t samples = 256, bool directDiffuse = false);
-    // Four actual surface origins per receiver, packed consecutively. Distribute
-    // the existing ray count over those sites; do not trace four full batches.
-    // Requires sample-parallel transport and a sample count divisible by four.
+    // Four or sixteen actual sunlight origins per receiver, packed consecutively. Distribute
+    // the existing ray count over those sites; do not multiply the requested ray count.
+    // Requires sample-parallel transport and a sample count divisible by the site count.
     // Ordinary probes/radiance rays retain their single-origin semantics.
     void recordSurfaceSun(VkCommandBuffer command, uint32_t slot, std::span<const Point> sites,
-                          uint32_t samples = 256, bool directDiffuse = false);
+                          uint32_t samples = 256, bool directDiffuse = false, uint32_t receiverSites = 4);
     void recordSurfaceVisibility(VkCommandBuffer command, uint32_t slot,
                                  std::span<const VisibilityPoint> sites, uint32_t samples = 256,
                                  bool directDiffuse = false);

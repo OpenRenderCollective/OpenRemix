@@ -276,11 +276,11 @@ namespace remix::forward::bake {
            directDiffuse ? Mode::SunDirectVisibility : Mode::SunVisibility);
   }
   void Transport::recordSurfaceSun(VkCommandBuffer command, uint32_t slot, std::span<const Point> sites,
-                                   uint32_t samples, bool directDiffuse) {
+                                   uint32_t samples, bool directDiffuse, uint32_t receiverSites) {
     if (!m_gpu->source->sun.isDistant)
       throw std::invalid_argument("Sun visibility requires a captured distant light");
     record(command, slot, sites, samples, 1, 0,
-           directDiffuse ? Mode::SunDirectVisibility : Mode::SunVisibility, {}, 4);
+           directDiffuse ? Mode::SunDirectVisibility : Mode::SunVisibility, {}, receiverSites);
   }
   void Transport::recordSurfaceVisibility(VkCommandBuffer command, uint32_t slot,
                                           std::span<const VisibilityPoint> sites, uint32_t samples,
@@ -317,10 +317,13 @@ namespace remix::forward::bake {
         throw std::logic_error("Lighting components require immutable captured light definitions");
     }
     if (receiverSites != 1 &&
-        (receiverSites != 4 || !g.options.parallel || samples % 4 || samples < 4 ||
-         (mode != Mode::Visibility && mode != Mode::DirectVisibility &&
-          mode != Mode::SunVisibility && mode != Mode::SunDirectVisibility)))
-      throw std::invalid_argument("Surface visibility requires four sites and balanced parallel samples");
+        ((receiverSites != 4 && receiverSites != 16) || !g.options.parallel || samples % receiverSites ||
+         samples < receiverSites ||
+         (receiverSites == 16 && mode != Mode::SunVisibility && mode != Mode::SunDirectVisibility) ||
+         (mode != Mode::Visibility && mode != Mode::DirectVisibility && mode != Mode::SunVisibility &&
+          mode != Mode::SunDirectVisibility)))
+      throw std::invalid_argument(
+          "Surface visibility requires supported sites and balanced parallel samples");
     if (points.empty() || points.size() % receiverSites || points.size() > g.options.batchPoints ||
         samples < 1 || samples > 8192 || bounces < 1 || bounces > 8 ||
         uint64_t(points.size() / receiverSites) * samples * bounces > g.options.rayBudget)
@@ -487,9 +490,13 @@ namespace remix::forward::bake {
     frame.counts[2] = samples;
     frame.counts[3] = bounces;
     const bool aggregate = mode == Mode::Irradiance && g.aggregateDiffuse && !slot.lighting;
-    frame.control = {g.domeLayer, firstSample, uint32_t(mode), uint32_t(g.hasDielectrics) |
+    frame.control = {g.domeLayer, firstSample, uint32_t(mode),
+                     uint32_t(g.hasDielectrics) |
                          (g.options.lightImportanceSampling && !slot.lighting ? 2u : 0u) |
-                         (aggregate ? 4u : 0u) | (receiverSites == 4 ? 16u : 0u) |
+                         (aggregate ? 4u : 0u) |
+                         (receiverSites == 4    ? 16u
+                          : receiverSites == 16 ? 32u
+                                                : 0u) |
                          (component ? lightingComponentFlag | (*component << lightingComponentShift) : 0u)};
     slot.constants->write(&frame, sizeof(frame));
     slot.count = count;

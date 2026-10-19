@@ -281,7 +281,8 @@ namespace remix::forward::bake::cache {
                                uint32_t(sizeof(Result)),
                                lightmap::atlasLayers,
                                uint32_t(c.directDiffuse),
-                               uint32_t(c.antialiasSun),
+                               c.antialiasSun ? (c.samples >= 16 ? 2u : 1u)
+                                              : 0u, // retain low-budget cache identity
                                uint32_t(c.lightmapFitBudget),
                                std::bit_cast<uint32_t>(c.spacing),
                                c.maxProbes,

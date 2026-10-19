@@ -9,6 +9,7 @@ namespace remix::forward::lightmap {
   public:
     ReceiverSampler(const scene::BakeScene &source, const Layout &layout);
     std::array<bake::Point, 4> sample(uint32_t point);
+    void sample(uint32_t point, std::span<bake::Point> sites);
     uint64_t memoryBytes() const;
     uint32_t fallbackCount() const { return m_fallbackCount; }
 

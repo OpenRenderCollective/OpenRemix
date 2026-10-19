@@ -4,8 +4,11 @@
 
 namespace remix::forward::bake {
   SunAntialiasing::SunAntialiasing(const scene::BakeScene &source, const lightmap::Layout &layout,
-                                   std::span<const lightmap::Sun> sunlight, std::stop_token cancelled)
-      : m_sampler(source, layout) {
+                                   std::span<const lightmap::Sun> sunlight, std::stop_token cancelled,
+                                   uint32_t sitesPerReceiver)
+      : m_siteCount(sitesPerReceiver), m_sampler(source, layout) {
+    if (m_siteCount != 4 && m_siteCount != 16)
+      throw std::invalid_argument("Sunlight quadrature requires four or sixteen sites");
     if (sunlight.size() != layout.points.size() ||
         layout.owners.size() != uint64_t(layout.pageSize) * layout.pageSize * layout.pages)
       throw std::invalid_argument("Incomplete sunlight edge sampling layout");
@@ -47,10 +50,9 @@ namespace remix::forward::bake {
     if (first > m_points.size() || count > m_points.size() - first)
       throw std::out_of_range("Sunlight edge batch leaves its task range");
     std::vector<Point> result;
-    result.reserve(size_t(count) * 4);
+    result.resize(size_t(count) * m_siteCount);
     for (uint32_t i = first; i < first + count; ++i) {
-      const auto samples = m_sampler.sample(m_points[i]);
-      result.insert(result.end(), samples.begin(), samples.end());
+      m_sampler.sample(m_points[i], std::span(result).subspan(size_t(i - first) * m_siteCount, m_siteCount));
     }
     return result;
   }
