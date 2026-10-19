@@ -23,6 +23,7 @@ namespace remix::forward::lightmap::denoising {
     std::vector<uint32_t> graphBatchMasks;
     FilterDispatch dispatch;
     FilterDevice selectedDevice;
+    uint32_t cpuThreads;
     OIDNDevice device = nullptr;
     std::array<Model, denoising::coefficientCount> models{}; // one immutable image binding per SH band
     OIDNBuffer buffer = nullptr;
@@ -60,8 +61,10 @@ namespace remix::forward::lightmap::denoising {
       pendingTransfers.clear();
       stagingUsed = 0;
     }
-    Impl(DenoiseStatistics &statistics, size_t requiredCapacity, HostTransfers hostTransfers, FilterDispatch dispatch, FilterDevice selectedDevice)
-        : dispatch(dispatch), selectedDevice(selectedDevice), hostTransfers(hostTransfers), requiredCapacity(requiredCapacity), statistics(statistics) {}
+    Impl(DenoiseStatistics &statistics, size_t requiredCapacity, HostTransfers hostTransfers,
+         FilterDispatch dispatch, FilterDevice selectedDevice, uint32_t cpuThreads)
+        : dispatch(dispatch), selectedDevice(selectedDevice), cpuThreads(cpuThreads),
+          hostTransfers(hostTransfers), requiredCapacity(requiredCapacity), statistics(statistics) {}
     ~Impl() {
       // Even cancellation/errors must retire queued work before its inputs,
       // callbacks, filters or buffers can be released.
@@ -100,6 +103,13 @@ namespace remix::forward::lightmap::denoising {
       check();
       if (!device)
         throw std::runtime_error("No OIDN lightmap device");
+      if (cpuThreads) {
+        if (cpuThreads > 32)
+          throw std::invalid_argument("CPU denoising thread limit outside its budget");
+        if (oidnGetDeviceInt(device, "type") != OIDN_DEVICE_TYPE_CPU)
+          throw std::runtime_error("CPU chart queues require a CPU denoising device");
+        oidnSetDeviceInt(device, "numThreads", int(cpuThreads));
+      }
       oidnCommitDevice(device);
       check();
       for (uint32_t i = 0; i < models.size(); ++i) {
@@ -427,8 +437,10 @@ namespace remix::forward::lightmap::denoising {
     }
   };
 
-  Filter::Filter(DenoiseStatistics &statistics, size_t requiredCapacity, HostTransfers transfers, FilterDispatch dispatch, FilterDevice device)
-      : m_impl(std::make_unique<Impl>(statistics, requiredCapacity, transfers, dispatch, device)) {}
+  Filter::Filter(DenoiseStatistics &statistics, size_t requiredCapacity, HostTransfers transfers,
+                 FilterDispatch dispatch, FilterDevice device, uint32_t cpuThreads)
+      : m_impl(
+            std::make_unique<Impl>(statistics, requiredCapacity, transfers, dispatch, device, cpuThreads)) {}
   Filter::~Filter() = default;
   void Filter::initialize(std::stop_token cancelled) {
     m_impl->initialize(cancelled);

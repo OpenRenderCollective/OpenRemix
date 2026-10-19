@@ -5,11 +5,20 @@ filter on 512 independent charts at each of two image sizes, 32 and 64 pixels.
 The regular test invocation still runs the chart isolation, directional SH,
 metadata and cancellation checks.
 
+An optional final argument selects one, two or four independent queues, for
+example `remix-forward-lightmap-denoise-test --cpu-benchmark 4`. Multiple queues
+split the same 512 charts and use a nominal 32-thread budget through per-device
+limits. OIDN environment overrides still take precedence. Models warm before a
+shared start barrier. Reported time is the slowest queue's measured duration.
+
 The benchmark explicitly requests the CPU device, prepares the model before
 timing, and queues eight chart packets before each synchronization. Every chart
 starts with the same deterministic nine-field input. It reports elapsed time,
-progress-monitored execution count, and a digest of all filtered values. The
-digest helps detect output changes when comparing scheduling experiments; it
+progress-monitored execution count, a per-worker digest, and a single-packet
+digest. Each worker must produce the same fields and digest for its equal share
+of the charts. Packet digests remain comparable across worker counts; whole-worker
+digests change when each worker processes fewer charts. These checks
+help detect output changes when comparing scheduling experiments; they
 does not replace the regular quality tests. Timings include packet copies,
 validation and digest calculation.
 

@@ -33,8 +33,8 @@ namespace remix::forward::lightmap::denoising {
   // this interface; callers retain chart arrays until finish() retires copies.
   class Filter {
   public:
-    Filter(DenoiseStatistics &statistics, size_t requiredCapacity, HostTransfers transfers, FilterDispatch dispatch,
-           FilterDevice device = FilterDevice::Default);
+    Filter(DenoiseStatistics &statistics, size_t requiredCapacity, HostTransfers transfers,
+           FilterDispatch dispatch, FilterDevice device = FilterDevice::Default, uint32_t cpuThreads = 0);
     ~Filter();
     Filter(const Filter &) = delete;
     Filter &operator=(const Filter &) = delete;

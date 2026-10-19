@@ -1,15 +1,19 @@
-#include "forward/lightmap/denoise.h"
-#include "forward/lightmap/denoise_device.h"
-#include "forward/lightmap/denoise_chart.h"
 #include "denoise_benchmark.h"
-#include <string_view>
+#include "forward/lightmap/denoise.h"
+#include "forward/lightmap/denoise_chart.h"
+#include "forward/lightmap/denoise_cpu.h"
+#include "forward/lightmap/denoise_device.h"
 #include <algorithm>
+#include <atomic>
+#include <barrier>
+#include <charconv>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <limits>
 #include <numeric>
 #include <stdexcept>
+#include <string_view>
 
 using namespace remix::forward;
 namespace {
@@ -17,6 +21,83 @@ namespace {
     if (!condition)
       throw std::runtime_error(message);
   }
+  void queueFailures() {
+    std::atomic_uint retired = 0;
+    std::barrier ready(2);
+    bool failed = false;
+    try {
+      lightmap::denoising::cpuQueues(2, {}, [&](uint32_t index, std::stop_token stop) {
+        struct Retire {
+          std::atomic_uint &count;
+          ~Retire() { ++count; }
+        } retire{retired};
+        ready.arrive_and_wait();
+        if (!index)
+          throw std::runtime_error("Expected queue failure");
+        while (!stop.stop_requested())
+          std::this_thread::yield();
+      });
+    } catch (const std::runtime_error &) {
+      failed = true;
+    }
+    require(failed && retired == 2, "Queue failures cancel and join every peer before returning");
+  }
+#ifdef REMIX_OIDN
+  void parallelCharts(const lightmap::Layout &layout, const std::vector<bake::Result> &source) {
+    using namespace lightmap;
+    using namespace lightmap::denoising;
+    std::vector<uint32_t> order(layout.charts.size());
+    std::iota(order.begin(), order.end(), 0u);
+    std::vector<std::vector<uint32_t>> points(layout.charts.size());
+    for (uint32_t i = 0; i < source.size(); ++i)
+      points[layout.pointCharts[i]].push_back(i);
+    auto serial = source, parallel = source;
+    DenoiseStatistics a, b;
+    filterChartQueues(layout, serial, order, points, 8u << 20, {FilterDevice::Cpu}, HostTransfers::Pageable,
+                      FilterDispatch::Ordinary, {}, a, {});
+    std::vector<uint32_t> progress;
+    filterChartQueues(
+        layout, parallel, order, points, 8u << 20, {FilterDevice::Cpu, 4, 2}, HostTransfers::Pageable,
+        FilterDispatch::Ordinary, {}, b, [&](uint32_t done, uint32_t total) {
+          require(total == layout.charts.size(), "Parallel chart progress retains its global total");
+          progress.push_back(done);
+        });
+    for (size_t i = 0; i < source.size(); ++i)
+      require(serial[i].irradiance == parallel[i].irradiance && serial[i].moments == parallel[i].moments &&
+                  serial[i].statistics == parallel[i].statistics,
+              "Independent CPU chart queues preserve serial fields and metadata exactly");
+    require(a.charts == b.charts && a.executions == b.executions && a.texels == b.texels && b.cpuQueues == 4,
+            "Parallel chart counters aggregate actual work");
+    for (uint32_t i = 0; i < progress.size(); ++i)
+      require(progress[i] == i, "Parallel chart progress remains serialized and monotonic");
+    require(progress.size() == layout.charts.size() + 1, "Every parallel chart reports completion");
+    bool failed = false;
+    try {
+      filterChartQueues(layout, parallel, order, points, 8u << 20, {FilterDevice::Cpu, 4, 2},
+                        HostTransfers::Pageable, FilterDispatch::Ordinary, {}, b,
+                        [](uint32_t done, uint32_t) {
+                          if (done)
+                            throw std::runtime_error("Expected progress failure");
+                        });
+    } catch (const std::runtime_error &) {
+      failed = true;
+    }
+    require(failed, "Parallel filtering propagates callback failures after draining work");
+    std::stop_source cancellation;
+    bool stopped = false;
+    try {
+      filterChartQueues(layout, parallel, order, points, 8u << 20, {FilterDevice::Cpu, 4, 2},
+                        HostTransfers::Pageable, FilterDispatch::Ordinary, cancellation.get_token(), b,
+                        [&](uint32_t done, uint32_t) {
+                          if (done)
+                            cancellation.request_stop();
+                        });
+    } catch (const std::runtime_error &) {
+      stopped = true;
+    }
+    require(stopped, "External cancellation interrupts and drains independent chart queues");
+  }
+#endif
   lightmap::Layout squareLayout() {
     lightmap::Layout layout;
     layout.pageSize = 512;
@@ -313,11 +394,19 @@ namespace {
 } // namespace
 int main(int argc, char **argv) try {
 #ifdef REMIX_OIDN
-  if (argc == 2 && std::string_view(argv[1]) == "--cpu-benchmark") {
-    remix::forward::test::denoiseBenchmark();
+  if ((argc == 2 || argc == 3) && std::string_view(argv[1]) == "--cpu-benchmark") {
+    uint32_t workers = 1;
+    if (argc == 3) {
+      const std::string_view text(argv[2]);
+      const auto parsed = std::from_chars(text.data(), text.data() + text.size(), workers);
+      if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size())
+        throw std::invalid_argument("Invalid CPU benchmark worker count");
+    }
+    remix::forward::test::denoiseBenchmark(workers);
     return 0;
   }
 #endif
+  queueFailures();
   {
     lightmap::Layout probeLayout;
     probeLayout.charts.resize(4096, {0, 0, 0, 16, 16});
@@ -424,6 +513,9 @@ int main(int argc, char **argv) try {
         values.push_back(sample);
       }
   const auto raw = values;
+#ifdef REMIX_OIDN
+  parallelCharts(layout, raw);
+#endif
   std::vector<std::array<uint32_t, 2>> progress;
   const auto statistics = lightmap::denoise(layout, values, {}, [&](uint32_t completed, uint32_t total) {
     progress.push_back({completed, total});

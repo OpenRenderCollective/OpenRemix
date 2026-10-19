@@ -1,5 +1,6 @@
 #include "forward/lightmap/denoise_device.h"
 #include "forward/lightmap/denoise_chart.h"
+#include "forward/lightmap/denoise_cpu.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -109,16 +110,56 @@ namespace remix::forward::lightmap::denoising {
       const int expected = device == FilterDevice::Cpu ? OIDN_DEVICE_TYPE_CPU : OIDN_DEVICE_TYPE_CUDA;
       return scratch.deviceType == expected ? projected : std::numeric_limits<double>::infinity();
     }
+    double measureCpuQueues(std::vector<ProbeBatch> &batches, uint32_t threads, size_t requiredCapacity,
+                            HostTransfers transfers, std::stop_token cancelled) {
+      constexpr uint32_t queues = 4;
+      std::array<DenoiseStatistics, queues> statistics;
+      std::array<std::unique_ptr<Filter>, queues> filters;
+      for (uint32_t i = 0; i < queues; ++i) {
+        filters[i] = std::make_unique<Filter>(statistics[i], requiredCapacity, transfers,
+                                              FilterDispatch::Ordinary, FilterDevice::Cpu, threads);
+        filters[i]->initialize(cancelled);
+      }
+      double projected = 0;
+      for (auto &batch : batches) {
+        // Warm each independent binding before timing. Trial writes remain in
+        // copied packets; neither device calibration can mutate map lighting.
+        for (uint32_t i = 0; i < queues && i < batch.packets.size(); ++i) {
+          auto &packet = batch.packets[i];
+          std::copy(batch.original[i].begin(), batch.original[i].end(), packet.fields.begin());
+          filters[i]->run(packet.fields, batch.width, batch.height, 0, packet.contentWidth,
+                          packet.contentHeight);
+        }
+        const auto began = std::chrono::steady_clock::now();
+        cpuQueues(queues, cancelled, [&](uint32_t index, std::stop_token stop) {
+          for (size_t i = index; i < batch.packets.size(); i += queues) {
+            checkCancellation(stop);
+            auto &packet = batch.packets[i];
+            std::copy(batch.original[i].begin(), batch.original[i].end(), packet.fields.begin());
+            filters[index]->enqueue(packet.fields, batch.width, batch.height, 0, packet.contentWidth,
+                                    packet.contentHeight);
+          }
+          filters[index]->finish();
+        });
+        const double seconds =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();
+        for (const auto &packet : batch.packets)
+          filters.front()->validate(packet.fields);
+        projected += seconds * batch.population / batch.packets.size();
+      }
+      return projected;
+    }
   }
-  FilterDevice chooseDevice(const Layout &layout, std::span<bake::Result> results,
-      std::span<const std::vector<uint32_t>> chartPoints, uint32_t alignment,
-      size_t requiredCapacity, HostTransfers transfers, FilterDispatch dispatch,
-      std::stop_token cancelled, DenoiseStatistics &statistics) {
+  DeviceChoice chooseDevice(const Layout &layout, std::span<bake::Result> results,
+                            std::span<const std::vector<uint32_t>> chartPoints, uint32_t alignment,
+                            size_t requiredCapacity, HostTransfers transfers, FilterDispatch dispatch,
+                            std::stop_token cancelled, DenoiseStatistics &statistics) {
     if (dispatch != FilterDispatch::Automatic || std::getenv("OIDN_DEFAULT_DEVICE") ||
         oidnGetNumPhysicalDevices() < 1 || oidnGetPhysicalDeviceInt(0, "type") != OIDN_DEVICE_TYPE_CUDA)
-      return FilterDevice::Default;
+      return {};
     const auto plan = deviceProbePlan(layout, chartPoints, alignment);
-    if (plan.empty()) return FilterDevice::Default;
+    if (plan.empty())
+      return {};
     const auto began = std::chrono::steady_clock::now();
     try {
       std::vector<ProbeBatch> batches;
@@ -147,13 +188,40 @@ namespace remix::forward::lightmap::denoising {
       std::fprintf(stderr, "OIDN device calibration: %u chart probes, %.3f s; projected CPU %.3f s / default %.3f s; CPU %u\n",
           statistics.calibrationCharts, statistics.deviceCalibrationSeconds,
           statistics.cpuEstimateSeconds, statistics.defaultEstimateSeconds, unsigned(cpu));
-      return cpu ? FilterDevice::Cpu : FilterDevice::Default;
+      DeviceChoice choice{cpu ? FilterDevice::Cpu : FilterDevice::Default};
+      // Keep explicit thread limits and small machines on the established path.
+      // Four devices share at most 32 nominal worker slots. Require a measured
+      // 25% margin on copied real charts before paying their additional storage.
+      const uint32_t hardware = std::min(32u, std::thread::hardware_concurrency());
+      if (cpu && hardware >= 16 && !std::getenv("OIDN_NUM_THREADS")) {
+        try {
+          statistics.parallelCpuEstimateSeconds =
+              measureCpuQueues(batches, hardware / 4, requiredCapacity, transfers, cancelled);
+          if (statistics.parallelCpuEstimateSeconds > 0 &&
+              statistics.parallelCpuEstimateSeconds < statistics.cpuEstimateSeconds * .75) {
+            choice.cpuQueues = 4;
+            choice.cpuThreads = hardware / 4;
+          }
+        } catch (const std::exception &error) {
+          checkCancellation(cancelled);
+          oidnGetDeviceError(nullptr, nullptr);
+          std::fprintf(stderr, "OIDN CPU queue calibration unavailable: %s\n", error.what());
+        }
+        std::fprintf(
+            stderr,
+            "OIDN CPU queues: projected serial %.3f s / parallel %.3f s; %u queues, %u threads each\n",
+            statistics.cpuEstimateSeconds, statistics.parallelCpuEstimateSeconds, choice.cpuQueues,
+            choice.cpuThreads);
+      }
+      statistics.deviceCalibrationSeconds =
+          std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();
+      return choice;
     } catch (const std::exception &error) {
       statistics.deviceCalibrationSeconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();
       checkCancellation(cancelled);
       oidnGetDeviceError(nullptr, nullptr); // optional calibration must not poison default creation
       std::fprintf(stderr, "OIDN device calibration unavailable: %s\n", error.what());
-      return FilterDevice::Default;
+      return {};
     }
   }
 #endif

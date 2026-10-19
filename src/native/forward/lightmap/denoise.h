@@ -22,7 +22,8 @@ namespace remix::forward::lightmap {
     double seconds = 0;
     // Host wall intervals, not GPU timestamps. Submission may block in the
     // driver; waits measure only explicit synchronization. These intervals do
-    // not include one another and leave orchestration as the unmeasured rest.
+    // not include one another within a queue. Parallel CPU queues sum worker
+    // intervals, which can overlap; seconds remains the overall wall duration.
     double initializationSeconds = 0, preparationSeconds = 0;
     double uploadSeconds = 0, executionSeconds = 0, readbackSeconds = 0;
     double waitSeconds = 0, chartSeconds = 0;
@@ -31,6 +32,8 @@ namespace remix::forward::lightmap {
     // production counters above. Total seconds includes calibration wall time.
     uint32_t calibrationCharts = 0;
     double deviceCalibrationSeconds = 0, cpuEstimateSeconds = 0, defaultEstimateSeconds = 0;
+    uint32_t cpuQueues = 1, cpuThreadsPerQueue = 0;
+    double parallelCpuEstimateSeconds = 0;
   };
   // Chart-heavy CUDA workloads may compare bounded real-chart CPU/GPU trials
   // before filtering. A CPU win needs a 35% projected margin; small maps,
@@ -57,6 +60,13 @@ namespace remix::forward::lightmap {
   // support retain ordinary dispatch. This changes submission, not filtering.
   // CPU devices, oversized packets and failed pinned
   // allocations retain pageable transfers. Pageable mode supports comparisons.
+  // A measured CPU win may also test four independent chart queues, with at most
+  // 32 nominal threads and a required additional 25% projected saving. Explicit
+  // OIDN device/thread overrides retain serial scheduling. Queues partition the
+  // 8 MiB host target and 32-chart limit; each can still admit one oversized
+  // chart and owns an image buffer/model. Their storage peaks are summed in the
+  // statistics. Chart data never shares a spatial filtering image. Any failure
+  // cancels peers; all devices retire before results or callbacks are released.
   DenoiseStatistics denoise(const Layout &layout, std::span<bake::Result> results,
                             std::stop_token cancelled = {},
                             std::function<void(uint32_t completed, uint32_t total)> progress = {},

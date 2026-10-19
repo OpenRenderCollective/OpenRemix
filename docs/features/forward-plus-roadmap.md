@@ -148,8 +148,20 @@ lighting. Keep authored overrides optional; improving automatic fitting remains 
 | Rough SSR, optional hardware reflections and live GI | Implemented | Refresh actual-engine toggles and shared-scene lifetime coverage; continue measured performance work where needed |
 | Shared USD/PBR material replacements | Implemented; plain Source roughness fallback corrected | Refresh late material arrival and broader material/BRDF parity in the current engine build |
 | Water optics, normals, HDR refraction, SSR/RT and underwater composition | Implemented; enabled for new settings; lazy refraction snapshots | Broader underwater/lifecycle validation, noise and live visual comparison with path-traced material response |
-| OIDN indirect-lightmap filtering | Implemented; bounded real-chart CPU/CUDA calibration for chart-heavy maps, explicit device overrides retained; defaults on where available, raw fallback without OIDN | Connected-seam review and lower-sample quality comparisons; distribution of optional dependencies |
+| OIDN indirect-lightmap filtering | Implemented; bounded real-chart CPU/CUDA calibration, with independent CPU chart queues when an additional measured margin justifies them; explicit device/thread overrides retained | Connected-seam review and lower-sample quality comparisons; distribution of optional dependencies |
 | Usable build and deployment | Feature branches/remotes retained; Windows runtime bundler available | Remaining platform/dependency coverage, lifecycle smoke tests and final delivery instructions |
+
+CPU queue checkpoint (2026-10-20): chart-heavy workloads that already favor CPU
+filtering can compare four independent queues against serial filtering on copied
+real charts. Selection requires a further 25% projected saving, at least 16 logical
+processors, and no explicit OIDN thread override. Queues share a nominal budget of
+32 threads and retain separate chart images, cancellation and joined lifetimes.
+Controlled replay pairs reduced main denoising from 19.1 to 11.4 seconds on
+Crossfire and 16.6 to 10.5 seconds on c1a0d. Styled fields retained serial filtering
+where trials did not justify parallelism. A temporary Crossfire verifier compared
+all 3,832 main-lightmap packets with serial CPU filtering on identical inputs,
+bit for bit; that verifier is not part of production. These are bake measurements,
+not live frame-rate claims. Existing baked caches remain compatible.
 
 Forward+ displays a passive map-lighting indicator while preparing or baking, even
 when settings are closed. It shows the current stage's work counts when available

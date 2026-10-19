@@ -17,9 +17,13 @@ namespace remix::forward::lightmap::denoising {
       std::span<const std::vector<uint32_t>> chartPoints, uint32_t alignment);
   bool preferCpuDevice(double cpu, double ordinary);
 #ifdef REMIX_OIDN
-  FilterDevice chooseDevice(const Layout &layout, std::span<bake::Result> results,
-      std::span<const std::vector<uint32_t>> chartPoints, uint32_t alignment,
-      size_t requiredCapacity, HostTransfers transfers, FilterDispatch dispatch,
-      std::stop_token cancelled, DenoiseStatistics &statistics);
+  struct DeviceChoice {
+    FilterDevice device = FilterDevice::Default;
+    uint32_t cpuQueues = 1, cpuThreads = 0;
+  };
+  DeviceChoice chooseDevice(const Layout &layout, std::span<bake::Result> results,
+                            std::span<const std::vector<uint32_t>> chartPoints, uint32_t alignment,
+                            size_t requiredCapacity, HostTransfers transfers, FilterDispatch dispatch,
+                            std::stop_token cancelled, DenoiseStatistics &statistics);
 #endif
 }
