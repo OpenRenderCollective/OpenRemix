@@ -72,10 +72,11 @@ namespace remix::forward::bake {
     auto &probe = grid.probes[index];
     probe = value;
     if (grid.header.settings[2] > .5f) {
-      uint32_t coordinate = indexed(grid.header) ? grid.nodes.at(index) : index;
+      uint32_t coordinate = index;
       for (uint32_t c = 0; c < 3; ++c) {
-        const float original = grid.header.originSpacing[c] +
-                               (coordinate % grid.header.dimensions[c]) * grid.header.originSpacing[3];
+        const float original = grid.origins.empty()
+            ? grid.header.originSpacing[c] + (coordinate % grid.header.dimensions[c]) * grid.header.originSpacing[3]
+            : grid.origins.at(index).position[c];
         probe.irradiance[c][3] = grid.points[index].position[c] - original;
         coordinate /= grid.header.dimensions[c];
       }

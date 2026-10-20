@@ -45,19 +45,19 @@ namespace remix::forward::bake::cache {
       return std::max(1u, (count + probeHeaderBlockSlots - 1) / probeHeaderBlockSlots);
     }
     // Bump whenever incompatible planning, transport or wire semantics change.
-    constexpr uint32_t algorithmRevision = 23; // compact irradiance records and occupancy-fitted lattice
+    constexpr uint32_t algorithmRevision = 24; // measured coarse/fine irradiance refinement
     void require(bool value) {
       if (!value)
         throw std::runtime_error("Invalid bake cache metadata");
     }
-    void probeOffsets(const GridHeader &header, const Result &probe) {
+    void probeOffsets(const GridHeader &header, const Result &probe, float spacing = 0) {
       require(probe.irradiance[7][3] == 0 || probe.irradiance[7][3] == 1);
       require(probe.irradiance[8][3] >= 0 && probe.irradiance[8][3] <= 1);
       if (header.settings[2] > .5f)
         for (uint32_t c = 0; c < 3; ++c)
           require(std::isfinite(probe.irradiance[c][3]) &&
-                  std::abs(probe.irradiance[c][3]) <= header.originSpacing[3] * .4501f &&
-                  (header.settings[2] != 2 || probe.irradiance[c][3] == 0));
+                  std::abs(probe.irradiance[c][3]) <= (spacing > 0 ? spacing : header.originSpacing[3]) * .4501f &&
+                  ((header.settings[2] != 2 && header.settings[2] != 4) || probe.irradiance[c][3] == 0));
     }
     template <typename Range> void finite(const Range &values) {
       for (auto value : values)
@@ -85,8 +85,8 @@ namespace remix::forward::bake::cache {
       require(grid.header.settings[3] == 0);
       require(grid.header.originSpacing[3] > 0 && device.storageRange >= sizeof(GridHeader));
       const auto addressing = grid.header.settings[2];
-      require(addressing == 0 || addressing == 2 ||
-              ((addressing == 1 || addressing == 3) && config.relocateProbes));
+      require(addressing == 0 || addressing == 2 || addressing == 4 ||
+              ((addressing == 1 || addressing == 3 || addressing == 5) && config.relocateProbes));
       const auto maximum =
           std::min(uint64_t(config.maxProbes), (device.storageRange - sizeof(GridHeader)) / sizeof(Result));
       uint64_t count = 1;
@@ -97,7 +97,8 @@ namespace remix::forward::bake::cache {
       }
       const uint64_t nodes = count;
       count = grid.header.dimensions[3];
-      require(count > 0 && count <= maximum && (indexed(grid.header) ? count <= nodes : count == nodes));
+      require(count > 0 && count <= maximum &&
+              (adaptive(grid.header) || (indexed(grid.header) ? count <= nodes : count == nodes)));
       grid.probes = input.array<Result>(count);
       require(grid.probes.size() == count);
       for (const auto &probe : grid.probes) {
@@ -115,19 +116,11 @@ namespace remix::forward::bake::cache {
         used[task] = true;
       }
       if (indexed(grid.header)) {
-        grid.lookup = input.array<uint32_t>(nodes);
-        require(grid.lookup.size() == nodes && gridBytes(grid) <= device.storageRange);
-        std::fill(used.begin(), used.end(), false);
-        grid.nodes.resize(size_t(count));
-        for (uint32_t node = 0; node < grid.lookup.size(); ++node) {
-          const auto record = grid.lookup[node];
-          require(record <= count);
-          if (!record) continue;
-          require(!used[record - 1]);
-          used[record - 1] = true;
-          grid.nodes[record - 1] = node;
-        }
-        require(std::all_of(used.begin(), used.end(), [](bool value) { return value; }));
+        grid.lookup = input.array<uint32_t>(adaptive(grid.header) ? maximumDirectoryWords : nodes);
+        require(gridBytes(grid) <= device.storageRange);
+        grid.origins = directoryOrigins(grid);
+        for (uint32_t i = 0; i < grid.probes.size(); ++i)
+          probeOffsets(grid.header, grid.probes[i], grid.origins[i].relocationSpacing);
       }
     }
     void localProbeOwners(const Grid &grid, const scene::BakeScene &source,
@@ -524,33 +517,17 @@ namespace remix::forward::bake::cache {
         require(view.mixed.lights.source != nullptr);
         localProbeOwners(view.grid, *view.mixed.lights.source, *view.localProbes);
       }
-      require(view.grid.header.settings[2] >= 0 && view.grid.header.settings[2] <= 3 &&
+      require(view.grid.header.settings[2] >= 0 && view.grid.header.settings[2] <= 5 &&
               std::floor(view.grid.header.settings[2]) == view.grid.header.settings[2]);
-      if (indexed(view.grid.header)) {
-        const auto &d = view.grid.header.dimensions;
-        uint64_t nodes = 1;
-        for (uint32_t c = 0; c < 3; ++c) {
-          require(d[c] >= 2 && d[c] <= maximumGridNodes / nodes);
-          nodes *= d[c];
-        }
-        require(d[3] > 0 && view.grid.lookup.size() == nodes &&
-                view.grid.probes.size() == d[3]);
-        std::vector<bool> used(view.grid.probes.size(), false);
-        for (auto record : view.grid.lookup) {
-          require(record <= used.size());
-          if (!record) continue;
-          require(!used[record - 1]);
-          used[record - 1] = true;
-        }
-        require(std::all_of(used.begin(), used.end(), [](bool value) { return value; }));
-      } else require(view.grid.lookup.empty());
+      const auto origins = directoryOrigins(view.grid);
       require(view.grid.header.settings[3] == 0);
       if (!view.styles.empty()) {
         require(view.mixed.lights.source != nullptr);
         sparse::validate(view.styles, {view.layout.pageSize, view.layout.pages, uint32_t(view.grid.probes.size())},
                          styleIds(*view.mixed.lights.source), view.styles.size_bytes());
       }
-      for (const auto &probe : view.grid.probes) probeOffsets(view.grid.header, probe);
+      for (uint32_t i = 0; i < view.grid.probes.size(); ++i)
+        probeOffsets(view.grid.header, view.grid.probes[i], origins.empty() ? 0 : origins[i].relocationSpacing);
       require(view.surfaceSamples || std::any_of(view.grid.probes.begin(), view.grid.probes.end(),
                                                  [](const auto &p) { return p.statistics[3] > .5f; }));
       std::filesystem::create_directories(file.parent_path());

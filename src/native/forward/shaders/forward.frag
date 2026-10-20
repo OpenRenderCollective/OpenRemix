@@ -104,6 +104,16 @@ void main() {
   vec4 surfaceLighting = vec4(0);
   bool charted = surfaceIrradiance(surfaceLightmap, n, surfaceLighting);
   uint debugView = LightingView;
+  if (debugView == 6u) {
+    bool covered = charted || localProbeStencil(worldPosition, n);
+    result = vec4(charted ? vec3(0, 0, 1) : covered ? vec3(0, 1, 0) : vec3(1, 0, 0),
+                  m.pbr.w > .5 ? surface.a : 1);
+#ifdef REFLECTION_GUIDES
+    outNormalRoughness = vec4(n, roughness);
+    outReflectance = vec4(0);
+#endif
+    return;
+  }
   if (debugView == 1u || debugView == 5u) {
     // Neutral irradiance: exclude albedo, metallic, emission and reflections.
     vec3 indirect = charted ? surfaceLighting.rgb / Pi

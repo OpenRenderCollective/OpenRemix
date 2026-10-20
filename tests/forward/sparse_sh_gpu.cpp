@@ -15,7 +15,11 @@ using namespace remix::forward::test;
 namespace b = remix::forward::bake;
 namespace s = b::sparse;
 namespace lm = remix::forward::lightmap;
-int main(int argc, char **) try {
+int main(int argc, char **argv) try {
+  const bool localFactor = argc > 1 && std::strcmp(argv[1], "adaptive-localfactor") == 0;
+  const bool stitched = argc > 1 && std::strcmp(argv[1], "adaptive-stitched") == 0;
+  const bool refined = stitched || localFactor || (argc > 1 && std::strcmp(argv[1], "adaptive") == 0);
+  const uint32_t probeCount = stitched ? 57 : refined ? 35 : 8;
   Fixture fixture(false);
   struct Gpu {
     VkDevice device;
@@ -61,7 +65,35 @@ int main(int argc, char **) try {
   base.header.originSpacing = {-1,-1,-1,2};
   base.header.dimensions = {2,2,2,8};
   base.header.settings = {.05f,.0001f,1,0};
-  if (argc > 1) {
+  if (stitched) {
+    base.header.dimensions = {3, 2, 2, probeCount};
+    base.header.settings[2] = 5;
+    base.lookup.resize(84);
+    for (uint32_t node = 0; node < 12; ++node) base.lookup[node] = node + 1;
+    base.lookup[12] = b::adaptiveDirectoryMagic;
+    base.lookup[13] = 2;
+    base.lookup[14] = 84;
+    base.lookup[15] = 12;
+    base.lookup[16] = b::patchReference(28, 2, 2);
+    base.lookup[17] = b::patchReference(56, 2, 1);
+    for (uint32_t node = 0; node < 27; ++node) base.lookup[28 + node] = 13 + node;
+    uint32_t next = 40;
+    for (uint32_t z = 0; z < 3; ++z)
+      for (uint32_t y = 0; y < 3; ++y)
+        for (uint32_t x = 0; x < 3; ++x)
+          base.lookup[56 + (z * 3 + y) * 3 + x] = x ? next++ : 13 + (z * 3 + y) * 3 + 2;
+  } else if (refined) {
+    base.header.dimensions[3] = probeCount;
+    base.header.settings[2] = 5;
+    base.lookup.resize(48);
+    for (uint32_t node = 0; node < 8; ++node) base.lookup[node] = node + 1;
+    base.lookup[8] = b::adaptiveDirectoryMagic;
+    base.lookup[9] = localFactor ? 8 : 2;
+    base.lookup[10] = 48;
+    base.lookup[11] = 8;
+    base.lookup[12] = localFactor ? b::patchReference(20, 2) : 20;
+    for (uint32_t node = 0; node < 27; ++node) base.lookup[20 + node] = 9 + node;
+  } else if (argc > 1) {
     base.header.dimensions = {3, 3, 3, 8};
     base.header.settings[2] = 3;
     base.lookup.resize(27);
@@ -70,9 +102,9 @@ int main(int argc, char **) try {
       base.lookup[(z * 3 + y) * 3 + x] = 8 - corner;
     }
   }
-  base.probes.resize(8);
-  std::vector<b::Result> probe32(8), probe97(8);
-  for (uint32_t i = 0; i < 8; ++i) {
+  base.probes.resize(probeCount);
+  std::vector<b::Result> probe32(probeCount), probe97(probeCount);
+  for (uint32_t i = 0; i < probeCount; ++i) {
     base.probes[i].irradiance[0] = {.8f + i * .025f,.5f,.3f, i & 1 ? -.4f : .4f};
     base.probes[i].irradiance[1][3] = i & 2 ? -.2f : .2f;
     base.probes[i].statistics[3] = 1;
@@ -82,15 +114,16 @@ int main(int argc, char **) try {
     probe97[i].irradiance[0][1] = .25f + i * .02f;
     probe97[i].irradiance[2][1] = .5f;
   }
-  s::Builder builder({33,2,8}, 4u << 20);
+  s::Builder builder({33,2,probeCount}, 4u << 20);
   builder.add(97, layout, surface97, probe97);
   builder.add(32, layout, surface32, probe32);
   const auto words = builder.serialize();
   const uint32_t styles[] = {32,97};
-  s::validate(words, {33,2,8}, styles, 4u << 20);
+  s::validate(words, {33,2,probeCount}, styles, 4u << 20);
   const size_t baseBytes = b::gridBytes(base);
   std::vector<std::byte> encoded((baseBytes + words.size() * 4 + 15) / 16 * 16);
-  std::memcpy(encoded.data(), &base.header, sizeof(base.header));
+  const auto publishedHeader = b::publicationHeader(base.header, base.lookup.size());
+  std::memcpy(encoded.data(), &publishedHeader, sizeof(publishedHeader));
   std::memcpy(encoded.data() + sizeof(base.header), base.probes.data(), base.probes.size() * sizeof(b::Result));
   if (!base.lookup.empty())
     std::memcpy(encoded.data() + sizeof(base.header) + base.probes.size() * sizeof(b::Result),
@@ -114,10 +147,12 @@ int main(int argc, char **) try {
     queries.push_back({coordinate, {0,0,1,0}, {0,0,0,0}});
     queries.push_back({coordinate, {0,0,1,0}, {3,0,0,0}});
   }
-  for (uint32_t i = 0; i < 8; ++i) for (const auto &n : normals)
+  for (uint32_t i = 0; i < probeCount; ++i) for (const auto &n : normals)
     queries.push_back({{}, {n[0],n[1],n[2],0}, {1,i,0,0}});
   for (float x : {-.5f,0.f,.5f,1.f,2.f,4.f}) for (const auto &n : normals)
     queries.push_back({{x,0,0,0}, {n[0],n[1],n[2],0}, {2,0,0,0}});
+  if (stitched) for (float x : {.9999f, 1.f, 1.0001f}) for (const auto &n : normals)
+    queries.push_back({{x, 0, 0, 0}, {n[0], n[1], n[2], 0}, {2, 0, 0, 0}});
   queries.push_back({{.5f,.5f,-1,1}, {0,0,1,0}, {0,0,0,0}});
   queries.push_back({{.5f,.5f,0,0}, {0,0,1,0}, {0,0,0,0}});
   gpu.weights.create(fixture.physical, fixture.device, 32 * sizeof(Vec4), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
@@ -212,13 +247,13 @@ int main(int argc, char **) try {
     weights[32/4][32%4] = scenario[0];
     weights[97/4][97%4] = scenario[1];
     gpu.weights.write(weights.data(),sizeof(weights));
-    auto header = base.header;
+    auto header = b::publicationHeader(base.header, base.lookup.size());
     header.settings[3] = b::publicationSettings(0, scenario[2] != 0);
     gpu.grid.write(&header,sizeof(header));
     const b::StyleScale scales[] = {{32,scenario[2] ? scenario[0] : 0,b::StyleStatus::Ready},
                                    {97,scenario[2] ? scenario[1] : 0,b::StyleStatus::Ready}};
     auto combined = base;
-    for (uint32_t i = 0; i < 8; ++i) for (const auto &scale : scales) {
+    for (uint32_t i = 0; i < probeCount; ++i) for (const auto &scale : scales) {
       const auto coefficients = s::probe(words,scale.style,i);
       for (uint32_t j = 0; j < 9; ++j) for (uint32_t c = 0; c < 3; ++c)
         combined.probes[i].irradiance[j][c] += scale.value * coefficients[j][c];

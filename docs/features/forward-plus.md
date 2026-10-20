@@ -9,6 +9,11 @@ available implementation. Public viewer code and extracted resources do not
 establish Valve compiler limits or defaults. A light's authored range, runtime
 light count and baked visibility-channel capacity are separate properties.
 
+Reference repositories:
+VRF Viewer (MIT Licenced): https://github.com/ValveResourceFormat/ValveResourceFormat/tree/master/Renderer
+S&box Engine Public Managed Code (MIT Licenced): https://github.com/Facepunch/sbox-public
+
+
 Select `Forward+ (experimental)` in the Rendering tab, or set:
 
 ```ini

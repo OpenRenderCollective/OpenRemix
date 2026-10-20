@@ -9,6 +9,56 @@ remain compatible with the same authored optical materials.
 This roadmap tracks delivery requirements. Detailed measurements and run evidence belong in local
 reports. An implementation or synthetic test alone does not close an integration or visual-quality gate.
 
+## Handoff status (2026-10-20)
+
+The current task is to make this branch ready for another contributor, not to claim renderer completion.
+Read [the continuation guide](forward-plus-handoff.md) first. The feature list below includes historical
+checkpoints; an implemented feature is not automatically accepted in live gameplay.
+
+The deployed native checkpoint is `e51bff0`; the adapter checkpoint is `712a3aa`. The newer adaptive
+irradiance integration is an **unreleased research checkpoint**. It improves five of six synthetic
+receiver comparisons in Construct but regresses GPU cost against the installed uniform-grid build.
+Do not deploy the branch tip as a default-performance improvement. Keep the installed version intact.
+There is no release-quality switch isolating the new adaptive policy yet; resolving that policy or
+replacing/deferring the candidate is the first release decision. No further speculative experiments
+are required just to complete this handoff.
+
+### Consolidated requested work and remaining acceptance
+
+| User requirement / report | State and remaining work |
+| --- | --- |
+| Source-2-style cheaper backend; clean, modular readable code | Core Forward+ backend implemented. Review the new adaptive modules and lifetime/cancellation boundaries before release; no promise of live FPS parity with path tracing. |
+| Fully baked direct + indirect on static surfaces and probes | Canonical baked runtime implemented, with attributed corrections, selected highlights and conservative unknown fallback. Finish live map-scale correctness/performance acceptance and retire only proven-redundant paths. |
+| Scalable single-channel visibility/index layers, sharing nonoverlapping lights | Indexed R8/shared-page/compressed encodings and attributed directional fields implemented. Validate arbitrary overlap, budgets, cancellation, cache migration and unknown coverage; do not claim a confirmed CS2 four-light or 1024-unit rule. |
+| Toggleable/named/styled lights baked and independently controlled | Grouped direct/indirect data implemented with scalar runtime control. Broaden live toggle/removal/replacement and mixed-shadow checks; native contracts must remain engine agnostic. |
+| Surface atlases using a fixed memory/texture budget | Surface charts, world-space density and bounded page packing implemented. Quality varies. Inspect chart continuity, seams, page utilization, skybox weighting and backface waste. Pages are intentional; one 4K atlas is a request to evaluate, not a requirement to discard paging. User later preferred 4K/compression over multi-GB allocations. |
+| Soft radial emitters, soft static shadows and antialiased direct bake | Finite emitter transport and sunlight refinement exist. Improve local/overflow and thin-shadow refinement, indirect noise and connected seams; compare path-traced emitter semantics. |
+| Hardware-accelerated, fast map-load baking; OIDN like vrad3 | HW ray-query transport, budgeting, indexed visibility, bounded OIDN calibration/CPU queues implemented. Cold-map work/latency still need broader profiling. Do not mislabel GPU frame time or whole startup time as bake transport time. |
+| Long overflow visibility stages; c1a0d noise; Lost Coast/Steamlab baking | Some bottlenecks and chart faults fixed. Keep d2_lostcoast, dm_steamlab and c1a0d on the regression matrix; these reports are not universally closed. Intersecting lights and range/unit conversions need transport parity review. |
+| Static world excluded from mixed moving-shadow maps | Implemented caster membership and empty-map correction shortcuts. Verify terrain, static props, replacements, map transitions and viewmodels; keep offscreen dynamic casters. Leave engine frustum culling off as requested. |
+| Mixed shadow fade, point-light filtering, wall leaks | Timed selection/highlight fades and filtering changes exist. User suggested about two seconds; verify live transitions, penumbrae and c1a0 close-wall pre-bake artifacts. Construct white-room toggleable lights are an important leak reproduction. |
+| Stable persistent caches; no rebake on camera/weapon changes | Cache validation and invalidation receipts exist. Investigate remaining spontaneous/weapon-change rebakes; distinguish real light/material edits from identity bugs. Warm replay parity is not proof that installed live caches always work. |
+| Auto exposure and same tonemap path as path tracing | Shared postprocessing and exposure controls implemented. Refresh live adaptation, HDR/water and mode-switch acceptance; coverage diagnostics intentionally bypass automatic exposure. |
+| Automatic tolerant parallax bounds, overlap/feathering, priorities | Default reflection budget is now 64, with 53 Construct captures in the stable checkpoint. Capacity improved hall coverage; automatic room fitting, bevel tolerance, doorway/wall separation, rotations and blending remain open. Capture point and influence/projection boxes are distinct. |
+| Better dynamic probe quality in Construct's main room | Target is the diagonal roof-slit skylit hall, especially props. Stable uniform grid remains coarse. Adaptive candidate/cache transitions and shared nodes are implemented but unreleased due mixed quality and GPU regression. Validate moving props and other maps, not just six spheres. |
+| Cubemaps captured after lighting | Ordering is implemented; verify invalidation/re-capture after styled/material/lighting changes without unrelated full diffuse rebakes. |
+| Roughness-aware s&box-like SSR, full resolution default, viewmodel SSR | Implemented paths and tests exist. Refresh live roughness, disocclusion, blend with cubemaps/RT, and actual weapon acceptance. |
+| PBR/AutoPBR and shared Remix replacements | Shared asset/material path implemented, including safer Source roughness fallback. Verify late replacement arrival, normals, BRDF/roughness parity and authored PBR examples; no separate incompatible asset conversion path. |
+| Viewmodel overlay, world probe lighting, received/self shadows | Dedicated close-up path/cascade, overlay and isolated self shadows implemented. Verify weapon changes, world-shadow reception, offscreen casters, SSR and that self shadows never affect the world. |
+| Decals borrow underlying lighting | Receiver borrowing implemented. Review fullbright exceptions, modulating decals, close receiver selection and live overlays. |
+| Water vaguely compatible with path tracing; CS2 water later | Optical-material, normals, HDR refraction, SSR/RT and underwater paths implemented. Broader lifecycle/noise/material parity remains; exact CS2-water recreation is a later aspiration. |
+| F12 cursor capture/menu usability and sky pitch/flip | Input bridge and sky changes have checks, but physical mouse/engine acceptance and reported sky behavior need live retesting. Separate pre-render engine startup exits from renderer defects. |
+| Performance: Crossfire, c1a0, Construct white room, stutter | Clustered screen tiles/depth slices already exist. Profile CPU submission, fragment invocations/overdraw, shading, lists, shadows, presentation and spikes separately. Replay is not live-game FPS. Do not repeat rejected shader/storage/draw trials without new evidence. |
+| Optional screen-space shadows, virtual shadow maps, distance reflections | Research/backlog only; retain present techniques as defaults. Do not expand this before correctness/performance release gates. |
+| Cubemap editor with textured worklight viewport, gizmos and right-mouse WASD | Native Qt workbench exists in adapter tools, with face handles, move/rotate/independent capture/priority, undo/save and live sidecar publication. Polish/test against BSPs; new standalone tooling should prefer C#. Larger Hammer-2-like replacement editor is a later project. Do not redistribute Valve icons/styles. |
+| Disk cleanup, testing install, official remotes and upstream merges | Testing install remains separate; official remotes/feature branches retained and main untouched. Preserve user configs/addon mounts and authored data. Cleanup needs verified payload receipts; refresh upstream merges deliberately, then retest before deployment. |
+
+Reference engines are Counter-Strike 2, Half-Life: Alyx and s&box. VRF's Renderer is an unofficial
+Source 2 resource viewer/reconstruction, useful for format/shader interpretation but not proof of Valve's
+compiler behavior. Study extracted lightmap/probe assets and authored combined volumes; avoid inventing
+engine limits from filenames, channel count or a single map. A future exact Hammer-style editor is not
+a prerequisite for the renderer handoff.
+
 ## Primary delivery task: default baked lighting
 
 Finish the baked runtime before adding renderer features. Ordinary fixed lights should contribute
@@ -153,7 +203,7 @@ lighting. Keep authored overrides optional; improving automatic fitting remains 
 | Aggregate fully static diffuse and compact directional lightmaps | Controller integration retains attributed masks/SH beside aggregate RGB; surface/probe publication, moving shadows and cache reload tested at 1x/2x/4x MSAA; definition edits/removal invalidate stale data until recapture; the default runtime baked policy bounds per-light corrections/highlights on covered receivers and retains analytic fallback; optional adapter bake hints preserve mixed requirements and identify sphere-shaped surface emission; covered receivers cluster only the mixed/dynamic prefix, with the complete light tail retained for uncovered fallback; runtime profiles enable the canonical policy | Earlier all-mixed aggregate alone did not improve steady-state cost; current policy selects mixed slots and independent highlights with timed fades, retains fallback coverage and skips proven-empty moving-map corrections. Broader live receiver coverage, water/probe/RT parity and map quality acceptance remain open |
 | Dynamic-object shadows combined with baked static shadows | Implemented; captured static casters excluded; overflow audits classify constant visibility and retain bounded-error palette masks within a memory budget | Confirm retained coverage across maps and bake quality settings; budget-exhausted overflow still requires realtime shadow capacity/range; live receivers, characters and static membership after map changes |
 | Indexed visibility storage beyond four channels | Primary and overflow visibility share indexed scalar records, using shared R8 pages or compressed masks; publication can omit the legacy visibility layer when total GPU allocations shrink; worker conversion preserves cache identity and source layout | Storage does not reduce visibility ray counts; broaden map-level latency/coverage validation of the integrated mixed-selection and aggregate policy |
-| Automatic parallax cubemap bounds with tolerance for room details | Coverage-based selection and optional 32-capture capacity; receiver bounds contact nearby axis-aligned room surfaces independently of inset projection boxes | Limited budgets still leave rooms uncovered; review transitions, rotated rooms and reflection leaks across multiple maps |
+| Automatic parallax cubemap bounds with tolerance for room details | Coverage-based selection and default 64-capture capacity; receiver bounds contact nearby axis-aligned room surfaces independently of inset projection boxes | Limited budgets still leave rooms uncovered; review transitions, rotated rooms and reflection leaks across multiple maps |
 | Rough SSR, optional hardware reflections and live GI | Implemented | Refresh actual-engine toggles and shared-scene lifetime coverage; continue measured performance work where needed |
 | Shared USD/PBR material replacements | Implemented; plain Source roughness fallback corrected | Refresh late material arrival and broader material/BRDF parity in the current engine build |
 | Water optics, normals, HDR refraction, SSR/RT and underwater composition | Implemented; enabled for new settings; lazy refraction snapshots | Broader underwater/lifecycle validation, noise and live visual comparison with path-traced material response |

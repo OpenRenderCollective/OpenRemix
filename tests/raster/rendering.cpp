@@ -875,7 +875,7 @@ namespace {
       };
       const auto shaded = render();
       const size_t at = (32 * 64 + 32) * 4;
-      for (uint32_t view : {1u, 2u, 3u, 4u, 5u}) {
+      for (uint32_t view : {1u, 2u, 3u, 4u, 5u, 6u}) {
         options.debugView = view;
         target.enableForward(options, true);
         const auto image = render();
@@ -883,11 +883,12 @@ namespace {
           require(image[at] > 40 && std::abs(int(image[at]) - int(image[at + 1])) <= 1 &&
                       std::abs(int(image[at]) - int(image[at + 2])) <= 1,
                   "Neutral indirect view excludes material tint, emission and direct lights");
-        else if (view == 4) {
-          const auto expected = prismDisplay({.8f, .2f, .05f});
+        else if (view == 4 || view == 6) {
+          const auto expected = view == 6 ? prismDisplay({1, 0, 0}) : prismDisplay({.8f, .2f, .05f});
           pixel(image, 32, 32, int(std::round(expected[0] * 255)), int(std::round(expected[1] * 255)),
                 int(std::round(expected[2] * 255)),
-                "Unlit albedo retains material colour without ambient, coloured lights or emission");
+                view == 6 ? "Coverage marks an unbaked receiver red despite ambient and direct lighting"
+                          : "Unlit albedo retains material colour without ambient, coloured lights or emission");
         } else
           require(image[at] < 3 && image[at + 1] > 5 && image[at + 2] > 5,
                   "Direct diffuse/specular views isolate green local and blue sun light from red emission/ambient");

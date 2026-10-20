@@ -47,9 +47,8 @@ namespace remix::forward::bake {
     result.header = best.header;
     result.header.settings[2] += 2; // bit 1: indexed, bit 0: relocated origins
     result.lookup.resize(best.points.size());
-    result.nodes = std::move(best.tasks);
-    result.points.reserve(result.nodes.size());
-    for (uint32_t node : result.nodes) {
+    result.points.reserve(best.tasks.size());
+    for (uint32_t node : best.tasks) {
       result.lookup[node] = uint32_t(result.points.size()) + 1;
       result.points.push_back(best.points[node]);
     }
@@ -57,6 +56,7 @@ namespace remix::forward::bake {
     result.tasks.resize(result.points.size());
     std::iota(result.tasks.begin(), result.tasks.end(), 0u);
     result.header.dimensions[3] = uint32_t(result.points.size());
+    result.origins = directoryOrigins(result);
     return result;
   }
 } // namespace remix::forward::bake

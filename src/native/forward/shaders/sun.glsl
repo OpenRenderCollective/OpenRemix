@@ -5,7 +5,7 @@ BrdfLobes sunLightResponse(vec4 coordinate, float unitIrradiance, vec3 p, float 
   float visibility = baked ? clamp(textureLod(surfaceAtlas,
       vec3(coordinate.xy, coordinate.z * SurfaceAtlasLayers + (SurfaceAtlasLayers - 1)), 0).r, 0, 1) : 1;
   bool charted = baked;
-  if (!baked && frame.sunDirection.w > .5) {
+  if (!FullyMappedReceiver && !baked && frame.sunDirection.w > .5) {
     float probeVisibility;
     if (bakedSunVisibility(p, n, probeVisibility)) {
       baked = true;

@@ -8,6 +8,11 @@
 #include <unordered_set>
 
 namespace remix::forward::lightmap {
+  bool fullyMapped(const Mesh &mesh) {
+    return !mesh.indices.empty() && std::all_of(mesh.indices.begin(), mesh.indices.end(), [&](uint32_t index) {
+      return mesh.vertices.at(index).coordinate[3] >= .5f;
+    });
+  }
   std::vector<uint32_t> directOwners(const Mesh &mesh) {
     std::unordered_set<uint32_t> unique;
     unique.reserve(std::min<size_t>(mesh.vertices.size(), 64));

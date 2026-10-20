@@ -32,6 +32,7 @@ namespace remix::forward {
                           compositeSetLayout = VK_NULL_HANDLE;
     VkPipelineLayout layout = VK_NULL_HANDLE, compositeLayout = VK_NULL_HANDLE;
     VkPipeline opaquePipeline = VK_NULL_HANDLE, lightmapPipeline = VK_NULL_HANDLE,
+               partialLightmapPipeline = VK_NULL_HANDLE,
                depthPipeline = VK_NULL_HANDLE, depthLightmapPipeline = VK_NULL_HANDLE,
                shadowPipeline = VK_NULL_HANDLE, localShadowPipeline = VK_NULL_HANDLE,
                clusterPipeline = VK_NULL_HANDLE, compositePipeline = VK_NULL_HANDLE;
@@ -59,6 +60,7 @@ namespace remix::forward {
     VkPipelineLayout giLayout = VK_NULL_HANDLE;
     VkPipeline giOpaquePipeline = VK_NULL_HANDLE, giLightmapPipeline = VK_NULL_HANDLE;
     VkPipeline terrainPipeline = VK_NULL_HANDLE, terrainLightmapPipeline = VK_NULL_HANDLE,
+               terrainPartialLightmapPipeline = VK_NULL_HANDLE,
                giTerrainPipeline = VK_NULL_HANDLE, giTerrainLightmapPipeline = VK_NULL_HANDLE;
     std::shared_ptr<bake::Controller> baking;
     std::unique_ptr<probes::Authoring> authoredReflections;

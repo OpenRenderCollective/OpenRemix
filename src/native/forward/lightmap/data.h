@@ -26,6 +26,7 @@ namespace remix::forward::lightmap {
     std::vector<uint32_t> indices;
   };
   std::vector<uint32_t> directOwners(const Mesh &mesh);
+  bool fullyMapped(const Mesh &mesh);
   // Duplicate only vertices whose chart coordinates disagree, preserving
   // indexed reuse within charts and explicit seams between them.
   std::vector<Mesh> meshes(const scene::BakeScene &scene, const Layout &layout,

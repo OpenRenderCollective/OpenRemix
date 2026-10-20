@@ -10,9 +10,12 @@ namespace remix::forward::lightmap {
 namespace remix::forward::bake {
   struct GridHeader {
     Vec4 originSpacing{};
-    // XYZ virtual lattice dimensions; W stored record count, which can be smaller.
+    // XYZ virtual root lattice dimensions; W physical records, including refinement.
     UInt4 dimensions{};
-    // CPU/cache: bias, variance, addressing flags (1 relocated, 2 indexed), zero. Published GPU settings.w
+    // CPU/cache: bias, variance, addressing mode (0 dense, 2 indexed, 4 adaptive;
+    // add 1 for relocated origins), zero. Published GPU settings.z contains
+    // uint32 bits: low3 addressing mode, remaining bits directory vec4 count.
+    // Published GPU settings.w
     // contains uint32 bits (not a numeric float): bit0 styled-SH presence, remaining bits sparse local
     // table offset in vec4 records relative to the probe-array start.
     Vec4 settings{};
@@ -29,11 +32,59 @@ namespace remix::forward::bake {
     std::vector<uint32_t> tasks;
     std::vector<Result> probes;
     // Optional virtual lattice node -> compact record + 1; zero has no probe.
-    // nodes is the inverse, used only by CPU placement/relocation bookkeeping.
-    std::vector<uint32_t> lookup, nodes;
+    // Adaptive addressing appends four words (magic, default factor, total
+    // directory words, coarse record count), then one patch reference per root
+    // cell. Four-word-aligned patch blocks contain (factor+1)^3 record IDs.
+    std::vector<uint32_t> lookup;
+    struct Origin {
+      Vec3 position{};
+      float spacing = 0;
+      // Aligned nodes may retain a trace from an earlier, coarser level.
+      float relocationSpacing = 0;
+      bool operator==(const Origin &) const = default;
+    };
+    // CPU-only canonical trace origins and finest spacing referencing each record.
+    std::vector<Origin> origins;
   };
   inline bool indexed(const GridHeader &header) { return header.settings[2] >= 2; }
+  inline bool adaptive(const GridHeader &header) { return header.settings[2] >= 4; }
   constexpr uint32_t maximumGridNodes = 1u << 20;
+  constexpr uint32_t maximumRefinedCells = 1024;
+  constexpr uint32_t maximumDirectoryWords = maximumGridNodes * 2 + maximumRefinedCells * 732 + 8;
+  constexpr uint32_t adaptiveDirectoryMagic = 0x41475244;
+  inline GridHeader publicationHeader(GridHeader header, size_t directoryWords) {
+    const float mode = header.settings[2];
+    if (!(mode >= 0 && mode <= 5) || float(uint32_t(mode)) != mode || directoryWords > maximumDirectoryWords ||
+        ((mode < 2) != (directoryWords == 0)))
+      throw std::invalid_argument("Invalid irradiance publication header");
+    header.settings[2] = std::bit_cast<float>((uint32_t((directoryWords + 3) / 4) << 3) | uint32_t(mode));
+    return header;
+  }
+  // Patch reference: bits0..1 local log2 subdivision (zero uses the default),
+  // bits2..25 word offset, bits26..31 reciprocal shared-face flags.
+  static_assert(maximumDirectoryWords < (1u << 26));
+  inline uint32_t patchOffset(uint32_t reference) { return reference & 0x03fffffcu; }
+  inline uint32_t patchFaces(uint32_t reference) { return reference >> 26; }
+  inline uint32_t patchFactor(uint32_t reference, uint32_t fallback) {
+    return (reference & 3u) ? 1u << (reference & 3u) : fallback;
+  }
+  inline uint32_t patchReference(uint32_t offset, uint32_t factor, uint32_t faces = 0) {
+    if (!offset || offset >= (1u << 26) || (offset & 3u) || faces >= 64 ||
+        (factor != 2 && factor != 4 && factor != 8))
+      throw std::invalid_argument("Invalid irradiance patch reference");
+    return offset | std::countr_zero(factor) | (faces << 26);
+  }
+  uint32_t gridNodes(const GridHeader &header);
+  std::vector<Grid::Origin> directoryOrigins(const Grid &grid);
+  // Same-resolution faces can skip the coarse fade only when every shared
+  // node references the identical physical probe. Bits are -X,+X,-Y,+Y,-Z,+Z.
+  std::vector<uint8_t> sharedPatchFaces(const Grid &grid);
+  struct ProbeStencil {
+    std::array<uint32_t, 16> indices{};
+    std::array<float, 16> weights{};
+    uint32_t count = 0;
+  };
+  ProbeStencil probeStencil(const Grid &grid, Vec3 position, Vec3 normal);
   inline size_t lookupBytes(const Grid &grid) { return (grid.lookup.size() * sizeof(uint32_t) + 15) & ~size_t(15); }
   inline size_t gridBytes(const Grid &grid) {
     return sizeof(GridHeader) + grid.probes.size() * sizeof(Result) + lookupBytes(grid);

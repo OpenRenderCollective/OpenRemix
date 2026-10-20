@@ -109,55 +109,14 @@ namespace remix::forward::bake {
     if (!h.dimensions[3])
       return {};
     normal = normalized(normal);
-    std::array<uint32_t, 3> base;
-    Vec3 fraction;
-    for (uint32_t c = 0; c < 3; ++c) {
-      position[c] += normal[c] * h.settings[0];
-      const float q = (position[c] - h.originSpacing[c]) / h.originSpacing[3];
-      if (q < 0 || q > float(h.dimensions[c] - 1))
-        return {};
-      base[c] = std::min(uint32_t(q), h.dimensions[c] - 2);
-      fraction[c] = q - base[c];
-    }
+    const auto stencil = probeStencil(grid, position, normal);
     const auto sh = irradianceBasis(normal);
     Vec3 value{};
     float total = 0;
-    for (uint32_t corner = 0; corner < 8; ++corner) {
-      std::array<uint32_t, 3> coordinate;
-      Vec3 delta;
-      float weight = 1;
-      for (uint32_t c = 0; c < 3; ++c) {
-        const bool upper = corner & (1u << c);
-        coordinate[c] = base[c] + upper;
-        weight *= upper ? fraction[c] : 1 - fraction[c];
-        delta[c] = position[c] - (h.originSpacing[c] + coordinate[c] * h.originSpacing[3]);
-      }
-      uint32_t index = (coordinate[2] * h.dimensions[1] + coordinate[1]) * h.dimensions[0] + coordinate[0];
-      if (indexed(h)) {
-        const auto record = grid.lookup.at(index);
-        if (!record) continue;
-        index = record - 1;
-      }
-      const auto &probe = grid.probes[index];
-      if (h.settings[2] > .5f)
-        for (uint32_t c = 0; c < 3; ++c) delta[c] -= probe.irradiance[c][3];
-      if (probe.statistics[3] < .5f || weight <= 0)
-        continue;
-      const float distance = std::sqrt(dot(delta, delta));
-      uint32_t axis = 0;
-      for (uint32_t c = 1; c < 3; ++c)
-        if (std::abs(delta[c]) > std::abs(delta[axis]))
-          axis = c;
-      const auto &moments = probe.moments[axis * 2 + uint32_t(delta[axis] < 0)];
-      if (moments[3] <= 0)
-        continue;
-      if (distance > moments[0]) {
-        const float variance = std::max(h.settings[1], moments[1] - moments[0] * moments[0]);
-        const float difference = distance - moments[0];
-        weight *= std::pow(variance / (variance + difference * difference), 3.f);
-      }
-      const float facing = distance > 1e-6f ? dot(normal, delta) / distance : -1;
-      weight *= std::pow(std::max(.05f, .5f - .5f * facing), 2.f);
+    for (uint32_t corner = 0; corner < stencil.count; ++corner) {
+      const float weight = stencil.weights[corner];
+      if (weight <= 0) continue;
+      const auto &probe = grid.probes[stencil.indices[corner]];
       if (sunlight) {
         if (probe.irradiance[7][3] < .5f && weight > 1e-6f)
           return {};

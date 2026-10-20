@@ -31,10 +31,11 @@ namespace remix::forward {
     }
     geometries.clear();
     spareGeometry.clear();
-    for (auto handle : {opaquePipeline, lightmapPipeline, depthPipeline, depthLightmapPipeline,
+    for (auto handle : {opaquePipeline, lightmapPipeline, partialLightmapPipeline, depthPipeline, depthLightmapPipeline,
                         shadowPipeline, localShadowPipeline,
                         clusterPipeline, compositePipeline, viewModelPipeline, giOpaquePipeline, giLightmapPipeline,
-                        terrainPipeline, terrainLightmapPipeline, giTerrainPipeline, giTerrainLightmapPipeline})
+                        terrainPipeline, terrainLightmapPipeline, terrainPartialLightmapPipeline,
+                        giTerrainPipeline, giTerrainLightmapPipeline})
       if (handle)
         pipeline::destroyPipeline(device, handle, nullptr);
     for (auto handle : {layout, compositeLayout, giLayout})

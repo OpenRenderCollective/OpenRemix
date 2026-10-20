@@ -138,6 +138,9 @@ int main() {
     expanded.header.dimensions[3] = uint32_t(compact.lookup.size());
     expanded.probes.assign(compact.lookup.size(), {});
     expanded.lookup.clear();
+    std::vector<uint32_t> nodes(compact.probes.size());
+    for (uint32_t node = 0; node < compact.lookup.size(); ++node)
+      if (compact.lookup[node]) nodes[compact.lookup[node] - 1] = node;
     for (uint32_t i = 0; i < compact.probes.size(); ++i) {
       bake::Result value;
       value.statistics[3] = 1;
@@ -146,8 +149,8 @@ int main() {
       value.irradiance[8][3] = float(i % 5) / 4;
       for (auto &moment : value.moments) moment = {100000, 1e10f, 0, 1};
       bake::storeProbe(compact, i, value);
-      expanded.probes[compact.nodes[i]] = compact.probes[i];
-      require(compact.lookup[compact.nodes[i]] == i + 1,
+      expanded.probes[nodes[i]] = compact.probes[i];
+      require(compact.lookup[nodes[i]] == i + 1,
               "Compacted records preserve the inverse lattice mapping for relocated origins");
     }
     require(std::abs(compact.probes.back().irradiance[0][3] - compact.header.originSpacing[3] * .1f) < .001f,

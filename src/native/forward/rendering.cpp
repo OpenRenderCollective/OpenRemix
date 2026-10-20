@@ -1,6 +1,9 @@
 #include "forward/gpu.h"
 #include "platform/gpu_timers.h"
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
+#include <optional>
 
 namespace remix::forward {
   namespace {
@@ -14,25 +17,43 @@ namespace remix::forward {
   void Renderer::Gpu::drawGeometry(VkCommandBuffer command, bool terrain, bool depthOnly) {
     const auto &frame = frames[slot];
     const bool gi = !depthOnly && bool(frame.giScene);
+    static const bool debugDraws = std::getenv("REMIX_DEBUG_FORWARD_DRAW_COUNTS") != nullptr;
+    static thread_local uint64_t reported = 0;
+    if (debugDraws && !depthOnly && !terrain && baking->volume() && baking->volume()->hash != reported) {
+      std::array<uint64_t, 3> counts{}, indices{};
+      for (const auto &draw : frame.commands) {
+        if (!draw.source.rasterVisible || !intersectsClip(draw.worldBounds, frame.data.camera)) continue;
+        const uint32_t kind = !draw.lightmap ? 0 : draw.lightmap->fullyMapped ? 1 : 2;
+        ++counts[kind];
+        indices[kind] += draw.lightmap ? draw.lightmap->count : draw.count;
+      }
+      std::fprintf(stderr, "Forward visible draw pipelines: unmapped=%llu/%llu indices, mapped=%llu/%llu indices, "
+                           "partial=%llu/%llu indices, liveGI=%u\n",
+                   static_cast<unsigned long long>(counts[0]), static_cast<unsigned long long>(indices[0]),
+                   static_cast<unsigned long long>(counts[1]), static_cast<unsigned long long>(indices[1]),
+                   static_cast<unsigned long long>(counts[2]), static_cast<unsigned long long>(indices[2]), unsigned(gi));
+      reported = baking->volume()->hash;
+    }
     const auto drawLayout = gi ? giLayout : layout;
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 0, 1, &frame.scene, 0,
                             nullptr);
     if (gi)
       vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 2, 1, &frame.giScene, 0,
                               nullptr);
-    for (const auto &draw : terrain ? frame.terrainCommands : frame.commands) {
+    auto drawCommand = [&](const Command &draw) {
       if (!draw.source.rasterVisible)
-        continue;
+        return;
       if (!intersectsClip(draw.worldBounds, frame.data.camera))
-        continue;
+        return;
       const auto *mapped = draw.lightmap;
-      vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                        depthOnly ? (mapped ? depthLightmapPipeline : depthPipeline)
-                        : terrain  ? (gi ? (mapped ? giTerrainLightmapPipeline : giTerrainPipeline)
-                                       : (mapped ? terrainLightmapPipeline : terrainPipeline))
-                        : gi       ? (mapped ? giLightmapPipeline : giOpaquePipeline)
-                        : mapped ? lightmapPipeline
-                                 : opaquePipeline);
+      VkPipeline selected;
+      if (depthOnly) selected = mapped ? depthLightmapPipeline : depthPipeline;
+      else if (gi) selected = terrain ? (mapped ? giTerrainLightmapPipeline : giTerrainPipeline)
+                                     : (mapped ? giLightmapPipeline : giOpaquePipeline);
+      else if (terrain) selected = !mapped ? terrainPipeline : mapped->fullyMapped ? terrainLightmapPipeline
+                                                                                  : terrainPartialLightmapPipeline;
+      else selected = !mapped ? opaquePipeline : mapped->fullyMapped ? lightmapPipeline : partialLightmapPipeline;
+      vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, selected);
       vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 1, 1, &draw.material, 0,
                               nullptr);
       const uint32_t push[] = {draw.index, 0};
@@ -45,6 +66,27 @@ namespace remix::forward {
       vkCmdBindIndexBuffer(command, indices, 0, VK_INDEX_TYPE_UINT32);
       vkCmdDrawIndexed(command, mapped ? mapped->count : draw.count, 1, mapped ? 0 : draw.source.firstIndex,
                        mapped ? 0 : draw.source.vertexOffset, 0);
+    };
+    // Time consecutive receiver runs without changing coplanar/decal ordering.
+    // Terrain blending and depth passes keep their ordinary timing scopes.
+    static const bool profileReceivers = std::getenv("REMIX_DEBUG_FORWARD_RECEIVER_TIMINGS") != nullptr;
+    if (profileReceivers && gpu::timing() && !terrain && !depthOnly && !gi) {
+      const char *names[] = {"Forward+ probe-lit receivers", "Forward+ lightmapped receivers",
+                             "Forward+ partially mapped receivers"};
+      std::optional<gpu::GpuScope> receiverTime;
+      uint32_t kind = 3;
+      for (const auto &draw : frame.commands) {
+        if (!draw.source.rasterVisible || !intersectsClip(draw.worldBounds, frame.data.camera)) continue;
+        const uint32_t receiver = !draw.lightmap ? 0 : draw.lightmap->fullyMapped ? 1 : 2;
+        if (receiver != kind) {
+          receiverTime.reset();
+          receiverTime.emplace(command, names[receiver], extent);
+          kind = receiver;
+        }
+        drawCommand(draw);
+      }
+    } else {
+      for (const auto &draw : terrain ? frame.terrainCommands : frame.commands) drawCommand(draw);
     }
   }
   void Renderer::Gpu::drawSunCasters(VkCommandBuffer command, uint32_t cascade, bool staticCasters) {

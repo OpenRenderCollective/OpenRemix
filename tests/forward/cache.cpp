@@ -634,12 +634,12 @@ int main(int argc, char **argv) {
     };
     require(saveIndexed(), "Sparse lattice directories serialize separately from compact probe records");
     const auto restored = bc::read(sparseFile, identity, source, config, device);
-    require(restored && restored->grid.lookup == indexed.lookup && restored->grid.nodes.size() == 8 &&
+    require(restored && restored->grid.lookup == indexed.lookup && restored->grid.origins.size() == 8 &&
                 restored->grid.header.dimensions == indexed.header.dimensions,
             "Sparse cache restore preserves holes, dimensions and permuted physical records");
-    for (uint32_t i = 0; i < restored->grid.nodes.size(); ++i)
-      require(restored->grid.lookup[restored->grid.nodes[i]] == i + 1,
-              "A restored directory has one canonical virtual owner per record");
+    require(restored->grid.origins.front().position == f::Vec3{3, 1, 1} &&
+                restored->grid.origins.back().position == f::Vec3{0, 0, 0},
+            "A restored directory reconstructs each physical record's canonical world origin");
     auto constrained = device;
     constrained.storageRange = uint32_t(sizeof(f::bake::GridHeader) + indexed.probes.size() * sizeof(f::bake::Result) + 32);
     require(!bc::read(sparseFile, identity, source, config, constrained),
@@ -671,6 +671,48 @@ int main(int argc, char **argv) {
     indexed.lookup[0] = 0;
     require(!saveIndexed() && bc::read(sparseFile, identity, source, config, device),
             "Orphan compact records are rejected while preserving the previous valid cache");
+  }
+  {
+    auto refined = data.grid;
+    refined.header.dimensions = {2, 2, 2, 35};
+    refined.header.settings[2] = 4;
+    refined.probes.resize(35, data.grid.probes.front());
+    refined.tasks.clear();
+    for (uint32_t i = 0; i < 35; ++i) refined.tasks.push_back(i);
+    refined.lookup.assign(48, 0);
+    for (uint32_t i = 0; i < 8; ++i) refined.lookup[i] = i + 1;
+    refined.lookup[8] = f::bake::adaptiveDirectoryMagic;
+    refined.lookup[9] = 8; // The local patch explicitly selects a twofold subdivision.
+    refined.lookup[10] = 48;
+    refined.lookup[11] = 8;
+    refined.lookup[12] = f::bake::patchReference(20, 2);
+    for (uint32_t i = 0; i < 27; ++i) refined.lookup[20 + i] = 9 + i;
+    const auto adaptiveFile = root / "adaptive-grid.bake";
+    require(bc::write(adaptiveFile, identity,
+                {refined, data.layout, data.mixed, data.captures, data.specular, data.pixels,
+                 data.surfaceSamples, data.directDiffuse, data.sun}),
+            "Adaptive fields persist physical records beyond the coarse lattice node count");
+    const auto restored = bc::read(adaptiveFile, identity, source, config, device);
+    require(restored && restored->grid.lookup == refined.lookup && restored->grid.origins.size() == 35 &&
+                restored->grid.origins.back().spacing == .5f &&
+                restored->grid.origins.back().position == f::Vec3{1, 1, 1},
+            "Adaptive cache restore retains fine topology and per-record canonical spacing");
+    refined.header.settings[2] = 5;
+    refined.probes.back().irradiance[0][3] = .4f;
+    const auto saveMoved = [&] {
+      return bc::write(adaptiveFile, identity,
+          {refined, data.layout, data.mixed, data.captures, data.specular, data.pixels,
+           data.surfaceSamples, data.directDiffuse, data.sun});
+    };
+    auto movedConfig = config;
+    movedConfig.relocateProbes = true;
+    require(saveMoved() && bc::read(adaptiveFile, identity, source, movedConfig, device),
+            "An aligned transition node retains its coarser trace relocation when referenced by a finer patch");
+    refined.probes[21].irradiance[0][3] = .4f;
+    require(!saveMoved(), "A genuinely fine midpoint cannot claim a coarser relocation allowance");
+    refined.probes[21].irradiance[0][3] = 0;
+    refined.lookup[12] |= 1u << 26;
+    require(!saveMoved(), "A cache cannot authorize stitching to a nonexistent neighbouring region");
   }
   {
     bc::recordLookup(file, identity, source->contentHash, 123, true);

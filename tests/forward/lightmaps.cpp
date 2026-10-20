@@ -27,6 +27,17 @@ namespace {
 int main() {
   {
     lm::Mesh mesh;
+    mesh.vertices.resize(4);
+    mesh.indices = {0, 1, 2};
+    for (uint32_t i = 0; i < 3; ++i) mesh.vertices[i].coordinate[3] = 1;
+    require(lm::fullyMapped(mesh), "Unused unmapped vertices do not prevent a complete charted draw");
+    mesh.vertices[1].coordinate[3] = 0;
+    require(!lm::fullyMapped(mesh), "Partially charted draws retain probe fallback for uncovered triangles");
+    mesh.indices.clear();
+    require(!lm::fullyMapped(mesh), "Empty meshes do not select a chart-only lighting specialization");
+  }
+  {
+    lm::Mesh mesh;
     mesh.vertices.resize(3);
     mesh.vertices[0].directLights = {7, 2, 7, ~0u};
     mesh.vertices[1].directLights = {2, ~0u, ~0u, ~0u};

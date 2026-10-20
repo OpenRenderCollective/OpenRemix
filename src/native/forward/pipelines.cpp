@@ -96,13 +96,15 @@ namespace remix::forward {
                                                    .dynamicStateCount = 2,
                                                    .pDynamicStates = states};
     enum class Pass { Opaque, Shadow, Composite, Terrain, Depth, ViewModel };
-    auto graphics = [&](VkShaderModule vs, VkShaderModule fs, VkRenderPass pass, Pass mode = Pass::Opaque) {
+    auto graphics = [&](VkShaderModule vs, VkShaderModule fs, VkRenderPass pass, Pass mode = Pass::Opaque,
+                         bool fullyMapped = false) {
       const bool shadow = mode == Pass::Shadow, composite = mode == Pass::Composite;
       const bool terrain = mode == Pass::Terrain, depthOnly = mode == Pass::Depth;
-      const uint32_t values[] = {options.debugView, uint32_t(bake::directionalFieldsRequested())};
+      const uint32_t values[] = {options.debugView, uint32_t(bake::directionalFieldsRequested()), uint32_t(fullyMapped)};
       const VkSpecializationMapEntry entries[] = {{1, 0, sizeof(uint32_t)},
-                                                  {2, sizeof(uint32_t), sizeof(uint32_t)}};
-      const VkSpecializationInfo specialization{2, entries, sizeof(values), values};
+                                                  {2, sizeof(uint32_t), sizeof(uint32_t)},
+                                                  {3, 2 * sizeof(uint32_t), sizeof(uint32_t)}};
+      const VkSpecializationInfo specialization{3, entries, sizeof(values), values};
       const VkPipelineShaderStageCreateInfo stages[] = {
           {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
            .stage = VK_SHADER_STAGE_VERTEX_BIT,
@@ -172,11 +174,13 @@ namespace remix::forward {
     opaquePipeline = graphics(vertex, fragment, worldPass);
     const auto viewModelFragment = modules.add(viewModelFragShader, sizeof(viewModelFragShader));
     viewModelPipeline = graphics(vertex, viewModelFragment, viewModelTarget->pass(), Pass::ViewModel);
-    lightmapPipeline = graphics(lightmapVertex, fragment, worldPass);
+    lightmapPipeline = graphics(lightmapVertex, fragment, worldPass, Pass::Opaque, true);
+    partialLightmapPipeline = graphics(lightmapVertex, fragment, worldPass);
     depthPipeline = graphics(vertex, depthFragment, worldPass, Pass::Depth);
     depthLightmapPipeline = graphics(lightmapVertex, depthFragment, worldPass, Pass::Depth);
     terrainPipeline = graphics(vertex, terrainFragment, worldPass, Pass::Terrain);
-    terrainLightmapPipeline = graphics(lightmapVertex, terrainFragment, worldPass, Pass::Terrain);
+    terrainLightmapPipeline = graphics(lightmapVertex, terrainFragment, worldPass, Pass::Terrain, true);
+    terrainPartialLightmapPipeline = graphics(lightmapVertex, terrainFragment, worldPass, Pass::Terrain);
     if (giSupported) {
       giOpaquePipeline = graphics(vertex, giFragment, worldPass);
       giLightmapPipeline = graphics(lightmapVertex, giFragment, worldPass);

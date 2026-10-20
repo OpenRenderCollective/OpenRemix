@@ -5,6 +5,7 @@
 #include "forward/bake/cache_persistence.h"
 #include "forward/bake/fingerprint.h"
 #include "forward/bake/receiver_report.h"
+#include "forward/bake/receiver_support.h"
 #include "forward/bake/transport.h"
 #include "forward/image_dump.h"
 #include "forward/lightmap/denoise.h"
@@ -196,7 +197,7 @@ namespace remix::forward::bake {
       throw std::runtime_error("Bake preparation superseded");
     auto placement = config;
     const uint64_t directoryReserve = source->partition && source->partition->closed
-        ? uint64_t(maximumGridNodes) * sizeof(uint32_t) : 0;
+        ? uint64_t(maximumDirectoryWords) * sizeof(uint32_t) : 0;
     if (properties.limits.maxStorageBufferRange <= sizeof(GridHeader) + directoryReserve)
       throw std::invalid_argument("Irradiance directory exceeds device storage range");
     placement.maxProbes =
@@ -214,7 +215,16 @@ namespace remix::forward::bake {
     if (atlas.pageSize > properties.limits.maxImageDimension2D)
       throw std::invalid_argument("Surface lightmap page exceeds device limit");
     surfaceLayout = lightmap::fit(*source, atlas, cancellation.get_token());
-    grid = placeSparse(*source, placement, surfaceLayout, cancellation.get_token());
+    grid = placeRefinementBase(*source, placement, surfaceLayout, refinement, cancellation.get_token());
+    if (std::getenv("REMIX_DEBUG_BAKE_GRID_PREFIX")) {
+      const auto support = receiverSupport(grid.header, surfaceLayout, 0, cancellation.get_token());
+      probes::dumpPublishedData(".receiver-support.bin", support.data(), support.size());
+      const auto halo = receiverSupport(grid.header, surfaceLayout, 3 / source->sceneScale,
+                                        cancellation.get_token());
+      probes::dumpPublishedData(".receiver-halo.bin", halo.data(), halo.size());
+      probes::dumpPublishedData(".receiver-grid-header.bin", &grid.header, sizeof(grid.header));
+      probes::dumpPublishedData(".receiver-grid-lookup.bin", grid.lookup.data(), grid.lookup.size() * sizeof(uint32_t));
+    }
     surfaces.resize(surfaceLayout.points.size());
     Options options;
     options.directLighting = directLighting;
@@ -1051,7 +1061,8 @@ namespace remix::forward::bake {
             (volume->visibilityPages ? volume->visibilityPages->bytes() : 0)};
     probes::dumpPublishedData(".visibility-pages.bin", pageStatistics, sizeof(pageStatistics));
     std::vector<std::byte> data(bytes);
-    std::memcpy(data.data(), &grid.header, sizeof(GridHeader));
+    const auto gpuHeader = publicationHeader(grid.header, grid.lookup.size());
+    std::memcpy(data.data(), &gpuHeader, sizeof(GridHeader));
     std::memcpy(data.data() + sizeof(GridHeader), grid.probes.data(), grid.probes.size() * sizeof(Result));
     if (!grid.lookup.empty())
       std::memcpy(data.data() + sizeof(GridHeader) + grid.probes.size() * sizeof(Result),
@@ -1064,14 +1075,14 @@ namespace remix::forward::bake {
     if (styleBytes) {
       volume->content.styledIndirect = scene::fastHash(publishedStyles.data(), styleBytes) | 1;
       std::memcpy(data.data() + baseBytes, publishedStyles.data(), styleBytes);
-      auto header = grid.header;
+      auto header = gpuHeader;
       header.settings[3] = publicationSettings(0, true);
       std::memcpy(data.data(), &header, sizeof(header));
       probes::dumpPublishedData(".styled-irradiance.bin", publishedStyles.data(), styleBytes);
     }
     if (localBytes) {
       std::memcpy(data.data() + localOffset, localWords.data(), localBytes);
-      auto header = grid.header;
+      auto header = gpuHeader;
       header.settings[3] = publicationSettings((localOffset - sizeof(GridHeader)) / 16, styleBytes != 0);
       std::memcpy(data.data(), &header, sizeof(header));
       volume->content.grid = scene::fastHash(localWords.data(), localBytes, volume->content.grid) | 1;
@@ -1342,6 +1353,7 @@ namespace remix::forward::bake {
           } else {
             const char *message = nullptr;
             switch (stage) {
+            case Job::FinishStage::ProbeRefinement: message = "Refining irradiance probe placement"; break;
             case Job::FinishStage::Reflections: message = "Filtering reflection cubemaps"; break;
             case Job::FinishStage::Denoising: message = "Denoising surface lightmaps"; break;
             case Job::FinishStage::Atlas: message = "Encoding surface lightmaps"; break;
@@ -1379,6 +1391,21 @@ namespace remix::forward::bake {
           return;
         }
         if (job.received == job.grid.tasks.size()) {
+          if (job.refinement.factor && !job.refinementPlanned) {
+            // Reuse the required lightmap bake as a local irradiance reference.
+            // No extra rays are needed to locate interpolation errors.
+            if (job.surfaceReceived < job.surfaceLayout.points.size()) {
+              recordSurfaces(command, config);
+              return;
+            }
+            job.refinementPlanned = true;
+            job.finishStage.store(Job::FinishStage::ProbeRefinement, std::memory_order_relaxed);
+            auto owner = m_job;
+            job.ticket = m_pipelines->prepare("forward-probe-refinement-" + std::to_string(++generation),
+                                             [owner, config] { owner->refineProbes(config); });
+            status(REMIXAPI_BAKE_PREPARING_EXT, "Refining irradiance probe placement");
+            return;
+          }
           recordProbeSun(command, config);
           return;
         }

@@ -46,7 +46,7 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
   baked = baked || cachedVisibility == 2u;
   if (!baked)
     baked = overflowLightVisibility(surfaceChart, uint(light.shaping.w), surfaceLightmap, surfaceBounds, visibility);
-  if (!baked && surfaceLightmap.w < .5) {
+  if (!FullyMappedReceiver && !baked && surfaceLightmap.w < .5) {
     float probeVisibility, probeDiffuse;
     // Aggregate corrections use the same normal-dependent probe stencil as
     // bakedIrradiance; otherwise normal maps could subtract another mixture.

@@ -118,7 +118,9 @@ namespace remix::forward::test {
     sky.header.settings[3] = bake::publicationSettings((localOffset - sizeof(bake::GridHeader)) / 16, large);
     gpu.sky.create(fixture.physical, fixture.device, localOffset + localWords.size() * sizeof(uint32_t),
                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-    gpu.sky.write(&sky, sizeof(sky));
+    auto publishedSky = sky;
+    publishedSky.header = bake::publicationHeader(sky.header, indexed ? std::size(lookup) : 0);
+    gpu.sky.write(&publishedSky, sizeof(publishedSky));
     if (indexed) gpu.sky.write(lookup, sizeof(lookup), sizeof(sky));
     gpu.sky.write(localWords.data(), localWords.size() * sizeof(uint32_t), localOffset);
     bake::Grid reference;

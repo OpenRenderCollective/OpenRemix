@@ -7,6 +7,7 @@ namespace remix::forward::lightmap {
   public:
     struct Entry {
       uint32_t draw = 0, count = 0;
+      bool fullyMapped = false;
       std::vector<uint32_t> directOwners;
       std::unique_ptr<Buffer> vertices, indices;
     };

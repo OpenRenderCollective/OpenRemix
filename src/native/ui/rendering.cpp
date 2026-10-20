@@ -43,13 +43,14 @@ namespace remix {
       int lightingView = int(forward.debugView);
       if (ui::Combo("Lighting view", &lightingView,
                     "Shaded\0Baked irradiance (neutral)\0Analytic direct diffuse\0Direct specular\0"
-                    "Albedo (unlit)\0Baked irradiance (no normal maps)\0"))
+                    "Albedo (unlit)\0Baked irradiance (no normal maps)\0Bake coverage\0"))
         forward.debugView = uint32_t(lightingView);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Separates opaque-world lighting using the current bake.\n"
                           "Neutral baked irradiance includes aggregate direct lighting, excluding material colour, emission and reflections.\n"
                           "Analytic diffuse excludes direct light already in the bake. Albedo excludes lighting.\n"
                           "Unmapped irradiance excludes normal maps. Direct views exclude screen-space and probe reflections.\n"
+                          "Bake coverage: blue = surface lightmap, green = valid probe, red = uncovered opaque receiver.\n"
                           "Does not rebake.");
       int samples = forward.samples == 4 ? 2 : forward.samples == 2 ? 1 : 0;
       if (ui::Combo("MSAA", &samples, "Off\0 2x\0 4x\0")) forward.samples = 1u << samples;

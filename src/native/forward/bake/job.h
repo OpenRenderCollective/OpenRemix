@@ -1,5 +1,6 @@
 #pragma once
 #include "forward/bake/controller.h"
+#include "forward/bake/adaptive_grid.h"
 #include "forward/bake/budget.h"
 #include "forward/bake/transport.h"
 #include "forward/bake/style_work.h"
@@ -25,6 +26,9 @@ namespace remix::forward::bake {
     std::unique_ptr<Transport> transport;
     Budget budget;
     Grid grid;
+    Refinement refinement;
+    bool refinementPlanned = false;
+    void refineProbes(const Config &config);
     lightmap::Layout surfaceLayout;
     std::vector<Result> surfaces;
     std::unique_ptr<StyleWork> styles;
@@ -109,7 +113,7 @@ namespace remix::forward::bake {
     std::stop_source cancellation;
     uint32_t captureNext = 0, captureReceived = 0;
     bool capturePlanned = false, filtering = false;
-    enum class FinishStage { None, Reflections, Denoising, Atlas, Geometry, Styles };
+    enum class FinishStage { None, ProbeRefinement, Reflections, Denoising, Atlas, Geometry, Styles };
     std::atomic<FinishStage> finishStage{FinishStage::None};
     std::atomic<uint32_t> denoisedCharts{0}, denoiseChartCount{0};
     uint32_t next = 0, received = 0;

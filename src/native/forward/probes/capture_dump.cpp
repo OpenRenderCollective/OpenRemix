@@ -8,6 +8,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 
 namespace remix::forward::probes {
@@ -64,6 +65,17 @@ namespace remix::forward::probes {
     void dumpData(const char *suffix, const void *data, size_t bytes, bool frameRequest,
                   bool requireCapture = true) noexcept {
       const char *prefix = std::getenv("REMIX_DEBUG_BAKE_CAPTURE_PREFIX");
+      if ((!prefix || !*prefix) && !frameRequest) {
+        // Inspect probe fields without dumping the much larger surface atlas.
+        const std::string_view name(suffix);
+        if (name == ".irradiance-published.bin" || name == ".styled-irradiance.bin" ||
+            name == ".local-probe-visibility.bin" || name == ".receiver-support.bin" ||
+            name == ".receiver-halo.bin" || name == ".receiver-grid-header.bin" ||
+            name == ".receiver-grid-lookup.bin") {
+          prefix = std::getenv("REMIX_DEBUG_BAKE_GRID_PREFIX");
+          requireCapture = false;
+        }
+      }
       if (!prefix || !*prefix)
         return;
       try {
