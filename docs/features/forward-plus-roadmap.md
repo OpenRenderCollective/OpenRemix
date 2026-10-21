@@ -55,6 +55,9 @@ Startup cache-identity differences outside the verified hall sessions still need
 An initial live Crossfire courtyard pair favors the candidate, with opaque shading still dominant, but
 does not reproduce the historical slowdown. Opposite hall and courtyard outcomes require broader
 controls and receiver/highlight profiling, rather than a global quality reduction or release claim.
+The corrected Crossfire opposing-view check also favors the candidate, but has variation and partial
+CPU/engine pacing. Next isolate selected highlights versus probe/atlas work while preserving bake
+identity, then test movement and weapon changes. Raw GPU deltas are not interchangeable with FPS.
 
 ## Handoff checkpoint (2026-10-20)
 
