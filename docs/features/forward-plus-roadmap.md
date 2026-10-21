@@ -55,10 +55,21 @@ Matched live Construct samples reduce barrel-top error from +68% to +17% and cra
 from -33% to -18%, but crate-front error worsens from +8% to -12%. This does not close quality.
 Cold capture costs about 2..3 ms total GPU time in that scene; a disk reload skips capture and
 reproduces published irradiance, style and local visibility buffers byte-for-byte. Whole-frame
-runtime cost needs opposite-order cached comparisons and broader map/viewmodel acceptance.
+runtime cost has now been checked with an off/on/on/off cached Construct sequence at
+1920x1080, 4x MSAA and full-resolution SSR on RTX 4090. The two-run means add about
+0.10 ms GPU time without a weapon (4.22 -> 4.32 ms), and 0.19 ms with the physics gun
+(5.37 -> 5.56 ms). These are one fixed hall view, not broad-map performance acceptance.
+Every run loads from disk without bake transport, preserves the scene input identity and
+has zero static-shadow updates; repeated runs of each policy publish byte-identical buffers.
+Sample-window graphics clocks remain about 2760 MHz. Broader map/moving-viewmodel checks remain.
 Cache retention accounting includes depth, lookup and origin storage. Seam, unknown-coverage,
 styled/indexed table offsets, adaptive confidence and hardware producer tests cover the new layout.
 This candidate is not deployed; preserve the installed stable build until those gates pass.
+Further offline contributor checks still find substantial residual through-floor support with
+the 8x8 field. Filtering visibility per octahedral tap instead of filtering moments trades
+leakage for worse dark-face error; do not adopt it globally. High-sample neighbour substitutions
+help the crate side but not all faces. Next investigate near-surface spatial placement and
+reconstruction against the independent hemisphere references, retaining the fixed memory budget.
 Camera motion also refreshes frozen sunlight cascades and prepares the captured world casters.
 The CPU projection cache now preserves the exact rendered projection for subtexel fit noise.
 Targeted CPU and sunlight/local-shadow GPU checks pass. Opposite-order moving-camera comparisons
