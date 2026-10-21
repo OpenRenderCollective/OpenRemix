@@ -41,8 +41,7 @@ namespace remix::forward::bake {
       if (entry.visibility < 0) probeLights[entry.light] = 2;
       else if (probeLights[entry.light] == 0) probeLights[entry.light] = 1;
     }
-    std::map<uint32_t, bool> surfaceCoverage;
-    for (uint32_t style : styles) surfaceCoverage[style] = true;
+    std::map<uint32_t, uint32_t> missingSurfaceLight;
     for (size_t i = 0; i < owners.size(); ++i) {
       check(cancelled);
       const auto [chart, light] = owners[i];
@@ -52,7 +51,8 @@ namespace remix::forward::bake {
       const auto &emitter = source.lights[light];
       if (!emitter.style) continue;
       chartLights[chart].push_back(light);
-      surfaceCoverage[emitter.style] &= mixed::DirectionalFields::sample(directionals, chart, light, 0, 0).has_value();
+      if (!mixed::DirectionalFields::sample(directionals, chart, light, 0, 0))
+        missingSurfaceLight.try_emplace(emitter.style, light);
     }
     // Cached layouts intentionally omit transient surface receivers. Captured
     // fields already include receiver coverage and seam donors; reconstruct
@@ -77,19 +77,21 @@ namespace remix::forward::bake {
     StyledDirectGroups result;
     for (uint32_t style : styles) {
       check(cancelled);
-      if (!surfaceCoverage[style]) {
-        result.declined.push_back({style, StyledDirectDecline::SurfaceCoverage});
+      if (const auto missing = missingSurfaceLight.find(style); missing != missingSurfaceLight.end()) {
+        result.declined.push_back({style, StyledDirectDecline::SurfaceCoverage, missing->second});
         continue;
       }
       bool covered = completeProbes;
+      uint32_t missingProbeLight = UINT32_MAX;
       std::vector<uint32_t> lights;
       for (uint32_t i = 0; i < source.lights.size(); ++i)
         if (source.lights[i].style == style) {
           lights.push_back(i);
+          if (probeLights[i] != 1 && missingProbeLight == UINT32_MAX) missingProbeLight = i;
           covered &= probeLights[i] == 1;
         }
       if (!covered) {
-        result.declined.push_back({style, StyledDirectDecline::ProbeCoverage});
+        result.declined.push_back({style, StyledDirectDecline::ProbeCoverage, missingProbeLight});
         continue;
       }
       try {

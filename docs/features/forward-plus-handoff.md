@@ -21,9 +21,13 @@ Keep static visibility, unknown coverage, toggleable groups and offscreen moving
 - `grid_sampling.cpp`: CPU reference reconstruction and coarse/fine transition weights.
 - `controller_refinement.cpp`: asynchronous refinement scheduling between coarse/required surface and fine work.
 - `shaders/grid-stencil.glsl`: matching shared stencil for diffuse, sky, sun and local visibility/corrections.
+- `probe_visibility_plan.cpp`: conservative per-record light volumes; adaptive records keep their largest
+  referencing/trace support, while shared coarse corners retain coarse reach.
 - Existing cache/controller/publication modules retain lifetime, cancellation, fencing and validated import.
 
-The prototype cache revision is 24; stable deployed revision is 23. GPU publication packs the mode and
+The current probe-planning cache policy revision is 25; the handoff prototype used 24 and the deployed
+uniform build uses 23. Upgrading deliberately rebakes once; camera movement and runtime toggle values
+do not change authored lighting identity. GPU publication packs the mode and
 directory length into raw bits of header settings.z; CPU/cache metadata retains numeric modes. Do not
 use old private binary parsers without adapting that distinction. Public Remix ABI layouts are unchanged.
 Styles, local unit-direct fields and visibility use the same physical record ownership. Do not merge
@@ -81,13 +85,20 @@ regression. The hall's visible coverage is overwhelmingly charted, and the six t
 large missing visible coverage did not explain this camera's cost. Fragment counters confirm that the
 existing depth prepass substantially reduces opaque colour shading work. The unmapped-receiver
 specialization reduces compiled shader size and modestly improves the tested replay, but the larger
-adaptive regression remains unresolved. Continue with probe/stencil cost and partially mapped receivers.
+adaptive comparison needs to be refreshed after subsequent fixes. Per-record probe volume bounds now
+avoid wasting coarse reach on fine-only records. In Construct this restores complete light-volume
+coverage and permits the white-room controllable direct group to publish. Decline diagnostics report
+missing owners and distinguish absent pairs from unreceived pairs; unknown coverage still falls back.
+A controlled current-adaptive replay improves substantially over its previous adaptive checkpoint, but
+live gameplay, other maps and a new deployed-uniform comparison remain required. Continue with
+probe/stencil cost and partially mapped receivers.
 Keep GPU frame, transport and startup timing separate.
 
 Rejected and removed: generic fragment offline optimization, fully fine-weighted coarse-sampling shortcut,
 separate mapped fragment modules, reordered category profiling, homogeneous draw-range splitting,
 compact cell-address stencil indices, unified mapped/partial pipelines, and explicit products replacing
-fixed-power stencil weights. These preserved output in
+fixed-power stencil weights. Hoisting styled-probe accumulation outside the corner loop was also slower
+and was restored; do not revive it without new evidence. These preserved output in
 many controls but did not establish a performance gain; reordered profiling changed coplanar pixels.
 Some paired runs drifted despite stable clocks: do not treat small percentages as precise hardware laws.
 Driver local-memory statistics were implausible; do not silently mask them into invented spill counts.

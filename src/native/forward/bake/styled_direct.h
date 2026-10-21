@@ -8,6 +8,7 @@ namespace remix::forward::bake {
   struct DeclinedStyle {
     uint32_t style;
     StyledDirectDecline reason;
+    uint32_t light = UINT32_MAX; // first missing captured owner, when known
   };
   struct StyledDirectGroups {
     std::vector<uint32_t> styles, words;

@@ -4,11 +4,13 @@
 #include "forward/mixed/directional_fields.h"
 #include "forward/lighting.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <map>
 
 namespace remix::forward::bake {
   namespace {
@@ -44,6 +46,40 @@ namespace remix::forward::bake {
       return support;
     }
     void vector(std::ostream &out, Vec3 v) { out << '[' << v[0] << ',' << v[1] << ',' << v[2] << ']'; }
+  }
+  void logGroupedDirectDeclines(const scene::BakeScene &source, const ProbeVisibility &probes,
+                                const StyledDirectGroups &groups) noexcept {
+    if (groups.declined.empty()) return;
+    try {
+      // Inspect only the reported owners, in one pass regardless of style count.
+      std::map<uint32_t, std::array<size_t, 2>> probeCoverage;
+      for (const auto &declined : groups.declined)
+        if (declined.reason == StyledDirectDecline::ProbeCoverage && declined.light != UINT32_MAX)
+          probeCoverage.try_emplace(declined.light);
+      if (!probeCoverage.empty())
+        for (const auto &entry : probes.entries())
+          if (const auto found = probeCoverage.find(entry.light); found != probeCoverage.end())
+            ++found->second[entry.visibility < 0 ? 1 : 0];
+      for (const auto &declined : groups.declined) {
+        const char *reason = "";
+        switch (declined.reason) {
+        case StyledDirectDecline::SurfaceCoverage: reason = "incomplete surface coverage"; break;
+        case StyledDirectDecline::ProbeCoverage: reason = "incomplete probe coverage"; break;
+        case StyledDirectDecline::Storage: reason = "storage budget"; break;
+        }
+        std::fprintf(stderr, "Forward grouped direct style %u declined: %s; retaining per-light fallback\n",
+                     declined.style, reason);
+        if (declined.light != UINT32_MAX) {
+          const auto &light = source.lights.at(declined.light);
+          std::fprintf(stderr, "  captured light %u at (%.3f, %.3f, %.3f)\n",
+                       declined.light, light.position[0], light.position[1], light.position[2]);
+          if (const auto found = probeCoverage.find(declined.light); found != probeCoverage.end())
+            std::fprintf(stderr, "  known probe pairs %zu, unknown %zu\n", found->second[0], found->second[1]);
+        }
+      }
+    } catch (const std::exception &error) {
+      std::fprintf(stderr, "Grouped direct decline details unavailable: %s\n", error.what());
+    }
   }
   void dumpGroupedDirectReport(const scene::BakeScene &source, const lightmap::Layout &layout,
       std::span<const uint16_t> pixels, const Grid &grid, std::span<const uint32_t> directionals,

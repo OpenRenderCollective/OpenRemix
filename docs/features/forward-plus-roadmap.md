@@ -21,6 +21,13 @@ modules or reordering draws. Two opposite-order Construct replay batches and tar
 support keeping it; broad map coverage and the larger adaptive-field regression remain open. The replay
 host also rejects renamed runtime DLLs so missing adapter extensions cannot masquerade as a slow bake.
 
+Adaptive probe light volumes now use each record's conservative support instead of assigning coarse
+reach to every fine-only probe. Construct retains all eligible light volumes within its existing budget,
+allowing the white-room controllable group to publish. CPU stencil-parity and grouped GPU checks pass;
+a controlled cached replay improves over the preceding adaptive checkpoint. Cache policy revision25
+requires a deliberate first-upgrade bake. Release still needs broader map/live-quality checks and a
+fresh comparison against the deployed uniform build; the earlier regression figures are historical.
+
 ## Handoff checkpoint (2026-10-20)
 
 The handoff prepared this branch for another contributor without claiming renderer completion.
@@ -52,7 +59,7 @@ are required just to complete this handoff.
 | Stable persistent caches; no rebake on camera/weapon changes | Cache validation and invalidation receipts exist. Investigate remaining spontaneous/weapon-change rebakes; distinguish real light/material edits from identity bugs. Warm replay parity is not proof that installed live caches always work. |
 | Auto exposure and same tonemap path as path tracing | Shared postprocessing and exposure controls implemented. Refresh live adaptation, HDR/water and mode-switch acceptance; coverage diagnostics intentionally bypass automatic exposure. |
 | Automatic tolerant parallax bounds, overlap/feathering, priorities | Default reflection budget is now 64, with 53 Construct captures in the stable checkpoint. Capacity improved hall coverage; automatic room fitting, bevel tolerance, doorway/wall separation, rotations and blending remain open. Capture point and influence/projection boxes are distinct. |
-| Better dynamic probe quality in Construct's main room | Target is the diagonal roof-slit skylit hall, especially props. Stable uniform grid remains coarse. Adaptive candidate/cache transitions and shared nodes are implemented but unreleased due mixed quality and GPU regression. Validate moving props and other maps, not just six spheres. |
+| Better dynamic probe quality in Construct's main room | Target is the diagonal roof-slit skylit hall, especially props. Stable uniform grid remains coarse. Adaptive candidate/cache transitions and shared nodes are implemented but unreleased. Per-record light-volume support fixes a budget/fallback cost issue; mixed receiver quality and current performance against the deployed uniform build still require acceptance. Validate moving props and other maps, not just six spheres. |
 | Cubemaps captured after lighting | Ordering is implemented; verify invalidation/re-capture after styled/material/lighting changes without unrelated full diffuse rebakes. |
 | Roughness-aware s&box-like SSR, full resolution default, viewmodel SSR | Implemented paths and tests exist. Refresh live roughness, disocclusion, blend with cubemaps/RT, and actual weapon acceptance. |
 | PBR/AutoPBR and shared Remix replacements | Shared asset/material path implemented, including safer Source roughness fallback. Verify late replacement arrival, normals, BRDF/roughness parity and authored PBR examples; no separate incompatible asset conversion path. |

@@ -77,11 +77,13 @@ int main() {
           "Cache layouts without transient receiver arrays rebuild the exact grouped publication");
   const auto incomplete = bake::groupStyledDirect(source, layout, owners, fields(true), visibility, 1u<<20);
   require(incomplete.styles == std::vector<uint32_t>{127} && incomplete.declined.size() == 1 &&
-          incomplete.declined[0].reason == bake::StyledDirectDecline::SurfaceCoverage,
+          incomplete.declined[0].reason == bake::StyledDirectDecline::SurfaceCoverage &&
+          incomplete.declined[0].light == 1,
           "One missing positive owner declines its whole style, preserving other groups");
   const auto unknownProbe = bake::groupStyledDirect(source, layout, owners, complete, probes(true), 1u<<20);
   require(unknownProbe.styles == std::vector<uint32_t>{127} && unknownProbe.declined[0].reason ==
-          bake::StyledDirectDecline::ProbeCoverage, "A deferred probe volume cannot become black grouped energy");
+          bake::StyledDirectDecline::ProbeCoverage && unknownProbe.declined[0].light == 1,
+          "A deferred probe volume identifies its missing owner without becoming black grouped energy");
   const std::vector<bake::VisibilityTask> partialTasks{{0,0,0}, {0,1,0}, {0,2,0}};
   bake::ProbeVisibility partial(1, 4, partialTasks, 4096, true);
   bake::VisibilityResult received{}; received.visibility = 1; received.irradiance[0] = 3;

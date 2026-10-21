@@ -26,6 +26,82 @@ namespace {
     }
     require(rejected, "Invalid input must be rejected");
   }
+  void adaptiveSupport(uint32_t factor) {
+    const uint32_t side = factor + 1, recordCount = side * side * side;
+    Grid grid;
+    grid.header.originSpacing[3] = 8;
+    grid.header.dimensions = {2, 2, 2, recordCount};
+    grid.header.settings[2] = 5;
+    grid.probes.resize(recordCount);
+    grid.points.resize(recordCount);
+    grid.lookup.resize(20 + ((recordCount + 3) & ~3u));
+    for (uint32_t corner = 0; corner < 8; ++corner) grid.lookup[corner] = corner + 1;
+    grid.lookup[8] = adaptiveDirectoryMagic;
+    grid.lookup[9] = factor;
+    grid.lookup[10] = uint32_t(grid.lookup.size());
+    grid.lookup[11] = 8;
+    grid.lookup[12] = patchReference(20, factor);
+    uint32_t next = 8;
+    for (uint32_t z = 0; z < side; ++z) for (uint32_t y = 0; y < side; ++y) for (uint32_t x = 0; x < side; ++x) {
+      const bool coarse = (x % factor == 0) && (y % factor == 0) && (z % factor == 0);
+      const uint32_t record = coarse ? (z / factor * 2 + y / factor) * 2 + x / factor : next++;
+      grid.lookup[20 + (z * side + y) * side + x] = record + 1;
+    }
+    const auto origins = directoryOrigins(grid);
+    uint32_t centre = UINT32_MAX;
+    for (uint32_t i = 0; i < origins.size(); ++i) {
+      const auto &p = origins[i].position;
+      grid.points[i].position = {p[0], p[1], p[2], 0};
+      if (p[0] == 4 && p[1] == 4 && p[2] == 4) centre = i;
+    }
+    require(centre != UINT32_MAX && origins[1].spacing == 8.f / factor && origins[1].relocationSpacing == 8,
+            "Adaptive fixture shares coarse corners with the fine stencil");
+    grid.probes[1].statistics[3] = grid.probes[centre].statistics[3] = 1;
+    remix::scene::SphereLight light;
+    light.position[0] = 20; light.position[1] = light.position[2] = 4;
+    light.radius = .001f;
+    light.radiance[0] = .01f;
+    const auto outsideFine = planProbeVisibility(grid, std::span(&light, 1), .001f, 1);
+    require(outsideFine && outsideFine->tasks.size() == 1 && outsideFine->tasks[0].point == 1,
+            "Fine-only records avoid coarse-radius work while shared coarse corners retain full support");
+    std::fill_n(light.position, 3, 0);
+    grid.points[centre].position = {5.8f, 5.8f, 5.8f, 0};
+    const auto relocated = planProbeVisibility(grid, std::span(&light, 1), .001f, 2);
+    require(relocated && relocated->tasks.size() == 2,
+            "Fine probe support still includes diagonal interpolation and maximal local relocation");
+    // Check the planner against the reconstruction stencil, not another copy
+    // of its radius formula. Include biased receivers around fine-cell edges
+    // and trace displacements at the allowed extent in every axis.
+    grid.header.settings[0] = .8f;
+    for (uint32_t i = 0; i < origins.size(); ++i) {
+      grid.probes[i].statistics[3] = 1;
+      for (uint32_t axis = 0; axis < 3; ++axis) {
+        const float offset = .45f * origins[i].relocationSpacing * ((i + axis) % 2 ? 1 : -1);
+        grid.points[i].position[axis] = origins[i].position[axis] + offset;
+        grid.probes[i].irradiance[axis][3] = offset;
+      }
+      for (auto &moment : grid.probes[i].moments) moment = {1000, 1000000, 0, 1};
+    }
+    const std::array<std::array<float, 3>, 6> normals{{{1,0,0}, {-1,0,0}, {0,1,0}, {0,-1,0}, {0,0,1}, {0,0,-1}}};
+    const std::array<float, 6> coordinates{.001f, 1.9f, 3.999f, 4.001f, 6.1f, 7.999f};
+    uint32_t coveredCorners = 0;
+    for (float z : coordinates) for (float y : coordinates) for (float x : coordinates) {
+      light.position[0] = x; light.position[1] = y; light.position[2] = z;
+      const auto plan = planProbeVisibility(grid, std::span(&light, 1), .001f, recordCount);
+      require(plan.has_value(), "Conservative adaptive probe volume fits the full fixture budget");
+      for (const auto &normal : normals) {
+        const auto stencil = probeStencil(grid, {x,y,z}, normal);
+        for (uint32_t corner = 0; corner < stencil.count; ++corner) {
+          if (stencil.weights[corner] <= 0) continue;
+          require(std::any_of(plan->tasks.begin(), plan->tasks.end(), [&](const auto &task) {
+                    return task.point == stencil.indices[corner];
+                  }), "Every contributing coarse/fine receiver corner keeps its light visibility task");
+          ++coveredCorners;
+        }
+      }
+    }
+    require(coveredCorners > 1000, "Adaptive support parity exercised nonempty reconstruction stencils");
+  }
 } // namespace
 int main() {
   {
@@ -418,6 +494,7 @@ int main() {
     require(moved && moved->tasks[0].point == 0,
             "Actual relocated positions, not original grid-coordinate approximations, determine candidates");
   }
+  for (uint32_t factor : {2u, 4u, 8u}) adaptiveSupport(factor);
   std::puts("Sparse probe visibility ownership, overlap, budgets and atomic "
             "readback passed");
 }

@@ -16,6 +16,10 @@ namespace remix::forward::bake {
       const lightmap::Layout &layout, std::span<const uint16_t> pixels, const Grid &grid,
       uint32_t maximumSamples = 8192, std::stop_token cancelled = {});
   struct StyledDirectGroups;
+  class ProbeVisibility;
+  // Once per publication attempt; diagnostic allocation failure never fails baking.
+  void logGroupedDirectDeclines(const scene::BakeScene &source, const ProbeVisibility &probes,
+                                const StyledDirectGroups &groups) noexcept;
   void dumpGroupedDirectReport(const scene::BakeScene &source, const lightmap::Layout &layout,
       std::span<const uint16_t> pixels, const Grid &grid, std::span<const uint32_t> directionals,
       const StyledDirectGroups &groups, std::stop_token cancelled = {}) noexcept;

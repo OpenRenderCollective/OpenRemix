@@ -31,6 +31,8 @@ test('Adaptive irradiance ownership, energy and smooth resolution transitions', 
 
 forward_probe_visibility_test = executable('remix-forward-probe-visibility-test', 'probe_visibility.cpp',
   '../../src/native/forward/bake/probe_visibility.cpp', '../../src/native/forward/bake/probe_visibility_gpu.cpp', '../../src/native/forward/bake/probe_visibility_plan.cpp',
+  '../../src/native/forward/bake/grid_directory.cpp',
+  '../../src/native/forward/bake/grid_sampling.cpp',
   '../../src/native/forward/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Sparse probe local-light visibility preserves unknown coverage and budgets', forward_probe_visibility_test)

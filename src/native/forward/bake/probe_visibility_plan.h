@@ -11,6 +11,8 @@ namespace remix::forward::bake {
   };
   // Conservative candidates for wall-aware trilinear reconstruction. Uses
   // actual relocated positions; halo covers all corners of a receiver cell.
+  // Adaptive records use their largest referencing/trace spacing, preserving
+  // coarse support for shared nodes without expanding every fine-only volume.
   // No visibility claim is made by distance, cone or BSP classification alone.
   // Select complete light volumes in increasing pair cost, then captured index.
   // Unselected lights remain unknown; no individual light's pairs are truncated.

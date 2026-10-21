@@ -56,6 +56,7 @@ namespace remix::forward::bake {
                  groupedStyles.styles.size(), groupedStyles.declined.size(), groupedStyles.words.size() * 4,
                  std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count(),
                  compositionMs, reportMs, mergeMs);
+    logGroupedDirectDeclines(*source, *localProbes, groupedStyles);
   }
   void Controller::Job::prepareSurfaceStorage() {
     const char *override = std::getenv("REMIX_DEBUG_UNIFIED_MASKS");

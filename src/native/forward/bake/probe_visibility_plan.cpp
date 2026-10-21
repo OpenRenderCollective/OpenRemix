@@ -52,12 +52,27 @@ namespace remix::forward::bake {
       uint32_t light;
       size_t first, end;
       uint64_t count;
-      double reach;
+      double radius;
     };
     std::vector<Candidate> candidates;
     // A trilinear corner can be sqrt(3) cells from the receiver. Relocation
     // moves it at most .45 cells per axis; include the receiver's normal bias.
     const double halo = std::sqrt(3.) * 1.45 * spacing + bias;
+    std::vector<double> probeHalos;
+    if (adaptive(grid.header)) {
+      // A fine-only record cannot contribute to a coarse stencil. Directory
+      // origins retain the largest referencing/trace spacing, including shared
+      // coarse corners and aligned records traced before further subdivision.
+      // The finest spacing would be unsafe for those shared records.
+      const auto origins = directoryOrigins(grid);
+      probeHalos.reserve(origins.size());
+      for (const auto &origin : origins)
+        probeHalos.push_back(std::sqrt(3.) * 1.45 * origin.relocationSpacing +
+                             double(bias) * origin.relocationSpacing / spacing);
+    }
+    const auto receiverReach = [&](double radius, uint32_t probe) {
+      return radius + (probeHalos.empty() ? halo : probeHalos[probe]);
+    };
     for (uint32_t lightIndex = 0; lightIndex < lights.size(); ++lightIndex) {
       check(cancelled);
       const auto &light = lights[lightIndex];
@@ -90,7 +105,8 @@ namespace remix::forward::bake {
           const double delta = double(position[axis]) - light.position[axis];
           distanceSquared += delta * delta;
         }
-        if (distanceSquared > reach * reach)
+        const double localReach = receiverReach(radius, *entry);
+        if (distanceSquared > localReach * localReach)
           continue;
         // A single light larger than the entire budget cannot be selected.
         // Stop counting it, but continue examining later, cheaper volumes.
@@ -99,7 +115,7 @@ namespace remix::forward::bake {
       }
       if (count)
         candidates.push_back(
-            {lightIndex, size_t(first - sorted.begin()), size_t(end - sorted.begin()), count, reach});
+            {lightIndex, size_t(first - sorted.begin()), size_t(end - sorted.begin()), count, radius});
     }
     result.eligibleLights = uint32_t(candidates.size());
     std::sort(candidates.begin(), candidates.end(), [](const Candidate &a, const Candidate &b) {
@@ -128,7 +144,8 @@ namespace remix::forward::bake {
           const double delta = double(position[axis]) - light.position[axis];
           distanceSquared += delta * delta;
         }
-        if (distanceSquared <= candidate.reach * candidate.reach)
+        const double localReach = receiverReach(candidate.radius, sorted[i]);
+        if (distanceSquared <= localReach * localReach)
           result.tasks.push_back({sorted[i], candidate.light, 0});
       }
     }
