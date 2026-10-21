@@ -42,8 +42,9 @@ vec3 probeMip(uint probe, uint level, vec3 ray) {
   }
   return result;
 }
-// Only screen-space compute uses a tile mask. Water and viewmodels retain
-// their original contiguous walk without adding mask work to those stages.
+// Candidates may come from screen tiles or a small object's receiver bounds.
+// Unmasked users, including water, keep the contiguous walk. Both paths
+// visit probes in the same header order.
 #ifdef PROBE_TILE_CANDIDATES
 bool probeRadianceMasked(vec3 position, vec3 reflected, float roughness, uvec2 candidates, out vec3 result) {
 #else

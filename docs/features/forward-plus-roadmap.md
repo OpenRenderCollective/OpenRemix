@@ -66,6 +66,12 @@ physgun/crowbar/pistol switching and weapon removal, including transition frames
 addon weapons, movement or other-map rebakes. Actual viewmodel rendering adds a substantial measured
 cost, so isolate its SSR, shadow and fragment work next; retain the overlay, world-probe lighting and
 isolated self-shadow requirements. Its appearance still needs comparison against the reference path.
+The physgun SSR isolation leaves substantial viewmodel color/resolve cost. Conservative CPU-prepared
+cubemap candidate masks now reduce that work without changing probe projection/blending or full-res
+SSR. Unknown receiver bounds retain the full set. A 64th-probe GPU fixture matches complete masked and
+unculled frame hashes at 1x/4x MSAA; two live renderer orders favor the mask in the measured hall. This
+is not broad map/weapon performance or visual acceptance; continue the remaining quality matrix.
+
 
 ## Handoff checkpoint (2026-10-20)
 

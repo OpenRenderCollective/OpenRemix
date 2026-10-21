@@ -209,3 +209,8 @@ forward_decal_test = executable('remix-forward-decal-test', 'decal.cpp',
   '../../src/native/forward/lightmap/decal.cpp', '../../src/native/forward/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Decals borrow receiver chart coordinates and light ownership', forward_decal_test)
+
+forward_probe_mask_test = executable('remix-forward-probe-mask-test', 'probe_receiver_mask.cpp',
+  '../../src/native/forward/probes/receiver_mask.cpp', '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Reflection probe receiver masks preserve padded and rotated coverage', forward_probe_mask_test)

@@ -2314,6 +2314,29 @@ namespace {
                           after.bakeContent.grid == baseline.bakeContent.grid &&
                           after.bakeContent.surfaces == baseline.bakeContent.surfaces,
                       "Authored reflection edits preserve completed diffuse probes and surface lightmaps");
+              // Only the last probe can influence the weapon. This exercises
+              // the upper mask word through authored publication and shading.
+              std::array<remixapi_ReflectionVolumeEXT, 64> complete{};
+              for (uint32_t i = 0; i < 63; ++i) {
+                auto &volume = complete[i];
+                volume.id = 1000 + i;
+                for (uint32_t c = 0; c < 3; ++c) {
+                  volume.minimum[c] = 100 + float(i * 2);
+                  volume.maximum[c] = volume.minimum[c] + 1;
+                  volume.capture[c] = volume.minimum[c] + .5f;
+                  volume.worldToLocal[c][c] = 1;
+                }
+              }
+              complete.back() = authored[0];
+              request.volumeCount = uint32_t(complete.size());
+              request.volumes = complete.data(); ++request.revision;
+              r.setReflectionVolumes(&request);
+              const auto lastProbe = waitForEdit();
+              require(target.forward->statistics().reflectionProbes.parameters[0] == 64 &&
+                          std::abs(int(lastProbe[centre]) - int(firstEdit[centre])) <= 2,
+                      "The 64th rotated probe preserves reflections while unrelated volumes are excluded");
+              std::printf("Viewmodel last-probe image %ux: %llu\n", samples,
+                          static_cast<unsigned long long>(remix::scene::fastHash(lastProbe.data(), lastProbe.size())));
               request.volumeCount = 0; ++request.revision;
               r.setReflectionVolumes(&request);
               require(waitForEdit()[centre] < 5, "An empty authoring document suppresses local cubemaps");

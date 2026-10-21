@@ -127,6 +127,13 @@ many controls but did not establish a performance gain; reordered profiling chan
 Some paired runs drifted despite stable clocks: do not treat small percentages as precise hardware laws.
 Driver local-memory statistics were implausible; do not silently mask them into invented spill counts.
 
+Viewmodel cubemap candidates are prepared by `forward/probes/receiver_mask.*` from posed draw bounds,
+including the normal-query padding. Uncertain inputs retain candidates. The private viewmodel screen
+uniform is 112 bytes and appends two candidate words; rebuild CPU and embedded shader together. Public
+ABI, probe headers and bake policy are unchanged. The diagnostic unculled-probe environment option
+must be set before process startup. Exact 64th-probe frame parity and fixed live costs support this path;
+other weapons/maps and moving receiver quality remain acceptance work.
+
 ## Adapter and authoring
 
 The adapter owns BSP/Source parsing, range/unit conventions, style identities and cubemap sidecars.

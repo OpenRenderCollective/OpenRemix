@@ -325,6 +325,15 @@ Optional hardware transport fills screen misses before that composition. Each fa
 missing transport without adding the same specular lobe twice. Sky fallback stays unavailable until a
 usable visibility bake is published and disappears when that bake is invalidated.
 
+Viewmodels conservatively restrict cubemap candidates using the union of their posed world bounds.
+The CPU tests those bounds, padded for the normal-biased query, against each oriented influence box;
+unknown or numerically uncertain bounds retain candidates. Two mask words cover all 64 records. The
+shader keeps the original per-fragment influence test, priority, feathering, parallax and roughness
+filtering in header order. This does not change authored boxes, capture budgets or the bake format.
+`REMIX_DEBUG_FORWARD_VIEWMODEL_UNCULLED_PROBES=1` before startup restores the full candidate list
+for diagnostic comparison. Water retains its unmasked walk.
+
+
 ## Parallax cubemap probes
 
 After diffuse tracing, the same static transport module captures directional radiance into six cube faces.

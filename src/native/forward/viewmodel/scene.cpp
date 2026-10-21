@@ -1,6 +1,8 @@
 #include "forward/gpu.h"
+#include "forward/probes/receiver_mask.h"
 #include <algorithm>
 #include <bit>
+#include <cstdlib>
 #include <limits>
 
 namespace remix::forward {
@@ -54,14 +56,29 @@ namespace remix::forward {
         Matrix inverseCamera;
         Vec4 trace;
         std::array<uint32_t, 4> config;
+        std::array<uint32_t, 4> probeCandidates;
       };
-      static_assert(sizeof(ScreenData) == 96);
+      static_assert(sizeof(ScreenData) == 112);
+      Bounds receivers;
+      for (const auto &draw : frame.viewModelCommands) {
+        if (!draw.worldBounds.valid) { receivers = {}; break; }
+        receivers.merge(draw.worldBounds);
+      }
+      const auto authored = authoredReflections->header();
+      const auto volume = baking->volume();
+      const auto *header = authored ? authored : volume ? &volume->reflectionHeader : nullptr;
+      // Match the normal bias in the sky/probe query, not just the mesh bounds.
+      auto candidates = header ? probes::receiverMask(*header, receivers, .002f / options.sceneScale)
+                               : std::array<uint32_t, 2>{};
+      static const bool unculled = std::getenv("REMIX_DEBUG_FORWARD_VIEWMODEL_UNCULLED_PROBES") != nullptr;
+      if (unculled) candidates = {~0u, ~0u};
       const auto screen = reflections ? reflections->screenInputs() : Reflections::ScreenInputs{};
       const ScreenData screenData{scene::inverse(data.camera),
           {options.ssrDistance / options.sceneScale, options.ssrThickness / options.sceneScale,
            .002f / options.sceneScale, options.ssrRoughness},
           {uint32_t(samples), options.ssrScale, options.ssr && screen.depth.imageView ? options.ssrSteps : 0u,
-           uint32_t(std::bit_width(std::max(extent.width, extent.height)))}};
+           uint32_t(std::bit_width(std::max(extent.width, extent.height)))},
+          {candidates[0], candidates[1], 0, 0}};
       ensure(frame.viewModelReflectionConstants, sizeof(ScreenData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
       frame.viewModelReflectionConstants->write(&screenData, sizeof(screenData));
       const auto screenConstants = frame.viewModelReflectionConstants->descriptor();

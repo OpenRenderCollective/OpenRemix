@@ -1,4 +1,5 @@
 #define PROBE_BINDING 12
+#define PROBE_TILE_CANDIDATES
 #include "../../shaders/probes.glsl"
 layout(set = 0, binding = 13, std140) uniform ViewModelSky {
   mat4 inverseProjection, viewToDome;
@@ -10,6 +11,7 @@ layout(set = 0, binding = 15, std140) uniform ViewModelScreen {
   mat4 inverseCamera;
   vec4 trace;
   uvec4 config;
+  uvec4 probeCandidates;
 } viewModelScreen;
 layout(set = 0, binding = 16) uniform sampler2D depthPyramid;
 layout(set = 0, binding = 17) uniform sampler2D normals;
@@ -21,7 +23,8 @@ layout(set = 0, binding = 18) uniform sampler2D opaqueColor;
 vec3 viewModelReflection(vec3 position, vec3 n, vec3 v, vec3 base, float roughness, float metallic) {
   if ((frame.clusterInfo.w & 2u) == 0u) return vec3(0);
   vec3 reflected = reflect(-v, n), radiance;
-  if (!probeRadiance(position + n * sky.target.z, reflected, roughness, radiance))
+  if (!probeRadianceMasked(position + n * sky.target.z, reflected, roughness,
+                           viewModelScreen.probeCandidates.xy, radiance))
     radiance = environmentReflection(position, n, reflected, roughness);
   ScreenReflectionView screen = ScreenReflectionView(frame.camera, viewModelScreen.inverseCamera,
       frame.view, viewModelScreen.trace, viewModelScreen.config, frame.target.xy);
