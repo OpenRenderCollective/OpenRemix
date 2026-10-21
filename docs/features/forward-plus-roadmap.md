@@ -52,6 +52,9 @@ Construct authored sidecar, which explicitly disables local cubemaps. Isolating 
 53/54 automatic captures in installed/candidate builds. F12 now identifies the active probe source and
 explains an empty authored set; the saved file is preserved. Probe bounds/blending quality remains open.
 Startup cache-identity differences outside the verified hall sessions still need fingerprint diagnostics.
+An initial live Crossfire courtyard pair favors the candidate, with opaque shading still dominant, but
+does not reproduce the historical slowdown. Opposite hall and courtyard outcomes require broader
+controls and receiver/highlight profiling, rather than a global quality reduction or release claim.
 
 ## Handoff checkpoint (2026-10-20)
 
