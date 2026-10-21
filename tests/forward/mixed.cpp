@@ -217,13 +217,29 @@ int main() {
     require(!m::outsideEmissionCone(spot, outside),
             "A triangle corner reaching a receiver cannot be rejected by its centre");
     spot.triangle = 0;
+    spot.radius = .1f;
+    spot.coneCos = -4.37113883e-8f;
+    const forward::Bounds rear{{-.2f,-.2f,-10}, {.2f,.2f,-9}, true};
+    require(m::outsideEmissionCone(spot, rear),
+            "A rounded hemisphere cosine still excludes a finite receiver behind the emitter");
+    require(!m::outsideEmissionCone(spot, {{-1,-1,-.01f}, {1,1,.01f}, true}),
+            "Finite support crossing a near-hemisphere boundary remains eligible");
+    spot.coneCos = -.5f;
+    require(m::outsideEmissionCone(spot, rear) &&
+                !m::outsideEmissionCone(spot, {{3,-.1f,-1}, {3.1f,.1f,-.9f}, true}),
+            "Wide cones reject their excluded rear axis but preserve allowed backward oblique connections");
+    spot.direction[2] = 2;
+    spot.coneCos = -1;
+    require(!m::outsideEmissionCone(spot, rear),
+            "Raw unrestricted cone flags bypass clipping even for a nonunit emission axis");
     uint32_t rejected = 0;
     for (uint32_t trial = 0; trial < 256; ++trial) {
       const float angle = trial * .731f;
       spot.direction[0] = .6f * std::cos(angle);
       spot.direction[1] = .6f * std::sin(angle);
       spot.direction[2] = .8f;
-      spot.coneCos = .25f + .7f * float(trial % 7) / 6;
+      constexpr float cosines[] = {-.9f, -.5f, -4.37113883e-8f, 0, .25f, .6f, .95f};
+      spot.coneCos = cosines[trial % std::size(cosines)];
       spot.radius = .1f + .3f * float(trial % 5);
       const forward::Vec3 centre{8*std::sin(angle*.7f), 8*std::cos(angle*1.3f), 5*std::sin(angle*.9f)};
       forward::Bounds bounds;
@@ -300,7 +316,12 @@ int main() {
     light.direction[2] = -1;
     light.focus = 0;
     light.coneCos = -.5f;
-    require(!m::plan(shaped, layout).tasks.empty(), "Wide unfocused spots may illuminate behind their axis");
+    require(m::plan(shaped, layout).tasks.empty(),
+            "Wide unfocused spots still exclude receivers near their rear axis");
+    light.position[0] = -6;
+    require(!m::plan(shaped, layout).tasks.empty(),
+            "Wide unfocused spots preserve backward oblique receivers inside their cone");
+    light.position[0] = 0;
     light.coneCos = .5f;
     require(m::plan(shaped, layout).tasks.empty(), "Narrow spots cannot illuminate their rear hemisphere");
     light.coneCos = -1;

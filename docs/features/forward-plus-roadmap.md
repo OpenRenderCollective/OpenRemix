@@ -102,6 +102,24 @@ The existing runtime light locator uses emitter centres/nearby samples; it is no
 that a whole finite emitter and all biased/dilated surface receivers are disconnected.
 Any bake-side visibility-partition pruning needs conservative volume coverage, explicit
 unknown/embedded-light fallback and agreement with replacement geometry before storing black.
+The read-only audit now exists: set `REMIX_DEBUG_BAKE_VISIBILITY_REPORT` to an absolute JSON
+path for a cold bake, then run `python scripts/experiments/visibility_partition_audit.py CAPTURE
+--output REPORT`. It records whole emitter bounds, full chart/donor bounds, biased sample-point
+bounds and completed visibility classifications. `--self-test` checks boundary, unknown-region,
+asymmetric-matrix and zero-weight clear-sentinel handling. No PVS rejection is enabled.
+Construct's broad-bound audit predicts 10854 disconnected pairs; 436 carry the baker's clear
+classification. The biased-point alternative predicts many more but is not a full receiver-area
+proof. Clear can also mean no emitter samples had positive weight, so these counts alone cannot
+establish either broken visibility or safe pruning. No isotropic-sphere clear conflict is found
+in that capture. Future PVS-based baking must also add matrix bits to cache identity; current
+bake content hashing includes partition geometry/cluster labels but not visibility rows.
+The audit exposes a separate analytic omission: finite cone rejection previously handled only
+positive outer cosines. Its conservative signed-distance bound now also covers wide cones and
+rounded negative `cos(pi/2)` values, while preserving unrestricted emitters, finite extents,
+backward oblique connections and numerical tangency. Construct removes 2010 extra candidate
+links and about 864000 visibility points; a matched cold run changes 52.2 to 51.8 s, with the
+checked shaded world crop within two display code values. Treat this as bounded work reduction,
+not a broad bake/FPS win. Existing completed caches remain valid; no layout or cache-key change.
 Camera motion also refreshes frozen sunlight cascades and prepares the captured world casters.
 The CPU projection cache now preserves the exact rendered projection for subtexel fit noise.
 Targeted CPU and sunlight/local-shadow GPU checks pass. Opposite-order moving-camera comparisons

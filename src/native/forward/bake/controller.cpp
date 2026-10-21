@@ -4,6 +4,7 @@
 #include "forward/bake/cache.h"
 #include "forward/bake/cache_persistence.h"
 #include "forward/bake/fingerprint.h"
+#include "forward/bake/visibility_report.h"
 #include "forward/bake/receiver_report.h"
 #include "forward/bake/receiver_support.h"
 #include "forward/bake/transport.h"
@@ -899,6 +900,8 @@ namespace remix::forward::bake {
           "forward-probe-filter-" + std::to_string(++generation), [owner, physical, device, config] {
             dumpPhaseFingerprint("transport", owner->source->contentHash, owner->grid, owner->surfaceLayout, owner->surfaces,
                                  owner->sun, owner->captures);
+            dumpVisibilityReport(*owner->mixedLights, owner->surfaceLayout,
+                                  Options{}.bias / owner->source->sceneScale, owner->cancellation.get_token());
             owner->finishStage.store(Job::FinishStage::Reflections, std::memory_order_relaxed);
             owner->specular = probes::filter(owner->captures, 128, owner->cancellation.get_token());
             if (config.denoiseLightmaps && lightmap::denoiserVersion()) {

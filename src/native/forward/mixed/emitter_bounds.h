@@ -6,7 +6,9 @@
 
 namespace remix::forward::mixed {
   inline bool outsideEmissionCone(const scene::SphereLight &light, const Bounds &bounds) {
-    if (!bounds.valid || !(light.coneCos > 0)) return false;
+    // The shader bypasses cone clipping only at outer <= -1. Wide cones
+    // still have an excluded rear region, including rounded cos(pi/2) < 0.
+    if (!bounds.valid || !(light.coneCos > -1)) return false;
     double axisLength2 = 0, distance2 = 0, halfDiagonal2 = 0, projection = 0, coordinateScale = 0;
     for (uint32_t c = 0; c < 3; ++c) {
       if (bounds.minimum[c] > bounds.maximum[c]) return false;
@@ -23,7 +25,7 @@ namespace remix::forward::mixed {
     const double axisLength = std::sqrt(axisLength2);
     // Match the GPU dot product even for an adapter supplying a nonunit axis.
     const double cosine = light.coneCos / axisLength;
-    if (!(cosine > 0 && cosine < 1)) return false;
+    if (!(cosine > -1 && cosine < 1)) return false;
     double emitterRadius = light.radius;
     if (light.triangle) {
       emitterRadius = 0;
