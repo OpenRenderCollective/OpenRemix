@@ -1,4 +1,5 @@
 forward_policy_test = executable('remix-forward-policy-test', 'lighting.cpp',
+  '../../src/native/forward/shadows/sun_cache.cpp',
   '../../src/native/forward/lighting.cpp', '../../src/native/runtime/settings.cpp',
   '../../src/native/forward/water/data.cpp',
   '../../src/native/forward/viewmodel/lighting.cpp',

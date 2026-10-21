@@ -285,6 +285,33 @@ int main() {
   dirty = sunCache.update(source, true, matrices);
   require(std::count(dirty.begin(), dirty.end(), true) == cascadeCount,
           "Re-enabling sunlight initializes the current projections");
+  {
+    shadows::SunCache stable;
+    matrices.fill(scene::identity());
+    stable.update(source, true, matrices, 1024);
+    auto request = matrices;
+    request[0][0] = std::nextafter(1.f, 2.f);
+    request[1][12] += .125f / 1024 * .5f;
+    request[2][14] += 1e-7f;
+    dirty = stable.update(source, true, request, 1024);
+    require(std::count(dirty.begin(), dirty.end(), true) == 0 && request == matrices,
+            "Subtexel fit noise retains the exact projection used to render cached sunlight");
+    request[0][12] += 2.f / 1024;
+    request[2][14] += .001f;
+    dirty = stable.update(source, true, request, 1024);
+    require(dirty[0] && dirty[2] && std::count(dirty.begin(), dirty.end(), true) == 2,
+            "Pixel-scale camera movement and meaningful depth changes still redraw their layers");
+    dirty = stable.update(source, true, request, 2048);
+    require(std::count(dirty.begin(), dirty.end(), true) == cascadeCount,
+            "Changed resolution invalidates the texel-dependent projection cache");
+    request[0][3] = 1e-9f;
+    dirty = stable.update(source, true, request, 2048);
+    require(dirty[0], "A non-affine projection cannot use orthographic reuse bounds");
+    request[1] = scene::identity();
+    request[1][0] = 0;
+    dirty = stable.update(source, true, request, 2048);
+    require(dirty[1], "A singular projection rejects reuse without throwing");
+  }
   scene::DistantLight capturedSun;
   capturedSun.isDistant = true;
   capturedSun.angularDiameterDegrees = .5f;
@@ -356,6 +383,23 @@ int main() {
             "Ordered cascade splits");
     for (float value : cascades.matrices[c])
       require(std::isfinite(value), "Finite shadow transforms");
+  }
+  {
+    shadows::SunCache fittedCache;
+    auto fitted = shadowCascades(identity, identity, {.001f, 1, 1}, {.3f, .7f, 1}, bounds, 1, 2048).matrices;
+    fittedCache.update(source, true, fitted, 2048);
+    auto request = fitted;
+    for (auto &projection : request) {
+      // Projection-space perturbations preserve the real rotated light basis
+      // and different cascade extents, unlike an identity-only cache fixture.
+      Matrix noise = scene::identity();
+      noise[12] = .125f / 2048 * .25f;
+      noise[14] = 1e-7f;
+      projection = scene::multiply(noise, projection);
+    }
+    dirty = fittedCache.update(source, true, request, 2048);
+    require(std::count(dirty.begin(), dirty.end(), true) == 0 && request == fitted,
+            "Rotated fitted cascades retain their exact rendered matrices under subtexel fit noise");
   }
   scene::Draw draw;
   draw.material = std::make_shared<scene::Material>();
@@ -592,7 +636,8 @@ int main() {
   require(remix::forward::bake::Config{}.denoiseLightmaps,
           "New bake configurations request indirect lightmap denoising by default");
   require(settings.forward.debugView == 0 &&
-              config::set(settings, "rtx.native.forward.debugView", "6") == config::SetResult::Invalid &&
+              config::set(settings, "rtx.native.forward.debugView", "7") == config::SetResult::Invalid &&
+              config::set(settings, "rtx.native.forward.debugView", "6") == config::SetResult::Success &&
               config::set(settings, "rtx.native.forward.debugView", "4") == config::SetResult::Success &&
               config::set(settings, "rtx.native.forward.debugView", "5") == config::SetResult::Success &&
               config::set(settings, "rtx.native.forward.debugView", "2") == config::SetResult::Success,

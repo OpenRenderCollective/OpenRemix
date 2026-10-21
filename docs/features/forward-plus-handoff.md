@@ -14,6 +14,11 @@ Keep static visibility, unknown coverage, toggleable groups and offscreen moving
 
 ## Module ownership
 
+- `forward/shadows/sun_cache.*`: frozen sunlight ownership and projection reuse. Subtexel fit
+  changes retain the exact cached matrix for both static sampling and moving-caster rendering;
+  significant movement, scene replacement and resolution changes still invalidate. This does not
+  remove uncovered-receiver fallback cascades. Broad live shadow-quality acceptance remains open.
+
 - `forward/bake/adaptive_grid.*`: coarse placement and receiver/reference-driven refinement selection.
 - `receiver_support.*`: bounded receiver support, halos and deterministic neighbour collection.
 - `refinement_builder.*`: coverage-first regional subdivision, canonical shared physical records and compaction.

@@ -306,7 +306,7 @@ namespace remix::forward {
     data.clusterInfo[1] = firstBaked == lights.end() ? 0 : runtimeLights + 1;
     data.target = {extent.width, extent.height, uint32_t(lights.size()),
                    uint32_t(options.shadows && sun.isDistant)};
-    frame.staticSunDirty = sunCache.update(shadowPlanner.source(), data.target[3] != 0, data.shadows);
+    frame.staticSunDirty = sunCache.update(shadowPlanner.source(), data.target[3] != 0, data.shadows, options.shadowResolution);
     const bool refreshLocal = std::any_of(shadowSelection.dirty.begin(), shadowSelection.dirty.end(),
                                          [](bool dirty) { return dirty; });
     const bool refreshSun = data.target[3] && std::any_of(frame.staticSunDirty.begin(), frame.staticSunDirty.end(),

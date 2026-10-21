@@ -11,6 +11,17 @@ reports. An implementation or synthetic test alone does not close an integration
 
 ## Continuation status (2026-10-22)
 
+Latest live moving-prop checks in Construct confirm valid probe coverage on the barrel and neutral
+crate while their appearance remains too dark. Coverage alone does not close probe quality; compare
+lighting components, receiver normals and reference density before changing brightness globally.
+Camera motion also refreshes frozen sunlight cascades and prepares the captured world casters.
+The CPU projection cache now preserves the exact rendered projection for subtexel fit noise.
+Targeted CPU and sunlight/local-shadow GPU checks pass. Opposite-order moving-camera comparisons
+reduce sun-shadow cost most clearly outbound, with a much smaller return-leg benefit; whole-frame
+FPS improvement is not established across maps. Stationary world images remain within two display
+code values per channel. Broader motion/visual acceptance remains open and this is not deployed.
+Keep necessary uncovered-receiver fallback and offscreen moving shadows intact.
+
 Work resumed after the handoff. Neither official feature branch had new contributor commits, and both
 already contained their official main branches. The immediate investigation is measured fragment work
 and depth-prepass effectiveness before another shader optimization. Optional bounded fragment and
