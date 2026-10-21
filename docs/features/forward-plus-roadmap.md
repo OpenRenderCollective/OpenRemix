@@ -23,6 +23,15 @@ direct transport references at actual prop-face positions, then assess interpola
 and local spatial support. Below-floor contributors alone are not proof of the cause; in the sampled
 default stencil removing them would reduce energy further. Keep brightness compensation out of this
 investigation until a reference establishes the missing energy.
+Bounded hardware point references now provide that incoming-SH comparison under identical captured
+scene inputs: at representative faces the default field is roughly 35% low on the crate side and
+72% high on the barrel top, while the crate front is about 7% low. The fronts remain dark in direct
+4096-sample transport, so this is not uniformly missing probe energy. The diagnostic leaves published
+irradiance/style/visibility buffers byte-identical to an ordinary bake. It is opt-in and separate from
+placement/publication. These are incoming-SH comparisons, with primary sunlight separate and local
+direct membership policy-dependent, not final-pixel ground truth. An 8-sample live-GI visual check was
+noisy and its alternate bake unfinished; do not use it as quality acceptance. Next obtain a converged
+cosine-weighted reference and improve regional interpolation against the opposing face errors.
 Camera motion also refreshes frozen sunlight cascades and prepares the captured world casters.
 The CPU projection cache now preserves the exact rendered projection for subtexel fit noise.
 Targeted CPU and sunlight/local-shadow GPU checks pass. Opposite-order moving-camera comparisons

@@ -3,6 +3,7 @@
 #include "forward/bake/adaptive_grid.h"
 #include "forward/bake/budget.h"
 #include "forward/bake/transport.h"
+#include "forward/bake/reference_capture.h"
 #include "forward/bake/style_work.h"
 #include "forward/bake/styled_direct.h"
 #include "forward/bake/probe_visibility.h"
@@ -24,6 +25,7 @@ namespace remix::forward::bake {
     std::shared_ptr<const scene::BakeScene> source;
     pipeline::PreparationQueue::Ticket ticket;
     std::unique_ptr<Transport> transport;
+    std::optional<ReferenceCapture> reference;
     Budget budget;
     Grid grid;
     Refinement refinement;

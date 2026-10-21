@@ -62,6 +62,17 @@ rebuild all affected objects, then relink both runtime and tests. Never overwrit
 
 ## Diagnostics and performance discipline
 
+For bounded point-transport references, set `REMIX_DEBUG_BAKE_REFERENCE_POINTS` to a UTF-8 text
+file containing a sample count (64..8192), followed by at most sixteen XYZ world positions. The
+controller bypasses cache loading for that diagnostic run and traces unbiased incoming SH through
+the existing immutable transport, separately from the placement grid. Fenced readback writes
+`<input>.results.json` with scene hash, sample/bounce counts and combined-lighting status. Its RGB
+coefficients use the same cosine convolution as probes. Primary sunlight remains a separate runtime
+term; primary local contributions depend on the transport's direct-light membership, so this is not
+an unconditional reference for the entire final shaded pixel. Use an isolated bake cache with the
+same canonical sky reference for comparisons. No request means no diagnostic rays or changed cache
+policy. This does not modify probe origins, surface charts, cache identity or the public API.
+
 Lighting view `Bake coverage` (`rtx.native.forward.debugView=6`) shows opaque atlas receivers blue,
 valid shared probe stencils green and uncovered receivers red. Sky/water/alpha/terrain composition can
 mix display colours. View zero restores normal shading and does not intentionally invalidate the bake.

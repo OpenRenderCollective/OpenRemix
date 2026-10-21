@@ -129,7 +129,8 @@ namespace remix::forward::bake {
                                  config.bakedGeometryLights)
         : DirectPolicy{};
     const char *samples = std::getenv("REMIX_DEBUG_BAKE_SURFACE_SAMPLES");
-    if (config.diskCache && (!samples || std::strcmp(samples, "1") != 0)) {
+    reference = ReferenceCapture::fromEnvironment();
+    if (!reference && config.diskCache && (!samples || std::strcmp(samples, "1") != 0)) {
       cache::Device deviceIdentity{properties.vendorID, properties.deviceID, properties.driverVersion,
                                      properties.limits.maxImageDimension2D,
                                      properties.limits.maxImageArrayLayers,
@@ -254,6 +255,11 @@ namespace remix::forward::bake {
     options.queueFamily = queueFamily;
     options.textureResolution = config.textureResolution;
     options.lightingComponents = config.styledIndirect && !styleIds(*source).empty();
+    if (reference) {
+      reference->sceneHash = source->contentHash;
+      reference->bounces = config.bounces;
+      reference->combinedLighting = options.lightingComponents;
+    }
     transport = std::make_unique<Transport>();
     transport->initialize(physical, device, source, options);
     const char *cpuVisibility = std::getenv("REMIX_DEBUG_BAKE_CPU_VISIBILITY");
@@ -313,7 +319,11 @@ namespace remix::forward::bake {
         job.transport->releaseBuildInputs();
       if (submission.count && submission.job == m_job && !job.failed) {
         const auto readBegin = std::chrono::steady_clock::now();
-        if (submission.visibility || submission.direct || submission.directionalField || submission.sun ||
+        if (submission.reference) {
+          job.readback.resize(submission.count);
+          job.transport->read(slot, job.readback);
+          job.reference->consume(submission.first, job.readback);
+        } else if (submission.visibility || submission.direct || submission.directionalField || submission.sun ||
             submission.probeSun || submission.probeLocal || submission.overflowVisibility) {
           const auto kind = submission.probeLocal ? Job::Visibility::ProbeLocal
                           : submission.probeSun ? Job::Visibility::ProbeSun
@@ -389,7 +399,7 @@ namespace remix::forward::bake {
                               submission.direct || submission.directionalField || submission.sun ||
                               submission.probeSun || submission.probeLocal
                                   ? sizeof(VisibilityResult) : sizeof(Result));
-        if (!submission.styled) (submission.radiance             ? job.captureReceived
+        if (!submission.styled && !submission.reference) (submission.radiance ? job.captureReceived
          : submission.reflectionGeometry ? job.geometryReceived
          : submission.reflectionSite     ? job.siteReceived
          : submission.visibility         ? job.visibilityReceived
@@ -415,7 +425,8 @@ namespace remix::forward::bake {
                             : submission.radiance                                    ? Work::Reflection
                             : submission.surface                                     ? Work::Surface
                                                                                      : Work::Irradiance;
-          job.budget.observe(work, submission.count, *elapsed, m_config.gpuBudgetMs);
+          if (!submission.reference)
+            job.budget.observe(work, submission.count, *elapsed, m_config.gpuBudgetMs);
         }
         m_statistics.completed = job.received;
       }
@@ -1388,6 +1399,25 @@ namespace remix::forward::bake {
           submission.job = m_job;
           submission.preparation = true;
           status(REMIXAPI_BAKE_TRACING_EXT, "Preparing static transport on GPU");
+          return;
+        }
+        if (job.reference && job.reference->received < job.reference->points.size()) {
+          auto &reference = *job.reference;
+          if (reference.next < reference.points.size()) {
+            auto &submission = m_submissions[m_slot];
+            if (submission.job) throw std::logic_error("Reference slot reused before its fence");
+            const auto point = std::span(reference.points).subspan(reference.next, 1);
+            if (reference.combinedLighting)
+              job.transport->recordComponent(command, m_slot, point, Transport::combinedLighting,
+                                             reference.samples, config.bounces);
+            else
+              job.transport->recordBatch(command, m_slot, point, reference.samples, config.bounces);
+            submission.job = m_job;
+            submission.reference = true;
+            submission.first = reference.next++;
+            submission.count = 1;
+          }
+          status(REMIXAPI_BAKE_TRACING_EXT, "Tracing offline irradiance reference");
           return;
         }
         if (job.received == job.grid.tasks.size()) {

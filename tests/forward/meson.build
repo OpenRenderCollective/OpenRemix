@@ -5,6 +5,11 @@ forward_policy_test = executable('remix-forward-policy-test', 'lighting.cpp',
   '../../src/native/forward/viewmodel/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Forward+ cluster, cascade and configuration policy', forward_policy_test)
+reference_capture_test = executable('remix-reference-capture-test', 'reference_capture.cpp',
+  '../../src/native/forward/bake/reference_capture.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Bounded offline irradiance reference requests and fenced readback', reference_capture_test,
+  args : [meson.current_build_dir() / 'reference-capture-points.txt'])
 material_constants_test = executable('remix-forward-material-constants-test', 'material_constants.cpp',
   '../../src/native/forward/material.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)

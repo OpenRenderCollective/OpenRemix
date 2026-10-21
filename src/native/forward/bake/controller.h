@@ -70,7 +70,7 @@ namespace remix::forward::bake {
       uint32_t first = 0, count = 0, styled = 0;
       bool preparation = false, radiance = false, surface = false, visibility = false, reflectionSite = false,
            sun = false, probeSun = false, probeLocal = false, overflowVisibility = false, reflectionGeometry = false,
-           sunAntialiasing = false, direct = false, directionalField = false;
+           sunAntialiasing = false, direct = false, directionalField = false, reference = false;
     };
     VkPhysicalDevice m_physical;
     VkDevice m_device;
