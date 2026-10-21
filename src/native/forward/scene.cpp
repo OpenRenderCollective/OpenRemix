@@ -229,6 +229,7 @@ namespace remix::forward {
     std::vector<uint8_t> unitDirectNeeded(selectDirectOwners ? bindings->source->lights.size() : 0);
     statistics.analyticLights = statistics.aggregateLights = statistics.selectedAggregateLights = 0;
     statistics.requiredMixedLights = 0;
+    statistics.selectedHighlightLights = statistics.selectedMixedShadowLights = 0;
     for (uint32_t sourceIndex = 0; sourceIndex < sources.size(); ++sourceIndex) {
       const auto &source = sources[sourceIndex];
       const float radius = influenceRadius(source, options.lightCutoff);
@@ -264,7 +265,11 @@ namespace remix::forward {
       switch (response.mode) {
       case LightResponse::Analytic: ++statistics.analyticLights; break;
       case LightResponse::Aggregate: ++statistics.aggregateLights; break;
-      case LightResponse::SelectedAggregate: ++statistics.selectedAggregateLights; break;
+      case LightResponse::SelectedAggregate:
+        ++statistics.selectedAggregateLights;
+        statistics.selectedHighlightLights += response.highlightWeight > 0;
+        statistics.selectedMixedShadowLights += responseInput.shadowSelected && responseInput.shadowWeight > 0;
+        break;
       case LightResponse::BakedFallback: break;
       }
       if (response.mode != LightResponse::BakedFallback && responseInput.requireMixed)

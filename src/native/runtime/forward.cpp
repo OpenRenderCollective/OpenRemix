@@ -32,6 +32,8 @@ namespace remix {
         << ", \"analyticLights\": " << state.analyticLights
         << ", \"aggregateLights\": " << state.aggregateLights
         << ", \"selectedAggregateLights\": " << state.selectedAggregateLights
+        << ", \"selectedHighlightLights\": " << state.selectedHighlightLights
+        << ", \"selectedMixedShadowLights\": " << state.selectedMixedShadowLights
         << ", \"requiredMixedLights\": " << state.requiredMixedLights
         << ", \"bakedFallbackLights\": " << state.fullyBakedLights << ", \"draws\": " << state.draws
         << ", \"clusters\": " << state.clusters << ", \"clusterCapacity\": " << state.clusterLightCapacity

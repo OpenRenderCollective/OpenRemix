@@ -56,8 +56,16 @@ An initial live Crossfire courtyard pair favors the candidate, with opaque shadi
 does not reproduce the historical slowdown. Opposite hall and courtyard outcomes require broader
 controls and receiver/highlight profiling, rather than a global quality reduction or release claim.
 The corrected Crossfire opposing-view check also favors the candidate, but has variation and partial
-CPU/engine pacing. Next isolate selected highlights versus probe/atlas work while preserving bake
-identity, then test movement and weapon changes. Raw GPU deltas are not interchangeable with FPS.
+CPU/engine pacing. Highlight-budget isolation in the live hall retains the bake and four mixed-shadow
+entries; removing highlight-only entries reduces some cost, but leaves most opaque work. Defaults are
+unchanged. F12 and the probe report now separate positive highlight and mixed-shadow roles, which can
+overlap. Raw GPU deltas are not interchangeable with FPS.
+
+A cached live hall session also keeps its active bake and published content through verified vanilla
+physgun/crowbar/pistol switching and weapon removal, including transition frames. This does not close
+addon weapons, movement or other-map rebakes. Actual viewmodel rendering adds a substantial measured
+cost, so isolate its SSR, shadow and fragment work next; retain the overlay, world-probe lighting and
+isolated self-shadow requirements. Its appearance still needs comparison against the reference path.
 
 ## Handoff checkpoint (2026-10-20)
 

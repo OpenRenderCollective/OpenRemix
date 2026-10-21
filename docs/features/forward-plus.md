@@ -246,6 +246,14 @@ default) migrates to baked lighting with controllable indirect components. The f
 A canonical `bakedLighting=0` wins over legacy aliases regardless of file order.
 Normal sample, bounce and atlas quality controls remain independent.
 
+F12 and `probes.json` distinguish selected baked highlight and mixed-shadow roles.
+`selectedHighlightLights` and `selectedMixedShadowLights` count positive response weights among
+selected aggregate entries; a light can count in both. A zero-weight incoming fade can retain a
+clustered slot without counting as active in either role. These are separate from host-required
+mixed lights, unrestricted analytic lights, and the retained fallback tail. Neither their sum nor
+the map's total light count measures the work at every pixel.
+
+
 Retained unit-direct lightmaps contain nine RGBA coefficient layers. Geometry keeps a compact union
 of its captured direct owners. Frame preparation marks a draw as needing those fields when an owner
 has an analytic/styled diffuse response or an active moving-shadow correction. Unknown owner indices

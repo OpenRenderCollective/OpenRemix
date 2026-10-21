@@ -1144,7 +1144,9 @@ namespace {
                     previewVolume->mixedLights->bakedDiffuse(0) &&
                     previewVolume->mixedLights->retainsVisibility(0) &&
                     target.forward->statistics().clusteredLights == 0 &&
-                    target.forward->statistics().fullyBakedLights == 1 && pixels[left] < 3 && pixels[right] > 80,
+                    target.forward->statistics().fullyBakedLights == 1 &&
+                    target.forward->statistics().selectedHighlightLights == 0 &&
+                    target.forward->statistics().selectedMixedShadowLights == 0 && pixels[left] < 3 && pixels[right] > 80,
                 "Grouped preview publishes aggregate data and selected responses without editing raw preferences");
         options.bakedLighting = false;
         options.baking = beforePreview;
@@ -1181,6 +1183,8 @@ namespace {
         require(specularPeak(pixels) > 0 && pixels[left] < 3 &&
                     target.forward->statistics().clusteredLights == 1 &&
                     target.forward->statistics().selectedAggregateLights == 1 &&
+                    target.forward->statistics().selectedHighlightLights == 1 &&
+                    target.forward->statistics().selectedMixedShadowLights == 0 &&
                     target.forward->statistics().analyticLights == 0 &&
                     target.forward->statistics().aggregateLights == 0 &&
                     target.forward->statistics().requiredMixedLights == 0 &&
@@ -1198,18 +1202,22 @@ namespace {
         options.localShadowFade = 2;
         target.enableForward(options, true);
         pixels = render(false);
-        require(specularPeak(pixels) == 0 && target.forward->statistics().clusteredLights == 1,
+        require(specularPeak(pixels) == 0 && target.forward->statistics().clusteredLights == 1 &&
+                    target.forward->statistics().selectedHighlightLights == 0 &&
+                    target.forward->statistics().selectedMixedShadowLights == 0,
                 "A newly selected aggregate light fades in its analytic highlight with its shadow slot");
         options.localShadowFade = 0;
         target.forward->updateLighting(options);
         pixels = render(false);
         std::printf("Selected aggregate specular %ux: peak %u\n", samples, unsigned(specularPeak(pixels)));
-        require(specularPeak(pixels) > 0,
+        require(specularPeak(pixels) > 0 && target.forward->statistics().selectedHighlightLights == 1 &&
+                    target.forward->statistics().selectedMixedShadowLights == 1,
                 "A selected aggregate light retains its direct analytic highlight");
         const auto selectedHighlight = pixels;
         options.selectedBakedLights = false;
         target.forward->updateLighting(options);
-        require(render(false) == selectedHighlight,
+        require(render(false) == selectedHighlight && target.forward->statistics().selectedHighlightLights == 0 &&
+                    target.forward->statistics().selectedMixedShadowLights == 0,
                 "A fully selected aggregate highlight matches unrestricted mixed specular exactly");
         options.selectedBakedLights = true;
         target.forward->updateLighting(options);
