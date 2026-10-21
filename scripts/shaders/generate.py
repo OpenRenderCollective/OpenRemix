@@ -20,6 +20,7 @@ OPTIMIZED = {'pathtrace'}
 # Offline transport benefits from inlining too, but retains its word-array ABI.
 INLINED = {'bake'}
 BACKENDS = {
+    'cluster_test': ('forward::test::cluster_input', 'vulkan1.1', ('query',)),
     'shadow_test': ('forward::test::shadow_input', 'vulkan1.1', ('query',)),
     'style_test': ('forward::test::style_input', 'vulkan1.1', ('query',)),
     'probe_test': ('forward::test::probe_input', 'vulkan1.1', ('reflection',)),
@@ -41,6 +42,8 @@ BACKENDS = {
 
 
 def shader_directory(backend):
+    if backend == 'cluster_test':
+        return ROOT / 'tests/forward/cluster_shaders'
     if backend == 'shadow_test':
         return ROOT / 'tests/forward/shadow_shaders'
     if backend == 'probe_test':
@@ -69,7 +72,7 @@ def shader_directory(backend):
 def defines_for(backend, stage, stages):
     """Preprocessor defines and source file of one embedded stage."""
     directory = shader_directory(backend)
-    if backend == 'shadow_test':
+    if backend in ('shadow_test', 'cluster_test'):
         return [], directory / 'query.comp'
     if backend == 'probe_test':
         return [], directory / 'reflection.comp'

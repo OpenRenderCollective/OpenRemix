@@ -15,6 +15,30 @@ using remix::test::require;
 
 int main() {
   {
+    for (float scale : {1.f, .25f, 4.f}) {
+      auto view = scene::identity();
+      view[0] = scale;
+      view[4] = .75f; // shear, plus nonuniform scaling and a reflection
+      view[5] = -2;
+      view[12] = 100;
+      view[13] = -50;
+      const Vec3 centre{2, -3, 4};
+      const auto bounds = clusterSphereBounds(view, centre, 3, viewRadiusScale(view));
+      for (int x = -4; x <= 4; ++x)
+        for (int y = -4; y <= 4; ++y)
+          for (int z = -4; z <= 4; ++z) {
+            const auto direction = normalized(Vec3{float(x), float(y), float(z)});
+            Vec3 sample;
+            for (uint32_t axis = 0; axis < 3; ++axis) sample[axis] = centre[axis] + 3 * direction[axis];
+            sample = transformPoint(view, sample);
+            float distance2 = 0;
+            for (uint32_t axis = 0; axis < 3; ++axis) distance2 += std::pow(sample[axis] - bounds[axis], 2);
+            require(distance2 <= bounds[3] * bounds[3],
+                    "Cluster spheres conservatively enclose translated, scaled, sheared and mirrored emitters");
+          }
+    }
+  }
+  {
     Bounds weapon, world;
     weapon.include({-.3f, -.4f, 1});
     weapon.include({.3f, .4f, 2});
@@ -204,8 +228,8 @@ int main() {
           "Adaptive lists fit sparse and dense light sets without the legacy64-light fallback");
   require(clusterListCapacity(4096, 12240, 128u << 20) == 512 &&
           clusterListCapacity(457, 12240, 128u << 20, 64) == 64 &&
-          uint64_t(clusterListCapacity(457, 100000, 128u << 20) + 1) * 100000 * 4 <= (32u << 20) &&
-          uint64_t(clusterListCapacity(457, 12240, 4u << 20) + 1) * 12240 * 4 <= (4u << 20),
+          uint64_t(clusterListCapacity(457, 100000, 128u << 20) + clusterHeaderWords) * 100000 * 4 <= (32u << 20) &&
+          uint64_t(clusterListCapacity(457, 12240, 4u << 20) + clusterHeaderWords) * 12240 * 4 <= (4u << 20),
           "Cluster capacity obeys total memory/device limits and retains explicit comparison overrides");
   {
     scene::Draw body;

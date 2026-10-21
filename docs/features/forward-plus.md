@@ -148,8 +148,16 @@ until the worker finishes.
 
 ## Lighting and composition
 
-The light list has 64 entries per cluster. A cluster that overflows evaluates the full light array in
-the fragment shader rather than silently omitting lights. Sphere and triangle emitters use approximate
+Light-list capacity adapts to the runtime light count and the existing bounded storage budget, with
+64 entries as the minimum automatic target. Each cluster stores two counts followed by one ordered
+index list: runtime/mixed lights precede the fully baked fallback tail. Covered receivers consume only
+the runtime prefix. Uncovered receivers use the complete culled list; if that list overflows they keep
+the full-array fallback. Tail overflow does not force covered receivers to evaluate fully baked lights.
+The private `REMIX_DEBUG_FORWARD_UNCLUSTERED_FALLBACK` switch restores complete fallback traversal
+for comparison. It does not change bake policy or cache identity.
+View-space influence spheres are prepared once per uploaded light, including conservative bounds for
+scaled or sheared views. Their storage is private to the renderer; world-space emitter radii, attenuation
+and bake inputs are unchanged. Sphere and triangle emitters use approximate
 solid-angle direct lighting. The shared Forward+ emitter helper follows the path tracer's angular
 spotlight softness/focus and cancellation-resistant sphere solid angle. The baker samples actual emitter
 positions/directions for radial energy and soft visibility; it does not blur a hard shadow after baking.
@@ -922,6 +930,8 @@ aggregate light counts. Their sum is `clusteredLights`; the remaining records
 are `bakedFallbackLights`. `requiredMixedLights` is a subset of clustered lights
 whose captured host definition explicitly requires a mixed response. These are
 CPU response classifications, not measurements of per-pixel light evaluations.
+`clusterBuildLights` separately reports the broad-phase candidate count, including a clustered baked
+tail. A larger build count does not mean every light is evaluated on each pixel.
 The additive `contentHashes` object fingerprints the exact packed grid,
 reflection and surface-atlas payloads at publication. `captureRadiance` separately
 fingerprints the raw cubemap RGB samples before filtering, excluding hit distances.

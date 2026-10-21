@@ -147,13 +147,12 @@ void main() {
       any(notEqual(surfaceDirectLights, uvec4(0xffffffffu)));
   vec4 directIrradiance = directChannels ? surfaceDirectIrradiance(surfaceLightmap, n) : vec4(-1);
   uint base = clusterIndex(gl_FragCoord.xy, depth) * ClusterStride;
-  uint count = clusters[base];
   // Overflow remains correct: this cluster evaluates the full light array.
   // It is slower, but never silently loses illumination.
   bool linear;
-  uint lightCount = receiverLightCount(count, aggregateReceiver, linear);
+  uint lightCount = receiverLightCount(base, aggregateReceiver, linear);
   for (uint i = 0u; i < lightCount; ++i) {
-    uint index = linear ? i : clusters[base + 1u + i];
+    uint index = linear ? i : clusters[base + ClusterHeaderWords + i];
     BrdfLobes local = localLightResponse(index, worldPosition, n, v, surface.rgb, roughness, metallic,
                                          directIrradiance, surfaceLightmap, vec3(.04), normalize(geometric),
                                          aggregateReceiver);

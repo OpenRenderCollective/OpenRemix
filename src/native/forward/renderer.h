@@ -38,6 +38,7 @@ namespace remix::forward {
     std::array<LocalShadowDraws, shadows::maximumLights> localShadowDraws{};
     uint32_t clusterLightCapacity = clusterCapacity;
     uint32_t clusteredLights = 0, fullyBakedLights = 0;
+    uint32_t clusterBuildLights = 0; // Broad-phase candidates, including any fallback tail.
     uint32_t analyticLights = 0, aggregateLights = 0, selectedAggregateLights = 0;
     // Positive selected-aggregate response weights; the roles can overlap.
     uint32_t selectedHighlightLights = 0, selectedMixedShadowLights = 0;

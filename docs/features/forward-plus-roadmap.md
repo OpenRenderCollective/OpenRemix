@@ -24,9 +24,18 @@ expose per-slot identities and recorded frozen/moving draws for continued profil
 covered versus uncovered probe receiver cost and the remaining surface-lightmap shading cost.
 Coverage views locate some uncovered distant geometry. `receiverLightCount` deliberately falls back
 to the full uploaded light array there because current cluster lists contain only the runtime prefix.
-Investigate a conservative clustered fallback for the baked tail, with explicit overflow handling and
-matched uncovered-receiver images. Do not simply omit these lights or increase the main prefix for
-every mapped receiver. Account for the additional clustering/storage cost before adopting it.
+A conservative clustered baked-tail candidate now shares one ordered list with the runtime prefix,
+retaining independent overflow and the complete analytic fallback. View-space spheres are prepared
+once per uploaded light, including affine-view bounds. Keep mapped receivers on their short prefix;
+do not omit unknown lighting. Core GPU membership and live integration checks cover this path.
+Fixed Crossfire views show lower GPU cost; Construct remains roughly flat in one direction. Continue
+broader maps, moving/armed views and worst-case build/storage checks before deployment acceptance.
+Crossfire can remain limited by host time after GPU time falls: profile the engine/adapter caller and
+native preparation separately before attributing the remaining frame cost to light shading.
+One live Construct check exited in the original shader API's filesystem worker after bake publication,
+with an invalid virtual-call target at `shaderapidx9_orig.dll+0xba1f`. An identical rerun completed.
+This is unresolved, not an accepted intermittent failure or proof that the native change caused it;
+preserve the crash evidence and investigate interface/texture lifetime if it recurs.
 Also audit cold cubemap capture repeatability: distinguish unchanged packed inputs/sites from identical
 captured radiance before claiming a byte-identical full bake or an isolated shader comparison.
 Changing that budget must not rebake or change published lighting buffers. Keep the slow Crossfire

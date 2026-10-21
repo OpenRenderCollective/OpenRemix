@@ -17,6 +17,7 @@ struct Light {
   vec4 positionRadius, radiance, directionCone, shaping;
   vec4 corners[3];
   vec4 responseWeights;
+  vec4 clusterBounds;
 };
 struct Material {
   mat4 model, normal;
@@ -41,14 +42,19 @@ layout(set = 0, binding = 3, std430) readonly buffer Materials {
 };
 layout(set = 0, binding = 4) uniform sampler2DArrayShadow sunShadow;
 #define ClusterCapacity frame.clusterInfo.x
-#define ClusterStride (ClusterCapacity + 1u)
-#define ClusterLightCount (frame.clusterInfo.y == 0u ? frame.target.z : frame.clusterInfo.y - 1u)
-// Only covered receivers may omit the fully baked tail. Cluster overflow still
-// visits every relevant light; uncovered receivers retain the complete fallback.
-uint receiverLightCount(uint count, bool aggregateReceiver, out bool linear) {
-  bool fallback = !aggregateReceiver && frame.clusterInfo.y != 0u;
-  linear = fallback || count > ClusterCapacity;
-  return fallback ? frame.target.z : count > ClusterCapacity ? ClusterLightCount : count;
+#define ClusterHeaderWords 2u
+#define ClusterStride (ClusterCapacity + ClusterHeaderWords)
+#define MixedLightPrefix (frame.clusterInfo.y & 0x7fffffffu)
+#define ClusterLightCount (MixedLightPrefix == 0u ? frame.target.z : MixedLightPrefix - 1u)
+#define ClusterBakedTail ((frame.clusterInfo.y & 0x80000000u) != 0u)
+// Lights are ordered runtime prefix, then baked tail. Each cell stores the
+// prefix count and complete count, followed by their shared ordered indices.
+// Tail overflow must not force covered receivers to evaluate baked lights.
+uint receiverLightCount(uint base, bool aggregateReceiver, out bool linear) {
+  bool fallback = !aggregateReceiver && MixedLightPrefix != 0u;
+  uint count = clusters[base + uint(fallback && ClusterBakedTail)];
+  linear = (fallback && !ClusterBakedTail) || count > ClusterCapacity;
+  return linear ? (fallback ? frame.target.z : ClusterLightCount) : count;
 }
 float sliceDepth(uint slice) {
   return frame.depth.x * pow(frame.depth.y / frame.depth.x, float(slice) / float(frame.grid.z));

@@ -23,7 +23,8 @@ namespace remix::forward {
     Vec4 localSettings{}; // local resolution, local radial bias, sun bias (scene units), baked direct enabled
     std::array<Vec4, 32> styleScales{}; // current/authored envelope scalar, indexed by adapter-assigned group ID
     std::array<uint32_t, 4> occlusion{}; // words per chart, chart count, texture width, indexed-mask tail
-    // Capacity; zero or mixed-prefix length + 1; sparse SH word; viewmodel flags (local shadows, reflections).
+    // Capacity; mixed-prefix length + 1 (zero = all), high bit = clustered baked tail;
+    // sparse SH word; viewmodel flags (local shadows, reflections).
     std::array<uint32_t, 4> clusterInfo{};
   };
   struct LightData {
@@ -34,6 +35,7 @@ namespace remix::forward {
     // x: selected highlight fade; y: proven empty world moving-caster map.
     // Static visibility and viewmodel self casters remain independent.
     Vec4 responseWeights{1, 0, 0, 0};
+    Vec4 clusterBounds{}; // view-space centre and conservative influence radius; shading stays in world space
   };
   struct DrawData {
     Matrix model, normal;
@@ -42,7 +44,8 @@ namespace remix::forward {
     std::array<uint32_t, 4> state{}, maps{};
   };
   static_assert(sizeof(FrameData) == 4336);
-  static_assert(sizeof(LightData) == 128);
+  static_assert(sizeof(LightData) == 144);
   static_assert(offsetof(LightData, responseWeights) == 112);
+  static_assert(offsetof(LightData, clusterBounds) == 128);
   static_assert(sizeof(DrawData) == 272);
 } // namespace remix::forward

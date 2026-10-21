@@ -37,8 +37,8 @@ namespace remix {
       const auto statistics = forwardStatistics();
       ImGui::Text("Active MSAA: %ux | opaque draws: %u | lights: %u | clusters: %u",
                   statistics.samples, statistics.draws, statistics.lights, statistics.clusters);
-      ImGui::TextDisabled("Local light lists: %u clustered | %u baked fallback",
-                          statistics.clusteredLights, statistics.fullyBakedLights);
+      ImGui::TextDisabled("Local light lists: %u runtime | %u baked fallback | %u build candidates",
+                          statistics.clusteredLights, statistics.fullyBakedLights, statistics.clusterBuildLights);
       ImGui::TextDisabled("Selected baked roles: %u highlights | %u mixed shadows",
                           statistics.selectedHighlightLights, statistics.selectedMixedShadowLights);
       if (ImGui::IsItemHovered())

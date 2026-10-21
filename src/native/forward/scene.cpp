@@ -230,6 +230,7 @@ namespace remix::forward {
     statistics.analyticLights = statistics.aggregateLights = statistics.selectedAggregateLights = 0;
     statistics.requiredMixedLights = 0;
     statistics.selectedHighlightLights = statistics.selectedMixedShadowLights = 0;
+    const float clusterRadiusScale = viewRadiusScale(data.view);
     for (uint32_t sourceIndex = 0; sourceIndex < sources.size(); ++sourceIndex) {
       const auto &source = sources[sourceIndex];
       const float radius = influenceRadius(source, options.lightCutoff);
@@ -243,6 +244,8 @@ namespace remix::forward {
       std::copy_n(source.direction, 3, light.directionCone.begin());
       light.directionCone[3] = source.coneCos;
       light.shaping = {source.softness, source.focus, radius, 0};
+      light.clusterBounds = clusterSphereBounds(data.view,
+          {source.position[0], source.position[1], source.position[2]}, radius, clusterRadiusScale);
       const auto shadowSlot = shadowSelection.slots[sourceIndex];
       LightResponseInput responseInput;
       responseInput.selectedOnly = options.selectBakedLights(giSupported);
@@ -304,6 +307,8 @@ namespace remix::forward {
     // Zero preserves the ordinary full-list contract. Otherwise the prefix
     // contains mixed/dynamic lights; the baked tail is only an uncovered fallback.
     data.clusterInfo[1] = firstBaked == lights.end() ? 0 : runtimeLights + 1;
+    static const bool clusterFallback = std::getenv("REMIX_DEBUG_FORWARD_UNCLUSTERED_FALLBACK") == nullptr;
+    if (clusterFallback && firstBaked != lights.end()) data.clusterInfo[1] |= clusteredBakedTail;
     data.target = {extent.width, extent.height, uint32_t(lights.size()),
                    uint32_t(options.shadows && sun.isDistant)};
     frame.staticSunDirty = sunCache.update(shadowPlanner.source(), data.target[3] != 0, data.shadows, options.shadowResolution);
@@ -338,7 +343,8 @@ namespace remix::forward {
     data.clusterInfo[0] = clusterListCapacity(runtimeLights, data.grid[3],
         properties.limits.maxStorageBufferRange, options.clusterLights);
     statistics.clusterLightCapacity = data.clusterInfo[0];
-    const VkDeviceSize clusterBytes = VkDeviceSize(data.grid[3]) * (data.clusterInfo[0] + 1) * sizeof(uint32_t);
+    const VkDeviceSize clusterBytes =
+        VkDeviceSize(data.grid[3]) * (data.clusterInfo[0] + clusterHeaderWords) * sizeof(uint32_t);
     for (const auto bytes : {clusterBytes, VkDeviceSize(lights.size() * sizeof(LightData)),
                              VkDeviceSize(draws.size() * sizeof(DrawData))})
       if (bytes > properties.limits.maxStorageBufferRange)
@@ -545,6 +551,8 @@ namespace remix::forward {
     probes::dumpFrameData(".shadow-policy.bin", shadowPolicy, sizeof(shadowPolicy));
     statistics.lights = uint32_t(lights.size());
     statistics.clusteredLights = runtimeLights;
+    statistics.clusterBuildLights =
+        (data.clusterInfo[1] & clusteredBakedTail) ? uint32_t(lights.size()) : runtimeLights;
     statistics.fullyBakedLights = uint32_t(lights.size()) - runtimeLights;
     statistics.clusters = data.grid[3];
     statistics.geometryBytes = spareGeometryBytes;

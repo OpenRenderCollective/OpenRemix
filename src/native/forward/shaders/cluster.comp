@@ -25,16 +25,19 @@ void main() {
         minimum = min(minimum, p);
         maximum = max(maximum, p);
       }
-  uint count = 0u, base = index * ClusterStride;
-  for (uint i = 0u; i < ClusterLightCount; ++i) {
-    vec3 center = (frame.view * vec4(lights[i].positionRadius.xyz, 1)).xyz;
+  uint count = 0u, runtimeCount = 0u, base = index * ClusterStride;
+  uint lightCount = ClusterBakedTail ? frame.target.z : ClusterLightCount;
+  for (uint i = 0u; i < lightCount; ++i) {
+    vec3 center = lights[i].clusterBounds.xyz;
     vec3 delta = center - clamp(center, minimum, maximum);
-    float radius = lights[i].shaping.z;
+    float radius = lights[i].clusterBounds.w;
     if (dot(delta, delta) <= radius * radius) {
       if (count < ClusterCapacity)
-        clusters[base + 1u + count] = i;
+        clusters[base + ClusterHeaderWords + count] = i;
       ++count;
+      runtimeCount += uint(i < ClusterLightCount);
     }
   }
-  clusters[base] = count;
+  clusters[base] = runtimeCount;
+  clusters[base + 1u] = count;
 }

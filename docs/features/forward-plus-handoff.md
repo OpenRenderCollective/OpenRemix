@@ -120,6 +120,13 @@ overlap, so a child-range increase does not by itself establish extra work in th
 Use `localShadowDraws` in the requested frame report to compare actual selected emitter identities
 and per-face submissions. Those counts require no query instrumentation or GPU readback.
 Keep the reported slow Crossfire gameplay case open until it is reproduced under its actual conditions.
+Clusters now retain separate runtime-prefix and complete-fallback counts in one ordered list. Overflow
+is checked for the receiver's chosen count; unknown coverage keeps complete analytic fallback. GPU
+membership tests include empty prefixes, independent tail overflow, late indices and either depth sign.
+Influence bounds are prepared in view space once per light; shading still uses the original world-space
+data. Private `.lights.bin` records are now 144 bytes (`clusterBounds` at byte 128), and the high bit of
+`FrameData.clusterInfo.y` selects clustered baked-tail construction. Mask that bit before interpreting
+the encoded prefix count. This changes private runtime buffers, not bake-cache payloads or the public ABI.
 
 Ordinary-vertex draws specialize `UnmappedReceiver`: their vertex shader always emits invalid surface
 chart coordinates, so those pipelines can discard atlas reconstruction code. Fully mapped and partial

@@ -29,6 +29,7 @@ namespace remix {
         << state.bakeContent.captureInputs << "\", \"styledIndirect\": \"" << state.bakeContent.styledIndirect << "\"}"
         << ",\n  \"rendering\": {\"lights\": " << state.lights
         << ", \"clusteredLights\": " << state.clusteredLights
+        << ", \"clusterBuildLights\": " << state.clusterBuildLights
         << ", \"analyticLights\": " << state.analyticLights
         << ", \"aggregateLights\": " << state.aggregateLights
         << ", \"selectedAggregateLights\": " << state.selectedAggregateLights

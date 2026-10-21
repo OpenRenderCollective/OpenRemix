@@ -9,10 +9,41 @@ namespace remix::forward {
     if (!cells) return clusterCapacity;
     const uint64_t budget = std::min(storageRange, uint64_t(32) << 20);
     const uint64_t stride = budget / (uint64_t(cells) * sizeof(uint32_t));
-    if (stride < 2) return 1; // caller's existing storage-range check reports an unsupported grid
+    if (stride <= clusterHeaderWords) return 1; // caller reports an unsupported grid
     const uint32_t target = requested ? std::clamp(requested, 1u, 1024u)
         : std::bit_ceil(std::clamp(lights, clusterCapacity, 512u));
-    return uint32_t(std::min(uint64_t(target), stride - 1));
+    return uint32_t(std::min(uint64_t(target), stride - clusterHeaderWords));
+  }
+  float viewRadiusScale(const Matrix &view) {
+    // The maximum absolute row sum of M^T M bounds its largest eigenvalue.
+    // This also supports scaled/sheared hosts instead of assuming a rigid view.
+    double maximum = 0;
+    for (uint32_t row = 0; row < 3; ++row) {
+      double sum = 0;
+      for (uint32_t column = 0; column < 3; ++column) {
+        double product = 0;
+        for (uint32_t axis = 0; axis < 3; ++axis)
+          product += double(view[row * 4 + axis]) * view[column * 4 + axis];
+        sum += std::abs(product);
+      }
+      maximum = std::max(maximum, sum);
+    }
+    return std::nextafter(float(std::sqrt(maximum)), std::numeric_limits<float>::infinity());
+  }
+  Vec4 clusterSphereBounds(const Matrix &view, Vec3 position, float radius, float radiusScale) {
+    const auto centre = transformVector(view, position);
+    Vec4 result{centre[0] + view[12], centre[1] + view[13], centre[2] + view[14], radius * radiusScale};
+    // Include the transform's absolute terms: camera-relative cancellation
+    // can hide rounding error when a small light is far from the world origin.
+    double magnitude = std::max(1.f, result[3]);
+    for (uint32_t row = 0; row < 3; ++row) {
+      double terms = std::abs(view[12 + row]);
+      for (uint32_t column = 0; column < 3; ++column)
+        terms += std::abs(double(view[column * 4 + row]) * position[column]);
+      magnitude = std::max(magnitude, terms);
+    }
+    result[3] += float(1e-5 * magnitude);
+    return result;
   }
   bool matchesSun(const scene::DistantLight &captured, const scene::DistantLight &live) {
     return captured.isDistant && live.isDistant &&

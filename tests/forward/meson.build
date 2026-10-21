@@ -73,6 +73,10 @@ forward_regions_test = executable('remix-forward-regions-test', 'regions.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('BSP reflection region occupancy and room fitting', forward_regions_test)
 if get_option('gpu_tests')
+  cluster_gpu_test = executable('remix-forward-cluster-gpu-test', 'clusters_gpu.cpp',
+    include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+    cpp_args : test_cpp_args)
+  test('Clustered baked fallback GPU membership and independent overflow', cluster_gpu_test, timeout : 120)
   shadow_filter_test = executable('remix-forward-shadow-filter-test', 'shadow_filter.cpp',
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)
