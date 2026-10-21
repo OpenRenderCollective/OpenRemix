@@ -7,6 +7,13 @@ struct Medium {
 Medium airMedium() { return Medium(vec3(0), 1); }
 Medium materialMedium(RayMaterial material) { return Medium(material.optics.rgb, material.optics.w); }
 bool dielectric(RayMaterial material) { return (material.flags.w & 4u) != 0u; }
+bool thinDielectric(RayMaterial material) { return (material.flags.w & 16u) != 0u; }
+DielectricSheet materialSheet(RayMaterial material, vec2 uv, float cosine, float incidentIndex) {
+  vec3 tint = sampleMap(material.textures.x, uv, material.flags.xyz).rgb;
+  vec3 tintDepth = -log(clamp(tint, vec3(1e-6), vec3(1))) * uintBitsToFloat(material.textures.w);
+  vec3 opticalDepth = min(material.optics.rgb + tintDepth, vec3(80));
+  return dielectricSheet(opticalDepth, 1, cosine, incidentIndex, material.optics.w);
+}
 vec3 attenuation(Medium medium, float distance) { return beerLambert(medium.extinction, distance); }
 // Locate a containing boundary once per shading point, rather than per sample.
 // A first-hit exit in any axis is evidence of being inside. Opaque geometry
@@ -20,19 +27,33 @@ Medium initialMedium(vec3 position, inout uint seed) {
   for (uint axis = 0; axis < 6u; ++axis) {
     vec3 direction = vec3(0);
     direction[axis / 2u] = (axis & 1u) == 0u ? 1 : -1;
-    Hit hit;
-    if (!traceRay(position, direction, rayFrame.trace.x, seed, hit))
-      continue;
-    RayMaterial material = rayMaterials[rayTriangles[hit.primitive].w];
-    if (!dielectric(material) || hit.distance >= nearest)
-      continue;
-    vec2 uv;
-    vec4 color;
-    vec3 normal, geometric;
-    attributes(hit.primitive, hit.bary, uv, color, normal, geometric);
-    if (dot(normal, direction) > 0) {
-      result = materialMedium(material);
-      nearest = hit.distance;
+    vec3 origin = position;
+    float travelled = 0;
+    for (uint boundary = 0u; boundary < 32u; ++boundary) {
+      Hit hit;
+      if (!traceRay(origin, direction, rayFrame.trace.x - travelled, seed, hit))
+        break;
+      RayMaterial material = rayMaterials[rayTriangles[hit.primitive].w];
+      if (thinDielectric(material)) {
+        // A pane neither contains this point nor hides a body's exit behind it.
+        float advance = hit.distance + rayFrame.trace.y;
+        travelled += advance;
+        if (travelled >= rayFrame.trace.x)
+          break;
+        origin += direction * advance;
+        continue;
+      }
+      if (!dielectric(material) || travelled + hit.distance >= nearest)
+        break;
+      vec2 uv;
+      vec4 color;
+      vec3 normal, geometric;
+      attributes(hit.primitive, hit.bary, uv, color, normal, geometric);
+      if (dot(normal, direction) > 0) {
+        result = materialMedium(material);
+        nearest = travelled + hit.distance;
+      }
+      break;
     }
   }
   return result;
@@ -65,10 +86,14 @@ vec3 visibility(vec3 origin, vec3 direction, float maximum, inout uint seed, Med
     vec4 color;
     vec3 normal, geometric;
     attributes(hit.primitive, hit.bary, uv, color, normal, geometric);
-    bool entering = dot(normal, direction) < 0;
-    Medium next = entering ? materialMedium(material) : airMedium();
-    weight *= 1 - fresnelBoundary(abs(dot(normal, direction)), medium.index, next.index);
-    medium = next;
+    if (thinDielectric(material)) {
+      weight *= materialSheet(material, uv, abs(dot(normal, direction)), medium.index).transmission;
+    } else {
+      bool entering = dot(normal, direction) < 0;
+      Medium next = entering ? materialMedium(material) : airMedium();
+      weight *= 1 - fresnelBoundary(abs(dot(normal, direction)), medium.index, next.index);
+      medium = next;
+    }
     float advance = hit.distance + rayFrame.trace.y;
     maximum -= advance;
     if (maximum <= 0)

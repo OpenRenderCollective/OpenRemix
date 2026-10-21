@@ -169,6 +169,24 @@ vec3 radiance(vec3 origin, vec3 direction, Medium medium, inout uint seed, out f
         firstBack = false; // a water exit is not an invalid solid probe
       bool entering = dot(n, direction) < 0;
       n = entering ? n : -n;
+      if (thinDielectric(m)) {
+        DielectricSheet sheet = materialSheet(m, uv, -dot(n, direction), medium.index);
+        float reflected = dot(sheet.reflection, vec3(.2126, .7152, .0722));
+        float transmitted = dot(sheet.transmission, vec3(.2126, .7152, .0722));
+        if (reflected + transmitted <= 1e-8)
+          break;
+        float probability = reflected / (reflected + transmitted);
+        origin += direction * hit.distance;
+        if (probability >= 1 || random(seed) < probability) {
+          throughput *= sheet.reflection / max(probability, 1e-8);
+          direction = reflect(direction, n);
+          origin += n * rayFrame.trace.y;
+        } else {
+          throughput *= sheet.transmission / max(1 - probability, 1e-8);
+          origin -= n * rayFrame.trace.y;
+        }
+        continue; // both interfaces leave the surrounding medium unchanged
+      }
       Medium next = entering ? materialMedium(m) : airMedium();
       float reflectance = fresnelBoundary(-dot(n, direction), medium.index, next.index);
       bool reflectBoundary = reflectance >= 1 || random(seed) < reflectance;

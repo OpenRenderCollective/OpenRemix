@@ -110,10 +110,20 @@ namespace remix {
       // Without a thin wall, a body (water): Fresnel reflection by the
       // refractive index, and what passes is the colour to the power of the
       // distance behind over the measurement distance (Beer-Lambert). A thin
-      // wall keeps the tinted-sheet approximation.
+      // wall retains its thickness for finite optical transport; primary thin
+      // refraction is routed separately from containing-body rendering.
       finite(&translucent->refractiveIndex, 1);
       finite(&translucent->transmittanceMeasurementDistance, 1);
-      if (!translucent->thinWallThickness_hasvalue && translucent->transmittanceMeasurementDistance > 0) {
+      if (translucent->thinWallThickness_hasvalue) {
+        finite(&translucent->thinWallThickness_value, 1);
+        if (translucent->thinWallThickness_value < 0)
+          throw invalid;
+        material->thinWallThickness = translucent->thinWallThickness_value;
+      }
+      // Zero-thickness legacy sheets retain their tinted compatibility path.
+      // A positive measured thickness supplies finite sheet absorption.
+      if ((!translucent->thinWallThickness_hasvalue || material->thinWallThickness > 0) &&
+          translucent->transmittanceMeasurementDistance > 0) {
         material->refractiveIndex = translucent->refractiveIndex >= 1 ? translucent->refractiveIndex : 1.5f;
         material->transmittanceDistance = translucent->transmittanceMeasurementDistance;
         material->roughness = .04f; // a smooth surface, shaded as PBR for its reflection
@@ -224,6 +234,7 @@ namespace remix {
              a.remap[0] == b.remap[0] && a.remap[1] == b.remap[1] && a.scrollLayers == b.scrollLayers &&
              std::equal(a.scroll, a.scroll + 6, b.scroll) && a.refractiveIndex == b.refractiveIndex &&
              a.transmittanceDistance == b.transmittanceDistance && a.bakeSmoothBoundary == b.bakeSmoothBoundary &&
+             a.thinWallThickness == b.thinWallThickness &&
              a.pbr == b.pbr && std::equal(a.emission, a.emission + 3, b.emission) &&
              std::equal(a.tint, a.tint + 4, b.tint) && a.compare == b.compare && a.reference == b.reference &&
              a.drawAlpha == b.drawAlpha && a.translucent == b.translucent &&

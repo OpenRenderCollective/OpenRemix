@@ -135,9 +135,10 @@ namespace remix {
       // base, layer 1 and layer 2 rates.
       uint32_t scrollLayers = 1;
       float scroll[6] = {};
-      // A translucent body (remixapi_MaterialInfoTranslucentEXT without a thin
-      // wall): its refractive index and measurement distance (0: a thin sheet).
+      // Measured optical properties in scene units. Zero measurement distance
+      // retains legacy tinted-sheet shading; positive thickness denotes a sheet.
       float refractiveIndex = 1.5f, transmittanceDistance = 0;
+      float thinWallThickness = 0; // positive: measured parallel sheet, not a containing volume
       bool bakeSmoothBoundary = false; // explicit mean interface; live ripple normals are excluded
       float emission[3] = {};
       bool suppressEmissionLight = false;

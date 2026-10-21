@@ -259,8 +259,14 @@ does not count.
 Bake input readiness now follows retained brush/overlay/terrain/prop material dependencies rather
 than the entire BSP material inventory. Required unresolved inputs still block publication. The
 Trainstation acceptance gate remains open: its retained `models/props_combine/com_shield001a` uses
-Source `Refract` with no base texture and animated normal/tint inputs. Add explicit live-material and
-stable optical bake-boundary support; do not skip the dependency or mark an opaque placeholder ready.
+Source `Refract` with no base texture, normal/tint maps and animation proxies. Native baking now
+supports explicitly measured finite dielectric sheets: two-interface reflection/transmission,
+textured absorption and containing-volume classification. CPU ownership/validation and hardware
+transport tests cover both sides, distance independence and sheets inside a volume. Live sheet
+refraction, path-tracer parity and adapter material/proxy integration remain pending; this foundation
+is not deployed and does not unblock Trainstation yet. Source's artistic refraction amount is not a
+physical IOR. Define a stable optical tint policy explicitly: the tint sampler can share animated
+bump UVs. Do not freeze an arbitrary animation frame, skip the dependency or mark a placeholder ready.
 Check complete first-load sky capture and radiance separately once this gate opens.
 
 The combined addon supplies `hls00amrl`, `hls05amrl` and later chapter BSPs for concrete follow-up

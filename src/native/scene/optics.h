@@ -35,4 +35,21 @@ namespace remix::scene {
           -std::log(std::clamp(material.tint[c], 1e-6f, 1.f)) / material.transmittanceDistance;
     return result;
   }
+  struct OpticalSheet {
+    std::array<float, 3> normalDepth{}; // dimensionless extinction times thickness
+    float thicknessRatio = 0; // thickness / authored measurement distance, also applied to tint maps
+  };
+  inline std::optional<OpticalSheet> measuredSheet(const Material &material) {
+    if (!validSmoothBoundary(material) || !(material.thinWallThickness > 0))
+      return {};
+    OpticalSheet result;
+    const double ratio = double(material.thinWallThickness) / material.transmittanceDistance;
+    // Every float below one is absorbed completely at this ratio; exact white
+    // remains transparent. Keep shader products finite even for extreme units.
+    result.thicknessRatio = float(std::min(ratio, 1e10));
+    for (uint32_t c = 0; c < 3; ++c)
+      result.normalDepth[c] = float(std::min(80.0,
+          -std::log(std::clamp(double(material.tint[c]), 1e-6, 1.0)) * ratio));
+    return result;
+  }
 } // namespace remix::scene

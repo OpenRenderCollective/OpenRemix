@@ -137,6 +137,7 @@ namespace {
 #include "indexed_visibility.h"
 #include "probe_visibility_gpu.h"
 #include "directional_capture_gpu.h"
+#include "dielectric_sheet.h"
   float evaluate(const bake::Result &value, Vec3 n, uint32_t channel) {
     const float sh[] = {.2820947918f,
                         .4886025119f * n[1],
@@ -2013,6 +2014,7 @@ int main() try {
     captureNoise(fixture, pipelines, world);
     siteValidation(fixture, pipelines, world);
     dielectricTransport(fixture, pipelines, world);
+    dielectricSheetTransport(fixture, pipelines, world);
     blendedCoverage(fixture, pipelines, world);
     modulatingDecals(fixture, pipelines, world);
     bakeSurface(fixture, pipelines, world);

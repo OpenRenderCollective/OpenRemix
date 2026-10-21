@@ -212,6 +212,20 @@ int main() {
   boundary = boundarySource;
   scene::freezeBakeScene(boundary);
   require(boundary.contentHash != boundaryHash, "Optical edits invalidate the frozen boundary");
+  const auto measuredBodyHash = boundary.contentHash;
+  water->thinWallThickness = .25f;
+  boundary = boundarySource;
+  scene::freezeBakeScene(boundary);
+  const auto sheetHash = boundary.contentHash;
+  require(sheetHash != measuredBodyHash && boundary.draws[0].material->thinWallThickness == .25f,
+          "Frozen sheet thickness has its own immutable optical identity");
+  water->thinWallThickness = .5f;
+  require(boundary.draws[0].material->thinWallThickness == .25f,
+          "A thickness edit cannot mutate the published sheet snapshot");
+  boundary = boundarySource;
+  scene::freezeBakeScene(boundary);
+  require(boundary.contentHash != sheetHash, "Thickness edits invalidate the frozen sheet");
+  water->thinWallThickness = 0;
   water->bakeSmoothBoundary = false;
   rejected([&] { scene::freezeBakeScene(boundarySource); });
   water->bakeSmoothBoundary = true;

@@ -108,6 +108,13 @@ namespace remix::scene {
         }
         copy(result->refractiveIndex, source->refractiveIndex);
         copy(result->transmittanceDistance, source->transmittanceDistance);
+        result->thinWallThickness = source->thinWallThickness;
+        // Preserve existing body hashes. Sheets were not previously eligible
+        // for measured-boundary transport, and need a distinct optical identity.
+        if (source->thinWallThickness > 0) {
+          hash.add(uint32_t(0x73686565));
+          hash.add(source->thinWallThickness);
+        }
         copy(result->emission, source->emission);
         copy(result->suppressEmissionLight, source->suppressEmissionLight);
         copy(result->selfIllumination, source->selfIllumination);

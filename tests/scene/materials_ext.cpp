@@ -431,12 +431,30 @@ namespace {
     const auto sheet = drawn(r, quad(r, 0x68, handle));
     require(sheet->transmission && !sheet->pbr && sheet->transmittanceDistance == 0,
             "Thin translucent sheet");
+    body.thinWallThickness_value = .25f;
+    bodyInfo.hash = 0x671;
+    r.createMaterial(bodyInfo, handle);
+    const auto measuredSheet = drawn(r, quad(r, 0x681, handle));
+    require(measuredSheet->thinWallThickness == .25f && measuredSheet->transmittanceDistance == 300 &&
+                measuredSheet->refractiveIndex == 1.333f,
+            "A positive measured sheet retains finite thickness and optical units");
+    body.thinWallThickness_value = -1;
+    rejected([&] { r.createMaterial(bodyInfo, handle); });
+    body.thinWallThickness_value = std::numeric_limits<float>::quiet_NaN();
+    rejected([&] { r.createMaterial(bodyInfo, handle); });
+    body.thinWallThickness_value = 0;
     remixapi_MaterialBakeBoundaryEXT boundary{};
     boundary.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_BAKE_BOUNDARY_EXT;
     boundary.pNext = &body;
     boundary.smoothBoundary = 1;
     bodyInfo.pNext = &boundary;
     rejected([&] { r.createMaterial(bodyInfo, handle); }); // no measured body
+    body.thinWallThickness_value = .25f;
+    bodyInfo.hash = 0x672;
+    r.createMaterial(bodyInfo, handle);
+    require(drawn(r, quad(r, 0x682, handle))->bakeSmoothBoundary,
+            "Measured sheets can explicitly freeze their mean optical interface");
+    body.thinWallThickness_value = 0;
     body.thinWallThickness_hasvalue = 0;
     bodyInfo.hash = 0x69;
     r.createMaterial(bodyInfo, handle);

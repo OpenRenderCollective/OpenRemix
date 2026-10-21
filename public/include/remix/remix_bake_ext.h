@@ -6,7 +6,7 @@ extern "C" {
 #endif
 
 // Optional MaterialInfo chain: bake a smooth, constant optical boundary while
-// normal-map ripples remain live. Only measured translucent bodies support this
+// normal-map ripples remain live. Measured bodies and positive-thickness sheets support this
 // policy (index 1..4; measurement distance >= 1e-6 world units). It excludes
 // normal textures/scrolling from capture, not animated base,
 // emission, geometry or optical properties. The host must republish optical edits.

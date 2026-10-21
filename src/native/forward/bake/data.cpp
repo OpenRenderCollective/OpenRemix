@@ -2,6 +2,7 @@
 #include "forward/material.h"
 #include "scene/optics.h"
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -53,11 +54,18 @@ namespace remix::forward::bake {
            {source.wrapU, source.wrapV, source.filter,
             (source.suppressEmissionLight ? suppressEmission : 0u) |
                 (sourceOver ? sourceOverCoverageFlag : 0u) | (dielectric ? dielectricBoundaryFlag : 0u) |
+                (dielectric && source.thinWallThickness > 0 ? thinDielectricFlag : 0u) |
                 (modulate ? modulatingDecalFlag : 0u)}});
       if (dielectric) {
         auto &optics = result.materials.back().optics;
         std::copy(medium->extinction.begin(), medium->extinction.end(), optics.begin());
         optics[3] = medium->refractiveIndex;
+        if (source.thinWallThickness > 0) {
+          const auto sheet = scene::measuredSheet(source).value();
+          std::copy(sheet.normalDepth.begin(), sheet.normalDepth.end(), optics.begin());
+          result.materials.back().textures[3] =
+              std::bit_cast<uint32_t>(sheet.thicknessRatio);
+        }
       }
       std::vector<Matrix> boneNormals;
       if (surface.bonesPerVertex) {

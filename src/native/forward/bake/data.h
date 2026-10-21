@@ -22,15 +22,16 @@ namespace remix::forward::bake {
            blend.src == 4 && blend.dst == 2 && blend.op == 0 && blend.mask == 15;
   }
   constexpr uint32_t suppressEmission = 1, sourceOverCoverageFlag = 2, dielectricBoundaryFlag = 4,
-                     modulatingDecalFlag = 8;
+                     modulatingDecalFlag = 8, thinDielectricFlag = 16;
   constexpr float decalReachMetres = .005f;
   struct Vertex {
     Vec4 position, normal, uv, color;
   };
   struct Material {
     DrawData shading;
+    // RGB image layers; fourth word: float bits of sheet thickness / measurement distance.
     UInt4 textures{}, flags{};
-    Vec4 optics{}; // Beer-Lambert extinction per world unit (RGB), refractive index
+    Vec4 optics{}; // RGB extinction (body) or normal optical depth (sheet), refractive index
   };
   struct Texture {
     std::shared_ptr<scene::Material> sampler;

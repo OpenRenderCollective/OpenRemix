@@ -11,6 +11,7 @@ using namespace remix;
 using namespace remix::forward;
 using remix::forward::test::require;
 namespace {
+  constexpr uint32_t queryCount = 13;
   struct Query {
     Vec4 origin{0, 0, .25f, 1}, incident{0, 0, 1, .005f}, normal{0, 0, -1, 0};
     Vec4 parameters{1, 1, 0, 1}, tint{.5f, .25f, 1, .00001f};
@@ -39,8 +40,8 @@ namespace {
     VkDescriptorSet set = VK_NULL_HANDLE;
     explicit Queries(VkDevice target) : device(target) {}
     void initialize(test::Fixture &f) {
-      input.create(f.physical, device, sizeof(Query) * 9, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-      output.create(f.physical, device, sizeof(Result) * 9, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+      input.create(f.physical, device, sizeof(Query) * queryCount, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+      output.create(f.physical, device, sizeof(Result) * queryCount, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                     Buffer::Memory::Readback);
       depth.create(f.physical, device, 16 * 16 * 4 * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
       VkDescriptorSetLayoutBinding bindings[3]{};
@@ -106,7 +107,7 @@ namespace {
       if (setLayout)
         vkDestroyDescriptorSetLayout(device, setLayout, nullptr);
     }
-    std::array<Result, 9> run(test::Fixture &f, const std::array<Query, 9> &queries, uint32_t samples,
+    std::array<Result, queryCount> run(test::Fixture &f, const std::array<Query, queryCount> &queries, uint32_t samples,
                               bool sky = false, bool foreground = false, float planeDepth = .75f) {
       std::vector<float> depths(16 * 16 * samples, sky ? 1.f : planeDepth);
       if (foreground)
@@ -117,7 +118,7 @@ namespace {
       f.begin();
       vkCmdBindPipeline(f.command, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
       vkCmdBindDescriptorSets(f.command, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &set, 0, nullptr);
-      const uint32_t push[] = {9, 16, 16, samples};
+      const uint32_t push[] = {queryCount, 16, 16, samples};
       vkCmdPushConstants(f.command, layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(push), push);
       vkCmdDispatch(f.command, 1, 1, 1);
       const VkMemoryBarrier read{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
@@ -126,7 +127,7 @@ namespace {
       vkCmdPipelineBarrier(f.command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 1,
                            &read, 0, nullptr, 0, nullptr);
       f.finish();
-      std::array<Result, 9> result;
+      std::array<Result, queryCount> result;
       output.read(result.data(), sizeof(result));
       for (const auto &value : result)
         for (const auto &vector : {value.refracted, value.reflected, value.through, value.screen})
@@ -143,7 +144,7 @@ int main() try {
     gpu.initialize(fixture);
     if (test::validationErrors != 0)
       throw std::runtime_error("Water query pipeline failed validation");
-    std::array<Query, 9> queries;
+    std::array<Query, queryCount> queries;
     queries[1].parameters[0] = 1.5f;
     queries[1].incident = {.6f, 0, .8f, .005f};
     queries[2].parameters = {1.5f, 1, 1, 1};
@@ -164,6 +165,15 @@ int main() try {
       queries[i].projection = perspective(sign);
       queries[i].inverseProjection = scene::inverse(queries[i].projection);
     }
+    for (uint32_t i = 9; i < queryCount; ++i) {
+      queries[i].normal[3] = .25f;
+      queries[i].parameters = {1.5f, 1, 1, 1};
+      queries[i].tint = {1, 1, 1, 0};
+    }
+    queries[10].tint = {.25f, .5f, 1, 0};
+    queries[11].incident = {std::sqrt(.96f), 0, .2f, 0};
+    queries[12].incident = {std::sqrt(.75f), 0, .5f, 0};
+    queries[12].parameters = {1, 1, 1.5f, 1};
     for (uint32_t samples : {1u, 2u, 4u}) {
       const auto values = gpu.run(fixture, queries, samples);
       require(values[0].screen[3] == 1 && std::abs(values[0].screen[2] - .5f) < .0001f,
@@ -182,6 +192,21 @@ int main() try {
       require(values[3].reflected[3] == 1 && values[3].refracted[3] == 1 && values[3].through[0] == 0 &&
                   values[3].through[3] == 1,
               "Underwater total internal reflection preserves all boundary energy");
+      require(std::abs(values[9].reflected[0] - 1.f / 13) < 1e-6f &&
+                  std::abs(values[9].through[0] - 12.f / 13) < 1e-6f,
+              "A clear index-1.5 sheet includes both interfaces and internal reflections");
+      for (uint32_t c = 0; c < 3; ++c) {
+        require(std::abs(values[9].reflected[c] + values[9].through[c] - 1) < 1e-6f &&
+                    std::abs(values[11].reflected[c] + values[11].through[c] - 1) < 1e-6f &&
+                    values[11].reflected[c] > values[9].reflected[c],
+                "Lossless sheets conserve energy at normal and grazing incidence");
+        const float absorbed = std::pow(queries[10].tint[c], .25f);
+        const float expected = .96f * .96f * absorbed / (1 - .04f * .04f * absorbed * absorbed);
+        require(std::abs(values[10].through[c] - expected) < 1e-6f &&
+                    values[10].through[c] + values[10].reflected[c] <= 1.000001f &&
+                    values[12].reflected[c] == 1 && values[12].through[c] == 0,
+                "Tinted sheet channels absorb independently and total internal reflection remains lossless");
+      }
       for (uint32_t i : {4u, 5u, 6u})
         require(values[i].screen[3] == 0,
                 "Foreground, off-screen and exhausted rays cannot invent refraction hits");

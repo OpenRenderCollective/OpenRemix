@@ -10,6 +10,7 @@ namespace remix::scene {
     return material.transmission && std::isfinite(material.refractiveIndex) &&
            material.refractiveIndex >= 1 && material.refractiveIndex <= 4 &&
            std::isfinite(material.transmittanceDistance) && material.transmittanceDistance >= 1e-6f &&
+           std::isfinite(material.thinWallThickness) && material.thinWallThickness >= 0 &&
            std::all_of(material.tint, material.tint + 3,
                        [](float color) { return std::isfinite(color) && color >= 0 && color <= 1; });
   }

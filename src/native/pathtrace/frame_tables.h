@@ -80,7 +80,7 @@ namespace remix::trace::detail {
     decodeOut[0] = decode.flags;
     // A translucent body: its refractive index and measurement distance, half
     // floats in pbr[3] (scene.glsl thickSheet); zero for everything else.
-    if (material.transmission && material.transmittanceDistance > 0) {
+    if (material.transmission && material.transmittanceDistance > 0 && material.thinWallThickness == 0) {
       const uint32_t packed = detail::halfBits(material.refractiveIndex) |
                               detail::halfBits(std::min(material.transmittanceDistance, 65504.f)) << 16;
       std::memcpy(&pbr[3], &packed, 4);

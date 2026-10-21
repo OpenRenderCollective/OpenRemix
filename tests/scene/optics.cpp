@@ -49,7 +49,26 @@ int main() {
           "A black measurement retains bounded coefficients and near-zero transmission");
   water.transmittanceDistance = 0;
   require(!measuredMedium(water), "A thin sheet does not become a homogeneous water volume");
+  require(!measuredSheet(water), "An unmeasured sheet has no invented absorption distance");
   water.transmittanceDistance = 800;
+  water.thinWallThickness = 200;
+  water.tint[0] = .25f;
+  const auto sheet = measuredSheet(water);
+  require(sheet && sheet->thicknessRatio == .25f &&
+              std::abs(std::exp(-sheet->normalDepth[0]) - std::pow(.25f, .25f)) < 1e-6f &&
+              sheet->normalDepth[2] == 0,
+          "Measured sheet absorption uses finite thickness and preserves a clear channel");
+  water.thinWallThickness *= .0254f;
+  water.transmittanceDistance *= .0254f;
+  const auto metricSheet = measuredSheet(water);
+  require(metricSheet && std::abs(metricSheet->normalDepth[0] - sheet->normalDepth[0]) < 1e-6f,
+          "Sheet optical depth is invariant under a consistent change of world units");
+  water.thinWallThickness = std::numeric_limits<float>::max();
+  water.transmittanceDistance = 1e-6f;
+  const auto extremeSheet = measuredSheet(water);
+  require(extremeSheet && extremeSheet->thicknessRatio == 1e10f &&
+              extremeSheet->normalDepth[0] == 80 && extremeSheet->normalDepth[2] == 0,
+          "Extreme sheet ratios retain bounded shader data without darkening exact white");
   water.transmission = false;
   require(!measuredMedium(water), "Opaque materials do not acquire volume extinction");
   bool refused = false;
