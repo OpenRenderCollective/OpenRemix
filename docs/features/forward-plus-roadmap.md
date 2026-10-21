@@ -16,6 +16,11 @@ already contained their official main branches. The immediate investigation is m
 and depth-prepass effectiveness before another shader optimization. Optional bounded fragment and
 precise passed-sample counters are available; they do not alter draw order or the public API.
 
+Ordinary-vertex receiver specialization now removes impossible surface-atlas work without adding
+modules or reordering draws. Two opposite-order Construct replay batches and targeted GPU readbacks
+support keeping it; broad map coverage and the larger adaptive-field regression remain open. The replay
+host also rejects renamed runtime DLLs so missing adapter extensions cannot masquerade as a slow bake.
+
 ## Handoff checkpoint (2026-10-20)
 
 The handoff prepared this branch for another contributor without claiming renderer completion.

@@ -99,7 +99,7 @@ void main() {
   // Explicit subrectangle bounds isolate chart neighbours, including MSAA edge
   // fragments. Outward-rounded grids already contain every required mip-zero
   // bilinear tap, so no extra atlas border is needed.
-  vec4 surfaceLightmap = surfaceLightmapInput;
+  vec4 surfaceLightmap = UnmappedReceiver ? vec4(0) : surfaceLightmapInput;
   surfaceLightmap.xy = clamp(surfaceLightmap.xy, surfaceBounds.xy, surfaceBounds.zw);
   vec4 surfaceLighting = vec4(0);
   bool charted = surfaceIrradiance(surfaceLightmap, n, surfaceLighting);

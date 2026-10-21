@@ -69,16 +69,25 @@ at teardown. Fragment invocations and passed MSAA samples have different units; 
 discard and sample coverage prevent treating their ratio as exact pixel overdraw. Query-enabled timing
 is instrumented timing, not a performance baseline.
 
+Ordinary-vertex draws specialize `UnmappedReceiver`: their vertex shader always emits invalid surface
+chart coordinates, so those pipelines can discard atlas reconstruction code. Fully mapped and partial
+chart layouts retain their existing specializations and probe fallback. This uses the same modules
+and draw order; it does not approximate lighting or change cache identity.
+
 The adaptive candidate improves five of six rendered receiver comparisons, with one worse. Controlled
 replay previously measured roughly 40% higher GPU time versus the installed uniform renderer. A packed
 directory-offset optimization reduced cost within the candidate by about 6.5%; this does not erase the
 regression. The hall's visible coverage is overwhelmingly charted, and the six test receivers are covered;
-large missing visible coverage did not explain this camera's cost. Next obtain fragment invocation/
-overdraw evidence before speculative shader rewrites. Keep GPU frame, transport and startup timing separate.
+large missing visible coverage did not explain this camera's cost. Fragment counters confirm that the
+existing depth prepass substantially reduces opaque colour shading work. The unmapped-receiver
+specialization reduces compiled shader size and modestly improves the tested replay, but the larger
+adaptive regression remains unresolved. Continue with probe/stencil cost and partially mapped receivers.
+Keep GPU frame, transport and startup timing separate.
 
 Rejected and removed: generic fragment offline optimization, fully fine-weighted coarse-sampling shortcut,
 separate mapped fragment modules, reordered category profiling, homogeneous draw-range splitting,
-compact cell-address stencil indices, and unified mapped/partial pipelines. These preserved output in
+compact cell-address stencil indices, unified mapped/partial pipelines, and explicit products replacing
+fixed-power stencil weights. These preserved output in
 many controls but did not establish a performance gain; reordered profiling changed coplanar pixels.
 Some paired runs drifted despite stable clocks: do not treat small percentages as precise hardware laws.
 Driver local-memory statistics were implausible; do not silently mask them into invented spill counts.

@@ -100,11 +100,15 @@ namespace remix::forward {
                          bool fullyMapped = false) {
       const bool shadow = mode == Pass::Shadow, composite = mode == Pass::Composite;
       const bool terrain = mode == Pass::Terrain, depthOnly = mode == Pass::Depth;
-      const uint32_t values[] = {options.debugView, uint32_t(bake::directionalFieldsRequested()), uint32_t(fullyMapped)};
+      // Ordinary vertices have no chart coordinates. Keep partially mapped
+      // lightmap vertices generic so their uncovered triangles retain probes.
+      const uint32_t values[] = {options.debugView, uint32_t(bake::directionalFieldsRequested()),
+                                  uint32_t(fullyMapped), uint32_t(vs == vertex)};
       const VkSpecializationMapEntry entries[] = {{1, 0, sizeof(uint32_t)},
                                                   {2, sizeof(uint32_t), sizeof(uint32_t)},
-                                                  {3, 2 * sizeof(uint32_t), sizeof(uint32_t)}};
-      const VkSpecializationInfo specialization{3, entries, sizeof(values), values};
+                                                  {3, 2 * sizeof(uint32_t), sizeof(uint32_t)},
+                                                  {4, 3 * sizeof(uint32_t), sizeof(uint32_t)}};
+      const VkSpecializationInfo specialization{4, entries, sizeof(values), values};
       const VkPipelineShaderStageCreateInfo stages[] = {
           {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
            .stage = VK_SHADER_STAGE_VERTEX_BIT,

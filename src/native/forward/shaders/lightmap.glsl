@@ -5,6 +5,8 @@
 bool indexedSurfaceVisibility() { return (frame.occlusion.x & 0x80000000u) != 0u; }
 layout(constant_id = 2) const bool IndexedSurfaceDirectionals = false;
 layout(constant_id = 3) const bool FullyMappedReceiver = false;
+// The ordinary vertex layout always supplies the invalid chart coordinate.
+layout(constant_id = 4) const bool UnmappedReceiver = false;
 bool indexedSurfaceDirect() { return IndexedSurfaceDirectionals && frame.clusterInfo.z != 0u; }
 #define SurfaceAtlasLayers (20.0 - (indexedSurfaceVisibility() ? 1.0 : 0.0) - (indexedSurfaceDirect() ? 9.0 : 0.0))
 void surfaceBasis(vec3 normal, out float sh[9]) {
@@ -15,7 +17,7 @@ void surfaceBasis(vec3 normal, out float sh[9]) {
 }
 layout(set = 0, binding = 6) uniform sampler2DArray surfaceAtlas;
 bool surfaceIrradiance(vec4 coordinate, vec3 normal, out vec4 result) {
-  if (!FullyMappedReceiver && coordinate.w < .5)
+  if (UnmappedReceiver || (!FullyMappedReceiver && coordinate.w < .5))
     return false;
   float sh[9];
   surfaceBasis(normal, sh);
