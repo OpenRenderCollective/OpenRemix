@@ -205,7 +205,13 @@ other weapons/maps and moving receiver quality remain acceptance work.
 ## Adapter and authoring
 
 The adapter owns BSP/Source parsing, range/unit conventions, style identities and cubemap sidecars.
-Native lighting remains engine agnostic. `bsp-replay` supports repeatable default-off
+Native lighting remains engine agnostic. Bake material readiness uses cached dependencies of
+retained geometry; unused inventory and engine-owned sky do not block it, but missing required
+materials do. `d1_trainstation_02` remains blocked by its required static-prop `Refract` material
+`models/props_combine/com_shield001a`, which has animated normal/tint inputs and no base texture.
+Implement a proper live material plus stable optical bake representation instead of bypassing it.
+The installed combined addon supplies chapter BSPs including `hls00amrl` and `hls05amrl`; exact
+`gm_fork` availability remains pending, and the installed RP Fork variant is not a substitute. `bsp-replay` supports repeatable default-off
 `replay.probeReceiver = X Y Z radius` matte dynamic spheres for receiver comparisons.
 See the adapter's `tools/probe_editor/README.md` for the existing native Qt cubemap workbench.
 Authored references align with **hls00amrl**, not hls01amrl. Use combined cubemap/probe volumes and their

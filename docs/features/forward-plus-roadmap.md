@@ -256,6 +256,17 @@ does not count.
 | `d1_trainstation_02` | Added campaign-map case: fixed and moving views, indoor/outdoor lighting transitions, props, reflections and bake/cache behavior. |
 | Large combined Half-Life addon maps | Added long connected-layout stress case: room/portal transitions, probe and cubemap boundaries, cumulative bake work, memory and traversal stutter. Inventory installed BSP names first; include the `hls00amrl` authored-reference comparison where available, then select additional combined maps. |
 
+Bake input readiness now follows retained brush/overlay/terrain/prop material dependencies rather
+than the entire BSP material inventory. Required unresolved inputs still block publication. The
+Trainstation acceptance gate remains open: its retained `models/props_combine/com_shield001a` uses
+Source `Refract` with no base texture and animated normal/tint inputs. Add explicit live-material and
+stable optical bake-boundary support; do not skip the dependency or mark an opaque placeholder ready.
+Check complete first-load sky capture and radiance separately once this gate opens.
+
+The combined addon supplies `hls00amrl`, `hls05amrl` and later chapter BSPs for concrete follow-up
+selection. The exact `gm_fork` must still be located or made available; `rp_fork_stasiland` is a distinct
+map and does not fulfill that matrix entry.
+
 For each selected map, retain cold-bake and warm-cache checks, fixed-camera timing windows and an
 armed traversal. Record effective quality/settings, focus, GPU clocks, scene identity and content
 mounts with local results. Separate bake latency, completed-bake frame time, host waits and GPU pass
