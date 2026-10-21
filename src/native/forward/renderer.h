@@ -3,6 +3,7 @@
 #include "forward/options.h"
 #include "forward/probes/data.h"
 #include "forward/ray/reflections.h"
+#include "forward/shadows/plan.h"
 #include "raster/renderer.h"
 #include "postfx/renderer.h"
 #include <memory>
@@ -28,6 +29,13 @@ namespace remix::forward {
     uint32_t shadowedLights = 0, shadowOverflow = 0, staticShadowUpdates = 0;
     uint32_t staticSunUpdates = 0, capturedCasters = 0, liveCasters = 0;
     uint32_t staticCasterPreparations = 0, emptyMovingShadowMaps = 0;
+    struct LocalShadowDraws {
+      uint64_t lightId = 0;
+      bool active = false;
+      std::array<uint32_t, shadows::faces> frozen{}, moving{};
+    };
+    // Submitted draw calls per cubemap face, not distinct objects or GPU samples.
+    std::array<LocalShadowDraws, shadows::maximumLights> localShadowDraws{};
     uint32_t clusterLightCapacity = clusterCapacity;
     uint32_t clusteredLights = 0, fullyBakedLights = 0;
     uint32_t analyticLights = 0, aggregateLights = 0, selectedAggregateLights = 0;

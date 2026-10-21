@@ -11,8 +11,11 @@
 //
 // Every timestamp is written at VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT: it is
 // latched once all previously recorded work on the queue has completed, so a
-// range measures the queue's time to finish the pass after the work before
-// it, and passes never overlap. Results are read after the frame slot's fence
+// range measures elapsed completion time between its boundaries. These writes
+// do not block subsequent commands: pipeline stages from neighbouring passes
+// can overlap, so a child range is not an isolated cost for its draw calls.
+// Compare whole-frame time and workload counters when another pass changes.
+// Results are read after the frame slot's fence
 // (beginFrame), without waiting: a slot whose queries are not all available
 // is skipped.
 namespace remix::gpu {

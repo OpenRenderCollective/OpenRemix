@@ -114,6 +114,11 @@ bakes with matched captured inputs, effective settings and camera views; broad F
 include bake work, weapons, different resolutions or missing assets. An isolated highlight-budget
 change must preserve bake hashes and distinguish specular selection from mixed-shadow selection.
 GPU pass costs can shift between those ranges; inspect whole-frame time as well as child timestamps.
+Bottom-of-pipe timestamps do not serialize subsequent commands. Neighbouring pipeline stages may
+overlap, so a child-range increase does not by itself establish extra work in that pass. See the
+[Vulkan timestamp synchronization scopes](https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdWriteTimestamp.html).
+Use `localShadowDraws` in the requested frame report to compare actual selected emitter identities
+and per-face submissions. Those counts require no query instrumentation or GPU readback.
 Keep the reported slow Crossfire gameplay case open until it is reproduced under its actual conditions.
 
 Ordinary-vertex draws specialize `UnmappedReceiver`: their vertex shader always emits invalid surface

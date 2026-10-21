@@ -17,6 +17,18 @@ Next isolate the dominant opaque receiver work with bounded fragment/receiver di
 ordinary draw order and checking omitted ranges. Investigate the observed increase in local-shadow
 GPU time when the independent baked-highlight budget is reduced: compare selected emitter identities,
 caster submissions and timestamp boundaries before attributing the difference to extra shadow work.
+The Crossfire check now confirms unchanged shadow identities and submissions across highlight budgets;
+the timestamp shift alone is not evidence of additional caster work. Local point shadows now clip
+casters against individual cube faces, retaining seam-crossing and offscreen actors. Frame reports
+expose per-slot identities and recorded frozen/moving draws for continued profiling. Next isolate
+covered versus uncovered probe receiver cost and the remaining surface-lightmap shading cost.
+Coverage views locate some uncovered distant geometry. `receiverLightCount` deliberately falls back
+to the full uploaded light array there because current cluster lists contain only the runtime prefix.
+Investigate a conservative clustered fallback for the baked tail, with explicit overflow handling and
+matched uncovered-receiver images. Do not simply omit these lights or increase the main prefix for
+every mapped receiver. Account for the additional clustering/storage cost before adopting it.
+Also audit cold cubemap capture repeatability: distinguish unchanged packed inputs/sites from identical
+captured radiance before claiming a byte-identical full bake or an isolated shader comparison.
 Changing that budget must not rebake or change published lighting buffers. Keep the slow Crossfire
 gameplay report open until its actual settings/location/weapon workload is reproduced; two fixed
 unarmed views do not establish broad performance acceptance. Retain highlight and shadow defaults.

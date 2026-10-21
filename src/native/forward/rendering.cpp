@@ -125,8 +125,13 @@ namespace remix::forward {
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, localShadowPipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &frame.scene, 0, nullptr);
     for (const auto &draw : commands) {
-      if (!castsLocalShadow(draw, lightSlot, staticCasters))
+      // Radial overlap alone submits every caster to all six faces. Keep
+      // seam-crossing bounds on each touched face, including offscreen actors.
+      if (!castsLocalShadow(draw, lightSlot, staticCasters) ||
+          !intersectsClip(draw.worldBounds, shadowSelection.views[lightSlot].matrices[face]))
         continue;
+      auto &counts = statistics.localShadowDraws[lightSlot];
+      ++(staticCasters ? counts.frozen : counts.moving)[face];
       vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 1, 1, &draw.material, 0,
                               nullptr);
       const uint32_t push[] = {draw.index, lightSlot * shadows::faces + face};
@@ -140,6 +145,11 @@ namespace remix::forward {
   }
   void Renderer::Gpu::recordWorld(VkCommandBuffer command) {
     auto &frame = frames[slot];
+    statistics.localShadowDraws = {};
+    for (uint32_t i = 0; i < shadows::maximumLights; ++i) {
+      statistics.localShadowDraws[i].active = shadowSelection.active[i];
+      statistics.localShadowDraws[i].lightId = shadowSelection.views[i].id;
+    }
     gpu::GpuScope clusterTime(command, "Forward+ light clustering");
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, clusterPipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &frame.scene, 0, nullptr);

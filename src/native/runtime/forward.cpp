@@ -93,6 +93,21 @@ namespace remix {
       }
       out << "]}";
     }
+    out << "\n  ],\n  \"localShadowDraws\": [";
+    bool firstShadow = true;
+    for (uint32_t slot = 0; slot < state.localShadowDraws.size(); ++slot) {
+      const auto &shadow = state.localShadowDraws[slot];
+      if (!shadow.active) continue;
+      out << (firstShadow ? "" : ",") << "\n    {\"slot\": " << slot
+          << ", \"lightId\": \"" << shadow.lightId << "\", \"frozen\": [";
+      for (uint32_t face = 0; face < shadow.frozen.size(); ++face)
+        out << (face ? ", " : "") << shadow.frozen[face];
+      out << "], \"moving\": [";
+      for (uint32_t face = 0; face < shadow.moving.size(); ++face)
+        out << (face ? ", " : "") << shadow.moving[face];
+      out << "]}";
+      firstShadow = false;
+    }
     out << "\n  ]\n}\n";
     return out.str();
   }

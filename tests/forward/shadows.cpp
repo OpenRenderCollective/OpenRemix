@@ -33,6 +33,75 @@ int main() {
   bounds = {};
   bounds.include({50, 50, 50});
   require(!s::intersects(bounds, view), "Distant casters outside the radial range are rejected");
+  for (uint32_t face = 0; face < s::faces; ++face) {
+    require(intersectsClip({}, view.matrices[face]), "Unknown caster bounds survive every shadow face");
+    Bounds nearLight;
+    for (uint32_t c = 0; c < 3; ++c) {
+      nearLight.minimum[c] = view.position[c] - 1;
+      nearLight.maximum[c] = view.position[c] + 1;
+    }
+    nearLight.valid = true;
+    require(intersectsClip(nearLight, view.matrices[face]),
+            "A caster enclosing the light survives all faces even without an interior corner");
+    for (uint32_t direction = 0; direction < s::faces; ++direction) {
+      Bounds axial;
+      for (uint32_t c = 0; c < 3; ++c) {
+        const float centre = view.position[c] + (c == direction / 2 ? (direction % 2 ? -2.f : 2.f) : 0);
+        axial.minimum[c] = centre - .1f;
+        axial.maximum[c] = centre + .1f;
+      }
+      axial.valid = true;
+      require(intersectsClip(axial, view.matrices[face]) == (face == direction),
+              "An axial caster is submitted only to its own translated cube face");
+    }
+    const uint32_t axis = face / 2;
+    const float sign = face % 2 ? -1.f : 1.f;
+    auto atDepth = [&](float depth, float extent) {
+      Bounds result;
+      result.valid = true;
+      for (uint32_t c = 0; c < 3; ++c) {
+        const float centre = view.position[c] + (c == axis ? sign * depth : 0);
+        result.minimum[c] = centre - extent;
+        result.maximum[c] = centre + extent;
+      }
+      return result;
+    };
+    require(!intersectsClip(atDepth(12, .1f), view.matrices[face]),
+            "A caster wholly beyond the face far plane is rejected");
+    require(intersectsClip(atDepth(10, .1f), view.matrices[face]) &&
+                intersectsClip(atDepth(view.nearPlane, .0005f), view.matrices[face]),
+            "Casters crossing the near or far plane remain submitted");
+  }
+  // Check all cube seams/corners against directly projected points. The box
+  // may span faces even when its centre belongs to a different face.
+  for (int x = -4; x <= 4; ++x)
+    for (int y = -4; y <= 4; ++y)
+      for (int z = -4; z <= 4; ++z) {
+        Bounds box;
+        const Vec3 centre{view.position[0] + x, view.position[1] + y, view.position[2] + z};
+        for (uint32_t c = 0; c < 3; ++c) {
+          box.minimum[c] = centre[c] - .25f;
+          box.maximum[c] = centre[c] + .25f;
+        }
+        box.valid = true;
+        for (uint32_t face = 0; face < s::faces; ++face) {
+          bool containsProjectedPoint = false;
+          for (uint32_t corner = 0; corner < 8; ++corner) {
+            Vec4 projected{};
+            for (uint32_t row = 0; row < 4; ++row) {
+              projected[row] = view.matrices[face][12 + row];
+              for (uint32_t c = 0; c < 3; ++c)
+                projected[row] += view.matrices[face][c * 4 + row] *
+                    (corner & (1u << c) ? box.maximum[c] : box.minimum[c]);
+            }
+            const float w = projected[3];
+            containsProjectedPoint |= w > 0 && std::abs(projected[0]) <= w &&
+                std::abs(projected[1]) <= w && projected[2] >= 0 && projected[2] <= w;
+          }
+          require(!containsProjectedPoint || intersectsClip(box, view.matrices[face]),
+                  "A shadow face never culls a box with a raster-visible seam or corner point");
+        }
+      }
 
   NativeResources resources;
   const auto mesh = quad(resources, 801, material(resources, 800, 1, 1, 1));

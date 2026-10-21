@@ -53,6 +53,12 @@ Developer frame captures include `.shadow-policy.bin`: five little-endian
 `uint32_t` values for captured candidates, live candidates, static sun cascade
 updates, static local-map updates, and unmatched statically classified candidates.
 Candidate counts precede shadow-frustum clipping; they are not submitted draw-call counts.
+The optional `probes.json` snapshot also includes `localShadowDraws`: each active local-shadow slot's
+light identity and six frozen/moving draw-call counts in cube-face order. These describe commands
+recorded for that published frame, without GPU readback. Frozen counts are zero when cached depth
+is reused. Local casters are conservatively clipped to each shadow face as well as the light's radial
+range; bounds spanning cube seams remain on every intersected face. This is independent of the game
+camera, so an offscreen actor can still cast a visible shadow.
 Frozen caster bounds are cached with the immutable scene. Per-frame frozen draw
 records and material descriptors are prepared only when a static sun cascade or
 local-light map needs rebuilding. `.shadow-preparation.bin` records that frame's
