@@ -20,6 +20,9 @@ Keep static visibility, unknown coverage, toggleable groups and offscreen moving
 - `grid_directory.cpp`: directory validation, ownership and reciprocal compatible-face flags.
 - `grid_sampling.cpp`: CPU reference reconstruction and coarse/fine transition weights.
 - `controller_refinement.cpp`: asynchronous refinement scheduling between coarse/required surface and fine work.
+- `adaptive_grid.cpp` / `sparse_grid.cpp`: an empty coarse seed retries ordinary full-budget placement;
+  an empty density-search trial keeps the last verified field. `EmptyProbePlacement` is distinct from
+  cancellation or malformed inputs. A wholly unusable partition still rejects.
 - `shaders/grid-stencil.glsl`: matching shared stencil for diffuse, sky, sun and local visibility/corrections.
 - `probe_visibility_plan.cpp`: conservative per-record light volumes; adaptive records keep their largest
   referencing/trace support, while shared coarse corners retain coarse reach.
@@ -90,7 +93,11 @@ avoid wasting coarse reach on fine-only records. In Construct this restores comp
 coverage and permits the white-room controllable direct group to publish. Decline diagnostics report
 missing owners and distinguish absent pairs from unreceived pairs; unknown coverage still falls back.
 A controlled current-adaptive replay improves substantially over its previous adaptive checkpoint, but
-live gameplay, other maps and a new deployed-uniform comparison remain required. Continue with
+a new same-condition comparison is now faster than the deployed uniform build in that Construct
+view. This does not prove live gameplay or broad quality/performance acceptance. c1a0, Crossfire and
+c1a0d publish and reload pixel-identical caches in fixed views; c1a0 required the empty-coarse-seed
+fallback. Static test content must mount its shared Source assets before diagnosing unresolved water
+materials as bake failures. The original c1a0d locker-room noise case remains open. Continue with
 probe/stencil cost and partially mapped receivers.
 Keep GPU frame, transport and startup timing separate.
 

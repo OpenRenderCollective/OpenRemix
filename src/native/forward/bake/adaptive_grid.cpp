@@ -87,17 +87,22 @@ namespace remix::forward::bake {
       // The global fallback need not spend the near-surface density budget on
       // distant air. An eightfold patch can still reach the requested spacing.
       coarse.spacing *= 8;
-      auto grid = placeSparse(scene, coarse, layout, cancelled);
-      uint32_t factor = 1;
-      while (factor < 8) {
-        const uint32_t next = factor * 2, side = next + 1;
-        if (grid.header.originSpacing[3] * scene.sceneScale / next < config.spacing ||
-            side * side * side > config.maxProbes - grid.probes.size()) break;
-        factor = next;
-      }
-      if (factor > 1) {
-        refinement = {factor, config.maxProbes, config.relocateProbes};
-        return grid;
+      try {
+        auto grid = placeSparse(scene, coarse, layout, cancelled);
+        uint32_t factor = 1;
+        while (factor < 8) {
+          const uint32_t next = factor * 2, side = next + 1;
+          if (grid.header.originSpacing[3] * scene.sceneScale / next < config.spacing ||
+              side * side * side > config.maxProbes - grid.probes.size()) break;
+          factor = next;
+        }
+        if (factor > 1) {
+          refinement = {factor, config.maxProbes, config.relocateProbes};
+          return grid;
+        }
+      } catch (const EmptyProbePlacement &) {
+        // Coarse alignment can miss an entire narrow interior. Retry ordinary
+        // placement at the requested density and full budget, not an empty bake.
       }
     }
     return placeSparse(scene, config, layout, cancelled);

@@ -31,7 +31,14 @@ namespace remix::forward::bake {
       Config candidate = config;
       candidate.maxProbes = virtualLimit;
       candidate.spacing = trial == 0 ? std::max(lower, estimate) : .5f * (lower + upper);
-      auto grid = prepare(candidate);
+      Grid grid;
+      try {
+        grid = prepare(candidate);
+      } catch (const EmptyProbePlacement &) {
+        // Lattice occupancy is phase-dependent, not monotonic. An empty trial
+        // cannot replace or invalidate the last verified fitting candidate.
+        break;
+      }
       const float spacing = grid.header.originSpacing[3] * scene.sceneScale;
       if (spacing >= upper * .9999f) break;
       if (grid.tasks.size() <= config.maxProbes) {

@@ -101,7 +101,7 @@ namespace remix::forward::bake {
             result.tasks.push_back(index);
         }
     if (result.tasks.empty())
-      throw std::invalid_argument("Probe bounds contain no usable BSP leaves");
+      throw EmptyProbePlacement();
     return result;
   }
   static std::optional<Vec3> sampleSignal(const Grid &grid, Vec3 position, Vec3 normal, bool sunlight) {

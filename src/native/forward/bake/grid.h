@@ -8,6 +8,12 @@ namespace remix::forward::lightmap {
   struct Layout;
 }
 namespace remix::forward::bake {
+  // A particular lattice can miss narrow open regions without invalidating
+  // the partition. Placement policies may retry a different verified lattice.
+  class EmptyProbePlacement final : public std::invalid_argument {
+  public:
+    EmptyProbePlacement() : std::invalid_argument("Probe lattice contains no usable visibility leaves") {}
+  };
   struct GridHeader {
     Vec4 originSpacing{};
     // XYZ virtual root lattice dimensions; W physical records, including refinement.

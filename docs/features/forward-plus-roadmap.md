@@ -9,7 +9,7 @@ remain compatible with the same authored optical materials.
 This roadmap tracks delivery requirements. Detailed measurements and run evidence belong in local
 reports. An implementation or synthetic test alone does not close an integration or visual-quality gate.
 
-## Continuation status (2026-10-21)
+## Continuation status (2026-10-22)
 
 Work resumed after the handoff. Neither official feature branch had new contributor commits, and both
 already contained their official main branches. The immediate investigation is measured fragment work
@@ -27,6 +27,14 @@ allowing the white-room controllable group to publish. CPU stencil-parity and gr
 a controlled cached replay improves over the preceding adaptive checkpoint. Cache policy revision25
 requires a deliberate first-upgrade bake. Release still needs broader map/live-quality checks and a
 fresh comparison against the deployed uniform build; the earlier regression figures are historical.
+
+That comparison now favors the current build in the fixed Construct hall view. This is evidence for
+that camera, not live-game FPS parity or a release gate for every map. c1a0, Crossfire and c1a0d also
+publish and reload matching caches in first-spawn replay views. c1a0 exposed an empty coarse-seed
+failure: adaptive placement now retries the normal full-density policy, while sparse density search
+preserves its last verified candidate. Real empty partitions still fail and cancellation still propagates.
+The isolated test content needed its shared Source assets mounted for c1a0d water materials; this is
+separate from renderer correctness. The reported locker-room noise and live frame pacing remain open.
 
 ## Handoff checkpoint (2026-10-20)
 

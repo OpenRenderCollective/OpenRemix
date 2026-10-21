@@ -31,8 +31,73 @@ namespace {
     grid.origins = bake::directoryOrigins(grid);
     return grid;
   }
+  void narrowPlacementTests() {
+    scene::BakeScene scene;
+    scene.sceneScale = 1;
+    scene.hasBounds = true;
+    scene.minimum = {0, 0, 0};
+    scene.maximum = {4, 4, 4};
+    auto partition = std::make_shared<scene::VisibilityPartition>();
+    partition->closed = true;
+    partition->clusterCount = 1;
+    partition->nodes = {{{1,0,0,1}, {1,-2}, {}}, {{1,0,0,3}, {-2,-1}, {}}};
+    partition->leafClusters = {0, -1};
+    scene.partition = partition;
+    lightmap::Layout layout;
+    layout.points = {{{2,2,2,0}, {0,0,1,0}}};
+    bake::Config config;
+    config.spacing = 1;
+    config.maxProbes = 512;
+    config.relocateProbes = false;
+    auto coarse = config;
+    coarse.spacing *= 8;
+    coarse.maxProbes /= 2;
+    bool empty = false;
+    try { bake::place(scene, coarse); }
+    catch (const bake::EmptyProbePlacement &) { empty = true; }
+    require(empty, "Coarse fixture misses a narrow open slab that the requested lattice can sample");
+    bake::Refinement refinement;
+    const auto fallback = bake::placeRefinementBase(scene, config, layout, refinement);
+    const auto ordinary = bake::placeSparse(scene, config, layout);
+    require(refinement.factor == 0 && refinement.recordBudget == 0 && !fallback.tasks.empty() &&
+                fallback.header.originSpacing == ordinary.header.originSpacing &&
+                fallback.lookup == ordinary.lookup && fallback.tasks == ordinary.tasks,
+            "An empty coarse seed falls back to verified full-budget ordinary placement");
+    partition->leafClusters[0] = -1;
+    empty = false;
+    try { bake::placeRefinementBase(scene, config, layout, refinement); }
+    catch (const bake::EmptyProbePlacement &) { empty = true; }
+    require(empty, "A partition with no usable leaves still fails rather than publishing empty lighting");
+    partition->leafClusters[0] = 0;
+    std::stop_source stop;
+    stop.request_stop();
+    bool cancelled = false;
+    try { bake::placeRefinementBase(scene, config, layout, refinement, stop.get_token()); }
+    catch (const std::runtime_error &) { cancelled = true; }
+    require(cancelled, "An adaptive fallback must not swallow cancellation");
+
+    // Here budget fitting places a valid 1.5-unit lattice, but a denser trial
+    // at the requested 1-unit spacing misses the thin leaf entirely.
+    scene.maximum = {1.5f, 1, 1};
+    partition->nodes[0].plane[3] = 1.45f;
+    partition->nodes[1].plane[3] = 1.55f;
+    config.maxProbes = 64;
+    const auto fitting = bake::place(scene, config);
+    auto dense = config;
+    dense.maxProbes = 512;
+    empty = false;
+    try { bake::place(scene, dense); }
+    catch (const bake::EmptyProbePlacement &) { empty = true; }
+    require(empty && fitting.header.originSpacing[3] == 1.5f,
+            "Sparse search fixture has a valid fitting lattice and an empty denser trial");
+    const auto sparse = bake::placeSparse(scene, config, layout);
+    require(sparse.header.originSpacing == fitting.header.originSpacing &&
+                sparse.tasks.size() == fitting.tasks.size(),
+            "An empty density-search trial preserves the last verified fitting lattice");
+  }
 }
 void refinementTests() {
+  narrowPlacementTests();
   {
     bake::GridHeader header;
     header.originSpacing = {0, 0, 0, 1};
