@@ -13,6 +13,8 @@ lightmap_denoise_library = static_library('remix_lightmap_denoise', 'lightmap/de
 
 forward_library = static_library('remix_forward',
   'bake/reference_capture.cpp',
+  'bake/probe_depth.cpp',
+  'bake/controller_probe_depth.cpp',
   'fragment_statistics.cpp', 'lighting.cpp', 'resources.cpp', 'renderer.cpp', 'targets.cpp', 'pipelines.cpp', 'scene.cpp', 'shadows/sun_cache.cpp', 'geometry_uploads.cpp', 'rendering.cpp', 'exposure.cpp', 'sky.cpp', 'image_dump.cpp',
   'viewmodel/target.cpp', 'viewmodel/lighting.cpp', 'viewmodel/scene.cpp', 'viewmodel/rendering.cpp',
   'reflections.cpp', 'ray/capture.cpp', 'ray/live_scene.cpp', 'ray/reflections.cpp',

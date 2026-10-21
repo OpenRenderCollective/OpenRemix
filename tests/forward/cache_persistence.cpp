@@ -27,6 +27,13 @@ int main() {
   withScratch.directionals.resize(128);
   require(cache::Persistence::retainedCharge(withScratch) >= scratchCharge + 128 * sizeof(uint32_t),
           "Complete directional payloads participate in background writer admission");
+  const auto directionalCharge = cache::Persistence::retainedCharge(withScratch);
+  withScratch.grid.depth.records.resize(128);
+  withScratch.grid.lookup.resize(128);
+  withScratch.grid.origins.resize(128);
+  require(cache::Persistence::retainedCharge(withScratch) >= directionalCharge +
+              128 * (sizeof(ProbeDepth::Record) + sizeof(uint32_t) + sizeof(Grid::Origin)),
+          "Probe depth, directory and retained origin storage obey the background writer memory budget");
   std::promise<void> started, release;
   auto released = release.get_future().share();
   std::vector<uint64_t> written;

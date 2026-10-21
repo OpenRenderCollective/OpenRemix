@@ -71,6 +71,9 @@ namespace remix::forward::bake {
     // irradiance[0].w and backface/miss/count in statistics.xyz; RGB stays zero.
     // Misses carry an explicit flag even when their distance reaches the cap.
     void recordGeometry(VkCommandBuffer command, uint32_t slot, std::span<const Point> rays);
+    // Four geometry rays per 8x8 octahedral bin, packed into one raw Result
+    // per probe. Readback is ProbeDepth::Record words, not irradiance/statistics.
+    void recordProbeDepth(VkCommandBuffer command, uint32_t slot, std::span<const Point> probes);
     // GPU producers may fill this slot's points directly, then dispatch radiance
     // without a CPU copy. Producer writes must be visible to COMPUTE shader reads;
     // the returned results become visible to COMPUTE reads after the dispatch.
@@ -162,7 +165,8 @@ namespace remix::forward::bake {
       SiteValidation,
       SunVisibility,
       SunDirectVisibility,
-      Geometry
+      Geometry,
+      ProbeDepth
     };
     void record(VkCommandBuffer command, uint32_t slot, std::span<const Point> points, uint32_t samples,
                 uint32_t bounces, uint32_t firstSample, Mode mode,

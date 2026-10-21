@@ -31,6 +31,7 @@ uint bakeDirectoryRecords() {
 #ifdef STYLED_BAKE
 vec3 styledProbeIrradiance(uint index, float sh[9]);
 #endif
+#include "probe-depth.glsl"
 #include "grid-stencil.glsl"
 bool bakedIrradiance(vec3 position, vec3 normal, out vec3 result) {
   if (!localProbeStencil(position, normal))
@@ -147,7 +148,7 @@ float localProbeDirect(uint indices, uint records, uint entry, float sh[9]) {
 bool bakedLocalProbeResponse(vec3 position, vec3 normal, vec3 shadingNormal, uint capturedLight,
                               bool directional, out float visibility, out float unitDiffuse) {
   unitDiffuse = -1;
-  uint table = floatBitsToUint(bakeSettings.w) / 2u;
+  uint table = (floatBitsToUint(bakeSettings.w) & 0x7fffffffu) / 2u;
   if (capturedLight == 0u || table == 0u || localProbeWord(table, 0u) != 0x56504c52u ||
       localProbeWord(table, 2u) != bakeDimensions.w) return false;
   uint direct = 0u;

@@ -3,6 +3,13 @@
 #include <cstring>
 
 namespace remix::forward::bake {
+  inline bool directionalProbeDepthRequested() {
+    static const bool requested = [] {
+      const auto value = std::getenv("REMIX_DEBUG_DIRECTIONAL_PROBE_DEPTH");
+      return value && std::strcmp(value, "1") == 0;
+    }();
+    return requested;
+  }
   // Process-level developer override. Publication and shader specialization
   // must agree; runtime table offsets still select complete allocation fallback.
   inline bool directionalFieldsRequested() {

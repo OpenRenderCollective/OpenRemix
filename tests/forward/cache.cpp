@@ -13,9 +13,9 @@ namespace f = remix::forward;
 int main(int argc, char **argv) {
   require(argc == 2, "Supply a scratch directory");
   for (size_t offset : {size_t(0), size_t((1u << 23) - 1), size_t(1u << 23), size_t((1u << 24) + 1)})
-    for (bool styled : {false, true}) {
-      const auto bits = std::bit_cast<uint32_t>(f::bake::publicationSettings(offset, styled));
-      require(bits / 2 == offset && bool(bits & 1) == styled,
+    for (bool styled : {false, true}) for (bool depth : {false, true}) {
+      const auto bits = std::bit_cast<uint32_t>(f::bake::publicationSettings(offset, styled, depth));
+      require((bits & 0x7fffffffu) / 2 == offset && bool(bits & 1) == styled && bool(bits >> 31) == depth,
               "Published local offsets and style flags retain exact uint32 bits beyond float precision");
     }
   const auto root = std::filesystem::path(argv[1]) / ("case-" + std::to_string(std::random_device{}()));
@@ -152,6 +152,36 @@ int main(int argc, char **argv) {
               f::probes::serialize(restored->specular) == f::probes::serialize(data.specular) &&
               restored->surfaceSamples == 25 && restored->directDiffuse,
           "Atlas, reflection data and direct-light policy survive the cache round trip");
+  {
+    auto depthConfig = config;
+    depthConfig.directionalProbeDepth = true;
+    const auto depthKey = bc::key(source->contentHash, depthConfig, .001f, device);
+    require(depthKey != identity, "Directional probe visibility owns a distinct bake policy identity");
+    data.grid.depth.maximumDistance = 100;
+    data.grid.depth.records.resize(data.grid.probes.size());
+    for (auto &record : data.grid.depth.records) record.fill(0x3c003c00u);
+    auto ownedGrid = data.grid;
+    ownedGrid.points.resize(ownedGrid.probes.size());
+    ownedGrid.origins.resize(ownedGrid.probes.size());
+    bc::Snapshot persisted;
+    persisted.takeGrid(ownedGrid);
+    require(ownedGrid.probes.empty() && persisted.grid.points.empty() && persisted.grid.origins.empty() &&
+                persisted.grid.depth.records == data.grid.depth.records,
+            "Real snapshot ownership moves every persistent grid field and releases only transient arrays");
+    const auto depthFile = root / "directional-depth.bake";
+    require(bc::write(depthFile, depthKey,
+        {persisted.grid, data.layout, data.mixed, data.captures, data.specular, data.pixels,
+         data.surfaceSamples, data.directDiffuse, data.sun}), "Directional probe depth snapshot is persisted");
+    const auto imported = bc::read(depthFile, depthKey, source, depthConfig, device);
+    require(imported && imported->grid.depth.maximumDistance == 100 &&
+                imported->grid.depth.records == data.grid.depth.records,
+            "Directional depth moments and distance survive a cache round trip exactly");
+    data.grid.depth.records[0][0] = 0x7c000000u;
+    require(!bc::write(root / "invalid-depth.bake", depthKey,
+        {data.grid, data.layout, data.mixed, data.captures, data.specular, data.pixels,
+         data.surfaceSamples, data.directDiffuse, data.sun}), "Malformed directional depth cannot be saved");
+    data.grid.depth = {};
+  }
   for (uint32_t count : {32u, 33u, 64u}) {
     auto extendedConfig = config;
     extendedConfig.reflectionProbes = 64;

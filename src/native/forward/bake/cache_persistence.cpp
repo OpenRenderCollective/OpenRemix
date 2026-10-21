@@ -15,6 +15,7 @@ namespace remix::forward::bake::cache {
   }
   uint64_t Persistence::retainedCharge(const Snapshot &s) {
     uint64_t bytes = sizeof(Snapshot) + storage(s.grid.probes) + storage(s.grid.tasks) + storage(s.grid.points) +
+        storage(s.grid.lookup) + storage(s.grid.origins) + storage(s.grid.depth.records) +
         storage(s.layout.charts) + storage(s.layout.mappings) + storage(s.pixels) + storage(s.styles) +
         storage(s.layout.points) + storage(s.layout.pointCharts) + storage(s.layout.addresses) +
         storage(s.layout.receiverSamples) + storage(s.layout.footprints) + storage(s.layout.sampleCenters) +

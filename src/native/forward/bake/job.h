@@ -28,6 +28,7 @@ namespace remix::forward::bake {
     std::optional<ReferenceCapture> reference;
     Budget budget;
     Grid grid;
+    uint32_t probeDepthNext = 0, probeDepthReceived = 0;
     Refinement refinement;
     bool refinementPlanned = false;
     void refineProbes(const Config &config);

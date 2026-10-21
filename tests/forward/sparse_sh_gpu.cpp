@@ -18,7 +18,8 @@ namespace lm = remix::forward::lightmap;
 int main(int argc, char **argv) try {
   const bool localFactor = argc > 1 && std::strcmp(argv[1], "adaptive-localfactor") == 0;
   const bool stitched = argc > 1 && std::strcmp(argv[1], "adaptive-stitched") == 0;
-  const bool refined = stitched || localFactor || (argc > 1 && std::strcmp(argv[1], "adaptive") == 0);
+  const bool depth = argc > 1 && std::strcmp(argv[1], "adaptive-depth") == 0;
+  const bool refined = depth || stitched || localFactor || (argc > 1 && std::strcmp(argv[1], "adaptive") == 0);
   const uint32_t probeCount = stitched ? 57 : refined ? 35 : 8;
   Fixture fixture(false);
   struct Gpu {
@@ -120,6 +121,17 @@ int main(int argc, char **argv) try {
   const auto words = builder.serialize();
   const uint32_t styles[] = {32,97};
   s::validate(words, {33,2,probeCount}, styles, 4u << 20);
+  if (depth) {
+    base.depth.maximumDistance = 10;
+    base.depth.records.resize(probeCount);
+    for (uint32_t record = 0; record < probeCount; ++record)
+      for (uint32_t texel = 0; texel < b::ProbeDepth::texels; ++texel) {
+        const float mean = .05f + .003f * texel + .001f * record;
+        base.depth.records[record][texel] = uint32_t(half::encode(mean)) |
+            uint32_t(half::encode(mean * mean + .0001f)) << 16;
+      }
+    base.depth.validate(probeCount);
+  }
   const size_t baseBytes = b::gridBytes(base);
   std::vector<std::byte> encoded((baseBytes + words.size() * 4 + 15) / 16 * 16);
   const auto publishedHeader = b::publicationHeader(base.header, base.lookup.size());
@@ -128,6 +140,10 @@ int main(int argc, char **argv) try {
   if (!base.lookup.empty())
     std::memcpy(encoded.data() + sizeof(base.header) + base.probes.size() * sizeof(b::Result),
                 base.lookup.data(), base.lookup.size() * sizeof(uint32_t));
+  if (depth) {
+    const auto offset = sizeof(b::GridHeader) + base.probes.size() * sizeof(b::Result) + b::lookupBytes(base);
+    base.depth.write(std::span(encoded).subspan(offset, base.depth.bytes()));
+  }
   std::memcpy(encoded.data() + baseBytes, words.data(), words.size() * 4);
   gpu.grid.create(fixture.physical, fixture.device, encoded.size(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   gpu.grid.write(encoded.data(), encoded.size());
@@ -248,7 +264,7 @@ int main(int argc, char **argv) try {
     weights[97/4][97%4] = scenario[1];
     gpu.weights.write(weights.data(),sizeof(weights));
     auto header = b::publicationHeader(base.header, base.lookup.size());
-    header.settings[3] = b::publicationSettings(0, scenario[2] != 0);
+    header.settings[3] = b::publicationSettings(0, scenario[2] != 0, depth);
     gpu.grid.write(&header,sizeof(header));
     const b::StyleScale scales[] = {{32,scenario[2] ? scenario[0] : 0,b::StyleStatus::Ready},
                                    {97,scenario[2] ? scenario[1] : 0,b::StyleStatus::Ready}};

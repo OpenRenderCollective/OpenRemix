@@ -254,6 +254,10 @@ namespace remix::forward::bake {
   void Transport::recordGeometry(VkCommandBuffer command, uint32_t slot, std::span<const Point> rays) {
     record(command, slot, rays, 1, 1, 0, Mode::Geometry);
   }
+  void Transport::recordProbeDepth(VkCommandBuffer command, uint32_t slot, std::span<const Point> probes) {
+    if (!m_gpu->options.parallel) throw std::invalid_argument("Probe depth requires parallel transport");
+    record(command, slot, probes, 256, 1, 0, Mode::ProbeDepth);
+  }
   void Transport::recordVisibility(VkCommandBuffer command, uint32_t slot,
                                    std::span<const VisibilityPoint> points, uint32_t samples,
                                    bool directDiffuse) {

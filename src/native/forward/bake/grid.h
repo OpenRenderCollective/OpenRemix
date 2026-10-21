@@ -1,6 +1,7 @@
 #pragma once
 #include "forward/bake/config.h"
 #include "forward/bake/data.h"
+#include "forward/bake/probe_depth.h"
 #include <optional>
 #include <bit>
 #include <stdexcept>
@@ -22,21 +23,22 @@ namespace remix::forward::bake {
     // add 1 for relocated origins), zero. Published GPU settings.z contains
     // uint32 bits: low3 addressing mode, remaining bits directory vec4 count.
     // Published GPU settings.w
-    // contains uint32 bits (not a numeric float): bit0 styled-SH presence, remaining bits sparse local
-    // table offset in vec4 records relative to the probe-array start.
+    // contains uint32 bits (not a numeric float): bit0 styled-SH presence, bit31 directional-depth
+    // presence; bits1..30 hold the sparse local-table offset in vec4 probe-array-relative records.
     Vec4 settings{};
   };
   static_assert(sizeof(GridHeader) == 48);
-  inline float publicationSettings(size_t localTableRecords, bool styled) {
-    if (localTableRecords >= (uint64_t(1) << 31))
+  inline float publicationSettings(size_t localTableRecords, bool styled, bool depth = false) {
+    if (localTableRecords >= (uint64_t(1) << 30))
       throw std::length_error("Local probe table offset exceeds uint32 header encoding");
-    return std::bit_cast<float>(uint32_t(localTableRecords * 2) | uint32_t(styled));
+    return std::bit_cast<float>(uint32_t(localTableRecords * 2) | uint32_t(styled) | (depth ? 0x80000000u : 0u));
   }
   struct Grid {
     GridHeader header;
     std::vector<Point> points;
     std::vector<uint32_t> tasks;
     std::vector<Result> probes;
+    ProbeDepth depth;
     // Optional virtual lattice node -> compact record + 1; zero has no probe.
     // Adaptive addressing appends four words (magic, default factor, total
     // directory words, coarse record count), then one patch reference per root
@@ -93,7 +95,7 @@ namespace remix::forward::bake {
   ProbeStencil probeStencil(const Grid &grid, Vec3 position, Vec3 normal);
   inline size_t lookupBytes(const Grid &grid) { return (grid.lookup.size() * sizeof(uint32_t) + 15) & ~size_t(15); }
   inline size_t gridBytes(const Grid &grid) {
-    return sizeof(GridHeader) + grid.probes.size() * sizeof(Result) + lookupBytes(grid);
+    return sizeof(GridHeader) + grid.probes.size() * sizeof(Result) + lookupBytes(grid) + grid.depth.bytes();
   }
   Grid place(const scene::BakeScene &scene, const Config &config);
   Grid placeSparse(const scene::BakeScene &scene, const Config &config, const lightmap::Layout &layout,

@@ -2,6 +2,7 @@
 #include "forward/bake/budget.h"
 #include "forward/bake/probe_visibility.h"
 #include "forward/bake/probe_visibility_plan.h"
+#include "forward/bake/probe_depth.h"
 #include "forward/lightmap/layout.h"
 #include "forward/mixed/overflow.h"
 #include "forward/mixed/directional_capture.h"
@@ -1605,6 +1606,48 @@ namespace {
     }
     require(transport.memoryBytes() == geometryBytes,
             "Geometry-only candidate queries reuse the prepared transport buffers and acceleration structure");
+    {
+      bake::Point probe{};
+      probe.normal = {1, 0, 0, 0}; // Depth capture must not apply a surface-normal origin bias.
+      fixture.begin();
+      transport.recordProbeDepth(fixture.command, 0, std::span(&probe, 1));
+      fixture.finish();
+      bake::Result packed;
+      transport.read(0, std::span(&packed, 1));
+      bake::ProbeDepth depth;
+      depth.maximumDistance = options.distance / scene->sceneScale;
+      depth.records.push_back(std::bit_cast<bake::ProbeDepth::Record>(packed));
+      depth.validate(1);
+      std::vector<bake::Point> referenceRays;
+      for (uint32_t texel = 0; texel < depth.texels; ++texel)
+        for (uint32_t sample = 0; sample < depth.samples; ++sample) {
+          bake::Point ray{};
+          const auto direction = depth.direction(texel, sample);
+          std::copy(direction.begin(), direction.end(), ray.normal.begin());
+          referenceRays.push_back(ray);
+        }
+      fixture.begin();
+      transport.recordGeometry(fixture.command, 0, referenceRays);
+      fixture.finish();
+      std::vector<bake::Result> reference(referenceRays.size());
+      transport.read(0, reference);
+      uint32_t hits = 0, misses = 0;
+      for (uint32_t texel = 0; texel < depth.texels; ++texel) {
+        float mean = 0, second = 0;
+        for (uint32_t sample = 0; sample < depth.samples; ++sample) {
+          const auto &ray = reference[texel * depth.samples + sample];
+          const float distance = ray.irradiance[0][3] / depth.maximumDistance;
+          mean += distance / depth.samples;
+          second += distance * distance / depth.samples;
+          ray.statistics[1] > .5f ? ++misses : ++hits;
+        }
+        const auto word = depth.records[0][texel];
+        require(std::abs(half::decode(uint16_t(word)) - mean) < .001f &&
+                    std::abs(half::decode(uint16_t(word >> 16)) - second) < .001f,
+                "Packed directional depth matches independent geometry rays, CPU directions and half precision");
+      }
+      require(hits && misses, "Directional depth fixture covers both opaque blockers and open directions");
+    }
     const bake::Point axial[] = {{{0, 0, 0, 0}, {0, 0, 4, 0}},
                                  {{0, 0, 0, 0}, {0, 0, -4, 0}}};
     fixture.begin();
@@ -1696,6 +1739,8 @@ namespace {
     test::probeQueries(fixture, extended, 4, true);
     test::probeQueries(fixture, extended, 0, false, true);
     test::probeQueries(fixture, extended, 4, true, true);
+    test::probeQueries(fixture, extended, 0, false, true, true);
+    test::probeQueries(fixture, extended, 4, true, true, true);
     TransportLight lamp;
     lamp.positionRadius = {0, 0, 0, .4f};
     lamp.radiance = {5, 5, 5, 0};

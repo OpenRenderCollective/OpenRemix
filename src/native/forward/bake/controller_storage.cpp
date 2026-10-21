@@ -95,10 +95,7 @@ namespace remix::forward::bake {
   }
   std::unique_ptr<const cache::Snapshot> Controller::Job::takeCacheSnapshot() {
     auto snapshot = std::make_unique<cache::Snapshot>();
-    snapshot->grid.header = grid.header;
-    snapshot->grid.probes = std::move(grid.probes);
-    snapshot->grid.tasks = std::move(grid.tasks);
-    snapshot->grid.lookup = std::move(grid.lookup);
+    snapshot->takeGrid(grid);
     // Keep only serialized allocations/mappings, never transient sample arrays.
     snapshot->layout.pageSize = surfaceLayout.pageSize;
     snapshot->layout.pages = surfaceLayout.pages;

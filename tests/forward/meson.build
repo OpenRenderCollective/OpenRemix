@@ -11,6 +11,10 @@ reference_capture_test = executable('remix-reference-capture-test', 'reference_c
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Bounded offline irradiance reference requests and fenced readback', reference_capture_test,
   args : [meson.current_build_dir() / 'reference-capture-points.txt'])
+probe_depth_test = executable('remix-probe-depth-test', 'probe_depth.cpp',
+  '../../src/native/forward/bake/probe_depth.cpp', '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Directional probe depth packing, octahedral seams and unknown coverage', probe_depth_test)
 material_constants_test = executable('remix-forward-material-constants-test', 'material_constants.cpp',
   '../../src/native/forward/material.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
@@ -24,12 +28,12 @@ forward_denoise_test = executable('remix-forward-lightmap-denoise-test', 'lightm
 test('Offline lightmap denoising preserves directional SH and chart isolation', forward_denoise_test,
   timeout : 120)
 forward_grid_test = executable('remix-forward-grid-test', 'grid.cpp',
-  '../../src/native/forward/bake/grid.cpp', '../../src/native/forward/bake/grid_sampling.cpp', '../../src/native/forward/bake/grid_directory.cpp', '../../src/native/forward/bake/sparse_grid.cpp', '../../src/native/forward/bake/relocation.cpp',
+  '../../src/native/forward/bake/grid.cpp', '../../src/native/forward/bake/grid_sampling.cpp', '../../src/native/forward/bake/probe_depth.cpp', '../../src/native/forward/bake/grid_directory.cpp', '../../src/native/forward/bake/sparse_grid.cpp', '../../src/native/forward/bake/relocation.cpp',
   '../../src/native/forward/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Irradiance grid placement and visibility reconstruction', forward_grid_test)
 adaptive_grid_test = executable('remix-adaptive-grid-test', 'adaptive_grid.cpp', 'refinement.cpp',
-  '../../src/native/forward/bake/grid.cpp', '../../src/native/forward/bake/grid_sampling.cpp',
+  '../../src/native/forward/bake/grid.cpp', '../../src/native/forward/bake/grid_sampling.cpp', '../../src/native/forward/bake/probe_depth.cpp',
   '../../src/native/forward/bake/adaptive_grid.cpp', '../../src/native/forward/bake/receiver_support.cpp', '../../src/native/forward/bake/refinement_builder.cpp', '../../src/native/forward/bake/sparse_grid.cpp',
   '../../src/native/forward/bake/relocation.cpp',
   '../../src/native/forward/bake/grid_directory.cpp', '../../src/native/forward/lighting.cpp',
@@ -39,13 +43,13 @@ test('Adaptive irradiance ownership, energy and smooth resolution transitions', 
 forward_probe_visibility_test = executable('remix-forward-probe-visibility-test', 'probe_visibility.cpp',
   '../../src/native/forward/bake/probe_visibility.cpp', '../../src/native/forward/bake/probe_visibility_gpu.cpp', '../../src/native/forward/bake/probe_visibility_plan.cpp',
   '../../src/native/forward/bake/grid_directory.cpp',
-  '../../src/native/forward/bake/grid_sampling.cpp',
+  '../../src/native/forward/bake/grid_sampling.cpp', '../../src/native/forward/bake/probe_depth.cpp',
   '../../src/native/forward/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Sparse probe local-light visibility preserves unknown coverage and budgets', forward_probe_visibility_test)
 
 forward_receiver_report_test = executable('remix-forward-receiver-report-test', 'receiver_report.cpp',
-  '../../src/native/forward/bake/receiver_report.cpp', '../../src/native/forward/bake/grid.cpp', '../../src/native/forward/bake/grid_sampling.cpp', '../../src/native/forward/bake/grid_directory.cpp',
+  '../../src/native/forward/bake/receiver_report.cpp', '../../src/native/forward/bake/grid.cpp', '../../src/native/forward/bake/grid_sampling.cpp', '../../src/native/forward/bake/probe_depth.cpp', '../../src/native/forward/bake/grid_directory.cpp',
   '../../src/native/forward/lightmap/data.cpp', '../../src/native/forward/material.cpp',
   '../../src/native/forward/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
@@ -128,6 +132,7 @@ forward_budget_test = executable('remix-forward-budget-test', 'budget.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Forward+ adaptive bake work and lighting identity', forward_budget_test)
 forward_cache_test = executable('remix-forward-cache-test', 'cache.cpp',
+  '../../src/native/forward/bake/probe_depth.cpp',
   '../../src/native/forward/bake/sparse_sh.cpp', '../../src/native/forward/bake/styles.cpp',
   '../../src/native/forward/bake/cache.cpp', '../../src/native/forward/bake/grid_directory.cpp', '../../src/native/forward/bake/probe_visibility.cpp', '../../src/native/forward/bake/probe_visibility_gpu.cpp', '../../src/native/forward/bake/policy.cpp', '../../src/native/forward/probes/data.cpp',
   '../../src/native/forward/lightmap/data.cpp', '../../src/native/forward/mixed/data.cpp',
@@ -202,6 +207,8 @@ if get_option('gpu_tests')
        sparse_style_gpu_test, args : ['adaptive-localfactor'], timeout : 120)
   test('Shared irradiance faces preserve fine lighting and biased GPU queries',
        sparse_style_gpu_test, args : ['adaptive-stitched'], timeout : 120)
+  test('Directional probe depth GPU visibility, adaptive confidence and styled reconstruction',
+       sparse_style_gpu_test, args : ['adaptive-depth'], timeout : 120)
 endif
 
 forward_styled_direct_test = executable('remix-forward-styled-direct-test', 'styled_direct.cpp', '../../src/native/forward/lighting.cpp',

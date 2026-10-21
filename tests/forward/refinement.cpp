@@ -1,6 +1,7 @@
 #include "forward/bake/adaptive_grid.h"
 #include "forward/bake/receiver_support.h"
 #include "forward/lightmap/layout.h"
+#include "forward/half.h"
 #include <algorithm>
 #include <cstring>
 #include <stdexcept>
@@ -220,4 +221,39 @@ void refinementTests() {
   require(selected.factor == 0 && dense.header.dimensions == plain.header.dimensions &&
               dense.header.originSpacing == plain.header.originSpacing,
           "Unpartitioned hosts retain their existing complete placement policy");
+  {
+    auto covered = grid;
+    for (auto &probe : covered.probes) {
+      probe.statistics[3] = 1;
+      for (auto &moment : probe.moments) moment = {100, 10000, 0, 1};
+      for (uint32_t coefficient = 0; coefficient < 9; ++coefficient)
+        for (uint32_t c = 0; c < 3; ++c) probe.irradiance[coefficient][c] = coefficient == 0 ? 4.f : 0.f;
+    }
+    const Vec3 receiver{1, 2, 2}, normal{0, 0, 1};
+    const auto legacy = bake::probeStencil(covered, receiver, normal);
+    float legacyCoarse = 0;
+    for (uint32_t i = 0; i < 8; ++i) legacyCoarse += legacy.weights[i];
+    covered.depth.maximumDistance = 100;
+    covered.depth.records.resize(covered.probes.size());
+    const uint32_t weak = uint32_t(half::encode(.02f)) | uint32_t(half::encode(.0005f)) << 16;
+    const uint32_t open = uint32_t(half::encode(1.f)) | uint32_t(half::encode(1.f)) << 16;
+    for (uint32_t record = 0; record < covered.probes.size(); ++record)
+      covered.depth.records[record].fill(record < original.probes.size() ? weak : open);
+    const auto directional = bake::probeStencil(covered, receiver, normal);
+    float coarseShare = 0, total = 0;
+    for (uint32_t i = 0; i < directional.count; ++i) {
+      total += directional.weights[i];
+      if (i < 8) coarseShare += directional.weights[i];
+    }
+    require(legacyCoarse > .1f && coarseShare < legacyCoarse * .5f && std::abs(total - 1) < 1e-5f,
+            "Weak blocked coarse support cannot regain its full blend share beside confident fine probes");
+    const auto constant = bake::sample(covered, receiver, normal);
+    require(constant && std::abs((*constant)[0] - 4 * .2820947918f) < 1e-5f,
+            "Confidence-aware adaptive mixing preserves constant irradiance energy");
+    for (auto &probe : covered.probes)
+      for (auto &coefficient : probe.irradiance)
+        for (uint32_t c = 0; c < 3; ++c) coefficient[c] = 0;
+    const auto black = bake::sample(covered, receiver, normal);
+    require(black && *black == Vec3{}, "Directional visibility retains valid black coverage");
+  }
 }

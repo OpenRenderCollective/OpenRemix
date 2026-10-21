@@ -47,9 +47,18 @@ restore its full blend share. Confidence-aware coarse/fine blending improves tha
 An 8x8 field with ordinary probe RGB reduces barrel-top error from about +68% to +17% and crate-side
 error from -33% to -18%; other faces still need work. Exact visibility plus high-sample neighbours
 performs better, but neither a higher sample default nor removing facing weights alone is justified.
-Next implement bounded GPU-produced directional depth and shared CPU/GPU confidence reconstruction,
-with explicit cache ownership/versioning, seam/unknown/style tests and live quality/performance gates.
-This proposal is not yet native code or a deployed fix; do not close the prop-lighting requirement.
+An opt-in native implementation now produces bounded GPU directional depth and shares confidence
+reconstruction across CPU/GPU sampling. Enable only for investigation with
+`REMIX_DEBUG_DIRECTIONAL_PROBE_DEPTH=1`; the default remains off. Each probe adds 256 bytes
+(about 8 MiB at 32768 probes), with cache policy revision 26 and explicit snapshot ownership.
+Matched live Construct samples reduce barrel-top error from +68% to +17% and crate-side error
+from -33% to -18%, but crate-front error worsens from +8% to -12%. This does not close quality.
+Cold capture costs about 2..3 ms total GPU time in that scene; a disk reload skips capture and
+reproduces published irradiance, style and local visibility buffers byte-for-byte. Whole-frame
+runtime cost needs opposite-order cached comparisons and broader map/viewmodel acceptance.
+Cache retention accounting includes depth, lookup and origin storage. Seam, unknown-coverage,
+styled/indexed table offsets, adaptive confidence and hardware producer tests cover the new layout.
+This candidate is not deployed; preserve the installed stable build until those gates pass.
 Camera motion also refreshes frozen sunlight cascades and prepares the captured world casters.
 The CPU projection cache now preserves the exact rendered projection for subtexel fit noise.
 Targeted CPU and sunlight/local-shadow GPU checks pass. Opposite-order moving-camera comparisons

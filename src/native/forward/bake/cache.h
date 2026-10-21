@@ -41,6 +41,7 @@ namespace remix::forward::bake::cache {
     uint64_t directionalBudget = 0; // zero on write selects the current layout allowance
   };
   struct Snapshot {
+    void takeGrid(Grid &source);
     Grid grid;
     lightmap::Layout layout; // render mappings only; no surface sampling work lists
     mixed::Plan mixed;

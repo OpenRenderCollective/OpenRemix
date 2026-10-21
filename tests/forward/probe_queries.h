@@ -1,6 +1,7 @@
 #pragma once
 #include "forward/probes/data.h"
 #include "forward/bake/probe_visibility.h"
+#include "forward/half.h"
 #include "gpu_fixture.h"
 #include "shaders/embedded.h"
 #include <cmath>
@@ -10,7 +11,7 @@ namespace remix::forward::test {
   // A host-visible storage buffer supplies the same packed asset that the
   // frame-boundary uploader will copy to device memory.
   inline void probeQueries(Fixture &fixture, const probes::Data &data, uint32_t skyCase = 0,
-                            bool directional = false, bool indexed = false) {
+                            bool directional = false, bool indexed = false, bool depth = false) {
     // Sky cases: open, closed, unusable, and hidden behind a distance boundary.
     struct Query {
       Vec4 position, reflected;
@@ -114,18 +115,36 @@ namespace remix::forward::test {
     const size_t largeOffset = sizeof(bake::GridHeader) + (size_t(1) << 27) + 16;
     const bool large = skyCase == 4 && directional &&
         largeOffset + localWords.size() * sizeof(uint32_t) <= properties.limits.maxStorageBufferRange;
-    const size_t localOffset = large ? largeOffset : sizeof(sky) + (indexed ? sizeof(lookup) : 0);
-    sky.header.settings[3] = bake::publicationSettings((localOffset - sizeof(bake::GridHeader)) / 16, large);
+    bake::ProbeDepth depthAsset;
+    if (depth) {
+      depthAsset.maximumDistance = 10;
+      depthAsset.records.resize(8);
+      for (uint32_t probe = 0; probe < 8; ++probe)
+        for (uint32_t texel = 0; texel < bake::ProbeDepth::texels; ++texel) {
+          const float mean = .05f + .003f * texel + .001f * probe;
+          depthAsset.records[probe][texel] = uint32_t(half::encode(mean)) |
+              uint32_t(half::encode(mean * mean + .0001f)) << 16;
+        }
+    }
+    const size_t depthOffset = sizeof(sky) + (indexed ? sizeof(lookup) : 0);
+    const size_t localOffset = large ? largeOffset : depthOffset + depthAsset.bytes();
+    sky.header.settings[3] = bake::publicationSettings((localOffset - sizeof(bake::GridHeader)) / 16, large, depth);
     gpu.sky.create(fixture.physical, fixture.device, localOffset + localWords.size() * sizeof(uint32_t),
                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     auto publishedSky = sky;
     publishedSky.header = bake::publicationHeader(sky.header, indexed ? std::size(lookup) : 0);
     gpu.sky.write(&publishedSky, sizeof(publishedSky));
     if (indexed) gpu.sky.write(lookup, sizeof(lookup), sizeof(sky));
+    if (depth) {
+      std::vector<std::byte> bytes(depthAsset.bytes());
+      depthAsset.write(bytes);
+      gpu.sky.write(bytes.data(), bytes.size(), depthOffset);
+    }
     gpu.sky.write(localWords.data(), localWords.size() * sizeof(uint32_t), localOffset);
     bake::Grid reference;
     reference.header = sky.header;
     reference.probes.assign(std::begin(sky.probes), std::end(sky.probes));
+    reference.depth = depthAsset;
     if (indexed) reference.lookup.assign(std::begin(lookup), std::end(lookup));
     gpu.input.create(fixture.physical, fixture.device, sizeof(queries), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     gpu.input.write(queries, sizeof(queries));
@@ -223,7 +242,9 @@ namespace remix::forward::test {
           }
         }
         auto expected = bake::sample(directReference, position, normal);
-        if (light == 1) expected.reset();
+        const auto stencil = bake::probeStencil(reference, position, normal);
+        for (uint32_t corner = 0; corner < stencil.count; ++corner)
+          if (stencil.weights[corner] > 1e-6f && !local.sample(stencil.indices[corner], light)) expected.reset();
         require((values[i][3] > .5f) == bool(expected), "Directional probe response preserves receiver coverage");
         if (expected) require(directional ? std::abs(values[i][1] - (*expected)[0]) < 2e-5f : values[i][1] == -1,
                               "Indexed directional fields match packed CPU interpolation, including black fields; scalar caches retain unknown SH");
@@ -271,7 +292,16 @@ namespace remix::forward::test {
         continue;
       }
       if (q.position[3] > 0) {
-        const float expected = (skyCase == 0 || skyCase == 4) && q.position[0] == 0 ? 1.f : 0.f;
+        const auto stencil = bake::probeStencil(reference,
+            {q.position[0], q.position[1], q.position[2]}, {0, 1, 0});
+        // Every fixture corner has the same sky moments. Receiver visibility
+        // may remove all support, including in otherwise open sky cases.
+        float support = 0;
+        for (uint32_t corner = 0; corner < stencil.count; ++corner) support += stencil.weights[corner];
+        const float expected = (skyCase == 0 || skyCase == 4) && support >= 1e-4f ? 1.f : 0.f;
+        if (std::abs(values[i][0] - expected) >= 1e-5f)
+          std::fprintf(stderr, "Sky case=%u indexed=%d depth=%d query=%u support=%u expected=%g actual=%g\n",
+              skyCase, indexed, depth, i, stencil.count, expected, values[i][0]);
         require(std::abs(values[i][0] - expected) < 1e-5f,
                 "Sky visibility accepts open space and rejects closed, invalid, occluded and unknown space");
         continue;

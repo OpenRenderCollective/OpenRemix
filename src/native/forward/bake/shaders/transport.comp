@@ -8,6 +8,7 @@ layout(local_size_x = 64) in;
 #define OFFLINE_LIGHT_SELECTION
 #include "radiance.glsl"
 #include "sample-sums.glsl"
+#include "../../shaders/probe-depth-mapping.glsl"
 #ifdef PARALLEL_BAKE
 #define SAMPLE_START gl_LocalInvocationIndex
 #define SAMPLE_STEP 64u
@@ -55,7 +56,31 @@ void main() {
 #endif
   RayPoint point = rayPoints[inputIndex];
   vec3 origin = point.position.xyz;
-  if (rayFrame.control.z != 1u && rayFrame.control.z != 7u && dot(point.normal.xyz, point.normal.xyz) > 1e-10)
+#if defined(PARALLEL_BAKE) && !defined(COMPACT_VISIBILITY)
+  if (rayFrame.control.z == 8u) {
+    // One lane owns one packed texel. Never initialize/store a whole Result:
+    // other lanes concurrently write its other scalar words.
+    uint texel = gl_LocalInvocationIndex;
+    vec2 moments = vec2(0);
+    for (uint sampleIndex = 0u; sampleIndex < 4u; ++sampleIndex) {
+      vec3 direction = probeDepthDirection(texel, sampleIndex);
+      uint seed = directionSeed(direction, floatBitsToUint(origin.x) ^ floatBitsToUint(origin.y) ^
+                                           floatBitsToUint(origin.z));
+      Hit hit;
+      traceRay(origin, direction, rayFrame.trace.x, seed, hit);
+      float distance = clamp(hit.distance / rayFrame.trace.x, 0, 1);
+      moments += vec2(distance, distance * distance) * .25;
+    }
+    float packed = uintBitsToFloat(packHalf2x16(moments));
+    uint vectorIndex = texel / 4u, channel = texel % 4u;
+    if (vectorIndex < 9u) rayResults[index].irradiance[vectorIndex][channel] = packed;
+    else if (vectorIndex < 15u) rayResults[index].moments[vectorIndex - 9u][channel] = packed;
+    else rayResults[index].statistics[channel] = packed;
+    return;
+  }
+#endif
+  if (rayFrame.control.z != 1u && rayFrame.control.z != 7u && rayFrame.control.z != 8u &&
+      dot(point.normal.xyz, point.normal.xyz) > 1e-10)
     origin += normalize(point.normal.xyz) * rayFrame.trace.y;
   RayResult outputValue;
   for (uint i = 0; i < 9; ++i)

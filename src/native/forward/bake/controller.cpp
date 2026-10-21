@@ -199,11 +199,14 @@ namespace remix::forward::bake {
     auto placement = config;
     const uint64_t directoryReserve = source->partition && source->partition->closed
         ? uint64_t(maximumDirectoryWords) * sizeof(uint32_t) : 0;
-    if (properties.limits.maxStorageBufferRange <= sizeof(GridHeader) + directoryReserve)
+    if (properties.limits.maxStorageBufferRange <= sizeof(GridHeader) + directoryReserve +
+                                                   (config.directionalProbeDepth ? 16 : 0))
       throw std::invalid_argument("Irradiance directory exceeds device storage range");
     placement.maxProbes =
         std::min(placement.maxProbes,
-                 uint32_t((properties.limits.maxStorageBufferRange - sizeof(GridHeader) - directoryReserve) / sizeof(Result)));
+                 uint32_t((properties.limits.maxStorageBufferRange - sizeof(GridHeader) - directoryReserve -
+                           (config.directionalProbeDepth ? 16 : 0)) /
+                          (sizeof(Result) + (config.directionalProbeDepth ? sizeof(ProbeDepth::Record) : 0))));
     lightmap::Options atlas;
     // Vertex UVs address texel centres and carry explicit chart clamp bounds.
     // The outward-rounded chart grid already contains its bilinear footprint.
@@ -319,7 +322,14 @@ namespace remix::forward::bake {
         job.transport->releaseBuildInputs();
       if (submission.count && submission.job == m_job && !job.failed) {
         const auto readBegin = std::chrono::steady_clock::now();
-        if (submission.reference) {
+        if (submission.probeDepth) {
+          job.readback.resize(submission.count);
+          job.transport->read(slot, job.readback);
+          for (uint32_t i = 0; i < submission.count; ++i)
+            job.grid.depth.records[job.grid.tasks[submission.first + i]] =
+                std::bit_cast<ProbeDepth::Record>(job.readback[i]);
+          job.probeDepthReceived += submission.count;
+        } else if (submission.reference) {
           job.readback.resize(submission.count);
           job.transport->read(slot, job.readback);
           job.reference->consume(submission.first, job.readback);
@@ -399,7 +409,7 @@ namespace remix::forward::bake {
                               submission.direct || submission.directionalField || submission.sun ||
                               submission.probeSun || submission.probeLocal
                                   ? sizeof(VisibilityResult) : sizeof(Result));
-        if (!submission.styled && !submission.reference) (submission.radiance ? job.captureReceived
+        if (!submission.styled && !submission.reference && !submission.probeDepth) (submission.radiance ? job.captureReceived
          : submission.reflectionGeometry ? job.geometryReceived
          : submission.reflectionSite     ? job.siteReceived
          : submission.visibility         ? job.visibilityReceived
@@ -417,7 +427,8 @@ namespace remix::forward::bake {
           if (submission.sunAntialiasing) job.sunAntialiasingGpuMs += *elapsed;
           if (submission.overflowVisibility)
             job.overflowTiming.gpuMs += *elapsed;
-          const auto work = submission.reflectionGeometry                            ? Work::Geometry
+          const auto work = submission.probeDepth                                    ? Work::ProbeDepth
+                            : submission.reflectionGeometry                          ? Work::Geometry
                             : submission.visibility || submission.direct || submission.directionalField ||
                               submission.overflowVisibility || submission.probeLocal     ? Work::Visibility
                             : submission.sun || submission.probeSun                  ? Work::Sun
@@ -1072,12 +1083,18 @@ namespace remix::forward::bake {
             (volume->visibilityPages ? volume->visibilityPages->bytes() : 0)};
     probes::dumpPublishedData(".visibility-pages.bin", pageStatistics, sizeof(pageStatistics));
     std::vector<std::byte> data(bytes);
-    const auto gpuHeader = publicationHeader(grid.header, grid.lookup.size());
+    auto gpuHeader = publicationHeader(grid.header, grid.lookup.size());
+    gpuHeader.settings[3] = publicationSettings(0, false, !grid.depth.empty());
     std::memcpy(data.data(), &gpuHeader, sizeof(GridHeader));
     std::memcpy(data.data() + sizeof(GridHeader), grid.probes.data(), grid.probes.size() * sizeof(Result));
     if (!grid.lookup.empty())
       std::memcpy(data.data() + sizeof(GridHeader) + grid.probes.size() * sizeof(Result),
                   grid.lookup.data(), grid.lookup.size() * sizeof(uint32_t));
+    if (!grid.depth.empty()) {
+      grid.depth.validate(uint32_t(grid.probes.size()));
+      const size_t offset = sizeof(GridHeader) + grid.probes.size() * sizeof(Result) + lookupBytes(grid);
+      grid.depth.write(std::span(data).subspan(offset, grid.depth.bytes()));
+    }
     // Hash once at publication, before releasing staging data. Diagnostics can
     // then distinguish input identity from changes in the actual baked result
     // without a GPU readback or a mutable worker-state dependency.
@@ -1087,14 +1104,14 @@ namespace remix::forward::bake {
       volume->content.styledIndirect = scene::fastHash(publishedStyles.data(), styleBytes) | 1;
       std::memcpy(data.data() + baseBytes, publishedStyles.data(), styleBytes);
       auto header = gpuHeader;
-      header.settings[3] = publicationSettings(0, true);
+      header.settings[3] = publicationSettings(0, true, !grid.depth.empty());
       std::memcpy(data.data(), &header, sizeof(header));
       probes::dumpPublishedData(".styled-irradiance.bin", publishedStyles.data(), styleBytes);
     }
     if (localBytes) {
       std::memcpy(data.data() + localOffset, localWords.data(), localBytes);
       auto header = gpuHeader;
-      header.settings[3] = publicationSettings((localOffset - sizeof(GridHeader)) / 16, styleBytes != 0);
+      header.settings[3] = publicationSettings((localOffset - sizeof(GridHeader)) / 16, styleBytes != 0, !grid.depth.empty());
       std::memcpy(data.data(), &header, sizeof(header));
       volume->content.grid = scene::fastHash(localWords.data(), localBytes, volume->content.grid) | 1;
       probes::dumpPublishedData(".local-probe-visibility.bin", localWords.data(), localBytes);
@@ -1234,7 +1251,8 @@ namespace remix::forward::bake {
                    uint32_t(m_job->transport && m_job->transport->hasVisibilityReceivers()),
                    static_cast<unsigned long long>(m_job->transport ? m_job->transport->visibilityReceiverBytes() : 0));
       constexpr const char *names[] = {"grid",  "surface",     "visibility", "sun",
-                                       "sites", "reflections", "geometry"};
+                                       "sites", "reflections", "geometry", "probe_depth"};
+      static_assert(std::size(names) == size_t(Work::Count));
       for (uint32_t i = 0; i < uint32_t(Work::Count); ++i) {
         const auto &timing = m_job->budget.statistics(Work(i));
         std::fprintf(stderr, "Bake GPU timing: %s points=%llu batches=%llu total_ms=%.3f "
@@ -1443,7 +1461,9 @@ namespace remix::forward::bake {
             status(REMIXAPI_BAKE_PREPARING_EXT, "Refining irradiance probe placement");
             return;
           }
-          recordProbeSun(command, config);
+          if (config.directionalProbeDepth && job.probeDepthReceived < job.grid.tasks.size())
+            recordProbeDepth(command, config);
+          else recordProbeSun(command, config);
           return;
         }
         auto &submission = m_submissions[m_slot];

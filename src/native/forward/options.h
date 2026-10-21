@@ -1,5 +1,6 @@
 #pragma once
 #include "forward/bake/config.h"
+#include "forward/bake/storage_options.h"
 #include <cstdint>
 
 namespace remix::forward {
@@ -54,6 +55,7 @@ namespace remix::forward {
     }
     bake::Config bakeConfiguration(bool liveGiActive) const {
       auto config = baking;
+      config.directionalProbeDepth = bake::directionalProbeDepthRequested();
       if (bakedLightingActive(liveGiActive)) {
         config.aggregateDiffuse = true;
         config.fullyBakedLights = false;

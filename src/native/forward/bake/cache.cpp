@@ -17,6 +17,13 @@
 #endif
 
 namespace remix::forward::bake::cache {
+  void Snapshot::takeGrid(Grid &source) {
+    grid = std::move(source);
+    // Move every persistent field together, then discard only known transient
+    // tracing arrays. New serialized fields cannot silently be left in the job.
+    std::vector<Point>{}.swap(grid.points);
+    std::vector<Grid::Origin>{}.swap(grid.origins);
+  }
   void recordLookup(const std::filesystem::path &file, uint64_t identity, uint64_t input,
                      uint64_t policy, bool hit) noexcept {
     try {
@@ -45,7 +52,7 @@ namespace remix::forward::bake::cache {
       return std::max(1u, (count + probeHeaderBlockSlots - 1) / probeHeaderBlockSlots);
     }
     // Bump whenever incompatible planning, transport or wire semantics change.
-    constexpr uint32_t algorithmRevision = 25; // local support bounds for adaptive probe light volumes
+    constexpr uint32_t algorithmRevision = 26; // directional probe depth ownership and publication
     void require(bool value) {
       if (!value)
         throw std::runtime_error("Invalid bake cache metadata");
@@ -83,12 +90,14 @@ namespace remix::forward::bake::cache {
       finite(grid.header.originSpacing);
       finite(grid.header.settings);
       require(grid.header.settings[3] == 0);
-      require(grid.header.originSpacing[3] > 0 && device.storageRange >= sizeof(GridHeader));
+      const uint64_t overhead = sizeof(GridHeader) + (config.directionalProbeDepth ? 16 : 0);
+      require(grid.header.originSpacing[3] > 0 && device.storageRange >= overhead);
       const auto addressing = grid.header.settings[2];
       require(addressing == 0 || addressing == 2 || addressing == 4 ||
               ((addressing == 1 || addressing == 3 || addressing == 5) && config.relocateProbes));
       const auto maximum =
-          std::min(uint64_t(config.maxProbes), (device.storageRange - sizeof(GridHeader)) / sizeof(Result));
+          std::min(uint64_t(config.maxProbes), (device.storageRange - overhead) /
+              (sizeof(Result) + (config.directionalProbeDepth ? sizeof(ProbeDepth::Record) : 0)));
       uint64_t count = 1;
       for (uint32_t c = 0; c < 3; ++c) {
         const auto dimension = grid.header.dimensions[c];
@@ -122,6 +131,10 @@ namespace remix::forward::bake::cache {
         for (uint32_t i = 0; i < grid.probes.size(); ++i)
           probeOffsets(grid.header, grid.probes[i], grid.origins[i].relocationSpacing);
       }
+      grid.depth.maximumDistance = input.pod<float>();
+      grid.depth.records = input.array<ProbeDepth::Record>(count);
+      require(config.directionalProbeDepth != grid.depth.empty() && gridBytes(grid) <= device.storageRange);
+      grid.depth.validate(uint32_t(count));
     }
     void localProbeOwners(const Grid &grid, const scene::BakeScene &source,
                             const ProbeVisibility &visibility) {
@@ -304,6 +317,7 @@ namespace remix::forward::bake::cache {
       return scene::fastHash(visibilityShader, sizeof(visibilityShader), hash);
     }();
     const uint32_t fields[] = {algorithmRevision,
+                               uint32_t(c.directionalProbeDepth),
                                uint32_t(sizeof(GridHeader)),
                                uint32_t(sizeof(Result)),
                                lightmap::atlasLayers,
@@ -551,6 +565,9 @@ namespace remix::forward::bake::cache {
       output.array(view.grid.probes);
       output.array(view.grid.tasks);
       if (indexed(view.grid.header)) output.array(view.grid.lookup);
+      view.grid.depth.validate(uint32_t(view.grid.probes.size()));
+      output.pod(view.grid.depth.maximumDistance);
+      output.array(view.grid.depth.records);
       const auto &layout = view.layout;
       output.pod(layout.pageSize);
       output.pod(layout.pages);
