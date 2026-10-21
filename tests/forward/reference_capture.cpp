@@ -2,6 +2,7 @@
 #include "scene/fixtures.h"
 #include <fstream>
 #include <limits>
+#include <cmath>
 
 using namespace remix::forward::bake;
 using remix::test::require;
@@ -59,6 +60,45 @@ int main(int argc, char **argv) {
   try { ReferenceCapture::load(path); }
   catch (const std::invalid_argument &) { rejected = true; }
   require(rejected, "Reference point count remains bounded independently of file size");
+  {
+    std::ofstream hemisphere(path);
+    hemisphere << "hemisphere 64\n1 2 3 0 0 1\n-4 5 6 -1 0 0\n";
+  }
+  auto cosine = ReferenceCapture::load(path);
+  require(cosine.hemisphere && cosine.tasks() == 128, "Hemisphere sites expand to bounded radiance rays");
+  const auto rays = cosine.batch(0, cosine.tasks());
+  double cosineSquared = 0;
+  for (uint32_t i = 0; i < rays.size(); ++i) {
+    const remix::forward::Vec3 direction{rays[i].normal[0], rays[i].normal[1], rays[i].normal[2]};
+    require(std::abs(remix::forward::dot(direction, direction) - 1) < 1e-5f &&
+                (i < 64 ? direction[2] : -direction[0]) > 0,
+            "Every cosine ray is unit length and stays above its oriented receiver plane");
+    const float receiverCosine = i < 64 ? direction[2] : -direction[0];
+    cosineSquared += receiverCosine * receiverCosine;
+  }
+  require(std::abs(cosineSquared / rays.size() - .5) < 1e-6,
+          "Stratified cosine rays integrate the cosine-squared moment to one half");
+  const auto split = cosine.batch(57, 19);
+  require(std::equal(split.begin(), split.end(), rays.begin() + 57,
+                    [](const auto &a, const auto &b) { return a.position == b.position && a.normal == b.normal; }),
+          "Splitting ray batches across site boundaries preserves deterministic directions");
+  std::vector<Result> constant(128);
+  for (uint32_t i = 0; i < constant.size(); ++i)
+    for (uint32_t c = 0; c < 3; ++c) constant[i].irradiance[0][c] = float(c + 1 + (i / 64) * 3);
+  cosine.consume(73, std::span(constant).subspan(73));
+  cosine.consume(0, std::span(constant).first(73));
+  {
+    std::ifstream json(output);
+    const std::string result((std::istreambuf_iterator<char>(json)), {});
+    require(result.find("\"diffuseIrradiance\":[3.14159265,6.28318531,9.42477796]") != std::string::npos &&
+                result.find("\"diffuseIrradiance\":[12.5663706,15.7079633,18.8495559]") != std::string::npos,
+            "Cosine sampling integrates constant radiance to Pi times radiance for each site");
+  }
+  { std::ofstream bad(path); bad << "hemisphere 64\n1 2 3 0 0 0\n"; }
+  rejected = false;
+  try { ReferenceCapture::load(path); }
+  catch (const std::invalid_argument &) { rejected = true; }
+  require(rejected, "Invalid receiver normals cannot create hemisphere rays");
   std::filesystem::remove(path);
   std::filesystem::remove(output);
 }

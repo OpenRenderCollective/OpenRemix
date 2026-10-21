@@ -1401,21 +1401,28 @@ namespace remix::forward::bake {
           status(REMIXAPI_BAKE_TRACING_EXT, "Preparing static transport on GPU");
           return;
         }
-        if (job.reference && job.reference->received < job.reference->points.size()) {
+        if (job.reference && job.reference->received < job.reference->tasks()) {
           auto &reference = *job.reference;
-          if (reference.next < reference.points.size()) {
+          if (reference.next < reference.tasks()) {
             auto &submission = m_submissions[m_slot];
             if (submission.job) throw std::logic_error("Reference slot reused before its fence");
-            const auto point = std::span(reference.points).subspan(reference.next, 1);
-            if (reference.combinedLighting)
-              job.transport->recordComponent(command, m_slot, point, Transport::combinedLighting,
+            const auto count = std::min(reference.hemisphere ? 256u : 1u, reference.tasks() - reference.next);
+            const auto referencePoints = reference.batch(reference.next, count);
+            if (reference.hemisphere && reference.combinedLighting)
+              job.transport->recordRadianceComponent(command, m_slot, referencePoints, Transport::combinedLighting,
+                                                     config.bounces);
+            else if (reference.hemisphere)
+              job.transport->recordRadiance(command, m_slot, referencePoints, config.bounces);
+            else if (reference.combinedLighting)
+              job.transport->recordComponent(command, m_slot, referencePoints, Transport::combinedLighting,
                                              reference.samples, config.bounces);
             else
-              job.transport->recordBatch(command, m_slot, point, reference.samples, config.bounces);
+              job.transport->recordBatch(command, m_slot, referencePoints, reference.samples, config.bounces);
             submission.job = m_job;
             submission.reference = true;
-            submission.first = reference.next++;
-            submission.count = 1;
+            submission.first = reference.next;
+            submission.count = count;
+            reference.next += count;
           }
           status(REMIXAPI_BAKE_TRACING_EXT, "Tracing offline irradiance reference");
           return;

@@ -73,6 +73,13 @@ an unconditional reference for the entire final shaded pixel. Use an isolated ba
 same canonical sky reference for comparisons. No request means no diagnostic rays or changed cache
 policy. This does not modify probe origins, surface charts, cache identity or the public API.
 
+Prefix the input with `hemisphere` to request an independent cosine-weighted radiance integral:
+sample count, then XYZ/unit-normal sextuples. The output mode is `hemisphere` with per-site
+`diffuseIrradiance` (linear E, not E/Pi); ordinary requests retain mode `sh` and RGB coefficients.
+Rays use deterministic stratified directions and bounded 256-ray submissions. This integrates
+environment/material radiance and reflected lighting; primary analytic local lights and sunlight
+must be compared separately. It is not a replacement for a fully composed image reference.
+
 Lighting view `Bake coverage` (`rtx.native.forward.debugView=6`) shows opaque atlas receivers blue,
 valid shared probe stencils green and uncovered receivers red. Sky/water/alpha/terrain composition can
 mix display colours. View zero restores normal shading and does not intentionally invalidate the bake.

@@ -1,8 +1,11 @@
 #include "forward/bake/reference_capture.h"
 #include <cmath>
+#include <bit>
+#include <charconv>
 #include <cstdlib>
 #include <fstream>
 #include <iomanip>
+#include <numbers>
 #include <stdexcept>
 
 namespace remix::forward::bake {
@@ -16,7 +19,13 @@ namespace remix::forward::bake {
       throw std::invalid_argument("Reference capture input exceeds 4 KiB");
     std::ifstream input(path);
     ReferenceCapture result;
-    if (!(input >> result.samples) || result.samples < 64 || result.samples > 8192)
+    std::string token;
+    input >> token;
+    result.hemisphere = token == "hemisphere";
+    if (result.hemisphere) input >> token;
+    const auto parsed = std::from_chars(token.data(), token.data() + token.size(), result.samples);
+    if (parsed.ec != std::errc{} || parsed.ptr != token.data() + token.size() ||
+        result.samples < 64 || result.samples > 8192)
       throw std::invalid_argument("Reference capture requires 64..8192 samples");
     while (input >> std::ws && input.peek() != std::char_traits<char>::eof()) {
       Point point{};
@@ -24,17 +33,52 @@ namespace remix::forward::bake {
         throw std::invalid_argument("Reference capture requires at most 16 XYZ positions");
       for (float value : point.position)
         if (!std::isfinite(value)) throw std::invalid_argument("Non-finite reference position");
+      if (result.hemisphere) {
+        if (!(input >> point.normal[0] >> point.normal[1] >> point.normal[2]))
+          throw std::invalid_argument("Hemisphere reference requires XYZ unit normals");
+        const Vec3 normal{point.normal[0], point.normal[1], point.normal[2]};
+        const float lengthSquared = dot(normal, normal);
+        if (!std::isfinite(lengthSquared) || std::abs(lengthSquared - 1) > 1e-4f)
+          throw std::invalid_argument("Invalid hemisphere reference unit normal");
+      }
       result.points.push_back(point);
     }
     if (result.points.empty()) throw std::invalid_argument("Empty reference capture");
     result.m_output = path;
     result.m_output += ".results.json";
-    result.m_results.resize(result.points.size());
-    result.m_completed.resize(result.points.size());
+    if (!result.hemisphere) result.m_results.resize(result.points.size());
+    result.m_completed.resize(result.tasks());
+    if (result.hemisphere) result.m_sums.resize(result.points.size());
+    return result;
+  }
+  std::vector<Point> ReferenceCapture::batch(uint32_t first, uint32_t count) const {
+    if (first > tasks() || count > tasks() - first) throw std::out_of_range("Reference task range");
+    std::vector<Point> result;
+    result.reserve(count);
+    for (uint32_t task = first; task < first + count; ++task) {
+      auto point = points[hemisphere ? task / samples : task];
+      if (hemisphere) {
+        const auto ordinal = task % samples;
+        const Vec3 normal = normalized({point.normal[0], point.normal[1], point.normal[2]});
+        const Vec3 tangent = normalized(cross(std::abs(normal[2]) < .99f ? Vec3{0, 0, 1} : Vec3{1, 0, 0}, normal));
+        const Vec3 bitangent = cross(normal, tangent);
+        const float cosine = std::sqrt((float(ordinal) + .5f) / samples);
+        const float radius = std::sqrt(1 - cosine * cosine);
+        const uint32_t rotation = std::bit_cast<uint32_t>(point.position[0]) * 73856093u ^
+                                  std::bit_cast<uint32_t>(point.position[1]) * 19349663u ^
+                                  std::bit_cast<uint32_t>(point.position[2]) * 83492791u;
+        const double phase = double(ordinal * 0x61c88647u + rotation) / 4294967296.0;
+        const double phi = phase * 2 * std::numbers::pi;
+        for (uint32_t c = 0; c < 3; ++c)
+          point.normal[c] = normal[c] * cosine + radius *
+              (tangent[c] * float(std::cos(phi)) + bitangent[c] * float(std::sin(phi)));
+      }
+      result.push_back(point);
+    }
     return result;
   }
   void ReferenceCapture::consume(uint32_t first, std::span<const Result> values) {
-    if (first > points.size() || values.size() > points.size() - first)
+    if (first > tasks() || values.size() > tasks() - first)
       throw std::out_of_range("Reference capture readback range");
     for (size_t i = 0; i < values.size(); ++i) {
       if (m_completed[first + i]) throw std::logic_error("Duplicate reference readback");
@@ -43,20 +87,33 @@ namespace remix::forward::bake {
           if (!std::isfinite(value)) throw std::invalid_argument("Non-finite reference irradiance");
     }
     for (size_t i = 0; i < values.size(); ++i) {
-      m_results[first + i] = values[i];
+      if (hemisphere) {
+        for (uint32_t c = 0; c < 3; ++c)
+          m_sums[(first + i) / samples][c] += values[i].irradiance[0][c];
+      } else m_results[first + i] = values[i];
       m_completed[first + i] = true;
     }
     received += uint32_t(values.size());
-    if (received != points.size()) return;
+    if (received != tasks()) return;
     std::ofstream output(m_output, std::ios::trunc);
     output.exceptions(std::ios::failbit | std::ios::badbit);
     output << std::setprecision(9) << "{\"version\":1,\"sceneHash\":\"" << sceneHash
            << "\",\"samples\":" << samples << ",\"bounces\":" << bounces
-           << ",\"combinedLighting\":" << (combinedLighting ? "true" : "false") << ",\"points\":[";
+           << ",\"combinedLighting\":" << (combinedLighting ? "true" : "false")
+           << ",\"mode\":\"" << (hemisphere ? "hemisphere" : "sh") << "\",\"points\":[";
     for (size_t i = 0; i < points.size(); ++i) {
       if (i) output << ',';
       output << "{\"position\":[";
       for (uint32_t c = 0; c < 3; ++c) output << (c ? "," : "") << points[i].position[c];
+      if (hemisphere) {
+        output << "],\"normal\":[";
+        for (uint32_t c = 0; c < 3; ++c) output << (c ? "," : "") << points[i].normal[c];
+        output << "],\"diffuseIrradiance\":[";
+        for (uint32_t c = 0; c < 3; ++c)
+          output << (c ? "," : "") << m_sums[i][c] * std::numbers::pi / samples;
+        output << "]}";
+        continue;
+      }
       output << "],\"irradiance\":[";
       for (uint32_t j = 0; j < 9; ++j) {
         output << (j ? ",[" : "[");

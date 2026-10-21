@@ -30,8 +30,15 @@ scene inputs: at representative faces the default field is roughly 35% low on th
 irradiance/style/visibility buffers byte-identical to an ordinary bake. It is opt-in and separate from
 placement/publication. These are incoming-SH comparisons, with primary sunlight separate and local
 direct membership policy-dependent, not final-pixel ground truth. An 8-sample live-GI visual check was
-noisy and its alternate bake unfinished; do not use it as quality acceptance. Next obtain a converged
-cosine-weighted reference and improve regional interpolation against the opposing face errors.
+noisy and its alternate bake unfinished; do not use it as quality acceptance.
+The bounded reference now also supports independent cosine hemisphere integration. At the same five
+sites, 4096 versus 8192 rays differ by about 0.3..3.9% in luminance. Fronts remain dark; the default
+field is about 68% high on the barrel top and 33% low on the crate side against the 8192-ray result.
+Replacing sixteen dominant neighbours with high-sample SH improves the crate side but worsens barrel
+excess, so more samples alone is insufficient. The barrel mixes about 27% coarse lighting with much
+brighter sky response; removing normal-facing weights also worsens fronts in an offline experiment.
+Keep both defaults unchanged. Next check coarse-contributor geometry visibility and improve the
+coarse/fine interpolation or directional visibility while preserving continuity and runtime cost.
 Camera motion also refreshes frozen sunlight cascades and prepares the captured world casters.
 The CPU projection cache now preserves the exact rendered projection for subtexel fit noise.
 Targeted CPU and sunlight/local-shadow GPU checks pass. Opposite-order moving-camera comparisons
