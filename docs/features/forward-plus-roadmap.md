@@ -39,6 +39,17 @@ excess, so more samples alone is insufficient. The barrel mixes about 27% coarse
 brighter sky response; removing normal-facing weights also worsens fronts in an offline experiment.
 Keep both defaults unchanged. Next check coarse-contributor geometry visibility and improve the
 coarse/fine interpolation or directional visibility while preserving continuity and runtime cost.
+An ordinary-visible-brush BSP ray check now finds all barrel-top coarse contributions blocked by
+world surfaces, plus roughly 41..44% of crate-front/side weights crossing the floor. This is a
+world-brush subset oracle, not the runtime's complete geometry. A half-precision directional-depth
+prototype exposes another issue: separately normalizing tiny residual blocked coarse support can
+restore its full blend share. Confidence-aware coarse/fine blending improves that subset experiment.
+An 8x8 field with ordinary probe RGB reduces barrel-top error from about +68% to +17% and crate-side
+error from -33% to -18%; other faces still need work. Exact visibility plus high-sample neighbours
+performs better, but neither a higher sample default nor removing facing weights alone is justified.
+Next implement bounded GPU-produced directional depth and shared CPU/GPU confidence reconstruction,
+with explicit cache ownership/versioning, seam/unknown/style tests and live quality/performance gates.
+This proposal is not yet native code or a deployed fix; do not close the prop-lighting requirement.
 Camera motion also refreshes frozen sunlight cascades and prepares the captured world casters.
 The CPU projection cache now preserves the exact rendered projection for subtexel fit noise.
 Targeted CPU and sunlight/local-shadow GPU checks pass. Opposite-order moving-camera comparisons
