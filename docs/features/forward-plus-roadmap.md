@@ -34,9 +34,12 @@ Crossfire can remain limited by host time after GPU time falls: profile the engi
 native preparation separately before attributing the remaining frame cost to light shading.
 Caller-stack sampling now locates repeated sleeps in the original Source shader backend while the
 native render thread waits for work. Treat this as a host synchronization lead, not proof of expensive
-CPU computation. A temporary `mat_forcehardwaresync=0` comparison changes the wait pattern but includes
-an anomalous slow interval and inconsistent GPU costs; it is not deployment evidence. Repeat matched
-comparisons with focus, GPU clocks, captured inputs and image checks before changing engine defaults.
+CPU computation. The initial `mat_forcehardwaresync=0` anomaly coincided with lost focus and is excluded.
+A subsequent startup-only comparison verifies focus, effective settings, clocks, captured inputs,
+rendering counts and near-identical world images. Disabling sync trades host delay for greater native
+GPU/fence time and helps only one tested direction; keep the default unchanged. Lua attempts to toggle
+this setting did not apply and are rejected as comparisons. Next isolate D3D event-query polling from
+occlusion and readbacks, preserving actual completion rather than removing synchronization wholesale.
 One live Construct check exited in the original shader API's filesystem worker after bake publication,
 with an invalid virtual-call target at `shaderapidx9_orig.dll+0xba1f`. An identical rerun completed.
 This is unresolved, not an accepted intermittent failure or proof that the native change caused it;

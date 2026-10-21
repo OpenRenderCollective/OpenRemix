@@ -122,9 +122,13 @@ and per-face submissions. Those counts require no query instrumentation or GPU r
 Keep the reported slow Crossfire gameplay case open until it is reproduced under its actual conditions.
 For host profiling, unwind caller stacks rather than classifying a syscall from its address alone.
 Observed main-thread sleeps lead through the original Source shader backend; the native worker often
-waits on its condition variable. `mat_forcehardwaresync` was enabled in the sampled game. A temporary
-disabled comparison changed scheduling but had an anomalous interval, so do not force this setting
-as an accepted optimization. Sampling overhead is excluded from ordinary timing windows.
+waits on its condition variable. `mat_forcehardwaresync` was enabled in the sampled game. The initial
+unfocused interval is excluded. A focused startup-only comparison changes Source/Vulkan overlap:
+one view improves while another regresses, so keep the default unchanged. Effective-setting receipts
+reject the unsuccessful Lua toggle trials. The sampled original shader-backend stack follows a
+one-millisecond sleep in a query polling loop. Next measure event-query polling separately from
+occlusion; preserve real query completion and readback lifetimes. Sampling overhead is excluded
+from ordinary timing windows.
 Clusters now retain separate runtime-prefix and complete-fallback counts in one ordered list. Overflow
 is checked for the receiver's chosen count; unknown coverage keeps complete analytic fallback. GPU
 membership tests include empty prefixes, independent tail overflow, late indices and either depth sign.
