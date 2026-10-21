@@ -14,6 +14,15 @@ reports. An implementation or synthetic test alone does not close an integration
 Latest live moving-prop checks in Construct confirm valid probe coverage on the barrel and neutral
 crate while their appearance remains too dark. Coverage alone does not close probe quality; compare
 lighting components, receiver normals and reference density before changing brightness globally.
+Live component captures now show correct neutral-crate albedo; bypassing normal maps does not remove
+the low irradiance, and adding every stored controllable group has negligible effect at sampled prop
+faces. A matched-input 131072-record/1m-request bake versus the 32768-record default changes faces
+in opposing directions and leaves the visible problem unresolved. It also exposes 30 analytic fallback
+lights under existing table budgets. Do not raise the global default based on this experiment. Obtain
+direct transport references at actual prop-face positions, then assess interpolation, directional SH
+and local spatial support. Below-floor contributors alone are not proof of the cause; in the sampled
+default stencil removing them would reduce energy further. Keep brightness compensation out of this
+investigation until a reference establishes the missing energy.
 Camera motion also refreshes frozen sunlight cascades and prepares the captured world casters.
 The CPU projection cache now preserves the exact rendered projection for subtexel fit noise.
 Targeted CPU and sunlight/local-shadow GPU checks pass. Opposite-order moving-camera comparisons
