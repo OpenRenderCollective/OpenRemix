@@ -32,6 +32,11 @@ Fixed Crossfire views show lower GPU cost; Construct remains roughly flat in one
 broader maps, moving/armed views and worst-case build/storage checks before deployment acceptance.
 Crossfire can remain limited by host time after GPU time falls: profile the engine/adapter caller and
 native preparation separately before attributing the remaining frame cost to light shading.
+Caller-stack sampling now locates repeated sleeps in the original Source shader backend while the
+native render thread waits for work. Treat this as a host synchronization lead, not proof of expensive
+CPU computation. A temporary `mat_forcehardwaresync=0` comparison changes the wait pattern but includes
+an anomalous slow interval and inconsistent GPU costs; it is not deployment evidence. Repeat matched
+comparisons with focus, GPU clocks, captured inputs and image checks before changing engine defaults.
 One live Construct check exited in the original shader API's filesystem worker after bake publication,
 with an invalid virtual-call target at `shaderapidx9_orig.dll+0xba1f`. An identical rerun completed.
 This is unresolved, not an accepted intermittent failure or proof that the native change caused it;

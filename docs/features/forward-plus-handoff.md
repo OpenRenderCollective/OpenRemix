@@ -120,6 +120,11 @@ overlap, so a child-range increase does not by itself establish extra work in th
 Use `localShadowDraws` in the requested frame report to compare actual selected emitter identities
 and per-face submissions. Those counts require no query instrumentation or GPU readback.
 Keep the reported slow Crossfire gameplay case open until it is reproduced under its actual conditions.
+For host profiling, unwind caller stacks rather than classifying a syscall from its address alone.
+Observed main-thread sleeps lead through the original Source shader backend; the native worker often
+waits on its condition variable. `mat_forcehardwaresync` was enabled in the sampled game. A temporary
+disabled comparison changed scheduling but had an anomalous interval, so do not force this setting
+as an accepted optimization. Sampling overhead is excluded from ordinary timing windows.
 Clusters now retain separate runtime-prefix and complete-fallback counts in one ordered list. Overflow
 is checked for the receiver's chosen count; unknown coverage keeps complete analytic fallback. GPU
 membership tests include empty prefixes, independent tail overflow, late indices and either depth sign.
