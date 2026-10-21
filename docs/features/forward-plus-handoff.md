@@ -133,8 +133,11 @@ Adapter `OPENREMIX_PROXY_QUERY_PROFILE=1` adds per-kind interval counters to its
 Query methods dispatch through the existing per-vtable resource registry, including event tables
 in diagnostic mode. `GetData` timing excludes caller sleeps and query lifetime; rolling intervals
 can straddle camera changes. Instrumentation adds overhead and is not an ordinary timing baseline.
-Profiled calls keep original arguments/results. Before testing a bounded retry, preserve FLUSH
-progress and device-loss returns; never fabricate completion or retry occlusion indiscriminately.
+Profiled calls keep original arguments/results. Bounded event retry with two poll caps was tested
+and rejected: the slow view rarely completes during retry and shows no gain; opposite launch order
+reverses the other view's apparent improvement. Retry code and tests were removed, leaving the query
+profiler. Preserve FLUSH progress and device-loss returns in any future policy; never fabricate
+completion or retry occlusion indiscriminately. Resume actual armed/moving gameplay and shading gates.
 Clusters now retain separate runtime-prefix and complete-fallback counts in one ordered list. Overflow
 is checked for the receiver's chosen count; unknown coverage keeps complete analytic fallback. GPU
 membership tests include empty prefixes, independent tail overflow, late indices and either depth sign.

@@ -44,8 +44,12 @@ The adapter now offers opt-in per-vtable query instrumentation, separating event
 issued/pending/failed/flush counts and driver-call time. Live checks locate frequent pending event
 polls in the slower host view; driver-call time itself remains small. Profiling-on/off world images
 and rendering counts match. Keep instrumentation timings separate from performance acceptance.
-Next test a bounded event-query retry that retains real completion/errors and flush progress;
-measure CPU cost and cross-API overlap before considering any default wait-policy change.
+Two bounded event-retry policies preserve completion/errors and flush progress but fail to show
+a repeatable frame-time win. Higher poll counts rarely complete the slow-view event before falling
+back to the engine sleep, and that view regresses slightly. Both tested policies are rejected;
+the experimental runtime path, helper, tests and retry-only counters were removed. Keep the useful
+query profiler and existing wait defaults. Return to armed/moving gameplay reproduction and dominant
+opaque/viewmodel shading; longer or adaptive waits need new evidence and a CPU/overlap justification.
 One live Construct check exited in the original shader API's filesystem worker after bake publication,
 with an invalid virtual-call target at `shaderapidx9_orig.dll+0xba1f`. An identical rerun completed.
 This is unresolved, not an accepted intermittent failure or proof that the native change caused it;
