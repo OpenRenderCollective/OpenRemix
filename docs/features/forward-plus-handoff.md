@@ -87,28 +87,36 @@ chart coordinates, so those pipelines can discard atlas reconstruction code. Ful
 chart layouts retain their existing specializations and probe fallback. This uses the same modules
 and draw order; it does not approximate lighting or change cache identity.
 
-The adaptive candidate improves five of six rendered receiver comparisons, with one worse. Controlled
-replay previously measured roughly 40% higher GPU time versus the installed uniform renderer. A packed
-directory-offset optimization reduced cost within the candidate by about 6.5%; this does not erase the
-regression. The hall's visible coverage is overwhelmingly charted, and the six test receivers are covered;
-large missing visible coverage did not explain this camera's cost. Fragment counters confirm that the
-existing depth prepass substantially reduces opaque colour shading work. The unmapped-receiver
-specialization reduces compiled shader size and modestly improves the tested replay, but the larger
-adaptive comparison needs to be refreshed after subsequent fixes. Per-record probe volume bounds now
-avoid wasting coarse reach on fine-only records. In Construct this restores complete light-volume
-coverage and permits the white-room controllable direct group to publish. Decline diagnostics report
-missing owners and distinguish absent pairs from unreceived pairs; unknown coverage still falls back.
-A controlled current-adaptive replay improves substantially over its previous adaptive checkpoint, but
-a new same-condition comparison is now faster than the deployed uniform build in that Construct
-view. This does not prove live gameplay or broad quality/performance acceptance. c1a0, Crossfire and
-c1a0d publish and reload pixel-identical caches in fixed views; c1a0 required the empty-coarse-seed
-fallback. Static test content must mount its shared Source assets before diagnosing unresolved water
-materials as bake failures. For another installed game's original archives, the adapter's optional
-`OPENREMIX_PROXY_CONTENT_MOUNTS` lists absolute game-content roots. This avoids asset copying and
-preserves normal defaults when unset. Lost Coast and Steamlab also publish and reload matching
-fixed-view caches with their required content mounted; their live-engine reports remain open. The original c1a0d locker-room noise case remains open. Continue with
-probe/stencil cost and partially mapped receivers.
-Keep GPU frame, transport and startup timing separate.
+The adaptive candidate improves five of six rendered receiver comparisons, with one worse. Its
+original roughly 40% GPU regression is historical: ordinary receiver specialization and conservative
+per-record light-volume support now make the current candidate faster than the installed uniform
+build in the fixed Construct replay camera. That is not live-game or broad quality acceptance. The
+hall's visible coverage is overwhelmingly charted, and the six test receivers are covered; missing
+visible coverage did not explain that camera's cost. Fragment counters confirm the depth prepass
+substantially reduces opaque colour shading work. Do not revive rejected shader experiments solely
+because an old checkpoint had a different bottleneck.
+
+Per-record probe volume bounds avoid wasting coarse reach on fine-only records. In Construct replay
+this restores eligible light-volume coverage and permits the white-room controllable group to publish.
+Decline diagnostics distinguish missing owners, absent pairs and unreceived pairs; unknown coverage
+still falls back. c1a0, Crossfire, c1a0d, Lost Coast and Steamlab publish and reload matching fixed-view
+caches. c1a0 required the empty-coarse-seed fallback. Static test content must mount shared Source
+assets before diagnosing unresolved materials as bake failures. The adapter's optional
+`OPENREMIX_PROXY_CONTENT_MOUNTS` lists absolute game-content roots without copying original archives.
+The original c1a0d locker-room noise, other-map quality and live performance reports remain open.
+
+A saved **zero-volume authored reflection set disables automatic local cubemaps** by API contract.
+It is different from having no override. Check the active count and authored status in F12 or
+`probes.json` before diagnosing room fitting or profiling the fallback. The adapter's sidecar lives
+under the game's `garrysmod/data/openremix/cubemaps` directory unless
+`OPENREMIX_PROXY_CUBEMAP_BOUNDS` overrides its path. Removing a sidecar restores automatic placement;
+an invalid edit preserves the previous valid override. Do not delete authored data merely because it
+is empty: use an isolated nonexistent override path for a diagnostic session. The test install was
+found to contain an empty Construct sidecar; it is preserved pending an explicit deployment decision.
+
+Keep GPU frame, transport and startup timing separate. Live profiles must verify the screenshot,
+active bake identity, effective reflection options and resolution before interpreting frame costs.
+The default SSR path and optional hardware reflections have very different costs.
 
 Rejected and removed: generic fragment offline optimization, fully fine-weighted coarse-sampling shortcut,
 separate mapped fragment modules, reordered category profiling, homogeneous draw-range splitting,

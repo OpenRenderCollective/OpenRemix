@@ -45,7 +45,13 @@ of the verified Construct skylit hall now identifies opaque GPU rendering (inclu
 as the largest measured cost; CPU recording is smaller and fence waits overlap GPU work. Static
 shadow updates remain zero after baking, and camera turns preserve the active bake. This does not
 reproduce the reported Crossfire slowdown or accept the candidate: compare matching live settings
-and candidate/installed views next. Startup cache-identity differences also need fingerprint diagnostics.
+and candidate/installed views across maps next. Live hall sessions now share an identical captured
+scene identity and retain it through camera turns. A small candidate slowdown with automatic cubemaps
+means the replay gain is not a live performance acceptance. The test install also has a zero-volume
+Construct authored sidecar, which explicitly disables local cubemaps. Isolating that override restores
+53/54 automatic captures in installed/candidate builds. F12 now identifies the active probe source and
+explains an empty authored set; the saved file is preserved. Probe bounds/blending quality remains open.
+Startup cache-identity differences outside the verified hall sessions still need fingerprint diagnostics.
 
 ## Handoff checkpoint (2026-10-20)
 

@@ -173,6 +173,12 @@ namespace remix {
       int probeCount = int(forward.baking.reflectionProbes);
       if (ui::SliderInt("Reflection probes", &probeCount, 0, int(remix::forward::probes::maxProbes)))
         forward.baking.reflectionProbes = uint32_t(probeCount);
+      const auto activeProbes = statistics.reflectionProbes.parameters[0];
+      ImGui::Text("Active reflection probes: %u (%s)", activeProbes,
+                  statistics.authoredReflections.active ? "authored" : "automatic");
+      if (statistics.authoredReflections.active && !activeProbes)
+        ImGui::TextWrapped("The authored volume set is empty, so local cubemaps are disabled. "
+                           "Clear the host's override to use automatic probes.");
       ui::DragFloat("Reflection trim tolerance (m)", &forward.baking.reflectionDetailTolerance, .01f, 0, 2);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Allows small bevels and interior clutter in fitted reflection boxes. Zero uses strict empty space.\n"
