@@ -18,7 +18,7 @@ precise passed-sample counters are available; they do not alter draw order or th
 
 Ordinary-vertex receiver specialization now removes impossible surface-atlas work without adding
 modules or reordering draws. Two opposite-order Construct replay batches and targeted GPU readbacks
-support keeping it; broad map coverage and the larger adaptive-field regression remain open. The replay
+support keeping it; broad map and live-game acceptance remain open. The replay
 host also rejects renamed runtime DLLs so missing adapter extensions cannot masquerade as a slow bake.
 
 Adaptive probe light volumes now use each record's conservative support instead of assigning coarse
@@ -26,7 +26,7 @@ reach to every fine-only probe. Construct retains all eligible light volumes wit
 allowing the white-room controllable group to publish. CPU stencil-parity and grouped GPU checks pass;
 a controlled cached replay improves over the preceding adaptive checkpoint. Cache policy revision25
 requires a deliberate first-upgrade bake. Release still needs broader map/live-quality checks and a
-fresh comparison against the deployed uniform build; the earlier regression figures are historical.
+live comparison against the deployed uniform build; the earlier regression figures are historical.
 
 That comparison now favors the current build in the fixed Construct hall view. This is evidence for
 that camera, not live-game FPS parity or a release gate for every map. c1a0, Crossfire and c1a0d also
@@ -40,7 +40,12 @@ Lost Coast and Steamlab now pass fixed-view publication/cache-reload checks too.
 needed its game-specific VPK mounted; the Source adapter now supports opt-in read-only game roots.
 This is separate from validating the user's installed live-game case. Optional reflection-stage timers
 separate guide/hierarchy/screen-trace/filter cost from the much heavier hardware-reflection path in
-one measured view. Full-resolution SSR remains the default; live CPU/GPU profiling is the next gate.
+one measured view. Full-resolution SSR remains the default. A repeated live installed-build profile
+of the verified Construct skylit hall now identifies opaque GPU rendering (including its depth prepass)
+as the largest measured cost; CPU recording is smaller and fence waits overlap GPU work. Static
+shadow updates remain zero after baking, and camera turns preserve the active bake. This does not
+reproduce the reported Crossfire slowdown or accept the candidate: compare matching live settings
+and candidate/installed views next. Startup cache-identity differences also need fingerprint diagnostics.
 
 ## Handoff checkpoint (2026-10-20)
 
@@ -50,7 +55,9 @@ checkpoints; an implemented feature is not automatically accepted in live gamepl
 
 The deployed native checkpoint is `e51bff0`; the adapter checkpoint is `712a3aa`. The newer adaptive
 irradiance integration is an **unreleased research checkpoint**. It improves five of six synthetic
-receiver comparisons in Construct but regresses GPU cost against the installed uniform-grid build.
+receiver comparisons in Construct. Its original GPU regression was resolved in the measured replay
+view, where the current candidate is faster than the installed uniform-grid build; live-game and
+broader quality acceptance remain open.
 Do not deploy the branch tip as a default-performance improvement. Keep the installed version intact.
 There is no release-quality switch isolating the new adaptive policy yet; resolving that policy or
 replacing/deferring the candidate is the first release decision. No further speculative experiments
