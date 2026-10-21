@@ -36,6 +36,12 @@ preserves its last verified candidate. Real empty partitions still fail and canc
 The isolated test content needed its shared Source assets mounted for c1a0d water materials; this is
 separate from renderer correctness. The reported locker-room noise and live frame pacing remain open.
 
+Lost Coast and Steamlab now pass fixed-view publication/cache-reload checks too. Steamlab replay
+needed its game-specific VPK mounted; the Source adapter now supports opt-in read-only game roots.
+This is separate from validating the user's installed live-game case. Optional reflection-stage timers
+separate guide/hierarchy/screen-trace/filter cost from the much heavier hardware-reflection path in
+one measured view. Full-resolution SSR remains the default; live CPU/GPU profiling is the next gate.
+
 ## Handoff checkpoint (2026-10-20)
 
 The handoff prepared this branch for another contributor without claiming renderer completion.

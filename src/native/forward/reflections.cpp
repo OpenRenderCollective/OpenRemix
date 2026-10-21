@@ -5,9 +5,12 @@
 #include "forward/resources.h"
 #include "forward/shaders/embedded.h"
 #include "platform/gpu_frames.h"
+#include "platform/gpu_timers.h"
 #include "runtime/pipelines.h"
 #include <algorithm>
 #include <bit>
+#include <cstdlib>
+#include <optional>
 #include <vector>
 
 namespace remix::forward {
@@ -329,6 +332,15 @@ namespace remix::forward {
     if (g.dump)
       g.dump->record(command, slot, "opaque", g.hdr, VK_FORMAT_R16G16B16A16_SFLOAT, g.extent,
                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    // Extra timestamps are opt-in: ordinary profiling keeps its existing cost
+    // and pass budget. Consecutive stages preserve command and barrier order.
+    static const bool profileReflections = std::getenv("REMIX_DEBUG_FORWARD_REFLECTION_TIMINGS") != nullptr;
+    std::optional<gpu::GpuScope> passTime;
+    auto stage = [&](const char *name, VkExtent2D extent) {
+      passTime.reset();
+      if (profileReflections && gpu::timing()) passTime.emplace(command, name, extent);
+    };
+    stage("Forward+ reflection guides", g.extent);
     for (auto *image : {g.normals.get(), g.reflectance.get(), g.raw.get(), g.filtered.get()})
       imageBarrier(command, image->handle, 1, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
@@ -363,6 +375,7 @@ namespace remix::forward {
       g.dump->record(command, slot, "depth", g.depth->handle, VK_FORMAT_R32_SFLOAT, g.extent,
                      VK_IMAGE_LAYOUT_GENERAL);
     }
+    if (options.ssr) stage("Forward+ reflection hierarchy", g.extent);
     for (uint32_t level = 1; options.ssr && level < g.levels; ++level) {
       const VkExtent2D size{std::max(1u, g.extent.width >> level), std::max(1u, g.extent.height >> level)};
       dispatch(g.reduce, frame.reduce[level - 1], size);
@@ -377,14 +390,18 @@ namespace remix::forward {
                        VK_IMAGE_LAYOUT_GENERAL, level);
       }
     }
+    stage("Forward+ reflection screen trace", g.traceExtent);
     dispatch(g.trace, frame.trace, g.traceExtent);
     if (g.dump)
       g.dump->record(command, slot, "ssr", g.raw->handle, VK_FORMAT_R16G16B16A16_SFLOAT, g.traceExtent,
                      VK_IMAGE_LAYOUT_GENERAL);
     readable(*g.raw);
-    if (hardware)
+    if (hardware) {
+      stage("Forward+ reflection hardware trace", g.extent);
       hardware->record(command, {g.normals->view, g.depthViews[0], g.raw->view, g.extent, g.traceExtent},
                        source, options);
+    }
+    stage("Forward+ reflection filter and probes", g.extent);
     dispatch(g.filter, frame.filter, g.extent);
     if (g.dump)
       g.dump->record(command, slot, "filtered", g.filtered->handle, VK_FORMAT_R16G16B16A16_SFLOAT, g.extent,

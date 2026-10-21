@@ -64,6 +64,12 @@ mix display colours. View zero restores normal shading and does not intentionall
 It adds timestamps; use normal-order image controls and check truncated ranges. Diagnostic counters and
 rendered spheres are not live gameplay acceptance.
 
+`REMIX_DEBUG_FORWARD_REFLECTION_TIMINGS=1` adds bounded child ranges for guide resolve, hierarchy,
+screen trace, optional hardware trace and filtering/probes. It preserves dispatch/barrier order and is
+off by default. Disable image dumps when collecting timings and check truncation; an outer inclusive
+reflection range contains these child costs. Full-resolution SSR and optional hardware reflections must
+be reported separately rather than treated as one default Forward+ workload.
+
 `REMIX_DEBUG_FORWARD_FRAGMENT_STATS=<CSV path>` enables private fragment-invocation and precise
 passed-sample queries. The runtime enables the supported Vulkan query features; other diagnostic hosts
 must enable `pipelineStatisticsQuery` and `occlusionQueryPrecise` on their logical device too. Unsupported
@@ -97,7 +103,10 @@ a new same-condition comparison is now faster than the deployed uniform build in
 view. This does not prove live gameplay or broad quality/performance acceptance. c1a0, Crossfire and
 c1a0d publish and reload pixel-identical caches in fixed views; c1a0 required the empty-coarse-seed
 fallback. Static test content must mount its shared Source assets before diagnosing unresolved water
-materials as bake failures. The original c1a0d locker-room noise case remains open. Continue with
+materials as bake failures. For another installed game's original archives, the adapter's optional
+`OPENREMIX_PROXY_CONTENT_MOUNTS` lists absolute game-content roots. This avoids asset copying and
+preserves normal defaults when unset. Lost Coast and Steamlab also publish and reload matching
+fixed-view caches with their required content mounted; their live-engine reports remain open. The original c1a0d locker-room noise case remains open. Continue with
 probe/stencil cost and partially mapped receivers.
 Keep GPU frame, transport and startup timing separate.
 
