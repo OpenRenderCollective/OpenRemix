@@ -94,6 +94,14 @@ phase CPU recording falls from 9.8 to 3.7 ms/frame; total bake time only changes
 52.2 s, so this is not a broad bake-throughput win. Visibility/styled tables match exactly;
 raw probe RGB differs by at most 2.4e-7 and the checked static world crop by at most two
 display code values. Next prioritize denoising throughput and remaining GPU/visibility work.
+A matched two-queue CPU denoising experiment on the 13900K is rejected: with eight threads
+per queue, base filtering rises from about 14 to 19 s and total bake time from 52.2 to
+57.2 s. Four queues remain selected by the existing calibration; no queue override remains
+in production code. Consider reducing provably irrelevant visibility candidates next.
+The existing runtime light locator uses emitter centres/nearby samples; it is not a proof
+that a whole finite emitter and all biased/dilated surface receivers are disconnected.
+Any bake-side visibility-partition pruning needs conservative volume coverage, explicit
+unknown/embedded-light fallback and agreement with replacement geometry before storing black.
 Camera motion also refreshes frozen sunlight cascades and prepares the captured world casters.
 The CPU projection cache now preserves the exact rendered projection for subtexel fit noise.
 Targeted CPU and sunlight/local-shadow GPU checks pass. Opposite-order moving-camera comparisons
