@@ -83,6 +83,17 @@ and ownership result, not a broad FPS claim. Oversized groups still keep complet
 Grouped probe policy version 2 intentionally separates older caches whose directional data may
 have stranded a component; the binary cache layout and public API are unchanged. Ungrouped
 planning retains its original cheapest-volume order. This fix is not deployed yet.
+Optional `REMIX_DEBUG_BAKE_TIMING=1` output now timestamps changed progress messages so
+CPU stages and trace batches can be joined to frame telemetry without affecting bake identity.
+A matched cold Construct pair attributes about 14 s to base lightmap denoising, 9 s to
+per-light visibility and 4 s to styled encoding/denoising in an approximately 52 s bake.
+The main visibility pass now reuses the validated receiver table already used by overflow
+tracing, removing repeated expanded-point vectors and validation. Receiver storage remains
+bounded to 128 MiB with the ordinary path on a declined allocation. In that pair, visibility
+phase CPU recording falls from 9.8 to 3.7 ms/frame; total bake time only changes 52.6 to
+52.2 s, so this is not a broad bake-throughput win. Visibility/styled tables match exactly;
+raw probe RGB differs by at most 2.4e-7 and the checked static world crop by at most two
+display code values. Next prioritize denoising throughput and remaining GPU/visibility work.
 Camera motion also refreshes frozen sunlight cascades and prepares the captured world casters.
 The CPU projection cache now preserves the exact rendered projection for subtexel fit noise.
 Targeted CPU and sunlight/local-shadow GPU checks pass. Opposite-order moving-camera comparisons

@@ -266,7 +266,8 @@ namespace remix::forward::bake {
     transport = std::make_unique<Transport>();
     transport->initialize(physical, device, source, options);
     const char *cpuVisibility = std::getenv("REMIX_DEBUG_BAKE_CPU_VISIBILITY");
-    if (mixedLights->overflow && (!cpuVisibility || std::strcmp(cpuVisibility, "1") != 0))
+    if ((!mixedLights->tasks.empty() || mixedLights->overflow) &&
+        (!cpuVisibility || std::strcmp(cpuVisibility, "1") != 0))
       transport->prepareVisibilityReceivers(surfaceLayout.points);
   }
   Controller::Controller(VkPhysicalDevice physical, VkDevice device, pipeline::Service *pipelines,
@@ -294,6 +295,21 @@ namespace remix::forward::bake {
         m_pipelines->cancel(job->ticket);
   }
   void Controller::status(uint32_t state, const char *message) {
+    static const bool timing = [] {
+      const auto value = std::getenv("REMIX_DEBUG_BAKE_TIMING");
+      return value && std::strcmp(value, "1") == 0;
+    }();
+    if (timing && (m_statistics.state != state ||
+                   std::strncmp(m_statistics.status, message, sizeof(m_statistics.status) - 1) != 0)) {
+      const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::system_clock::now().time_since_epoch()).count();
+      // Join progress with frame/GPU telemetry without changing scheduling or
+      // bake identity. Repeated unchanged status does not generate log traffic.
+      std::fprintf(stderr, "Bake progress: unix_ms=%lld state=%u scene=%llu status=%.*s\n",
+                   static_cast<long long>(now), state,
+                   static_cast<unsigned long long>(m_source ? m_source->sceneId : 0),
+                   int(sizeof(m_statistics.status) - 1), message);
+    }
     m_statistics.state = state;
     std::snprintf(m_statistics.status, sizeof(m_statistics.status), "%s", message);
   }
@@ -630,12 +646,16 @@ namespace remix::forward::bake {
       const uint32_t count =
           job.count(Work::Visibility, config, uint32_t(job.mixedLights->tasks.size() - job.visibilityNext),
                     config.samples);
-      std::vector<VisibilityPoint> points;
-      for (uint32_t i = 0; i < count; ++i) {
-        const auto &task = job.mixedLights->tasks[job.visibilityNext + i];
-        points.push_back({job.surfaceLayout.points[task.point], task.light});
+      const auto batch = std::span(job.mixedLights->tasks).subspan(job.visibilityNext, count);
+      if (job.transport->hasVisibilityReceivers()) {
+        job.transport->recordIndexedVisibility(command, m_slot, batch, config.samples);
+      } else {
+        std::vector<VisibilityPoint> points;
+        points.reserve(count);
+        for (const auto &task : batch)
+          points.push_back({job.surfaceLayout.points[task.point], task.light});
+        job.transport->recordVisibility(command, m_slot, points, config.samples, false);
       }
-      job.transport->recordVisibility(command, m_slot, points, config.samples, false);
       submission.job = m_job;
       submission.visibility = true;
       submission.first = job.visibilityNext;
