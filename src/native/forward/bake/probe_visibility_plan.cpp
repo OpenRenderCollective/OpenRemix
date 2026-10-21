@@ -1,6 +1,7 @@
 #include "forward/bake/probe_visibility_plan.h"
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <stdexcept>
 
 namespace remix::forward::bake {
@@ -9,12 +10,108 @@ namespace remix::forward::bake {
       if (cancelled.stop_requested())
         throw std::runtime_error("Probe visibility planning cancelled");
     }
+    struct Candidate {
+      uint32_t light;
+      size_t first, end;
+      uint64_t count;
+      double radius;
+    };
+    std::vector<size_t> selectVolumes(std::span<const Candidate> candidates,
+                                      std::span<const scene::SphereLight> lights,
+                                      uint32_t maximumPairs, bool completeStyleGroups,
+                                      std::stop_token cancelled) {
+      if (!completeStyleGroups || std::none_of(candidates.begin(), candidates.end(),
+            [&](const Candidate &candidate) { return lights[candidate.light].style != 0; })) {
+        uint64_t pairs = 0;
+        std::vector<size_t> selected;
+        for (size_t i = 0; i < candidates.size(); ++i) {
+          if ((i & 1023u) == 0) check(cancelled);
+          if (candidates[i].count > maximumPairs - pairs) break;
+          pairs += candidates[i].count;
+          selected.push_back(i);
+        }
+        return selected;
+      }
+      struct Group {
+        std::vector<size_t> members;
+        uint64_t pairs = 0;
+        uint32_t firstLight = UINT32_MAX;
+        bool selected = false;
+      };
+      std::vector<Group> groups;
+      std::map<uint32_t, size_t> styles;
+      for (size_t i = 0; i < candidates.size(); ++i) {
+        if ((i & 1023u) == 0) check(cancelled);
+        const auto &candidate = candidates[i];
+        const uint32_t style = completeStyleGroups ? lights[candidate.light].style : 0;
+        size_t group = groups.size();
+        if (style) group = styles.try_emplace(style, group).first->second;
+        if (group == groups.size()) groups.emplace_back();
+        groups[group].members.push_back(i);
+        groups[group].pairs += candidate.count;
+        groups[group].firstLight = std::min(groups[group].firstLight, candidate.light);
+      }
+      // A controllable component can only replace runtime lights when every
+      // member has a complete volume. Rank cost per light, not total group cost:
+      // otherwise a large useful group is always considered last and stranded.
+      std::sort(groups.begin(), groups.end(), [](const Group &a, const Group &b) {
+        const double x = double(a.pairs) / a.members.size(), y = double(b.pairs) / b.members.size();
+        return x != y ? x < y : a.firstLight < b.firstLight;
+      });
+      uint64_t pairs = 0;
+      std::vector<size_t> chosen;
+      for (size_t i = 0; i < groups.size(); ++i) {
+        check(cancelled);
+        auto &group = groups[i];
+        if (group.pairs > maximumPairs) continue;
+        if (group.pairs > maximumPairs - pairs) {
+          // Repair a nearly fitting component by trading the most expensive
+          // selected suffix for it, only if that retires strictly more lights.
+          // Stop after losing its member count: this bounds repair work by the
+          // number of captured lights, rather than solving a large knapsack.
+          uint64_t released = 0;
+          size_t lost = 0, remove = 0;
+          while (remove < chosen.size()) {
+            if ((remove & 1023u) == 0) check(cancelled);
+            const auto &previous = groups[chosen[chosen.size() - 1 - remove]];
+            lost += previous.members.size();
+            if (lost >= group.members.size()) break;
+            released += previous.pairs;
+            ++remove;
+            if (group.pairs <= maximumPairs - pairs + released) break;
+          }
+          if (lost >= group.members.size() || group.pairs > maximumPairs - pairs + released) continue;
+          for (size_t j = 0; j < remove; ++j) {
+            groups[chosen.back()].selected = false;
+            chosen.pop_back();
+          }
+          pairs -= released;
+        }
+        pairs += group.pairs;
+        group.selected = true;
+        chosen.push_back(i);
+      }
+      // An eviction can leave room for an earlier skipped, cheaper unit.
+      for (auto &group : groups) {
+        check(cancelled);
+        if (group.selected || group.pairs > maximumPairs - pairs) continue;
+        group.selected = true;
+        pairs += group.pairs;
+      }
+      std::vector<size_t> selected;
+      for (const auto &group : groups)
+        if (group.selected) selected.insert(selected.end(), group.members.begin(), group.members.end());
+      // Preserve existing captured-cost order for transport and packing.
+      std::sort(selected.begin(), selected.end());
+      return selected;
+    }
   } // namespace
   std::optional<ProbeVisibilityPlan> planProbeVisibility(const Grid &grid,
                                                          std::span<const scene::SphereLight> lights,
                                                          float cutoff, uint32_t maximumPairs,
                                                          std::stop_token cancelled,
-                                                         const DirectPolicy &directLighting) {
+                                                         const DirectPolicy &directLighting,
+                                                         bool completeStyleGroups) {
     check(cancelled);
     const float spacing = grid.header.originSpacing[3], bias = grid.header.settings[0];
     if (grid.points.size() != grid.probes.size() || grid.points.size() > UINT32_MAX ||
@@ -48,12 +145,6 @@ namespace remix::forward::bake {
       return x < y || (x == y && a < b);
     });
     ProbeVisibilityPlan result;
-    struct Candidate {
-      uint32_t light;
-      size_t first, end;
-      uint64_t count;
-      double radius;
-    };
     std::vector<Candidate> candidates;
     // A trilinear corner can be sqrt(3) cells from the receiver. Relocation
     // moves it at most .45 cells per axis; include the receiver's normal bias.
@@ -121,19 +212,16 @@ namespace remix::forward::bake {
     std::sort(candidates.begin(), candidates.end(), [](const Candidate &a, const Candidate &b) {
       return a.count < b.count || (a.count == b.count && a.light < b.light);
     });
+    const auto selected = selectVolumes(candidates, lights, maximumPairs, completeStyleGroups, cancelled);
     uint64_t selectedPairs = 0;
-    for (const auto &candidate : candidates) {
-      if (candidate.count > maximumPairs - selectedPairs)
-        break;
-      selectedPairs += candidate.count;
-      ++result.selectedLights;
-    }
+    for (size_t index : selected) selectedPairs += candidates[index].count;
+    result.selectedLights = uint32_t(selected.size());
     result.deferredLights = result.eligibleLights - result.selectedLights;
     if (result.eligibleLights && !result.selectedLights)
       return {};
     result.tasks.reserve(size_t(selectedPairs));
-    for (uint32_t selected = 0; selected < result.selectedLights; ++selected) {
-      const auto &candidate = candidates[selected];
+    for (size_t index : selected) {
+      const auto &candidate = candidates[index];
       const auto &light = lights[candidate.light];
       for (size_t i = candidate.first; i < candidate.end; ++i) {
         if ((result.candidates++ & 1023u) == 0)

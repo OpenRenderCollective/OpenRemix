@@ -475,6 +475,64 @@ int main() {
   }
   {
     Grid grid;
+    grid.header.originSpacing[3] = .1f;
+    grid.points.resize(4);
+    grid.probes.resize(4);
+    for (uint32_t i = 0; i < 4; ++i) {
+      grid.points[i].position = {float(i) * 100, 0, 0, 0};
+      grid.probes[i].statistics[3] = 1;
+    }
+    std::array<remix::scene::SphereLight, 5> lights{};
+    lights[0].radius = 1;
+    lights[0].radiance[0] = 1000000; // Four probes, while its two group partners cost one each.
+    for (uint32_t i = 0; i < 3; ++i) lights[i].style = 32;
+    for (uint32_t i = 1; i < 3; ++i) {
+      lights[i].position[0] = i == 1 ? 0.f : 300.f;
+      lights[i].radius = .1f;
+      lights[i].radiance[0] = .001f;
+    }
+    for (uint32_t i = 3; i < 5; ++i) {
+      lights[i].position[0] = 150;
+      lights[i].radius = 1;
+      lights[i].radiance[0] = 2; // Two probes per independent volume.
+    }
+    lights[3].position[0] = 100;
+    lights[3].radius = .1f;
+    lights[3].radiance[0] = .001f; // This cheap volume fits first but strands the three-light component.
+    const auto legacy = planProbeVisibility(grid, lights, .001f, 6);
+    const auto grouped = planProbeVisibility(grid, lights, .001f, 6, {}, {}, true);
+    require(legacy && grouped && legacy->selectedLights == 4 && grouped->selectedLights == 3 &&
+                grouped->tasks.size() == 6 && grouped->eligibleLights == 5 && grouped->deferredLights == 2 &&
+                std::all_of(grouped->tasks.begin(), grouped->tasks.end(), [](const auto &task) { return task.light < 3; }),
+            "Repacking one cheaper volume completes a three-light component without raising the pair budget");
+    lights[3].style = lights[4].style = 33;
+    const auto bounded = planProbeVisibility(grid, lights, .001f, 5, {}, {}, true);
+    require(bounded && bounded->tasks.size() == 3 && bounded->selectedLights == 2 &&
+                std::all_of(bounded->tasks.begin(), bounded->tasks.end(), [](const auto &task) { return task.light >= 3; }),
+            "An oversized component stays entirely unknown while a later fitting component still bakes");
+    const auto full = planProbeVisibility(grid, lights, .001f, 100);
+    const auto complete = planProbeVisibility(grid, lights, .001f, 100, {}, {}, true);
+    require(full && complete && full->tasks.size() == complete->tasks.size() &&
+                std::equal(full->tasks.begin(), full->tasks.end(), complete->tasks.begin(),
+                           [](const auto &a, const auto &b) { return a.point == b.point && a.light == b.light; }),
+            "When all volumes fit, group selection preserves exact transport order and coverage");
+    for (uint32_t budget = 0; budget <= 10; ++budget) {
+      const auto plan = planProbeVisibility(grid, lights, .001f, budget, {}, {}, true);
+      if (!plan) continue;
+      require(plan->tasks.size() <= budget, "Group repacking never exceeds its fixed pair budget");
+      std::array<bool, 5> selected{};
+      for (const auto &task : plan->tasks) selected[task.light] = true;
+      require(selected[0] == selected[1] && selected[1] == selected[2] && selected[3] == selected[4],
+              "Every controllable component remains entirely selected or entirely unknown at budget boundaries");
+      for (uint32_t light = 0; light < lights.size(); ++light)
+        if (selected[light])
+          require(std::count_if(plan->tasks.begin(), plan->tasks.end(), [&](const auto &task) { return task.light == light; }) ==
+                      std::count_if(full->tasks.begin(), full->tasks.end(), [&](const auto &task) { return task.light == light; }),
+                  "Selected components retain complete light volumes after eviction and refill");
+    }
+  }
+  {
+    Grid grid;
     grid.header.originSpacing[3] = 1;
     grid.points.resize(1);
     grid.probes.resize(1);

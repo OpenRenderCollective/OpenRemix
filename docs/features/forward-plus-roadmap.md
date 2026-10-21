@@ -70,6 +70,19 @@ the 8x8 field. Filtering visibility per octahedral tap instead of filtering mome
 leakage for worse dark-face error; do not adopt it globally. High-sample neighbour substitutions
 help the crate side but not all faces. Next investigate near-surface spatial placement and
 reconstruction against the independent hemisphere references, retaining the fixed memory budget.
+A bounded physical support-halo experiment fits 48 rather than 33 cells at 2 m spacing within
+the same 32768-record budget, including the test hall. Four sampled face errors improve, but
+the crate front becomes substantially darker; the change is excluded from production source.
+It also exposes budget coupling: deferring one member of a controllable group can leave all
+30 members analytic. Probe-volume planning now selects complete controllable groups together,
+ranking pair cost per member and repairing a nearly fitting group by evicting a selected suffix
+only when it retires strictly more lights. A final fill pass reuses remaining capacity.
+The same constrained Construct experiment then drops from 30 analytic lights to zero while
+retaining 135/136 complete volumes within the existing 64 MiB allowance. This is a coverage
+and ownership result, not a broad FPS claim. Oversized groups still keep complete runtime fallback.
+Grouped probe policy version 2 intentionally separates older caches whose directional data may
+have stranded a component; the binary cache layout and public API are unchanged. Ungrouped
+planning retains its original cheapest-volume order. This fix is not deployed yet.
 Camera motion also refreshes frozen sunlight cascades and prepares the captured world casters.
 The CPU projection cache now preserves the exact rendered projection for subtexel fit noise.
 Targeted CPU and sunlight/local-shadow GPU checks pass. Opposite-order moving-camera comparisons

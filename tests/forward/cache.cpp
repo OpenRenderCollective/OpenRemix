@@ -73,9 +73,9 @@ int main(int argc, char **argv) {
             "An analytic-only cache needs a distinct capability for directional probe capture");
     f::bake::DirectPolicy aggregate;
     aggregate.lights.assign(source->lights.size(), f::bake::DirectMode::BakedMixed);
-    require(bc::key(source->contentHash, grouped, .001f, device, aggregate) ==
+    require(bc::key(source->contentHash, grouped, .001f, device, aggregate) !=
                 bc::key(source->contentHash, config, .001f, device, aggregate),
-            "Grouped publication reuses aggregate caches that already retain directional probes");
+            "Grouped publication owns coherent volume selection even with aggregate directional probes");
   }
   qualityKey([](auto &c) { c.directDiffuse = !c.directDiffuse; });
   qualityKey([](auto &c) { c.aggregateDiffuse = !c.aggregateDiffuse; });

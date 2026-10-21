@@ -385,11 +385,10 @@ namespace remix::forward::bake::cache {
       raw = scene::fastHash(aggregateShader, sizeof(aggregateShader), raw);
       raw = scene::fastHash(aggregateParallelShader, sizeof(aggregateParallelShader), raw);
     }
-    // Grouped direct is derived from existing captures. Only the all-analytic
-    // policy needs new probe coefficients; aggregate policies already retain them.
-    if (c.groupedStyledDirect && !std::any_of(policy.lights.begin(), policy.lights.end(),
-          [](DirectMode mode) { return aggregatesDiffuse(mode) && retainsVisibility(mode); })) {
-      const uint32_t groupedProbeVersion[] = {0x47525044u, 1};
+    // Grouped planning also chooses complete controllable volumes atomically.
+    // Older aggregate caches may strand a group behind one deferred member.
+    if (c.groupedStyledDirect) {
+      const uint32_t groupedProbeVersion[] = {0x47525044u, 2};
       raw = scene::fastHash(groupedProbeVersion, sizeof(groupedProbeVersion), raw);
     }
     if (c.styledIndirect) {

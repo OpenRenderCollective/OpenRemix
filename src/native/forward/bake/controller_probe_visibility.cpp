@@ -16,7 +16,8 @@ namespace remix::forward::bake {
     const auto storage = probeVisibilityBudget(uint32_t(grid.probes.size()), uint32_t(source->lights.size()),
                                                storageRange - lookupBytes(grid), directional);
     if (!storage.pairs) return;
-    auto plan = planProbeVisibility(grid, source->lights, cutoff, storage.pairs, cancellation.get_token(), policy);
+    auto plan = planProbeVisibility(grid, source->lights, cutoff, storage.pairs, cancellation.get_token(), policy,
+                                    groupedDirect);
     if (plan && !plan->tasks.empty()) {
       localProbeTasks = std::move(plan->tasks);
       localProbes.emplace(uint32_t(grid.probes.size()), uint32_t(source->lights.size()),
