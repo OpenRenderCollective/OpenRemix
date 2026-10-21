@@ -33,8 +33,10 @@ Keep static visibility, unknown coverage, toggleable groups and offscreen moving
   referencing/trace support, while shared coarse corners retain coarse reach.
 - Existing cache/controller/publication modules retain lifetime, cancellation, fencing and validated import.
 
-The current probe-planning cache policy revision is 25; the handoff prototype used 24 and the deployed
-uniform build uses 23. Upgrading deliberately rebakes once; camera movement and runtime toggle values
+The current probe-planning cache policy revision is 26; the handoff prototype used 24 and the deployed
+uniform build uses 23. Grouped probe policy version 2 also separates caches with incomplete controllable
+groups. Directional probe depth remains opt-in and is not deployed. Upgrading deliberately rebakes once;
+camera movement and runtime toggle values
 do not change authored lighting identity. GPU publication packs the mode and
 directory length into raw bits of header settings.z; CPU/cache metadata retains numeric modes. Do not
 use old private binary parsers without adapting that distinction. Public Remix ABI layouts are unchanged.
@@ -104,6 +106,15 @@ appends another header and restarts frame numbering. The last pending slots are 
 at teardown. Fragment invocations and passed MSAA samples have different units; helper invocations,
 discard and sample coverage prevent treating their ratio as exact pixel overdraw. Query-enabled timing
 is instrumented timing, not a performance baseline.
+
+The renderer already has an opaque depth prepass and tiled, depth-sliced light lists. Profile their
+actual contribution before proposing another tiled-light path. The opaque-world timestamp includes
+the depth prepass: subtract its child range when estimating colour shading alone. Compare completed
+bakes with matched captured inputs, effective settings and camera views; broad FPS reports may also
+include bake work, weapons, different resolutions or missing assets. An isolated highlight-budget
+change must preserve bake hashes and distinguish specular selection from mixed-shadow selection.
+GPU pass costs can shift between those ranges; inspect whole-frame time as well as child timestamps.
+Keep the reported slow Crossfire gameplay case open until it is reproduced under its actual conditions.
 
 Ordinary-vertex draws specialize `UnmappedReceiver`: their vertex shader always emits invalid surface
 chart coordinates, so those pipelines can discard atlas reconstruction code. Fully mapped and partial

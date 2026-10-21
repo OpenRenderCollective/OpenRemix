@@ -11,6 +11,16 @@ reports. An implementation or synthetic test alone does not close an integration
 
 ## Continuation status (2026-10-22)
 
+Runtime performance investigation must distinguish completed-bake gameplay from bake transport and
+startup. The renderer already provides an opaque depth prepass and tiled, depth-sliced light lists.
+Next isolate the dominant opaque receiver work with bounded fragment/receiver diagnostics, preserving
+ordinary draw order and checking omitted ranges. Investigate the observed increase in local-shadow
+GPU time when the independent baked-highlight budget is reduced: compare selected emitter identities,
+caster submissions and timestamp boundaries before attributing the difference to extra shadow work.
+Changing that budget must not rebake or change published lighting buffers. Keep the slow Crossfire
+gameplay report open until its actual settings/location/weapon workload is reproduced; two fixed
+unarmed views do not establish broad performance acceptance. Retain highlight and shadow defaults.
+
 Latest live moving-prop checks in Construct confirm valid probe coverage on the barrel and neutral
 crate while their appearance remains too dark. Coverage alone does not close probe quality; compare
 lighting components, receiver normals and reference density before changing brightness globally.
