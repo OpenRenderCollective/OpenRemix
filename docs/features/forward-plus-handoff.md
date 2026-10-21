@@ -57,6 +57,18 @@ mix display colours. View zero restores normal shading and does not intentionall
 It adds timestamps; use normal-order image controls and check truncated ranges. Diagnostic counters and
 rendered spheres are not live gameplay acceptance.
 
+`REMIX_DEBUG_FORWARD_FRAGMENT_STATS=<CSV path>` enables private fragment-invocation and precise
+passed-sample queries. The runtime enables the supported Vulkan query features; other diagnostic hosts
+must enable `pipelineStatisticsQuery` and `occlusionQueryPrecise` on their logical device too. Unsupported
+devices skip capture. Queries preserve consecutive draw order, use 256 ranges per submission slot and
+read completed slots without waiting. Check `available` and `omitted_ranges` before interpreting rows.
+Categories: 0 probe/unmapped, 1 fully mapped, 2 partially mapped, 3 depth prepass, 4 terrain, 5 live GI.
+The CSV includes extent, MSAA count and bake hash; zero hash is not a completed bake. Target recreation
+appends another header and restarts frame numbering. The last pending slots are deliberately not read
+at teardown. Fragment invocations and passed MSAA samples have different units; helper invocations,
+discard and sample coverage prevent treating their ratio as exact pixel overdraw. Query-enabled timing
+is instrumented timing, not a performance baseline.
+
 The adaptive candidate improves five of six rendered receiver comparisons, with one worse. Controlled
 replay previously measured roughly 40% higher GPU time versus the installed uniform renderer. A packed
 directory-offset optimization reduced cost within the candidate by about 6.5%; this does not erase the

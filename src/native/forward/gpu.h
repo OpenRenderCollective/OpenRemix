@@ -1,6 +1,7 @@
 #pragma once
 #include "forward/bake/controller.h"
 #include "forward/bindings.h"
+#include "forward/fragment_statistics.h"
 #include "forward/highlight_selection.h"
 #include "forward/reflections.h"
 #include "forward/probes/authoring.h"
@@ -22,6 +23,7 @@ namespace remix::forward {
     VkExtent2D extent{};
     VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
     Options options;
+    std::unique_ptr<FragmentStatistics> fragmentStatistics;
     Statistics statistics;
     bool encodeOutput = false;
     bool hardwareSrgb = false;

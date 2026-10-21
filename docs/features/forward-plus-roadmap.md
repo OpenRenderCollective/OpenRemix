@@ -9,9 +9,16 @@ remain compatible with the same authored optical materials.
 This roadmap tracks delivery requirements. Detailed measurements and run evidence belong in local
 reports. An implementation or synthetic test alone does not close an integration or visual-quality gate.
 
-## Handoff status (2026-10-20)
+## Continuation status (2026-10-21)
 
-The current task is to make this branch ready for another contributor, not to claim renderer completion.
+Work resumed after the handoff. Neither official feature branch had new contributor commits, and both
+already contained their official main branches. The immediate investigation is measured fragment work
+and depth-prepass effectiveness before another shader optimization. Optional bounded fragment and
+precise passed-sample counters are available; they do not alter draw order or the public API.
+
+## Handoff checkpoint (2026-10-20)
+
+The handoff prepared this branch for another contributor without claiming renderer completion.
 Read [the continuation guide](forward-plus-handoff.md) first. The feature list below includes historical
 checkpoints; an implemented feature is not automatically accepted in live gameplay.
 

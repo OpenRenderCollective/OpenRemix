@@ -70,7 +70,8 @@ namespace remix::forward {
     // Time consecutive receiver runs without changing coplanar/decal ordering.
     // Terrain blending and depth passes keep their ordinary timing scopes.
     static const bool profileReceivers = std::getenv("REMIX_DEBUG_FORWARD_RECEIVER_TIMINGS") != nullptr;
-    if (profileReceivers && gpu::timing() && !terrain && !depthOnly && !gi) {
+    const bool receiverTimings = profileReceivers && gpu::timing();
+    if ((receiverTimings || fragmentStatistics->enabled()) && !terrain && !depthOnly && !gi) {
       const char *names[] = {"Forward+ probe-lit receivers", "Forward+ lightmapped receivers",
                              "Forward+ partially mapped receivers"};
       std::optional<gpu::GpuScope> receiverTime;
@@ -80,13 +81,18 @@ namespace remix::forward {
         const uint32_t receiver = !draw.lightmap ? 0 : draw.lightmap->fullyMapped ? 1 : 2;
         if (receiver != kind) {
           receiverTime.reset();
-          receiverTime.emplace(command, names[receiver], extent);
+          fragmentStatistics->end(command);
+          fragmentStatistics->begin(command, receiver);
+          if (receiverTimings) receiverTime.emplace(command, names[receiver], extent);
           kind = receiver;
         }
         drawCommand(draw);
       }
+      fragmentStatistics->end(command);
     } else {
+      fragmentStatistics->begin(command, depthOnly ? 3 : terrain ? 4 : 5);
       for (const auto &draw : terrain ? frame.terrainCommands : frame.commands) drawCommand(draw);
+      fragmentStatistics->end(command);
     }
   }
   void Renderer::Gpu::drawSunCasters(VkCommandBuffer command, uint32_t cascade, bool staticCasters) {
@@ -176,6 +182,7 @@ namespace remix::forward {
       drawLocalCasters(command, lightSlot, face, staticCasters);
     });
     localTime.close();
+    fragmentStatistics->reset(command, extent, samples, baking->volume() ? baking->volume()->hash : 0);
     gpu::GpuScope worldTime(command, "Forward+ opaque world shading", extent);
     const VkClearValue clear[] = {{.color = {{0, 0, 0, 0}}},
                                   {.depthStencil = {1, 0}},

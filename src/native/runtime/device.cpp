@@ -309,6 +309,10 @@ namespace remix {
       features.features.samplerAnisotropy = available.samplerAnisotropy;
       // Line polygon mode for wireframe instances (remixapi_InstanceInfoWireframeEXT).
       features.features.fillModeNonSolid = available.fillModeNonSolid;
+      // Query capability alone changes no rendering. Private Forward diagnostics
+      // allocate query pools only when explicitly requested.
+      features.features.pipelineStatisticsQuery = available.pipelineStatisticsQuery;
+      features.features.occlusionQueryPrecise = available.occlusionQueryPrecise;
     }
     // Physical-device queries need only support, not device enablement.
     m_memoryBudget = m_instanceApiVersion >= VK_API_VERSION_1_1 &&

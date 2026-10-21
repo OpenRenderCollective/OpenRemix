@@ -70,6 +70,7 @@ namespace remix::forward {
     next->physical = physical;
     next->device = device;
     next->extent = extent;
+    next->fragmentStatistics = std::make_unique<FragmentStatistics>(physical, device);
     next->options = options;
     next->encodeOutput = encodeOutput;
     next->hardwareSrgb = hardwareSrgb;
@@ -130,6 +131,7 @@ namespace remix::forward {
   void Renderer::selectFrame(uint32_t slot) {
     auto &g = *m_gpu;
     g.slot = slot;
+    g.fragmentStatistics->selectFrame(slot);
     g.postProcessing->selectFrame(slot);
     g.baking->selectFrame(slot);
     g.authoredReflections->selectFrame(slot);
