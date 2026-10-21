@@ -172,6 +172,9 @@ namespace remix::forward::bake {
     hasDielectrics = std::any_of(inputs.materials.begin(), inputs.materials.end(), [](const auto &material) {
       return (material.flags[3] & dielectricBoundaryFlag) != 0;
     });
+    hasContainingMedia = std::any_of(inputs.materials.begin(), inputs.materials.end(), [](const auto &material) {
+      return (material.flags[3] & (dielectricBoundaryFlag | thinDielectricFlag)) == dielectricBoundaryFlag;
+    });
     hasModulatingDecals = std::any_of(inputs.materials.begin(), inputs.materials.end(), [](const auto &material) {
       return (material.flags[3] & modulatingDecalFlag) != 0;
     });
@@ -414,6 +417,7 @@ namespace remix::forward::bake {
     if (!slot.lighting)
       frame.counts[1] = uint32_t(g.source->lights.size());
     frame.control = {g.domeLayer, 0, 1, uint32_t(g.hasDielectrics) |
+                         (g.hasContainingMedia ? containingMediaFlag : 0u) |
                          (g.options.lightImportanceSampling && !slot.lighting ? 2u : 0u)};
     fragment.constants->write(&frame, sizeof(frame));
     const auto acceleration = g.rays.handle();
@@ -496,6 +500,7 @@ namespace remix::forward::bake {
     const bool aggregate = mode == Mode::Irradiance && g.aggregateDiffuse && !slot.lighting;
     frame.control = {g.domeLayer, firstSample, uint32_t(mode),
                      uint32_t(g.hasDielectrics) |
+                         (g.hasContainingMedia ? containingMediaFlag : 0u) |
                          (g.options.lightImportanceSampling && !slot.lighting ? 2u : 0u) |
                          (aggregate ? 4u : 0u) |
                          (receiverSites == 4    ? 16u

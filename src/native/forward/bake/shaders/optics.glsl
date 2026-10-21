@@ -21,7 +21,9 @@ vec3 attenuation(Medium medium, float distance) { return beerLambert(medium.exti
 // Disjoint bodies are supported; overlapping/nested media need a volume stack.
 Medium initialMedium(vec3 position, inout uint seed) {
   Medium result = airMedium();
-  if ((rayFrame.control.w & 1u) == 0u)
+  // Thin sheets affect visibility but cannot contain a receiver. Skip all six
+  // containment directions when the scene has no volumetric boundaries.
+  if ((rayFrame.control.w & 64u) == 0u)
     return result;
   float nearest = rayFrame.trace.x;
   for (uint axis = 0; axis < 6u; ++axis) {

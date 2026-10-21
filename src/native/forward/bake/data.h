@@ -72,7 +72,7 @@ namespace remix::forward::bake {
     std::array<float, 2> padding{};
   };
   static_assert(sizeof(VisibilityResult) == 48);
-  constexpr uint32_t lightingComponentFlag = 8, lightingComponentShift = 8;
+  constexpr uint32_t lightingComponentFlag = 8, containingMediaFlag = 64, lightingComponentShift = 8;
   struct Frame {
     Matrix dome;
     Vec4 sunDirection{}, sunRadiance{}, domeRadiance{}, trace{};

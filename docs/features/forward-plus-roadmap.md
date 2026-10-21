@@ -269,6 +269,12 @@ physical IOR. Define a stable optical tint policy explicitly: the tint sampler c
 bump UVs. Do not freeze an arbitrary animation frame, skip the dependency or mark a placeholder ready.
 Check complete first-load sky capture and radiance separately once this gate opens.
 
+Transport distinguishes dielectric visibility from containing-volume classification. Scenes with
+only finite sheets skip the six receiver-containment directions; scenes with bodies retain them,
+including traversal past sheets to find a body's exit. The same transport descriptors serve the
+optional live GI and hardware reflection paths. This removes redundant classification work without
+disabling sheet transmission or changing the public material layout.
+
 The combined addon supplies `hls00amrl`, `hls05amrl` and later chapter BSPs for concrete follow-up
 selection. The exact `gm_fork` must still be located or made available; `rp_fork_stasiland` is a distinct
 map and does not fulfill that matrix entry.
