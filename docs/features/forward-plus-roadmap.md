@@ -40,6 +40,12 @@ rendering counts and near-identical world images. Disabling sync trades host del
 GPU/fence time and helps only one tested direction; keep the default unchanged. Lua attempts to toggle
 this setting did not apply and are rejected as comparisons. Next isolate D3D event-query polling from
 occlusion and readbacks, preserving actual completion rather than removing synchronization wholesale.
+The adapter now offers opt-in per-vtable query instrumentation, separating event and occlusion
+issued/pending/failed/flush counts and driver-call time. Live checks locate frequent pending event
+polls in the slower host view; driver-call time itself remains small. Profiling-on/off world images
+and rendering counts match. Keep instrumentation timings separate from performance acceptance.
+Next test a bounded event-query retry that retains real completion/errors and flush progress;
+measure CPU cost and cross-API overlap before considering any default wait-policy change.
 One live Construct check exited in the original shader API's filesystem worker after bake publication,
 with an invalid virtual-call target at `shaderapidx9_orig.dll+0xba1f`. An identical rerun completed.
 This is unresolved, not an accepted intermittent failure or proof that the native change caused it;

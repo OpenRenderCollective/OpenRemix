@@ -129,6 +129,12 @@ reject the unsuccessful Lua toggle trials. The sampled original shader-backend s
 one-millisecond sleep in a query polling loop. Next measure event-query polling separately from
 occlusion; preserve real query completion and readback lifetimes. Sampling overhead is excluded
 from ordinary timing windows.
+Adapter `OPENREMIX_PROXY_QUERY_PROFILE=1` adds per-kind interval counters to its slots report.
+Query methods dispatch through the existing per-vtable resource registry, including event tables
+in diagnostic mode. `GetData` timing excludes caller sleeps and query lifetime; rolling intervals
+can straddle camera changes. Instrumentation adds overhead and is not an ordinary timing baseline.
+Profiled calls keep original arguments/results. Before testing a bounded retry, preserve FLUSH
+progress and device-loss returns; never fabricate completion or retry occlusion indiscriminately.
 Clusters now retain separate runtime-prefix and complete-fallback counts in one ordered list. Overflow
 is checked for the receiver's chosen count; unknown coverage keeps complete analytic fallback. GPU
 membership tests include empty prefixes, independent tail overflow, late indices and either depth sign.
