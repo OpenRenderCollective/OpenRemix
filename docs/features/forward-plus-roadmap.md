@@ -239,6 +239,29 @@ unculled frame hashes at 1x/4x MSAA; two live renderer orders favor the mask in 
 is not broad map/weapon performance or visual acceptance; continue the remaining quality matrix.
 
 
+## Map acceptance matrix
+
+Keep a varied map set rather than accepting performance or lighting from Construct and Crossfire
+alone. The additions below are planned coverage, not completed test results. Verify the actual loaded
+BSP, content mounts and required addon assets before accepting a run; a missing map or fallback load
+does not count.
+
+| Map or map family | Coverage to exercise |
+| --- | --- |
+| `gm_construct` | Skylit main hall, white-room controllable lights, terrain, prop probe lighting, cubemap transitions and mixed shadows. |
+| `crossfire` | Light-heavy opposing views, armed/moving gameplay, host synchronization and opaque/viewmodel cost. |
+| `c1a0`, `c1a0d` | Interior lighting, intersecting emitters, locker-room noise, weapon changes and bake stability. |
+| `d2_lostcoast`, `dm_steamlab` | Previously reported bake failures, light leaks, transport quality and cache restoration. |
+| `gm_fork` | Added large-map stress case: chart/probe/cubemap budgets, bake time and memory, distant visibility, offscreen shadow casters and movement between areas. |
+| `d1_trainstation_02` | Added campaign-map case: fixed and moving views, indoor/outdoor lighting transitions, props, reflections and bake/cache behavior. |
+| Large combined Half-Life addon maps | Added long connected-layout stress case: room/portal transitions, probe and cubemap boundaries, cumulative bake work, memory and traversal stutter. Inventory installed BSP names first; include the `hls00amrl` authored-reference comparison where available, then select additional combined maps. |
+
+For each selected map, retain cold-bake and warm-cache checks, fixed-camera timing windows and an
+armed traversal. Record effective quality/settings, focus, GPU clocks, scene identity and content
+mounts with local results. Separate bake latency, completed-bake frame time, host waits and GPU pass
+costs; include visual checks of lightmaps, dynamic probes, reflections and shadow continuity. Keep
+large-map memory and bake budgets bounded rather than reducing quality silently to complete a run.
+
 ## Handoff checkpoint (2026-10-20)
 
 The handoff prepared this branch for another contributor without claiming renderer completion.
