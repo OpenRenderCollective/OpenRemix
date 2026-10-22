@@ -223,7 +223,9 @@ namespace remix::forward {
           return draw.source.rasterVisible && intersectsClip(draw.worldBounds, frame.data.camera);
         })) return;
     gpu::GpuScope time(command, "Forward+ measured water", extent);
-    const auto specular = reflections ? reflections->output() : VkDescriptorImageInfo{};
+    // This pass also overlays opaque reflections, even when water is occluded.
+    // Keep diagnostic exclusions consistent with the final compositor.
+    const auto specular = reflections && options.debugView == 0 ? reflections->output() : VkDescriptorImageInfo{};
     waterPass->record(command, slot,
         {resolved ? resolved->view : color->view, depth->view, specular},
         [&](VkPipeline pipeline, VkPipelineLayout waterLayout) {

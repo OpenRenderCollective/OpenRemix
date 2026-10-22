@@ -4223,6 +4223,23 @@ namespace {
           for (size_t at = 0; at < reflected.size(); ++at)
             require(std::abs(int(composed[at]) - int(reflected[at])) <= 2,
                     "Late water composition preserves opaque SSR energy and coverage exactly once");
+          if (samples == 4 && scale == 1) {
+            for (const uint32_t view : {1u, 5u, 6u}) {
+              options.debugView = view;
+              target.enableForward(options);
+              composeWater = false;
+              const auto diagnostic = drawScene();
+              composeWater = true;
+              const auto withWater = drawScene();
+              require(target.forward->statistics().draws == 3,
+                      "Diagnostic regression exercises occluded water composition");
+              for (size_t at = 0; at < diagnostic.size(); ++at)
+                require(std::abs(int(withWater[at]) - int(diagnostic[at])) <= 2,
+                        "Occluded water added reflections to an opaque lighting diagnostic");
+            }
+            options.debugView = 0;
+            target.enableForward(options);
+          }
           composeWater = false;
           const auto waterReflection = drawScene(false, true, false, false, 0, waterFloor);
           options.ssrSteps = 0;

@@ -15,7 +15,8 @@ namespace remix::forward {
     const auto &hdr = resolved ? resolved : color;
     // Late water has already incorporated screen reflections into HDR. Other
     // frames add the same separate reflection image used by the compositor.
-    const auto reflected = reflections && !frame.waterComposed ? reflections->output() : VkDescriptorImageInfo{};
+    const auto reflected = reflections && !frame.waterComposed && options.debugView == 0
+        ? reflections->output() : VkDescriptorImageInfo{};
     auto epoch = resources.temporalEpoch();
     if (const auto &source = resources.bakeScene(); source && source->ready)
       epoch.world = scene::fastHash(&source->sceneId, sizeof(source->sceneId), epoch.world);

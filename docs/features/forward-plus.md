@@ -613,8 +613,9 @@ evaluated with the mesh normals instead of normal maps.
 Baked irradiance includes direct contributions already aggregated into the lightmap or
 probe table; analytic diffuse shows the remaining per-light response. Albedo includes
 material texture and vertex tint but excludes lighting and normal-map response.
-Diagnostic views exclude emission and
-reflection composition; water, compatibility effects and UI retain their ordinary paths. Switching
+Diagnostic views exclude emission and opaque reflection composition, including the late water
+pass's opaque reflection overlay and exposure input. Water surfaces, compatibility effects and UI
+retain their ordinary paths. Switching
 views prepares a specialized shader while retaining the active bake; normal shading compiles out
 diagnostic branches. Exposure/display mapping still applies. These views locate an artifact's lighting
 component; they do not diagnose its sampling cause on their own.
