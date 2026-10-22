@@ -511,6 +511,13 @@ int main() {
               config::set(settings, "rtx.native.forward.reflectionResolution", "64") ==
                   config::SetResult::Success,
           "Reflection capture settings participate in profile persistence");
+  require(config::set(settings, "rtx.native.forward.reflectionResolution", "256") == config::SetResult::Success &&
+              settings.forward.baking.reflectionResolution == 256 &&
+              config::set(settings, "rtx.native.forward.reflectionResolution", "512") == config::SetResult::Success &&
+              settings.forward.baking.reflectionResolution == 512 &&
+              config::set(settings, "rtx.native.forward.reflectionResolution", "1024") == config::SetResult::Invalid &&
+              config::set(settings, "rtx.native.forward.reflectionResolution", "64") == config::SetResult::Success,
+          "HDR reflection image settings expose 256/512 while retaining a bounded supported range");
   require(config::set(settings, "rtx.native.forward.reflectionDetailTolerance", "-0.1") ==
                   config::SetResult::Invalid &&
               config::set(settings, "rtx.native.forward.reflectionDetailTolerance", "nan") ==

@@ -4,6 +4,10 @@
 #include <memory>
 
 namespace remix::forward::probes {
+  struct Descriptors {
+    VkDescriptorBufferInfo metadata{};
+    VkDescriptorImageInfo radiance{};
+  };
   // A complete immutable reflection image and its independent projection table.
   // Creation may run on a preparation worker. Upload/publication uses the one
   // render queue; the caller retains this owner through every sampling fence.
@@ -19,6 +23,7 @@ namespace remix::forward::probes {
     void releaseUpload();
     VkDescriptorBufferInfo metadata() const { return m_metadata->descriptor(); }
     VkDescriptorImageInfo radiance() const;
+    Descriptors descriptors() const { return {metadata(), radiance()}; }
     const Image &image() const { return *m_image; }
     uint64_t bufferBytes() const;
     uint64_t imageBytes() const { return m_image->bytes; }

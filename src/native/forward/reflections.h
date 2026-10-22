@@ -1,6 +1,7 @@
 #pragma once
 #include "forward/bindings.h"
 #include "forward/options.h"
+#include "forward/probes/image_asset.h"
 #include <memory>
 #include <vulkan/vulkan.h>
 
@@ -33,7 +34,7 @@ namespace remix::forward {
     // Caller has waited for this frame slot's fence. Targets are shared on the
     // renderer's one queue; all cross-pass and cross-frame barriers live here.
     void record(VkCommandBuffer command, uint32_t slot, const FrameData &frame, const Options &options,
-                VkDescriptorBufferInfo probes, const Environment &environment,
+                probes::Descriptors probes, const Environment &environment,
                 ray::Reflections *hardware = nullptr);
     void selectFrame(uint32_t slot); // prior slot fence completed
     VkDescriptorImageInfo output() const;

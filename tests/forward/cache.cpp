@@ -153,6 +153,30 @@ int main(int argc, char **argv) {
               restored->surfaceSamples == 25 && restored->directDiffuse,
           "Atlas, reflection data and direct-light policy survive the cache round trip");
   {
+    auto imageConfig = config;
+    imageConfig.reflectionResolution = 128;
+    auto imageDevice = device;
+    imageDevice.storageRange = 1u << 20;
+    auto largeCapture = capture;
+    largeCapture.resolution = 128;
+    largeCapture.radiance.assign(6*128*128, {1, 2, 3, 10});
+    const std::vector<f::probes::Capture> captures{largeCapture};
+    const auto specular = f::probes::filter(captures, 8);
+    require(f::probes::serialize(specular).size() > imageDevice.storageRange,
+            "Image-cache fixture exceeds the old combined-buffer range");
+    const auto imageKey = bc::key(source->contentHash, imageConfig, .001f, imageDevice);
+    const auto imageFile = root / "image-reflection.bake";
+    require(bc::write(imageFile, imageKey,
+        {data.grid,data.layout,data.mixed,captures,specular,data.pixels,
+         data.surfaceSamples,data.directDiffuse,data.sun}), "Image-backed reflection cache can be saved");
+    const auto imported = bc::read(imageFile, imageKey, source, imageConfig, imageDevice);
+    require(imported && f::probes::serialize(imported->specular) == f::probes::serialize(specular),
+            "Reflection cache validates image dimensions separately from compact metadata range");
+    imageDevice.imageSize = 767;
+    require(!bc::read(imageFile, imageKey, source, imageConfig, imageDevice),
+            "Image-backed cache still rejects unsupported face-strip dimensions");
+  }
+  {
     auto depthConfig = config;
     depthConfig.directionalProbeDepth = true;
     const auto depthKey = bc::key(source->contentHash, depthConfig, .001f, device);

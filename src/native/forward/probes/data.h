@@ -66,8 +66,9 @@ namespace remix::forward::probes {
                              uint32_t resolution, std::stop_token cancelled = {}, float detailTolerance = .5f,
                              const std::vector<Vec3> *validatedSites = nullptr);
   uint32_t levelOffset(uint32_t resolution, uint32_t level);
-  // Bounded by both table capacity and the complete GPU header/mip footprint.
-  uint32_t storageCapacity(uint32_t resolution, uint64_t maximumBytes);
+  // Image dimensions/layers and the independent compact metadata table.
+  uint32_t imageCapacity(uint32_t resolution, uint32_t maximumDimension,
+                          uint32_t maximumLayers, uint64_t maximumMetadataBytes);
   // Interior props are allowed; geometry substantially beyond a proxy lowers
   // its preference where another capture overlaps. Unknown distances are neutral.
   float projectionConfidence(const Capture &capture);

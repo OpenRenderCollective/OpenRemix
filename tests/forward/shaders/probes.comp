@@ -1,6 +1,7 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
 layout(local_size_x = 64) in;
+#define PROBE_IMAGE_BINDING 14
 #include "../../../src/native/forward/shaders/probes.glsl"
 #define IRRADIANCE_BINDING 2
 #include "../../../src/native/forward/shaders/irradiance.glsl"

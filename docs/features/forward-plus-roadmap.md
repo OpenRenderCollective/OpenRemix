@@ -788,34 +788,38 @@ reflected features across overlaps before accepting parallax/blending, including
 coverage tradeoffs. Preserve SSR-on and ordinary-exposure integration checks.
 
 Cubemap sharpness remains below the reference target. The current default is 32-square faces;
-the s&box reference exposes 128/256/512/1024 and defaults to 128. Matched Construct runs at
-32/64/128 retain identical 63 capture records and non-reflection fields, with clearer reflected
-ceiling detail at higher resolution. Current RGBA32F storage is roughly 8/32/126 MiB for that
-set, and 128-square faces reduce capacity to 63 on the minimum 128 MiB storage-buffer limit.
-Separate compact projection records from sampled HDR image storage before enabling practical
-256/512 quality levels; retain coverage, seam filtering, shared-origin capture work and all
-opaque/viewmodel/water/editor consumers. Compare mirror and rough materials and measure frame
-cost before choosing a sharper default. s&box's square-root roughness lookup belongs to its
-different coefficient-prefiltered mip chain; do not copy the lookup without matching the producer.
-Disabling the independent highlight budget still retains mixed-light specular work, so it alone
-does not isolate cubemap radiance.
-The image-storage migration now has CPU packing and Vulkan upload/readback tests. Its RGBA16F
-layout uses one array layer per capture with six vertically stacked faces, avoiding optional
-cube-array features and keeping 64 captures below the minimum array-layer limit. Tests cover
-all texels/mips, HDR precision, cancellation and 256/512-square faces. This is preparation work:
-production still samples the original buffer. Next connect image ownership, uploads and descriptors
-through both bake publication and live authored edits, then migrate and validate every shader consumer
-before raising exposed resolution limits or defaults. Do not claim rendered 256/512 support from
-an upload test alone; check sampling seams, blend parity, cache reload, memory and frame cost.
-An immutable image owner now manages compact metadata, HDR image/sampler, upload barriers and
-fence-delayed staging release. The shared sampler's image path is tested against half-quantized CPU
-data through 512-square faces, including all axis directions, corners, roughness mips and 64-capture
-membership. It remains an internal migration path; live bake/editor publication still uses buffers.
+the s&box reference exposes 128/256/512/1024 and defaults to 128. Earlier matched captures at
+32/64/128 show clearer reflected detail at higher resolution. The former RGBA32F buffer payload
+also reduced capture capacity at 128-square faces on minimum-range devices. Production now uses
+compact projection metadata plus RGBA16F image layers, with six vertically stacked faces per layer.
+The image payload is half the previous radiance size, avoids optional cube-array features, and
+retains 64 captures within core image-layer limits. Canonical CPU/cache data stays full precision.
+Bake workers and authored-edit workers prepare immutable image owners; the render queue uploads
+and publishes them, and frame fences retain uploads and sampled owners. Reflection composition,
+viewmodels and water share the single image-backed sampler. The obsolete buffer-radiance shader
+path is removed. Settings and UI expose 256/512; the default stays 32 pending quality/performance
+acceptance. The face-size control estimates image texel memory at the selected capture budget.
+
+CPU, image upload/readback and sampling tests cover HDR precision, all faces/mips, cancellation,
+empty fallback, 64-capture membership and 256/512-square faces. Cache validation separates image
+limits from metadata range; a regression reads a payload larger than its device buffer range.
+Authored-edit, viewmodel environment/SSR/shadow, transport and asynchronous-target integration
+checks pass with synchronization validation. A small-budget Construct replay also completes with
+live 256-square image captures. A small-budget 128-square Construct cold/warm pair reports a
+cache hit with identical published captures and lighting hashes. These checks do not establish
+default-quality frame cost or full map visual acceptance. Check wider room coverage, mirror/rough
+materials and normal-quality cache/timing runs before choosing a sharper default or updating the install.
+
 Expanded tests exposed a three-face corner discontinuity in the previous manual filter. CPU mip
-preparation and both shader paths now average the diagonal corner tap across the three meeting
-faces. All eight corner approaches have an explicit regression test; cache policy 28 prevents stale
-pre-fix mip data reuse. Regenerated shaders must travel with this change. Validate full-map visual
-and performance effects before deploying; the testing install still uses its previous checkpoint.
+preparation and the shared shader now average the diagonal corner tap across the three meeting
+faces. All eight corner approaches have an explicit regression test. Policy 28 introduced this fix;
+current cache policy 29 also prevents reuse of sets truncated by the old buffer-capacity policy.
+Regenerated shaders must travel with the resource/descriptor changes. s&box's square-root roughness
+lookup belongs to its different coefficient-prefiltered mip chain; do not copy the lookup without
+matching the producer. Disabling the independent highlight budget still retains mixed-light
+specular work, so it alone does not isolate cubemap radiance. Further work includes shared GPU
+image storage for same-origin shapes, streamed high-resolution capture rays, compressed cache/GPU
+formats, and calibration against all three reference renderers.
 The attempted receiver-first score is rejected: it can fill the sheltered-region budget and displace
 broad map coverage. Its runtime code is removed. Develop room-local fairness before revisiting that
 objective; do not equate global area sampling or additional audit records with complete quality.

@@ -23,7 +23,8 @@ namespace remix::forward::probes {
     if ((format.optimalTilingFeatures & required) != required)
       throw std::runtime_error("Device cannot sample uploaded RGBA16F reflection images");
     m_metadata = std::make_unique<Buffer>();
-    m_metadata->create(physical, device, sizeof(Header), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    m_metadata->create(physical, device, sizeof(Header),
+                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
     m_metadata->write(&packed.header, sizeof(Header));
     if (!count) {
       packed.pixels.resize(4); // A valid black descriptor before a map bake exists.

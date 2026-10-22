@@ -6,6 +6,7 @@ struct WaterMaterial { vec4 transmittance, optical, scroll01, scroll2; };
 layout(set = 2, binding = 3, std430) readonly buffer WaterMaterials { WaterMaterial waterMaterials[]; };
 #define PROBE_SET 2
 #define PROBE_BINDING 4
+#define PROBE_IMAGE_BINDING 11
 #include "../../shaders/probes.glsl"
 layout(set = 2, binding = 5, std140) uniform WaterSky {
   mat4 inverseProjection, viewToDome;

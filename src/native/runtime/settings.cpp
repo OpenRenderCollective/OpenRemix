@@ -207,7 +207,7 @@ namespace remix::config {
             [](const Settings &s) { return number(s.forward.baking.reflectionResolution); },
             [](Settings &s, std::string_view text) {
               unsigned value;
-              if (!readNumber(text, value) || value < 8 || value > 128 || (value & (value - 1)))
+              if (!readNumber(text, value) || value < 8 || value > 512 || (value & (value - 1)))
                 return false;
               s.forward.baking.reflectionResolution = value;
               return true;

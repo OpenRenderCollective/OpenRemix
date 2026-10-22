@@ -190,8 +190,16 @@ namespace remix {
                           "Thin walls remain barriers; this is an approximate room fit.");
       int probeResolution = 0;
       while ((8u << probeResolution) < forward.baking.reflectionResolution) ++probeResolution;
-      if (ui::Combo("Cubemap face size", &probeResolution, "8\0 16\0 32\0 64\0 128\0"))
+      if (ui::Combo("Cubemap face size", &probeResolution, "8\0 16\0 32\0 64\0 128\0 256\0 512\0"))
         forward.baking.reflectionResolution = 8u << probeResolution;
+      if (ImGui::IsItemHovered()) {
+        const uint64_t size = forward.baking.reflectionResolution;
+        // Six faces, their full mip chain, and eight bytes per HDR texel.
+        const uint64_t perCapture = 6 * (4*size*size-1) / 3 * 8;
+        ImGui::SetTooltip("Sharper faces require more memory and capture work.\n"
+                          "Image texels at this capture budget: about %.1f MiB.",
+                          double(perCapture * forward.baking.reflectionProbes) / (1024*1024));
+      }
       ImGui::TextWrapped("%s", statistics.baking.status[0] ? statistics.baking.status : "Waiting for static map inputs");
       if (statistics.baking.probes)
         ImGui::Text("Bake probes: %u / %u", statistics.baking.completed, statistics.baking.probes);

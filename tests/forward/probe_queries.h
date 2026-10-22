@@ -1,5 +1,5 @@
 #pragma once
-#include "forward/probes/data.h"
+#include "forward/probes/image_asset.h"
 #include "forward/bake/probe_visibility.h"
 #include "forward/half.h"
 #include "gpu_fixture.h"
@@ -8,8 +8,7 @@
 
 namespace remix::forward::test {
   // Runs the production probe lookup on the GPU against its CPU reference.
-  // A host-visible storage buffer supplies the same packed asset that the
-  // frame-boundary uploader will copy to device memory.
+  // Uses the production HDR image owner and its compact projection table.
   inline void probeQueries(Fixture &fixture, const probes::Data &data, uint32_t skyCase = 0,
                             bool directional = false, bool indexed = false, bool depth = false) {
     // Sky cases: open, closed, unusable, and hidden behind a distance boundary.
@@ -41,7 +40,7 @@ namespace remix::forward::test {
         {{0, 0, 0, 10}, {0, 0, 1, 0}}, {{0, 0, 0, 11}, {0, 0, 1, 0}}};
     struct Gpu {
       VkDevice device;
-      Buffer asset, input, output, sky;
+      Buffer input, output, sky;
       VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
       VkPipelineLayout layout = VK_NULL_HANDLE;
       VkPipeline pipeline = VK_NULL_HANDLE;
@@ -57,9 +56,10 @@ namespace remix::forward::test {
           vkDestroyDescriptorSetLayout(device, setLayout, nullptr);
       }
     } gpu{fixture.device};
-    const auto packed = probes::serialize(data);
-    gpu.asset.create(fixture.physical, fixture.device, packed.size(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-    gpu.asset.write(packed.data(), packed.size());
+    probes::ImageAsset asset(fixture.physical, fixture.device, data);
+    auto quantized = data;
+    for (auto &pixel : quantized.texels)
+      for (uint32_t c = 0; c < 3; ++c) pixel[c] = half::decode(half::encode(pixel[c]));
     struct SkyGrid {
       bake::GridHeader header;
       bake::Result probes[8];
@@ -154,10 +154,11 @@ namespace remix::forward::test {
         {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
         {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
         {13, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-        {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}};
+        {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+        {14, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}};
     const VkDescriptorSetLayoutCreateInfo setInfo{.sType =
                                                       VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-                                                  .bindingCount = 4,
+                                                  .bindingCount = 5,
                                                   .pBindings = bindings};
     check(vkCreateDescriptorSetLayout(fixture.device, &setInfo, nullptr, &gpu.setLayout));
     const VkPushConstantRange push{VK_SHADER_STAGE_COMPUTE_BIT, 0, 4};
@@ -183,11 +184,12 @@ namespace remix::forward::test {
         vkCreateComputePipelines(fixture.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &gpu.pipeline);
     vkDestroyShaderModule(fixture.device, module, nullptr);
     check(result);
-    const VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4};
+    const VkDescriptorPoolSize size[]{{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4},
+                                      {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1}};
     const VkDescriptorPoolCreateInfo poolInfo{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
                                               .maxSets = 1,
-                                              .poolSizeCount = 1,
-                                              .pPoolSizes = &size};
+                                              .poolSizeCount = 2,
+                                              .pPoolSizes = size};
     check(vkCreateDescriptorPool(fixture.device, &poolInfo, nullptr, &gpu.pool));
     VkDescriptorSet set;
     const VkDescriptorSetAllocateInfo allocate{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
@@ -196,8 +198,8 @@ namespace remix::forward::test {
                                                .pSetLayouts = &gpu.setLayout};
     check(vkAllocateDescriptorSets(fixture.device, &allocate, &set));
     const VkDescriptorBufferInfo buffers[] = {gpu.input.descriptor(), gpu.output.descriptor(),
-                                              gpu.asset.descriptor(), gpu.sky.descriptor()};
-    VkWriteDescriptorSet writes[4]{};
+                                              asset.metadata(), gpu.sky.descriptor()};
+    VkWriteDescriptorSet writes[5]{};
     for (uint32_t i = 0; i < 4; ++i)
       writes[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                    .dstSet = set,
@@ -205,8 +207,12 @@ namespace remix::forward::test {
                    .descriptorCount = 1,
                    .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                    .pBufferInfo = &buffers[i]};
-    vkUpdateDescriptorSets(fixture.device, 4, writes, 0, nullptr);
+    const auto radiance = asset.radiance();
+    writes[4] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 14,
+        .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &radiance};
+    vkUpdateDescriptorSets(fixture.device, 5, writes, 0, nullptr);
     fixture.begin();
+    asset.recordUpload(fixture.command);
     vkCmdBindPipeline(fixture.command, VK_PIPELINE_BIND_POINT_COMPUTE, gpu.pipeline);
     vkCmdBindDescriptorSets(fixture.command, VK_PIPELINE_BIND_POINT_COMPUTE, gpu.layout, 0, 1, &set, 0,
                             nullptr);
@@ -219,6 +225,7 @@ namespace remix::forward::test {
     vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0,
                          1, &read, 0, nullptr, 0, nullptr);
     fixture.finish();
+    asset.releaseUpload();
     Vec4 values[std::size(queries)];
     gpu.output.read(values, sizeof(values));
     for (uint32_t i = 0; i < count; ++i) {
@@ -306,7 +313,7 @@ namespace remix::forward::test {
                 "Sky visibility accepts open space and rejects closed, invalid, occluded and unknown space");
         continue;
       }
-      const auto expected = probes::sample(data, {q.position[0], q.position[1], q.position[2]},
+      const auto expected = probes::sample(quantized, {q.position[0], q.position[1], q.position[2]},
                                            {q.reflected[0], q.reflected[1], q.reflected[2]}, q.reflected[3]);
       require((values[i][3] > .5f) == bool(expected), "GPU probe influence matches the CPU reference");
       if (expected)

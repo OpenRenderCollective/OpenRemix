@@ -8,7 +8,6 @@
 #include <cstdio>
 #include <stop_token>
 #include <stdexcept>
-#include <stdexcept>
 #include <unordered_set>
 
 namespace remix::forward::probes {
@@ -21,7 +20,7 @@ namespace remix::forward::probes {
     std::vector<bake::Point> rays;
     std::vector<uint32_t> destinations;
     std::shared_ptr<bake::Transport> transport;
-    std::unique_ptr<Buffer> buffer;
+    std::unique_ptr<ImageAsset> image;
     Data filtered;
     bake::Budget budget;
     std::vector<int32_t> reused;
@@ -30,11 +29,11 @@ namespace remix::forward::probes {
     bool prepared = false, filtering = false, sceneReused = false;
     void prepare(const std::shared_ptr<Job> &prior, const std::shared_ptr<const scene::BakeScene> &source,
                   VkPhysicalDevice physical, VkDevice device, uint32_t family, const bake::Config &config) {
-      VkPhysicalDeviceProperties properties;
-      vkGetPhysicalDeviceProperties(physical, &properties);
-      if (request->volumes.size() > storageCapacity(config.reflectionResolution,
-                                                  properties.limits.maxStorageBufferRange))
-        throw std::length_error("Authored reflection set exceeds GPU storage range");
+      VkPhysicalDeviceProperties limits;
+      vkGetPhysicalDeviceProperties(physical, &limits);
+      if (request->volumes.size() > imageCapacity(config.reflectionResolution,
+              limits.limits.maxImageDimension2D, limits.limits.maxImageArrayLayers, limits.limits.maxStorageBufferRange))
+        throw std::length_error("Authored reflection set exceeds GPU image or metadata limits");
       for (size_t index = 0; index < request->volumes.size(); ++index) {
         if (cancellation.stop_requested()) throw std::runtime_error("Reflection edit superseded");
         const auto &volume = request->volumes[index];
@@ -103,11 +102,8 @@ namespace remix::forward::probes {
           }
         }
       }
-      const auto bytes = probes::serialize(filtered);
+      image = std::make_unique<ImageAsset>(physical, device, filtered, cancellation.get_token());
       previous.reset();
-      buffer = std::make_unique<Buffer>();
-      buffer->create(physical, device, bytes.size(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-      buffer->write(bytes.data(), bytes.size());
     }
   };
   Authoring::Authoring(VkPhysicalDevice physical, VkDevice device, pipeline::Service *pipelines,
@@ -126,6 +122,7 @@ namespace remix::forward::probes {
   void Authoring::selectFrame(uint32_t slot) {
     m_slot = slot;
     auto &frame = m_frames.at(slot);
+    if (frame.uploaded) frame.uploaded->image->releaseUpload();
     if (frame.work) {
       auto &job = *frame.work;
       if (frame.preparation) job.transport->releaseBuildInputs();
@@ -190,6 +187,8 @@ namespace remix::forward::probes {
     try {
       job.ticket->check();
       if (job.filtering) {
+        job.image->recordUpload(command);
+        m_frames[m_slot].uploaded = m_job;
         m_active = std::move(m_job);
         m_status.clear();
       } else if (job.transport && !job.prepared) {
@@ -224,8 +223,8 @@ namespace remix::forward::probes {
     }
     m_frames[m_slot].sampled = m_active;
   }
-  VkDescriptorBufferInfo Authoring::descriptor(VkDescriptorBufferInfo automatic) const {
-    return m_active ? m_active->buffer->descriptor() : automatic;
+  Descriptors Authoring::descriptor(Descriptors automatic) const {
+    return m_active ? m_active->image->descriptors() : automatic;
   }
   const Header *Authoring::header() const { return m_active ? &m_active->filtered.header : nullptr; }
   AuthoringStatistics Authoring::statistics() const {
@@ -250,7 +249,10 @@ namespace remix::forward::probes {
     std::unordered_set<const bake::Transport *> scenes;
     auto count = [&](const std::shared_ptr<Job> &job) {
       if (!job || !jobs.insert(job.get()).second || !job->ticket->ready()) return;
-      if (job->buffer) result.buffers += job->buffer->allocationBytes;
+      if (job->image) {
+        result.buffers += job->image->bufferBytes();
+        result.images += job->image->imageBytes();
+      }
       if (job->prepared && job->transport && scenes.insert(job->transport.get()).second) {
         result.buffers += job->transport->memoryBytes();
         result.images += job->transport->imageBytes();
@@ -259,7 +261,7 @@ namespace remix::forward::probes {
     };
     count(m_active); count(m_job);
     for (const auto &job : m_retired) count(job);
-    for (const auto &frame : m_frames) { count(frame.work); count(frame.sampled); }
+    for (const auto &frame : m_frames) { count(frame.work); count(frame.sampled); count(frame.uploaded); }
     return result;
   }
 } // namespace remix::forward::probes

@@ -1,6 +1,7 @@
 #pragma once
 #include "forward/water/data.h"
 #include "forward/water/snapshot.h"
+#include "forward/probes/image_asset.h"
 #include <functional>
 #include <span>
 
@@ -19,7 +20,8 @@ namespace remix::forward::water {
       VkImageView color, depth, resolved;
     };
     struct Lighting {
-      VkDescriptorBufferInfo probes, sky;
+      probes::Descriptors probes;
+      VkDescriptorBufferInfo sky;
       VkDescriptorImageInfo dome;
       VkDescriptorImageInfo reflectionDepth{}, reflectionNormals{}, reflectionColor{};
     };

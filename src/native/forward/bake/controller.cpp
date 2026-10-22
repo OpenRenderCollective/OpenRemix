@@ -275,6 +275,7 @@ namespace remix::forward::bake {
     m_empty->create(physical, device, sizeof(probes::Header), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     const probes::Header empty{};
     m_empty->write(&empty, sizeof(empty));
+    m_emptyReflections = std::make_unique<probes::ImageAsset>(physical, device, probes::Data{});
     m_emptySurface = std::make_unique<Image>();
     m_emptySurface->create(physical, device, {1, 1}, VK_FORMAT_R16G16B16A16_SFLOAT,
                            VK_IMAGE_USAGE_SAMPLED_BIT, VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_ASPECT_COLOR_BIT,
@@ -328,8 +329,14 @@ namespace remix::forward::bake {
     // be consumed and resources referenced by that submission be released.
     m_slot = slot;
     auto &submission = m_submissions.at(slot);
-    if (submission.upload)
+    if (m_emptyReflectionUpload == slot) {
+      m_emptyReflections->releaseUpload();
+      m_emptyReflectionUpload = ~0u;
+    }
+    if (submission.upload) {
       submission.upload->staging.reset();
+      submission.upload->specular->releaseUpload();
+    }
     if (submission.job) {
       auto &job = *submission.job;
       if (submission.preparation)
@@ -865,10 +872,11 @@ namespace remix::forward::bake {
     if (!job.capturePlanned) {
       job.capturePlanned = true;
       const auto owner = m_job;
-      VkPhysicalDeviceProperties properties;
-      vkGetPhysicalDeviceProperties(m_physical, &properties);
+      VkPhysicalDeviceProperties limits;
+      vkGetPhysicalDeviceProperties(m_physical, &limits);
       const uint32_t captureCount = std::min(config.reflectionProbes,
-          probes::storageCapacity(config.reflectionResolution, properties.limits.maxStorageBufferRange));
+          probes::imageCapacity(config.reflectionResolution, limits.limits.maxImageDimension2D,
+                                limits.limits.maxImageArrayLayers, limits.limits.maxStorageBufferRange));
       job.ticket =
           m_pipelines->prepare("forward-probe-selection-" + std::to_string(++generation), [owner, config, captureCount] {
             if (owner->projectionAudit) {
@@ -900,6 +908,8 @@ namespace remix::forward::bake {
                                   Options{}.bias / owner->source->sceneScale, owner->cancellation.get_token());
             owner->finishStage.store(Job::FinishStage::Reflections, std::memory_order_relaxed);
             owner->specular = probes::filter(owner->captures, 128, owner->cancellation.get_token());
+            owner->reflectionImage = std::make_unique<probes::ImageAsset>(
+                physical, device, owner->specular, owner->cancellation.get_token());
             if (config.denoiseLightmaps && lightmap::denoiserVersion()) {
               owner->finishStage.store(Job::FinishStage::Denoising, std::memory_order_relaxed);
               auto progress = [owner](uint32_t completed, uint32_t total) {
@@ -1089,7 +1099,7 @@ namespace remix::forward::bake {
                                    visibility.hasMasks ? uint32_t(2 + m_job->mixedLights->occlusion.words().size()) : 0u};
     const size_t occlusionBytes = occlusion.words.size() * sizeof(uint32_t);
     volume->content.staticOcclusion = scene::fastHash(occlusion.words.data(), occlusionBytes) | 1;
-    const size_t occlusionOffset = bytes + specular.size() + surfaceBytes;
+    const size_t occlusionOffset = bytes + surfaceBytes;
     const size_t visibilityOffset = occlusionOffset + occlusionBytes;
     const size_t visibilityBytes = visibilityPages ? visibilityPages->texels.size() : 0;
     if (visibilityPages) {
@@ -1159,11 +1169,10 @@ namespace remix::forward::bake {
     volume->staging->create(m_physical, m_device, visibilityOffset + visibilityBytes,
                             VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
     volume->staging->write(data.data(), data.size());
-    volume->staging->write(specular.data(), specular.size(), bytes);
     if (surfaceBytes)
       for (const auto &segment : segments)
         volume->staging->write(m_job->surfacePixels.data() + segment.source,
-            segment.values * sizeof(uint16_t), bytes + specular.size() + segment.destination * sizeof(uint16_t));
+            segment.values * sizeof(uint16_t), bytes + segment.destination * sizeof(uint16_t));
     volume->staging->write(occlusion.words.data(), occlusionBytes, occlusionOffset);
     if (visibilityBytes)
       volume->staging->write(visibilityPages->texels.data(), visibilityBytes, visibilityOffset);
@@ -1172,15 +1181,11 @@ namespace remix::forward::bake {
                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                              (ImageDump::enabled(m_physical) ? VK_BUFFER_USAGE_TRANSFER_SRC_BIT : 0u),
                          Buffer::Memory::Device);
-    volume->specular = std::make_unique<Buffer>();
-    volume->specular->create(m_physical, m_device, specular.size(),
-                             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-                                 (ImageDump::enabled(m_physical) ? VK_BUFFER_USAGE_TRANSFER_SRC_BIT : 0u),
-                             Buffer::Memory::Device);
+    volume->specular = std::move(m_job->reflectionImage);
+    if (!volume->specular) throw std::logic_error("Missing prepared reflection image");
     const VkBufferCopy copy{0, 0, bytes};
     vkCmdCopyBuffer(command, volume->staging->handle, volume->data->handle, 1, &copy);
-    const VkBufferCopy reflectionCopy{bytes, 0, specular.size()};
-    vkCmdCopyBuffer(command, volume->staging->handle, volume->specular->handle, 1, &reflectionCopy);
+    volume->specular->recordUpload(command);
     VkImageMemoryBarrier surfaceReady{};
     volume->occlusion->upload(command, volume->staging->handle, occlusionOffset);
     if (volume->visibilityPages)
@@ -1199,7 +1204,7 @@ namespace remix::forward::bake {
       vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,
                            nullptr, 0, nullptr, 1, &transfer);
       const VkBufferImageCopy imageCopy{
-          .bufferOffset = bytes + specular.size(),
+          .bufferOffset = bytes,
           .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, atlas.pages * surfaceLayers},
           .imageExtent = {atlas.pageSize, atlas.pageSize, 1}};
       vkCmdCopyBufferToImage(command, volume->staging->handle, volume->surfaceAtlas->handle,
@@ -1299,6 +1304,8 @@ namespace remix::forward::bake {
                           float lightCutoff) {
     std::erase_if(m_obsolete, [](const auto &job) { return job->ticket->ready(); });
     if (!m_emptySurfaceReady) {
+      m_emptyReflections->recordUpload(command);
+      m_emptyReflectionUpload = m_slot;
       const VkImageMemoryBarrier ready{
           .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
           .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
@@ -1384,6 +1391,9 @@ namespace remix::forward::bake {
           // no camera-frame resources or controller state cross threads.
           auto prepare = [job, physical, device, config, lightCutoff, queueFamily] {
             job->prepareResources(physical, device, config, lightCutoff, queueFamily);
+            if (job->cacheHit)
+              job->reflectionImage = std::make_unique<probes::ImageAsset>(
+                  physical, device, job->specular, job->cancellation.get_token());
           };
           job->ticket =
               m_pipelines->prepare("forward-bake-" + std::to_string(++generation), std::move(prepare));
@@ -1527,8 +1537,8 @@ namespace remix::forward::bake {
   VkDescriptorBufferInfo Controller::descriptor() const {
     return m_volume ? m_volume->data->descriptor() : m_empty->descriptor();
   }
-  VkDescriptorBufferInfo Controller::reflectionDescriptor() const {
-    return m_volume ? m_volume->specular->descriptor() : m_empty->descriptor();
+  probes::Descriptors Controller::reflectionDescriptor() const {
+    return (m_volume ? m_volume->specular : m_emptyReflections)->descriptors();
   }
   VkDescriptorImageInfo Controller::surfaceDescriptor() const {
     const auto &image = m_volume && m_volume->surfaceAtlas ? m_volume->surfaceAtlas : m_emptySurface;
@@ -1547,8 +1557,8 @@ namespace remix::forward::bake {
   }
   Memory Controller::memory() const {
     Memory result;
-    result.buffers = m_empty->allocationBytes;
-    result.images = m_emptySurface->bytes + m_emptyOcclusion->bytes();
+    result.buffers = m_empty->allocationBytes + m_emptyReflections->bufferBytes();
+    result.images = m_emptySurface->bytes + m_emptyOcclusion->bytes() + m_emptyReflections->imageBytes();
     std::unordered_set<const lightmap::Geometry *> surfaces;
     auto addSurfaces = [&](const std::shared_ptr<lightmap::Geometry> &geometry) {
       if (geometry && surfaces.insert(geometry.get()).second)
@@ -1559,6 +1569,10 @@ namespace remix::forward::bake {
       if (!job || !job->initialized || !jobs.insert(job.get()).second)
         return;
       addSurfaces(job->surfaceGeometry);
+      if (job->ticket->ready() && job->reflectionImage) {
+        result.buffers += job->reflectionImage->bufferBytes();
+        result.images += job->reflectionImage->imageBytes();
+      }
       if (!job->transport)
         return; // a disk hit needs only geometry and the published volume upload
       const auto &transport = *job->transport;
@@ -1581,7 +1595,8 @@ namespace remix::forward::bake {
       if (volume->visibilityPages)
         result.images += volume->visibilityPages->bytes();
       result.buffers += volume->data->allocationBytes;
-      result.buffers += volume->specular->allocationBytes;
+      result.buffers += volume->specular->bufferBytes();
+      result.images += volume->specular->imageBytes();
       if (volume->staging)
         result.buffers += volume->staging->allocationBytes;
     };

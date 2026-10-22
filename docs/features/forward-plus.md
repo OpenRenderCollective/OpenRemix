@@ -822,9 +822,11 @@ Ray misses sample the captured/current environment. Current analytic lighting is
 hits, giving indirect light; the primary direct-light calculation is unchanged. Shared material-aware
 alpha/sidedness traversal and diffuse secondary shading come from `bake/shaders/radiance.glsl`.
 
-The public material/mesh ABI and the baseline private forward bindings are unchanged. GI uses a third
+The public material/mesh ABI is unchanged. GI uses a third
 private descriptor set and optional shader modules targeting Vulkan1.2. It requires ray-query support
-plus at least eight fragment-stage SSBO descriptors and ten storage buffers across the pipeline layout.
+plus at least ten fragment-stage SSBO descriptors and twelve storage buffers across the pipeline layout.
+The complete scene/material/transport layouts also need four uniform buffers and eighteen sampled
+images/samplers; optional GI is declined when these descriptor limits are unavailable.
 If unavailable, the UI reports baked-lighting fallback. MSAA remains the primary geometry antialiasing;
 no TAA or sample-rate-shading feature is introduced.
 
@@ -2251,9 +2253,21 @@ scheduling retains its existing per-volume reuse policy. Bake policy revision 27
 planning; revision 28 additionally distinguishes three-face cube-corner filtering. The diagonal tap
 at a cube corner averages the three meeting faces in CPU mip preparation and shader sampling,
 avoiding a discontinuity when a near tie selects a different major axis. Query sharing itself does
-not change the wire format. The image-storage migration has a tested RGBA16F image owner and
-shared sampler path, but production publication still uses the buffer payload. Do not infer live
-256/512 bake support from the image upload/sampling fixtures.
+not change the wire format. Current policy 29 also replaces the old buffer-size capture cap.
+Production stores radiance in RGBA16F 2D-array images: one layer per capture, six faces stacked
+vertically, and a compact independent projection table. This avoids optional cube-array features
+and keeps full 64-capture capacity within core image limits. Cold and cached bake workers and
+live authored-edit workers prepare the same image owner. Render-queue uploads precede publication;
+frame fences retain sampled resources and release staging. Reflection composition, viewmodels and
+water use the shared image sampler. The former buffer-radiance shader path is removed.
+
+`rtx.native.forward.reflectionResolution` accepts powers of two from 8 through 512, also exposed
+by the face-size control. The default remains 32 until broader quality and performance acceptance.
+Image radiance uses half the old RGBA32F payload size; CPU/cache radiance remains full precision.
+The face-size tooltip estimates image texel memory at the selected capture budget, excluding
+alignment and transient bake/upload allocations. The image layout does not itself bound those
+transient CPU costs. The optional GPU frame dump now names compact metadata `probe-records`;
+canonical full-precision publication dumps remain available separately as `.probes-published.bin`.
 
 The shared reflection sampler supports rigid world-to-projection frames and signed overlap priorities.
 Projection and influence bounds use this local frame; capture positions and cube-face radiance stay in

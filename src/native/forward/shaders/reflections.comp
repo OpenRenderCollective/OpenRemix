@@ -2,6 +2,7 @@
 #extension GL_GOOGLE_include_directive : require
 #ifdef SSR_FILTER
 #define PROBE_TILE_CANDIDATES
+#define PROBE_IMAGE_BINDING 17
 #include "probes.glsl"
 #endif
 // All reflection intermediates are current-frame scene-linear data. Sampling

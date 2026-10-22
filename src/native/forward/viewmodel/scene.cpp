@@ -45,12 +45,15 @@ namespace remix::forward {
       const auto skyConstants = frame.skyConstants->descriptor();
       const VkWriteDescriptorSet environment[] = {
           {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = frame.viewModelScene, .dstBinding = 12,
-           .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &reflectionProbes},
+           .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &reflectionProbes.metadata},
           {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = frame.viewModelScene, .dstBinding = 13,
            .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = &skyConstants},
           {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = frame.viewModelScene, .dstBinding = 14,
-           .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &frame.skyImage}};
-      vkUpdateDescriptorSets(device, 3, environment, 0, nullptr);
+           .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &frame.skyImage},
+          {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = frame.viewModelScene, .dstBinding = 19,
+           .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+           .pImageInfo = &reflectionProbes.radiance}};
+      vkUpdateDescriptorSets(device, 4, environment, 0, nullptr);
       // Borrow the completed world hierarchy; viewmodels never enter these guides.
       struct ScreenData {
         Matrix inverseCamera;

@@ -5,6 +5,7 @@
 #include "forward/mixed/data.h"
 #include "forward/mixed/map.h"
 #include "forward/probes/data.h"
+#include "forward/probes/image_asset.h"
 #include "forward/resources.h"
 #include "platform/gpu_frames.h"
 #include "runtime/pipelines.h"
@@ -26,7 +27,8 @@ namespace remix::forward::bake {
     float sceneScale = 1;
     std::array<uint32_t, 4> occlusionParameters{}; // stride + compact-atlas flag, charts, width, indexed-mask tail
     uint32_t surfaceDirectOffset = 0; // sparse directional table in the R32_UINT lookup; zero keeps atlas SH
-    std::unique_ptr<Buffer> data, specular, staging;
+    std::unique_ptr<Buffer> data, staging;
+    std::unique_ptr<probes::ImageAsset> specular;
     std::unique_ptr<Image> surfaceAtlas;
     std::unique_ptr<mixed::OcclusionMap> occlusion, visibilityPages;
     std::shared_ptr<lightmap::Geometry> surfaces;
@@ -54,7 +56,7 @@ namespace remix::forward::bake {
                 float lightCutoff = .001f);
     const std::shared_ptr<Volume> &volume() const { return m_volume; }
     VkDescriptorBufferInfo descriptor() const;
-    VkDescriptorBufferInfo reflectionDescriptor() const;
+    probes::Descriptors reflectionDescriptor() const;
     VkDescriptorImageInfo surfaceDescriptor() const;
     VkDescriptorImageInfo occlusionDescriptor() const;
     VkDescriptorImageInfo visibilityDescriptor() const;
@@ -86,6 +88,8 @@ namespace remix::forward::bake {
     std::shared_ptr<Volume> m_volume;
     std::array<Submission, gpuFrameCount> m_submissions;
     std::unique_ptr<Buffer> m_empty;
+    std::unique_ptr<probes::ImageAsset> m_emptyReflections;
+    uint32_t m_emptyReflectionUpload = ~0u;
     std::unique_ptr<Image> m_emptySurface;
     std::unique_ptr<mixed::OcclusionMap> m_emptyOcclusion;
     bool m_emptySurfaceReady = false;

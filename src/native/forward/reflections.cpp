@@ -158,13 +158,13 @@ namespace remix::forward {
     }
   }
   void Reflections::Gpu::createLayouts() {
-    VkDescriptorSetLayoutBinding bindings[17];
-    for (uint32_t i = 0; i < 17; ++i) {
+    VkDescriptorSetLayoutBinding bindings[18];
+    for (uint32_t i = 0; i < 18; ++i) {
       bindings[i] = {i, descriptorType(i), 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
     }
     const VkDescriptorSetLayoutCreateInfo setInfo{.sType =
                                                       VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-                                                  .bindingCount = 17,
+                                                  .bindingCount = 18,
                                                   .pBindings = bindings};
     check(pipeline::createDescriptorSetLayout(device, &setInfo, nullptr, &setLayout));
     const VkPushConstantRange push{VK_SHADER_STAGE_COMPUTE_BIT, 0, 4};
@@ -216,7 +216,7 @@ namespace remix::forward {
   void Reflections::Gpu::createDescriptors(VkPhysicalDevice physical, Inputs inputs) {
     const uint32_t setCount = gpuFrameCount * (colorLevels + 2);
     const VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, setCount * 2},
-                                          {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, setCount * 9},
+                                          {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, setCount * 10},
                                           {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, setCount * 4},
                                           {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, setCount * 2}};
     const VkDescriptorPoolCreateInfo poolInfo{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
@@ -279,7 +279,7 @@ namespace remix::forward {
     }
   }
   void Reflections::record(VkCommandBuffer command, uint32_t slot, const FrameData &source,
-                           const Options &options, VkDescriptorBufferInfo probes,
+                           const Options &options, probes::Descriptors probes,
                            const Environment &environment, ray::Reflections *hardware) {
     auto &g = *m_gpu;
     auto &frame = g.frames.at(slot);
@@ -288,8 +288,12 @@ namespace remix::forward {
                                           .dstBinding = 13,
                                           .descriptorCount = 1,
                                           .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                                          .pBufferInfo = &probes};
+                                          .pBufferInfo = &probes.metadata};
     vkUpdateDescriptorSets(g.device, 1, &probeWrite, 0, nullptr);
+    const VkWriteDescriptorSet probeImage{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = frame.filter, .dstBinding = 17, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &probes.radiance};
+    vkUpdateDescriptorSets(g.device, 1, &probeImage, 0, nullptr);
     const VkWriteDescriptorSet environmentWrites[] = {
         {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
          .dstSet = frame.filter,
@@ -324,8 +328,7 @@ namespace remix::forward {
     if (g.dump) {
       g.dump->recordBuffer(command, slot, "reflection-frame", frame.constants->descriptor());
       g.dump->recordBuffer(command, slot, "sky-frame", environment.sky);
-      if (probes.range > sizeof(probes::Header))
-        g.dump->recordBuffer(command, slot, "probes", probes);
+      g.dump->recordBuffer(command, slot, "probe-records", probes.metadata);
       if (environment.irradiance.range > sizeof(bake::GridHeader))
         g.dump->recordBuffer(command, slot, "irradiance", environment.irradiance);
     }

@@ -231,12 +231,12 @@ namespace remix::forward::water {
     vkGetPhysicalDeviceProperties(physical, &properties);
     const auto &limits = properties.limits;
     // Scene/material/water inputs plus one read-only transport scene set.
-    return limits.maxBoundDescriptorSets >= 4 && limits.maxPerStageResources >= 33 &&
-           limits.maxPerStageDescriptorUniformBuffers >= 4 && limits.maxDescriptorSetUniformBuffers >= 4 &&
-           limits.maxPerStageDescriptorStorageBuffers >= 10 &&
-           limits.maxDescriptorSetStorageBuffers >= 12 && limits.maxPerStageDescriptorSamplers >= 18 &&
-           limits.maxDescriptorSetSamplers >= 18 && limits.maxPerStageDescriptorSampledImages >= 18 &&
-           limits.maxDescriptorSetSampledImages >= 18;
+    return limits.maxBoundDescriptorSets >= 4 && limits.maxPerStageResources >= 45 &&
+           limits.maxPerStageDescriptorUniformBuffers >= 6 && limits.maxDescriptorSetUniformBuffers >= 6 &&
+           limits.maxPerStageDescriptorStorageBuffers >= 12 &&
+           limits.maxDescriptorSetStorageBuffers >= 14 && limits.maxPerStageDescriptorSamplers >= 26 &&
+           limits.maxDescriptorSetSamplers >= 26 && limits.maxPerStageDescriptorSampledImages >= 26 &&
+           limits.maxDescriptorSetSampledImages >= 26;
   }
   void Pass::initialize(VkPhysicalDevice physical, VkDevice device, VkExtent2D extent,
                         VkSampleCountFlagBits samples, VkDescriptorSetLayout scene,
@@ -253,13 +253,13 @@ namespace remix::forward::water {
         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,         VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
         VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
         VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER};
-    VkDescriptorSetLayoutBinding bindings[11]{};
-    for (uint32_t i = 0; i < 11; ++i)
+        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER};
+    VkDescriptorSetLayoutBinding bindings[12]{};
+    for (uint32_t i = 0; i < 12; ++i)
       bindings[i] = {i, types[i], 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
     const VkDescriptorSetLayoutCreateInfo setInfo{.sType =
                                                       VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-                                                  .bindingCount = 11,
+                                                  .bindingCount = 12,
                                                   .pBindings = bindings};
     check(pipeline::createDescriptorSetLayout(device, &setInfo, nullptr, &g.inputs));
     const VkDescriptorSetLayout layouts[] = {scene, material, g.inputs};
@@ -280,7 +280,7 @@ namespace remix::forward::water {
     }
     g.createTarget(samples, targets);
     g.createPipelines(samples);
-    const VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 7 * gpuFrameCount},
+    const VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 8 * gpuFrameCount},
                                           {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2 * gpuFrameCount},
                                           {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2 * gpuFrameCount}};
     const VkDescriptorPoolCreateInfo poolInfo{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
@@ -311,7 +311,7 @@ namespace remix::forward::water {
     const auto saved = g.snapshot.output();
     const VkDescriptorImageInfo images[] = {saved.hdr, saved.depth, lighting.dome};
     const VkDescriptorBufferInfo buffers[] = {frame.parameters->descriptor(), frame.materials->descriptor(),
-                                              lighting.probes, lighting.sky};
+                                              lighting.probes.metadata, lighting.sky};
     VkWriteDescriptorSet writes[7]{};
     for (uint32_t i = 0; i < 7; ++i) {
       const bool image = i < 2 || i == 6;
@@ -326,6 +326,10 @@ namespace remix::forward::water {
                    .pBufferInfo = image ? nullptr : &buffers[i - 2]};
     }
     vkUpdateDescriptorSets(g.device, 7, writes, 0, nullptr);
+    const VkWriteDescriptorSet probeImage{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = frame.set, .dstBinding = 11, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &lighting.probes.radiance};
+    vkUpdateDescriptorSets(g.device, 1, &probeImage, 0, nullptr);
     const VkDescriptorImageInfo screen[] = {
         lighting.reflectionDepth.imageView ? lighting.reflectionDepth : saved.depth,
         lighting.reflectionNormals.imageView ? lighting.reflectionNormals : saved.hdr,

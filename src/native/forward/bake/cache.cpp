@@ -52,7 +52,7 @@ namespace remix::forward::bake::cache {
       return std::max(1u, (count + probeHeaderBlockSlots - 1) / probeHeaderBlockSlots);
     }
     // Bump whenever incompatible planning, transport or wire semantics change.
-    constexpr uint32_t algorithmRevision = 28; // three-face cube-corner filtering in capture mip preparation
+    constexpr uint32_t algorithmRevision = 29; // image capacity no longer drops captures at the buffer limit
     void require(bool value) {
       if (!value)
         throw std::runtime_error("Invalid bake cache metadata");
@@ -271,7 +271,7 @@ namespace remix::forward::bake::cache {
       const uint32_t stride = size ? probes::levelOffset(size, levels) : 0;
       require(data.header.parameters == UInt4{count, size, levels, stride});
       require(device.storageRange >= sizeof(probes::Header) &&
-              uint64_t(count) * stride <= (device.storageRange - sizeof(probes::Header)) / sizeof(Vec4));
+              (!count || count <= probes::imageCapacity(size, device.imageSize, device.imageLayers, device.storageRange)));
       data.texels = input.array<Vec4>(uint64_t(count) * stride);
       require(data.texels.size() == uint64_t(count) * stride);
       for (uint32_t i = 0; i < count; ++i) {

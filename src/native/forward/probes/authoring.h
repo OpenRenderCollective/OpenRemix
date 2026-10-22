@@ -1,5 +1,6 @@
 #pragma once
 #include "forward/probes/data.h"
+#include "forward/probes/image_asset.h"
 #include "scene/reflection_volumes.h"
 #include "forward/resources.h"
 #include "runtime/pipelines.h"
@@ -18,7 +19,7 @@ namespace remix::forward::probes {
     void selectFrame(uint32_t slot);
     void record(VkCommandBuffer command, RasterRenderer &resources, const bake::Config &config,
                 uint64_t activeBakeHash);
-    VkDescriptorBufferInfo descriptor(VkDescriptorBufferInfo automatic) const;
+    Descriptors descriptor(Descriptors automatic) const;
     const Header *header() const;
     AuthoringMemory memory() const;
     AuthoringStatistics statistics() const;
@@ -26,7 +27,7 @@ namespace remix::forward::probes {
   private:
     struct Job;
     struct Frame {
-      std::shared_ptr<Job> work, sampled;
+      std::shared_ptr<Job> work, sampled, uploaded;
       uint32_t first = 0, count = 0;
       bool preparation = false;
       float budgetMilliseconds = 0;

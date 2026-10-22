@@ -41,11 +41,13 @@ namespace remix::forward::ray {
   bool LiveScene::supportsFragmentGI(VkPhysicalDevice physical) {
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physical, &properties);
-    // Four ray-scene SSBOs plus the ordinary Forward+ fragment resources.
-    return properties.limits.maxPerStageDescriptorStorageBuffers >= 8 &&
-           properties.limits.maxDescriptorSetStorageBuffers >= 10 &&
-           properties.limits.maxPerStageDescriptorSamplers >= 10 &&
-           properties.limits.maxDescriptorSetSamplers >= 10;
+    // Complete scene/material layouts plus the read-only transport scene set.
+    const auto &limits = properties.limits;
+    return limits.maxPerStageResources >= 33 &&
+           limits.maxPerStageDescriptorUniformBuffers >= 4 && limits.maxDescriptorSetUniformBuffers >= 4 &&
+           limits.maxPerStageDescriptorStorageBuffers >= 10 && limits.maxDescriptorSetStorageBuffers >= 12 &&
+           limits.maxPerStageDescriptorSamplers >= 18 && limits.maxDescriptorSetSamplers >= 18 &&
+           limits.maxPerStageDescriptorSampledImages >= 18 && limits.maxDescriptorSetSampledImages >= 18;
   }
   void LiveScene::selectFrame(uint32_t index) {
     auto &g = *m_gpu;

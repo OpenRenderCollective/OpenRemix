@@ -20,7 +20,7 @@ namespace remix::forward::probes {
         throw std::invalid_argument("Invalid reflection projection frame or priority");
       const auto origin = projectionPoint(capture.worldToLocal, capture.position);
       if (!finite(origin) || !capture.bounds.valid || !finite(capture.position) || !finite(capture.bounds.minimum) ||
-          !finite(capture.bounds.maximum) || capture.resolution < 8 || capture.resolution > 128 ||
+          !finite(capture.bounds.maximum) || capture.resolution < 8 || capture.resolution > 512 ||
           !std::has_single_bit(capture.resolution))
         throw std::invalid_argument("Invalid reflection capture bounds or resolution");
       if (capture.influence.valid) {
@@ -194,12 +194,12 @@ namespace remix::forward::probes {
       result += 6 * (resolution >> i) * (resolution >> i);
     return result;
   }
-  uint32_t storageCapacity(uint32_t resolution, uint64_t maximumBytes) {
-    if (resolution < 8 || resolution > 128 || !std::has_single_bit(resolution))
-      throw std::invalid_argument("Invalid reflection storage resolution");
-    if (maximumBytes < sizeof(Header)) return 0;
-    const uint64_t stride = uint64_t(levelOffset(resolution, std::bit_width(resolution))) * sizeof(Vec4);
-    return uint32_t(std::min<uint64_t>(maxProbes, (maximumBytes - sizeof(Header)) / stride));
+  uint32_t imageCapacity(uint32_t resolution, uint32_t maximumDimension,
+                          uint32_t maximumLayers, uint64_t maximumMetadataBytes) {
+    if (resolution < 8 || resolution > 512 || !std::has_single_bit(resolution))
+      throw std::invalid_argument("Invalid reflection image resolution");
+    if (maximumMetadataBytes < sizeof(Header) || 6*resolution > maximumDimension) return 0;
+    return std::min(maxProbes, maximumLayers);
   }
   float projectionConfidence(const Capture &capture) {
     const uint32_t size = capture.resolution;
