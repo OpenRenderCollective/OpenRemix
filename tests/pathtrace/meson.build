@@ -261,6 +261,8 @@ if get_option('gpu_tests')
   endif
   pathtrace_test = executable('remix-pathtrace-test', 'rendering.cpp',
     include_directories : test_includes, dependencies : [sdl3_dep, filesystem_dep] + [runtime_test_dep])
+  test('Scrolling normals preserve progressive reference history', pathtrace_test,
+    args : [meson.current_build_dir() / 'normal-animation-scenes', 'normal-animation'], timeout : 180)
   test('Opaque traversal shared mesh and alpha replacement', pathtrace_test,
     args : [meson.current_build_dir() / 'opacity-scenes', 'opaque-variants'], timeout : 180)
   test('Compatible mesh updates and queued version isolation', pathtrace_test,

@@ -157,7 +157,8 @@ namespace remix::trace::detail {
     // scattering albedo, extinction per world unit. volumeHeight: up axis,
     // density falloff per world unit. volumeEye/Previous: the windows' centre.
     uint64_t volumeGrid = 0;
-    // Seconds of the runtime's clock (wrapped), for scrolling maps; the world's
+    // Seconds of the runtime's clock (wrapped), zero without scrolling maps or
+    // during progressive reference accumulation; the world's
     // up axis (0 x, 1 y, 2 z: rtx.native.pathtrace.volumetricUpAxis).
     float animationTime = 0, upAxis = 2;
     uint32_t volumeConfig[4] = {}, volumeFrame[4] = {};

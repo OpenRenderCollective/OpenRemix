@@ -806,9 +806,29 @@ namespace {
     d.tailSurfaces = {0, 1, 2, 8, 9, 10, 16, 17, 18, 24, 25, 26};
     require(c.equal(d) && d.equal(c), "Strided and packed records differ");
   }
+
+  void normalAnimation() {
+    scene::Material material;
+    material.normalEncoding = 5;
+    material.scroll[0] = .1f;
+    require(!trace::detail::hasScrollingNormals(material), "Missing normal map advanced animation");
+    material.normalTexture = std::make_shared<scene::Texture>();
+    require(trace::detail::hasScrollingNormals(material), "First normal layer did not animate");
+    material.normalEncoding = 0;
+    require(!trace::detail::hasScrollingNormals(material), "Ordinary normal encoding consumed scroll rates");
+    material.normalEncoding = 5;
+    material.scroll[0] = 0;
+    material.scroll[5] = -.2f;
+    require(!trace::detail::hasScrollingNormals(material), "Unused water layer advanced animation");
+    material.scrollLayers = 3;
+    require(trace::detail::hasScrollingNormals(material), "Third normal layer did not animate");
+    material.scroll[5] = 0;
+    require(!trace::detail::hasScrollingNormals(material), "Stationary water advanced animation");
+  }
 } // namespace
 
 int main() {
+  normalAnimation();
   signatures();
   membership();
   sequence();

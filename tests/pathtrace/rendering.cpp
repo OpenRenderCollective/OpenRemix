@@ -41,10 +41,22 @@ int main(int argc, char **argv) {
   startup.windowHeight = 96;
 #endif
   ok(api.Startup(&startup));
+  // History assertions below count completed submissions, not queued Presents.
+  ok(api.SetConfigVariable("rtx.native.asyncPresent", "0"));
+  // Exercise backend selection explicitly; the application may request path
+  // tracing by default while its initial raster presentation prepares it.
+  ok(api.SetConfigVariable("rtx.native.backend", "raster"));
   // These fixtures measure the unexposed lighting/display contract.
   ok(api.SetConfigVariable("rtx.native.pathtrace.autoExposure", "0"));
   ok(api.SetConfigVariable("rtx.native.pathtrace.bloom", "0"));
   ok(api.SetConfigVariable("rtx.native.pathtrace.upscaler", "off"));
+  const bool normalAnimation = argc > 2 && std::string(argv[2]) == "normal-animation";
+  if (normalAnimation) {
+    // This clock regression needs raw history, not temporal pipeline preparation.
+    ok(api.SetConfigVariable("rtx.native.pathtrace.denoiser", "off"));
+    for (const char *key : {"taa", "sharc", "sigma"})
+      ok(api.SetConfigVariable((std::string("rtx.native.pathtrace.") + key).c_str(), "0"));
+  }
   const bool denoiseFailure = argc > 2 && std::string(argv[2]) == "denoise-failure";
   if (denoiseFailure) {
     // Establish a working raw renderer before staging the failing replacement.
@@ -55,7 +67,7 @@ int main(int argc, char **argv) {
   remixapi_BackendCapabilitiesEXT caps = {};
   caps.structSize = sizeof(caps);
   ok(remixapi_GetBackendCapabilitiesEXT(&caps));
-  require(caps.activeBackend == 0 && caps.requestedBackend == 0, "Raster must be default");
+  require(caps.activeBackend == 0 && caps.requestedBackend == 0, "Explicit raster selection failed");
   require(api.SetConfigVariable("rtx.native.backend", "invalid") == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS,
           "Invalid backend accepted");
   require(api.SetConfigVariable("rtx.native.pathtrace.samples", "17") ==
@@ -178,6 +190,63 @@ int main(int argc, char **argv) {
     frame();
   ok(remixapi_GetBackendCapabilitiesEXT(&caps));
   require(caps.activeBackend == 1, "Hardware pathtrace did not activate");
+  if (normalAnimation) {
+    const uint8_t normals[] = {128, 128, 255, 255, 200, 128, 230, 255};
+    remixapi_TextureInfo texture{};
+    texture.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_INFO;
+    texture.hash = 13;
+    texture.width = 2; texture.height = 1;
+    texture.format = REMIXAPI_FORMAT_R8G8B8A8_UNORM;
+    texture.data = normals; texture.dataSize = sizeof(normals);
+    remixapi_TextureHandle handle{};
+    ok(api.CreateTexture(&texture, &handle));
+    const auto path = std::filesystem::path("0xd");
+    material.normalTexture = path.c_str();
+    remixapi_MaterialNormalScrollEXT scroll{};
+    scroll.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_NORMAL_SCROLL_EXT;
+    scroll.layers = 3; scroll.layer2[0] = .1f;
+    remixapi_MaterialNormalEncodingEXT encoding{};
+    encoding.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_NORMAL_ENCODING_EXT;
+    encoding.encoding = 5; encoding.pNext = &scroll;
+    opaque.pNext = &encoding;
+    ok(api.CreateMaterial(&material, &mat));
+    for (const char *accumulate : {"1", "0", "1"}) {
+      ok(api.SetConfigVariable("rtx.native.pathtrace.accumulate", accumulate));
+      frame();
+      const auto before = statistics();
+      SDL_Delay(20);
+      frame();
+      const auto after = statistics();
+      if (*accumulate == '1')
+        require(after.accumulationCount == before.accumulationCount + 1 &&
+                    after.sceneGeneration == before.sceneGeneration,
+                "Scrolling water reset progressive reference history");
+      else
+        require(after.sceneGeneration > before.sceneGeneration && after.accumulationCount == 1,
+                "Live water stopped advancing its animation clock");
+    }
+    scroll.layer2[0] = 0;
+    ok(api.CreateMaterial(&material, &mat));
+    ok(api.SetConfigVariable("rtx.native.pathtrace.accumulate", "0"));
+    frame();
+    const auto stationary = statistics();
+    SDL_Delay(20);
+    frame();
+    require(statistics().sceneGeneration == stationary.sceneGeneration,
+            "Stationary water invalidated scene history");
+    ok(api.SetConfigVariable("rtx.native.pathtrace.accumulate", "1"));
+    frame();
+    frame();
+    const auto beforeTint = statistics();
+    ok(api.SetScreenTint(0, 0, 0, .1f));
+    frame();
+    const auto afterTint = statistics();
+    require(afterTint.accumulationCount > beforeTint.accumulationCount &&
+                afterTint.sceneGeneration == beforeTint.sceneGeneration,
+            "Screen tint invalidated the progressive world reference");
+    ok(api.Shutdown());
+    return 0;
+  }
   if (argc > 2 && std::string(argv[2]) == "opaque-variants") {
     for (auto key : {"taa", "sharc", "sigma", "accumulate"})
       ok(api.SetConfigVariable((std::string("rtx.native.pathtrace.") + key).c_str(), "0"));
@@ -508,6 +577,12 @@ int main(int argc, char **argv) {
           "Reference accumulation failed to bypass temporal filters");
   auto accumulated = statistics();
   require(accumulated.accumulationCount >= 2, "Accumulation not advancing");
+  SDL_Delay(20);
+  frame();
+  require(statistics().accumulationCount == accumulated.accumulationCount + 1 &&
+              statistics().sceneGeneration == accumulated.sceneGeneration,
+          "Wall-clock time invalidated a stationary progressive reference");
+  accumulated = statistics();
   ok(api.CreateMesh(&mesh, &geometry));
   ok(api.CreateMaterial(&material, &mat));
   frame();
@@ -695,8 +770,9 @@ int main(int argc, char **argv) {
   auto facing = capture("single-sided.png");
   require(facing[0] > 240, "Ray-query front face disagrees with raster clockwise fronts");
   instance.doubleSided = 1;
-  // Subpixel motion of a two-pixel-wide surface must stay visible without a
-  // broad history trail. Retain these frames for visual edge inspection.
+  // Subpixel motion of a narrow surface must stay visible without a broad
+  // history trail. Its projected width is 2% of the viewport (about two pixels
+  // at 96 px, but wider in the default Windows window).
   instance.transform.matrix[0][0] = .01f;
   for (unsigned sample = 0; sample < 4; ++sample) {
     instance.transform.matrix[0][3] = float(sample) * .005f;
@@ -711,7 +787,9 @@ int main(int argc, char **argv) {
     for (int x = 0; x < w; ++x)
       litPixels += bytes[(h / 2 * w + x) * 4] > 180;
     stbi_image_free(bytes);
-    require(litPixels >= 1 && litPixels <= 8, "Thin geometry vanished or retained a broad history trail");
+    const unsigned surfacePixels = unsigned(std::ceil(float(w) * .02f));
+    require(litPixels >= 1 && litPixels <= surfacePixels + 6,
+            "Thin geometry vanished or retained a broad history trail");
   }
   instance.transform.matrix[0][0] = 1;
   instance.transform.matrix[0][3] = 0;
@@ -830,10 +908,20 @@ int main(int argc, char **argv) {
   ok(api.SetConfigVariable("rtx.native.pathtrace.accumulate", "1"));
   frame();
   frame();
-  auto countBeforeUi = statistics().accumulationCount;
+  const auto beforeUi = statistics();
   ok(api.SetScreenTint(0, 0, 0, .1f));
   frame();
-  require(statistics().accumulationCount == countBeforeUi + 1, "UI-only change reset accumulation");
+  const auto afterUi = statistics();
+  // First-use UI pipelines may make preparedFrame submit more than one frame.
+  // History must continue across those submissions without a world change.
+  std::printf("UI history: %llu -> %llu frames, scene %llu -> %llu\n",
+              static_cast<unsigned long long>(beforeUi.accumulationCount),
+              static_cast<unsigned long long>(afterUi.accumulationCount),
+              static_cast<unsigned long long>(beforeUi.sceneGeneration),
+              static_cast<unsigned long long>(afterUi.sceneGeneration));
+  require(afterUi.accumulationCount > beforeUi.accumulationCount &&
+              afterUi.sceneGeneration == beforeUi.sceneGeneration,
+          "UI-only change reset accumulation");
   ok(api.SetScreenTint(0, 0, 0, 0));
   // A red side wall transfers diffuse light to a receiver with zero direct illumination.
   ok(api.SetConfigVariable("rtx.native.pathtrace.accumulate", "0"));

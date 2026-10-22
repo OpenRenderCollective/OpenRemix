@@ -1251,6 +1251,9 @@ typedef struct remixapi_MaterialNormalEncodingEXT {
 // $bumptransform gets from a TextureScroll proxy) and, with multi-texture
 // layers (layers 3: $scroll1 set), averaged with samples at
 // 0.1 x (u + v, v - u) + layer1 x t and 0.45 x (v, u) + layer2 x t.
+// Progressive path-tracing accumulation evaluates these procedural scrolls at
+// time zero so history describes a fixed surface. Ordinary rendering advances
+// the runtime clock. Host texture/geometry updates still invalidate history.
 // Encoding 5 shares the material's packed fields with
 // remixapi_MaterialPbrRemapEXT: such a material has no roughness or metallic
 // map.
