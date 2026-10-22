@@ -9,13 +9,17 @@ remain compatible with the same authored optical materials.
 This roadmap tracks delivery requirements. Detailed measurements and run evidence belong in local
 reports. An implementation or synthetic test alone does not close an integration or visual-quality gate.
 
-## Continuation status (2026-10-22)
+## Continuation status (2026-10-23)
 
-The separate GMod testing install now uses native `3c7c428` and adapter `d7894f6`; it includes the
+The separate GMod testing install now uses native `40c9fb5` and adapter `d7894f6`; it includes the
 current clustered fallback, shared sphere-bound loads, adaptive probe reconstruction and runtime
 publication fixes. This makes the feature branch available for testing, not an accepted general
 performance or visual-quality release. Existing dependencies, settings and authored volumes are
 preserved with a rollback checkpoint. The previous uniform-grid install remains a historical baseline.
+The native continuation adds chart-edge denoising, stable progressive history, surface-hemisphere
+transport, reflection-free lighting diagnostics and cosine-anchored surface/unit-light irradiance.
+The deployed DLL passes a small Construct replay bake with synchronization validation. The remaining
+Construct fixture halo persists in fresh full-quality neutral and shaded captures; it is not closed.
 
 Runtime performance investigation must distinguish completed-bake gameplay from bake transport and
 startup. The renderer already provides an opaque depth prepass and tiled, depth-sliced light lists.
@@ -322,7 +326,7 @@ checkpoints; an implemented feature is not automatically accepted in live gamepl
 
 At the handoff, native `e51bff0` and adapter `712a3aa` remained installed, and the adaptive work
 was an unreleased research checkpoint. The original recommendation to keep that install fixed has
-been superseded by the reviewed 2026-10-22 testing checkpoint above. Fixed-view improvements and
+been superseded by the reviewed testing checkpoint above. Fixed-view improvements and
 component checks do not close live-game performance, broad probe quality, moving-viewmodel or
 other-map acceptance. Continue those gates rather than treating testing deployment as release completion.
 
