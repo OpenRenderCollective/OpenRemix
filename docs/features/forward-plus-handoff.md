@@ -14,6 +14,11 @@ Keep static visibility, unknown coverage, toggleable groups and offscreen moving
 
 ## Module ownership
 
+- `forward/shaders/cluster.comp`: each workgroup shares batches of light spheres while retaining
+  sorted prefix/tail membership and independent overflow counts. Inactive lanes must reach both
+  shared-memory barriers; guard writes rather than returning before a barrier. No persistent cluster
+  result is reused, so camera/light changes are evaluated on every frame.
+
 - `forward/shadows/sun_cache.*`: frozen sunlight ownership and projection reuse. Subtexel fit
   changes retain the exact cached matrix for both static sampling and moving-caster rendering;
   significant movement, scene replacement and resolution changes still invalidate. This does not

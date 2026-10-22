@@ -22,14 +22,16 @@ the timestamp shift alone is not evidence of additional caster work. Local point
 casters against individual cube faces, retaining seam-crossing and offscreen actors. Frame reports
 expose per-slot identities and recorded frozen/moving draws for continued profiling. Next isolate
 covered versus uncovered probe receiver cost and the remaining surface-lightmap shading cost.
-Coverage views locate some uncovered distant geometry. `receiverLightCount` deliberately falls back
-to the full uploaded light array there because current cluster lists contain only the runtime prefix.
-A conservative clustered baked-tail candidate now shares one ordered list with the runtime prefix,
-retaining independent overflow and the complete analytic fallback. View-space spheres are prepared
+Coverage views locate some uncovered distant geometry. The clustered baked tail shares one ordered
+list with the runtime prefix, so `receiverLightCount` can use the complete spatially culled list on
+uncovered receivers. Complete analytic traversal remains available on overflow; covered receivers
+retain independent prefix counts and overflow. View-space spheres are prepared
 once per uploaded light, including affine-view bounds. Keep mapped receivers on their short prefix;
 do not omit unknown lighting. Core GPU membership and live integration checks cover this path.
-Fixed Crossfire views show lower GPU cost; Construct remains roughly flat in one direction. Continue
-broader maps, moving/armed views and worst-case build/storage checks before deployment acceptance.
+Cooperative sphere-bound loads reduce redundant light-buffer access during cluster construction.
+Fixed-view renderer replays cover Crossfire, Construct and c1a0; they do not establish live gameplay
+performance. Continue broader maps, moving/armed views and worst-case build/storage checks before
+deployment acceptance.
 Crossfire can remain limited by host time after GPU time falls: profile the engine/adapter caller and
 native preparation separately before attributing the remaining frame cost to light shading.
 Caller-stack sampling now locates repeated sleeps in the original Source shader backend while the
