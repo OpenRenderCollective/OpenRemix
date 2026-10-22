@@ -62,6 +62,10 @@ namespace remix::forward::probes {
   // signed zero in the shader seed), not on projection/blending metadata.
   bool sameCaptureRays(const Capture &a, const Capture &b);
   std::vector<bake::Point> rays(const Capture &capture);
+  // Append directly to a caller's planned work buffer, avoiding a temporary
+  // six-face ray array per capture. Failure preserves the existing prefix.
+  void appendRays(const Capture &capture, std::vector<bake::Point> &output,
+                  std::stop_token cancelled = {});
   // Ordered authored/automatic candidates. The controller validates these
   // against captured geometry before fitting, including static props and masks.
   std::vector<Vec3> candidateSites(const scene::BakeScene &scene, const bake::Grid &grid, uint32_t count,

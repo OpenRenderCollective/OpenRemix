@@ -84,8 +84,7 @@ namespace remix::forward::probes {
       rays.reserve(size_t(rayOwners.size()) * texels);
       for (const auto owner : rayOwners) {
         if (cancellation.stop_requested()) throw std::runtime_error("Reflection edit superseded");
-        const auto captureRays = probes::rays(captures[owner]);
-        rays.insert(rays.end(), captureRays.begin(), captureRays.end());
+        appendRays(captures[owner], rays, cancellation.get_token());
       }
       rayCount = uint32_t(rays.size());
       if (prior && prior->transport) {

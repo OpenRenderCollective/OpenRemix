@@ -190,18 +190,30 @@ namespace remix::forward::probes {
     return d[2] >= 0 ? FaceUv{4, {d[0] / z, -d[1] / z}} : FaceUv{5, {-d[0] / z, -d[1] / z}};
   }
   std::vector<bake::Point> rays(const Capture &capture) {
+    std::vector<bake::Point> result;
+    appendRays(capture, result);
+    return result;
+  }
+  void appendRays(const Capture &capture, std::vector<bake::Point> &output, std::stop_token cancelled) {
     validate(capture);
     const uint32_t size = capture.resolution;
-    std::vector<bake::Point> result;
-    result.reserve(6 * size * size);
-    for (uint32_t face = 0; face < 6; ++face)
-      for (uint32_t y = 0; y < size; ++y)
-        for (uint32_t x = 0; x < size; ++x) {
-          const auto ray = direction(face, 2 * (float(x) + .5f) / size - 1, 2 * (float(y) + .5f) / size - 1);
-          result.push_back({{capture.position[0], capture.position[1], capture.position[2], 0},
-                            {ray[0], ray[1], ray[2], 0}});
+    const auto start = output.size();
+    if (cancelled.stop_requested()) throw std::runtime_error("Reflection ray planning superseded");
+    output.reserve(start + 6ull * size * size);
+    try {
+      for (uint32_t face = 0; face < 6; ++face)
+        for (uint32_t y = 0; y < size; ++y) {
+          if (cancelled.stop_requested()) throw std::runtime_error("Reflection ray planning superseded");
+          for (uint32_t x = 0; x < size; ++x) {
+            const auto ray = direction(face, 2 * (float(x) + .5f) / size - 1, 2 * (float(y) + .5f) / size - 1);
+            output.push_back({{capture.position[0], capture.position[1], capture.position[2], 0},
+                              {ray[0], ray[1], ray[2], 0}});
+          }
         }
-    return result;
+    } catch (...) {
+      output.resize(start);
+      throw;
+    }
   }
   uint32_t levelOffset(uint32_t resolution, uint32_t level) {
     uint32_t result = 0;

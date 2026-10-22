@@ -31,6 +31,21 @@ void testCaptureWork() {
   alias.priority = 2;
   alias.worldToLocal = {{{0,-1,0,0}, {1,0,0,0}, {0,0,1,0}}};
   other.position[0] = .25f;
+  auto appended = p::rays(base);
+  const auto prefix = appended;
+  p::appendRays(other, appended);
+  const auto suffix = p::rays(other);
+  require(appended.size() == prefix.size() + suffix.size() &&
+              std::memcmp(appended.data(), prefix.data(), prefix.size() * sizeof(prefix[0])) == 0 &&
+              std::memcmp(appended.data() + prefix.size(), suffix.data(), suffix.size() * sizeof(suffix[0])) == 0,
+          "Direct ray append preserves prior captures and the following capture's ray bits");
+  std::stop_source stopped;
+  stopped.request_stop();
+  bool appendCancelled = false;
+  try { p::appendRays(base, appended, stopped.get_token()); }
+  catch (const std::runtime_error &) { appendCancelled = true; }
+  require(appendCancelled && appended.size() == prefix.size() + suffix.size(),
+          "Cancelled direct ray append leaves the existing work buffer intact");
   std::vector<p::Capture> captures{base, alias, other, alias, other};
   p::CaptureWork work(captures);
   require(work.rays().size() == 2u * 384 &&

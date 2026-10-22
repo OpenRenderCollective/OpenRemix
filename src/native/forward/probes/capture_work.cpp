@@ -35,8 +35,7 @@ namespace remix::forward::probes {
     m_rays.reserve(m_owners.size() * m_texels);
     for (const auto owner : m_owners) {
       check(cancelled);
-      const auto points = probes::rays(captures[owner]);
-      m_rays.insert(m_rays.end(), points.begin(), points.end());
+      appendRays(captures[owner], m_rays, cancelled);
     }
   }
   std::pair<uint32_t, uint32_t> CaptureWork::destination(uint32_t ray) const {
