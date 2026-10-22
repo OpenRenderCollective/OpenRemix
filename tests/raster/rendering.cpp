@@ -2241,6 +2241,16 @@ namespace {
               for (uint32_t frame = 0; frame < 8; ++frame) render(false, false, true, false);
               const auto baseline = target.forward->statistics();
               const auto probe = baseline.reflectionProbes.probes[0];
+              remix::forward::probes::Capture inputCapture;
+              inputCapture.resolution = baseline.reflectionProbes.parameters[1];
+              inputCapture.worldToLocal = probe.worldToLocal;
+              for (uint32_t c = 0; c < 3; ++c) inputCapture.position[c] = probe.position[c];
+              inputCapture.bounds.include({probe.minimum[0], probe.minimum[1], probe.minimum[2]});
+              inputCapture.bounds.include({probe.maximum[0], probe.maximum[1], probe.maximum[2]});
+              const auto inputRays = remix::forward::probes::rays(inputCapture);
+              require(baseline.reflectionProbes.parameters[0] == 1 && baseline.bakeContent.captureInputs ==
+                          (remix::scene::fastHash(inputRays.data(), inputRays.size() * sizeof(inputRays[0])) | 1),
+                      "Published automatic capture provenance preserves exact ray bytes after work-buffer release");
               remixapi_ReflectionVolumeEXT authored[2]{};
               authored[0].id = 71;
               for (uint32_t c = 0; c < 3; ++c) {

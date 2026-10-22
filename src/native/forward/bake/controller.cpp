@@ -921,6 +921,13 @@ namespace remix::forward::bake {
       job.ticket = m_pipelines->prepare(
           "forward-probe-filter-" + std::to_string(++generation), [owner, physical, device, config] {
             owner->captureWork.complete(owner->captures, owner->cancellation.get_token());
+            // Preserve exact input provenance on the worker, then release ray
+            // scratch before filtered cubemaps, denoising and atlas encoding.
+            // Publication must not scan this potentially large buffer again.
+            if (!owner->captures.empty())
+              owner->captureInputHash = scene::fastHash(owner->captureWork.rays().data(),
+                  owner->captureWork.rays().size() * sizeof(Point)) | 1;
+            owner->captureWork = {};
             dumpPhaseFingerprint("transport", owner->source->contentHash, owner->grid, owner->surfaceLayout, owner->surfaces,
                                  owner->sun, owner->captures);
             dumpVisibilityReport(*owner->mixedLights, owner->surfaceLayout,
@@ -1044,8 +1051,7 @@ namespace remix::forward::bake {
       volume->sun = m_job->source->sun;
     volume->hash = m_hash;
     if (!m_job->captures.empty()) {
-      volume->content.captureInputs =
-          scene::fastHash(m_job->captureWork.rays().data(), m_job->captureWork.rays().size() * sizeof(Point)) | 1;
+      volume->content.captureInputs = m_job->captureInputHash;
       uint64_t captured = 1469598103934665603ull;
       for (const auto &capture : m_job->captures)
         for (const auto &color : capture.radiance)

@@ -909,7 +909,12 @@ released before filtering. Both automatic and authored planning now append rays 
 reserved work buffer, removing a separate six-face temporary/copy per capture (3 MiB at 128-face,
 48 MiB at 512-face). Face/texel order and ray bits remain unchanged; CPU alias/cancellation and
 production automatic/authored rendering checks pass. These are array payload estimates, not measured whole-process reductions
-or FPS results. Scalar counters and canonical radiance remain available for edits.
+or FPS results. Automatic bake capture scratch is also released after readback, before reflection
+filtering, denoising and atlas encoding. Its exact input hash is computed once on the preparation
+worker and retained as a scalar, avoiding a large-buffer hash during render-thread publication.
+Production 1x/4x tests verify the published hash against exact reconstructed ray bytes. This latest
+automatic cleanup is source-only after the installed `22b8406` checkpoint. Scalar counters and
+canonical radiance remain available for edits.
 Production 1x/4x tests confirm zero published transport scratch, retained pending scratch and complete
 GPU image/acceleration cleanup after override reset and frame retirement. Diffuse bake ownership
 remains unchanged.

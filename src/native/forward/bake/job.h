@@ -114,6 +114,7 @@ namespace remix::forward::bake {
     bool candidatesPlanned = false;
     std::vector<probes::Capture> captures;
     probes::CaptureWork captureWork;
+    uint64_t captureInputHash = 0;
     probes::Data specular;
     std::unique_ptr<probes::ImageAsset> reflectionImage;
     std::stop_source cancellation;
