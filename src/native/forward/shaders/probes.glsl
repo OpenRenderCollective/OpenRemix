@@ -1,5 +1,6 @@
-// Packed cubemaps use a storage buffer, avoiding optional cube-array and
-// descriptor-indexing features. Layout matches forward/probes/data.h.
+// Projection metadata matches forward/probes/data.h. Image-backed radiance
+// needs no optional cube-array or descriptor-indexing features. The buffer
+// payload remains temporarily available while production consumers migrate.
 #ifndef PROBE_BINDING
 #define PROBE_BINDING 13
 #endif
@@ -13,10 +14,16 @@ struct ReflectionProbe {
 layout(set = PROBE_SET, binding = PROBE_BINDING, std430) readonly buffer ReflectionProbes {
   uvec4 probeParameters;
   ReflectionProbe probes[64];
+#ifndef PROBE_IMAGE_BINDING
   vec4 probeTexels[];
+#endif
 };
+#ifdef PROBE_IMAGE_BINDING
+layout(set = PROBE_SET, binding = PROBE_IMAGE_BINDING) uniform sampler2DArray probeImages;
+#endif
 #include "cube.glsl"
-vec3 probeTexel(uint start, uint size, uint face, ivec2 pixel) {
+#ifndef PROBE_IMAGE_BINDING
+vec3 probeFaceTexel(uint start, uint size, uint face, ivec2 pixel) {
   if (any(lessThan(pixel, ivec2(0))) || any(greaterThanEqual(pixel, ivec2(size)))) {
     vec3 adjacent = cubeProjection(cubeDirection(face, 2 * (vec2(pixel) + .5) / float(size) - 1));
     face = uint(adjacent.z);
@@ -24,12 +31,44 @@ vec3 probeTexel(uint start, uint size, uint face, ivec2 pixel) {
   }
   return probeTexels[start + (face * size + uint(pixel.y)) * size + uint(pixel.x)].rgb;
 }
+vec3 probeTexel(uint start, uint size, uint face, ivec2 pixel) {
+  bvec2 outside = bvec2(pixel.x < 0 || pixel.x >= int(size), pixel.y < 0 || pixel.y >= int(size));
+  if (all(outside)) {
+    ivec2 edge = clamp(pixel, ivec2(0), ivec2(size)-1);
+    return (probeFaceTexel(start, size, face, edge) +
+            probeFaceTexel(start, size, face, ivec2(pixel.x, edge.y)) +
+            probeFaceTexel(start, size, face, ivec2(edge.x, pixel.y))) / 3;
+  }
+  return probeFaceTexel(start, size, face, pixel);
+}
+#else
+vec3 probeImageFaceTexel(uint probe, uint level, uint size, uint face, ivec2 pixel) {
+  if (any(lessThan(pixel, ivec2(0))) || any(greaterThanEqual(pixel, ivec2(size)))) {
+    vec3 adjacent = cubeProjection(cubeDirection(face, 2 * (vec2(pixel) + .5) / float(size) - 1));
+    face = uint(adjacent.z);
+    pixel = clamp(ivec2((adjacent.xy * .5 + .5) * float(size)), ivec2(0), ivec2(size) - 1);
+  }
+  return texelFetch(probeImages, ivec3(pixel.x, int(face*size) + pixel.y, int(probe)), int(level)).rgb;
+}
+vec3 probeImageTexel(uint probe, uint level, uint size, uint face, ivec2 pixel) {
+  bvec2 outside = bvec2(pixel.x < 0 || pixel.x >= int(size), pixel.y < 0 || pixel.y >= int(size));
+  if (all(outside)) {
+    ivec2 edge = clamp(pixel, ivec2(0), ivec2(size)-1);
+    return (probeImageFaceTexel(probe, level, size, face, edge) +
+            probeImageFaceTexel(probe, level, size, face, ivec2(pixel.x, edge.y)) +
+            probeImageFaceTexel(probe, level, size, face, ivec2(edge.x, pixel.y))) / 3;
+  }
+  return probeImageFaceTexel(probe, level, size, face, pixel);
+}
+#endif
 vec3 probeMip(uint probe, uint level, vec3 ray) {
   uint size = probeParameters.y >> level;
   // Six faces per level, each one quarter the preceding level's area.
   // Their geometric sum is 8 * (baseArea - levelArea); sizes are powers of two.
+#ifndef PROBE_IMAGE_BINDING
   uint start = probe * probeParameters.w +
       8u * (probeParameters.y * probeParameters.y - size * size);
+#endif
   vec3 projected = cubeProjection(ray);
   vec2 pixel = (projected.xy * .5 + .5) * float(size) - .5;
   ivec2 base = ivec2(floor(pixel));
@@ -38,7 +77,11 @@ vec3 probeMip(uint probe, uint level, vec3 ray) {
   for (uint corner = 0; corner < 4u; ++corner) {
     ivec2 upper = ivec2(corner & 1u, (corner >> 1u) & 1u);
     vec2 weight = mix(1 - fraction, fraction, vec2(upper));
+#ifdef PROBE_IMAGE_BINDING
+    result += probeImageTexel(probe, level, size, uint(projected.z), base + upper) * weight.x * weight.y;
+#else
     result += probeTexel(start, size, uint(projected.z), base + upper) * weight.x * weight.y;
+#endif
   }
   return result;
 }

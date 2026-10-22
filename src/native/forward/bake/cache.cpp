@@ -52,7 +52,7 @@ namespace remix::forward::bake::cache {
       return std::max(1u, (count + probeHeaderBlockSlots - 1) / probeHeaderBlockSlots);
     }
     // Bump whenever incompatible planning, transport or wire semantics change.
-    constexpr uint32_t algorithmRevision = 27; // compare every fit at each bounded reflection origin
+    constexpr uint32_t algorithmRevision = 28; // three-face cube-corner filtering in capture mip preparation
     void require(bool value) {
       if (!value)
         throw std::runtime_error("Invalid bake cache metadata");

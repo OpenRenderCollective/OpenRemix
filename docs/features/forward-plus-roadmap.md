@@ -807,6 +807,15 @@ production still samples the original buffer. Next connect image ownership, uplo
 through both bake publication and live authored edits, then migrate and validate every shader consumer
 before raising exposed resolution limits or defaults. Do not claim rendered 256/512 support from
 an upload test alone; check sampling seams, blend parity, cache reload, memory and frame cost.
+An immutable image owner now manages compact metadata, HDR image/sampler, upload barriers and
+fence-delayed staging release. The shared sampler's image path is tested against half-quantized CPU
+data through 512-square faces, including all axis directions, corners, roughness mips and 64-capture
+membership. It remains an internal migration path; live bake/editor publication still uses buffers.
+Expanded tests exposed a three-face corner discontinuity in the previous manual filter. CPU mip
+preparation and both shader paths now average the diagonal corner tap across the three meeting
+faces. All eight corner approaches have an explicit regression test; cache policy 28 prevents stale
+pre-fix mip data reuse. Regenerated shaders must travel with this change. Validate full-map visual
+and performance effects before deploying; the testing install still uses its previous checkpoint.
 The attempted receiver-first score is rejected: it can fill the sheltered-region budget and displace
 broad map coverage. Its runtime code is removed. Develop room-local fairness before revisiting that
 objective; do not equate global area sampling or additional audit records with complete quality.

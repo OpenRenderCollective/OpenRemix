@@ -26,10 +26,31 @@ namespace {
       c.radiance.push_back({1 + ray.normal[0], 1 + ray.normal[1], 1 + ray.normal[2], 0});
     return c;
   }
+  void cubeCorners() {
+    const auto source = capture(8);
+    auto data = p::filter({&source, 1}, 64);
+    const uint32_t last = p::levelOffset(8, data.header.parameters[2]-1);
+    for (uint32_t face = 0; face < 6; ++face)
+      data.texels[last+face] = {float(face+1), 0, 0, 0};
+    for (float x : {-1.f, 1.f})
+      for (float y : {-1.f, 1.f})
+        for (float z : {-1.f, 1.f}) {
+          const float expected = ((x > 0 ? 1.f : 2.f) + (y > 0 ? 3.f : 4.f) +
+                                  (z > 0 ? 5.f : 6.f)) / 3;
+          for (uint32_t axis = 0; axis < 3; ++axis) {
+            Vec3 ray{x, y, z};
+            ray[axis] *= 1.00001f;
+            const auto value = p::sample(data, {}, ray, 1);
+            require(value && std::abs((*value)[0]-expected) < 1e-4f && (*value)[1] == 0,
+                    "All eight cube corners average three faces independently of the winning major axis");
+          }
+        }
+  }
 } // namespace
 int main() {
   testCaptureWork();
   testProbeImageData();
+  cubeCorners();
   require(p::storageCapacity(128, 128ull << 20) == 63 &&
               p::storageCapacity(32, 128ull << 20) == 64 &&
               p::storageCapacity(8, sizeof(p::Header)) == 0 &&

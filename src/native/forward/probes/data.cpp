@@ -49,6 +49,20 @@ namespace remix::forward::probes {
       return a;
     }
     Vec3 texel(std::span<const Vec4> pixels, uint32_t size, uint32_t face, int x, int y) {
+      if ((x < 0 || x >= int(size)) && (y < 0 || y >= int(size))) {
+        // The diagonal tap at a cube corner belongs equally to three faces.
+        // Choosing one neighbour makes the result depend on which major axis
+        // won a floating-point tie in project(). These calls cross at most one
+        // edge each, so recursion stops immediately.
+        const int edgeX = std::clamp(x, 0, int(size)-1), edgeY = std::clamp(y, 0, int(size)-1);
+        const auto a = texel(pixels, size, face, edgeX, edgeY);
+        const auto b = texel(pixels, size, face, x, edgeY);
+        const auto c = texel(pixels, size, face, edgeX, y);
+        Vec3 result;
+        for (uint32_t channel = 0; channel < 3; ++channel)
+          result[channel] = (a[channel] + b[channel] + c[channel]) / 3;
+        return result;
+      }
       // Reproject taps that cross an edge instead of clamping them to the
       // original face. All mips use the same seam-aware lookup.
       if (x < 0 || y < 0 || x >= int(size) || y >= int(size)) {

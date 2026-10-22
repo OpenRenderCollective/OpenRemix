@@ -1,15 +1,38 @@
 #include "forward/probes/data.h"
+#include "forward/probes/image_asset.h"
+#include "forward/half.h"
 #include "gpu_fixture.h"
 #include "probe_shaders/embedded.h"
 #include <cmath>
 using namespace remix;
 using namespace remix::forward;
 using namespace remix::forward::test;
+// Exercise the image sampler at sizes not yet exposed by the production baker.
+// A continuous directional pattern checks face orientation without amplifying
+// sub-texel CPU/GPU rounding at an exact face tie into a discontinuous label.
+void fillLargeImage(probes::Data &data, uint32_t resolution) {
+  const uint32_t levels = std::bit_width(resolution), stride = probes::levelOffset(resolution, levels);
+  data.header.parameters[1] = resolution;
+  data.header.parameters[2] = levels;
+  data.header.parameters[3] = stride;
+  data.texels.resize(size_t(data.header.parameters[0]) * stride);
+  for (uint32_t probe = 0; probe < data.header.parameters[0]; ++probe)
+    for (uint32_t level = 0; level < levels; ++level) {
+      const uint32_t size = resolution >> level;
+      for (uint32_t face = 0; face < 6; ++face)
+        for (uint32_t y = 0; y < size; ++y)
+          for (uint32_t x = 0; x < size; ++x) {
+            const auto ray = probes::direction(face, 2*(float(x)+.5f)/size-1, 2*(float(y)+.5f)/size-1);
+            data.texels[size_t(probe)*stride + probes::levelOffset(resolution, level) + (face*size+y)*size+x] =
+                {float(probe + 1) + .5f*ray[0], float(level + 1) + .5f*ray[1], 1 + .5f*ray[2], 0};
+          }
+    }
+}
 void samplingCase(uint32_t resolution) {
   Fixture fixture(false);
   struct Gpu {
     VkDevice device;
-    Buffer asset, input, output;
+    Buffer input, output;
     VkDescriptorSetLayout setLayout{};
     VkPipelineLayout layout{};
     VkPipeline pipeline{};
@@ -22,19 +45,20 @@ void samplingCase(uint32_t resolution) {
     }
   } gpu{fixture.device};
   std::vector<probes::Capture> captures(3);
+  const uint32_t captureSize = std::min(resolution, 128u);
   for (auto &capture : captures) {
     capture.bounds.include({-2, -.5f, -1});
     capture.bounds.include({2, .5f, 1});
     capture.worldToLocal = {{{0, 1, 0, -20}, {-1, 0, 0, 10}, {0, 0, 1, -30}}};
     capture.position = {10, 20.25f, 30};
-    capture.resolution = resolution;
-    capture.radiance.resize(6*resolution*resolution);
+    capture.resolution = captureSize;
+    capture.radiance.resize(6*captureSize*captureSize);
     for (uint32_t face = 0; face < 6; ++face)
-      for (uint32_t y = 0; y < resolution; ++y)
-        for (uint32_t x = 0; x < resolution; ++x) {
-          const auto ray = probes::direction(face, 2*(float(x)+.5f)/resolution-1,
-                                            2*(float(y)+.5f)/resolution-1);
-          capture.radiance[(face*resolution+y)*resolution+x] = {1+ray[0], 1+ray[1], 1+ray[2], 0};
+      for (uint32_t y = 0; y < captureSize; ++y)
+        for (uint32_t x = 0; x < captureSize; ++x) {
+          const auto ray = probes::direction(face, 2*(float(x)+.5f)/captureSize-1,
+                                            2*(float(y)+.5f)/captureSize-1);
+          capture.radiance[(face*captureSize+y)*captureSize+x] = {1+ray[0], 1+ray[1], 1+ray[2], 0};
         }
   }
   captures[1].priority = 7;
@@ -55,8 +79,12 @@ void samplingCase(uint32_t resolution) {
       captures[i].worldToLocal[1][3] += 1000.f * i;
     }
   }
-  const auto data = probes::filter(captures, 64);
-  const auto bytes = probes::serialize(data);
+  auto data = probes::filter(captures, 64);
+  if (resolution > 128) fillLargeImage(data, resolution);
+  probes::ImageAsset asset(fixture.physical, fixture.device, data);
+  auto quantized = data;
+  for (auto &pixel : quantized.texels)
+    for (uint32_t c = 0; c < 3; ++c) pixel[c] = half::decode(half::encode(pixel[c]));
   struct Query { Vec4 position, direction; };
   std::vector<Query> queries;
   const uint32_t steps = 2 * (data.header.parameters[2] - 1);
@@ -64,7 +92,10 @@ void samplingCase(uint32_t resolution) {
     for (float x : {9.f, 9.5f, 9.9f, 10.f, 10.2f, 10.5f, 11.f})
       for (float y : {17.f, 18.f, 19.f, 19.5f, 20.f, 20.2f, 21.f, 22.f, 23.f})
         for (float z : {29.f, 30.f, 31.f})
-          for (Vec3 ray : {Vec3{1, 0, 0}, Vec3{0, 1, 1}, Vec3{-1, .2f, 1}})
+          for (Vec3 ray : {Vec3{1, 0, 0}, Vec3{-1, 0, 0}, Vec3{0, 1, 0}, Vec3{0, -1, 0},
+                          Vec3{0, 0, 1}, Vec3{0, 0, -1}, Vec3{1, 1, 0}, Vec3{-1, -1, 0},
+                          Vec3{1, 0, 1}, Vec3{-1, 0, -1}, Vec3{0, 1, 1}, Vec3{0, -1, -1},
+                          Vec3{1, 1, 1}, Vec3{-1, -1, -1}, Vec3{-1, .2f, 1}})
             queries.push_back(
                 {{x, y, z, float(step) / steps}, {ray[0], ray[1], ray[2], 0}});
   if (resolution == 8) {
@@ -79,9 +110,10 @@ void samplingCase(uint32_t resolution) {
   const VkDescriptorSetLayoutBinding bindings[] = {
       {0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
       {1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
-      {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}};
+      {2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr},
+      {3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr}};
   const VkDescriptorSetLayoutCreateInfo setInfo{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-      .bindingCount = 3, .pBindings = bindings};
+      .bindingCount = 4, .pBindings = bindings};
   check(vkCreateDescriptorSetLayout(fixture.device, &setInfo, nullptr, &gpu.setLayout));
   const uint32_t count = uint32_t(queries.size());
   const VkPushConstantRange range{VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(count)};
@@ -98,26 +130,29 @@ void samplingCase(uint32_t resolution) {
   const auto result = vkCreateComputePipelines(fixture.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &gpu.pipeline);
   vkDestroyShaderModule(fixture.device, module, nullptr);
   check(result);
-  gpu.asset.create(fixture.physical, fixture.device, bytes.size(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-  gpu.asset.write(bytes.data(), bytes.size());
   gpu.input.create(fixture.physical, fixture.device, queries.size()*sizeof(Query), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   gpu.input.write(queries.data(), queries.size()*sizeof(Query));
   gpu.output.create(fixture.physical, fixture.device, queries.size()*sizeof(Vec4), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-  const VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3};
+  const VkDescriptorPoolSize poolSize[]{{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3},
+                                       {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1}};
   const VkDescriptorPoolCreateInfo poolInfo{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-      .maxSets = 1, .poolSizeCount = 1, .pPoolSizes = &poolSize};
+      .maxSets = 1, .poolSizeCount = 2, .pPoolSizes = poolSize};
   check(vkCreateDescriptorPool(fixture.device, &poolInfo, nullptr, &gpu.pool));
   const VkDescriptorSetAllocateInfo allocate{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
       .descriptorPool = gpu.pool, .descriptorSetCount = 1, .pSetLayouts = &gpu.setLayout};
   VkDescriptorSet set;
   check(vkAllocateDescriptorSets(fixture.device, &allocate, &set));
-  const VkDescriptorBufferInfo buffers[]{gpu.asset.descriptor(), gpu.input.descriptor(), gpu.output.descriptor()};
-  VkWriteDescriptorSet writes[3];
+  const VkDescriptorBufferInfo buffers[]{asset.metadata(), gpu.input.descriptor(), gpu.output.descriptor()};
+  VkWriteDescriptorSet writes[4];
   for (uint32_t i = 0; i < 3; ++i)
     writes[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = i,
         .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &buffers[i]};
-  vkUpdateDescriptorSets(fixture.device, 3, writes, 0, nullptr);
+  const auto radiance = asset.radiance();
+  writes[3] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = 3,
+      .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &radiance};
+  vkUpdateDescriptorSets(fixture.device, 4, writes, 0, nullptr);
   fixture.begin();
+  asset.recordUpload(fixture.command);
   vkCmdBindPipeline(fixture.command, VK_PIPELINE_BIND_POINT_COMPUTE, gpu.pipeline);
   vkCmdBindDescriptorSets(fixture.command, VK_PIPELINE_BIND_POINT_COMPUTE, gpu.layout, 0, 1, &set, 0, nullptr);
   vkCmdPushConstants(fixture.command, gpu.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(count), &count);
@@ -127,16 +162,24 @@ void samplingCase(uint32_t resolution) {
   vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
                        0, 1, &read, 0, nullptr, 0, nullptr);
   fixture.finish();
+  asset.releaseUpload();
   std::vector<Vec4> values(count);
   gpu.output.read(values.data(), values.size()*sizeof(Vec4));
   for (size_t i = 0; i < queries.size(); ++i) {
     const auto &q = queries[i];
-    const auto expected = probes::sample(data, {q.position[0], q.position[1], q.position[2]},
+    const auto expected = probes::sample(quantized, {q.position[0], q.position[1], q.position[2]},
         {q.direction[0], q.direction[1], q.direction[2]}, q.position[3]);
     require(values[i][3] == (expected ? 1.f : 0.f), "GPU oriented influence matches receiver membership");
-    for (uint32_t c = 0; c < 3; ++c)
-      require(std::abs(values[i][c] - (expected ? (*expected)[c] : 0.f)) < 2e-5f,
-              "GPU oriented parallax, priorities and roughness match CPU reference");
+    for (uint32_t c = 0; c < 3; ++c) {
+      const float reference = expected ? (*expected)[c] : 0.f;
+      if (std::abs(values[i][c] - reference) >= 2e-5f) {
+        std::fprintf(stderr, "Reflection mismatch: size %u query %zu channel %u GPU %.9g CPU %.9g; "
+            "position %.9g %.9g %.9g roughness %.9g ray %.9g %.9g %.9g\n", resolution, i, c,
+            values[i][c], reference, q.position[0], q.position[1], q.position[2], q.position[3],
+            q.direction[0], q.direction[1], q.direction[2]);
+        require(false, "GPU oriented parallax, priorities and roughness match CPU reference");
+      }
+    }
   }
   require(validationErrors == 0, "Oriented reflection sampling is Vulkan validation clean");
   std::printf("Oriented reflection GPU sampling at %u: %u translated, rotated, "
@@ -144,7 +187,7 @@ void samplingCase(uint32_t resolution) {
               resolution, count);
 }
 int main() try {
-  for (uint32_t resolution : {8u, 16u, 32u, 64u, 128u})
+  for (uint32_t resolution : {8u, 16u, 32u, 64u, 128u, 256u, 512u})
     samplingCase(resolution);
 } catch (VkResult error) {
   std::fprintf(stderr, "GPU reflection sampling failed: %d\n", int(error));

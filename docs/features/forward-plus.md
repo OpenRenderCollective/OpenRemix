@@ -2247,8 +2247,13 @@ volume retains independent projection, influence, feathering and priority metada
 origins remain distinct because their bits participate in the shader seed. Cold and cached jobs build
 the same unique query plan, including its diagnostic fingerprint. GPU storage still retains a full
 mip chain per volume; sharing texture storage remains an optimization. Authored live-edit capture
-scheduling retains its existing per-volume reuse policy. Bake policy revision 27 distinguishes this
-planning from previous caches; query sharing does not require another format or policy revision.
+scheduling retains its existing per-volume reuse policy. Bake policy revision 27 introduced this
+planning; revision 28 additionally distinguishes three-face cube-corner filtering. The diagonal tap
+at a cube corner averages the three meeting faces in CPU mip preparation and shader sampling,
+avoiding a discontinuity when a near tie selects a different major axis. Query sharing itself does
+not change the wire format. The image-storage migration has a tested RGBA16F image owner and
+shared sampler path, but production publication still uses the buffer payload. Do not infer live
+256/512 bake support from the image upload/sampling fixtures.
 
 The shared reflection sampler supports rigid world-to-projection frames and signed overlap priorities.
 Projection and influence bounds use this local frame; capture positions and cube-face radiance stay in
