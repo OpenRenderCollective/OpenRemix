@@ -876,7 +876,12 @@ and none capacity-omitted. A glossy test sphere outside both authored volumes re
 reflections with SSR disabled. The longer-warmup repeat exits cleanly with a fresh report and matching
 image; its radiance hashes differ despite matching identity, geometry and capture inputs. The initial
 short-window run failed only its final report-freshness drain. This is narrow coverage acceptance,
-not a performance result or whole-map quality acceptance.
+not a performance result or whole-map quality acceptance. A separate controlled 33-frame crossing
+through an artificial interior authored boundary now verifies fallback feathering: sphere-interior
+maximum mean adjacent RGB change drops from 68.46 display levels to 3.47. Both full-quality runs
+exit cleanly with synchronized validation; fallback retains 2 authored plus 61 automatic records.
+The original user bounds remain untouched. This verifies the constructed transition, not room-fitting
+accuracy or FPS. Exact GPU readback also covers 64 interleaved/reversed source layers and all mips.
 The input/screenshot fixture now explicitly selects raster, checks the actual DLSS reconstruction
 default, and waits for the single completed presentation and resized screenshot before examining
 frame accounting. Exceptions unwind an explicit runtime shutdown; thread assertions propagate to

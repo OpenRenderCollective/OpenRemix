@@ -18,13 +18,28 @@ void uploadCase(uint32_t count, uint32_t size, bool composition = false) {
   probes::ImageAsset asset(fixture.physical, fixture.device, source);
   std::unique_ptr<probes::ImageAsset> second, combined;
   if (composition) {
-    require(count == 1, "Composition fixture uses one layer per source");
+    require(count > 0 && count <= 32, "Composition fixture fits both sources within 64 layers");
     auto other = source;
-    for (auto &texel : other.texels) texel = {32, 8, .5f, 1};
+    for (size_t i = 0; i < other.texels.size(); ++i)
+      other.texels[i] = {32 + float(i % 1000) / 32, 8, .5f, 1};
     second = std::make_unique<probes::ImageAsset>(fixture.physical, fixture.device, other);
-    source.header.parameters[0] = ++count;
-    source.texels.insert(source.texels.end(), other.texels.begin(), other.texels.end());
-    probes::Composition plan{.header = source.header, .layers = {{false, 0}, {true, 0}}, .automatic = 1};
+    probes::Data expected;
+    expected.header = source.header;
+    expected.header.parameters[0] = 2 * count;
+    probes::Composition plan{.header = expected.header, .automatic = count};
+    for (uint32_t layer = 0; layer < count; ++layer) {
+      // Interleave reversed authored layers with forward automatic layers.
+      // Distinct HDR patterns expose source/layer/mip addressing mistakes.
+      const uint32_t reverse = count - layer - 1;
+      plan.layers.push_back({false, reverse});
+      plan.layers.push_back({true, layer});
+      expected.texels.insert(expected.texels.end(), source.texels.begin() + size_t(reverse)*stride,
+                             source.texels.begin() + size_t(reverse+1)*stride);
+      expected.texels.insert(expected.texels.end(), other.texels.begin() + size_t(layer)*stride,
+                             other.texels.begin() + size_t(layer+1)*stride);
+    }
+    source = std::move(expected);
+    count *= 2;
     combined = std::make_unique<probes::ImageAsset>(fixture.physical, fixture.device, plan);
   }
   auto &output = combined ? *combined : asset;
@@ -92,6 +107,7 @@ int main() try {
   uploadCase(1, 256);
   uploadCase(1, 512);
   uploadCase(1, 8, true);
+  uploadCase(32, 8, true);
 } catch (VkResult error) {
   std::fprintf(stderr, "Reflection image upload failed: %d\n", int(error));
   return 1;
