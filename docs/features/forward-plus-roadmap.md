@@ -1045,3 +1045,17 @@ diagnostics expose actual density. Dense hosts retain their complete coverage.
 This is still a single-resolution lattice: local adaptive refinement, resolution
 transitions and real moving-prop comparisons against dense reference fields remain
 the next probe-quality work.
+
+### Cubemap reference review follow-up
+
+A pinned ValveResourceFormat renderer review identifies two concrete quality studies: its environment
+lookup bends rough reflections toward the surface normal and uses per-capture L1 luminance SH to
+normalize/occlude cubemap lighting against receiver irradiance. OpenRemix currently samples the mirror
+direction through its independently GGX-filtered mip chain and has no equivalent normalization field.
+The viewer also uses a different roughness-to-mip remap; copying that scalar without matching its
+asset prefilter convention is not justified. Our base mip copies raw capture radiance, so roughness-zero
+sharpness should first be checked against capture resolution and parallax rather than blaming GGX.
+Treat this as an unofficial viewer reference, not proof of Valve's proprietary implementation.
+Next compare controlled roughness/grazing sweeps and bright/dark receiver transitions, including props,
+viewmodels, water and sky. Preserve direct visibility and validate energy, cache/layout compatibility
+and actual map quality before introducing normalization or changing defaults.
