@@ -295,6 +295,23 @@ namespace {
     texture.format = REMIXAPI_FORMAT_BC1_RGBA_SRGB_EXT;
     auto rgbaBc1 = remix::scene::decodeTexture(texture);
     require(rgbaBc1.srgb && rgbaBc1.mips[0][3] == 0, "sRGB BC1 changed alpha or transfer function");
+    const float hdr[] = {8, .125f, 2, 1};
+    texture.format = REMIXAPI_FORMAT_R32G32B32A32_SFLOAT_EXT;
+    texture.data = hdr;
+    texture.dataSize = sizeof(hdr);
+    auto linearHdr = remix::scene::decodeTexture(texture);
+    require(!linearHdr.srgb && linearHdr.hdrMips[0] == std::vector<float>({8, .125f, 2, 1}),
+            "Immutable float upload preserves linear HDR radiance");
+    texture.dataSize = sizeof(hdr) - 1;
+    rejected([&] { remix::scene::decodeTexture(texture); });
+    const uint16_t halfHdr[] = {0x4800, 0x3000, 0x4000, 0x3c00};
+    texture.format = REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT;
+    texture.data = halfHdr;
+    texture.dataSize = sizeof(halfHdr);
+    require(remix::scene::decodeTexture(texture).hdrMips == linearHdr.hdrMips,
+            "Half and float HDR uploads agree");
+    texture.data = nullptr;
+    rejected([&] { remix::scene::decodeTexture(texture); });
     // Tiny valid DDS fixtures cover channel masks, BC1/2/3, odd dimensions and truncation.
     auto save = [&](const char *name, const std::vector<uint8_t> &data) {
       auto path = directory / name;

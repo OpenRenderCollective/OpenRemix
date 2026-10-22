@@ -1303,3 +1303,6 @@ typedef struct remixapi_MaterialPbrRemapEXT {
 #define REMIXAPI_FORMAT_BC4_UNORM_EXT ((remixapi_Format)147)
 #define REMIXAPI_FORMAT_BC6H_UFLOAT_EXT ((remixapi_Format)143)
 #define REMIXAPI_FORMAT_BC6H_SFLOAT_EXT ((remixapi_Format)144)
+// Immutable linear HDR uploads; values match Vulkan. Existing ABI layouts are unchanged.
+#define REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT ((remixapi_Format)97)
+#define REMIXAPI_FORMAT_R32G32B32A32_SFLOAT_EXT ((remixapi_Format)109)

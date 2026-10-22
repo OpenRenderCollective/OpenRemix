@@ -185,6 +185,11 @@ namespace remix::scene {
     uint32_t block = 0;
     bool srgb = false, bgra = false, bc1Alpha = false;
     switch (uint32_t(info.format)) {
+    case REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT:
+    case REMIXAPI_FORMAT_R32G32B32A32_SFLOAT_EXT:
+      return decodeFloat(info.width, info.height, info.mipLevels, 4,
+                         info.format == REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT,
+                         static_cast<const uint8_t *>(info.data), size_t(info.dataSize));
     case REMIXAPI_FORMAT_R8G8B8A8_SRGB:
       srgb = true;
       break;

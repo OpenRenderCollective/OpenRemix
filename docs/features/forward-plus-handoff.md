@@ -348,3 +348,9 @@ of magnitude. Runtime defaults already use 256 samples and three bounces. Earlie
 comparisons cannot decide a production direction/energy change. The adapter's
 `tools/replay_quality.cfg` provides an explicit starting point; add fixed camera, matching assets,
 exposure and sky scope, and still verify preparation and transport convergence.
+
+
+HDR sky replay requires the new native immutable float texture formats; the currently installed
+22b8406 runtime predates them. Pair the rebuilt replay with a newer native runtime for HDR skies.
+LDR/frozen-reference behavior remains compatible. See the adapter README for encodings and limits.
+No testing-install deployment was made as part of this source change.

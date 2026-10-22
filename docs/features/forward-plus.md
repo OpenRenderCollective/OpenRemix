@@ -2320,11 +2320,11 @@ unknown and retains the sampler's unit-weight fallback. It is useful when compar
 since identical origins/bounds alone do not prove identical blend weights. The optional
 `remixapi_SetReflectionVolumesEXT` authoring API publishes copied, scene-scoped volumes separately
 from frozen diffuse bake inputs. The adapter validates its map fingerprint and submits saved volumes.
-A nonempty authored set currently replaces the complete automatic set; it is not a partial overlay.
-Receivers outside every authored influence volume therefore have no local cubemap from automatic
-placement. Removing the sidecar restores automatic placement; an explicit empty set disables local
-cubemaps. Partial authoring needs a future fallback/composition policy rather than assuming both
-sets are sampled together.
+By default a nonempty authored set replaces the automatic set. The opt-in
+`rtx.native.forward.authoredReflectionFallback` retains uncovered automatic captures below authored
+priorities within the shared 64-capture budget, conservatively omitting fully covered boxes. Its
+composed image has an additional memory cost. Removing the sidecar restores automatic placement;
+an explicit empty set disables local cubemaps even with fallback enabled.
 A reflection-only job retains the previous published set while edited captures are prepared. Bounds and
 priority edits reuse raw and filtered radiance; changed origins trace only their affected captures against
 reused scene acceleration. Submitted frames retain their transport and sampled reflection buffers until
@@ -2337,3 +2337,13 @@ The image owner exposes that physical header to diagnostics and CPU viewmodel ca
 bits always refer to the corresponding GPU layer. Compare canonical dumps by capture metadata rather
 than assuming their indices equal uploaded layer indices when priorities differ. This does not change
 the metadata layout, image format, 64-capture capacity or serialized bake data, and needs no rebake.
+
+
+## Static HDR sky uploads
+
+The optional immutable texture formats `REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT` and
+`REMIXAPI_FORMAT_R32G32B32A32_SFLOAT_EXT` expose the existing linear HDR image decoder through
+`CreateTexture`. They retain HDR pixels, use the existing bounded mip validation and GPU image path,
+and leave public ABI layouts unchanged. Dynamic byte-texture updates retain their existing format
+restrictions. This allows offline hosts to supply decoded sky radiance without a lossy LDR conversion;
+Source-specific HDR material selection and scaling belong to the adapter, not the native renderer.

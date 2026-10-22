@@ -1121,3 +1121,17 @@ Use it instead of smoke-test settings for visual acceptance. Future direction/en
 need normal-quality comparisons; capture-origin/parallax and receiver-local controls, bright/dark
 transitions, props, water, viewmodels, other maps and motion remain open. Preserve finite-sample
 reference limitations and avoid treating this fixed metallic-sphere study as renderer parity or FPS.
+
+
+### Static HDR sky relay
+
+The BSP replay now handles floating-point/integer HDR sky faces and single-texture RGBS encoding,
+including Source's radiance scaling and linear colour tint. The native API accepts immutable half/float
+RGBA uploads through the existing HDR image path without changing ABI layouts. HDR sky interpolation
+and transport preserve values above one; ordinary and frozen LDR paths remain supported. Legacy
+three-texture HDR, animated/procedural skies and server overrides remain outside static decoding;
+procedural skies still need an explicit frozen live reference. Normal game capture is unchanged.
+
+A cold path-traced configuration combination returned Vulkan NOT_READY during preparation; the fully
+specified known tracing configuration completed cleanly. Keep the former preparation case as a
+separate follow-up; do not attribute it to HDR or accept its incomplete capture as evidence.
