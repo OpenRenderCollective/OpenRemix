@@ -895,6 +895,10 @@ normal Meson object linked to a separate local executable because the old execut
 Earlier terminated tests still expose one blocked thread each to Windows wait-chain inspection,
 with no cycle or wait owner reported. Their process handles remain unsignalled despite exit code 1.
 Cleanup and an ordinary full API-suite run remain unconfirmed; do not accept new timings yet.
+Windows GPU counters now confirm roughly 248 MiB dedicated plus 210 MiB shared memory retained
+across the three old terminated tests. Three one-second engine samples show zero observed activity;
+this does not explain the stalled cleanup or establish clean profiling conditions. A convenient
+Windows restart has been requested; independent renderer/quality work can continue.
 The rendering menu now explains that active authored volumes replace the whole automatic set.
 The explicit fallback mode preserves replacement/empty-set/reset semantics and uses the priority
 feathering below. It copies published automatic radiance without retracing, keeps canonical authored
