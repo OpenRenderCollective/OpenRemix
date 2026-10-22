@@ -2,11 +2,16 @@
 
 ## Start here
 
-The separate GMod testing install was updated on 2026-10-23 to native `4d0f521` and adapter
+The separate GMod testing install was updated on 2026-10-23 to native `22b8406` and adapter
 `d7894f6`, including shared clustered-light loads, one-sided coarse probe confidence, and retained
 bake/memory publication across asynchronous target replacement. The package retains the existing
 runtime dependencies. User settings, addon mounts and authored Construct cubemaps are preserved;
-an exact local rollback is available. Main branches remain upstream.
+an exact local rollback is available. Main branches remain upstream. The latest refresh adds priority
+feathering, optional automatic reflection fallback, reflection readiness diagnostics and reduced
+CPU capture scratch. Six selected GPU suites and candidate/installed Construct smoke checks pass
+with synchronization validation; their smoke images match exactly. All 150 runtime files and six
+preserved settings/assets verify. Automatic authored fallback stays off by default; enable it with
+"Automatic fallback outside authored volumes" in the rendering menu for targeted testing.
 
 This checkpoint also includes chart-edge denoising, stable progressive history, surface-hemisphere
 transport, cosine-anchored surface irradiance and chart-local exterior donor repair. The reproduced
@@ -33,11 +38,12 @@ and offscreen moving shadows. The prior uniform-grid checkpoint was `e51bff0`.
 - `forward/probes/data.cpp` and `forward/shaders/probes.glsl`: matching priority-layer feathering.
   Equal-priority sets retain one traversal; mixed sets normalize edge coverage across priority layers,
   cancelling shared floor/wall bands. An isolated Construct glossy-boundary check confirms the blend
-  and unchanged control interiors; a moving-path validation smoke passes. This source continuation
-  remains undeployed. A controlled 33-frame glossy traversal now confirms a less abrupt transition
+  and unchanged control interiors; a moving-path validation smoke passes. This continuation is now
+  in the testing install. A controlled 33-frame glossy traversal confirms a less abrupt transition
   with matching endpoint interiors; sharp common reflection-detail changes still need investigation.
   Wider maps, material/roughness variants, real gameplay and performance acceptance remain open. Authored sets
-  still replace automatic sets; fallback composition is separate unfinished work.
+  replace automatic sets by default; explicit fallback composition is implemented and available for
+  targeted testing. It preserves empty-set/reset semantics and reports capacity omissions.
 
 - `forward/Renderer::activate`: queue-idle adoption publishes retained bake metadata and owned
   allocation totals before asynchronous queries can observe the replacement renderer. Preparation
@@ -237,7 +243,7 @@ automatic placement on the next map load. Live visual confirmation remains pendi
 The user subsequently authored two Construct volumes, restoring a nonempty active override.
 Their JSON is preserved in the adapter's `tools/probe_editor/references/gm_construct.json` as
 a partial main-hall fitting reference. Preserve the live authoring document and runtime sidecar;
-these two volumes do not establish whole-map reflection coverage. The source-only optional setting
+these two volumes do not establish whole-map reflection coverage. The optional setting
 `rtx.native.forward.authoredReflectionFallback=1` now fills uncovered areas with existing automatic
 image layers within the shared 64-record budget. It defaults off, preserves explicit-empty/null-reset
 semantics, reports covered/omitted counts, and does not invalidate diffuse lighting. CPU/GPU copy and

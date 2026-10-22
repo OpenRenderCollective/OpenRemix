@@ -11,11 +11,15 @@ reports. An implementation or synthetic test alone does not close an integration
 
 ## Continuation status (2026-10-23)
 
-The separate GMod testing install now uses native `4d0f521` and adapter `d7894f6`; it includes the
+The separate GMod testing install now uses native `22b8406` and adapter `d7894f6`; it includes the
 current clustered fallback, shared sphere-bound loads, adaptive probe reconstruction and runtime
 publication fixes. This makes the feature branch available for testing, not an accepted general
 performance or visual-quality release. Existing dependencies, settings and authored volumes are
-preserved with a rollback checkpoint. The previous uniform-grid install remains a historical baseline.
+preserved with a rollback checkpoint. The previous uniform-grid install remains a historical baseline. This refresh also deploys authored
+priority feathering, optional automatic fallback, reflection readiness and capture-scratch reductions.
+Fallback remains off by default. Six GPU suites and low-budget candidate/installed Construct smoke
+checks pass with synchronization validation; smoke images match exactly. All 150 runtime files and
+six preserved settings/assets verify. These functional checks do not establish gameplay FPS.
 The native continuation adds chart-edge denoising, stable progressive history, surface-hemisphere
 transport, reflection-free lighting diagnostics and cosine-anchored surface/unit-light irradiance.
 The deployed DLL passes a small Construct replay bake with synchronization validation. Chart-local
@@ -852,7 +856,7 @@ behind authored priorities. It retains all authored records and removes automati
 their entire influence box is proven contained by one authored box; remaining automatic records keep
 their original order within the shared 64-record budget. Diagnostics report retained, covered and
 capacity-omitted counts. Empty authored sets still disable local probes; null resets restore automatic
-placement. The mode is not deployed or accepted across maps yet.
+placement. The mode is present in the testing install but remains off by default and unaccepted across maps.
 An installed-sidecar containment check confirms the skylit hall camera is inside the first authored
 volume, while the behind-spawn room, connector and unconfirmed secret approach cameras are outside
 both. Only 8 of the current 63 automatic capture origins are inside these volumes; that is an origin
@@ -914,7 +918,8 @@ edge bands blend toward lower priorities, and shared floor/wall bands cancel thr
 ratio. GPU uploads sort metadata and radiance layers together; canonical capture/cache identities remain
 unchanged, while diagnostics and viewmodel masks use the uploaded order. Analytic two/three-tier/HDR
 checks and GPU projection queries across 8–512 resolution pass, as do authored-edit reuse, viewmodel,
-SSR, water and sky-fallback checks with synchronization validation. This source checkpoint is not deployed.
+SSR, water and sky-fallback checks with synchronization validation. These changes now ship in the
+testing install; broad gameplay and performance acceptance remain open.
 An isolated runtime built from normal Meson inputs now reproduces the intended Construct boundary
 blend on a glossy receiver, while the low-only and high-core control interiors remain pixel-identical.
 Both authored captures are fully published in the compared images. A camera-path smoke across that
