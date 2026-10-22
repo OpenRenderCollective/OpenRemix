@@ -272,6 +272,12 @@ explicitly: the tint sampler can share animated
 bump UVs. Do not freeze an arbitrary animation frame, skip the dependency or mark a placeholder ready.
 Check complete first-load sky capture and radiance separately once this gate opens.
 
+Vulkan path-tracer shadow visibility now has descriptor-indexed measured-sheet data and shares
+the finite, angle-dependent transmission model. Surface and frame GPU record sizes are preserved;
+dry scenes allocate no optics buffer. Primary/continuation shading, Metal optical-buffer integration
+and full backend/material acceptance remain pending. Keep the blended-secondary-ray policy explicit
+in comparisons so disabling those rays cannot masquerade as a transmission error.
+
 Transport distinguishes dielectric visibility from containing-volume classification. Scenes with
 only finite sheets skip the six receiver-containment directions; scenes with bodies retain them,
 including traversal past sheets to find a body's exit. The same transport descriptors serve the

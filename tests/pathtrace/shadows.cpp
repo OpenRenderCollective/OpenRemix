@@ -38,6 +38,17 @@ int main(int argc, char **argv) {
   }
 #endif
   ok(api.Startup(&startup));
+  if (std::getenv("REMIX_TEST_SHEET_VISIBILITY")) {
+    // Readbacks observe completed frames, independent of the host's saved
+    // presentation mode and the Windows startup window defaults.
+    ok(api.SetConfigVariable("rtx.native.asyncPresent", "0"));
+    ok(api.SetConfigVariable("rtx.native.lowLatency", "0"));
+    int count = 0;
+    SDL_Window **windows = SDL_GetWindows(&count);
+    require(count > 0 && windows, "Measured-sheet visibility window");
+    SDL_SetWindowSize(windows[0], 256, 128);
+    SDL_free(windows);
+  }
   // These fixtures measure the unexposed lighting/display contract.
   ok(api.SetConfigVariable("rtx.native.pathtrace.autoExposure", "0"));
   ok(api.SetConfigVariable("rtx.native.pathtrace.bloom", "0"));
@@ -100,6 +111,8 @@ int main(int argc, char **argv) {
   const auto blocker = quad(2, -.5f, -20, 0, -20, 20, black);
   const auto holes = quad(2, -.5f, -20, 0, -20, 20, cutout);
   const auto glass = quad(2, -.5f, -20, 0, -20, 20, tint);
+  remixapi_MeshHandle measuredGlass = nullptr;
+  bool reverseSheet = false;
   remixapi_MeshHandle occluder = blocker;
   float separation = 8, shift = 0;
   remixapi_CameraEnvironmentEXT environment{};
@@ -134,11 +147,12 @@ int main(int argc, char **argv) {
     identity.classification = mesh == receiver ? 0 : 1;
     remixapi_InstanceInfoBlendEXT blend{};
     blend.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BLEND_EXT; blend.pNext = &identity;
-    blend.alphaBlendEnabled = mesh == glass;
+    blend.alphaBlendEnabled = mesh == glass || mesh == measuredGlass;
     remixapi_InstanceInfo instance{};
     instance.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO; instance.pNext = &blend;
     instance.mesh = mesh; instance.doubleSided = 1;
     for (int i = 0; i < 3; ++i) instance.transform.matrix[i][i] = 1;
+    if (mesh == measuredGlass && reverseSheet) instance.transform.matrix[1][1] = -1;
     if (mesh != receiver) {
       instance.transform.matrix[2][3] = 1 - separation;
       instance.transform.matrix[0][3] = shift;
@@ -193,6 +207,95 @@ int main(int argc, char **argv) {
       for (int x = x0; x < x1; ++x) result += pixels[y * 256 + x][channel];
     return result / (64 * (x1 - x0));
   };
+  if (std::getenv("REMIX_TEST_SHEET_VISIBILITY")) {
+    for (const char *key : {"sigma", "taa", "sharc", "bounces"}) configure(key, "0");
+    configure("denoiser", "off");
+    configure("skipBlendedSecondaryRays", "0");
+    configure("sunAngularDiameter", "0");
+    configure("localSamples", "16");
+    configure("localRange", "0");
+    const uint8_t texel[] = {128, 255, 64, 255};
+    remixapi_TextureInfo image{};
+    image.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_INFO;
+    image.hash = next++;
+    image.width = image.height = 1;
+    image.format = REMIXAPI_FORMAT_R8G8B8A8_UNORM;
+    image.data = texel;
+    image.dataSize = sizeof(texel);
+    remixapi_TextureHandle texture;
+    ok(api.CreateTexture(&image, &texture));
+    char imageName[32];
+    std::snprintf(imageName, sizeof(imageName), "0x%llx", static_cast<unsigned long long>(image.hash));
+    const auto imagePath = std::filesystem::path(imageName);
+    remixapi_LightInfoSphereEXT sphere{};
+    sphere.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT;
+    sphere.position = {-.5f, 0, -12};
+    sphere.radius = .1f;
+    remixapi_LightInfo point{};
+    point.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+    point.hash = next++;
+    point.pNext = &sphere;
+    point.radiance = {10000, 10000, 10000};
+    remixapi_LightHandle pointLight;
+    ok(api.CreateLight(&point, &pointLight));
+    const auto directional = sun;
+    for (bool local : {false, true}) for (const char *primary : {"ray", "raster"}) {
+      sun = local ? pointLight : directional;
+      const auto prefix = std::string(local ? "point-" : "sun-") + primary;
+      configure("primaryVisibility", primary);
+      for (unsigned early : {0u, 1u}) {
+        configure("shadowEarlyOut", early ? "1" : "0");
+        occluder = nullptr;
+        const auto reference = capture(prefix + "-reference-" + std::to_string(early), 4);
+        // Clear, tinted and textured sheets, then legacy coverage and a body.
+        for (unsigned kind = 0; kind < 5; ++kind) {
+          remixapi_MaterialInfoTranslucentEXT optical{};
+          optical.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_TRANSLUCENT_EXT;
+          optical.refractiveIndex = 1.5f;
+          optical.transmittanceColor = kind == 0 ? remixapi_Float3D{1, 1, 1}
+              : kind == 4 ? remixapi_Float3D{.95f, .9f, .85f} : remixapi_Float3D{.0625f, .25f, 1};
+          optical.transmittanceMeasurementDistance = 1;
+          optical.thinWallThickness_hasvalue = kind != 4;
+          optical.thinWallThickness_value = kind == 4 ? 0 : .25f;
+          remixapi_MaterialInfo info{};
+          info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+          info.hash = next++;
+          info.pNext = &optical;
+          info.albedoTexture = kind == 2 ? imagePath.c_str() : nullptr;
+          measuredGlass = glass;
+          if (kind != 3) {
+            remixapi_MaterialHandle measured;
+            ok(api.CreateMaterial(&info, &measured));
+            measuredGlass = quad(2, -.5f, -20, 0, -20, 20, measured);
+          }
+          occluder = measuredGlass;
+          for (float distance : {2.f, 8.f}) for (bool back : {false, true}) {
+            separation = distance;
+            reverseSheet = back;
+            const auto label = prefix + (kind == 3 ? "-coverage-" : kind == 4 ? "-body-" : "-sheet-") + std::to_string(early) + "-" +
+                std::to_string(kind) + "-" + std::to_string(int(distance)) + (back ? "-back" : "-front");
+            const auto result = capture(label, 4);
+            const auto tint = kind == 3 ? std::array<float, 3>{.1f, 1, .2f}
+                : std::array<float, 3>{optical.transmittanceColor.x, optical.transmittanceColor.y, optical.transmittanceColor.z};
+            for (unsigned c = 0; c < 3; ++c) {
+              const float base = kind == 2 ? float(texel[c]) / 255 : 1;
+              const float absorbed = std::pow(tint[c] * base, .25f);
+              const float expected = kind == 3 ? tint[c] * .5f : kind == 4 ? .96f * std::pow(tint[c], distance)
+                  : .96f * .96f * absorbed / (1 - .04f * .04f * absorbed * absorbed);
+              const double baseline = average(reference, 32, 64, c);
+              require(baseline > .2, "Measured-sheet visibility requires a lit reference receiver");
+              const double passed = average(result, 32, 64, c) / baseline;
+              std::fprintf(stderr, "%s channel %u: %.6f expected %.6f\n", label.c_str(), c, passed, expected);
+              require(std::abs(passed - expected) < .02,
+                      "Shadow visibility preserves measured sheets, coverage and legacy body absorption");
+            }
+          }
+        }
+      }
+    }
+    ok(api.Shutdown());
+    return 0;
+  }
   auto width = [&](const auto &pixels) {
     unsigned result = 0;
     for (int x = 64; x < 192; ++x) {

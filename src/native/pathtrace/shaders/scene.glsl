@@ -24,7 +24,7 @@ struct Surface {
   vec4 emission;
   vec4 pbr;
   uvec4 pbrTextures;
-  // scene::MaterialDecode: x flags (self-illumination); the rest unused.
+  // scene::MaterialDecode: x flags (self-illumination; bit 8 measured sheet).
   uvec4 material;
 };
 // Shading reads the AS index order directly. Only debug identity needs the
@@ -88,7 +88,7 @@ layout(set=0,binding=3,std140) uniform Frame {
   vec4 volumeEye, volumePrevious; // the windows' centre this frame and last
   vec4 cameraMedium; // remixapi_CameraMediumEXT: transmittance colour, measurement distance (0: in air)
   uint64_t sheetResults; // SheetResults: the sheet lighting pass's transport
-  uint64_t reservedFrame;
+  uint64_t sheetMaterials; // Optional measured-sheet optics, keyed by albedo descriptor.
   mat4 inverseCameraRelative; // camera rays: world = point.xyz / point.w + eye.xyz
 } frame;
 // Instance mask bit of view models (pathtrace/tlas_policy.h).
@@ -157,6 +157,11 @@ vec2 uvGradX=vec2(0),uvGradY=vec2(0);
 // A material texture at mesh UV `uv`, filtered over the footprint.
 vec4 materialTexel(Surface s,uint index,vec2 uv) {
   return textureGrad(textures[nonuniformEXT(index)],uv*s.uv.xy+s.uv.zw,uvGradX*s.uv.xy,uvGradY*s.uv.xy);
+}
+vec2 intersectionUV(Surface s, uint triangle, vec2 bary) {
+  uint base = triangle * 3;
+  return s.vertices.v[s.indices.i[base]].uv.xy * (1 - bary.x - bary.y) +
+      s.vertices.v[s.indices.i[base + 1]].uv.xy * bary.x + s.vertices.v[s.indices.i[base + 2]].uv.xy * bary.y;
 }
 vec3 environmentRadiance(vec3 direction) {
   if(frame.skyRadiance.w<=0)return frame.skyRadiance.rgb;
@@ -249,13 +254,26 @@ vec4 combineColor(uint op, vec4 a, vec4 b) { return op == 7 ? vec4(mix(a.rgb, mi
 // background unchanged, regardless of their RGB. Only authored thin-sheet
 // materials (constant opacity or glass) retain the colored-transmission model.
 vec3 transmissionColor(vec3 color, bool tinted) { return tinted ? color : vec3(1); }
-// What a sheet met at distance t along a light or shadow ray lets through. A
+// A measured sheet has finite, angle-dependent transmission independent of t.
+// Legacy translucent bodies retain their existing segment-distance model. A
 // translucent body (frame_tables.h materialFields: refractive index and
 // measurement distance in pbr.w) passes its colour to the power of t over the
 // measurement distance (the ray's length inside it, as from a surface under
 // water), less its Fresnel reflection at normal incidence; any other sheet
 // its tinted coverage rule.
-vec3 sheetTransmission(Surface s, vec4 color, float t) {
+#include "../../forward/shaders/dielectric.glsl"
+struct SheetMaterial { vec4 depth, parameters; };
+layout(buffer_reference,std430,buffer_reference_align=16) readonly buffer SheetMaterials { SheetMaterial data[]; };
+vec3 sheetTransmission(Surface s, vec4 color, uint triangle, vec2 bary, float cosine, float t) {
+  if ((s.material.x & 256u) != 0u && frame.sheetMaterials != 0) {
+    SheetMaterial sheet = SheetMaterials(frame.sheetMaterials).data[s.textureState.x];
+    // Light visibility has no camera footprint. Do not inherit UV gradients
+    // left by shading the receiver; coverage traversal also uses the finest mip.
+    vec2 uv = intersectionUV(s, triangle, bary) * s.uv.xy + s.uv.zw;
+    vec3 tint = textureLod(textures[nonuniformEXT(s.textureState.x)], uv, 0).rgb;
+    vec3 depth = min(sheet.depth.rgb - log(clamp(tint, vec3(1e-6), vec3(1))) * sheet.parameters.z, vec3(80));
+    return dielectricSheet(depth, 1, cosine, 1, sheet.parameters.x).transmission;
+  }
   if ((s.state.w&8)!=0 && s.pbr.w!=0) {
     vec2 body=unpackHalf2x16(floatBitsToUint(s.pbr.w));
     float f0=(body.x-1)/(body.x+1);

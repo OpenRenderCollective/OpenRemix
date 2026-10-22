@@ -166,7 +166,7 @@ namespace remix::trace::detail {
     // remixapi_CameraMediumEXT: transmittance colour, measurement distance (0: in air).
     float cameraMedium[4] = {};
     uint64_t sheetResults = 0; // SheetResults: the sheet lighting pass's transport
-    uint64_t reserved = 0;
+    uint64_t sheetMaterials = 0; // Optional measured-sheet optics; descriptor-indexed.
     // Camera rays (pathtrace.comp ray()): inverseCamera relative to the eye,
     // which the shader adds back. In single precision the absolute matrix
     // holds the eye's translation scaled by the inverse near plane, and loses
@@ -497,7 +497,7 @@ namespace remix {
     std::chrono::steady_clock::time_point previousTime{}, pendingTime{};
     uint64_t historyResets = 0, denoisedFrames = 0, postPeakMemory = 0;
     std::vector<std::shared_ptr<Arena>> arenas;
-    std::unique_ptr<Buffer> scratch, table, uniform;
+    std::unique_ptr<Buffer> scratch, table, uniform, sheetMaterials;
     scene::LightBvh lightBvh;
     scene::LightVisibility lightVisibility;
     std::unique_ptr<Buffer> visibilityNodes, visibilityLeaves, visibilityTable;
@@ -827,7 +827,7 @@ namespace remix {
       uint32_t compactionCapacity = 0;
       bool timingPending = false, sharcPending = false, guidingPending = false, reusePending = false,
            rayPending = false;
-      std::unique_ptr<Buffer> table, uniform, scratch, topScratch, instances[3];
+      std::unique_ptr<Buffer> table, uniform, scratch, topScratch, sheetMaterials, instances[3];
       uint64_t combinedPrefix = 0; // Tlas::prefix of the combined TLAS's instances
       std::unique_ptr<Buffer> tableUpload;
       std::vector<uint8_t> tableShadow;

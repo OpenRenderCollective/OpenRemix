@@ -10,6 +10,9 @@ test('Volumetric medium from fog and settings', volume_policy_test)
 static_scene_test = executable('remix-static-scene-test', 'static_scene.cpp',
   include_directories : test_includes, link_with : scene_library, dependencies : threads_dep)
 test('Persistent static set matches the rebuild path', static_scene_test)
+material_optics_test = executable('remix-trace-material-optics-test', 'material_optics.cpp',
+  include_directories : test_includes, link_with : scene_library)
+test('Path-tracer measured sheet material representation', material_optics_test)
 upscale_depth_test = executable('remix-upscale-depth-test', 'upscale_depth.cpp', include_directories : test_includes)
 test('FSR wide-frustum depth precision', upscale_depth_test)
 # CPU cost of Present for a scene of about 12k scene instances. A benchmark,
@@ -190,6 +193,9 @@ if get_option('gpu_tests')
     args : [meson.current_build_dir() / 'local-light-scenes'], timeout : 300)
   shadow_test = executable('remix-shadow-test', 'shadows.cpp',
     include_directories : test_includes, dependencies : [sdl3_dep, filesystem_dep] + [runtime_test_dep])
+  test('Path-tracer measured sheet shadow visibility', shadow_test,
+    args : [meson.current_build_dir() / 'sheet-shadow-scenes'],
+    env : ['REMIX_TEST_SHEET_VISIBILITY=1', 'REMIX_FG_PRESENT_METERING=0'], timeout : 480, is_parallel : false)
   test('SIGMA sun penumbra and temporal separation', shadow_test,
     args : [meson.current_build_dir() / 'shadow-scenes'], timeout : 240)
   test('SIGMA hashed shadow comparison', shadow_test,

@@ -224,9 +224,16 @@ namespace {
       check(x.opacity->key == y.opacity->key, "opacity partition");
     }
     const auto &p = a.tables, &q = b.tables;
+    const auto optics = p.sheetMaterials();
+    check(optics == q.sheetMaterials(), "descriptor-indexed sheet optics");
     check(p.surfaceCount() == q.surfaceCount(), "surface table size");
-    for (size_t i = 0; i < p.surfaceCount(); ++i)
+    for (size_t i = 0; i < p.surfaceCount(); ++i) {
       check(!std::memcmp(&p.surface(i), &q.surface(i), sizeof(trace::TraceSurface)), "surface table entry");
+      const auto &surface = p.surface(i);
+      if (surface.material[0] & trace::measuredSheetMaterialFlag)
+        check(surface.textureState[0] < optics.size() && optics[surface.textureState[0]].parameters[1] > 0,
+              "measured surface addresses its material's optical data");
+    }
     check(p.primaryCount() == q.primaryCount(), "primary draw count");
     for (size_t i = 0; i < p.primaryCount(); ++i) {
       const auto &x = p.primary(i), &y = q.primary(i);
@@ -485,6 +492,25 @@ namespace {
       }
       case 7:
         red = material(r, 1, .5f, 0, 0); // Material replacement.
+        break;
+      case 10:
+      case 13: {
+        remixapi_MaterialInfoTranslucentEXT optical{};
+        optical.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_TRANSLUCENT_EXT;
+        optical.refractiveIndex = 1.5f;
+        optical.transmittanceColor = {.25f, .5f, 1};
+        optical.transmittanceMeasurementDistance = 1;
+        optical.thinWallThickness_hasvalue = 1;
+        optical.thinWallThickness_value = frame == 10 ? .25f : .5f;
+        remixapi_MaterialInfo info{};
+        info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+        info.hash = 1;
+        info.pNext = &optical;
+        r.createMaterial(info, red);
+        break;
+      }
+      case 17:
+        red = material(r, 1, .5f, 0, 0);
         break;
       case 8:
       case 9: {

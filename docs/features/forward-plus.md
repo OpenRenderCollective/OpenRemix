@@ -99,6 +99,13 @@ distance. PBR roughness/normals and the shared SSR/cubemap/hardware reflection p
 The primary sheet assumes air outside both interfaces. Nested sheets, sheets inside camera media
 and path-tracer primary-sheet parity still need integration; do not enable the Source `Refract`
 adapter mapping until its stable optical tint and animation policy is explicit.
+Vulkan path-tracer light visibility uses the same measured sheet absorption and two-interface
+Fresnel model. Its optical records are keyed by existing albedo descriptors, in an optional buffer
+owned by each completed frame slot. The surface table remains 256 bytes per record and the frame
+uniform keeps its existing size. The policy that skips blended secondary rays remains respected;
+enable those rays when comparing physical sheet shadows. Primary and continuation-sheet shading
+still need parity work. Metal retains its legacy sheet behavior and requires separate optical-buffer
+integration and shader compilation; the shared CPU buffer layout remains compatible.
 For standard 2x/4x sample locations, the depth snapshot reconstructs pixel-centre depth only when
 the pixel and four neighbouring sample sets agree on one plane. This avoids a nearest-sample bias
 making a shallow shoreline look like a missing/deep layer. Discontinuities, missing coverage,

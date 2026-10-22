@@ -275,9 +275,12 @@ namespace remix {
     const size_t prefixBytes = prefixSurfaceCount * sizeof(TraceSurface);
     const size_t tableBytes = surfaceCount * sizeof(TraceSurface);
     tables.signature(signature);
+    const auto optical = tables.sheetMaterials();
     if (digestEnabled) {
       // Device addresses depend on allocation order; hash everything else.
       digest = tables.geometryDigest();
+      if (!optical.empty())
+        digest = hashBytes(optical.data(), optical.size() * sizeof(trace::SheetMaterial), digest);
       auto hashSurface = [&](const TraceSurface &surface) {
         auto copy = surface;
         const bool history = copy.previousVertices != 0;
@@ -515,6 +518,11 @@ namespace remix {
               VK_ACCESS_SHADER_READ_BIT);
     tableTime.close();
     Frame frame = {};
+    if (!optical.empty()) {
+      hostBuffer(sheetMaterials, optical.data(), optical.size() * sizeof(trace::SheetMaterial),
+                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+      frame.sheetMaterials = sheetMaterials->address;
+    }
     frame.localConfig[0] = options.localLights && options.localIntensity > 0 ? lightBvh.active : 0;
     localIlluminationActive = frame.localConfig[0] != 0;
     localFirstHitActive = localIlluminationActive && !hasBlendedGeometry;

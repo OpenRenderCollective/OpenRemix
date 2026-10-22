@@ -20,6 +20,7 @@
 //       keeps a vertex buffer alive
 //   [[noreturn]] void tooManyObjects();
 #include "pathtrace/sharc_policy.h"
+#include "pathtrace/material_optics.h"
 #include "pathtrace/tlas_policy.h"
 #include "platform/timing.h"
 #include "platform/workers.h"
@@ -78,6 +79,8 @@ namespace remix::trace::detail {
     pbr[2] = material.pbr ? 1.f : 0.f;
     const auto decode = scene::materialDecode(material);
     decodeOut[0] = decode.flags;
+    if (material.thinWallThickness > 0 && scene::validSmoothBoundary(material))
+      decodeOut[0] |= measuredSheetMaterialFlag;
     // A translucent body: its refractive index and measurement distance, half
     // floats in pbr[3] (scene.glsl thickSheet); zero for everything else.
     if (material.transmission && material.transmittanceDistance > 0 && material.thinWallThickness == 0) {
@@ -135,6 +138,7 @@ namespace remix::trace {
     uint32_t albedo = 0, emissive = 0;
     float pbr[4] = {}, emission[4] = {};
     uint32_t decode[4] = {}, maps[4] = {};
+    SheetMaterial sheet;
   };
   // One entry of the frame's texture descriptor array, in first-use order:
   // Albedo (sampledMaterial), Map (sampledTexture of *texture) or Emission.
@@ -150,7 +154,7 @@ namespace remix::trace {
   };
   // Byte layouts of the SHARC geometry and scene signatures.
   constexpr size_t staticInstanceBytes = 8 + 4 + sizeof(scene::Matrix) + sizeof(uintptr_t) + 8 + 8;
-  constexpr size_t staticSurfaceBytes = 4 * 4 * 4;
+  constexpr size_t staticSurfaceBytes = 4 * 4 * 4 + sizeof(SheetMaterial);
   constexpr size_t dynamicInstanceBytes = 8 + 4 + sizeof(scene::Matrix) + 8 + 8;
   constexpr size_t sceneInstanceBytes = sizeof(scene::Matrix) + 8 + 8 + 4 + 4;
   constexpr size_t sceneSurfaceBytes = offsetof(TraceSurface, previousVertices);
@@ -484,6 +488,23 @@ namespace remix::trace {
       const size_t prefix = m_current ? m_current->requests.size() : 0;
       return i < prefix ? m_current->requests[i] : m_tail.requests[i - prefix];
     }
+    // Keyed by the existing albedo descriptor, so shared materials need no
+    // per-instance optical payload or extra indirection index. Dry scenes
+    // return no records and allocate no optional GPU buffer.
+    std::vector<SheetMaterial> sheetMaterials() const {
+      std::vector<SheetMaterial> result;
+      for (size_t i = 0; i < requestCount(); ++i) {
+        const auto &entry = request(i);
+        if (entry.kind != DescriptorRequest::Albedo || entry.material->thinWallThickness <= 0)
+          continue;
+        const auto optical = sheetMaterial(*entry.material);
+        if (optical.parameters[1] <= 0)
+          continue;
+        if (result.empty()) result.resize(requestCount());
+        result[i] = optical;
+      }
+      return result;
+    }
     // The static TLAS inputs and SHARC bytes: the prefix's, or the tail's
     // without the static set (a frame with the set has no other static ones).
     const std::vector<InstanceInput> &staticInputs() const { return m_current ? m_current->inputs : m_tail.inputs[0]; }
@@ -578,6 +599,7 @@ namespace remix::trace {
     static MaterialSlots values(const scene::Material &material) {
       MaterialSlots entry;
       detail::materialFields(material, entry.pbr, entry.decode, entry.maps[3]);
+      entry.sheet = sheetMaterial(material);
       const auto decode = scene::materialDecode(material);
       std::copy_n(material.emission, 3, entry.emission);
       entry.emission[3] = decode.selfIlluminationScale;
@@ -607,6 +629,9 @@ namespace remix::trace {
       const uint8_t sampler[] = {material.filter, material.wrapU, material.wrapV};
       append(sampler, sizeof(sampler));
       detail::materialFields(material, value.pbr, value.material, value.pbrTextures[3]);
+      const auto optical = sheetMaterial(material);
+      if (optical.parameters[1] > 0)
+        append(&optical, sizeof(optical));
       const auto decode = scene::materialDecode(material);
       const std::shared_ptr<scene::Texture> *textures[] = {&material.roughnessTexture, &material.metallicTexture,
                                                            &material.normalTexture};
@@ -648,6 +673,7 @@ namespace remix::trace {
       std::copy_n(value.material, 4, entry.decode);
       std::copy_n(value.pbrTextures, 4, entry.maps);
       std::copy_n(value.emission, 4, entry.emission);
+      entry.sheet = optical;
       return entry;
     }
 
@@ -785,6 +811,7 @@ namespace remix::trace {
           write(staticCursor, value.factor, sizeof(value.factor));
           write(staticCursor, value.state, sizeof(value.state));
           write(staticCursor, value.material, sizeof(value.material));
+          write(staticCursor, &entry.sheet, sizeof(entry.sheet));
         }
         *primaryOut++ = {model, uint32_t(next), uint32_t(surface.surface->indices.size()), b.enabled, draw.viewModel};
         do {

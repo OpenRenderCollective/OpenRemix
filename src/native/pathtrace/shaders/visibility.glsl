@@ -34,7 +34,7 @@ void queryVisibility(accelerationStructureEXT scene,vec3 origin,vec3 direction,i
   hit.p=model*vec4(a+bary.x*(b-a)+bary.y*(c-a),1);
   hit.n=normalize(cross(model*vec4(b-a,0),model*vec4(c-a,0)));
   if(dot(hit.n,direction)>0)hit.n=-hit.n;
-  hit.transmission=sheetTransmission(s,color,hit.t);
+  hit.transmission=sheetTransmission(s,color,tri/3,bary,abs(dot(hit.n,direction)),hit.t);
 }
 VisibilityHit visibilityHit(vec3 origin,vec3 direction,bool anyOpaque) {
   VisibilityHit hit;hit.t=1e30;hit.blocked=false;
@@ -103,6 +103,6 @@ VisibilityHit earlyVisibilityHit(vec3 origin,vec3 direction,float maximum,uint p
   if(!blendedAtAlpha(s,color.a)){hit.blocked=true;return hit;}
   hit.p=sheet.p;hit.n=sheet.n;
   if(dot(hit.n,direction)>0)hit.n=-hit.n;
-  hit.transmission=sheetTransmission(s,color,hit.t);
+  hit.transmission=sheetTransmission(s,color,sheet.primitive,sheet.bary,abs(dot(hit.n,direction)),hit.t);
   return hit;
 }

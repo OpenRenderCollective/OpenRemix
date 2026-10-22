@@ -217,6 +217,10 @@ integration, path-tracer primary parity and adapter integration remain pending. 
 and Trainstation is still blocked. Define stable mean optical tint explicitly because tint can share
 animated bump UVs. Source's artistic refraction amount is not a physical IOR. Do not bypass the
 required material.
+Vulkan path-tracer light visibility now uses optional descriptor-indexed sheet optics with the
+shared two-interface transport model. Its surface/frame GPU layouts are unchanged. Primary and
+continuation shading remain legacy, as does Metal sheet rendering. The shadow visibility fixture
+explicitly enables blended secondary rays; the renderer's existing skip policy is unchanged.
 The installed combined addon supplies chapter BSPs including `hls00amrl` and `hls05amrl`; exact
 `gm_fork` availability remains pending, and the installed RP Fork variant is not a substitute. `bsp-replay` supports repeatable default-off
 `replay.probeReceiver = X Y Z radius` matte dynamic spheres for receiver comparisons.
