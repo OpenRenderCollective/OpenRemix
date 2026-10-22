@@ -778,6 +778,10 @@ is below baseline repeat variation; Crossfire improves in the sampled view. Cach
 lighting and fixed cameras limit attribution and do not establish gameplay performance acceptance.
 Moving-view, room-transition and wall-leakage acceptance remain open before deployment; shared
 texture storage and the separate authored-edit scheduling policy are further optimization opportunities.
+The adapter replay now supports bounded, frame-indexed camera paths with numbered images and a
+position trace, separate from fixed-view timing. Installed-baseline and development runs complete a
+short main-hall path with unchanged active bakes. Use this to inspect actual boundary crossings;
+successful capture and geometric influence coverage alone do not close visual continuity or leakage.
 The attempted receiver-first score is rejected: it can fill the sheltered-region budget and displace
 broad map coverage. Its runtime code is removed. Develop room-local fairness before revisiting that
 objective; do not equate global area sampling or additional audit records with complete quality.
