@@ -1,6 +1,8 @@
 #include "forward/bake/sun_antialiasing.h"
+#include "forward/half.h"
 #include "forward/lightmap/data.h"
 #include "forward/lightmap/layout.h"
+#include "forward/lightmap/interior_donors.h"
 #include "forward/lightmap/packing.h"
 #include "forward/lightmap/receiver_footprint.h"
 #include "forward/lightmap/receiver_sampler.h"
@@ -25,6 +27,69 @@ namespace {
   }
 } // namespace
 int main() {
+  {
+    lm::Layout covered;
+    covered.pageSize = 4;
+    covered.pages = 1;
+    covered.charts = {{0, 0, 0, 2, 4}, {0, 2, 0, 2, 4}};
+    covered.points.resize(16);
+    covered.pointCharts.resize(16);
+    covered.owners.resize(16);
+    std::vector<forward::bake::Result> values(16);
+    for (uint32_t y = 0; y < 4; ++y)
+      for (uint32_t x = 0; x < 4; ++x) {
+        const uint32_t point = x < 2 ? y * 2 + x : 8 + y * 2 + x - 2;
+        covered.owners[y * 4 + x] = point;
+        covered.pointCharts[point] = x < 2 ? 0 : 1;
+        covered.points[point].position[0] = float(point);
+        values[point].statistics = {point >= 8 || (point >= 2 && point <= 5) ? 1.f : 0.f, 0, 256, 0};
+        values[point].irradiance[0][0] = float(point + 1);
+      }
+    // Open, ambiguous and undersampled points must remain usable donors.
+    values[1].statistics = {1, .2f, 256, 0};
+    values[6].statistics = {.5f, 0, 256, 0};
+    values[7].statistics = {1, 0, 8, 0};
+    const auto original = covered.owners;
+    const auto originalPoints = covered.points;
+    const auto originalCharts = covered.pointCharts;
+    const auto repaired = lm::repairInteriorDonors(covered, values);
+    require(repaired.hiddenSamples == 12 && repaired.repairedTexels == 4 && repaired.unresolvedCharts == 1,
+            "Interior repair is conservative and reports charts without safe exterior donors");
+    const uint32_t expected[] = {0, 1, 0, 1, 6, 7, 6, 7};
+    for (uint32_t y = 0; y < 4; ++y)
+      for (uint32_t x = 0; x < 4; ++x)
+        require(covered.owners[y * 4 + x] == (x < 2 ? expected[y * 2 + x] : original[y * 4 + x]),
+                "Nearest exterior lighting stays within its receiving chart");
+    std::vector<forward::Vec4> visibility(16);
+    std::vector<lm::Direct> direct(16);
+    std::vector<lm::Sun> sun(16);
+    for (uint32_t i = 0; i < 16; ++i) {
+      visibility[i][0] = .1f + float(i) / 32;
+      direct[i][0][0] = .3f + float(i);
+      sun[i].visibility = .2f + float(i) / 32;
+      sun[i].direct[0] = .4f + float(i);
+    }
+    const auto pixels = lm::pixels(covered, values, {}, visibility, direct, sun);
+    require(forward::half::decode(pixels[4 * 4]) == 1,
+            "An interior texel packs its exterior donor instead of bright hidden lighting");
+    require(pixels[(lm::visibilityLayer * 16 + 4) * 4] == forward::half::encode(.1f) &&
+                pixels[(lm::directLayer * 16 + 4) * 4] == forward::half::encode(.3f) &&
+                pixels[(lm::sunVisibilityLayer * 16 + 4) * 4] == forward::half::encode(.2f) &&
+                pixels[4 * 4 + 3] == forward::half::encode(.4f),
+            "Mixed visibility, local direct and sunlight use the same repaired chart donor");
+    require(covered.pointCharts == originalCharts && covered.points.size() == originalPoints.size() &&
+                std::memcmp(covered.points.data(), originalPoints.data(),
+                            covered.points.size() * sizeof(covered.points.front())) == 0,
+            "Interior donor repair preserves world samples and chart identities");
+    require(lm::repairInteriorDonors(covered, values).repairedTexels == 0,
+            "Interior donor repair is idempotent");
+    std::stop_source stopped;
+    stopped.request_stop();
+    refused([&] { lm::repairInteriorDonors(covered, values, stopped.get_token()); });
+    auto invalid = covered;
+    invalid.owners[0] = 8;
+    refused([&] { lm::repairInteriorDonors(invalid, values); });
+  }
   {
     lm::Mesh mesh;
     mesh.vertices.resize(4);

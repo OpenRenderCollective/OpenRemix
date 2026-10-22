@@ -10,6 +10,7 @@
 #include "gpu_fixture.h"
 #include "probe_queries.h"
 #include "lighting_components.h"
+#include "interior_surface_gpu.h"
 #include "raster/renderer.h"
 #include "runtime/pipelines.h"
 #include <chrono>
@@ -2019,6 +2020,7 @@ int main() try {
     World world(fixture);
     if (std::getenv("REMIX_TEST_SURFACE_HEMISPHERE")) {
       surfaceHemisphere(fixture, pipelines, world);
+      test::interiorSurfaceDonors(fixture, pipelines, world);
       require(test::validationErrors == 0, "Surface hemisphere test emitted Vulkan validation errors");
       return 0;
     }
@@ -2175,6 +2177,7 @@ int main() try {
     test::lightingComponents(fixture, pipelines, world);
     liveLighting(fixture, pipelines, world);
     surfaceHemisphere(fixture, pipelines, world);
+    test::interiorSurfaceDonors(fixture, pipelines, world);
     std::printf("Bake readback: emitter %.4f, blocked %.4f, alpha holes %.4f, "
                 "local light %.4f, shadowed %.4f\n",
                 red, blocked.irradiance[0][0], holes.irradiance[0][0], lit.irradiance[0][0],

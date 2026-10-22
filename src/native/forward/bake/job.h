@@ -35,6 +35,7 @@ namespace remix::forward::bake {
     void refineProbes(const Config &config);
     lightmap::Layout surfaceLayout;
     std::vector<Result> surfaces;
+    bool surfaceDonorsResolved = false;
     std::unique_ptr<StyleWork> styles;
     std::vector<uint32_t> styleWords; // original indirect-only cache data
     StyledDirectGroups groupedStyles; // disposable derived publication data

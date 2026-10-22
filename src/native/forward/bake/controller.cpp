@@ -11,6 +11,7 @@
 #include "forward/bake/transport.h"
 #include "forward/image_dump.h"
 #include "forward/lightmap/denoise.h"
+#include "forward/lightmap/interior_donors.h"
 #include "forward/mixed/overflow.h"
 #include "forward/mixed/ownership.h"
 #include "forward/mixed/mask_pages.h"
@@ -469,6 +470,23 @@ namespace remix::forward::bake {
   void Controller::recordSurfaces(VkCommandBuffer command, const Config &config) {
     auto &job = *m_job;
     if (job.surfaceReceived == job.surfaceLayout.points.size()) {
+      if (!job.cacheHit && !job.surfaceDonorsResolved && !job.surfaces.empty()) {
+        job.surfaceDonorsResolved = true;
+        const auto owner = m_job;
+        job.ticket = m_pipelines->prepare(
+            "forward-surface-donors-" + std::to_string(++generation), [owner] {
+              const auto began = std::chrono::steady_clock::now();
+              const auto repaired = lightmap::repairInteriorDonors(
+                  owner->surfaceLayout, owner->surfaces, owner->cancellation.get_token());
+              std::fprintf(stderr, "Forward surface interior donors: %u hidden samples, %u repaired texels, "
+                                   "%u charts without an exterior donor, %.3f ms CPU\n",
+                           repaired.hiddenSamples, repaired.repairedTexels, repaired.unresolvedCharts,
+                           std::chrono::duration<double, std::milli>(
+                               std::chrono::steady_clock::now() - began).count());
+            });
+        status(REMIXAPI_BAKE_PREPARING_EXT, "Resolving covered surface lightmap samples");
+        return;
+      }
       recordVisibility(command, config);
       return;
     }

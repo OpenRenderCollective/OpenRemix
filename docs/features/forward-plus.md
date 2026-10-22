@@ -202,7 +202,15 @@ directional lighting into a constant. Volume probes retain their unconstrained f
 Surface local/sun unit-direct fields apply
 the same constraint while preserving scalar visibility, so mixed-shadow subtraction and styled light
 scaling use matching receiver energy. The correction adds no rays,
-result fields or atlas layers. It does not establish that the remaining Construct fixture halo is fixed.
+result fields or atlas layers. Interior-donor filtering addresses a separate fixture-halo cause below.
+After surface readback, chart-local filter donors exclude strongly enclosed samples: at least 64
+rays, at least 95% first-hit backfaces and no more than 1% misses. These can occur where a static prop
+intersects a world surface; lighting inside its housing must not spread onto the visible exterior.
+Nearest exterior donors are selected within the same chart before visibility, directional/styled
+encoding and OIDN. Coordinates, sample identities and light ownership remain unchanged. Ambiguous or
+undersampled samples remain usable, and charts with no exterior donor keep their original data.
+The repair allocates no extra atlas space and traces no extra rays. Its CPU work runs on the bake
+preparation service. Raw cache policy revision 30 distinguishes repaired bakes.
 Analytic sphere connections end at the sampled emitting surface without subtracting the receiver's
 ray bias: these lights have no geometry to self-intersect, and shortening the connection can miss a
 wall immediately in front of the emitter. Triangle emitters retain an endpoint tolerance for their
