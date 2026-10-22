@@ -153,6 +153,75 @@ namespace {
       result += value.irradiance[i][channel] * sh[i];
     return result;
   }
+  void surfaceHemisphere(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
+    // A coplanar emissive patch cannot illuminate the front of its neighbouring
+    // surface. A nearby volume probe must still retain its full-sphere signal.
+    const auto emitter = world.wall(world.material({.emission = 1000}), 0, 1);
+    const auto emissive = world.scene({emitter});
+    auto below = world.scene({});
+    scene::SphereLight light;
+    light.id = 91;
+    light.position[0] = 1.1f;
+    light.position[2] = -1;
+    light.radius = .1f;
+    light.radiance[0] = 50;
+    below->lights = {light};
+    auto above = world.scene({});
+    above->lights = {light};
+    above->lights[0].position[2] = 1;
+    auto sky = world.scene({});
+    sky->dome.enabled = true;
+    sky->dome.radiance = {1, .5f, .25f};
+    const bake::Point points[] = {{{1.1f, 0, 0, 0}, {0, 0, 1, 0}},
+                                 {{1.1f, 0, .002f, 0}, {}}};
+    uint32_t generation = 0;
+    const auto capture = [&](const auto &source, bool parallel, bool aggregate = false) {
+      bake::Transport transport;
+      bake::Options options;
+      options.parallel = parallel;
+      options.batchPoints = 2;
+      if (aggregate)
+        options.directLighting = bake::staticAggregatePolicy(*source, bake::DirectMode::Baked);
+      auto job = pipelines.prepare("surface-hemisphere-" + std::to_string(++generation), [&] {
+        transport.initialize(fixture.physical, fixture.device, source, options);
+      });
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+      while (!job->ready() && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      require(job->ready(), "Surface hemisphere preparation timed out");
+      job->check();
+      fixture.begin();
+      transport.recordPrepare(fixture.command, world.resources);
+      transport.recordBatch(fixture.command, 0, points, 8192, 1);
+      fixture.finish();
+      std::array<bake::Result, 2> values;
+      transport.read(0, values);
+      return values;
+    };
+    for (const bool parallel : {false, true}) {
+      const auto emission = capture(emissive, parallel);
+      const float surface = evaluate(emission[0], {0, 0, 1}, 0);
+      std::printf("Coplanar emission, parallel %u: surface %.6f, volume L0 %.6f\n",
+                  unsigned(parallel), surface, emission[1].irradiance[0][0]);
+      require(emission[1].irradiance[0][0] > .01f, "Volume probe lost coplanar emission");
+      require(std::abs(surface) < 1e-4f, "Back-hemisphere emission leaked into the surface lightmap");
+      const auto direct = capture(below, parallel, true);
+      const float behind = evaluate(direct[0], {0, 0, 1}, 0);
+      std::printf("Back-hemisphere direct, parallel %u: surface %.6f, volume L0 %.6f\n",
+                  unsigned(parallel), behind, direct[1].irradiance[0][0]);
+      require(direct[1].irradiance[0][0] > .01f, "Volume probe lost rear baked light");
+      require(std::abs(behind) < 1e-4f, "Back-hemisphere direct light leaked into the surface lightmap");
+      const auto front = capture(above, parallel, true);
+      require(evaluate(front[0], {0, 0, 1}, 0) > .1f &&
+                  front[0].irradiance == front[1].irradiance,
+              "Surface hemisphere changed valid front-facing direct light");
+      const auto environment = capture(sky, parallel);
+      require(std::abs(evaluate(environment[0], {0, 0, 1}, 0) - std::numbers::pi_v<float>) < .01f,
+              "Surface hemisphere changed constant environment energy");
+      require(std::abs(evaluate(environment[0], {1, 0, 0}, 0) - std::numbers::pi_v<float> * .5f) < .01f,
+              "Surface hemisphere lost directional normal response");
+    }
+  }
   bake::Result run(test::Fixture &fixture, pipeline::Service &pipelines, World &world,
                    std::shared_ptr<scene::BakeScene> scene, uint32_t bounces = 3,
                    uint32_t samples = 1024, bool parallel = true) {
@@ -1876,6 +1945,11 @@ int main() try {
     vkGetPhysicalDeviceProperties(fixture.physical, &properties);
     pipeline::Service pipelines(fixture.device, properties, false);
     World world(fixture);
+    if (std::getenv("REMIX_TEST_SURFACE_HEMISPHERE")) {
+      surfaceHemisphere(fixture, pipelines, world);
+      require(test::validationErrors == 0, "Surface hemisphere test emitted Vulkan validation errors");
+      return 0;
+    }
     if (std::getenv("REMIX_BENCH_VISIBILITY")) {
       bakeVisibility(fixture, pipelines, world);
       return 0;
@@ -2028,6 +2102,7 @@ int main() try {
     aggregateDiffuse(fixture, pipelines, world);
     test::lightingComponents(fixture, pipelines, world);
     liveLighting(fixture, pipelines, world);
+    surfaceHemisphere(fixture, pipelines, world);
     std::printf("Bake readback: emitter %.4f, blocked %.4f, alpha holes %.4f, "
                 "local light %.4f, shadowed %.4f\n",
                 red, blocked.irradiance[0][0], holes.irradiance[0][0], lit.irradiance[0][0],

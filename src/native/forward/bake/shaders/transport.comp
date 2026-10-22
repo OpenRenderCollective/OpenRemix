@@ -267,6 +267,7 @@ void main() {
     return;
   }
   float rotation = random(seed) * 2 * RayPi;
+  bool surfaceReceiver = dot(point.normal.xyz, point.normal.xyz) > 1e-10;
 #ifdef PARALLEL_BAKE
   seed ^= gl_LocalInvocationIndex * 747796405u;
 #endif
@@ -276,15 +277,20 @@ void main() {
     float phase = float((i + rayFrame.control.y) * 0x61c88647u) * (1.0 / 4294967296.0);
     float z = 1 - 2 * (float(i) + .5) / float(rayFrame.counts.z), phi = rotation + 2 * RayPi * phase;
     vec3 direction = vec3(sqrt(max(0, 1 - z * z)) * vec2(cos(phi), sin(phi)), z);
+    if (surfaceReceiver)
+      direction = basisDirection(normalize(point.normal.xyz), (float(i) + .5) / float(rayFrame.counts.z), phi);
     float distance;
     bool back, miss;
     vec3 value = radiance(origin, direction, medium, seed, distance, back, miss);
+    // Surface receivers see a hemisphere (2Pi); volume probes see 4Pi. Keep
+    // the common epilogue unchanged for the separately normalized direct NEE.
+    if (surfaceReceiver) value *= .5;
     float sh[9];
     basis(direction, sh);
     for (uint j = 0; j < 9; ++j)
       outputValue.irradiance[j].rgb += value * sh[j];
 #ifdef AGGREGATE_DIFFUSE
-    accumulateBakedDiffuse(outputValue, origin, medium, i + rayFrame.control.y);
+    accumulateBakedDiffuse(outputValue, origin, point.normal.xyz, medium, i + rayFrame.control.y);
 #endif
     vec3 axis = abs(direction);
     uint face = axis.x >= axis.y && axis.x >= axis.z ? (direction.x >= 0 ? 0u : 1u)

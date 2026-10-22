@@ -187,6 +187,12 @@ semantics and requires no persistent GPU result cache. Sphere and triangle emitt
 solid-angle direct lighting. The shared Forward+ emitter helper follows the path tracer's angular
 spotlight softness/focus and cancellation-resistant sphere solid angle. The baker samples actual emitter
 positions/directions for radial energy and soft visibility; it does not blur a hard shadow after baking.
+Surface lightmaps integrate the incident hemisphere around their receiver normal; volume probes
+retain the full sphere. Rear-facing energy is excluded from both diffuse paths and aggregate direct
+samples before directional SH projection, avoiding coplanar self-lighting through the truncated
+cosine kernel. Surface samples integrate over 2Pi steradians, while direct emitter sampling retains its
+own solid-angle normalization. This changes neither the ray count nor the atlas allocation. Modified
+transport shader bytes invalidate existing bake keys automatically.
 Analytic sphere connections end at the sampled emitting surface without subtracting the receiver's
 ray bias: these lights have no geometry to self-intersect, and shortening the connection can miss a
 wall immediately in front of the emitter. Triangle emitters retain an endpoint tolerance for their
