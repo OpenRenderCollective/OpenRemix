@@ -776,7 +776,7 @@ volume. Default-quality fixed-view comparisons at 1080p, 4x MSAA and full-resolu
 show no large steady-state GPU regression on Construct or Crossfire. Construct's small difference
 is below baseline repeat variation; Crossfire improves in the sampled view. Cached versus fresh
 lighting and fixed cameras limit attribution and do not establish gameplay performance acceptance.
-Moving-view, room-transition and wall-leakage acceptance remain open before deployment; shared
+Moving-view, room-transition and wall-leakage acceptance remain open beyond the testing checkpoint; shared
 texture storage and the separate authored-edit scheduling policy are further optimization opportunities.
 The adapter replay now supports bounded, frame-indexed camera paths with numbered images and a
 position trace, separate from fixed-view timing. Installed-baseline and development runs complete a
@@ -811,7 +811,12 @@ full map visual acceptance. Normal-quality repeated fixed views retain 63/64 cap
 Construct/Crossfire at both 32 and 128. Crossfire shows similar steady GPU cost; Construct has
 larger run variation than the average resolution difference. This supports the sharper branch
 default without establishing gameplay performance or a general speedup. Check wider room coverage,
-mirror/rough materials and normal-quality cache transitions before updating the testing install.
+mirror/rough materials and normal-quality cache transitions for broader acceptance. The separate testing
+install now carries the image-backed 128-default checkpoint and bounded CPU filter workers; settings,
+addon mounts and the two authored Construct volumes are preserved. This is not full quality acceptance.
+Authored sets currently replace the automatic set entirely. Partial authored maps therefore need an
+explicit overlay/fallback design that respects priorities, the 64-record budget and empty-set semantics;
+do not assume automatic coverage survives outside the two reference volumes.
 
 Expanded tests exposed a three-face corner discontinuity in the previous manual filter. CPU mip
 preparation and the shared shader now average the diagonal corner tap across the three meeting

@@ -2282,6 +2282,11 @@ unknown and retains the sampler's unit-weight fallback. It is useful when compar
 since identical origins/bounds alone do not prove identical blend weights. The optional
 `remixapi_SetReflectionVolumesEXT` authoring API publishes copied, scene-scoped volumes separately
 from frozen diffuse bake inputs. The adapter validates its map fingerprint and submits saved volumes.
+A nonempty authored set currently replaces the complete automatic set; it is not a partial overlay.
+Receivers outside every authored influence volume therefore have no local cubemap from automatic
+placement. Removing the sidecar restores automatic placement; an explicit empty set disables local
+cubemaps. Partial authoring needs a future fallback/composition policy rather than assuming both
+sets are sampled together.
 A reflection-only job retains the previous published set while edited captures are prepared. Bounds and
 priority edits reuse raw and filtered radiance; changed origins trace only their affected captures against
 reused scene acceleration. Submitted frames retain their transport and sampled reflection buffers until
