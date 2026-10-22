@@ -1108,3 +1108,17 @@ mismatch remains. Treat this as evidence against promoting direction correction 
 captured radiance, specular energy/BRDF normalization and receiver-local lighting before changing
 direction or mip conventions. Broader materials, bounds, bright/dark transitions, water and viewmodels
 still require acceptance; this low-budget metallic-sphere study establishes neither parity nor FPS.
+
+
+### Reflection-study sunlight confound
+
+Further isolation corrects the interpretation of the large brightness error above. A numerical
+GGX split-sum energy candidate barely changes it. Direct-specular-only rendering retains the bright
+sphere; omitting sunlight alone removes it. Restoring the production shader and increasing the
+requested grid from 256 to 32768 probes also removes it (245 versus 31919 usable probes). Surface,
+static-occlusion and capture input/radiance hashes remain unchanged. All isolation captures finish
+preparation and pass synchronization validation. The sparse study therefore cannot establish a
+cubemap radiance/normalization failure: direct sun visibility dominates its error. Repeat the
+roughness comparison with the dense cached grid before promoting direction or energy changes.
+Sparse-grid visibility robustness remains an independent quality concern. No production shader,
+default or installed artifact changed during these experiments.
