@@ -127,6 +127,7 @@ namespace remix::forward::bake {
     bool initialized = false, prepared = false, failed = false;
     void prepareResources(VkPhysicalDevice physical, VkDevice device, const Config &config, float lightCutoff,
                           uint32_t queueFamily);
+    void finishCaptureInputs(); // worker-only: retain provenance, release ray scratch
     enum class Visibility {
       Local, Direct, DirectionalField, Overflow, SurfaceSun, SurfaceSunAntialiasing, ProbeSun, ProbeLocal
     };

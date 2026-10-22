@@ -913,7 +913,11 @@ or FPS results. Automatic bake capture scratch is also released after readback, 
 filtering, denoising and atlas encoding. Its exact input hash is computed once on the preparation
 worker and retained as a scalar, avoiding a large-buffer hash during render-thread publication.
 Production 1x/4x tests verify the published hash against exact reconstructed ray bytes. This latest
-automatic cleanup is source-only after the installed `22b8406` checkpoint. Scalar counters and
+automatic cleanup is source-only after the installed `22b8406` checkpoint. Cold/warm Construct
+validation caught and fixed a missing cached-load provenance step in that cleanup: both preparation
+paths now retain the exact input hash and release scratch. A fixed warm load reuses the original cache
+with identical content hashes and pixels; the 1x/4x production fixture now explicitly tests disk-cache
+reload provenance. The installed checkpoint predates the caught regression. Scalar counters and
 canonical radiance remain available for edits.
 Production 1x/4x tests confirm zero published transport scratch, retained pending scratch and complete
 GPU image/acceleration cleanup after override reset and frame retirement. Diffuse bake ownership

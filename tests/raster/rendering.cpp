@@ -2050,7 +2050,7 @@ namespace {
           options.baking.reflectionResolution = 16;
           options.baking.lightmapTexels = 1024;
           options.baking.lightmapPageSize = 32;
-          options.baking.diskCache = false;
+          options.baking.diskCache = authoringTest;
           options.baking.denoiseLightmaps = false;
           options.ambient = 0;
           options.shadowResolution = 256;
@@ -2433,6 +2433,23 @@ namespace {
                           static_cast<unsigned long long>(restored.targetBytes),
                           static_cast<unsigned long long>(baseline.accelerationBytes),
                           static_cast<unsigned long long>(restored.accelerationBytes));
+              remix::forward::bake::cache::persistence().waitIdle();
+              options.baking.enabled = false;
+              target.forward->updateLighting(options);
+              render(false, false, true, false);
+              require(!target.forward->statistics().baking.active, "Cache reload fixture retires the active bake");
+              options.baking.enabled = true;
+              target.forward->updateLighting(options);
+              const auto cacheDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+              do {
+                render(false, false, true, false);
+                if (target.forward->statistics().baking.active) break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+              } while (std::chrono::steady_clock::now() < cacheDeadline);
+              const auto cached = target.forward->statistics();
+              require(cached.baking.active && std::strstr(cached.baking.status, "Cached lighting active") &&
+                          cached.bakeContent.captureInputs == baseline.bakeContent.captureInputs,
+                      "Warm automatic cubemap cache preserves exact capture provenance after scratch release");
             }
             std::printf("Viewmodel probes %ux: overlay %u, world %u, analytic lights %u\n",
                         samples, probeWeapon[centre], probeWorld[centre], target.forward->statistics().lights);

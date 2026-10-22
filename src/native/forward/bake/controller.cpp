@@ -123,6 +123,11 @@ namespace remix::forward::bake {
     }
     return true;
   }
+  void Controller::Job::finishCaptureInputs() {
+    if (!captures.empty())
+      captureInputHash = scene::fastHash(captureWork.rays().data(), captureWork.rays().size() * sizeof(Point)) | 1;
+    captureWork = {};
+  }
   void Controller::Job::prepareResources(VkPhysicalDevice physical, VkDevice device, const Config &config,
                                          float lightCutoff, uint32_t queueFamily) {
     VkPhysicalDeviceProperties properties;
@@ -182,6 +187,7 @@ namespace remix::forward::bake {
           hasSun = cached->sun;
           received = uint32_t(grid.tasks.size());
           captureWork = probes::CaptureWork(captures, cancellation.get_token());
+          finishCaptureInputs();
           if (!source->charts.empty())
             surfaceGeometry = std::make_shared<lightmap::Geometry>(
                 physical, device, source, surfaceLayout, cancellation.get_token(),
@@ -924,10 +930,7 @@ namespace remix::forward::bake {
             // Preserve exact input provenance on the worker, then release ray
             // scratch before filtered cubemaps, denoising and atlas encoding.
             // Publication must not scan this potentially large buffer again.
-            if (!owner->captures.empty())
-              owner->captureInputHash = scene::fastHash(owner->captureWork.rays().data(),
-                  owner->captureWork.rays().size() * sizeof(Point)) | 1;
-            owner->captureWork = {};
+            owner->finishCaptureInputs();
             dumpPhaseFingerprint("transport", owner->source->contentHash, owner->grid, owner->surfaceLayout, owner->surfaces,
                                  owner->sun, owner->captures);
             dumpVisibilityReport(*owner->mixedLights, owner->surfaceLayout,
