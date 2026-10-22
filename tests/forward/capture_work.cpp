@@ -1,4 +1,5 @@
 #include "forward/probes/capture_work.h"
+#include "scene/hash_stream.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -48,6 +49,22 @@ void testCaptureWork() {
           "Cancelled direct ray append leaves the existing work buffer intact");
   std::vector<p::Capture> captures{base, alias, other, alias, other};
   p::CaptureWork work(captures);
+  require(p::CaptureWork::inputHash(captures) ==
+              (remix::scene::fastHash(work.rays().data(), work.rays().size_bytes()) | 1),
+          "Bounded cached provenance matches complete deduplicated capture ray bytes");
+  for (uint64_t seed : {0ull, 1ull, UINT64_MAX}) {
+    std::array<uint8_t, 513> bytes;
+    for (size_t i = 0; i < bytes.size(); ++i) bytes[i] = uint8_t(i * 37);
+    for (size_t size = 0; size <= bytes.size(); ++size)
+      for (size_t chunk : {1u, 3u, 8u, 31u, 32u, 33u, 127u}) {
+        remix::scene::HashStream stream(seed);
+        stream.append(nullptr, 0);
+        for (size_t at = 0; at < size; at += chunk)
+          stream.append(bytes.data() + at, std::min(chunk, size - at));
+        require(stream.digest() == remix::scene::fastHash(bytes.data(), size, seed),
+                "Streaming hash preserves one-shot bytes at every tail and block boundary");
+      }
+  }
   require(work.rays().size() == 2u * 384 &&
               work.destination(0) == std::pair<uint32_t,uint32_t>{0,0} &&
               work.destination(384) == std::pair<uint32_t,uint32_t>{2,0} &&

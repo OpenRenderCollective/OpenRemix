@@ -186,8 +186,7 @@ namespace remix::forward::bake {
           hasDirectDiffuse = cached->directDiffuse;
           hasSun = cached->sun;
           received = uint32_t(grid.tasks.size());
-          captureWork = probes::CaptureWork(captures, cancellation.get_token());
-          finishCaptureInputs();
+          captureInputHash = probes::CaptureWork::inputHash(captures, cancellation.get_token());
           if (!source->charts.empty())
             surfaceGeometry = std::make_shared<lightmap::Geometry>(
                 physical, device, source, surfaceLayout, cancellation.get_token(),

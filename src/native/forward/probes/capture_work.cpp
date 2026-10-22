@@ -1,4 +1,5 @@
 #include "forward/probes/capture_work.h"
+#include "scene/hash_stream.h"
 #include <stdexcept>
 
 namespace remix::forward::probes {
@@ -8,7 +9,9 @@ namespace remix::forward::probes {
         throw std::runtime_error("Reflection capture planning superseded");
     }
   } // namespace
-  CaptureWork::CaptureWork(std::span<const Capture> captures, std::stop_token cancelled) {
+  CaptureWork::CaptureWork(std::span<const Capture> captures, std::stop_token cancelled)
+      : CaptureWork(captures, cancelled, true) {}
+  CaptureWork::CaptureWork(std::span<const Capture> captures, std::stop_token cancelled, bool generate) {
     check(cancelled);
     if (captures.size() > maxProbes)
       throw std::invalid_argument("Reflection capture budget exceeded");
@@ -32,11 +35,25 @@ namespace remix::forward::probes {
       m_sources.push_back(source);
       m_positions.push_back(capture.position);
     }
+    if (!generate) return;
     m_rays.reserve(m_owners.size() * m_texels);
     for (const auto owner : m_owners) {
       check(cancelled);
       appendRays(captures[owner], m_rays, cancelled);
     }
+  }
+  uint64_t CaptureWork::inputHash(std::span<const Capture> captures, std::stop_token cancelled) {
+    const CaptureWork plan(captures, cancelled, false);
+    if (captures.empty()) return 0;
+    scene::HashStream hash;
+    std::vector<bake::Point> points;
+    for (const auto owner : plan.m_owners) {
+      check(cancelled);
+      points.clear();
+      appendRays(captures[owner], points, cancelled);
+      hash.append(points.data(), points.size() * sizeof(bake::Point));
+    }
+    return hash.digest() | 1;
   }
   std::pair<uint32_t, uint32_t> CaptureWork::destination(uint32_t ray) const {
     if (ray >= m_rays.size()) throw std::out_of_range("Reflection capture readback ray");

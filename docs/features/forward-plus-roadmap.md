@@ -917,7 +917,12 @@ automatic cleanup is source-only after the installed `22b8406` checkpoint. Cold/
 validation caught and fixed a missing cached-load provenance step in that cleanup: both preparation
 paths now retain the exact input hash and release scratch. A fixed warm load reuses the original cache
 with identical content hashes and pixels; the 1x/4x production fixture now explicitly tests disk-cache
-reload provenance. The installed checkpoint predates the caught regression. Scalar counters and
+reload provenance. Warm preparation now computes that exact hash one unique capture at a time
+using bounded incremental hashing, instead of regenerating the whole scene ray buffer. At 128-face
+resolution its temporary ray payload is 3 MiB regardless of capture count (48 MiB at 512-face).
+Streaming/one-shot equivalence tests cover block/tail boundaries and capture alias order; a Construct
+warm load retains every cold content hash and pixel. No cache format or lighting change is required.
+The installed checkpoint predates these source-only changes and the caught regression. Scalar counters and
 canonical radiance remain available for edits.
 Production 1x/4x tests confirm zero published transport scratch, retained pending scratch and complete
 GPU image/acceleration cleanup after override reset and frame retirement. Diffuse bake ownership
