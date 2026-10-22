@@ -1059,3 +1059,11 @@ Treat this as an unofficial viewer reference, not proof of Valve's proprietary i
 Next compare controlled roughness/grazing sweeps and bright/dark receiver transitions, including props,
 viewmodels, water and sky. Preserve direct visibility and validate energy, cache/layout compatibility
 and actual map quality before introducing normalization or changing defaults.
+
+A controlled analytic GGX/Smith study now compares mirror-direction prefiltering with viewer-style
+dominant-direction lookup across 30 roughness/view-angle cases. Increasing quadrature from 131,072
+to 524,288 samples retains the same tradeoff: mean environment/centroid error improves, but seven
+narrow-highlight cases regress at low/mid roughness. Normal-incidence controls remain identical.
+This normalized F=1 model omits actual cube texels, parallax, Fresnel and mip interpolation, so it
+does not establish a production improvement. Keep the existing default while preparing actual
+renderer roughness/grazing sweeps; do not infer parity or a universal fix from the average result.
