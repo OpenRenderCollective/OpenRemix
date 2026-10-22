@@ -1067,3 +1067,13 @@ narrow-highlight cases regress at low/mid roughness. Normal-incidence controls r
 This normalized F=1 model omits actual cube texels, parallax, Fresnel and mip interpolation, so it
 does not establish a production improvement. Keep the existing default while preparing actual
 renderer roughness/grazing sweeps; do not infer parity or a universal fix from the average result.
+
+An isolated actual-renderer direction experiment now has twelve validated Forward+ captures spanning
+six roughnesses on a metallic sphere in Construct. Production shader/source bytes were restored
+after building the candidate; no new setting or default was added. Captures use the same reported
+bake/probe metadata and lower-sample lighting, so they establish the visible effect rather than final
+quality. The attempted path-traced references are rejected: a screenshot still contains the requested-
+settings compilation overlay despite active backend/denoiser readiness. Shutdown later completes
+those pipelines without failure. Add explicit preparation-readiness diagnostics and gate replay
+warmup/capture on them before repeating the reference sweep or accepting those timings. The remaining
+reference cases were deliberately not launched; completed owned processes exited normally.
