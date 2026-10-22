@@ -422,6 +422,14 @@ within 5% of the proxy exit are neither near nor far. A positive `meanRelativeRe
 lies beyond the proxy; a negative value identifies nearer geometry inside it, including props. Residuals
 are normalized by proxy exit distance, clamped to [-1,4] per hit, and averaged over hits only; faces
 without hits report zero. These measurements do not change selection or permit growth through walls.
+Version 2 also exports up to 8192 deterministic, area-weighted `receivers` from the frozen surface
+charts. Positions use host scene units; `sceneScale` converts lengths to metres. Each sample includes
+its normal, represented area in square metres and draw/chart/index provenance. Sampling uses world
+triangle area rather than luxel counts or texture dimensions, includes charted props and terrain,
+and allocates memory proportional to the sample budget. It runs only for an explicitly requested
+candidate report. Uncharted geometry, alpha coverage and capture-to-receiver visibility are not
+inferred from these samples. Use them to investigate coverage separately from box volume; they
+do not alter capture placement, selection, transport or cache identity.
 
 The default fit tolerates small solid details rather than shrinking an entire face around a ceiling bevel.
 Touching solid fragments are merged when their union nearly fills its bounding box, reassembling

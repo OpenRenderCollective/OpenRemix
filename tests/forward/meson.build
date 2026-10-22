@@ -67,6 +67,11 @@ forward_projection_test = executable('remix-forward-projection-test', 'evaluatio
   '../../src/native/forward/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Reflection candidate geometry assessment and bounded streaming', forward_projection_test)
+probe_receivers_test = executable('remix-probe-receivers-test', 'probe_receivers.cpp',
+  '../../src/native/forward/probes/receivers.cpp', '../../src/native/forward/material.cpp',
+  '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Reflection receiver sampling preserves physical area and bounded work', probe_receivers_test)
 forward_regions_test = executable('remix-forward-regions-test', 'regions.cpp',
   '../../src/native/forward/probes/regions.cpp', '../../src/native/forward/probes/sites.cpp', '../../src/native/forward/lighting.cpp',
   '../../src/native/forward/probes/data.cpp', '../../src/native/forward/probes/placement.cpp', '../../src/native/forward/probes/selection.cpp',

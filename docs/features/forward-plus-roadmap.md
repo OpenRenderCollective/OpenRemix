@@ -753,8 +753,9 @@ alternative but orders a larger corridor first. The nearby automatic doorway pos
 generate that room-shaped alternative. These are separate failures: changing the final selector
 cannot recover a shape that placement never generated. Brush-surface sampling confirms that a
 visible-surface objective can prefer the room alternative without consulting authored bounds;
-this is an offline lead, not an accepted runtime heuristic. Next build bounded receiver samples
-from actual bake geometry, compare marginal visible surface coverage and projection error, and
+this is an offline lead, not an accepted runtime heuristic. The opt-in candidate report now includes
+bounded, area-weighted samples from frozen surface charts, independent of atlas resolution. Next
+compare marginal visible surface coverage and projection error using these actual bake receivers, and
 test both automatic origins and authored origins. Preserve wall separation, independent influence
 and projection bounds, capture/ray budgets and cancellation. Include terrain, props and material
 visibility before accepting the result; two partial authored rooms are not whole-map ground truth.

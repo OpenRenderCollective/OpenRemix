@@ -881,7 +881,8 @@ namespace remix::forward::bake {
             owner->captures = probes::captureCandidates(
                 *owner->source, owner->candidateRegions, captureCount, config.reflectionResolution,
                 owner->cancellation.get_token(), config.reflectionDetailTolerance);
-            probes::dumpCandidates(owner->source->contentHash, owner->candidateRegions, owner->captures);
+            probes::dumpCandidates(*owner->source, owner->candidateRegions, owner->captures,
+                                   owner->cancellation.get_token());
             releaseStorage(owner->candidateRegions);
             for (const auto &capture : owner->captures) {
               auto rays = probes::rays(capture);

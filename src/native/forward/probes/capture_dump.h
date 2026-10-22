@@ -1,12 +1,15 @@
 #pragma once
 #include "forward/probes/data.h"
+#include <stop_token>
+
+namespace remix::scene { struct BakeScene; }
 
 namespace remix::forward::probes {
   struct FittedRegion;
   // Small, independent candidate report for hardware-fit experiments. Only
   // writes when REMIX_DEBUG_PROBE_CANDIDATES names a fresh JSON output file.
-  void dumpCandidates(uint64_t sceneHash, std::span<const FittedRegion> regions,
-                      std::span<const Capture> captures) noexcept;
+  void dumpCandidates(const scene::BakeScene &source, std::span<const FittedRegion> regions,
+                      std::span<const Capture> captures, std::stop_token cancelled = {}) noexcept;
   // Optional developer aid. No CPU capture copy is retained after publication.
   // Writes only when REMIX_DEBUG_BAKE_CAPTURE_PREFIX names a fresh output prefix.
   // Failures are reported to stderr and never invalidate the completed bake.

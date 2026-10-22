@@ -1,5 +1,7 @@
 #include "forward/probes/capture_dump.h"
 #include "forward/probes/selection.h"
+#include "forward/probes/receivers.h"
+#include "scene/bake_scene.h"
 #include <algorithm>
 #include <bit>
 #include <cstdio>
@@ -12,21 +14,23 @@
 #include <unordered_set>
 
 namespace remix::forward::probes {
-  void dumpCandidates(uint64_t sceneHash, std::span<const FittedRegion> regions,
-                      std::span<const Capture> captures) noexcept {
+  void dumpCandidates(const scene::BakeScene &source, std::span<const FittedRegion> regions,
+                      std::span<const Capture> captures, std::stop_token cancelled) noexcept {
     const char *path = std::getenv("REMIX_DEBUG_PROBE_CANDIDATES");
     if (!path || !*path)
       return;
     try {
       if (std::filesystem::exists(path))
         throw std::runtime_error("Candidate report exists; choose a fresh path");
+      const auto receivers = sampleReceivers(source, 8192, cancelled);
       std::ofstream output(path);
       output.exceptions(std::ios::failbit | std::ios::badbit);
       output.precision(9);
       auto vector = [&](Vec3 value) {
         output << '[' << value[0] << ',' << value[1] << ',' << value[2] << ']';
       };
-      output << "{\"version\":1,\"sceneHash\":\"" << sceneHash << "\",\"candidates\":[\n";
+      output << "{\"version\":2,\"sceneHash\":\"" << source.contentHash
+             << "\",\"sceneScale\":" << source.sceneScale << ",\"candidates\":[\n";
       for (size_t i = 0; i < regions.size(); ++i) {
         const auto &region = regions[i];
         const bool selected = std::any_of(captures.begin(), captures.end(), [&](const auto &capture) {
@@ -55,6 +59,20 @@ namespace remix::forward::probes {
                  << ",\"meanRelativeResidual\":" << audit.meanRelativeResidual << '}';
         }
         output << "]}";
+      }
+      output << "\n],\"receivers\":[\n";
+      for (size_t i = 0; i < receivers.size(); ++i) {
+        if (cancelled.stop_requested())
+          throw std::runtime_error("Reflection receiver report superseded");
+        const auto &receiver = receivers[i];
+        output << (i ? ",\n" : "") << "{\"position\":";
+        vector(receiver.position);
+        output << ",\"normal\":";
+        vector(receiver.normal);
+        output << ",\"areaMetresSquared\":" << receiver.areaMetresSquared
+               << ",\"draw\":" << receiver.draw << ",\"chart\":" << receiver.chart
+               << ",\"firstIndex\":" << receiver.firstIndex
+               << ",\"terrain\":" << (source.draws.at(receiver.draw).terrain ? "true" : "false") << '}';
       }
       output << "\n]}\n";
     } catch (const std::exception &error) {
