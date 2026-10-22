@@ -897,9 +897,12 @@ feathering below. It copies published automatic radiance without retracing, keep
 captures available for edit reuse, and retains both image sources through the upload fence. Its composed
 GPU image duplicates selected radiance while automatic images remain available for reset; include this
 memory cost when accepting the mode. Completed authored capture jobs now release their CPU ray
-and destination vectors after readback, before filtering/image allocation. Their payload alone is
-216 MiB for 64 distinct 128-face captures; this is an arithmetic capacity estimate, not a measured
-whole-process reduction. Scalar counters and canonical radiance remain available for edits.
+and owner vectors after readback, before filtering/image allocation. Work ownership now stores one
+index per capture instead of per ray: at 64 distinct 128-face captures its payload drops from
+24 MiB to 256 bytes. Ray planning reserves only the unique new capture count, and avoids zeroing
+radiance arrays before reuse/alias copies. The ray payload is still 192 MiB at that size and is
+released before filtering. These are array payload estimates, not measured whole-process reductions
+or FPS results. Scalar counters and canonical radiance remain available for edits.
 Production 1x/4x tests confirm zero published transport scratch, retained pending scratch and complete
 GPU image/acceleration cleanup after override reset and frame retirement. Diffuse bake ownership
 remains unchanged.

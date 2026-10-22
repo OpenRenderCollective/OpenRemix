@@ -20,7 +20,7 @@ namespace remix::forward::probes {
     std::shared_ptr<const scene::ReflectionVolumes> request;
     std::vector<Capture> captures;
     std::vector<bake::Point> rays;
-    std::vector<uint32_t> destinations;
+    std::vector<uint32_t> rayOwners; // one owner per complete six-face capture
     std::shared_ptr<bake::Transport> transport;
     std::unique_ptr<ImageAsset> image;
     std::unique_ptr<ImageAsset> authoredImage;
@@ -52,7 +52,6 @@ namespace remix::forward::probes {
         capture.priority = volume.priority;
         capture.blendDistance = .5f / source->sceneScale;
         capture.resolution = config.reflectionResolution;
-        capture.radiance.resize(6ull * capture.resolution * capture.resolution);
         int32_t oldIndex = -1;
         if (prior)
           for (size_t old = 0; old < prior->captures.size(); ++old)
@@ -74,11 +73,19 @@ namespace remix::forward::probes {
             }
         aliases.push_back(alias);
         if (oldIndex < 0 && alias < 0) {
-          const auto captureRays = probes::rays(capture);
-          for (uint32_t i = 0; i < captureRays.size(); ++i) destinations.push_back(uint32_t(index * captureRays.size() + i));
-          rays.insert(rays.end(), captureRays.begin(), captureRays.end());
+          capture.radiance.resize(6ull * capture.resolution * capture.resolution);
+          rayOwners.push_back(uint32_t(index));
         }
         captures.push_back(std::move(capture));
+      }
+      // Plan reuse/aliases first, so a cold set reserves exactly its unique
+      // captures instead of repeatedly reallocating an ever-growing ray list.
+      const uint32_t texels = 6 * config.reflectionResolution * config.reflectionResolution;
+      rays.reserve(size_t(rayOwners.size()) * texels);
+      for (const auto owner : rayOwners) {
+        if (cancellation.stop_requested()) throw std::runtime_error("Reflection edit superseded");
+        const auto captureRays = probes::rays(captures[owner]);
+        rays.insert(rays.end(), captureRays.begin(), captureRays.end());
       }
       rayCount = uint32_t(rays.size());
       if (prior && prior->transport) {
@@ -104,7 +111,7 @@ namespace remix::forward::probes {
       // Release capacity before allocating filtered texels and image staging;
       // retain only the scalar count for diagnostics.
       std::vector<bake::Point>().swap(rays);
-      std::vector<uint32_t>().swap(destinations);
+      std::vector<uint32_t>().swap(rayOwners);
       if (!captures.empty()) {
         const uint32_t size = captures.front().resolution;
         const uint32_t levels = std::bit_width(size), stride = levelOffset(size, levels);
@@ -175,11 +182,12 @@ namespace remix::forward::probes {
         job.transport->read(slot, results);
         const uint32_t texels = job.captures.front().resolution * job.captures.front().resolution * 6;
         for (uint32_t i = 0; i < frame.count; ++i) {
-          const auto destination = job.destinations[frame.first+i];
+          const auto ray = frame.first + i;
+          const auto owner = job.rayOwners.at(ray / texels);
           const auto &color = results[i].irradiance[0];
           for (float component : color)
             if (!std::isfinite(component) || component < 0) throw std::runtime_error("Invalid authored reflection readback");
-          job.captures[destination / texels].radiance[destination % texels] = color;
+          job.captures[owner].radiance[ray % texels] = color;
         }
         job.received += frame.count;
         if (const auto elapsed = job.transport->elapsed(slot))
@@ -309,7 +317,7 @@ namespace remix::forward::probes {
       result.sceneReused = job->sceneReused;
       result.rays = job->rayCount;
       result.captureScratchBytes = job->rays.capacity() * sizeof(bake::Point) +
-                                   job->destinations.capacity() * sizeof(uint32_t);
+                                   job->rayOwners.capacity() * sizeof(uint32_t);
       result.completed = job->received;
       result.reused = uint32_t(std::count_if(job->reused.begin(), job->reused.end(), [](int32_t i) { return i >= 0; }));
       result.reused += uint32_t(std::count_if(job->aliases.begin(), job->aliases.end(), [](int32_t i) { return i >= 0; }));
