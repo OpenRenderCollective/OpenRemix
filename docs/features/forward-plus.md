@@ -2233,7 +2233,15 @@ exceed configured component/device capacity on unusually demanding content.
 
 Viewmodels trace the completed opaque world SSR hierarchy at their shaded fragment resolution, with the same roughness filtering and confidence blend into parallax probes or sky. They remain excluded from world reflection guides. Full-resolution opaque SSR is the default; Half and Quarter remain selectable.
 
-Automatic reflection fitting retains up to three distinct growth results per validated capture origin. Primary origins and uncovered-space candidates keep their existing slots; remaining slots let the geometry audit compare alternate room shapes within the same maximum of 160 candidates. Equivalent boxes are merged at 95% intersection-over-union. Every alternative uses the same whole-volume wall and detail-tolerance checks.
+Automatic reflection fitting retains up to three distinct growth results per validated capture origin.
+Primary origins and uncovered-space candidates keep their existing fitting budget. Every retained shape
+then reaches the geometry audit, rather than competing with other origins for its assessment record.
+The audit caps unique origins at 160 and shape records at 480. Shapes sharing an origin reuse the same
+384 first-hit rays; the maximum geometry-query work remains 61,440 rays. Equivalent boxes are merged
+at 95% intersection-over-union. Every alternative uses the same whole-volume wall and detail-tolerance
+checks, and final captures remain bounded by the configured budget (at most 64). Selected shapes can
+share an origin; lighting capture and filtered storage still occupy separate slots. Sharing that work
+is a remaining optimization. Bake policy revision 27 distinguishes this planning from previous caches.
 
 The shared reflection sampler supports rigid world-to-projection frames and signed overlap priorities.
 Projection and influence bounds use this local frame; capture positions and cube-face radiance stay in

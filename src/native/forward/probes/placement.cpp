@@ -193,12 +193,10 @@ namespace remix::forward::probes {
       const auto &p = grid.points[selected].position;
       regions.push_back({box, {{p[0], p[1], p[2]}, 0, 0}});
     }
-    // Preserve origin coverage first. Remaining audit slots can compare shape
-    // alternatives without increasing the established budget (at most 160).
-    for (const auto &alternative : alternatives) {
-      if (regions.size() == auditLimit) break;
-      regions.push_back(alternative);
-    }
+    // Shape alternatives reuse the first-hit queries at an existing origin.
+    // Keep the origin/ray budget fixed, while retaining each bounded fit for
+    // assessment instead of letting primary boxes consume all audit records.
+    regions.insert(regions.end(), alternatives.begin(), alternatives.end());
     return regions;
   }
   std::vector<Capture> captureCandidates(const scene::BakeScene &scene, std::span<const FittedRegion> regions,

@@ -18,7 +18,7 @@ namespace remix::forward::probes {
     check(cancelled);
     if (m_regions.size() > maximumCandidates)
       throw std::invalid_argument("Reflection candidate budget exceeded");
-    m_rays.reserve(m_regions.size() * raysPerOrigin);
+    m_rays.reserve(std::min(m_regions.size(), size_t(maximumOrigins)) * raysPerOrigin);
     for (size_t i = 0; i < m_regions.size(); ++i) {
       check(cancelled);
       const auto &region = m_regions[i];
@@ -32,6 +32,8 @@ namespace remix::forward::probes {
         origin->regions.push_back(i);
         continue;
       }
+      if (m_origins.size() == maximumOrigins)
+        throw std::invalid_argument("Reflection origin budget exceeded");
       m_origins.push_back({region.site.position, {i}});
       m_rays.insert(m_rays.end(), points.begin(), points.end());
     }

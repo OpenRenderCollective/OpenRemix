@@ -232,11 +232,22 @@ int main() {
   require(empty.rays().empty() && empty.finish().empty(), "Empty candidate work needs no GPU submission");
   bool bounded = false;
   try {
-    p::ProjectionAudit excessive(std::vector<p::FittedRegion>(161, candidates.front()));
+    p::ProjectionAudit excessive(std::vector<p::FittedRegion>(p::ProjectionAudit::maximumCandidates + 1,
+                                                            candidates.front()));
   } catch (const std::invalid_argument &) {
     bounded = true;
   }
   require(bounded, "Candidate limits are checked before ray allocation");
+  p::ProjectionAudit aliases(std::vector<p::FittedRegion>(p::ProjectionAudit::maximumCandidates,
+                                                        candidates.front()));
+  require(aliases.rays().size() == 6u * 8u * 8u,
+          "Maximum alternative records still reuse one origin's geometry rays");
+  auto origins = std::vector<p::FittedRegion>(p::ProjectionAudit::maximumOrigins + 1, candidates.front());
+  for (size_t i = 0; i < origins.size(); ++i) origins[i].site.position[0] += float(i) * .001f;
+  bounded = false;
+  try { p::ProjectionAudit excessive(origins); }
+  catch (const std::invalid_argument &) { bounded = true; }
+  require(bounded, "Alternative records must not increase unique-origin ray budget");
   std::stop_source stop;
   stop.request_stop();
   bool cancelled = false;

@@ -138,6 +138,15 @@ namespace remix::forward::test {
       }
       std::printf("}");
     }
+    std::printf("],\"automaticSites\":[");
+    for (size_t i = 0; i < automatic.size(); ++i) {
+      const auto &site = automatic[i];
+      const bool spread = std::find(selected.begin(), selected.end(), i) != selected.end();
+      std::printf("%s{\"position\":[%.9g,%.9g,%.9g],\"clearance\":%.9g,"
+                  "\"enclosedAxes\":%u,\"spreadSelected\":%s}", i ? "," : "", site.position[0],
+                  site.position[1], site.position[2], site.clearance, site.enclosedAxes,
+                  spread ? "true" : "false");
+    }
     std::printf("]}\n");
     return 0;
   } catch (const std::exception &error) {

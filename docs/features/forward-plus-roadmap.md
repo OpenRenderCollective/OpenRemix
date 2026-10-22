@@ -762,6 +762,19 @@ visibility before accepting the result; two partial authored rooms are not whole
 Do not replace fitting with authored-volume union, loosen occupancy globally or add runtime
 receiver rays per fragment on the strength of this subset study.
 
+The complete Construct site pipeline also finds automatic interior origins that generate room fits;
+the earlier doorway-only comparison did not describe the whole candidate set. Primary-origin records
+can consume the old shape-audit allowance before those alternatives are assessed. All retained fits
+now reach assessment, with independent limits of 160 unique origins and 480 records and shared
+first-hit rays. Final capture limits and volume-based selection remain unchanged. This improves the
+observed Construct/Crossfire receiver assignment, but gains coexist with losses elsewhere; validate
+actual room transitions, wall leakage, moving views and frame cost before deploying this checkpoint.
+Selected same-origin shapes currently repeat lighting capture, filtering and storage; share that work
+without changing projection/blending semantics before treating the larger selected set as optimized.
+The attempted receiver-first score is rejected: it can fill the sheltered-region budget and displace
+broad map coverage. Its runtime code is removed. Develop room-local fairness before revisiting that
+objective; do not equate global area sampling or additional audit records with complete quality.
+
 ## Work discipline
 
 New standalone tooling should prefer C#. The current native Qt cubemap workbench remains usable;

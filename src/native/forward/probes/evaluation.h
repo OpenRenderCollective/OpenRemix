@@ -8,7 +8,7 @@ namespace remix::forward::probes {
   // Identical origins share queries, while each fit retains independent statistics.
   class ProjectionAudit {
   public:
-    static constexpr uint32_t resolution = 8, maximumCandidates = 160;
+    static constexpr uint32_t resolution = 8, maximumOrigins = 160, maximumCandidates = 3 * maximumOrigins;
     explicit ProjectionAudit(std::vector<FittedRegion> regions, std::stop_token cancelled = {});
     std::span<const bake::Point> rays() const { return m_rays; }
     bool observe(uint32_t first, std::span<const bake::Result> results);
