@@ -11,6 +11,7 @@ using namespace remix::forward;
 namespace p = remix::forward::probes;
 void testCaptureWork();
 void testProbeImageData();
+void testProbeComposition();
 namespace {
   void require(bool value, const char *message) {
     if (!value) {
@@ -71,6 +72,7 @@ int main() {
   }
   testCaptureWork();
   testProbeImageData();
+  testProbeComposition();
   cubeCorners();
   require(p::imageCapacity(128, 4096, 256, 128ull << 20) == 64 &&
               p::imageCapacity(512, 4096, 256, sizeof(p::Header)) == 64 &&

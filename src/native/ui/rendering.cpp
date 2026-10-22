@@ -179,12 +179,18 @@ namespace remix {
       if (ui::SliderInt("Reflection probes", &probeCount, 0, int(remix::forward::probes::maxProbes)))
         forward.baking.reflectionProbes = uint32_t(probeCount);
       const auto activeProbes = statistics.reflectionProbes.parameters[0];
+      ui::Checkbox("Automatic fallback outside authored volumes", &forward.authoredReflectionFallback);
       ImGui::Text("Active reflection probes: %u (%s)", activeProbes,
-                  statistics.authoredReflections.active ? "authored" : "automatic");
-      if (statistics.authoredReflections.active && activeProbes)
+                  statistics.authoredReflections.active ?
+                    (statistics.authoredReflections.automatic ? "authored + automatic" : "authored") : "automatic");
+      if (statistics.authoredReflections.active && activeProbes && !forward.authoredReflectionFallback)
         ImGui::TextWrapped("Authored volumes replace the automatic set for this map. "
                            "Areas outside these volumes have no local cubemap. "
                            "Clear the host's override to restore automatic probes.");
+      if (statistics.authoredReflections.active && forward.authoredReflectionFallback && activeProbes)
+        ImGui::Text("Automatic fallback: %u retained, %u covered, %u omitted by capacity",
+                    statistics.authoredReflections.automatic, statistics.authoredReflections.covered,
+                    statistics.authoredReflections.omitted);
       if (statistics.authoredReflections.active && !activeProbes)
         ImGui::TextWrapped("The authored volume set is empty, so local cubemaps are disabled. "
                            "Clear the host's override to use automatic probes.");

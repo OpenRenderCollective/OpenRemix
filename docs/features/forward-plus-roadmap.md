@@ -846,9 +846,13 @@ default without establishing gameplay performance or a general speedup. Check wi
 mirror/rough materials and normal-quality cache transitions for broader acceptance. The separate testing
 install now carries the image-backed 128-default checkpoint and bounded CPU filter workers; settings,
 addon mounts and the two authored Construct volumes are preserved. This is not full quality acceptance.
-Authored sets currently replace the automatic set entirely. Partial authored maps therefore need an
-explicit overlay/fallback design that respects priorities, the 64-record budget and empty-set semantics;
-do not assume automatic coverage survives outside the two reference volumes.
+Authored sets replace the automatic set by default and in the deployed checkpoint. An explicit
+`rtx.native.forward.authoredReflectionFallback` option now composes existing automatic image layers
+behind authored priorities. It retains all authored records and removes automatic records only when
+their entire influence box is proven contained by one authored box; remaining automatic records keep
+their original order within the shared 64-record budget. Diagnostics report retained, covered and
+capacity-omitted counts. Empty authored sets still disable local probes; null resets restore automatic
+placement. The mode is not deployed or accepted across maps yet.
 An installed-sidecar containment check confirms the skylit hall camera is inside the first authored
 volume, while the behind-spawn room, connector and unconfirmed secret approach cameras are outside
 both. Only 8 of the current 63 automatic capture origins are inside these volumes; that is an origin
@@ -863,7 +867,16 @@ work continued. The optional bake-statistics tail now exposes requested/pending/
 reflection state; measurement and camera-path readiness wait for publication, and final measurements
 refresh their probe report. Legacy 256-byte statistics clients retain their allocation boundary.
 An earlier report showing pending work is not proof that its later image was incomplete; match
-fresh final diagnostics before making that claim. Authored fallback composition is still unimplemented.
+fresh final diagnostics before making that claim. Fallback composition now has CPU selection, exact
+GPU copy/readback and production authored-edit tests at 1x/4x MSAA. Those tests verify outside-volume
+reflections, zero new capture rays on mode changes and unchanged diffuse bake identity. Map-scale
+coverage and memory/performance acceptance remain open. A full-quality behind-spawn Construct check
+now publishes 2 authored plus 59 automatic probes, with 4 automatic influence boxes fully covered
+and none capacity-omitted. A glossy test sphere outside both authored volumes regains local
+reflections with SSR disabled. The longer-warmup repeat exits cleanly with a fresh report and matching
+image; its radiance hashes differ despite matching identity, geometry and capture inputs. The initial
+short-window run failed only its final report-freshness drain. This is narrow coverage acceptance,
+not a performance result or whole-map quality acceptance.
 The input/screenshot fixture now explicitly selects raster, checks the actual DLSS reconstruction
 default, and waits for the single completed presentation and resized screenshot before examining
 frame accounting. Exceptions unwind an explicit runtime shutdown; thread assertions propagate to
@@ -874,10 +887,11 @@ Earlier terminated tests still expose one blocked thread each to Windows wait-ch
 with no cycle or wait owner reported. Their process handles remain unsignalled despite exit code 1.
 Cleanup and an ordinary full API-suite run remain unconfirmed; do not accept new timings yet.
 The rendering menu now explains that active authored volumes replace the whole automatic set.
-An eventual overlay must preserve existing replacement/empty-set/reset semantics through an explicit
-mode, retain authored priority ordering, select fallback captures within the shared 64-record budget,
-and feather toward lower-priority coverage without introducing a hard transition at volume edges.
-Reuse published automatic radiance rather than retracing it; diffuse bake ownership must remain unchanged.
+The explicit fallback mode preserves replacement/empty-set/reset semantics and uses the priority
+feathering below. It copies published automatic radiance without retracing, keeps canonical authored
+captures available for edit reuse, and retains both image sources through the upload fence. Its composed
+GPU image duplicates selected radiance while automatic images remain available for reset; include this
+memory cost when accepting the mode. Diffuse bake ownership remains unchanged.
 Priority feathering is now implemented within a published reflection set: core priority remains dominant,
 edge bands blend toward lower priorities, and shared floor/wall bands cancel through a relative coverage
 ratio. GPU uploads sort metadata and radiance layers together; canonical capture/cache identities remain

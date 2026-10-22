@@ -61,6 +61,9 @@ namespace remix {
         << ", \"rays\": " << state.authoredReflections.rays
         << ", \"completed\": " << state.authoredReflections.completed
         << ", \"reused\": " << state.authoredReflections.reused
+        << ", \"automatic\": " << state.authoredReflections.automatic
+        << ", \"covered\": " << state.authoredReflections.covered
+        << ", \"omitted\": " << state.authoredReflections.omitted
         << ", \"sceneReused\": " << (state.authoredReflections.sceneReused ? "true" : "false") << '}'
         << ",\n  \"irradianceGrid\": {\"spacingMetres\": " << state.irradianceGrid.spacingMetres
         << ", \"dimensions\": [" << state.irradianceGrid.dimensions[0] << ", "

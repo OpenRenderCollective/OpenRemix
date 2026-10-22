@@ -481,6 +481,12 @@ int main() {
   require(config::set(settings, "rtx.native.forward.lightCutoff", "nan") == config::SetResult::Invalid,
           "Reject nonfinite light cutoff");
   require(Options{}.ssrScale == 1, "SSR defaults to full resolution");
+  require(!Options{}.authoredReflectionFallback,
+          "Authored reflection fallback remains an explicit rendering option");
+  const auto beforeFallback = settings.forward.baking;
+  require(config::set(settings, "rtx.native.forward.authoredReflectionFallback", "true") == config::SetResult::Success &&
+              settings.forward.authoredReflectionFallback && settings.forward.baking.sameLighting(beforeFallback),
+          "Automatic reflection fallback can change without invalidating the light bake");
   require(config::set(settings, "rtx.native.forward.ssrScale", "3") == config::SetResult::Invalid,
           "Reject unsupported reflection resolution");
   require(config::set(settings, "rtx.native.forward.ssrScale", "4") == config::SetResult::Success &&

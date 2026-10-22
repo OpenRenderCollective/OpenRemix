@@ -133,6 +133,7 @@ namespace remix::config {
                             return true;
                           }});
         result.push_back(scalar("rtx.native.forward.ssr", FIELD(forward.ssr), 0, 1));
+        result.push_back(scalar("rtx.native.forward.authoredReflectionFallback", FIELD(forward.authoredReflectionFallback), 0, 1));
         result.push_back(scalar("rtx.native.forward.water", FIELD(forward.water), 0, 1));
         result.push_back(scalar("rtx.native.forward.waterDistance", FIELD(forward.waterDistance), .1, 10000));
         result.push_back(scalar("rtx.native.forward.waterThickness", FIELD(forward.waterThickness), .001, 10));

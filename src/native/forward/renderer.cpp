@@ -215,7 +215,7 @@ namespace remix::forward {
                          m_gpu->options.lightCutoff);
     const auto &baked = m_gpu->baking->volume();
     m_gpu->authoredReflections->record(command, resources,
-        m_gpu->options.bakeConfiguration(m_gpu->giSupported), baked ? baked->hash : 0);
+        m_gpu->options.bakeConfiguration(m_gpu->giSupported), baked, m_gpu->options.authoredReflectionFallback);
     bakeTime.close();
     step(cpu.bake);
     if (m_gpu->liveScene) {

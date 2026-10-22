@@ -237,7 +237,11 @@ automatic placement on the next map load. Live visual confirmation remains pendi
 The user subsequently authored two Construct volumes, restoring a nonempty active override.
 Their JSON is preserved in the adapter's `tools/probe_editor/references/gm_construct.json` as
 a partial main-hall fitting reference. Preserve the live authoring document and runtime sidecar;
-these two volumes do not establish whole-map reflection coverage.
+these two volumes do not establish whole-map reflection coverage. The source-only optional setting
+`rtx.native.forward.authoredReflectionFallback=1` now fills uncovered areas with existing automatic
+image layers within the shared 64-record budget. It defaults off, preserves explicit-empty/null-reset
+semantics, reports covered/omitted counts, and does not invalidate diffuse lighting. CPU/GPU copy and
+production edit tests pass; map-scale quality and memory/performance acceptance remain open.
 
 Keep GPU frame, transport and startup timing separate. Live profiles must verify the screenshot,
 active bake identity, effective reflection options and resolution before interpreting frame costs.

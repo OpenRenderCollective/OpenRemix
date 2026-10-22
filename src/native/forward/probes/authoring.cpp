@@ -2,6 +2,7 @@
 #include "platform/workers.h"
 #include "forward/bake/transport.h"
 #include "forward/bake/budget.h"
+#include "forward/bake/controller.h"
 #include "raster/renderer.h"
 #include <algorithm>
 #include <atomic>
@@ -22,6 +23,10 @@ namespace remix::forward::probes {
     std::vector<uint32_t> destinations;
     std::shared_ptr<bake::Transport> transport;
     std::unique_ptr<ImageAsset> image;
+    std::unique_ptr<ImageAsset> authoredImage;
+    std::shared_ptr<const bake::Volume> automatic;
+    uint64_t revision = 0;
+    uint32_t automaticCount = 0, covered = 0, omitted = 0;
     Data filtered;
     bake::Budget budget;
     std::vector<int32_t> reused, aliases;
@@ -121,6 +126,16 @@ namespace remix::forward::probes {
         }
       }
       image = std::make_unique<ImageAsset>(physical, device, filtered, cancellation.get_token());
+      if (automatic && !captures.empty() && automatic->specular) {
+        const auto plan = compose(image->header(), automatic->specular->header());
+        automaticCount = plan.automatic;
+        covered = plan.covered;
+        omitted = plan.omitted;
+        if (automaticCount) {
+          authoredImage = std::move(image);
+          image = std::make_unique<ImageAsset>(physical, device, plan);
+        }
+      }
       previous.reset();
     }
   };
@@ -140,7 +155,11 @@ namespace remix::forward::probes {
   void Authoring::selectFrame(uint32_t slot) {
     m_slot = slot;
     auto &frame = m_frames.at(slot);
-    if (frame.uploaded) frame.uploaded->image->releaseUpload();
+    if (frame.uploaded) {
+      frame.uploaded->image->releaseUpload();
+      frame.uploaded->authoredImage.reset();
+      frame.uploaded->automatic.reset();
+    }
     if (frame.work) {
       auto &job = *frame.work;
       if (frame.preparation) job.transport->releaseBuildInputs();
@@ -164,7 +183,7 @@ namespace remix::forward::probes {
     std::erase_if(m_retired, [](const auto &job) { return job->ticket->ready(); });
   }
   void Authoring::record(VkCommandBuffer command, RasterRenderer &resources, const bake::Config &config,
-                          uint64_t activeBakeHash) {
+                          const std::shared_ptr<const bake::Volume> &automatic, bool fallback) {
     const auto source = resources.bakeScene();
     const auto request = resources.reflectionVolumes();
     if (source != m_source || !config.sameLighting(m_config)) {
@@ -174,20 +193,30 @@ namespace remix::forward::probes {
       m_source = source;
       m_config = config;
     }
-    if (request != m_request) {
+    const bool useFallback = fallback && request && !request->volumes.empty();
+    const auto fallbackVolume = useFallback ? automatic : nullptr;
+    if (request != m_request || useFallback != m_fallback || fallbackVolume != m_automatic.lock()) {
       retire();
       m_request = request;
+      m_fallback = useFallback;
+      m_automatic = fallbackVolume;
+      ++m_revision;
       m_status.clear();
       if (!request) m_active.reset();
     }
     // Keep the published override while an edit is preparing, but never sample
     // another map's override or trace before its world lighting has completed.
-    if (!request || !source || !source->ready || !activeBakeHash ||
-        source->contentHash != activeBakeHash || !config.enabled) return;
-    if (!m_job && (!m_active || m_active->request != request) && m_status.empty()) {
+    m_frames[m_slot].sampled = m_active;
+    if (!request || !source || !source->ready || !automatic ||
+        source->contentHash != automatic->hash || !config.enabled) return;
+    if (useFallback && (!automatic->specular || (automatic->reflectionHeader.parameters[0] &&
+        automatic->reflectionHeader.parameters[1] != config.reflectionResolution))) return;
+    if (!m_job && (!m_active || m_active->revision != m_revision) && m_status.empty()) {
       if (!m_hardware || !m_pipelines) { m_status = "Authored reflections require hardware ray queries"; return; }
       auto job = std::make_shared<Job>();
       job->request = request;
+      job->revision = m_revision;
+      job->automatic = fallbackVolume;
       const auto previous = m_active;
       job->previous = previous;
       const auto physical = m_physical;
@@ -205,7 +234,12 @@ namespace remix::forward::probes {
     try {
       job.ticket->check();
       if (job.filtering) {
-        job.image->recordUpload(command);
+        if (job.authoredImage) {
+          job.authoredImage->recordUpload(command);
+          job.image->recordCompose(command, *job.authoredImage, *job.automatic->specular);
+        } else {
+          job.image->recordUpload(command);
+        }
         m_frames[m_slot].uploaded = m_job;
         m_active = std::move(m_job);
         m_status.clear();
@@ -234,6 +268,10 @@ namespace remix::forward::probes {
           owner->finish(physical, device);
         });
       }
+    } catch (VkResult error) {
+      m_status = "Authored reflection Vulkan failure " + std::to_string(int(error));
+      std::fprintf(stderr, "%s\n", m_status.c_str());
+      retire();
     } catch (const std::exception &error) {
       m_status = error.what();
       std::fprintf(stderr, "Authored reflections: %s\n", m_status.c_str());
@@ -249,8 +287,13 @@ namespace remix::forward::probes {
     AuthoringStatistics result;
     result.requested = bool(m_request);
     result.failed = !m_status.empty();
-    result.pending = bool(m_request) && (!m_active || m_active->request != m_request);
+    result.pending = bool(m_request) && (!m_active || m_active->revision != m_revision);
     result.active = bool(m_active);
+    if (m_active) {
+      result.automatic = m_active->automaticCount;
+      result.covered = m_active->covered;
+      result.omitted = m_active->omitted;
+    }
     const auto &job = m_job ? m_job : m_active;
     if (!job) return result;
     // Worker-owned vectors are read only after preparation has completed.
@@ -273,6 +316,10 @@ namespace remix::forward::probes {
       if (job->image) {
         result.buffers += job->image->bufferBytes();
         result.images += job->image->imageBytes();
+      }
+      if (job->authoredImage) {
+        result.buffers += job->authoredImage->bufferBytes();
+        result.images += job->authoredImage->imageBytes();
       }
       if (job->prepared && job->transport && scenes.insert(job->transport.get()).second) {
         result.buffers += job->transport->memoryBytes();

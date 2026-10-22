@@ -40,6 +40,7 @@ namespace remix::forward::probes {
   struct AuthoringStatistics {
     uint64_t revision = 0;
     uint32_t rays = 0, completed = 0, reused = 0;
+    uint32_t automatic = 0, covered = 0, omitted = 0;
     bool pending = false, active = false, sceneReused = false, requested = false, failed = false;
   };
   struct Data {

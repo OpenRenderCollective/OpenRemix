@@ -7,6 +7,7 @@
 #include "platform/gpu_frames.h"
 #include <memory>
 namespace remix { class RasterRenderer; }
+namespace remix::forward::bake { struct Volume; }
 namespace remix::forward::probes {
   // Reflection-only publication. Neither source ownership nor diffuse bake
   // buffers are modified; frame slots retain every sampled and submitted job.
@@ -18,7 +19,7 @@ namespace remix::forward::probes {
     ~Authoring();
     void selectFrame(uint32_t slot);
     void record(VkCommandBuffer command, RasterRenderer &resources, const bake::Config &config,
-                uint64_t activeBakeHash);
+                const std::shared_ptr<const bake::Volume> &automatic, bool fallback);
     Descriptors descriptor(Descriptors automatic) const;
     const Header *header() const;
     AuthoringMemory memory() const;
@@ -39,6 +40,9 @@ namespace remix::forward::probes {
     uint32_t m_queueFamily, m_slot = 0;
     std::shared_ptr<const scene::BakeScene> m_source;
     std::shared_ptr<const scene::ReflectionVolumes> m_request;
+    std::weak_ptr<const bake::Volume> m_automatic;
+    uint64_t m_revision = 0;
+    bool m_fallback = false;
     std::shared_ptr<Job> m_job, m_active;
     std::vector<std::shared_ptr<Job>> m_retired;
     std::array<Frame, gpuFrameCount> m_frames;

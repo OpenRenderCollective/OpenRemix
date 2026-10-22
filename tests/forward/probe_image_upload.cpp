@@ -7,7 +7,7 @@
 using namespace remix::forward;
 using namespace remix::forward::test;
 
-void uploadCase(uint32_t count, uint32_t size) {
+void uploadCase(uint32_t count, uint32_t size, bool composition = false) {
   Fixture fixture(false); // No optional cube-array or descriptor-indexing features.
   probes::Data source;
   const uint32_t levels = std::bit_width(size), stride = probes::levelOffset(size, levels);
@@ -15,15 +15,27 @@ void uploadCase(uint32_t count, uint32_t size) {
   source.texels.resize(size_t(count) * stride);
   for (size_t i = 0; i < source.texels.size(); ++i)
     source.texels[i] = {float(i % 1000) / 16, float(i % 31), .001f, 1000000};
+  probes::ImageAsset asset(fixture.physical, fixture.device, source);
+  std::unique_ptr<probes::ImageAsset> second, combined;
+  if (composition) {
+    require(count == 1, "Composition fixture uses one layer per source");
+    auto other = source;
+    for (auto &texel : other.texels) texel = {32, 8, .5f, 1};
+    second = std::make_unique<probes::ImageAsset>(fixture.physical, fixture.device, other);
+    source.header.parameters[0] = ++count;
+    source.texels.insert(source.texels.end(), other.texels.begin(), other.texels.end());
+    probes::Composition plan{.header = source.header, .layers = {{false, 0}, {true, 0}}, .automatic = 1};
+    combined = std::make_unique<probes::ImageAsset>(fixture.physical, fixture.device, plan);
+  }
+  auto &output = combined ? *combined : asset;
   auto packed = probes::prepareImage(source);
   if (!count) packed.pixels.resize(4);
   const auto bytes = packed.pixels.size() * sizeof(uint16_t);
   Buffer readback;
   readback.create(fixture.physical, fixture.device, bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT, Buffer::Memory::Readback);
-  probes::ImageAsset asset(fixture.physical, fixture.device, source);
-  const auto &image = asset.image();
+  const auto &image = output.image();
   require(asset.metadata().range == sizeof(probes::Header), "Projection descriptor excludes radiance payload");
-  require(asset.radiance().sampler && asset.radiance().imageView == image.view,
+  require(output.radiance().sampler && output.radiance().imageView == image.view,
           "Image asset owns a complete combined sampler descriptor");
   bool earlyRelease = false;
   try { asset.releaseUpload(); } catch (const std::logic_error &) { earlyRelease = true; }
@@ -37,6 +49,10 @@ void uploadCase(uint32_t count, uint32_t size) {
                                 .imageExtent = {1, 1, 1}});
   fixture.begin();
   asset.recordUpload(fixture.command);
+  if (composition) {
+    second->recordUpload(fixture.command);
+    combined->recordCompose(fixture.command, asset, *second);
+  }
   bool duplicate = false;
   try { asset.recordUpload(fixture.command); } catch (const std::logic_error &) { duplicate = true; }
   require(duplicate, "Image asset refuses recording its one-time upload twice");
@@ -57,6 +73,10 @@ void uploadCase(uint32_t count, uint32_t size) {
   fixture.finish();
   const auto beforeRelease = asset.bufferBytes();
   asset.releaseUpload();
+  if (composition) {
+    second->releaseUpload();
+    combined->releaseUpload();
+  }
   require(asset.bufferBytes() < beforeRelease && asset.metadata().buffer,
           "Completed upload releases staging while retaining sampled metadata");
   std::vector<uint16_t> actual(packed.pixels.size());
@@ -71,6 +91,7 @@ int main() try {
   uploadCase(64, 8);
   uploadCase(1, 256);
   uploadCase(1, 512);
+  uploadCase(1, 8, true);
 } catch (VkResult error) {
   std::fprintf(stderr, "Reflection image upload failed: %d\n", int(error));
   return 1;

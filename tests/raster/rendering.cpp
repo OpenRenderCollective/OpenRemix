@@ -2341,6 +2341,42 @@ namespace {
                           after.bakeContent.grid == baseline.bakeContent.grid &&
                           after.bakeContent.surfaces == baseline.bakeContent.surfaces,
                       "Authored reflection edits preserve completed diffuse probes and surface lightmaps");
+              options.authoredReflectionFallback = true;
+              target.forward->updateLighting(options);
+              waitForEdit();
+              require(target.forward->statistics().authoredReflections.rays == 0 &&
+                          target.forward->statistics().authoredReflections.reused == 2 &&
+                          target.forward->statistics().baking.activeHash == baseline.baking.activeHash,
+                      "Enabling automatic fallback reuses authored radiance without rebaking diffuse lighting");
+              // Shrink both influence boxes away from the receiver. Automatic
+              // capture radiance must now light it outside authored coverage.
+              auto fallbackVolumes = std::array{authored[0], authored[1]};
+              for (auto &volume : fallbackVolumes)
+                for (uint32_t c = 0; c < 3; ++c) {
+                  float capture = volume.worldToLocal[c][3];
+                  for (uint32_t axis = 0; axis < 3; ++axis)
+                    capture += volume.worldToLocal[c][axis] * volume.capture[axis];
+                  volume.minimum[c] = capture - .01f;
+                  volume.maximum[c] = capture + .01f;
+                }
+              request.volumes = fallbackVolumes.data(); ++request.revision;
+              r.setReflectionVolumes(&request);
+              const auto fallbackImage = waitForEdit();
+              require(target.forward->statistics().authoredReflections.automatic > 0 &&
+                          target.forward->statistics().authoredReflections.rays == 0 && fallbackImage[centre] > 40,
+                      "Automatic image layers supply reflections outside edited authored bounds without retracing");
+              request.volumes = authored; ++request.revision;
+              r.setReflectionVolumes(&request);
+              waitForEdit();
+              options.authoredReflectionFallback = false;
+              target.forward->updateLighting(options);
+              waitForEdit();
+              require(target.forward->statistics().reflectionProbes.parameters[0] == 2 &&
+                          target.forward->statistics().authoredReflections.rays == 0,
+                      "Disabling fallback restores the authored-only set without retracing");
+              options.authoredReflectionFallback = true;
+              target.forward->updateLighting(options);
+              waitForEdit();
               // Only the last probe can influence the weapon. This exercises
               // the upper mask word through authored publication and shading.
               std::array<remixapi_ReflectionVolumeEXT, 64> complete{};
@@ -4912,7 +4948,8 @@ namespace {
     }
   }
 } // namespace
-int main(int argc, char **argv) {
+int main(int argc, char **argv) try {
+  std::setvbuf(stdout, nullptr, _IONBF, 0);
   require(argc >= 2, "Supply scratch directory");
   const std::filesystem::path directory(argv[1]);
   std::filesystem::create_directories(directory);
@@ -4977,4 +5014,13 @@ int main(int argc, char **argv) {
   }
   else gpuTests(directory);
   require(!errors.load(), "Vulkan validation errors");
+} catch (VkResult error) {
+  std::fprintf(stderr, "Raster GPU fixture failed with VkResult %d\n", int(error));
+  return 1;
+} catch (remixapi_ErrorCode error) {
+  std::fprintf(stderr, "Raster GPU fixture failed with Remix error %d\n", int(error));
+  return 1;
+} catch (const std::exception &error) {
+  std::fprintf(stderr, "Raster GPU fixture failed: %s\n", error.what());
+  return 1;
 }

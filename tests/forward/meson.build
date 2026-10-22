@@ -54,7 +54,8 @@ forward_receiver_report_test = executable('remix-forward-receiver-report-test', 
   '../../src/native/forward/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Surface and probe receiver comparison preserves coordinates and indirect units', forward_receiver_report_test)
-forward_probes_test = executable('remix-forward-probes-test', 'probes.cpp', 'capture_work.cpp', 'probe_image_data.cpp',
+forward_probes_test = executable('remix-forward-probes-test', 'probes.cpp', 'capture_work.cpp', 'probe_image_data.cpp', 'probe_composition.cpp',
+  '../../src/native/forward/probes/composition.cpp',
   '../../src/native/forward/probes/image_data.cpp',
   '../../src/native/forward/probes/capture_work.cpp',
   '../../src/native/forward/probes/data.cpp', '../../src/native/forward/probes/placement.cpp', '../../src/native/forward/probes/selection.cpp',
