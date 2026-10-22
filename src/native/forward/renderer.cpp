@@ -7,6 +7,46 @@
 #include <stdexcept>
 
 namespace remix::forward {
+  void Renderer::Gpu::publishStatistics() {
+    statistics.baking = baking->statistics();
+    const auto &volume = baking->volume();
+    statistics.bakeContent = volume ? volume->content : bake::ContentHashes{};
+    auto &irradiance = statistics.irradianceGrid;
+    irradiance = {};
+    if (volume) {
+      const auto &header = volume->irradianceHeader;
+      std::copy_n(header.dimensions.begin(), 3, irradiance.dimensions.begin());
+      irradiance.slots = header.dimensions[3];
+      irradiance.usable = volume->usableIrradianceProbes;
+      irradiance.spacingMetres = header.originSpacing[3] * volume->sceneScale;
+    }
+    statistics.reflectionSceneScale = volume ? volume->sceneScale : 1;
+    statistics.authoredReflections = authoredReflections->statistics();
+    const auto authoredHeader = authoredReflections->header();
+    statistics.reflectionProbes = authoredHeader ? *authoredHeader : volume ? volume->reflectionHeader : probes::Header{};
+    const auto memory = baking->memory();
+    const auto authoredMemory = authoredReflections->memory();
+    statistics.bufferBytes += memory.buffers + authoredMemory.buffers;
+    statistics.targetBytes = baseTargetBytes + memory.images + authoredMemory.images +
+                             (waterPass ? waterPass->targetBytes() : 0) +
+                             viewModelTarget->bytes() +
+                             (viewModelSun ? viewModelSun->bytes() : 0) +
+                             (viewModelLocalMaps ? viewModelLocalMaps->memoryBytes() : 0);
+    statistics.accelerationBytes = memory.acceleration + authoredMemory.acceleration;
+    if (liveScene) {
+      const auto live = liveScene->memory();
+      statistics.bufferBytes += live.buffers;
+      statistics.targetBytes += live.images;
+      statistics.accelerationBytes += live.acceleration;
+    }
+    if (rayReflections) {
+      statistics.rayReflections = rayReflections->statistics();
+      const auto live = rayReflections->memory();
+      statistics.bufferBytes += live.buffers;
+      statistics.targetBytes += live.images;
+      statistics.accelerationBytes += live.acceleration;
+    }
+  }
   Renderer::Renderer() = default;
   Renderer::~Renderer() = default;
   Renderer::Gpu::~Gpu() {
@@ -128,6 +168,12 @@ namespace remix::forward {
   std::shared_ptr<postfx::State> Renderer::exposureState() const {
     return m_gpu ? m_gpu->postProcessing->state() : nullptr;
   }
+  void Renderer::activate(uint32_t slot) {
+    selectFrame(slot);
+    // Queue retirement precedes activation. Preparation workers must not
+    // inspect a controller still used by the old renderer.
+    m_gpu->publishStatistics();
+  }
   void Renderer::selectFrame(uint32_t slot) {
     auto &g = *m_gpu;
     g.slot = slot;
@@ -215,44 +261,7 @@ namespace remix::forward {
     m_gpu->recordViewModels(command);
     m_gpu->recordExposure(command, resources, seconds);
     step(cpu.waterExposure);
-    m_gpu->statistics.baking = m_gpu->baking->statistics();
-    const auto &volume = m_gpu->baking->volume();
-    m_gpu->statistics.bakeContent = volume ? volume->content : bake::ContentHashes{};
-    auto &irradiance = m_gpu->statistics.irradianceGrid;
-    irradiance = {};
-    if (volume) {
-      const auto &header = volume->irradianceHeader;
-      std::copy_n(header.dimensions.begin(), 3, irradiance.dimensions.begin());
-      irradiance.slots = header.dimensions[3];
-      irradiance.usable = volume->usableIrradianceProbes;
-      irradiance.spacingMetres = header.originSpacing[3] * volume->sceneScale;
-    }
-    m_gpu->statistics.authoredReflections = m_gpu->authoredReflections->statistics();
-    const auto authoredHeader = m_gpu->authoredReflections->header();
-    m_gpu->statistics.reflectionProbes = authoredHeader ? *authoredHeader : volume ? volume->reflectionHeader : probes::Header{};
-    m_gpu->statistics.reflectionSceneScale = volume ? volume->sceneScale : 1;
-    const auto memory = m_gpu->baking->memory();
-    const auto authoredMemory = m_gpu->authoredReflections->memory();
-    m_gpu->statistics.bufferBytes += memory.buffers + authoredMemory.buffers;
-    m_gpu->statistics.targetBytes = m_gpu->baseTargetBytes + memory.images + authoredMemory.images +
-                                    (m_gpu->waterPass ? m_gpu->waterPass->targetBytes() : 0) +
-                                    m_gpu->viewModelTarget->bytes() +
-                                    (m_gpu->viewModelSun ? m_gpu->viewModelSun->bytes() : 0) +
-                                    (m_gpu->viewModelLocalMaps ? m_gpu->viewModelLocalMaps->memoryBytes() : 0);
-    m_gpu->statistics.accelerationBytes = memory.acceleration + authoredMemory.acceleration;
-    if (m_gpu->liveScene) {
-      const auto live = m_gpu->liveScene->memory();
-      m_gpu->statistics.bufferBytes += live.buffers;
-      m_gpu->statistics.targetBytes += live.images;
-      m_gpu->statistics.accelerationBytes += live.acceleration;
-    }
-    if (m_gpu->rayReflections) {
-      m_gpu->statistics.rayReflections = m_gpu->rayReflections->statistics();
-      const auto live = m_gpu->rayReflections->memory();
-      m_gpu->statistics.bufferBytes += live.buffers;
-      m_gpu->statistics.targetBytes += live.images;
-      m_gpu->statistics.accelerationBytes += live.acceleration;
-    }
+    m_gpu->publishStatistics();
     step(cpu.publication);
     m_gpu->statistics.cpuRecording = cpu;
   }

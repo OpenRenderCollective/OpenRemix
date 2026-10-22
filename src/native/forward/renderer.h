@@ -76,6 +76,8 @@ namespace remix::forward {
     // advances it, on the render thread after the owning frame-slot fence.
     std::shared_ptr<bake::Controller> bakeController() const;
     std::shared_ptr<postfx::State> exposureState() const;
+    // Queue-idle activation retains published bake metadata before the first frame.
+    void activate(uint32_t slot);
     void selectFrame(uint32_t slot); // caller has waited for this slot's fence
     void prepare(VkCommandBuffer command, RasterRenderer &resources, float seconds = -1);
     void composite(VkCommandBuffer command);  // inside the output render pass

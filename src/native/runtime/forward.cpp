@@ -1,4 +1,5 @@
 #include "runtime/runtime.h"
+#include "forward/bake/controller.h"
 #include <algorithm>
 #include <iomanip>
 #include <locale>
@@ -11,7 +12,11 @@ namespace remix {
   forward::Statistics RemixNativeRuntime::forwardStatistics() const {
     if (const auto *busy = busyState())
       return busy->forward;
-    return m_forward ? m_forward->statistics() : forward::Statistics{};
+    auto statistics = m_forward ? m_forward->statistics() : forward::Statistics{};
+    // A swapchain/attachment replacement can temporarily have no renderer,
+    // while its lighting controller and published volume remain alive.
+    if (!m_forward && m_forwardBaking) statistics.baking = m_forwardBaking->statistics();
+    return statistics;
   }
   std::string RemixNativeRuntime::reflectionProbeReport() const {
     // Read the same published frame snapshot as the statistics API. Never inspect
@@ -182,7 +187,7 @@ namespace remix {
         m_forwardExposure = m_forward->exposureState();
         // Activation waited for the whole queue. Adopt the actual frame slot
         // before the new targets advance a retained bake or touch descriptors.
-        m_forward->selectFrame(m_frameIndex);
+        m_forward->activate(m_frameIndex);
         m_forward->updateLighting(options);
         m_forwardPreparation.reset();
         m_forwardFailure.clear();

@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <remix/remix_bake_ext.h>
 #include <thread>
 
@@ -10,7 +11,11 @@ namespace {
   void require(bool value, const char *message) {
     if (!value) {
       std::fprintf(stderr, "%s\n", message);
-      std::exit(1);
+      // Failure can occur while async rendering is active. Preserve the
+      // assertion instead of waiting in DLL/static teardown; successful runs
+      // still exercise the explicit Shutdown path below.
+      std::fflush(stderr);
+      std::_Exit(1);
     }
   }
   void checked(remixapi_ErrorCode code) {
@@ -18,7 +23,9 @@ namespace {
   }
 } // namespace
 
-int main() {
+int main(int argc, char **argv) {
+  const bool targetsOnly = argc == 2 && std::strcmp(argv[1], "--targets-only") == 0;
+  require(argc == 1 || targetsOnly, "Unknown lifecycle test argument");
   std::fprintf(stderr, "Forward+ lifecycle: initialize library\n");
   remixapi_InitializeLibraryInfo initialize{};
   initialize.sType = REMIXAPI_STRUCT_TYPE_INITIALIZE_LIBRARY_INFO;
@@ -126,8 +133,14 @@ int main() {
     publishedHash = baking.activeHash;
     expectPublishedBake = true;
   }
+  // Target replacements must retain bake publication even while the first
+  // frame in the replacement renderer is still executing asynchronously.
+  checked(api.SetConfigVariable("rtx.native.asyncPresent", "1"));
   checked(api.SetConfigVariable("rtx.native.vramStatistics", "1"));
+  uint32_t targetCheck = 0;
   auto waitTargets = [&](auto ready) {
+    ++targetCheck;
+    uint64_t observedBytes = 0;
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
     do {
       checked(scene.draw(api, 0, drawWidth, drawHeight));
@@ -147,10 +160,13 @@ int main() {
       }
       remixapi_VramStats memory{};
       checked(api.GetVramStats(&memory));
+      observedBytes = memory.usedRenderTargetBytes;
       if (caps.activeBackend == 2 && ready(memory.usedRenderTargetBytes))
         return memory.usedRenderTargetBytes;
       std::this_thread::sleep_for(std::chrono::milliseconds(2));
     } while (std::chrono::steady_clock::now() < deadline);
+    std::fprintf(stderr, "Target check %u timed out: backend %u, target bytes %llu\n",
+                 targetCheck, caps.activeBackend, (unsigned long long)observedBytes);
     require(false, "Reflection target replacement timed out");
     return uint64_t(0);
   };
@@ -176,6 +192,9 @@ int main() {
   const auto opaqueBytes = waitTargets([&](auto bytes) { return bytes < reflectedBytes; });
   checked(api.SetConfigVariable("rtx.native.forward.rtReflections", "1"));
   waitTargets([&](auto bytes) { return bytes > opaqueBytes; });
+  // The following unload checks inspect the just-completed frame rather
+  // than an allowed last-completed snapshot from an asynchronous Present.
+  checked(api.SetConfigVariable("rtx.native.asyncPresent", "0"));
   expectPublishedBake = false;
   checked(remixapi_SetBakeSceneEXT(nullptr));
   for (uint32_t i = 0; i < 6; ++i) {
@@ -208,6 +227,11 @@ int main() {
     checked(api.Present(nullptr));
   }
   waitTargets([&](auto bytes) { return bytes > opaqueBytes; });
+  if (targetsOnly) {
+    checked(api.Shutdown());
+    std::puts("Forward+ asynchronous target bake continuity, unload and shutdown passed");
+    return 0;
+  }
   waitBackend("raster", 0);
   waitBackend("forwardplus", 2);
   if (traceSupported) {

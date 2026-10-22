@@ -14,6 +14,11 @@ Keep static visibility, unknown coverage, toggleable groups and offscreen moving
 
 ## Module ownership
 
+- `forward/Renderer::activate`: queue-idle adoption publishes retained bake metadata and owned
+  allocation totals before asynchronous queries can observe the replacement renderer. Preparation
+  workers do not read a controller owned by the active renderer. Frame completion uses the same
+  publication helper; a real unload still clears the controller and published lighting.
+
 - `forward/shaders/cluster.comp`: each workgroup shares batches of light spheres while retaining
   sorted prefix/tail membership and independent overflow counts. Inactive lanes must reach both
   shared-memory barriers; guard writes rather than returning before a barrier. No persistent cluster

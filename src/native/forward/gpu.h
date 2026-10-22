@@ -132,6 +132,8 @@ namespace remix::forward {
     uint64_t spareGeometryBytes = 0;
 
     ~Gpu();
+    // Activation, or frame completion after scene base-buffer accounting.
+    void publishStatistics();
     void createLayouts();
     void createTargets();
     void createPipelines(VkRenderPass output);

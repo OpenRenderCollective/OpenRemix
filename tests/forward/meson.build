@@ -110,6 +110,8 @@ if get_option('gpu_tests')
     dependencies : sdl3_dep, link_with : remix, cpp_args : test_cpp_args)
   test('Forward+ runtime backend transitions and publication', forward_lifecycle_test,
     timeout : 240, is_parallel : false)
+  test('Forward+ asynchronous target replacements retain bake publication', forward_lifecycle_test,
+    args : ['--targets-only'], timeout : 120, is_parallel : false)
 endif
 
 forward_lightmaps_test = executable('remix-forward-lightmaps-test', 'lightmaps.cpp',

@@ -563,7 +563,7 @@ namespace remix {
     // Render thread idle: the last completed frame's values, for the getters
     // while the frame about to be handed over renders.
     auto &s = m_published;
-    s.forward = m_forward ? m_forward->statistics() : forward::Statistics{};
+    s.forward = forwardStatistics();
     s.performance = m_framePerformance;
     s.breakdown = m_frameBreakdown;
     s.presentations = m_presentationCount;
