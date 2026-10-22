@@ -14,8 +14,8 @@ void frontGuides(Hit hit,ivec2 pixel) {
   }
   vec3 diffuseFactor=valid?max(hit.color.rgb,vec3(.001)):vec3(1),specularFactor=vec3(1);
   if(valid&&hit.pbr)
-    NRD_MaterialFactors(hit.n,hit.wo,hit.color.rgb*(1-hit.rm.y),
-      mix(vec3(.04),hit.color.rgb,hit.rm.y),hit.rm.x,diffuseFactor,specularFactor);
+    NRD_MaterialFactors(hit.n,hit.wo,materialDiffuseAlbedo(hit),
+      materialF0(hit),hit.rm.x,diffuseFactor,specularFactor);
   imageStore(frontDepth,pixel,vec4(z));
   imageStore(frontNormal,pixel,NRD_FrontEnd_PackNormalAndRoughness(valid?hit.n:vec3(0,0,1),
     valid&&hit.pbr?hit.rm.x:1,valid&&hit.pbr?(hit.rm.y>.5?2:1):0));

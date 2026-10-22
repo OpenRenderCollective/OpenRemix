@@ -123,7 +123,8 @@ bool acceptCandidate(Surface s,uint triangle,vec2 bary) {
 }
 // color: what the surface reflects. self: the part of its colour that emits
 // instead (remixapi_MaterialInfoSelfIlluminationEXT), set with the emission.
-struct Hit { float t; vec3 p; vec3 n; vec4 color; bool blended; bool blendedDraw; bool decal; uint decalMode; bool tinted; bool cacheable; vec3 previousPosition; vec3 previousNormal; bool historyValid; vec3 emission; float identity; vec3 ng; vec3 wo; vec2 rm; bool pbr; vec3 self; vec2 thick; };
+struct Hit { float t; vec3 p; vec3 n; vec4 color; bool blended; bool blendedDraw; bool decal; uint decalMode; bool tinted; bool cacheable; vec3 previousPosition; vec3 previousNormal; bool historyValid; vec3 emission; float identity; vec3 ng; vec3 wo; vec2 rm; bool pbr; vec3 self; vec2 thick; uint sheetIndex; vec3 sheetDepth; };
+#include "sheet.glsl"
 // Every query rejects back faces of one-sided surfaces ((state.w&4)==0 below).
 // With hardware face culling (target.z bit 2) one-sided instances enable
 // facing culling in the TLAS and this flag culls exactly those back faces in
@@ -242,6 +243,7 @@ void queryScene(accelerationStructureEXT scene, vec3 origin, vec3 direction, ino
   hit.tinted=(s.state.w&32)!=0;
   // A translucent body: refractive index, measurement distance (frame_tables.h materialFields).
   hit.thick=(s.state.w&8)!=0&&s.pbr.w!=0?unpackHalf2x16(floatBitsToUint(s.pbr.w)):vec2(0);
+  loadSheet(hit, s, intersectionUV(s, tri / 3, bary));
   hit.previousPosition=hit.p;hit.previousNormal=hit.n;hit.historyValid=false;
 // The visibility pass captures foreground and background motion before shading.
 #if defined(TEMPORAL) && !defined(TRANSPARENCY_PASS)
@@ -259,6 +261,7 @@ void queryScene(accelerationStructureEXT scene, vec3 origin, vec3 direction, ino
 Hit closestGeometry(vec3 origin,vec3 direction,float maximum,bool motion,float minimum) {
   Hit hit; hit.t=maximum; hit.p=vec3(0);hit.n=vec3(0);hit.color=vec4(0);hit.blended=false;hit.blendedDraw=false;hit.decal=false;hit.decalMode=0u;hit.cacheable=false;hit.previousPosition=vec3(0);hit.previousNormal=vec3(0);hit.historyValid=false;
   hit.emission=vec3(0);hit.self=vec3(0);hit.tinted=false;hit.thick=vec2(0);
+  hit.sheetIndex=0u;hit.sheetDepth=vec3(0);
   hit.identity=0;hit.ng=vec3(0);hit.wo=-direction;hit.rm=vec2(1,0);hit.pbr=false;
   if ((frame.target.z&1)!=0) queryScene(staticScene,origin,direction,hit,motion,minimum);
   if ((frame.target.z&2)!=0) queryScene(dynamicScene,origin,direction,hit,motion,minimum);
@@ -362,11 +365,13 @@ Hit rasterPrimary(ivec2 pixel, vec3 origin) {
   vec4 position=imageLoad(primaryPosition,pixel), normal=imageLoad(primaryNormal,pixel);
   // The kind plus 8: a view model (gbuffer.frag).
   if(normal.w>=8){normal.w-=8;viewModelPath=true;}
+  if(normal.w==5) return cameraHit(origin,normalize(position.xyz-origin));
   vec4 previous=imageLoad(primaryPrevious,pixel);
   Hit hit;
   hit.t=normal.w==0?1e30:length(position.xyz-origin);
   hit.p=position.xyz;hit.n=normal.w==0?vec3(0):normalize(normal.xyz);
   hit.color=imageLoad(primaryAlbedo,pixel);hit.blended=normal.w>=2;hit.blendedDraw=hit.blended;hit.decal=normal.w==4;hit.decalMode=0u;hit.tinted=normal.w==3;hit.cacheable=false;hit.thick=vec2(0);
+  hit.sheetIndex=0u;hit.sheetDepth=vec3(0);
   hit.previousPosition=previous.xyz;hit.previousNormal=hit.n;hit.historyValid=previous.w!=0;
   hit.emission=imageLoad(primaryEmission,pixel).rgb;
   // Alpha: a debug identity, or minus the self-illuminated share of the colour.
@@ -414,6 +419,7 @@ vec3 offsetRay(vec3 p,vec3 n) {
 // (zero: none). A sheet from the raster G-buffer carries no material record:
 // its ray is traced again for it.
 vec2 sheetBody(Hit hit,vec3 direction) {
+  if(hit.sheetIndex!=0u)return vec2(0);
   vec2 body=hit.thick;
   if(body.x==0&&frame.target.w!=0&&hit.tinted) {
     Hit traced=cameraHit(offsetRay(hit.p,hit.ng),direction);
@@ -438,7 +444,7 @@ Hit pastSheets(Hit hit,inout vec3 origin,inout vec3 direction,out uint layers) {
       vec2 body=sheetBody(hit,direction);
       if(body.x>=1){direction=bodyDirection(hit,direction,body.x);bent=true;}
     }
-    origin=offsetRay(hit.p,-hit.ng);hit=cameraHit(origin,direction);
+    origin=sheetOrigin(hit,direction);hit=cameraHit(origin,direction);
   }
   return hit;
 }
@@ -556,7 +562,7 @@ vec3 direct(Hit hit,bool primary,out vec3 specular,out float distance) {
     local+=(diffuse+sunSpecular)*cosine*frame.lightRadiance.rgb*visibility;
     specular+=sunSpecular*cosine*frame.lightRadiance.rgb*visibility;
   }
-  if(frame.skyRadiance.w!=0) {
+  if(frame.skyRadiance.w!=0 && !(primary && hit.sheetIndex!=0u)) {
     vec3 direction,environmentSpecular;
     vec3 weight=materialSample(hit,direction,environmentSpecular);
     vec3 illumination=environmentRadiance(direction)*shadow(offsetRay(hit.p,hit.ng),direction);
@@ -622,7 +628,7 @@ SharcHitData cacheHit(Hit hit) {
   data.materialDemodulation=max(hit.color.rgb,vec3(.001));
   if(hit.pbr) {
     vec3 diffuseFactor,specularFactor;
-    NRD_MaterialFactors(hit.n,hit.wo,hit.color.rgb*(1-hit.rm.y),mix(vec3(.04),hit.color.rgb,hit.rm.y),cacheRoughness(hit),diffuseFactor,specularFactor);
+    NRD_MaterialFactors(hit.n,hit.wo,materialDiffuseAlbedo(hit),materialF0(hit),cacheRoughness(hit),diffuseFactor,specularFactor);
     data.materialDemodulation=max(diffuseFactor+specularFactor,vec3(.001));
   }
   return data;
@@ -750,7 +756,20 @@ vec3 continuation(Hit primary,int lobe,float probability,out vec3 firstDirection
     // Also through blended layers, and to the sky (a reflection distance).
     pathDistance+=hit.t*(1-smoothstep(0.,.2,diffuseMotion));
     if(hit.t==1e30) { if(frame.skyRadiance.w==0)result+=throughput*environmentRadiance(direction);profilePath(5u);break; }
-    if(hit.blended&&random()>=hit.color.a) {
+    if(hit.sheetIndex!=0u) {
+      DielectricSheet optics=sheetOptics(hit,abs(dot(hit.n,direction)));
+      float reflected=sheetReflectionProbability(optics);
+      if(random()>=reflected) {
+        if(++layers>=32){profilePath(9u);break;}
+        throughput*=optics.transmission/max(1-reflected,1e-20);
+        vec3 next=sheetOrigin(hit,direction);
+        pathDistance+=length(next-hit.p)*(1-smoothstep(0.,.2,diffuseMotion));
+        origin=next;
+        if(!any(greaterThan(throughput,vec3(0))))break;
+        continue;
+      }
+      throughput/=max(reflected,1e-20);
+    } else if(hit.blended&&random()>=hit.color.a) {
       if(++layers>=32){profilePath(9u);break;}
       // A translucent body: its depth absorption over the segment, per pass taken.
       if(hit.thick.y>0){float f0=(hit.thick.x-1)/(hit.thick.x+1);
@@ -766,12 +785,12 @@ vec3 continuation(Hit primary,int lobe,float probability,out vec3 firstDirection
     }
 #endif
 #ifdef ORCA_SPARSE_PASS
-    if(bounce==0&&!orcaRecorded) {
+    if(bounce==0&&!orcaRecorded&&hit.sheetIndex==0u) {
       orcaFirst=hit;orcaDirection=direction;orcaThroughput=throughput;orcaBefore=result;orcaRecorded=true;
     }
 #elif !defined(TRANSPARENCY_PASS)
     // This frame's ORCA cache answers the first bounce (orca.glsl).
-    if(bounce==0&&frame.orcaConfig.w!=0) {
+    if(bounce==0&&frame.orcaConfig.w!=0&&hit.sheetIndex==0u) {
       vec3 cachedRadiance;
       if(orcaLookup(hit,direction,cachedRadiance)){result+=throughput*cachedRadiance;break;}
     }
@@ -857,6 +876,22 @@ vec3 continuation(Hit primary,out vec3 firstDirection,out float pathDistance,out
 vec3 continuation(Hit primary,out vec3 firstDirection,out float pathDistance) {
   vec3 specular;return continuation(primary,firstDirection,pathDistance,specular);
 }
+#if defined(TRANSPARENCY_PASS) && defined(SINGLE_SHEET_PASS)
+// A deeper measured sheet cannot reuse diffuse paint lighting while the
+// multi-sheet pipeline prepares. Keep its specular-only reference estimator.
+vec3 measuredSheetLighting(Hit hit) {
+  vec3 light=hit.emission;
+  uint samples=max(frame.config.x,1u);
+  for(uint i=0u;i<samples;++i) {
+    vec3 direction,specular,directLight,directSpecular;float distance,directDistance;
+    vec3 value=continuation(hit,-1,1.,direction,distance,specular,i==0u,frame.config.y,
+                            directLight,directSpecular,directDistance);
+    if(i==0u)light+=directLight;
+    light+=materialFactor(hit)*value/float(samples);
+  }
+  return light;
+}
+#endif
 float nearestDistance(float a,float b) { return a>0&&b>0?min(a,b):max(a,b); }
 #ifdef TEMPORAL
 // NRD's probabilistic lobe selection at a PBR primary surface (NRD sample,
@@ -941,7 +976,16 @@ void updateCache(ivec2 pixel) {
     // weighted by transmission. This also trains surfaces reached from water
     // when the opaque primary guide is sky (for example, looking up from
     // underwater). The traced-sheet mode keeps the stochastic choice.
-    if(hit.blended&&((frame.pathConfig.z&1u)==0||random()>=hit.color.a)) {
+    if(hit.sheetIndex!=0u) {
+      DielectricSheet optics=sheetOptics(hit,abs(dot(hit.n,direction)));
+      float reflected=sheetReflectionProbability(optics);
+      if(random()>=reflected) {
+        if(++layers>=32)break;
+        if(bounce!=0)SharcSetThroughput(state,optics.transmission/max(1-reflected,1e-20));
+        origin=sheetOrigin(hit,direction);continue;
+      }
+      if(bounce!=0)SharcSetThroughput(state,vec3(1/max(reflected,1e-20)));
+    } else if(hit.blended&&((frame.pathConfig.z&1u)==0||random()>=hit.color.a)) {
       if(++layers>=32)break;
       if(bounce!=0)SharcSetThroughput(state,transmissionColor(hit.color.rgb,hit.tinted)*((frame.pathConfig.z&1u)==0?1-hit.color.a:1.));
       origin=offsetRay(hit.p,-hit.ng);continue;
@@ -1188,7 +1232,7 @@ void replaceMirror(ivec2 pixel) {
       Hit hit=closest(offsetRay(mirror.p,mirror.ng),reflected);
       if(hit.t<1e30&&!hit.blended&&!deltaSurface(hit)) {
         // A delta lobe reflects exactly the Fresnel term (GGX shadowing -> 1).
-        vec3 reflectance=fresnel(mix(vec3(.04),mirror.color.rgb,mirror.rm.y),max(0,dot(mirror.n,mirror.wo)));
+        vec3 reflectance=fresnel(materialF0(mirror),max(0,dot(mirror.n,mirror.wo)));
         packed=packMirror(mirror.n,mirror.p,reflectance);
         imageStore(primaryPosition,pixel,vec4(hit.p,imageLoad(primaryPosition,pixel).w));
         imageStore(primaryNormal,pixel,vec4(hit.n,1));
@@ -1328,7 +1372,7 @@ void main() {
   bool front=abs(signedCount)>=1; // the front sheet, also of a layered pixel (multiSheetFallback)
   vec3 origin,direction;
   ray((vec2(pixel)+.5+frame.jitter.xy)/vec2(frame.target.xy)*2-1,frame.inverseCameraRelative,frame.eye.xyz,origin,direction);
-  Hit hit;hit.t=1e30;hit.p=vec3(0);hit.n=vec3(0);hit.blended=false;hit.pbr=false;hit.thick=vec2(0);
+  Hit hit;hit.t=1e30;hit.p=vec3(0);hit.n=vec3(0);hit.blended=false;hit.pbr=false;hit.thick=vec2(0);hit.sheetIndex=0u;hit.sheetDepth=vec3(0);
   if(front)hit=frame.target.w!=0?rasterPrimary(pixel,origin):cameraHit(origin,direction);
   hit.wo=-direction;
   bool lit=inBounds&&front&&hit.blended;
@@ -1371,8 +1415,8 @@ void main() {
   vec3 diffuseFactor=vec3(1),specularFactor=vec3(1);
 #ifdef TEMPORAL
   if(primary.t<1e30&&primary.pbr)
-    NRD_MaterialFactors(primary.n,primary.wo,primary.color.rgb*(1-primary.rm.y),
-      mix(vec3(.04),primary.color.rgb,primary.rm.y),primary.rm.x,diffuseFactor,specularFactor);
+    NRD_MaterialFactors(primary.n,primary.wo,materialDiffuseAlbedo(primary),
+      materialF0(primary),primary.rm.x,diffuseFactor,specularFactor);
 #endif
   IndirectResult result=traceIndirect(primary,pixel,diffuseFactor,specularFactor);
   IndirectResults(frame.indirectResults).pixels[uint(pixel.x)+uint(pixel.y)*frame.target.x]=
@@ -1483,7 +1527,7 @@ void main() {
   else ray(previousSample/vec2(targetSize)*2-1,temporal.previousInverseCamera,vec3(0),origin,direction);
   rng=hash(uint(fullPixel.x)+uint(fullPixel.y)*frame.target.x+hash(temporal.target.z));
   Hit hit=cameraHit(origin,direction);
-  for(uint layer=0;layer<32&&hit.blended;++layer){origin=offsetRay(hit.p,-hit.ng);hit=cameraHit(origin,direction);}
+  for(uint layer=0;layer<32&&hit.blended;++layer){origin=sheetOrigin(hit,direction);hit=cameraHit(origin,direction);}
   // The followed surface point must be the one last frame's sample saw.
   vec3 previousPoint=hit.p;
   if(follow&&hit.t<1e30) {
@@ -1559,8 +1603,8 @@ void main() {
   vec3 diffuseFactor=vec3(1),specularFactor=vec3(1);
   float specularDistance=0;
   if(primary.t<1e30&&primary.pbr)
-    NRD_MaterialFactors(primary.n,primary.wo,primary.color.rgb*(1-primary.rm.y),
-      mix(vec3(.04),primary.color.rgb,primary.rm.y),primary.rm.x,diffuseFactor,specularFactor);
+    NRD_MaterialFactors(primary.n,primary.wo,materialDiffuseAlbedo(primary),
+      materialF0(primary),primary.rm.x,diffuseFactor,specularFactor);
 #endif
   vec3 sunTransmittance=vec3(1),unshadowedDirect=vec3(0);float blockerDistance=65504;
   if(primary.t<1e30&&!primary.blended&&sparseLaunch!=2u) {
@@ -1658,7 +1702,7 @@ void main() {
   }
   if(temporal.hitDistance.w!=0) {
     vec3 diffuse=opaque?(primary.color.rgb+primary.self)*(primary.pbr?1-primary.rm.y:1):vec3(.5);
-    vec3 specular=opaque&&primary.pbr?rrSpecularAlbedo(mix(vec3(.04),primary.color.rgb,primary.rm.y),primary.rm.x,dot(primary.n,primary.wo)):vec3(0);
+    vec3 specular=opaque&&primary.pbr?rrSpecularAlbedo(materialF0(primary),primary.rm.x,dot(primary.n,primary.wo)):vec3(0);
     if(mirror.replaced){diffuse*=mirror.reflectance;specular*=mirror.reflectance;}
     imageStore(rrDiffuse,pixel,vec4(diffuse,0));
     imageStore(rrSpecular,pixel,vec4(specular,0));
@@ -1739,7 +1783,7 @@ void main() {
 #ifndef SINGLE_SHEET_PASS
   if(sheetCount<=1)return;
 #endif
-  Hit primary;primary.p=vec3(0);primary.n=vec3(0);primary.blended=false;primary.pbr=false;primary.thick=vec2(0);
+  Hit primary;primary.p=vec3(0);primary.n=vec3(0);primary.blended=false;primary.pbr=false;primary.thick=vec2(0);primary.sheetIndex=0u;primary.sheetDepth=vec3(0);
   if(sheetCount!=0
 #ifdef SINGLE_SHEET_PASS
       &&(sheetCount==1||multiSheetFallback)
@@ -1775,7 +1819,8 @@ void main() {
 #endif
       } else {
         // multiSheetFallback: deeper sheets take the front sheet's light.
-        surfaceLight=(reusedDirect.x>=0?reusedDirect*materialFactor(hit):vec3(0))+hit.emission;
+        surfaceLight=hit.sheetIndex!=0u?measuredSheetLighting(hit):
+            (reusedDirect.x>=0?reusedDirect*materialFactor(hit):vec3(0))+hit.emission;
       }
 #else
       // One continuation call site: sample 0 lights the sheet itself, unless
@@ -1799,7 +1844,8 @@ void main() {
       if(!tail)surfaceLight+=factor*sheetIndirect(pixel,hit,direction);
 #endif
       vec3 through=transmissionColor(hit.color.rgb,hit.tinted)*(1-hit.color.a);
-      if(hit.tinted&&thickSheet(hit,layerDirection,hit.color.a,through)) {
+      if(hit.sheetIndex!=0u)through=sheetOptics(hit,abs(dot(hit.n,layerDirection))).transmission;
+      else if(hit.tinted&&thickSheet(hit,layerDirection,hit.color.a,through)) {
 #if defined(TEMPORAL) && defined(SINGLE_SHEET_PASS)
         // The denoised front layer is composed with this share as well.
         vec4 front=imageLoad(frontAlbedo,pixel);
@@ -1810,14 +1856,14 @@ void main() {
       if(temporal.hitDistance.w!=0) {
         // Deterministic material guides follow the same transparent composition
         // as radiance. Geometry guides remain consistently on the background.
-        transparentDiffuse+=tint*hit.color.a*(hit.color.rgb+hit.self)*(hit.pbr?1-hit.rm.y:1);
-        if(hit.pbr)transparentSpecular+=tint*hit.color.a*rrSpecularAlbedo(mix(vec3(.04),hit.color.rgb,hit.rm.y),hit.rm.x,dot(hit.n,hit.wo));
+        if(hit.sheetIndex==0u)transparentDiffuse+=tint*hit.color.a*(hit.color.rgb+hit.self)*(hit.pbr?1-hit.rm.y:1);
+        if(hit.pbr)transparentSpecular+=tint*hit.color.a*rrSpecularAlbedo(materialF0(hit),hit.rm.x,dot(hit.n,hit.wo));
       }
 #endif
       if(frame.firefly.z!=0)transparentMaterial+=tint*hit.color.a*(hit.color.rgb+hit.self);
       transparent+=tint*hit.color.a*surfaceLight;
-      tint*=through;opacityProduct*=1-hit.color.a;
-    if(layer+1<sheetCount)primary=cameraHit(offsetRay(primary.p,-primary.ng),layerDirection);
+      tint*=through;opacityProduct*=hit.sheetIndex!=0u?dot(through,vec3(.2126,.7152,.0722)):1-hit.color.a;
+    if(layer+1<sheetCount)primary=cameraHit(sheetOrigin(primary,layerDirection),layerDirection);
   }
   if(frame.firefly.z!=0)imageStore(meterMaterial,pixel,vec4(transparentMaterial+tint*imageLoad(meterMaterial,pixel).rgb,1));
   float depth=1;

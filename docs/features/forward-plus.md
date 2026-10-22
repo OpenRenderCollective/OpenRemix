@@ -96,15 +96,21 @@ sheet uses exact two-interface Fresnel with internal reflections, measured RGB/t
 and a refracted exit-point offset. Its outgoing transmitted direction is parallel to the incident
 direction. Absorbed energy does not become diffuse body light; tint is independent of background
 distance. PBR roughness/normals and the shared SSR/cubemap/hardware reflection path remain available.
-The primary sheet assumes air outside both interfaces. Nested sheets, sheets inside camera media
-and path-tracer primary-sheet parity still need integration; do not enable the Source `Refract`
+The primary sheet assumes air outside both interfaces. Nested sheets and sheets inside camera media
+still need integration in this pass; do not enable the Source `Refract`
 adapter mapping until its stable optical tint and animation policy is explicit.
 Vulkan path-tracer light visibility uses the same measured sheet absorption and two-interface
 Fresnel model. Its optical records are keyed by existing albedo descriptors, in an optional buffer
 owned by each completed frame slot. The surface table remains 256 bytes per record and the frame
 uniform keeps its existing size. The policy that skips blended secondary rays remains respected;
-enable those rays when comparing physical sheet shadows. Primary and continuation-sheet shading
-still need parity work. Metal retains its legacy sheet behavior and requires separate optical-buffer
+enable those rays when comparing physical sheet shadows. `pathtrace/shaders/sheet.glsl` now owns
+hit-local sheet decoding, optical depth and exit offsets. Ray and raster primary visibility resolve
+measured sheets into specular reflection plus finite transmission, without diffuse absorption glow.
+Continuation and SHARC update paths use compensated reflection/transmission choices; sheets hold
+no cache entries and camera transmission does not tint the outgoing lighting stored behind them.
+Raw camera and secondary-transport checks cover parallel sheets in air, including populated SHARC
+queries. Textured primary optics, roughness, denoising/motion guides, nested camera media and full
+live backend parity remain acceptance work. Metal retains its legacy sheet behavior and requires separate optical-buffer
 integration and shader compilation; the shared CPU buffer layout remains compatible.
 For standard 2x/4x sample locations, the depth snapshot reconstructs pixel-centre depth only when
 the pixel and four neighbouring sample sets agree on one plane. This avoids a nearest-sample bias

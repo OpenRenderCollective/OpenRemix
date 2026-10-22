@@ -4,7 +4,9 @@ mat3 shadingBasis(vec3 n) {
   return mat3(t,cross(n,t),n);
 }
 // Retain an albedo-independent dielectric reflection, including black plastics.
-vec3 materialFactor(Hit hit) { return hit.pbr?max(hit.color.rgb,vec3(.04)):hit.color.rgb; }
+vec3 materialFactor(Hit hit) { return hit.sheetIndex!=0u?vec3(1):hit.pbr?max(hit.color.rgb,vec3(.04)):hit.color.rgb; }
+vec3 materialDiffuseAlbedo(Hit hit) { return hit.sheetIndex!=0u?vec3(0):hit.color.rgb*(1-hit.rm.y); }
+vec3 materialF0(Hit hit) { return hit.sheetIndex!=0u?sheetOptics(hit,1).reflection:mix(vec3(.04),hit.color.rgb,hit.rm.y); }
 vec3 fresnel(vec3 f0,float cosine) { return f0+(1-f0)*pow(clamp(1-cosine,0,1),5); }
 float ggxD(float nh,float alpha) {
   float a2=alpha*alpha,den=(1-nh*nh)+a2*nh*nh;
@@ -20,10 +22,10 @@ void materialLobes(Hit hit,vec3 wi,out vec3 diffuse,out vec3 specular) {
   if(!hit.pbr){diffuse=hit.color.rgb/eonPi;return;}
   diffuse=eonBrdfCosines(hit.color.rgb,hit.rm.x,ni,no,dot(wi,hit.wo));
   vec3 h=normalize(wi+hit.wo);
-  vec3 f=fresnel(mix(vec3(.04),hit.color.rgb,hit.rm.y),max(0,dot(hit.wo,h)));
+  vec3 f=hit.sheetIndex!=0u?sheetOptics(hit,max(0,dot(hit.wo,h))).reflection:fresnel(materialF0(hit),max(0,dot(hit.wo,h)));
   float alpha=max(.001,hit.rm.x*hit.rm.x);
   specular=f*(ggxD(max(0,dot(hit.n,h)),alpha)*ggxG1(ni,alpha)*ggxG1(no,alpha)/(4*ni*no));
-  diffuse*=(1-hit.rm.y)*(1-f);
+  diffuse*=hit.sheetIndex!=0u?vec3(0):(1-hit.rm.y)*(1-f);
 }
 vec3 materialBrdf(Hit hit,vec3 wi) {
   vec3 diffuse,specular;materialLobes(hit,wi,diffuse,specular);
@@ -48,6 +50,7 @@ vec3 materialResponse(Hit hit,vec3 wi,out vec3 specular) {
 // of a metal) gets exactly zero: its samples would all be black, which reads
 // as grain on mirrors.
 float diffuseShare(Hit hit) {
+  if(hit.sheetIndex!=0u)return 0;
   if(!hit.pbr)return 1;
   vec3 f0=mix(vec3(.04),hit.color.rgb,hit.rm.y);
   float specular=dot(fresnel(f0,max(0,dot(hit.n,hit.wo))),vec3(.2126,.7152,.0722));

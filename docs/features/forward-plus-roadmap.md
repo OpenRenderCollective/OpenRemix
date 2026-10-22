@@ -268,7 +268,7 @@ textured absorption and containing-volume classification. CPU ownership/validati
 transport tests cover both sides, distance independence and sheets inside a volume. Native live
 sheet refraction now shares the late MSAA pass, with finite thickness, textured absorption, an exit
 offset, visible-sky transmission and shared SSR/cubemap/hardware reflections. It assumes air outside
-the primary sheet; camera-media/nested-layer integration, path-tracer primary parity and adapter
+the primary sheet; camera-media/nested-layer integration, full path-tracer parity and adapter
 material/proxy integration remain pending. This is not deployed and does not unblock Trainstation
 yet. Source's artistic refraction amount is not a physical IOR. Define a stable optical tint policy
 explicitly: the tint sampler can share animated
@@ -277,8 +277,12 @@ Check complete first-load sky capture and radiance separately once this gate ope
 
 Vulkan path-tracer shadow visibility now has descriptor-indexed measured-sheet data and shares
 the finite, angle-dependent transmission model. Surface and frame GPU record sizes are preserved;
-dry scenes allocate no optics buffer. Primary/continuation shading, Metal optical-buffer integration
-and full backend/material acceptance remain pending. Keep the blended-secondary-ray policy explicit
+dry scenes allocate no optics buffer. Primary/continuation shading now shares finite sheet optics,
+with specular-only camera composition, compensated secondary transport and SHARC updates that
+exclude camera attenuation from cached outgoing radiance. Ray/raster raw camera, stacked-sheet
+and populated-cache transport cases are covered. Textured primary optics, roughness, denoised
+guides, nested camera media, Metal optical-buffer integration and full backend/material acceptance
+remain pending. Keep the blended-secondary-ray policy explicit
 in comparisons so disabling those rays cannot masquerade as a transmission error.
 
 Transport distinguishes dielectric visibility from containing-volume classification. Scenes with

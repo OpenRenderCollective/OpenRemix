@@ -22,6 +22,15 @@ scene_frame_benchmark = executable('remix-scene-frame-benchmark', 'scene_frame.c
 benchmark('Scene frame CPU cost', scene_frame_benchmark, env : ['REMIX_BENCH_SCENE=1'], timeout : 1800,
   verbose : true)
 if get_option('gpu_tests')
+  measured_sheet_test = executable('remix-measured-sheet-test', 'sheets.cpp',
+    include_directories : test_includes, dependencies : [sdl3_dep, filesystem_dep] + [runtime_test_dep])
+  test('Path-tracer primary measured sheets, energy and layering', measured_sheet_test,
+    args : [meson.current_build_dir() / 'measured-sheet-scenes'],
+    env : ['REMIX_FG_PRESENT_METERING=0'], timeout : 600, is_parallel : false)
+  test('Path-tracer measured sheet indirect transport and cache', measured_sheet_test,
+    args : [meson.current_build_dir() / 'measured-sheet-indirect'],
+    env : ['REMIX_FG_PRESENT_METERING=0', 'REMIX_TEST_SHEET_INDIRECT=1'],
+    timeout : 600, is_parallel : false)
   subdir('upscale')
   if system != 'windows'
     process_exit_test = executable('remix-tracing-exit-test', 'process_exit.cpp',

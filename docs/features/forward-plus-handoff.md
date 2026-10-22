@@ -219,7 +219,10 @@ Native measured thin-sheet bake transport is implemented and tested, including t
 both interface directions and containing-volume classification through panes. Native live sheets
 now use the late MSAA refraction pass, with textured absorption, an exit-point offset, visible-sky
 transmission and shared reflections. The primary sheet assumes external air; camera-media/nested
-integration, path-tracer primary parity and adapter integration remain pending. This is not deployed
+integration, full path-tracer parity and adapter integration remain pending. Vulkan primary and
+continuation paths now share the measured optics model; raw ray/raster, stacked-sheet and actual
+SHARC-query transport checks cover sheets in air. Textured primary optics, roughness and denoised
+motion/lighting guides still need acceptance. This is not deployed
 and Trainstation is still blocked. Define stable mean optical tint explicitly because tint can share
 animated bump UVs. Source's artistic refraction amount is not a physical IOR. Do not bypass the
 required material.
