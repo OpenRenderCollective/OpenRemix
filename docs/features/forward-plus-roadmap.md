@@ -772,8 +772,12 @@ actual room transitions, wall leakage, moving views and frame cost before deploy
 Automatic same-origin shapes now share lighting queries and reuse bit-identical filtered mip chains,
 while retaining independent projection/blending records. Cold/warm cache reconstruction uses the
 same unique query plan. This removes duplicate capture/filter work but keeps texture storage per
-volume. Default-resolution frame cost and moving-view acceptance remain open; shared texture
-storage and the separate authored-edit scheduling policy are further optimization opportunities.
+volume. Default-quality fixed-view comparisons at 1080p, 4x MSAA and full-resolution SSR
+show no large steady-state GPU regression on Construct or Crossfire. Construct's small difference
+is below baseline repeat variation; Crossfire improves in the sampled view. Cached versus fresh
+lighting and fixed cameras limit attribution and do not establish gameplay performance acceptance.
+Moving-view, room-transition and wall-leakage acceptance remain open before deployment; shared
+texture storage and the separate authored-edit scheduling policy are further optimization opportunities.
 The attempted receiver-first score is rejected: it can fill the sheltered-region budget and displace
 broad map coverage. Its runtime code is removed. Develop room-local fairness before revisiting that
 objective; do not equate global area sampling or additional audit records with complete quality.
