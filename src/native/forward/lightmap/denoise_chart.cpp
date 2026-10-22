@@ -75,9 +75,6 @@ namespace remix::forward::lightmap::denoising {
     for (uint32_t slot = 0; slot < count; ++slot) {
       check(m_cancelled);
       const uint32_t coefficient = first + slot;
-      // OIDN 2.5 pads its network input with zero AFTER transfer functions.
-      // HDR zero stays zero; signed directional -1 maps to that same zero.
-      std::fill_n(output.begin() + size_t(slot) * m_plane, m_plane, coefficient ? -1.f : 0.f);
       for (uint32_t y = 0; y < m_allocation.height; ++y) {
         check(m_cancelled);
         for (uint32_t x = 0; x < m_allocation.width; ++x) {
@@ -95,6 +92,21 @@ namespace remix::forward::lightmap::denoising {
           }
         }
       }
+      // Alignment is an implementation detail, not a black lighting boundary.
+      // Continue only this chart's values into the temporary right/bottom pad.
+      // Signed SH padding at -1 can otherwise create coloured reconstruction
+      // fringes, even though the HDR image looks smoothly denoised.
+      if (m_width != m_allocation.width || m_height != m_allocation.height)
+        for (uint32_t y = 0; y < m_height; ++y) {
+          check(m_cancelled);
+          for (uint32_t x = 0; x < m_width; ++x)
+            if (x >= m_allocation.width || y >= m_allocation.height) {
+              const size_t source = size_t(slot)*m_plane +
+                  (size_t(std::min(y, m_allocation.height-1))*m_width + std::min(x, m_allocation.width-1))*3;
+              const size_t target = size_t(slot)*m_plane + (size_t(y)*m_width+x)*3;
+              std::copy_n(output.begin()+source, 3, output.begin()+target);
+            }
+        }
     }
     return output;
   }

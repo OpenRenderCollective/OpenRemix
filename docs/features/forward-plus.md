@@ -698,8 +698,10 @@ validation requirements. Denoising mode and compiled OIDN version participate in
 Each SH band retains a committed filter and a separate image binding. Charts are grouped by image
 dimensions, and a filter is rebound only when dimensions, offset or the shared image buffer change.
 With OIDN 2.5, each image explicitly matches the network's 16-pixel padding, so nearby chart sizes can
-share committed bindings. Padding is zero in HDR data and minus one in signed directional data;
-both become zero after the respective network input transforms. Only the original chart pixels are
+share committed bindings. Temporary right/bottom alignment padding repeats that chart's edge values
+for both HDR and normalized signed SH. A synthetic black HDR / minus-one directional boundary can
+produce coloured reconstruction fringes at chart edges. Edge continuation changes neither image
+dimensions nor atlas allocations and never reads another chart. Only the original chart pixels are
 reconstructed, and constant-field detection ignores the synthetic padding. Unknown OIDN versions
 retain native chart dimensions. Padding is temporary denoiser scratch and consumes no atlas space.
 Up to nine bands are packed into one packet. Equal-shaped charts with all nine bands in a packet can
@@ -1412,8 +1414,10 @@ samples its covered centroid. Multiple triangles sharing a texel retain one real
 preferring a contained centre and then the nearest clipped centroid. Rays therefore remain on actual
 geometry, including slivers that cross texels without containing any integer centres. This avoids
 collapsing an entire fractional face to one fallback sample. Chart-local dilation fills remaining unsupported
-texels; verified coplanar completion replaces only supported border taps. Runtime atlas packing uses one texel of padding, sufficient
-for its explicit mip-zero bilinear sampling, to preserve more coverage within the fixed memory budget.
+texels; verified coplanar completion replaces only supported border taps. Runtime atlas packing uses
+zero additional padding: the outward-rounded chart grid contains the bilinear footprint and the
+shader clamps coordinates to explicit first/last texel-centre bounds. Temporary denoiser alignment
+padding is separate from atlas space.
 
 The surface shader samples the chart's coefficients at mip zero with a dedicated linear sampler when
 the HDR format supports it (nearest fallback otherwise), evaluates them with the

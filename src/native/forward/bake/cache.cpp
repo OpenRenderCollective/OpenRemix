@@ -397,7 +397,7 @@ namespace remix::forward::bake::cache {
     }
     if (!c.denoiseLightmaps)
       return raw; // preserve existing raw cache entries when this optional stage is disabled
-    const uint32_t filter[] = {0x4f49444eu, 1, lightmap::denoiserVersion()};
+    const uint32_t filter[] = {0x4f49444eu, 2, lightmap::denoiserVersion()};
     return scene::fastHash(filter, sizeof(filter), raw);
   }
   std::filesystem::path path(uint64_t identity) {

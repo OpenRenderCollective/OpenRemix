@@ -269,8 +269,9 @@ namespace {
         for (uint32_t x = 0; x < 32; ++x)
           if (x >= 17 || y >= 31)
             for (uint32_t c = 0; c < 3; ++c)
-              require(packet[(band * 32 * 32 + y * 32 + x) * 3 + c] == (band ? -1.f : 0.f),
-                      "Synthetic boundaries are zero after HDR and signed network transforms");
+              require(packet[(band * 32 * 32 + y * 32 + x) * 3 + c] ==
+                          packet[(band * 32 * 32 + std::min(y,30u) * 32 + std::min(x,16u)) * 3 + c],
+                      "Temporary padding continues chart-edge lighting instead of injecting black signed boundaries");
     const auto statistics = lightmap::denoise(layout, values);
     // The supported OIDN 2.5 network uses the same 32x32 tensor for all three
     // shapes. A future unknown OIDN version deliberately keeps native shapes.
