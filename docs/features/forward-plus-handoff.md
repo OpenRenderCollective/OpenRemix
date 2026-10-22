@@ -2,15 +2,17 @@
 
 ## Start here
 
-This feature branch contains an unreleased adaptive irradiance candidate, not an accepted faster
-replacement for the deployed uniform-grid renderer. Read the current-status block and requirement
-matrix in [the roadmap](forward-plus-roadmap.md), then [the renderer guide](forward-plus.md).
-The last deployed native checkpoint is `e51bff0`; adapter checkpoint `712a3aa` is the pre-handoff base.
-Current checkpoint commits preserve subsequent work for review. Main branches remain upstream.
+The separate GMod testing install was updated on 2026-10-22 to native `3c7c428` and adapter
+`d7894f6`, including shared clustered-light loads, one-sided coarse probe confidence, and retained
+bake/memory publication across asynchronous target replacement. The package retains the existing
+runtime dependencies. User settings, addon mounts and authored Construct cubemaps are preserved;
+an exact local rollback is available. Main branches remain upstream.
 
-First decide whether to finish, explicitly isolate, or defer adaptive refinement. The candidate currently
-runs automatically when eligible; it must not silently become the default shipping performance policy.
-Keep static visibility, unknown coverage, toggleable groups and offscreen moving shadows correct.
+This is an experimental testing checkpoint, not broad gameplay or probe-quality acceptance.
+Adaptive irradiance runs automatically when eligible in this checkpoint. Continue the requirement
+matrix in [the roadmap](forward-plus-roadmap.md) and [the renderer guide](forward-plus.md) before
+claiming a release-ready default. Preserve static visibility, unknown coverage, controllable groups
+and offscreen moving shadows. The prior uniform-grid checkpoint was `e51bff0`.
 
 ## Module ownership
 
@@ -46,9 +48,9 @@ Keep static visibility, unknown coverage, toggleable groups and offscreen moving
   referencing/trace support, while shared coarse corners retain coarse reach.
 - Existing cache/controller/publication modules retain lifetime, cancellation, fencing and validated import.
 
-The current probe-planning cache policy revision is 26; the handoff prototype used 24 and the deployed
-uniform build uses 23. Grouped probe policy version 2 also separates caches with incomplete controllable
-groups. Directional probe depth remains opt-in and is not deployed. Upgrading deliberately rebakes once;
+The current probe-planning cache policy revision is 26; the handoff prototype used 24 and the previous
+uniform testing build used 23. Grouped probe policy version 2 also separates caches with incomplete controllable
+groups. Directional probe depth remains opt-in and disabled by default. Upgrading deliberately rebakes once;
 camera movement and runtime toggle values
 do not change authored lighting identity. GPU publication packs the mode and
 directory length into raw bits of header settings.z; CPU/cache metadata retains numeric modes. Do not
@@ -248,8 +250,8 @@ transmission and shared reflections. The primary sheet assumes external air; cam
 integration, full path-tracer parity and adapter integration remain pending. Vulkan primary and
 continuation paths now share the measured optics model; raw ray/raster, stacked-sheet and actual
 SHARC-query transport checks cover sheets in air. Textured primary optics, roughness and denoised
-motion/lighting guides still need acceptance. This is not deployed
-and Trainstation is still blocked. Define stable mean optical tint explicitly because tint can share
+motion/lighting guides still need acceptance. These native paths are available in the testing
+checkpoint; Trainstation is still blocked. Define stable mean optical tint explicitly because tint can share
 animated bump UVs. Source's artistic refraction amount is not a physical IOR. Do not bypass the
 required material.
 Vulkan path-tracer light visibility now uses optional descriptor-indexed sheet optics with the

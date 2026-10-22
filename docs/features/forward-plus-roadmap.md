@@ -11,6 +11,12 @@ reports. An implementation or synthetic test alone does not close an integration
 
 ## Continuation status (2026-10-22)
 
+The separate GMod testing install now uses native `3c7c428` and adapter `d7894f6`; it includes the
+current clustered fallback, shared sphere-bound loads, adaptive probe reconstruction and runtime
+publication fixes. This makes the feature branch available for testing, not an accepted general
+performance or visual-quality release. Existing dependencies, settings and authored volumes are
+preserved with a rollback checkpoint. The previous uniform-grid install remains a historical baseline.
+
 Runtime performance investigation must distinguish completed-bake gameplay from bake transport and
 startup. The renderer already provides an opaque depth prepass and tiled, depth-sliced light lists.
 Next isolate the dominant opaque receiver work with bounded fragment/receiver diagnostics, preserving
@@ -115,7 +121,7 @@ has zero static-shadow updates; repeated runs of each policy publish byte-identi
 Sample-window graphics clocks remain about 2760 MHz. Broader map/moving-viewmodel checks remain.
 Cache retention accounting includes depth, lookup and origin storage. Seam, unknown-coverage,
 styled/indexed table offsets, adaptive confidence and hardware producer tests cover the new layout.
-This candidate is not deployed; preserve the installed stable build until those gates pass.
+Directional probe depth remains disabled by default in the testing install until those gates pass.
 Further offline contributor checks still find substantial residual through-floor support with
 the 8x8 field. Filtering visibility per octahedral tap instead of filtering moments trades
 leakage for worse dark-face error; do not adopt it globally. High-sample neighbour substitutions
@@ -138,7 +144,7 @@ retaining 135/136 complete volumes within the existing 64 MiB allowance. This is
 and ownership result, not a broad FPS claim. Oversized groups still keep complete runtime fallback.
 Grouped probe policy version 2 intentionally separates older caches whose directional data may
 have stranded a component; the binary cache layout and public API are unchanged. Ungrouped
-planning retains its original cheapest-volume order. This fix is not deployed yet.
+planning retains its original cheapest-volume order. The testing checkpoint includes this fix.
 Optional `REMIX_DEBUG_BAKE_TIMING=1` output now timestamps changed progress messages so
 CPU stages and trace batches can be joined to frame telemetry without affecting bake identity.
 A matched cold Construct pair attributes about 14 s to base lightmap denoising, 9 s to
@@ -181,7 +187,7 @@ The CPU projection cache now preserves the exact rendered projection for subtexe
 Targeted CPU and sunlight/local-shadow GPU checks pass. Opposite-order moving-camera comparisons
 reduce sun-shadow cost most clearly outbound, with a much smaller return-leg benefit; whole-frame
 FPS improvement is not established across maps. Stationary world images remain within two display
-code values per channel. Broader motion/visual acceptance remains open and this is not deployed.
+code values per channel. The testing checkpoint includes this; broader motion/visual acceptance remains open.
 Keep necessary uncovered-receiver fallback and offscreen moving shadows intact.
 
 Work resumed after the handoff. Neither official feature branch had new contributor commits, and both
@@ -199,7 +205,7 @@ reach to every fine-only probe. Construct retains all eligible light volumes wit
 allowing the white-room controllable group to publish. CPU stencil-parity and grouped GPU checks pass;
 a controlled cached replay improves over the preceding adaptive checkpoint. Cache policy revision25
 requires a deliberate first-upgrade bake. Release still needs broader map/live-quality checks and a
-live comparison against the deployed uniform build; the earlier regression figures are historical.
+live comparison against the earlier uniform checkpoint; the older regression figures are historical.
 
 That comparison now favors the current build in the fixed Construct hall view. This is evidence for
 that camera, not live-game FPS parity or a release gate for every map. c1a0, Crossfire and c1a0d also
@@ -276,7 +282,7 @@ transport tests cover both sides, distance independence and sheets inside a volu
 sheet refraction now shares the late MSAA pass, with finite thickness, textured absorption, an exit
 offset, visible-sky transmission and shared SSR/cubemap/hardware reflections. It assumes air outside
 the primary sheet; camera-media/nested-layer integration, full path-tracer parity and adapter
-material/proxy integration remain pending. This is not deployed and does not unblock Trainstation
+material/proxy integration remain pending. The testing checkpoint includes the native paths but does not unblock Trainstation
 yet. Source's artistic refraction amount is not a physical IOR. Define a stable optical tint policy
 explicitly: the tint sampler can share animated
 bump UVs. Do not freeze an arbitrary animation frame, skip the dependency or mark a placeholder ready.
@@ -314,15 +320,11 @@ The handoff prepared this branch for another contributor without claiming render
 Read [the continuation guide](forward-plus-handoff.md) first. The feature list below includes historical
 checkpoints; an implemented feature is not automatically accepted in live gameplay.
 
-The deployed native checkpoint is `e51bff0`; the adapter checkpoint is `712a3aa`. The newer adaptive
-irradiance integration is an **unreleased research checkpoint**. It improves five of six synthetic
-receiver comparisons in Construct. Its original GPU regression was resolved in the measured replay
-view, where the current candidate is faster than the installed uniform-grid build; live-game and
-broader quality acceptance remain open.
-Do not deploy the branch tip as a default-performance improvement. Keep the installed version intact.
-There is no release-quality switch isolating the new adaptive policy yet; resolving that policy or
-replacing/deferring the candidate is the first release decision. No further speculative experiments
-are required just to complete this handoff.
+At the handoff, native `e51bff0` and adapter `712a3aa` remained installed, and the adaptive work
+was an unreleased research checkpoint. The original recommendation to keep that install fixed has
+been superseded by the reviewed 2026-10-22 testing checkpoint above. Fixed-view improvements and
+component checks do not close live-game performance, broad probe quality, moving-viewmodel or
+other-map acceptance. Continue those gates rather than treating testing deployment as release completion.
 
 ### Consolidated requested work and remaining acceptance
 
@@ -341,7 +343,7 @@ are required just to complete this handoff.
 | Stable persistent caches; no rebake on camera/weapon changes | Cache validation and invalidation receipts exist. Investigate remaining spontaneous/weapon-change rebakes; distinguish real light/material edits from identity bugs. Warm replay parity is not proof that installed live caches always work. |
 | Auto exposure and same tonemap path as path tracing | Shared postprocessing and exposure controls implemented. Refresh live adaptation, HDR/water and mode-switch acceptance; coverage diagnostics intentionally bypass automatic exposure. |
 | Automatic tolerant parallax bounds, overlap/feathering, priorities | Default reflection budget is now 64, with 53 Construct captures in the stable checkpoint. Capacity improved hall coverage; automatic room fitting, bevel tolerance, doorway/wall separation, rotations and blending remain open. Capture point and influence/projection boxes are distinct. |
-| Better dynamic probe quality in Construct's main room | Target is the diagonal roof-slit skylit hall, especially props. Stable uniform grid remains coarse. Adaptive candidate/cache transitions and shared nodes are implemented but unreleased. Per-record light-volume support fixes a budget/fallback cost issue; mixed receiver quality and current performance against the deployed uniform build still require acceptance. Validate moving props and other maps, not just six spheres. |
+| Better dynamic probe quality in Construct's main room | Target is the diagonal roof-slit skylit hall, especially props. The adaptive field, cache transitions and shared nodes are available in the testing checkpoint but still need broad visual acceptance. Per-record light-volume support fixes a budget/fallback cost issue; mixed receiver quality and current performance against the earlier uniform checkpoint still require acceptance. Validate moving props and other maps, not just six spheres. |
 | Cubemaps captured after lighting | Ordering is implemented; verify invalidation/re-capture after styled/material/lighting changes without unrelated full diffuse rebakes. |
 | Roughness-aware s&box-like SSR, full resolution default, viewmodel SSR | Implemented paths and tests exist. Refresh live roughness, disocclusion, blend with cubemaps/RT, and actual weapon acceptance. |
 | PBR/AutoPBR and shared Remix replacements | Shared asset/material path implemented, including safer Source roughness fallback. Verify late replacement arrival, normals, BRDF/roughness parity and authored PBR examples; no separate incompatible asset conversion path. |
