@@ -896,7 +896,13 @@ The explicit fallback mode preserves replacement/empty-set/reset semantics and u
 feathering below. It copies published automatic radiance without retracing, keeps canonical authored
 captures available for edit reuse, and retains both image sources through the upload fence. Its composed
 GPU image duplicates selected radiance while automatic images remain available for reset; include this
-memory cost when accepting the mode. Diffuse bake ownership remains unchanged.
+memory cost when accepting the mode. Completed authored capture jobs now release their CPU ray
+and destination vectors after readback, before filtering/image allocation. Their payload alone is
+216 MiB for 64 distinct 128-face captures; this is an arithmetic capacity estimate, not a measured
+whole-process reduction. Scalar counters and canonical radiance remain available for edits.
+Production 1x/4x tests confirm zero published transport scratch, retained pending scratch and complete
+GPU image/acceleration cleanup after override reset and frame retirement. Diffuse bake ownership
+remains unchanged.
 Priority feathering is now implemented within a published reflection set: core priority remains dominant,
 edge bands blend toward lower priorities, and shared floor/wall bands cancel through a relative coverage
 ratio. GPU uploads sort metadata and radiance layers together; canonical capture/cache identities remain

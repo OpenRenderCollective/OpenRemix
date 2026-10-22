@@ -59,6 +59,7 @@ namespace remix {
         << ", \"pending\": " << (state.authoredReflections.pending ? "true" : "false")
         << ", \"active\": " << (state.authoredReflections.active ? "true" : "false")
         << ", \"rays\": " << state.authoredReflections.rays
+        << ", \"captureScratchBytes\": " << state.authoredReflections.captureScratchBytes
         << ", \"completed\": " << state.authoredReflections.completed
         << ", \"reused\": " << state.authoredReflections.reused
         << ", \"automatic\": " << state.authoredReflections.automatic

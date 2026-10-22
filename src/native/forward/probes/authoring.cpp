@@ -31,7 +31,7 @@ namespace remix::forward::probes {
     bake::Budget budget;
     std::vector<int32_t> reused, aliases;
     std::shared_ptr<Job> previous;
-    uint32_t next = 0, received = 0;
+    uint32_t next = 0, received = 0, rayCount = 0;
     bool prepared = false, filtering = false, sceneReused = false;
     void prepare(const std::shared_ptr<Job> &prior, const std::shared_ptr<const scene::BakeScene> &source,
                   VkPhysicalDevice physical, VkDevice device, uint32_t family, const bake::Config &config) {
@@ -80,6 +80,7 @@ namespace remix::forward::probes {
         }
         captures.push_back(std::move(capture));
       }
+      rayCount = uint32_t(rays.size());
       if (prior && prior->transport) {
         // Immutable acceleration/textures are reused. Mutable dispatch slots
         // are accessed only after Authoring::selectFrame observed their fence.
@@ -98,6 +99,12 @@ namespace remix::forward::probes {
       }
     }
     void finish(VkPhysicalDevice physical, VkDevice device) {
+      // All submitted readbacks have retired before filtering starts. Future
+      // edits reuse captures/filtered texels, never these transport work lists.
+      // Release capacity before allocating filtered texels and image staging;
+      // retain only the scalar count for diagnostics.
+      std::vector<bake::Point>().swap(rays);
+      std::vector<uint32_t>().swap(destinations);
       if (!captures.empty()) {
         const uint32_t size = captures.front().resolution;
         const uint32_t levels = std::bit_width(size), stride = levelOffset(size, levels);
@@ -300,7 +307,9 @@ namespace remix::forward::probes {
     result.revision = job->request->revision;
     if (job->ticket->ready()) {
       result.sceneReused = job->sceneReused;
-      result.rays = uint32_t(job->rays.size());
+      result.rays = job->rayCount;
+      result.captureScratchBytes = job->rays.capacity() * sizeof(bake::Point) +
+                                   job->destinations.capacity() * sizeof(uint32_t);
       result.completed = job->received;
       result.reused = uint32_t(std::count_if(job->reused.begin(), job->reused.end(), [](int32_t i) { return i >= 0; }));
       result.reused += uint32_t(std::count_if(job->aliases.begin(), job->aliases.end(), [](int32_t i) { return i >= 0; }));

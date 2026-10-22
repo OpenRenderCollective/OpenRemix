@@ -2236,6 +2236,9 @@ namespace {
             }
             if (authoringTest) {
               weapon.mesh = weaponMesh;
+              // Observe steady ownership after every frame slot has retired the
+              // initial bake publication, before comparing later edit cleanup.
+              for (uint32_t frame = 0; frame < 8; ++frame) render(false, false, true, false);
               const auto baseline = target.forward->statistics();
               const auto probe = baseline.reflectionProbes.probes[0];
               remixapi_ReflectionVolumeEXT authored[2]{};
@@ -2267,6 +2270,8 @@ namespace {
               const auto firstEdit = waitForEdit();
               require(firstEdit[centre] > 40 && target.forward->statistics().authoredReflections.rays == 6*16*16,
                       "Authored capture publishes visible viewmodel reflections through the production path");
+              require(target.forward->statistics().authoredReflections.captureScratchBytes == 0,
+                      "Published captures release transport scratch while preserving completed ray counters");
               require(target.forward->statistics().authoredReflections.reused == 1 &&
                           target.forward->statistics().reflectionProbes.parameters[0] == 2 &&
                           target.forward->statistics().reflectionProbes.probes[0].minimum[3] == 1,
@@ -2321,6 +2326,8 @@ namespace {
                         "Pending capture edits retain the previously published reflection set");
                 const auto pending = target.forward->statistics().authoredReflections;
                 if (pending.pending && pending.rays > 0) {
+                  require(pending.captureScratchBytes >= uint64_t(pending.rays) * sizeof(remix::forward::bake::Point),
+                          "Pending capture transport retains its work list until readbacks retire");
                   require(pending.requested && pending.active && !pending.failed,
                           "Pending reflection edits expose the retained active set and request readiness separately");
                   break;
@@ -2406,6 +2413,16 @@ namespace {
               r.setReflectionVolumes(nullptr);
               require(render(false, false, true, false)[centre] > 40,
                       "Restoring automatic placement immediately restores the original reflection buffer");
+              for (uint32_t frame = 0; frame < 8; ++frame) render(false, false, true, false);
+              const auto restored = target.forward->statistics();
+              require(restored.targetBytes == baseline.targetBytes &&
+                          restored.accelerationBytes == baseline.accelerationBytes,
+                      "Retiring authored edits releases their images and capture acceleration after frame fences");
+              std::printf("Authored cleanup %ux: image bytes %llu -> %llu, acceleration bytes %llu -> %llu\n",
+                          samples, static_cast<unsigned long long>(baseline.targetBytes),
+                          static_cast<unsigned long long>(restored.targetBytes),
+                          static_cast<unsigned long long>(baseline.accelerationBytes),
+                          static_cast<unsigned long long>(restored.accelerationBytes));
             }
             std::printf("Viewmodel probes %ux: overlay %u, world %u, analytic lights %u\n",
                         samples, probeWeapon[centre], probeWorld[centre], target.forward->statistics().lights);
