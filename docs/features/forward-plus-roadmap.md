@@ -786,6 +786,19 @@ A matched SSR-disabled camera route through Construct's adjoining stairwell also
 rebaking. Dark existing materials provide only weak evidence about reflection transitions; use clear
 reflected features across overlaps before accepting parallax/blending, including the lower-basement
 coverage tradeoffs. Preserve SSR-on and ordinary-exposure integration checks.
+
+Cubemap sharpness remains below the reference target. The current default is 32-square faces;
+the s&box reference exposes 128/256/512/1024 and defaults to 128. Matched Construct runs at
+32/64/128 retain identical 63 capture records and non-reflection fields, with clearer reflected
+ceiling detail at higher resolution. Current RGBA32F storage is roughly 8/32/126 MiB for that
+set, and 128-square faces reduce capacity to 63 on the minimum 128 MiB storage-buffer limit.
+Separate compact projection records from sampled HDR image storage before enabling practical
+256/512 quality levels; retain coverage, seam filtering, shared-origin capture work and all
+opaque/viewmodel/water/editor consumers. Compare mirror and rough materials and measure frame
+cost before choosing a sharper default. s&box's square-root roughness lookup belongs to its
+different coefficient-prefiltered mip chain; do not copy the lookup without matching the producer.
+Disabling the independent highlight budget still retains mixed-light specular work, so it alone
+does not isolate cubemap radiance.
 The attempted receiver-first score is rejected: it can fill the sheltered-region budget and displace
 broad map coverage. Its runtime code is removed. Develop room-local fairness before revisiting that
 objective; do not equate global area sampling or additional audit records with complete quality.
