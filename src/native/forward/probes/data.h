@@ -53,6 +53,10 @@ namespace remix::forward::probes {
   // when remapping a filter footprint across an edge.
   Vec3 direction(uint32_t face, float u, float v);
   FaceUv project(Vec3 direction);
+  void validateCapture(const Capture &capture);
+  // Lighting rays depend on resolution and the exact origin bits (including
+  // signed zero in the shader seed), not on projection/blending metadata.
+  bool sameCaptureRays(const Capture &a, const Capture &b);
   std::vector<bake::Point> rays(const Capture &capture);
   // Ordered authored/automatic candidates. The controller validates these
   // against captured geometry before fitting, including static props and masks.

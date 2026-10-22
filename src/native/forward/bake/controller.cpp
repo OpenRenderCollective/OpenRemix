@@ -179,10 +179,7 @@ namespace remix::forward::bake {
           hasDirectDiffuse = cached->directDiffuse;
           hasSun = cached->sun;
           received = uint32_t(grid.tasks.size());
-          for (const auto &capture : captures) {
-            const auto rays = probes::rays(capture);
-            captureRays.insert(captureRays.end(), rays.begin(), rays.end());
-          }
+          captureWork = probes::CaptureWork(captures, cancellation.get_token());
           if (!source->charts.empty())
             surfaceGeometry = std::make_shared<lightmap::Geometry>(
                 physical, device, source, surfaceLayout, cancellation.get_token(),
@@ -394,12 +391,12 @@ namespace remix::forward::bake {
                 status(REMIXAPI_BAKE_FAILED_EXT, "Bake produced non-finite irradiance");
               }
               if (submission.radiance) {
-                const uint32_t count = uint32_t(job.captures.front().radiance.size());
                 const uint32_t ray = submission.first + i;
+                const auto [capture, texel] = job.captureWork.destination(ray);
                 auto color = value.irradiance[0];
                 for (uint32_t c = 0; c < 3; ++c)
                   color[c] = std::clamp(color[c], 0.f, 65000.f);
-                job.captures[ray / count].radiance[ray % count] = color;
+                job.captures[capture].radiance[texel] = color;
               } else if (submission.reflectionSite) {
                 job.usableReflectionSites[submission.first + i] =
                     !job.failed && value.statistics[2] == reflectionSiteSamples &&
@@ -884,21 +881,19 @@ namespace remix::forward::bake {
             probes::dumpCandidates(*owner->source, owner->candidateRegions, owner->captures,
                                    owner->cancellation.get_token());
             releaseStorage(owner->candidateRegions);
-            for (const auto &capture : owner->captures) {
-              auto rays = probes::rays(capture);
-              owner->captureRays.insert(owner->captureRays.end(), rays.begin(), rays.end());
-            }
+            owner->captureWork = probes::CaptureWork(owner->captures, owner->cancellation.get_token());
           });
       status(REMIXAPI_BAKE_PREPARING_EXT, "Selecting reflection captures");
       return;
     }
-    if (job.captureReceived == job.captureRays.size()) {
+    if (job.captureReceived == job.captureWork.rays().size()) {
       job.filtering = true;
       const auto owner = m_job;
       const auto physical = m_physical;
       const auto device = m_device;
       job.ticket = m_pipelines->prepare(
           "forward-probe-filter-" + std::to_string(++generation), [owner, physical, device, config] {
+            owner->captureWork.complete(owner->captures, owner->cancellation.get_token());
             dumpPhaseFingerprint("transport", owner->source->contentHash, owner->grid, owner->surfaceLayout, owner->surfaces,
                                  owner->sun, owner->captures);
             dumpVisibilityReport(*owner->mixedLights, owner->surfaceLayout,
@@ -982,15 +977,15 @@ namespace remix::forward::bake {
       status(REMIXAPI_BAKE_PREPARING_EXT, "Finishing baked lighting assets");
       return;
     }
-    if (job.captureNext < job.captureRays.size()) {
+    if (job.captureNext < job.captureWork.rays().size()) {
       auto &submission = m_submissions[m_slot];
       if (submission.job)
         throw std::logic_error("Reflection slot reused before its fence");
       const uint32_t count = job.count(Work::Reflection, config,
-                                       uint32_t(job.captureRays.size() - job.captureNext),
+                                       uint32_t(job.captureWork.rays().size() - job.captureNext),
                                        config.samples, config.bounces);
       job.transport->recordRadiance(
-          command, m_slot, std::span(job.captureRays).subspan(job.captureNext, count), config.bounces, config.samples);
+          command, m_slot, job.captureWork.rays().subspan(job.captureNext, count), config.bounces, config.samples);
       submission.job = m_job;
       submission.radiance = true;
       submission.first = job.captureNext;
@@ -999,7 +994,7 @@ namespace remix::forward::bake {
     }
     char progress[128];
     std::snprintf(progress, sizeof(progress), "Capturing reflection cubemaps (%u/%zu texels, %u samples)",
-                  job.captureReceived, job.captureRays.size(), config.samples);
+                  job.captureReceived, job.captureWork.rays().size(), config.samples);
     status(REMIXAPI_BAKE_TRACING_EXT, progress);
     return;
   }
@@ -1019,7 +1014,7 @@ namespace remix::forward::bake {
     volume->reflectionHeader = m_job->specular.header;
     if (!m_job->captures.empty()) {
       volume->content.captureInputs =
-          scene::fastHash(m_job->captureRays.data(), m_job->captureRays.size() * sizeof(Point)) | 1;
+          scene::fastHash(m_job->captureWork.rays().data(), m_job->captureWork.rays().size() * sizeof(Point)) | 1;
       uint64_t captured = 1469598103934665603ull;
       for (const auto &capture : m_job->captures)
         for (const auto &color : capture.radiance)

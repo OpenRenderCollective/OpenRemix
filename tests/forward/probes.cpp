@@ -8,6 +8,7 @@
 
 using namespace remix::forward;
 namespace p = remix::forward::probes;
+void testCaptureWork();
 namespace {
   void require(bool value, const char *message) {
     if (!value) {
@@ -26,6 +27,7 @@ namespace {
   }
 } // namespace
 int main() {
+  testCaptureWork();
   require(p::storageCapacity(128, 128ull << 20) == 63 &&
               p::storageCapacity(32, 128ull << 20) == 64 &&
               p::storageCapacity(8, sizeof(p::Header)) == 0 &&

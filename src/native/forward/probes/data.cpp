@@ -124,6 +124,11 @@ namespace remix::forward::probes {
       return result;
     }
   } // namespace
+  void validateCapture(const Capture &capture) { validate(capture); }
+  bool sameCaptureRays(const Capture &a, const Capture &b) {
+    return a.resolution == b.resolution &&
+           std::memcmp(a.position.data(), b.position.data(), sizeof(Vec3)) == 0;
+  }
   Vec3 direction(uint32_t face, float u, float v) {
     // Vulkan specification: Cube Map Face Selection and Transformations.
     switch (face) {
@@ -273,6 +278,19 @@ namespace remix::forward::probes {
     for (uint32_t probe = 0; probe < captures.size(); ++probe) {
       const auto &capture = captures[probe];
       result.header.probes[probe] = projectionRecord(capture);
+      uint32_t shared = probe;
+      for (uint32_t previous = 0; previous < probe; ++previous)
+        if (sameCaptureRays(capture, captures[previous]) &&
+            std::memcmp(capture.radiance.data(), captures[previous].radiance.data(),
+                        capture.radiance.size() * sizeof(Vec4)) == 0) {
+          shared = previous;
+          break;
+        }
+      if (shared != probe) {
+        std::copy_n(result.texels.begin() + shared * stride, stride,
+                    result.texels.begin() + probe * stride);
+        continue;
+      }
       std::copy(capture.radiance.begin(), capture.radiance.end(), result.texels.begin() + probe * stride);
       for (uint32_t level = 1; level < levels; ++level) {
         const uint32_t mipSize = size >> level, start = probe * stride + levelOffset(size, level);

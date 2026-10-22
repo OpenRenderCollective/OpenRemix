@@ -769,8 +769,11 @@ now reach assessment, with independent limits of 160 unique origins and 480 reco
 first-hit rays. Final capture limits and volume-based selection remain unchanged. This improves the
 observed Construct/Crossfire receiver assignment, but gains coexist with losses elsewhere; validate
 actual room transitions, wall leakage, moving views and frame cost before deploying this checkpoint.
-Selected same-origin shapes currently repeat lighting capture, filtering and storage; share that work
-without changing projection/blending semantics before treating the larger selected set as optimized.
+Automatic same-origin shapes now share lighting queries and reuse bit-identical filtered mip chains,
+while retaining independent projection/blending records. Cold/warm cache reconstruction uses the
+same unique query plan. This removes duplicate capture/filter work but keeps texture storage per
+volume. Default-resolution frame cost and moving-view acceptance remain open; shared texture
+storage and the separate authored-edit scheduling policy are further optimization opportunities.
 The attempted receiver-first score is rejected: it can fill the sheltered-region budget and displace
 broad map coverage. Its runtime code is removed. Develop room-local fairness before revisiting that
 objective; do not equate global area sampling or additional audit records with complete quality.

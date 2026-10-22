@@ -2240,8 +2240,15 @@ The audit caps unique origins at 160 and shape records at 480. Shapes sharing an
 384 first-hit rays; the maximum geometry-query work remains 61,440 rays. Equivalent boxes are merged
 at 95% intersection-over-union. Every alternative uses the same whole-volume wall and detail-tolerance
 checks, and final captures remain bounded by the configured budget (at most 64). Selected shapes can
-share an origin; lighting capture and filtered storage still occupy separate slots. Sharing that work
-is a remaining optimization. Bake policy revision 27 distinguishes this planning from previous caches.
+share an origin. Automatic capture work traces each bit-identical world origin/resolution once, maps
+fenced readbacks to its owning record, and copies the completed radiance to alias volumes. Filtering
+reuses an earlier mip chain only when both the ray identity and all captured texel bits match. Each
+volume retains independent projection, influence, feathering and priority metadata. Signed-zero
+origins remain distinct because their bits participate in the shader seed. Cold and cached jobs build
+the same unique query plan, including its diagnostic fingerprint. GPU storage still retains a full
+mip chain per volume; sharing texture storage remains an optimization. Authored live-edit capture
+scheduling retains its existing per-volume reuse policy. Bake policy revision 27 distinguishes this
+planning from previous caches; query sharing does not require another format or policy revision.
 
 The shared reflection sampler supports rigid world-to-projection frames and signed overlap priorities.
 Projection and influence bounds use this local frame; capture positions and cube-face radiance stay in
