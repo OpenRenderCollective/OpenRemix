@@ -132,6 +132,11 @@ typedef struct remixapi_BakeStatisticsEXT {
   uint32_t probes, completed, samples, bounces;
   uint64_t memoryBytes;
   char status[192];
+  // Optional tail: reflection-only edits can remain pending after active becomes true.
+  // Consumers must check the returned structSize before reading these fields.
+  // reflectionActive can describe the retained previous set while an edit is pending.
+  // An authored request is ready only when active, not pending, and not failed.
+  uint32_t reflectionRequested, reflectionPending, reflectionActive, reflectionFailed;
 } remixapi_BakeStatisticsEXT;
 typedef remixapi_ErrorCode(REMIXAPI_PTR *PFN_remixapi_GetBakeStatisticsEXT)(remixapi_BakeStatisticsEXT *out);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetBakeStatisticsEXT(remixapi_BakeStatisticsEXT *out);

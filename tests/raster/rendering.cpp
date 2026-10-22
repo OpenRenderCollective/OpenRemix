@@ -2320,7 +2320,11 @@ namespace {
                 require(render(false, false, true, false)[centre] > 40,
                         "Pending capture edits retain the previously published reflection set");
                 const auto pending = target.forward->statistics().authoredReflections;
-                if (pending.pending && pending.rays > 0) break;
+                if (pending.pending && pending.rays > 0) {
+                  require(pending.requested && pending.active && !pending.failed,
+                          "Pending reflection edits expose the retained active set and request readiness separately");
+                  break;
+                }
               } while (std::chrono::steady_clock::now() < cancellationDeadline);
               require(target.forward->statistics().authoredReflections.pending,
                       "Cancellation fixture reaches a submitted reflection edit");

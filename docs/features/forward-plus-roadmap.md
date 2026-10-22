@@ -849,11 +849,37 @@ addon mounts and the two authored Construct volumes are preserved. This is not f
 Authored sets currently replace the automatic set entirely. Partial authored maps therefore need an
 explicit overlay/fallback design that respects priorities, the 64-record budget and empty-set semantics;
 do not assume automatic coverage survives outside the two reference volumes.
+An installed-sidecar containment check confirms the skylit hall camera is inside the first authored
+volume, while the behind-spawn room, connector and unconfirmed secret approach cameras are outside
+both. Only 8 of the current 63 automatic capture origins are inside these volumes; that is an origin
+membership check, not a surface-area coverage estimate. Replacement can explain missing local
+cubemaps elsewhere, but does not explain weak main-hall reflections. Compare completed authored
+and automatic hall captures with SSR disabled before blaming its bounds or radiance.
+That comparison now confirms a completed two-probe authored set in the hall, with all 196,608
+capture rays returned; local reflections remain visible with SSR disabled. Existing ordinary
+materials are insufficient to accept capture sharpness, prop response or moving transitions.
+Replay diagnostics previously retained initial diffuse-publication state while reflection-only
+work continued. The optional bake-statistics tail now exposes requested/pending/active/failed
+reflection state; measurement and camera-path readiness wait for publication, and final measurements
+refresh their probe report. Legacy 256-byte statistics clients retain their allocation boundary.
+An earlier report showing pending work is not proof that its later image was incomplete; match
+fresh final diagnostics before making that claim. Authored fallback composition is still unimplemented.
+The focused statistics ABI, authored-edit ownership and renderer compatibility checks pass; the
+general input/screenshot fixture remains unresolved. Its default reconstruction assertion conflicts
+with current DLSS defaults, and a temporary isolated follow-up hit frame-performance accounting and
+failure-teardown hangs. Keep that investigation separate from the focused readiness result and do
+not claim a full API-suite pass or accept new timings while owned test cleanup is unconfirmed.
+The rendering menu now explains that active authored volumes replace the whole automatic set.
+An eventual overlay must preserve existing replacement/empty-set/reset semantics through an explicit
+mode, retain authored priority ordering, select fallback captures within the shared 64-record budget,
+and feather toward lower-priority coverage without introducing a hard transition at volume edges.
+Reuse published automatic radiance rather than retracing it; diffuse bake ownership must remain unchanged.
 
 Expanded tests exposed a three-face corner discontinuity in the previous manual filter. CPU mip
 preparation and the shared shader now average the diagonal corner tap across the three meeting
 faces. All eight corner approaches have an explicit regression test. Policy 28 introduced this fix;
-current cache policy 29 also prevents reuse of sets truncated by the old buffer-capacity policy.
+policy 29 also prevents reuse of sets truncated by the old buffer-capacity policy; current policy 30
+additionally repairs hidden interior surface donors before filtering.
 Regenerated shaders must travel with the resource/descriptor changes. s&box's square-root roughness
 lookup belongs to its different coefficient-prefiltered mip chain; do not copy the lookup without
 matching the producer. Disabling the independent highlight budget still retains mixed-light

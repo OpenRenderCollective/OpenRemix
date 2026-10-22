@@ -69,8 +69,13 @@ public:
   std::string reflectionProbeReport() const;
   forward::Statistics::CpuRecording forwardCpuRecording() const;
   remixapi_BakeStatisticsEXT bakingStatistics() const {
-    auto statistics = forwardStatistics().baking;
+    const auto forward = forwardStatistics();
+    auto statistics = forward.baking;
     statistics.supported = m_forwardRaySupported;
+    statistics.reflectionRequested = forward.authoredReflections.requested;
+    statistics.reflectionPending = forward.authoredReflections.pending;
+    statistics.reflectionActive = forward.authoredReflections.active;
+    statistics.reflectionFailed = forward.authoredReflections.failed;
     return statistics;
   }
   const std::string &postProcessingFailure() const { return m_postFailure; }

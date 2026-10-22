@@ -10,6 +10,9 @@ if system != 'windows'
   test('C++ SDK wrapper', cpp_test, args : [remix.full_path()])
 endif
 if get_option('gpu_tests')
+  bake_statistics_test = executable('remix-bake-statistics-test', 'bake_statistics.cpp',
+    include_directories : test_includes, dependencies : [sdl3_dep, threads_dep, filesystem_dep], link_with : remix)
+  test('Bake statistics legacy prefix and authored reflection readiness', bake_statistics_test, timeout : 30)
   extension_test = executable('remix-native-extensions-test', 'native_extensions.cpp',
     include_directories : test_includes, dependencies : [sdl3_dep, threads_dep, filesystem_dep], link_with : remix)
   test('Native input events and presented screenshot', extension_test,

@@ -246,13 +246,15 @@ namespace remix::forward::probes {
   }
   const Header *Authoring::header() const { return m_active ? &m_active->filtered.header : nullptr; }
   AuthoringStatistics Authoring::statistics() const {
-    const auto &job = m_job ? m_job : m_active;
-    if (!job) return {};
-    // Worker-owned vectors are read only after preparation has completed.
     AuthoringStatistics result;
-    result.revision = job->request->revision;
-    result.pending = bool(m_job);
+    result.requested = bool(m_request);
+    result.failed = !m_status.empty();
+    result.pending = bool(m_request) && (!m_active || m_active->request != m_request);
     result.active = bool(m_active);
+    const auto &job = m_job ? m_job : m_active;
+    if (!job) return result;
+    // Worker-owned vectors are read only after preparation has completed.
+    result.revision = job->request->revision;
     if (job->ticket->ready()) {
       result.sceneReused = job->sceneReused;
       result.rays = uint32_t(job->rays.size());
