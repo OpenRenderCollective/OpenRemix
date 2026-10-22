@@ -887,8 +887,12 @@ SSR, water and sky-fallback checks with synchronization validation. This source 
 An isolated runtime built from normal Meson inputs now reproduces the intended Construct boundary
 blend on a glossy receiver, while the low-only and high-core control interiors remain pixel-identical.
 Both authored captures are fully published in the compared images. A camera-path smoke across that
-boundary also passes synchronization validation. Continuous moving-view visual acceptance, other maps
-and performance acceptance remain open. It does not compose automatic captures
+boundary also passes synchronization validation. A subsequent 33-frame controlled glossy traversal
+confirms a less abrupt transition, with matching start/end control interiors and clean validation.
+The replay capture interval is configurable with a 64-image limit, retaining its default cadence.
+Some sharp reflection changes remain identically in both samplers and need separate capture/filter
+review; the priority fix is not proof that all glossy aliasing is solved. Other maps, material/roughness
+variants, real gameplay motion and performance acceptance remain open. It does not compose automatic captures
 into an authored override or fix coverage outside that override.
 
 Expanded tests exposed a three-face corner discontinuity in the previous manual filter. CPU mip

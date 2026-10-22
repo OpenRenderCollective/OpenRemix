@@ -34,7 +34,9 @@ and offscreen moving shadows. The prior uniform-grid checkpoint was `e51bff0`.
   Equal-priority sets retain one traversal; mixed sets normalize edge coverage across priority layers,
   cancelling shared floor/wall bands. An isolated Construct glossy-boundary check confirms the blend
   and unchanged control interiors; a moving-path validation smoke passes. This source continuation
-  remains undeployed, with visual motion, wider maps and performance acceptance open. Authored sets
+  remains undeployed. A controlled 33-frame glossy traversal now confirms a less abrupt transition
+  with matching endpoint interiors; sharp common reflection-detail changes still need investigation.
+  Wider maps, material/roughness variants, real gameplay and performance acceptance remain open. Authored sets
   still replace automatic sets; fallback composition is separate unfinished work.
 
 - `forward/Renderer::activate`: queue-idle adoption publishes retained bake metadata and owned
