@@ -2246,8 +2246,11 @@ namespace {
                 authored[0].capture[c] = probe.position[c];
                 authored[0].worldToLocal[c][c] = 1;
               }
+              authored[1] = authored[0];
+              authored[1].id = 72;
+              authored[1].priority = 1;
               remixapi_ReflectionVolumesInfoEXT request{sizeof(request), REMIXAPI_REFLECTION_VOLUMES_VERSION_EXT,
-                  snapshot->sceneId, 1, 1, 0, authored};
+                  snapshot->sceneId, 1, 2, 0, authored};
               auto waitForEdit = [&] {
                 const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
                 std::vector<uint8_t> image;
@@ -2264,6 +2267,13 @@ namespace {
               const auto firstEdit = waitForEdit();
               require(firstEdit[centre] > 40 && target.forward->statistics().authoredReflections.rays == 6*16*16,
                       "Authored capture publishes visible viewmodel reflections through the production path");
+              require(target.forward->statistics().authoredReflections.reused == 1 &&
+                          target.forward->statistics().reflectionProbes.parameters[0] == 2 &&
+                          target.forward->statistics().reflectionProbes.probes[1].minimum[3] == 1,
+                      "New same-origin volumes trace once while retaining independent priority records");
+              request.volumeCount = 1; ++request.revision;
+              r.setReflectionVolumes(&request);
+              waitForEdit();
               authored[0].id = 171;
               ++request.revision;
               r.setReflectionVolumes(&request);

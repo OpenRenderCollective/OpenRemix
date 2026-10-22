@@ -24,7 +24,7 @@ namespace remix::forward::probes {
     std::unique_ptr<ImageAsset> image;
     Data filtered;
     bake::Budget budget;
-    std::vector<int32_t> reused;
+    std::vector<int32_t> reused, aliases;
     std::shared_ptr<Job> previous;
     uint32_t next = 0, received = 0;
     bool prepared = false, filtering = false, sceneReused = false;
@@ -60,7 +60,15 @@ namespace remix::forward::probes {
               break;
             }
         reused.push_back(oldIndex);
-        if (oldIndex < 0) {
+        int32_t alias = -1;
+        if (oldIndex < 0)
+          for (size_t earlier = 0; earlier < captures.size(); ++earlier)
+            if (sameCaptureRays(captures[earlier], capture)) {
+              alias = int32_t(earlier);
+              break;
+            }
+        aliases.push_back(alias);
+        if (oldIndex < 0 && alias < 0) {
           const auto captureRays = probes::rays(capture);
           for (uint32_t i = 0; i < captureRays.size(); ++i) destinations.push_back(uint32_t(index * captureRays.size() + i));
           rays.insert(rays.end(), captureRays.begin(), captureRays.end());
@@ -93,10 +101,17 @@ namespace remix::forward::probes {
         WorkerPool workers;
         for (size_t i = 0; i < captures.size(); ++i) {
           if (cancellation.stop_requested()) throw std::runtime_error("Reflection edit superseded");
+          // Aliases always point backwards to an already completed capture.
+          // Keep raw depth for this volume's independent projection confidence.
+          if (aliases[i] >= 0)
+            captures[i].radiance = captures[size_t(aliases[i])].radiance;
           filtered.header.probes[i] = projectionRecord(captures[i]);
           if (reused[i] >= 0) {
             const auto &priorTexels = previous->filtered.texels;
             std::copy_n(priorTexels.begin() + size_t(reused[i])*stride, stride,
+                        filtered.texels.begin() + i*stride);
+          } else if (aliases[i] >= 0) {
+            std::copy_n(filtered.texels.begin() + size_t(aliases[i])*stride, stride,
                         filtered.texels.begin() + i*stride);
           } else {
             const auto one = probes::filter(std::span(captures).subspan(i, 1), 128,
@@ -243,6 +258,7 @@ namespace remix::forward::probes {
       result.rays = uint32_t(job->rays.size());
       result.completed = job->received;
       result.reused = uint32_t(std::count_if(job->reused.begin(), job->reused.end(), [](int32_t i) { return i >= 0; }));
+      result.reused += uint32_t(std::count_if(job->aliases.begin(), job->aliases.end(), [](int32_t i) { return i >= 0; }));
     }
     return result;
   }

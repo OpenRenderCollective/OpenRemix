@@ -2253,8 +2253,10 @@ origins remain distinct because their bits participate in the shader seed. Cold 
 the same unique query plan, including its diagnostic fingerprint. GPU storage still retains a full
 mip chain per volume; sharing texture storage remains an optimization. Authored live-edit capture
 scheduling reuses any previously published capture with the same bit-identical world origin and
-resolution, independent of authoring ID, bounds or priority. It retains per-volume scheduling for
-new origins within one edit. Signed-zero origins remain distinct here too. Bake policy revision 27 introduced this
+resolution, independent of authoring ID, bounds or priority. New same-origin volumes within one edit
+also share one query set and filtered mip chain. Each volume still gets its own projection confidence
+and published record, and GPU image layers remain separate. Signed-zero origins remain distinct
+here too. Bake policy revision 27 introduced this
 planning; revision 28 additionally distinguishes three-face cube-corner filtering. The diagonal tap
 at a cube corner averages the three meeting faces in CPU mip preparation and shader sampling,
 avoiding a discontinuity when a near tie selects a different major axis. Query sharing itself does
