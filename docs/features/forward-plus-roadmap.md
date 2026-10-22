@@ -411,7 +411,8 @@ frame-time improvement.
 
 Optimize cluster construction as well as receiver shading. In clustered baked-tail mode,
 `cluster.comp` still tests the full uploaded light list for every depth-sliced tile; selected
-highlight counts do not describe that work. Evaluate conservative spatial broad phases or reuse
+highlight counts do not describe that work. Cooperative 64-light batches now share sphere-bound
+loads across each workgroup without changing membership; spatial candidate reduction remains open. Evaluate conservative spatial broad phases or reuse
 with exact input invalidation, while preserving unknown-coverage fallback and per-receiver list
 overflow. Any reuse must follow actual GPU submission/resource lifetime, including abandoned
 recordings; recording commands alone does not prove their output exists. Compare moving-camera

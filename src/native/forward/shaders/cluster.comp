@@ -3,6 +3,7 @@
 #define CLUSTER_BUILD
 #include "bindings.glsl"
 layout(local_size_x = 64) in;
+shared vec4 lightBounds[64];
 vec3 viewPoint(vec2 ndc, float depth) {
   vec4 a = frame.inverseProjection * vec4(ndc, 0, 1), b = frame.inverseProjection * vec4(ndc, .9999, 1);
   vec3 pa = a.xyz / a.w, pb = b.xyz / b.w;
@@ -10,8 +11,7 @@ vec3 viewPoint(vec2 ndc, float depth) {
 }
 void main() {
   uint index = gl_GlobalInvocationID.x;
-  if (index >= frame.grid.w)
-    return;
+  bool validCell = index < frame.grid.w;
   uvec3 cell = uvec3(index % frame.grid.x, (index / frame.grid.x) % frame.grid.y,
                      index / (frame.grid.x * frame.grid.y));
   vec2 low = vec2(cell.xy) / vec2(frame.grid.xy) * 2 - 1;
@@ -27,17 +27,30 @@ void main() {
       }
   uint count = 0u, runtimeCount = 0u, base = index * ClusterStride;
   uint lightCount = ClusterBakedTail ? frame.target.z : ClusterLightCount;
-  for (uint i = 0u; i < lightCount; ++i) {
-    vec3 center = lights[i].clusterBounds.xyz;
-    vec3 delta = center - clamp(center, minimum, maximum);
-    float radius = lights[i].clusterBounds.w;
-    if (dot(delta, delta) <= radius * radius) {
-      if (count < ClusterCapacity)
-        clusters[base + ClusterHeaderWords + count] = i;
-      ++count;
-      runtimeCount += uint(i < ClusterLightCount);
+  // All lanes participate, including the final partial cell workgroup.
+  // Only sphere bounds are shared; sorted light indices and overflow counts
+  // retain the receiver's existing runtime-prefix/fallback contract.
+  uint lane = gl_LocalInvocationIndex;
+  for (uint batch = 0u; batch < lightCount; batch += 64u) {
+    uint size = min(64u, lightCount - batch);
+    if (lane < size) lightBounds[lane] = lights[batch + lane].clusterBounds;
+    barrier();
+    if (validCell) {
+      for (uint j = 0u; j < size; ++j) {
+        vec4 sphere = lightBounds[j];
+        vec3 delta = sphere.xyz - clamp(sphere.xyz, minimum, maximum);
+        if (dot(delta, delta) <= sphere.w * sphere.w) {
+          uint i = batch + j;
+          if (count < ClusterCapacity)
+            clusters[base + ClusterHeaderWords + count] = i;
+          ++count;
+          runtimeCount += uint(i < ClusterLightCount);
+        }
+      }
     }
+    barrier();
   }
+  if (!validCell) return;
   clusters[base] = runtimeCount;
   clusters[base + 1u] = count;
 }

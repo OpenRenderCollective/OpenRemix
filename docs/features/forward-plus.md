@@ -179,7 +179,11 @@ The private `REMIX_DEBUG_FORWARD_UNCLUSTERED_FALLBACK` switch restores complete 
 for comparison. It does not change bake policy or cache identity.
 View-space influence spheres are prepared once per uploaded light, including conservative bounds for
 scaled or sheared views. Their storage is private to the renderer; world-space emitter radii, attenuation
-and bake inputs are unchanged. Sphere and triangle emitters use approximate
+and bake inputs are unchanged. Each 64-cell compute workgroup cooperatively loads sphere bounds
+in batches of 64 lights into shared memory, then tests its cells against that batch in the original
+light order. Inactive lanes still participate in both barriers, including the last partial workgroup;
+only valid cells write cluster output. This changes no list capacity, light eligibility or fallback
+semantics and requires no persistent GPU result cache. Sphere and triangle emitters use approximate
 solid-angle direct lighting. The shared Forward+ emitter helper follows the path tracer's angular
 spotlight softness/focus and cancellation-resistant sphere solid angle. The baker samples actual emitter
 positions/directions for radial energy and soft visibility; it does not blur a hard shadow after baking.

@@ -10,6 +10,7 @@ using namespace remix::forward;
 using namespace remix::forward::test;
 namespace {
   using UInt4 = std::array<uint32_t, 4>;
+  constexpr uint32_t maximumCells = 128;
   struct Gpu {
     VkDevice device;
     Buffer frame, lights, clusters, results;
@@ -59,9 +60,9 @@ int main() try {
   gpu.query = pipeline(gpu, cluster_input::queryShader, sizeof(cluster_input::queryShader));
   gpu.frame.create(fixture.physical, gpu.device, sizeof(FrameData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
   gpu.lights.create(fixture.physical, gpu.device, 128 * sizeof(LightData), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-  gpu.clusters.create(fixture.physical, gpu.device, 8 * (64 + clusterHeaderWords) * sizeof(uint32_t),
+  gpu.clusters.create(fixture.physical, gpu.device, maximumCells * (64 + clusterHeaderWords) * sizeof(uint32_t),
                        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-  gpu.results.create(fixture.physical, gpu.device, 16 * sizeof(UInt4), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+  gpu.results.create(fixture.physical, gpu.device, maximumCells * 2 * sizeof(UInt4), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   const VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
                                         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3}};
   const VkDescriptorPoolCreateInfo poolInfo{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
@@ -81,11 +82,12 @@ int main() try {
   vkUpdateDescriptorSets(gpu.device, 4, writes, 0, nullptr);
   uint32_t cases = 0;
   auto run = [&](std::span<const LightData> lights, uint32_t prefix, uint32_t capacity,
-                 bool clustered, float sign) {
+                 bool clustered, float sign, uint32_t columns = 2) {
     FrameData frame{};
     frame.view = frame.inverseProjection = scene::identity();
     frame.view[10] = sign;
-    frame.grid = {2, 2, 2, 8};
+    const uint32_t cells = columns * 4;
+    frame.grid = {columns, 2, 2, cells};
     frame.depth = {.1f, 10, 0, sign};
     frame.target[2] = uint32_t(lights.size());
     frame.clusterInfo = {capacity, prefix == UINT32_MAX ? 0 : prefix + 1, 0, 0};
@@ -97,31 +99,31 @@ int main() try {
       light.clusterBounds = clusterSphereBounds(frame.view,
           {light.positionRadius[0], light.positionRadius[1], light.positionRadius[2]}, light.shaping[2], radiusScale);
     gpu.lights.write(prepared.data(), prepared.size() * sizeof(LightData));
-    std::vector<uint32_t> cleared(8 * (64 + clusterHeaderWords), 0xdeadbeefu);
+    std::vector<uint32_t> cleared(maximumCells * (64 + clusterHeaderWords), 0xdeadbeefu);
     gpu.clusters.write(cleared.data(), cleared.size() * sizeof(uint32_t));
     fixture.begin();
     vkCmdBindDescriptorSets(fixture.command, VK_PIPELINE_BIND_POINT_COMPUTE, gpu.layout, 0, 1, &set, 0, nullptr);
     vkCmdBindPipeline(fixture.command, VK_PIPELINE_BIND_POINT_COMPUTE, gpu.build);
-    vkCmdDispatch(fixture.command, 1, 1, 1);
+    vkCmdDispatch(fixture.command, (cells + 63) / 64 + 1, 1, 1);
     VkMemoryBarrier barrier{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
         .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT, .dstAccessMask = VK_ACCESS_SHADER_READ_BIT};
     vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &barrier, 0, nullptr, 0, nullptr);
     vkCmdBindPipeline(fixture.command, VK_PIPELINE_BIND_POINT_COMPUTE, gpu.query);
-    vkCmdDispatch(fixture.command, 1, 1, 1);
+    vkCmdDispatch(fixture.command, (cells * 2 + 63) / 64, 1, 1);
     barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
     vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                          VK_PIPELINE_STAGE_HOST_BIT, 0, 1, &barrier, 0, nullptr, 0, nullptr);
     fixture.finish();
-    std::array<UInt4, 16> results;
+    std::array<UInt4, maximumCells * 2> results;
     gpu.results.read(results.data(), sizeof(results));
     gpu.clusters.read(cleared.data(), cleared.size() * sizeof(uint32_t));
     const uint32_t runtime = prefix == UINT32_MAX ? uint32_t(lights.size()) : prefix;
-    for (uint32_t cell = 0; cell < 8; ++cell) {
-      const float depthMinimum = cell < 4 ? .1f : 1.f, depthMaximum = cell < 4 ? 1.f : 10.f;
-      const Vec3 low{cell % 2 ? 0.f : -1.f, (cell / 2) % 2 ? 0.f : -1.f,
+    for (uint32_t cell = 0; cell < cells; ++cell) {
+      const float depthMinimum = cell < columns * 2 ? .1f : 1.f, depthMaximum = cell < columns * 2 ? 1.f : 10.f;
+      const Vec3 low{float(cell % columns) / columns * 2 - 1, (cell / columns) % 2 ? 0.f : -1.f,
                      sign > 0 ? depthMinimum : -depthMaximum};
-      const Vec3 high{cell % 2 ? 1.f : 0.f, (cell / 2) % 2 ? 1.f : 0.f,
+      const Vec3 high{float(cell % columns + 1) / columns * 2 - 1, (cell / columns) % 2 ? 1.f : 0.f,
                       sign > 0 ? depthMaximum : -depthMinimum};
       std::vector<uint32_t> all, active;
       for (uint32_t i = 0; i < lights.size(); ++i) {
@@ -178,6 +180,25 @@ int main() try {
         for (bool clustered : {false, true})
           run(lights, 1, 2, clustered, sign);
     }
+  // Shared batches cross light boundaries independently of cell workgroups.
+  // Include full, partial and entirely inactive dispatched workgroups.
+  lights.resize(128);
+  for (auto &light : lights) {
+    light.positionRadius = {0, 0, .5f, 100};
+    light.shaping[2] = 100;
+  }
+  for (uint32_t size : {63u, 64u, 65u, 127u, 128u})
+    for (uint32_t columns : {2u, 16u, 17u})
+      for (bool clustered : {false, true})
+        run(std::span(lights).first(size), 1, 64, clustered, 1, columns);
+  for (auto &light : lights) light.positionRadius[0] = 1000;
+  for (uint32_t size : {63u, 64u, 65u, 127u, 128u}) {
+    lights[size - 1].positionRadius[0] = 0;
+    for (uint32_t columns : {2u, 16u, 17u})
+      for (bool clustered : {false, true})
+        run(std::span(lights).first(size), 1, 64, clustered, 1, columns);
+    lights[size - 1].positionRadius[0] = 1000;
+  }
   require(validationErrors.load() == 0, "Cluster dispatch and receiver queries remain validation-clean");
   std::printf("Clustered baked-tail GPU membership and independent overflow passed (%u cases)\n", cases);
   return 0;
