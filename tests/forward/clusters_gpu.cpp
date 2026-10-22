@@ -166,6 +166,18 @@ int main() try {
       }
   for (uint32_t i = 0; i < lights.size() - 1; ++i) lights[i].positionRadius[0] = 100;
   run(lights, 1, 64, true, 1);
+  // Membership must retain near/far tangencies, both view-depth signs,
+  // prefix ownership and overflow even when every sphere shares one depth.
+  for (float depth : {-.5f, 0.f, .1f, .5f, 1.f, 1.5f, 10.f, 10.5f, 100.f})
+    for (float radius : {0.f, .5f, 1.f, 100.f}) {
+      for (auto &light : lights) {
+        light.positionRadius = {-.5f, -.5f, depth, radius};
+        light.shaping[2] = radius;
+      }
+      for (float sign : {1.f, -1.f})
+        for (bool clustered : {false, true})
+          run(lights, 1, 2, clustered, sign);
+    }
   require(validationErrors.load() == 0, "Cluster dispatch and receiver queries remain validation-clean");
   std::printf("Clustered baked-tail GPU membership and independent overflow passed (%u cases)\n", cases);
   return 0;

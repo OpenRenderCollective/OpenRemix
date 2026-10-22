@@ -416,6 +416,10 @@ with exact input invalidation, while preserving unknown-coverage fallback and pe
 overflow. Any reuse must follow actual GPU submission/resource lifetime, including abandoned
 recordings; recording commands alone does not prove their output exists. Compare moving-camera
 cases as well as stationary views and retain whole-frame timing alongside nested pass ranges.
+Treat depth-only rejection as an experiment rather than an assumed win: a large-radius light
+can span most depth slices, and additional scalar branches can duplicate the existing sphere/AABB
+test. Require repeatable whole-frame improvement before retaining new pruning metadata. Keep
+near/far tangencies, both depth signs, mixed-prefix ownership and overflow in GPU regression coverage.
 The CPU `groupStyledDirect` compositor now reuses completed per-light surface and probe
 SH without launching style-specific rays or allocating dense all-map RGB workspaces.
 It declines complete style groups on missing coverage or storage exhaustion. Signed
