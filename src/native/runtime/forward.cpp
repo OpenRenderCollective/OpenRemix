@@ -92,6 +92,7 @@ namespace remix {
                 ? 1 / inverse[c]
                 : (probe.influenceMaximum[c] - probe.influenceMinimum[c]) * .1f;
       vector(widths);
+      out << ", \"projectionConfidence\": " << probe.position[3];
       out << ", \"priority\": " << int32_t(probe.minimum[3]) << ", \"worldToLocal\": [";
       for (uint32_t row = 0; row < 3; ++row) {
         const auto &r = probe.worldToLocal[row];

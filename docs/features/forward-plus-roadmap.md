@@ -787,7 +787,7 @@ rebaking. Dark existing materials provide only weak evidence about reflection tr
 reflected features across overlaps before accepting parallax/blending, including the lower-basement
 coverage tradeoffs. Preserve SSR-on and ordinary-exposure integration checks.
 
-Cubemap sharpness remains below the reference target. The current default is 32-square faces;
+Cubemap sharpness remains below the reference target. The development default is now 128-square faces;
 the s&box reference exposes 128/256/512/1024 and defaults to 128. Earlier matched captures at
 32/64/128 show clearer reflected detail at higher resolution. The former RGBA32F buffer payload
 also reduced capture capacity at 128-square faces on minimum-range devices. Production now uses
@@ -797,8 +797,8 @@ retains 64 captures within core image-layer limits. Canonical CPU/cache data sta
 Bake workers and authored-edit workers prepare immutable image owners; the render queue uploads
 and publishes them, and frame fences retain uploads and sampled owners. Reflection composition,
 viewmodels and water share the single image-backed sampler. The obsolete buffer-radiance shader
-path is removed. Settings and UI expose 256/512; the default stays 32 pending quality/performance
-acceptance. The face-size control estimates image texel memory at the selected capture budget.
+path is removed. Settings and UI retain smaller sizes and expose 256/512 quality choices.
+The face-size control estimates image texel memory at the selected capture budget.
 
 CPU, image upload/readback and sampling tests cover HDR precision, all faces/mips, cancellation,
 empty fallback, 64-capture membership and 256/512-square faces. Cache validation separates image
@@ -807,8 +807,11 @@ Authored-edit, viewmodel environment/SSR/shadow, transport and asynchronous-targ
 checks pass with synchronization validation. A small-budget Construct replay also completes with
 live 256-square image captures. A small-budget 128-square Construct cold/warm pair reports a
 cache hit with identical published captures and lighting hashes. These checks do not establish
-default-quality frame cost or full map visual acceptance. Check wider room coverage, mirror/rough
-materials and normal-quality cache/timing runs before choosing a sharper default or updating the install.
+full map visual acceptance. Normal-quality repeated fixed views retain 63/64 captures on
+Construct/Crossfire at both 32 and 128. Crossfire shows similar steady GPU cost; Construct has
+larger run variation than the average resolution difference. This supports the sharper branch
+default without establishing gameplay performance or a general speedup. Check wider room coverage,
+mirror/rough materials and normal-quality cache transitions before updating the testing install.
 
 Expanded tests exposed a three-face corner discontinuity in the previous manual filter. CPU mip
 preparation and the shared shader now average the diagonal corner tap across the three meeting
@@ -819,7 +822,9 @@ lookup belongs to its different coefficient-prefiltered mip chain; do not copy t
 matching the producer. Disabling the independent highlight budget still retains mixed-light
 specular work, so it alone does not isolate cubemap radiance. Further work includes shared GPU
 image storage for same-origin shapes, streamed high-resolution capture rays, compressed cache/GPU
-formats, and calibration against all three reference renderers.
+formats, GPU GGX filtering and calibration against all three reference renderers. Higher face sizes
+also increase canonical raw/filtered cache size and CPU capture/filter work; compact GPU images
+alone do not solve those bake-time and disk costs.
 The attempted receiver-first score is rejected: it can fill the sheltered-region budget and displace
 broad map coverage. Its runtime code is removed. Develop room-local fairness before revisiting that
 objective; do not equate global area sampling or additional audit records with complete quality.

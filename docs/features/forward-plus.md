@@ -2262,7 +2262,7 @@ frame fences retain sampled resources and release staging. Reflection compositio
 water use the shared image sampler. The former buffer-radiance shader path is removed.
 
 `rtx.native.forward.reflectionResolution` accepts powers of two from 8 through 512, also exposed
-by the face-size control. The default remains 32 until broader quality and performance acceptance.
+by the face-size control. The development default is 128; explicit profile values remain authoritative.
 Image radiance uses half the old RGBA32F payload size; CPU/cache radiance remains full precision.
 The face-size tooltip estimates image texel memory at the selected capture budget, excluding
 alignment and transient bake/upload allocations. The image layout does not itself bound those
@@ -2274,6 +2274,9 @@ Projection and influence bounds use this local frame; capture positions and cube
 world space. Only the highest priority containing a receiver contributes, with existing spatial blending
 among captures at that priority. Automatic fits keep identity frames and priority zero. Native probe reports
 include the frame and priority, and the bounds workbench can import them. The optional
+`projectionConfidence` field reports the raw geometric blend-confidence scalar; legacy zero means
+unknown and retains the sampler's unit-weight fallback. It is useful when comparing resolutions,
+since identical origins/bounds alone do not prove identical blend weights. The optional
 `remixapi_SetReflectionVolumesEXT` authoring API publishes copied, scene-scoped volumes separately
 from frozen diffuse bake inputs. The adapter validates its map fingerprint and submits saved volumes.
 A reflection-only job retains the previous published set while edited captures are prepared. Bounds and
