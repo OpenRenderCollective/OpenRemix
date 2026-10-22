@@ -50,10 +50,11 @@ namespace remix::forward::probes {
         capture.radiance.resize(6ull * capture.resolution * capture.resolution);
         int32_t oldIndex = -1;
         if (prior)
-          for (size_t old = 0; old < prior->request->volumes.size(); ++old)
-            if (prior->request->volumes[old].id == volume.id &&
-                prior->captures[old].position == capture.position &&
-                prior->captures[old].resolution == capture.resolution) {
+          for (size_t old = 0; old < prior->captures.size(); ++old)
+            // Frozen scene and lighting configuration are unchanged here.
+            // IDs and projection bounds do not affect world-space capture rays;
+            // exact origin bits do, including signed zero in the shader seed.
+            if (sameCaptureRays(prior->captures[old], capture)) {
               capture.radiance = prior->captures[old].radiance;
               oldIndex = int32_t(old);
               break;

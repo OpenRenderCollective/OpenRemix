@@ -2264,7 +2264,20 @@ namespace {
               const auto firstEdit = waitForEdit();
               require(firstEdit[centre] > 40 && target.forward->statistics().authoredReflections.rays == 6*16*16,
                       "Authored capture publishes visible viewmodel reflections through the production path");
+              authored[0].id = 171;
+              ++request.revision;
+              r.setReflectionVolumes(&request);
+              waitForEdit();
+              require(target.forward->statistics().authoredReflections.reused == 1 &&
+                          target.forward->statistics().authoredReflections.rays == 0,
+                      "Replacing an authoring ID preserves identical world-space capture lighting");
               authored[1] = authored[0]; authored[1].id = 72;
+              request.volumeCount = 2; ++request.revision;
+              r.setReflectionVolumes(&request);
+              waitForEdit();
+              require(target.forward->statistics().authoredReflections.reused == 2 &&
+                          target.forward->statistics().authoredReflections.rays == 0,
+                      "A new volume at a published capture origin reuses its complete mip chain");
               authored[1].capture[0] += .01f;
               request.volumeCount = 2; ++request.revision;
               r.setReflectionVolumes(&request);

@@ -777,7 +777,10 @@ show no large steady-state GPU regression on Construct or Crossfire. Construct's
 is below baseline repeat variation; Crossfire improves in the sampled view. Cached versus fresh
 lighting and fixed cameras limit attribution and do not establish gameplay performance acceptance.
 Moving-view, room-transition and wall-leakage acceptance remain open beyond the testing checkpoint; shared
-texture storage and the separate authored-edit scheduling policy are further optimization opportunities.
+texture storage and within-edit query sharing for newly authored captures are further optimization
+opportunities. Authored edits now reuse previously published radiance by exact capture-ray identity,
+including when a volume gets a new ID or another volume uses that same origin. Signed-zero origins
+remain distinct; changed frozen scenes or lighting configuration invalidate the authored state.
 The adapter replay now supports bounded, frame-indexed camera paths with numbered images and a
 position trace, separate from fixed-view timing. Installed-baseline and development runs complete a
 short main-hall path with unchanged active bakes. Use this to inspect actual boundary crossings;
