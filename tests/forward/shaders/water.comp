@@ -26,7 +26,10 @@ void main() {
     vec3 extinction = -log(clamp(q.tint.rgb, vec3(1e-6), vec3(1))) / q.parameters.y;
     DielectricSheet sheet = dielectricSheet(extinction, q.normal.w,
         abs(dot(normalize(q.incident.xyz), normalize(q.normal.xyz))), q.parameters.z, q.parameters.x);
-    results[index] = Result(vec4(0), vec4(sheet.reflection, 0), vec4(sheet.transmission, 0), vec4(0));
+    DielectricSheetPath path = dielectricSheetPath(q.incident.xyz, q.normal.xyz, q.normal.w,
+        q.parameters.z, q.parameters.x);
+    results[index] = Result(vec4(path.exitOffset, path.totalInternal ? 1 : 0),
+        vec4(sheet.reflection, 0), vec4(sheet.transmission, 0), vec4(path.reflected, 0));
     return;
   }
   bool inside = q.parameters.z > 0;

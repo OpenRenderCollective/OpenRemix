@@ -29,6 +29,10 @@ if get_option('gpu_tests')
       args : [meson.current_build_dir() / 'auto-exposure-readback', 'auto-exposure'], timeout : 120)
   test('Forward+ measured water HDR, MSAA and frame-slot readback', raster_test,
     args : [meson.current_build_dir() / 'water-readback', 'water'], timeout : 120)
+  test('Forward+ finite sheet absorption, opaque depth and MSAA readback', raster_test,
+    args : [meson.current_build_dir() / 'sheet-readback', 'sheet'], timeout : 120)
+  test('Forward+ finite sheet environment reflection and baked visibility', raster_test,
+    args : [meson.current_build_dir() / 'sheet-environment-readback', 'sheet-environment'], timeout : 120)
   test('Forward+ water environment reflection and baked visibility', raster_test,
     args : [meson.current_build_dir() / 'water-environment-readback', 'water-environment'], timeout : 120)
   test('Forward+ automatic exposure with water HDR composition', raster_test,

@@ -11,7 +11,7 @@ using namespace remix;
 using namespace remix::forward;
 using remix::forward::test::require;
 namespace {
-  constexpr uint32_t queryCount = 13;
+  constexpr uint32_t queryCount = 17;
   struct Query {
     Vec4 origin{0, 0, .25f, 1}, incident{0, 0, 1, .005f}, normal{0, 0, -1, 0};
     Vec4 parameters{1, 1, 0, 1}, tint{.5f, .25f, 1, .00001f};
@@ -174,6 +174,13 @@ int main() try {
     queries[11].incident = {std::sqrt(.96f), 0, .2f, 0};
     queries[12].incident = {std::sqrt(.75f), 0, .5f, 0};
     queries[12].parameters = {1, 1, 1.5f, 1};
+    queries[13].incident = {.6f, 0, .8f, 0};
+    queries[14].incident = {.6f, 0, -.8f, 0};
+    queries[15].parameters[0] = 1;
+    queries[15].incident = {.6f, 0, .8f, 0};
+    queries[16].parameters[0] = 1;
+    queries[16].normal[3] = 3e38f;
+    queries[16].incident = {std::sqrt(.96f), 0, .2f, 0};
     for (uint32_t samples : {1u, 2u, 4u}) {
       const auto values = gpu.run(fixture, queries, samples);
       require(values[0].screen[3] == 1 && std::abs(values[0].screen[2] - .5f) < .0001f,
@@ -207,6 +214,22 @@ int main() try {
                     values[12].reflected[c] == 1 && values[12].through[c] == 0,
                 "Tinted sheet channels absorb independently and total internal reflection remains lossless");
       }
+      const float sideways = .25f * .4f / std::sqrt(.84f);
+      require(std::abs(values[13].refracted[0] - sideways) < 1e-6f &&
+                  std::abs(values[14].refracted[0] - sideways) < 1e-6f &&
+                  std::abs(values[13].refracted[2] - .25f) < 1e-6f &&
+                  std::abs(values[14].refracted[2] + .25f) < 1e-6f,
+              "Parallel sheet refraction shifts the exit point symmetrically from either side");
+      require(std::abs(values[15].refracted[0] - .1875f) < 1e-6f &&
+                  std::abs(values[15].refracted[2] - .25f) < 1e-6f &&
+                  values[12].refracted[3] == 1 && values[12].refracted[0] == 0,
+              "Index-matched sheets preserve a straight path and total internal reflection has no exit");
+      std::printf("Extreme sheet: exit %.9g %.9g %.9g, transmission %.9g, reflection %.9g\n",
+          values[16].refracted[0], values[16].refracted[1], values[16].refracted[2],
+          values[16].through[0], values[16].reflected[0]);
+      require(values[16].refracted[0] > 0 && values[16].refracted[2] > 0 &&
+                  values[16].through[0] == 1 && values[16].reflected[0] == 0,
+              "Extreme clear sheets retain finite exit coordinates and do not invent absorption");
       for (uint32_t i : {4u, 5u, 6u})
         require(values[i].screen[3] == 0,
                 "Foreground, off-screen and exhausted rays cannot invent refraction hits");

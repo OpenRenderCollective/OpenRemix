@@ -3730,6 +3730,12 @@ namespace {
     const auto waterRayEmitter = makeQuad(9019, makeMaterial(9018, .5f, 0, 4), wallPositions, wallNormal);
     const auto waterRayRejected = makeQuad(9021, makeMaterial(9020, .5f, 0, 4, true), wallPositions, wallNormal);
     const auto waterRayBlack = makeQuad(9023, makeMaterial(9022, .5f, 0, 0), wallPositions, wallNormal);
+    waterOptics.transmittanceColor = {1, 1, 1};
+    waterOptics.thinWallThickness_hasvalue = 1;
+    waterOptics.thinWallThickness_value = .1f;
+    waterInfo.hash = 9024;
+    r.createMaterial(waterInfo, waterMaterial);
+    const auto sheetFloor = makeQuad(9025, waterMaterial, floorPositions, floorNormal);
     float waterRoughness = .04f;
     bool composeWater = false;
     remixapi_MeshHandle reflectionBackdrop = nullptr;
@@ -3761,7 +3767,8 @@ namespace {
       r.drawInstance(reflectionReceiver);
       // Exercise the resolved material, where USD replacements can author
       // roughness beyond the legacy translucent API's fixed smooth value.
-      if (receiver == waterFloor) r.draws().back().material->roughness = waterRoughness;
+      if (receiver == waterFloor || receiver == sheetFloor)
+        r.draws().back().material->roughness = waterRoughness;
       if (composeWater) {
         auto liquid = instance(occludedWater, .01f);
         liquid.transform.matrix[0][0] = liquid.transform.matrix[1][1] = .5f;
@@ -3994,6 +4001,10 @@ namespace {
         std::printf("Hardware water reflection %ux: %zu hidden-emitter pixels\n", samples, waterRayPixels(reflected));
         require(waterRayPixels(reflected) > 12,
                 "Water hardware continuation reflects hidden current geometry with SSR disabled");
+        require(waterRayPixels(drawScene(false, true, false, true, 0, sheetFloor, waterRayEmitter)) > 12,
+                "Finite sheets share hardware reflection of hidden current geometry with SSR disabled");
+        require(waterRayPixels(drawScene(false, true, false, true, 0, sheetFloor, waterRayRejected)) < 3,
+                "Finite-sheet hardware reflections reject alpha-tested candidates");
         require(waterRayPixels(drawScene(false, true, false, true, 0, waterFloor, waterRayRejected)) < 3,
                 "Water hardware traversal rejects alpha-tested candidates");
         options.ssr = true;
@@ -4207,6 +4218,20 @@ namespace {
                       waterHits(waterReflection));
           require(waterHits(waterReflection) > 12,
                   "A measured water surface reflects a current opaque emitter through shared SSR");
+          options.ssrSteps = 128;
+          target.forward->updateLighting(options);
+          const auto sheetReflection = drawScene(false, true, false, false, 0, sheetFloor);
+          options.ssrSteps = 0;
+          target.forward->updateLighting(options);
+          const auto sheetWithout = drawScene(false, true, false, false, 0, sheetFloor);
+          size_t sheetHits = 0;
+          for (uint32_t y = target.extent.height / 2; y < target.extent.height; ++y)
+            for (uint32_t x = 0; x < target.extent.width; ++x) {
+              const auto at = (y * target.extent.width + x) * 4;
+              sheetHits += sheetReflection[at] > sheetWithout[at] + 8 && sheetReflection[at + 1] < 8;
+            }
+          require(sheetHits > 12,
+                  "A finite dielectric sheet reflects current opaque geometry through shared SSR");
           options.ssrSteps = 128;
           options.ssrRoughness = .03f;
           target.forward->updateLighting(options);
@@ -4541,6 +4566,7 @@ namespace {
     std::puts(
         "Raster GPU readback: depth, culling, textures, cutouts, blending, skinning, UI and lifetime passed");
   }
+#include "forward_sheet.h"
   void waterTests() {
     for (uint32_t samples : {1u, 2u, 4u}) {
       Target target;
@@ -4740,7 +4766,7 @@ namespace {
                   "A zero-depth shoreline stays transparent with mixed foreground/background MSAA samples");
     }
   }
-  void waterEnvironmentTests(bool automatic = false) {
+  void waterEnvironmentTests(bool automatic = false, bool sheet = false) {
     for (uint32_t samples : {1u, 2u, 4u}) {
       Target target(64, 64, true); // The visibility bake requires hardware ray queries.
       auto &r = target.raster;
@@ -4759,6 +4785,9 @@ namespace {
       optical.transmittanceMeasurementDistance = 1;
       optical.refractiveIndex = 1.5f;
       optical.transmittanceColor = {1, 1, 1};
+      optical.thinWallThickness_hasvalue = sheet;
+      optical.thinWallThickness_value = sheet ? .25f : 0;
+      const float reflectance = sheet ? 1.f / 13 : .04f;
       remixapi_MaterialInfo info{};
       info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
       info.pNext = &optical;
@@ -4782,7 +4811,9 @@ namespace {
         r.setupCamera(view);
         if (environmentLight) r.drawLight(environmentLight);
         r.drawInstance(instance(reflectiveLiquid, -.2f));
-        r.drawInstance(instance(backdrop, .6f));
+        // Keep the black backdrop inside the identity projection's clip
+        // volume, isolating reflection from transmission of the visible sky.
+        r.drawInstance(instance(backdrop, .3f));
         return target.render();
       };
       const auto unknown = reflectSky();
@@ -4810,7 +4841,7 @@ namespace {
       }
       require(target.forward->statistics().baking.active, "Water sky fallback waits for published visibility");
       const auto reflected = reflectSky();
-      const auto reflectedDisplay = prismDisplay({.04f * environment[0], .04f * environment[1], .04f * environment[2]});
+      const auto reflectedDisplay = prismDisplay({reflectance * environment[0], reflectance * environment[1], reflectance * environment[2]});
       for (uint32_t c = 0; c < 3; ++c) {
         std::printf("Water sky %ux channel %u: %u expected %.2f\n", samples, c, unsigned(reflected[centre+c]),
                     reflectedDisplay[c] * 255);
@@ -4827,7 +4858,7 @@ namespace {
       domeLight.radiance = {6, 2, 1};
       r.createLight(domeLight, environmentLight);
       const auto authored = reflectSky();
-      const auto authoredDisplay = prismDisplay({.04f * 6, .04f * 2, .04f});
+      const auto authoredDisplay = prismDisplay({reflectance * 6, reflectance * 2, reflectance});
       for (uint32_t c = 0; c < 3; ++c)
         require(std::abs(float(authored[centre+c]) - authoredDisplay[c] * 255) < 3,
                 "An authored dome replaces uniform water environment instead of adding it twice");
@@ -4850,6 +4881,8 @@ int main(int argc, char **argv) {
     surfaceLightmapTests();
   }
   else if (argc>2 && std::strcmp(argv[2],"water")==0) waterTests();
+  else if (argc>2 && std::strcmp(argv[2],"sheet")==0) sheetTests();
+  else if (argc>2 && std::strcmp(argv[2],"sheet-environment")==0) waterEnvironmentTests(false, true);
   else if (argc>2 && std::strcmp(argv[2],"water-environment")==0) waterEnvironmentTests();
   else if (argc>2 && std::strcmp(argv[2],"water-exposure")==0) waterEnvironmentTests(true);
   else if (argc>2 && std::strcmp(argv[2],"water-shoreline")==0) waterShorelineTests(directory);

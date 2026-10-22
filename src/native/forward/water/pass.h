@@ -11,7 +11,7 @@ namespace remix::forward::water {
     std::array<uint32_t, 4> reflectionConfig{};
   };
   static_assert(sizeof(Parameters) == 240);
-  // Owns only the late water pass and independent sampled snapshots. The
+  // Owns the late body/sheet refraction pass and independent sampled snapshots. The
   // renderer keeps its existing MSAA colour/depth attachments and draw owners.
   class Pass {
   public:

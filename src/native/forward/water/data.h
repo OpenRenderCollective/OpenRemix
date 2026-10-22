@@ -2,12 +2,15 @@
 #include "forward/bindings.h"
 
 namespace remix::forward::water {
-  // A measured, depth-writing body. Unsupported blend/mask/overlay operations
-  // remain owned by compatibility rasterization.
+  // Measured, depth-writing bodies and finite sheets. Unsupported blend,
+  // mask and overlay operations remain owned by compatibility rasterization.
   bool accepts(const scene::Draw &draw);
   struct MaterialData {
-    Vec4 transmittance{}; // RGB transmission at the measurement distance in w
-    Vec4 optical{};       // refractive index, animation seconds, normal layer count, reserved
+    // Body: RGB transmission / measurement distance.
+    // Sheet: normal optical depth / thickness-to-measurement ratio.
+    Vec4 transmittance{};
+    // IOR, animation seconds, normal layer count, thickness (zero for bodies).
+    Vec4 optical{};
     Vec4 scroll01{}, scroll2{};
   };
   static_assert(sizeof(MaterialData) == 64);

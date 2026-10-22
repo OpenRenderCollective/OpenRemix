@@ -4,7 +4,7 @@
 #include <cmath>
 
 namespace remix::scene {
-  // A stable homogeneous body with numerically bounded optical parameters.
+  // Stable measured bodies or sheets with numerically bounded optical parameters.
   // Kept CPU-only and shared by material creation, capture and ray packing.
   inline bool validSmoothBoundary(const Material &material) {
     return material.transmission && std::isfinite(material.refractiveIndex) &&

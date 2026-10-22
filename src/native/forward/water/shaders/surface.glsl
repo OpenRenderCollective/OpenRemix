@@ -48,8 +48,15 @@ void main() {
   float roughness = (m.maps.x & 1u) != 0u ? mapValue(texture(roughnessMap, uv), m.remap[0], m.maps.z) : m.pbr.x;
   roughness = clamp(sqrt(roughness * roughness + min(.25, dot(dFdx(n), dFdx(n)) + dot(dFdy(n), dFdy(n)))), .04, 1);
   float index = water.optical.x;
+  bool thinSheet = water.optical.w > 0;
   WaterBoundary boundary = waterBoundary(-v, n, index, waterFrame.settings.y > .5);
   vec3 p = (frame.view * vec4(worldPosition, 1)).xyz;
+  float depth = abs(p.z);
+  if (thinSheet) {
+    DielectricSheetPath path = dielectricSheetPath(-v, n, water.optical.w, 1, index);
+    boundary = WaterBoundary(-v, path.reflected, 0, path.totalInternal);
+    p += mat3(frame.view) * path.exitOffset;
+  }
   ivec2 extent = ivec2(waterFrame.target.xy);
   WaterScreenHit behind = WaterScreenHit(vec2(0), 0, false);
   if (!boundary.totalInternal)
@@ -71,17 +78,35 @@ void main() {
   if (behind.valid) {
     vec4 sampleColor = textureLod(savedHdr, behind.uv, 0);
     background = sampleColor.rgb / max(sampleColor.a, 1e-6);
+  } else if (thinSheet && !boundary.totalInternal) {
+    // A parallel pane leaves a distant sky direction unchanged. Unlike a
+    // body, it has a known finite absorption distance even without opaque depth.
+    ivec2 pixel = clamp(ivec2(gl_FragCoord.xy), ivec2(0), extent - 1);
+    // The visible sky is composed later, so it is absent from saved opaque HDR.
+    // Uniform camera environment lighting alone does not enable a background.
+    if (waterOpaqueDepth(pixel) >= 1 && waterSky.radiance.w != 0)
+      background = waterSkyRadiance(-v);
   }
-  float surfaceWeight;
-  vec3 through = waterThrough(boundary, water.transmittance.rgb, water.transmittance.w,
-                              behind.distance, behind.valid, waterFrame.settings.y > .5, surfaceWeight);
+  float surfaceWeight = 0;
+  vec3 through;
   float f0 = pow((index - 1) / (index + 1), 2);
+  vec3 reflectedWeight = vec3(boundary.reflectance), specularF0 = vec3(f0);
+  if (thinSheet) {
+    vec3 tintDepth = -log(clamp(texture(albedoMap, uv).rgb, vec3(1e-6), vec3(1))) * water.transmittance.w;
+    vec3 depth = min(water.transmittance.rgb + tintDepth, vec3(80));
+    DielectricSheet sheet = dielectricSheet(depth, 1, abs(dot(n, v)), 1, index);
+    through = sheet.transmission;
+    reflectedWeight = sheet.reflection;
+    specularF0 = dielectricSheet(depth, 1, 1, 1, index).reflection;
+    // Absorption is lost energy, not diffuse body lighting.
+  } else
+    through = waterThrough(boundary, water.transmittance.rgb, water.transmittance.w,
+        behind.distance, behind.valid, waterFrame.settings.y > .5, surfaceWeight);
   vec3 irradiance, diffuse = surface.rgb * frame.ambientExposure.rgb;
   bool aggregateReceiver = bakedIrradiance(worldPosition, n, irradiance);
   if (aggregateReceiver) diffuse = surface.rgb * irradiance / Pi;
-  float depth = abs(p.z);
   vec3 l = -frame.sunDirection.xyz;
-  BrdfLobes sun = brdfLobes(surface.rgb, roughness, 0, n, v, l, vec3(f0));
+  BrdfLobes sun = brdfLobes(surface.rgb, roughness, 0, n, v, l, specularF0);
   float visibility = sunShadowVisibility(worldPosition, depth, true);
   diffuse += sun.diffuse * max(dot(n, l), 0) * frame.sunRadiance.rgb * visibility;
   vec3 specular = sun.specular * frame.sunRadiance.rgb * visibility;
@@ -91,7 +116,7 @@ void main() {
   for (uint i = 0u; i < lightCount; ++i) {
     uint light = linear ? i : clusters[base + ClusterHeaderWords + i];
     BrdfLobes response = localLightResponse(light, worldPosition, n, v, surface.rgb, roughness, 0,
-                                           vec4(-1), vec4(0), vec3(f0), normalize(geometric), aggregateReceiver);
+                                           vec4(-1), vec4(0), specularF0, normalize(geometric), aggregateReceiver);
     diffuse += response.diffuse;
     specular += response.specular;
   }
@@ -107,9 +132,9 @@ void main() {
   screenHit = waterHardwareReflection(worldPosition, n, boundary.reflected, roughness, screenHit);
 #endif
   reflected = screenHit.rgb + (1 - screenHit.a) * reflected;
-  // Absorbed energy becomes the lit body colour, as in the primary path-traced
-  // sheet. The interface's reflected energy uses its IOR and filtered probes.
+  // Bodies retain lit absorption colour; finite sheets lose absorbed energy.
+  // Both use the shared filtered reflection path and their optical weights.
   vec3 color = through * background + max(0, surfaceWeight - boundary.reflectance) * diffuse +
-               boundary.reflectance * reflected + specular + surfaceWeight * emitted;
+               reflectedWeight * reflected + specular + (thinSheet ? 1 : surfaceWeight) * emitted;
   result = vec4(clamp(color, vec3(0), vec3(65000)), 1);
 }

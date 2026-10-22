@@ -210,10 +210,13 @@ retained geometry; unused inventory and engine-owned sky do not block it, but mi
 materials do. `d1_trainstation_02` remains blocked by its required static-prop `Refract` material
 `models/props_combine/com_shield001a`, which has normal/tint maps, animation proxies and no base texture.
 Native measured thin-sheet bake transport is implemented and tested, including textured absorption,
-both interface directions and containing-volume classification through panes. Live sheet refraction,
-path-tracer parity and adapter integration remain pending; this is not deployed and Trainstation is
-still blocked. Define stable mean optical tint explicitly because tint can share animated bump UVs;
-Source's artistic refraction amount is not a physical IOR. Do not bypass the required material.
+both interface directions and containing-volume classification through panes. Native live sheets
+now use the late MSAA refraction pass, with textured absorption, an exit-point offset, visible-sky
+transmission and shared reflections. The primary sheet assumes external air; camera-media/nested
+integration, path-tracer primary parity and adapter integration remain pending. This is not deployed
+and Trainstation is still blocked. Define stable mean optical tint explicitly because tint can share
+animated bump UVs. Source's artistic refraction amount is not a physical IOR. Do not bypass the
+required material.
 The installed combined addon supplies chapter BSPs including `hls00amrl` and `hls05amrl`; exact
 `gm_fork` availability remains pending, and the installed RP Fork variant is not a substitute. `bsp-replay` supports repeatable default-off
 `replay.probeReceiver = X Y Z radius` matte dynamic spheres for receiver comparisons.

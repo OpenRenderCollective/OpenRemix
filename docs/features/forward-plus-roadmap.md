@@ -262,10 +262,13 @@ Trainstation acceptance gate remains open: its retained `models/props_combine/co
 Source `Refract` with no base texture, normal/tint maps and animation proxies. Native baking now
 supports explicitly measured finite dielectric sheets: two-interface reflection/transmission,
 textured absorption and containing-volume classification. CPU ownership/validation and hardware
-transport tests cover both sides, distance independence and sheets inside a volume. Live sheet
-refraction, path-tracer parity and adapter material/proxy integration remain pending; this foundation
-is not deployed and does not unblock Trainstation yet. Source's artistic refraction amount is not a
-physical IOR. Define a stable optical tint policy explicitly: the tint sampler can share animated
+transport tests cover both sides, distance independence and sheets inside a volume. Native live
+sheet refraction now shares the late MSAA pass, with finite thickness, textured absorption, an exit
+offset, visible-sky transmission and shared SSR/cubemap/hardware reflections. It assumes air outside
+the primary sheet; camera-media/nested-layer integration, path-tracer primary parity and adapter
+material/proxy integration remain pending. This is not deployed and does not unblock Trainstation
+yet. Source's artistic refraction amount is not a physical IOR. Define a stable optical tint policy
+explicitly: the tint sampler can share animated
 bump UVs. Do not freeze an arbitrary animation frame, skip the dependency or mark a placeholder ready.
 Check complete first-load sky capture and radiance separately once this gate opens.
 

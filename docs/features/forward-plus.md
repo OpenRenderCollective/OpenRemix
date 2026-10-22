@@ -64,7 +64,8 @@ records and material descriptors are prepared only when a static sun cascade or
 local-light map needs rebuilding. `.shadow-preparation.bin` records that frame's
 prepared frozen draw count as one little-endian `uint32_t`.
 General transparency, viewmodels, decals and unsupported masking operations stay in compatibility
-rasterization. Measured transmission bodies use the late Forward+ water pass by default.
+rasterization. Measured transmission bodies and finite sheets use the late Forward+ refraction pass
+by default; this pass is currently owned by `water/`.
 The Rendering panel's Water refraction and reflections control, or `rtx.native.forward.water = 0`,
 restores compatibility rendering. An explicitly saved zero remains respected.
 Pipeline preparation runs with the renderer's worker preparation; independent refraction images are
@@ -90,6 +91,14 @@ Source water normals retain their authored scroll rates. Camera-medium absorptio
 tone mapping. Water shares the opaque hierarchical SSR tracer and rough colour-pyramid filtering;
 optional hardware rays fill unresolved water reflections. Existing opaque reflections are included once
 in the transmitted background. Nested transparent layers are unsupported.
+Positive authored thin-wall thickness selects a parallel sheet instead of a containing body. The
+sheet uses exact two-interface Fresnel with internal reflections, measured RGB/texture absorption
+and a refracted exit-point offset. Its outgoing transmitted direction is parallel to the incident
+direction. Absorbed energy does not become diffuse body light; tint is independent of background
+distance. PBR roughness/normals and the shared SSR/cubemap/hardware reflection path remain available.
+The primary sheet assumes air outside both interfaces. Nested sheets, sheets inside camera media
+and path-tracer primary-sheet parity still need integration; do not enable the Source `Refract`
+adapter mapping until its stable optical tint and animation policy is explicit.
 For standard 2x/4x sample locations, the depth snapshot reconstructs pixel-centre depth only when
 the pixel and four neighbouring sample sets agree on one plane. This avoids a nearest-sample bias
 making a shallow shoreline look like a missing/deep layer. Discontinuities, missing coverage,
