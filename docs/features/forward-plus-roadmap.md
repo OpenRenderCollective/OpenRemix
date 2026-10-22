@@ -246,6 +246,9 @@ alone. The additions below are planned coverage, not completed test results. Ver
 BSP, content mounts and required addon assets before accepting a run; a missing map or fallback load
 does not count.
 
+Exclude alt-tabbed or unfocused intervals from accepted FPS comparisons; the user reported tabbing
+out during an earlier run. Repeat any affected timing window with the game focused.
+
 | Map or map family | Coverage to exercise |
 | --- | --- |
 | `gm_construct` | Skylit main hall, white-room controllable lights, terrain, prop probe lighting, cubemap transitions and mixed shadows. |

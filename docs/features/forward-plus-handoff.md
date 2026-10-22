@@ -180,7 +180,13 @@ under the game's `garrysmod/data/openremix/cubemaps` directory unless
 `OPENREMIX_PROXY_CUBEMAP_BOUNDS` overrides its path. Removing a sidecar restores automatic placement;
 an invalid edit preserves the previous valid override. Do not delete authored data merely because it
 is empty: use an isolated nonexistent override path for a diagnostic session. The test install was
-found to contain an empty Construct sidecar; it is preserved pending an explicit deployment decision.
+found to contain an empty Construct sidecar. On 2026-10-22 that override was renamed to
+`gm_construct.cubemaps.bin.disabled-empty-20261022`, preserving its contents while restoring
+automatic placement on the next map load. Live visual confirmation remains pending.
+The user subsequently authored two Construct volumes, restoring a nonempty active override.
+Their JSON is preserved in the adapter's `tools/probe_editor/references/gm_construct.json` as
+a partial main-hall fitting reference. Preserve the live authoring document and runtime sidecar;
+these two volumes do not establish whole-map reflection coverage.
 
 Keep GPU frame, transport and startup timing separate. Live profiles must verify the screenshot,
 active bake identity, effective reflection options and resolution before interpreting frame costs.
