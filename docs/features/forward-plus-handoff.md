@@ -120,6 +120,11 @@ overlap, so a child-range increase does not by itself establish extra work in th
 Use `localShadowDraws` in the requested frame report to compare actual selected emitter identities
 and per-face submissions. Those counts require no query instrumentation or GPU readback.
 Keep the reported slow Crossfire gameplay case open until it is reproduced under its actual conditions.
+The adapter's optional frame CSV now appends host/process foreground observations and native
+window focus, minimized and drawable state. Exclude unfocused intervals from FPS acceptance;
+failed window-state queries are unknown, not focused. Forced termination can truncate the final
+record. Completed-bake and weapon/prop stability can still be inspected in an unfocused session,
+but those checks do not establish foreground gameplay performance.
 Use the roadmap's [map acceptance matrix](forward-plus-roadmap.md#map-acceptance-matrix), including
 `gm_fork`, `d1_trainstation_02` and installed large combined Half-Life addon maps. These additions
 are pending coverage. Inventory addon BSP names and verify actual loaded content before recording

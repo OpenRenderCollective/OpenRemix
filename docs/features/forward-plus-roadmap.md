@@ -408,6 +408,14 @@ engine agnostic. Preserve per-light specular visibility, moving-caster correctio
 cache restoration and unknown-coverage fallback. Use exported response counts to distinguish
 this remaining work from selected highlights; fewer clustered lights alone does not prove a
 frame-time improvement.
+
+Optimize cluster construction as well as receiver shading. In clustered baked-tail mode,
+`cluster.comp` still tests the full uploaded light list for every depth-sliced tile; selected
+highlight counts do not describe that work. Evaluate conservative spatial broad phases or reuse
+with exact input invalidation, while preserving unknown-coverage fallback and per-receiver list
+overflow. Any reuse must follow actual GPU submission/resource lifetime, including abandoned
+recordings; recording commands alone does not prove their output exists. Compare moving-camera
+cases as well as stationary views and retain whole-frame timing alongside nested pass ranges.
 The CPU `groupStyledDirect` compositor now reuses completed per-light surface and probe
 SH without launching style-specific rays or allocating dense all-map RGB workspaces.
 It declines complete style groups on missing coverage or storage exhaustion. Signed
