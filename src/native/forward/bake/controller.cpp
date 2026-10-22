@@ -1043,7 +1043,6 @@ namespace remix::forward::bake {
                                     [](const auto &p) { return p.irradiance[7][3] > .5f; }))
       volume->sun = m_job->source->sun;
     volume->hash = m_hash;
-    volume->reflectionHeader = m_job->specular.header;
     if (!m_job->captures.empty()) {
       volume->content.captureInputs =
           scene::fastHash(m_job->captureWork.rays().data(), m_job->captureWork.rays().size() * sizeof(Point)) | 1;
@@ -1205,6 +1204,7 @@ namespace remix::forward::bake {
                          Buffer::Memory::Device);
     volume->specular = std::move(m_job->reflectionImage);
     if (!volume->specular) throw std::logic_error("Missing prepared reflection image");
+    volume->reflectionHeader = volume->specular->header();
     const VkBufferCopy copy{0, 0, bytes};
     vkCmdCopyBuffer(command, volume->staging->handle, volume->data->handle, 1, &copy);
     volume->specular->recordUpload(command);

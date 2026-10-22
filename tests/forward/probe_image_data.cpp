@@ -65,6 +65,33 @@ void testProbeImageData() {
         }
     }
   }
+  {
+    auto data = fixture(3, 8);
+    data.header.probes[0].minimum[3] = -1;
+    data.header.probes[1].minimum[3] = data.header.probes[2].minimum[3] = 7;
+    const auto original = p::serialize(data);
+    const auto image = p::prepareImage(data);
+    const uint32_t order[]{1, 2, 0};
+    require(p::serialize(data) == original, "Priority upload sorting preserves canonical cache and reuse data");
+    for (uint32_t layer = 0; layer < 3; ++layer) {
+      require(std::memcmp(&image.header.probes[layer], &data.header.probes[order[layer]], sizeof(p::Record)) == 0,
+              "Projection metadata sorts with image layers and retains equal-priority order");
+      for (uint32_t level = 0; level < image.levels.size(); ++level) {
+        const auto &mip = image.levels[level];
+        const uint32_t values = 6 * mip.faceSize * mip.faceSize;
+        for (uint32_t pixel = 0; pixel < values; ++pixel) {
+          const auto &source = data.texels[size_t(order[layer])*data.header.parameters[3] +
+                                           p::levelOffset(8, level) + pixel];
+          const size_t offset = mip.byteOffset / 2 + (size_t(layer)*values + pixel)*4;
+          for (uint32_t c = 0; c < 3; ++c)
+            require(image.pixels[offset+c] == remix::forward::half::encode(source[c]),
+                    "Priority sorting moves every face and roughness mip with its projection record");
+        }
+      }
+    }
+    data.header.probes[1].minimum[3] = std::numeric_limits<float>::quiet_NaN();
+    invalid([&] { p::prepareImage(data); });
+  }
   auto bad = fixture(1, 8);
   bad.texels.pop_back();
   invalid([&] { p::prepareImage(bad); });

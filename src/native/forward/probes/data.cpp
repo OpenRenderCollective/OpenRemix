@@ -1,4 +1,5 @@
 #include "forward/probes/data.h"
+#include "forward/probes/priority_order.h"
 #include "platform/workers.h"
 #include <algorithm>
 #include <bit>
@@ -13,6 +14,19 @@ namespace remix::forward::probes {
     constexpr float pi = std::numbers::pi_v<float>;
     bool finite(Vec3 v) {
       return std::all_of(v.begin(), v.end(), [](float x) { return std::isfinite(x); });
+    }
+    float priorityCoverage(const Record &record, Vec3 local) {
+      const Vec3 inverseWidth{record.maximum[3], record.influenceMinimum[3], record.influenceMaximum[3]};
+      float coverage = 1;
+      for (uint32_t c = 0; c < 3; ++c) {
+        if (local[c] < record.influenceMinimum[c] || local[c] > record.influenceMaximum[c]) return 0;
+        const float half = (record.influenceMaximum[c] - record.influenceMinimum[c]) * .5f;
+        const float distance = std::min(local[c] - record.influenceMinimum[c], record.influenceMaximum[c] - local[c]);
+        const float inverse = inverseWidth[c] > 0 ? inverseWidth[c] : 1 / (half * .2f);
+        const float t = std::clamp(distance * inverse, 0.f, 1.f);
+        coverage *= std::max(t * t * (3 - 2 * t), 1e-12f);
+      }
+      return coverage;
     }
     void validate(const Capture &capture) {
       if (!validProjectionSpace(capture.worldToLocal) ||
@@ -348,10 +362,36 @@ namespace remix::forward::probes {
     const auto &parameters = data.header.parameters;
     const float lod = std::clamp(roughness, 0.f, 1.f) * (parameters[2] - 1);
     const uint32_t low = uint32_t(lod), high = std::min(low + 1, parameters[2] - 1);
-    Vec3 result{};
-    float total = 0;
-    float priority = -std::numeric_limits<float>::infinity();
-    for (uint32_t probe = 0; probe < parameters[0]; ++probe) {
+    const auto order = priorityOrder(data.header);
+    const bool layered = data.header.probes[order[0]].minimum[3] !=
+                         data.header.probes[order[parameters[0] - 1]].minimum[3];
+    float maximumCoverage = 1;
+    // The strongest tier becomes opaque and ends compositing, so one global
+    // maximum serves every visited tier. Ratios cancel shared floor/wall bands.
+    if (layered) {
+      maximumCoverage = 0;
+      for (uint32_t i = 0; i < parameters[0]; ++i) {
+        const auto &record = data.header.probes[i];
+        maximumCoverage = std::max(maximumCoverage,
+            priorityCoverage(record, projectionPoint(record.worldToLocal, position)));
+      }
+      if (!maximumCoverage) return {};
+    }
+    Vec3 result{}, group{};
+    float total = 0, groupCoverage = 0, remaining = 1;
+    bool found = false;
+    float priority = std::numeric_limits<float>::infinity();
+    auto finishGroup = [&] {
+      if (!total) return;
+      const float opacity = layered ? std::clamp(groupCoverage / maximumCoverage, 0.f, 1.f) : 1;
+      for (uint32_t c = 0; c < 3; ++c) result[c] += (group[c] / total) * opacity * remaining;
+      remaining *= 1 - opacity;
+      found = true;
+      group = {};
+      total = groupCoverage = 0;
+    };
+    for (uint32_t index = 0; index < parameters[0]; ++index) {
+      const uint32_t probe = order[index];
       const auto &record = data.header.probes[probe];
       const auto localPosition = projectionPoint(record.worldToLocal, position);
       const auto localRay = projectionDirection(record.worldToLocal, reflected);
@@ -379,12 +419,11 @@ namespace remix::forward::probes {
           exitDistance = std::min(exitDistance, (plane - localPosition[c]) / localRay[c]);
         }
       }
-      if (!inside || record.minimum[3] < priority)
-        continue;
-      if (record.minimum[3] > priority) {
+      if (!inside) continue;
+      if (record.minimum[3] != priority) {
+        finishGroup();
+        if (!remaining) break;
         priority = record.minimum[3];
-        result = {};
-        total = 0;
       }
       Vec3 corrected;
       for (uint32_t c = 0; c < 3; ++c)
@@ -411,14 +450,12 @@ namespace remix::forward::probes {
       const float weight = spatialWeight * edge;
       for (uint32_t c = 0; c < 3; ++c) {
         const float radiance = std::lerp(a[c], b[c], lod - low);
-        result[c] += weight * radiance;
+        group[c] += weight * radiance;
       }
       total += weight;
+      if (layered) groupCoverage = std::max(groupCoverage, priorityCoverage(record, localPosition));
     }
-    if (!total)
-      return {};
-    for (auto &channel : result)
-      channel /= total;
-    return result;
+    finishGroup();
+    return found ? std::optional<Vec3>{result} : std::nullopt;
   }
 } // namespace remix::forward::probes

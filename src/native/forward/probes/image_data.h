@@ -16,6 +16,7 @@ namespace remix::forward::probes {
     std::vector<uint16_t> pixels;
   };
   // Repack canonical CPU/cache data for image upload without changing it.
-  // Projection records remain independent of the image and retain their order.
+  // Upload records and image layers are sorted together by descending priority.
+  // The canonical input remains unchanged, including equal-priority ordering.
   ImageData prepareImage(const Data &source, std::stop_token cancelled = {});
 }

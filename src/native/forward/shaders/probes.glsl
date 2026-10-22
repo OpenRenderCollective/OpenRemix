@@ -54,6 +54,26 @@ vec3 probeMip(uint probe, uint level, vec3 ray) {
 // Candidates may come from screen tiles or a small object's receiver bounds.
 // Unmasked users, including water, keep the contiguous walk. Both paths
 // visit probes in the same header order.
+vec3 probeFeather(ReflectionProbe record, vec3 localPosition) {
+  vec3 halfSize = (record.influenceMaximum.xyz - record.influenceMinimum.xyz) * .5;
+  vec3 inverseWidth = vec3(record.maximum.w, record.influenceMinimum.w, record.influenceMaximum.w);
+  inverseWidth = mix(1 / (halfSize * .2), inverseWidth, greaterThan(inverseWidth, vec3(0)));
+  vec3 distance = min(localPosition - record.influenceMinimum.xyz, record.influenceMaximum.xyz - localPosition);
+  vec3 fade = clamp(distance * inverseWidth, 0, 1);
+  return fade * fade * (3 - 2 * fade);
+}
+float probePriorityCoverage(vec3 fade) {
+  // A smaller finite limit keeps shared-face ratios defined without a visible
+  // priority step at the outer boundary, even for very bright HDR captures.
+  fade = max(fade, vec3(1e-12));
+  return fade.x * fade.y * fade.z;
+}
+void compositeProbeGroup(vec3 group, float total, float coverage, float maximumCoverage,
+                         inout vec3 result, inout float remaining) {
+  float opacity = clamp(coverage / maximumCoverage, 0, 1);
+  result += (group / total) * opacity * remaining;
+  remaining *= 1 - opacity;
+}
 #ifdef PROBE_TILE_CANDIDATES
 bool probeRadianceMasked(vec3 position, vec3 reflected, float roughness, uvec2 candidates, out vec3 result) {
 #else
@@ -64,7 +84,35 @@ bool probeRadiance(vec3 position, vec3 reflected, float roughness, out vec3 resu
     return false;
   reflected = normalize(reflected);
   float lod = clamp(roughness, 0, 1) * float(probeParameters.z - 1u), total = 0;
-  float priority = -3.402823e38;
+  // Upload records/layers are ordered by priority. Automatic equal-priority
+  // sets retain their original single traversal and normalized blend.
+  bool layered = probes[0].minimum.w != probes[probeParameters.x - 1u].minimum.w;
+  float maximumCoverage = 1;
+  // A tier reaching this maximum is opaque and ends traversal. The ratio also
+  // cancels common floor/wall bands instead of washing out their priority.
+  if (layered) {
+    maximumCoverage = 0;
+#ifdef PROBE_TILE_CANDIDATES
+    uvec2 pending = candidates;
+    while (any(notEqual(pending, uvec2(0)))) {
+      uint word = pending.x != 0u ? 0u : 1u;
+      uint probe = word * 32u + uint(findLSB(pending[word]));
+      pending[word] &= pending[word] - 1u;
+      if (probe >= probeParameters.x) break;
+#else
+    for (uint probe = 0; probe < probeParameters.x; ++probe) {
+#endif
+      ReflectionProbe record = probes[probe];
+      vec3 local;
+      for (uint c = 0; c < 3u; ++c) local[c] = dot(record.worldToLocal[c], vec4(position, 1));
+      if (any(lessThan(local, record.influenceMinimum.xyz)) || any(greaterThan(local, record.influenceMaximum.xyz))) continue;
+      maximumCoverage = max(maximumCoverage, probePriorityCoverage(probeFeather(record, local)));
+    }
+    if (maximumCoverage == 0) return false;
+  }
+  vec3 group = vec3(0);
+  float priority = 3.402823e38, remaining = 1, groupCoverage = layered ? 0 : 1;
+  bool found = false;
   uint low = uint(lod), high = min(low + 1u, probeParameters.z - 1u);
 #ifdef PROBE_TILE_CANDIDATES
   while (any(notEqual(candidates, uvec2(0)))) {
@@ -81,13 +129,17 @@ bool probeRadiance(vec3 position, vec3 reflected, float roughness, out vec3 resu
       localPosition[c] = dot(record.worldToLocal[c], vec4(position, 1));
       localRay[c] = dot(record.worldToLocal[c].xyz, reflected);
     }
-    if (record.minimum.w < priority || any(lessThan(localPosition, record.influenceMinimum.xyz)) ||
+    if (any(lessThan(localPosition, record.influenceMinimum.xyz)) ||
         any(greaterThan(localPosition, record.influenceMaximum.xyz))) continue;
-    if (record.minimum.w > priority) {
-      priority = record.minimum.w;
-      result = vec3(0);
+    if (record.minimum.w != priority && total > 0) {
+      compositeProbeGroup(group, total, groupCoverage, maximumCoverage, result, remaining);
+      found = true;
+      group = vec3(0);
       total = 0;
+      groupCoverage = layered ? 0 : 1;
+      if (remaining == 0) break;
     }
+    priority = record.minimum.w;
     // Intersect the reflected ray with its parallax proxy. Sampling from the
     // capture origin toward that hit corrects parallax as the receiver moves.
     float exitDistance = 3.402823e38;
@@ -100,13 +152,10 @@ bool probeRadiance(vec3 position, vec3 reflected, float roughness, out vec3 resu
     if (exitDistance <= 0 || dot(corrected, corrected) < 1e-10)
       corrected = reflected;
     vec3 halfSize = (record.influenceMaximum.xyz - record.influenceMinimum.xyz) * .5;
-    vec3 inverseWidth = vec3(record.maximum.w, record.influenceMinimum.w, record.influenceMaximum.w);
-    inverseWidth = mix(1 / (halfSize * .2), inverseWidth, greaterThan(inverseWidth, vec3(0)));
-    vec3 distance = min(localPosition - record.influenceMinimum.xyz, record.influenceMaximum.xyz - localPosition);
-    vec3 edgeFade = clamp(distance * inverseWidth, 0, 1);
+    vec3 feather = probeFeather(record, localPosition);
     // Independent axis bands retain doorway fades on a shared solid floor.
     // A finite edge limit preserves normalized energy at exact wall corners.
-    edgeFade = max(edgeFade * edgeFade * (3 - 2 * edgeFade), vec3(1e-4));
+    vec3 edgeFade = max(feather, vec3(1e-4));
     float edge = edgeFade.x * edgeFade.y * edgeFade.z;
     // Shared floor/wall faces have identical zero edge fade. Prefer nearby
     // captures there as well, with a finite core relative to the room size.
@@ -119,11 +168,13 @@ bool probeRadiance(vec3 position, vec3 reflected, float roughness, out vec3 resu
     float spatialWeight = confidence / max(dot(offset, offset), coreSquared);
     float weight = spatialWeight * edge;
     vec3 radiance = mix(probeMip(probe, low, corrected), probeMip(probe, high, corrected), lod - float(low));
-    result += radiance * weight;
+    group += radiance * weight;
     total += weight;
+    if (layered) groupCoverage = max(groupCoverage, probePriorityCoverage(feather));
   }
-  if (total == 0)
-    return false;
-  result /= total;
-  return true;
+  if (total > 0) {
+    compositeProbeGroup(group, total, groupCoverage, maximumCoverage, result, remaining);
+    found = true;
+  }
+  return found;
 }

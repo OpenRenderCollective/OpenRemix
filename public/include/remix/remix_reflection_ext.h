@@ -9,7 +9,7 @@ typedef struct remixapi_ReflectionVolumeEXT {
   float minimum[3], maximum[3]; // local projection and receiver influence bounds
   float worldToLocal[3][4]; // rows of a rigid transform; no scaling or shear
   float capture[3]; // world-space origin, independent of volume center
-  int32_t priority; // -32768..32767; larger values win overlapping receivers
+  int32_t priority; // -32768..32767; larger values win interiors and feather toward lower priorities at edges
 } remixapi_ReflectionVolumeEXT;
 typedef struct remixapi_ReflectionVolumesInfoEXT {
   uint32_t structSize, version;

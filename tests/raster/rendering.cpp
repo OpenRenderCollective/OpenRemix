@@ -2269,7 +2269,7 @@ namespace {
                       "Authored capture publishes visible viewmodel reflections through the production path");
               require(target.forward->statistics().authoredReflections.reused == 1 &&
                           target.forward->statistics().reflectionProbes.parameters[0] == 2 &&
-                          target.forward->statistics().reflectionProbes.probes[1].minimum[3] == 1,
+                          target.forward->statistics().reflectionProbes.probes[0].minimum[3] == 1,
                       "New same-origin volumes trace once while retaining independent priority records");
               request.volumeCount = 1; ++request.revision;
               r.setReflectionVolumes(&request);

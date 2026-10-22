@@ -1,4 +1,5 @@
 #include "forward/probes/image_data.h"
+#include "forward/probes/priority_order.h"
 #include "forward/half.h"
 #include <bit>
 #include <cmath>
@@ -19,6 +20,9 @@ namespace remix::forward::probes {
         source.texels.size() != size_t(count) * stride)
       throw std::invalid_argument("Invalid reflection image dimensions or mip payload");
     ImageData result{source.header, {}, {}};
+    const auto order = priorityOrder(source.header);
+    for (uint32_t i = 0; i < count; ++i)
+      result.header.probes[i] = source.header.probes[order[i]];
     result.levels.reserve(levels);
     result.pixels.resize(source.texels.size() * 4);
     size_t destination = 0;
@@ -29,7 +33,7 @@ namespace remix::forward::probes {
       for (uint32_t probe = 0; probe < count; ++probe) {
         if (cancelled.stop_requested())
           throw std::runtime_error("Reflection image preparation superseded");
-        const size_t start = size_t(probe) * stride + levelOffset(size, level);
+        const size_t start = size_t(order[probe]) * stride + levelOffset(size, level);
         for (uint32_t pixel = 0; pixel < values; ++pixel) {
           const auto &value = source.texels[start + pixel];
           for (uint32_t channel = 0; channel < 3; ++channel) {

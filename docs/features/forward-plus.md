@@ -2307,8 +2307,13 @@ canonical full-precision publication dumps remain available separately as `.prob
 
 The shared reflection sampler supports rigid world-to-projection frames and signed overlap priorities.
 Projection and influence bounds use this local frame; capture positions and cube-face radiance stay in
-world space. Only the highest priority containing a receiver contributes, with existing spatial blending
-among captures at that priority. Automatic fits keep identity frames and priority zero. Native probe reports
+world space. The highest priority wins in a volume's core; its feather band blends toward lower-priority
+coverage. Captures at the same priority retain normalized spatial/confidence blending. Priority layers
+composite front to back using their strongest edge coverage relative to the strongest containing capture.
+Once that strongest tier is reached it is opaque, so a single coverage maximum serves the traversal.
+This ratio cancels shared floor/wall bands rather than washing out priority at those boundaries. A sole
+capture remains normalized at every edge. Automatic fits keep identity frames and priority zero, and
+their equal-priority sampler retains one traversal without the priority-coverage prepass. Native probe reports
 include the frame and priority, and the bounds workbench can import them. The optional
 `projectionConfidence` field reports the raw geometric blend-confidence scalar; legacy zero means
 unknown and retains the sampler's unit-weight fallback. It is useful when comparing resolutions,
@@ -2325,3 +2330,10 @@ priority edits reuse raw and filtered radiance; changed origins trace only their
 reused scene acceleration. Submitted frames retain their transport and sampled reflection buffers until
 their own fences complete. A null request restores automatic placement, while an explicit empty request
 disables local cubemaps. Authoring overrides are not persisted in the automatic lighting cache.
+
+Canonical capture/cache order remains unchanged for identity and radiance reuse. Image upload sorts
+projection records and every radiance mip together by descending priority, retaining source order for ties.
+The image owner exposes that physical header to diagnostics and CPU viewmodel candidate masks, so mask
+bits always refer to the corresponding GPU layer. Compare canonical dumps by capture metadata rather
+than assuming their indices equal uploaded layer indices when priorities differ. This does not change
+the metadata layout, image format, 64-capture capacity or serialized bake data, and needs no rebake.

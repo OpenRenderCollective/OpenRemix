@@ -244,7 +244,7 @@ namespace remix::forward::probes {
   Descriptors Authoring::descriptor(Descriptors automatic) const {
     return m_active ? m_active->image->descriptors() : automatic;
   }
-  const Header *Authoring::header() const { return m_active ? &m_active->filtered.header : nullptr; }
+  const Header *Authoring::header() const { return m_active ? &m_active->image->header() : nullptr; }
   AuthoringStatistics Authoring::statistics() const {
     AuthoringStatistics result;
     result.requested = bool(m_request);

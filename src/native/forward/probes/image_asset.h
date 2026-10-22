@@ -25,10 +25,12 @@ namespace remix::forward::probes {
     VkDescriptorImageInfo radiance() const;
     Descriptors descriptors() const { return {metadata(), radiance()}; }
     const Image &image() const { return *m_image; }
+    const Header &header() const { return m_header; }
     uint64_t bufferBytes() const;
     uint64_t imageBytes() const { return m_image->bytes; }
   private:
     VkDevice m_device;
+    Header m_header;
     VkSampler m_sampler = VK_NULL_HANDLE;
     std::unique_ptr<Buffer> m_metadata, m_staging;
     std::unique_ptr<Image> m_image;

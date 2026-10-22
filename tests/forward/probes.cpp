@@ -178,11 +178,48 @@ int main() {
   const auto priorityOutside = p::sample(prioritized, {.5f, 0, 0}, {1, 0, 0}, .4f);
   require(priorityInside && (*priorityInside)[0] < 1e-5f && std::abs((*priorityInside)[1]-2) < 1e-5f &&
               priorityOutside && std::abs((*priorityOutside)[0]-4) < 1e-5f && (*priorityOutside)[1] < 1e-5f,
-          "Highest containing priority wins; leaving its influence restores the lower-priority capture");
+          "Highest core priority wins; leaving its influence restores the lower-priority capture");
   std::swap(constants[0], constants[1]);
   const auto reversed = p::sample(p::filter(constants, 64), {0, 0, 0}, {1, 0, 0}, .4f);
   require(reversed && (*reversed) == (*priorityInside), "Overlap priority is independent of capture ordering");
   std::swap(constants[0], constants[1]);
+  {
+    std::array shared{constants[0], constants[1]};
+    shared[1].blendDistance = .05f;
+    shared[1].influence.minimum[2] = -1;
+    const auto blended = p::filter(shared, 64);
+    for (float roughness : {0.f, .4f, 1.f})
+      for (float z : {0.f, -1.f})
+        for (float t : {0.f, .25f, .5f, .75f, 1.f}) {
+          const float alpha = t * t * (3 - 2 * t);
+          const auto value = p::sample(blended, {.25f - .05f*t, 0, z}, {1, 0, 0}, roughness);
+          require(value && std::abs((*value)[0] - 4*(1-alpha)) < 5e-5f &&
+                      std::abs((*value)[1] - 2*alpha) < 5e-5f,
+                  "Priority feathering follows analytic layer opacity, including a shared floor");
+          if (roughness == 0 && z == -1)
+            std::printf("Priority shared-floor blend t %.2f: %.7f %.7f %.7f\n", t,
+                        (*value)[0], (*value)[1], (*value)[2]);
+        }
+    auto top = shared[1];
+    top.priority = 9;
+    top.influence.minimum[0] = -.2375f;
+    top.influence.maximum[0] = .2375f;
+    for (auto &pixel : top.radiance) pixel = {0, 0, 8, 0};
+    const std::array layers{shared[0], shared[1], top};
+    const std::array reversedLayers{top, shared[1], shared[0]};
+    const auto layered = p::sample(p::filter(layers, 64), {.225f, 0, -1}, {1, 0, 0}, .4f);
+    const auto reordered = p::sample(p::filter(reversedLayers, 64), {.225f, 0, -1}, {1, 0, 0}, .4f);
+    require(layered && reordered && std::abs((*layered)[0]-1.6875f) < 5e-5f &&
+                std::abs((*layered)[1]-.84375f) < 5e-5f && std::abs((*layered)[2]-1.25f) < 5e-5f &&
+                *layered == *reordered,
+            "Three priority layers composite front to back independently of capture order");
+    auto bright = p::filter(layers, 64);
+    for (auto &pixel : bright.texels) pixel = {65000, 65000, 65000, 0};
+    const auto hdr = p::sample(bright, {.225f, 0, -1}, {1, 0, 0}, .4f);
+    require(hdr && std::all_of(hdr->begin(), hdr->end(), [](float value) {
+              return std::isfinite(value) && std::abs(value-65000) < .02f;
+            }), "Priority layers preserve finite HDR energy on a shared boundary");
+  }
   constants[1].priority = 0;
   constants[1].influence = {};
   // Both volumes touch the same floor. Box-edge distance is zero for every

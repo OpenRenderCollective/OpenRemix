@@ -33,7 +33,7 @@ namespace remix::forward::probes {
     // Optional receiver/blend bounds, independent of the parallax proxy.
     Bounds influence{};
     ProjectionSpace worldToLocal = worldSpace;
-    int32_t priority = 0; // larger values win only where their influence contains the receiver
+    int32_t priority = 0; // core priority; edges feather toward lower containing priorities
     float blendDistance =
         0; // scene units; zero derives a 20%-of-half-extent edge band
   };

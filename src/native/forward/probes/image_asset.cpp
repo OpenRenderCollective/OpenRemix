@@ -6,6 +6,7 @@ namespace remix::forward::probes {
   ImageAsset::ImageAsset(VkPhysicalDevice physical, VkDevice device, const Data &data,
                           std::stop_token cancelled) : m_device(device) {
     auto packed = prepareImage(data, cancelled);
+    m_header = packed.header;
     const uint32_t count = data.header.parameters[0], size = data.header.parameters[1];
     m_layers = std::max(count, 1u);
     m_levels = std::max(data.header.parameters[2], 1u);
