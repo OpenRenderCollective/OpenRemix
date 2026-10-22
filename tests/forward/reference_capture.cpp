@@ -29,12 +29,27 @@ int main(int argc, char **argv) {
   catch (const std::invalid_argument &) { rejected = true; }
   require(rejected && capture.received == 1, "Non-finite transport cannot contaminate JSON");
   value.irradiance[3][2] = 0;
+  for (bool moments : {true, false}) {
+    auto &field = moments ? value.moments[2][1] : value.statistics[0];
+    field = std::numeric_limits<float>::quiet_NaN();
+    rejected = false;
+    try { capture.consume(0, std::span(&value, 1)); }
+    catch (const std::invalid_argument &) { rejected = true; }
+    require(rejected && capture.received == 1 && !std::filesystem::exists(output),
+            "Non-finite visibility data rejects before consuming a reference batch");
+    field = 0;
+  }
+  value.moments[0] = {2, 5, .5f, 4096};
+  value.statistics = {.125f, .25f, 4096, 0};
   capture.consume(0, std::span(&value, 1));
   std::ifstream file(output);
   const std::string text((std::istreambuf_iterator<char>(file)), {});
   require(text.find("\"samples\":4096") != std::string::npos &&
               text.find("\"position\":[-4,5,6]") != std::string::npos,
           "Completed output contains sampling budget and original positions");
+  require(text.find("\"distanceMoments\":[[2,5,0.5,4096]") != std::string::npos &&
+              text.find("\"statistics\":[0.125,0.25,4096,0]") != std::string::npos,
+          "SH reference preserves raw visibility moments and transport statistics");
   file.close();
   for (const auto *input : {"63\n1 2 3", "8193\n1 2 3", "4096\n", "4096\n1 2 broken"}) {
     { std::ofstream bad(path); bad << input; }
@@ -93,6 +108,9 @@ int main(int argc, char **argv) {
     require(result.find("\"diffuseIrradiance\":[3.14159265,6.28318531,9.42477796]") != std::string::npos &&
                 result.find("\"diffuseIrradiance\":[12.5663706,15.7079633,18.8495559]") != std::string::npos,
             "Cosine sampling integrates constant radiance to Pi times radiance for each site");
+    require(result.find("\"distanceMoments\"") == std::string::npos &&
+                result.find("\"statistics\"") == std::string::npos,
+            "Hemisphere output does not invent SH visibility moments from individual radiance rays");
   }
   { std::ofstream bad(path); bad << "hemisphere 64\n1 2 3 0 0 0\n"; }
   rejected = false;

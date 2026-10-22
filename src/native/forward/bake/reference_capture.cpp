@@ -85,6 +85,13 @@ namespace remix::forward::bake {
       for (const auto &coefficient : values[i].irradiance)
         for (float value : coefficient)
           if (!std::isfinite(value)) throw std::invalid_argument("Non-finite reference irradiance");
+      if (!hemisphere) {
+        for (const auto &moment : values[i].moments)
+          for (float value : moment)
+            if (!std::isfinite(value)) throw std::invalid_argument("Non-finite reference distance moments");
+        for (float value : values[i].statistics)
+          if (!std::isfinite(value)) throw std::invalid_argument("Non-finite reference statistics");
+      }
     }
     for (size_t i = 0; i < values.size(); ++i) {
       if (hemisphere) {
@@ -120,6 +127,14 @@ namespace remix::forward::bake {
         for (uint32_t c = 0; c < 3; ++c) output << (c ? "," : "") << m_results[i].irradiance[j][c];
         output << ']';
       }
+      output << "],\"distanceMoments\":[";
+      for (uint32_t face = 0; face < 6; ++face) {
+        output << (face ? ",[" : "[");
+        for (uint32_t c = 0; c < 4; ++c) output << (c ? "," : "") << m_results[i].moments[face][c];
+        output << ']';
+      }
+      output << "],\"statistics\":[";
+      for (uint32_t c = 0; c < 4; ++c) output << (c ? "," : "") << m_results[i].statistics[c];
       output << "]}";
     }
     output << "]}\n";

@@ -948,6 +948,15 @@ diagnostic only. This is off by default; keep captures separate from timing runs
 because statistic capture can affect compilation and driver optimization. Treat
 driver-reported values as implementation-specific, not portable occupancy estimates.
 
+For bounded offline probe studies, `REMIX_DEBUG_BAKE_REFERENCE_POINTS` names a file containing
+64..8192 samples followed by at most 16 XYZ sites. SH results add six `distanceMoments` vectors in
++X, -X, +Y, -Y, +Z, -Z order: mean distance, mean squared distance, hit fraction and ray count.
+Distances use host world units. `statistics` contains back-face fraction, miss fraction, sample count
+and the reserved transport value. Existing irradiance fields retain their format. The alternative
+`hemisphere <samples>` input takes XYZ and unit-normal sites and exports independent cosine-integrated
+irradiance instead. These diagnostics do not change published probe positions or lighting buffers.
+Check captured scene inputs, including the dome texture, before comparing separate runs.
+
 For inspection, `probes.request` in the profile directory writes `probes.json`
 from the published frame's immutable metadata. It lists the active content hash,
 world-unit scale, resolution, origins, projection boxes and influence boxes.

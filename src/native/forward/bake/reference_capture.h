@@ -8,6 +8,8 @@ namespace remix::forward::bake {
   // Private offline diagnostic, independent of probe placement/publication.
   // Input: sample count then XYZ sites (SH), or "hemisphere", sample count and
   // XYZ/unit-normal sites (cosine-weighted radiance integration, without SH).
+  // SH output includes six distance-moment vec4s (+/-X, +/-Y, +/-Z) and
+  // transport statistics so offline placement studies can reconstruct visibility.
   struct ReferenceCapture {
     static std::optional<ReferenceCapture> fromEnvironment();
     static ReferenceCapture load(const std::filesystem::path &path);
