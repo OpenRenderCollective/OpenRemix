@@ -121,6 +121,11 @@ the 8x8 field. Filtering visibility per octahedral tap instead of filtering mome
 leakage for worse dark-face error; do not adopt it globally. High-sample neighbour substitutions
 help the crate side but not all faces. Next investigate near-surface spatial placement and
 reconstruction against the independent hemisphere references, retaining the fixed memory budget.
+The legacy six-axis stencil now applies one-sided confidence to suppress weak coarse fallback;
+it does not increase the coarse share over valid fine support. Directional-depth confidence remains
+symmetric. This reconstruction change requires no extra probe records, rays or cache revision;
+broader prop/viewmodel quality and whole-frame cost remain acceptance work. Do not treat it as
+closure of the directional-depth candidate or as a general valid-slot relocation rule.
 A bounded physical support-halo experiment fits 48 rather than 33 cells at 2 m spacing within
 the same 32768-record budget, including the test hall. Four sampled face errors improve, but
 the crate front becomes substantially darker; the change is excluded from production source.

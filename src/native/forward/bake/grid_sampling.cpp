@@ -111,11 +111,16 @@ namespace remix::forward::bake {
     const float fineTotal = cell(8, {side, side, side, 0}, start, factor, block);
     if (fineTotal < 1e-4f) return result;
     if (coarseTotal < 1e-4f) blend = 1;
-    else if (!grid.depth.empty()) {
-      // Do not normalize a tiny surviving blocked coarse stencil back to its
-      // full blend share. Confidence changes the mixture, never constant energy.
+    else {
+      // Avoid restoring weak coarse support to its full normalized share.
+      // Broad six-axis moments can suppress coarse fallback, but must not
+      // promote it over the nominal fine share. Directional depth retains
+      // its symmetric confidence policy. Constant fields conserve energy.
       const float fine = blend * confidence[1], coarse = (1 - blend) * confidence[0];
-      if (fine + coarse > 1e-6f) blend = fine / (fine + coarse);
+      if (fine + coarse > 1e-6f) {
+        const float trusted = fine / (fine + coarse);
+        blend = grid.depth.empty() ? std::max(blend, trusted) : trusted;
+      }
     }
     for (uint32_t corner = 0; corner < 8; ++corner) {
       result.weights[corner] *= coarseTotal >= 1e-4f ? (1 - blend) / coarseTotal : 0;

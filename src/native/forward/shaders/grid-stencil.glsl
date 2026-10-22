@@ -113,9 +113,14 @@ bool localProbeStencil(vec3 position, vec3 normal) {
                                     factor, block, 8u, fineConfidence);
   if (fineTotal < 1e-4) return localStencilValid;
   if (coarseTotal < 1e-4) blend = 1;
-  else if (directionalProbeDepth()) {
+  else {
+    // Broad moments may suppress weak coarse fallback, never promote it
+    // over the nominal fine share. Keep directional confidence symmetric.
     float fine = blend * fineConfidence, coarse = (1 - blend) * coarseConfidence;
-    if (fine + coarse > 1e-6) blend = fine / (fine + coarse);
+    if (fine + coarse > 1e-6) {
+      float trusted = fine / (fine + coarse);
+      blend = directionalProbeDepth() ? trusted : max(blend, trusted);
+    }
   }
   for (uint corner = 0u; corner < 8u; ++corner) {
     localStencilWeights[corner] *= coarseTotal >= 1e-4 ? (1 - blend) / coarseTotal : 0;

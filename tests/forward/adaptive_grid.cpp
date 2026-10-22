@@ -78,6 +78,16 @@ int main() {
     require(value && std::abs((*value)[0] - 3) < 2e-5f,
             "A constant field conserves energy through every blend weight");
   }
+  {
+    auto confidence = field();
+    for (uint32_t record = 0; record < confidence.probes.size(); ++record)
+      for (auto &moment : confidence.probes[record].moments)
+        moment = record < 12 ? Vec4{2, 5, 0, 1} : Vec4{100, 10000, 0, 1};
+    const auto inside = bake::sample(confidence, {4 - 1e-4f, 2, 2}, normal);
+    const auto outside = bake::sample(confidence, {4 + 1e-4f, 2, 2}, normal);
+    require(inside && outside && std::abs((*inside)[0] - (*outside)[0]) < 1e-5f,
+            "Suppressing weak coarse support retains the coarse/fine boundary limit");
+  }
   for (uint32_t i = 12; i < grid.probes.size(); ++i) grid.probes[i].statistics[3] = 0;
   require(bake::sample(grid, {2, 2, 2}, normal).has_value(),
           "Unsupported fine records retain coarse coverage");

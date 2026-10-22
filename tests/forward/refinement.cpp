@@ -233,6 +233,27 @@ void refinementTests() {
     const auto legacy = bake::probeStencil(covered, receiver, normal);
     float legacyCoarse = 0;
     for (uint32_t i = 0; i < 8; ++i) legacyCoarse += legacy.weights[i];
+    auto coarseWeight = [](const bake::ProbeStencil &stencil) {
+      float value = 0;
+      for (uint32_t i = 0; i < 8; ++i) value += stencil.weights[i];
+      return value;
+    };
+    for (uint32_t record = 0; record < covered.probes.size(); ++record)
+      for (auto &moment : covered.probes[record].moments)
+        moment = record < original.probes.size() ? Vec4{2, 5, 0, 1} : Vec4{100, 10000, 0, 1};
+    const auto weakCoarse = bake::probeStencil(covered, receiver, normal);
+    const auto constantMoments = bake::sample(covered, receiver, normal);
+    require(coarseWeight(weakCoarse) < legacyCoarse * .5f && constantMoments &&
+                std::abs((*constantMoments)[0] - 4 * .2820947918f) < 1e-5f,
+            "Six-axis confidence suppresses weak coarse support while preserving constant energy");
+    for (uint32_t record = 0; record < covered.probes.size(); ++record)
+      for (auto &moment : covered.probes[record].moments)
+        moment = record < original.probes.size() ? Vec4{100, 10000, 0, 1} : Vec4{1, 2, 0, 1};
+    const auto weakFine = bake::probeStencil(covered, receiver, normal);
+    require(weakFine.count == 16 && coarseWeight(weakFine) <= legacyCoarse + 1e-5f,
+            "Broad moments cannot increase the coarse share when fine support is weaker");
+    for (auto &probe : covered.probes)
+      for (auto &moment : probe.moments) moment = {100, 10000, 0, 1};
     covered.depth.maximumDistance = 100;
     covered.depth.records.resize(covered.probes.size());
     const uint32_t weak = uint32_t(half::encode(.02f)) | uint32_t(half::encode(.0005f)) << 16;

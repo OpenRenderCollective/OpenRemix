@@ -29,6 +29,9 @@ Keep static visibility, unknown coverage, toggleable groups and offscreen moving
 - `refinement_builder.*`: coverage-first regional subdivision, canonical shared physical records and compaction.
 - `grid_directory.cpp`: directory validation, ownership and reciprocal compatible-face flags.
 - `grid_sampling.cpp`: CPU reference reconstruction and coarse/fine transition weights.
+  Broad six-axis moments may reduce weak coarse fallback below its nominal blend share, but
+  cannot promote it over valid fine support. Directional-depth confidence retains its symmetric policy.
+  The shared GPU stencil applies the same rule; placement, storage and cache identity are unchanged.
 - `controller_refinement.cpp`: asynchronous refinement scheduling between coarse/required surface and fine work.
 - `adaptive_grid.cpp` / `sparse_grid.cpp`: an empty coarse seed retries ordinary full-budget placement;
   an empty density-search trial keeps the last verified field. `EmptyProbePlacement` is distinct from
