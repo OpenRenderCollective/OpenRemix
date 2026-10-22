@@ -1,12 +1,13 @@
 # Remix native runtime
 
 This repository is an SDL3/Vulkan renderer with the retained Remix 0.1003 API.
-Raster remains the default; an opt-in ray-query backend adds diffuse world lighting.
+Path tracing is the configured default, with raster fallback on unsupported hardware.
+The opt-in Forward+ backend provides baked surface/probe lighting and optional ray-query effects.
 Gameplay effects and UI remain rasterized. Compatibility exports remain supported;
 the original RTX renderer and Direct3D injection runtime have been removed.
 
 Use Clang, Meson and Ninja; on Windows use clang-cl in a Visual Studio developer environment.
-First-party code is grouped under `src/native/{api,runtime,scene,raster,pathtrace,platform,ui}`.
+First-party code is grouped under `src/native/{api,runtime,scene,raster,forward,pathtrace,platform,ui}`.
 Tests mirror feature folders under `tests`. See [architecture](docs/architecture.md) for ownership.
 CPU-only `scene` code must not depend on Vulkan, SDL, or either GPU backend. Backend GPU state
 is private to each feature. Preserve existing API locking, resource lifetimes, callback re-entry,

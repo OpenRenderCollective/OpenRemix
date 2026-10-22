@@ -11,7 +11,7 @@ reports. An implementation or synthetic test alone does not close an integration
 
 ## Continuation status (2026-10-23)
 
-The separate GMod testing install now uses native `6249d6c` and adapter `d7894f6`; it includes the
+The separate GMod testing install now uses native `4d0f521` and adapter `d7894f6`; it includes the
 current clustered fallback, shared sphere-bound loads, adaptive probe reconstruction and runtime
 publication fixes. This makes the feature branch available for testing, not an accepted general
 performance or visual-quality release. Existing dependencies, settings and authored volumes are
@@ -43,7 +43,11 @@ times do not establish live gameplay FPS or armed/moving-view performance. Const
 comparisons now skip albedo sampling while preserving camera-backface rejection and cutouts.
 All eight alpha comparisons pass world/viewmodel, draw-order and 1/2/4-sample coverage checks.
 Two opposite-order Construct hall comparisons reduce total GPU time by about 3–4%; keep this
-scope separate from general performance acceptance. Broader-map checks and deployment remain open.
+scope separate from general performance acceptance. A further fixed-view Crossfire pair reduces
+total GPU time by about 1.7% at matching clocks, with at most one channel value of image difference.
+Viewmodel overlay/shadow isolation, baked-probe lighting and SSR compatibility tests pass with
+synchronization validation. The installed-DLL smoke also passes; settings, mounts, adapter and authored
+Construct volumes are preserved. Armed/moving gameplay performance and broader-map acceptance remain open.
 Coverage views locate some uncovered distant geometry. The clustered baked tail shares one ordered
 list with the runtime prefix, so `receiverLightCount` can use the complete spatially culled list on
 uncovered receivers. Complete analytic traversal remains available on overflow; covered receivers

@@ -2,11 +2,22 @@
 
 ## Start here
 
-The separate GMod testing install was updated on 2026-10-22 to native `3c7c428` and adapter
+The separate GMod testing install was updated on 2026-10-23 to native `4d0f521` and adapter
 `d7894f6`, including shared clustered-light loads, one-sided coarse probe confidence, and retained
 bake/memory publication across asynchronous target replacement. The package retains the existing
 runtime dependencies. User settings, addon mounts and authored Construct cubemaps are preserved;
 an exact local rollback is available. Main branches remain upstream.
+
+This checkpoint also includes chart-edge denoising, stable progressive history, surface-hemisphere
+transport, cosine-anchored surface irradiance and chart-local exterior donor repair. The reproduced
+Construct ceiling-fixture halo is removed in neutral, raw and shaded fixed-view checks. Hidden interior
+samples still consume bake/atlas capacity; the repair prevents them donating filtering energy rather
+than reclaiming their allocation. Connector/secret-room and broader map quality remain open.
+
+The depth prepass now skips texture sampling for constant alpha comparisons. All eight comparisons
+retain world/viewmodel coverage across draw order and MSAA. Fixed-view Construct GPU comparisons
+improve about 3–4%; a Crossfire pair improves about 1.7%. Installed-DLL and viewmodel functional tests
+pass with synchronization validation. These measurements do not establish live armed/moving FPS.
 
 This is an experimental testing checkpoint, not broad gameplay or probe-quality acceptance.
 Adaptive irradiance runs automatically when eligible in this checkpoint. Continue the requirement
@@ -48,7 +59,7 @@ and offscreen moving shadows. The prior uniform-grid checkpoint was `e51bff0`.
   referencing/trace support, while shared coarse corners retain coarse reach.
 - Existing cache/controller/publication modules retain lifetime, cancellation, fencing and validated import.
 
-The current probe-planning cache policy revision is 26; the handoff prototype used 24 and the previous
+The current bake algorithm policy revision is 30; the handoff prototype used 24 and the previous
 uniform testing build used 23. Grouped probe policy version 2 also separates caches with incomplete controllable
 groups. Directional probe depth remains opt-in and disabled by default. Upgrading deliberately rebakes once;
 camera movement and runtime toggle values
