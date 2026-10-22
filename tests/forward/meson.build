@@ -54,7 +54,8 @@ forward_receiver_report_test = executable('remix-forward-receiver-report-test', 
   '../../src/native/forward/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Surface and probe receiver comparison preserves coordinates and indirect units', forward_receiver_report_test)
-forward_probes_test = executable('remix-forward-probes-test', 'probes.cpp', 'capture_work.cpp',
+forward_probes_test = executable('remix-forward-probes-test', 'probes.cpp', 'capture_work.cpp', 'probe_image_data.cpp',
+  '../../src/native/forward/probes/image_data.cpp',
   '../../src/native/forward/probes/capture_work.cpp',
   '../../src/native/forward/probes/data.cpp', '../../src/native/forward/probes/placement.cpp', '../../src/native/forward/probes/selection.cpp',
   '../../src/native/forward/probes/regions.cpp', '../../src/native/forward/probes/sites.cpp',
@@ -91,6 +92,10 @@ if get_option('gpu_tests')
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)
   test('GPU oriented cubemap projection, priorities and roughness', forward_probe_sampling_test, timeout : 60)
+  forward_probe_image_test = executable('remix-forward-probe-image-test', 'probe_image_upload.cpp',
+    include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+    cpp_args : test_cpp_args)
+  test('GPU HDR reflection image layers and mip uploads', forward_probe_image_test, timeout : 60)
   forward_mask_decode_test = executable('remix-forward-mask-decode-test', 'mask_decode.cpp',
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)

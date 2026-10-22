@@ -799,6 +799,14 @@ cost before choosing a sharper default. s&box's square-root roughness lookup bel
 different coefficient-prefiltered mip chain; do not copy the lookup without matching the producer.
 Disabling the independent highlight budget still retains mixed-light specular work, so it alone
 does not isolate cubemap radiance.
+The image-storage migration now has CPU packing and Vulkan upload/readback tests. Its RGBA16F
+layout uses one array layer per capture with six vertically stacked faces, avoiding optional
+cube-array features and keeping 64 captures below the minimum array-layer limit. Tests cover
+all texels/mips, HDR precision, cancellation and 256/512-square faces. This is preparation work:
+production still samples the original buffer. Next connect image ownership, uploads and descriptors
+through both bake publication and live authored edits, then migrate and validate every shader consumer
+before raising exposed resolution limits or defaults. Do not claim rendered 256/512 support from
+an upload test alone; check sampling seams, blend parity, cache reload, memory and frame cost.
 The attempted receiver-first score is rejected: it can fill the sheltered-region budget and displace
 broad map coverage. Its runtime code is removed. Develop room-local fairness before revisiting that
 objective; do not equate global area sampling or additional audit records with complete quality.
