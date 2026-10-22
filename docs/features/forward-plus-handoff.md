@@ -322,3 +322,10 @@ need a newer source-built runtime. Rebuild older isolated shader experiments bef
 A live path-traced capture now waits for 35/35 pipelines and has no compilation overlay, but emitted
 a timeline-semaphore validation warning. Keep it out of validation-clean reference/performance
 acceptance. Focused API and CPU readiness checks pass; synchronization diagnosis remains open.
+
+The timeline warning was subsequently isolated with the installed 1.3.280 validation layer: setting
+only `rtx.native.lowLatency=0` for the offline reference yields a clean capture at 35/35 pipelines.
+Runtime code uses the specification's driver-signalled Reflex timeline pattern; current validation
+source tracks that external signal while the old version lacks the hook. Keep graphics synchronization
+and game Reflex defaults unchanged. Explicitly record Reflex-off when validating offline references
+with that layer; this does not settle the older retained-process problem or establish FPS.

@@ -1081,3 +1081,16 @@ loading overlay is absent, with an adjacent readiness report. It still emits a t
 validation diagnostic, so it is functional evidence only, not a validation-clean reference or timing
 acceptance. Resolve that caveat before accepting further comparisons. The remaining
 reference cases were deliberately not launched; completed owned processes exited normally.
+
+### Reflex validation isolation
+
+The path-traced timeline warning is now isolated to the NVIDIA Reflex pacing path with the installed
+1.3.280 validation layer. Repeating the same preparation-gated Construct capture with only
+`rtx.native.lowLatency=0` removes the diagnostics and reaches 35/35 pipelines without a loading
+overlay. The Vulkan specification describes this driver-signalled timeline/host-wait pattern, and
+current validation-layer source explicitly tracks `vkLatencySleepNV`; the installed-version source
+lacks that hook. This strongly supports a layer bookkeeping incompatibility rather than evidence
+that graphics/bake synchronization needs weakening. Preserve game pacing defaults. Offline reference
+checks may explicitly disable Reflex and record that scope; newer-layer validation remains desirable.
+The clean isolated capture is functional/quality evidence, not FPS acceptance, and does not diagnose
+the older retained-process cleanup issue. No renderer, driver or installed-setting change was made.
