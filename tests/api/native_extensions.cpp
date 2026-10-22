@@ -2,10 +2,13 @@
 #include <remix/remix_reconstruction_ext.h>
 #include <SDL3/SDL.h>
 #include <array>
+#include <chrono>
+#include <cstring>
 #include <cstdio>
-#include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <thread>
+#include <stdexcept>
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_PNG
 #include <image/stb_image.h>
@@ -13,15 +16,25 @@
 namespace {
   void require(bool value, const char *message) {
     if (!value) {
-      std::fprintf(stderr, "%s\n", message);
-      std::exit(1);
+      throw std::runtime_error(message);
     }
   }
   void ok(remixapi_ErrorCode result) { require(result == REMIXAPI_ERROR_CODE_SUCCESS, "API failed"); }
+  struct Shutdown {
+    remixapi_Interface &api;
+    bool active = true;
+    ~Shutdown() {
+      if (active) api.Shutdown();
+    }
+  };
+  struct ExpectedFailure {};
 } // namespace
 
-int main(int argc, char **argv) {
-  require(argc == 2, "Supply screenshot output directory");
+int main(int argc, char **argv) try {
+  const bool synchronous = argc == 3 && std::strcmp(argv[2], "sync") == 0;
+  const bool failAfterPresent = argc == 3 && std::strcmp(argv[2], "fail-after-present") == 0;
+  require(argc == 2 || synchronous || failAfterPresent,
+          "Supply screenshot output directory and optional sync or fail-after-present mode");
   static_assert(sizeof(remixapi_MeshInfoUpdateEXT) == 24);
   static_assert(sizeof(remixapi_MeshInfoMotionEXT) == 24);
   static_assert(offsetof(remixapi_MeshInfoMotionEXT, enabled) == 16);
@@ -87,6 +100,10 @@ int main(int argc, char **argv) {
   startup.windowHeight = 240;
 #endif
   ok(api.Startup(&startup));
+  Shutdown shutdown{api};
+  // Input and clear-color readback must not depend on the selected world renderer.
+  ok(api.SetConfigVariable("rtx.native.backend", "raster"));
+  ok(api.SetConfigVariable("rtx.native.asyncPresent", synchronous ? "0" : "1"));
   static_assert(sizeof(remixapi_ReconstructionDiagnosticsEXT) == 336);
   static_assert(offsetof(remixapi_ReconstructionDiagnosticsEXT, memoryBytes) == 64);
   remixapi_ReconstructionDiagnosticsEXT reconstruction{};
@@ -98,7 +115,7 @@ int main(int argc, char **argv) {
   require(prefix.version == 1 && prefix.size == sizeof(reconstruction) && prefix.sentinel == 0x12345678abcdefull, "Diagnostics prefix write exceeded capacity");
   reconstruction.structSize = sizeof(reconstruction);
   ok(remixapi_GetReconstructionDiagnosticsEXT(&reconstruction));
-  require(reconstruction.requestedMode == 1 && !reconstruction.activeBackend, "Default reconstruction request changed");
+  require(reconstruction.requestedMode == 3 && !reconstruction.activeBackend, "Default DLSS reconstruction request changed");
   ok(remixapi_GetFramePerformanceEXT(&framePerformance));
   require(!framePerformance.attempts && !framePerformance.presentations,
           "Frame performance not reset on startup");
@@ -150,14 +167,20 @@ int main(int argc, char **argv) {
   require(count == 3 && !events[0].down && events[1].type == REMIXAPI_INPUT_TEXT && events[1].code == 0xe9 &&
               events[2].code == 0x1f600,
           "Release or Unicode lost");
-  std::thread wrongThread([] {
-    uint32_t count = 1;
-    require(remixapi_PollInputEvents(nullptr, 0, &count) == REMIXAPI_ERROR_CODE_WRONG_THREAD && !count,
-            "Input thread ownership");
-    require(remixapi_SetTextInputEnabled(0) == REMIXAPI_ERROR_CODE_WRONG_THREAD,
-            "Text input thread ownership");
+  std::exception_ptr threadFailure;
+  std::thread wrongThread([&] {
+    try {
+      uint32_t count = 1;
+      require(remixapi_PollInputEvents(nullptr, 0, &count) == REMIXAPI_ERROR_CODE_WRONG_THREAD && !count,
+              "Input thread ownership");
+      require(remixapi_SetTextInputEnabled(0) == REMIXAPI_ERROR_CODE_WRONG_THREAD,
+              "Text input thread ownership");
+    } catch (...) {
+      threadFailure = std::current_exception();
+    }
   });
   wrongThread.join();
+  if (threadFailure) std::rethrow_exception(threadFailure);
   event = {};
   event.type = SDL_EVENT_MOUSE_MOTION;
   event.motion.windowID = SDL_GetWindowID(window);
@@ -185,7 +208,15 @@ int main(int argc, char **argv) {
   require(SDL_SyncWindow(window), "Wait for resize before screenshot");
   ok(api.PumpEvents());
   ok(api.Present(nullptr));
-  ok(remixapi_GetFramePerformanceEXT(&framePerformance));
+  // Exercise failure unwinding while the asynchronous worker may own the frame.
+  if (failAfterPresent) throw ExpectedFailure{};
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  do {
+    ok(api.PumpEvents());
+    ok(remixapi_GetFramePerformanceEXT(&framePerformance));
+    if (framePerformance.presentations && std::filesystem::exists(path)) break;
+    SDL_Delay(8);
+  } while (std::chrono::steady_clock::now() < deadline);
   require(framePerformance.attempts == 1 && framePerformance.presentMilliseconds >= 0 &&
               framePerformance.presentMilliseconds >= framePerformance.fenceMilliseconds &&
               framePerformance.presentations == framePerformance.presented,
@@ -204,8 +235,20 @@ int main(int argc, char **argv) {
           "Screenshot color/BGRA conversion");
   stbi_image_free(pixels);
   ok(api.Shutdown());
+  shutdown.active = false;
   count = 99;
   require(remixapi_PollInputEvents(nullptr, 0, &count) == REMIXAPI_ERROR_CODE_NOT_INITIALIZED && !count,
           "Shutdown retained input");
   return 0;
+} catch (const ExpectedFailure &) {
+  uint32_t count = 99;
+  if (remixapi_PollInputEvents(nullptr, 0, &count) != REMIXAPI_ERROR_CODE_NOT_INITIALIZED || count) {
+    std::fprintf(stderr, "Failure unwinding did not shut down the runtime\n");
+    return 1;
+  }
+  std::puts("Pending presentation drained during intentional test failure");
+  return 0;
+} catch (const std::exception &error) {
+  std::fprintf(stderr, "%s\n", error.what());
+  return 1;
 }

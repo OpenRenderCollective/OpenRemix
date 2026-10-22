@@ -17,4 +17,8 @@ if get_option('gpu_tests')
     include_directories : test_includes, dependencies : [sdl3_dep, threads_dep, filesystem_dep], link_with : remix)
   test('Native input events and presented screenshot', extension_test,
     args : [meson.current_build_dir() / 'native-extensions'], timeout : 30)
+  test('Native synchronous input events and presented screenshot', extension_test,
+    args : [meson.current_build_dir() / 'native-extensions-sync', 'sync'], timeout : 30)
+  test('Native asynchronous failure drains pending presentation', extension_test,
+    args : [meson.current_build_dir() / 'native-extensions-failure', 'fail-after-present'], timeout : 30)
 endif

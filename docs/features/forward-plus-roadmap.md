@@ -864,11 +864,15 @@ reflection state; measurement and camera-path readiness wait for publication, an
 refresh their probe report. Legacy 256-byte statistics clients retain their allocation boundary.
 An earlier report showing pending work is not proof that its later image was incomplete; match
 fresh final diagnostics before making that claim. Authored fallback composition is still unimplemented.
-The focused statistics ABI, authored-edit ownership and renderer compatibility checks pass; the
-general input/screenshot fixture remains unresolved. Its default reconstruction assertion conflicts
-with current DLSS defaults, and a temporary isolated follow-up hit frame-performance accounting and
-failure-teardown hangs. Keep that investigation separate from the focused readiness result and do
-not claim a full API-suite pass or accept new timings while owned test cleanup is unconfirmed.
+The input/screenshot fixture now explicitly selects raster, checks the actual DLSS reconstruction
+default, and waits for the single completed presentation and resized screenshot before examining
+frame accounting. Exceptions unwind an explicit runtime shutdown; thread assertions propagate to
+the same cleanup path. Asynchronous, synchronous and deliberate failure-after-handoff cases pass
+with synchronization validation; their decoded 400×300 screenshots match. These checks used the
+normal Meson object linked to a separate local executable because the old executable remains locked.
+Earlier terminated tests still expose one blocked thread each to Windows wait-chain inspection,
+with no cycle or wait owner reported. Their process handles remain unsignalled despite exit code 1.
+Cleanup and an ordinary full API-suite run remain unconfirmed; do not accept new timings yet.
 The rendering menu now explains that active authored volumes replace the whole automatic set.
 An eventual overlay must preserve existing replacement/empty-set/reset semantics through an explicit
 mode, retain authored priority ordering, select fallback captures within the shared 64-record budget,
