@@ -309,3 +309,16 @@ independent capture origins, not ordinary point entities alone. New standalone t
 
 The local handoff bundle supplies machine-specific paths, binary/cache hashes, evidence receipts and
 reproduction configurations. Those verification artifacts intentionally stay out of tracked feature docs.
+
+## Offline capture preparation readiness
+
+The source API adds independent `remixapi_GetPreparationStatisticsEXT`; it leaves existing backend
+and interface layouts unchanged. The replay requires it for measured and camera-path captures,
+waiting for loading/preparation to clear and requested/completed pipeline counts to agree. Compilation
+failures or preparation restarting after warmup reject the run; pending waits are bounded. Manual
+fixed-frame use with older runtimes warns that readiness cannot be verified. Final readiness is saved
+in `.preparation.json`. The installed `22b8406` lacks this new export, so current replay measurements
+need a newer source-built runtime. Rebuild older isolated shader experiments before using that tool.
+A live path-traced capture now waits for 35/35 pipelines and has no compilation overlay, but emitted
+a timeline-semaphore validation warning. Keep it out of validation-clean reference/performance
+acceptance. Focused API and CPU readiness checks pass; synchronization diagnosis remains open.

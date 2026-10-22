@@ -556,6 +556,17 @@ typedef struct remixapi_BackendCapabilitiesEXT {
   uint32_t requestedBackend;
   char unavailableReason[256];
 } remixapi_BackendCapabilitiesEXT;
+
+// Independent preparation diagnostics. An active backend can still compile
+// scene variants or prepare requested settings. Reference captures should wait
+// for pending/loading to clear as well as their backend/bake readiness checks.
+// Pipeline counters are cumulative since Startup. This export does not wait for
+// compilation or GPU completion; continue presenting normally while pending.
+typedef struct remixapi_PreparationStatisticsEXT {
+  uint32_t structSize, pending, loading, failed;
+  uint64_t pipelinesRequested, pipelinesCompleted, pipelinesFailed;
+  char failureReason[256];
+} remixapi_PreparationStatisticsEXT;
 typedef enum remixapi_RebuildReasonEXT {
   REMIXAPI_REBUILD_NONE_EXT = 0, REMIXAPI_REBUILD_MEMBERSHIP_EXT = 1,
   REMIXAPI_REBUILD_GEOMETRY_EXT = 2, REMIXAPI_REBUILD_REFIT_LIMIT_EXT = 3,
@@ -1035,6 +1046,7 @@ typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetPresentationCount)(uin
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetPresentationCount(uint64_t* out_count);
 
 typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetBackendCapabilitiesEXT)(remixapi_BackendCapabilitiesEXT* capabilities);
+typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetPreparationStatisticsEXT)(remixapi_PreparationStatisticsEXT* statistics);
 typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetLocalLightStatisticsEXT)(remixapi_LocalLightStatisticsEXT* statistics);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetLocalLightStatisticsEXT(remixapi_LocalLightStatisticsEXT* statistics);
 typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetLocalLightSetStatisticsEXT)(remixapi_LocalLightSetStatisticsEXT* statistics);
@@ -1144,6 +1156,7 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetSharcStatisticsEXT(remixap
 
 typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetTracingStatisticsEXT)(remixapi_TracingStatisticsEXT* statistics);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetBackendCapabilitiesEXT(remixapi_BackendCapabilitiesEXT* capabilities);
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetPreparationStatisticsEXT(remixapi_PreparationStatisticsEXT* statistics);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetTracingStatisticsEXT(remixapi_TracingStatisticsEXT* statistics);
 typedef remixapi_ErrorCode (REMIXAPI_PTR *PFN_remixapi_GetFramePerformanceEXT)(remixapi_FramePerformanceEXT* statistics);
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_GetFramePerformanceEXT(remixapi_FramePerformanceEXT* statistics);

@@ -109,6 +109,31 @@ remixapi_GetBackendCapabilitiesEXT(remixapi_BackendCapabilitiesEXT *out) {
 }
 
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
+remixapi_GetPreparationStatisticsEXT(remixapi_PreparationStatisticsEXT *out) {
+  if (!out || out->structSize != sizeof(*out))
+    return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
+  try {
+    std::lock_guard lock(g_apiMutex);
+    if (!g_runtime.isInitialized())
+      return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
+    // Preparation is API-thread-owned; pipeline counters synchronize internally.
+    // This query neither waits for the render thread nor submits GPU work.
+    const auto status = g_runtime.preparationStatus();
+    remixapi_PreparationStatisticsEXT result{.structSize = sizeof(result),
+        .pending = uint32_t(status.pending), .loading = uint32_t(status.loading),
+        .failed = uint32_t(!status.failure.empty()),
+        .pipelinesRequested = status.pipelines.requested,
+        .pipelinesCompleted = status.pipelines.completed,
+        .pipelinesFailed = status.pipelines.failed};
+    std::strncpy(result.failureReason, status.failure.c_str(), sizeof(result.failureReason) - 1);
+    *out = result;
+    return REMIXAPI_ERROR_CODE_SUCCESS;
+  } catch (...) {
+    return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
+  }
+}
+
+REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
 remixapi_GetFramePerformanceEXT(remixapi_FramePerformanceEXT *out) {
   if (!out || out->structSize != sizeof(*out))
     return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;

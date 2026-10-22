@@ -1074,6 +1074,10 @@ after building the candidate; no new setting or default was added. Captures use 
 bake/probe metadata and lower-sample lighting, so they establish the visible effect rather than final
 quality. The attempted path-traced references are rejected: a screenshot still contains the requested-
 settings compilation overlay despite active backend/denoiser readiness. Shutdown later completes
-those pipelines without failure. Add explicit preparation-readiness diagnostics and gate replay
-warmup/capture on them before repeating the reference sweep or accepting those timings. The remaining
+those pipelines without failure. An independent preparation-statistics export and replay readiness gate now prevent warmup/capture
+until loading/preparation clear and all requested pipelines finish; failures/restarts reject the run.
+Existing API layouts remain unchanged. A live path-traced check reaches 35/35 pipelines and its
+loading overlay is absent, with an adjacent readiness report. It still emits a timeline-semaphore
+validation diagnostic, so it is functional evidence only, not a validation-clean reference or timing
+acceptance. Resolve that caveat before accepting further comparisons. The remaining
 reference cases were deliberately not launched; completed owned processes exited normally.

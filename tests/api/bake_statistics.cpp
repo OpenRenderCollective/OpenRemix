@@ -17,6 +17,14 @@ namespace {
 }
 
 int main() {
+  static_assert(sizeof(remixapi_BackendCapabilitiesEXT) == 272);
+  remixapi_PreparationStatisticsEXT preparation{};
+  require(remixapi_GetPreparationStatisticsEXT(nullptr) == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS &&
+              remixapi_GetPreparationStatisticsEXT(&preparation) == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS,
+          "Preparation statistics validate pointer and exact independent layout");
+  preparation.structSize = sizeof(preparation);
+  require(remixapi_GetPreparationStatisticsEXT(&preparation) == REMIXAPI_ERROR_CODE_NOT_INITIALIZED,
+          "Preparation statistics require startup");
   static_assert(offsetof(remixapi_BakeStatisticsEXT, reflectionRequested) == 256);
   remixapi_BakeStatisticsEXT statistics{};
   require(remixapi_GetBakeStatisticsEXT(nullptr) == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS,
@@ -39,6 +47,12 @@ int main() {
   startup.windowHeight = 240;
 #endif
   ok(api.Startup(&startup));
+  ok(remixapi_GetPreparationStatisticsEXT(&preparation));
+  require(preparation.structSize == sizeof(preparation) && preparation.pending <= 1 &&
+              preparation.loading <= 1 && preparation.failed <= 1 &&
+              preparation.pipelinesCompleted <= preparation.pipelinesRequested &&
+              preparation.failureReason[255] == 0,
+          "Preparation diagnostics return bounded flags, counters and terminated failure text");
 
   statistics.structSize = 256;
   statistics.reflectionRequested = statistics.reflectionPending =
