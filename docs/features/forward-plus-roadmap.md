@@ -747,6 +747,20 @@ and still crossed doorway boundaries by over 2000 Source units at individual sit
 a production replacement. Next candidates must establish receiver visibility and room enclosure
 separately, with actual Construct coverage gains; see cubemap-axial-comparison-2026-10-20.txt.
 
+The two authored Construct volumes now provide separate capture-placement and receiver-domain
+fixtures. At the smaller room's authored capture position, fitting generates a room-shaped
+alternative but orders a larger corridor first. The nearby automatic doorway position does not
+generate that room-shaped alternative. These are separate failures: changing the final selector
+cannot recover a shape that placement never generated. Brush-surface sampling confirms that a
+visible-surface objective can prefer the room alternative without consulting authored bounds;
+this is an offline lead, not an accepted runtime heuristic. Next build bounded receiver samples
+from actual bake geometry, compare marginal visible surface coverage and projection error, and
+test both automatic origins and authored origins. Preserve wall separation, independent influence
+and projection bounds, capture/ray budgets and cancellation. Include terrain, props and material
+visibility before accepting the result; two partial authored rooms are not whole-map ground truth.
+Do not replace fitting with authored-volume union, loosen occupancy globally or add runtime
+receiver rays per fragment on the strength of this subset study.
+
 ## Work discipline
 
 New standalone tooling should prefer C#. The current native Qt cubemap workbench remains usable;
