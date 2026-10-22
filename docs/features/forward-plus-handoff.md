@@ -69,6 +69,14 @@ rebuild all affected objects, then relink both runtime and tests. Never overwrit
 
 ## Diagnostics and performance discipline
 
+For controlled GMod transport references, the adapter's private
+`OPENREMIX_PROXY_BAKE_SKY_REFERENCE` variable can pin a validated `.sky` capture. It is read-only
+and rejects an invalid reference rather than replacing it with live pixels. Unset it for ordinary
+play; normal capture-noise reuse keeps its existing bounds. Compare input fingerprints including
+the dome before using a reference to judge placement. Match transport sample counts on original
+and proposed positions, and reconstruct visibility as well as SH; raw point brightness alone is
+not an interpolated receiver-quality result.
+
 For bounded point-transport references, set `REMIX_DEBUG_BAKE_REFERENCE_POINTS` to a UTF-8 text
 file containing a sample count (64..8192), followed by at most sixteen XYZ world positions. The
 controller bypasses cache loading for that diagnostic run and traces unbiased incoming SH through
