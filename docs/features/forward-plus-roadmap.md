@@ -33,6 +33,17 @@ the timestamp shift alone is not evidence of additional caster work. Local point
 casters against individual cube faces, retaining seam-crossing and offscreen actors. Frame reports
 expose per-slot identities and recorded frozen/moving draws for continued profiling. Next isolate
 covered versus uncovered probe receiver cost and the remaining surface-lightmap shading cost.
+The current installed-runtime Construct hall replay, without synthetic probe receiver spheres,
+measures about 0.66 ms in the depth prepass, 1.13 ms in opaque shading excluding depth, and
+0.63 ms in reflection composition. Bounded receiver timing attributes only about 0.095 ms to
+ordinary probe-lit geometry in that view. Do not carry the older sphere-heavy probe diagnosis
+over to ordinary BSP geometry. Check constant-alpha depth material work next, and retain an
+optimization only after coverage tests and matched runtime measurements. These fixed-view GPU
+times do not establish live gameplay FPS or armed/moving-view performance. Constant-alpha depth
+comparisons now skip albedo sampling while preserving camera-backface rejection and cutouts.
+All eight alpha comparisons pass world/viewmodel, draw-order and 1/2/4-sample coverage checks.
+Two opposite-order Construct hall comparisons reduce total GPU time by about 3–4%; keep this
+scope separate from general performance acceptance. Broader-map checks and deployment remain open.
 Coverage views locate some uncovered distant geometry. The clustered baked tail shares one ordered
 list with the runtime prefix, so `receiverLightCount` can use the complete spatially culled list on
 uncovered receivers. Complete analytic traversal remains available on overflow; covered receivers

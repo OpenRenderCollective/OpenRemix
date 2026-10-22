@@ -9,5 +9,8 @@ void main() {
   Material m = materials[draw.index];
   // Match visible world faces and cutout holes before writing any depth.
   if ((m.state.w & 16u) != 0u && !gl_FrontFacing) discard;
+  // Constant alpha comparisons need no material texture fetch in a depth-only pass.
+  if (m.state.y == 7u) return;
+  if (m.state.y == 0u) discard;
   alphaTest(m, surfaceColor(m, uv, vertexColor).a);
 }
