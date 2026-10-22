@@ -1094,3 +1094,17 @@ that graphics/bake synchronization needs weakening. Preserve game pacing default
 checks may explicitly disable Reflex and record that scope; newer-layer validation remains desirable.
 The clean isolated capture is functional/quality evidence, not FPS acceptance, and does not diagnose
 the older retained-process cleanup issue. No renderer, driver or installed-setting change was made.
+
+
+### Prepared cubemap direction comparison
+
+The six-roughness Construct sphere sweep now includes twelve preparation-gated Forward+ captures
+and six finite-sample path-traced references, all validation clean with Reflex explicitly disabled
+for the older validation layer. Both authored captures finish and reported bake/probe metadata agree.
+Production shaders and defaults remain unchanged. Dominant-direction lookup makes only small
+rough-material improvements: core display-space error at roughness 1 falls from about 50.55 to
+49.55 on the 0–255 scale, while low-roughness rim error increases. The much larger brightness
+mismatch remains. Treat this as evidence against promoting direction correction alone. Next isolate
+captured radiance, specular energy/BRDF normalization and receiver-local lighting before changing
+direction or mip conventions. Broader materials, bounds, bright/dark transitions, water and viewmodels
+still require acceptance; this low-budget metallic-sphere study establishes neither parity nor FPS.
