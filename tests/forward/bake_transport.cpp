@@ -172,10 +172,26 @@ namespace {
     auto sky = world.scene({});
     sky->dome.enabled = true;
     sky->dome.radiance = {1, .5f, .25f};
+    auto grazing = world.scene({});
+    grazing->lights = {light};
+    auto &edgeLight = grazing->lights.front();
+    edgeLight.position[0] = 2.1f;
+    edgeLight.position[2] = .003f;
+    edgeLight.radius = .0005f;
+    edgeLight.radiance[0] = 1e7f;
+    const auto grazingGeometry = world.scene({world.wall(world.material({.emission = 1000}), .003f, .5f)});
+    auto grazingSun = world.scene({});
+    grazingSun->sun.isDistant = true;
+    grazingSun->sun.direction[0] = -1;
+    grazingSun->sun.direction[1] = 0;
+    grazingSun->sun.direction[2] = -.001f;
+    grazingSun->sun.angularDiameterDegrees = 0;
     const bake::Point points[] = {{{1.1f, 0, 0, 0}, {0, 0, 1, 0}},
                                  {{1.1f, 0, .002f, 0}, {}}};
     uint32_t generation = 0;
-    const auto capture = [&](const auto &source, bool parallel, bool aggregate = false) {
+    enum class Response { Irradiance, Local, Sun };
+    const auto capture = [&](const auto &source, bool parallel, bool aggregate = false,
+                             Response response = Response::Irradiance) {
       bake::Transport transport;
       bake::Options options;
       options.parallel = parallel;
@@ -192,13 +208,56 @@ namespace {
       job->check();
       fixture.begin();
       transport.recordPrepare(fixture.command, world.resources);
-      transport.recordBatch(fixture.command, 0, points, 8192, 1);
+      if (response == Response::Local) {
+        const bake::VisibilityPoint receivers[] = {{points[0], 0}, {points[1], 0}};
+        transport.recordVisibility(fixture.command, 0, receivers, 8192, true);
+      } else if (response == Response::Sun)
+        transport.recordSun(fixture.command, 0, points, 8192, true);
+      else
+        transport.recordBatch(fixture.command, 0, points, 8192, 1);
       fixture.finish();
       std::array<bake::Result, 2> values;
       transport.read(0, values);
       return values;
     };
     for (const bool parallel : {false, true}) {
+      const auto edge = capture(grazing, parallel, true);
+      const float edgeValue = evaluate(edge[0], {0, 0, 1}, 0);
+      // The emitter's whole angular disk is above the biased receiver's horizon.
+      // Its exact cosine integral is Pi * sin(radiusAngle)^2 * cos(axisAngle).
+      const float edgeDistanceSquared = 1 + .001f * .001f;
+      const float expectedEdge = edgeLight.radiance[0] * std::numbers::pi_v<float> *
+          edgeLight.radius * edgeLight.radius / edgeDistanceSquared *
+          (.001f / std::sqrt(edgeDistanceSquared));
+      std::printf("Grazing surface, parallel %u: %.9f, exact %.9f\n",
+                  unsigned(parallel), edgeValue, expectedEdge);
+      require(std::abs(edgeValue - expectedEdge) < expectedEdge * .02f,
+              "Surface irradiance adds energy at a grazing emitter's horizon");
+      require(evaluate(edge[0], {1, 0, 0}, 0) > expectedEdge * 100 &&
+                  evaluate(edge[0], {0, 1, 0}, 0) < evaluate(edge[0], {1, 0, 0}, 0) * .25f,
+              "Surface irradiance anchoring flattened directional normal-map response");
+      const auto local = capture(grazing, parallel, false, Response::Local);
+      const float localValue = evaluate(local[0], {0, 0, 1}, 1) * edgeLight.radiance[0];
+      require(local[0].irradiance[0][0] == 1 && local[1].irradiance[0][0] == 1 &&
+                  std::abs(localValue - expectedEdge) < expectedEdge * .02f,
+              "Unit local light must retain visibility and match aggregate surface energy");
+      const auto sun = capture(grazingSun, parallel, false, Response::Sun);
+      const float sunValue = evaluate(sun[0], {0, 0, 1}, 1);
+      const float expectedSun = .001f / std::sqrt(1 + .001f * .001f);
+      std::printf("Grazing unit fields, parallel %u: local %.9f, sun %.9f\n",
+                  unsigned(parallel), localValue, sunValue);
+      require(sun[0].irradiance[0][0] == 1 && sun[1].irradiance[0][0] == 1 &&
+                  std::abs(sunValue - expectedSun) < expectedSun * .01f,
+              "Unit sunlight must retain visibility and match its exact surface cosine");
+      const auto edgeGeometry = capture(grazingGeometry, parallel);
+      const float edgeEmission = evaluate(edgeGeometry[0], {0, 0, 1}, 0);
+      // Unit-area parallel patch: both cosine terms are height/distance.
+      // Its nearest point is .6 units away, so this bounds the whole integral.
+      const float emissionBound = 1000 * .001f * .001f / std::pow(.6f, 4);
+      std::printf("Grazing emission, parallel %u: %.9f, upper bound %.9f\n",
+                  unsigned(parallel), edgeEmission, emissionBound);
+      require(edgeEmission > 0 && edgeEmission < emissionBound,
+              "Surface irradiance exceeds a grazing emissive patch's physical bound");
       const auto emission = capture(emissive, parallel);
       const float surface = evaluate(emission[0], {0, 0, 1}, 0);
       std::printf("Coplanar emission, parallel %u: surface %.6f, volume L0 %.6f\n",
@@ -211,10 +270,23 @@ namespace {
                   unsigned(parallel), behind, direct[1].irradiance[0][0]);
       require(direct[1].irradiance[0][0] > .01f, "Volume probe lost rear baked light");
       require(std::abs(behind) < 1e-4f, "Back-hemisphere direct light leaked into the surface lightmap");
+      const auto rearUnit = capture(below, parallel, false, Response::Local);
+      require(rearUnit[0].irradiance[0][0] == 1 && rearUnit[1].irradiance[0][1] > 0 &&
+                  std::all_of(rearUnit[0].irradiance.begin(), rearUnit[0].irradiance.end(),
+                              [](const auto &coefficient) { return coefficient[1] == 0; }),
+              "Unit direct preserves clear visibility but excludes rear surface energy");
       const auto front = capture(above, parallel, true);
-      require(evaluate(front[0], {0, 0, 1}, 0) > .1f &&
-                  front[0].irradiance == front[1].irradiance,
-              "Surface hemisphere changed valid front-facing direct light");
+      const float frontDistance = 1 - .002f;
+      const float expectedFront = light.radiance[0] * std::numbers::pi_v<float> *
+          light.radius * light.radius / (frontDistance * frontDistance);
+      require(std::abs(evaluate(front[0], {0, 0, 1}, 0) - expectedFront) < expectedFront * .01f,
+              "Surface irradiance changed a front-facing sphere's cosine integral");
+      const float frontSolidAngle = 2 * std::numbers::pi_v<float> *
+          (1 - std::sqrt(1 - light.radius * light.radius / (frontDistance * frontDistance)));
+      const float expectedVolume = light.radiance[0] * frontSolidAngle *
+          std::numbers::pi_v<float> * .2820947918f;
+      require(std::abs(front[1].irradiance[0][0] - expectedVolume) < expectedVolume * .01f,
+              "Surface irradiance anchoring changed the volume probe's full-sphere SH");
       const auto environment = capture(sky, parallel);
       require(std::abs(evaluate(environment[0], {0, 0, 1}, 0) - std::numbers::pi_v<float>) < .01f,
               "Surface hemisphere changed constant environment energy");

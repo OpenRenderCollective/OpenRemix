@@ -46,7 +46,8 @@ namespace remix::forward::bake {
     // The selected slot's prior fence has completed. Call after recordPrepare.
     // A nonzero normal identifies a surface receiver: offset it along the normal
     // and integrate its incident hemisphere. Zero normals identify volume probes
-    // and retain full-sphere lighting. Both retain directional irradiance SH.
+    // and retain full-sphere lighting. Surface SH is constrained to the sampled
+    // cosine integral at that normal; both retain directional irradiance SH.
     void recordBatch(VkCommandBuffer command, uint32_t slot, std::span<const Point> points, uint32_t samples,
                      uint32_t bounces = 3, uint32_t firstSample = 0);
     // Separate authored lighting: 0 is the unstyled base, 1..127 a captured

@@ -193,6 +193,16 @@ samples before directional SH projection, avoiding coplanar self-lighting throug
 cosine kernel. Surface samples integrate over 2Pi steradians, while direct emitter sampling retains its
 own solid-angle normalization. This changes neither the ray count nor the atlas allocation. Modified
 transport shader bytes invalidate existing bake keys automatically.
+Surface irradiance also accumulates the actual receiver cosine along the same paths and aggregate
+direct samples. After SH convolution, its nine coefficients receive the minimum squared correction
+that makes their value at the receiver normal equal this integral. The orthonormal basis has squared
+norm `9/(4Pi)`, so the correction is linear and preserves additive lighting components. This avoids
+the truncated cosine kernel's substantial overestimate for nearly tangent emitters without flattening
+directional lighting into a constant. Volume probes retain their unconstrained full-sphere SH.
+Surface local/sun unit-direct fields apply
+the same constraint while preserving scalar visibility, so mixed-shadow subtraction and styled light
+scaling use matching receiver energy. The correction adds no rays,
+result fields or atlas layers. It does not establish that the remaining Construct fixture halo is fixed.
 Analytic sphere connections end at the sampled emitting surface without subtracting the receiver's
 ray bias: these lights have no geometry to self-intersect, and shortening the connection can miss a
 wall immediately in front of the emitter. Triangle emitters retain an endpoint tolerance for their

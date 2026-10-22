@@ -1,7 +1,8 @@
 // Fully baked direct light joins the surface/grid irradiance, rather than
 // requiring a separate visibility query for every light at every texel.
 // The all-light mixture PDF stays valid when only a subset contributes.
-void accumulateBakedDiffuse(inout RayResult value, vec3 origin, vec3 normal, Medium medium, uint ordinal) {
+void accumulateBakedDiffuse(inout RayResult value, inout vec3 surfaceIrradiance, vec3 origin, vec3 normal,
+                            Medium medium, uint ordinal) {
   if (!lightingStyleSelected(0u) || (rayFrame.control.w & 4u) == 0u || rayFrame.counts.y == 0u)
     return;
   // Independent of the diffuse path's random stream and batch-local indices.
@@ -24,6 +25,7 @@ void accumulateBakedDiffuse(inout RayResult value, vec3 origin, vec3 normal, Med
   // The common irradiance epilogue applies 4Pi/N and cosine convolution.
   // NEE already integrates emitter solid angle, so remove that extra 4Pi.
   vec3 incoming = light.radiance.rgb * passing * (weight / (pdf * 4 * RayPi));
+  surfaceIrradiance += incoming * max(dot(normal, direction), 0);
   float sh[9];
   basis(direction, sh);
   for (uint coefficient = 0u; coefficient < 9u; ++coefficient)
