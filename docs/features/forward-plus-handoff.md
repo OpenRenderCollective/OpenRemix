@@ -319,9 +319,9 @@ failures or preparation restarting after warmup reject the run; pending waits ar
 fixed-frame use with older runtimes warns that readiness cannot be verified. Final readiness is saved
 in `.preparation.json`. The installed `22b8406` lacks this new export, so current replay measurements
 need a newer source-built runtime. Rebuild older isolated shader experiments before using that tool.
-A live path-traced capture now waits for 35/35 pipelines and has no compilation overlay, but emitted
-a timeline-semaphore validation warning. Keep it out of validation-clean reference/performance
-acceptance. Focused API and CPU readiness checks pass; synchronization diagnosis remains open.
+Focused API and CPU readiness checks pass. The original prepared path-traced check emitted a
+timeline warning and is excluded from clean reference/performance acceptance; the isolation below
+provides the current validation scope.
 
 The timeline warning was subsequently isolated with the installed 1.3.280 validation layer: setting
 only `rtx.native.lowLatency=0` for the offline reference yields a clean capture at 35/35 pipelines.
@@ -329,3 +329,14 @@ Runtime code uses the specification's driver-signalled Reflex timeline pattern; 
 source tracks that external signal while the old version lacks the hook. Keep graphics synchronization
 and game Reflex defaults unchanged. Explicitly record Reflex-off when validating offline references
 with that layer; this does not settle the older retained-process problem or establish FPS.
+
+
+## Cubemap experiment status
+
+Dense-grid Construct sphere comparisons now separate the sparse-grid sunlight leak from reflection
+quality. Dominant-direction lookup and numerical GGX energy correction both have roughness-dependent
+tradeoffs; neither is promoted. Production shaders/defaults and the installed package are unchanged.
+Use the current roadmap section for the decision and remaining controls. Before changing reflection
+shading, isolate capture resolution/origin, parallax and transport convergence; then evaluate material
+energy and receiver-lighting normalization. Single-camera metallic-sphere results are not broader
+map, water, viewmodel, motion or FPS acceptance.

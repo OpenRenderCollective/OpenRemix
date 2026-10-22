@@ -1068,19 +1068,10 @@ This normalized F=1 model omits actual cube texels, parallax, Fresnel and mip in
 does not establish a production improvement. Keep the existing default while preparing actual
 renderer roughness/grazing sweeps; do not infer parity or a universal fix from the average result.
 
-An isolated actual-renderer direction experiment now has twelve validated Forward+ captures spanning
-six roughnesses on a metallic sphere in Construct. Production shader/source bytes were restored
-after building the candidate; no new setting or default was added. Captures use the same reported
-bake/probe metadata and lower-sample lighting, so they establish the visible effect rather than final
-quality. The attempted path-traced references are rejected: a screenshot still contains the requested-
-settings compilation overlay despite active backend/denoiser readiness. Shutdown later completes
-those pipelines without failure. An independent preparation-statistics export and replay readiness gate now prevent warmup/capture
-until loading/preparation clear and all requested pipelines finish; failures/restarts reject the run.
-Existing API layouts remain unchanged. A live path-traced check reaches 35/35 pipelines and its
-loading overlay is absent, with an adjacent readiness report. It still emits a timeline-semaphore
-validation diagnostic, so it is functional evidence only, not a validation-clean reference or timing
-acceptance. Resolve that caveat before accepting further comparisons. The remaining
-reference cases were deliberately not launched; completed owned processes exited normally.
+Offline capture acceptance now requires the independent preparation-statistics export: loading must
+clear, requested/completed pipeline counts must agree, and compilation failures or preparation
+restarting after warmup reject the run. Existing public API layouts remain unchanged. Earlier images
+with compilation overlays are rejected; the prepared references described below supersede them.
 
 ### Reflex validation isolation
 
@@ -1096,29 +1087,27 @@ The clean isolated capture is functional/quality evidence, not FPS acceptance, a
 the older retained-process cleanup issue. No renderer, driver or installed-setting change was made.
 
 
-### Prepared cubemap direction comparison
+### Current cubemap quality evidence and next work
 
-The six-roughness Construct sphere sweep now includes twelve preparation-gated Forward+ captures
-and six finite-sample path-traced references, all validation clean with Reflex explicitly disabled
-for the older validation layer. Both authored captures finish and reported bake/probe metadata agree.
-Production shaders and defaults remain unchanged. Dominant-direction lookup makes only small
-rough-material improvements: core display-space error at roughness 1 falls from about 50.55 to
-49.55 on the 0–255 scale, while low-roughness rim error increases. The much larger brightness
-mismatch remains. Treat this as evidence against promoting direction correction alone. Next isolate
-captured radiance, specular energy/BRDF normalization and receiver-local lighting before changing
-direction or mip conventions. Broader materials, bounds, bright/dark transitions, water and viewmodels
-still require acceptance; this low-budget metallic-sphere study establishes neither parity nor FPS.
+The initial six-roughness Construct study used only 245 probes. Its large bright highlight was direct
+sunlight, not a cubemap-energy failure: a direct-specular pass retained it, omitting sunlight removed
+it, and restoring the production shader with 31919 usable probes also removed it. Sparse-grid sun
+visibility robustness remains an independent concern; do not infer reflection normalization failure
+from that configuration.
 
+The repeated dense-grid study has eighteen preparation-gated, synchronization-validation-clean
+Forward+ captures: current shading, dominant reflection direction, and numerical GGX split-sum energy
+response across six roughnesses. The same two authored captures finish in every case; reported baked
+content/probe metadata agree. Six prepared finite-sample path-traced references provide a quality
+comparison, with explicit Reflex-off validation scope. No production shader/default changed.
 
-### Reflection-study sunlight confound
+Dominant direction improves the fully rough sphere's mean absolute display-space RGB error from
+6.43 to 4.13 in its core and 9.05 to 4.37 at its rim, but worsens middle roughness: at 0.6, core error
+increases from 16.99 to 18.17 and rim error from 13.11 to 15.52. Numerical split-sum energy is also
+inconsistent. Retain the current default. This fixed camera, metallic sphere, 128-face resolution and
+lower-sample capture/transport study establishes neither general quality parity nor FPS acceptance.
 
-Further isolation corrects the interpretation of the large brightness error above. A numerical
-GGX split-sum energy candidate barely changes it. Direct-specular-only rendering retains the bright
-sphere; omitting sunlight alone removes it. Restoring the production shader and increasing the
-requested grid from 256 to 32768 probes also removes it (245 versus 31919 usable probes). Surface,
-static-occlusion and capture input/radiance hashes remain unchanged. All isolation captures finish
-preparation and pass synchronization validation. The sparse study therefore cannot establish a
-cubemap radiance/normalization failure: direct sun visibility dominates its error. Repeat the
-roughness comparison with the dense cached grid before promoting direction or energy changes.
-Sparse-grid visibility robustness remains an independent quality concern. No production shader,
-default or installed artifact changed during these experiments.
+Next isolate capture resolution, capture-origin/parallax error, transport convergence and material
+energy with receiver-local or constant-environment controls. Then assess the viewer's normalization
+against bright/dark receiver transitions, including props, viewmodels, water and sky. Avoid combining
+direction, mip and energy changes before each cause has evidence. Broader maps and motion remain open.
