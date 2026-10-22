@@ -27,6 +27,16 @@ and offscreen moving shadows. The prior uniform-grid checkpoint was `e51bff0`.
 
 ## Module ownership
 
+- `forward/probes/priority_order.h` and `image_data.*`: canonical captures/cache data retain their order;
+  upload records and every image mip sort together by priority. `ImageAsset::header()` exposes the
+  physical order for diagnostics and CPU viewmodel masks. Do not mix canonical indices with layer bits.
+- `forward/probes/data.cpp` and `forward/shaders/probes.glsl`: matching priority-layer feathering.
+  Equal-priority sets retain one traversal; mixed sets normalize edge coverage across priority layers,
+  cancelling shared floor/wall bands. An isolated Construct glossy-boundary check confirms the blend
+  and unchanged control interiors; a moving-path validation smoke passes. This source continuation
+  remains undeployed, with visual motion, wider maps and performance acceptance open. Authored sets
+  still replace automatic sets; fallback composition is separate unfinished work.
+
 - `forward/Renderer::activate`: queue-idle adoption publishes retained bake metadata and owned
   allocation totals before asynchronous queries can observe the replacement renderer. Preparation
   workers do not read a controller owned by the active renderer. Frame completion uses the same
