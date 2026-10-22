@@ -1,4 +1,5 @@
 #include "forward/bake/job.h"
+#include "platform/workers.h"
 #include "forward/bake/storage_options.h"
 #include "forward/bake/budget.h"
 #include "forward/bake/cache.h"
@@ -907,7 +908,10 @@ namespace remix::forward::bake {
             dumpVisibilityReport(*owner->mixedLights, owner->surfaceLayout,
                                   Options{}.bias / owner->source->sceneScale, owner->cancellation.get_token());
             owner->finishStage.store(Job::FinishStage::Reflections, std::memory_order_relaxed);
-            owner->specular = probes::filter(owner->captures, 128, owner->cancellation.get_token());
+            {
+              WorkerPool workers;
+              owner->specular = probes::filter(owner->captures, 128, owner->cancellation.get_token(), &workers);
+            }
             owner->reflectionImage = std::make_unique<probes::ImageAsset>(
                 physical, device, owner->specular, owner->cancellation.get_token());
             if (config.denoiseLightmaps && lightmap::denoiserVersion()) {

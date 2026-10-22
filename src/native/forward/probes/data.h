@@ -6,6 +6,8 @@
 #include <span>
 #include <stop_token>
 
+namespace remix { class WorkerPool; }
+
 namespace remix::forward::probes {
   constexpr uint32_t maxProbes = 64;
   struct Record {
@@ -73,7 +75,10 @@ namespace remix::forward::probes {
   // its preference where another capture overlaps. Unknown distances are neutral.
   float projectionConfidence(const Capture &capture);
   Record projectionRecord(const Capture &capture);
-  Data filter(std::span<const Capture> captures, uint32_t samples = 128, std::stop_token cancelled = {});
+  // Optional caller-owned workers process independent mip rows without changing
+  // per-texel accumulation order. The pool must not be running another task.
+  Data filter(std::span<const Capture> captures, uint32_t samples = 128,
+              std::stop_token cancelled = {}, WorkerPool *workers = nullptr);
   std::vector<std::byte> serialize(const Data &data);
   // CPU reference for the shader's box projection, cross-face bilinear
   // filtering, roughness mip interpolation and overlapping-volume blending.

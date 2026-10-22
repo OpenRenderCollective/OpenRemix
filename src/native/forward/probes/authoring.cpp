@@ -1,4 +1,5 @@
 #include "forward/probes/authoring.h"
+#include "platform/workers.h"
 #include "forward/bake/transport.h"
 #include "forward/bake/budget.h"
 #include "raster/renderer.h"
@@ -88,6 +89,7 @@ namespace remix::forward::probes {
         const uint32_t levels = std::bit_width(size), stride = levelOffset(size, levels);
         filtered.header.parameters = {uint32_t(captures.size()), size, levels, stride};
         filtered.texels.resize(captures.size() * stride);
+        WorkerPool workers;
         for (size_t i = 0; i < captures.size(); ++i) {
           if (cancellation.stop_requested()) throw std::runtime_error("Reflection edit superseded");
           filtered.header.probes[i] = projectionRecord(captures[i]);
@@ -97,7 +99,7 @@ namespace remix::forward::probes {
                         filtered.texels.begin() + i*stride);
           } else {
             const auto one = probes::filter(std::span(captures).subspan(i, 1), 128,
-                                             cancellation.get_token());
+                                             cancellation.get_token(), &workers);
             std::copy(one.texels.begin(), one.texels.end(), filtered.texels.begin() + i*stride);
           }
         }

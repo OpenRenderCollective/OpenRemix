@@ -1,4 +1,5 @@
 #include "forward/probes/data.h"
+#include "platform/workers.h"
 #include <algorithm>
 #include <bit>
 #include <cmath>
@@ -263,7 +264,7 @@ namespace remix::forward::probes {
     record.influenceMaximum[3] = inverseWidth[2];
     return record;
   }
-  Data filter(std::span<const Capture> captures, uint32_t samples, std::stop_token cancelled) {
+  Data filter(std::span<const Capture> captures, uint32_t samples, std::stop_token cancelled, WorkerPool *workers) {
     if (cancelled.stop_requested())
       throw std::runtime_error("Reflection filtering superseded");
     if (captures.size() > maxProbes || !samples || samples > 4096)
@@ -308,16 +309,22 @@ namespace remix::forward::probes {
       std::copy(capture.radiance.begin(), capture.radiance.end(), result.texels.begin() + probe * stride);
       for (uint32_t level = 1; level < levels; ++level) {
         const uint32_t mipSize = size >> level, start = probe * stride + levelOffset(size, level);
-        for (uint32_t face = 0; face < 6; ++face)
-          for (uint32_t y = 0; y < mipSize; ++y)
-            for (uint32_t x = 0; x < mipSize; ++x) {
-              if (cancelled.stop_requested())
-                throw std::runtime_error("Reflection filtering superseded");
-              const auto n =
-                  direction(face, 2 * (float(x) + .5f) / mipSize - 1, 2 * (float(y) + .5f) / mipSize - 1);
-              const auto color = prefilter(capture, n, quadrature[level]);
-              result.texels[start + (face * mipSize + y) * mipSize + x] = {color[0], color[1], color[2], 0};
-            }
+        const auto row = [&](size_t index) {
+          const uint32_t face = uint32_t(index) / mipSize, y = uint32_t(index) % mipSize;
+          for (uint32_t x = 0; x < mipSize; ++x) {
+            if (cancelled.stop_requested())
+              throw std::runtime_error("Reflection filtering superseded");
+            const auto n =
+                direction(face, 2 * (float(x) + .5f) / mipSize - 1, 2 * (float(y) + .5f) / mipSize - 1);
+            const auto color = prefilter(capture, n, quadrature[level]);
+            result.texels[start + (face * mipSize + y) * mipSize + x] = {color[0], color[1], color[2], 0};
+          }
+        };
+        if (workers && mipSize >= 4)
+          workers->run(6 * mipSize, row);
+        else
+          for (uint32_t index = 0; index < 6 * mipSize; ++index)
+            row(index);
       }
     }
     return result;

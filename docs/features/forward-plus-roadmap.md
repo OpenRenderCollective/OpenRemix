@@ -822,7 +822,11 @@ lookup belongs to its different coefficient-prefiltered mip chain; do not copy t
 matching the producer. Disabling the independent highlight budget still retains mixed-light
 specular work, so it alone does not isolate cubemap radiance. Further work includes shared GPU
 image storage for same-origin shapes, streamed high-resolution capture rays, compressed cache/GPU
-formats, GPU GGX filtering and calibration against all three reference renderers. Higher face sizes
+formats, GPU GGX filtering and calibration against all three reference renderers. CPU GGX filtering
+now distributes independent mip rows through the existing bounded worker pool in automatic bakes
+and authored edits. Per-texel sample order and duplicate-capture reuse stay unchanged; packed serial
+and parallel results match byte for byte. This targets CPU finalization, not steady rendering cost.
+GPU filtering and streamed capture work remain outstanding. Higher face sizes
 also increase canonical raw/filtered cache size and CPU capture/filter work; compact GPU images
 alone do not solve those bake-time and disk costs.
 The attempted receiver-first score is rejected: it can fill the sheltered-region budget and displace

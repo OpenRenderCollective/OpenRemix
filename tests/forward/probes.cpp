@@ -1,4 +1,5 @@
 #include "forward/probes/data.h"
+#include "platform/workers.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -48,6 +49,26 @@ namespace {
   }
 } // namespace
 int main() {
+  {
+    auto first = capture(64), second = first;
+    second.position[0] = .25f;
+    second.radiance[19] = {12000, 300, .125f, 0};
+    const std::array captures{first, second, first};
+    const auto serial = p::serialize(p::filter(captures, 64));
+    remix::WorkerPool workers(2);
+    for (unsigned repeat = 0; repeat < 2; ++repeat)
+      require(p::serialize(p::filter(captures, 64, {}, &workers)) == serial,
+              "Parallel reflection rows preserve every packed byte, including shared captures");
+    std::stop_source stopped;
+    stopped.request_stop();
+    bool cancelled = false;
+    try {
+      p::filter(captures, 64, stopped.get_token(), &workers);
+    } catch (const std::runtime_error &) {
+      cancelled = true;
+    }
+    require(cancelled, "Parallel reflection filtering respects cancellation");
+  }
   testCaptureWork();
   testProbeImageData();
   cubeCorners();
