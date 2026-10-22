@@ -1107,7 +1107,17 @@ increases from 16.99 to 18.17 and rim error from 13.11 to 15.52. Numerical split
 inconsistent. Retain the current default. This fixed camera, metallic sphere, 128-face resolution and
 lower-sample capture/transport study establishes neither general quality parity nor FPS acceptance.
 
-Next isolate capture resolution, capture-origin/parallax error, transport convergence and material
-energy with receiver-local or constant-environment controls. Then assess the viewer's normalization
-against bright/dark receiver transitions, including props, viewmodels, water and sky. Avoid combining
-direction, mip and energy changes before each cause has evidence. Broader maps and motion remain open.
+Transport isolation now explains most of the remaining dark reflection mismatch. Raising face
+resolution from 128 to 512 sharpens detail without fixing the dark ceiling. Keeping 64 samples but
+raising transport from one to three bounces reduces the mirror core display-space error from 25.61
+to 3.23; the existing 256-sample, three-bounce default reaches 2.39. At roughness 0.4 the default
+transport gives 2.27 versus 21.93 for the cheap one-bounce case. These runs complete preparation,
+authored captures and synchronization validation. Runtime defaults already use this transport, so
+no default change is warranted. Earlier one-bounce direction/energy comparisons are confounded by
+unconverged captured radiance and cannot establish production improvement or regression.
+
+The adapter supplies a documented quality-study preset using normal transport and probe budgets.
+Use it instead of smoke-test settings for visual acceptance. Future direction/energy candidates
+need normal-quality comparisons; capture-origin/parallax and receiver-local controls, bright/dark
+transitions, props, water, viewmodels, other maps and motion remain open. Preserve finite-sample
+reference limitations and avoid treating this fixed metallic-sphere study as renderer parity or FPS.

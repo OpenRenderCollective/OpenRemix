@@ -340,3 +340,11 @@ Use the current roadmap section for the decision and remaining controls. Before 
 shading, isolate capture resolution/origin, parallax and transport convergence; then evaluate material
 energy and receiver-lighting normalization. Single-camera metallic-sphere results are not broader
 map, water, viewmodel, motion or FPS acceptance.
+
+
+Normal-quality transport is required for the reflection study: three bounces restore ceiling
+illumination missing at one bounce, reducing the controlled mirror-region error by roughly an order
+of magnitude. Runtime defaults already use 256 samples and three bounces. Earlier cheap-transport
+comparisons cannot decide a production direction/energy change. The adapter's
+`tools/replay_quality.cfg` provides an explicit starting point; add fixed camera, matching assets,
+exposure and sky scope, and still verify preparation and transport convergence.
