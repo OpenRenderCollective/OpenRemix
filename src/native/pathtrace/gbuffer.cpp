@@ -202,13 +202,13 @@ namespace remix {
 
   void PathTracer::Gpu::recordPrimary(VkCommandBuffer command, bool rasterPrimary) {
     if (!rasterPrimary) {
-      // The reference shader statically declares these descriptors even when it
-      // does not read them. Keep their descriptor layouts valid from first use.
+      // Ray-primary tracing still writes previous-position and metering guides.
+      // Keep every descriptor valid, including write access from first use.
       if (!primaryInitialized) {
         VkImageMemoryBarrier transitions[7] = {};
         for (unsigned i = 0; i < 7; ++i)
           transitions[i] = {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-                            .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+                            .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
                             .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
                             .newLayout = VK_IMAGE_LAYOUT_GENERAL,
                             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
