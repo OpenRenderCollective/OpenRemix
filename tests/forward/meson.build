@@ -249,3 +249,10 @@ forward_probe_mask_test = executable('remix-forward-probe-mask-test', 'probe_rec
   '../../src/native/forward/probes/receiver_mask.cpp', '../../src/native/forward/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Reflection probe receiver masks preserve padded and rotated coverage', forward_probe_mask_test)
+
+sun_depth_cache_test = executable('remix-sun-depth-cache-test', 'sun_depth_cache.cpp',
+  '../../src/native/forward/bake/sun_depth_cache.cpp', '../../src/native/forward/bake/sun_depth_layout.cpp',
+  '../../src/native/forward/lighting.cpp', include_directories : test_includes,
+  link_with : scene_library, cpp_args : test_cpp_args)
+test('Sun depth cache validates identity and packs captured rows only', sun_depth_cache_test,
+  args : [meson.current_build_dir() / 'sun-depth-cache'])

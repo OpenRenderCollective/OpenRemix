@@ -1283,7 +1283,15 @@ errors, while residual indirect probe tint remains. These are fixed-view diagnos
 live gameplay FPS or universal map acceptance. Disabled-path pixels remain identical; world/MSAA and
 viewmodel regressions pass with Vulkan synchronization validation.
 
-Next implement versioned cache persistence/restoration, cover map transitions and moving actors,
+The versioned CPU cache chunk now packs only captured tile rows, retaining exact float bits and
+restoring unused atlas space to explicit misses. It reuses the checksummed container and compares
+sampling metadata and the sparse directory against the current scene plan before accepting bounded
+sample counts. Producer and consumer independently reject nonfinite/out-of-range depth and unknown
+negative sentinels; cancellation and malformed/truncated payload tests pass. This chunk is not yet
+connected to live GPU readback/restore or the main bake cache, so the diagnostic switch still bypasses
+persistent caches. No warm-cache performance or default readiness is claimed from codec tests.
+
+Next connect atomic cache publication and fenced GPU readback/restoration, cover map transitions and moving actors,
 and measure the steady-state and total bake costs. Confirm unsupported/over-budget fallback,
 transmissive casters and finite sun shape before enabling a default. The existing static-cascade
 fallback can still redraw for receivers that need it; do not claim that all static sun shadow work

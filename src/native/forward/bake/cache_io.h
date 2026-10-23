@@ -34,6 +34,11 @@ namespace remix::forward::bake::cache::detail {
       static_assert(std::is_trivially_copyable_v<T>);
       bytes(&value, sizeof(value));
     }
+    // Known-size chunks (for example bounded atlas rows) need no repeated count.
+    template <typename T> void raw(std::span<const T> values) {
+      static_assert(std::is_trivially_copyable_v<T>);
+      bytes(values.data(), values.size_bytes());
+    }
     template <typename T> void array(std::span<const T> values) {
       static_assert(std::is_trivially_copyable_v<T>);
       pod(uint64_t(values.size()));
@@ -109,6 +114,10 @@ namespace remix::forward::bake::cache::detail {
       std::vector<T> result(size_t(count), T{});
       bytes(result.data(), result.size() * sizeof(T));
       return result;
+    }
+    template <typename T> void raw(std::span<T> values) {
+      static_assert(std::is_trivially_copyable_v<T>);
+      bytes(values.data(), values.size_bytes());
     }
     void finish() {
       if (remaining)
