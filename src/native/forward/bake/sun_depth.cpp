@@ -1,10 +1,13 @@
 #include "forward/bake/sun_depth.h"
+#include "forward/bake/cache.h"
+#include "forward/bake/shaders/embedded.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 namespace remix::forward::bake {
   std::shared_ptr<SunDepth> SunDepth::prepare(VkPhysicalDevice physical, VkDevice device,
-      const scene::BakeScene &source, const lightmap::Layout &receivers, std::stop_token cancelled) {
+      const scene::BakeScene &source, const lightmap::Layout &receivers, std::stop_token cancelled,
+      bool diskCache, uint32_t textureResolution) {
     if (!source.sun.isDistant) return {};
     auto result = std::shared_ptr<SunDepth>(new SunDepth);
     const auto z = normalized({source.sun.direction[0], source.sun.direction[1], source.sun.direction[2]});
@@ -42,12 +45,29 @@ namespace remix::forward::bake {
     result->m_extent = result->m_layout.options.tileTexels + 2 * result->m_layout.options.border;
     if (uint64_t(result->m_layout.tiles.size()) * result->m_extent * result->m_extent > UINT32_MAX)
       throw std::length_error("Sun depth capture task count exceeds uint32");
+    if (diskCache) {
+      const uint32_t policy[]{1, textureResolution};
+      result->m_cacheKey = scene::fastHash(policy, sizeof(policy), source.contentHash);
+      result->m_cacheKey = scene::fastHash(depthShader, sizeof(depthShader), result->m_cacheKey);
+      result->m_cacheKey = scene::fastHash(&result->m_header, sizeof(result->m_header), result->m_cacheKey);
+      result->m_cacheKey = scene::fastHash(result->m_layout.directory.data(), result->m_layout.directory.size()*sizeof(uint32_t), result->m_cacheKey);
+      try { result->m_cacheFile = cache::path(result->m_cacheKey); result->m_cacheFile.replace_extension(".sun-depth"); }
+      catch (const std::exception &) { result->m_cacheFile.clear(); }
+    }
+    auto restored = result->loadCache(cancelled);
     result->m_table.create(physical, device, tableBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     result->m_table.write(&result->m_header, sizeof(result->m_header));
     result->m_table.write(result->m_layout.directory.data(), result->m_layout.directory.size() * sizeof(uint32_t), sizeof(SunDepthHeader));
-    result->m_values.create(physical, device, result->m_layout.depthBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Buffer::Memory::Device);
-    std::fprintf(stderr, "Forward sparse sun depth: %zu tiles, %u rays, %llu bytes; diagnostic uncached capture\n",
-        result->m_layout.tiles.size(), result->tasks(), static_cast<unsigned long long>(result->bytes()));
+    result->m_values.create(physical, device, result->m_layout.depthBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, Buffer::Memory::Device);
+    if (!restored.empty()) {
+      result->m_transfer = std::make_unique<Buffer>();
+      result->m_transfer->create(physical, device, result->m_layout.depthBytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+      result->m_transfer->write(restored.data(), restored.size()*sizeof(float));
+      result->m_transferBytes = result->m_transfer->allocationBytes;
+      result->m_restored = true;
+    }
+    std::fprintf(stderr, "Forward sparse sun depth: %zu tiles, %u rays, %llu bytes; restored %u\n",
+        result->m_layout.tiles.size(), result->tasks(), static_cast<unsigned long long>(result->bytes()), uint32_t(result->m_restored));
     return result;
   }
   std::vector<Transport::DepthRay> SunDepth::batch(uint32_t first, uint32_t count) const {

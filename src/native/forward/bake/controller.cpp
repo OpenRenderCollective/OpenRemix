@@ -140,7 +140,7 @@ namespace remix::forward::bake {
     const char *samples = std::getenv("REMIX_DEBUG_BAKE_SURFACE_SAMPLES");
     reference = ReferenceCapture::fromEnvironment();
     const bool depthCapture = std::getenv("REMIX_DEBUG_BAKE_SUN_DEPTH") != nullptr;
-    if (!depthCapture && !reference && config.diskCache && (!samples || std::strcmp(samples, "1") != 0)) {
+    if (!reference && config.diskCache && (!samples || std::strcmp(samples, "1") != 0)) {
       cache::Device deviceIdentity{properties.vendorID, properties.deviceID, properties.driverVersion,
                                      properties.limits.maxImageDimension2D,
                                      properties.limits.maxImageArrayLayers,
@@ -160,6 +160,10 @@ namespace remix::forward::bake {
             (!cached->directionalAttempted || (cached->directionals.empty() &&
              cached->directionalBudget < mixed::directionalStorageBudget(cached->layout))))
           cached.reset(); // Upgrade only a missing capability or a smaller declined budget.
+        if (cached && depthCapture) {
+          sunDepth = SunDepth::prepare(physical, device, *source, cached->layout, cancellation.get_token(),
+                                       true, config.textureResolution);
+        }
         if (!cancellation.stop_requested())
           cache::recordLookup(cacheFile, cacheKey, source->contentHash,
                                cache::key(0, config, lightCutoff, deviceIdentity, directLighting), bool(cached));
@@ -196,6 +200,18 @@ namespace remix::forward::bake {
           dumpReceiverReport(*source, surfaceLayout, surfacePixels, grid, cancellation.get_token());
           prepareSurfaceStorage();
           prepareGroupedStyles(properties.limits.maxStorageBufferRange, config);
+          if (sunDepth && !sunDepth->restored()) {
+            // A missing depth sidecar must not retrace cached irradiance/styles.
+            Options depthOptions;
+            depthOptions.depthCapture = true;
+            depthOptions.batchPoints = Budget::maximumPoints;
+            depthOptions.rayBudget = Budget::maximumWork;
+            depthOptions.initialBatchPoints = 1024;
+            depthOptions.queueFamily = queueFamily;
+            depthOptions.textureResolution = config.textureResolution;
+            transport = std::make_unique<Transport>();
+            transport->initialize(physical, device, source, depthOptions);
+          }
           cacheHit = filtering = true;
           return;
         }
@@ -236,7 +252,8 @@ namespace remix::forward::bake {
       probes::dumpPublishedData(".receiver-grid-header.bin", &grid.header, sizeof(grid.header));
       probes::dumpPublishedData(".receiver-grid-lookup.bin", grid.lookup.data(), grid.lookup.size() * sizeof(uint32_t));
     }
-    if (depthCapture) sunDepth = SunDepth::prepare(physical, device, *source, surfaceLayout, cancellation.get_token());
+    if (depthCapture && !sunDepth) sunDepth = SunDepth::prepare(physical, device, *source, surfaceLayout, cancellation.get_token(),
+                                                            config.diskCache, config.textureResolution);
     surfaces.resize(surfaceLayout.points.size());
     Options options;
     options.directLighting = directLighting;
@@ -350,12 +367,19 @@ namespace remix::forward::bake {
     }
     if (submission.upload) {
       submission.upload->staging.reset();
+      if (submission.upload->sunDepth) submission.upload->sunDepth->releaseUpload();
       submission.upload->specular->releaseUpload();
     }
     if (submission.job) {
       auto &job = *submission.job;
-      if (submission.preparation)
+      if (submission.sunDepthCache && submission.job == m_job) {
+        job.sunDepthCacheReady = true;
+        job.readbackBytes += job.sunDepth->depthBytes();
+      }
+      if (submission.preparation) {
         job.transport->releaseBuildInputs();
+        if (job.sunDepth && job.sunDepth->restored()) job.sunDepth->releaseUpload();
+      }
       if (submission.count && submission.job == m_job && !job.failed) {
         const auto readBegin = std::chrono::steady_clock::now();
         if (submission.sunDepth) {
@@ -1065,6 +1089,7 @@ namespace remix::forward::bake {
                                     [](const auto &p) { return p.irradiance[7][3] > .5f; }))
       volume->sun = m_job->source->sun;
     volume->sunDepth = m_job->sunDepth;
+    if (volume->sunDepth) volume->sunDepth->recordUpload(command);
     volume->hash = m_hash;
     if (!m_job->captures.empty()) {
       volume->content.captureInputs = m_job->captureInputHash;
@@ -1476,6 +1501,19 @@ namespace remix::forward::bake {
         m_statistics.probes = uint32_t(job.grid.tasks.size());
         m_statistics.completed = job.received;
         if (job.filtering) {
+          if (job.sunDepth && !job.sunDepth->restored()) {
+            if (!job.prepared) {
+              auto &submission = m_submissions[m_slot];
+              if (submission.job) throw std::logic_error("Cached sun depth preparation reused a live slot");
+              job.transport->recordPrepare(command, resources);
+              job.prepared = true;
+              submission.job = m_job;
+              submission.preparation = true;
+              status(REMIXAPI_BAKE_PREPARING_EXT, "Preparing missing sun depth from cached lighting");
+              return;
+            }
+            if (recordSunDepth(command, config)) return;
+          }
           activate(command);
           return;
         }
@@ -1486,6 +1524,7 @@ namespace remix::forward::bake {
         if (!job.prepared) {
           auto &submission = m_submissions[m_slot];
           job.transport->recordPrepare(command, resources);
+          if (job.sunDepth && job.sunDepth->restored()) job.sunDepth->recordUpload(command);
           job.prepared = true;
           submission.job = m_job;
           submission.preparation = true;

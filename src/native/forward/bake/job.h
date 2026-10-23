@@ -32,6 +32,7 @@ namespace remix::forward::bake {
     std::shared_ptr<SunDepth> sunDepth;
     uint32_t sunDepthNext = 0, sunDepthReceived = 0;
     bool sunDepthLogged = false;
+    bool sunDepthCacheSubmitted = false, sunDepthCacheReady = false, sunDepthCacheWritten = false;
     double sunDepthGpuMs = 0;
     uint32_t probeDepthNext = 0, probeDepthReceived = 0;
     Refinement refinement;

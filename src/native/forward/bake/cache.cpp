@@ -1,6 +1,7 @@
 #include "forward/bake/cache.h"
 #include "forward/bake/sparse_sh.h"
 #include "forward/bake/cache_io.h"
+#include "forward/bake/cache_file.h"
 #include "forward/bake/shaders/embedded.h"
 #include "forward/lightmap/denoise.h"
 #include "forward/mixed/directional_coverage.h"
@@ -12,9 +13,6 @@
 #include <cstdlib>
 #include <random>
 #include <sstream>
-#ifdef _WIN32
-#include <windows.h>
-#endif
 
 namespace remix::forward::bake::cache {
   void Snapshot::takeGrid(Grid &source) {
@@ -298,15 +296,6 @@ namespace remix::forward::bake::cache {
       }
       for (const auto &texel : data.texels)
         finite(texel);
-    }
-    void replace(const std::filesystem::path &temporary, const std::filesystem::path &destination) {
-#ifdef _WIN32
-      if (!MoveFileExW(temporary.c_str(), destination.c_str(),
-                       MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
-        throw std::runtime_error("Bake cache rename failed");
-#else
-      std::filesystem::rename(temporary, destination);
-#endif
     }
   } // namespace
   uint64_t key(uint64_t content, const Config &c, float cutoff, const Device &d, const DirectPolicy &policy) {
@@ -633,7 +622,7 @@ namespace remix::forward::bake::cache {
       }
       output.finish();
       detail::check(cancelled);
-      replace(temporary, file);
+      detail::replaceFile(temporary, file);
       return true;
     } catch (const std::exception &error) {
       if (!temporary.empty()) {

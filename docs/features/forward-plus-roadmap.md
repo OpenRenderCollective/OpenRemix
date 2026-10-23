@@ -1268,8 +1268,8 @@ positions retain the original probe/shadow fallback. Ordinary transport does not
 kernel. Capture output is 64 times smaller per ray, not a measured whole-bake speedup.
 
 The renderer prototype is enabled only by the process environment flag
-`REMIX_DEBUG_BAKE_SUN_DEPTH`. It intentionally bypasses disk-cache reads and writes until the depth
-field has a versioned persistent representation. Receiver projection is a reusable CPU planning
+`REMIX_DEBUG_BAKE_SUN_DEPTH`. It reuses the ordinary lighting cache and stores depth in a separate
+versioned sidecar. Receiver projection is a reusable CPU planning
 module; `SunDepth` owns the immutable layout and GPU buffers, while a dedicated controller stage
 schedules bounded indexed ray batches. Each ray writes its final atlas location directly. All
 submission fences must complete before the published volume can expose the buffers. Old frames
@@ -1287,11 +1287,17 @@ The versioned CPU cache chunk now packs only captured tile rows, retaining exact
 restoring unused atlas space to explicit misses. It reuses the checksummed container and compares
 sampling metadata and the sparse directory against the current scene plan before accepting bounded
 sample counts. Producer and consumer independently reject nonfinite/out-of-range depth and unknown
-negative sentinels; cancellation and malformed/truncated payload tests pass. This chunk is not yet
-connected to live GPU readback/restore or the main bake cache, so the diagnostic switch still bypasses
-persistent caches. No warm-cache performance or default readiness is claimed from codec tests.
+negative sentinels; cancellation and malformed/truncated payload tests pass. Live capture copies depth
+to readback storage once, waits for its submission fence, then writes and atomically replaces the
+sidecar on a worker. Restore stages a GPU upload before publication and retains staging until its
+fence completes. Cache identity includes scene content, capture shader, sampling layout and policy.
+A missing or rejected sidecar captures depth without discarding cached irradiance or styled lighting.
+Construct's partial-cache and warm-cache images match each other and the original sun-depth control
+exactly with synchronization validation. The warm load restores depth without geometry tracing;
+the existing lighting cache remains unchanged. This proves this fixed-view persistence path, not
+default readiness or a general load-time/FPS improvement.
 
-Next connect atomic cache publication and fenced GPU readback/restoration, cover map transitions and moving actors,
+Next cover map transitions and moving actors,
 and measure the steady-state and total bake costs. Confirm unsupported/over-budget fallback,
 transmissive casters and finite sun shape before enabling a default. The existing static-cascade
 fallback can still redraw for receivers that need it; do not claim that all static sun shadow work
