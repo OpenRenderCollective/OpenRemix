@@ -2,6 +2,11 @@
 #include <algorithm>
 #include <cstring>
 #include <remix/remix_bake_ext.h>
+#include <remix/remix_reflection_ext.h>
+
+extern "C" REMIXAPI uint32_t REMIXAPI_CALL remixapi_GetReflectionBindingVersionEXT(void) {
+  return REMIXAPI_REFLECTION_BINDING_VERSION_EXT;
+}
 
 extern "C" REMIXAPI remixapi_ErrorCode REMIXAPI_CALL
 remixapi_SetBakeSceneEXT(const remixapi_BakeSceneInfoEXT *info) {

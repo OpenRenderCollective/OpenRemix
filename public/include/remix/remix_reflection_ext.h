@@ -4,6 +4,7 @@
 #define REMIXAPI_REFLECTION_VOLUMES_VERSION_EXT 1
 #define REMIXAPI_REFLECTION_VOLUMES_SAMPLING_VERSION_EXT 2
 #define REMIXAPI_REFLECTION_VOLUMES_MAX_EXT 64
+#define REMIXAPI_REFLECTION_BINDING_VERSION_EXT 1
 
 // Optional pNext on opaque MaterialInfo. Bind its local reflection fallback to
 // one authored volume, independently of receiver influence bounds. SSR retains
@@ -47,6 +48,15 @@ typedef struct remixapi_ReflectionVolumesSamplingInfoEXT {
 #ifdef __cplusplus
 extern "C" {
 #endif
+// Optional immutable capability query; callable before initialization. Version
+// one includes opaque receiver bindings and frame-snapshotted binding-only
+// updates that preserve shading/retained ownership. It does not report active
+// backend, hardware capture support, or asynchronous authored-image readiness.
+// An absent export means this contract is unsupported, even if an older binary
+// happens to accept/ignore the material pNext node.
+typedef uint32_t(REMIXAPI_PTR *PFN_remixapi_GetReflectionBindingVersionEXT)(void);
+REMIXAPI uint32_t REMIXAPI_CALL remixapi_GetReflectionBindingVersionEXT(void);
+
 // Copies caller data. NULL restores automatic placement. A non-NULL zero-count
 // request explicitly disables local cubemaps. Updates never change diffuse bake inputs.
 // Requests are scoped to sceneId and remain dormant while another scene is active.

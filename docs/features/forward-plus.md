@@ -2397,6 +2397,11 @@ They do not need mesh/material replacement to update a binding. The Source adapt
 accepted-sidecar captures. VMT-specific variant keys preserve distinct receivers sharing an albedo.
 This requires a matching runtime and remains off by default pending live-host and visual acceptance;
 it does not infer original BSP projection conventions or dynamic influence regions.
+The optional `remixapi_GetReflectionBindingVersionEXT()` export is an immutable contract query
+that can run before initialization. Version 1 guarantees opaque receiver bindings and frame-safe,
+ownership-preserving binding-only updates; higher versions retain those guarantees. An absent
+export is unsupported. The Source opt-in gate checks this contract before creating receiver
+variants. This is separate from backend/device capabilities and authored-capture readiness.
 
 Canonical capture/cache order remains unchanged for identity and radiance reuse. Image upload sorts
 projection records and every radiance mip together by descending priority, retaining source order for ties.
