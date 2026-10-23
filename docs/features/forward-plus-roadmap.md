@@ -322,8 +322,13 @@ cubemap import belongs in the Source adapter: identify the map's volume represen
 capture origins independently from projection bounds, and translate supported transforms and
 priorities into the existing engine-agnostic `SetReflectionVolumesEXT` API. Validate coordinate
 conventions and overlapping-volume behavior against the authored reference before enabling it.
-This import is planned work; existing BSP cubemap capture seeds alone do not establish authored
-parallax bounds support. Inspect the interaction with the entities' optional `sides` face assignments
+Runtime import remains planned work; existing BSP cubemap capture seeds alone do not establish
+authored parallax bounds support. The read-only `probe_editor.bsp_reflections` tool now extracts a
+map-fingerprinted projection-reference corpus from loose BSPs, retaining raw capture/box/angle fields
+and optional Hammer side assignments. Its bounded entity parser rejects malformed or ambiguous
+qualifying records and selects only explicitly enabled parallax entities. Extraction from the installed
+Black Mesa BSP matches the earlier manual reference, including its side assignments. Reference JSON
+is deliberately distinct from authoring JSON and cannot be published as a runtime sidecar. Inspect the interaction with the entities' optional `sides` face assignments
 before treating their boxes as freely blended influence volumes. Bounds values appear relative to
 the capture origin, but confirm this convention against Black Mesa rendering before conversion.
 The installed Black Mesa `bin/base.fgd` defines `boxmin`/`boxmax` as **projection** bounds and
