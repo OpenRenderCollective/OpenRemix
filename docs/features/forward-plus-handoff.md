@@ -5,8 +5,9 @@ Current testing installation: `forwardplus-bake-batch-20261024`, native binary
 tint motion/stationary bake policy, canonical Source asset paths and batched
 bake pipeline compilation. Existing rendering defaults and user-authored
 assets are preserved; experimental probe batching remains opt-in. Earlier
-checkpoint/deployment descriptions below are historical. Foreground gameplay
-performance, wider visual parity and the remaining roadmap are still open.
+checkpoint/deployment descriptions below are historical. Focused fixed-view
+Trainstation qualification passes; moving gameplay, wider visual parity and
+the remaining roadmap are still open.
 
 Current probe-batching executable diagnostics show generic world fragments growing from about
 110 KiB to 135 KiB and viewmodel fragments from about 156 KiB to 181 KiB; the fully mapped
@@ -652,3 +653,10 @@ and dispatch semantics are unchanged. This removes serial create/wait
 scheduling during cold compilation. Transport and cancellation validation,
 plus repeated Construct cold-start/image comparisons, pass. The testing
 installation now includes this candidate.
+
+Current runtime profiling priority: expensive generic receiver/world and
+viewmodel shading in light-heavy views, preserving unknown probe/lightmap
+coverage fallback. The clustered baked-light tail is correctness work, not
+proof of analytic diffuse evaluation. Separate host-limited views from
+GPU-limited views before selecting optimizations. Static shadow-map update
+counters remain zero after bake in the qualified Trainstation fixed views.
