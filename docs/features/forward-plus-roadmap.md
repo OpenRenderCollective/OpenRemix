@@ -110,8 +110,10 @@ Normal-quality Construct before/staged/installed captures retain identical pixel
 with synchronization validation. The staged DLL passes late-emissive/TAA preparation and visibility
 checks. Six current GPU suites cover MSAA, viewmodel overlay/shadows, baked probes, SSR, authored
 edits and sun-depth lifecycle; F12 and sidecar CPU checks pass. These are functional checks, not
-armed/moving gameplay or FPS acceptance. Automatic authored fallback remains off by default, and
-user backend settings are preserved. Ordinary lighting cache identity is unchanged by this refresh;
+armed/moving gameplay or FPS acceptance. Automatic fallback outside authored volumes is now enabled
+by default and pinned by the testing launcher; authored priority remains local. User backend settings
+are preserved. Remaining transition work must close uncovered doorway strips using visibility-aware
+influence overlap, without expanding projection bounds through walls or changing saved authored boxes. Ordinary lighting cache identity is unchanged by this refresh;
 optional sun-depth policy/layout changes can recapture depth while retaining cached irradiance.
 Older cache files are not deleted. Broader map, quality and performance gates remain open.
 The native continuation adds chart-edge denoising, stable progressive history, surface-hemisphere
