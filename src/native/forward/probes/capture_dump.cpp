@@ -31,6 +31,21 @@ namespace remix::forward::probes {
       return {};
     }
   }
+  bool retryReceiverAudit(const scene::BakeScene &source, std::span<const Capture> captures,
+      ReceiverAudit &audit, std::stop_token cancelled) noexcept {
+    try {
+      if (!audit.complete() || audit.pairs().size() == 32768) return false;
+      const auto receivers = sampleReceivers(source, 8192, cancelled);
+      auto pairs = receiverRetryPairs(receivers, captures, audit.pairs(), audit.visibility(),
+          .002f / source.sceneScale, uint32_t(32768 - audit.pairs().size()), cancelled);
+      if (pairs.empty()) return false;
+      audit.append(std::move(pairs));
+      return true;
+    } catch (const std::exception &error) {
+      std::fprintf(stderr, "Receiver visibility retry unavailable: %s\n", error.what());
+      return false;
+    }
+  }
   void dumpReceiverAudit(const scene::BakeScene &source, std::span<const Capture> captures,
       const ReceiverAudit &audit, std::stop_token cancelled) noexcept {
     const char *path = std::getenv("REMIX_DEBUG_PROBE_RECEIVER_VISIBILITY");
@@ -51,6 +66,7 @@ namespace remix::forward::probes {
         const auto &receiver = receivers.at(pair.receiver);
         const auto state = audit.visibility(i);
         output << (i ? ",\n" : "") << "{\"receiver\":" << pair.receiver << ",\"capture\":" << pair.capture
+               << ",\"candidateRank\":" << pair.rank
                << ",\"position\":";
         vector(receiver.position);
         output << ",\"target\":";

@@ -94,4 +94,47 @@ int main() {
   require(!audit.observe(3, std::span(hits).subspan(3, 2))); // Refuse overlap atomically, including unseen index 3.
   require(audit.observe(0, std::span(hits).first(4)) && audit.complete());
   require(audit.visibility(3) == V::Visible && !audit.observe(0, std::span(hits).first(1)));
+  auto manyCaptures = captures;
+  while (manyCaptures.size() < 8) {
+    auto capture = captures[0];
+    capture.position[0] = float(manyCaptures.size() * 10);
+    capture.bounds.minimum[0] = capture.position[0] - 1;
+    capture.bounds.maximum[0] = capture.position[0] + 1;
+    manyCaptures.push_back(capture);
+  }
+  receivers[0].position = {0, 0, 0};
+  const auto firstRound = p::receiverPairs(std::span(receivers).first(4), manyCaptures, .01f, 8, 4);
+  require(firstRound.size() == 8);
+  std::vector<V> states(8, V::Blocked);
+  states[4] = V::Unknown;
+  const auto retry = p::receiverRetryPairs(receivers, manyCaptures, firstRound, states, .01f, 8);
+  require(retry.size() == 4);
+  const auto limitedRetry = p::receiverRetryPairs(receivers, manyCaptures, firstRound, states, .01f, 1);
+  require(limitedRetry.size() == 1 && limitedRetry[0].rank == 4);
+  for (const auto &pair : retry) {
+    require(pair.receiver == firstRound[0].receiver && pair.rank >= 4 && pair.rank < 8);
+    for (const auto &old : firstRound)
+      require(pair.receiver != old.receiver || pair.capture != old.capture);
+  }
+  states[0] = V::Visible;
+  require(p::receiverRetryPairs(receivers, manyCaptures, firstRound, states, .01f, 8).empty());
+  auto duplicate = firstRound;
+  duplicate[1].capture = duplicate[0].capture;
+  rejected = false;
+  try { p::receiverRetryPairs(receivers, manyCaptures, duplicate, states, .01f, 8); }
+  catch (const std::invalid_argument &) { rejected = true; }
+  require(rejected);
+  p::ReceiverAudit rounds(firstRound, .01f);
+  rejected = false;
+  try { rounds.append(retry); } catch (const std::logic_error &) { rejected = true; }
+  require(rejected); // Pending GPU owners cannot be displaced by retry allocation.
+  std::vector<Result> blocked(8, geometry(1));
+  require(rounds.observe(0, blocked));
+  rounds.append(retry);
+  require(!rounds.complete() && rounds.visibility(0) == V::Blocked && rounds.rays().size() == 12);
+  std::vector<Result> clear(4, geometry(10000));
+  require(rounds.observe(8, clear) && rounds.complete() && rounds.visibility(8) == V::Visible);
+  rejected = false;
+  try { rounds.append({firstRound[0]}); } catch (const std::invalid_argument &) { rejected = true; }
+  require(rejected && rounds.complete() && rounds.rays().size() == 12);
 }

@@ -12,6 +12,8 @@ namespace remix::forward::probes {
   // receiver sampling, pair storage or extra GPU traversal.
   std::unique_ptr<ReceiverAudit> prepareReceiverAudit(const scene::BakeScene &source,
       std::span<const Capture> captures, std::stop_token cancelled = {}) noexcept;
+  bool retryReceiverAudit(const scene::BakeScene &source, std::span<const Capture> captures,
+      ReceiverAudit &audit, std::stop_token cancelled = {}) noexcept;
   void dumpReceiverAudit(const scene::BakeScene &source, std::span<const Capture> captures,
       const ReceiverAudit &audit, std::stop_token cancelled = {}) noexcept;
   // Small, independent candidate report for hardware-fit experiments. Only

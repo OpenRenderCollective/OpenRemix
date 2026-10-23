@@ -492,7 +492,10 @@ visibility, authorize volume growth or guarantee that the nearest four include a
 of this bounded proposal set. The bake controller records geometry-only batches through its existing
 transport, retains each audit through submission fences, and publishes visible/blocked/unknown
 segment results on a worker after all readbacks retire. A missing request allocates no audit and
-issues no extra rays. Existing output paths are refused. The report covers automatic captures before
+issues no extra rays. One retry round checks shortlist ranks 4..7 only for receivers whose first
+four results were all blocked. Visible, unknown and incomplete groups do not retry. Both rounds
+share the 32768-ray cap and preserve prior evidence; duplicate owners and pending-work extension
+are rejected. Reports include zero-based `candidateRank`. Existing output paths are refused. The report covers automatic captures before
 authored composition; it does not change selection, published lighting, cache identity or influence
 bounds. It adds diagnostic work only during a fresh bake; loading cached lighting bypasses it.
 A segment is sampled evidence only, particularly with alpha coverage, not proof of an empty volume. These

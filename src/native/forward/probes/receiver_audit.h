@@ -1,6 +1,7 @@
 #pragma once
 #include "forward/probes/receiver_pairs.h"
 #include <utility>
+#include <unordered_set>
 
 namespace remix::forward::probes {
   // One bounded set of geometry queries. The controller owns submission and
@@ -30,6 +31,24 @@ namespace remix::forward::probes {
     }
     std::span<const bake::Point> rays() const { return m_rays; }
     std::span<const ReceiverPair> pairs() const { return m_pairs; }
+    std::span<const ReceiverVisibility> visibility() const { return m_visibility; }
+    // Only extend after every old slot has retired. Existing evidence and seen
+    // bits stay intact; retry pairs must not resubmit an earlier owner.
+    void append(std::vector<ReceiverPair> pairs) {
+      if (!complete() || pairs.size() > 32768 - m_pairs.size())
+        throw std::logic_error("Receiver audit cannot extend pending work or exceed its budget");
+      ReceiverAudit extra(std::move(pairs), m_tolerance);
+      std::unordered_set<uint64_t> owners;
+      for (const auto &pair : m_pairs) owners.insert((uint64_t(pair.receiver) << 32) | pair.capture);
+      for (const auto &pair : extra.m_pairs)
+        if (!owners.insert((uint64_t(pair.receiver) << 32) | pair.capture).second)
+          throw std::invalid_argument("Receiver audit retry repeats a capture owner");
+      m_pairs.insert(m_pairs.end(), extra.m_pairs.begin(), extra.m_pairs.end());
+      m_rays.insert(m_rays.end(), extra.m_rays.begin(), extra.m_rays.end());
+      m_seen.resize(m_pairs.size());
+      m_visibility.resize(m_pairs.size(), ReceiverVisibility::Unknown);
+      m_distances.resize(m_pairs.size());
+    }
     bool observe(uint32_t first, std::span<const bake::Result> results) {
       if (first > m_pairs.size() || results.size() > m_pairs.size() - first) return false;
       for (size_t i = 0; i < results.size(); ++i) if (m_seen[first + i]) return false;

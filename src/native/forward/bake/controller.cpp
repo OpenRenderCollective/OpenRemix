@@ -967,7 +967,11 @@ namespace remix::forward::bake {
       const auto rays = job.receiverAudit->rays();
       if (job.receiverReceived == rays.size()) {
         const auto owner = m_job;
-        job.ticket = m_pipelines->prepare("forward-receiver-report-" + std::to_string(++generation), [owner] {
+        const bool retry = !job.receiverRetried;
+        job.receiverRetried = true;
+        job.ticket = m_pipelines->prepare("forward-receiver-report-" + std::to_string(++generation), [owner, retry] {
+          if (retry && probes::retryReceiverAudit(*owner->source, owner->captures, *owner->receiverAudit,
+                                                 owner->cancellation.get_token())) return;
           probes::dumpReceiverAudit(*owner->source, owner->captures, *owner->receiverAudit,
                                    owner->cancellation.get_token());
           owner->receiverAudit.reset();

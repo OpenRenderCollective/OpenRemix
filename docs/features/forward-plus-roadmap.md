@@ -129,9 +129,11 @@ CPU and GPU wall/open-segment coverage is in place. Bounded nearest-capture plan
 covered samples, spreads budgeted receiver selection and preserves deterministic capture ties.
 Optional planning reports expose automatic-set proposals without executing rays. A separate fresh-path
 hardware audit now schedules bounded geometry batches, retains fence ownership and publishes segment
-results without changing fitting or cache inputs. Next, support broader search or new local sites
-when all nearest candidates are blocked; preserve unknown range-limited misses, then validate
-localized influence support. Authored-composition pairing still needs separate validation. Ordinary lighting cache identity is unchanged by this refresh;
+results without changing fitting or cache inputs. The audit now retries shortlist ranks 4..7 only
+after four blocked results, sharing the original ray cap and retaining completed evidence. Unknown
+or visible groups never trigger retries. Next, investigate geometry-validated local capture sites
+for receivers still unsupported after bounded search, then validate localized influence support.
+Authored-composition pairing still needs separate validation. Ordinary lighting cache identity is unchanged by this refresh;
 optional sun-depth policy/layout changes can recapture depth while retaining cached irradiance.
 Older cache files are not deleted. Broader map, quality and performance gates remain open.
 The native continuation adds chart-edge denoising, stable progressive history, surface-hemisphere

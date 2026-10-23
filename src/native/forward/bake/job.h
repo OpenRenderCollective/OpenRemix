@@ -121,6 +121,7 @@ namespace remix::forward::bake {
     std::vector<probes::Capture> captures;
     std::unique_ptr<probes::ReceiverAudit> receiverAudit;
     uint32_t receiverNext = 0, receiverReceived = 0;
+    bool receiverRetried = false;
     probes::CaptureWork captureWork;
     uint64_t captureInputHash = 0;
     probes::Data specular;
