@@ -453,11 +453,13 @@ retained-sample reuse, cancellation and all-or-nothing publication. CPU and hard
 the serial coefficients and encoded fields under reordered dispatches. Keep extending saved-map
 checks of cache restoration, image parity and bake latency beyond Crossfire. Measure bake GPU time
 separately from wall time; normal scene rendering and presentation must not be mislabeled as rays.
-`bm_c1a1b` exposes a remaining scalability failure: complete attributed surface fields exceed the
-encoded storage allowance after substantial tracing/encoding work, then fall back to retained
-coverage. Improve compression, coverage planning or bounded storage policy so complex maps retain
-the fully baked path; merely skipping the attempted capture would preserve the performance problem.
-Keep the existing atomic fallback and cache compatibility while fixing this. Its Black Mesa material
+`bm_c1a1b` exposed complete attributed surface fields exceeding the encoded storage allowance after
+substantial tracing/encoding work. Adaptive lossless 4x4/8x8 blocks now fit all of its declared fields
+within the unchanged allowance; complete coverage and the sampled image are preserved. Extend map,
+camera and steady-state performance checks before claiming general scalability or rollout acceptance.
+Window scheduling and repeated encoding remain bake-time optimization targets. Keep the existing
+atomic fallback and bounded storage when improving them. The direct-light cache identity includes
+the new codec capability so previously declined bakes are retried once. Its Black Mesa material
 inputs also require ABGR8888 decoding and texture references with an explicit `.vtf` suffix, now
 handled by the adapter. Successful cache restoration alone does not close lighting-quality or
 steady-state performance acceptance for this map.

@@ -255,11 +255,22 @@ int main(int argc, char **argv) {
       std::vector<f::mixed::directional::Field> values(rectangle.width * rectangle.height);
       for (uint32_t light = 0; light < count; ++light) {
         for (auto &value : values) value.fill(light == 6 ? 0 : (light & 1 ? 0xb400 : 0x3800));
+        if (light == 0) {
+          require(rectangle.width >= 4 && rectangle.height == 5, "Sparse cache fixture retains its row of black padding");
+          for (uint32_t y = 0; y < rectangle.height; ++y)
+            for (uint32_t x = 0; x < rectangle.width; ++x) {
+              auto &value = values[size_t(y) * rectangle.width + x];
+              value.fill(0);
+              if (x < 4 && y < 4) value[2] = uint16_t(0x8000u | (1 + x + y * 4));
+            }
+        }
         require(fields.add(0, light, rectangle, values), "Seven-light cache fixture fits its storage budget");
       }
       return fields.words();
     };
     auto words = encode(7);
+    require(words[words[6] + 5] == f::mixed::directional::tiledSmall,
+            "Cache fixture exercises the small-tile codec rather than only old layouts");
     uint64_t requestedBudget = 0;
     const auto saveDirectional = [&](bool attempted = true) {
       return bc::write(directionalFile, identity,

@@ -345,6 +345,12 @@ namespace remix::forward::bake::cache {
                                d.storageRange};
     const auto hash = scene::fastHash(fields, sizeof(fields), content ^ shaders);
     auto raw = scene::fastHash(d.uuid.data(), d.uuid.size(), hash);
+    if (c.directDiffuse) {
+      // Previously declined complete fields must be retried with the adaptive
+      // codec, even though their storage allowance and transport are unchanged.
+      const uint32_t directionalCodec[] = {0x44495243u, 2};
+      raw = scene::fastHash(directionalCodec, sizeof(directionalCodec), raw);
+    }
     if (c.reflectionProbes) {
       // Balanced interior seeds prevent diagonal-room slivers. Old captures
       // retain their old proxy boxes, so reflection bakes need a new identity.

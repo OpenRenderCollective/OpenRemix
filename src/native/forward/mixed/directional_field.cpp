@@ -1,6 +1,7 @@
 #include "forward/mixed/directional_field.h"
 #include <algorithm>
 #include <stdexcept>
+#include <optional>
 
 namespace remix::forward::mixed::directional {
   namespace {
@@ -16,7 +17,7 @@ namespace remix::forward::mixed::directional {
       return size_t(width) * height;
     }
     size_t wordCount(size_t fields) { return (fields * 9 + 1) / 2; }
-    uint32_t columns(uint32_t width) { return (width + tileSide - 1) / tileSide; }
+    uint32_t columns(uint32_t width, uint32_t side) { return (width + side - 1) / side; }
     void append(std::vector<uint32_t> &words, std::span<const Field> fields) {
       const auto first = words.size();
       words.resize(first + wordCount(fields.size()), 0);
@@ -52,6 +53,42 @@ namespace remix::forward::mixed::directional {
       }
       return result;
     }
+    std::optional<Encoded> encodeTiles(std::span<const Field> fields, uint32_t width, uint32_t height,
+        std::stop_token cancelled, uint64_t maximumWords, uint32_t side, uint32_t encoding) {
+      const size_t descriptors = size_t(columns(width, side)) * columns(height, side);
+      const size_t rawWords = wordCount(fields.size());
+      if (std::min(descriptors, rawWords) > maximumWords)
+        return std::nullopt;
+      if (descriptors >= rawWords) return rawImage(fields, cancelled);
+      Encoded result{encoding, std::vector<uint32_t>(descriptors)};
+      std::array<Field, tileFields> block;
+      const uint32_t blockFields = side * side;
+      for (uint32_t ty = 0; ty < columns(height, side); ++ty) {
+        check(cancelled);
+        for (uint32_t tx = 0; tx < columns(width, side); ++tx) {
+          bool black = true, constant = true;
+          for (uint32_t y = 0; y < side; ++y)
+            for (uint32_t x = 0; x < side; ++x) {
+              const auto px = std::min(tx * side + x, width - 1);
+              const auto py = std::min(ty * side + y, height - 1);
+              const auto &field = fields[size_t(py) * width + px];
+              block[y * side + x] = field;
+              constant &= field == block[0];
+              black &= std::all_of(field.begin(), field.end(), [](uint16_t value) { return value == 0; });
+            }
+          if (black) continue;
+          const size_t next = result.words.size() + wordCount(constant ? 1 : blockFields);
+          if (std::min(next, rawWords) > maximumWords)
+            return std::nullopt;
+          if (next >= rawWords) return rawImage(fields, cancelled);
+          require(result.words.size() <= offsetMask);
+          result.words[ty * columns(width, side) + tx] = uint32_t(result.words.size()) | (constant ? 1u : 2u) << 30;
+          append(result.words, std::span(block).first(constant ? 1 : blockFields));
+        }
+      }
+      check(cancelled);
+      return result;
+    }
   }
   Encoded encode(std::span<const Field> fields, uint32_t width, uint32_t height, std::stop_token cancelled,
                  uint64_t maximumWords) {
@@ -61,38 +98,13 @@ namespace remix::forward::mixed::directional {
       if ((i & 1023u) == 0) check(cancelled);
       for (auto coefficient : fields[i]) require((coefficient & 0x7c00u) != 0x7c00u);
     }
-    const size_t descriptors = size_t(columns(width)) * columns(height);
-    const size_t rawWords = wordCount(fields.size());
-    if (std::min(descriptors, rawWords) > maximumWords)
-      throw std::length_error("Directional field exceeds its encoding budget");
-    if (descriptors >= rawWords) return rawImage(fields, cancelled);
-    Encoded result{tiled, std::vector<uint32_t>(descriptors)};
-    std::array<Field, tileFields> block;
-    for (uint32_t ty = 0; ty < columns(height); ++ty) {
-      check(cancelled);
-      for (uint32_t tx = 0; tx < columns(width); ++tx) {
-        bool black = true, constant = true;
-        for (uint32_t y = 0; y < tileSide; ++y)
-          for (uint32_t x = 0; x < tileSide; ++x) {
-            const auto px = std::min(tx * tileSide + x, width - 1);
-            const auto py = std::min(ty * tileSide + y, height - 1);
-            const auto &field = fields[size_t(py) * width + px];
-            block[y * tileSide + x] = field;
-            constant &= field == block[0];
-            black &= std::all_of(field.begin(), field.end(), [](uint16_t value) { return value == 0; });
-          }
-        if (black) continue;
-        const size_t next = result.words.size() + wordCount(constant ? 1 : tileFields);
-        if (std::min(next, rawWords) > maximumWords)
-          throw std::length_error("Directional field exceeds its encoding budget");
-        if (next >= rawWords) return rawImage(fields, cancelled);
-        require(result.words.size() <= offsetMask);
-        result.words[ty * columns(width) + tx] = uint32_t(result.words.size()) | (constant ? 1u : 2u) << 30;
-        append(result.words, std::span(block).first(constant ? 1 : tileFields));
-      }
-    }
-    check(cancelled);
-    return result;
+    auto best = encodeTiles(fields, width, height, cancelled, maximumWords, tileSide, tiled);
+    // Preserve the old layout on ties and avoid allocating a losing candidate.
+    const auto limit = best ? std::min<uint64_t>(maximumWords, best->words.size() - 1) : maximumWords;
+    if (auto compact = encodeTiles(fields, width, height, cancelled, limit, 4, tiledSmall))
+      best = std::move(compact);
+    if (!best) throw std::length_error("Directional field exceeds its encoding budget");
+    return std::move(*best);
   }
   size_t validate(std::span<const uint32_t> words, uint32_t width, uint32_t height, uint32_t encoding) {
     const size_t count = fieldCount(width, height);
@@ -100,8 +112,9 @@ namespace remix::forward::mixed::directional {
       validateFields(words, 0, count);
       return wordCount(count);
     }
-    require(encoding == tiled);
-    const size_t descriptors = size_t(columns(width)) * columns(height);
+    require(encoding == tiled || encoding == tiledSmall);
+    const uint32_t side = encoding == tiledSmall ? 4 : tileSide;
+    const size_t descriptors = size_t(columns(width, side)) * columns(height, side);
     require(descriptors <= words.size());
     size_t cursor = descriptors;
     for (size_t tile = 0; tile < descriptors; ++tile) {
@@ -111,7 +124,7 @@ namespace remix::forward::mixed::directional {
         continue;
       }
       require((mode == 1 || mode == 2) && (descriptor & offsetMask) == cursor);
-      const size_t fields = mode == 1 ? 1 : tileFields;
+      const size_t fields = mode == 1 ? 1 : side * side;
       validateFields(words, cursor, fields);
       cursor += wordCount(fields);
     }
@@ -119,9 +132,10 @@ namespace remix::forward::mixed::directional {
   }
   Field texel(std::span<const uint32_t> words, uint32_t width, uint32_t encoding, uint32_t x, uint32_t y) {
     if (encoding == raw) return read(words, 0, size_t(y) * width + x);
-    const auto descriptor = words[size_t(y / tileSide) * columns(width) + x / tileSide];
+    const uint32_t side = encoding == tiledSmall ? 4 : tileSide;
+    const auto descriptor = words[size_t(y / side) * columns(width, side) + x / side];
     if (descriptor == 0) return {};
     const auto mode = descriptor >> 30, offset = descriptor & offsetMask;
-    return read(words, offset, mode == 1 ? 0 : (y % tileSide) * tileSide + x % tileSide);
+    return read(words, offset, mode == 1 ? 0 : (y % side) * side + x % side);
   }
 }

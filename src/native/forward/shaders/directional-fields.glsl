@@ -5,10 +5,11 @@ float directionalFieldValue(uint data, uint encoding, uint width, uvec2 pixel, f
   if (encoding == 0u) {
     field = pixel.y * width + pixel.x;
   } else {
-    uint descriptor = occlusionWord(data + (pixel.y / 8u) * ((width + 7u) / 8u) + pixel.x / 8u);
+    uint side = encoding == 2u ? 4u : 8u;
+    uint descriptor = occlusionWord(data + (pixel.y / side) * ((width + side - 1u) / side) + pixel.x / side);
     if (descriptor == 0u) return 0;
     data += descriptor & 0x3fffffffu;
-    field = (descriptor >> 30u) == 1u ? 0u : (pixel.y % 8u) * 8u + pixel.x % 8u;
+    field = (descriptor >> 30u) == 1u ? 0u : (pixel.y % side) * side + pixel.x % side;
   }
   float value = 0;
   for (uint c = 0u; c < 9u; ++c) {

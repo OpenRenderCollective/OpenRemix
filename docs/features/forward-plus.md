@@ -259,6 +259,13 @@ not a total memory guarantee. Retained-only conversion keeps its 128 MiB cap.
 Cancellation never publishes unfinished fields. Budget exhaustion declines the
 whole optional replacement. Unknown visibility remains unknown.
 
+Directional chunks choose raw, 8x8 tiled or 4x4 tiled storage by encoded size, retaining the old
+layout on ties. Tiles remain exactly black, constant or raw signed half-precision SH; no spatial
+coarsening or coefficient quantization is added. CPU validation and GPU sampling support both tile
+sizes. The direct-light cache capability revision forces one fresh bake after this codec upgrade,
+including maps whose earlier complete capture exceeded its budget. Serialized old chunks remain
+readable, but caches produced with the new tile encoding require the updated runtime.
+
 Complete capture publication preserves additional baked owners even when their
 table is larger than the four-channel atlas, then minimizes allocation among
 equivalent complete options. Device limits or allocation failure can still

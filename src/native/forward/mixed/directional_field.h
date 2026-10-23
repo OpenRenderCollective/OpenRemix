@@ -8,12 +8,12 @@
 
 namespace remix::forward::mixed::directional {
   using Field = std::array<uint16_t, 9>; // signed cosine-convolved unit-direct SH
-  constexpr uint32_t raw = 0, tiled = 1, tileSide = 8;
+  constexpr uint32_t raw = 0, tiled = 1, tiledSmall = 2, tileSide = 8;
   struct Encoded {
     uint32_t encoding = raw;
     std::vector<uint32_t> words;
   };
-  // Lossless relative to finite half input. An 8x8 block is black, constant,
+  // Lossless relative to finite half input. An 8x8 or 4x4 block is black, constant,
   // or raw. Descriptors use their high two bits for the mode and low 30 bits
   // for a chunk-relative word offset. Raw whole images win storage ties.
   // A word budget throws length_error as soon as neither layout can fit.

@@ -91,6 +91,37 @@ int main() {
   for (uint32_t y = 0; y < 17; ++y)
     values[y * 9 + 8][3] = remix::forward::half::encode(-.5f);
   roundTrip(values, 9, 17);
+  {
+    std::vector<field::Field> sparse(8 * 8);
+    for (uint32_t y = 0; y < 4; ++y)
+      for (uint32_t x = 0; x < 4; ++x)
+        sparse[y * 8 + x][2] = uint16_t(0x8000u | (1 + y * 4 + x));
+    const auto compact = roundTrip(sparse, 8, 8);
+    require(compact.encoding == field::tiledSmall && compact.words.size() == 76,
+            "Small tiles preserve sparse signed coefficients with less padding");
+    require(field::encode(sparse, 8, 8, {}, 76).words == compact.words,
+            "A compact-tile field fits even when the old raw layout exceeds the budget");
+    remix::forward::mixed::DirectionalFields table(1, 1);
+    remix::forward::lightmap::Allocation rectangle{};
+    rectangle.width = rectangle.height = 8;
+    require(table.add(0, 0, rectangle, sparse), "Small tiles fit a directional table");
+    const auto words = table.words();
+    remix::forward::mixed::DirectionalFields::validate(words, 1, 1, table.bytes());
+    for (uint32_t y = 0; y < 8; ++y)
+      for (uint32_t x = 0; x < 8; ++x)
+        require(*remix::forward::mixed::DirectionalFields::sample(words, 0, 0, x, y) == sparse[y * 8 + x],
+                "Serialized table sampling preserves small-tile coordinates");
+    rejects([&] { field::encode(sparse, 8, 8, {}, 75); });
+    rejects([&] { field::validate(std::span(compact.words).first(75), 8, 8, field::tiledSmall); });
+  }
+  for (const auto dimensions : {std::array<uint32_t, 2>{5, 9}, {19, 5}, {31, 23}}) {
+    values.assign(size_t(dimensions[0]) * dimensions[1], {});
+    for (uint32_t y = 0; y < dimensions[1]; ++y)
+      for (uint32_t x = 0; x < dimensions[0]; ++x)
+        if (((x / 4) + (y / 4)) % 2)
+          values[size_t(y) * dimensions[0] + x][3] = uint16_t(0x8000u | (1 + x + y * 31));
+    roundTrip(values, dimensions[0], dimensions[1]);
+  }
   auto malformed = mixed.words;
   malformed[0] += 1;
   rejects([&] { field::validate(malformed, 16, 16, field::tiled); });
@@ -104,9 +135,10 @@ int main() {
   malformed[4] = 0x7c00;
   rejects([&] { field::validate(malformed, 16, 16, field::tiled); });
   rejects([&] { field::validate(std::span(mixed.words).first(4), 16, 16, field::tiled); });
-  rejects([&] { field::validate(mixed.words, 16, 16, 2); });
+  rejects([&] { field::validate(mixed.words, 16, 16, 3); });
   rejects([&] { field::encode({}, 0, 1); });
   rejects([&] { field::encode(values, 4097, 1); });
+  values.assign(9 * 17, {});
   values[0][0] = 0x7e00;
   rejects([&] { field::encode(values, 9, 17); });
   values[0][0] = 0;
