@@ -15,6 +15,14 @@ namespace remix::forward::bake {
   std::vector<ReceiverComparison> compareReceivers(const scene::BakeScene &source,
       const lightmap::Layout &layout, std::span<const uint16_t> pixels, const Grid &grid,
       uint32_t maximumSamples = 8192, std::stop_token cancelled = {});
+  struct ReceiverProjection {
+    Bounds bounds; // metres in the supplied orthonormal basis
+    uint64_t triangles = 0;
+  };
+  // Bounds every vertex of charted receiver triangles, including cached mappings.
+  // Excludes uncharted triangles; this is receiver coverage, not caster coverage.
+  ReceiverProjection projectReceivers(const scene::BakeScene &source, const lightmap::Layout &layout,
+      const std::array<Vec3, 3> &basis, std::stop_token cancelled = {});
   struct StyledDirectGroups;
   class ProbeVisibility;
   // Once per publication attempt; diagnostic allocation failure never fails baking.
@@ -24,7 +32,9 @@ namespace remix::forward::bake {
       std::span<const uint16_t> pixels, const Grid &grid, std::span<const uint32_t> directionals,
       const StyledDirectGroups &groups, std::stop_token cancelled = {}) noexcept;
   // Optional worker-side diagnostic, also usable after an exact cache hit.
-  // REMIX_DEBUG_BAKE_RECEIVERS names a fresh JSON file. Failures never fail baking.
+  // REMIX_DEBUG_BAKE_RECEIVERS names a fresh JSON file. Distant-light reports
+  // also include complete charted receiver bounds in sun-space metres.
+  // Failures never fail baking.
   void dumpReceiverReport(const scene::BakeScene &source, const lightmap::Layout &layout,
                           std::span<const uint16_t> pixels, const Grid &grid,
                           std::stop_token cancelled = {}) noexcept;

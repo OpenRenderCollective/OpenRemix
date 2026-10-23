@@ -47,6 +47,44 @@ int main() {
     probe.irradiance[0] = {2, .5, 1, 0};
     for (auto &moment : probe.moments) moment = {10000, 100000000, 0, 1};
   }
+  const std::array<Vec3, 3> identityBasis{Vec3{1, 0, 0}, Vec3{0, 1, 0}, Vec3{0, 0, 1}};
+  const auto projection = bake::projectReceivers(source, layout, identityBasis);
+  require(projection.triangles == 2 && projection.bounds.valid &&
+              projection.bounds.minimum == Vec3{0, 0, 0} && projection.bounds.maximum == Vec3{2, 2, 0},
+          "Receiver projection includes complete charted triangle extents rather than centroids");
+  auto shifted = source;
+  shifted.sceneScale = .5f;
+  shifted.draws[0].model[12] = 10;
+  const auto shiftedProjection = bake::projectReceivers(shifted, layout, identityBasis);
+  require(shiftedProjection.bounds.minimum == Vec3{5, 0, 0} &&
+              shiftedProjection.bounds.maximum == Vec3{6, 1, 0},
+          "Projected receiver bounds apply world transforms and metre conversion once");
+  auto invalidBasis = identityBasis;
+  invalidBasis[1] = invalidBasis[0];
+  bool invalidProjection = false;
+  try { bake::projectReceivers(source, layout, invalidBasis); }
+  catch (const std::invalid_argument &) { invalidProjection = true; }
+  require(invalidProjection, "Projection rejects nonorthogonal bases before measuring coverage");
+  auto rotatedBasis = identityBasis;
+  rotatedBasis[0] = {0, 1, 0};
+  rotatedBasis[1] = {-1, 0, 0};
+  const auto rotatedProjection = bake::projectReceivers(source, layout, rotatedBasis);
+  require(rotatedProjection.bounds.minimum == Vec3{0, -2, 0} &&
+              rotatedProjection.bounds.maximum == Vec3{2, 0, 0},
+          "Receiver coverage follows the supplied sun-space axes");
+  std::stop_source projectionStop;
+  projectionStop.request_stop();
+  bool projectionCancelled = false;
+  try { bake::projectReceivers(source, layout, identityBasis, projectionStop.get_token()); }
+  catch (const std::runtime_error &) { projectionCancelled = true; }
+  require(projectionCancelled, "Superseded receiver coverage does not keep traversing geometry");
+  auto uncharted = source;
+  uncharted.charts.clear();
+  auto noCharts = layout;
+  noCharts.charts.clear();
+  const auto emptyProjection = bake::projectReceivers(uncharted, noCharts, identityBasis);
+  require(!emptyProjection.bounds.valid && emptyProjection.triangles == 0,
+          "Uncharted geometry does not inflate measured receiver coverage");
   auto compared = bake::compareReceivers(source, layout, pixels, grid);
   require(compared.size() == 2, "Each charted triangle produces one shared receiver");
   for (const auto &receiver : compared) {

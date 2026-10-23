@@ -121,6 +121,39 @@ namespace remix::forward::bake {
     }
     return result;
   }
+  ReceiverProjection projectReceivers(const scene::BakeScene &source, const lightmap::Layout &layout,
+      const std::array<Vec3, 3> &basis, std::stop_token cancelled) {
+    if (!std::isfinite(source.sceneScale) || source.sceneScale <= 0)
+      throw std::invalid_argument("Invalid receiver projection scale");
+    for (uint32_t axis = 0; axis < 3; ++axis) {
+      if (std::abs(dot(basis[axis], basis[axis]) - 1) > 1e-4f ||
+          !std::all_of(basis[axis].begin(), basis[axis].end(), [](float v) { return std::isfinite(v); }))
+        throw std::invalid_argument("Invalid receiver projection basis");
+      for (uint32_t other = 0; other < axis; ++other)
+        if (std::abs(dot(basis[axis], basis[other])) > 1e-4f)
+          throw std::invalid_argument("Nonorthogonal receiver projection basis");
+    }
+    ReceiverProjection result;
+    for (const auto &mesh : lightmap::meshes(source, layout, cancelled)) {
+      const auto &draw = source.draws.at(mesh.draw);
+      for (size_t first = 0; first + 2 < mesh.indices.size(); first += 3) {
+        if (cancelled.stop_requested()) throw std::runtime_error("Receiver projection superseded");
+        if (!charted(mesh, first)) continue;
+        ++result.triangles;
+        for (uint32_t corner = 0; corner < 3; ++corner) {
+          const auto &p = mesh.vertices[mesh.indices[first + corner]].surface.position;
+          const auto world = transformPoint(draw.model, {p[0], p[1], p[2]});
+          Vec3 projected;
+          for (uint32_t axis = 0; axis < 3; ++axis) {
+            projected[axis] = dot(basis[axis], world) * source.sceneScale;
+            if (!std::isfinite(projected[axis])) throw std::invalid_argument("Nonfinite receiver projection");
+          }
+          result.bounds.include(projected);
+        }
+      }
+    }
+    return result;
+  }
   void dumpReceiverReport(const scene::BakeScene &source, const lightmap::Layout &layout,
                           std::span<const uint16_t> pixels, const Grid &grid,
                           std::stop_token cancelled) noexcept {
@@ -140,6 +173,12 @@ namespace remix::forward::bake {
         probe += b;
         absolute += std::abs(a - b);
         squared += (a - b) * (a - b);
+      }
+      std::optional<ReceiverProjection> projection;
+      if (source.sun.isDistant) {
+        const auto z = normalized({source.sun.direction[0], source.sun.direction[1], source.sun.direction[2]});
+        const auto x = normalized(cross(std::abs(z[2]) < .99f ? Vec3{0, 0, 1} : Vec3{0, 1, 0}, z));
+        projection = projectReceivers(source, layout, {x, cross(z, x), z}, cancelled);
       }
       std::ofstream output(path);
       output.exceptions(std::ios::failbit | std::ios::badbit);
@@ -170,7 +209,19 @@ namespace remix::forward::bake {
         vector(output, r.probe);
         output << '}';
       }
-      output << "\n]}\n";
+      output << "\n]";
+      if (projection) {
+        output << ",\"sunReceiverProjection\":{\"scope\":\"All charted triangle vertices in metres; excludes uncharted receivers and caster coverage\",\"triangles\":"
+               << projection->triangles << ",\"valid\":" << (projection->bounds.valid ? "true" : "false");
+        if (projection->bounds.valid) {
+          output << ",\"minimum\":";
+          vector(output, projection->bounds.minimum);
+          output << ",\"maximum\":";
+          vector(output, projection->bounds.maximum);
+        }
+        output << '}';
+      }
+      output << "}\n";
     } catch (const std::exception &error) {
       std::fprintf(stderr, "Receiver lighting report unavailable: %s\n", error.what());
     }
