@@ -122,7 +122,8 @@ namespace remix::forward::bake {
     return result;
   }
   ReceiverProjection projectReceivers(const scene::BakeScene &source, const lightmap::Layout &layout,
-      const std::array<Vec3, 3> &basis, std::stop_token cancelled) {
+      const std::array<Vec3, 3> &basis, std::stop_token cancelled,
+      std::span<const ReceiverTileOptions> options) {
     if (!std::isfinite(source.sceneScale) || source.sceneScale <= 0)
       throw std::invalid_argument("Invalid receiver projection scale");
     for (uint32_t axis = 0; axis < 3; ++axis) {
@@ -133,6 +134,9 @@ namespace remix::forward::bake {
         if (std::abs(dot(basis[axis], basis[other])) > 1e-4f)
           throw std::invalid_argument("Nonorthogonal receiver projection basis");
     }
+    if (options.size() > 8) throw std::invalid_argument("Too many receiver tile trials");
+    std::vector<ReceiverTiles> tiles;
+    for (const auto &option : options) tiles.emplace_back(option);
     ReceiverProjection result;
     for (const auto &mesh : lightmap::meshes(source, layout, cancelled)) {
       const auto &draw = source.draws.at(mesh.draw);
@@ -140,6 +144,7 @@ namespace remix::forward::bake {
         if (cancelled.stop_requested()) throw std::runtime_error("Receiver projection superseded");
         if (!charted(mesh, first)) continue;
         ++result.triangles;
+        std::array<Vec3, 3> triangle;
         for (uint32_t corner = 0; corner < 3; ++corner) {
           const auto &p = mesh.vertices[mesh.indices[first + corner]].surface.position;
           const auto world = transformPoint(draw.model, {p[0], p[1], p[2]});
@@ -149,9 +154,12 @@ namespace remix::forward::bake {
             if (!std::isfinite(projected[axis])) throw std::invalid_argument("Nonfinite receiver projection");
           }
           result.bounds.include(projected);
+          triangle[corner] = projected;
         }
+        for (auto &trial : tiles) trial.include(triangle, cancelled);
       }
     }
+    for (const auto &trial : tiles) result.tiles.push_back(trial.coverage());
     return result;
   }
   void dumpReceiverReport(const scene::BakeScene &source, const lightmap::Layout &layout,
@@ -178,7 +186,8 @@ namespace remix::forward::bake {
       if (source.sun.isDistant) {
         const auto z = normalized({source.sun.direction[0], source.sun.direction[1], source.sun.direction[2]});
         const auto x = normalized(cross(std::abs(z[2]) < .99f ? Vec3{0, 0, 1} : Vec3{0, 1, 0}, z));
-        projection = projectReceivers(source, layout, {x, cross(z, x), z}, cancelled);
+        const std::array<ReceiverTileOptions, 3> trials{{{4, 0}, {4, 1}, {4, 2}}};
+        projection = projectReceivers(source, layout, {x, cross(z, x), z}, cancelled, trials);
       }
       std::ofstream output(path);
       output.exceptions(std::ios::failbit | std::ios::badbit);
@@ -219,7 +228,14 @@ namespace remix::forward::bake {
           output << ",\"maximum\":";
           vector(output, projection->bounds.maximum);
         }
-        output << '}';
+        output << ",\"tiles\":[";
+        for (size_t i = 0; i < projection->tiles.size(); ++i) {
+          const auto &tile = projection->tiles[i];
+          output << (i ? "," : "") << "{\"tileMetres\":" << tile.tileMetres
+                 << ",\"haloMetres\":" << tile.haloMetres << ",\"occupied\":" << tile.occupied
+                 << ",\"rectangle\":" << tile.rectangle << '}';
+        }
+        output << "]}";
       }
       output << "}\n";
     } catch (const std::exception &error) {

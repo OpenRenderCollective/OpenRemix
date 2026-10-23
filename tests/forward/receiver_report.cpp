@@ -12,6 +12,49 @@ namespace {
   }
 }
 int main() {
+  {
+    const std::array<Vec3, 3> triangle{Vec3{.1f, .1f, 0}, Vec3{2.8f, .1f, 0}, Vec3{.1f, 2.8f, 0}};
+    bake::ReceiverTiles exact({1, 0});
+    exact.include(triangle);
+    require(exact.coverage().occupied == 6 && exact.coverage().rectangle == 9,
+            "Triangle tile overlap excludes empty corners of its bounding rectangle");
+    exact.include(triangle);
+    require(exact.coverage().occupied == 6, "Overlapping receiver triangles share physical tiles");
+    auto reversed = triangle;
+    std::swap(reversed[0], reversed[1]);
+    exact.include(reversed);
+    require(exact.coverage().occupied == 6, "Receiver tile coverage is independent of triangle winding");
+    auto negative = triangle;
+    for (auto &vertex : negative) { vertex[0] = -vertex[0]; vertex[1] = -vertex[1]; }
+    bake::ReceiverTiles mirrored({1, 0});
+    mirrored.include(negative);
+    require(mirrored.coverage().occupied == 6 && mirrored.coverage().rectangle == 9,
+            "Negative projected coordinates use the same conservative grid convention");
+    std::stop_source stopTiles;
+    stopTiles.request_stop();
+    bake::ReceiverTiles cancelledTiles({1, 0});
+    bool stopped = false;
+    try { cancelledTiles.include(triangle, stopTiles.get_token()); }
+    catch (const std::runtime_error &) { stopped = true; }
+    require(stopped && !cancelledTiles.coverage().occupied, "Cancelled tiling stops before populating tiles");
+    bake::ReceiverTiles expanded({1, 1});
+    expanded.include(triangle);
+    require(expanded.coverage().occupied > 6 && expanded.coverage().occupied <= expanded.coverage().rectangle,
+            "Dynamic support margin expands conservative coverage without duplicate tiles");
+    bake::ReceiverTiles point({1, 0});
+    point.include({Vec3{0,0,0}, Vec3{0,0,0}, Vec3{0,0,0}});
+    require(point.coverage().occupied == 4, "A degenerate point on tile boundaries retains every touching tile");
+    bake::ReceiverTiles bounded({1, 0, 2});
+    bool exhausted = false;
+    try { bounded.include(triangle); } catch (const std::length_error &) { exhausted = true; }
+    require(exhausted, "Tile storage budget exhaustion is explicit rather than dropping coverage");
+    bake::ReceiverTiles workBounded({1, 0, 100, 2});
+    exhausted = false;
+    try { workBounded.include(triangle); } catch (const std::length_error &) { exhausted = true; }
+    require(exhausted && !workBounded.coverage().occupied,
+            "Oversized candidate rectangles are refused before traversal or allocation");
+  }
+
   scene::BakeScene source;
   auto surface = std::make_shared<scene::Surface>();
   surface->vertices.resize(4);
