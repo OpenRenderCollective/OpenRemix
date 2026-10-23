@@ -684,3 +684,11 @@ Explicitly disabling selected baked highlights removes that fine shine while
 leaving the broader baked lighting intact. Keep the default highlights: check
 the source/AutoPBR normal and roughness response against a matched reference,
 then visibility if necessary, before labeling this an occlusion or atlas bug.
+
+The connector ceiling is the map-patched `concretefloor028a` at Z=-8. Its
+replacement roughness is exactly the inverse of Source normal alpha, including
+near-zero patches; it is not a uniform fallback roughness. Keep the material
+unchanged pending physical/reference review. The matching accumulated
+pathtraced capture is much darker, so specular/visibility parity remains open.
+Accumulation references must explicitly disable TAA; the relay now reports
+active/requested temporal states instead of hiding such readiness conflicts.
