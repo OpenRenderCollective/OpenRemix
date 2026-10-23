@@ -307,6 +307,13 @@ This import is planned work; existing BSP cubemap capture seeds alone do not est
 parallax bounds support. Inspect the interaction with the entities' optional `sides` face assignments
 before treating their boxes as freely blended influence volumes. Bounds values appear relative to
 the capture origin, but confirm this convention against Black Mesa rendering before conversion.
+The installed Black Mesa `bin/base.fgd` defines `boxmin`/`boxmax` as **projection** bounds and
+`sides` as optional direct brush-face attachments. These are not evidence of receiver influence
+bounds or overlap priorities. The current native volume ABI uses one box for both projection and
+influence, so a faithful automatic importer must resolve that distinction rather than silently
+converting projection boxes into selection boxes. Preserve source face assignments in reference
+data; Hammer face IDs must not be treated as compiled BSP face indices. Only explicitly enabled
+`parallax=1` entities qualify; default boxes on ordinary cubemaps are not authored room bounds.
 
 Bake input readiness now follows retained brush/overlay/terrain/prop material dependencies rather
 than the entire BSP material inventory. Required unresolved inputs still block publication. The
