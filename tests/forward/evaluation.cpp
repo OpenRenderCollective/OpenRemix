@@ -238,6 +238,45 @@ int main() {
     require(face.supportFraction == 0 && face.nearFraction == 0 && face.farFraction == 1 &&
                 std::abs(face.meanRelativeResidual - 1) < 1e-6f,
             "A box stopping short of a wall has positive residuals, distinct from clutter");
+  for (const auto &face : rectangleResult.front().faces)
+    require(!face.plane, "Normal candidate assessment allocates no plane diagnostics");
+  p::ProjectionAudit planes(rectangular, {}, true);
+  auto planeValues = geometry(planes, rectangleRooms);
+  for (size_t face = 0; face < 6; ++face)
+    for (size_t i = 0; i < 4; ++i) planeValues[face * 64 + i].irradiance[0][3] *= .1f;
+  require(planes.observe(0, planeValues), "Sparse foreground clutter is retained as plane evidence");
+  const auto planeResult = planes.finish();
+  for (size_t face = 0; face < 6; ++face) {
+    const auto &fit = planeResult[0].faces[face].plane;
+    const float coordinate = face & 1u ? -1.f : 1.f;
+    require(fit && std::abs(fit->median - coordinate) < 1e-6f &&
+            std::abs(fit->lower - coordinate) < 1e-6f && std::abs(fit->upper - coordinate) < 1e-6f &&
+            fit->hits == 64 && std::abs(fit->sampleFraction - 1) < 1e-6f,
+            "Weighted plane percentiles retain a coherent wall despite sparse foreground clutter");
+  }
+  p::ProjectionAudit ordinaryReassessment(planeResult);
+  require(ordinaryReassessment.observe(0, geometry(ordinaryReassessment, rectangleRooms)),
+          "Previously assessed geometry can be reassessed without plane storage");
+  const auto ordinaryResult = ordinaryReassessment.finish();
+  for (const auto &face : ordinaryResult[0].faces)
+    require(!face.plane, "Disabled plane diagnostics cannot retain evidence from an earlier assessment");
+  p::ProjectionAudit scatteredPlanes(rectangular, {}, true);
+  auto scatteredValues = geometry(scatteredPlanes, rectangleRooms);
+  for (size_t i = 0; i < scatteredValues.size(); i += 2) scatteredValues[i].irradiance[0][3] *= .5f;
+  require(scatteredPlanes.observe(0, scatteredValues), "Distributed foreground geometry remains measurable");
+  const auto scatteredResult = scatteredPlanes.finish();
+  for (const auto &face : scatteredResult[0].faces)
+    require(face.plane && face.plane->upper - face.plane->lower > .49f,
+            "Broad hit distributions cannot masquerade as a coherent wall plane");
+  p::ProjectionAudit unavailablePlanes(rectangular, {}, true);
+  planeValues = geometry(unavailablePlanes, rectangleRooms);
+  for (size_t i = 0; i < 64; ++i) planeValues[i].statistics[0] = 1;
+  for (size_t i = 64; i < 128; ++i) planeValues[i].statistics[1] = 1;
+  require(unavailablePlanes.observe(0, planeValues), "Backfaces and misses retain their raw classifications");
+  const auto unavailableResult = unavailablePlanes.finish();
+  require(!unavailableResult[0].faces[0].plane && !unavailableResult[0].faces[1].plane &&
+          unavailableResult[0].faces[2].plane,
+          "Missing or back-facing geometry cannot supply a solid front-surface plane");
   p::ProjectionAudit empty({});
   require(empty.rays().empty() && empty.finish().empty(), "Empty candidate work needs no GPU submission");
   bool bounded = false;

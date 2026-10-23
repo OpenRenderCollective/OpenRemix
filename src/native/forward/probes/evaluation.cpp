@@ -13,11 +13,12 @@ namespace remix::forward::probes {
         throw std::runtime_error("Reflection projection evaluation superseded");
     }
   } // namespace
-  ProjectionAudit::ProjectionAudit(std::vector<FittedRegion> regions, std::stop_token cancelled)
+  ProjectionAudit::ProjectionAudit(std::vector<FittedRegion> regions, std::stop_token cancelled, bool collectPlanes)
       : m_regions(std::move(regions)), m_statistics(m_regions.size()), m_cancelled(cancelled) {
     check(cancelled);
     if (m_regions.size() > maximumCandidates)
       throw std::invalid_argument("Reflection candidate budget exceeded");
+    if (collectPlanes) m_planes.resize(m_regions.size());
     m_rays.reserve(std::min(m_regions.size(), size_t(maximumOrigins)) * raysPerOrigin);
     for (size_t i = 0; i < m_regions.size(); ++i) {
       check(cancelled);
@@ -83,6 +84,8 @@ namespace remix::forward::probes {
           for (uint32_t axis = 0; axis < 3; ++axis)
             hit[axis] = region.site.position[axis] + direction[axis] * value.irradiance[0][3];
           statistics.hitBounds[face].include(hit);
+          if (!m_planes.empty() && value.statistics[0] == 0 && std::isfinite(hit[face / 2]))
+            m_planes[regionIndex][face].push_back({hit[face / 2], float(weight)});
         }
         for (auto *part : {&statistics.total, &statistics.faces[face]}) {
           if (!missed && value.irradiance[0][3] <= exit * 1.05f)
@@ -118,10 +121,31 @@ namespace remix::forward::probes {
       for (uint32_t face = 0; face < 6; ++face) {
         const auto &part = m_statistics[i].faces[face];
         auto &output = regions[i].faces[face];
+        output.plane.reset();
         output.solidAngleFraction = float(part.total / statistics.total);
         output.hitBounds = m_statistics[i].hitBounds[face];
         if (part.total <= 0)
           continue;
+        if (!m_planes.empty()) {
+          auto samples = m_planes[i][face];
+          if (!samples.empty()) {
+            std::sort(samples.begin(), samples.end(), [](const auto &a, const auto &b) {
+              return a.coordinate < b.coordinate;
+            });
+            double weight = 0;
+            for (const auto &sample : samples) weight += sample.weight;
+            auto quantile = [&](double fraction) {
+              double accumulated = 0;
+              for (const auto &sample : samples) {
+                accumulated += sample.weight;
+                if (accumulated >= weight * fraction) return sample.coordinate;
+              }
+              return samples.back().coordinate;
+            };
+            output.plane = ProjectionPlaneAudit{quantile(.1), quantile(.5), quantile(.9),
+                                                float(std::clamp(weight / part.total, 0., 1.)), uint32_t(samples.size())};
+          }
+        }
         output.supportFraction = float(part.agreement / part.total);
         output.nearFraction = float(part.nearer / part.total);
         output.farFraction = float(part.farther / part.total);

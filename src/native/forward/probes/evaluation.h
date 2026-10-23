@@ -9,7 +9,7 @@ namespace remix::forward::probes {
   class ProjectionAudit {
   public:
     static constexpr uint32_t resolution = 8, maximumOrigins = 160, maximumCandidates = 3 * maximumOrigins;
-    explicit ProjectionAudit(std::vector<FittedRegion> regions, std::stop_token cancelled = {});
+    explicit ProjectionAudit(std::vector<FittedRegion> regions, std::stop_token cancelled = {}, bool collectPlanes = false);
     std::span<const bake::Point> rays() const { return m_rays; }
     bool observe(uint32_t first, std::span<const bake::Result> results);
     std::vector<FittedRegion> finish() const;
@@ -24,6 +24,10 @@ namespace remix::forward::probes {
       std::array<Statistics, 6> faces;
       std::array<Bounds, 6> hitBounds;
     };
+    struct PlaneSample { float coordinate, weight; };
+    // Allocated only for explicitly requested plane diagnostics. At most one
+    // sample per face-crossing ray and candidate (480 * 384 samples total).
+    std::vector<std::array<std::vector<PlaneSample>, 6>> m_planes;
     struct Origin {
       Vec3 position;
       std::vector<size_t> regions;

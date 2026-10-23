@@ -1801,6 +1801,11 @@ existing authored-room control. Preserve original volume identities and geometry
 free slots can be used without displacing the baseline. Authored-fixture priorities do not implement
 or qualify a production automatic-selection policy.
 
+Local-fit diagnostics now retain optional weighted face-coordinate percentiles and sample support
+from the existing geometry rays. Compare the 10th-to-90th spread and median against the current
+proxy face before considering a plane shift. Sparse near-hit clutter and broad terrain distributions
+must remain distinguishable. A percentile alone cannot classify dielectric interfaces or certify a wall.
+
 Next refine projection accuracy before automatic publication. Near-hit statistics can expose a floor
 plane well behind actual terrain even when a candidate provides useful receiver coverage. Investigate
 bounded, robust surface-plane fitting with independent receiver influence, keeping capture origins

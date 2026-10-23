@@ -141,6 +141,12 @@ namespace remix::forward::probes {
               output << ",\"hitMaximum\":";
               if (a.hitBounds.valid) vector(a.hitBounds.maximum);
               else output << "null";
+              output << ",\"plane\":";
+              if (a.plane) {
+                output << "{\"lower\":" << a.plane->lower << ",\"median\":" << a.plane->median
+                       << ",\"upper\":" << a.plane->upper << ",\"sampleFraction\":" << a.plane->sampleFraction
+                       << ",\"hits\":" << a.plane->hits << '}';
+              } else output << "null";
               output << '}';
             }
             output << "]}";

@@ -19,7 +19,7 @@ namespace remix::forward::probes {
         regions.push_back(region);
       }
     }
-    m_audit = std::make_unique<ProjectionAudit>(std::move(regions), cancelled);
+    m_audit = std::make_unique<ProjectionAudit>(std::move(regions), cancelled, true);
   }
   ReceiverFits ReceiverFitAudit::finish() const {
     auto result = m_fits;

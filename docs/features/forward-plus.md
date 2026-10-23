@@ -517,7 +517,13 @@ geometry assessment at eight samples per cube-face direction (384 rays per uniqu
 12288 rays). Alternate boxes share those rays. Frame-fenced readbacks retain their own audit, and
 incomplete or duplicate readbacks cannot become completed evidence. `geometryAudited` and
 `geometryRays` describe that pass; each variant retains per-face near/far/miss/backface statistics
-and finite first-hit envelopes. These are sampled comparisons, not proof of an empty proxy or
+and finite first-hit envelopes. Local-fit diagnostics optionally retain weighted hit-coordinate
+percentiles per proxy face (10th, median, 90th), participating sample count and fraction of face
+solid angle. Misses, backface flags and nonfinite coordinates cannot supply percentile samples.
+This storage is opt-in; ordinary candidate assessment retains its existing query and selection path.
+A narrow distribution is evidence of a consistent sampled coordinate, not a certified wall:
+geometry flags do not identify material class, and dielectric interfaces may participate.
+These are sampled comparisons, not proof of an empty proxy or
 camera visibility. Geometry-only backface classification follows the same interpolated-normal and
 dielectric-exclusion rule as spherical admission. Hardware triangle facing still controls actual
 material culling; it is not substituted for the solid-side diagnostic on double-sided meshes.

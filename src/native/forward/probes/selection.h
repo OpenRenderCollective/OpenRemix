@@ -3,6 +3,13 @@
 #include <span>
 
 namespace remix::forward::probes {
+  struct ProjectionPlaneAudit {
+    float lower = 0, median = 0, upper = 0; // Weighted 10th, 50th, 90th coordinate percentiles.
+    // Fraction of face solid angle represented by finite, non-backface hits.
+    // Geometry flags do not identify material class; dielectric interfaces may participate.
+    float sampleFraction = 0;
+    uint32_t hits = 0;
+  };
   struct ProjectionFaceAudit {
     // Directions are grouped by the first proxy face they cross: +X,-X,+Y,-Y,+Z,-Z.
     float solidAngleFraction = 0, supportFraction = 0, nearFraction = 0, farFraction = 0;
@@ -10,6 +17,7 @@ namespace remix::forward::probes {
     // World-space envelope of finite first hits crossing this proxy face.
     // A diagnostic sample envelope, not a certified empty projection volume.
     Bounds hitBounds;
+    std::optional<ProjectionPlaneAudit> plane;
   };
   struct FittedRegion {
     Bounds bounds;
