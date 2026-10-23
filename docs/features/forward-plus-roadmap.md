@@ -11,12 +11,14 @@ reports. An implementation or synthetic test alone does not close an integration
 
 ## Continuation status (2026-10-23)
 
-The separate GMod testing install now uses native `f8514cd` and adapter `28c28cb`. This paired
-refresh includes independent reflection sampling and extended sidecars, retaining existing authored
+The separate GMod testing install now uses native `ac33981` and adapter `28c28cb`. The latest
+incremental refresh adds early fragment rejection to prepassed world shading; only the native DLL
+and runtime manifest changed, and all ten settings/assets/launcher files verify unchanged. The
+previous paired refresh added independent reflection sampling and extended sidecars, retaining authored
 files. Sparse sun-depth capture/cache/compaction is present but stays opt-in; the test-only soft
 filter is not integrated. No user settings or renderer defaults changed. Earlier storage, preparation,
-sky and material fixes remain, and rejected draw-path experiments are absent. The two DLLs and runtime
-manifest changed; the other 149 runtime files and ten settings/assets/launcher files verify unchanged.
+sky and material fixes remain, and rejected draw-path experiments are absent. That previous paired refresh changed the two DLLs and runtime
+manifest; its other 149 runtime files and ten settings/assets/launcher files verified unchanged.
 The root install record now agrees with the runtime checkpoint, and deployment settings pin an
 immutable verified package. Rollback copies remain available.
 

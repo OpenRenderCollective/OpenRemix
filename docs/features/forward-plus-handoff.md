@@ -2,15 +2,17 @@
 
 ## Start here
 
-The separate GMod testing install was refreshed on 2026-10-23 to native `f8514cd` and adapter
-`28c28cb`. The pair adds independent reflection influence/feather authoring and extended sidecars
+The separate GMod testing install was refreshed on 2026-10-23 to native `ac33981` and adapter
+`28c28cb`. The latest incremental refresh adds early fragment rejection to prepassed world shading;
+only the native DLL and runtime manifest changed, preserving all ten settings/assets/launcher files.
+The preceding paired refresh added independent reflection influence/feather authoring and extended sidecars
 while retaining legacy volume records and files. Sparse baked sun depth persistence, coverage gates
 and compact pages are present but remain opt-in through `REMIX_DEBUG_BAKE_SUN_DEPTH`; finite-source
 softness and broader map acceptance are unfinished. No renderer settings or experimental defaults
 were enabled by deployment. Earlier bake-storage, preparation, HDR sky and texture fixes remain.
 
-All 155 owned files verify. Only the two DLLs and runtime manifest changed in the payload; the root
-install record was refreshed so both provenance records agree. The other 149 runtime files and ten
+All 155 owned files verify. The preceding paired refresh changed the two DLLs and runtime manifest;
+the latest incremental refresh also updates the root install record so provenance remains current. The other 149 runtime files and ten
 settings/assets/launcher files verify unchanged, including addon mounts and authored Construct boxes.
 Deployment settings now pin the verified pair in an active `_work/packages` bundle rather than
 mutable build outputs or disposable reports. Exact rollback copies remain in the test install.
