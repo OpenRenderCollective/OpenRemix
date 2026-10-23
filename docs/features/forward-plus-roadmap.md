@@ -35,6 +35,9 @@ checks; synchronization-validation overhead and changed submission pacing are no
 An early raster backface-cull variant for the depth prepass preserved coverage but failed opposite-order
 timing comparisons with and without validation, and was removed. Continue with draw/vertex/setup
 work and depth ordering while preserving colour/decal order and offscreen shadow casters.
+Local pipeline/material/buffer binding reuse likewise preserved the sampled image but failed to
+show a repeatable normal-runtime end-to-end benefit, and was removed. Keep rejected experiments
+out of the shipping draw path; assess depth-only ordering separately from colour/decal order.
 Next isolate the dominant opaque receiver work with bounded fragment/receiver diagnostics, preserving
 ordinary draw order and checking omitted ranges. Investigate the observed increase in local-shadow
 GPU time when the independent baked-highlight budget is reduced: compare selected emitter identities,
