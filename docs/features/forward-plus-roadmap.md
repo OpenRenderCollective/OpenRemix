@@ -539,6 +539,12 @@ still needs a justified selection/influence policy rather than silently converti
 into selection boxes. Preserve source face assignments in reference
 data; Hammer face IDs must not be treated as compiled BSP face indices. Only explicitly enabled
 `parallax=1` entities qualify; default boxes on ordinary cubemaps are not authored room bounds.
+The reference CLI also supports `--compiled-receivers`, preserving actual compiled face-to-material
+assignments through validated face, texinfo, texdata and string-table indices. These include brush
+models and displacement base faces; they do not assert visible receiver coverage. Packed material
+patches can carry explicit capture-texture assignments, providing a separate basis for authored
+static receiver selection. Runtime receiver binding and dynamic-object influence/blending remain
+unfinished; do not infer those semantics from a material filename or projection box alone.
 
 Bake input readiness now follows retained brush/overlay/terrain/prop material dependencies rather
 than the entire BSP material inventory. Required unresolved inputs still block publication. The
