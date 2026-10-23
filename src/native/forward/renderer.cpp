@@ -171,7 +171,7 @@ namespace remix::forward {
     }
     next->viewModelTarget = std::make_unique<viewmodel::Target>();
     next->viewModelTarget->initialize(physical, device, extent, next->samples);
-    if (std::getenv("REMIX_DEBUG_PROBE_BATCH") || std::getenv("REMIX_DEBUG_PROBE_BATCH_VIEWMODEL_ONLY")) {
+    if (std::getenv("REMIX_DEBUG_PROBE_BATCH")) {
       next->probeVisibility = std::make_unique<probe_batch::Cache>(physical, device);
       next->probeVisibility->prepare();
     }

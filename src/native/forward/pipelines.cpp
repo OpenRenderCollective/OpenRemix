@@ -104,7 +104,6 @@ namespace remix::forward {
                                                    .dynamicStateCount = 2,
                                                    .pDynamicStates = states};
     enum class Pass { Opaque, Shadow, Composite, Terrain, Depth, ViewModel };
-    const bool viewModelProbeBatchOnly = std::getenv("REMIX_DEBUG_PROBE_BATCH_VIEWMODEL_ONLY") != nullptr;
     auto graphics = [&](VkShaderModule vs, VkShaderModule fs, VkRenderPass pass, Pass mode = Pass::Opaque,
                          bool fullyMapped = false) {
       const bool shadow = mode == Pass::Shadow, composite = mode == Pass::Composite;
@@ -113,7 +112,7 @@ namespace remix::forward {
       // lightmap vertices generic so their uncovered triangles retain probes.
       const uint32_t values[] = {options.debugView, uint32_t(bake::directionalFieldsRequested()),
                                   uint32_t(fullyMapped), uint32_t(vs == vertex),
-                                  uint32_t(probeVisibility && (!viewModelProbeBatchOnly || mode == Pass::ViewModel))};
+                                  uint32_t(probeVisibility != nullptr)};
       const VkSpecializationMapEntry entries[] = {{1, 0, sizeof(uint32_t)},
                                                   {2, sizeof(uint32_t), sizeof(uint32_t)},
                                                   {3, 2 * sizeof(uint32_t), sizeof(uint32_t)},

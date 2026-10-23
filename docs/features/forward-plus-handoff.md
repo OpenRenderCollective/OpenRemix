@@ -661,11 +661,9 @@ proof of analytic diffuse evaluation. Separate host-limited views from
 GPU-limited views before selecting optimizations. Static shadow-map update
 counters remain zero after bake in the qualified Trainstation fixed views.
 
-A narrower probe-gather experiment is available through presence of
-`REMIX_DEBUG_PROBE_BATCH_VIEWMODEL_ONLY`. It allocates the same selected-light
-field but enables consumer specialization only for viewmodel passes; world and
-terrain keep the baseline consumer. If both debug flags are present this narrow
-scope wins. Like the original debug flag, a value of `0` still enables it.
-Gather ownership and viewmodel probe/shadow validation pass; focused performance
-and image comparisons remain pending. This experiment is not deployed or enabled
-by default. Do not remove unknown-coverage or directional-correction fallbacks.
+The viewmodel-only probe-gather selector was tested and removed: repeated
+focused Trainstation comparisons did not improve whole-frame GPU cost, despite
+a local viewmodel improvement in one view. World consumer specialization stayed
+on the baseline, so the observed cost increase is not proof of shader-code
+causality. Keep the ordinary path and the existing broader opt-in experiment;
+do not restore the narrower selector without new supporting evidence.
