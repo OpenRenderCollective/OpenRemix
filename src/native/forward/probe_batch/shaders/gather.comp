@@ -1,0 +1,31 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x = 64) in;
+#define IRRADIANCE_BINDING 0
+#include "../../shaders/irradiance.glsl"
+layout(set = 0, binding = 1, std430) readonly buffer Selection {
+  uvec4 selection; // probes, selected lights, four-light groups, magic
+  uint capturedLights[]; // one-based captured IDs, padded to whole groups
+};
+layout(set = 0, binding = 2, std430) writeonly buffer Field {
+  uvec4 fieldHeader;
+  vec4 fieldMasks[]; // probe-major groups; negative means unknown
+};
+void main() {
+  uint index = gl_GlobalInvocationID.x;
+  if (index >= selection.x * selection.z) return;
+  if (index == 0u) fieldHeader = selection;
+  uint probe = index / selection.z, group = index % selection.z;
+  vec4 masks = vec4(-1);
+  for (uint lane = 0u; lane < 4u; ++lane) {
+    uint slot = group * 4u + lane;
+    if (slot >= selection.y) continue;
+    ProbeLightReference reference;
+    float visibility;
+    uint entry;
+    if (resolveProbeLight(capturedLights[slot], reference) &&
+        localProbeMask(reference.table, probe, reference.light, visibility, entry))
+      masks[lane] = visibility;
+  }
+  fieldMasks[index] = masks;
+}

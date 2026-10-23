@@ -84,6 +84,19 @@ contiguous vector fields, preserving exact masks, custom stencil weights, unknow
 attributed moving corrections. Key any derived field by active volume and selected captured IDs;
 account for preparation/storage cost and frame ownership. Retain sparse fallback for unsupported or
 large selections, and do not change highlight budgets to manufacture an equivalent-rendering win.
+The GPU preparation primitive is implemented in `forward/probe_batch`, but is not yet called by the
+renderer. It gathers selected captured-light visibility into probe-major four-component groups,
+retaining exact stored values and negative unknown coverage. Its bounded cache keys immutable bake
+ownership and ordered light IDs; reuse requires device-confirmed completion. Submitted owners retain
+source and pipeline resources through their fences, including after cache replacement/destruction.
+Preparation runs through the pipeline worker, with no compilation during frame recording. Resident
+accounting includes parameter buffers, allocation alignment and externally retained old fields.
+GPU checks cover both sparse formats, directional wrappers, padded table offsets, duplicate/missing
+IDs, the full 64-light selection, budget rejection, abandoned commands and replacement lifetimes.
+Receiver integration remains open: bind the field to frame-owned descriptors, reconstruct vector
+groups with the existing stencil, retain attributed moving corrections and sparse fallback, then
+measure preparation, memory and normal-quality shading on representative maps. This groundwork
+does not establish a speedup, change a default, alter the bake format or update the installed runtime.
 The branch also regenerates the stale ordinary-water fragment from current maintained source. Its
 source/binary and SPIR-V checks plus four water GPU suites pass. This correction is not yet deployed;
 the testing install remains native `ac33981`. Shared shader changes must account for ordinary water,

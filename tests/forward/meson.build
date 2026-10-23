@@ -81,6 +81,10 @@ forward_regions_test = executable('remix-forward-regions-test', 'regions.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('BSP reflection region occupancy and room fitting', forward_regions_test)
 if get_option('gpu_tests')
+  probe_batch_test = executable('remix-probe-batch-test', 'probe_batch.cpp',
+    include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+    cpp_args : test_cpp_args)
+  test('Selected probe visibility gather preserves values and completed ownership', probe_batch_test, timeout : 60)
   cluster_gpu_test = executable('remix-forward-cluster-gpu-test', 'clusters_gpu.cpp',
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)

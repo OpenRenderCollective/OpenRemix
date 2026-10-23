@@ -12,6 +12,7 @@ lightmap_denoise_library = static_library('remix_lightmap_denoise', 'lightmap/de
   cpp_args : oidn_args, gnu_symbol_visibility : 'hidden', pic : true)
 
 forward_library = static_library('remix_forward',
+  'probe_batch/batch.cpp',
   'bake/reference_capture.cpp',
   'bake/visibility_report.cpp',
   'bake/probe_depth.cpp',

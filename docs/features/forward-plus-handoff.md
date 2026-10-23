@@ -47,6 +47,15 @@ and offscreen moving shadows. The prior uniform-grid checkpoint was `e51bff0`.
 
 ## Current profiling direction
 
+The `forward/probe_batch` preparation primitive is implemented and GPU-tested, but is not connected
+to scene descriptors or receiver shading yet. It gathers exact selected-light visibility into bounded
+probe-major vector groups without changing persistent bake formats. Its immutable returned owner
+must live through command cancellation/submission completion; cache reuse requires a device-set
+completion event. Prepare its pipeline on the existing preparation worker, never during recording.
+Next integrate frame-owned descriptors and vector stencil reconstruction, preserving unknown
+coverage, sparse fallback and attributed moving-shadow corrections. Compare normal-quality timings
+and resident memory before enabling it. The testing installation and default shader path are unchanged.
+
 The installed runtime has completed Windows-confirmed foreground Construct samples with the
 physgun, full-resolution SSR and stable bake identity. Source's own focus flag alone proved
 insufficient, so future runs must check Windows process ownership and visually verify the camera.
