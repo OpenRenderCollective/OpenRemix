@@ -11,15 +11,19 @@ reports. An implementation or synthetic test alone does not close an integration
 
 ## Continuation status (2026-10-23)
 
-The separate GMod testing install now uses native `22b8406` and adapter `d7894f6`; it includes the
-current clustered fallback, shared sphere-bound loads, adaptive probe reconstruction and runtime
-publication fixes. This makes the feature branch available for testing, not an accepted general
-performance or visual-quality release. Existing dependencies, settings and authored volumes are
-preserved with a rollback checkpoint. The previous uniform-grid install remains a historical baseline. This refresh also deploys authored
-priority feathering, optional automatic fallback, reflection readiness and capture-scratch reductions.
-Fallback remains off by default. Six GPU suites and low-budget candidate/installed Construct smoke
-checks pass with synchronization validation; smoke images match exactly. All 150 runtime files and
-six preserved settings/assets verify. These functional checks do not establish gameplay FPS.
+The separate GMod testing install now uses native `ffc32fe` and adapter `6330779`. This refresh
+includes adaptive lossless complete-light fields, wider bounded bake windows, asynchronous emissive
+preparation, exact reflection-capture provenance, HDR immutable sky textures and BSP ABGR/explicit
+VTF-reference fixes. Rejected draw-path experiments are absent. Both DLLs and the manifest were
+updated; the other 149 runtime files are byte-identical. Seven user settings/assets, including
+addon mounts and authored Construct cubemaps, verify unchanged, with an exact rollback checkpoint.
+Staged and installed normal-quality Construct captures pass synchronization validation with identical
+pixels/content hashes; the staged path tracer passes late-emissive preparation and visibility checks.
+F12 input-bridge and cubemap publication CPU checks pass. These are functional checks, not live
+armed/moving gameplay acceptance. Earlier six-suite coverage belongs to the previous `22b8406`
+checkpoint. Automatic authored fallback remains off by default, and user backend settings are preserved.
+The direct-light codec revision intentionally causes one fresh bake of older direct-light caches;
+this update does not delete those cache files. Follow-up clean-up and broader quality checks remain open.
 The native continuation adds chart-edge denoising, stable progressive history, surface-hemisphere
 transport, reflection-free lighting diagnostics and cosine-anchored surface/unit-light irradiance.
 The deployed DLL passes a small Construct replay bake with synchronization validation. Chart-local
@@ -963,7 +967,7 @@ or FPS results. Automatic bake capture scratch is also released after readback, 
 filtering, denoising and atlas encoding. Its exact input hash is computed once on the preparation
 worker and retained as a scalar, avoiding a large-buffer hash during render-thread publication.
 Production 1x/4x tests verify the published hash against exact reconstructed ray bytes. This latest
-automatic cleanup is source-only after the installed `22b8406` checkpoint. Cold/warm Construct
+automatic cleanup is included in the `ffc32fe` testing-install refresh. Cold/warm Construct
 validation caught and fixed a missing cached-load provenance step in that cleanup: both preparation
 paths now retain the exact input hash and release scratch. A fixed warm load reuses the original cache
 with identical content hashes and pixels; the 1x/4x production fixture now explicitly tests disk-cache

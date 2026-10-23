@@ -2,16 +2,22 @@
 
 ## Start here
 
-The separate GMod testing install was updated on 2026-10-23 to native `22b8406` and adapter
-`d7894f6`, including shared clustered-light loads, one-sided coarse probe confidence, and retained
-bake/memory publication across asynchronous target replacement. The package retains the existing
-runtime dependencies. User settings, addon mounts and authored Construct cubemaps are preserved;
-an exact local rollback is available. Main branches remain upstream. The latest refresh adds priority
-feathering, optional automatic reflection fallback, reflection readiness diagnostics and reduced
-CPU capture scratch. Six selected GPU suites and candidate/installed Construct smoke checks pass
-with synchronization validation; their smoke images match exactly. All 150 runtime files and six
-preserved settings/assets verify. Automatic authored fallback stays off by default; enable it with
-"Automatic fallback outside authored volumes" in the rendering menu for targeted testing.
+The separate GMod testing install was updated on 2026-10-23 to native `ffc32fe` and adapter
+`6330779`. The refresh includes adaptive complete directional storage, wider bounded bake windows,
+asynchronous emissive preparation, exact reflection-capture provenance, HDR sky uploads and BSP
+ABGR/explicit-VTF texture fixes. Rejected raster-culling, binding-cache and depth-order experiments
+are absent. Only both DLLs and the runtime manifest changed; the other 149 runtime files are identical.
+Seven user settings/assets, addon mounts and authored Construct cubemaps verify unchanged; an exact
+local rollback is available. Main branches remain upstream. Staged/installed normal-quality Construct
+captures pass synchronization validation with identical pixels and content hashes. The staged path
+tracer passes late-emissive/TAA preparation and repeated visibility changes. F12 input-bridge and
+cubemap publication CPU checks pass; full interactive gameplay has not been reaccepted by these tests.
+The earlier six-GPU-suite coverage belongs to the previous `22b8406` deployment.
+
+The direct-light codec capability intentionally invalidates older direct-light cache keys once so
+previously declined complete captures can be retried. Old cache files are not deleted by this update.
+Automatic authored fallback stays off by default; enable it with "Automatic fallback outside authored
+volumes" in the rendering menu for targeted testing. Existing user backend settings are preserved.
 
 This checkpoint also includes chart-edge denoising, stable progressive history, surface-hemisphere
 transport, cosine-anchored surface irradiance and chart-local exterior donor repair. The reproduced
@@ -324,8 +330,8 @@ and interface layouts unchanged. The replay requires it for measured and camera-
 waiting for loading/preparation to clear and requested/completed pipeline counts to agree. Compilation
 failures or preparation restarting after warmup reject the run; pending waits are bounded. Manual
 fixed-frame use with older runtimes warns that readiness cannot be verified. Final readiness is saved
-in `.preparation.json`. The installed `22b8406` lacks this new export, so current replay measurements
-need a newer source-built runtime. Rebuild older isolated shader experiments before using that tool.
+in `.preparation.json`. The installed `ffc32fe` provides this export; the older `22b8406` did not.
+Rebuild older isolated shader experiments before using that tool.
 Focused API and CPU readiness checks pass. The original prepared path-traced check emitted a
 timeline warning and is excluded from clean reference/performance acceptance; the isolation below
 provides the current validation scope.
@@ -357,10 +363,10 @@ comparisons cannot decide a production direction/energy change. The adapter's
 exposure and sky scope, and still verify preparation and transport convergence.
 
 
-HDR sky replay requires the new native immutable float texture formats; the currently installed
-22b8406 runtime predates them. Pair the rebuilt replay with a newer native runtime for HDR skies.
-LDR/frozen-reference behavior remains compatible. See the adapter README for encodings and limits.
-No testing-install deployment was made as part of this source change.
+HDR sky replay requires the native immutable float texture formats included in the installed
+`ffc32fe` refresh. The earlier `22b8406` runtime predates them. Pair rebuilt replay tools with a
+compatible native runtime. LDR/frozen-reference behavior remains compatible; see the adapter README
+for encodings and limits.
 
 
 Late-emissive temporal layout changes now use the runtime's compiler-worker preparation contract.
