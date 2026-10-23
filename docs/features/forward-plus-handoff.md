@@ -59,7 +59,11 @@ matching alpha-tested prepass. Other cameras, terrain, water, prepass-off and sh
 retain their separate handling. Six GPU suites pass synchronization validation; opposite-order live
 Construct and full-resolution Construct/Crossfire replay checks show a benefit at stable bake identity.
 Stationary brush bake membership and the remaining probe shading cost are next; no static-brush
-policy has changed. These frozen-view checks do not establish broad gameplay FPS parity.
+policy has changed. A subsequent lazy coarse-stencil experiment matched the reference but traded
+white-room improvement for a hall regression, so its production changes were removed. The additional
+GPU regression for wholly unsupported fine records remains. Construct's room-shell brush submodels
+allow material/color edits and disable baked shadow casting; preserve those policies before publishing
+them as stable bake receivers. These frozen-view checks do not establish broad gameplay FPS parity.
 
 ## Recent optional work
 

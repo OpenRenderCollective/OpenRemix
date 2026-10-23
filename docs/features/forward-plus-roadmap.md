@@ -54,6 +54,12 @@ do not close moving gameplay or wider map acceptance. Investigate whether
 stationary controllable brush shells can enter a stable bake without treating movable/toggleable
 geometry as immutable or adding Source-specific rules to OpenRemix. Clustering and local shadow
 rendering are not the dominant cost in these captured Construct views; other maps remain unmeasured.
+A lazy coarse-stencil variant preserves CPU/GPU reconstruction but remains rejected: it improves one
+probe-heavy live view while regressing the ordinary hall replay. Its shader/generated-code changes
+were removed; an explicit unsupported-fine GPU fallback regression remains. Keep the existing stencil
+until a replacement improves representative workloads without trading away other views. The Construct
+room shell is separate brush submodels with editable color/materials and disabled baked shadow casting;
+a future stable receiver relay must preserve those policies independently of movement classification.
 
 Runtime performance investigation must distinguish completed-bake gameplay from bake transport and
 startup. The renderer already provides an opaque depth prepass and tiled, depth-sliced light lists.

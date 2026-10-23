@@ -19,7 +19,9 @@ int main(int argc, char **argv) try {
   const bool localFactor = argc > 1 && std::strcmp(argv[1], "adaptive-localfactor") == 0;
   const bool stitched = argc > 1 && std::strcmp(argv[1], "adaptive-stitched") == 0;
   const bool depth = argc > 1 && std::strcmp(argv[1], "adaptive-depth") == 0;
-  const bool refined = depth || stitched || localFactor || (argc > 1 && std::strcmp(argv[1], "adaptive") == 0);
+  const bool fineFallback = argc > 1 && std::strcmp(argv[1], "adaptive-fallback") == 0;
+  const bool refined = depth || stitched || localFactor || fineFallback ||
+                       (argc > 1 && std::strcmp(argv[1], "adaptive") == 0);
   const uint32_t probeCount = stitched ? 57 : refined ? 35 : 8;
   Fixture fixture(false);
   struct Gpu {
@@ -115,6 +117,11 @@ int main(int argc, char **argv) try {
     probe97[i].irradiance[0][1] = .25f + i * .02f;
     probe97[i].irradiance[2][1] = .5f;
   }
+  // A full nominal fine blend is not proof of supported fine coverage. The
+  // production shader must reconstruct the coarse field when all fine records
+  // are unusable, including the exact patch centre.
+  if (fineFallback)
+    for (uint32_t i = 8; i < probeCount; ++i) base.probes[i].statistics[3] = 0;
   s::Builder builder({33,2,probeCount}, 4u << 20);
   builder.add(97, layout, surface97, probe97);
   builder.add(32, layout, surface32, probe32);

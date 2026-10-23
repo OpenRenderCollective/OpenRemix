@@ -226,6 +226,8 @@ if get_option('gpu_tests')
        sparse_style_gpu_test, args : ['indexed'], timeout : 120)
   test('Adaptive irradiance GPU blends, local spacing and styled reconstruction',
        sparse_style_gpu_test, args : ['adaptive'], timeout : 120)
+  test('Unsupported fine irradiance preserves coarse GPU coverage and styled lighting',
+       sparse_style_gpu_test, args : ['adaptive-fallback'], timeout : 120)
   test('Per-region irradiance subdivision GPU addressing and styled reconstruction',
        sparse_style_gpu_test, args : ['adaptive-localfactor'], timeout : 120)
   test('Shared irradiance faces preserve fine lighting and biased GPU queries',
