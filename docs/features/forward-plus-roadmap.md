@@ -28,6 +28,13 @@ captures. Broader map, connector/secret-room and interactive quality acceptance 
 
 Runtime performance investigation must distinguish completed-bake gameplay from bake transport and
 startup. The renderer already provides an opaque depth prepass and tiled, depth-sliced light lists.
+The normal-quality Construct hall continuation confirms the user's two authored cubemap volumes
+are active alongside complete directional coverage, no unrestricted analytic lights and no static
+shadow updates. Profile normal-runtime CPU/GPU costs with validation disabled after correctness
+checks; synchronization-validation overhead and changed submission pacing are not gameplay cost.
+An early raster backface-cull variant for the depth prepass preserved coverage but failed opposite-order
+timing comparisons with and without validation, and was removed. Continue with draw/vertex/setup
+work and depth ordering while preserving colour/decal order and offscreen shadow casters.
 Next isolate the dominant opaque receiver work with bounded fragment/receiver diagnostics, preserving
 ordinary draw order and checking omitted ranges. Investigate the observed increase in local-shadow
 GPU time when the independent baked-highlight budget is reduced: compare selected emitter identities,
