@@ -73,6 +73,17 @@ world/viewmodel fragment variants. Its local-memory byte values have implausible
 are not accepted as spill-size evidence. Next investigate invocation-private stencil layout and lifetimes,
 using normal-runtime timings and reconstruction checks. Human-readable prepassed/viewmodel pipeline
 labels are now registered; compiler captures remain separate from performance acceptance.
+The stencil-layout follow-up is now closed without a production change: four-corner vectors retain
+high reported registers, fixed-component access regresses the hall, and offline Forward+ SPIR-V
+optimization shows no normal-runtime benefit. All three variants and generated/policy changes were
+removed. Keep the original readable stencil and compiler policy.
+A pinned viewer re-review confirms per-light direct shading still exists; baked channels are sampled
+once per receiver and reused by its culled barn-light evaluation. This is viewer evidence, not a claim
+that Valve's implementation is identical. Next prototype batched selected-light probe visibility in
+contiguous vector fields, preserving exact masks, custom stencil weights, unknown coverage and
+attributed moving corrections. Key any derived field by active volume and selected captured IDs;
+account for preparation/storage cost and frame ownership. Retain sparse fallback for unsupported or
+large selections, and do not change highlight budgets to manufacture an equivalent-rendering win.
 The branch also regenerates the stale ordinary-water fragment from current maintained source. Its
 source/binary and SPIR-V checks plus four water GPU suites pass. This correction is not yet deployed;
 the testing install remains native `ac33981`. Shared shader changes must account for ordinary water,

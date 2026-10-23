@@ -74,6 +74,13 @@ capture identifies high world/viewmodel fragment register use, but implausible l
 must not be reported as literal byte allocations. Investigate stencil layout/lifetimes next and verify
 both reconstruction and normal-runtime performance. Missing prepassed/viewmodel pipeline labels are
 registered on the branch for future captures.
+The follow-up vector/fixed-component stencil layouts and offline Forward+ SPIR-V pass were also
+removed after checks failed to establish a useful performance gain. Production stencil/compiler
+policy is unchanged. The next reference-guided study is batched selected-light visibility reconstruction:
+the pinned viewer samples baked receiver channels once before its per-light evaluation. This does not
+justify removing specular highlights. A derived vector field must preserve exact masks, unknown
+coverage, attributed corrections, frame lifetime and sparse fallback, without touching diffuse bakes.
+Include preparation and storage overhead in the comparison.
 The branch's ordinary-water embedded fragment is now regenerated to match maintained sources; four
 water GPU suites and source/binary validation pass. That parity correction is not yet deployed, and
 native `ac33981` remains the installed checkpoint.
