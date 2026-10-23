@@ -60,6 +60,16 @@ were removed; an explicit unsupported-fine GPU fallback regression remains. Keep
 until a replacement improves representative workloads without trading away other views. The Construct
 room shell is separate brush submodels with editable color/materials and disabled baked shadow casting;
 a future stable receiver relay must preserve those policies independently of movement classification.
+A four-case live colour-room diagnostic now isolates selected highlight and mixed-shadow evaluation
+from the aggregate reconstruction. Both contribute substantial receiver shading cost while bake identity
+stays stable; disabling them changes lighting and is not an accepted optimization. Keep their defaults.
+Next evaluate bounded direct-address probe visibility with exact stored values, unknown-coverage and
+attributed-field ownership preserved; compare it with the current ranked sparse rows on other maps.
+Do not attribute all local-light cost to storage until a controlled candidate establishes the benefit.
+The branch also regenerates the stale ordinary-water fragment from current maintained source. Its
+source/binary and SPIR-V checks plus four water GPU suites pass. This correction is not yet deployed;
+the testing install remains native `ac33981`. Shared shader changes must account for ordinary water,
+hardware water, live GI, Forward+ and their GPU query fixtures.
 
 Runtime performance investigation must distinguish completed-bake gameplay from bake transport and
 startup. The renderer already provides an opaque depth prepass and tiled, depth-sliced light lists.

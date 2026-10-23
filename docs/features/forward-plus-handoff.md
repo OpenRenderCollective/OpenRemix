@@ -64,6 +64,13 @@ white-room improvement for a hall regression, so its production changes were rem
 GPU regression for wholly unsupported fine records remains. Construct's room-shell brush submodels
 allow material/color edits and disable baked shadow casting; preserve those policies before publishing
 them as stable bake receivers. These frozen-view checks do not establish broad gameplay FPS parity.
+Further live diagnostic ablations retain one bake while independently disabling highlights and mixed
+selection. They identify substantial per-light receiver cost beyond aggregate probe reconstruction;
+these quality-changing runs do not justify lowering the defaults. Investigate bounded visibility lookup
+addressing next, retaining exact values, unknown coverage, directional ownership and sparse fallback.
+The branch's ordinary-water embedded fragment is now regenerated to match maintained sources; four
+water GPU suites and source/binary validation pass. That parity correction is not yet deployed, and
+native `ac33981` remains the installed checkpoint.
 
 ## Recent optional work
 
