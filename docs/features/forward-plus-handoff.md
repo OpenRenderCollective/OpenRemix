@@ -503,6 +503,12 @@ See the adapter's `tools/probe_editor/README.md` for the existing native Qt cube
 Authored references align with **hls00amrl**, not hls01amrl. Use combined cubemap/probe volumes and their
 independent capture origins, not ordinary point entities alone. New standalone tools should prefer C#.
 
+A 2026-10-24 installed-build recheck confirms this is still a pre-bake publication blocker:
+614/615 resolved materials, retained geometry present, active bake hash zero. No GPU/FPS
+timings from that attempt are accepted. Temporary HL2 mounts and protected settings were
+restored after ending the owned run. Adapter diagnostics now distinguish unsupported texture
+sources from uploads still loading; this does not implement Refract or bypass readiness.
+
 ## Release/handoff gates
 
 1. Review candidate policy and CPU/GPU/cache contracts; preserve existing default performance.

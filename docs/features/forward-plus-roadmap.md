@@ -547,6 +547,12 @@ explicitly: the tint sampler can share animated
 bump UVs. Do not freeze an arbitrary animation frame, skip the dependency or mark a placeholder ready.
 Check complete first-load sky capture and radiance separately once this gate opens.
 
+A 2026-10-24 installed-build recheck confirms this is still a pre-bake publication blocker:
+614/615 resolved materials, retained geometry present, active bake hash zero. No GPU/FPS
+timings from that attempt are accepted. Temporary HL2 mounts and protected settings were
+restored after ending the owned run. Adapter diagnostics now distinguish unsupported texture
+sources from uploads still loading; this does not implement Refract or bypass readiness.
+
 Vulkan path-tracer shadow visibility now has descriptor-indexed measured-sheet data and shares
 the finite, angle-dependent transmission model. Surface and frame GPU record sizes are preserved;
 dry scenes allocate no optics buffer. Primary/continuation shading now shares finite sheet optics,
