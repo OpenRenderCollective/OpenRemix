@@ -2,6 +2,7 @@
 #include "forward/bake/gpu.h"
 #include "forward/bake/shaders/embedded.h"
 #include <algorithm>
+#include <array>
 
 namespace remix::forward::bake {
   VkDescriptorSetLayout Transport::createSceneLayout(VkDevice device) {
@@ -42,43 +43,66 @@ namespace remix::forward::bake {
     check(pipeline::createPipelineLayout(device, &atlasInfo, nullptr, &atlasLayout));
   }
   void Transport::Gpu::createPipelines() {
-    auto compute = [&](const uint32_t *code, size_t bytes, VkPipelineLayout layout) {
+    // Submit independent kernels together so the shared preparation service can
+    // compile them concurrently. Serial create/wait calls defeat its worker pool.
+    std::array<VkComputePipelineCreateInfo, 7> recipes{};
+    std::array<VkPipeline *, 7> destinations{};
+    std::array<VkPipeline, 7> pipelines{};
+    uint32_t count = 0;
+    auto releaseModules = [&] {
+      for (uint32_t i = 0; i < count; ++i)
+        pipeline::destroyShaderModule(device, recipes[i].stage.module, nullptr);
+    };
+    auto append = [&](const uint32_t *code, size_t bytes, VkPipelineLayout layout,
+                      VkPipeline &destination) {
       const auto module = shaderModule(device, code, bytes);
-      const VkComputePipelineCreateInfo info{
+      recipes[count] = {
           .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
           .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
                     .stage = VK_SHADER_STAGE_COMPUTE_BIT,
                     .module = module,
                     .pName = "main"},
           .layout = layout};
-      VkPipeline result;
-      const auto status =
-          pipeline::createComputePipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &result);
-      pipeline::destroyShaderModule(device, module, nullptr);
-      check(status);
-      return result;
+      destinations[count++] = &destination;
     };
-    if (options.depthCapture) depthPipeline = compute(depthShader, sizeof(depthShader), layout);
-    tracePipeline = compute(transportShader, sizeof(transportShader), layout);
-    parallelPipeline = compute(parallelShader, sizeof(parallelShader), layout);
-    // Keep optional aggregate transport out of the ordinary bake/live kernels.
-    // Compile only the variant this immutable policy can actually dispatch.
-    if (aggregateDiffuse) {
-      if (options.parallel)
-        aggregateParallelPipeline = compute(aggregateParallelShader, sizeof(aggregateParallelShader), layout);
-      else
-        aggregatePipeline = compute(aggregateShader, sizeof(aggregateShader), layout);
+    try {
+      if (options.depthCapture)
+        append(depthShader, sizeof(depthShader), layout, depthPipeline);
+      append(transportShader, sizeof(transportShader), layout, tracePipeline);
+      append(parallelShader, sizeof(parallelShader), layout, parallelPipeline);
+      // Keep optional aggregate transport out of the ordinary bake/live kernels.
+      // Compile only the variant this immutable policy can actually dispatch.
+      if (aggregateDiffuse) {
+        if (options.parallel)
+          append(aggregateParallelShader, sizeof(aggregateParallelShader), layout,
+                 aggregateParallelPipeline);
+        else
+          append(aggregateShader, sizeof(aggregateShader), layout,
+                 aggregatePipeline);
+      }
+      if (options.cpuReadback && options.parallel)
+        append(visibilityShader, sizeof(visibilityShader), layout,
+               visibilityPipeline);
+      append(atlasShader, sizeof(atlasShader), atlasLayout, atlasPipeline);
+      const auto status = pipeline::createComputePipelines(
+          device, VK_NULL_HANDLE, count, recipes.data(), nullptr,
+          pipelines.data());
+      for (uint32_t i = 0; i < count; ++i)
+        *destinations[i] = pipelines[i];
+      check(status);
+    } catch (...) {
+      releaseModules();
+      throw;
     }
-    if (options.cpuReadback && options.parallel)
-      visibilityPipeline = compute(visibilityShader, sizeof(visibilityShader), layout);
-    atlasPipeline = compute(atlasShader, sizeof(atlasShader), atlasLayout);
-    const VkSamplerCreateInfo info{.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-                                   .magFilter = VK_FILTER_NEAREST,
-                                   .minFilter = VK_FILTER_NEAREST,
-                                   .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
-                                   .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-                                   .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-                                   .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
+    releaseModules();
+    const VkSamplerCreateInfo info{
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_NEAREST,
+        .minFilter = VK_FILTER_NEAREST,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE};
     check(pipeline::createSampler(device, &info, nullptr, &sampler));
   }
   void Transport::Gpu::createDescriptors() {
