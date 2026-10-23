@@ -533,16 +533,16 @@ data; Hammer face IDs must not be treated as compiled BSP face indices. Only exp
 
 Bake input readiness now follows retained brush/overlay/terrain/prop material dependencies rather
 than the entire BSP material inventory. Required unresolved inputs still block publication. The
-Trainstation acceptance gate remains open: its retained `models/props_combine/com_shield001a` uses
+Trainstation visual/performance acceptance remains open: its now-supported `models/props_combine/com_shield001a` uses
 Source `Refract` with no base texture, normal/tint maps and animation proxies. Native baking now
 supports explicitly measured finite dielectric sheets: two-interface reflection/transmission,
 textured absorption and containing-volume classification. CPU ownership/validation and hardware
 transport tests cover both sides, distance independence and sheets inside a volume. Native live
 sheet refraction now shares the late MSAA pass, with finite thickness, textured absorption, an exit
 offset, visible-sky transmission and shared SSR/cubemap/hardware reflections. It assumes air outside
-the primary sheet; camera-media/nested-layer integration, full path-tracer parity and adapter
-material/proxy integration remain pending. The testing checkpoint includes the native paths but does not unblock Trainstation
-yet. Source's artistic refraction amount is not a physical IOR. Define a stable optical tint policy
+the primary sheet; camera-media/nested-layer integration and full path-tracer visual parity
+remain pending. The newer paired candidate includes adapter material/proxy integration and
+completes Trainstation bake/cache and moving-camera checks; it is not yet deployed. Source's artistic refraction amount is not a physical IOR. Define a stable optical tint policy
 explicitly: the tint sampler can share animated
 bump UVs. Do not freeze an arbitrary animation frame, skip the dependency or mark a placeholder ready.
 Check complete first-load sky capture and radiance separately once this gate opens.
@@ -550,13 +550,13 @@ Check complete first-load sky capture and radiance separately once this gate ope
 Refract reference inspection of the local s&box Source1 importer/shader confirms normal-frame
 selection by `$bumpframe` and tint sampling through transformed normal UVs. The shield proxy
 names `$dudvmap` but writes `$bumpframe`; matching only the animated texture name would miss
-its normal playback. Existing native sheet tint uses base UVs, so adapter creation alone
-would not represent this material. Keep the artistic refraction amount separate from IOR,
+its normal playback. Native sheet tint now supports explicit scrolling UV rates, which
+the adapter binds alongside normal scroll. Keep the artistic refraction amount separate from IOR,
 define passive optical tint conversion explicitly, and preserve replacement keys.
 Adapter `4297c7a` fixes a prerequisite: water normal cache/upload identity now includes the
 playback rate, so shared texture names with different rates cannot alias the same mutable
-runtime texture. Proxy and relay compile; live multi-rate validation and Refract integration
-remain pending. This change is not deployed.
+runtime texture. Refract integration now shares these surface-normal resources; broader
+live multi-rate validation remains pending. This change is not deployed.
 
 Native optical tint scrolling is now implemented as an optional engine-agnostic measured-sheet
 control, with separate UV rates and a streamed clock. Forward+ shares one animation time
@@ -567,9 +567,9 @@ Frozen tint now supports an explicit per-axis uniform-UV distribution through
 `MaterialBakeTintAverageEXT`. Interactions independently sample optical response, preserving
 unselected spatial axes; this is not a coherent global animation-time simulation. All moving
 axes must be covered, and mutable tint images remain rejected. Playback rate changes preserve
-the averaged bake hash; live rays ignore the policy and keep actual rates. Actual Refract
-material creation, tint conversion and proxy integration remain open. These controls alone
-do not unblock Trainstation or provide Metal parity.
+the averaged bake hash; live rays ignore the policy and keep actual rates. The adapter now
+creates supported Refract sheets with passive tint conversion and proxy bindings, unblocking
+Trainstation. Metal parity and broader visual qualification remain open.
 This source change is not deployed.
 Averaging checks cover invalid/wrong/missing axis policies, immutable-image requirements,
 snapshot rate retention and stationary hash identity. GPU horizontal/vertical tint cases
@@ -1627,3 +1627,11 @@ native/adapter candidate. The installed test game still uses the older package.
 Targeted animated-sheet visual validation, pathtracer parity, moving-camera cache
 stability and foreground in-game performance remain required before deployment.
 Do not treat relay completion or its small render target as game FPS acceptance.
+
+Offline transport now submits independent required compute kernels as one
+preparation batch through the existing bounded pipeline service. Optional
+variants retain their existing policy gates; shader modules, pipeline layouts
+and dispatch semantics are unchanged. This removes serial create/wait
+scheduling during cold compilation. Transport and cancellation validation,
+plus repeated Construct cold-start/image comparisons, pass. The testing
+installation has not yet been updated to this candidate.

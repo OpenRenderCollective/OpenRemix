@@ -479,22 +479,22 @@ other weapons/maps and moving receiver quality remain acceptance work.
 The adapter owns BSP/Source parsing, range/unit conventions, style identities and cubemap sidecars.
 Native lighting remains engine agnostic. Bake material readiness uses cached dependencies of
 retained geometry; unused inventory and engine-owned sky do not block it, but missing required
-materials do. `d1_trainstation_02` remains blocked by its required static-prop `Refract` material
-`models/props_combine/com_shield001a`, which has normal/tint maps, animation proxies and no base texture.
+materials do. The supported static-prop `Refract` import now resolves Trainstation's
+`models/props_combine/com_shield001a`, including normal/tint maps and animation proxies.
 Native measured thin-sheet bake transport is implemented and tested, including textured absorption,
 both interface directions and containing-volume classification through panes. Native live sheets
 now use the late MSAA refraction pass, with textured absorption, an exit-point offset, visible-sky
 transmission and shared reflections. The primary sheet assumes external air; camera-media/nested
-integration, full path-tracer parity and adapter integration remain pending. Vulkan primary and
+integration and full path-tracer visual parity remain pending. Vulkan primary and
 continuation paths now share the measured optics model; raw ray/raster, stacked-sheet and actual
 SHARC-query transport checks cover sheets in air. Textured primary optics, roughness and denoised
 motion/lighting guides still need acceptance. These native paths are available in the testing
-checkpoint; Trainstation is still blocked. Define stable mean optical tint explicitly because tint can share
-animated bump UVs. Source's artistic refraction amount is not a physical IOR. Do not bypass the
+checkpoint. The newer paired candidate unblocks Trainstation through explicit stationary
+mean optical tint, including tint that shares animated bump UVs. Source's artistic refraction amount is not a physical IOR. Do not bypass the
 required material.
 Vulkan path-tracer light visibility now uses optional descriptor-indexed sheet optics with the
 shared two-interface transport model. Its surface/frame GPU layouts are unchanged. Primary and
-continuation shading remain legacy, as does Metal sheet rendering. The shadow visibility fixture
+continuation shading use the measured model; Metal sheet rendering remains legacy. The shadow visibility fixture
 explicitly enables blended secondary rays; the renderer's existing skip policy is unchanged.
 The installed combined addon supplies chapter BSPs including `hls00amrl` and `hls05amrl`; exact
 `gm_fork` availability remains pending, and the installed RP Fork variant is not a substitute. `bsp-replay` supports repeatable default-off
@@ -506,13 +506,13 @@ independent capture origins, not ordinary point entities alone. New standalone t
 Refract reference inspection of the local s&box Source1 importer/shader confirms normal-frame
 selection by `$bumpframe` and tint sampling through transformed normal UVs. The shield proxy
 names `$dudvmap` but writes `$bumpframe`; matching only the animated texture name would miss
-its normal playback. Existing native sheet tint uses base UVs, so adapter creation alone
-would not represent this material. Keep the artistic refraction amount separate from IOR,
+its normal playback. Native sheet tint now supports explicit scrolling UV rates, which
+the adapter binds alongside normal scroll. Keep the artistic refraction amount separate from IOR,
 define passive optical tint conversion explicitly, and preserve replacement keys.
 Adapter `4297c7a` fixes a prerequisite: water normal cache/upload identity now includes the
 playback rate, so shared texture names with different rates cannot alias the same mutable
-runtime texture. Proxy and relay compile; live multi-rate validation and Refract integration
-remain pending. This change is not deployed.
+runtime texture. Refract integration now shares these surface-normal resources; broader
+live multi-rate validation remains pending. This change is not deployed.
 
 Native optical tint scrolling is now implemented as an optional engine-agnostic measured-sheet
 control, with separate UV rates and a streamed clock. Forward+ shares one animation time
@@ -523,9 +523,9 @@ Frozen tint now supports an explicit per-axis uniform-UV distribution through
 `MaterialBakeTintAverageEXT`. Interactions independently sample optical response, preserving
 unselected spatial axes; this is not a coherent global animation-time simulation. All moving
 axes must be covered, and mutable tint images remain rejected. Playback rate changes preserve
-the averaged bake hash; live rays ignore the policy and keep actual rates. Actual Refract
-material creation, tint conversion and proxy integration remain open. These controls alone
-do not unblock Trainstation or provide Metal parity.
+the averaged bake hash; live rays ignore the policy and keep actual rates. The adapter now
+creates supported Refract sheets with passive tint conversion and proxy bindings, unblocking
+Trainstation. Metal parity and broader visual qualification remain open.
 This source change is not deployed.
 Averaging checks cover invalid/wrong/missing axis policies, immutable-image requirements,
 snapshot rate retention and stationary hash identity. GPU horizontal/vertical tint cases
@@ -636,3 +636,11 @@ with both at manual exposure 1 brings scene brightness much closer; do not
 attribute that earlier difference to bake transport. Specular appearance and
 animation still need targeted qualification. The replay quality template now
 pins matching Prism/gamma/manual exposure settings for both backends.
+
+Offline transport now submits independent required compute kernels as one
+preparation batch through the existing bounded pipeline service. Optional
+variants retain their existing policy gates; shader modules, pipeline layouts
+and dispatch semantics are unchanged. This removes serial create/wait
+scheduling during cold compilation. Transport and cancellation validation,
+plus repeated Construct cold-start/image comparisons, pass. The testing
+installation has not yet been updated to this candidate.
