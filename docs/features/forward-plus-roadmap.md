@@ -545,6 +545,11 @@ models and displacement base faces; they do not assert visible receiver coverage
 patches can carry explicit capture-texture assignments, providing a separate basis for authored
 static receiver selection. Runtime receiver binding and dynamic-object influence/blending remain
 unfinished; do not infer those semantics from a material filename or projection box alone.
+`--capture-assignments` additionally inventories explicit packed-material capture links using
+bounded compiler-style patch/include/replace scalar blocks. It preserves missing, unsupported,
+nonlocal and ambiguous statuses instead of guessing; matched origins identify projection-reference
+entities, not dynamic influence regions. General VMT inheritance, runtime receiver bindings and
+reference-renderer acceptance remain separate work.
 
 Bake input readiness now follows retained brush/overlay/terrain/prop material dependencies rather
 than the entire BSP material inventory. Required unresolved inputs still block publication. The
