@@ -74,6 +74,8 @@ namespace remix::forward::bake {
     // Geometry-only rays for candidate projection evaluation. Directions use
     // Point.normal.xyz without a surface offset. Returns first-hit distance in
     // irradiance[0].w and backface/miss/count in statistics.xyz; RGB stays zero.
+    // Backface means an opaque surface normal faces along the ray, matching
+    // spherical admission; dielectric exits are not classified as solid interiors.
     // Misses carry an explicit flag even when their distance reaches the cap.
     void recordGeometry(VkCommandBuffer command, uint32_t slot, std::span<const Point> rays);
     // Write one scene-unit first-hit distance per ray directly into caller-owned

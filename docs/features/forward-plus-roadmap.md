@@ -1782,9 +1782,11 @@ receiver coverage and projection quality within the existing capture budget, the
 transitions and wall leakage. A blocked receiver connection is not proof that the receiver
 is camera-invisible; do not remove bake charts on that evidence alone.
 
-The local-site geometry comparison exposes a backface classification discrepancy: spherical
-admission uses interpolated surface normals (excluding dielectrics), while geometry-only
-queries use hardware triangle facing. Resolve and regression-test that semantic difference
-before using local-fit backface statistics for acceptance or changing published captures.
-The sampled Construct comparison is diagnostic evidence, not a reason to discard receivers
-or loosen occupancy.
+The local-site geometry comparison exposed a backface classification discrepancy: spherical
+admission used interpolated surface normals (excluding dielectrics), while geometry-only
+queries used hardware triangle facing. A hardware regression reproduced opposite classifications
+on a double-sided wall whose normals oppose its winding. Geometry-only queries now share
+admission's normal-based solid-side rule; material culling still uses hardware facing.
+Shader regeneration/validation and hardware transport checks cover this contract. Compare the
+resulting local-fit statistics before selection or publication; sampled evidence remains insufficient
+to discard receivers or loosen occupancy.

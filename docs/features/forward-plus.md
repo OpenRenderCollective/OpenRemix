@@ -518,7 +518,10 @@ geometry assessment at eight samples per cube-face direction (384 rays per uniqu
 incomplete or duplicate readbacks cannot become completed evidence. `geometryAudited` and
 `geometryRays` describe that pass; each variant retains per-face near/far/miss/backface statistics
 and finite first-hit envelopes. These are sampled comparisons, not proof of an empty proxy or
-camera visibility. Marginal coverage comparison and bounded capture-slot allocation remain required
+camera visibility. Geometry-only backface classification follows the same interpolated-normal and
+dielectric-exclusion rule as spherical admission. Hardware triangle facing still controls actual
+material culling; it is not substituted for the solid-side diagnostic on double-sided meshes.
+Marginal coverage comparison and bounded capture-slot allocation remain required
 before publication. Neither the sites nor their
 radiance are inserted into the published reflection set. These
 measurements do not change selection or permit growth through walls.

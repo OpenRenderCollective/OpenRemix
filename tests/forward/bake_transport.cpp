@@ -1784,6 +1784,40 @@ namespace {
                 std::sqrt(error[0] / rays.size()), std::sqrt(error[1] / rays.size()),
                 means[0] / rays.size(), means[1] / rays.size(), expectedMean / rays.size());
   }
+  void geometryNormalFacing(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
+    // Source normals may oppose triangle winding on double-sided captured
+    // geometry. Admission and radiance classify the normal, not hardware facing.
+    const auto surface = world.quad(world.material({.diffuse = .5f}),
+        {{{-2, -2, 1}, {2, -2, 1}, {2, 2, 1}, {-2, 2, 1}}}, nullptr, 0xffffffff, {0, 0, 1});
+    bake::Transport transport;
+    bake::Options options;
+    options.batchPoints = 2;
+    auto job = pipelines.prepare("geometry-normal-facing", [&] {
+      transport.initialize(fixture.physical, fixture.device, world.scene({surface}), options);
+    });
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (!job->ready() && std::chrono::steady_clock::now() < deadline)
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    require(job->ready(), "Normal-facing geometry transport preparation completed");
+    job->check();
+    const bake::Point rays[] = {{{0, 0, 0, 0}, {0, 0, 1, 0}}, {{0, 0, 2, 0}, {0, 0, -1, 0}}};
+    bake::Result radiance[2], geometry[2];
+    fixture.begin();
+    transport.recordPrepare(fixture.command, world.resources);
+    transport.recordRadiance(fixture.command, 0, rays, 1);
+    fixture.finish();
+    transport.read(0, radiance);
+    fixture.begin();
+    transport.recordGeometry(fixture.command, 0, rays);
+    fixture.finish();
+    transport.read(0, geometry);
+    require(radiance[0].statistics[0] == 1 && radiance[1].statistics[0] == 0,
+            "Radiance uses explicit surface normals on both sides of a double-sided wall");
+    for (uint32_t i = 0; i < 2; ++i)
+      require(geometry[i].statistics[0] == radiance[i].statistics[0] &&
+              geometry[i].statistics[1] == 0 && std::abs(geometry[i].irradiance[0][3] - 1) < .001f,
+              "Geometry backface classification agrees with radiance when normals oppose winding");
+  }
   void captureProbe(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
     const auto emitter = world.wall(world.material({.diffuse = .5f, .emission = 3}), 1, 2);
     auto scene = world.scene({emitter});
@@ -2282,6 +2316,7 @@ int main(int argc, char **argv) try {
             "Hardware visibility shadows local-light indirect radiance without "
             "hiding the receiver patch");
     reflectionOnlyTransport(fixture, pipelines, world);
+    geometryNormalFacing(fixture, pipelines, world);
     captureProbe(fixture, pipelines, world);
     captureNoise(fixture, pipelines, world);
     siteValidation(fixture, pipelines, world);

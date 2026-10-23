@@ -9,6 +9,17 @@ layout(local_size_x = 64) in;
 #include "radiance.glsl"
 #include "sample-sums.glsl"
 #include "../../shaders/probe-depth-mapping.glsl"
+// Placement and projection diagnostics use the same solid-side definition as
+// radiance. Captured double-sided meshes can have normals opposite winding;
+// hardware facing alone is not evidence that a probe lies inside a solid.
+bool solidBackface(Hit hit, vec3 direction) {
+  RayMaterial material = rayMaterials[rayTriangles[hit.primitive].w];
+  vec2 uv;
+  vec4 color;
+  vec3 normal, geometric;
+  attributes(hit.primitive, hit.bary, uv, color, normal, geometric);
+  return !dielectric(material) && dot(normal, direction) > 0;
+}
 #ifdef PARALLEL_BAKE
 #define SAMPLE_START gl_LocalInvocationIndex
 #define SAMPLE_STEP 64u
@@ -125,7 +136,7 @@ void main() {
     seed = directionSeed(direction, seed);
     bool found = traceRay(origin, direction, rayFrame.trace.x, seed, hit);
     outputValue.irradiance[0].w = hit.distance;
-    outputValue.statistics = vec4(found && !hit.front ? 1 : 0, found ? 0 : 1, 1, 0);
+    outputValue.statistics = vec4(found && solidBackface(hit, direction) ? 1 : 0, found ? 0 : 1, 1, 0);
     storeResult(index, outputValue);
     return;
   }
@@ -139,12 +150,7 @@ void main() {
       Hit hit;
       bool found = traceRay(origin, direction, rayFrame.trace.x, seed, hit);
       if (found) {
-        RayMaterial material = rayMaterials[rayTriangles[hit.primitive].w];
-        vec2 uv;
-        vec4 color;
-        vec3 normal, geometric;
-        attributes(hit.primitive, hit.bary, uv, color, normal, geometric);
-        outputValue.statistics.x += !dielectric(material) && dot(normal, direction) > 0 ? 1 : 0;
+        outputValue.statistics.x += solidBackface(hit, direction) ? 1 : 0;
       } else {
         outputValue.statistics.y += 1;
       }
