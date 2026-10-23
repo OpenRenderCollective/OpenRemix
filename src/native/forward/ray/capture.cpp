@@ -60,7 +60,7 @@ namespace remix::forward::ray {
     }
     for (const auto &[id, draw] : retained)
       source.draws.push_back(draw);
-    result.inputs = bake::pack(source, seconds);
+    result.inputs = bake::pack(source, seconds, bake::MaterialUse::LiveRays);
     uint64_t hash = 1469598103934665603ull;
     auto add = [&](const auto &value) { hash = scene::fastHash(&value, sizeof(value), hash); };
     auto array = [&](const auto &values) {

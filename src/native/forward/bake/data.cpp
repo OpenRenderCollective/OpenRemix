@@ -10,7 +10,7 @@
 #include <unordered_map>
 
 namespace remix::forward::bake {
-  Inputs pack(const scene::BakeScene &scene, double seconds) {
+  Inputs pack(const scene::BakeScene &scene, double seconds, MaterialUse use) {
     if (!scene.ready)
       throw std::invalid_argument("Baking needs a complete static scene");
     Inputs result;
@@ -56,10 +56,12 @@ namespace remix::forward::bake {
                 (sourceOver ? sourceOverCoverageFlag : 0u) | (dielectric ? dielectricBoundaryFlag : 0u) |
                 (dielectric && source.thinWallThickness > 0 ? thinDielectricFlag : 0u) |
                 (draw.reflectionOnly ? reflectionOnlyFlag : 0u) |
+                (use == MaterialUse::StaticBake && (source.bakeTintAxes & 1u) ? averageTintUFlag : 0u) |
+                (use == MaterialUse::StaticBake && (source.bakeTintAxes & 2u) ? averageTintVFlag : 0u) |
                 (modulate ? modulatingDecalFlag : 0u)}});
       if (dielectric) {
-        // Live transport follows the current optical tint clock. Frozen scenes
-        // reject nonstationary tint, so ordinary bake inputs remain unchanged.
+        // Live rays use the streamed clock; static transport can average its
+        // explicitly selected UV axes from this same immutable rate payload.
         auto &mapped = result.materials.back().shading;
         mapped.remap[0][3] = source.transmittanceScroll[0];
         mapped.remap[1][3] = source.transmittanceScroll[1];

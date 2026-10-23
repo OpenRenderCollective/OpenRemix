@@ -22,7 +22,8 @@ namespace remix::forward::bake {
            blend.src == 4 && blend.dst == 2 && blend.op == 0 && blend.mask == 15;
   }
   constexpr uint32_t suppressEmission = 1, sourceOverCoverageFlag = 2, dielectricBoundaryFlag = 4,
-                     modulatingDecalFlag = 8, thinDielectricFlag = 16, reflectionOnlyFlag = 32;
+                     modulatingDecalFlag = 8, thinDielectricFlag = 16, reflectionOnlyFlag = 32,
+                     averageTintUFlag = 64, averageTintVFlag = 128;
   constexpr float decalReachMetres = .005f;
   struct Vertex {
     Vec4 position, normal, uv, color;
@@ -45,7 +46,8 @@ namespace remix::forward::bake {
     std::vector<TransportLight> lights;
     uint32_t domeLayer = 0;
   };
-  Inputs pack(const scene::BakeScene &scene, double seconds = 0);
+  enum class MaterialUse { StaticBake, LiveRays };
+  Inputs pack(const scene::BakeScene &scene, double seconds = 0, MaterialUse use = MaterialUse::StaticBake);
   struct Point {
     Vec4 position{}, normal{};
   }; // normal optionally supplies a surface bias direction

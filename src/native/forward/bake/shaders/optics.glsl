@@ -8,8 +8,10 @@ Medium airMedium() { return Medium(vec3(0), 1); }
 Medium materialMedium(RayMaterial material) { return Medium(material.optics.rgb, material.optics.w); }
 bool dielectric(RayMaterial material) { return (material.flags.w & 4u) != 0u; }
 bool thinDielectric(RayMaterial material) { return (material.flags.w & 16u) != 0u; }
-DielectricSheet materialSheet(RayMaterial material, vec2 uv, float cosine, float incidentIndex) {
+DielectricSheet materialSheet(RayMaterial material, vec2 uv, float cosine, float incidentIndex, inout uint seed) {
   uv += vec2(material.shading.remap[0].w, material.shading.remap[1].w) * rayFrame.domeRadiance.w;
+  if ((material.flags.w & 64u) != 0u) uv.x = random(seed);
+  if ((material.flags.w & 128u) != 0u) uv.y = random(seed);
   vec3 tint = sampleMap(material.textures.x, uv, material.flags.xyz).rgb;
   vec3 tintDepth = -log(clamp(tint, vec3(1e-6), vec3(1))) * uintBitsToFloat(material.textures.w);
   vec3 opticalDepth = min(material.optics.rgb + tintDepth, vec3(80));
@@ -90,7 +92,7 @@ vec3 visibility(vec3 origin, vec3 direction, float maximum, inout uint seed, Med
     vec3 normal, geometric;
     attributes(hit.primitive, hit.bary, uv, color, normal, geometric);
     if (thinDielectric(material)) {
-      weight *= materialSheet(material, uv, abs(dot(normal, direction)), medium.index).transmission;
+      weight *= materialSheet(material, uv, abs(dot(normal, direction)), medium.index, seed).transmission;
     } else {
       bool entering = dot(normal, direction) < 0;
       Medium next = entering ? materialMedium(material) : airMedium();

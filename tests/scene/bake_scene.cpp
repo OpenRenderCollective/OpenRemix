@@ -292,6 +292,31 @@ int main() {
   const auto stationarySheetHash = boundary.contentHash;
   water->transmittanceScroll[0] = .125f;
   rejected([&] { scene::freezeBakeScene(boundarySource); });
+  water->bakeTintAxes = 2;
+  rejected([&] { scene::freezeBakeScene(boundarySource); }); // wrong axis cannot hide animation
+  water->bakeTintAxes = 1;
+  boundary = boundarySource;
+  scene::freezeBakeScene(boundary);
+  const auto averagedSheetHash = boundary.contentHash;
+  require(averagedSheetHash != stationarySheetHash && boundary.draws[0].material->bakeTintAxes == 1 &&
+              boundary.draws[0].material->transmittanceScroll[0] == .125f,
+          "Explicit tint distribution is frozen while preserving rates for live transport");
+  water->texture = std::make_shared<scene::Texture>();
+  water->texture->dynamic = true;
+  rejected([&] { scene::freezeBakeScene(boundarySource); });
+  water->texture.reset(); // averaging UVs cannot conceal unresolved animated image content
+  water->transmittanceScroll[0] = .25f;
+  boundary = boundarySource;
+  scene::freezeBakeScene(boundary);
+  require(boundary.contentHash == averagedSheetHash, "Playback speed cannot invalidate a stationary UV distribution");
+  water->transmittanceScroll[1] = .125f;
+  rejected([&] { scene::freezeBakeScene(boundarySource); }); // the second moving axis needs its own policy
+  water->bakeTintAxes = 3;
+  boundary = boundarySource;
+  scene::freezeBakeScene(boundary);
+  require(boundary.contentHash != averagedSheetHash, "Changing the averaged UV axes invalidates transport");
+  water->transmittanceScroll[1] = 0;
+  water->bakeTintAxes = 0;
   water->transmittanceScroll[0] = 0;
   boundary = boundarySource;
   scene::freezeBakeScene(boundary);

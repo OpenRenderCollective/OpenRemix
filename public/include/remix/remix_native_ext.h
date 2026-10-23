@@ -1281,8 +1281,8 @@ typedef struct remixapi_MaterialNormalScrollEXT {
 // Optional MaterialInfo pNext for a measured finite dielectric sheet. Its
 // transmission tint samples uv + rate * animationSeconds. A host can use the
 // same rate as its normal texture, without encoding engine-specific semantics.
-// Progressive rendering uses its fixed animation clock. Nonzero rates cannot
-// enter a frozen bake until the host supplies a stationary transport material.
+// Progressive rendering uses its fixed animation clock. Nonzero rates need a
+// matching MaterialBakeTintAverageEXT policy before entering a frozen bake.
 // Existing materials retain zero rates and their established cache identities.
 #define REMIXAPI_STRUCT_TYPE_MATERIAL_TRANSMITTANCE_SCROLL_EXT ((remixapi_StructType)0x7fff1070)
 typedef struct remixapi_MaterialTransmittanceScrollEXT {
@@ -1290,6 +1290,23 @@ typedef struct remixapi_MaterialTransmittanceScrollEXT {
   const void *pNext;
   float rate[2];
 } remixapi_MaterialTransmittanceScrollEXT;
+
+// Optional MaterialInfo pNext for a measured finite sheet. Static transport
+// samples its transmission-tint UV uniformly on each requested axis, averaging
+// optical interactions rather than pre-averaging colours or extinction. This
+// explicitly selects a stationary distribution; it does not infer an animation
+// period. Interactions sample independent phases, not a coherent global time.
+// Other UV axes retain their spatial detail. Live rendering ignores the
+// policy and uses the actual tint clock. Tint images must still be immutable.
+// Every scrolling tint axis must be averaged before accepting a frozen bake.
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_BAKE_TINT_AVERAGE_EXT ((remixapi_StructType)0x7fff1071)
+#define REMIXAPI_MATERIAL_BAKE_TINT_U_EXT 0x1u
+#define REMIXAPI_MATERIAL_BAKE_TINT_V_EXT 0x2u
+typedef struct remixapi_MaterialBakeTintAverageEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  uint32_t axes; // zero, U, V, or U|V
+} remixapi_MaterialBakeTintAverageEXT;
 
 // Optional pNext on opaque MaterialInfo: how the roughness and metallic maps'
 // texels become values, so a game's own masks serve as PBR maps unconverted.

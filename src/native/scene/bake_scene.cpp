@@ -59,7 +59,9 @@ namespace remix::scene {
         return hash.value;
       }
       std::pair<std::shared_ptr<Material>, uint64_t> material(const std::shared_ptr<Material> &source) {
-        if (!source || source->fps || source->transmittanceScroll[0] != 0 || source->transmittanceScroll[1] != 0 ||
+        if (!source || source->fps ||
+            (source->transmittanceScroll[0] != 0 && !(source->bakeTintAxes & 1u)) ||
+            (source->transmittanceScroll[1] != 0 && !(source->bakeTintAxes & 2u)) ||
             (source->normalEncoding == 5 && !source->bakeSmoothBoundary) ||
             (source->bakeSmoothBoundary && !validSmoothBoundary(*source)))
           throw invalid;
@@ -110,6 +112,16 @@ namespace remix::scene {
         copy(result->refractiveIndex, source->refractiveIndex);
         copy(result->transmittanceDistance, source->transmittanceDistance);
         result->thinWallThickness = source->thinWallThickness;
+        if (source->bakeTintAxes) {
+          if (!validSmoothBoundary(*source) || source->thinWallThickness <= 0 || (source->bakeTintAxes & ~3u))
+            throw invalid;
+          result->bakeTintAxes = source->bakeTintAxes;
+          std::copy_n(source->transmittanceScroll, 2, result->transmittanceScroll);
+          // The selected stationary distribution, not playback speed, determines
+          // baked transport. Preserve rates solely for live rays using this scene.
+          hash.add(uint32_t(0x74696e74));
+          hash.add(source->bakeTintAxes);
+        }
         // Preserve existing body hashes. Sheets were not previously eligible
         // for measured-boundary transport, and need a distinct optical identity.
         if (source->thinWallThickness > 0) {

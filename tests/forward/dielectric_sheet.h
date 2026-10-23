@@ -125,6 +125,100 @@
         require(std::abs(animated[pixel].irradiance[0][0] - results[(pixel + step) % 2].irradiance[0][0]) < 3e-4f,
                 "A streamed tint clock shifts and wraps sheet absorption without rebuilding geometry");
     }
+    for (uint32_t axes : {1u, 2u, 3u}) {
+      auto averagedScene = std::make_shared<scene::BakeScene>(*tintedScene);
+      auto averagedMaterial = std::make_shared<scene::Material>(*tintedScene->draws[0].material);
+      averagedScene->draws[0].material = averagedMaterial;
+      averagedMaterial->bakeTintAxes = axes;
+      averagedMaterial->transmittanceScroll[0] = axes & 1u ? .5f : 0;
+      averagedMaterial->transmittanceScroll[1] = axes & 2u ? .25f : 0;
+      bake::Transport averaged;
+      prepare(averaged, averagedScene, ("averaged-tint-" + std::to_string(axes)).c_str());
+      std::array<bake::Result, 2> firstMean;
+      for (uint32_t phase = 0; phase < 2; ++phase) {
+        fixture.begin();
+        averaged.updateLighting(0, {}, averagedScene->sun, averagedScene->dome, 1000, float(phase * 5));
+        averaged.recordRadiance(fixture.command, 0, tintRays, 1, 8192);
+        fixture.finish();
+        std::array<bake::Result, 2> mean;
+        averaged.read(0, mean);
+        for (uint32_t pixel = 0; pixel < 2; ++pixel) {
+          const float expected = axes & 1u
+              ? .5f * (results[0].irradiance[0][0] + results[1].irradiance[0][0])
+              : results[pixel].irradiance[0][0];
+          require(std::abs(mean[pixel].irradiance[0][0] - expected) < .003f,
+                  "Averaging samples sheet response while unselected axes retain spatial tint");
+        }
+        if (phase == 0) firstMean = mean;
+        else require(std::memcmp(firstMean.data(), mean.data(), sizeof(mean)) == 0,
+                     "The explicit stationary tint distribution is independent of live animation time");
+      }
+    }
+    // A vertical texture makes a missing V-phase implementation observable;
+    // the horizontal fixture above separately checks preserving unselected U.
+    remixapi_TextureInfo vertical{};
+    vertical.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_INFO;
+    vertical.hash = 0x7e12;
+    vertical.width = 1;
+    vertical.height = 2;
+    vertical.depth = vertical.mipLevels = 1;
+    vertical.format = REMIXAPI_FORMAT_R8G8B8A8_UNORM;
+    vertical.data = tintPixels;
+    vertical.dataSize = sizeof(tintPixels);
+    remixapi_TextureHandle verticalImage;
+    world.resources.createTexture(vertical, verticalImage);
+    sheet.transmittanceTexture = L"0x7e12";
+    info.hash = ++world.hash;
+    world.resources.createMaterial(info, material);
+    const auto verticalPanel = world.quad(material,
+        {{{-100, -100, 1}, {100, -100, 1}, {100, 100, 1}, {-100, 100, 1}}},
+        nullptr, 0xffffffff, {0, 0, 1});
+    auto verticalScene = world.scene({verticalPanel});
+    verticalScene->dome = scene->dome;
+    verticalScene->draws[0].material = std::make_shared<scene::Material>(*verticalScene->draws[0].material);
+    verticalScene->draws[0].material->bakeTintAxes = 2;
+    verticalScene->draws[0].material->transmittanceScroll[1] = .5f;
+    bake::Transport verticalMean;
+    prepare(verticalMean, verticalScene, "vertical-tint-average");
+    const bake::Point verticalRays[] = {{{0, -50, -2, 0}, {0, 0, 1, 0}},
+                                       {{0, 50, -2, 0}, {0, 0, 1, 0}}};
+    fixture.begin();
+    verticalMean.recordRadiance(fixture.command, 0, verticalRays, 1, 8192);
+    fixture.finish();
+    std::array<bake::Result, 2> verticalResults;
+    verticalMean.read(0, verticalResults);
+    const float expectedMean = .5f * (results[0].irradiance[0][0] + results[1].irradiance[0][0]);
+    for (const auto &result : verticalResults)
+      require(std::abs(result.irradiance[0][0] - expectedMean) < .003f,
+              "The V averaging axis integrates vertical tint variation from either receiver position");
+    // Diagonal dark texels distinguish independent U/V phases from reusing
+    // one random phase for both coordinates (which would stay on the diagonal).
+    const uint8_t checkerPixels[] = {64, 64, 64, 255, 192, 192, 192, 255,
+                                    192, 192, 192, 255, 64, 64, 64, 255};
+    vertical.hash = 0x7e13;
+    vertical.width = vertical.height = 2;
+    vertical.data = checkerPixels;
+    vertical.dataSize = sizeof(checkerPixels);
+    world.resources.createTexture(vertical, verticalImage);
+    sheet.transmittanceTexture = L"0x7e13";
+    info.hash = ++world.hash;
+    world.resources.createMaterial(info, material);
+    const auto checkerPanel = world.quad(material,
+        {{{-100, -100, 1}, {100, -100, 1}, {100, 100, 1}, {-100, 100, 1}}},
+        nullptr, 0xffffffff, {0, 0, 1});
+    auto checkerScene = world.scene({checkerPanel});
+    checkerScene->dome = scene->dome;
+    checkerScene->draws[0].material = std::make_shared<scene::Material>(*checkerScene->draws[0].material);
+    checkerScene->draws[0].material->bakeTintAxes = 3;
+    bake::Transport checkerMean;
+    prepare(checkerMean, checkerScene, "independent-tint-phases");
+    fixture.begin();
+    checkerMean.recordRadiance(fixture.command, 0, verticalRays, 1, 8192);
+    fixture.finish();
+    checkerMean.read(0, verticalResults);
+    for (const auto &result : verticalResults)
+      require(std::abs(result.irradiance[0][0] - expectedMean) < .003f,
+              "Combined tint averaging samples the joint UV distribution rather than a correlated diagonal");
     // Surround the point with sheets on all six axes. They must not hide the
     // containing volume's exits during the initial-medium lookup.
     auto body = sheet;

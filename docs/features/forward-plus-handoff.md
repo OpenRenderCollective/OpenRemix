@@ -519,15 +519,24 @@ control, with separate UV rates and a streamed clock. Forward+ shares one animat
 between live surfaces and ray transport; exposure adaptation keeps its independent input.
 Ray-scene identity depends on rates, not ticking time. Vulkan path-tracer primary/continuation
 and light visibility share the tint UV helper; procedural material flags also include tint.
-Nonstationary tint remains ineligible for frozen bake snapshots: stationary/time-averaged
-optical transport, actual Refract material creation, tint conversion and proxy integration
-remain open. Do not claim this API alone unblocks Trainstation or provides Metal parity.
+Frozen tint now supports an explicit per-axis uniform-UV distribution through
+`MaterialBakeTintAverageEXT`. Interactions independently sample optical response, preserving
+unselected spatial axes; this is not a coherent global animation-time simulation. All moving
+axes must be covered, and mutable tint images remain rejected. Playback rate changes preserve
+the averaged bake hash; live rays ignore the policy and keep actual rates. Actual Refract
+material creation, tint conversion and proxy integration remain open. These controls alone
+do not unblock Trainstation or provide Metal parity.
 This source change is not deployed.
+Averaging checks cover invalid/wrong/missing axis policies, immutable-image requirements,
+snapshot rate retention and stationary hash identity. GPU horizontal/vertical tint cases
+check the mean optical response, preserved unselected detail and clock-independent results.
+Live capture checks ensure bake-only flags neither alter live sampling nor force rebuilds.
+Affected source/binary checks pass; this component is still not deployed.
 CPU validation, frozen-bake refusal/restored hash, stable live acceleration keys, descriptor
 and procedural-clock ownership checks pass. GPU transport and Forward+ MSAA surface tests
 exercise tint shifting/wrapping; exposure, path-tracer primary-sheet and light-visibility
 regressions pass. Affected shader source/binary checks pass. Nonprogressive path-tracer
-animated image acceptance, Source adapter integration and static tint averaging remain open.
+animated image acceptance and Source adapter integration remain open.
 
 A 2026-10-24 installed-build recheck confirms this is still a pre-bake publication blocker:
 614/615 resolved materials, retained geometry present, active bake hash zero. No GPU/FPS

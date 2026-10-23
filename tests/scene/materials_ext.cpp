@@ -452,6 +452,17 @@ namespace {
     tintScroll.rate[0] = std::numeric_limits<float>::infinity();
     rejected([&] { r.createMaterial(bodyInfo, handle); });
     tintScroll.rate[0] = .125f;
+    remixapi_MaterialBakeTintAverageEXT average{};
+    average.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_BAKE_TINT_AVERAGE_EXT;
+    average.pNext = &tintScroll;
+    average.axes = REMIXAPI_MATERIAL_BAKE_TINT_U_EXT;
+    bodyInfo.pNext = &average;
+    bodyInfo.hash = 0x684;
+    r.createMaterial(bodyInfo, handle);
+    require(drawn(r, quad(r, 0x685, handle))->bakeTintAxes == 1, "Material retains explicit optical tint bake axes");
+    average.axes = 4;
+    rejected([&] { r.createMaterial(bodyInfo, handle); });
+    average.axes = 3;
     body.thinWallThickness_value = 0;
     rejected([&] { r.createMaterial(bodyInfo, handle); }); // no containing-body texture model
     bodyInfo.pNext = &body;

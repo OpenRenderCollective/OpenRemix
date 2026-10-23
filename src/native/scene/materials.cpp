@@ -137,6 +137,12 @@ namespace remix {
         throw invalid;
       std::copy_n(scroll->rate, 2, material->transmittanceScroll);
     }
+    if (const auto *average = static_cast<const remixapi_MaterialBakeTintAverageEXT *>(
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_BAKE_TINT_AVERAGE_EXT))) {
+      if ((average->axes & ~3u) || !validSmoothBoundary(*material) || material->thinWallThickness <= 0)
+        throw invalid;
+      material->bakeTintAxes = average->axes;
+    }
     if (const auto *boundary = static_cast<const remixapi_MaterialBakeBoundaryEXT *>(
             extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_BAKE_BOUNDARY_EXT))) {
       if (boundary->smoothBoundary > 1 ||
@@ -243,6 +249,7 @@ namespace remix {
              a.transmittanceDistance == b.transmittanceDistance && a.bakeSmoothBoundary == b.bakeSmoothBoundary &&
              a.thinWallThickness == b.thinWallThickness &&
              std::equal(a.transmittanceScroll, a.transmittanceScroll + 2, b.transmittanceScroll) &&
+             a.bakeTintAxes == b.bakeTintAxes &&
              a.pbr == b.pbr && std::equal(a.emission, a.emission + 3, b.emission) &&
              std::equal(a.tint, a.tint + 4, b.tint) && a.compare == b.compare && a.reference == b.reference &&
              a.drawAlpha == b.drawAlpha && a.translucent == b.translucent &&

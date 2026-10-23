@@ -105,10 +105,15 @@ by signed UV-units/second rates. Forward+ surface/ray transport and Vulkan path 
 the material animation clock; zero rates preserve existing behavior and GPU record sizes.
 The rates are immutable scene data while time streams per frame, so ticking alone does not
 rebuild live ray geometry. Progressive path tracing keeps its fixed material clock. Nonfinite
-rates and non-sheet use are rejected. Nonzero tint scroll cannot enter a frozen bake: a
-stationary transport/averaging policy is still required. This is a Vulkan feature; Metal optical
-integration remains pending. Source Refract translation, tint conversion and proxy support
-are separate adapter work, and are not enabled by this control alone.
+rates and non-sheet use are rejected. `remixapi_MaterialBakeTintAverageEXT` explicitly selects
+U, V or both tint axes for stationary static transport. Each interaction samples independent
+uniform phases before evaluating absorption/Fresnel; it averages optical response rather than
+pre-averaging colour. Other axes retain spatial detail. This is a declared UV distribution,
+not a coherent global animation-time simulation. Every scrolling axis needs a matching policy;
+mutable tint images still cannot be frozen. Live rays ignore averaging flags, retain playback
+rates and use the current clock. Playback speed does not change the averaged bake hash.
+These are Vulkan features; Metal optical integration remains pending. Source Refract translation,
+tint conversion and proxy support remain adapter work; these controls alone do not unblock it.
 
 Vulkan path-tracer light visibility uses the same measured sheet absorption and two-interface
 Fresnel model. Its optical records are keyed by existing albedo descriptors, in an optional buffer

@@ -174,7 +174,7 @@ vec3 radiance(vec3 origin, vec3 direction, Medium medium, inout uint seed, out f
       bool entering = dot(n, direction) < 0;
       n = entering ? n : -n;
       if (thinDielectric(m)) {
-        DielectricSheet sheet = materialSheet(m, uv, -dot(n, direction), medium.index);
+        DielectricSheet sheet = materialSheet(m, uv, -dot(n, direction), medium.index, seed);
         float reflected = dot(sheet.reflection, vec3(.2126, .7152, .0722));
         float transmitted = dot(sheet.transmission, vec3(.2126, .7152, .0722));
         if (reflected + transmitted <= 1e-8)

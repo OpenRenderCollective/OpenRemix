@@ -791,6 +791,13 @@ int main() {
   optical.material->transmittanceScroll[0] = .25f;
   require(capture({&optical, 1}, 0).key != tintStart.key,
           "Changing optical tint rates changes immutable transport material identity");
+  const auto liveTint = capture({&optical, 1}, 0);
+  optical.material->bakeTintAxes = 3;
+  const auto meanPolicy = capture({&optical, 1}, 0);
+  require(meanPolicy.key == liveTint.key &&
+              (meanPolicy.inputs.materials[0].flags[3] &
+               (forward::bake::averageTintUFlag | forward::bake::averageTintVFlag)) == 0,
+          "Live ray transport ignores bake-only tint distribution without changing scene identity");
   current.reflectionOnly = true;
   const auto reflectionOnly = capture({&current, 1});
   require(!forward::accepts(current) && reflectionOnly.inputs.triangles.size() == frozen.inputs.triangles.size() &&
