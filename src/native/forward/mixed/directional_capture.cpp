@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <iterator>
 #include <stdexcept>
 
@@ -195,6 +196,13 @@ namespace remix::forward::mixed {
         }
       }
       if (!m_fields.add(field.owner.chart, field.owner.light, r, rectangle, cancelled)) {
+        const auto usage = m_fields.storageUsage();
+        std::fprintf(stderr, "Forward directional storage exhausted: accepted_fields=%zu total_fields=%zu "
+                             "encoded_bytes=%llu raw_payload_bytes=%llu raw_fields=%u tiled_fields=%u "
+                             "next_chart=%u next_light=%u next_size=%ux%u\n",
+            m_fields.size(), m_links.size(), static_cast<unsigned long long>(usage.encodedBytes),
+            static_cast<unsigned long long>(usage.rawBytes), usage.rawFields, usage.tiledFields,
+            field.owner.chart, field.owner.light, r.width, r.height);
         m_failed = true;
         return false;
       }

@@ -56,6 +56,8 @@ namespace remix::forward::mixed {
     m_entries.push_back({chart, light, rectangle.x, rectangle.y, rectangle.width, rectangle.height,
         encoded.encoding, uint32_t(m_data.size()), uint32_t(encoded.words.size())});
     m_data.insert(m_data.end(), encoded.words.begin(), encoded.words.end());
+    m_rawBytes += ((uint64_t(rectangle.width) * rectangle.height * 9 + 1) / 2) * 4;
+    ++(encoded.encoding == directional::raw ? m_rawFields : m_tiledFields);
     return true;
   }
   std::vector<uint32_t> DirectionalFields::words(std::stop_token cancelled) const {

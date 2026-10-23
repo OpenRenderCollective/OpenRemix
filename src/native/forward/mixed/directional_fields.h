@@ -16,6 +16,11 @@ namespace remix::forward::mixed {
     bool add(uint32_t chart, uint32_t light, const lightmap::Allocation &rectangle,
              std::span<const directional::Field> fields, std::stop_token cancelled = {});
     uint64_t bytes() const;
+    struct StorageUsage {
+      uint64_t encodedBytes, rawBytes;
+      uint32_t rawFields, tiledFields;
+    };
+    StorageUsage storageUsage() const { return {bytes(), m_rawBytes, m_rawFields, m_tiledFields}; }
     size_t size() const { return m_entries.size(); }
     std::vector<uint32_t> words(std::stop_token cancelled = {}) const;
     static void validate(std::span<const uint32_t> words, uint32_t charts, uint32_t lights, uint64_t budget);
@@ -28,6 +33,8 @@ namespace remix::forward::mixed {
     struct Entry { uint32_t chart, light, x, y, width, height, encoding, first, count; };
     uint32_t m_charts, m_lights;
     uint64_t m_budget;
+    uint64_t m_rawBytes = 0;
+    uint32_t m_rawFields = 0, m_tiledFields = 0;
     std::vector<Entry> m_entries;
     std::vector<uint32_t> m_data;
     std::set<std::pair<uint32_t, uint32_t>> m_identities;

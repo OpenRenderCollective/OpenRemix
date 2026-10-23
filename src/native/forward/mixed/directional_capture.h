@@ -35,6 +35,7 @@ namespace remix::forward::mixed {
     // Resident index/sample staging. beginWindow() also budgets receipt-index
     // validation and one temporary rectangle. Codec scratch/output are separate.
     uint64_t stagingBytes() const;
+    DirectionalFields::StorageUsage storageUsage() const { return m_fields.storageUsage(); }
 
   private:
     const lightmap::Layout &m_layout;

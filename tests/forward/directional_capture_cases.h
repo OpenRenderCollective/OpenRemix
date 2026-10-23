@@ -165,6 +165,9 @@ void directionalCaptureTests() {
     std::vector<remix::forward::bake::VisibilityResult> zero(count);
     limited.observe(0, zero);
     require(limited.finish() == (i == 0), "Storage exhaustion declines a whole replacement after partial progress");
+    const auto usage = limited.storageUsage();
+    require(usage.rawFields + usage.tiledFields == 1 && usage.encodedBytes <= 100 && usage.rawBytes > 0,
+            "Storage diagnostics count accepted fields only, including after exhaustion");
   }
   rejects([&] { limited.words(); });
   mixed::DirectionalCapture limitedWindow(layout, 8, black, 4096, 100);
