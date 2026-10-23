@@ -1607,3 +1607,23 @@ limits; retain distant static occluders in depth coverage and keep moving shadow
 `replay.receiverSegments=128` for close-up references; the original diagnostic default stays
 unchanged. Moving props, viewmodels, other materials/maps and comparison with the earlier uniform
 checkpoint remain open.
+
+
+### Refract importer integration checkpoint
+
+The adapter now imports supported Source Refract materials as measured finite
+sheets, preserving normal/tint scroll and original texture replacement identities.
+The passive linear tint conversion clamps Source texture amplification; this is
+an explicit physical approximation, not Source screen-space refraction parity.
+Animated tint images and mismatched normal/proxy frame counts fail with diagnostics.
+Static baking uses smooth interfaces and independent stationary tint UV phases;
+live rendering keeps the scrolling material. Shared surface-normal resources keep
+ownership and playback-rate identity, independent of the water debug switch.
+Repeated Source asset separators now normalize consistently for loose/VPK lookup.
+
+This supersedes the earlier Trainstation missing-material blocker notes: complete
+relay static inputs and first bake/cache reuse are now working with the paired
+native/adapter candidate. The installed test game still uses the older package.
+Targeted animated-sheet visual validation, pathtracer parity, moving-camera cache
+stability and foreground in-game performance remain required before deployment.
+Do not treat relay completion or its small render target as game FPS acceptance.
