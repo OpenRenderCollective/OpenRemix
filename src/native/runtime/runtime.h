@@ -384,6 +384,7 @@ private:
   // Map bake ownership survives target recreation, but not backend exit or
   // device destruction. Preparation workers only retain this shared owner.
   std::shared_ptr<forward::bake::Controller> m_forwardBaking;
+  std::shared_ptr<forward::probes::Authoring> m_forwardReflections;
   std::shared_ptr<postfx::State> m_forwardExposure;
   struct PreparedForward {
     pipeline::PreparationQueue::Ticket job;

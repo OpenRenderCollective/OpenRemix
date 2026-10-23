@@ -68,7 +68,7 @@ namespace remix::forward {
                giTerrainPipeline = VK_NULL_HANDLE, giTerrainLightmapPipeline = VK_NULL_HANDLE;
     std::shared_ptr<bake::Controller> baking;
     std::unique_ptr<probe_batch::Cache> probeVisibility;
-    std::unique_ptr<probes::Authoring> authoredReflections;
+    std::shared_ptr<probes::Authoring> authoredReflections;
     probes::Descriptors reflectionDescriptor() const {
       return authoredReflections->descriptor(baking->reflectionDescriptor());
     }

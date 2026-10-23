@@ -129,9 +129,12 @@ namespace remix::forward {
                             VkExtent2D extent, Options options, bool encodeOutput,
                             pipeline::Service *pipelines, bool hardwareRay,
                             std::shared_ptr<bake::Controller> baking, uint32_t queueFamily,
-                            std::shared_ptr<postfx::State> exposure, bool hardwareSrgb) {
+                            std::shared_ptr<postfx::State> exposure, bool hardwareSrgb,
+                            std::shared_ptr<probes::Authoring> authoredReflections) {
     if (baking && !baking->compatible(physical, device, pipelines, hardwareRay, queueFamily))
       throw std::invalid_argument("Shared map bake belongs to another device or pipeline service");
+    if (authoredReflections && !authoredReflections->compatible(physical, device, pipelines, hardwareRay, queueFamily))
+      throw std::invalid_argument("Shared reflection captures belong to another device or pipeline service");
     auto next = std::make_unique<Gpu>();
     next->physical = physical;
     next->device = device;
@@ -188,7 +191,8 @@ namespace remix::forward {
     next->baking =
         baking ? std::move(baking)
                : std::make_shared<bake::Controller>(physical, device, pipelines, hardwareRay, queueFamily);
-    next->authoredReflections = std::make_unique<probes::Authoring>(physical, device, pipelines, hardwareRay, queueFamily);
+    next->authoredReflections = authoredReflections ? std::move(authoredReflections)
+        : std::make_shared<probes::Authoring>(physical, device, pipelines, hardwareRay, queueFamily);
     next->baseTargetBytes = next->statistics.targetBytes;
     m_gpu = std::move(next);
   }
@@ -197,6 +201,9 @@ namespace remix::forward {
   }
   std::shared_ptr<postfx::State> Renderer::exposureState() const {
     return m_gpu ? m_gpu->postProcessing->state() : nullptr;
+  }
+  std::shared_ptr<probes::Authoring> Renderer::reflectionAuthoring() const {
+    return m_gpu ? m_gpu->authoredReflections : nullptr;
   }
   void Renderer::activate(uint32_t slot) {
     selectFrame(slot);

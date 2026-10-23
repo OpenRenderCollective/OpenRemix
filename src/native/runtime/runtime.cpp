@@ -239,6 +239,7 @@ namespace remix {
     m_forwardPreparation.reset();
     m_obsoleteForward.clear();
     m_forwardBaking.reset();
+    m_forwardReflections.reset();
     m_forwardExposure.reset();
     m_forwardFailure.clear();
     m_forwardSupported = false;

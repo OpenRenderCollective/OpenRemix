@@ -588,8 +588,10 @@ use ordinary selection when capture origins do not match compiled assignments. V
 live renderer resets, late-asset refreshes and paired-package checks remain gates before default.
 GPU target-recreation coverage now verifies receiver pixels and diffuse ownership under synchronization
 validation; CPU coverage includes shading refresh, deletion, hash reuse and scene reset isolation.
-Authored capture images currently rebuild with render targets; preserving completed capture ownership
-across compatible target recreation remains an optimization opportunity. Runtime
+Compatible target recreation now shares authored capture ownership as well as diffuse baking.
+Completed capture images and pending edits survive MSAA changes; the active renderer alone advances
+frame-slot retirement, and incompatible device/queue/pipeline ownership is rejected before preparation.
+GPU synchronization coverage verifies image identity and pending-edit cancellation across replacement. Runtime
 capability negotiation now requires `GetReflectionBindingVersionEXT()` version 1 or newer; missing
 or older contracts preserve ordinary selection rather than silently emitting ignored nodes. This
 immutable query is available before initialization and does not establish device/capture readiness.

@@ -2406,6 +2406,13 @@ ownership-preserving binding-only updates; higher versions retain those guarante
 export is unsupported. The Source opt-in gate checks this contract before creating receiver
 variants. This is separate from backend/device capabilities and authored-capture readiness.
 
+Compatible Forward+ target replacement retains the reflection authoring controller alongside diffuse
+baking and exposure. Preparation workers only retain ownership and validate immutable device, queue,
+and pipeline identity. Queue-idle activation precedes frame-slot retirement on the active render
+thread; completed capture images and pending transport survive MSAA or output-target changes.
+Leaving Forward+ or shutting down the runtime releases retained ownership. Map/configuration changes
+still invalidate captures through the existing source and lighting identity checks.
+
 Canonical capture/cache order remains unchanged for identity and radiance reuse. Image upload sorts
 projection records and every radiance mip together by descending priority, retaining source order for ties.
 The image owner exposes that physical header to diagnostics and CPU viewmodel candidate masks, so mask

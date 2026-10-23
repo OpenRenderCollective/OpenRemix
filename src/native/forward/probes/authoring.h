@@ -17,6 +17,12 @@ namespace remix::forward::probes {
     Authoring(VkPhysicalDevice physical, VkDevice device, pipeline::Service *pipelines,
                bool hardware, uint32_t queueFamily);
     ~Authoring();
+    // Immutable constructor identity: safe to inspect during worker preparation.
+    bool compatible(VkPhysicalDevice physical, VkDevice device, pipeline::Service *pipelines,
+                    bool hardware, uint32_t queueFamily) const {
+      return physical == m_physical && device == m_device && pipelines == m_pipelines &&
+             hardware == m_hardware && queueFamily == m_queueFamily;
+    }
     void selectFrame(uint32_t slot);
     void record(VkCommandBuffer command, RasterRenderer &resources, const bake::Config &config,
                 const std::shared_ptr<const bake::Volume> &automatic, bool fallback);

@@ -1,6 +1,7 @@
 #include "raster/renderer.h"
 #include "forward/renderer.h"
 #include "forward/bake/controller.h"
+#include "forward/probes/authoring.h"
 #include "forward/bake/sun_depth.h"
 #include "forward/bake/cache_persistence.h"
 #include "forward/bake/cache.h"
@@ -17,6 +18,7 @@
 #include <cstring>
 #include <fstream>
 #include <limits>
+#include <stdexcept>
 #include <remix/remix_native_ext.h>
 #include <thread>
 
@@ -306,10 +308,11 @@ namespace {
     void enableForward(remix::forward::Options options, bool preserveBaking = false, bool encodeOutput = false) {
       vk(vkDeviceWaitIdle(device));
       const auto baking = preserveBaking && forward ? forward->bakeController() : nullptr;
+      const auto reflections = preserveBaking && forward ? forward->reflectionAuthoring() : nullptr;
       const auto exposure = preserveBaking && forward ? forward->exposureState() : nullptr;
       auto next = std::make_unique<remix::forward::Renderer>();
       auto job = pipelines->prepare("forward-test-" + std::to_string(++forwardGeneration), [&] {
-          next->initialize(physical,device,pass,extent,options,encodeOutput,pipelines.get(),hardwareRay,baking,queueFamily,exposure);
+          next->initialize(physical,device,pass,extent,options,encodeOutput,pipelines.get(),hardwareRay,baking,queueFamily,exposure,false,reflections);
       });
       while (!job->ready()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
       job->check();
@@ -2382,6 +2385,12 @@ namespace {
               } while (std::chrono::steady_clock::now() < cancellationDeadline);
               require(target.forward->statistics().authoredReflections.pending,
                       "Cancellation fixture reaches a submitted reflection edit");
+              const auto pendingAuthoring = target.forward->reflectionAuthoring();
+              const auto activeHeader = pendingAuthoring->header();
+              target.enableForward(options, true);
+              require(target.forward->reflectionAuthoring() == pendingAuthoring &&
+                          pendingAuthoring->header() == activeHeader && pendingAuthoring->statistics().pending,
+                      "Target replacement retains pending transport and the last published image together");
               authored[1].capture[0] = originalCaptureX;
               ++request.revision;
               r.setReflectionVolumes(&request);
@@ -2441,9 +2450,25 @@ namespace {
               // Target recreation (MSAA/output changes) keeps CPU bindings and diffuse
               // ownership while the new renderer republishes its authored captures.
               const auto retainedBaking = target.forward->bakeController();
+              const auto retainedReflections = target.forward->reflectionAuthoring();
+              const auto publishedHeader = retainedReflections->header();
+              bool incompatibleRejected = false;
+              try {
+                remix::forward::Renderer incompatible;
+                incompatible.initialize(target.physical, target.device, target.pass, target.extent, options,
+                    false, target.pipelines.get(), target.hardwareRay, {}, target.queueFamily + 1, {}, false,
+                    retainedReflections);
+              } catch (const std::invalid_argument &) { incompatibleRejected = true; }
+              require(incompatibleRejected,
+                      "Target recreation rejects capture ownership from a different queue family before GPU preparation");
+              options.samples = samples == 1 ? 4 : 1;
               target.enableForward(options, true);
+              require(target.forward->reflectionAuthoring()->header() == publishedHeader &&
+                          !target.forward->reflectionAuthoring()->statistics().pending,
+                      "Changing MSAA retains the published capture image without scheduling new transport");
               const auto rebuiltWorld = waitForEdit();
-              require(target.forward->bakeController() == retainedBaking && r.bakeScene() == snapshot &&
+              require(target.forward->bakeController() == retainedBaking &&
+                          target.forward->reflectionAuthoring() == retainedReflections && r.bakeScene() == snapshot &&
                           target.forward->statistics().baking.activeHash == baseline.baking.activeHash &&
                           target.forward->statistics().boundReflectionDraws > 0 &&
                           std::abs(int(rebuiltWorld[centre]) - int(boundWorld[centre])) <= 2,
@@ -2460,6 +2485,9 @@ namespace {
               require(target.forward->statistics().unresolvedReflectionDraws > 0 &&
                           target.forward->statistics().boundReflectionDraws == 0,
                       "Missing-scene receiver diagnostics distinguish assignments from resolved captures");
+              options.samples = samples;
+              target.enableForward(options, true);
+              waitForEdit();
               weapon.mesh = weaponMesh;
               options.authoredReflectionFallback = true;
               target.forward->updateLighting(options);
