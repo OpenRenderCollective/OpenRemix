@@ -82,6 +82,12 @@ accepting sustained gameplay/churn performance. The two observed preparation ran
 Windows-confirmed focus and are excluded from performance conclusions. Short alternating holds
 also did not outlast highlight fade, so repeat with adequate dwell and verify actual selection changes.
 Both original test-install DLLs and protected settings were restored after the owned session ended.
+Disassembly narrows that host crash to an indirect call through an overwritten static device-object
+vtable pointer in the original shader DLL. Pixel-like pointer bytes are evidence of corruption, not
+proof of its writer or cause. A self-tested external hardware write watch now supports exact owned
+process reproductions without patching application code/data. One watched transition session did not
+reproduce the overwrite or crash; it is not a fix or a performance acceptance. Retain the stability
+follow-up and use feature-off controls before changing production resource or shadow lifetime rules.
 
 The installed runtime has completed Windows-confirmed foreground Construct samples with the
 physgun, full-resolution SSR and stable bake identity. Source's own focus flag alone proved

@@ -124,7 +124,13 @@ Source shader DLL's asynchronous loading stack. Its cause remains unproven; qual
 accepting sustained gameplay/churn performance. The two observed preparation ranges preceded
 Windows-confirmed focus and are excluded from performance conclusions. Short alternating holds
 also did not outlast highlight fade, so repeat with adequate dwell and verify actual selection changes.
-Both original test-install DLLs and protected settings were restored after the owned session ended. This is an in-progress
+Both original test-install DLLs and protected settings were restored after the owned session ended.
+Disassembly narrows that host crash to an indirect call through an overwritten static device-object
+vtable pointer in the original shader DLL. Pixel-like pointer bytes are evidence of corruption, not
+proof of its writer or cause. A self-tested external hardware write watch now supports exact owned
+process reproductions without patching application code/data. One watched transition session did not
+reproduce the overwrite or crash; it is not a fix or a performance acceptance. Retain the stability
+follow-up and use feature-off controls before changing production resource or shadow lifetime rules. This is an in-progress
 optimization, not broad FPS/quality acceptance or a persistent bake-format change.
 The branch also regenerates the stale ordinary-water fragment from current maintained source. Its
 source/binary and SPIR-V checks plus four water GPU suites pass. This correction is not yet deployed;
