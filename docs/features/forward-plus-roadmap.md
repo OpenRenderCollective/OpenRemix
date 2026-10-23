@@ -601,8 +601,14 @@ influence. A nonnegative scene-unit blend distance sets feather width, with zero
 20%-of-half-extent rule. Version-one callers retain combined bounds and their legacy half-metre
 feather. The scene owns validated copies; invalid edits preserve the last valid request. Influence
 and feather edits reuse existing captured radiance and do not alter frozen diffuse lighting.
-The current editor/sidecar format still writes version one; independent handles and Black Mesa
-entity/face-assignment import remain adapter/tool work.
+The adapter now accepts both legacy `BSPCUBE1` and extended `BSPCUBE2` sidecars. Extended records
+carry sampling bounds/feather metadata alongside unchanged projection records, with fingerprint,
+capacity, atomic publication and retry semantics preserved. Editor JSON can retain optional sampling
+metadata and imports representable probe-report influence/feather fields; legacy-equivalent exports
+stay version one. Mixed exports preserve legacy feathering for unchanged volumes. A Construct
+relay replay verifies independent projection/influence metadata and explicit feather distance through
+the actual sidecar-to-native path. Matching updated adapter/runtime builds are required for version
+two. Independent viewport handles and Black Mesa entity/face-assignment import remain tool work.
 
 | Requirement | Current state | Remaining proof or work |
 | --- | --- | --- |
