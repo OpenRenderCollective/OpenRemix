@@ -178,9 +178,12 @@ failed window-state queries are unknown, not focused. Forced termination can tru
 record. Completed-bake and weapon/prop stability can still be inspected in an unfocused session,
 but those checks do not establish foreground gameplay performance.
 Use the roadmap's [map acceptance matrix](forward-plus-roadmap.md#map-acceptance-matrix), including
-`gm_fork`, `d1_trainstation_02` and installed large combined Half-Life addon maps. These additions
+`gm_fork`, `d1_trainstation_02`, `bm_c1a1b` and installed large combined Half-Life addon maps. These additions
 are pending coverage. Inventory addon BSP names and verify actual loaded content before recording
 cold/warm, fixed-view and armed-traversal results; do not substitute repeated small-map checks.
+`bm_c1a1b` also has user-reported authored parallax cubemap bounds to investigate. Verify their
+encoding and route a future importer through the Source adapter into `SetReflectionVolumesEXT`;
+capture seeds are not projection volumes. Import and performance acceptance remain pending.
 For host profiling, unwind caller stacks rather than classifying a syscall from its address alone.
 Observed main-thread sleeps lead through the original Source shader backend; the native worker often
 waits on its condition variable. `mat_forcehardwaresync` was enabled in the sampled game. The initial

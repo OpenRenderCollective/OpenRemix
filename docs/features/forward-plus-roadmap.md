@@ -294,7 +294,16 @@ out during an earlier run. Repeat any affected timing window with the game focus
 | `d2_lostcoast`, `dm_steamlab` | Previously reported bake failures, light leaks, transport quality and cache restoration. |
 | `gm_fork` | Added large-map stress case: chart/probe/cubemap budgets, bake time and memory, distant visibility, offscreen shadow casters and movement between areas. |
 | `d1_trainstation_02` | Added campaign-map case: fixed and moving views, indoor/outdoor lighting transitions, props, reflections and bake/cache behavior. |
+| `bm_c1a1b` | Added complex-map case: bake time and memory, traversal stutter, light/probe coverage and reflection transitions. Inspect the map's reported hand-authored parallax cubemap bounds as a reference for automatic fitting and a future authored-volume importer; their availability and encoding still need verification. |
 | Large combined Half-Life addon maps | Added long connected-layout stress case: room/portal transitions, probe and cubemap boundaries, cumulative bake work, memory and traversal stutter. Inventory installed BSP names first; include the `hls00amrl` authored-reference comparison where available, then select additional combined maps. |
+
+For `bm_c1a1b`, locate the actual BSP and required mounted assets before testing. Future authored
+cubemap import belongs in the Source adapter: identify the map's volume representation, preserve
+capture origins independently from projection bounds, and translate supported transforms and
+priorities into the existing engine-agnostic `SetReflectionVolumesEXT` API. Validate coordinate
+conventions and overlapping-volume behavior against the authored reference before enabling it.
+This import is planned work; existing BSP cubemap capture seeds alone do not establish authored
+parallax bounds support.
 
 Bake input readiness now follows retained brush/overlay/terrain/prop material dependencies rather
 than the entire BSP material inventory. Required unresolved inputs still block publication. The
