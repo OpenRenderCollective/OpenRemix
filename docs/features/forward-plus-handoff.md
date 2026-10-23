@@ -75,6 +75,13 @@ field storage and 5 MiB peak residency during selection changes. A fixed-view re
 peak. These are measured cases, not a universal bound or an armed moving-gameplay acceptance. The
 preparation timer is absent from the completed steady-state timing window because reuse emits no
 gather; measure first use and sustained selection churn separately before judging preparation cost.
+Live frame-profile CSV now appends gather presence/time and timing truncation, preserving previous
+columns. A subsequent live churn comparison was interrupted by an access violation in the original
+Source shader DLL's asynchronous loading stack. Its cause remains unproven; qualify this before
+accepting sustained gameplay/churn performance. The two observed preparation ranges preceded
+Windows-confirmed focus and are excluded from performance conclusions. Short alternating holds
+also did not outlast highlight fade, so repeat with adequate dwell and verify actual selection changes.
+Both original test-install DLLs and protected settings were restored after the owned session ended.
 
 The installed runtime has completed Windows-confirmed foreground Construct samples with the
 physgun, full-resolution SSR and stable bake identity. Source's own focus flag alone proved

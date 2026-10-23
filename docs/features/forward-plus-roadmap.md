@@ -117,7 +117,14 @@ match the feature-off run within one display-channel value. It records about 2 M
 field storage and 5 MiB peak residency during selection changes. A fixed-view replay records a 4 MiB
 peak. These are measured cases, not a universal bound or an armed moving-gameplay acceptance. The
 preparation timer is absent from the completed steady-state timing window because reuse emits no
-gather; measure first use and sustained selection churn separately before judging preparation cost. This is an in-progress
+gather; measure first use and sustained selection churn separately before judging preparation cost.
+Live frame-profile CSV now appends gather presence/time and timing truncation, preserving previous
+columns. A subsequent live churn comparison was interrupted by an access violation in the original
+Source shader DLL's asynchronous loading stack. Its cause remains unproven; qualify this before
+accepting sustained gameplay/churn performance. The two observed preparation ranges preceded
+Windows-confirmed focus and are excluded from performance conclusions. Short alternating holds
+also did not outlast highlight fade, so repeat with adequate dwell and verify actual selection changes.
+Both original test-install DLLs and protected settings were restored after the owned session ended. This is an in-progress
 optimization, not broad FPS/quality acceptance or a persistent bake-format change.
 The branch also regenerates the stale ordinary-water fragment from current maintained source. Its
 source/binary and SPIR-V checks plus four water GPU suites pass. This correction is not yet deployed;
