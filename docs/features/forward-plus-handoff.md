@@ -43,6 +43,19 @@ matrix in [the roadmap](forward-plus-roadmap.md) and [the renderer guide](forwar
 claiming a release-ready default. Preserve static visibility, unknown coverage, controllable groups
 and offscreen moving shadows. The prior uniform-grid checkpoint was `e51bff0`.
 
+## Current profiling direction
+
+The installed runtime has completed Windows-confirmed foreground Construct samples with the
+physgun, full-resolution SSR and stable bake identity. Source's own focus flag alone proved
+insufficient, so future runs must check Windows process ownership and visually verify the camera.
+The colour-room view is trace-confirmed in non-solid space, facing `GM_CONSTRUCT/COLOR_ROOM`
+on a `func_brush`. Its probe-lit shell is substantially more expensive than the lightmapped hall.
+Bounded receiver instrumentation also shows mapped geometry invoking shaders despite zero passing
+depth samples, without omitted query ranges. Investigate safe prepass-dependent early rejection and
+stationary brush bake membership next. Preserve cutouts, prepass-off behavior, terrain, moving or
+controllable geometry and viewmodel/shadow isolation. No early-test default or static-brush policy
+has been changed. These frozen-view diagnostics do not establish broad gameplay FPS parity.
+
 ## Recent optional work
 
 - `forward/bake/sun_depth*`, `controller_sun_depth.cpp` and `forward/shaders/sun-depth.glsl` own the

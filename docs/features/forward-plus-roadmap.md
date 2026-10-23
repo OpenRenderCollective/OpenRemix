@@ -34,6 +34,22 @@ The deployed DLL passes a small Construct replay bake with synchronization valid
 interior donor repair removes the reproduced ceiling-fixture halo in fresh neutral, raw and shaded
 captures. Broader map, connector/secret-room and interactive quality acceptance remain open.
 
+Live installed-runtime profiling now records Windows foreground ownership as well as Source's
+focus flag. The latter can remain true while Windows reports the game unfocused; reject those
+intervals. A process-scoped helper restores/focuses the owned benchmark once after readiness,
+without repeatedly stealing focus. Frozen armed Construct hall and colour-room samples have
+accepted foreground intervals and stable bake identity; this does not close moving gameplay gates.
+The colour-room camera is trace-validated in non-solid space, looking at its `func_brush` shell.
+That shell takes the probe-lit receiver path and dominates this view, unlike the largely lightmapped
+hall. Separate bounded receiver queries also find substantial shader invocations on mapped geometry
+with zero passing depth samples and no omitted query ranges. Investigate safe early rejection after
+the matching depth prepass, preserving alpha cutouts, camera backface rejection, coplanar order,
+terrain, prepass-off mode, viewmodel isolation and shadow depth semantics. Current color pipelines
+write depth, so forcing early tests across existing shaders is not an accepted fix. Investigate whether
+stationary controllable brush shells can enter a stable bake without treating movable/toggleable
+geometry as immutable or adding Source-specific rules to OpenRemix. Clustering and local shadow
+rendering are not the dominant cost in these captured Construct views; other maps remain unmeasured.
+
 Runtime performance investigation must distinguish completed-bake gameplay from bake transport and
 startup. The renderer already provides an opaque depth prepass and tiled, depth-sliced light lists.
 The normal-quality Construct hall continuation confirms the user's two authored cubemap volumes
