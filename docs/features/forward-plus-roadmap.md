@@ -19,18 +19,17 @@ shadows, baked probes, SSR, environment materials and animated frame slots. A fo
 Construct comparison improves both viewmodel repeats, while separate invocation queries show fewer
 shader invocations at unchanged passing-sample/geometry counts. These are fixed-view results, not
 whole-roadmap gameplay acceptance. The private disable override is documented in the renderer guide.
-Deployment of this continuation is pending; the install checkpoint below still describes the prior DLL.
+This continuation is deployed in the verified testing refresh described below; broader gameplay
+and roadmap quality gates remain open.
 
-The separate GMod testing install now uses native `ac33981` and adapter `28c28cb`. The latest
-incremental refresh adds early fragment rejection to prepassed world shading; only the native DLL
-and runtime manifest changed, and all ten settings/assets/launcher files verify unchanged. The
-previous paired refresh added independent reflection sampling and extended sidecars, retaining authored
-files. Sparse sun-depth capture/cache/compaction is present but stays opt-in; the test-only soft
-filter is not integrated. No user settings or renderer defaults changed. Earlier storage, preparation,
-sky and material fixes remain, and rejected draw-path experiments are absent. That previous paired refresh changed the two DLLs and runtime
-manifest; its other 149 runtime files and ten settings/assets/launcher files verified unchanged.
-The root install record now agrees with the runtime checkpoint, and deployment settings pin an
-immutable verified package. Rollback copies remain available.
+The separate GMod testing install now uses native `d9d54c2` and adapter `a499842`. The latest
+refresh enables early-depth shading for eligible viewmodels and includes ordinary-water shader
+source/binary parity plus the newer profiling/diagnostic groundwork. Only the two DLLs and runtime
+manifest changed; the other 152 owned files and all ten protected settings/assets/launcher files
+verify unchanged. The earlier world early-fragment rejection and reflection influence/feather updates
+remain. Sparse sun depth and selected-probe batching stay opt-in; deployment does not enable them.
+The root install record agrees with the runtime checkpoint, and deployment settings pin an immutable
+verified package. Rollback copies remain available. All 155 owned files pass verification.
 
 Normal-quality Construct before/staged/installed captures retain identical pixels/content hashes
 with synchronization validation. The staged DLL passes late-emissive/TAA preparation and visibility
@@ -152,8 +151,7 @@ future shutdown tests. Both installed DLLs and protected settings were restored 
 follow-up and use feature-off controls before changing production resource or shadow lifetime rules. This is an in-progress
 optimization, not broad FPS/quality acceptance or a persistent bake-format change.
 The branch also regenerates the stale ordinary-water fragment from current maintained source. Its
-source/binary and SPIR-V checks plus four water GPU suites pass. This correction is not yet deployed;
-the testing install remains native `ac33981`. Shared shader changes must account for ordinary water,
+source/binary and SPIR-V checks plus four water GPU suites pass. This correction is included in the current testing refresh. Shared shader changes must account for ordinary water,
 hardware water, live GI, Forward+ and their GPU query fixtures.
 
 Runtime performance investigation must distinguish completed-bake gameplay from bake transport and

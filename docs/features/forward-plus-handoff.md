@@ -2,26 +2,26 @@
 
 ## Start here
 
-The separate GMod testing install was refreshed on 2026-10-23 to native `ac33981` and adapter
-`28c28cb`. The latest incremental refresh adds early fragment rejection to prepassed world shading;
-only the native DLL and runtime manifest changed, preserving all ten settings/assets/launcher files.
-The preceding paired refresh added independent reflection influence/feather authoring and extended sidecars
-while retaining legacy volume records and files. Sparse baked sun depth persistence, coverage gates
-and compact pages are present but remain opt-in through `REMIX_DEBUG_BAKE_SUN_DEPTH`; finite-source
-softness and broader map acceptance are unfinished. No renderer settings or experimental defaults
-were enabled by deployment. Earlier bake-storage, preparation, HDR sky and texture fixes remain.
+The separate GMod testing install was refreshed on 2026-10-23 to native `d9d54c2` and adapter
+`a499842`. The latest refresh enables early-depth shading only for viewmodel draws whose packed
+state guarantees unconditional coverage, and includes ordinary-water shader parity and newer
+profiling diagnostics. Cutouts and explicit camera-backface rejection retain ordinary shading.
+The world early-depth optimization and independent reflection influence/feather sidecars remain.
+Sparse baked sun depth and selected-probe batching remain opt-in; deployment enables neither.
 
-All 155 owned files verify. The preceding paired refresh changed the two DLLs and runtime manifest;
-the latest incremental refresh also updates the root install record so provenance remains current. The other 149 runtime files and ten
-settings/assets/launcher files verify unchanged, including addon mounts and authored Construct boxes.
-Deployment settings now pin the verified pair in an active `_work/packages` bundle rather than
-mutable build outputs or disposable reports. Exact rollback copies remain in the test install.
-Main branches remain upstream. Normal-quality Construct comparisons before/staged/installed retain
-identical pixels and lighting content hashes with synchronization validation. The actual staged DLL
-passes late-emissive/TAA preparation and repeated visibility changes. Six current GPU suites cover
-MSAA, overlay/shadows, baked viewmodel probes, viewmodel SSR, authored edits and sun-depth lifecycle.
-F12 and sidecar CPU checks pass. These are functional checks, not armed/moving gameplay FPS or
-broad visual-quality acceptance.
+All 155 owned files verify. Only the two DLLs and runtime manifest changed; the other 152 owned
+files and ten protected settings/assets/launcher files verify unchanged, including authored Construct
+boxes and addon mounts. The root install record agrees with the immutable package checkpoint.
+Main branches remain upstream and rollback copies remain available.
+
+Six final GPU suites pass validation/sync checks across world/MSAA, viewmodel overlay/shadows,
+baked probes, SSR, environment materials and animated frame slots. Perspective camera-culling tests
+cover reversed winding and explicit two-sided policy. Separate invocation queries confirm less
+viewmodel fragment work with unchanged passing samples and geometry counts. Focused opposite-order
+Construct timing checks improve both eligible-viewmodel repeats. The staged and installed DLL replay
+outputs agree with the control within one display-channel value; native-runtime validation retains the
+known older-layer device-feature-structure message, with no new synchronization/descriptor report.
+These are bounded functional/fixed-view checks, not broad moving-gameplay or map-quality acceptance.
 
 Ordinary lighting cache identity remains unchanged by this refresh. Optional sun-depth sidecar
 policy/layout changes can require fresh depth capture while retaining cached irradiance. Older
@@ -55,7 +55,8 @@ shadows, baked probes, SSR, environment materials and animated frame slots. A fo
 Construct comparison improves both viewmodel repeats, while separate invocation queries show fewer
 shader invocations at unchanged passing-sample/geometry counts. These are fixed-view results, not
 whole-roadmap gameplay acceptance. The private disable override is documented in the renderer guide.
-Deployment of this continuation is pending; the install checkpoint below still describes the prior DLL.
+This continuation is deployed in the verified testing refresh above; broader gameplay and roadmap
+quality gates remain open.
 
 The selected-light visibility gather and receiver integration are now opt-in through presence of
 `REMIX_DEBUG_PROBE_BATCH` (remove the variable to disable). `forward/probe_batch` produces exact,
