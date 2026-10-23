@@ -47,6 +47,34 @@ namespace remix::forward::bake {
     result.counts = {layout.pages, uint32_t(layout.tiles.size()), 0, 0};
     return result;
   }
+  std::optional<SunDepthLayout> fitSunDepthLayout(std::span<const std::array<int32_t, 2>> tiles,
+      SunDepthLayoutOptions options, std::stop_token cancelled) {
+    // Validate caller limits even when coverage is empty or cannot fit.
+    auto empty = planSunDepthLayout({}, options, cancelled);
+    if (tiles.empty()) return empty;
+    if (tiles.size() > (1u << 20)) throw std::length_error("Too many sun depth tiles");
+    std::vector<std::array<int32_t, 2>> unique(tiles.begin(), tiles.end());
+    std::sort(unique.begin(), unique.end());
+    unique.erase(std::unique(unique.begin(), unique.end()), unique.end());
+    const uint32_t extent = options.tileTexels + 2 * options.border;
+    uint64_t bestBytes = UINT64_MAX, bestPages = UINT64_MAX;
+    uint32_t bestSide = 0;
+    for (uint32_t side = 1; side <= options.pageSize / extent; ++side) {
+      if (cancelled.stop_requested()) throw std::runtime_error("Sun depth fitting superseded");
+      const uint64_t perPage = uint64_t(side) * side;
+      const uint64_t pages = (unique.size() + perPage - 1) / perPage;
+      if (pages > options.maximumPages) continue;
+      const uint64_t bytes = pages * perPage * extent * extent * sizeof(float);
+      if (bytes < bestBytes || (bytes == bestBytes && pages < bestPages)) {
+        bestBytes = bytes;
+        bestPages = pages;
+        bestSide = side;
+      }
+    }
+    if (!bestSide) return {};
+    options.pageSize = bestSide * extent;
+    return planSunDepthLayout(unique, options, cancelled);
+  }
   std::optional<SunDepthLayout> planSunDepthLayout(std::span<const std::array<int32_t, 2>> tiles,
       SunDepthLayoutOptions options, std::stop_token cancelled) {
     auto check = [&] { if (cancelled.stop_requested()) throw std::runtime_error("Sun depth layout superseded"); };

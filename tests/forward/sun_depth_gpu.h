@@ -40,7 +40,7 @@ void sparseSunDepthPrototype(test::Fixture &fixture, pipeline::Service &pipeline
   std::vector<float> depth(options.pageSize * options.pageSize, 8);
   Buffer atlasDepth;
   atlasDepth.create(fixture.physical, fixture.device, layout.depthBytes,
-      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, Buffer::Memory::Device);
+      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, Buffer::Memory::Device);
   fixture.begin();
   vkCmdFillBuffer(fixture.command, atlasDepth.handle, 0, layout.depthBytes, 0xbf800000u);
   const VkMemoryBarrier initialAtlas{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
@@ -219,6 +219,38 @@ void sparseSunDepthPrototype(test::Fixture &fixture, pipeline::Service &pipeline
     require(range < 9 ? value < 0 : std::abs(value - 9) < 1e-4f,
             "Explicit depth range reaches casters beyond the default transport cap and preserves bounded misses");
   }
+  auto repackedOptions = options;
+  repackedOptions.pageSize = 72;
+  repackedOptions.maximumBytes = 72 * 72 * 4 + 16;
+  const auto repacked = bake::planSunDepthLayout(tiles, repackedOptions);
+  require(bool(repacked), "Repacked fixture retains complete coverage");
+  Buffer repackedDepth;
+  repackedDepth.create(fixture.physical, fixture.device, repacked->depthBytes,
+      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, Buffer::Memory::Device);
+  fixture.begin();
+  std::vector<VkBufferCopy> rows;
+  for (uint32_t slot = 0; slot < tiles.size(); ++slot) {
+    const auto before = layout.allocation(slot), after = repacked->allocation(slot);
+    for (uint32_t y = 0; y < extent; ++y) {
+      const uint64_t from = (before.page * options.pageSize + before.y - options.border + y) *
+                               options.pageSize + before.x - options.border;
+      const uint64_t to = (after.page * repackedOptions.pageSize + after.y - options.border + y) *
+                             repackedOptions.pageSize + after.x - options.border;
+      rows.push_back({from * sizeof(float), to * sizeof(float), extent * sizeof(float)});
+    }
+  }
+  vkCmdCopyBuffer(fixture.command, atlasDepth.handle, repackedDepth.handle, uint32_t(rows.size()), rows.data());
+  const VkMemoryBarrier repackedBarrier{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+      .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, .dstAccessMask = VK_ACCESS_SHADER_READ_BIT};
+  vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+      0,1,&repackedBarrier,0,nullptr,0,nullptr);
+  fixture.finish();
+  std::vector<bake::Point> fractional;
+  for (float x : {-.08f, -.0737f, -.06123f, -.05111f, -.041f, .041f, .05111f, .06123f, .0737f, .08f})
+    fractional.push_back({{x,.425f,0,0},{}});
+  require(querySunDepth(fixture, layout, atlasDepth, fractional) ==
+              querySunDepth(fixture, *repacked, repackedDepth, fractional),
+          "Fractional GPU visibility is bit-identical after physical tile repacking");
   fixture.begin();
   vkCmdFillBuffer(fixture.command, atlasDepth.handle, 0, layout.depthBytes, 0xc0000000u); // -2
   const VkMemoryBarrier unresolved{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,

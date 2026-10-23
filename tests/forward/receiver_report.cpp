@@ -1,4 +1,5 @@
 #include "forward/bake/receiver_report.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -97,6 +98,42 @@ int main() {
     const auto empty = bake::planSunDepthLayout({}, options);
     require(empty && !empty->pages && !empty->depthBytes && empty->directory.empty(),
             "Empty coverage allocates neither an image nor directory");
+  }
+  {
+    for (uint32_t count : {1u, 4u, 577u, 2980u}) {
+      std::vector<std::array<int32_t, 2>> tiles;
+      for (uint32_t i = 0; i < count; ++i)
+        tiles.push_back({int32_t(i % 64) - 32, int32_t(i / 64) - 24});
+      const auto fixed = bake::planSunDepthLayout(tiles);
+      const auto fitted = bake::fitSunDepthLayout(tiles);
+      require(fixed && fitted && fitted->tiles == fixed->tiles && fitted->directory == fixed->directory &&
+                  fitted->minimum == fixed->minimum && fitted->dimensions == fixed->dimensions &&
+                  fitted->depthBytes <= fixed->depthBytes,
+              "Compact pages preserve exact virtual coverage while never increasing depth storage");
+      const uint32_t extent = fitted->options.tileTexels + 2 * fitted->options.border;
+      require(fitted->options.pageSize % extent == 0 && fitted->pages <= 8,
+              "Fitted storage pages contain whole bordered tiles within the original page cap");
+      uint64_t minimum = UINT64_MAX;
+      for (uint32_t side = 1; side <= 2048 / extent; ++side) {
+        const uint64_t perPage = uint64_t(side) * side;
+        const uint64_t pages = (count + perPage - 1) / perPage;
+        if (pages <= 8) minimum = std::min(minimum, pages * perPage * extent * extent * sizeof(float));
+      }
+      require(fitted->depthBytes == minimum, "Page fitting minimizes resident bytes across every supported whole-tile side");
+      auto reordered = tiles;
+      std::reverse(reordered.begin(), reordered.end());
+      reordered.push_back(tiles[0]);
+      const auto duplicate = bake::fitSunDepthLayout(reordered);
+      require(duplicate && duplicate->tiles == fitted->tiles && duplicate->directory == fitted->directory &&
+                  duplicate->options.pageSize == fitted->options.pageSize,
+              "Compact allocation is independent of input order and duplicate receivers");
+      auto limited = fitted->options;
+      limited.maximumBytes = fitted->depthBytes + fitted->directoryBytes - 1;
+      require(!bake::fitSunDepthLayout(tiles, limited), "A budget one byte below the best complete allocation declines coverage");
+      std::printf("Compact sun depth layout: tiles=%u fixed_bytes=%llu fitted_bytes=%llu pages=%u side=%u\n",
+          count, static_cast<unsigned long long>(fixed->depthBytes),
+          static_cast<unsigned long long>(fitted->depthBytes), fitted->pages, fitted->options.pageSize);
+    }
   }
   scene::BakeScene source;
   auto surface = std::make_shared<scene::Surface>();

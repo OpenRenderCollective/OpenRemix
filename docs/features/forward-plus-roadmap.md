@@ -1239,12 +1239,19 @@ padding; this is a storage estimate, not accepted shadow quality or complete dyn
 coverage. Diagnostics enforce tile and candidate-work budgets and stop rather than silently omitting
 geometry.
 
-A deterministic CPU atlas planner now converts complete requested tile sets into bordered physical
-pages and a bounded virtual directory, declining the whole plan when its image/directory/page budget
-fails. The diagnostic Construct layout fits all three measured margins in six 2048² D32 pages (96
-MiB), plus about 21 KiB directory at a 1 m margin, with 80 interior texels per 4 m tile and
-two-texel borders under a 128 MiB planning limit. Layout planning remains independent from GPU
-resource ownership and capture scheduling.
+A deterministic CPU atlas planner converts complete requested tile sets into bordered physical
+pages and a bounded virtual directory, declining the whole plan when its storage/directory/page budget
+fails. Production fitting treats 2048 as a maximum and chooses whole-tile page sides that minimize
+resident depth bytes, preferring fewer pages on a tie. These are linear storage-buffer regions and
+need no power-of-two padding. Coverage, 80 interior texels per 4 m tile, two-texel borders and the
+128 MiB budget remain unchanged. Tiny scenes no longer reserve a full maximum-sized page.
+Layout planning remains independent from GPU resource ownership and capture scheduling.
+
+Fractional filter weights are computed in local tile coordinates before adding the physical atlas
+offset, preventing allocation-dependent floating-point rounding. GPU repacking comparisons and a
+controlled Construct fixed/compact-page replay produce identical visibility/output with validation.
+Page compaction reduces resident storage and full-atlas staging/readback volume; it preserves the
+number of captured rays and the already-packed on-disk tile rows. No FPS improvement is implied.
 
 A focused hardware prototype now captures a bordered sparse orthographic depth atlas through the
 existing material-aware geometry transport: 2,304 rays resolve a 15 cm roof opening and eight depth

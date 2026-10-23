@@ -46,7 +46,7 @@ namespace remix::forward::bake {
     for (const auto &trial : tiles) {
       result.tiles.push_back(trial.coverage());
       const std::vector<std::array<int32_t, 2>> coordinates(trial.coordinates().begin(), trial.coordinates().end());
-      result.depthLayouts.push_back(planSunDepthLayout(coordinates, {}, cancelled));
+      result.depthLayouts.push_back(fitSunDepthLayout(coordinates, {}, cancelled));
     }
     return result;
   }

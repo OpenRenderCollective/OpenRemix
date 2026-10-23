@@ -37,4 +37,9 @@ namespace remix::forward::bake {
   // never retain only the first part of the requested receiver coverage.
   std::optional<SunDepthLayout> planSunDepthLayout(std::span<const std::array<int32_t, 2>> tiles,
       SunDepthLayoutOptions options = {}, std::stop_token cancelled = {});
+  // Treat pageSize as a maximum. Minimize resident depth bytes with whole-tile
+  // page dimensions; pages are linear storage-buffer regions, not images.
+  // Coverage, sample density, borders and all budget limits remain unchanged.
+  std::optional<SunDepthLayout> fitSunDepthLayout(std::span<const std::array<int32_t, 2>> tiles,
+      SunDepthLayoutOptions options = {}, std::stop_token cancelled = {});
 }

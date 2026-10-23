@@ -37,8 +37,9 @@ bool sparseSunDepthVisibility(vec3 position, out float visibility) {
   if (page >= sunDepthCounts.x) return false;
   uint extent = sunDepthAtlas.y + 2u * sunDepthAtlas.z;
   uvec2 base = uvec2(localSlot % sunDepthAtlas.w, localSlot / sunDepthAtlas.w) * extent + sunDepthAtlas.z;
-  vec2 pixel = vec2(base) + fract(virtualPosition) * float(sunDepthAtlas.y) - .5;
-  ivec2 first = ivec2(floor(pixel));
+  // Keep filter weights independent of the physical allocation's magnitude.
+  vec2 pixel = fract(virtualPosition) * float(sunDepthAtlas.y) - .5;
+  ivec2 first = ivec2(base) + ivec2(floor(pixel));
   vec2 fraction = fract(pixel);
   float reference = projected.z - sunDepthSampling.y - sunDepthSampling.w;
   visibility = 0;
