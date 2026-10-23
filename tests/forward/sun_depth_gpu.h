@@ -7,6 +7,7 @@ void sparseSunDepthPrototype(test::Fixture &fixture, pipeline::Service &pipeline
   const auto cutout = world.wall(world.material({.opacity = 0, .cutout = true}), 1.25f, 2);
   auto scene = world.scene({left, right, cutout});
   scene->sun.isDistant = true;
+  scene->sun.direction[1] = 0;
   scene->sun.direction[2] = -1;
   scene->sun.angularDiameterDegrees = 0;
   bake::Options transportOptions;

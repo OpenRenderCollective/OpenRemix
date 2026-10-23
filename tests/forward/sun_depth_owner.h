@@ -6,6 +6,7 @@ void sunDepthOwnerLifetime(test::Fixture &fixture, pipeline::Service &pipelines,
   const auto floor = world.quad(material, {{{-2,-2,-1},{2,-2,-1},{2,2,-1},{-2,2,-1}}});
   auto publishedScene = world.scene({left, right, floor});
   publishedScene->sun.isDistant = true;
+  publishedScene->sun.direction[1] = 0;
   publishedScene->sun.direction[2] = -1;
   publishedScene->sun.angularDiameterDegrees = 0;
   publishedScene->charts.push_back({2, 0, 3, 3, {{0,0},{2,2},{2,0},{0,0},{0,2},{2,2}}});
@@ -42,6 +43,7 @@ void sunDepthOwnerLifetime(test::Fixture &fixture, pipeline::Service &pipelines,
   require(original[0] == std::array<float,2>{0,1} && original[1] == std::array<float,2>{1,1} &&
               original[2] == std::array<float,2>{0,1},
           "Moving receivers cross the captured roof opening without changing the field");
+  sunDepthAngularReference(fixture, pipelines, world, *publishedScene, *retained);
   auto replacementScene = *publishedScene;
   replacementScene.sun.direction[0] = 1;
   replacementScene.sun.direction[2] = 0;

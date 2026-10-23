@@ -140,6 +140,7 @@ namespace {
   };
 #include "sun_depth_query.h"
 #include "sun_depth_gpu.h"
+#include "sun_depth_angular_reference.h"
 #include "sun_depth_owner.h"
 #include "sun_depth_transmission.h"
 #include "indexed_visibility.h"

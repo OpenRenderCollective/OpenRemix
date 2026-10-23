@@ -1318,6 +1318,14 @@ cold/warm unmapped receiver pixels, replaces MSAA attachments and unloads. Synch
 passes. This covers synthetic controller publication/lifetime, not large real-map transitions or
 interactive moving-shadow quality.
 
+Finite-source quality now has an independent hardware angular-reference fixture: a narrow roof slit,
+two receiver heights and point/small/broad sun discs. The reference resolves separation-dependent
+penumbrae that the centre-direction depth plus bilinear comparison cannot reproduce. Both roof
+fixtures explicitly clear the default Y sun direction so the intended vertical geometry is tested.
+Next evaluate blocker-aware visibility filtering against this reference, including search/filter taps
+across sparse tile boundaries and missing coverage. A fixed wider blur is not finite-source support;
+keep this acceptance gate open and measure lookup cost before changing the default.
+
 Next cover live map transitions and moving actors,
 and measure the steady-state and total bake costs. Confirm unsupported/over-budget fallback,
 transmissive casters and finite sun shape before enabling a default. The existing static-cascade
