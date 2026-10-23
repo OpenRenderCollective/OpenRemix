@@ -39,6 +39,13 @@ One installed relay run completed image/timings but timed out waiting for the fr
 report within 60 presents. A repeat exited successfully with that report and matching image.
 Keep this intermittent harness-report timeout on the diagnostic todo; do not count the first
 run as a full smoke-test pass.
+Adapter diagnostic-host commit `6cbb0b3` replaces timestamp-only probe-report freshness with
+retirement of the previous owned response before each request, followed by a nonempty-file
+check. A filesystem regression covers identical replacement timestamps/content, stale/empty
+responses and request-creation errors. Five cached Construct repeats return fresh published
+reflection reports with stable bake identity. This hardens the host without establishing the
+exact cause of the earlier one-off timeout; keep watching for it. Only tools/tests changed,
+so the installed adapter DLL remains the verified `a499842` package.
 
 The intended result is a cheaper, Source-2-style rendering backend for GMod: forward PBR shading with
 MSAA, hardware map-load surface lightmaps and probes, attributed baked direct lighting, soft static
