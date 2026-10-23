@@ -1,6 +1,7 @@
 #include "forward/bake/transport.h"
 #include "forward/bake/budget.h"
 #include "forward/bake/sun_depth_layout.h"
+#include "forward/bake/sun_depth.h"
 #include "forward/bake/probe_visibility.h"
 #include "forward/bake/probe_visibility_plan.h"
 #include "forward/bake/probe_depth.h"
@@ -139,6 +140,7 @@ namespace {
   };
 #include "sun_depth_query.h"
 #include "sun_depth_gpu.h"
+#include "sun_depth_owner.h"
 #include "indexed_visibility.h"
 #include "probe_visibility_gpu.h"
 #include "directional_capture_gpu.h"
@@ -2022,6 +2024,10 @@ int main(int argc, char **argv) try {
     vkGetPhysicalDeviceProperties(fixture.physical, &properties);
     pipeline::Service pipelines(fixture.device, properties, false);
     World world(fixture);
+    if (argc == 2 && std::strcmp(argv[1], "--sun-depth-owner-only") == 0) {
+      sunDepthOwnerLifetime(fixture, pipelines, world);
+      return 0;
+    }
     if (argc == 2 && std::strcmp(argv[1], "--sun-depth-only") == 0) {
       sparseSunDepthPrototype(fixture, pipelines, world);
       require(test::validationErrors == 0, "Sparse sun depth validation stayed clean");

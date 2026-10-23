@@ -1297,7 +1297,13 @@ exactly with synchronization validation. The warm load restores depth without ge
 the existing lighting cache remains unchanged. This proves this fixed-view persistence path, not
 default readiness or a general load-time/FPS improvement.
 
-Next cover map transitions and moving actors,
+Production-owner GPU tests now cover receivers crossing the roof opening without recapture,
+independent replacement allocations, retained-buffer lookup after replacement release, cancellation,
+and explicit rejection of over-budget coverage. Tiling exhaustion declines the optional field rather
+than failing the ordinary lighting bake. These resource-level checks do not replace live map-change
+and moving-shadow acceptance.
+
+Next cover live map transitions and moving actors,
 and measure the steady-state and total bake costs. Confirm unsupported/over-budget fallback,
 transmissive casters and finite sun shape before enabling a default. The existing static-cascade
 fallback can still redraw for receivers that need it; do not claim that all static sun shadow work

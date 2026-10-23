@@ -14,7 +14,15 @@ namespace remix::forward::bake {
     const auto x = normalized(cross(std::abs(z[2]) < .99f ? Vec3{0,0,1} : Vec3{0,1,0}, z));
     result->m_basis = {x, cross(z,x), z};
     const std::array<ReceiverTileOptions, 1> trials{{{4, 1}}};
-    auto projected = projectReceivers(source, receivers, result->m_basis, cancelled, trials);
+    ReceiverProjection projected;
+    try {
+      projected = projectReceivers(source, receivers, result->m_basis, cancelled, trials);
+    } catch (const std::length_error &error) {
+      // Optional coverage must not invalidate an otherwise usable light bake.
+      // Cancellation and malformed input still propagate to the caller.
+      std::fprintf(stderr, "Forward sparse sun depth declined: %s\n", error.what());
+      return {};
+    }
     if (projected.depthLayouts.empty() || !projected.depthLayouts[0] || projected.depthLayouts[0]->tiles.empty()) {
       std::fprintf(stderr, "Forward sparse sun depth declined: empty or over-budget coverage\n");
       return {};

@@ -1,10 +1,9 @@
 #pragma once
-std::vector<std::array<float, 2>> querySunDepth(test::Fixture &fixture, const bake::SunDepthLayout &layout,
-    const Buffer &depth, std::span<const bake::Point> receivers,
-    const std::array<Vec3, 3> &basis = {Vec3{1,0,0},Vec3{0,1,0},Vec3{0,0,-1}}) {
+std::vector<std::array<float, 2>> querySunDepth(test::Fixture &fixture, VkDescriptorBufferInfo table,
+    VkDescriptorBufferInfo depth, std::span<const bake::Point> receivers) {
   struct Query {
     VkDevice device;
-    Buffer table, input, output;
+    Buffer input, output;
     VkDescriptorSetLayout set = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     VkPipeline pipeline = VK_NULL_HANDLE;
@@ -16,12 +15,6 @@ std::vector<std::array<float, 2>> querySunDepth(test::Fixture &fixture, const ba
       if (set) vkDestroyDescriptorSetLayout(device, set, nullptr);
     }
   } query{fixture.device};
-  const auto header = bake::sunDepthHeader(layout, basis, 1, -2, 6, .0001f);
-  query.table.create(fixture.physical, fixture.device, sizeof(header) + layout.directory.size() * sizeof(uint32_t),
-                     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-  query.table.write(&header, sizeof(header));
-  if (!layout.directory.empty())
-    query.table.write(layout.directory.data(), layout.directory.size() * sizeof(uint32_t), sizeof(header));
   std::vector<Vec4> positions;
   for (const auto &receiver : receivers) positions.push_back(receiver.position);
   query.input.create(fixture.physical, fixture.device, positions.size() * sizeof(Vec4), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
@@ -54,7 +47,7 @@ std::vector<std::array<float, 2>> querySunDepth(test::Fixture &fixture, const ba
       .descriptorPool = query.pool, .descriptorSetCount = 1, .pSetLayouts = &query.set};
   VkDescriptorSet set;
   check(vkAllocateDescriptorSets(fixture.device, &allocate, &set));
-  const VkDescriptorBufferInfo buffers[]{query.table.descriptor(), depth.descriptor(), query.input.descriptor(), query.output.descriptor()};
+  const VkDescriptorBufferInfo buffers[]{table, depth, query.input.descriptor(), query.output.descriptor()};
   std::array<VkWriteDescriptorSet, 4> writes;
   for (uint32_t i = 0; i < writes.size(); ++i)
     writes[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = set, .dstBinding = i,
@@ -72,4 +65,17 @@ std::vector<std::array<float, 2>> querySunDepth(test::Fixture &fixture, const ba
   std::vector<std::array<float, 2>> result(receivers.size());
   query.output.read(result.data(), result.size() * sizeof(result[0]));
   return result;
+}
+
+std::vector<std::array<float, 2>> querySunDepth(test::Fixture &fixture, const bake::SunDepthLayout &layout,
+    const Buffer &depth, std::span<const bake::Point> receivers,
+    const std::array<Vec3, 3> &basis = {Vec3{1,0,0},Vec3{0,1,0},Vec3{0,0,-1}}) {
+  const auto header = bake::sunDepthHeader(layout, basis, 1, -2, 6, .0001f);
+  Buffer table;
+  table.create(fixture.physical, fixture.device, sizeof(header) + layout.directory.size() * sizeof(uint32_t),
+               VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+  table.write(&header, sizeof(header));
+  if (!layout.directory.empty())
+    table.write(layout.directory.data(), layout.directory.size() * sizeof(uint32_t), sizeof(header));
+  return querySunDepth(fixture, table.descriptor(), depth.descriptor(), receivers);
 }
