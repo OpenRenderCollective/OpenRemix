@@ -11,7 +11,9 @@ namespace remix::forward::mixed {
   public:
     using Link = DirectionalLink;
     struct Field { Link owner; uint32_t first, count; };
-    static constexpr uint32_t maximumWindowFields = 256;
+    // Small charts can share more receipts without another worker/fence handoff.
+    // The point target and staging budget still bound actual window size.
+    static constexpr uint32_t maximumWindowFields = 1024;
     DirectionalCapture(const lightmap::Layout &layout, uint32_t lights, std::span<const Link> links,
                        uint64_t stagingBudget, uint64_t storageBudget = DirectionalFields::defaultBytes,
                        std::stop_token cancelled = {});

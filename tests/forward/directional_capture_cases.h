@@ -139,10 +139,10 @@ void directionalCaptureTests() {
             "A small staging budget need not reserve the maximum window directory");
     uint32_t windows = 0;
     while (!capped.done()) {
-      const auto count = capped.beginWindow(UINT32_MAX);
+      const auto count = capped.beginWindow(UINT32_MAX, 256);
       require(capped.window().size() == 256 && count == 768 &&
                   capped.batch(count - 1, 1).front().channel == (windows + 1) * 256 - 1,
-              "Large manifests split at the hard field limit without narrowing global field tags");
+              "Large manifests obey a caller field limit without narrowing global field tags");
       std::vector<remix::forward::bake::VisibilityResult> zero(count);
       capped.observe(0, zero);
       require(capped.finish(), "A bounded large-overlap window encodes every declared owner");
@@ -150,6 +150,29 @@ void directionalCaptureTests() {
     }
     require(windows == 2 && capped.words()[4] == 512,
             "Window boundaries cannot silently truncate large overlap manifests");
+  }
+  {
+    std::vector<mixed::DirectionalCapture::Link> many;
+    for (uint32_t light = 0; light < 1536; ++light) many.push_back({0, light});
+    auto collect = [&](uint32_t fieldLimit) {
+      mixed::DirectionalCapture capture(layout, 1536, many, 262144);
+      uint32_t windows = 0;
+      while (!capture.done()) {
+        const auto count = capture.beginWindow(UINT32_MAX, fieldLimit);
+        require(capture.stagingBytes() <= 262144, "Wider windows remain within their resident staging allowance");
+        const auto tasks = capture.batch(0, count);
+        std::vector<remix::forward::bake::VisibilityResult> values(count);
+        for (size_t i = 0; i < tasks.size(); ++i)
+          values[i].irradiance[0] = float(tasks[i].channel + 1) / 2048;
+        capture.observe(0, values);
+        require(capture.finish(), "Large field windows preserve complete sample receipts");
+        ++windows;
+      }
+      return std::pair{capture.words(), windows};
+    };
+    const auto narrow = collect(256), wide = collect(mixed::DirectionalCapture::maximumWindowFields);
+    require(narrow.first == wide.first && narrow.second == 6 && wide.second == 2,
+            "Wider bounded windows reduce handoffs without changing any encoded lighting field");
   }
   rejects([&] { mixed::DirectionalCapture bad(layout, 8, duplicate, 1024); });
   mixed::DirectionalCapture tiny(layout, 8, links, resident);

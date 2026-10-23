@@ -245,9 +245,12 @@ direct-light channels and separate overflow masks remain a scalability limitatio
 Complete directional capture is enabled by default for known
 positive chart/light links beyond the four retained channels. The developer override
 `REMIX_DEBUG_DIRECTIONAL_FIELDS=0` retains the legacy storage comparison. The controller
-reuses existing retained samples, then groups up to 256 complete fields into a
+reuses existing retained samples, then groups up to 1024 complete fields into a
 bounded transport window. Its soft point target is the existing transport
 capacity; dispatches still obey the ordinary sample-work and GPU-time budgets.
+The larger field directory reduces worker/fence handoffs for small charts; it does not raise the
+sample target, staging allowance or per-dispatch work limit. Large charts still stop a window at
+the sample or memory limit, and callers can request a smaller field directory.
 Sparse receipt indices preserve ownership around reused samples and across
 out-of-order frame slots. Each window drains its fenced readbacks before
 encoding its rectangles or advancing; there is no expanded all-map coefficient

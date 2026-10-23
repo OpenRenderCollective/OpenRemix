@@ -457,7 +457,9 @@ separately from wall time; normal scene rendering and presentation must not be m
 substantial tracing/encoding work. Adaptive lossless 4x4/8x8 blocks now fit all of its declared fields
 within the unchanged allowance; complete coverage and the sampled image are preserved. Extend map,
 camera and steady-state performance checks before claiming general scalability or rollout acceptance.
-Window scheduling and repeated encoding remain bake-time optimization targets. Keep the existing
+Wider bounded field windows reduce scheduling handoffs on this map while preserving sampled output;
+extend the same-quality checks to other maps. Repeated encoding and remaining transport/visibility
+stages remain bake-time optimization targets. Keep the existing
 atomic fallback and bounded storage when improving them. The direct-light cache identity includes
 the new codec capability so previously declined bakes are retried once. Its Black Mesa material
 inputs also require ABGR8888 decoding and texture references with an explicit `.vtf` suffix, now
