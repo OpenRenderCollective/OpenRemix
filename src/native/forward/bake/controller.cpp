@@ -10,6 +10,7 @@
 #include "forward/bake/receiver_support.h"
 #include "forward/bake/transport.h"
 #include "forward/image_dump.h"
+#include "forward/bake/sun_depth.h"
 #include "forward/lightmap/denoise.h"
 #include "forward/lightmap/interior_donors.h"
 #include "forward/mixed/overflow.h"
@@ -138,7 +139,8 @@ namespace remix::forward::bake {
         : DirectPolicy{};
     const char *samples = std::getenv("REMIX_DEBUG_BAKE_SURFACE_SAMPLES");
     reference = ReferenceCapture::fromEnvironment();
-    if (!reference && config.diskCache && (!samples || std::strcmp(samples, "1") != 0)) {
+    const bool depthCapture = std::getenv("REMIX_DEBUG_BAKE_SUN_DEPTH") != nullptr;
+    if (!depthCapture && !reference && config.diskCache && (!samples || std::strcmp(samples, "1") != 0)) {
       cache::Device deviceIdentity{properties.vendorID, properties.deviceID, properties.driverVersion,
                                      properties.limits.maxImageDimension2D,
                                      properties.limits.maxImageArrayLayers,
@@ -234,9 +236,11 @@ namespace remix::forward::bake {
       probes::dumpPublishedData(".receiver-grid-header.bin", &grid.header, sizeof(grid.header));
       probes::dumpPublishedData(".receiver-grid-lookup.bin", grid.lookup.data(), grid.lookup.size() * sizeof(uint32_t));
     }
+    if (depthCapture) sunDepth = SunDepth::prepare(physical, device, *source, surfaceLayout, cancellation.get_token());
     surfaces.resize(surfaceLayout.points.size());
     Options options;
     options.directLighting = directLighting;
+    options.depthCapture = bool(sunDepth);
     mixedLights = std::make_shared<mixed::Plan>(
         mixed::plan(source, surfaceLayout, lightCutoff, cancellation.get_token(),
                     options.bias / source->sceneScale, directLighting));
@@ -282,6 +286,10 @@ namespace remix::forward::bake {
     m_empty->create(physical, device, sizeof(probes::Header), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     const probes::Header empty{};
     m_empty->write(&empty, sizeof(empty));
+    m_emptySunDepth = std::make_unique<Buffer>();
+    m_emptySunDepth->create(physical, device, sizeof(SunDepthHeader), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    const SunDepthHeader emptyDepth{};
+    m_emptySunDepth->write(&emptyDepth, sizeof(emptyDepth));
     m_emptyReflections = std::make_unique<probes::ImageAsset>(physical, device, probes::Data{});
     m_emptySurface = std::make_unique<Image>();
     m_emptySurface->create(physical, device, {1, 1}, VK_FORMAT_R16G16B16A16_SFLOAT,
@@ -350,7 +358,9 @@ namespace remix::forward::bake {
         job.transport->releaseBuildInputs();
       if (submission.count && submission.job == m_job && !job.failed) {
         const auto readBegin = std::chrono::steady_clock::now();
-        if (submission.probeDepth) {
+        if (submission.sunDepth) {
+          // Device-only output: the owning slot fence is the completion receipt.
+        } else if (submission.probeDepth) {
           job.readback.resize(submission.count);
           job.transport->read(slot, job.readback);
           for (uint32_t i = 0; i < submission.count; ++i)
@@ -432,12 +442,13 @@ namespace remix::forward::bake {
         if (submission.overflowVisibility)
           job.overflowTiming.readbackMs += readbackMs;
         job.readbackBytes += uint64_t(submission.count) *
-                             (submission.overflowVisibility || submission.visibility ||
+                             (submission.sunDepth ? 0 : submission.overflowVisibility || submission.visibility ||
                               (submission.probeLocal && !job.localProbes->directional()) ? sizeof(float) :
                               submission.direct || submission.directionalField || submission.sun ||
                               submission.probeSun || submission.probeLocal
                                   ? sizeof(VisibilityResult) : sizeof(Result));
-        if (!submission.styled && !submission.reference && !submission.probeDepth) (submission.radiance ? job.captureReceived
+        if (!submission.styled && !submission.reference && !submission.probeDepth) (submission.sunDepth ? job.sunDepthReceived
+         : submission.radiance ? job.captureReceived
          : submission.reflectionGeometry ? job.geometryReceived
          : submission.reflectionSite     ? job.siteReceived
          : submission.visibility         ? job.visibilityReceived
@@ -451,12 +462,13 @@ namespace remix::forward::bake {
          : submission.surface            ? job.surfaceReceived
                                          : job.received) += submission.count;
         if (const auto elapsed = job.transport->elapsed(slot)) {
+          if (submission.sunDepth) job.sunDepthGpuMs += *elapsed;
           if (submission.directionalField) job.directionalTiming.gpuMs += *elapsed;
           if (submission.sunAntialiasing) job.sunAntialiasingGpuMs += *elapsed;
           if (submission.overflowVisibility)
             job.overflowTiming.gpuMs += *elapsed;
           const auto work = submission.probeDepth                                    ? Work::ProbeDepth
-                            : submission.reflectionGeometry                          ? Work::Geometry
+                            : submission.reflectionGeometry || submission.sunDepth  ? Work::Geometry
                             : submission.visibility || submission.direct || submission.directionalField ||
                               submission.overflowVisibility || submission.probeLocal     ? Work::Visibility
                             : submission.sun || submission.probeSun                  ? Work::Sun
@@ -813,6 +825,7 @@ namespace remix::forward::bake {
   }
   void Controller::recordReflections(VkCommandBuffer command, const Config &config) {
     auto &job = *m_job;
+    if (recordSunDepth(command, config)) return;
     if (!job.sitesPlanned) {
       job.sitesPlanned = true;
       const auto owner = m_job;
@@ -1051,6 +1064,7 @@ namespace remix::forward::bake {
     if (m_job->hasSun || std::any_of(grid.probes.begin(), grid.probes.end(),
                                     [](const auto &p) { return p.irradiance[7][3] > .5f; }))
       volume->sun = m_job->source->sun;
+    volume->sunDepth = m_job->sunDepth;
     volume->hash = m_hash;
     if (!m_job->captures.empty()) {
       volume->content.captureInputs = m_job->captureInputHash;
@@ -1567,6 +1581,12 @@ namespace remix::forward::bake {
   VkDescriptorBufferInfo Controller::descriptor() const {
     return m_volume ? m_volume->data->descriptor() : m_empty->descriptor();
   }
+  VkDescriptorBufferInfo Controller::sunDepthTable() const {
+    return m_volume && m_volume->sunDepth ? m_volume->sunDepth->table() : m_emptySunDepth->descriptor();
+  }
+  VkDescriptorBufferInfo Controller::sunDepthValues() const {
+    return m_volume && m_volume->sunDepth ? m_volume->sunDepth->values() : m_emptySunDepth->descriptor();
+  }
   probes::Descriptors Controller::reflectionDescriptor() const {
     return (m_volume ? m_volume->specular : m_emptyReflections)->descriptors();
   }
@@ -1587,18 +1607,23 @@ namespace remix::forward::bake {
   }
   Memory Controller::memory() const {
     Memory result;
-    result.buffers = m_empty->allocationBytes + m_emptyReflections->bufferBytes();
+    result.buffers = m_emptySunDepth->allocationBytes + m_empty->allocationBytes + m_emptyReflections->bufferBytes();
     result.images = m_emptySurface->bytes + m_emptyOcclusion->bytes() + m_emptyReflections->imageBytes();
     std::unordered_set<const lightmap::Geometry *> surfaces;
     auto addSurfaces = [&](const std::shared_ptr<lightmap::Geometry> &geometry) {
       if (geometry && surfaces.insert(geometry.get()).second)
         result.buffers += geometry->memoryBytes();
     };
+    std::unordered_set<const SunDepth *> depths;
+    auto addDepth = [&](const std::shared_ptr<SunDepth> &depth) {
+      if (depth && depths.insert(depth.get()).second) result.buffers += depth->bytes();
+    };
     std::unordered_set<const Job *> jobs;
     auto addJob = [&](const std::shared_ptr<Job> &job) {
       if (!job || !job->initialized || !jobs.insert(job.get()).second)
         return;
       addSurfaces(job->surfaceGeometry);
+      addDepth(job->sunDepth);
       if (job->ticket->ready() && job->reflectionImage) {
         result.buffers += job->reflectionImage->bufferBytes();
         result.images += job->reflectionImage->imageBytes();
@@ -1618,6 +1643,7 @@ namespace remix::forward::bake {
       if (!volume || !volumes.insert(volume.get()).second)
         return;
       addSurfaces(volume->surfaces);
+      addDepth(volume->sunDepth);
       if (volume->surfaceAtlas)
         result.images += volume->surfaceAtlas->bytes;
       if (volume->occlusion)

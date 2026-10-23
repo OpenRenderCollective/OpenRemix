@@ -29,6 +29,10 @@ namespace remix::forward::bake {
     std::optional<ReferenceCapture> reference;
     Budget budget;
     Grid grid;
+    std::shared_ptr<SunDepth> sunDepth;
+    uint32_t sunDepthNext = 0, sunDepthReceived = 0;
+    bool sunDepthLogged = false;
+    double sunDepthGpuMs = 0;
     uint32_t probeDepthNext = 0, probeDepthReceived = 0;
     Refinement refinement;
     bool refinementPlanned = false;

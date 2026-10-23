@@ -92,14 +92,6 @@ void sparseSunDepthPrototype(test::Fixture &fixture, pipeline::Service &pipeline
     transport.recordDepth(fixture.command, slot, rays, compactDepth.descriptor(), 1);
     const VkBufferCopy copy{0, 0, compactBytes};
     vkCmdCopyBuffer(fixture.command, compactDepth.handle, compactReadback.handle, 1, &copy);
-    std::vector<VkBufferCopy> scatter;
-    for (uint32_t i = 0; i < rays.size(); ++i)
-      scatter.push_back({VkDeviceSize(i + 1) * sizeof(float), VkDeviceSize(destinations[i]) * sizeof(float), sizeof(float)});
-    vkCmdCopyBuffer(fixture.command, compactDepth.handle, atlasDepth.handle, uint32_t(scatter.size()), scatter.data());
-    const VkMemoryBarrier atlasBarrier{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, .dstAccessMask = VK_ACCESS_SHADER_READ_BIT};
-    vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        0, 1, &atlasBarrier, 0, nullptr, 0, nullptr);
     const VkMemoryBarrier hostBarrier{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
         .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
     vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
@@ -124,6 +116,13 @@ void sparseSunDepthPrototype(test::Fixture &fixture, pipeline::Service &pipeline
       else { ++hits; require(std::abs(r.irradiance[0][3] - 1) < 1e-4f, "Roof depth is captured from the light-facing plane"); }
       depth[destinations[i]] = compact[i + 1] < 0 ? 8 : compact[i + 1];
     }
+    std::vector<bake::Transport::DepthRay> indexed;
+    for (size_t i = 0; i < rays.size(); ++i)
+      indexed.push_back({{rays[i].position[0],rays[i].position[1],rays[i].position[2]},
+                         {rays[i].normal[0],rays[i].normal[1],rays[i].normal[2]}, destinations[i]});
+    fixture.begin();
+    transport.recordIndexedDepth(fixture.command, slot, indexed, atlasDepth.descriptor(), 8);
+    fixture.finish();
     rays.clear(); destinations.clear();
   };
   for (uint32_t slot = 0; slot < layout.tiles.size(); ++slot) {
@@ -203,6 +202,22 @@ void sparseSunDepthPrototype(test::Fixture &fixture, pipeline::Service &pipeline
   const auto fallback = querySunDepth(fixture, layout, atlasDepth, uncovered);
   for (const auto &value : fallback)
     require(value[0] == -1 && value[1] == 0, "Missing XY or depth coverage requests fallback instead of leaking sunlight");
+  const bake::Transport::DepthRay distantRay{{.125f,.425f,10}, {0,0,-1}, 0};
+  for (float range : {.5f,12.f}) {
+    fixture.begin();
+    transport.recordIndexedDepth(fixture.command, 0, {&distantRay, 1}, compactDepth.descriptor(), range);
+    const VkBufferCopy copy{0,0,sizeof(float)};
+    vkCmdCopyBuffer(fixture.command, compactDepth.handle, compactReadback.handle, 1, &copy);
+    const VkMemoryBarrier host{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
+    vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+        0, 1, &host, 0, nullptr, 0, nullptr);
+    fixture.finish();
+    float value;
+    compactReadback.read(&value, sizeof(value));
+    require(range < 9 ? value < 0 : std::abs(value - 9) < 1e-4f,
+            "Explicit depth range reaches casters beyond the default transport cap and preserves bounded misses");
+  }
   std::printf("Sparse sun depth prototype: %u hits, %u misses, %zu receiver comparisons; %llu image bytes\n",
               hits, misses, receivers.size(), static_cast<unsigned long long>(layout.depthBytes));
 }

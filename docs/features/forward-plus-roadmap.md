@@ -413,7 +413,7 @@ other-map acceptance. Continue those gates rather than treating testing deployme
 | Stable persistent caches; no rebake on camera/weapon changes | Cache validation and invalidation receipts exist. Investigate remaining spontaneous/weapon-change rebakes; distinguish real light/material edits from identity bugs. Warm replay parity is not proof that installed live caches always work. |
 | Auto exposure and same tonemap path as path tracing | Shared postprocessing and exposure controls implemented. Refresh live adaptation, HDR/water and mode-switch acceptance; coverage diagnostics intentionally bypass automatic exposure. |
 | Automatic tolerant parallax bounds, overlap/feathering, priorities | Default reflection budget is 64. Current normal-quality automatic comparisons publish 63 captures on Construct and 64 on Crossfire; authored overrides replace that set. Capacity improved hall coverage; automatic room fitting, bevel tolerance, doorway/wall separation, rotations and blending remain open. Capture point and influence/projection boxes are distinct. |
-| Better dynamic probe quality in Construct's main room | Scalar probe sunlight smears the narrow roof-slit shadow on props. Sparse baked depth has bounded layout, compact hardware capture and a shared GPU lookup prototype; it is not published by map baking or enabled in world shading. See [baked sun visibility](#baked-sun-visibility-for-dynamic-receivers) for retained diagnosis, rejected approaches and acceptance gates. |
+| Better dynamic probe quality in Construct's main room | Scalar probe sunlight smears the narrow roof-slit shadow on props. Sparse baked depth now captures and publishes into world shading under a diagnostic opt-in. The Construct narrow-opening case improves; caching, broad quality and performance acceptance remain before defaults change. See [baked sun visibility](#baked-sun-visibility-for-dynamic-receivers) for retained diagnosis, rejected approaches and acceptance gates. |
 | Cubemaps captured after lighting | Ordering is implemented; verify invalidation/re-capture after styled/material/lighting changes without unrelated full diffuse rebakes. |
 | Roughness-aware s&box-like SSR, full resolution default, viewmodel SSR | Implemented paths and tests exist. Refresh live roughness, disocclusion, blend with cubemaps/RT, and actual weapon acceptance. |
 | PBR/AutoPBR and shared Remix replacements | Shared asset/material path implemented, including safer Source roughness fallback. Verify late replacement arrival, normals, BRDF/roughness parity and authored PBR examples; no separate incompatible asset conversion path. |
@@ -1243,15 +1243,15 @@ A deterministic CPU atlas planner now converts complete requested tile sets into
 pages and a bounded virtual directory, declining the whole plan when its image/directory/page budget
 fails. The diagnostic Construct layout fits all three measured margins in six 2048² D32 pages (96
 MiB), plus about 21 KiB directory at a 1 m margin, with 80 interior texels per 4 m tile and
-two-texel borders under a 128 MiB planning limit. This is layout-only; no GPU depth capture or new
-visibility sampling is enabled.
+two-texel borders under a 128 MiB planning limit. Layout planning remains independent from GPU
+resource ownership and capture scheduling.
 
 A focused hardware prototype now captures a bordered sparse orthographic depth atlas through the
 existing material-aware geometry transport: 2,304 rays resolve a 15 cm roof opening and eight depth
 comparisons agree with independent direct-sun queries below/above the roof, including a fully
 cut-out foreground sheet, with clean Vulkan validation. The initial fixture used CPU lookup; the
-shared GPU lookup described below supersedes that test path, while fragment-stage and Construct
-acceptance remain open.
+shared GPU lookup described below supersedes that test path. The world-renderer prototype now
+exercises the actual Construct opening; broad acceptance remains open.
 
 Compact capture now has a separately prepared optional kernel and `Transport::recordDepth`: one
 signed 4-byte first-hit distance per ray writes directly into caller-owned GPU storage at a supplied
@@ -1263,13 +1263,31 @@ and its sparse directory. Four depth comparisons are filtered as visibility; a n
 exposed, while missing tiles, empty maps and out-of-range receivers report no coverage for fallback.
 GPU tests exercise the narrow opening at two heights, rotated bases, a half-visible filter boundary
 and uncovered cases. Atlas population and lookup stay on GPU in the test (with verification
-readbacks only); compute exercises the same lookup source intended for fragments. World fragment
-descriptors, bake publication and Construct acceptance are not wired yet. Existing bake shader
-binaries remain identical; ordinary transport does not prepare this optional kernel. Capture output
-is 64 times smaller per ray, not a measured whole-bake speedup.
+readbacks only). World fragments now use the same lookup when a matching map is published; uncovered
+positions retain the original probe/shadow fallback. Ordinary transport does not prepare the optional
+kernel. Capture output is 64 times smaller per ray, not a measured whole-bake speedup.
 
-Next connect bake scheduling/publication and fragment lookup, then test Construct,
-uncovered/vertical/dynamic coverage, transmissive casters and finite sun shape.
+The renderer prototype is enabled only by the process environment flag
+`REMIX_DEBUG_BAKE_SUN_DEPTH`. It intentionally bypasses disk-cache reads and writes until the depth
+field has a versioned persistent representation. Receiver projection is a reusable CPU planning
+module; `SunDepth` owns the immutable layout and GPU buffers, while a dedicated controller stage
+schedules bounded indexed ray batches. Each ray writes its final atlas location directly. All
+submission fences must complete before the published volume can expose the buffers. Old frames
+retain volume owners, and memory accounting deduplicates shared capture/publication resources.
+Projection and depth limits use scene units consistently and include the complete static caster
+span. Viewmodels retain their existing probe and isolated close-up shadow path.
+
+Construct's sun-only opening comparison removes the false-lit receiver centre and restores the thin
+rim close to the path-traced control. Normal shaded output also improves the rim and most colour
+errors, while residual indirect probe tint remains. These are fixed-view diagnostic results, not
+live gameplay FPS or universal map acceptance. Disabled-path pixels remain identical; world/MSAA and
+viewmodel regressions pass with Vulkan synchronization validation.
+
+Next implement versioned cache persistence/restoration, cover map transitions and moving actors,
+and measure the steady-state and total bake costs. Confirm unsupported/over-budget fallback,
+transmissive casters and finite sun shape before enabling a default. The existing static-cascade
+fallback can still redraw for receivers that need it; do not claim that all static sun shadow work
+has been removed.
 
 Use an atlas or grouped pages rather than assuming one array layer per occupied tile fits device
 limits; retain distant static occluders in depth coverage and keep moving shadows independent. Use

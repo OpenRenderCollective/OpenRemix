@@ -15,11 +15,13 @@ namespace remix {
   class RasterRenderer;
 }
 namespace remix::forward::bake {
+  class SunDepth;
   struct Volume {
     uint64_t hash = 0;
     ContentHashes content;
     bool directDiffuse = false, styledLighting = false;
     std::vector<uint32_t> groupedStyles; // complete direct groups, separate from permanent aggregate policy
+    std::shared_ptr<SunDepth> sunDepth;
     scene::DistantLight sun; // shape provenance for matching surface/probe static sunlight
     probes::Header reflectionHeader;
     GridHeader irradianceHeader;
@@ -56,6 +58,8 @@ namespace remix::forward::bake {
                 float lightCutoff = .001f);
     const std::shared_ptr<Volume> &volume() const { return m_volume; }
     VkDescriptorBufferInfo descriptor() const;
+    VkDescriptorBufferInfo sunDepthTable() const;
+    VkDescriptorBufferInfo sunDepthValues() const;
     probes::Descriptors reflectionDescriptor() const;
     VkDescriptorImageInfo surfaceDescriptor() const;
     VkDescriptorImageInfo occlusionDescriptor() const;
@@ -71,7 +75,7 @@ namespace remix::forward::bake {
       std::shared_ptr<Volume> sampled;
       uint32_t first = 0, count = 0, styled = 0;
       bool preparation = false, radiance = false, surface = false, visibility = false, reflectionSite = false,
-           sun = false, probeSun = false, probeLocal = false, overflowVisibility = false, reflectionGeometry = false,
+           sun = false, sunDepth = false, probeSun = false, probeLocal = false, overflowVisibility = false, reflectionGeometry = false,
            sunAntialiasing = false, direct = false, directionalField = false, reference = false, probeDepth = false;
     };
     VkPhysicalDevice m_physical;
@@ -87,7 +91,7 @@ namespace remix::forward::bake {
     std::vector<std::shared_ptr<Job>> m_obsolete;
     std::shared_ptr<Volume> m_volume;
     std::array<Submission, gpuFrameCount> m_submissions;
-    std::unique_ptr<Buffer> m_empty;
+    std::unique_ptr<Buffer> m_empty, m_emptySunDepth;
     std::unique_ptr<probes::ImageAsset> m_emptyReflections;
     uint32_t m_emptyReflectionUpload = ~0u;
     std::unique_ptr<Image> m_emptySurface;
@@ -103,6 +107,7 @@ namespace remix::forward::bake {
     void recordDirect(VkCommandBuffer command, const Config &config);
     void recordOverflowVisibility(VkCommandBuffer command, const Config &config);
     void recordDirectionals(VkCommandBuffer command, const Config &config);
+    bool recordSunDepth(VkCommandBuffer command, const Config &config);
     void recordSun(VkCommandBuffer command, const Config &config);
     void recordSunAntialiasing(VkCommandBuffer command, const Config &config);
     void recordProbeSun(VkCommandBuffer command, const Config &config);

@@ -79,11 +79,16 @@ namespace remix::forward::bake {
     // Write one scene-unit first-hit distance per ray directly into caller-owned
     // STORAGE_BUFFER memory; negative values mean misses. Traversal uses at least
     // the frozen scene diagonal; place origins at its sun-facing boundary.
-    // The caller owns output through
-    // the slot fence and supplies a concrete descriptor range/aligned offset.
+    // A positive distance overrides traversal range in scene units; zero uses the diagonal.
+    // The caller owns output through the slot fence and supplies a concrete descriptor range/aligned offset.
     // Output is made visible to fragment/compute reads and transfer copies.
     void recordDepth(VkCommandBuffer command, uint32_t slot, std::span<const Point> rays,
-                     VkDescriptorBufferInfo output, uint32_t firstWord = 0);
+                     VkDescriptorBufferInfo output, uint32_t firstWord = 0, float distance = 0);
+    struct DepthRay { Vec3 origin{}, direction{}; uint32_t destination = 0; };
+    // Scatter into a caller-owned atlas without copies or per-row dispatches.
+    // Each destination is a unique float index relative to the output descriptor.
+    void recordIndexedDepth(VkCommandBuffer command, uint32_t slot, std::span<const DepthRay> rays,
+                            VkDescriptorBufferInfo output, float distance = 0);
     // Four geometry rays per 8x8 octahedral bin, packed into one raw Result
     // per probe. Readback is ProbeDepth::Record words, not irradiance/statistics.
     void recordProbeDepth(VkCommandBuffer command, uint32_t slot, std::span<const Point> probes);
@@ -181,6 +186,8 @@ namespace remix::forward::bake {
       Geometry,
       ProbeDepth
     };
+    void recordDepthBatch(VkCommandBuffer command, uint32_t slot, std::span<const Point> rays,
+                          VkDescriptorBufferInfo output, uint32_t firstWord, bool indexed, float distance);
     void record(VkCommandBuffer command, uint32_t slot, std::span<const Point> points, uint32_t samples,
                 uint32_t bounces, uint32_t firstSample, Mode mode,
                 std::optional<uint32_t> component = {}, uint32_t receiverSites = 1);

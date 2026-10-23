@@ -13,7 +13,7 @@ namespace remix::forward::bake {
   SunDepthHeader sunDepthHeader(const SunDepthLayout &layout, const std::array<Vec3, 3> &basis,
       float tileWidth, float nearDepth, float farDepth, float bias) {
     if (!std::isfinite(tileWidth) || tileWidth <= 0 || !std::isfinite(nearDepth) ||
-        !std::isfinite(farDepth) || farDepth <= nearDepth || !std::isfinite(bias) || bias < 0 ||
+        !std::isfinite(farDepth) || !std::isfinite(farDepth - nearDepth) || farDepth <= nearDepth || !std::isfinite(bias) || bias < 0 ||
         layout.options.border < 1 || layout.depthBytes / sizeof(float) > UINT32_MAX)
       throw std::invalid_argument("Invalid sun depth sampling range");
     for (uint32_t axis = 0; axis < 3; ++axis) {

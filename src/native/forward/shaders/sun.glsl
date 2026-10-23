@@ -1,4 +1,7 @@
 #include "sun-shadows.glsl"
+#ifndef VIEWMODEL_PASS
+#include "sun-depth.glsl"
+#endif
 BrdfLobes sunLightResponse(vec4 coordinate, float unitIrradiance, vec3 p, float depth, vec3 n, vec3 v,
                            vec3 base, float roughness, float metallic) {
   bool baked = frame.sunDirection.w > .5 && coordinate.w > .5;
@@ -7,7 +10,11 @@ BrdfLobes sunLightResponse(vec4 coordinate, float unitIrradiance, vec3 p, float 
   bool charted = baked;
   if (!FullyMappedReceiver && !baked && frame.sunDirection.w > .5) {
     float probeVisibility;
-    if (bakedSunVisibility(p, n, probeVisibility)) {
+    if (
+#ifndef VIEWMODEL_PASS
+        sparseSunDepthVisibility(p, probeVisibility) ||
+#endif
+        bakedSunVisibility(p, n, probeVisibility)) {
       baked = true;
       visibility = probeVisibility;
     }

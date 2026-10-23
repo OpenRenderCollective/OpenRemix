@@ -371,7 +371,7 @@ namespace remix::forward {
       frame.poolCapacity = std::max(64u, capacity);
       const VkDescriptorPoolSize sizes[] = {
           {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 7},
-          {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 10},
+          {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 14},
           {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frame.poolCapacity * 5 + 21}};
       const VkDescriptorPoolCreateInfo info{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
                                             .maxSets = frame.poolCapacity,
@@ -496,6 +496,13 @@ namespace remix::forward {
                   .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                   .pImageInfo = &visibilityPages};
     vkUpdateDescriptorSets(device, 1, &writes[13], 0, nullptr);
+    const VkDescriptorBufferInfo sunDepthBuffers[]{baking->sunDepthTable(), baking->sunDepthValues()};
+    VkWriteDescriptorSet sunDepthWrites[2];
+    for (uint32_t i = 0; i < 2; ++i)
+      sunDepthWrites[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = frame.scene,
+          .dstBinding = 20 + i, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+          .pBufferInfo = &sunDepthBuffers[i]};
+    vkUpdateDescriptorSets(device, 2, sunDepthWrites, 0, nullptr);
     prepareViewModelDescriptors();
     step(cpu.uploads);
     std::unordered_map<const scene::Material *, VkDescriptorSet> materials;

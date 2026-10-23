@@ -18,5 +18,6 @@ void main() {
   Hit hit;
   bool found = traceRay(point.position.xyz, direction, rayFrame.trace.x, seed, hit);
   // Negative means an explicit miss, independent of the traversal distance cap.
-  visibilityResults[rayFrame.control.y + index] = found ? hit.distance : -1;
+  uint destination = rayFrame.control.z != 0u ? floatBitsToUint(point.position.w) : rayFrame.control.y + index;
+  visibilityResults[destination] = found ? hit.distance : -1;
 }

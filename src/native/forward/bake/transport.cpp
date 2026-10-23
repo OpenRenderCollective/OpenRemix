@@ -261,12 +261,31 @@ namespace remix::forward::bake {
     record(command, slot, rays, 1, 1, 0, Mode::Geometry);
   }
   void Transport::recordDepth(VkCommandBuffer command, uint32_t index, std::span<const Point> rays,
-                                VkDescriptorBufferInfo output, uint32_t firstWord) {
+                                VkDescriptorBufferInfo output, uint32_t firstWord, float distance) {
+    recordDepthBatch(command, index, rays, output, firstWord, false, distance);
+  }
+  void Transport::recordIndexedDepth(VkCommandBuffer command, uint32_t index, std::span<const DepthRay> rays,
+                                       VkDescriptorBufferInfo output, float distance) {
+    if (rays.size() > m_gpu->options.batchPoints) throw std::invalid_argument("Too many indexed depth rays");
+    std::vector<Point> points;
+    points.reserve(rays.size());
+    for (const auto &ray : rays) {
+      if ((uint64_t(ray.destination) + 1) * sizeof(float) > output.range || ray.destination >= (1u << 25))
+        throw std::invalid_argument("Indexed depth destination exceeds output");
+      // Position W is unused by geometry traversal. Its bits carry the typed
+      // destination index; bounded storage indices cannot encode NaN or Inf.
+      points.push_back({{ray.origin[0], ray.origin[1], ray.origin[2], std::bit_cast<float>(ray.destination)},
+                        {ray.direction[0], ray.direction[1], ray.direction[2], 0}});
+    }
+    recordDepthBatch(command, index, points, output, 0, true, distance);
+  }
+  void Transport::recordDepthBatch(VkCommandBuffer command, uint32_t index, std::span<const Point> rays,
+                                      VkDescriptorBufferInfo output, uint32_t firstWord, bool indexed, float distance) {
     auto &g = *m_gpu;
-    const uint64_t words = uint64_t(firstWord) + rays.size();
+    const uint64_t words = indexed ? 0 : uint64_t(firstWord) + rays.size();
     if (!g.prepared || !g.depthPipeline || g.options.deviceLocalBatches)
       throw std::logic_error("Compact depth requires prepared CPU-point transport");
-    if (rays.empty() || rays.size() > g.options.batchPoints || rays.size() > g.options.rayBudget ||
+    if (!std::isfinite(distance) || distance < 0 || rays.empty() || rays.size() > g.options.batchPoints || rays.size() > g.options.rayBudget ||
         !output.buffer || output.range == VK_WHOLE_SIZE || output.range > g.limits.maxStorageBufferRange ||
         output.offset % g.limits.minStorageBufferOffsetAlignment || words * sizeof(float) > output.range)
       throw std::invalid_argument("Invalid compact depth output range or batch");
@@ -290,11 +309,11 @@ namespace remix::forward::bake {
     slot.count = 0; // Ordinary CPU result readers cannot read this caller-owned output.
     slot.compactVisibility = slot.scalarVisibility = false;
     Frame frame = lightingFrame(g.source->sun, g.source->dome, g.options.distance, g.options.bias, g.source->sceneScale);
-    frame.trace[0] = g.sunDistance;
+    frame.trace[0] = distance > 0 ? distance : g.sunDistance;
     frame.trace[2] = decalReachMetres / g.source->sceneScale;
     frame.trace[3] = g.hasModulatingDecals ? 1 : 0;
     frame.counts[0] = uint32_t(rays.size());
-    frame.control = {g.domeLayer, firstWord, 0, uint32_t(g.hasDielectrics) |
+    frame.control = {g.domeLayer, firstWord, uint32_t(indexed), uint32_t(g.hasDielectrics) |
                                               (g.hasContainingMedia ? containingMediaFlag : 0u)};
     slot.constants->write(&frame, sizeof(frame));
     g.timing->begin(command, index);
