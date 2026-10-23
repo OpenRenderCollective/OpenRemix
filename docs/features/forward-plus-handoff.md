@@ -629,3 +629,10 @@ native/adapter candidate. The installed test game still uses the older package.
 Targeted animated-sheet visual validation, pathtracer parity, moving-camera cache
 stability and foreground in-game performance remain required before deployment.
 Do not treat relay completion or its small render target as game FPS acceptance.
+
+Controlled Refract comparison note: the earlier pathtracer close-up retained
+automatic exposure and bloom while Forward+ used manual exposure. A repeat
+with both at manual exposure 1 brings scene brightness much closer; do not
+attribute that earlier difference to bake transport. Specular appearance and
+animation still need targeted qualification. The replay quality template now
+pins matching Prism/gamma/manual exposure settings for both backends.
