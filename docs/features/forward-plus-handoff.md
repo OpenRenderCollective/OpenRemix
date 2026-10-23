@@ -2,22 +2,29 @@
 
 ## Start here
 
-The separate GMod testing install was updated on 2026-10-23 to native `ffc32fe` and adapter
-`6330779`. The refresh includes adaptive complete directional storage, wider bounded bake windows,
-asynchronous emissive preparation, exact reflection-capture provenance, HDR sky uploads and BSP
-ABGR/explicit-VTF texture fixes. Rejected raster-culling, binding-cache and depth-order experiments
-are absent. Only both DLLs and the runtime manifest changed; the other 149 runtime files are identical.
-Seven user settings/assets, addon mounts and authored Construct cubemaps verify unchanged; an exact
-local rollback is available. Main branches remain upstream. Staged/installed normal-quality Construct
-captures pass synchronization validation with identical pixels and content hashes. The staged path
-tracer passes late-emissive/TAA preparation and repeated visibility changes. F12 input-bridge and
-cubemap publication CPU checks pass; full interactive gameplay has not been reaccepted by these tests.
-The earlier six-GPU-suite coverage belongs to the previous `22b8406` deployment.
+The separate GMod testing install was refreshed on 2026-10-23 to native `f8514cd` and adapter
+`28c28cb`. The pair adds independent reflection influence/feather authoring and extended sidecars
+while retaining legacy volume records and files. Sparse baked sun depth persistence, coverage gates
+and compact pages are present but remain opt-in through `REMIX_DEBUG_BAKE_SUN_DEPTH`; finite-source
+softness and broader map acceptance are unfinished. No renderer settings or experimental defaults
+were enabled by deployment. Earlier bake-storage, preparation, HDR sky and texture fixes remain.
 
-The direct-light codec capability intentionally invalidates older direct-light cache keys once so
-previously declined complete captures can be retried. Old cache files are not deleted by this update.
-Automatic authored fallback stays off by default; enable it with "Automatic fallback outside authored
-volumes" in the rendering menu for targeted testing. Existing user backend settings are preserved.
+All 155 owned files verify. Only the two DLLs and runtime manifest changed in the payload; the root
+install record was refreshed so both provenance records agree. The other 149 runtime files and ten
+settings/assets/launcher files verify unchanged, including addon mounts and authored Construct boxes.
+Deployment settings now pin the verified pair in an active `_work/packages` bundle rather than
+mutable build outputs or disposable reports. Exact rollback copies remain in the test install.
+Main branches remain upstream. Normal-quality Construct comparisons before/staged/installed retain
+identical pixels and lighting content hashes with synchronization validation. The actual staged DLL
+passes late-emissive/TAA preparation and repeated visibility changes. Six current GPU suites cover
+MSAA, overlay/shadows, baked viewmodel probes, viewmodel SSR, authored edits and sun-depth lifecycle.
+F12 and sidecar CPU checks pass. These are functional checks, not armed/moving gameplay FPS or
+broad visual-quality acceptance.
+
+Ordinary lighting cache identity remains unchanged by this refresh. Optional sun-depth sidecar
+policy/layout changes can require fresh depth capture while retaining cached irradiance. Older
+pre-codec caches remain on disk. Automatic authored fallback stays off by default; use the rendering
+menu for targeted testing. User backend settings are preserved.
 
 This checkpoint also includes chart-edge denoising, stable progressive history, surface-hemisphere
 transport, cosine-anchored surface irradiance and chart-local exterior donor repair. The reproduced
@@ -35,6 +42,21 @@ Adaptive irradiance runs automatically when eligible in this checkpoint. Continu
 matrix in [the roadmap](forward-plus-roadmap.md) and [the renderer guide](forward-plus.md) before
 claiming a release-ready default. Preserve static visibility, unknown coverage, controllable groups
 and offscreen moving shadows. The prior uniform-grid checkpoint was `e51bff0`.
+
+## Recent optional work
+
+- `forward/bake/sun_depth*`, `controller_sun_depth.cpp` and `forward/shaders/sun-depth.glsl` own the
+  sparse static-sun field for unmapped world receivers. Capture writes final GPU tile addresses;
+  fences guard publication, readback and restore. Compact pages preserve samples, and local filter
+  coordinates keep results invariant under repacking. Transmission and missing coverage use the
+  existing fallback. The test-only soft filter is not integrated: finite-source/subtexel coverage
+  error remains a default-blocking quality gate. Keep viewmodel and moving-shadow paths separate.
+- `remix_reflection_ext.h`, scene reflection volumes and probe authoring accept optional sampling
+  metadata without changing version-one records. Adapter `cubemap_overrides.*` accepts `BSPCUBE2`;
+  editor document/probe-report import preserves supported influence and feather fields. Independent
+  influence gizmos remain unfinished. `probe_editor.bsp_reflections` extracts raw map-fingerprinted
+  projection references, including Black Mesa Hammer side assignments; it does not publish them or
+  infer receiver influence/priority. Resolve those semantics before enabling runtime BSP import.
 
 ## Module ownership
 

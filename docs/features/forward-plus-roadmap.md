@@ -11,19 +11,23 @@ reports. An implementation or synthetic test alone does not close an integration
 
 ## Continuation status (2026-10-23)
 
-The separate GMod testing install now uses native `ffc32fe` and adapter `6330779`. This refresh
-includes adaptive lossless complete-light fields, wider bounded bake windows, asynchronous emissive
-preparation, exact reflection-capture provenance, HDR immutable sky textures and BSP ABGR/explicit
-VTF-reference fixes. Rejected draw-path experiments are absent. Both DLLs and the manifest were
-updated; the other 149 runtime files are byte-identical. Seven user settings/assets, including
-addon mounts and authored Construct cubemaps, verify unchanged, with an exact rollback checkpoint.
-Staged and installed normal-quality Construct captures pass synchronization validation with identical
-pixels/content hashes; the staged path tracer passes late-emissive preparation and visibility checks.
-F12 input-bridge and cubemap publication CPU checks pass. These are functional checks, not live
-armed/moving gameplay acceptance. Earlier six-suite coverage belongs to the previous `22b8406`
-checkpoint. Automatic authored fallback remains off by default, and user backend settings are preserved.
-The direct-light codec revision intentionally causes one fresh bake of older direct-light caches;
-this update does not delete those cache files. Follow-up clean-up and broader quality checks remain open.
+The separate GMod testing install now uses native `f8514cd` and adapter `28c28cb`. This paired
+refresh includes independent reflection sampling and extended sidecars, retaining existing authored
+files. Sparse sun-depth capture/cache/compaction is present but stays opt-in; the test-only soft
+filter is not integrated. No user settings or renderer defaults changed. Earlier storage, preparation,
+sky and material fixes remain, and rejected draw-path experiments are absent. The two DLLs and runtime
+manifest changed; the other 149 runtime files and ten settings/assets/launcher files verify unchanged.
+The root install record now agrees with the runtime checkpoint, and deployment settings pin an
+immutable verified package. Rollback copies remain available.
+
+Normal-quality Construct before/staged/installed captures retain identical pixels/content hashes
+with synchronization validation. The staged DLL passes late-emissive/TAA preparation and visibility
+checks. Six current GPU suites cover MSAA, viewmodel overlay/shadows, baked probes, SSR, authored
+edits and sun-depth lifecycle; F12 and sidecar CPU checks pass. These are functional checks, not
+armed/moving gameplay or FPS acceptance. Automatic authored fallback remains off by default, and
+user backend settings are preserved. Ordinary lighting cache identity is unchanged by this refresh;
+optional sun-depth policy/layout changes can recapture depth while retaining cached irradiance.
+Older cache files are not deleted. Broader map, quality and performance gates remain open.
 The native continuation adds chart-edge denoising, stable progressive history, surface-hemisphere
 transport, reflection-free lighting diagnostics and cosine-anchored surface/unit-light irradiance.
 The deployed DLL passes a small Construct replay bake with synchronization validation. Chart-local
