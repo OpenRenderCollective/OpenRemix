@@ -64,6 +64,8 @@ namespace remix {
         << ", \"meterFrames\": " << state.postProcessing.meterFrames
         << ", \"adapting\": " << (state.postProcessing.adapting ? "true" : "false") << '}'
         << ",\n  \"authoredReflections\": {\"revision\": " << state.authoredReflections.revision
+        << ", \"publishedSceneId\": \"" << state.authoredReflections.publishedSceneId << '"'
+        << ", \"publishedRevision\": " << state.authoredReflections.publishedRevision
         << ", \"pending\": " << (state.authoredReflections.pending ? "true" : "false")
         << ", \"active\": " << (state.authoredReflections.active ? "true" : "false")
         << ", \"rays\": " << state.authoredReflections.rays
@@ -84,7 +86,7 @@ namespace remix {
     auto vector = [&](const auto &v) { out << '[' << v[0] << ", " << v[1] << ", " << v[2] << ']'; };
     for (uint32_t i = 0; i < count; ++i) {
       const auto &probe = header.probes[i];
-      out << (i ? "," : "") << "\n    {\"position\": ";
+      out << (i ? "," : "") << "\n    {\"authoredId\": \"" << state.reflectionIdentities[i] << "\", \"position\": ";
       vector(probe.position);
       out << ", \"minimum\": ";
       vector(probe.minimum);

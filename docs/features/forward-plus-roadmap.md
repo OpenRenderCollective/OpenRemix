@@ -557,6 +557,11 @@ frame. Reflection guides must preserve receiver selection from the same covered 
 depth, normal and F0. Keep Source material/face interpretation in the adapter, dynamic influence
 selection separate, and reflection-only edits outside diffuse bake invalidation. Required acceptance
 includes reordered captures, pending edits, map changes, missing bindings and MSAA silhouettes.
+Native authored publication now retains CPU-side stable IDs in actual priority-sorted/composed
+image-layer order. Automatic fallback layers carry zero. Probe diagnostics expose each layer
+identity and the published scene/revision separately from a pending request. This metadata follows
+the active image while edits prepare; GPU layouts and diffuse bake inputs are unchanged. Receiver
+binding requests and shader selection through MSAA reflection guides still need implementation.
 
 Bake input readiness now follows retained brush/overlay/terrain/prop material dependencies rather
 than the entire BSP material inventory. Required unresolved inputs still block publication. The

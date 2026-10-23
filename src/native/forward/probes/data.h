@@ -10,6 +10,8 @@ namespace remix { class WorkerPool; }
 
 namespace remix::forward::probes {
   constexpr uint32_t maxProbes = 64;
+  // CPU publication metadata. Zero denotes an automatic/unbound image layer.
+  using LayerIdentities = std::array<uint64_t, maxProbes>;
   struct Record {
     // position.w: captured solid-angle agreement with the projection box.
     // maximum.w/influenceMinimum.w/influenceMaximum.w: inverse XYZ feather
@@ -39,6 +41,7 @@ namespace remix::forward::probes {
   };
   struct AuthoringStatistics {
     uint64_t revision = 0;
+    uint64_t publishedSceneId = 0, publishedRevision = 0;
     uint64_t captureScratchBytes = 0;
     uint32_t rays = 0, completed = 0, reused = 0;
     uint32_t automatic = 0, covered = 0, omitted = 0;

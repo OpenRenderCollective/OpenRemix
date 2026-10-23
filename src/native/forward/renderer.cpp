@@ -26,6 +26,8 @@ namespace remix::forward {
     statistics.authoredReflections = authoredReflections->statistics();
     const auto authoredHeader = authoredReflections->header();
     statistics.reflectionProbes = authoredHeader ? *authoredHeader : volume ? volume->reflectionHeader : probes::Header{};
+    const auto identities = authoredReflections->identities();
+    statistics.reflectionIdentities = identities ? *identities : probes::LayerIdentities{};
     const auto memory = baking->memory();
     const auto authoredMemory = authoredReflections->memory();
     statistics.bufferBytes += memory.buffers + authoredMemory.buffers;

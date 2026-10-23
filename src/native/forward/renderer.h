@@ -56,6 +56,7 @@ namespace remix::forward {
     ray::Statistics rayGI;
     postfx::Statistics postProcessing;
     probes::Header reflectionProbes;
+    probes::LayerIdentities reflectionIdentities{};
     probes::AuthoringStatistics authoredReflections;
     struct IrradianceGrid {
       std::array<uint32_t, 3> dimensions{};

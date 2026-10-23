@@ -22,6 +22,7 @@ namespace remix::forward::probes {
                 const std::shared_ptr<const bake::Volume> &automatic, bool fallback);
     Descriptors descriptor(Descriptors automatic) const;
     const Header *header() const;
+    const LayerIdentities *identities() const;
     AuthoringMemory memory() const;
     AuthoringStatistics statistics() const;
     const std::string &status() const { return m_status; }

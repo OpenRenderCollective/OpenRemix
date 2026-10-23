@@ -2280,6 +2280,11 @@ namespace {
               };
               r.setReflectionVolumes(&request);
               const auto firstEdit = waitForEdit();
+              require(target.forward->statistics().reflectionIdentities[0] == 72 &&
+                          target.forward->statistics().reflectionIdentities[1] == 71 &&
+                          target.forward->statistics().authoredReflections.publishedSceneId == snapshot->sceneId &&
+                          target.forward->statistics().authoredReflections.publishedRevision == request.revision,
+                      "Published authored identities follow priority-sorted GPU layers and their own request");
               require(firstEdit[centre] > 40 && target.forward->statistics().authoredReflections.rays == 6*16*16,
                       "Authored capture publishes visible viewmodel reflections through the production path");
               require(target.forward->statistics().authoredReflections.captureScratchBytes == 0,
@@ -2295,6 +2300,8 @@ namespace {
               ++request.revision;
               r.setReflectionVolumes(&request);
               waitForEdit();
+              require(target.forward->statistics().reflectionIdentities[0] == 171,
+                      "Replacing a logical ID updates published identity without retracing unchanged radiance");
               require(target.forward->statistics().authoredReflections.reused == 1 &&
                           target.forward->statistics().authoredReflections.rays == 0,
                       "Replacing an authoring ID preserves identical world-space capture lighting");
@@ -2365,6 +2372,9 @@ namespace {
                           "Pending capture transport retains its work list until readbacks retire");
                   require(pending.requested && pending.active && !pending.failed,
                           "Pending reflection edits expose the retained active set and request readiness separately");
+                  require(pending.publishedSceneId == snapshot->sceneId &&
+                              pending.publishedRevision < request.revision,
+                          "Pending edits retain the publication identity of the image actually sampled");
                   break;
                 }
               } while (std::chrono::steady_clock::now() < cancellationDeadline);
@@ -2404,6 +2414,10 @@ namespace {
               request.volumes = fallbackVolumes.data(); ++request.revision;
               r.setReflectionVolumes(&request);
               const auto fallbackImage = waitForEdit();
+              require(std::count_if(target.forward->statistics().reflectionIdentities.begin(),
+                          target.forward->statistics().reflectionIdentities.end(),
+                          [](uint64_t id) { return id != 0; }) == 2,
+                      "Composed automatic layers remain unbound while preserving both authored identities");
               require(target.forward->statistics().authoredReflections.automatic > 0 &&
                           target.forward->statistics().authoredReflections.rays == 0 && fallbackImage[centre] > 40,
                       "Automatic image layers supply reflections outside edited authored bounds without retracing");

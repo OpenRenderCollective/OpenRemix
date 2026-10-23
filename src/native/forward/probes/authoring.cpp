@@ -1,4 +1,5 @@
 #include "forward/probes/authoring.h"
+#include "forward/probes/identities.h"
 #include "platform/workers.h"
 #include "forward/bake/transport.h"
 #include "forward/bake/budget.h"
@@ -28,6 +29,7 @@ namespace remix::forward::probes {
     uint64_t revision = 0;
     uint32_t automaticCount = 0, covered = 0, omitted = 0;
     Data filtered;
+    LayerIdentities identities{};
     bake::Budget budget;
     std::vector<int32_t> reused, aliases;
     std::shared_ptr<Job> previous;
@@ -139,6 +141,10 @@ namespace remix::forward::probes {
           }
         }
       }
+      std::vector<uint64_t> ids;
+      ids.reserve(request->volumes.size());
+      for (const auto &volume : request->volumes) ids.push_back(volume.id);
+      identities = imageIdentities(filtered.header, ids);
       image = std::make_unique<ImageAsset>(physical, device, filtered, cancellation.get_token());
       if (automatic && !captures.empty() && automatic->specular) {
         const auto plan = compose(image->header(), automatic->specular->header());
@@ -146,6 +152,7 @@ namespace remix::forward::probes {
         covered = plan.covered;
         omitted = plan.omitted;
         if (automaticCount) {
+          identities = composedIdentities(plan, std::span(identities).first(captures.size()));
           authoredImage = std::move(image);
           image = std::make_unique<ImageAsset>(physical, device, plan);
         }
@@ -298,6 +305,7 @@ namespace remix::forward::probes {
     return m_active ? m_active->image->descriptors() : automatic;
   }
   const Header *Authoring::header() const { return m_active ? &m_active->image->header() : nullptr; }
+  const LayerIdentities *Authoring::identities() const { return m_active ? &m_active->identities : nullptr; }
   AuthoringStatistics Authoring::statistics() const {
     AuthoringStatistics result;
     result.requested = bool(m_request);
@@ -305,6 +313,8 @@ namespace remix::forward::probes {
     result.pending = bool(m_request) && (!m_active || m_active->revision != m_revision);
     result.active = bool(m_active);
     if (m_active) {
+      result.publishedSceneId = m_active->request->sceneId;
+      result.publishedRevision = m_active->request->revision;
       result.automatic = m_active->automaticCount;
       result.covered = m_active->covered;
       result.omitted = m_active->omitted;
