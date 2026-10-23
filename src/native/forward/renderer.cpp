@@ -33,11 +33,20 @@ namespace remix::forward {
     if (probeVisibility) {
       visibility.residentBytes = probeVisibility->bufferBytes();
       visibility.peakResidentBytes = probeVisibility->peakBufferBytes();
+      visibility.recordedGathers = probeVisibility->recordedGathers();
+      visibility.completedReuses = probeVisibility->completedReuses();
       statistics.bufferBytes += visibility.residentBytes;
       if (const auto &field = frames[slot].probeVisibility) {
         visibility.lights = uint32_t(field->lights().size());
         visibility.groups = field->groups();
         visibility.fieldBytes = field->bufferBytes();
+        // Diagnostic identity of the ordered captured-light slots; never used
+        // as a cache key in place of the exact source/ID comparison.
+        visibility.selectionHash = 14695981039346656037ull;
+        for (uint32_t light : field->lights()) {
+          visibility.selectionHash ^= light;
+          visibility.selectionHash *= 1099511628211ull;
+        }
       }
     }
     statistics.targetBytes = baseTargetBytes + memory.images + authoredMemory.images +

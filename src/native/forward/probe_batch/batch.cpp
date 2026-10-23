@@ -94,6 +94,7 @@ namespace remix::forward::probe_batch {
     for (const auto &field : m_fields) {
       const auto status = vkGetEventStatus(m_device, field->m_completed);
       if (status == VK_EVENT_SET) {
+        ++m_completedReuses;
         auto completed = field;
         m_fields.assign(1, completed); // Other submissions retain their own owners.
         return completed;
@@ -143,6 +144,7 @@ namespace remix::forward::probe_batch {
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, m_resources->layout,
                             0, 1, &next->m_set, 0, nullptr);
     vkCmdDispatch(command, uint32_t((elements + 63) / 64), 1, 1);
+    ++m_recordedGathers;
     const VkMemoryBarrier visible{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
         .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT, .dstAccessMask = VK_ACCESS_SHADER_READ_BIT};
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,

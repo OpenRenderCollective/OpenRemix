@@ -46,6 +46,7 @@ namespace remix::forward {
     struct ProbeVisibility {
       uint32_t lights = 0, groups = 0;
       uint64_t fieldBytes = 0, residentBytes = 0, peakResidentBytes = 0;
+      uint64_t selectionHash = 0, recordedGathers = 0, completedReuses = 0;
     } probeVisibility;
     uint64_t targetBytes = 0, geometryBytes = 0, bufferBytes = 0;
     uint64_t rigidUploadCreates = 0, rigidUploadReuses = 0, spareGeometryBytes = 0;

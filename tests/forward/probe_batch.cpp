@@ -127,6 +127,8 @@ int main() try {
     fixture.begin();
     auto field = cache.record(fixture.command, input.volume, lights);
     require(field && field != abandoned, "Recording alone cannot publish an unwritten reusable field");
+    require(cache.recordedGathers() == 2 && cache.completedReuses() == 0,
+            "Recorded preparation counts abandoned producers without claiming completion");
     readback(fixture, *field, input.masks);
     queryField(fixture, *input.volume, input.masks, *field);
     std::weak_ptr<const probe_batch::Field> discarded = abandoned;
@@ -134,6 +136,8 @@ int main() try {
     fixture.begin();
     auto reused = cache.record(fixture.command, input.volume, lights);
     require(reused == field, "A device-completed immutable field is reused without another gather");
+    require(cache.recordedGathers() == 2 && cache.completedReuses() == 1,
+            "Completed reuse is distinguished from another recorded producer");
     require(discarded.expired(), "Completed reuse releases abandoned cache-only producers");
     require(cache.bufferBytes() == field->bufferBytes(), "Abandoned resident storage is reclaimed after completed reuse");
     require(cache.peakBufferBytes() == 2 * field->bufferBytes(),

@@ -53,6 +53,10 @@ namespace remix::forward::probe_batch {
     // Source bake buffers remain accounted by the bake controller.
     uint64_t bufferBytes() const;
     uint64_t peakBufferBytes() const;
+    // Recorded producers include abandoned commands; only a completion event
+    // permits reuse. These counters diagnose work, not completed GPU dispatches.
+    uint64_t recordedGathers() const { return m_recordedGathers; }
+    uint64_t completedReuses() const { return m_completedReuses; }
 
   private:
     VkPhysicalDevice m_physical;
@@ -60,5 +64,6 @@ namespace remix::forward::probe_batch {
     uint64_t m_byteBudget, m_storageRange;
     std::shared_ptr<Resources> m_resources;
     std::vector<std::shared_ptr<Field>> m_fields;
+    uint64_t m_recordedGathers = 0, m_completedReuses = 0;
   };
 }

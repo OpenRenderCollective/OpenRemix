@@ -53,7 +53,10 @@ namespace remix {
         << ", \"groups\": " << state.probeVisibility.groups
         << ", \"fieldBytes\": " << state.probeVisibility.fieldBytes
         << ", \"residentBytes\": " << state.probeVisibility.residentBytes
-        << ", \"peakResidentBytes\": " << state.probeVisibility.peakResidentBytes << '}'
+        << ", \"peakResidentBytes\": " << state.probeVisibility.peakResidentBytes
+        << ", \"selectionHash\": \"" << state.probeVisibility.selectionHash << '"'
+        << ", \"recordedGathers\": " << state.probeVisibility.recordedGathers
+        << ", \"completedReuses\": " << state.probeVisibility.completedReuses << '}'
         << ",\n  \"exposure\": {\"current\": " << state.postProcessing.exposure
         << ", \"target\": " << state.postProcessing.target << ", \"limit\": " << state.postProcessing.limit
         << ", \"milliseconds\": " << state.postProcessing.milliseconds

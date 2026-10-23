@@ -86,7 +86,16 @@ Disassembly narrows that host crash to an indirect call through an overwritten s
 vtable pointer in the original shader DLL. Pixel-like pointer bytes are evidence of corruption, not
 proof of its writer or cause. A self-tested external hardware write watch now supports exact owned
 process reproductions without patching application code/data. One watched transition session did not
-reproduce the overwrite or crash; it is not a fix or a performance acceptance. Retain the stability
+reproduce the overwrite or crash; it is not a fix or a performance acceptance.
+Longer watched feature-off/on controls now complete eight transitions with no observed header write.
+The new selected-ID fingerprint confirms changing sets; recorded-gather and completed-reuse counters
+separate producers (including cancellation) from reuse. Focused, untruncated gather intervals are
+about 0.110 ms at first use and 0.011-0.016 ms thereafter in this diagnostic session. Debugger presence
+and asynchronous snapshots qualify these values: they are not normal moving-gameplay FPS/stutter
+acceptance or a measured CPU allocation cost. Counters/fingerprints do not alter exact cache keys.
+The test harness's Lua quit is blocked; a visible-window close request also did not establish orderly
+engine shutdown. Keep bounded owned-process cleanup, but verify the actual engine close path in
+future shutdown tests. Both installed DLLs and protected settings were restored after these controls. Retain the stability
 follow-up and use feature-off controls before changing production resource or shadow lifetime rules.
 
 The installed runtime has completed Windows-confirmed foreground Construct samples with the
