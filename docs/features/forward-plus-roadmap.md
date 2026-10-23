@@ -1661,3 +1661,10 @@ retain matching bake data and do not reproduce the old coloured edge fringe
 or fixture halo. This is static relay coverage, not interactive acceptance.
 The glossy connector ceiling response needs specular/SSR/cubemap isolation and
 a matched-material reference before changing lightmap packing or quality.
+
+Connector isolation retains the fine ceiling highlight with SSR disabled and
+in the direct-specular diagnostic (which excludes environment composition).
+Explicitly disabling selected baked highlights removes that fine shine while
+leaving the broader baked lighting intact. Keep the default highlights: check
+the source/AutoPBR normal and roughness response against a matched reference,
+then visibility if necessary, before labeling this an occlusion or atlas bug.
