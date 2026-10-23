@@ -42,10 +42,13 @@ accepted foreground intervals and stable bake identity; this does not close movi
 The colour-room camera is trace-validated in non-solid space, looking at its `func_brush` shell.
 That shell takes the probe-lit receiver path and dominates this view, unlike the largely lightmapped
 hall. Separate bounded receiver queries also find substantial shader invocations on mapped geometry
-with zero passing depth samples and no omitted query ranges. Investigate safe early rejection after
-the matching depth prepass, preserving alpha cutouts, camera backface rejection, coplanar order,
-terrain, prepass-off mode, viewmodel isolation and shadow depth semantics. Current color pipelines
-write depth, so forcing early tests across existing shaders is not an accepted fix. Investigate whether
+with zero passing depth samples and no omitted query ranges. Ordinary prepassed world shading now
+uses explicit early-fragment-test variants with read-only depth; the matching prepass owns depth and
+coverage. Prepass-off, terrain, water, viewmodels and shadow shader policies remain separate. Six GPU
+suites pass synchronization validation, including all alpha comparisons, draw orders and MSAA modes.
+Opposite-order Construct live checks retain stable bakes and improve the expensive colour-room view;
+full-resolution Construct and Crossfire replay comparisons also improve. These frozen-view results
+do not close moving gameplay or wider map acceptance. Investigate whether
 stationary controllable brush shells can enter a stable bake without treating movable/toggleable
 geometry as immutable or adding Source-specific rules to OpenRemix. Clustering and local shadow
 rendering are not the dominant cost in these captured Construct views; other maps remain unmeasured.

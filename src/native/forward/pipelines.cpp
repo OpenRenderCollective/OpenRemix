@@ -29,8 +29,11 @@ namespace remix::forward {
     } modules{device, {}};
     const auto vertex = modules.add(vertShader, sizeof(vertShader));
     const auto lightmapVertex = modules.add(lightmapVertShader, sizeof(lightmapVertShader));
-    const auto fragment = options.reflections() ? modules.add(ssrFragShader, sizeof(ssrFragShader))
-                                                : modules.add(fragShader, sizeof(fragShader));
+    const auto fragment = options.depthPrepass
+        ? (options.reflections() ? modules.add(prepassedSsrFragShader, sizeof(prepassedSsrFragShader))
+                                 : modules.add(prepassedFragShader, sizeof(prepassedFragShader)))
+        : (options.reflections() ? modules.add(ssrFragShader, sizeof(ssrFragShader))
+                                 : modules.add(fragShader, sizeof(fragShader)));
     VkShaderModule giFragment = VK_NULL_HANDLE;
     const auto terrainFragment = modules.add(fragShader, sizeof(fragShader));
     const auto depthFragment = modules.add(opaqueDepthFragShader, sizeof(opaqueDepthFragShader));
@@ -135,7 +138,10 @@ namespace remix::forward {
       const VkPipelineDepthStencilStateCreateInfo depthState{
           .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
           .depthTestEnable = VK_TRUE,
-          .depthWriteEnable = !terrain,
+          // A prepassed world draw only shades existing coverage. In particular,
+          // forced early tests must not write depth before its cutout discard.
+          // Other cameras and shadow/depth passes retain their own depth writes.
+          .depthWriteEnable = !terrain && !(mode == Pass::Opaque && options.depthPrepass),
           .depthCompareOp = composite ? VK_COMPARE_OP_ALWAYS : VK_COMPARE_OP_LESS_OR_EQUAL};
       const VkPipelineColorBlendAttachmentState attachment{
           .blendEnable = composite || terrain,

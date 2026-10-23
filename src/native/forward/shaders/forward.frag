@@ -1,5 +1,11 @@
 #version 460
 #extension GL_GOOGLE_include_directive : require
+#ifdef PREPASSED_WORLD
+// Coverage and depth were written by the matching alpha-tested prepass.
+// This variant must use a read-only depth pipeline: discard cannot undo an
+// early depth write, including at coplanar cutout boundaries.
+layout(early_fragment_tests) in;
+#endif
 #if defined(LIVE_GI) || defined(WATER_RAY)
 #extension GL_EXT_ray_query : require
 #endif

@@ -51,10 +51,13 @@ insufficient, so future runs must check Windows process ownership and visually v
 The colour-room view is trace-confirmed in non-solid space, facing `GM_CONSTRUCT/COLOR_ROOM`
 on a `func_brush`. Its probe-lit shell is substantially more expensive than the lightmapped hall.
 Bounded receiver instrumentation also shows mapped geometry invoking shaders despite zero passing
-depth samples, without omitted query ranges. Investigate safe prepass-dependent early rejection and
-stationary brush bake membership next. Preserve cutouts, prepass-off behavior, terrain, moving or
-controllable geometry and viewmodel/shadow isolation. No early-test default or static-brush policy
-has been changed. These frozen-view diagnostics do not establish broad gameplay FPS parity.
+depth samples, without omitted query ranges. The world prepass path now selects explicit early-test
+shader variants with depth writes disabled in its shaded pass. Coverage/depth remain owned by the
+matching alpha-tested prepass. Other cameras, terrain, water, prepass-off and shadow shader policies
+retain their separate handling. Six GPU suites pass synchronization validation; opposite-order live
+Construct and full-resolution Construct/Crossfire replay checks show a benefit at stable bake identity.
+Stationary brush bake membership and the remaining probe shading cost are next; no static-brush
+policy has changed. These frozen-view checks do not establish broad gameplay FPS parity.
 
 ## Recent optional work
 

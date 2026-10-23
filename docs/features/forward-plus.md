@@ -986,6 +986,11 @@ expensive material and lighting evaluation. Terrain overlays, decals, water and 
 shadow passes retain their separate handling. `rtx.native.forward.depthPrepass` defaults to
 `1`; set it to `0` for comparisons. Changing it does not invalidate baked lighting or require
 new render targets. The GPU report exposes the prepass separately within opaque world shading.
+When the prepass is enabled, ordinary world shading uses an explicit early-fragment-test shader
+and disables depth writes in its color pipeline. The matching prepass owns coverage and depth;
+cutout discards in the shaded pass cannot write over an underlying surface. Prepass-off shading,
+viewmodels, terrain, water and shadow depth retain their separate shader/depth policies. Live GI
+retains its existing shader while also reusing the prepass depth without rewriting it.
 
 For compiler inspection, start with `REMIX_PIPELINE_EXECUTABLES=1`, then create
 `pipelines.request` in the profile directory to write `pipelines.txt`. On supporting
