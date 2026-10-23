@@ -413,7 +413,7 @@ other-map acceptance. Continue those gates rather than treating testing deployme
 | Stable persistent caches; no rebake on camera/weapon changes | Cache validation and invalidation receipts exist. Investigate remaining spontaneous/weapon-change rebakes; distinguish real light/material edits from identity bugs. Warm replay parity is not proof that installed live caches always work. |
 | Auto exposure and same tonemap path as path tracing | Shared postprocessing and exposure controls implemented. Refresh live adaptation, HDR/water and mode-switch acceptance; coverage diagnostics intentionally bypass automatic exposure. |
 | Automatic tolerant parallax bounds, overlap/feathering, priorities | Default reflection budget is 64. Current normal-quality automatic comparisons publish 63 captures on Construct and 64 on Crossfire; authored overrides replace that set. Capacity improved hall coverage; automatic room fitting, bevel tolerance, doorway/wall separation, rotations and blending remain open. Capture point and influence/projection boxes are distinct. |
-| Better dynamic probe quality in Construct's main room | Target is the diagonal roof-slit skylit hall, especially props. High-detail matte receiver comparisons now separate low-poly reference self-shadow artifacts from remaining probe errors. The shaded case is close, but a direct-sun-only reference preserves the opening rim mismatch even beyond moving-CSM range, implicating static sunlight visibility reconstruction. A dense local field improves shaded-centre leakage but worsens the rim region; do not raise global density/brightness from that mixed result. Position-only scalar sun sampling leaves shaded-centre leakage unchanged and worsens the rim comparison, so retain the shared normal-dependent stencil. An uncached prototype capturing coarse sunlight before refinement and adding its visibility range to allocation changed the grid but left the targeted sphere error unchanged; it is not promoted. A second uncached prototype reusing surface sunlight before placement and scoring its reconstruction error also changed allocation without changing the target sphere result; retain neither prototype as a default. A published-grid audit now confirms the affected cell uses 4 m refinement for a 0.81 m diagnostic sphere. Production CPU stencil reconstruction gives 7.18% sunlight on its camera-facing side from one sunlit node about 4.5 m away among shaded neighbours; the top gets 4.80%. This establishes spatial smearing of scalar sunlight visibility at this location. A diagnostic fallback to full static+moving sun cascades removes the false-lit sphere centre and restores the thin rim closely (sun-only core error zero, upper-rim RGB error about 2.4/2.3/2.2 display-byte levels versus roughly 38/37/34). This confirms a spatial visibility representation target rather than a global brightness correction. Keep the cascade control for quality comparisons, but do not promote camera-following static cascades as the fully baked solution: camera movement can redraw frozen geometry. Next evaluate baked directional visibility with local boundary detail, fixed memory and bake-time costs; global allocation changes alone have not improved this receiver. A conservative Construct probe-domain projection spans roughly 382 by 511 m: one 4K D32 map costs 64 MiB at 9–12 cm per texel, while 8K costs 256 MiB at 5–6 cm. These are domain-box estimates, not tight receiver bounds or measured image-quality guarantees. The optional receiver diagnostic now measures all charted triangle vertices in an orthonormal sun basis (world transforms and metre scale applied once), including exact-cache-hit layouts. Construct has 37,813 charted triangles spanning about 302 by 271 m in that projection. This is a tighter bounding rectangle, not occupied-tile coverage and not a guarantee of dynamic receiver or static occluder coverage. Conservative triangle/tile overlap at 4 m tiles reports 2,902 occupied of 5,244 bounding tiles; a 1 m projected L-infinity margin yields 2,980/5,313, and 2 m yields 3,060/5,460. The 1 m case implies about 73 MiB raw D32 at 5 cm texels before borders, indexing and allocation padding; this is a storage estimate, not accepted shadow quality or complete dynamic-receiver coverage. Diagnostics enforce tile and candidate-work budgets and stop rather than silently omitting geometry. A deterministic CPU atlas planner now converts complete requested tile sets into bordered physical pages and a bounded virtual directory, declining the whole plan when its image/directory/page budget fails. The diagnostic Construct layout fits all three measured margins in six 2048² D32 pages (96 MiB), plus about 21 KiB directory at a 1 m margin, with 80 interior texels per 4 m tile and two-texel borders under a 128 MiB planning limit. This is layout-only; no GPU depth capture or new visibility sampling is enabled. A focused hardware prototype now captures a bordered sparse orthographic depth atlas through the existing material-aware geometry transport: 2,304 rays resolve a 15 cm roof opening and eight depth comparisons agree with independent direct-sun queries below/above the roof, including a fully cut-out foreground sheet, with clean Vulkan validation. This uses CPU atlas lookup after fenced GPU readback, not fragment-shader sampling or Construct acceptance. Compact capture now has a separately prepared optional kernel and `Transport::recordDepth`: one signed 4-byte first-hit distance per ray writes directly into caller-owned GPU storage at a supplied word offset, with an explicit negative miss and fragment/compute/transfer visibility barriers. The focused test compares compact/full geometry results, uses compact data for atlas lookup, checks range guards and invalid requests, rotates frame slots and restores normal sun/geometry output descriptors after depth dispatch. Existing bake shader binaries remain identical; ordinary transport does not prepare this optional kernel. Capture output is 64 times smaller per ray, not a measured whole-bake speedup. Next connect bake scheduling/publication and fragment lookup, then test Construct, uncovered/vertical/dynamic coverage, transmissive casters and finite sun shape. Use an atlas or grouped pages rather than assuming one array layer per occupied tile fits device limits; retain distant static occluders in depth coverage and keep moving shadows independent. Use `replay.receiverSegments=128` for close-up references; the original diagnostic default stays unchanged. Moving props, viewmodels, other materials/maps and comparison with the earlier uniform checkpoint remain open. |
+| Better dynamic probe quality in Construct's main room | Scalar probe sunlight smears the narrow roof-slit shadow on props. Sparse baked depth has bounded layout, compact hardware capture and a shared GPU lookup prototype; it is not published by map baking or enabled in world shading. See [baked sun visibility](#baked-sun-visibility-for-dynamic-receivers) for retained diagnosis, rejected approaches and acceptance gates. |
 | Cubemaps captured after lighting | Ordering is implemented; verify invalidation/re-capture after styled/material/lighting changes without unrelated full diffuse rebakes. |
 | Roughness-aware s&box-like SSR, full resolution default, viewmodel SSR | Implemented paths and tests exist. Refresh live roughness, disocclusion, blend with cubemaps/RT, and actual weapon acceptance. |
 | PBR/AutoPBR and shared Remix replacements | Shared asset/material path implemented, including safer Source roughness fallback. Verify late replacement arrival, normals, BRDF/roughness parity and authored PBR examples; no separate incompatible asset conversion path. |
@@ -1197,3 +1197,82 @@ without more renderer preparation or temporal allocation changes. That regressio
 identical Forward+ comparison pass validation; pipeline preparation CPU checks also pass. These are
 stability/compatibility checks, not FPS acceptance. Older rejected controls hit validation-layer queue
 state timeouts during cleanup; that separate issue is not claimed fixed.
+
+## Baked sun visibility for dynamic receivers
+
+Target is the diagonal roof-slit skylit hall, especially props. High-detail matte receiver
+comparisons now separate low-poly reference self-shadow artifacts from remaining probe errors. The
+shaded case is close, but a direct-sun-only reference preserves the opening rim mismatch even beyond
+moving-CSM range, implicating static sunlight visibility reconstruction. A dense local field
+improves shaded-centre leakage but worsens the rim region; do not raise global density/brightness
+from that mixed result. Position-only scalar sun sampling leaves shaded-centre leakage unchanged and
+worsens the rim comparison, so retain the shared normal-dependent stencil. An uncached prototype
+capturing coarse sunlight before refinement and adding its visibility range to allocation changed
+the grid but left the targeted sphere error unchanged; it is not promoted. A second uncached
+prototype reusing surface sunlight before placement and scoring its reconstruction error also
+changed allocation without changing the target sphere result; retain neither prototype as a default.
+A published-grid audit now confirms the affected cell uses 4 m refinement for a 0.81 m diagnostic
+sphere. Production CPU stencil reconstruction gives 7.18% sunlight on its camera-facing side from
+one sunlit node about 4.5 m away among shaded neighbours; the top gets 4.80%. This establishes
+spatial smearing of scalar sunlight visibility at this location.
+
+A diagnostic fallback to full static+moving sun cascades removes the false-lit sphere centre and
+restores the thin rim closely (sun-only core error zero, upper-rim RGB error about 2.4/2.3/2.2
+display-byte levels versus roughly 38/37/34). This confirms a spatial visibility representation
+target rather than a global brightness correction. Keep the cascade control for quality comparisons,
+but do not promote camera-following static cascades as the fully baked solution: camera movement can
+redraw frozen geometry. Next evaluate baked directional visibility with local boundary detail, fixed
+memory and bake-time costs; global allocation changes alone have not improved this receiver.
+
+A conservative Construct probe-domain projection spans roughly 382 by 511 m: one 4K D32 map costs 64
+MiB at 9–12 cm per texel, while 8K costs 256 MiB at 5–6 cm. These are domain-box estimates, not
+tight receiver bounds or measured image-quality guarantees.
+
+The optional receiver diagnostic now measures all charted triangle vertices in an orthonormal sun
+basis (world transforms and metre scale applied once), including exact-cache-hit layouts. Construct
+has 37,813 charted triangles spanning about 302 by 271 m in that projection. This is a tighter
+bounding rectangle, not occupied-tile coverage and not a guarantee of dynamic receiver or static
+occluder coverage. Conservative triangle/tile overlap at 4 m tiles reports 2,902 occupied of 5,244
+bounding tiles; a 1 m projected L-infinity margin yields 2,980/5,313, and 2 m yields 3,060/5,460.
+The 1 m case implies about 73 MiB raw D32 at 5 cm texels before borders, indexing and allocation
+padding; this is a storage estimate, not accepted shadow quality or complete dynamic-receiver
+coverage. Diagnostics enforce tile and candidate-work budgets and stop rather than silently omitting
+geometry.
+
+A deterministic CPU atlas planner now converts complete requested tile sets into bordered physical
+pages and a bounded virtual directory, declining the whole plan when its image/directory/page budget
+fails. The diagnostic Construct layout fits all three measured margins in six 2048² D32 pages (96
+MiB), plus about 21 KiB directory at a 1 m margin, with 80 interior texels per 4 m tile and
+two-texel borders under a 128 MiB planning limit. This is layout-only; no GPU depth capture or new
+visibility sampling is enabled.
+
+A focused hardware prototype now captures a bordered sparse orthographic depth atlas through the
+existing material-aware geometry transport: 2,304 rays resolve a 15 cm roof opening and eight depth
+comparisons agree with independent direct-sun queries below/above the roof, including a fully
+cut-out foreground sheet, with clean Vulkan validation. The initial fixture used CPU lookup; the
+shared GPU lookup described below supersedes that test path, while fragment-stage and Construct
+acceptance remain open.
+
+Compact capture now has a separately prepared optional kernel and `Transport::recordDepth`: one
+signed 4-byte first-hit distance per ray writes directly into caller-owned GPU storage at a supplied
+word offset, with an explicit negative miss and fragment/compute/transfer visibility barriers. The
+focused test compares compact/full geometry results, checks range guards and invalid requests,
+rotates frame slots and restores normal sun/geometry output descriptors after depth dispatch. A
+shared GLSL lookup now reads the captured GPU atlas through validated scene-unit projection metadata
+and its sparse directory. Four depth comparisons are filtered as visibility; a negative miss is
+exposed, while missing tiles, empty maps and out-of-range receivers report no coverage for fallback.
+GPU tests exercise the narrow opening at two heights, rotated bases, a half-visible filter boundary
+and uncovered cases. Atlas population and lookup stay on GPU in the test (with verification
+readbacks only); compute exercises the same lookup source intended for fragments. World fragment
+descriptors, bake publication and Construct acceptance are not wired yet. Existing bake shader
+binaries remain identical; ordinary transport does not prepare this optional kernel. Capture output
+is 64 times smaller per ray, not a measured whole-bake speedup.
+
+Next connect bake scheduling/publication and fragment lookup, then test Construct,
+uncovered/vertical/dynamic coverage, transmissive casters and finite sun shape.
+
+Use an atlas or grouped pages rather than assuming one array layer per occupied tile fits device
+limits; retain distant static occluders in depth coverage and keep moving shadows independent. Use
+`replay.receiverSegments=128` for close-up references; the original diagnostic default stays
+unchanged. Moving props, viewmodels, other materials/maps and comparison with the earlier uniform
+checkpoint remain open.

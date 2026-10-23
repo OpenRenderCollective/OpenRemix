@@ -9,6 +9,7 @@
 #include "forward/mixed/directional_capture.h"
 #include "forward/half.h"
 #include "gpu_fixture.h"
+#include "sun_depth_shaders/embedded.h"
 #include "probe_queries.h"
 #include "lighting_components.h"
 #include "interior_surface_gpu.h"
@@ -136,6 +137,7 @@ namespace {
       return std::make_shared<scene::BakeScene>(*resources.bakeScene());
     }
   };
+#include "sun_depth_query.h"
 #include "sun_depth_gpu.h"
 #include "indexed_visibility.h"
 #include "probe_visibility_gpu.h"

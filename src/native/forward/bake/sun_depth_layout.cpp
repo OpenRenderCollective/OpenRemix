@@ -1,5 +1,6 @@
 #include "forward/bake/sun_depth_layout.h"
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 namespace remix::forward::bake {
   lightmap::Allocation SunDepthLayout::allocation(uint32_t slot) const {
@@ -8,6 +9,43 @@ namespace remix::forward::bake {
     const uint32_t local = slot % perPage, extent = options.tileTexels + options.border * 2;
     return {slot / perPage, local % tilesPerAxis * extent + options.border,
             local / tilesPerAxis * extent + options.border, options.tileTexels, options.tileTexels};
+  }
+  SunDepthHeader sunDepthHeader(const SunDepthLayout &layout, const std::array<Vec3, 3> &basis,
+      float tileWidth, float nearDepth, float farDepth, float bias) {
+    if (!std::isfinite(tileWidth) || tileWidth <= 0 || !std::isfinite(nearDepth) ||
+        !std::isfinite(farDepth) || farDepth <= nearDepth || !std::isfinite(bias) || bias < 0 ||
+        layout.options.border < 1 || layout.depthBytes / sizeof(float) > UINT32_MAX)
+      throw std::invalid_argument("Invalid sun depth sampling range");
+    for (uint32_t axis = 0; axis < 3; ++axis) {
+      if (!std::all_of(basis[axis].begin(), basis[axis].end(), [](float v) { return std::isfinite(v); }) ||
+          std::abs(dot(basis[axis], basis[axis]) - 1) > 1e-4f)
+        throw std::invalid_argument("Invalid sun depth sampling basis");
+      for (uint32_t other = 0; other < axis; ++other)
+        if (std::abs(dot(basis[axis], basis[other])) > 1e-4f)
+          throw std::invalid_argument("Nonorthogonal sun depth sampling basis");
+    }
+    if (!layout.tiles.empty()) {
+      const auto &o = layout.options;
+      const uint64_t words = uint64_t(layout.dimensions[0]) * layout.dimensions[1];
+      const uint64_t pixels = uint64_t(layout.pages) * o.pageSize * o.pageSize;
+      if (!o.pageSize || o.pageSize > 16384 || !o.tileTexels || o.tileTexels > o.pageSize ||
+          o.border > (o.pageSize - o.tileTexels) / 2 ||
+          layout.tilesPerAxis != o.pageSize / (o.tileTexels + 2 * o.border) ||
+          !layout.pages || layout.pages > 2048 || pixels > UINT32_MAX ||
+          layout.depthBytes != pixels * sizeof(float) || !words || words > (1u << 20) ||
+          layout.directory.size() != words || !layout.dimensions[0] || !layout.dimensions[1] ||
+          layout.tiles.size() > uint64_t(layout.pages) * layout.tilesPerAxis * layout.tilesPerAxis)
+        throw std::invalid_argument("Inconsistent sun depth sampling layout");
+    }
+    SunDepthHeader result;
+    std::copy(basis[0].begin(), basis[0].end(), result.axisX.begin());
+    std::copy(basis[1].begin(), basis[1].end(), result.axisY.begin());
+    std::copy(basis[2].begin(), basis[2].end(), result.axisZ.begin());
+    result.sampling = {tileWidth, nearDepth, farDepth, bias};
+    result.grid = {layout.minimum[0], layout.minimum[1], int32_t(layout.dimensions[0]), int32_t(layout.dimensions[1])};
+    result.atlas = {layout.options.pageSize, layout.options.tileTexels, layout.options.border, layout.tilesPerAxis};
+    result.counts = {layout.pages, uint32_t(layout.tiles.size()), 0, 0};
+    return result;
   }
   std::optional<SunDepthLayout> planSunDepthLayout(std::span<const std::array<int32_t, 2>> tiles,
       SunDepthLayoutOptions options, std::stop_token cancelled) {

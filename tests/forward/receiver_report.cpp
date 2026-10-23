@@ -71,6 +71,18 @@ int main() {
     require(a.page == 0 && a.x == 1 && a.y == 1 && b.x == 5 && b.y == 1 && c.x == 1 && c.y == 5 &&
                 a.width == 2 && a.height == 2,
             "Physical tile allocation reserves filter borders without crossing page edges");
+    const std::array<Vec3,3> basis{Vec3{1,0,0}, Vec3{0,1,0}, Vec3{0,0,-1}};
+    const auto header = bake::sunDepthHeader(*layout, basis, 4, -10, 20, .002f);
+    require(header.grid == std::array<int32_t,4>{-1,0,3,2} &&
+                header.atlas == std::array<uint32_t,4>{8,2,1,2} && header.counts[0] == 1 &&
+                header.counts[1] == 3 && header.axisZ[2] == -1 && header.sampling[0] == 4,
+            "GPU lookup metadata preserves signed coordinates, atlas layout and scene-unit projection");
+    auto corrupt = *layout;
+    corrupt.tilesPerAxis = 0;
+    bool rejectedHeader = false;
+    try { bake::sunDepthHeader(corrupt, basis, 4, -10, 20, 0); }
+    catch (const std::invalid_argument &) { rejectedHeader = true; }
+    require(rejectedHeader, "Malformed atlas metadata cannot reach GPU division or addressing");
     --options.maximumBytes;
     require(!bake::planSunDepthLayout(tiles, options), "One byte below the complete atlas budget declines all coverage");
     options.maximumBytes = 1024;

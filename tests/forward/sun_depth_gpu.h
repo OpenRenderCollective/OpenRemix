@@ -37,6 +37,16 @@ void sparseSunDepthPrototype(test::Fixture &fixture, pipeline::Service &pipeline
   constexpr uint32_t extent = 24;
   const float texel = 1.f / options.tileTexels;
   std::vector<float> depth(options.pageSize * options.pageSize, 8);
+  Buffer atlasDepth;
+  atlasDepth.create(fixture.physical, fixture.device, layout.depthBytes,
+      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, Buffer::Memory::Device);
+  fixture.begin();
+  vkCmdFillBuffer(fixture.command, atlasDepth.handle, 0, layout.depthBytes, 0xbf800000u);
+  const VkMemoryBarrier initialAtlas{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+      .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, .dstAccessMask = VK_ACCESS_SHADER_READ_BIT};
+  vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+      0, 1, &initialAtlas, 0, nullptr, 0, nullptr);
+  fixture.finish();
   std::vector<bake::Point> rays;
   std::vector<uint32_t> destinations;
   Buffer compactDepth, compactReadback;
@@ -82,6 +92,14 @@ void sparseSunDepthPrototype(test::Fixture &fixture, pipeline::Service &pipeline
     transport.recordDepth(fixture.command, slot, rays, compactDepth.descriptor(), 1);
     const VkBufferCopy copy{0, 0, compactBytes};
     vkCmdCopyBuffer(fixture.command, compactDepth.handle, compactReadback.handle, 1, &copy);
+    std::vector<VkBufferCopy> scatter;
+    for (uint32_t i = 0; i < rays.size(); ++i)
+      scatter.push_back({VkDeviceSize(i + 1) * sizeof(float), VkDeviceSize(destinations[i]) * sizeof(float), sizeof(float)});
+    vkCmdCopyBuffer(fixture.command, compactDepth.handle, atlasDepth.handle, uint32_t(scatter.size()), scatter.data());
+    const VkMemoryBarrier atlasBarrier{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, .dstAccessMask = VK_ACCESS_SHADER_READ_BIT};
+    vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        0, 1, &atlasBarrier, 0, nullptr, 0, nullptr);
     const VkMemoryBarrier hostBarrier{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
         .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
     vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
@@ -130,6 +148,7 @@ void sparseSunDepthPrototype(test::Fixture &fixture, pipeline::Service &pipeline
   fixture.finish();
   std::vector<bake::Result> reference(receivers.size());
   transport.read(0, reference);
+  const auto gpuVisibility = querySunDepth(fixture, layout, atlasDepth, receivers);
   for (size_t i = 0; i < receivers.size(); ++i) {
     const auto &p = receivers[i].position;
     const int32_t tx = int32_t(std::floor(p[0])), ty = int32_t(std::floor(p[1]));
@@ -145,9 +164,45 @@ void sparseSunDepthPrototype(test::Fixture &fixture, pipeline::Service &pipeline
       visible += wx * wy * (2-p[2] <= depth.at(size_t(index)) + .0001f ? 1.f : 0.f);
     }
     const float expected = p[2] > 1 || std::abs(p[0]) < .075f ? 1.f : 0.f;
+    require(gpuVisibility[i][1] == 1 && std::abs(gpuVisibility[i][0] - expected) < 1e-4f,
+            "Shared GPU sparse-depth lookup agrees with captured depth and independent sun visibility");
     require(std::abs(reference[i].irradiance[0][0]-expected) < 1e-5f && std::abs(visible-expected) < 1e-4f,
             "Sparse depth matches direct sun queries across a sub-probe opening and above/below the roof");
   }
+  const auto negativeTile = layout.directory[2] - 1;
+  const auto edgeAllocation = layout.allocation(negativeTile);
+  bool filteredEdge = false;
+  for (uint32_t x = 0; x + 1 < options.tileTexels && !filteredEdge; ++x) {
+    const auto address = (edgeAllocation.y + 8) * options.pageSize + edgeAllocation.x + x;
+    if ((depth[address] > 2) == (depth[address + 1] > 2)) continue;
+    const bake::Point midpoint{{-1 + float(x + 1) * texel, .425f, 0, 0}, {}};
+    const auto filtered = querySunDepth(fixture, layout, atlasDepth, {&midpoint, 1});
+    require(filtered[0][1] == 1 && std::abs(filtered[0][0] - .5f) < 1e-4f,
+            "GPU filtering blends visibility comparisons rather than averaging foreground/background depth");
+    filteredEdge = true;
+  }
+  require(filteredEdge, "The narrow-opening fixture contains a captured filtering boundary");
+  auto rotatedReceivers = receivers;
+  for (auto &receiver : rotatedReceivers) {
+    const float x = receiver.position[0];
+    receiver.position[0] = -receiver.position[1];
+    receiver.position[1] = x;
+  }
+  const auto rotated = querySunDepth(fixture, layout, atlasDepth, rotatedReceivers,
+                                     {Vec3{0,1,0},Vec3{-1,0,0},Vec3{0,0,-1}});
+  for (size_t i = 0; i < rotated.size(); ++i)
+    require(rotated[i] == gpuVisibility[i], "GPU lookup applies the supplied sun basis independently of world axes");
+  auto missingTile = layout;
+  missingTile.directory.back() = 0;
+  const auto hole = querySunDepth(fixture, missingTile, atlasDepth, {receivers.data()+3, 1});
+  require(hole[0][0] == -1 && hole[0][1] == 0, "A sparse directory hole requests fallback inside the outer coverage bounds");
+  const auto emptyLayout = bake::planSunDepthLayout({}, options);
+  const auto disabled = querySunDepth(fixture, *emptyLayout, atlasDepth, {receivers.data(), 1});
+  require(disabled[0][0] == -1 && disabled[0][1] == 0, "An unpublished empty map performs no depth sampling");
+  const std::array<bake::Point, 2> uncovered{{{{3, 0, 0, 0}, {}}, {{0, 0, 3, 0}, {}}}};
+  const auto fallback = querySunDepth(fixture, layout, atlasDepth, uncovered);
+  for (const auto &value : fallback)
+    require(value[0] == -1 && value[1] == 0, "Missing XY or depth coverage requests fallback instead of leaking sunlight");
   std::printf("Sparse sun depth prototype: %u hits, %u misses, %zu receiver comparisons; %llu image bytes\n",
               hits, misses, receivers.size(), static_cast<unsigned long long>(layout.depthBytes));
 }
