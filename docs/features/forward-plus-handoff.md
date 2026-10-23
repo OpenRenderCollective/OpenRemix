@@ -660,3 +660,12 @@ coverage fallback. The clustered baked-light tail is correctness work, not
 proof of analytic diffuse evaluation. Separate host-limited views from
 GPU-limited views before selecting optimizations. Static shadow-map update
 counters remain zero after bake in the qualified Trainstation fixed views.
+
+A narrower probe-gather experiment is available through presence of
+`REMIX_DEBUG_PROBE_BATCH_VIEWMODEL_ONLY`. It allocates the same selected-light
+field but enables consumer specialization only for viewmodel passes; world and
+terrain keep the baseline consumer. If both debug flags are present this narrow
+scope wins. Like the original debug flag, a value of `0` still enables it.
+Gather ownership and viewmodel probe/shadow validation pass; focused performance
+and image comparisons remain pending. This experiment is not deployed or enabled
+by default. Do not remove unknown-coverage or directional-correction fallbacks.
