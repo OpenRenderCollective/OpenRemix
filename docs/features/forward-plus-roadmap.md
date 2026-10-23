@@ -1326,6 +1326,14 @@ Next evaluate blocker-aware visibility filtering against this reference, includi
 across sparse tile boundaries and missing coverage. A fixed wider blur is not finite-source support;
 keep this acceptance gate open and measure lookup cost before changing the default.
 
+A test-only sparse PCSS candidate now searches blockers and filters visibility comparisons with a
+separation-dependent sun-disc radius. Each tap resolves its virtual tile independently; unknown
+transmission or missing search/filter coverage requests fallback. Point-source lookup remains exact.
+The candidate reduces broad-source fixture error but retains substantial error: the centre-depth
+grid has already lost subtexel slit coverage, which filtering cannot reconstruct. Do not integrate
+this candidate into renderer shaders or treat the prototype tests as quality acceptance. Next compare
+coverage-aware capture and finer sampling within the existing memory budget before selecting a filter.
+
 Next cover live map transitions and moving actors,
 and measure the steady-state and total bake costs. Confirm unsupported/over-budget fallback,
 transmissive casters and finite sun shape before enabling a default. The existing static-cascade

@@ -1,6 +1,6 @@
 #pragma once
 std::vector<std::array<float, 2>> querySunDepth(test::Fixture &fixture, VkDescriptorBufferInfo table,
-    VkDescriptorBufferInfo depth, std::span<const bake::Point> receivers) {
+    VkDescriptorBufferInfo depth, std::span<const bake::Point> receivers, float angularSin = 0) {
   struct Query {
     VkDevice device;
     Buffer input, output;
@@ -16,7 +16,10 @@ std::vector<std::array<float, 2>> querySunDepth(test::Fixture &fixture, VkDescri
     }
   } query{fixture.device};
   std::vector<Vec4> positions;
-  for (const auto &receiver : receivers) positions.push_back(receiver.position);
+  for (const auto &receiver : receivers) {
+    positions.push_back(receiver.position);
+    positions.back()[3] = angularSin;
+  }
   query.input.create(fixture.physical, fixture.device, positions.size() * sizeof(Vec4), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   query.input.write(positions.data(), positions.size() * sizeof(Vec4));
   query.output.create(fixture.physical, fixture.device, positions.size() * 2 * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);

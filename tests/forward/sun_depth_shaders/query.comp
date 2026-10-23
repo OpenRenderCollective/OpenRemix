@@ -3,6 +3,7 @@
 #define SUN_DEPTH_TABLE_BINDING 0
 #define SUN_DEPTH_VALUES_BINDING 1
 #include "../../../src/native/forward/shaders/sun-depth.glsl"
+#include "soft_reference.glsl"
 layout(local_size_x = 64) in;
 layout(set = 0, binding = 2, std430) readonly buffer Inputs { vec4 positions[]; };
 layout(set = 0, binding = 3, std430) writeonly buffer Outputs { vec2 results[]; };
@@ -10,6 +11,6 @@ void main() {
   uint index = gl_GlobalInvocationID.x;
   if (index >= positions.length()) return;
   float visibility;
-  bool covered = sparseSunDepthVisibility(positions[index].xyz, visibility);
+  bool covered = sparseSunDepthSoftVisibility(positions[index].xyz, positions[index].w, visibility);
   results[index] = vec2(covered ? visibility : -1, float(covered));
 }
