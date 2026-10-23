@@ -8,6 +8,10 @@ replays differ by at most one display-channel value, with only the known older V
 device-structure warning and no synchronization hazards. Rendering defaults remain unchanged;
 selected-probe batching and sparse sun depth remain opt-in. Earlier refresh details below
 are historical validation of the retained optimizations.
+One installed relay run completed image/timings but timed out waiting for the fresh reflection
+report within 60 presents. A repeat exited successfully with that report and matching image.
+Keep this intermittent harness-report timeout on the diagnostic todo; do not count the first
+run as a full smoke-test pass.
 
 ## Start here
 
