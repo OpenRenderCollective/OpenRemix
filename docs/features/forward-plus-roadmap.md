@@ -328,9 +328,11 @@ before treating their boxes as freely blended influence volumes. Bounds values a
 the capture origin, but confirm this convention against Black Mesa rendering before conversion.
 The installed Black Mesa `bin/base.fgd` defines `boxmin`/`boxmax` as **projection** bounds and
 `sides` as optional direct brush-face attachments. These are not evidence of receiver influence
-bounds or overlap priorities. The current native volume ABI uses one box for both projection and
-influence, so a faithful automatic importer must resolve that distinction rather than silently
-converting projection boxes into selection boxes. Preserve source face assignments in reference
+bounds or overlap priorities. Version-one native authoring uses one box for both projection and
+influence. The optional version-two sampling request now accepts independent influence bounds and
+feather distance without changing the original records or sidecars. A faithful automatic importer
+still needs a justified selection/influence policy rather than silently converting projection boxes
+into selection boxes. Preserve source face assignments in reference
 data; Hammer face IDs must not be treated as compiled BSP face indices. Only explicitly enabled
 `parallax=1` entities qualify; default boxes on ordinary cubemaps are not authored room bounds.
 
@@ -590,6 +592,17 @@ capture points, translation, rotation, priorities and durable map-specific files
 of automatic results so authored examples become a fitting-validation corpus. Game integration must
 handle rotated projection/influence bounds and live updates without rebaking unrelated diffuse
 lighting. Keep authored overrides optional; improving automatic fitting remains the default goal.
+
+`remixapi_ReflectionVolumesSamplingInfoEXT` extends authoring through the existing export: pass
+`&request.base`, set its version to `REMIXAPI_REFLECTION_VOLUMES_SAMPLING_VERSION_EXT`, and provide
+one sampling record per original volume. Projection, rigid frame, capture point and priority retain
+their original meanings. Sampling bounds are local to that frame; the capture need not lie inside
+influence. A nonnegative scene-unit blend distance sets feather width, with zero deriving the existing
+20%-of-half-extent rule. Version-one callers retain combined bounds and their legacy half-metre
+feather. The scene owns validated copies; invalid edits preserve the last valid request. Influence
+and feather edits reuse existing captured radiance and do not alter frozen diffuse lighting.
+The current editor/sidecar format still writes version one; independent handles and Black Mesa
+entity/face-assignment import remain adapter/tool work.
 
 | Requirement | Current state | Remaining proof or work |
 | --- | --- | --- |

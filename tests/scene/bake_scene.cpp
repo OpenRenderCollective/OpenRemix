@@ -62,6 +62,44 @@ int main() {
     rejected([&] { resources.setReflectionVolumes(&request); });
     require(resources.reflectionVolumes() == current, "Invalid transforms preserve the last valid authoring request");
     volume.worldToLocal[0][0] = 1;
+    static_assert(sizeof(remixapi_ReflectionVolumeEXT) == 96);
+    static_assert(offsetof(remixapi_ReflectionVolumesSamplingInfoEXT, base) == 0);
+    remixapi_ReflectionSamplingEXT sampling{};
+    for (uint32_t c = 0; c < 3; ++c) { sampling.minimum[c] = -2; sampling.maximum[c] = 2; }
+    sampling.blendDistance = .25f;
+    remixapi_ReflectionVolumesSamplingInfoEXT extended{request, &sampling};
+    extended.base.structSize = sizeof(extended);
+    extended.base.version = REMIXAPI_REFLECTION_VOLUMES_SAMPLING_VERSION_EXT;
+    resources.setReflectionVolumes(&extended.base);
+    const auto separate = resources.reflectionVolumes();
+    require(separate && separate->volumes[0].minimum[0] == -1 &&
+                separate->volumes[0].influenceMinimum[0] == -2 && separate->volumes[0].blendDistance == .25f &&
+                resources.bakeScene() == original,
+            "Extended reflection authoring separates influence and feathering without changing diffuse input");
+    resources.publishFrame(frame);
+    sampling.minimum[0] = 2; sampling.maximum[0] = 3;
+    resources.setReflectionVolumes(&extended.base);
+    require(frame.reflectionVolumes() == separate && separate->volumes[0].influenceMinimum[0] == -2 &&
+                resources.reflectionVolumes()->volumes[0].influenceMinimum[0] == 2,
+            "Capture may lie outside influence; published sampling metadata owns its copied values");
+    const auto validSeparate = resources.reflectionVolumes();
+    sampling.blendDistance = -1;
+    rejected([&] { resources.setReflectionVolumes(&extended.base); });
+    sampling.blendDistance = std::numeric_limits<float>::quiet_NaN();
+    rejected([&] { resources.setReflectionVolumes(&extended.base); });
+    sampling.blendDistance = 0;
+    sampling.maximum[0] = sampling.minimum[0];
+    rejected([&] { resources.setReflectionVolumes(&extended.base); });
+    sampling.maximum[0] = std::numeric_limits<float>::infinity();
+    rejected([&] { resources.setReflectionVolumes(&extended.base); });
+    extended.sampling = nullptr;
+    rejected([&] { resources.setReflectionVolumes(&extended.base); });
+    require(resources.reflectionVolumes() == validSeparate, "Invalid sampling edits preserve the last complete request");
+    resources.setReflectionVolumes(&request);
+    require(resources.reflectionVolumes()->volumes[0].influenceMinimum ==
+                resources.reflectionVolumes()->volumes[0].minimum &&
+                resources.reflectionVolumes()->volumes[0].blendDistance == -1,
+            "Version-one requests retain their combined bounds and legacy feathering");
     std::vector<remixapi_ReflectionVolumeEXT> full(REMIXAPI_REFLECTION_VOLUMES_MAX_EXT, volume);
     for (uint32_t i = 0; i < full.size(); ++i) full[i].id = i + 1;
     request.volumeCount = uint32_t(full.size()); request.volumes = full.data();

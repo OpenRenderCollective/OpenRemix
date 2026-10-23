@@ -46,11 +46,12 @@ namespace remix::forward::probes {
         Capture capture;
         capture.bounds.include(volume.minimum);
         capture.bounds.include(volume.maximum);
-        capture.influence = capture.bounds;
+        capture.influence.include(volume.influenceMinimum);
+        capture.influence.include(volume.influenceMaximum);
         capture.worldToLocal = volume.worldToLocal;
         capture.position = volume.capture;
         capture.priority = volume.priority;
-        capture.blendDistance = .5f / source->sceneScale;
+        capture.blendDistance = volume.blendDistance < 0 ? .5f / source->sceneScale : volume.blendDistance;
         capture.resolution = config.reflectionResolution;
         int32_t oldIndex = -1;
         if (prior)

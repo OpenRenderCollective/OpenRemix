@@ -2327,6 +2327,29 @@ namespace {
                           target.forward->statistics().authoredReflections.rays == 0 &&
                           std::abs(int(rotated[centre])-int(firstEdit[centre])) <= 2,
                       "Bounds rotation and priority edits reuse filtered radiance without tracing");
+              std::array<remixapi_ReflectionSamplingEXT, 2> sampling{};
+              for (uint32_t i = 0; i < sampling.size(); ++i) {
+                for (uint32_t c = 0; c < 3; ++c) {
+                  sampling[i].minimum[c] = authored[i].minimum[c] - .25f;
+                  sampling[i].maximum[c] = authored[i].maximum[c] + .25f;
+                }
+                sampling[i].blendDistance = .125f;
+              }
+              remixapi_ReflectionVolumesSamplingInfoEXT extended{request, sampling.data()};
+              extended.base.structSize = sizeof(extended);
+              extended.base.version = REMIXAPI_REFLECTION_VOLUMES_SAMPLING_VERSION_EXT;
+              extended.base.revision = ++request.revision;
+              r.setReflectionVolumes(&extended.base);
+              waitForEdit();
+              const auto &separate = target.forward->statistics().reflectionProbes.probes[0];
+              require(separate.minimum[0] == authored[0].minimum[0] &&
+                          separate.influenceMinimum[0] == sampling[0].minimum[0] && separate.maximum[3] == 8 &&
+                          target.forward->statistics().authoredReflections.rays == 0 &&
+                          target.forward->statistics().authoredReflections.reused == 2 && r.bakeScene() == snapshot,
+                      "Independent influence and feather edits reach GPU metadata while reusing both captures");
+              ++request.revision;
+              r.setReflectionVolumes(&request);
+              waitForEdit();
               const float originalCaptureX = authored[1].capture[0];
               authored[1].capture[0] += .01f;
               ++request.revision;

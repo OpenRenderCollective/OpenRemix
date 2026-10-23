@@ -2,11 +2,12 @@
 #pragma once
 #include "remix_c.h"
 #define REMIXAPI_REFLECTION_VOLUMES_VERSION_EXT 1
+#define REMIXAPI_REFLECTION_VOLUMES_SAMPLING_VERSION_EXT 2
 #define REMIXAPI_REFLECTION_VOLUMES_MAX_EXT 64
 
 typedef struct remixapi_ReflectionVolumeEXT {
   uint64_t id; // nonzero, stable within this scene
-  float minimum[3], maximum[3]; // local projection and receiver influence bounds
+  float minimum[3], maximum[3]; // local projection bounds; version 1 also uses them for influence
   float worldToLocal[3][4]; // rows of a rigid transform; no scaling or shear
   float capture[3]; // world-space origin, independent of volume center
   int32_t priority; // -32768..32767; larger values win interiors and feather toward lower priorities at edges
@@ -17,6 +18,18 @@ typedef struct remixapi_ReflectionVolumesInfoEXT {
   uint32_t volumeCount, reserved; // reserved must be zero
   const remixapi_ReflectionVolumeEXT *volumes;
 } remixapi_ReflectionVolumesInfoEXT;
+
+typedef struct remixapi_ReflectionSamplingEXT {
+  float minimum[3], maximum[3]; // local receiver influence, independent of projection
+  float blendDistance; // scene units; zero derives a 20%-of-half-extent edge band
+} remixapi_ReflectionSamplingEXT;
+
+// Pass &request.base to SetReflectionVolumesEXT. Original version-1 requests,
+// volume records and sidecars retain their layouts and blending behavior.
+typedef struct remixapi_ReflectionVolumesSamplingInfoEXT {
+  remixapi_ReflectionVolumesInfoEXT base; // version = SAMPLING_VERSION, structSize = sizeof(this)
+  const remixapi_ReflectionSamplingEXT *sampling; // volumeCount records, copied with volumes
+} remixapi_ReflectionVolumesSamplingInfoEXT;
 #ifdef __cplusplus
 extern "C" {
 #endif
