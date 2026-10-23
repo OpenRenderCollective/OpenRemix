@@ -127,9 +127,11 @@ The receiver segment prototype now constructs normal-offset capture queries and 
 interprets existing hardware geometry readbacks, including unknown short misses and endpoint hits.
 CPU and GPU wall/open-segment coverage is in place. Bounded nearest-capture planning now skips
 covered samples, spreads budgeted receiver selection and preserves deterministic capture ties.
-Optional reports expose automatic-set proposals without executing rays; next, measure the focused
-Construct terrain/doorway segments on hardware before using them to generate influence support.
-Authored-composition pairing and nearest-neighbor sufficiency still need separate validation. Ordinary lighting cache identity is unchanged by this refresh;
+Optional planning reports expose automatic-set proposals without executing rays. A separate fresh-path
+hardware audit now schedules bounded geometry batches, retains fence ownership and publishes segment
+results without changing fitting or cache inputs. Next, support broader search or new local sites
+when all nearest candidates are blocked; preserve unknown range-limited misses, then validate
+localized influence support. Authored-composition pairing still needs separate validation. Ordinary lighting cache identity is unchanged by this refresh;
 optional sun-depth policy/layout changes can recapture depth while retaining cached irradiance.
 Older cache files are not deleted. Broader map, quality and performance gates remain open.
 The native continuation adds chart-edge denoising, stable progressive history, surface-hemisphere

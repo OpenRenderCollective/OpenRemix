@@ -1,11 +1,19 @@
 #pragma once
 #include "forward/probes/data.h"
+#include <memory>
 #include <stop_token>
 
 namespace remix::scene { struct BakeScene; }
 
 namespace remix::forward::probes {
   struct FittedRegion;
+  class ReceiverAudit;
+  // Optional bounded hardware diagnostic; absent environment request means no
+  // receiver sampling, pair storage or extra GPU traversal.
+  std::unique_ptr<ReceiverAudit> prepareReceiverAudit(const scene::BakeScene &source,
+      std::span<const Capture> captures, std::stop_token cancelled = {}) noexcept;
+  void dumpReceiverAudit(const scene::BakeScene &source, std::span<const Capture> captures,
+      const ReceiverAudit &audit, std::stop_token cancelled = {}) noexcept;
   // Small, independent candidate report for hardware-fit experiments. Only
   // writes when REMIX_DEBUG_PROBE_CANDIDATES names a fresh JSON output file.
   void dumpCandidates(const scene::BakeScene &source, std::span<const FittedRegion> regions,

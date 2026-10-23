@@ -15,6 +15,7 @@
 #include "forward/mixed/directional_capture.h"
 #include "forward/probes/evaluation.h"
 #include "forward/probes/capture_work.h"
+#include "forward/probes/receiver_audit.h"
 #include <atomic>
 #include <chrono>
 #include <filesystem>
@@ -118,6 +119,8 @@ namespace remix::forward::bake {
     uint32_t geometryNext = 0, geometryReceived = 0;
     bool candidatesPlanned = false;
     std::vector<probes::Capture> captures;
+    std::unique_ptr<probes::ReceiverAudit> receiverAudit;
+    uint32_t receiverNext = 0, receiverReceived = 0;
     probes::CaptureWork captureWork;
     uint64_t captureInputHash = 0;
     probes::Data specular;

@@ -2,6 +2,7 @@
 #include "forward/probes/selection.h"
 #include "forward/probes/receivers.h"
 #include "forward/probes/receiver_pairs.h"
+#include "forward/probes/receiver_audit.h"
 #include "scene/bake_scene.h"
 #include <algorithm>
 #include <bit>
@@ -15,6 +16,56 @@
 #include <unordered_set>
 
 namespace remix::forward::probes {
+  std::unique_ptr<ReceiverAudit> prepareReceiverAudit(const scene::BakeScene &source,
+      std::span<const Capture> captures, std::stop_token cancelled) noexcept {
+    const char *path = std::getenv("REMIX_DEBUG_PROBE_RECEIVER_VISIBILITY");
+    if (!path || !*path) return {};
+    try {
+      if (std::filesystem::exists(path)) throw std::runtime_error("Receiver audit report already exists");
+      const auto receivers = sampleReceivers(source, 8192, cancelled);
+      return std::make_unique<ReceiverAudit>(
+          receiverPairs(receivers, captures, .002f / source.sceneScale, 32768, 4, cancelled),
+          .001f / source.sceneScale);
+    } catch (const std::exception &error) {
+      std::fprintf(stderr, "Receiver visibility audit unavailable: %s\n", error.what());
+      return {};
+    }
+  }
+  void dumpReceiverAudit(const scene::BakeScene &source, std::span<const Capture> captures,
+      const ReceiverAudit &audit, std::stop_token cancelled) noexcept {
+    const char *path = std::getenv("REMIX_DEBUG_PROBE_RECEIVER_VISIBILITY");
+    if (!path || !*path) return;
+    try {
+      if (!audit.complete() || std::filesystem::exists(path))
+        throw std::runtime_error("Receiver audit is incomplete or its report already exists");
+      const auto receivers = sampleReceivers(source, 8192, cancelled);
+      std::ofstream output(path);
+      output.exceptions(std::ios::failbit | std::ios::badbit);
+      output.precision(9);
+      auto vector = [&](Vec3 value) { output << '[' << value[0] << ',' << value[1] << ',' << value[2] << ']'; };
+      output << "{\"version\":1,\"sceneHash\":\"" << source.contentHash
+             << "\",\"sceneScale\":" << source.sceneScale << ",\"pairs\":[\n";
+      for (size_t i = 0; i < audit.pairs().size(); ++i) {
+        if (cancelled.stop_requested()) throw std::runtime_error("Receiver visibility report superseded");
+        const auto &pair = audit.pairs()[i];
+        const auto &receiver = receivers.at(pair.receiver);
+        const auto state = audit.visibility(i);
+        output << (i ? ",\n" : "") << "{\"receiver\":" << pair.receiver << ",\"capture\":" << pair.capture
+               << ",\"position\":";
+        vector(receiver.position);
+        output << ",\"target\":";
+        vector(captures[pair.capture].position);
+        output << ",\"segmentDistance\":" << pair.ray.distance << ",\"hitDistance\":";
+        if (std::isfinite(audit.distance(i))) output << audit.distance(i);
+        else output << "null";
+        output << ",\"visibility\":\"" << (state == ReceiverVisibility::Visible ? "visible" :
+            state == ReceiverVisibility::Blocked ? "blocked" : "unknown") << "\"}";
+      }
+      output << "\n]}\n";
+    } catch (const std::exception &error) {
+      std::fprintf(stderr, "Receiver visibility report unavailable: %s\n", error.what());
+    }
+  }
   void dumpCandidates(const scene::BakeScene &source, std::span<const FittedRegion> regions,
                       std::span<const Capture> captures, std::stop_token cancelled) noexcept {
     const char *path = std::getenv("REMIX_DEBUG_PROBE_CANDIDATES");

@@ -1,5 +1,6 @@
 #include "forward/probes/receiver_visibility.h"
 #include "forward/probes/receiver_pairs.h"
+#include "forward/probes/receiver_audit.h"
 #include <limits>
 #include <stdexcept>
 
@@ -86,4 +87,11 @@ int main() {
   try { p::receiverPairs(receivers, captures, .01f, 0); }
   catch (const std::invalid_argument &) { rejected = true; }
   require(rejected);
+  p::ReceiverAudit audit(pairs, .01f);
+  std::vector<Result> hits(pairs.size());
+  for (size_t i = 0; i < hits.size(); ++i) hits[i] = geometry(pairs[i].ray.distance + 1);
+  require(!audit.complete() && audit.observe(4, std::span(hits).subspan(4)));
+  require(!audit.observe(3, std::span(hits).subspan(3, 2))); // Refuse overlap atomically, including unseen index 3.
+  require(audit.observe(0, std::span(hits).first(4)) && audit.complete());
+  require(audit.visibility(3) == V::Visible && !audit.observe(0, std::span(hits).first(1)));
 }

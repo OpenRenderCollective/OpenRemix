@@ -422,6 +422,11 @@ namespace remix::forward::bake {
               job.failed = true;
               status(REMIXAPI_BAKE_FAILED_EXT, "Invalid attributed irradiance readback");
             }
+          } else if (submission.reflectionReceiver) {
+            if (!job.receiverAudit || !job.receiverAudit->observe(submission.first, results)) {
+              job.failed = true;
+              status(REMIXAPI_BAKE_FAILED_EXT, "Invalid reflection receiver readback ownership");
+            }
           } else if (submission.reflectionGeometry) {
             if (!job.projectionAudit->observe(submission.first, results)) {
               job.failed = true;
@@ -473,6 +478,7 @@ namespace remix::forward::bake {
                                   ? sizeof(VisibilityResult) : sizeof(Result));
         if (!submission.styled && !submission.reference && !submission.probeDepth) (submission.sunDepth ? job.sunDepthReceived
          : submission.radiance ? job.captureReceived
+         : submission.reflectionReceiver ? job.receiverReceived
          : submission.reflectionGeometry ? job.geometryReceived
          : submission.reflectionSite     ? job.siteReceived
          : submission.visibility         ? job.visibilityReceived
@@ -492,7 +498,7 @@ namespace remix::forward::bake {
           if (submission.overflowVisibility)
             job.overflowTiming.gpuMs += *elapsed;
           const auto work = submission.probeDepth                                    ? Work::ProbeDepth
-                            : submission.reflectionGeometry || submission.sunDepth  ? Work::Geometry
+                            : submission.reflectionGeometry || submission.reflectionReceiver || submission.sunDepth ? Work::Geometry
                             : submission.visibility || submission.direct || submission.directionalField ||
                               submission.overflowVisibility || submission.probeLocal     ? Work::Visibility
                             : submission.sun || submission.probeSun                  ? Work::Sun
@@ -949,10 +955,35 @@ namespace remix::forward::bake {
                 owner->cancellation.get_token(), config.reflectionDetailTolerance);
             probes::dumpCandidates(*owner->source, owner->candidateRegions, owner->captures,
                                    owner->cancellation.get_token());
+            owner->receiverAudit = probes::prepareReceiverAudit(*owner->source, owner->captures,
+                                                               owner->cancellation.get_token());
             releaseStorage(owner->candidateRegions);
             owner->captureWork = probes::CaptureWork(owner->captures, owner->cancellation.get_token());
           });
       status(REMIXAPI_BAKE_PREPARING_EXT, "Selecting reflection captures");
+      return;
+    }
+    if (job.receiverAudit) {
+      const auto rays = job.receiverAudit->rays();
+      if (job.receiverReceived == rays.size()) {
+        const auto owner = m_job;
+        job.ticket = m_pipelines->prepare("forward-receiver-report-" + std::to_string(++generation), [owner] {
+          probes::dumpReceiverAudit(*owner->source, owner->captures, *owner->receiverAudit,
+                                   owner->cancellation.get_token());
+          owner->receiverAudit.reset();
+        });
+      } else if (job.receiverNext < rays.size()) {
+        auto &submission = m_submissions[m_slot];
+        if (submission.job) throw std::logic_error("Receiver audit slot reused before its fence");
+        const uint32_t count = job.count(Work::Geometry, config, uint32_t(rays.size() - job.receiverNext), 1);
+        job.transport->recordGeometry(command, m_slot, rays.subspan(job.receiverNext, count));
+        submission.job = m_job;
+        submission.reflectionReceiver = true;
+        submission.first = job.receiverNext;
+        submission.count = count;
+        job.receiverNext += count;
+      }
+      status(REMIXAPI_BAKE_TRACING_EXT, "Checking optional receiver-to-capture visibility");
       return;
     }
     if (job.captureReceived == job.captureWork.rays().size()) {

@@ -487,7 +487,15 @@ spreads receiver selection through the sampled input. The optional candidate rep
 full bounded proposal list (at most 32768 pairs for 8192 samples) as `visibilityPairs`, without
 submitting those rays. Capture indices refer to `visibilityCaptureOrigins` in that report, not GPU
 image layers. Planning uses the automatic captures before authored composition; it does not prove
-visibility, authorize volume growth or guarantee that the nearest four include a usable capture. These
+visibility, authorize volume growth or guarantee that the nearest four include a usable capture.
+`REMIX_DEBUG_PROBE_RECEIVER_VISIBILITY` optionally names a fresh JSON path for hardware execution
+of this bounded proposal set. The bake controller records geometry-only batches through its existing
+transport, retains each audit through submission fences, and publishes visible/blocked/unknown
+segment results on a worker after all readbacks retire. A missing request allocates no audit and
+issues no extra rays. Existing output paths are refused. The report covers automatic captures before
+authored composition; it does not change selection, published lighting, cache identity or influence
+bounds. It adds diagnostic work only during a fresh bake; loading cached lighting bypasses it.
+A segment is sampled evidence only, particularly with alpha coverage, not proof of an empty volume. These
 measurements do not change selection or permit growth through walls.
 Version 2 also exports up to 8192 deterministic, area-weighted `receivers` from the frozen surface
 charts. Positions use host scene units; `sceneScale` converts lengths to metres. Each sample includes

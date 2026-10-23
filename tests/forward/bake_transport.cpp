@@ -10,6 +10,7 @@
 #include "forward/mixed/directional_capture.h"
 #include "forward/half.h"
 #include "forward/probes/receiver_visibility.h"
+#include "forward/probes/receiver_audit.h"
 #include "gpu_fixture.h"
 #include "sun_depth_shaders/embedded.h"
 #include "probe_queries.h"
@@ -1808,6 +1809,13 @@ namespace {
       transport.recordGeometry(fixture.command, 0, points);
       fixture.finish();
       transport.read(0, hits);
+      probes::ReceiverAudit audit({{0, 0, *nearCaptureRay}, {0, 1, *farCaptureRay}, {1, 2, *openCaptureRay}}, .001f);
+      require(audit.observe(2, std::span(hits).subspan(2)) &&
+                  audit.observe(0, std::span(hits).first(2)) && audit.complete() &&
+                  audit.visibility(0) == probes::ReceiverVisibility::Visible &&
+                  audit.visibility(1) == probes::ReceiverVisibility::Blocked &&
+                  audit.visibility(2) == probes::ReceiverVisibility::Visible,
+              "Receiver audit consumes hardware slot readbacks out of order without losing their owners");
       require(probes::receiverVisibility(*nearCaptureRay, hits[0], .001f) == probes::ReceiverVisibility::Visible &&
                   probes::receiverVisibility(*farCaptureRay, hits[1], .001f) == probes::ReceiverVisibility::Blocked,
               "Actual geometry proves a capture before the wall visible and a capture behind it blocked");
