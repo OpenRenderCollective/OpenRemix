@@ -1651,3 +1651,13 @@ coverage fallback. The clustered baked-light tail is correctness work, not
 proof of analytic diffuse evaluation. Separate host-limited views from
 GPU-limited views before selecting optimizations. Static shadow-map update
 counters remain zero after bake in the qualified Trainstation fixed views.
+
+Construct review now includes entity-located secret-room cameras near
+(-3040, -1248, -32), identified by `soundscape_secret` and nearby furniture
+entities and verified nonsolid in the BSP tree. The old (2104, -800, -90)
+camera is corridor follow-through, not confirmed secret-room coverage. Paired
+neutral irradiance and ordinary shading at five installed-build viewpoints
+retain matching bake data and do not reproduce the old coloured edge fringe
+or fixture halo. This is static relay coverage, not interactive acceptance.
+The glossy connector ceiling response needs specular/SSR/cubemap isolation and
+a matched-material reference before changing lightmap packing or quality.
