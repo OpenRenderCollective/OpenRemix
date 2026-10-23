@@ -23,7 +23,7 @@ namespace remix::forward::probes {
     std::vector<Vec3> origins;
     for (const auto &fit : fits.attempts) {
       check();
-      if (fit.variants.size() > 3) throw std::invalid_argument("Local fit variant budget exceeded");
+      if (fit.variants.size() > ReceiverSiteFit::maximumVariants) throw std::invalid_argument("Local fit variant budget exceeded");
       Vec3 origin{};
       for (size_t i = 0; i < fit.variants.size(); ++i) {
         const auto &v = fit.variants[i];

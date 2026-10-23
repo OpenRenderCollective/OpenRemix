@@ -14,7 +14,8 @@ namespace remix::forward::probes {
   std::unique_ptr<ReceiverAudit> prepareReceiverFitCoverage(const scene::BakeScene &source,
       std::span<const Capture> baseline, const ReceiverFitAudit &fits, std::stop_token cancelled = {}) noexcept;
   std::unique_ptr<ReceiverFitAudit> prepareReceiverFits(const scene::BakeScene &source,
-      const ReceiverSiteAudit &audit, const ReceiverSiteChecks &checks, std::stop_token cancelled = {}) noexcept;
+      const ReceiverSiteAudit &audit, const ReceiverSiteChecks &checks, float detailToleranceMetres,
+      std::stop_token cancelled = {}) noexcept;
   std::unique_ptr<ReceiverSiteChecks> prepareReceiverSiteChecks(const scene::BakeScene &source,
       const ReceiverSiteAudit &audit, std::stop_token cancelled = {}) noexcept;
   std::unique_ptr<ReceiverSiteAudit> prepareReceiverSites(const scene::BakeScene &source,

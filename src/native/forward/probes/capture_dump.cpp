@@ -46,10 +46,11 @@ namespace remix::forward::probes {
     }
   }
   std::unique_ptr<ReceiverFitAudit> prepareReceiverFits(const scene::BakeScene &source,
-      const ReceiverSiteAudit &audit, const ReceiverSiteChecks &checks, std::stop_token cancelled) noexcept {
+      const ReceiverSiteAudit &audit, const ReceiverSiteChecks &checks, float detailToleranceMetres,
+      std::stop_token cancelled) noexcept {
     try {
       const auto receivers = sampleReceivers(source, 8192, cancelled);
-      return std::make_unique<ReceiverFitAudit>(fitReceiverSites(source, receivers, audit, checks, 32, cancelled),
+      return std::make_unique<ReceiverFitAudit>(fitReceiverSites(source, receivers, audit, checks, 32, cancelled, detailToleranceMetres),
                                                audit.sites(), cancelled);
     } catch (const std::exception &error) {
       std::fprintf(stderr, "Receiver projection assessment unavailable: %s\n", error.what());
@@ -77,6 +78,8 @@ namespace remix::forward::probes {
           std::filesystem::exists(path))
         throw std::runtime_error("Receiver sites incomplete or report exists");
       const auto fits = assessment ? assessment->finish() : ReceiverFits{};
+      const auto occupancy = source.partition && source.partition->closed
+          ? std::make_unique<RegionQuery>(*source.partition, cancelled) : nullptr;
       std::ofstream output(path);
       output.exceptions(std::ios::failbit | std::ios::badbit);
       output.precision(9);
@@ -115,14 +118,15 @@ namespace remix::forward::probes {
              << ",\"available\":"
              << (fits.available ? "true" : "false") << ",\"supported\":" << fits.supported
              << ",\"partitionRefused\":" << fits.partitionRefused << ",\"duplicates\":" << fits.duplicates
-             << ",\"attempts\":[";
+             << ",\"detailToleranceMetres\":" << fits.detailToleranceMetres << ",\"attempts\":[";
       auto vector = [&](Vec3 value) { output << '[' << value[0] << ',' << value[1] << ',' << value[2] << ']'; };
       for (size_t i = 0; i < fits.attempts.size(); ++i) {
         const auto &fit = fits.attempts[i];
         output << (i ? "," : "") << "{\"site\":" << fit.site << ",\"variants\":[";
         for (size_t j = 0; j < fit.variants.size(); ++j) {
           const auto &variant = fit.variants[j];
-          output << (j ? "," : "") << "{\"minimum\":"; vector(variant.projection.minimum);
+          output << (j ? "," : "") << "{\"detailTolerant\":" << (variant.detailTolerant ? "true" : "false")
+                 << ",\"minimum\":"; vector(variant.projection.minimum);
           output << ",\"maximum\":"; vector(variant.projection.maximum);
           output << ",\"influenceMinimum\":"; vector(variant.influence.minimum);
           output << ",\"influenceMaximum\":"; vector(variant.influence.maximum);
@@ -153,8 +157,10 @@ namespace remix::forward::probes {
             output << "]}";
           } else output << "null";
           output << ",\"refinement\":";
-          const auto refinement = variant.geometry ? refineProjection(*variant.geometry, .001f / source.sceneScale)
-                                                    : std::nullopt;
+          auto refinement = variant.geometry ? refineProjection(*variant.geometry, .001f / source.sceneScale)
+                                             : std::nullopt;
+          const RegionTolerance tolerance{variant.detailTolerant ? fits.detailToleranceMetres / source.sceneScale : 0};
+          if (refinement && (!occupancy || !occupancy->contains(refinement->bounds, tolerance))) refinement.reset();
           if (refinement) {
             auto region = *variant.geometry;
             region.bounds = refinement->bounds;

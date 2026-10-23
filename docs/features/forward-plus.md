@@ -510,8 +510,12 @@ is true; blocked and unknown results remain separate. `connectionBlock` exposes 
 hit for diagnosis, not a camera-visibility classification. Readbacks follow the same frame-fence
 ownership as the preceding passes. These are still sampled candidate locations, not certified empty
 volumes. The optional report also compares at most 32 spread-out supported origins using the strict
-partition fitter, retaining up to three projection variants and independent receiver influence bounds
-per origin. Solid partition origins are refused even when hardware samples passed. `projectionFits`
+partition fitter and the configured bounded-detail fitter, retaining up to six distinct variants
+and independent receiver influence bounds
+per origin. Strict alternatives remain controls; configured-detail alternatives are labelled
+`detailTolerant`, with `detailToleranceMetres` in the report. Zero detail tolerance disables the
+additional policy. Identical origin queries remain shared across both policies. Solid partition
+origins are refused even when hardware samples passed. `projectionFits`
 records whether each influence contains its originating receiver. The diagnostic then runs the normal
 geometry assessment at eight samples per cube-face direction (384 rays per unique origin, at most
 12288 rays). Alternate boxes share those rays. Frame-fenced readbacks retain their own audit, and
@@ -528,6 +532,8 @@ policy requires at least 16 samples, 90% represented face solid angle and at mos
 uncertainty relative to capture-to-plane distance. A shift must exceed its measured uncertainty
 plus the projection margin, retain the capture strictly inside and never expand the original box.
 These are experimental policy thresholds, not guarantees of material or room classification.
+Proposed bounds must pass their original occupancy policy again, including its ignored-volume
+fraction; a smaller detail-tolerant box is not assumed to preserve that fraction automatically.
 Receiver influence is unchanged. Opt-in plane diagnostics retain bounded distance/backface/miss
 samples per unique origin. Completed samples can reassess revised boxes without GPU traversal;
 origin and direction bits must match, including signed zero used by stochastic coverage. Pending

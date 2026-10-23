@@ -1771,6 +1771,14 @@ active/requested temporal states instead of hiding such readiness conflicts.
 
 ### Receiver-supported cubemap fitting follow-up
 
+The optional receiver diagnostic compares strict occupancy with the ordinary renderer's configured
+bounded-detail tolerance at the same supported origins. Strict alternatives remain controls; up to
+six distinct projection/influence alternatives share each origin's geometry rays. Refined proposals
+must revalidate against their own occupancy policy, including the allowed ignored-volume fraction.
+This does not relax published fitting or admit solid origins. Larger tolerant alternatives are not
+automatically better: retain strict controls and compare actual geometry error and receiver coverage
+before choosing either policy.
+
 The optional receiver diagnostic now compares a bounded set of supported local origins
 with the existing strict partition fitter. It records independent projection and influence
 bounds and whether each influence includes its originating surface sample. Sampled

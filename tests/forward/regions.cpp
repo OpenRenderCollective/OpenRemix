@@ -241,6 +241,43 @@ int main(int argc, char **argv) {
           "Detail tolerance never permits a capture origin inside solid geometry");
   auto bevel = partition();
   bevel.nodes[6] = {{1, 0, 1, 5.7f}, {-1, -2}, {0, 0}};
+  auto detailedSource = localSource;
+  detailedSource.partition = std::make_shared<scene::VisibilityPartition>(bevel);
+  const auto detailFits = p::fitReceiverSites(detailedSource, std::span(&localReceiver, 1), admission,
+                                             support, 32, {}, .5f);
+  require(detailFits.attempts.size() == 1 &&
+          detailFits.attempts[0].variants.size() <= p::ReceiverSiteFit::maximumVariants,
+          "Strict and configured-detail alternatives share a bounded local origin");
+  double strictVolume = 0, tolerantVolume = 0;
+  p::RegionQuery detailQuery(bevel);
+  for (const auto &variant : detailFits.attempts[0].variants) {
+    double volume = 1;
+    for (uint32_t axis = 0; axis < 3; ++axis)
+      volume *= variant.projection.maximum[axis] - variant.projection.minimum[axis];
+    if (variant.detailTolerant) {
+      require(detailQuery.contains(variant.projection, {.5f}), "Detail alternatives retain bounded occupancy checks");
+      tolerantVolume = std::max(tolerantVolume, volume);
+    } else {
+      require(p::emptyRegion(bevel, variant.projection), "Strict alternatives retain entirely empty occupancy");
+      strictVolume = std::max(strictVolume, volume);
+    }
+  }
+  require(strictVolume > 0 && tolerantVolume > strictVolume,
+          "Configured detail tolerance recovers room volume around a bevel without replacing the strict controls");
+  p::ReceiverFitAudit detailAudit(detailFits, admission.sites());
+  require(detailAudit.rays().size() == 6 * 8 * 8,
+          "Additional detail-fit alternatives do not multiply hardware geometry directions");
+  std::vector<bake::Result> detailMisses(detailAudit.rays().size());
+  for (auto &value : detailMisses) {
+    value.irradiance[0][3] = 100;
+    value.statistics = {0, 1, 1, 0};
+  }
+  require(detailAudit.observe(0, detailMisses), "Shared detail-comparison geometry completes");
+  auto aliasedDetails = detailAudit.finish();
+  auto &aliases = aliasedDetails.attempts[0].variants;
+  aliases.resize(p::ReceiverSiteFit::maximumVariants, aliases.front());
+  require(p::receiverFitPairs(std::span(&localReceiver, 1), {}, aliasedDetails, .002f).size() == 1,
+          "Full strict/detail alternative capacity still shares one receiver-to-origin segment");
   const auto bevelStrict = p::fitRegion(bevel, room, {0, 0, 0}, .01f);
   const auto bevelTolerant = p::fitRegion(bevel, room, {0, 0, 0}, .01f, {}, tolerance);
   p::RegionQuery bevelQuery(bevel);

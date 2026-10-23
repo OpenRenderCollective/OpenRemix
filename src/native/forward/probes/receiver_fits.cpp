@@ -1,6 +1,7 @@
 #include "forward/probes/receiver_fits.h"
 #include "forward/probes/selection.h"
 #include <set>
+#include <algorithm>
 
 namespace remix::forward::probes {
   ReceiverFitAudit::ReceiverFitAudit(ReceiverFits fits, std::span<const ReceiverSite> sites,
@@ -9,7 +10,7 @@ namespace remix::forward::probes {
       throw std::invalid_argument("Local projection assessment budget exceeded");
     std::vector<FittedRegion> regions;
     for (const auto &fit : m_fits.attempts) {
-      if (fit.site >= sites.size() || fit.variants.size() > 3)
+      if (fit.site >= sites.size() || fit.variants.size() > ReceiverSiteFit::maximumVariants)
         throw std::invalid_argument("Invalid local projection assessment owner");
       const auto &point = sites[fit.site].point.position;
       for (const auto &variant : fit.variants) {
@@ -31,15 +32,17 @@ namespace remix::forward::probes {
   }
   ReceiverFits fitReceiverSites(const scene::BakeScene &source,
       std::span<const ReceiverSample> receivers, const ReceiverSiteAudit &admission,
-      const ReceiverSiteChecks &checks, uint32_t budget, std::stop_token cancelled) {
+      const ReceiverSiteChecks &checks, uint32_t budget, std::stop_token cancelled, float detailToleranceMetres) {
     auto check = [&] {
       if (cancelled.stop_requested()) throw std::runtime_error("Receiver projection fitting superseded");
     };
     check();
     if (!admission.complete() || !checks.complete() || !budget || budget > 32 || receivers.size() > 8192 ||
-        !std::isfinite(source.sceneScale) || source.sceneScale <= 0)
+        !std::isfinite(source.sceneScale) || source.sceneScale <= 0 ||
+        !std::isfinite(detailToleranceMetres) || detailToleranceMetres < 0)
       throw std::invalid_argument("Invalid receiver projection inputs or budget");
     ReceiverFits result;
+    result.detailToleranceMetres = detailToleranceMetres;
     result.available = source.hasBounds && source.partition && source.partition->closed;
     Bounds limit;
     if (result.available) {
@@ -72,14 +75,25 @@ namespace remix::forward::probes {
       const auto &position = receivers[admission.sites()[owner].receiver].position;
       ReceiverSiteFit fit;
       fit.site = owner;
-      for (const auto &box : fitRegionCandidates(*source.partition, limit, sites[index].position,
-                                                .001f / source.sceneScale, cancelled)) {
-        const auto influence = receiverRegion(*source.partition, box, .002f / source.sceneScale,
-                                              cancelled, {}, .5f / source.sceneScale);
-        bool covered = true;
-        for (uint32_t c = 0; c < 3; ++c)
-          covered &= position[c] >= influence.minimum[c] && position[c] <= influence.maximum[c];
-        fit.variants.push_back({box, influence, covered});
+      const uint32_t policies = detailToleranceMetres > 0 ? 2 : 1;
+      for (uint32_t policy = 0; policy < policies; ++policy) {
+        const RegionTolerance tolerance{policy ? detailToleranceMetres / source.sceneScale : 0};
+        for (const auto &box : fitRegionCandidates(*source.partition, limit, sites[index].position,
+                                                  .001f / source.sceneScale, cancelled, tolerance)) {
+          const auto influence = receiverRegion(*source.partition, box, .002f / source.sceneScale,
+                                                cancelled, tolerance, .5f / source.sceneScale);
+          const bool duplicate = std::any_of(fit.variants.begin(), fit.variants.end(), [&](const auto &v) {
+            return v.projection.minimum == box.minimum && v.projection.maximum == box.maximum &&
+                   v.influence.minimum == influence.minimum && v.influence.maximum == influence.maximum;
+          });
+          if (duplicate) continue;
+          bool covered = true;
+          for (uint32_t c = 0; c < 3; ++c)
+            covered &= position[c] >= influence.minimum[c] && position[c] <= influence.maximum[c];
+          ReceiverProjection variant{box, influence, covered};
+          variant.detailTolerant = policy != 0;
+          fit.variants.push_back(std::move(variant));
+        }
       }
       result.attempts.push_back(std::move(fit));
     }

@@ -68,10 +68,10 @@ namespace remix::forward::bake {
         if (!job.receiverFitsPlanned) {
           job.receiverFitsPlanned = true;
           const auto owner = m_job;
-          job.ticket = m_pipelines->prepare("forward-receiver-fit-plan-" + std::to_string(++receiverDiagnosticGeneration), [owner] {
+          job.ticket = m_pipelines->prepare("forward-receiver-fit-plan-" + std::to_string(++receiverDiagnosticGeneration), [owner, detailTolerance = config.reflectionDetailTolerance] {
             if (owner->receiverSiteChecks)
               owner->receiverFits = probes::prepareReceiverFits(*owner->source, *owner->receiverSites,
-                  *owner->receiverSiteChecks, owner->cancellation.get_token());
+                  *owner->receiverSiteChecks, detailTolerance, owner->cancellation.get_token());
           });
           return true;
         }
