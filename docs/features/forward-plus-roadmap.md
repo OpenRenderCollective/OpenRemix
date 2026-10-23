@@ -1672,7 +1672,10 @@ then visibility if necessary, before labeling this an occlusion or atlas bug.
 The connector ceiling is the map-patched `concretefloor028a` at Z=-8. Its
 replacement roughness is exactly the inverse of Source normal alpha, including
 near-zero patches; it is not a uniform fallback roughness. Keep the material
-unchanged pending physical/reference review. The matching accumulated
-pathtraced capture is much darker, so specular/visibility parity remains open.
+unchanged pending broader material review. The earlier dark pathtraced
+reference used the relay's erroneous 16-Source-unit light cutoff. Replay now
+shares Source lighting defaults with the live adapter; the corrected reference
+is lit and retains the ceiling highlight. A cutoff-only control reproduces
+the dark image. This resolves that reference mismatch, not every parity gate.
 Accumulation references must explicitly disable TAA; the relay now reports
 active/requested temporal states instead of hiding such readiness conflicts.
