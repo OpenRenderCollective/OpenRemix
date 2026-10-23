@@ -550,6 +550,13 @@ bounded compiler-style patch/include/replace scalar blocks. It preserves missing
 nonlocal and ambiguous statuses instead of guessing; matched origins identify projection-reference
 entities, not dynamic influence regions. General VMT inheritance, runtime receiver bindings and
 reference-renderer acceptance remain separate work.
+Runtime receiver bindings must carry stable logical capture IDs rather than transient image-layer
+indices: authored edits keep the previous capture set active while replacements prepare, and
+composition can reorder records. Resolve bindings against the capture set actually sampled by the
+frame. Reflection guides must preserve receiver selection from the same covered MSAA sample as
+depth, normal and F0. Keep Source material/face interpretation in the adapter, dynamic influence
+selection separate, and reflection-only edits outside diffuse bake invalidation. Required acceptance
+includes reordered captures, pending edits, map changes, missing bindings and MSAA silhouettes.
 
 Bake input readiness now follows retained brush/overlay/terrain/prop material dependencies rather
 than the entire BSP material inventory. Required unresolved inputs still block publication. The
