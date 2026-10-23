@@ -453,6 +453,14 @@ retained-sample reuse, cancellation and all-or-nothing publication. CPU and hard
 the serial coefficients and encoded fields under reordered dispatches. Keep extending saved-map
 checks of cache restoration, image parity and bake latency beyond Crossfire. Measure bake GPU time
 separately from wall time; normal scene rendering and presentation must not be mislabeled as rays.
+`bm_c1a1b` exposes a remaining scalability failure: complete attributed surface fields exceed the
+encoded storage allowance after substantial tracing/encoding work, then fall back to retained
+coverage. Improve compression, coverage planning or bounded storage policy so complex maps retain
+the fully baked path; merely skipping the attempted capture would preserve the performance problem.
+Keep the existing atomic fallback and cache compatibility while fixing this. Its Black Mesa material
+inputs also require ABGR8888 decoding and texture references with an explicit `.vtf` suffix, now
+handled by the adapter. Successful cache restoration alone does not close lighting-quality or
+steady-state performance acceptance for this map.
 Toggleable/styled components must remain independently controllable instead of joining permanent
 aggregate RGB. Check water, displacement layers and live-GI transitions, then measure Crossfire,
 Construct, c1a0/c1a0d and Steamlab with identical quality and fixed camera positions. Default rollout
