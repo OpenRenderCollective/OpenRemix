@@ -528,8 +528,16 @@ policy requires at least 16 samples, 90% represented face solid angle and at mos
 uncertainty relative to capture-to-plane distance. A shift must exceed its measured uncertainty
 plus the projection margin, retain the capture strictly inside and never expand the original box.
 These are experimental policy thresholds, not guarantees of material or room classification.
-Receiver influence is unchanged. Proposed `refinement` bounds are marked `reassessed:false`;
-they require geometry reassessment and visual qualification and are not published automatically.
+Receiver influence is unchanged. Opt-in plane diagnostics retain bounded distance/backface/miss
+samples per unique origin. Completed samples can reassess revised boxes without GPU traversal;
+origin and direction bits must match, including signed zero used by stochastic coverage. Pending
+readbacks, unobserved origins and ordinary assessments without retained samples cannot be reused.
+The report marks completed `refinement` comparisons as `reassessed:true` and includes their face
+residuals. This reuses the same directions; it is not independent geometry or visual acceptance.
+Absolute relative residuals accompany signed residuals, so opposite errors cannot cancel.
+Both exclude misses and use the existing bounded residual range; compare miss/backface fractions
+alongside them rather than interpreting a zero residual as complete geometry support.
+No refined capture is published automatically.
 These are sampled comparisons, not proof of an empty proxy or
 camera visibility. Geometry-only backface classification follows the same interpolated-normal and
 dielectric-exclusion rule as spherical admission. Hardware triangle facing still controls actual

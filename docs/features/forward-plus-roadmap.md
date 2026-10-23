@@ -1808,9 +1808,15 @@ must remain distinguishable. A percentile alone cannot classify dielectric inter
 
 An optional inward-only refinement proposal now uses named sample-support and relative-uncertainty
 thresholds. It cannot enlarge the validated box or move the origin onto a face, and does not change
-receiver influence. The local report marks proposals as not reassessed. An analytic inner-room test
+receiver influence. The local report reassesses proposals from retained, completed first-hit samples without retracing. An analytic inner-room test
 checks improved projection agreement; broad, unsupported and outward planes cannot authorize shifts.
-Next reassess proposed bounds against captured geometry and compare visual parallax, including terrain
+Use absolute relative residual alongside miss/backface fractions for refinement acceptance. The
+existing agreement score counts nearer geometry as supported, so it is not a symmetric accuracy
+measure and must not alone reject a tighter fit or accept a loose box.
+Fixed views over low-detail reflected terrain are weak parallax acceptance evidence. Use clear
+reflected landmarks and moving receivers/cameras before accepting refined shapes, then repeat
+across maps with frozen lighting and capture/influence identity controls.
+Next compare reassessed bounds and visual parallax, including terrain
 and dielectric interfaces, before automatic publication. Near-hit statistics can expose a floor
 plane well behind actual terrain even when a candidate provides useful receiver coverage. Investigate
 bounded, robust surface-plane fitting with independent receiver influence, keeping capture origins

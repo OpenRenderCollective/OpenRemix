@@ -13,17 +13,24 @@ namespace remix::forward::probes {
     std::span<const bake::Point> rays() const { return m_rays; }
     bool observe(uint32_t first, std::span<const bake::Result> results);
     std::vector<FittedRegion> finish() const;
+    // Reuse completed optional diagnostic samples at identical origins and
+    // directions. No new traversal; unobserved origins are refused.
+    std::vector<FittedRegion> reassess(std::vector<FittedRegion> regions) const;
 
   private:
     struct Statistics {
       double agreement = 0, total = 0, missed = 0, back = 0;
-      double nearer = 0, farther = 0, residual = 0;
+      double nearer = 0, farther = 0, residual = 0, absoluteResidual = 0;
     };
     struct RegionStatistics {
       Statistics total;
       std::array<Statistics, 6> faces;
       std::array<Bounds, 6> hitBounds;
     };
+    // Optional compact first-hit history: at most 160 * 384 samples, no RGB.
+    struct GeometrySample { float distance, back, miss; };
+    std::vector<GeometrySample> m_samples;
+    bool m_reusable = false;
     struct PlaneSample { float coordinate, weight; };
     // Allocated only for explicitly requested plane diagnostics. At most one
     // sample per face-crossing ray and candidate (480 * 384 samples total).

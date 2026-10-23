@@ -136,7 +136,7 @@ namespace remix::forward::probes {
               output << (face ? "," : "") << "{\"solidAngleFraction\":" << a.solidAngleFraction << ",\"supportFraction\":" << a.supportFraction
                      << ",\"nearFraction\":" << a.nearFraction << ",\"farFraction\":" << a.farFraction
                      << ",\"missFraction\":" << a.missFraction << ",\"backfaceFraction\":" << a.backfaceFraction
-                     << ",\"meanRelativeResidual\":" << a.meanRelativeResidual << ",\"hitMinimum\":";
+                     << ",\"meanRelativeResidual\":" << a.meanRelativeResidual << ",\"meanAbsoluteRelativeResidual\":" << a.meanAbsoluteRelativeResidual << ",\"hitMinimum\":";
               if (a.hitBounds.valid) vector(a.hitBounds.minimum);
               else output << "null";
               output << ",\"hitMaximum\":";
@@ -156,10 +156,21 @@ namespace remix::forward::probes {
           const auto refinement = variant.geometry ? refineProjection(*variant.geometry, .001f / source.sceneScale)
                                                     : std::nullopt;
           if (refinement) {
-            output << "{\"reassessed\":false,\"faces\":" << refinement->faces << ",\"minimum\":";
+            auto region = *variant.geometry;
+            region.bounds = refinement->bounds;
+            const auto reassessed = assessment->reassess({region});
+            output << "{\"reassessed\":true,\"faces\":" << refinement->faces << ",\"minimum\":";
             vector(refinement->bounds.minimum);
             output << ",\"maximum\":"; vector(refinement->bounds.maximum);
-            output << '}';
+            output << ",\"geometry\":{\"quality\":" << reassessed[0].quality << ",\"faces\":[";
+            for (uint32_t face = 0; face < 6; ++face) {
+              const auto &g = reassessed[0].faces[face];
+              output << (face ? "," : "") << "{\"solidAngleFraction\":" << g.solidAngleFraction
+                     << ",\"nearFraction\":" << g.nearFraction << ",\"farFraction\":" << g.farFraction
+                     << ",\"missFraction\":" << g.missFraction
+                     << ",\"meanRelativeResidual\":" << g.meanRelativeResidual << ",\"meanAbsoluteRelativeResidual\":" << g.meanAbsoluteRelativeResidual << '}';
+            }
+            output << "]}}";
           } else output << "null";
           output << '}';
         }
@@ -293,6 +304,7 @@ namespace remix::forward::probes {
                  << ",\"missFraction\":" << audit.missFraction
                  << ",\"backfaceFraction\":" << audit.backfaceFraction
                  << ",\"meanRelativeResidual\":" << audit.meanRelativeResidual
+                 << ",\"meanAbsoluteRelativeResidual\":" << audit.meanAbsoluteRelativeResidual
                  << ",\"hitMinimum\":";
           if (audit.hitBounds.valid) vector(audit.hitBounds.minimum);
           else output << "null";

@@ -1,5 +1,6 @@
 #include "forward/probes/evaluation.h"
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -39,6 +40,8 @@ namespace remix::forward::probes {
       m_rays.insert(m_rays.end(), points.begin(), points.end());
     }
     m_seen.resize(m_rays.size());
+    m_reusable = collectPlanes;
+    if (m_reusable) m_samples.resize(m_rays.size());
   }
   bool ProjectionAudit::observe(uint32_t first, std::span<const bake::Result> results) {
     if (first > m_rays.size() || results.size() > m_rays.size() - first)
@@ -55,6 +58,7 @@ namespace remix::forward::probes {
     }
     for (size_t i = 0; i < results.size(); ++i) {
       const size_t index = first + i;
+      if (m_reusable) m_samples[index] = {results[i].irradiance[0][3], results[i].statistics[0], results[i].statistics[1]};
       const auto &direction = m_rays[index].normal;
       const double dominant =
           std::max({std::abs(direction[0]), std::abs(direction[1]), std::abs(direction[2])});
@@ -98,6 +102,7 @@ namespace remix::forward::probes {
             part->farther += weight * (relative > .05);
             // Bound grazing-ray outliers; this diagnostic does not change selection.
             part->residual += weight * std::clamp(relative, -1., 4.);
+            part->absoluteResidual += weight * std::abs(std::clamp(relative, -1., 4.));
           }
         }
       }
@@ -105,6 +110,35 @@ namespace remix::forward::probes {
       ++m_completed;
     }
     return true;
+  }
+  std::vector<FittedRegion> ProjectionAudit::reassess(std::vector<FittedRegion> regions) const {
+    check(m_cancelled);
+    if (!m_reusable || m_completed != m_rays.size())
+      throw std::logic_error("Projection reassessment requires retained completed geometry");
+    ProjectionAudit revised(std::move(regions), m_cancelled, true);
+    std::vector<bake::Result> values(raysPerOrigin);
+    for (size_t i = 0; i < revised.m_origins.size(); ++i) {
+      check(m_cancelled);
+      const auto found = std::find_if(m_origins.begin(), m_origins.end(), [&](const auto &origin) {
+        return origin.position == revised.m_origins[i].position;
+      });
+      if (found == m_origins.end()) throw std::invalid_argument("Projection reassessment has an unobserved origin");
+      const size_t original = size_t(found - m_origins.begin()) * raysPerOrigin;
+      const size_t first = i * raysPerOrigin;
+      for (uint32_t ray = 0; ray < raysPerOrigin; ++ray) {
+        if (std::bit_cast<std::array<uint32_t, 4>>(revised.m_rays[first + ray].position) !=
+                std::bit_cast<std::array<uint32_t, 4>>(m_rays[original + ray].position) ||
+            std::bit_cast<std::array<uint32_t, 4>>(revised.m_rays[first + ray].normal) !=
+                std::bit_cast<std::array<uint32_t, 4>>(m_rays[original + ray].normal))
+          throw std::invalid_argument("Projection reassessment requires bit-identical sampled rays");
+        const auto &sample = m_samples[original + ray];
+        values[ray].irradiance[0][3] = sample.distance;
+        values[ray].statistics = {sample.back, sample.miss, 1, 0};
+      }
+      if (!revised.observe(uint32_t(first), values))
+        throw std::logic_error("Projection reassessment rejected retained geometry");
+    }
+    return revised.finish();
   }
   std::vector<FittedRegion> ProjectionAudit::finish() const {
     check(m_cancelled);
@@ -153,6 +187,7 @@ namespace remix::forward::probes {
         output.backfaceFraction = float(part.back / part.total);
         const double hitWeight = part.total - part.missed;
         output.meanRelativeResidual = hitWeight > 0 ? float(part.residual / hitWeight) : 0;
+        output.meanAbsoluteRelativeResidual = hitWeight > 0 ? float(part.absoluteResidual / hitWeight) : 0;
       }
     }
     return regions;

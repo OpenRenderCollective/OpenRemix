@@ -229,7 +229,8 @@ int main() {
   const auto clutterResult = clutter.finish();
   for (const auto &face : clutterResult.front().faces)
     require(face.supportFraction == 1 && face.nearFraction == 1 && face.farFraction == 0 &&
-                std::abs(face.meanRelativeResidual + .5f) < 1e-6f,
+                std::abs(face.meanRelativeResidual + .5f) < 1e-6f &&
+                std::abs(face.meanAbsoluteRelativeResidual - .5f) < 1e-6f,
             "Nearer props have negative residuals without changing existing agreement policy");
   p::ProjectionAudit shortBox(rectangular);
   for (auto &value : rectangleValues) value.irradiance[0][3] *= 4;
@@ -237,7 +238,8 @@ int main() {
   const auto shortBoxResult = shortBox.finish();
   for (const auto &face : shortBoxResult.front().faces)
     require(face.supportFraction == 0 && face.nearFraction == 0 && face.farFraction == 1 &&
-                std::abs(face.meanRelativeResidual - 1) < 1e-6f,
+                std::abs(face.meanRelativeResidual - 1) < 1e-6f &&
+                std::abs(face.meanAbsoluteRelativeResidual - 1) < 1e-6f,
             "A box stopping short of a wall has positive residuals, distinct from clutter");
   for (const auto &face : rectangleResult.front().faces)
     require(!face.plane, "Normal candidate assessment allocates no plane diagnostics");
@@ -298,6 +300,43 @@ int main() {
   for (const auto &face : revisedResult[0].faces)
     require(face.nearFraction == 0 && face.farFraction == 0,
             "Coherent plane refinement removes the analytic room's original projection mismatch");
+  const auto reusedResult = refinementAudit.reassess({revised});
+  for (uint32_t face = 0; face < 6; ++face) {
+    const auto &fresh = revisedResult[0].faces[face];
+    const auto &reused = reusedResult[0].faces[face];
+    require(fresh.solidAngleFraction == reused.solidAngleFraction && fresh.nearFraction == reused.nearFraction &&
+            fresh.farFraction == reused.farFraction && fresh.missFraction == reused.missFraction &&
+            fresh.meanRelativeResidual == reused.meanRelativeResidual &&
+            fresh.meanAbsoluteRelativeResidual == reused.meanAbsoluteRelativeResidual,
+            "Reused first hits exactly match an independent analytic reassessment of the new box");
+  }
+  bool reuseRefused = false;
+  try { (void)rectangle.reassess({revised}); } catch (const std::logic_error &) { reuseRefused = true; }
+  require(reuseRefused, "Ordinary assessments do not retain reusable per-ray geometry");
+  p::ProjectionAudit pendingReuse(oversized, {}, true);
+  reuseRefused = false;
+  try { (void)pendingReuse.reassess({revised}); } catch (const std::logic_error &) { reuseRefused = true; }
+  require(reuseRefused, "Pending readbacks cannot support reassessment");
+  auto movedOrigin = revised;
+  movedOrigin.site.position[0] = .1f;
+  reuseRefused = false;
+  try { (void)refinementAudit.reassess({movedOrigin}); } catch (const std::invalid_argument &) { reuseRefused = true; }
+  require(reuseRefused, "New origins need fresh geometry rather than borrowing nearby evidence");
+  auto signedOrigin = revised;
+  signedOrigin.site.position[0] = -0.f;
+  reuseRefused = false;
+  try { (void)refinementAudit.reassess({signedOrigin}); } catch (const std::invalid_argument &) { reuseRefused = true; }
+  require(reuseRefused, "Reassessment preserves bit-identical origins used by stochastic alpha coverage");
+  auto shifted = oversized[0];
+  shifted.site.position[0] = .25f;
+  p::ProjectionAudit twoOrigins({oversized[0], shifted}, {}, true);
+  require(twoOrigins.observe(0, geometry(twoOrigins, rectangleRooms)), "Two independent geometry origins complete");
+  const auto reorderedOrigins = twoOrigins.reassess({shifted, oversized[0]});
+  for (const auto &region : reorderedOrigins)
+    require(region.faces[0].plane && region.faces[1].plane &&
+            std::abs(region.faces[0].plane->median - 1) < 1e-6f &&
+            std::abs(region.faces[1].plane->median + 1) < 1e-6f,
+            "Reordered origins retain their own first-hit distances rather than borrowing batch neighbours");
   auto uncertain = refinementInput;
   for (auto &face : uncertain.faces) {
     face.plane->lower -= .5f;
@@ -316,6 +355,16 @@ int main() {
   auto crossedOrigin = refinementInput;
   for (auto &face : crossedOrigin.faces) face.plane = p::ProjectionPlaneAudit{0, 0, 0, 1, 64};
   require(!p::refineProjection(crossedOrigin, .001f), "No proposal may place the capture on its surface");
+  p::ProjectionAudit balancedError(rectangular);
+  auto balancedValues = geometry(balancedError, rectangleRooms);
+  for (size_t i = 0; i < balancedValues.size(); ++i)
+    balancedValues[i].irradiance[0][3] *= i & 1u ? .5f : 1.5f;
+  require(balancedError.observe(0, balancedValues), "Near and far projection errors remain independently measurable");
+  const auto balancedResult = balancedError.finish();
+  for (const auto &face : balancedResult[0].faces)
+    require(std::abs(face.meanRelativeResidual) < 1e-6f &&
+            std::abs(face.meanAbsoluteRelativeResidual - .5f) < 1e-6f,
+            "Opposite projection errors cannot cancel in the absolute residual metric");
   p::ProjectionAudit empty({});
   require(empty.rays().empty() && empty.finish().empty(), "Empty candidate work needs no GPU submission");
   bool bounded = false;

@@ -26,6 +26,9 @@ namespace remix::forward::probes {
     std::span<const bake::Point> rays() const { return m_audit->rays(); }
     bool observe(uint32_t first, std::span<const bake::Result> results) { return m_audit->observe(first, results); }
     ReceiverFits finish() const;
+    std::vector<FittedRegion> reassess(std::vector<FittedRegion> regions) const {
+      return m_audit->reassess(std::move(regions));
+    }
   private:
     ReceiverFits m_fits;
     std::unique_ptr<ProjectionAudit> m_audit;
