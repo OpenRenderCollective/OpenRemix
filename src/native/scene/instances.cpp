@@ -493,6 +493,8 @@ namespace remix {
           draw.compare = d.alphaCompare;
           draw.reference = d.alphaReference;
         }
+        draw.reflectionOnly = (d.categoryFlags & (REMIXAPI_INSTANCE_CATEGORY_BIT_THIRD_PERSON_PLAYER_MODEL |
+                                                  REMIXAPI_INSTANCE_CATEGORY_BIT_THIRD_PERSON_PLAYER_BODY)) != 0;
         if (d.categoryFlags & REMIXAPI_INSTANCE_CATEGORY_BIT_VIEW_MODEL) {
           draw.camera = REMIXAPI_CAMERA_TYPE_VIEW_MODEL;
           // Follows the camera every frame: never part of the static set.

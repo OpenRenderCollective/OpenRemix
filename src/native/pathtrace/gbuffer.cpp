@@ -260,7 +260,7 @@ namespace remix {
         }
         for (size_t i = first; i < last; ++i) {
           const auto &draw = primaryDraw(i);
-          if ((pass && draw.blended) || draw.viewModel != viewModels)
+          if ((pass && draw.blended) || draw.viewModel != viewModels || draw.reflectionOnly)
             continue;
           PrimaryPush push{draw.model,
                            {pass ? 0.f : temporalFrame.jitter[0], pass ? 0.f : temporalFrame.jitter[1]},

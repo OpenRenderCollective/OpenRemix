@@ -1005,6 +1005,10 @@ are prepared on the pipeline worker, and adjacent eligible draws reuse the selec
 restore the default. It is a diagnostic override, not a stored renderer setting. Optional fragment
 statistics distinguish ordinary viewmodel ranges (category 6) and eligible early ranges (category 7).
 
+Shader regeneration accepts `--jobs N` to bound concurrent GLSL compilation and validation.
+Use a modest limit for large optimized path-tracing stages when memory is constrained; validation
+remains enabled and generated stage order is deterministic.
+
 For compiler inspection, start with `REMIX_PIPELINE_EXECUTABLES=1`, then create
 `pipelines.request` in the profile directory to write `pipelines.txt`. On supporting
 Vulkan devices the report includes executable names, subgroup sizes and the driver's

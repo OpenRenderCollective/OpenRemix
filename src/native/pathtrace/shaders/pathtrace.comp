@@ -133,7 +133,7 @@ uint traceFlags() { return (frame.target.z&4u)!=0?gl_RayFlagsCullBackFacingTrian
 // Instance mask for closestGeometry: camera and transparency rays see every
 // instance but view models, which cameraHit looks for on its own first
 // (secondaryHit narrows it).
-const uint cameraMask=0xffu&~viewModelInstanceMask;
+const uint cameraMask=0xffu&~viewModelInstanceMask&~reflectionOnlyInstanceMask;
 uint traceMask=cameraMask;
 // remixapi_InstanceInfoMaskEXT CUT: the camera does not see an instance where
 // its mask group's coverage is set. pixelCut: the coverage at this pixel's
@@ -358,7 +358,7 @@ Hit cameraHit(vec3 origin,vec3 direction) {
 // Bounce rays may ignore blended layers (frame.pathConfig.w; see
 // skipBlendedSecondaryRays). Camera and transparency rays keep every instance.
 Hit secondaryHit(vec3 origin,vec3 direction) {
-  traceMask=secondaryMask();Hit hit=closest(origin,direction,1e30,false);traceMask=cameraMask;return hit;
+  traceMask=bounceMask();Hit hit=closest(origin,direction,1e30,false);traceMask=cameraMask;return hit;
 }
 // First visibility comes from rasterization; secondary rays still query the full scene.
 Hit rasterPrimary(ivec2 pixel, vec3 origin) {
@@ -1229,7 +1229,10 @@ void replaceMirror(ivec2 pixel) {
   if(mirror.t<1e30&&!mirror.blended&&!mirror.decal&&deltaSurface(mirror)) {
     vec3 reflected=reflect(-mirror.wo,mirror.n);
     if(dot(reflected,mirror.ng)>0) {
+      // The mirror's reflection is a bounce: it shows reflection-only instances
+      traceMask=bounceMask();
       Hit hit=closest(offsetRay(mirror.p,mirror.ng),reflected);
+      traceMask=cameraMask;
       if(hit.t<1e30&&!hit.blended&&!deltaSurface(hit)) {
         // A delta lobe reflects exactly the Fresnel term (GGX shadowing -> 1).
         vec3 reflectance=fresnel(materialF0(mirror),max(0,dot(mirror.n,mirror.wo)));

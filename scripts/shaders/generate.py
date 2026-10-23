@@ -286,10 +286,10 @@ def compressed_output(backend, stages, results):
     return header, bytes(blob)
 
 
-def process(backends, check, validate):
+def process(backends, check, validate, jobs=None):
     """Compiles every stage of the backends concurrently, one task per stage."""
     with tempfile.TemporaryDirectory() as temporary, \
-            ThreadPoolExecutor(max_workers=os.cpu_count() or 1) as pool:
+            ThreadPoolExecutor(max_workers=jobs or os.cpu_count() or 1) as pool:
         if validate:
             texts = {b: decompressed_stages(b) if b in OPTIMIZED else
                      (shader_directory(b) / 'embedded.h').read_text() for b in backends}
@@ -332,14 +332,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     # metal translates the other backends' SPIR-V; 'all' leaves it out (it needs macOS and Xcode).
     parser.add_argument('backend', choices=[*BACKENDS, 'nrd', 'fsr31', 'metal', 'all'])
+    parser.add_argument('--jobs', type=int, help='Maximum concurrent GLSL compilation/validation tasks')
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--check', action='store_true', help='Compare generated output without modifying files')
     mode.add_argument('--validate', action='store_true', help='Validate checked-in SPIR-V using only spirv-val')
     args = parser.parse_args()
+    if args.jobs is not None and args.jobs < 1:
+        parser.error('--jobs must be a positive integer')
     selected = [*BACKENDS, 'nrd', 'fsr31'] if args.backend == 'all' else [args.backend]
     glsl = [backend for backend in selected if backend in BACKENDS]
+    if args.jobs is not None and not glsl:
+        parser.error('--jobs requires a GLSL backend')
     if glsl:
-        process(glsl, args.check, args.validate)
+        process(glsl, args.check, args.validate, args.jobs)
     if 'metal' in selected:
         import metal
         metal.process(args.check, args.validate)

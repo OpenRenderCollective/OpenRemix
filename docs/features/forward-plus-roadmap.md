@@ -11,6 +11,19 @@ reports. An implementation or synthetic test alone does not close an integration
 
 ## Continuation status (2026-10-23)
 
+The branch now merges official OpenRemix main through `877df12`, including its Apache-2.0 license
+file and reflection-only third-person player categories. The adapter main was already contained.
+Compatibility-raster conflicts preserve both upstream primary-visibility rejection and Forward+
+ownership, so owned draws are not duplicated by fallback. Path-tracing shaders are regenerated from
+the merged source; bounded regeneration and source/binary checking pass, along with scene decoding,
+retained replay, TLAS masks and the world/viewmodel raster regressions. `generate.py --jobs N` now
+bounds GLSL compilation/validation concurrency for large optimized backends.
+Forward+ reflection-only category integration remains open: test camera/prepass/overlay exclusion,
+shadow exclusion and visibility in live reflection/bounce rays, including cache identity and dynamic
+updates. Its flattened transport acceleration needs an explicit ray-purpose policy; do not merely
+remove those instances from all transport. This merge is not deployed. The verified installed native
+`d9d54c2` / adapter `a499842` package remains unchanged until that integration is qualified.
+
 The viewmodel continuation adds a default early-depth variant only for packed ALWAYS-alpha draws
 with camera backface rejection disabled. Its shader contains no discard instructions; cutouts and
 explicit camera culling retain the ordinary shader. This needs no second geometry pass or new target.

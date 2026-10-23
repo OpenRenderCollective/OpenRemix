@@ -94,7 +94,7 @@ namespace remix {
       request(draw, true, false);
     };
     for (const auto &draw : m_draws)
-      if (draw.rasterVisible && (!tracing || !draw.traced()) &&
+      if (draw.rasterVisible && !draw.reflectionOnly && (!tracing || !draw.traced()) &&
           (!forward || !(owner ? owner(draw) : forward::accepts(draw)))) {
         if (tracing && draw.depthCompare == 2) {
           auto adjusted = draw;

@@ -14,6 +14,15 @@ namespace {
     auto red = material(r, 1, 1, 0, 0);
     auto mesh = quad(r, 2, red);
     auto draw = instance(mesh);
+    for (uint32_t category : {0u, uint32_t(REMIXAPI_INSTANCE_CATEGORY_BIT_THIRD_PERSON_PLAYER_MODEL),
+                                   uint32_t(REMIXAPI_INSTANCE_CATEGORY_BIT_THIRD_PERSON_PLAYER_BODY)}) {
+      auto player = draw;
+      player.categoryFlags = category;
+      r.drawInstance(player);
+      require(r.draws().back().reflectionOnly == (category != 0),
+              "Third-person player categories preserve reflection-only scene metadata");
+      r.finishFrame();
+    }
     for (auto category : {REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_STATIC,
                            REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_DYNAMIC,
                            REMIXAPI_INSTANCE_CATEGORY_BIT_DECAL_SINGLE_OFFSET,

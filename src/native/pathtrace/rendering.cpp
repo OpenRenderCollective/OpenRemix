@@ -661,7 +661,7 @@ namespace remix {
     // off). Bit 8: a traced view model is in the frame (camera rays look for
     // it first; see cameraHit).
     frame.pathConfig[3] = (options.skipBlendedSecondaryRays ? 0xffu & ~uint32_t(trace::blendedInstanceMask) : 0xffu) &
-                          ~uint32_t(trace::viewModelInstanceMask);
+                          ~uint32_t(trace::viewModelInstanceMask) & ~uint32_t(trace::reflectionOnlyInstanceMask);
     if (prepared.viewModel)
       frame.pathConfig[3] |= 0x100u;
     append(&frame, sizeof(frame));

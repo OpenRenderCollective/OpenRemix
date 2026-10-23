@@ -269,6 +269,11 @@ namespace remix {
       // (NativeResources::applyViewModel): traced in front of the scene, seen
       // by no ray but the camera's and those of paths that start on it.
       bool viewModel = false;
+      // THIRD_PERSON_PLAYER_MODEL / _BODY instances (dxvk-remix semantics): the
+      // player's own body in a first-person game. Neither the camera nor the
+      // raster passes see it, nor shadow and light-visibility rays (the eye and
+      // the player's lights are inside it); reflection and bounce rays do.
+      bool reflectionOnly = false;
       bool alphaOverride = false;
       uint32_t compare = 7;
       float reference = 0;

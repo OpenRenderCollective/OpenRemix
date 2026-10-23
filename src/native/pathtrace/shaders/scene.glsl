@@ -93,11 +93,16 @@ layout(set=0,binding=3,std140) uniform Frame {
 } frame;
 // Instance mask bit of view models (pathtrace/tlas_policy.h).
 const uint viewModelInstanceMask=8u;
+// Instance mask bit of reflection-only instances (the player's own body):
+// bounce rays see them, camera, shadow and light-visibility rays do not.
+const uint reflectionOnlyInstanceMask=16u;
 // Set when the camera's primary surface is a view model: the rays of its path
 // see view models too (they shadow themselves); every other ray passes them.
 bool viewModelPath=false;
 // The instance mask of shadow, light-visibility and bounce rays.
 uint secondaryMask(){return (frame.pathConfig.w&0xffu)|(viewModelPath?viewModelInstanceMask:0u);}
+// Bounce (reflection and indirect) rays: the secondary mask plus reflection-only instances.
+uint bounceMask(){return secondaryMask()|reflectionOnlyInstanceMask;}
 layout(set=0,binding=6) uniform sampler2D textures[4096];
 // remixapi_InstanceInfoMaskEXT CUT: the camera does not see a surface where
 // its mask group's coverage is set (state.w bits 16-21: the group). Coverage
