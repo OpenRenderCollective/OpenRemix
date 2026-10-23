@@ -8,6 +8,12 @@ mapped-world cost; it does not establish causality or literal spill memory. Clus
 are emitted in sorted light order, and the stencil cache is shared by both paths. Preserve
 unknown-coverage fallback and directional corrections when prototyping a smaller receiver
 reconstruction; measure its cost before changing defaults. Both diagnostic relay runs pass.
+Two smaller receiver reconstructions are rejected and removed from production: vector validity
+simplification passes GPU reference checks but saves only about 128 bytes; scalar gathered
+lookups pass correctness/image checks yet lose about 2.1-2.2% whole-GPU time in opposite-order
+128-frame hallway/room relay comparisons. Scalar partial-lightmap code reports 161 registers
+versus 128, despite slightly smaller binaries. These are relay checks, not gameplay FPS.
+Keep the original vector reconstruction and its missing-data/directional fallback policy.
 
 A fresh focused Construct off/on/on/off comparison on the deployed `b8c384a` DLL confirms the
 selected-probe batching tradeoff: white-room whole-GPU mean of per-run medians drops from
