@@ -76,6 +76,8 @@ namespace remix {
         << ", \"covered\": " << state.authoredReflections.covered
         << ", \"omitted\": " << state.authoredReflections.omitted
         << ", \"sceneReused\": " << (state.authoredReflections.sceneReused ? "true" : "false") << '}'
+        << ",\n  \"receiverReflections\": {\"boundDraws\": " << state.boundReflectionDraws
+        << ", \"unresolvedDraws\": " << state.unresolvedReflectionDraws << '}'
         << ",\n  \"irradianceGrid\": {\"spacingMetres\": " << state.irradianceGrid.spacingMetres
         << ", \"dimensions\": [" << state.irradianceGrid.dimensions[0] << ", "
         << state.irradianceGrid.dimensions[1] << ", " << state.irradianceGrid.dimensions[2]

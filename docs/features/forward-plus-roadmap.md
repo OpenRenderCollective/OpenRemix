@@ -582,8 +582,10 @@ creation. VMT receiver identities distinguish shared-texture variants; selected 
 metadata, not cache keys. Existing masks, PBR conversion, replacement keys and pins remain in
 those paths. Owned optical, blended and modulated imports are excluded. Accepted-document revision
 tracking avoids per-frame receiver scans. Same-map retained refreshes preserve authored requests;
-actual map teardown clears them. Live GMod execution, actual Construct sidecars, renderer resets,
-late-asset refreshes and paired-package checks remain acceptance gates before default. Runtime
+actual map teardown clears them. Live GMod receiver resolution, identity edits and weapon changes
+now pass functional qualification without diffuse invalidation; original Construct volumes still
+use ordinary selection when capture origins do not match compiled assignments. Visual quality,
+renderer resets, late-asset refreshes and paired-package checks remain gates before default. Runtime
 capability negotiation now requires `GetReflectionBindingVersionEXT()` version 1 or newer; missing
 or older contracts preserve ordinary selection rather than silently emitting ignored nodes. This
 immutable query is available before initialization and does not establish device/capture readiness.

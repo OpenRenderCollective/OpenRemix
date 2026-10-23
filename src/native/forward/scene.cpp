@@ -39,6 +39,7 @@ namespace remix::forward {
       began = now;
     };
     auto &frame = frames[slot];
+    statistics.boundReflectionDraws = statistics.unresolvedReflectionDraws = 0;
     const auto sun = resources.light();
     frame.commands.clear();
     frame.probeVisibility.reset();
@@ -147,10 +148,14 @@ namespace remix::forward {
         waterMaterials.push_back(water::materialData(*draw.material, seconds));
       }
       draws.push_back(materialData(draw, seconds));
-      if (!liquid) {
+      if (!liquid && !staticOnly) {
         const auto binding = resources.materialReflection(draw.reflectionMaterial);
-        if (binding.volumeId)
-          draws.back().maps[0] |= authoredReflections->receiverLayer(binding.sceneId, binding.volumeId) << reflectionLayerShift;
+        if (binding.volumeId) {
+          const auto layer = authoredReflections->receiverLayer(binding.sceneId, binding.volumeId);
+          draws.back().maps[0] |= layer << reflectionLayerShift;
+          if (layer) ++statistics.boundReflectionDraws;
+          else ++statistics.unresolvedReflectionDraws;
+        }
       }
       const auto &state = draws.back().state;
       out.unconditionalCoverage = state[1] == VK_COMPARE_OP_ALWAYS && (state[3] & 16u) == 0;

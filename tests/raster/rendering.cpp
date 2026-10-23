@@ -2436,6 +2436,8 @@ namespace {
                       "Viewmodel receiver binding selects authored radiance outside influence bounds");
               weapon.categoryFlags = 0;
               const auto boundWorld = render(false, false, true, false);
+              require(target.forward->statistics().boundReflectionDraws > 0,
+                      "Reflection diagnostics count resolved receiver draws separately from static shadow commands");
               weapon.mesh = weaponMesh;
               const auto unboundWorld = render(false, false, true, false);
               require(boundWorld[centre] > unboundWorld[centre] + 8,
@@ -2445,6 +2447,9 @@ namespace {
               weapon.mesh = quad(r, 13102, matte(13103, {1, 1, 1}, 1, .04f, &receiverBinding));
               require(render(false, false, true, false)[centre] == unbound[centre],
                       "A binding from another scene uses ordinary selection rather than a stale image layer");
+              require(target.forward->statistics().unresolvedReflectionDraws > 0 &&
+                          target.forward->statistics().boundReflectionDraws == 0,
+                      "Missing-scene receiver diagnostics distinguish assignments from resolved captures");
               weapon.mesh = weaponMesh;
               options.authoredReflectionFallback = true;
               target.forward->updateLighting(options);

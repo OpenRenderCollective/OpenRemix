@@ -2389,6 +2389,9 @@ and SSR precedence. World selection follows the covered depth/normal MSAA sample
 guide alpha; viewmodels sample directly. No extra attachment or diffuse bake input is required.
 Probe diagnostics expose `authoredId` per published layer (string; zero denotes automatic), plus
 `publishedSceneId` and `publishedRevision` separately from a pending request revision.
+`receiverReflections.boundDraws` counts camera receiver commands resolved to published captures;
+`unresolvedDraws` counts assigned commands that fall back because their scene or capture is absent.
+Static-only shadow commands do not participate in these counters or receiver resolution.
 Binding-only redefinitions of the same material hash use a copy-on-write metadata table, independent
 of immutable shading resources and frozen diffuse inputs. Frame publication retains its own table
 revision; cached retained draws carry the original material key and resolve against that frame.
