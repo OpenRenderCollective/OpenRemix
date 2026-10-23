@@ -55,6 +55,37 @@ int main() {
             "Oversized candidate rectangles are refused before traversal or allocation");
   }
 
+  {
+    const std::array<std::array<int32_t, 2>, 4> tiles{{{1, 0}, {-1, 0}, {1, 0}, {0, 1}}};
+    bake::SunDepthLayoutOptions options;
+    options.pageSize = 8; options.tileTexels = 2; options.border = 1;
+    options.maximumPages = 1; options.maximumBytes = 288;
+    const auto layout = bake::planSunDepthLayout(tiles, options);
+    require(layout && layout->tiles.size() == 3 && layout->pages == 1 && layout->depthBytes == 256 &&
+                layout->directoryBytes == 32 && layout->minimum == std::array<int32_t,2>{-1,0} &&
+                layout->dimensions == std::array<uint32_t,2>{3,2},
+            "Sun atlas planning accounts for deduplication, borders, image pages and aligned directory storage");
+    require(layout->directory == std::vector<uint32_t>{1,0,3,0,2,0},
+            "Sun directory preserves negative virtual coordinates and explicit uncovered holes");
+    const auto a = layout->allocation(0), b = layout->allocation(1), c = layout->allocation(2);
+    require(a.page == 0 && a.x == 1 && a.y == 1 && b.x == 5 && b.y == 1 && c.x == 1 && c.y == 5 &&
+                a.width == 2 && a.height == 2,
+            "Physical tile allocation reserves filter borders without crossing page edges");
+    --options.maximumBytes;
+    require(!bake::planSunDepthLayout(tiles, options), "One byte below the complete atlas budget declines all coverage");
+    options.maximumBytes = 1024;
+    const std::array<std::array<int32_t,2>,5> more{{{0,0},{1,0},{2,0},{3,0},{4,0}}};
+    require(!bake::planSunDepthLayout(more, options), "Page-layer limits decline rather than publish a truncated atlas");
+    options.maximumPages = 2;
+    const auto twoPages = bake::planSunDepthLayout(more, options);
+    require(twoPages && twoPages->pages == 2 && twoPages->allocation(4).page == 1,
+            "Full page occupancy advances to the next array page deterministically");
+    options.maximumDirectoryWords = 1;
+    require(!bake::planSunDepthLayout(tiles, options), "Sparse coordinate extents cannot exceed the bounded lookup directory");
+    const auto empty = bake::planSunDepthLayout({}, options);
+    require(empty && !empty->pages && !empty->depthBytes && empty->directory.empty(),
+            "Empty coverage allocates neither an image nor directory");
+  }
   scene::BakeScene source;
   auto surface = std::make_shared<scene::Surface>();
   surface->vertices.resize(4);

@@ -159,7 +159,11 @@ namespace remix::forward::bake {
         for (auto &trial : tiles) trial.include(triangle, cancelled);
       }
     }
-    for (const auto &trial : tiles) result.tiles.push_back(trial.coverage());
+    for (const auto &trial : tiles) {
+      result.tiles.push_back(trial.coverage());
+      const std::vector<std::array<int32_t, 2>> coordinates(trial.coordinates().begin(), trial.coordinates().end());
+      result.depthLayouts.push_back(planSunDepthLayout(coordinates, {}, cancelled));
+    }
     return result;
   }
   void dumpReceiverReport(const scene::BakeScene &source, const lightmap::Layout &layout,
@@ -233,7 +237,16 @@ namespace remix::forward::bake {
           const auto &tile = projection->tiles[i];
           output << (i ? "," : "") << "{\"tileMetres\":" << tile.tileMetres
                  << ",\"haloMetres\":" << tile.haloMetres << ",\"occupied\":" << tile.occupied
-                 << ",\"rectangle\":" << tile.rectangle << '}';
+                 << ",\"rectangle\":" << tile.rectangle;
+          const auto &depth = projection->depthLayouts[i];
+          output << ",\"depthLayoutFits\":" << (depth ? "true" : "false");
+          if (depth) output << ",\"depthPages\":" << depth->pages << ",\"depthBytes\":" << depth->depthBytes
+                            << ",\"directoryBytes\":" << depth->directoryBytes
+                            << ",\"pageSize\":" << depth->options.pageSize
+                            << ",\"tileTexels\":" << depth->options.tileTexels
+                            << ",\"borderTexels\":" << depth->options.border
+                            << ",\"maximumBytes\":" << depth->options.maximumBytes;
+          output << '}';
         }
         output << "]}";
       }

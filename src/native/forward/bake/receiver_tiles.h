@@ -19,6 +19,7 @@ namespace remix::forward::bake {
     explicit ReceiverTiles(ReceiverTileOptions options);
     void include(const std::array<Vec3, 3> &triangle, std::stop_token cancelled = {});
     ReceiverTileCoverage coverage() const;
+    const std::set<std::array<int32_t, 2>> &coordinates() const { return m_tiles; }
   private:
     ReceiverTileOptions m_options;
     uint64_t m_candidates = 0;
