@@ -132,6 +132,9 @@ namespace remix::forward::bake {
     bool receiverChecksPlanned = false, receiverFitsPlanned = false;
     std::unique_ptr<probes::ReceiverFitAudit> receiverFits;
     uint32_t receiverFitNext = 0, receiverFitReceived = 0;
+    bool receiverCoveragePlanned = false;
+    std::unique_ptr<probes::ReceiverAudit> receiverFitCoverage;
+    uint32_t receiverCoverageNext = 0, receiverCoverageReceived = 0;
     probes::CaptureWork captureWork;
     uint64_t captureInputHash = 0;
     probes::Data specular;

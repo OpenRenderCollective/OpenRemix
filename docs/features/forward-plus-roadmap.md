@@ -1790,3 +1790,11 @@ admission's normal-based solid-side rule; material culling still uses hardware f
 Shader regeneration/validation and hardware transport checks cover this contract. Compare the
 resulting local-fit statistics before selection or publication; sampled evidence remains insufficient
 to discard receivers or loosen occupancy.
+
+Local-fit coverage now has an opt-in bounded geometry audit rather than treating influence-box
+containment as usable coverage. Receiver/origin segments are shared across alternate shapes and
+only target uncovered automatic-baseline receivers. Reports retain blocked and unknown outcomes
+and local attempt ownership. Next compare the final authored-plus-automatic baseline, verified
+sampled gains, losses from displaced captures and projection error within the 64-layer budget.
+Do not select large underwater boxes solely for their geometric area: nearer terrain and floors
+can invalidate their claimed room coverage even when partition occupancy passes.

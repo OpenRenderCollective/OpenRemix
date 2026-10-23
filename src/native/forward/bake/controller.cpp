@@ -422,6 +422,11 @@ namespace remix::forward::bake {
               job.failed = true;
               status(REMIXAPI_BAKE_FAILED_EXT, "Invalid attributed irradiance readback");
             }
+          } else if (submission.receiverFitCoverage) {
+            if (!job.receiverFitCoverage || !job.receiverFitCoverage->observe(submission.first, results)) {
+              job.failed = true;
+              status(REMIXAPI_BAKE_FAILED_EXT, "Invalid local coverage readback ownership");
+            }
           } else if (submission.receiverFit) {
             if (!job.receiverFits || !job.receiverFits->observe(submission.first, results)) {
               job.failed = true;
@@ -493,6 +498,7 @@ namespace remix::forward::bake {
                                   ? sizeof(VisibilityResult) : sizeof(Result));
         if (!submission.styled && !submission.reference && !submission.probeDepth) (submission.sunDepth ? job.sunDepthReceived
          : submission.radiance ? job.captureReceived
+         : submission.receiverFitCoverage ? job.receiverCoverageReceived
          : submission.receiverFit ? job.receiverFitReceived
          : submission.receiverSiteCheck ? job.receiverCheckReceived
          : submission.receiverSite ? job.receiverSiteReceived
@@ -516,7 +522,7 @@ namespace remix::forward::bake {
           if (submission.overflowVisibility)
             job.overflowTiming.gpuMs += *elapsed;
           const auto work = submission.probeDepth                                    ? Work::ProbeDepth
-                            : submission.reflectionGeometry || submission.reflectionReceiver || submission.receiverSiteCheck || submission.receiverFit || submission.sunDepth ? Work::Geometry
+                            : submission.reflectionGeometry || submission.reflectionReceiver || submission.receiverSiteCheck || submission.receiverFit || submission.receiverFitCoverage || submission.sunDepth ? Work::Geometry
                             : submission.visibility || submission.direct || submission.directionalField ||
                               submission.overflowVisibility || submission.probeLocal     ? Work::Visibility
                             : submission.sun || submission.probeSun                  ? Work::Sun

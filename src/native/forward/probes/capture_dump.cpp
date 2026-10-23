@@ -6,6 +6,7 @@
 #include "forward/probes/receiver_sites.h"
 #include "forward/probes/receiver_site_checks.h"
 #include "forward/probes/receiver_fits.h"
+#include "forward/probes/receiver_fit_pairs.h"
 #include "scene/bake_scene.h"
 #include <algorithm>
 #include <bit>
@@ -54,13 +55,25 @@ namespace remix::forward::probes {
       return {};
     }
   }
+  std::unique_ptr<ReceiverAudit> prepareReceiverFitCoverage(const scene::BakeScene &source,
+      std::span<const Capture> baseline, const ReceiverFitAudit &fits, std::stop_token cancelled) noexcept {
+    try {
+      const auto receivers = sampleReceivers(source, 8192, cancelled);
+      return std::make_unique<ReceiverAudit>(receiverFitPairs(receivers, baseline, fits.finish(),
+          .002f / source.sceneScale, 32768, cancelled), .001f / source.sceneScale);
+    } catch (const std::exception &error) {
+      std::fprintf(stderr, "Local receiver coverage unavailable: %s\n", error.what());
+      return {};
+    }
+  }
   void dumpReceiverSites(const scene::BakeScene &source, const ReceiverSiteAudit &audit,
-      const ReceiverSiteChecks *checks, const ReceiverFitAudit *assessment, std::stop_token cancelled) noexcept {
+      const ReceiverSiteChecks *checks, const ReceiverFitAudit *assessment, const ReceiverAudit *coverage, std::stop_token cancelled) noexcept {
     const char *prefix = std::getenv("REMIX_DEBUG_PROBE_RECEIVER_VISIBILITY");
     if (!prefix || !*prefix) return;
     try {
       const auto path = std::string(prefix) + ".sites.json";
-      if (!audit.complete() || (checks && !checks->complete()) || std::filesystem::exists(path))
+      if (!audit.complete() || (checks && !checks->complete()) || (coverage && !coverage->complete()) ||
+          std::filesystem::exists(path))
         throw std::runtime_error("Receiver sites incomplete or report exists");
       const auto fits = assessment ? assessment->finish() : ReceiverFits{};
       std::ofstream output(path);
@@ -135,6 +148,17 @@ namespace remix::forward::probes {
           output << '}';
         }
         output << "]}";
+      }
+      output << "]},\"localCoverage\":{\"tested\":" << (coverage ? "true" : "false")
+             << ",\"baseline\":\"automatic-before-authored-composition\",\"pairs\":[";
+      if (coverage) for (size_t i = 0; i < coverage->pairs().size(); ++i) {
+        if (cancelled.stop_requested()) throw std::runtime_error("Local coverage report superseded");
+        const auto &pair = coverage->pairs()[i];
+        output << (i ? "," : "") << "{\"receiver\":" << pair.receiver << ",\"attempt\":" << pair.capture
+               << ",\"segmentDistance\":" << pair.ray.distance << ",\"hitDistance\":";
+        if (std::isfinite(coverage->distance(i))) output << coverage->distance(i);
+        else output << "null";
+        output << ",\"visibility\":\"" << visibility(coverage->visibility()[i]) << "\"}";
       }
       output << "]}}\n";
     } catch (const std::exception &error) {

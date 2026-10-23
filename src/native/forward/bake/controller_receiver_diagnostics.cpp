@@ -91,10 +91,37 @@ namespace remix::forward::bake {
           status(REMIXAPI_BAKE_TRACING_EXT, "Assessing optional local reflection projections");
           return true;
         }
+        if (!job.receiverCoveragePlanned) {
+          job.receiverCoveragePlanned = true;
+          const auto owner = m_job;
+          job.ticket = m_pipelines->prepare("forward-local-coverage-plan-" + std::to_string(++receiverDiagnosticGeneration), [owner] {
+            if (owner->receiverFits)
+              owner->receiverFitCoverage = probes::prepareReceiverFitCoverage(*owner->source, owner->captures,
+                  *owner->receiverFits, owner->cancellation.get_token());
+          });
+          return true;
+        }
+        if (job.receiverFitCoverage && job.receiverCoverageReceived < job.receiverFitCoverage->rays().size()) {
+          const auto rays = job.receiverFitCoverage->rays();
+          if (job.receiverCoverageNext < rays.size()) {
+            auto &submission = m_submissions[m_slot];
+            if (submission.job) throw std::logic_error("Local coverage slot reused before its fence");
+            const uint32_t count = job.count(Work::Geometry, config, uint32_t(rays.size() - job.receiverCoverageNext), 1);
+            job.transport->recordGeometry(command, m_slot, rays.subspan(job.receiverCoverageNext, count));
+            submission.job = m_job;
+            submission.receiverFitCoverage = true;
+            submission.first = job.receiverCoverageNext;
+            submission.count = count;
+            job.receiverCoverageNext += count;
+          }
+          status(REMIXAPI_BAKE_TRACING_EXT, "Checking optional local reflection receiver coverage");
+          return true;
+        }
         const auto owner = m_job;
         job.ticket = m_pipelines->prepare("forward-receiver-sites-" + std::to_string(++receiverDiagnosticGeneration), [owner] {
-          probes::dumpReceiverSites(*owner->source, *owner->receiverSites, owner->receiverSiteChecks.get(), owner->receiverFits.get(),
+          probes::dumpReceiverSites(*owner->source, *owner->receiverSites, owner->receiverSiteChecks.get(), owner->receiverFits.get(), owner->receiverFitCoverage.get(),
                                    owner->cancellation.get_token());
+          owner->receiverFitCoverage.reset();
           owner->receiverFits.reset();
           owner->receiverSiteChecks.reset();
           owner->receiverSites.reset();

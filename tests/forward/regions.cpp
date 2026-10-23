@@ -1,5 +1,6 @@
 #include "forward/probes/regions.h"
 #include "forward/probes/receiver_fits.h"
+#include "forward/probes/receiver_fit_pairs.h"
 #include "partition_fixture.h"
 #include "forward/probes/data.h"
 #include "forward/probes/selection.h"
@@ -159,6 +160,30 @@ int main(int argc, char **argv) {
   const auto nearFits = nearAudit.finish();
   for (const auto &face : nearFits.attempts[0].variants[0].geometry->faces)
     require(face.nearFraction > .99f, "Near hits remain distinguishable from a matching room shell");
+  const auto localPairs = p::receiverFitPairs(std::span(&localReceiver, 1), {}, assessed, .002f);
+  require(localPairs.size() == 1 && localPairs[0].receiver == 0 && localPairs[0].capture == 0,
+          "Alternate local boxes share one receiver-to-origin coverage segment");
+  auto backwards = localReceiver;
+  backwards.normal = {0, 0, -1};
+  require(p::receiverFitPairs(std::span(&backwards, 1), {}, assessed, .002f).empty(),
+          "An influence box cannot authorize a back-facing receiver segment");
+  p::Capture baseline;
+  baseline.bounds = box({-1, -1, -1}, {1, 1, 1});
+  baseline.influence = box({-1, -1, -2}, {1, 1, 2});
+  baseline.position = {-1, 0, 0};
+  baseline.worldToLocal = {{{0, -1, 0, 0}, {1, 0, 0, 1}, {0, 0, 1, 0}}};
+  baseline.resolution = 8;
+  require(p::receiverFitPairs(std::span(&localReceiver, 1), std::span(&baseline, 1), assessed, .002f).empty(),
+          "Existing rotated influence coverage is excluded even outside its projection inset");
+  std::vector<p::ReceiverSample> cohort(25, localReceiver);
+  const auto limited = p::receiverFitPairs(cohort, {}, assessed, .002f, 3);
+  require(limited.size() == 3 && limited[0].receiver < 8 && limited[1].receiver >= 8 &&
+          limited[1].receiver < 17 && limited[2].receiver >= 17,
+          "A bounded local coverage cohort spreads across receiver order instead of keeping a prefix");
+  bool unassessedRefused = false;
+  try { (void)p::receiverFitPairs(std::span(&localReceiver, 1), {}, localFits, .002f); }
+  catch (const std::invalid_argument &) { unassessedRefused = true; }
+  require(unassessedRefused, "Local coverage never skips completed projection assessment");
   localSource.partition.reset();
   require(!p::fitReceiverSites(localSource, std::span(&localReceiver, 1), admission, support).available,
           "Missing occupancy partition does not permit a projection fallback");

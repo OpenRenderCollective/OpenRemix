@@ -521,8 +521,16 @@ and finite first-hit envelopes. These are sampled comparisons, not proof of an e
 camera visibility. Geometry-only backface classification follows the same interpolated-normal and
 dielectric-exclusion rule as spherical admission. Hardware triangle facing still controls actual
 material culling; it is not substituted for the solid-side diagnostic on double-sided meshes.
-Marginal coverage comparison and bounded capture-slot allocation remain required
-before publication. Neither the sites nor their
+A further optional pass checks receivers outside the current automatic capture influences and
+inside at least one assessed local influence. Each receiver/local-origin pair is traced once across
+alternate boxes. The 8192-receiver, 32-origin scan retains only owner indices for its candidate pool;
+at most 32768 selected geometry rays are allocated, spread across receiver order when capped.
+Existing rotated influence bounds are respected; invalid and back-facing segments are not queried.
+`localCoverage.pairs` records receiver indices, local attempt indices and visible/blocked/unknown
+results. Its baseline is automatic captures before authored composition, not the final published set.
+Unqueried receivers have no visibility evidence. Readbacks retire through the existing frame fences;
+no per-fragment visibility rays or radiance captures are added. Bounded capture-slot selection and
+visible room-transition acceptance remain required before publication. Neither the sites nor their
 radiance are inserted into the published reflection set. These
 measurements do not change selection or permit growth through walls.
 Version 2 also exports up to 8192 deterministic, area-weighted `receivers` from the frozen surface
