@@ -1794,7 +1794,17 @@ to discard receivers or loosen occupancy.
 Local-fit coverage now has an opt-in bounded geometry audit rather than treating influence-box
 containment as usable coverage. Receiver/origin segments are shared across alternate shapes and
 only target uncovered automatic-baseline receivers. Reports retain blocked and unknown outcomes
-and local attempt ownership. Next compare the final authored-plus-automatic baseline, verified
-sampled gains, losses from displaced captures and projection error within the 64-layer budget.
-Do not select large underwater boxes solely for their geometric area: nearer terrain and floors
-can invalidate their claimed room coverage even when partition occupancy passes.
+and local attempt ownership. Marginal analysis must use the final authored-plus-automatic baseline,
+visibility-supported sampled gains and losses from displaced captures within the 64-layer budget.
+Visual qualification uses isolated authored fixtures, SSR-off isolation, SSR-on integration and an
+existing authored-room control. Preserve original volume identities and geometry when checking that
+free slots can be used without displacing the baseline. Authored-fixture priorities do not implement
+or qualify a production automatic-selection policy.
+
+Next refine projection accuracy before automatic publication. Near-hit statistics can expose a floor
+plane well behind actual terrain even when a candidate provides useful receiver coverage. Investigate
+bounded, robust surface-plane fitting with independent receiver influence, keeping capture origins
+inside the projection and preserving partition occupancy. Do not move faces to whole first-hit AABB
+envelopes or discard near hits as clutter without evidence. Then check moving receivers, overlap
+transitions, leakage and renderer cost across maps. Large underwater boxes must not win solely for
+geometric area or sampled visibility; neither establishes parallax accuracy.
