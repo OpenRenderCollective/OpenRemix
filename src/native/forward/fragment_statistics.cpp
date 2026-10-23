@@ -17,11 +17,14 @@ namespace remix::forward {
       return;
     }
     // Append allows target recreation without losing earlier frames.
-    std::fprintf(m_output, "frame,bake_hash,width,height,msaa,category,fragment_invocations,passed_samples,available,omitted_ranges\n");
+    std::fprintf(m_output, "frame,bake_hash,width,height,msaa,category,fragment_invocations,passed_samples,"
+                           "available,omitted_ranges,input_primitives,vertex_invocations\n");
     for (auto &frame : m_frames) {
       const VkQueryPoolCreateInfo fragments{.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
           .queryType = VK_QUERY_TYPE_PIPELINE_STATISTICS, .queryCount = capacity,
-          .pipelineStatistics = VK_QUERY_PIPELINE_STATISTIC_FRAGMENT_SHADER_INVOCATIONS_BIT};
+          .pipelineStatistics = VK_QUERY_PIPELINE_STATISTIC_INPUT_ASSEMBLY_PRIMITIVES_BIT |
+                                VK_QUERY_PIPELINE_STATISTIC_VERTEX_SHADER_INVOCATIONS_BIT |
+                                VK_QUERY_PIPELINE_STATISTIC_FRAGMENT_SHADER_INVOCATIONS_BIT};
       const VkQueryPoolCreateInfo samples{.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
           .queryType = VK_QUERY_TYPE_OCCLUSION, .queryCount = capacity};
       // Diagnostic allocation failure must not prevent ordinary rendering.
@@ -48,20 +51,25 @@ namespace remix::forward {
     auto &frame = m_frames.at(slot);
     if (!frame.used) return;
     struct Result { uint64_t value = 0, available = 0; };
-    std::array<Result, capacity> fragments{}, samples{};
+    // Vulkan returns counters in ascending statistic-bit order, then availability.
+    struct PipelineResult { uint64_t primitives = 0, vertices = 0, fragments = 0, available = 0; };
+    std::array<PipelineResult, capacity> fragments{};
+    std::array<Result, capacity> samples{};
     const auto flags = VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT;
     const auto a = vkGetQueryPoolResults(m_device, frame.fragments, 0, frame.used,
-        sizeof(Result) * frame.used, fragments.data(), sizeof(Result), flags);
+        sizeof(PipelineResult) * frame.used, fragments.data(), sizeof(PipelineResult), flags);
     const auto b = vkGetQueryPoolResults(m_device, frame.samples, 0, frame.used,
         sizeof(Result) * frame.used, samples.data(), sizeof(Result), flags);
     // No WAIT_BIT: instrumentation never adds a GPU completion wait.
     for (uint32_t i = 0; i < frame.used; ++i) {
       const bool ready = a == VK_SUCCESS && b == VK_SUCCESS && fragments[i].available && samples[i].available;
-      std::fprintf(m_output, "%llu,%llu,%u,%u,%u,%u,%llu,%llu,%u,%u\n",
+      std::fprintf(m_output, "%llu,%llu,%u,%u,%u,%u,%llu,%llu,%u,%u,%llu,%llu\n",
           static_cast<unsigned long long>(frame.serial), static_cast<unsigned long long>(frame.bakeHash),
           frame.extent.width, frame.extent.height, frame.sampleCount, frame.categories[i],
-          static_cast<unsigned long long>(ready ? fragments[i].value : 0),
-          static_cast<unsigned long long>(ready ? samples[i].value : 0), unsigned(ready), frame.omitted);
+          static_cast<unsigned long long>(ready ? fragments[i].fragments : 0),
+          static_cast<unsigned long long>(ready ? samples[i].value : 0), unsigned(ready), frame.omitted,
+          static_cast<unsigned long long>(ready ? fragments[i].primitives : 0),
+          static_cast<unsigned long long>(ready ? fragments[i].vertices : 0));
     }
     std::fflush(m_output);
     frame.used = 0;
