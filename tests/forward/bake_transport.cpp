@@ -9,6 +9,7 @@
 #include "forward/mixed/overflow.h"
 #include "forward/mixed/directional_capture.h"
 #include "forward/half.h"
+#include "forward/probes/receiver_visibility.h"
 #include "gpu_fixture.h"
 #include "sun_depth_shaders/embedded.h"
 #include "probe_queries.h"
@@ -1792,6 +1793,30 @@ namespace {
     }
     require(transport.memoryBytes() == geometryBytes,
             "Geometry-only candidate queries reuse the prepared transport buffers and acceleration structure");
+    {
+      probes::ReceiverSample receiver;
+      receiver.normal = {0, 0, 1};
+      const auto nearCaptureRay = probes::receiverRay(receiver, {0, 0, .5f}, .002f);
+      const auto farCaptureRay = probes::receiverRay(receiver, {0, 0, 2}, .002f);
+      receiver.position = {3, 0, 0};
+      const auto openCaptureRay = probes::receiverRay(receiver, {3, 0, 2}, .002f);
+      require(nearCaptureRay && farCaptureRay && openCaptureRay,
+              "Receiver visibility fixture produces valid offset segments");
+      const std::array<bake::Point, 3> points{nearCaptureRay->point, farCaptureRay->point, openCaptureRay->point};
+      std::array<bake::Result, 3> hits;
+      fixture.begin();
+      transport.recordGeometry(fixture.command, 0, points);
+      fixture.finish();
+      transport.read(0, hits);
+      require(probes::receiverVisibility(*nearCaptureRay, hits[0], .001f) == probes::ReceiverVisibility::Visible &&
+                  probes::receiverVisibility(*farCaptureRay, hits[1], .001f) == probes::ReceiverVisibility::Blocked,
+              "Actual geometry proves a capture before the wall visible and a capture behind it blocked");
+      require(hits[2].statistics[1] == 1 &&
+                  probes::receiverVisibility(*openCaptureRay, hits[2], .001f) == probes::ReceiverVisibility::Visible,
+              "An unobstructed hardware miss proves visibility only after reaching beyond the capture");
+      require(transport.memoryBytes() == geometryBytes,
+              "Receiver segment queries reuse existing transport capacity and scene acceleration");
+    }
     {
       bake::Point probe{};
       probe.normal = {1, 0, 0, 0}; // Depth capture must not apply a surface-normal origin bias.

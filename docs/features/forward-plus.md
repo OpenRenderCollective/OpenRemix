@@ -474,7 +474,13 @@ are normalized by proxy exit distance, clamped to [-1,4] per hit, and averaged o
 without hits report zero. Optional `hitMinimum` and `hitMaximum` fields contain the world-space
 envelope of finite first hits in host scene units; both are null when the face has no hits. They
 reuse the existing geometry readbacks, including shared-origin queries, and expose actual surfaces
-beyond BSP-derived proxy faces. A sampled hit envelope is not a certified empty box. These
+beyond BSP-derived proxy faces. A sampled hit envelope is not a certified empty box.
+`probes/receiver_visibility.h` constructs host-unit surface-to-capture segments for the existing
+geometry transport, applying the geometric-normal offset exactly once. Interpretation distinguishes
+visible, blocked and unknown results: a short range-capped miss, incomplete metadata or an ambiguous
+endpoint never proves visibility. Backface intersections still block the segment. The caller must
+bound candidate pairs and retain GPU readbacks through their frame fences. This prototype is not
+yet connected to automatic influence growth or receiver selection. These
 measurements do not change selection or permit growth through walls.
 Version 2 also exports up to 8192 deterministic, area-weighted `receivers` from the frozen surface
 charts. Positions use host scene units; `sceneScale` converts lengths to metres. Each sample includes
