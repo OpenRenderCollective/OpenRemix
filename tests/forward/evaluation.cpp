@@ -1,4 +1,5 @@
 #include "forward/probes/evaluation.h"
+#include "forward/probes/refinement.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -277,6 +278,44 @@ int main() {
   require(!unavailableResult[0].faces[0].plane && !unavailableResult[0].faces[1].plane &&
           unavailableResult[0].faces[2].plane,
           "Missing or back-facing geometry cannot supply a solid front-surface plane");
+  const std::vector<p::FittedRegion> oversized = {{box({-2,-2,-2},{2,2,2}), {{0,0,0},1,3}}};
+  p::ProjectionAudit refinementAudit(oversized, {}, true);
+  require(refinementAudit.observe(0, geometry(refinementAudit, rectangleRooms)),
+          "Captured inner room supports an oversized projection comparison");
+  const auto refinementInput = refinementAudit.finish()[0];
+  const auto proposal = p::refineProjection(refinementInput, .001f);
+  require(proposal && proposal->faces == 63, "Consistent interior planes propose six inward face shifts");
+  for (uint32_t axis = 0; axis < 3; ++axis)
+    require(proposal->bounds.minimum[axis] > oversized[0].bounds.minimum[axis] &&
+            proposal->bounds.maximum[axis] < oversized[0].bounds.maximum[axis] &&
+            proposal->bounds.minimum[axis] < 0 && proposal->bounds.maximum[axis] > 0,
+            "Projection refinement contracts the box while preserving an interior capture");
+  auto revised = oversized[0];
+  revised.bounds = proposal->bounds;
+  p::ProjectionAudit reassessment({revised});
+  require(reassessment.observe(0, geometry(reassessment, rectangleRooms)), "Refined proposal remains independently assessable");
+  const auto revisedResult = reassessment.finish();
+  for (const auto &face : revisedResult[0].faces)
+    require(face.nearFraction == 0 && face.farFraction == 0,
+            "Coherent plane refinement removes the analytic room's original projection mismatch");
+  auto uncertain = refinementInput;
+  for (auto &face : uncertain.faces) {
+    face.plane->lower -= .5f;
+    face.plane->upper += .5f;
+  }
+  require(!p::refineProjection(uncertain, .001f), "Broad plane uncertainty cannot authorize contraction");
+  auto outward = refinementInput;
+  for (uint32_t face = 0; face < 6; ++face) {
+    const float coordinate = face & 1u ? -3.f : 3.f;
+    outward.faces[face].plane = p::ProjectionPlaneAudit{coordinate, coordinate, coordinate, 1, 64};
+  }
+  require(!p::refineProjection(outward, .001f), "Measured planes beyond the proxy cannot grow it through walls");
+  auto unsupported = refinementInput;
+  for (auto &face : unsupported.faces) face.plane->sampleFraction = .5f;
+  require(!p::refineProjection(unsupported, .001f), "A minority of usable hits cannot move a projection face");
+  auto crossedOrigin = refinementInput;
+  for (auto &face : crossedOrigin.faces) face.plane = p::ProjectionPlaneAudit{0, 0, 0, 1, 64};
+  require(!p::refineProjection(crossedOrigin, .001f), "No proposal may place the capture on its surface");
   p::ProjectionAudit empty({});
   require(empty.rays().empty() && empty.finish().empty(), "Empty candidate work needs no GPU submission");
   bool bounded = false;

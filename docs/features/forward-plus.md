@@ -523,6 +523,13 @@ solid angle. Misses, backface flags and nonfinite coordinates cannot supply perc
 This storage is opt-in; ordinary candidate assessment retains its existing query and selection path.
 A narrow distribution is evidence of a consistent sampled coordinate, not a certified wall:
 geometry flags do not identify material class, and dielectric interfaces may participate.
+The local report can propose inward-only face refinement from these percentiles. The diagnostic
+policy requires at least 16 samples, 90% represented face solid angle and at most 20% coordinate
+uncertainty relative to capture-to-plane distance. A shift must exceed its measured uncertainty
+plus the projection margin, retain the capture strictly inside and never expand the original box.
+These are experimental policy thresholds, not guarantees of material or room classification.
+Receiver influence is unchanged. Proposed `refinement` bounds are marked `reassessed:false`;
+they require geometry reassessment and visual qualification and are not published automatically.
 These are sampled comparisons, not proof of an empty proxy or
 camera visibility. Geometry-only backface classification follows the same interpolated-normal and
 dielectric-exclusion rule as spherical admission. Hardware triangle facing still controls actual

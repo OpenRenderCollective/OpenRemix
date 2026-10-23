@@ -1806,7 +1806,12 @@ from the existing geometry rays. Compare the 10th-to-90th spread and median agai
 proxy face before considering a plane shift. Sparse near-hit clutter and broad terrain distributions
 must remain distinguishable. A percentile alone cannot classify dielectric interfaces or certify a wall.
 
-Next refine projection accuracy before automatic publication. Near-hit statistics can expose a floor
+An optional inward-only refinement proposal now uses named sample-support and relative-uncertainty
+thresholds. It cannot enlarge the validated box or move the origin onto a face, and does not change
+receiver influence. The local report marks proposals as not reassessed. An analytic inner-room test
+checks improved projection agreement; broad, unsupported and outward planes cannot authorize shifts.
+Next reassess proposed bounds against captured geometry and compare visual parallax, including terrain
+and dielectric interfaces, before automatic publication. Near-hit statistics can expose a floor
 plane well behind actual terrain even when a candidate provides useful receiver coverage. Investigate
 bounded, robust surface-plane fitting with independent receiver influence, keeping capture origins
 inside the projection and preserving partition occupancy. Do not move faces to whole first-hit AABB

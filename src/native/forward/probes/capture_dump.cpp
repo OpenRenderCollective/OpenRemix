@@ -6,6 +6,7 @@
 #include "forward/probes/receiver_sites.h"
 #include "forward/probes/receiver_site_checks.h"
 #include "forward/probes/receiver_fits.h"
+#include "forward/probes/refinement.h"
 #include "forward/probes/receiver_fit_pairs.h"
 #include "scene/bake_scene.h"
 #include <algorithm>
@@ -150,6 +151,15 @@ namespace remix::forward::probes {
               output << '}';
             }
             output << "]}";
+          } else output << "null";
+          output << ",\"refinement\":";
+          const auto refinement = variant.geometry ? refineProjection(*variant.geometry, .001f / source.sceneScale)
+                                                    : std::nullopt;
+          if (refinement) {
+            output << "{\"reassessed\":false,\"faces\":" << refinement->faces << ",\"minimum\":";
+            vector(refinement->bounds.minimum);
+            output << ",\"maximum\":"; vector(refinement->bounds.maximum);
+            output << '}';
           } else output << "null";
           output << '}';
         }

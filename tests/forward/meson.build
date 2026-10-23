@@ -64,6 +64,7 @@ forward_probes_test = executable('remix-forward-probes-test', 'probes.cpp', 'cap
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Reflection probe parallax, filtering and packed data', forward_probes_test)
 forward_projection_test = executable('remix-forward-projection-test', 'evaluation.cpp',
+  '../../src/native/forward/probes/refinement.cpp',
   '../../src/native/forward/probes/data.cpp', '../../src/native/forward/probes/placement.cpp',
   '../../src/native/forward/probes/selection.cpp', '../../src/native/forward/probes/evaluation.cpp',
   '../../src/native/forward/probes/regions.cpp', '../../src/native/forward/probes/sites.cpp',
