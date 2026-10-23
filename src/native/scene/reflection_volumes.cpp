@@ -4,6 +4,14 @@
 #include <unordered_set>
 
 namespace remix {
+  void NativeResources::setMaterialReflection(uint64_t material, scene::ReflectionBinding binding) {
+    if (materialReflection(material) == binding) return;
+    auto next = m_materialReflections ? std::make_shared<MaterialReflections>(*m_materialReflections)
+                                     : std::make_shared<MaterialReflections>();
+    if (binding.volumeId) (*next)[material] = binding;
+    else next->erase(material);
+    m_materialReflections = next->empty() ? nullptr : std::move(next);
+  }
   void NativeResources::setReflectionVolumes(const remixapi_ReflectionVolumesInfoEXT *info) {
     if (!info) { m_reflectionVolumes.reset(); return; }
     const bool extended = info->version == REMIXAPI_REFLECTION_VOLUMES_SAMPLING_VERSION_EXT;

@@ -18,6 +18,7 @@ namespace remix {
   void NativeResources::reset() {
     m_bakeScene.reset();
     m_reflectionVolumes.reset();
+    m_materialReflections.reset();
     m_bakeInstances.clear();
     m_bakeLights.clear();
     m_publishedBakeLightsCurrent.reset();

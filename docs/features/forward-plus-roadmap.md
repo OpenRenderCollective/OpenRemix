@@ -567,14 +567,25 @@ overrides supply their own assignment. Forward+ resolves against the active publ
 ordinary selection for missing/wrong-scene IDs, and transports world selection through normalized
 RGBA8 guide alpha from the same covered MSAA sample. Viewmodels use the same bound projection
 and roughness mips directly. Explicit bindings bypass influence blending; SSR retains precedence.
-BSP importer integration, source projection conventions, dynamic selection, silhouette-specific
-selector acceptance and map-wide performance qualification remain open. This is not deployed.
+Original BSP projection-bound import, dynamic selection, silhouette-specific selector acceptance
+and map-wide performance qualification remain open. This is not deployed. Binding-only material
+redefinitions now update a copy-on-write receiver table, separately snapshotted for each frame.
+Draws retain their original material key through shading replacements. Shader materials, cached
+retained geometry and frozen bake ownership stay unchanged when only IDs change; old frames keep
+their own table revision.
 The Source adapter retains explicit capture origins from resolved VMT `$envmap` values separately
 from base texture upload hashes. Its sidecar watcher exposes only API-accepted documents (not
 asynchronous image readiness), preserving prior metadata after invalid/refused edits. Exact unique
-origin matching rejects coincident captures and integer-to-float aliases. Per-material variants
-still need to carry binding IDs through both live and relay material creation: grouped meshes
-contain multiple materials, and texture-level or whole-instance binding would conflate receivers.
+origin matching rejects coincident captures and integer-to-float aliases. Opt-in
+`OPENREMIX_PROXY_CUBEMAP_RECEIVER_BINDINGS=1` now carries IDs through both live and relay material
+creation. VMT receiver identities distinguish shared-texture variants; selected volume IDs are
+metadata, not cache keys. Existing masks, PBR conversion, replacement keys and pins remain in
+those paths. Owned optical, blended and modulated imports are excluded. Accepted-document revision
+tracking avoids per-frame receiver scans. Same-map retained refreshes preserve authored requests;
+actual map teardown clears them. Live GMod execution, actual Construct sidecars, renderer resets,
+late-asset refreshes and paired-runtime capability checks remain acceptance gates before default.
+The original Black Mesa projection conventions are still unverified; manual sidecar matching does
+not constitute a raw projection-bound importer.
 
 Bake input readiness now follows retained brush/overlay/terrain/prop material dependencies rather
 than the entire BSP material inventory. Required unresolved inputs still block publication. The

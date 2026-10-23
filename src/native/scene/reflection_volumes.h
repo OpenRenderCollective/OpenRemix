@@ -2,6 +2,10 @@
 #include "scene/projection_space.h"
 #include <vector>
 namespace remix::scene {
+  struct ReflectionBinding {
+    uint64_t sceneId = 0, volumeId = 0;
+    bool operator==(const ReflectionBinding &) const = default;
+  };
   struct ReflectionVolume {
     uint64_t id = 0;
     std::array<float, 3> minimum{}, maximum{}, capture{};

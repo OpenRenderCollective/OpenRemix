@@ -152,6 +152,13 @@ namespace remix {
     void drawRetained(const float *sceneOrigin);
     void setBakeScene(const remixapi_BakeSceneInfoEXT *info);
     void setReflectionVolumes(const remixapi_ReflectionVolumesInfoEXT *info);
+    scene::ReflectionBinding materialReflection(uint64_t material) const {
+      if (m_materialReflections) {
+        const auto found = m_materialReflections->find(material);
+        if (found != m_materialReflections->end()) return found->second;
+      }
+      return {};
+    }
     std::shared_ptr<const scene::ReflectionVolumes> reflectionVolumes() const {
       return m_bakeScene && m_reflectionVolumes && m_reflectionVolumes->sceneId == m_bakeScene->sceneId
                  ? m_reflectionVolumes : nullptr;
@@ -309,6 +316,9 @@ namespace remix {
     std::shared_ptr<scene::Material> m_default, m_domeMaterial;
     std::shared_ptr<const scene::VisibilityPartition> m_visibilityPartition;
     std::unordered_map<uint64_t, std::shared_ptr<scene::Material>> m_materials, m_modMaterials;
+    using MaterialReflections = std::unordered_map<uint64_t, scene::ReflectionBinding>;
+    std::shared_ptr<const MaterialReflections> m_materialReflections;
+    void setMaterialReflection(uint64_t material, scene::ReflectionBinding binding);
     // A mod material given the albedo of the material it replaces
     // (instances.cpp), by that material's hash; remade when either changes.
     struct ModMerged {

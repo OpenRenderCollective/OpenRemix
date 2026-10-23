@@ -238,12 +238,12 @@ namespace remix {
           material->replacementKeys.push_back(hash);
       }
     }
+    scene::ReflectionBinding reflection;
     if (const auto *binding = static_cast<const remixapi_MaterialReflectionBindingEXT *>(
             extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_REFLECTION_BINDING_EXT))) {
       if (bool(binding->sceneId) != bool(binding->volumeId) || material->translucent || material->transmission)
         throw invalid;
-      material->reflectionSceneId = binding->sceneId;
-      material->reflectionVolumeId = binding->volumeId;
+      reflection = {binding->sceneId, binding->volumeId};
     }
     auto equal = [&](const Material &a, const Material &b) {
       return a.sourceHash == b.sourceHash && a.replacementKeys == b.replacementKeys &&
@@ -251,8 +251,7 @@ namespace remix {
              a.suppressEmissionLight == b.suppressEmissionLight && a.selfIllumination == b.selfIllumination &&
              a.selfIlluminationScale == b.selfIlluminationScale && a.roughnessTexture == b.roughnessTexture &&
              a.metallicTexture == b.metallicTexture && a.normalTexture == b.normalTexture &&
-             a.normalEncoding == b.normalEncoding && a.reflectionSceneId == b.reflectionSceneId &&
-             a.reflectionVolumeId == b.reflectionVolumeId && a.roughness == b.roughness && a.metallic == b.metallic &&
+             a.normalEncoding == b.normalEncoding && a.roughness == b.roughness && a.metallic == b.metallic &&
              a.remap[0] == b.remap[0] && a.remap[1] == b.remap[1] && a.scrollLayers == b.scrollLayers &&
              std::equal(a.scroll, a.scroll + 6, b.scroll) && a.refractiveIndex == b.refractiveIndex &&
              a.transmittanceDistance == b.transmittanceDistance && a.bakeSmoothBoundary == b.bakeSmoothBoundary &&
@@ -274,10 +273,12 @@ namespace remix {
       ++m_resourceGeneration;
       textureCounters.materialsCreated.fetch_add(1, std::memory_order_relaxed);
     }
+    setMaterialReflection(info.hash, reflection);
     handle = reinterpret_cast<remixapi_MaterialHandle>(uintptr_t(info.hash));
   }
 
   void NativeResources::destroyMaterial(remixapi_MaterialHandle handle) {
+    setMaterialReflection(key(handle), {});
     if (auto it = m_materials.find(key(handle)); it != m_materials.end()) {
       it->second->retired = true;
       ++m_retireGeneration;

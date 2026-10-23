@@ -10,6 +10,7 @@ namespace remix {
   void NativeResources::publishFrame(NativeResources &frame) {
     frame.m_bakeScene = m_bakeScene;
     frame.m_reflectionVolumes = m_reflectionVolumes;
+    frame.m_materialReflections = m_materialReflections;
     frame.m_publishedBakeLightsCurrent = bakeLightsCurrent();
     // The frame's draw lists move; state that persists across frames here is
     // copied. finishFrame below leaves this side as a finished frame would.

@@ -29,15 +29,16 @@ namespace {
     remixapi_MaterialHandle handle;
     r.createMaterial(info, handle);
     const auto first = drawn(r, quad(r, 0x913, handle));
-    require(first->reflectionSceneId == 501 && first->reflectionVolumeId == UINT64_MAX,
+    const auto receiver = r.draws().back().reflectionMaterial;
+    require(r.materialReflection(receiver) == scene::ReflectionBinding{501, UINT64_MAX},
             "Opaque materials retain exact scene-scoped reflection identities");
     const auto boundMesh = quad(r, 0x916, handle);
     const auto replacement = material(r, 0x917, .2f, .3f, .4f);
     r.addModMaterial(info.hash, replacement);
     r.finishFrame();
     drawn(r, boundMesh);
-    require(r.draws().back().material->tint[0] == .2f && r.draws().back().reflectionSceneId == 501 &&
-                r.draws().back().reflectionVolumeId == UINT64_MAX,
+    require(r.draws().back().material->tint[0] == .2f &&
+                r.materialReflection(r.draws().back().reflectionMaterial) == scene::ReflectionBinding{501, UINT64_MAX},
             "Shading replacements preserve the source receiver's authored reflection assignment");
     r.clearModMaterials();
     auto frozenIdentity = [&] {
@@ -51,10 +52,31 @@ namespace {
       return snapshot.contentHash;
     };
     const auto originalBake = frozenIdentity();
+    const auto retained = r.createRetained(instance(boundMesh));
+    r.finishFrame();
+    r.drawRetained(nullptr);
+    remixapi_BakeSceneInfoEXT bake{};
+    bake.structSize = sizeof(bake); bake.version = REMIXAPI_BAKE_SCENE_VERSION_EXT;
+    bake.sceneId = 501; bake.revision = 1; bake.sceneScale = 1;
+    bake.state = REMIXAPI_BAKE_SCENE_READY_EXT; bake.instanceCount = 1; bake.instances = &retained;
+    r.setBakeScene(&bake);
+    const auto captured = r.bakeScene();
+    remix::NativeResources published;
+    r.publishFrame(published);
     binding.volumeId = 3;
     r.createMaterial(info, handle);
-    require(drawn(r, quad(r, 0x914, handle))->reflectionVolumeId == 3 && first->reflectionVolumeId == UINT64_MAX,
-            "A binding change creates distinct material ownership without mutating existing receivers");
+    require(drawn(r, quad(r, 0x914, handle)) == first && !first->retired &&
+                r.materialReflection(receiver) == scene::ReflectionBinding{501, 3} &&
+                published.materialReflection(receiver) == scene::ReflectionBinding{501, UINT64_MAX},
+            "Binding-only updates preserve shading ownership and independently published frame metadata");
+    r.finishFrame();
+    r.drawRetained(nullptr);
+    require(r.retainedStatistics().resolved == 0 &&
+                r.materialReflection(r.draws().back().reflectionMaterial).volumeId == 3,
+            "Cached retained receivers resolve against current binding metadata without geometry replacement");
+    r.setBakeScene(&bake);
+    require(r.bakeScene() == captured,
+            "Binding metadata updates reuse the actual frozen bake snapshot and receiver ownership");
     require(frozenIdentity() == originalBake,
             "Changing only the receiver reflection binding preserves frozen diffuse lighting identity");
     binding.sceneId = 0;
@@ -63,8 +85,11 @@ namespace {
     rejected([&] { r.createMaterial(info, handle); });
     binding.sceneId = 0;
     r.createMaterial(info, handle);
-    require(drawn(r, quad(r, 0x915, handle))->reflectionVolumeId == 0,
+    drawn(r, quad(r, 0x915, handle));
+    require(r.materialReflection(receiver).volumeId == 0 &&
+                published.materialReflection(receiver).volumeId == UINT64_MAX,
             "Zero binding explicitly retains ordinary local reflection selection");
+    r.destroyRetained(&retained, 1);
   }
   void replacementKeys() {
     remix::NativeResources r;

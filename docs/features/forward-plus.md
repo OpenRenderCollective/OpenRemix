@@ -2389,6 +2389,14 @@ and SSR precedence. World selection follows the covered depth/normal MSAA sample
 guide alpha; viewmodels sample directly. No extra attachment or diffuse bake input is required.
 Probe diagnostics expose `authoredId` per published layer (string; zero denotes automatic), plus
 `publishedSceneId` and `publishedRevision` separately from a pending request revision.
+Binding-only redefinitions of the same material hash use a copy-on-write metadata table, independent
+of immutable shading resources and frozen diffuse inputs. Frame publication retains its own table
+revision; cached retained draws carry the original material key and resolve against that frame.
+They do not need mesh/material replacement to update a binding. The Source adapter can opt in via
+`OPENREMIX_PROXY_CUBEMAP_RECEIVER_BINDINGS=1`, matching resolved `$envmap` origins exactly to unique
+accepted-sidecar captures. VMT-specific variant keys preserve distinct receivers sharing an albedo.
+This requires a matching runtime and remains off by default pending live-host and visual acceptance;
+it does not infer original BSP projection conventions or dynamic influence regions.
 
 Canonical capture/cache order remains unchanged for identity and radiance reuse. Image upload sorts
 projection records and every radiance mip together by descending priority, retaining source order for ties.
