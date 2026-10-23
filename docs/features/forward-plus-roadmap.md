@@ -585,7 +585,11 @@ tracking avoids per-frame receiver scans. Same-map retained refreshes preserve a
 actual map teardown clears them. Live GMod receiver resolution, identity edits and weapon changes
 now pass functional qualification without diffuse invalidation; original Construct volumes still
 use ordinary selection when capture origins do not match compiled assignments. Visual quality,
-renderer resets, late-asset refreshes and paired-package checks remain gates before default. Runtime
+live renderer resets, late-asset refreshes and paired-package checks remain gates before default.
+GPU target-recreation coverage now verifies receiver pixels and diffuse ownership under synchronization
+validation; CPU coverage includes shading refresh, deletion, hash reuse and scene reset isolation.
+Authored capture images currently rebuild with render targets; preserving completed capture ownership
+across compatible target recreation remains an optimization opportunity. Runtime
 capability negotiation now requires `GetReflectionBindingVersionEXT()` version 1 or newer; missing
 or older contracts preserve ordinary selection rather than silently emitting ignored nodes. This
 immutable query is available before initialization and does not establish device/capture readiness.

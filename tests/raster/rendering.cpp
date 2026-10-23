@@ -2438,6 +2438,16 @@ namespace {
               const auto boundWorld = render(false, false, true, false);
               require(target.forward->statistics().boundReflectionDraws > 0,
                       "Reflection diagnostics count resolved receiver draws separately from static shadow commands");
+              // Target recreation (MSAA/output changes) keeps CPU bindings and diffuse
+              // ownership while the new renderer republishes its authored captures.
+              const auto retainedBaking = target.forward->bakeController();
+              target.enableForward(options, true);
+              const auto rebuiltWorld = waitForEdit();
+              require(target.forward->bakeController() == retainedBaking && r.bakeScene() == snapshot &&
+                          target.forward->statistics().baking.activeHash == baseline.baking.activeHash &&
+                          target.forward->statistics().boundReflectionDraws > 0 &&
+                          std::abs(int(rebuiltWorld[centre]) - int(boundWorld[centre])) <= 2,
+                      "Target recreation restores bound receiver radiance while preserving the diffuse bake");
               weapon.mesh = weaponMesh;
               const auto unboundWorld = render(false, false, true, false);
               require(boundWorld[centre] > unboundWorld[centre] + 8,

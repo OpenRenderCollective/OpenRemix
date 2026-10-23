@@ -89,7 +89,30 @@ namespace {
     require(r.materialReflection(receiver).volumeId == 0 &&
                 published.materialReflection(receiver).volumeId == UINT64_MAX,
             "Zero binding explicitly retains ordinary local reflection selection");
+    binding.sceneId = 501; binding.volumeId = 3;
+    opaque.albedoConstant = {.3f, .4f, .5f};
+    r.createMaterial(info, handle);
+    const auto refreshed = drawn(r, boundMesh);
+    require(refreshed != first && refreshed->tint[0] == .3f &&
+                r.materialReflection(receiver) == scene::ReflectionBinding{501, 3},
+            "A shading refresh replaces shader resources while retaining the receiver assignment");
+    remix::NativeResources refreshedFrame;
+    r.publishFrame(refreshedFrame);
+    r.destroyMaterial(handle);
+    require(r.materialReflection(receiver) == scene::ReflectionBinding{} &&
+                refreshedFrame.materialReflection(receiver) == scene::ReflectionBinding{501, 3},
+            "Material destruction clears future bindings without mutating an already published frame");
+    info.pNext = &opaque;
+    r.createMaterial(info, handle);
+    require(r.materialReflection(receiver) == scene::ReflectionBinding{},
+            "Reusing an unbound material hash cannot inherit a destroyed receiver assignment");
+    info.pNext = &binding;
+    r.createMaterial(info, handle);
     r.destroyRetained(&retained, 1);
+    r.reset();
+    require(r.materialReflection(receiver) == scene::ReflectionBinding{} &&
+                refreshedFrame.materialReflection(receiver) == scene::ReflectionBinding{501, 3},
+            "Scene reset clears binding metadata while published frames retain their own ownership");
   }
   void replacementKeys() {
     remix::NativeResources r;
