@@ -1810,6 +1810,10 @@ An optional inward-only refinement proposal now uses named sample-support and re
 thresholds. It cannot enlarge the validated box or move the origin onto a face, and does not change
 receiver influence. The local report reassesses proposals from retained, completed first-hit samples without retracing. An analytic inner-room test
 checks improved projection agreement; broad, unsupported and outward planes cannot authorize shifts.
+Cross-map qualification must include local fits that improve yet retain large absolute error.
+Do not convert improvement alone into automatic acceptance: receiver-supported origins can still
+produce poor boxes, especially in the deliberately uncovered regions targeted by this diagnostic.
+Require a useful final projection, visible transitions and preserved baseline coverage within budget.
 Use absolute relative residual alongside miss/backface fractions for refinement acceptance. The
 existing agreement score counts nearer geometry as supported, so it is not a symmetric accuracy
 measure and must not alone reject a tighter fit or accept a loose box.
