@@ -32,7 +32,8 @@ namespace remix::forward {
     // xyz triangle; [0].w shadow slot + 1, [1].w unshadowed blend,
     // [2].w: LightResponse (runtime packing only; see light_response.h).
     std::array<Vec4, 3> corners{};
-    // x: selected highlight fade; y: proven empty world moving-caster map.
+    // x: selected highlight fade; y: proven empty world moving-caster map;
+    // z: optional selected probe-visibility slot + 1 (zero keeps sparse lookup).
     // Static visibility and viewmodel self casters remain independent.
     Vec4 responseWeights{1, 0, 0, 0};
     Vec4 clusterBounds{}; // view-space centre and conservative influence radius; shading stays in world space

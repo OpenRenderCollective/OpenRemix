@@ -30,6 +30,10 @@ namespace remix::forward {
             .srcSet = frame.scene, .srcBinding = binding, .dstSet = frame.viewModelScene,
             .dstBinding = binding, .descriptorCount = 1};
       vkUpdateDescriptorSets(device, 0, nullptr, 12, copies);
+      const VkCopyDescriptorSet probeCopy{.sType = VK_STRUCTURE_TYPE_COPY_DESCRIPTOR_SET,
+          .srcSet = frame.scene, .srcBinding = 22, .dstSet = frame.viewModelScene,
+          .dstBinding = 22, .descriptorCount = 1};
+      vkUpdateDescriptorSets(device, 0, nullptr, 1, &probeCopy);
       const auto constants = frame.viewModelConstants->descriptor();
       const VkDescriptorImageInfo sun{shadowSampler,
           viewModelSun ? viewModelSun->view() : shadow->view, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};

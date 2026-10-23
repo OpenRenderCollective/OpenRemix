@@ -4,6 +4,7 @@
 #include "runtime/pipelines.h"
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <stdexcept>
 
 namespace remix::forward {
@@ -27,6 +28,7 @@ namespace remix::forward {
     const auto memory = baking->memory();
     const auto authoredMemory = authoredReflections->memory();
     statistics.bufferBytes += memory.buffers + authoredMemory.buffers;
+    if (probeVisibility) statistics.bufferBytes += probeVisibility->bufferBytes();
     statistics.targetBytes = baseTargetBytes + memory.images + authoredMemory.images +
                              (waterPass ? waterPass->targetBytes() : 0) +
                              viewModelTarget->bytes() +
@@ -147,6 +149,10 @@ namespace remix::forward {
     }
     next->viewModelTarget = std::make_unique<viewmodel::Target>();
     next->viewModelTarget->initialize(physical, device, extent, next->samples);
+    if (std::getenv("REMIX_DEBUG_PROBE_BATCH")) {
+      next->probeVisibility = std::make_unique<probe_batch::Cache>(physical, device);
+      next->probeVisibility->prepare();
+    }
     next->createPipelines(output);
     if (options.water) {
       next->waterPass = std::make_unique<water::Pass>();
@@ -188,6 +194,7 @@ namespace remix::forward {
     if (g.rayReflections)
       g.rayReflections->selectFrame(slot);
     auto &frame = g.frames.at(slot);
+    frame.probeVisibility.reset();
     frame.commands.clear();
     frame.staticCommands.clear();
     frame.terrainCommands.clear();

@@ -47,14 +47,20 @@ and offscreen moving shadows. The prior uniform-grid checkpoint was `e51bff0`.
 
 ## Current profiling direction
 
-The `forward/probe_batch` preparation primitive is implemented and GPU-tested, but is not connected
-to scene descriptors or receiver shading yet. It gathers exact selected-light visibility into bounded
-probe-major vector groups without changing persistent bake formats. Its immutable returned owner
-must live through command cancellation/submission completion; cache reuse requires a device-set
-completion event. Prepare its pipeline on the existing preparation worker, never during recording.
-Next integrate frame-owned descriptors and vector stencil reconstruction, preserving unknown
-coverage, sparse fallback and attributed moving-shadow corrections. Compare normal-quality timings
-and resident memory before enabling it. The testing installation and default shader path are unchanged.
+The selected-light visibility gather and receiver integration are now opt-in through presence of
+`REMIX_DEBUG_PROBE_BATCH` (remove the variable to disable). `forward/probe_batch` produces exact,
+bounded probe-major vector groups; `shaders/probe-batch.glsl` reconstructs one group with the existing
+stencil. Frame owners retain derived fields through their fences, including source/pipeline ownership.
+Pipeline preparation runs on the existing worker. Directional moving corrections keep sparse attributed
+lookup, unsupported fields keep sparse fallback, and water/live GI keep their existing paths.
+The focused Construct colour-room comparison improves in both opposite-order repeats with unchanged
+light budgets and bake identity. Fixed room regions match; animated viewmodels prevent whole-screen
+pixel equivalence. The ordinary hall shows no clear benefit. Before enabling by default, test weighted
+unknown-coverage edges, moving selection churn, wider maps, preparation cost and peak residency, and
+resolve that hall tradeoff. The old validation layer reports the same unrecognized device-feature
+structure on/off; no new synchronization/descriptor error appears, but full runtime validation remains
+qualified by that compatibility message. Test-install bytes/settings were restored after owned runs.
+The roadmap's broader quality and deployment gates remain open.
 
 The installed runtime has completed Windows-confirmed foreground Construct samples with the
 physgun, full-resolution SSR and stable bake identity. Source's own focus flag alone proved

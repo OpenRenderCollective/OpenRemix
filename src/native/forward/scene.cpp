@@ -41,6 +41,7 @@ namespace remix::forward {
     auto &frame = frames[slot];
     const auto sun = resources.light();
     frame.commands.clear();
+    frame.probeVisibility.reset();
     frame.staticCommands.clear();
     frame.terrainCommands.clear();
     frame.waterCommands.clear();
@@ -338,6 +339,24 @@ namespace remix::forward {
         }
     }
     step(cpu.lighting);
+    if (probeVisibility && !giSupported) {
+      std::vector<uint32_t> selected;
+      for (uint32_t i = 0; i < runtimeLights; ++i) {
+        auto &light = lights[i];
+        const auto captured = uint32_t(light.shaping[3]);
+        if (captured == 0 || light.corners[2][3] <= .5f) continue;
+        auto found = std::find(selected.begin(), selected.end(), captured);
+        if (found == selected.end()) {
+          if (selected.size() == probe_batch::Cache::maximumLights) continue;
+          selected.push_back(captured);
+          found = selected.end() - 1;
+        }
+        light.responseWeights[2] = float(found - selected.begin() + 1);
+      }
+      frame.probeVisibility = probeVisibility->record(command, publishedBake, selected);
+      if (!frame.probeVisibility)
+        for (auto &light : lights) light.responseWeights[2] = 0;
+    }
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physical, &properties);
     data.clusterInfo[0] = clusterListCapacity(runtimeLights, data.grid[3],
@@ -371,7 +390,7 @@ namespace remix::forward {
       frame.poolCapacity = std::max(64u, capacity);
       const VkDescriptorPoolSize sizes[] = {
           {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 7},
-          {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 14},
+          {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 16},
           {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frame.poolCapacity * 5 + 21}};
       const VkDescriptorPoolCreateInfo info{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
                                             .maxSets = frame.poolCapacity,
@@ -503,6 +522,13 @@ namespace remix::forward {
           .dstBinding = 20 + i, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
           .pBufferInfo = &sunDepthBuffers[i]};
     vkUpdateDescriptorSets(device, 2, sunDepthWrites, 0, nullptr);
+    // A declined optional field keeps every selected slot zero. Bind a valid
+    // existing buffer as fallback; the shader never addresses it in that case.
+    const auto probeField = frame.probeVisibility ? frame.probeVisibility->descriptor() : irradiance;
+    const VkWriteDescriptorSet probeWrite{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = frame.scene, .dstBinding = 22, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &probeField};
+    vkUpdateDescriptorSets(device, 1, &probeWrite, 0, nullptr);
     prepareViewModelDescriptors();
     step(cpu.uploads);
     std::unordered_map<const scene::Material *, VkDescriptorSet> materials;

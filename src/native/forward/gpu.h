@@ -5,6 +5,7 @@
 #include "forward/highlight_selection.h"
 #include "forward/reflections.h"
 #include "forward/probes/authoring.h"
+#include "forward/probe_batch/batch.h"
 #include "forward/renderer.h"
 #include "forward/resources.h"
 #include "forward/shadows/maps.h"
@@ -65,6 +66,7 @@ namespace remix::forward {
                terrainPartialLightmapPipeline = VK_NULL_HANDLE,
                giTerrainPipeline = VK_NULL_HANDLE, giTerrainLightmapPipeline = VK_NULL_HANDLE;
     std::shared_ptr<bake::Controller> baking;
+    std::unique_ptr<probe_batch::Cache> probeVisibility;
     std::unique_ptr<probes::Authoring> authoredReflections;
     probes::Descriptors reflectionDescriptor() const {
       return authoredReflections->descriptor(baking->reflectionDescriptor());
@@ -102,6 +104,7 @@ namespace remix::forward {
       VkDescriptorSet giScene = VK_NULL_HANDLE;
       VkDescriptorSet waterRayScene = VK_NULL_HANDLE;
       std::unique_ptr<Buffer> constants, lights, draws, clusters, skyConstants;
+      std::shared_ptr<const probe_batch::Field> probeVisibility;
       std::unique_ptr<Buffer> viewModelConstants, viewModelReflectionConstants;
       Matrix viewModelProjection = scene::identity();
       bool skyEnabled = false;

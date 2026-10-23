@@ -7,6 +7,7 @@ vec3 localStencilPosition, localStencilNormal;
 uint localStencilIndices[16];
 float localStencilWeights[16];
 uint localStencilCount = 0u;
+uint localStencilRevision = 0u;
 
 float bakeCellStencil(vec3 position, vec3 normal, uvec3 dimensions, uvec3 start,
                       uint divisor, uint directory, uint first, out float confidence) {
@@ -71,6 +72,7 @@ bool localProbeStencil(vec3 position, vec3 normal) {
   if (localStencilInitialized && all(equal(position, localStencilPosition)) &&
       all(equal(normal, localStencilNormal))) return localStencilValid;
   localStencilInitialized = true;
+  ++localStencilRevision;
   localStencilValid = false;
   localStencilPosition = position;
   localStencilNormal = normal;

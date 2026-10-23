@@ -84,19 +84,27 @@ contiguous vector fields, preserving exact masks, custom stencil weights, unknow
 attributed moving corrections. Key any derived field by active volume and selected captured IDs;
 account for preparation/storage cost and frame ownership. Retain sparse fallback for unsupported or
 large selections, and do not change highlight budgets to manufacture an equivalent-rendering win.
-The GPU preparation primitive is implemented in `forward/probe_batch`, but is not yet called by the
-renderer. It gathers selected captured-light visibility into probe-major four-component groups,
-retaining exact stored values and negative unknown coverage. Its bounded cache keys immutable bake
-ownership and ordered light IDs; reuse requires device-confirmed completion. Submitted owners retain
-source and pipeline resources through their fences, including after cache replacement/destruction.
-Preparation runs through the pipeline worker, with no compilation during frame recording. Resident
-accounting includes parameter buffers, allocation alignment and externally retained old fields.
+The GPU preparation primitive and first receiver integration are implemented in `forward/probe_batch`
+and `shaders/probe-batch.glsl`. They remain opt-in via presence of `REMIX_DEBUG_PROBE_BATCH`; remove
+that variable to disable the prototype (setting it to zero still enables it). The gather preserves
+exact masks, negative unknown coverage, immutable bake ownership and ordered captured-light IDs.
+Frame owners retain fields through their fences; reuse requires device-confirmed completion.
+Preparation runs on the pipeline worker. Resident accounting includes parameters, alignment and old
+submitted fields. Fields exceeding the bounded selection/payload limits retain sparse lookup.
+Receiver shading reconstructs one four-light group at a time with the existing stencil. Attributed
+moving-shadow corrections retain their directional lookup; live GI and water retain their own paths.
 GPU checks cover both sparse formats, directional wrappers, padded table offsets, duplicate/missing
-IDs, the full 64-light selection, budget rejection, abandoned commands and replacement lifetimes.
-Receiver integration remains open: bind the field to frame-owned descriptors, reconstruct vector
-groups with the existing stencil, retain attributed moving corrections and sparse fallback, then
-measure preparation, memory and normal-quality shading on representative maps. This groundwork
-does not establish a speedup, change a default, alter the bake format or update the installed runtime.
+IDs, the full selection, budget rejection, cancellation and replacement lifetimes. Initial integration
+checks cover world/MSAA, baked viewmodels and viewmodel SSR. A focused, armed Construct colour-room
+opposite-order comparison improves both repeats at stable bake identity and unchanged light budgets;
+fixed room regions retain matching lighting. The ordinary hall replay has no clear benefit and small
+order-dependent differences. Keep the prototype off by default: validate weighted unknown boundaries,
+more maps and moving selection changes, quantify preparation/resident cost, and resolve the hall
+tradeoff before default/deployment acceptance. Runtime replay validation reports the same unknown
+newer device-feature structure in both on/off runs with the installed older validation layer; do not
+call those runs wholly validation-clean. No new gather/descriptor/synchronization message was observed.
+The testing install was restored byte-for-byte after owned diagnostic runs. This is an in-progress
+optimization, not broad FPS/quality acceptance or a persistent bake-format change.
 The branch also regenerates the stale ordinary-water fragment from current maintained source. Its
 source/binary and SPIR-V checks plus four water GPU suites pass. This correction is not yet deployed;
 the testing install remains native `ac33981`. Shared shader changes must account for ordinary water,

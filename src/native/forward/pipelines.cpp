@@ -109,12 +109,14 @@ namespace remix::forward {
       // Ordinary vertices have no chart coordinates. Keep partially mapped
       // lightmap vertices generic so their uncovered triangles retain probes.
       const uint32_t values[] = {options.debugView, uint32_t(bake::directionalFieldsRequested()),
-                                  uint32_t(fullyMapped), uint32_t(vs == vertex)};
+                                  uint32_t(fullyMapped), uint32_t(vs == vertex),
+                                  uint32_t(probeVisibility != nullptr)};
       const VkSpecializationMapEntry entries[] = {{1, 0, sizeof(uint32_t)},
                                                   {2, sizeof(uint32_t), sizeof(uint32_t)},
                                                   {3, 2 * sizeof(uint32_t), sizeof(uint32_t)},
-                                                  {4, 3 * sizeof(uint32_t), sizeof(uint32_t)}};
-      const VkSpecializationInfo specialization{4, entries, sizeof(values), values};
+                                                  {4, 3 * sizeof(uint32_t), sizeof(uint32_t)},
+                                                  {5, 4 * sizeof(uint32_t), sizeof(uint32_t)}};
+      const VkSpecializationInfo specialization{5, entries, sizeof(values), values};
       const VkPipelineShaderStageCreateInfo stages[] = {
           {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
            .stage = VK_SHADER_STAGE_VERTEX_BIT,

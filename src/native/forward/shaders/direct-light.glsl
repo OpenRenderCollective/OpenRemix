@@ -1,5 +1,6 @@
 #include "diffuse-residual.glsl"
 #include "directional-fields.glsl"
+#include "probe-batch.glsl"
 bool emitterAbovePlane(Light light, vec3 p, vec3 n) {
   if (light.radiance.w <= 0)
     return dot(light.positionRadius.xyz - p, n) + light.positionRadius.w > 0;
@@ -50,7 +51,11 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
     float probeVisibility, probeDiffuse;
     // Aggregate corrections use the same normal-dependent probe stencil as
     // bakedIrradiance; otherwise normal maps could subtract another mixture.
-    if (bakedLocalProbeResponse(p, aggregateDiffuse ? n : receiverNormal, n, uint(light.shaping.w), probeCorrection,
+    if (!probeCorrection && batchedProbeVisibility(p, aggregateDiffuse ? n : receiverNormal,
+                                                   uint(light.responseWeights.z), probeVisibility)) {
+      baked = true;
+      visibility = probeVisibility;
+    } else if (bakedLocalProbeResponse(p, aggregateDiffuse ? n : receiverNormal, n, uint(light.shaping.w), probeCorrection,
                                  probeVisibility, probeDiffuse)) {
       baked = true;
       visibility = probeVisibility;
