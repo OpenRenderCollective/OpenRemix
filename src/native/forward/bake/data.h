@@ -22,7 +22,7 @@ namespace remix::forward::bake {
            blend.src == 4 && blend.dst == 2 && blend.op == 0 && blend.mask == 15;
   }
   constexpr uint32_t suppressEmission = 1, sourceOverCoverageFlag = 2, dielectricBoundaryFlag = 4,
-                     modulatingDecalFlag = 8, thinDielectricFlag = 16;
+                     modulatingDecalFlag = 8, thinDielectricFlag = 16, reflectionOnlyFlag = 32;
   constexpr float decalReachMetres = .005f;
   struct Vertex {
     Vec4 position, normal, uv, color;

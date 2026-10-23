@@ -7,7 +7,9 @@
 namespace remix::forward::ray {
   namespace {
     bool acceptsTransport(const scene::Draw &draw) {
-      if (accepts(draw))
+      // Camera ownership excludes reflection-only players; transport still
+      // retains them and applies their per-material ray-purpose policy.
+      if (!draw.viewModel && acceptsOpaque(draw))
         return true;
       const bool coverage = bake::sourceOverCoverage(draw.blend);
       const bool boundary = draw.material->bakeSmoothBoundary && (!draw.blend.enabled || coverage);

@@ -778,6 +778,17 @@ int main() {
           "Analytic light edits stream fresh data without invalidating "
           "geometry/atlas reuse");
   auto current = resources.retained(handle)->records[0];
+  current.reflectionOnly = true;
+  const auto reflectionOnly = capture({&current, 1});
+  require(!forward::accepts(current) && reflectionOnly.inputs.triangles.size() == frozen.inputs.triangles.size() &&
+              reflectionOnly.key != frozen.key &&
+              (reflectionOnly.inputs.materials[0].flags[3] & forward::bake::reflectionOnlyFlag),
+          "Reflection-only actors leave camera ownership while retaining separately keyed bounce geometry");
+  require(!scene::matchesBakeDraw(*source, 0, current),
+          "A changed ray-purpose category cannot reuse a frozen lighting binding");
+  current.reflectionOnly = false;
+  require(capture({&current, 1}).key == frozen.key,
+          "Restoring ordinary ray purpose restores the established live transport identity");
   current.model[12] = 2;
   auto moved = capture({&current, 1});
   require(moved.inputs.triangles.size() == 2 && moved.key != frozen.key &&

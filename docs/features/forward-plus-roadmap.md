@@ -18,11 +18,16 @@ ownership, so owned draws are not duplicated by fallback. Path-tracing shaders a
 the merged source; bounded regeneration and source/binary checking pass, along with scene decoding,
 retained replay, TLAS masks and the world/viewmodel raster regressions. `generate.py --jobs N` now
 bounds GLSL compilation/validation concurrency for large optimized backends.
-Forward+ reflection-only category integration remains open: test camera/prepass/overlay exclusion,
-shadow exclusion and visibility in live reflection/bounce rays, including cache identity and dynamic
-updates. Its flattened transport acceleration needs an explicit ray-purpose policy; do not merely
-remove those instances from all transport. This merge is not deployed. The verified installed native
-`d9d54c2` / adapter `a499842` package remains unchanged until that integration is qualified.
+Forward+ now separates primary ownership from transport ray purpose: reflection-only bodies
+remain in bounce transport but are rejected by visibility/depth queries and surface charts.
+CPU scene/cache ownership checks and the hardware transport suite pass, including emissive
+reflection hits and geometry-query exclusion. World/viewmodel primary visibility toggles pass
+at 1/2/4 MSAA; toggling retained body categories removes/restores the moving sun shadow without
+changing the baked-world hash. Local-shadow/cache and viewmodel isolation regressions also pass
+with Vulkan/synchronization validation. Ordinary map cache keys are preserved.
+Live reflection rendering through dynamic updates still needs an integration check before
+package deployment. Do not remove these instances from all transport. The installed native
+`d9d54c2` / adapter `a499842` package remains unchanged.
 
 The viewmodel continuation adds a default early-depth variant only for packed ALWAYS-alpha draws
 with camera backface rejection disabled. Its shader contains no discard instructions; cutouts and

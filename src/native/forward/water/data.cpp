@@ -5,7 +5,7 @@
 
 namespace remix::forward::water {
   bool accepts(const scene::Draw &draw) {
-    return draw.surface && draw.material && draw.traced() && scene::validSmoothBoundary(*draw.material) &&
+    return !draw.reflectionOnly && draw.surface && draw.material && draw.traced() && scene::validSmoothBoundary(*draw.material) &&
            (!draw.blend.enabled || bake::sourceOverCoverage(draw.blend)) && draw.blend.mask == 15 &&
            !draw.decal && !draw.cutGroup && !draw.wireframe && !draw.viewModel && !draw.spriteFlags &&
            draw.depth && (!draw.depthWriteOverride || draw.depthWrite) &&

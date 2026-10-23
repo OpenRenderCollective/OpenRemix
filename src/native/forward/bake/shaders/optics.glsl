@@ -71,7 +71,7 @@ vec3 visibility(vec3 origin, vec3 direction, float maximum, inout uint seed, Med
   // boundary traversal so Fresnel loss and absorption stay ordered correctly.
   if ((rayFrame.control.w & 1u) == 0u) {
     Hit hit;
-    return traceRayFlags(origin, direction, maximum, seed, gl_RayFlagsTerminateOnFirstHitEXT, hit)
+    return traceRayFlags(origin, direction, maximum, seed, gl_RayFlagsTerminateOnFirstHitEXT, false, hit)
                ? vec3(0) : attenuation(medium, maximum);
   }
   vec3 weight = vec3(1);

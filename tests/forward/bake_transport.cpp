@@ -147,6 +147,41 @@ namespace {
 #include "probe_visibility_gpu.h"
 #include "directional_capture_gpu.h"
 #include "dielectric_sheet.h"
+  void reflectionOnlyTransport(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
+    const auto wall = world.wall(world.material({.emission = 4}), 1, 4);
+    for (bool reflectionOnly : {false, true}) {
+      auto source = world.scene({wall});
+      source->draws.front().reflectionOnly = reflectionOnly;
+      bake::Transport transport;
+      bake::Options options;
+      options.batchPoints = 1;
+      auto job = pipelines.prepare(reflectionOnly ? "reflection-only-body" : "ordinary-body", [&] {
+        transport.initialize(fixture.physical, fixture.device, source, options);
+      });
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+      while (!job->ready() && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      require(job->ready(), "Reflection-only transport preparation completed");
+      job->check();
+      fixture.begin();
+      transport.recordPrepare(fixture.command, world.resources);
+      fixture.finish();
+      const bake::Point ray{{0, 0, 0, 0}, {0, 0, 1, 0}};
+      bake::Result result;
+      fixture.begin();
+      transport.recordRadiance(fixture.command, 0, {&ray, 1}, 1);
+      fixture.finish();
+      transport.read(0, {&result, 1});
+      require(result.irradiance[0][0] > 1 && std::abs(result.irradiance[0][3] - 1) < .01f,
+              "Reflection rays retain the third-person body and its first-hit distance");
+      fixture.begin();
+      transport.recordGeometry(fixture.command, 0, {&ray, 1});
+      fixture.finish();
+      transport.read(0, {&result, 1});
+      require(reflectionOnly ? result.statistics[1] != 0 : std::abs(result.irradiance[0][3] - 1) < .01f,
+              "Visibility and probe placement ignore reflection-only bodies but retain ordinary occluders");
+    }
+  }
   float evaluate(const bake::Result &value, Vec3 n, uint32_t channel) {
     const float sh[] = {.2820947918f,
                         .4886025119f * n[1],
@@ -2177,6 +2212,7 @@ int main(int argc, char **argv) try {
     require(lit.irradiance[0][0] > .01f && shadowed.irradiance[0][0] < lit.irradiance[0][0] * .05f,
             "Hardware visibility shadows local-light indirect radiance without "
             "hiding the receiver patch");
+    reflectionOnlyTransport(fixture, pipelines, world);
     captureProbe(fixture, pipelines, world);
     captureNoise(fixture, pipelines, world);
     siteValidation(fixture, pipelines, world);

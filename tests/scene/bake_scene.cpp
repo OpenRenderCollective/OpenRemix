@@ -6,6 +6,32 @@ using namespace remix;
 using namespace remix::test;
 
 int main() {
+  {
+    NativeResources fixture;
+    const auto surface = quad(fixture, 2, material(fixture, 1, 1, 0, 0));
+    auto instanceInfo = instance(surface);
+    auto snapshot = [&](uint32_t category, bool chart) {
+      fixture.finishFrame();
+      instanceInfo.categoryFlags = category;
+      fixture.drawInstance(instanceInfo);
+      auto result = std::make_shared<scene::BakeScene>();
+      result->ready = true;
+      result->draws.push_back(fixture.draws().back());
+      result->draws.back().classification = REMIXAPI_INSTANCE_STATIC_EXT;
+      if (chart) result->charts.push_back({0, 0, 2, 2, {{0, 0}, {1, 0}, {1, 1}, {0, 0}, {1, 1}, {0, 1}}});
+      scene::freezeBakeScene(*result);
+      return result;
+    };
+    const auto ordinary = snapshot(0, false);
+    const auto reflectionOnly = snapshot(REMIXAPI_INSTANCE_CATEGORY_BIT_THIRD_PERSON_PLAYER_BODY, false);
+    require(ordinary->contentHash != reflectionOnly->contentHash &&
+                ordinary->contentHash == snapshot(0, false)->contentHash,
+            "Ray-purpose changes invalidate affected bakes without changing ordinary scene identity");
+    const auto receiver = snapshot(0, true);
+    const auto invisibleReceiver = snapshot(REMIXAPI_INSTANCE_CATEGORY_BIT_THIRD_PERSON_PLAYER_MODEL, true);
+    require(receiver->charts.size() == 1 && invisibleReceiver->charts.empty() && invisibleReceiver->draws.size() == 1,
+            "Reflection-only geometry remains available for bounces without wasting surface lightmap charts");
+  }
   NativeResources resources;
   auto red = material(resources, 10, 1, 0, 0);
   auto mesh = quad(resources, 20, red);

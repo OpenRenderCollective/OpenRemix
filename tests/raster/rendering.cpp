@@ -3083,6 +3083,17 @@ namespace {
               "Only the new actor enters moving sun maps alongside the captured world");
       require(target.forward->statistics().staticCasterPreparations == 0,
               "A live actor inside the frozen scene bounds needs no frozen caster preparation");
+      moving.categoryFlags = REMIXAPI_INSTANCE_CATEGORY_BIT_THIRD_PERSON_PLAYER_BODY;
+      r.updateRetained(actor, moving);
+      pixels = render();
+      require(pixels[right] > lit / 2 && target.forward->statistics().liveCasters == 0 &&
+                  target.forward->statistics().baking.activeHash == hash,
+              "Reflection-only players cast no moving sun shadow and do not restart the world bake");
+      moving.categoryFlags = 0;
+      r.updateRetained(actor, moving);
+      pixels = render();
+      require(pixels[right] < lit / 3 && target.forward->statistics().liveCasters == 1,
+              "Returning a reflection-only player to ordinary geometry restores its moving sun shadow");
       // Skybox-scale depth bounds must not turn a small comparison bias into
       // metres of missing shadow around a gameplay-sized moving caster.
       auto remoteCaster = instance(blockerMesh, 400000);
@@ -3586,6 +3597,16 @@ namespace {
       pixel(render(), 32, 32, 0, 0, 0, "Camera backface policy hides reversed winding");
       culling.flags = 0; // Source $nocull materials omit the camera flag.
       require(render()[centre] > 100, "Explicit two-sided camera material remains visible");
+      const auto primaryCategory = info.categoryFlags;
+      for (const auto category : {REMIXAPI_INSTANCE_CATEGORY_BIT_THIRD_PERSON_PLAYER_MODEL,
+                                  REMIXAPI_INSTANCE_CATEGORY_BIT_THIRD_PERSON_PLAYER_BODY}) {
+        info.categoryFlags = primaryCategory | category;
+        pixel(render(), 32, 32, 0, 0, 0,
+              "Reflection-only players remain absent from world and viewmodel camera passes");
+        info.categoryFlags = primaryCategory;
+        require(render()[centre] > 100,
+                "Changing a reflection-only player back to primary geometry restores camera ownership");
+      }
     }
   }
 #include "forward_skinning.h"

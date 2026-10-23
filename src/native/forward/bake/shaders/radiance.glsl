@@ -18,7 +18,8 @@ struct Hit {
   vec2 bary;
   bool front;
 };
-bool traceRayFlags(vec3 origin, vec3 direction, float maximum, inout uint seed, uint flags, out Hit hit) {
+bool traceRayFlags(vec3 origin, vec3 direction, float maximum, inout uint seed, uint flags,
+                   bool bounceRay, out Hit hit) {
   // One stream step per ray keeps repeated samples independent, including rays
   // that miss. Candidate visits must never change the path's random stream.
   uint coverageSeed = seed;
@@ -29,7 +30,7 @@ bool traceRayFlags(vec3 origin, vec3 direction, float maximum, inout uint seed, 
     if (rayQueryGetIntersectionTypeEXT(query, false) == gl_RayQueryCandidateIntersectionTriangleEXT &&
         covered(rayQueryGetIntersectionPrimitiveIndexEXT(query, false),
                 rayQueryGetIntersectionBarycentricsEXT(query, false),
-                rayQueryGetIntersectionFrontFaceEXT(query, false), coverageSeed))
+                rayQueryGetIntersectionFrontFaceEXT(query, false), coverageSeed, bounceRay))
       rayQueryConfirmIntersectionEXT(query);
   }
   hit = Hit(maximum, 0u, vec2(0), true);
@@ -42,7 +43,10 @@ bool traceRayFlags(vec3 origin, vec3 direction, float maximum, inout uint seed, 
   return true;
 }
 bool traceRay(vec3 origin, vec3 direction, float maximum, inout uint seed, out Hit hit) {
-  return traceRayFlags(origin, direction, maximum, seed, 0u, hit);
+  return traceRayFlags(origin, direction, maximum, seed, 0u, false, hit);
+}
+bool traceBounceRay(vec3 origin, vec3 direction, float maximum, inout uint seed, out Hit hit) {
+  return traceRayFlags(origin, direction, maximum, seed, 0u, true, hit);
 }
 #include "optics.glsl"
 #include "decal.glsl"
@@ -148,7 +152,7 @@ vec3 radiance(vec3 origin, vec3 direction, Medium medium, inout uint seed, out f
   uint bounce = 0;
   for (uint step = 0; bounce < rayFrame.counts.w && step < rayFrame.counts.w + 32u; ++step) {
     Hit hit;
-    bool found = traceRay(origin, direction, rayFrame.trace.x, seed, hit);
+    bool found = traceBounceRay(origin, direction, rayFrame.trace.x, seed, hit);
     if (step == 0u) {
       firstDistance = hit.distance;
       firstMiss = !found;

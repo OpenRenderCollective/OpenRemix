@@ -55,6 +55,7 @@ namespace remix::forward::bake {
             (source.suppressEmissionLight ? suppressEmission : 0u) |
                 (sourceOver ? sourceOverCoverageFlag : 0u) | (dielectric ? dielectricBoundaryFlag : 0u) |
                 (dielectric && source.thinWallThickness > 0 ? thinDielectricFlag : 0u) |
+                (draw.reflectionOnly ? reflectionOnlyFlag : 0u) |
                 (modulate ? modulatingDecalFlag : 0u)}});
       if (dielectric) {
         auto &optics = result.materials.back().optics;

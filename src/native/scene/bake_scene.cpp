@@ -191,6 +191,9 @@ namespace remix::scene {
   } // namespace
   void freezeBakeScene(BakeScene &scene) {
     validateBakeCharts(scene.draws, scene.charts);
+    // Retain these triangles for bounce transport, without allocating primary
+    // receiver charts for surfaces the camera must never see.
+    std::erase_if(scene.charts, [&](const auto &chart) { return scene.draws[chart.draw].reflectionOnly; });
     std::vector<std::vector<uint64_t>> chartHashes(scene.draws.size());
     for (const auto &chart : scene.charts) {
       Hash hash;
@@ -231,6 +234,9 @@ namespace remix::scene {
       hash.add(materialHash);
       hash.add(draw.model);
       hash.add(draw.doubleSided);
+      // Ordinary scenes keep their established cache identity. Only a scene
+      // using the new ray-purpose category adds this tagged policy marker.
+      if (draw.reflectionOnly) hash.add(uint32_t(0x52464c4fu));
       hash.add(draw.decal);
       hash.add(draw.terrain);
       hash.add(draw.ignoreAlpha);

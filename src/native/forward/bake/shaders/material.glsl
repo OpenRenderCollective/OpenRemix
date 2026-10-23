@@ -46,8 +46,10 @@ vec4 baseColor(RayMaterial m, vec2 uv, vec4 vertex) {
                             sampleMap(m.textures.x, uv, m.flags.xyz), vertex);
 }
 float random(inout uint state);
-bool covered(uint primitive, vec2 bary, bool front, uint seed) {
+bool covered(uint primitive, vec2 bary, bool front, uint seed, bool bounceRay) {
   RayMaterial m = rayMaterials[rayTriangles[primitive].w];
+  if (!bounceRay && (m.flags.w & 32u) != 0u)
+    return false; // Reflection-only geometry never blocks light/depth/medium queries.
   if ((m.flags.w & 8u) != 0u)
     return false; // a colour layer is neither an occluder nor a refractive interface
   if ((m.shading.state.w & 2u) == 0u && !front)
