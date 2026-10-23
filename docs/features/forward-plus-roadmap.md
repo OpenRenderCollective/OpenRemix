@@ -1767,3 +1767,15 @@ is lit and retains the ceiling highlight. A cutoff-only control reproduces
 the dark image. This resolves that reference mismatch, not every parity gate.
 Accumulation references must explicitly disable TAA; the relay now reports
 active/requested temporal states instead of hiding such readiness conflicts.
+
+
+### Receiver-supported cubemap fitting follow-up
+
+The optional receiver diagnostic now compares a bounded set of supported local origins
+with the existing strict partition fitter. It records independent projection and influence
+bounds and whether each influence includes its originating surface sample. Sampled
+hardware support never overrides a solid partition origin. No new captures are published.
+Next assess these local fits against actual geometry, compare marginal receiver coverage
+and projection quality within the existing capture budget, then qualify visible room
+transitions and wall leakage. A blocked receiver connection is not proof that the receiver
+is camera-invisible; do not remove bake charts on that evidence alone.

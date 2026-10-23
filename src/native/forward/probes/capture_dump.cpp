@@ -5,6 +5,7 @@
 #include "forward/probes/receiver_audit.h"
 #include "forward/probes/receiver_sites.h"
 #include "forward/probes/receiver_site_checks.h"
+#include "forward/probes/receiver_fits.h"
 #include "scene/bake_scene.h"
 #include <algorithm>
 #include <bit>
@@ -50,6 +51,11 @@ namespace remix::forward::probes {
       const auto path = std::string(prefix) + ".sites.json";
       if (!audit.complete() || (checks && !checks->complete()) || std::filesystem::exists(path))
         throw std::runtime_error("Receiver sites incomplete or report exists");
+      ReceiverFits fits;
+      if (checks) {
+        const auto receivers = sampleReceivers(source, 8192, cancelled);
+        fits = fitReceiverSites(source, receivers, audit, *checks, 32, cancelled);
+      }
       std::ofstream output(path);
       output.exceptions(std::ios::failbit | std::ios::badbit);
       output.precision(9);
@@ -83,7 +89,25 @@ namespace remix::forward::probes {
         else output << "null";
         output << '}';
       }
-      output << "\n]}\n";
+      output << "\n],\"projectionFits\":{\"geometryAudited\":false,\"available\":"
+             << (fits.available ? "true" : "false") << ",\"supported\":" << fits.supported
+             << ",\"partitionRefused\":" << fits.partitionRefused << ",\"duplicates\":" << fits.duplicates
+             << ",\"attempts\":[";
+      auto vector = [&](Vec3 value) { output << '[' << value[0] << ',' << value[1] << ',' << value[2] << ']'; };
+      for (size_t i = 0; i < fits.attempts.size(); ++i) {
+        const auto &fit = fits.attempts[i];
+        output << (i ? "," : "") << "{\"site\":" << fit.site << ",\"variants\":[";
+        for (size_t j = 0; j < fit.variants.size(); ++j) {
+          const auto &variant = fit.variants[j];
+          output << (j ? "," : "") << "{\"minimum\":"; vector(variant.projection.minimum);
+          output << ",\"maximum\":"; vector(variant.projection.maximum);
+          output << ",\"influenceMinimum\":"; vector(variant.influence.minimum);
+          output << ",\"influenceMaximum\":"; vector(variant.influence.maximum);
+          output << ",\"coversReceiver\":" << (variant.coversReceiver ? "true" : "false") << '}';
+        }
+        output << "]}";
+      }
+      output << "]}}\n";
     } catch (const std::exception &error) {
       std::fprintf(stderr, "Receiver site report unavailable: %s\n", error.what());
     }

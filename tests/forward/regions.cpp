@@ -1,4 +1,5 @@
 #include "forward/probes/regions.h"
+#include "forward/probes/receiver_fits.h"
 #include "partition_fixture.h"
 #include "forward/probes/data.h"
 #include "forward/probes/selection.h"
@@ -78,6 +79,54 @@ namespace {
 int main(int argc, char **argv) {
   if (argc == 3 && std::string_view(argv[1]) == "--partition-fixture")
     return remix::forward::test::partitionFixture(argv[2]);
+  scene::BakeScene localSource;
+  localSource.hasBounds = true;
+  localSource.minimum = room.minimum;
+  localSource.maximum = room.maximum;
+  localSource.sceneScale = 1;
+  localSource.partition = std::make_shared<scene::VisibilityPartition>(partition());
+  p::ReceiverSample localReceiver{};
+  localReceiver.position = {-1, 0, -2};
+  localReceiver.normal = {0, 0, 1};
+  p::ReceiverSite localSite{};
+  localSite.point.position = {-1, 0, -1.25f, 0};
+  p::ReceiverSiteAudit admission({localSite});
+  bake::Result admitted{};
+  admitted.statistics = {0, 0, 64, 0};
+  require(admission.observe(0, std::span(&admitted, 1)), "Local site admission recorded");
+  p::ReceiverSiteChecks support(admission, std::span(&localReceiver, 1), 1);
+  std::vector<bake::Result> clear(support.rays().size());
+  for (auto &value : clear) {
+    value.statistics = {0, 1, 1, 0};
+    value.irradiance[0][3] = 100;
+  }
+  require(support.observe(0, clear), "Local site support recorded");
+  const auto localFits = p::fitReceiverSites(localSource, std::span(&localReceiver, 1), admission, support);
+  require(localFits.available && localFits.supported == 1 && localFits.attempts.size() == 1,
+          "Supported receiver site reaches bounded room fitting");
+  bool coversFloor = false;
+  for (const auto &variant : localFits.attempts[0].variants) {
+    require(p::emptyRegion(*localSource.partition, variant.projection), "Local proxy respects solid walls");
+    coversFloor |= variant.coversReceiver;
+  }
+  require(coversFloor, "Local influence restores contact with its originating floor receiver");
+  p::ReceiverSiteChecks blocked(admission, std::span(&localReceiver, 1), 1);
+  clear[0].statistics = {0, 0, 1, 0};
+  clear[0].irradiance[0][3] = .1f;
+  require(blocked.observe(0, clear), "Blocked receiver support recorded");
+  require(p::fitReceiverSites(localSource, std::span(&localReceiver, 1), admission, blocked).attempts.empty(),
+          "A free endpoint cannot authorize a fit through a blocked receiver connection");
+  auto solidSource = localSource;
+  solidSource.minimum = {-10, -10, -10};
+  solidSource.maximum = {10, 10, 10};
+  const auto obstruction = box({-2, -1, -1.5f}, {0, 1, -.5f});
+  solidSource.partition = std::make_shared<scene::VisibilityPartition>(partition(&obstruction));
+  const auto refused = p::fitReceiverSites(solidSource, std::span(&localReceiver, 1), admission, support);
+  require(refused.partitionRefused == 1 && refused.attempts.empty(),
+          "Sampled hardware support cannot override a solid partition origin");
+  localSource.partition.reset();
+  require(!p::fitReceiverSites(localSource, std::span(&localReceiver, 1), admission, support).available,
+          "Missing occupancy partition does not permit a projection fallback");
   auto splitRoom = partition();
   const auto interior = box({-3.99f, -2.99f, -1.99f}, {3.99f, 2.99f, 1.99f});
   require(p::emptyRegion(splitRoom, interior), "Artificial empty visleaf splits do not become room walls");

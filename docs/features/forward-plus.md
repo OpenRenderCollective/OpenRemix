@@ -509,7 +509,12 @@ Only sampled-free sites receive the next checks: one normal-offset receiver conn
 is true; blocked and unknown results remain separate. `connectionBlock` exposes an actual blocking
 hit for diagnosis, not a camera-visibility classification. Readbacks follow the same frame-fence
 ownership as the preceding passes. These are still sampled candidate locations, not certified empty
-volumes: projection fitting and capture-slot allocation remain unproven. Neither the sites nor their
+volumes. The optional report also compares at most 32 spread-out supported origins using the strict
+partition fitter, retaining up to three projection variants and independent receiver influence bounds
+per origin. Solid partition origins are refused even when hardware samples passed. `projectionFits`
+records whether each influence contains its originating receiver; `geometryAudited` remains false.
+These fitted boxes still require actual-geometry assessment, marginal coverage comparison and bounded
+capture-slot allocation before publication. Neither the sites nor their
 radiance are inserted into the published reflection set. These
 measurements do not change selection or permit growth through walls.
 Version 2 also exports up to 8192 deterministic, area-weighted `receivers` from the frozen surface
