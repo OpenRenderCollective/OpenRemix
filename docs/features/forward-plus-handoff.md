@@ -61,8 +61,9 @@ reflection hits and geometry-query exclusion. World/viewmodel primary visibility
 at 1/2/4 MSAA; toggling retained body categories removes/restores the moving sun shadow without
 changing the baked-world hash. Local-shadow/cache and viewmodel isolation regressions also pass
 with Vulkan/synchronization validation. Ordinary map cache keys are preserved.
-Live reflection rendering through dynamic updates still needs an integration check before
-package deployment. Do not remove these instances from all transport. The installed native
+Live reflection resolve now passes category toggles, movement, stale-hit removal and unchanged
+acceleration reuse across all 1/2/4 MSAA and reflection-resolution combinations with validation.
+The source integration is qualified; deployment packaging and installed verification remain. Do not remove these instances from all transport. The installed native
 `d9d54c2` / adapter `a499842` package remains unchanged.
 
 The viewmodel continuation adds a default early-depth variant only for packed ALWAYS-alpha draws

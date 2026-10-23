@@ -3914,6 +3914,7 @@ namespace {
     float waterRoughness = .04f;
     bool composeWater = false;
     remixapi_MeshHandle reflectionBackdrop = nullptr;
+    uint32_t emitterCategory = 0;
     auto drawScene = [&](bool rough = false, bool showWall = true, bool cutout = false,
                          bool hidden = false, float offset = 0.f, remixapi_MeshHandle receiver = nullptr,
                          remixapi_MeshHandle emitter = nullptr) {
@@ -3952,6 +3953,7 @@ namespace {
       }
       if (showWall) {
         auto draw = instance(emitter ? emitter : cutout ? cutoutWall : wall);
+        draw.categoryFlags = emitterCategory;
         remixapi_InstanceIdentityEXT identity{};
         identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
         identity.instanceId = 9400;
@@ -4137,6 +4139,25 @@ namespace {
           drawScene(false, true, false, true);
           require(target.forward->statistics().rayReflections.sceneBuilds == 0,
                   "An unchanged live scene reuses its acceleration structures");
+          for (const auto category : {REMIXAPI_INSTANCE_CATEGORY_BIT_THIRD_PERSON_PLAYER_MODEL,
+                                      REMIXAPI_INSTANCE_CATEGORY_BIT_THIRD_PERSON_PLAYER_BODY}) {
+            emitterCategory = category;
+            require(reflectedPixels(drawScene(false, true, false, false)) > 12 &&
+                        target.forward->statistics().rayReflections.sceneBuilds == 1,
+                    "Changing a live player category refreshes transport and retains its reflection");
+            require(reflectedPixels(drawScene(false, true, false, false)) > 12 &&
+                        target.forward->statistics().rayReflections.sceneBuilds == 0,
+                    "Unchanged reflection-only players reuse their live acceleration structures");
+            require(reflectedPixels(drawScene(false, true, false, false, 50)) < 3,
+                    "Moving a reflection-only player removes its old reflection immediately");
+            require(reflectedPixels(drawScene(false, true, false, false)) > 12,
+                    "Returning a reflection-only player restores its current reflection");
+            emitterCategory = 0;
+            require(reflectedPixels(drawScene(false, true, false, true)) > 12 &&
+                        target.forward->statistics().rayReflections.sceneBuilds == 1,
+                    "Removing the live reflection-only policy refreshes transport without dropping geometry");
+          }
+          emitterCategory = 0;
           require(reflectedPixels(drawScene(true, true, false, true)) < 3,
                   "Hardware reflection roughness cutoff rejects unsupported sharp transport");
           require(reflectedPixels(drawScene(false, false)) < 3,
