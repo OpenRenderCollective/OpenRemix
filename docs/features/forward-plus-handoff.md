@@ -1,5 +1,14 @@
 # Forward+ continuation guide
 
+The 2026-10-24 testing refresh deploys native `b8c384a` and adapter `a499842` from the immutable
+`forwardplus-reflection-only-20261024` package. All 155 owned files verify; only the native DLL,
+upstream license and runtime manifest changed. Ten protected settings/assets/launcher files
+are byte-identical, including authored Construct cubemap bounds. Staged/installed Construct
+replays differ by at most one display-channel value, with only the known older Vulkan-layer
+device-structure warning and no synchronization hazards. Rendering defaults remain unchanged;
+selected-probe batching and sparse sun depth remain opt-in. Earlier refresh details below
+are historical validation of the retained optimizations.
+
 ## Start here
 
 The separate GMod testing install was refreshed on 2026-10-23 to native `d9d54c2` and adapter
@@ -63,8 +72,8 @@ changing the baked-world hash. Local-shadow/cache and viewmodel isolation regres
 with Vulkan/synchronization validation. Ordinary map cache keys are preserved.
 Live reflection resolve now passes category toggles, movement, stale-hit removal and unchanged
 acceleration reuse across all 1/2/4 MSAA and reflection-resolution combinations with validation.
-The source integration is qualified; deployment packaging and installed verification remain. Do not remove these instances from all transport. The installed native
-`d9d54c2` / adapter `a499842` package remains unchanged.
+The integration is deployed as native `b8c384a` / adapter `a499842` in the testing install.
+Do not remove these instances from all transport.
 
 The viewmodel continuation adds a default early-depth variant only for packed ALWAYS-alpha draws
 with camera backface rejection disabled. Its shader contains no discard instructions; cutouts and
