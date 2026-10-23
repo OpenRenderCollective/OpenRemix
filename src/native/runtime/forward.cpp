@@ -33,6 +33,7 @@ namespace remix {
         << "\", \"captureRadiance\": \"" << state.bakeContent.captureRadiance << "\", \"captureInputs\": \""
         << state.bakeContent.captureInputs << "\", \"styledIndirect\": \"" << state.bakeContent.styledIndirect << "\"}"
         << ",\n  \"rendering\": {\"lights\": " << state.lights
+        << ", \"samples\": " << state.samples
         << ", \"clusteredLights\": " << state.clusteredLights
         << ", \"clusterBuildLights\": " << state.clusterBuildLights
         << ", \"analyticLights\": " << state.analyticLights

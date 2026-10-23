@@ -585,7 +585,9 @@ tracking avoids per-frame receiver scans. Same-map retained refreshes preserve a
 actual map teardown clears them. Live GMod receiver resolution, identity edits and weapon changes
 now pass functional qualification without diffuse invalidation; original Construct volumes still
 use ordinary selection when capture origins do not match compiled assignments. Visual quality,
-live renderer resets, late-asset refreshes and paired-package checks remain gates before default.
+device-loss recovery, late-asset refreshes and paired-package checks remain gates before default.
+Live Construct MSAA target changes now preserve the bake and authored publication with receiver
+resolution intact; this functional check does not establish reflection quality or device-loss recovery.
 GPU target-recreation coverage now verifies receiver pixels and diffuse ownership under synchronization
 validation; CPU coverage includes shading refresh, deletion, hash reuse and scene reset isolation.
 Compatible target recreation now shares authored capture ownership as well as diffuse baking.
