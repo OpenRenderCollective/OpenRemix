@@ -2367,7 +2367,7 @@ unknown and retains the sampler's unit-weight fallback. It is useful when compar
 since identical origins/bounds alone do not prove identical blend weights. The optional
 `remixapi_SetReflectionVolumesEXT` authoring API publishes copied, scene-scoped volumes separately
 from frozen diffuse bake inputs. The adapter validates its map fingerprint and submits saved volumes.
-By default a nonempty authored set replaces the automatic set. The opt-in
+By default authored volumes take priority while automatic captures fill uncovered areas.
 `rtx.native.forward.authoredReflectionFallback` retains uncovered automatic captures below authored
 priorities within the shared 64-capture budget, conservatively omitting fully covered boxes. Its
 composed image has an additional memory cost. Removing the sidecar restores automatic placement;

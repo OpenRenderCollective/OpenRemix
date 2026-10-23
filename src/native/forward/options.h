@@ -29,7 +29,7 @@ namespace remix::forward {
     float localShadowBias = .002f;   // metres, radial comparison bias
     float localShadowFade = 2;      // seconds per selection fade; zero selects immediately
     bool ssr = true;
-    bool authoredReflectionFallback = false;
+    bool authoredReflectionFallback = true;
     bool rtReflections = false;
     bool rtGI = false;
     bool selectedBakedLights = false; // experimental: aggregate lights use selected mixed-shadow slots

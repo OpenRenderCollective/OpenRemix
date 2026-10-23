@@ -2056,6 +2056,7 @@ namespace {
           options.baking.lightmapTexels = 1024;
           options.baking.lightmapPageSize = 32;
           options.baking.diskCache = authoringTest;
+          if (authoringTest) options.authoredReflectionFallback = false; // exercise authored-only mode before fallback
           options.baking.denoiseLightmaps = false;
           options.ambient = 0;
           options.shadowResolution = 256;
