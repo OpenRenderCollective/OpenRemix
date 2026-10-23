@@ -306,6 +306,13 @@ namespace remix::forward::probes {
   }
   const Header *Authoring::header() const { return m_active ? &m_active->image->header() : nullptr; }
   const LayerIdentities *Authoring::identities() const { return m_active ? &m_active->identities : nullptr; }
+  uint32_t Authoring::receiverLayer(uint64_t sceneId, uint64_t volumeId) const {
+    if (!m_active || !volumeId || sceneId != m_active->request->sceneId) return 0;
+    const auto count = m_active->image->header().parameters[0];
+    for (uint32_t layer = 0; layer < count; ++layer)
+      if (m_active->identities[layer] == volumeId) return layer + 1;
+    return 0;
+  }
   AuthoringStatistics Authoring::statistics() const {
     AuthoringStatistics result;
     result.requested = bool(m_request);

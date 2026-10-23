@@ -5,6 +5,20 @@
 #define REMIXAPI_REFLECTION_VOLUMES_SAMPLING_VERSION_EXT 2
 #define REMIXAPI_REFLECTION_VOLUMES_MAX_EXT 64
 
+// Optional pNext on opaque MaterialInfo. Bind its local reflection fallback to
+// one authored volume, independently of receiver influence bounds. SSR retains
+// precedence. Both IDs must be nonzero, or both zero to use ordinary selection.
+// Missing/inactive/wrong-scene IDs use ordinary selection. Reflection-only:
+// neither these IDs nor authoring edits change frozen diffuse lighting inputs.
+// Forward+ only. The source receiver assignment survives USD/PBR shading
+// replacements; an instance material override supplies its own assignment.
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_REFLECTION_BINDING_EXT ((remixapi_StructType)0x7fff1072)
+typedef struct remixapi_MaterialReflectionBindingEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  uint64_t sceneId, volumeId;
+} remixapi_MaterialReflectionBindingEXT;
+
 typedef struct remixapi_ReflectionVolumeEXT {
   uint64_t id; // nonzero, stable within this scene
   float minimum[3], maximum[3]; // local projection bounds; version 1 also uses them for influence

@@ -173,12 +173,16 @@ void main() {
   }
   if (debugView == 0u) color += emitted;
 #ifdef VIEWMODEL_PASS
-  if (debugView == 0u) color += viewModelReflection(worldPosition, n, v, surface.rgb, roughness, metallic);
+  if (debugView == 0u) color += viewModelReflection(worldPosition, n, v, surface.rgb, roughness, metallic,
+                                                  (m.maps.x >> 8u) & 127u);
 #endif
   result = vec4(min(max(color, vec3(0)), vec3(65000)), m.pbr.w > .5 ? surface.a : 1);
 #ifdef REFLECTION_GUIDES
   outNormalRoughness = vec4(n, roughness);
-  outReflectance = vec4(mix(vec3(.04), surface.rgb, metallic), 1);
+  // The guide is RGBA8 UNORM. Reserve its upper 65 alpha codes for ordinary
+  // selection and one-based layer IDs, from this same covered MSAA sample.
+  outReflectance = vec4(mix(vec3(.04), surface.rgb, metallic),
+                        float(255u - ((m.maps.x >> 8u) & 127u)) / 255);
 #endif
 #endif
 }

@@ -543,12 +543,12 @@ The reference CLI also supports `--compiled-receivers`, preserving actual compil
 assignments through validated face, texinfo, texdata and string-table indices. These include brush
 models and displacement base faces; they do not assert visible receiver coverage. Packed material
 patches can carry explicit capture-texture assignments, providing a separate basis for authored
-static receiver selection. Runtime receiver binding and dynamic-object influence/blending remain
+static receiver selection. BSP runtime import and dynamic-object influence/blending remain
 unfinished; do not infer those semantics from a material filename or projection box alone.
 `--capture-assignments` additionally inventories explicit packed-material capture links using
 bounded compiler-style patch/include/replace scalar blocks. It preserves missing, unsupported,
 nonlocal and ambiguous statuses instead of guessing; matched origins identify projection-reference
-entities, not dynamic influence regions. General VMT inheritance, runtime receiver bindings and
+entities, not dynamic influence regions. General VMT inheritance, BSP runtime import and
 reference-renderer acceptance remain separate work.
 Runtime receiver bindings must carry stable logical capture IDs rather than transient image-layer
 indices: authored edits keep the previous capture set active while replacements prepare, and
@@ -560,8 +560,15 @@ includes reordered captures, pending edits, map changes, missing bindings and MS
 Native authored publication now retains CPU-side stable IDs in actual priority-sorted/composed
 image-layer order. Automatic fallback layers carry zero. Probe diagnostics expose each layer
 identity and the published scene/revision separately from a pending request. This metadata follows
-the active image while edits prepare; GPU layouts and diffuse bake inputs are unchanged. Receiver
-binding requests and shader selection through MSAA reflection guides still need implementation.
+the active image while edits prepare; GPU layouts and diffuse bake inputs are unchanged. The
+optional opaque-material `MaterialReflectionBindingEXT` now binds a source receiver to one stable
+scene/volume ID. Source assignments survive USD/PBR shading replacements; instance material
+overrides supply their own assignment. Forward+ resolves against the active publication, uses
+ordinary selection for missing/wrong-scene IDs, and transports world selection through normalized
+RGBA8 guide alpha from the same covered MSAA sample. Viewmodels use the same bound projection
+and roughness mips directly. Explicit bindings bypass influence blending; SSR retains precedence.
+BSP importer integration, source projection conventions, dynamic selection, silhouette-specific
+selector acceptance and map-wide performance qualification remain open. This is not deployed.
 
 Bake input readiness now follows retained brush/overlay/terrain/prop material dependencies rather
 than the entire BSP material inventory. Required unresolved inputs still block publication. The

@@ -123,6 +123,7 @@ namespace remix {
       float roughness = 1, metallic = 0;
       bool pbr = false;
       uint32_t normalEncoding = 0;
+      uint64_t reflectionSceneId = 0, reflectionVolumeId = 0; // live local reflection selection only
       // remixapi_MaterialPbrRemapEXT, per map (roughness, metallic).
       struct Remap {
         uint8_t channel = 0, curve = 0;
@@ -244,6 +245,7 @@ namespace remix {
       bool operator==(const DistantLight &) const = default;
     };
     struct Draw {
+      uint64_t reflectionSceneId = 0, reflectionVolumeId = 0; // receiver assignment survives shading replacements
       std::shared_ptr<Mesh> mesh;
       uint64_t instanceId = 0;
       uint32_t instanceIndex = 0, surfaceIndex = 0;

@@ -23,6 +23,7 @@ namespace remix::forward::probes {
     Descriptors descriptor(Descriptors automatic) const;
     const Header *header() const;
     const LayerIdentities *identities() const;
+    uint32_t receiverLayer(uint64_t sceneId, uint64_t volumeId) const; // one-based; zero uses ordinary selection
     AuthoringMemory memory() const;
     AuthoringStatistics statistics() const;
     const std::string &status() const { return m_status; }

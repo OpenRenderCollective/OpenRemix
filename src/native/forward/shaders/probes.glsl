@@ -74,6 +74,37 @@ void compositeProbeGroup(vec3 group, float total, float coverage, float maximumC
   result += (group / total) * opacity * remaining;
   remaining *= 1 - opacity;
 }
+vec3 probeParallaxDirection(ReflectionProbe record, vec3 position, vec3 reflected,
+                           vec3 localPosition, vec3 localRay) {
+  float exitDistance = 3.402823e38;
+  for (uint c = 0; c < 3u; ++c)
+    if (abs(localRay[c]) > 1e-10) {
+      float plane = localRay[c] > 0 ? record.maximum[c] : record.minimum[c];
+      exitDistance = min(exitDistance, (plane - localPosition[c]) / localRay[c]);
+    }
+  vec3 corrected = position + reflected * exitDistance - record.position.xyz;
+  if (exitDistance <= 0 || dot(corrected, corrected) < 1e-10) corrected = reflected;
+  return corrected;
+}
+// Explicit receiver assignments bypass influence/priority selection, while
+// retaining the selected capture's projection and roughness-filtered mips.
+bool boundProbeRadiance(uint layer, vec3 position, vec3 reflected, float roughness, out vec3 result) {
+  result = vec3(0);
+  if (layer == 0u || layer > probeParameters.x || dot(reflected, reflected) < 1e-10) return false;
+  uint probe = layer - 1u;
+  ReflectionProbe record = probes[probe];
+  reflected = normalize(reflected);
+  vec3 localPosition, localRay;
+  for (uint c = 0u; c < 3u; ++c) {
+    localPosition[c] = dot(record.worldToLocal[c], vec4(position, 1));
+    localRay[c] = dot(record.worldToLocal[c].xyz, reflected);
+  }
+  vec3 corrected = probeParallaxDirection(record, position, reflected, localPosition, localRay);
+  float lod = clamp(roughness, 0, 1) * float(probeParameters.z - 1u);
+  uint low = uint(lod), high = min(low + 1u, probeParameters.z - 1u);
+  result = mix(probeMip(probe, low, corrected), probeMip(probe, high, corrected), lod - float(low));
+  return true;
+}
 #ifdef PROBE_TILE_CANDIDATES
 bool probeRadianceMasked(vec3 position, vec3 reflected, float roughness, uvec2 candidates, out vec3 result) {
 #else
@@ -142,15 +173,7 @@ bool probeRadiance(vec3 position, vec3 reflected, float roughness, out vec3 resu
     priority = record.minimum.w;
     // Intersect the reflected ray with its parallax proxy. Sampling from the
     // capture origin toward that hit corrects parallax as the receiver moves.
-    float exitDistance = 3.402823e38;
-    for (uint c = 0; c < 3u; ++c)
-      if (abs(localRay[c]) > 1e-10) {
-        float plane = localRay[c] > 0 ? record.maximum[c] : record.minimum[c];
-        exitDistance = min(exitDistance, (plane - localPosition[c]) / localRay[c]);
-      }
-    vec3 corrected = position + reflected * exitDistance - record.position.xyz;
-    if (exitDistance <= 0 || dot(corrected, corrected) < 1e-10)
-      corrected = reflected;
+    vec3 corrected = probeParallaxDirection(record, position, reflected, localPosition, localRay);
     vec3 halfSize = (record.influenceMaximum.xyz - record.influenceMinimum.xyz) * .5;
     vec3 feather = probeFeather(record, localPosition);
     // Independent axis bands retain doorway fades on a shared solid floor.

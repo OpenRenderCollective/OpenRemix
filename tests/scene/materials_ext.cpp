@@ -4,6 +4,7 @@
 #include "scene/fixtures.h"
 #include "scene/opacity.h"
 #include "scene/temporal.h"
+#include <remix/remix_reflection_ext.h>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -16,6 +17,55 @@ namespace scene = remix::scene;
 
 namespace {
   std::shared_ptr<scene::Material> drawn(remix::NativeResources &r, remixapi_MeshHandle mesh);
+  void reflectionBinding() {
+    remix::NativeResources r;
+    remixapi_MaterialInfoOpaqueEXT opaque{};
+    opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+    opaque.albedoConstant = {1, 1, 1}; opaque.opacityConstant = 1; opaque.alphaTestType = 7;
+    remixapi_MaterialReflectionBindingEXT binding{
+        REMIXAPI_STRUCT_TYPE_MATERIAL_REFLECTION_BINDING_EXT, &opaque, 501, UINT64_MAX};
+    remixapi_MaterialInfo info{};
+    info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO; info.hash = 0x912; info.pNext = &binding;
+    remixapi_MaterialHandle handle;
+    r.createMaterial(info, handle);
+    const auto first = drawn(r, quad(r, 0x913, handle));
+    require(first->reflectionSceneId == 501 && first->reflectionVolumeId == UINT64_MAX,
+            "Opaque materials retain exact scene-scoped reflection identities");
+    const auto boundMesh = quad(r, 0x916, handle);
+    const auto replacement = material(r, 0x917, .2f, .3f, .4f);
+    r.addModMaterial(info.hash, replacement);
+    r.finishFrame();
+    drawn(r, boundMesh);
+    require(r.draws().back().material->tint[0] == .2f && r.draws().back().reflectionSceneId == 501 &&
+                r.draws().back().reflectionVolumeId == UINT64_MAX,
+            "Shading replacements preserve the source receiver's authored reflection assignment");
+    r.clearModMaterials();
+    auto frozenIdentity = [&] {
+      r.finishFrame();
+      drawn(r, boundMesh);
+      scene::BakeScene snapshot;
+      snapshot.ready = true;
+      snapshot.draws.push_back(r.draws().back());
+      snapshot.draws.back().classification = REMIXAPI_INSTANCE_STATIC_EXT;
+      scene::freezeBakeScene(snapshot);
+      return snapshot.contentHash;
+    };
+    const auto originalBake = frozenIdentity();
+    binding.volumeId = 3;
+    r.createMaterial(info, handle);
+    require(drawn(r, quad(r, 0x914, handle))->reflectionVolumeId == 3 && first->reflectionVolumeId == UINT64_MAX,
+            "A binding change creates distinct material ownership without mutating existing receivers");
+    require(frozenIdentity() == originalBake,
+            "Changing only the receiver reflection binding preserves frozen diffuse lighting identity");
+    binding.sceneId = 0;
+    rejected([&] { r.createMaterial(info, handle); });
+    binding.sceneId = 501; binding.volumeId = 0;
+    rejected([&] { r.createMaterial(info, handle); });
+    binding.sceneId = 0;
+    r.createMaterial(info, handle);
+    require(drawn(r, quad(r, 0x915, handle))->reflectionVolumeId == 0,
+            "Zero binding explicitly retains ordinary local reflection selection");
+  }
   void replacementKeys() {
     remix::NativeResources r;
     remixapi_MaterialInfoOpaqueEXT opaque{};
@@ -504,6 +554,7 @@ namespace {
 } // namespace
 
 int main() {
+  reflectionBinding();
   replacementKeys();
   materialOverride();
   dynamicTexture();

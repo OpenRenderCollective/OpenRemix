@@ -462,13 +462,18 @@ namespace remix {
             if (resolved && i == 0)
               resolved->push_back(it->second);
             draw.material = modMaterial(it->second, key(surface->material));
+            draw.reflectionSceneId = it->second->reflectionSceneId;
+            draw.reflectionVolumeId = it->second->reflectionVolumeId;
           }
         }
         // An instance's override is replaced as a mesh's own material is: a
         // host that names every draw's material that way (a translation
         // layer whose meshes are shared between materials) has no other.
-        if (materialOverride)
+        if (materialOverride) {
           draw.material = modMaterial(materialOverride, d.materialOverride);
+          draw.reflectionSceneId = materialOverride->reflectionSceneId;
+          draw.reflectionVolumeId = materialOverride->reflectionVolumeId;
+        }
         if (surface->bonesPerVertex) {
           if (!d.bones || d.bones->empty()) {
             throw invalid;

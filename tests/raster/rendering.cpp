@@ -2062,9 +2062,11 @@ namespace {
           options.localShadowFade = 0;
           options.sceneScale = 1;
           target.enableForward(options);
-          auto matte = [&](uint64_t hash, remixapi_Float3D color, float metallic = 0, float roughness = 1) {
+          auto matte = [&](uint64_t hash, remixapi_Float3D color, float metallic = 0, float roughness = 1,
+                           void *extension = nullptr) {
             remixapi_MaterialInfoOpaqueEXT opaque{};
             opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+            opaque.pNext = extension;
             opaque.albedoConstant = color;
             opaque.opacityConstant = 1;
             opaque.roughnessConstant = roughness;
@@ -2421,6 +2423,31 @@ namespace {
               require(target.forward->statistics().authoredReflections.automatic > 0 &&
                           target.forward->statistics().authoredReflections.rays == 0 && fallbackImage[centre] > 40,
                       "Automatic image layers supply reflections outside edited authored bounds without retracing");
+              options.authoredReflectionFallback = false;
+              target.forward->updateLighting(options);
+              waitForEdit();
+              const auto unbound = render(false, false, true, false);
+              remixapi_MaterialReflectionBindingEXT receiverBinding{
+                  REMIXAPI_STRUCT_TYPE_MATERIAL_REFLECTION_BINDING_EXT, nullptr, snapshot->sceneId, authored[0].id};
+              const auto boundMesh = quad(r, 13100, matte(13101, {1, 1, 1}, 1, .04f, &receiverBinding));
+              weapon.mesh = boundMesh;
+              const auto bound = render(false, false, true, false);
+              require(bound[centre] > unbound[centre] + 8,
+                      "Viewmodel receiver binding selects authored radiance outside influence bounds");
+              weapon.categoryFlags = 0;
+              const auto boundWorld = render(false, false, true, false);
+              weapon.mesh = weaponMesh;
+              const auto unboundWorld = render(false, false, true, false);
+              require(boundWorld[centre] > unboundWorld[centre] + 8,
+                      "World reflection guides preserve the explicit receiver assignment through MSAA resolve");
+              weapon.categoryFlags = REMIXAPI_INSTANCE_CATEGORY_BIT_VIEW_MODEL;
+              receiverBinding.sceneId ^= 1;
+              weapon.mesh = quad(r, 13102, matte(13103, {1, 1, 1}, 1, .04f, &receiverBinding));
+              require(render(false, false, true, false)[centre] == unbound[centre],
+                      "A binding from another scene uses ordinary selection rather than a stale image layer");
+              weapon.mesh = weaponMesh;
+              options.authoredReflectionFallback = true;
+              target.forward->updateLighting(options);
               request.volumes = authored; ++request.revision;
               r.setReflectionVolumes(&request);
               waitForEdit();
@@ -2447,6 +2474,7 @@ namespace {
                 }
               }
               complete.back() = authored[0];
+              complete.back().priority = -1; // force its published image to layer 63
               request.volumeCount = uint32_t(complete.size());
               request.volumes = complete.data(); ++request.revision;
               r.setReflectionVolumes(&request);
@@ -2454,6 +2482,18 @@ namespace {
               require(target.forward->statistics().reflectionProbes.parameters[0] == 64 &&
                           std::abs(int(lastProbe[centre]) - int(firstEdit[centre])) <= 2,
                       "The 64th rotated probe preserves reflections while unrelated volumes are excluded");
+              weapon.categoryFlags = 0;
+              const auto lastWorld = render(false, false, true, false);
+              receiverBinding.sceneId = snapshot->sceneId;
+              receiverBinding.volumeId = complete.back().id;
+              weapon.mesh = quad(r, 13104, matte(13105, {1, 1, 1}, 1, .04f, &receiverBinding));
+              const auto lastBoundWorld = render(false, false, true, false);
+              require(target.forward->statistics().reflectionIdentities[63] == receiverBinding.volumeId &&
+                          lastBoundWorld[centre] > 5 &&
+                          std::abs(int(lastBoundWorld[centre]) - int(lastWorld[centre])) <= 2,
+                      "The highest receiver selector survives RGBA8 guides and MSAA resolution without aliasing layers");
+              weapon.mesh = weaponMesh;
+              weapon.categoryFlags = REMIXAPI_INSTANCE_CATEGORY_BIT_VIEW_MODEL;
               std::printf("Viewmodel last-probe image %ux: %llu\n", samples,
                           static_cast<unsigned long long>(remix::scene::fastHash(lastProbe.data(), lastProbe.size())));
               request.volumeCount = 0; ++request.revision;

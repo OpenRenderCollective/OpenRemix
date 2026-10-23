@@ -21,10 +21,11 @@ layout(set = 0, binding = 18) uniform sampler2D opaqueColor;
 #include "../../shaders/radiance-filter.glsl"
 #include "../../shaders/screen-reflection.glsl"
 
-vec3 viewModelReflection(vec3 position, vec3 n, vec3 v, vec3 base, float roughness, float metallic) {
+vec3 viewModelReflection(vec3 position, vec3 n, vec3 v, vec3 base, float roughness, float metallic, uint layer) {
   if ((frame.clusterInfo.w & 2u) == 0u) return vec3(0);
   vec3 reflected = reflect(-v, n), radiance;
-  if (!probeRadianceMasked(position + n * sky.target.z, reflected, roughness,
+  if (!boundProbeRadiance(layer, position + n * sky.target.z, reflected, roughness, radiance) &&
+      !probeRadianceMasked(position + n * sky.target.z, reflected, roughness,
                            viewModelScreen.probeCandidates.xy, radiance))
     radiance = environmentReflection(position, n, reflected, roughness);
   ScreenReflectionView screen = ScreenReflectionView(frame.camera, viewModelScreen.inverseCamera,

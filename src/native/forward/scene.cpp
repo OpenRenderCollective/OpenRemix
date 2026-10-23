@@ -147,6 +147,9 @@ namespace remix::forward {
         waterMaterials.push_back(water::materialData(*draw.material, seconds));
       }
       draws.push_back(materialData(draw, seconds));
+      if (!liquid && draw.reflectionVolumeId)
+        draws.back().maps[0] |= authoredReflections->receiverLayer(draw.reflectionSceneId,
+            draw.reflectionVolumeId) << reflectionLayerShift;
       const auto &state = draws.back().state;
       out.unconditionalCoverage = state[1] == VK_COMPARE_OP_ALWAYS && (state[3] & 16u) == 0;
       commands.push_back(std::move(out));

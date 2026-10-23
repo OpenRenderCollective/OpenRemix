@@ -4,6 +4,7 @@
 #include "scene/validation.h"
 #include <remix/remix_native_ext.h>
 #include <remix/remix_bake_ext.h>
+#include <remix/remix_reflection_ext.h>
 
 #include <algorithm>
 #include <cmath>
@@ -237,13 +238,21 @@ namespace remix {
           material->replacementKeys.push_back(hash);
       }
     }
+    if (const auto *binding = static_cast<const remixapi_MaterialReflectionBindingEXT *>(
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_REFLECTION_BINDING_EXT))) {
+      if (bool(binding->sceneId) != bool(binding->volumeId) || material->translucent || material->transmission)
+        throw invalid;
+      material->reflectionSceneId = binding->sceneId;
+      material->reflectionVolumeId = binding->volumeId;
+    }
     auto equal = [&](const Material &a, const Material &b) {
       return a.sourceHash == b.sourceHash && a.replacementKeys == b.replacementKeys &&
              a.texture == b.texture && a.emissionTexture == b.emissionTexture &&
              a.suppressEmissionLight == b.suppressEmissionLight && a.selfIllumination == b.selfIllumination &&
              a.selfIlluminationScale == b.selfIlluminationScale && a.roughnessTexture == b.roughnessTexture &&
              a.metallicTexture == b.metallicTexture && a.normalTexture == b.normalTexture &&
-             a.normalEncoding == b.normalEncoding && a.roughness == b.roughness && a.metallic == b.metallic &&
+             a.normalEncoding == b.normalEncoding && a.reflectionSceneId == b.reflectionSceneId &&
+             a.reflectionVolumeId == b.reflectionVolumeId && a.roughness == b.roughness && a.metallic == b.metallic &&
              a.remap[0] == b.remap[0] && a.remap[1] == b.remap[1] && a.scrollLayers == b.scrollLayers &&
              std::equal(a.scroll, a.scroll + 6, b.scroll) && a.refractiveIndex == b.refractiveIndex &&
              a.transmittanceDistance == b.transmittanceDistance && a.bakeSmoothBoundary == b.bakeSmoothBoundary &&

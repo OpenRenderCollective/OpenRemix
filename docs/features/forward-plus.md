@@ -2378,6 +2378,18 @@ reused scene acceleration. Submitted frames retain their transport and sampled r
 their own fences complete. A null request restores automatic placement, while an explicit empty request
 disables local cubemaps. Authoring overrides are not persisted in the automatic lighting cache.
 
+Optional `remixapi_MaterialReflectionBindingEXT` on an opaque material binds that source receiver
+to a scene-scoped authored volume ID in Forward+. Both IDs zero retain ordinary selection;
+otherwise both must be nonzero. Translucent/transmitting materials reject this node. Source
+assignments survive USD/PBR shading replacements, while an instance material override supplies
+its own assignment. Missing, wrong-scene or unpublished IDs fall back to ordinary selection.
+Resolution follows the active image, including while newer edits prepare. Bound receivers sample
+that capture independently of its influence box, preserving projection correction, roughness mips
+and SSR precedence. World selection follows the covered depth/normal MSAA sample through RGBA8
+guide alpha; viewmodels sample directly. No extra attachment or diffuse bake input is required.
+Probe diagnostics expose `authoredId` per published layer (string; zero denotes automatic), plus
+`publishedSceneId` and `publishedRevision` separately from a pending request revision.
+
 Canonical capture/cache order remains unchanged for identity and radiance reuse. Image upload sorts
 projection records and every radiance mip together by descending priority, retaining source order for ties.
 The image owner exposes that physical header to diagnostics and CPU viewmodel candidate masks, so mask
