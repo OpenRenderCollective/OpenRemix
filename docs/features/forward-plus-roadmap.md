@@ -1,5 +1,14 @@
 # Forward+ delivery roadmap
 
+Current probe-batching executable diagnostics show generic world fragments growing from about
+110 KiB to 135 KiB and viewmodel fragments from about 156 KiB to 181 KiB; the fully mapped
+lightmap variant remains 105728 bytes. Both variants report 128 registers. This narrows the
+hallway regression investigation to generic receiver shader work rather than a universal
+mapped-world cost; it does not establish causality or literal spill memory. Cluster lists
+are emitted in sorted light order, and the stencil cache is shared by both paths. Preserve
+unknown-coverage fallback and directional corrections when prototyping a smaller receiver
+reconstruction; measure its cost before changing defaults. Both diagnostic relay runs pass.
+
 A fresh focused Construct off/on/on/off comparison on the deployed `b8c384a` DLL confirms the
 selected-probe batching tradeoff: white-room whole-GPU mean of per-run medians drops from
 9.787 to 8.297 ms (15.2%), while hall-east rises from 4.103 to 4.213 ms (2.7% slower)
