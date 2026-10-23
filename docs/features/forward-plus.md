@@ -504,8 +504,13 @@ receivers with eight blocked candidates. Partition disagreements get priority bu
 admission. The existing spherical hardware validator spends 64 directions per site (a separate
 32768-direction diagnostic cap), retaining readbacks through their fences. Results go to the request
 path plus `.sites.json`, including partition classification and sampled backface fractions.
-These are candidate locations only: receiver connectivity, clearance and projection fitting remain
-unproven. Neither the sites nor their radiance are inserted into the published reflection set. These
+Only sampled-free sites receive the next checks: one normal-offset receiver connection plus six
+10 cm axial clearance segments, at most 3584 geometry rays. Both must be visible before `supported`
+is true; blocked and unknown results remain separate. `connectionBlock` exposes an actual blocking
+hit for diagnosis, not a camera-visibility classification. Readbacks follow the same frame-fence
+ownership as the preceding passes. These are still sampled candidate locations, not certified empty
+volumes: projection fitting and capture-slot allocation remain unproven. Neither the sites nor their
+radiance are inserted into the published reflection set. These
 measurements do not change selection or permit growth through walls.
 Version 2 also exports up to 8192 deterministic, area-weighted `receivers` from the frozen surface
 charts. Positions use host scene units; `sceneScale` converts lengths to metres. Each sample includes

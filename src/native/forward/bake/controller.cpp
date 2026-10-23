@@ -422,6 +422,11 @@ namespace remix::forward::bake {
               job.failed = true;
               status(REMIXAPI_BAKE_FAILED_EXT, "Invalid attributed irradiance readback");
             }
+          } else if (submission.receiverSiteCheck) {
+            if (!job.receiverSiteChecks || !job.receiverSiteChecks->observe(submission.first, results)) {
+              job.failed = true;
+              status(REMIXAPI_BAKE_FAILED_EXT, "Invalid receiver site check ownership");
+            }
           } else if (submission.receiverSite) {
             if (!job.receiverSites || !job.receiverSites->observe(submission.first, results)) {
               job.failed = true;
@@ -483,6 +488,7 @@ namespace remix::forward::bake {
                                   ? sizeof(VisibilityResult) : sizeof(Result));
         if (!submission.styled && !submission.reference && !submission.probeDepth) (submission.sunDepth ? job.sunDepthReceived
          : submission.radiance ? job.captureReceived
+         : submission.receiverSiteCheck ? job.receiverCheckReceived
          : submission.receiverSite ? job.receiverSiteReceived
          : submission.reflectionReceiver ? job.receiverReceived
          : submission.reflectionGeometry ? job.geometryReceived
@@ -504,7 +510,7 @@ namespace remix::forward::bake {
           if (submission.overflowVisibility)
             job.overflowTiming.gpuMs += *elapsed;
           const auto work = submission.probeDepth                                    ? Work::ProbeDepth
-                            : submission.reflectionGeometry || submission.reflectionReceiver || submission.sunDepth ? Work::Geometry
+                            : submission.reflectionGeometry || submission.reflectionReceiver || submission.receiverSiteCheck || submission.sunDepth ? Work::Geometry
                             : submission.visibility || submission.direct || submission.directionalField ||
                               submission.overflowVisibility || submission.probeLocal     ? Work::Visibility
                             : submission.sun || submission.probeSun                  ? Work::Sun

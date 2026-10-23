@@ -77,7 +77,7 @@ namespace remix::forward::bake {
       bool preparation = false, radiance = false, surface = false, visibility = false, reflectionSite = false,
            sun = false, sunDepth = false, sunDepthCache = false, probeSun = false, probeLocal = false, overflowVisibility = false, reflectionGeometry = false,
            sunAntialiasing = false, direct = false, directionalField = false, reference = false, probeDepth = false,
-           reflectionReceiver = false, receiverSite = false;
+           reflectionReceiver = false, receiverSite = false, receiverSiteCheck = false;
     };
     VkPhysicalDevice m_physical;
     VkDevice m_device;

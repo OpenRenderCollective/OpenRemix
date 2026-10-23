@@ -2,6 +2,7 @@
 #include "forward/probes/receiver_pairs.h"
 #include "forward/probes/receiver_audit.h"
 #include "forward/probes/receiver_sites.h"
+#include "forward/probes/receiver_site_checks.h"
 #include <limits>
 #include <stdexcept>
 
@@ -161,6 +162,21 @@ int main() {
               admission.observe(0, {&freeSite, 1}) && admission.observe(1, {&insideSite, 1}));
   require(admission.complete() && admission.sampledFree(0) && admission.known(1) &&
               !admission.sampledFree(1) && !admission.known(2) && !admission.observe(0, {&freeSite, 1}));
+  p::ReceiverSiteChecks connected(admission, receivers, source.sceneScale);
+  require(connected.rays().size() == 7 && !connected.supported(0));
+  std::vector<Result> clearChecks(7, geometry(1000));
+  require(connected.observe(3, std::span(clearChecks).subspan(3)) && !connected.supported(0) &&
+              connected.observe(0, std::span(clearChecks).first(3)) && connected.complete());
+  require(connected.supported(0) && !connected.supported(1) && !connected.supported(2));
+  p::ReceiverSiteChecks acrossWall(admission, receivers, source.sceneScale);
+  clearChecks[0] = geometry(1);
+  require(acrossWall.observe(0, clearChecks) && acrossWall.connection(0) == V::Blocked && !acrossWall.supported(0));
+  p::ReceiverSiteChecks tooClose(admission, receivers, source.sceneScale);
+  clearChecks[0] = geometry(1000); clearChecks[1] = geometry(.01f);
+  require(tooClose.observe(0, clearChecks) && tooClose.clearance(0) == V::Blocked && !tooClose.supported(0));
+  p::ReceiverSiteChecks capped(admission, receivers, source.sceneScale);
+  clearChecks[0] = geometry(1, true); clearChecks[1] = geometry(1000);
+  require(capped.observe(0, clearChecks) && capped.connection(0) == V::Unknown && !capped.supported(0));
   std::vector<p::ReceiverPair> several;
   for (uint32_t owner : {1u, 3u, 5u})
     for (auto pair : unsupported) { pair.receiver = owner; several.push_back(pair); }

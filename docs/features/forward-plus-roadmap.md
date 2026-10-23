@@ -134,8 +134,11 @@ after four blocked results, sharing the original ray cap and retaining completed
 or visible groups never trigger retries. Receivers still unsupported after bounded search now have
 bounded normal-offset site proposals and spherical hardware admission are now available in the
 optional diagnostic, prioritizing partition disagreements without treating occupancy as truth.
-Next validate receiver-to-site connectivity, clearance, projection fits and capture-slot allocation
-before publishing these candidates. Authored-composition pairing still needs separate validation.
+Admitted sites now receive bounded receiver connections and 10 cm axial clearance checks; blocked
+or unknown results cannot authorize support. First-block positions distinguish overlap/buried
+receivers from simple missing influence. Individual connection failures are not sufficient to remove
+charts or declare camera invisibility. Next validate projection fits, capture-slot allocation and
+visible receiver coverage before publishing candidates. Authored-composition pairing remains open.
 Ordinary lighting cache identity is unchanged by this refresh;
 optional sun-depth policy/layout changes can recapture depth while retaining cached irradiance.
 Older cache files are not deleted. Broader map, quality and performance gates remain open.

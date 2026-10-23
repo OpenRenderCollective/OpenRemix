@@ -4,6 +4,7 @@
 #include "forward/probes/receiver_pairs.h"
 #include "forward/probes/receiver_audit.h"
 #include "forward/probes/receiver_sites.h"
+#include "forward/probes/receiver_site_checks.h"
 #include "scene/bake_scene.h"
 #include <algorithm>
 #include <bit>
@@ -31,19 +32,36 @@ namespace remix::forward::probes {
       return {};
     }
   }
+  std::unique_ptr<ReceiverSiteChecks> prepareReceiverSiteChecks(const scene::BakeScene &source,
+      const ReceiverSiteAudit &audit, std::stop_token cancelled) noexcept {
+    try {
+      const auto receivers = sampleReceivers(source, 8192, cancelled);
+      return std::make_unique<ReceiverSiteChecks>(audit, receivers, source.sceneScale);
+    } catch (const std::exception &error) {
+      std::fprintf(stderr, "Receiver site checks unavailable: %s\n", error.what());
+      return {};
+    }
+  }
   void dumpReceiverSites(const scene::BakeScene &source, const ReceiverSiteAudit &audit,
-      std::stop_token cancelled) noexcept {
+      const ReceiverSiteChecks *checks, std::stop_token cancelled) noexcept {
     const char *prefix = std::getenv("REMIX_DEBUG_PROBE_RECEIVER_VISIBILITY");
     if (!prefix || !*prefix) return;
     try {
       const auto path = std::string(prefix) + ".sites.json";
-      if (!audit.complete() || std::filesystem::exists(path)) throw std::runtime_error("Receiver sites incomplete or report exists");
+      if (!audit.complete() || (checks && !checks->complete()) || std::filesystem::exists(path))
+        throw std::runtime_error("Receiver sites incomplete or report exists");
       std::ofstream output(path);
       output.exceptions(std::ios::failbit | std::ios::badbit);
       output.precision(9);
       output << "{\"version\":1,\"sceneHash\":\"" << source.contentHash << "\",\"sceneScale\":"
              << source.sceneScale << ",\"offsetMetres\":0.75,\"samplesPerSite\":" << ReceiverSiteAudit::samples
-             << ",\"receiverConnectionTested\":false,\"sites\":[\n";
+             << ",\"receiverConnectionTested\":" << (checks && checks->complete() ? "true" : "false")
+             << ",\"checkRays\":" << (checks ? checks->rays().size() : 0)
+             << ",\"axisClearanceMetres\":0.1,\"sites\":[\n";
+      auto visibility = [](ReceiverVisibility value) {
+        return value == ReceiverVisibility::Visible ? "visible" :
+               value == ReceiverVisibility::Blocked ? "blocked" : "unknown";
+      };
       for (size_t i = 0; i < audit.sites().size(); ++i) {
         if (cancelled.stop_requested()) throw std::runtime_error("Receiver site report superseded");
         const auto &site = audit.sites()[i];
@@ -55,7 +73,15 @@ namespace remix::forward::probes {
         if (std::isfinite(audit.backface(i))) output << audit.backface(i);
         else output << "null";
         output << ",\"classification\":\"" << (!audit.known(i) ? "unknown" :
-            audit.sampledFree(i) ? "sampled-free" : "sampled-inside") << "\"}";
+            audit.sampledFree(i) ? "sampled-free" : "sampled-inside") << "\",\"connection\":\""
+               << visibility(checks ? checks->connection(i) : ReceiverVisibility::Unknown)
+               << "\",\"axisClearance\":\"" << visibility(checks ? checks->clearance(i) : ReceiverVisibility::Unknown)
+               << "\",\"supported\":" << (checks && checks->supported(i) ? "true" : "false")
+               << ",\"connectionBlock\":";
+        const auto block = checks ? checks->connectionBlock(i) : std::nullopt;
+        if (block) output << '[' << (*block)[0] << ',' << (*block)[1] << ',' << (*block)[2] << ']';
+        else output << "null";
+        output << '}';
       }
       output << "\n]}\n";
     } catch (const std::exception &error) {

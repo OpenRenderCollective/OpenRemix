@@ -40,9 +40,36 @@ namespace remix::forward::bake {
     if (job.receiverSites) {
       const auto points = job.receiverSites->points();
       if (job.receiverSiteReceived == points.size()) {
+        if (!job.receiverChecksPlanned) {
+          job.receiverChecksPlanned = true;
+          const auto owner = m_job;
+          job.ticket = m_pipelines->prepare("forward-receiver-check-plan-" + std::to_string(++receiverDiagnosticGeneration), [owner] {
+            owner->receiverSiteChecks = probes::prepareReceiverSiteChecks(*owner->source, *owner->receiverSites,
+                                                                         owner->cancellation.get_token());
+          });
+          return true;
+        }
+        if (job.receiverSiteChecks && job.receiverCheckReceived < job.receiverSiteChecks->rays().size()) {
+          const auto rays = job.receiverSiteChecks->rays();
+          if (job.receiverCheckNext < rays.size()) {
+            auto &submission = m_submissions[m_slot];
+            if (submission.job) throw std::logic_error("Receiver check slot reused before its fence");
+            const uint32_t count = job.count(Work::Geometry, config, uint32_t(rays.size() - job.receiverCheckNext), 1);
+            job.transport->recordGeometry(command, m_slot, rays.subspan(job.receiverCheckNext, count));
+            submission.job = m_job;
+            submission.receiverSiteCheck = true;
+            submission.first = job.receiverCheckNext;
+            submission.count = count;
+            job.receiverCheckNext += count;
+          }
+          status(REMIXAPI_BAKE_TRACING_EXT, "Checking local reflection site connectivity and clearance");
+          return true;
+        }
         const auto owner = m_job;
         job.ticket = m_pipelines->prepare("forward-receiver-sites-" + std::to_string(++receiverDiagnosticGeneration), [owner] {
-          probes::dumpReceiverSites(*owner->source, *owner->receiverSites, owner->cancellation.get_token());
+          probes::dumpReceiverSites(*owner->source, *owner->receiverSites, owner->receiverSiteChecks.get(),
+                                   owner->cancellation.get_token());
+          owner->receiverSiteChecks.reset();
           owner->receiverSites.reset();
         });
       } else if (job.receiverSiteNext < points.size()) {

@@ -12,6 +12,7 @@
 #include "forward/probes/receiver_visibility.h"
 #include "forward/probes/receiver_audit.h"
 #include "forward/probes/receiver_sites.h"
+#include "forward/probes/receiver_site_checks.h"
 #include "gpu_fixture.h"
 #include "sun_depth_shaders/embedded.h"
 #include "probe_queries.h"
@@ -1359,6 +1360,33 @@ namespace {
                 admission.observe(0, std::span(results).first(1)) && admission.complete() &&
                 admission.known(0) && !admission.sampledFree(0) && admission.sampledFree(1),
             "Receiver-driven local sites use the existing hardware inside/outside admission rule");
+    probes::ReceiverSample receiver;
+    receiver.position = {2, 0, -.75f}; receiver.normal = {0, 0, 1};
+    probes::ReceiverSiteChecks connected(admission, {&receiver, 1}, 1);
+    require(connected.rays().size() == 7, "Only the admitted local site receives connection and clearance checks");
+    auto runChecks = [&](probes::ReceiverSiteChecks &checks) {
+      std::array<bake::Result, 4> readback;
+      for (size_t first = 0; first < checks.rays().size(); first += readback.size()) {
+        const size_t count = std::min(readback.size(), checks.rays().size() - first);
+        fixture.begin();
+        transport.recordGeometry(fixture.command, 0, checks.rays().subspan(first, count));
+        fixture.finish();
+        const auto values = std::span(readback).first(count);
+        transport.read(0, values);
+        require(checks.observe(uint32_t(first), values), "Local site check batches retain their query indices");
+      }
+    };
+    runChecks(connected);
+    require(connected.complete() && connected.supported(1),
+            "Actual hardware geometry validates a connected site with ten-centimetre axial clearance");
+    receiver.position = {0, 0, 0}; receiver.normal = {1, 0, 0};
+    probes::ReceiverSiteChecks acrossWall(admission, {&receiver, 1}, 1);
+    runChecks(acrossWall);
+    require(acrossWall.connection(1) == probes::ReceiverVisibility::Blocked &&
+                acrossWall.clearance(1) == probes::ReceiverVisibility::Visible &&
+                !acrossWall.supported(1) && acrossWall.connectionBlock(1) &&
+                std::abs((*acrossWall.connectionBlock(1))[0] - 1) < .001f,
+            "A free site across a wall is rejected even when its own admission and clearance pass");
     for (const auto &value : results)
       require(value.irradiance[0] == Vec4{}, "Site validation does not evaluate environment lighting");
     std::printf("Capture origin back-face fractions: inside %.3f, outside %.3f\n", results[0].statistics[0],
