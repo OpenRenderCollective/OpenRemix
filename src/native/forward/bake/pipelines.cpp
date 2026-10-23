@@ -58,6 +58,7 @@ namespace remix::forward::bake {
       check(status);
       return result;
     };
+    if (options.depthCapture) depthPipeline = compute(depthShader, sizeof(depthShader), layout);
     tracePipeline = compute(transportShader, sizeof(transportShader), layout);
     parallelPipeline = compute(parallelShader, sizeof(parallelShader), layout);
     // Keep optional aggregate transport out of the ordinary bake/live kernels.

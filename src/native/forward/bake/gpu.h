@@ -13,6 +13,7 @@ namespace remix::forward::bake {
     VkDevice device = VK_NULL_HANDLE;
     std::shared_ptr<const scene::BakeScene> source;
     Options options;
+    VkPhysicalDeviceLimits limits{};
     float sunDistance = 0; // scene units; covers the complete frozen geometry bounds
     std::unique_ptr<Timing> timing;
     RayScene rays;
@@ -32,7 +33,7 @@ namespace remix::forward::bake {
     VkDescriptorSetLayout setLayout = VK_NULL_HANDLE, atlasSetLayout = VK_NULL_HANDLE;
     VkPipelineLayout layout = VK_NULL_HANDLE, atlasLayout = VK_NULL_HANDLE;
     VkPipeline tracePipeline = VK_NULL_HANDLE, parallelPipeline = VK_NULL_HANDLE,
-               visibilityPipeline = VK_NULL_HANDLE, atlasPipeline = VK_NULL_HANDLE;
+               visibilityPipeline = VK_NULL_HANDLE, atlasPipeline = VK_NULL_HANDLE, depthPipeline = VK_NULL_HANDLE;
     VkPipeline aggregatePipeline = VK_NULL_HANDLE, aggregateParallelPipeline = VK_NULL_HANDLE;
     VkDescriptorPool pool = VK_NULL_HANDLE;
     VkSampler sampler = VK_NULL_HANDLE;
@@ -52,7 +53,7 @@ namespace remix::forward::bake {
       uint32_t samples = 0;
       bool componentProposal = false;
       bool compactVisibility = false;
-      bool scalarVisibility = false;
+      bool scalarVisibility = false, externalDepth = false;
     };
     std::array<Slot, gpuFrameCount> slots;
     ~Gpu();

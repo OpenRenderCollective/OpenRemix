@@ -18,6 +18,7 @@ namespace remix::forward::bake {
     bool lightingComponents = false; // retain styled power in the immutable component proposal
     DirectPolicy directLighting; // explicit fully baked diffuse membership; default preserves legacy output
     bool cpuReadback = true; // prefer CPU-cached results for baking
+    bool depthCapture = false; // optional compact depth pipeline, prepared on the worker
     bool deviceLocalBatches = false; // GPU-produced points/results; CPU batch/read APIs are unavailable
     uint32_t rayBudget = 1u << 20; // point * sample * bounce ceiling per dispatch
     uint64_t atlasBudget = 256ull << 20;
@@ -75,6 +76,14 @@ namespace remix::forward::bake {
     // irradiance[0].w and backface/miss/count in statistics.xyz; RGB stays zero.
     // Misses carry an explicit flag even when their distance reaches the cap.
     void recordGeometry(VkCommandBuffer command, uint32_t slot, std::span<const Point> rays);
+    // Write one scene-unit first-hit distance per ray directly into caller-owned
+    // STORAGE_BUFFER memory; negative values mean misses. Traversal uses at least
+    // the frozen scene diagonal; place origins at its sun-facing boundary.
+    // The caller owns output through
+    // the slot fence and supplies a concrete descriptor range/aligned offset.
+    // Output is made visible to fragment/compute reads and transfer copies.
+    void recordDepth(VkCommandBuffer command, uint32_t slot, std::span<const Point> rays,
+                     VkDescriptorBufferInfo output, uint32_t firstWord = 0);
     // Four geometry rays per 8x8 octahedral bin, packed into one raw Result
     // per probe. Readback is ProbeDepth::Record words, not irradiance/statistics.
     void recordProbeDepth(VkCommandBuffer command, uint32_t slot, std::span<const Point> probes);

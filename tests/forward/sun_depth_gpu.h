@@ -11,6 +11,7 @@ void sparseSunDepthPrototype(test::Fixture &fixture, pipeline::Service &pipeline
   scene->sun.angularDiameterDegrees = 0;
   bake::Options transportOptions;
   transportOptions.batchPoints = 256;
+  transportOptions.depthCapture = true;
   transportOptions.distance = 8;
   transportOptions.bias = .0001f;
   bake::Transport transport;
@@ -38,21 +39,72 @@ void sparseSunDepthPrototype(test::Fixture &fixture, pipeline::Service &pipeline
   std::vector<float> depth(options.pageSize * options.pageSize, 8);
   std::vector<bake::Point> rays;
   std::vector<uint32_t> destinations;
+  Buffer compactDepth, compactReadback;
+  constexpr size_t compactBytes = (256 + 2) * sizeof(float);
+  compactDepth.create(fixture.physical, fixture.device, compactBytes,
+      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+      Buffer::Memory::Device);
+  compactReadback.create(fixture.physical, fixture.device, compactBytes,
+      VK_BUFFER_USAGE_TRANSFER_DST_BIT, Buffer::Memory::Readback);
   uint32_t hits = 0, misses = 0;
+  const bake::Point validDepthRay{{0, 0, 2, 0}, {0, 0, -1, 0}};
+  for (uint32_t firstWord : {uint32_t(258), UINT32_MAX}) {
+    bool rejected = false;
+    try { transport.recordDepth(fixture.command, 0, {&validDepthRay, 1}, compactDepth.descriptor(), firstWord); }
+    catch (const std::invalid_argument &) { rejected = true; }
+    require(rejected, "Compact depth rejects destination overflow before recording GPU work");
+  }
+  VkPhysicalDeviceProperties depthProperties;
+  vkGetPhysicalDeviceProperties(fixture.physical, &depthProperties);
+  if (depthProperties.limits.minStorageBufferOffsetAlignment > 1) {
+    auto unaligned = compactDepth.descriptor();
+    unaligned.offset = 1;
+    bool alignmentRejected = false;
+    try { transport.recordDepth(fixture.command, 0, {&validDepthRay, 1}, unaligned); }
+    catch (const std::invalid_argument &) { alignmentRejected = true; }
+    require(alignmentRejected, "Compact depth rejects misaligned storage descriptors");
+  }
+  uint32_t depthBatch = 0;
   auto flush = [&] {
     if (rays.empty()) return;
+    const uint32_t slot = depthBatch++ % gpuFrameCount;
     fixture.begin();
-    transport.recordGeometry(fixture.command, 0, rays);
+    transport.recordGeometry(fixture.command, slot, rays);
     fixture.finish();
     std::vector<bake::Result> results(rays.size());
-    transport.read(0, results);
+    transport.read(slot, results);
+    fixture.begin();
+    vkCmdFillBuffer(fixture.command, compactDepth.handle, 0, compactBytes, 0x7fc00000u);
+    const VkMemoryBarrier fillBarrier{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT};
+    vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        0, 1, &fillBarrier, 0, nullptr, 0, nullptr);
+    transport.recordDepth(fixture.command, slot, rays, compactDepth.descriptor(), 1);
+    const VkBufferCopy copy{0, 0, compactBytes};
+    vkCmdCopyBuffer(fixture.command, compactDepth.handle, compactReadback.handle, 1, &copy);
+    const VkMemoryBarrier hostBarrier{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
+    vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+        0, 1, &hostBarrier, 0, nullptr, 0, nullptr);
+    fixture.finish();
+    bake::Result unavailable;
+    bool readRejected = false;
+    try { transport.read(slot, {&unavailable, 1}); }
+    catch (const std::invalid_argument &) { readRejected = true; }
+    require(readRejected, "Caller-owned depth cannot be mistaken for ordinary transport readback");
+    std::array<float, 258> compact;
+    compactReadback.read(compact.data(), compactBytes);
+    require(std::isnan(compact[0]) && std::isnan(compact[rays.size() + 1]),
+            "Compact depth writes only its explicit destination range");
     for (size_t i = 0; i < results.size(); ++i) {
       const auto &r = results[i];
       const bool miss = r.statistics[1] > .5f;
+      require(miss ? compact[i + 1] < 0 : std::abs(compact[i + 1] - r.irradiance[0][3]) < 1e-5f,
+              "Four-byte GPU depth agrees with full geometry readback and explicit miss metadata");
       require(r.statistics[2] == 1 && std::isfinite(r.irradiance[0][3]), "Depth capture preserves explicit one-ray hit metadata");
       if (miss) ++misses;
       else { ++hits; require(std::abs(r.irradiance[0][3] - 1) < 1e-4f, "Roof depth is captured from the light-facing plane"); }
-      depth[destinations[i]] = miss ? 8 : r.irradiance[0][3];
+      depth[destinations[i]] = compact[i + 1] < 0 ? 8 : compact[i + 1];
     }
     rays.clear(); destinations.clear();
   };
@@ -65,7 +117,7 @@ void sparseSunDepthPrototype(test::Fixture &fixture, pipeline::Service &pipeline
       ray.normal = {0,0,-1,0};
       rays.push_back(ray);
       destinations.push_back((allocation.y - options.border + y) * options.pageSize + allocation.x - options.border + x);
-      if (rays.size() == 256) flush();
+      if (rays.size() == 127) flush();
     }
   }
   flush();

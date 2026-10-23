@@ -52,8 +52,9 @@ layout(set = RAY_SCENE_SET, binding = 6, std430) readonly buffer RayPointsBuffer
   RayPoint rayPoints[];
 };
 layout(set = RAY_SCENE_SET, binding = 7, std430) writeonly buffer RayResultsBuffer {
-#ifdef COMPACT_VISIBILITY
+#if defined(COMPACT_VISIBILITY) || defined(COMPACT_DEPTH)
   // Visibility-only batches store one scalar; direct SH batches store twelve.
+  // Compact depth stores one signed first-hit distance per ray.
   float visibilityResults[];
 #else
   RayResult rayResults[];

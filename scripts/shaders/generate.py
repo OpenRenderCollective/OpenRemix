@@ -30,7 +30,7 @@ BACKENDS = {
     'water': ('forward::water', 'vulkan1.1', ('snapshot', 'snapshotSingle', 'vert', 'frag', 'overlayVert', 'overlayFrag', 'compositeFrag', 'compositeSingle')),
     'live_gi': ('forward::ray::gi', 'vulkan1.2', ('frag', 'guides')),
     'live_ray': ('forward::ray', 'vulkan1.2', ('launch', 'merge')),
-    'bake': ('forward::bake', 'vulkan1.2', ('atlas', 'transport', 'parallel', 'visibility', 'aggregate', 'aggregateParallel')),
+    'bake': ('forward::bake', 'vulkan1.2', ('atlas', 'transport', 'parallel', 'visibility', 'aggregate', 'aggregateParallel', 'depth')),
     'forward_test': ('forward::test', 'vulkan1.2', ('comp', 'probes', 'water')),
     'forward': ('forward', 'vulkan1.1', ('vert', 'lightmapVert', 'frag', 'viewModelFrag', 'cluster', 'shadowVert', 'shadowFrag', 'opaqueDepthFrag', 'localShadowVert', 'localShadowFrag', 'compositeVert', 'compositeFrag', 'compositeSingle', 'ssrFrag', 'ssrResolve', 'ssrResolveSingle', 'ssrReduce', 'ssrTrace', 'ssrFilter')),
     'postfx': ('postfx', 'vulkan1.1', ('meter', 'resolve', 'down', 'up')),

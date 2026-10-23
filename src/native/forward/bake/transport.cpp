@@ -39,7 +39,7 @@ namespace remix::forward::bake {
     if (pool)
       vkDestroyDescriptorPool(device, pool, nullptr);
     for (auto handle : {tracePipeline, parallelPipeline, visibilityPipeline, atlasPipeline,
-                        aggregatePipeline, aggregateParallelPipeline})
+                        aggregatePipeline, aggregateParallelPipeline, depthPipeline})
       if (handle)
         pipeline::destroyPipeline(device, handle, nullptr);
     for (auto handle : {layout, atlasLayout})
@@ -99,6 +99,9 @@ namespace remix::forward::bake {
           throw std::invalid_argument("Component proposal does not match captured style ownership");
     }
     auto next = std::make_unique<Gpu>();
+    VkPhysicalDeviceProperties depthProperties;
+    vkGetPhysicalDeviceProperties(physical, &depthProperties);
+    next->limits = depthProperties.limits;
     next->physical = physical;
     next->device = device;
     next->source = std::move(source);
@@ -256,6 +259,56 @@ namespace remix::forward::bake {
   }
   void Transport::recordGeometry(VkCommandBuffer command, uint32_t slot, std::span<const Point> rays) {
     record(command, slot, rays, 1, 1, 0, Mode::Geometry);
+  }
+  void Transport::recordDepth(VkCommandBuffer command, uint32_t index, std::span<const Point> rays,
+                                VkDescriptorBufferInfo output, uint32_t firstWord) {
+    auto &g = *m_gpu;
+    const uint64_t words = uint64_t(firstWord) + rays.size();
+    if (!g.prepared || !g.depthPipeline || g.options.deviceLocalBatches)
+      throw std::logic_error("Compact depth requires prepared CPU-point transport");
+    if (rays.empty() || rays.size() > g.options.batchPoints || rays.size() > g.options.rayBudget ||
+        !output.buffer || output.range == VK_WHOLE_SIZE || output.range > g.limits.maxStorageBufferRange ||
+        output.offset % g.limits.minStorageBufferOffsetAlignment || words * sizeof(float) > output.range)
+      throw std::invalid_argument("Invalid compact depth output range or batch");
+    for (const auto &ray : rays) {
+      for (const auto &values : {ray.position, ray.normal})
+        for (float value : values)
+          if (!std::isfinite(value)) throw std::invalid_argument("Nonfinite compact depth ray");
+      const float lengthSquared = dot(Vec3{ray.normal[0], ray.normal[1], ray.normal[2]},
+                                      Vec3{ray.normal[0], ray.normal[1], ray.normal[2]});
+      if (!std::isfinite(lengthSquared) || lengthSquared < 1e-10f || ray.normal[3] < 0)
+        throw std::invalid_argument("Invalid compact depth direction");
+    }
+    g.reserveSlot(index, uint32_t(rays.size()), sizeof(float));
+    auto &slot = g.slots.at(index);
+    slot.points->write(rays.data(), rays.size_bytes());
+    const VkWriteDescriptorSet write{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = slot.set, .dstBinding = 7, .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &output};
+    vkUpdateDescriptorSets(g.device, 1, &write, 0, nullptr);
+    slot.externalDepth = true;
+    slot.count = 0; // Ordinary CPU result readers cannot read this caller-owned output.
+    slot.compactVisibility = slot.scalarVisibility = false;
+    Frame frame = lightingFrame(g.source->sun, g.source->dome, g.options.distance, g.options.bias, g.source->sceneScale);
+    frame.trace[0] = g.sunDistance;
+    frame.trace[2] = decalReachMetres / g.source->sceneScale;
+    frame.trace[3] = g.hasModulatingDecals ? 1 : 0;
+    frame.counts[0] = uint32_t(rays.size());
+    frame.control = {g.domeLayer, firstWord, 0, uint32_t(g.hasDielectrics) |
+                                              (g.hasContainingMedia ? containingMediaFlag : 0u)};
+    slot.constants->write(&frame, sizeof(frame));
+    g.timing->begin(command, index);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, g.depthPipeline);
+    vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, g.layout, 0, 1, &slot.set, 0, nullptr);
+    const auto shape = dispatchShape((uint32_t(rays.size()) + 63) / 64);
+    vkCmdDispatch(command, shape.x, shape.y, 1);
+    const VkMemoryBarrier barrier{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT};
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0, 1, &barrier, 0, nullptr, 0, nullptr);
+    g.timing->end(command, index);
   }
   void Transport::recordProbeDepth(VkCommandBuffer command, uint32_t slot, std::span<const Point> probes) {
     if (!m_gpu->options.parallel) throw std::invalid_argument("Probe depth requires parallel transport");
@@ -474,6 +527,14 @@ namespace remix::forward::bake {
                            std::optional<uint32_t> component, uint32_t receiverSites) {
     auto &g = *m_gpu;
     auto &slot = g.slots.at(index);
+    if (slot.externalDepth) {
+      const auto output = slot.results->descriptor();
+      const VkWriteDescriptorSet write{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+          .dstSet = slot.set, .dstBinding = 7, .descriptorCount = 1,
+          .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &output};
+      vkUpdateDescriptorSets(g.device, 1, &write, 0, nullptr);
+      slot.externalDepth = false;
+    }
     if (slot.componentProposal != bool(component)) {
       const auto nodes = (component ? g.componentLightNodes : g.lightNodes)->descriptor();
       const VkWriteDescriptorSet write{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,

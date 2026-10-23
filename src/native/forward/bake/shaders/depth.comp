@@ -1,0 +1,22 @@
+#version 460
+#extension GL_EXT_ray_query : require
+#extension GL_EXT_control_flow_attributes : require
+#extension GL_GOOGLE_include_directive : require
+#define COMPACT_DEPTH
+layout(local_size_x = 64) in;
+#include "bindings.glsl"
+#include "material.glsl"
+#include "radiance.glsl"
+void main() {
+  uint index = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * gl_NumWorkGroups.x * 64u;
+  if (index >= rayFrame.counts.x) return;
+  RayPoint point = rayPoints[index];
+  vec3 direction = normalize(point.normal.xyz);
+  uint seed = floatBitsToUint(point.position.x) * 73856093u ^ floatBitsToUint(point.position.y) * 19349663u ^
+              floatBitsToUint(point.position.z) * 83492791u ^ 2654435761u;
+  seed = directionSeed(direction, seed);
+  Hit hit;
+  bool found = traceRay(point.position.xyz, direction, rayFrame.trace.x, seed, hit);
+  // Negative means an explicit miss, independent of the traversal distance cap.
+  visibilityResults[rayFrame.control.y + index] = found ? hit.distance : -1;
+}
