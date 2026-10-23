@@ -569,6 +569,12 @@ RGBA8 guide alpha from the same covered MSAA sample. Viewmodels use the same bou
 and roughness mips directly. Explicit bindings bypass influence blending; SSR retains precedence.
 BSP importer integration, source projection conventions, dynamic selection, silhouette-specific
 selector acceptance and map-wide performance qualification remain open. This is not deployed.
+The Source adapter retains explicit capture origins from resolved VMT `$envmap` values separately
+from base texture upload hashes. Its sidecar watcher exposes only API-accepted documents (not
+asynchronous image readiness), preserving prior metadata after invalid/refused edits. Exact unique
+origin matching rejects coincident captures and integer-to-float aliases. Per-material variants
+still need to carry binding IDs through both live and relay material creation: grouped meshes
+contain multiple materials, and texture-level or whole-instance binding would conflate receivers.
 
 Bake input readiness now follows retained brush/overlay/terrain/prop material dependencies rather
 than the entire BSP material inventory. Required unresolved inputs still block publication. The
