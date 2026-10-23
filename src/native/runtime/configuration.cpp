@@ -92,7 +92,7 @@ namespace remix {
 
   namespace {
   std::string resourceKey(const config::Settings &settings, VkExtent2D extent,
-                          bool perspective, bool local) {
+                          bool perspective, bool local, bool emissive) {
     // Only changes to resource/pipeline contracts replace the renderer.
     // Continuous lighting and display edits keep their temporal state.
     config::Settings resources;
@@ -118,7 +118,8 @@ namespace remix {
     out.rasterPrimary = in.rasterPrimary;
     return config::serialize(resources) + std::to_string(extent.width) + ":" +
            std::to_string(extent.height) + ":" + std::to_string(perspective) +
-           ":" + std::to_string(local);
+           ":" + std::to_string(local) + ":" +
+           std::to_string(emissive && out.separateLocalLighting != 0);
   }
   } // namespace
   bool RemixNativeRuntime::preparationPending() const {
@@ -190,8 +191,8 @@ namespace remix {
     const auto &frame = renderer();
     const bool perspective = frame.cameraValid() &&
                              upscale::supportsCamera(frame.projection());
-    const bool detectedLocal =
-        frame.hasSphereLights() || frame.staticEmissiveCount() ||
+    const bool detectedEmissive =
+        frame.staticEmissiveCount() ||
         std::any_of(frame.draws().begin(), frame.draws().end(),
                     [](const auto &draw) {
                       const auto &e = draw.material->emission;
@@ -201,7 +202,12 @@ namespace remix {
     // Match the tracer's sticky local-light contract: temporary culling must
     // not repeatedly rebuild denoisers or discard their histories.
     m_localSourcesSeen =
-        settings.backend && (m_localSourcesSeen || detectedLocal);
+        settings.backend && (m_localSourcesSeen || frame.hasSphereLights() || detectedEmissive);
+    // Emissive discovery can require split temporal lighting. Treat that as a
+    // prepared resource contract, not an in-place render-thread pipeline change.
+    m_emissiveSourcesSeen = settings.backend &&
+        (m_emissiveSourcesSeen || (settings.trace.localLights && settings.trace.emissiveLights && detectedEmissive));
+    const bool emissive = m_emissiveSourcesSeen;
     // SIGMA's sun-only composition multiplies the whole direct signal by its
     // shadow mask. Reserve a separate local signal when local lighting is
     // enabled, so a newly appearing torch is never treated as sunlight while
@@ -224,7 +230,7 @@ namespace remix {
     // Not loading while held: the raster backend presents the menu as it is.
     m_worldCameraHold = holding;
     const auto requestedKey =
-        resourceKey(settings, m_swapchainExtent, perspective, local);
+        resourceKey(settings, m_swapchainExtent, perspective, local, emissive);
     if (requestedKey != m_reconstructionFailureKey) {
       m_reconstructionFailureMask = 0;
       m_reconstructionFailure.clear();
@@ -234,7 +240,7 @@ namespace remix {
       const auto reconstruction = m_pathTracer->upscalingStatistics();
       if (reconstruction.failed &&
           requestedKey == resourceKey(m_appliedSettings, m_swapchainExtent,
-                                      perspective, local)) {
+                                      perspective, local, emissive)) {
         m_reconstructionFailureMask |= 1u << uint32_t(reconstruction.backend);
         m_reconstructionFailure = reconstruction.failure;
       }
@@ -335,7 +341,7 @@ namespace remix {
           tracer->setNgx(ngx);
           tracer->configureTarget(pass, extent, encode, depthFormat, depth,
                                   srgb);
-          tracer->prepareConfiguration(options, perspective, local,
+          tracer->prepareConfiguration(options, perspective, local, emissive,
                                        failedBackends, reconstructionFailure);
           next->tracer = std::move(tracer);
           (void)sdkGuard;

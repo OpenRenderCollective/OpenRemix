@@ -255,7 +255,7 @@ namespace remix {
     m_failedPreparationKey.clear();
     m_preparationFailure.clear();
     m_loading = m_rasterPreparing = false;
-    m_localSourcesSeen = false;
+    m_localSourcesSeen = m_emissiveSourcesSeen = false;
     m_reconstructionFailureMask = 0;
     m_reconstructionFailureKey.clear();
     m_reconstructionFailure.clear();

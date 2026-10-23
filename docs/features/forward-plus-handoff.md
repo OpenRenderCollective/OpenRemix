@@ -354,3 +354,12 @@ HDR sky replay requires the new native immutable float texture formats; the curr
 22b8406 runtime predates them. Pair the rebuilt replay with a newer native runtime for HDR skies.
 LDR/frozen-reference behavior remains compatible. See the adapter README for encodings and limits.
 No testing-install deployment was made as part of this source change.
+
+
+Late-emissive temporal layout changes now use the runtime's compiler-worker preparation contract.
+Scene source eligibility is sticky independently of the currently prepared layout, so spawning an
+emissive object requests a replacement while the previous renderer remains usable. Hiding/showing
+it does not repeatedly replace temporal targets. Existing Vulkan error handling, queue fences and
+public ABI layouts remain unchanged. The added GPU regression covers the late-source transition,
+TAA retention and warmed visibility variants; the original map failure now captures cleanly. The
+separate validation-layer cleanup diagnostics in rejected negative controls remain unresolved.

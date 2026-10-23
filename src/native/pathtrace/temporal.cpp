@@ -148,7 +148,9 @@ namespace remix {
       local = localCapable[0];
     }
     const bool localDenoise = local && options.localDenoiser && reblur;
-    const bool split = local && options.separateLocalLighting != 0 && (emissiveSeen || options.restir) &&
+    // Scene discoveries replace this contract through runtime preparation.
+    // The active renderer keeps combined lighting while its replacement compiles.
+    const bool split = local && options.separateLocalLighting != 0 && (preparedEmissive || options.restir) &&
                        denoise::localSupported(physical, sigma, true);
     const bool combinedDirect = split && options.separateLocalLighting == 3;
     if (reblur != postReblur || taa != postTaa || sigma != postSigmaRequested ||
@@ -171,7 +173,7 @@ namespace remix {
       postFailure.clear();
     if (localLimited)
       postFailure = "Insufficient descriptors for separate local and sun signals; SIGMA is disabled";
-    if (local && options.separateLocalLighting && (emissiveSeen || options.restir) && !split)
+    if (local && options.separateLocalLighting && (preparedEmissive || options.restir) && !split)
       postFailure = options.separateLocalLighting == 3
           ? "Insufficient descriptors for a separate combined-light pass; inline combined lighting active"
           : "Insufficient descriptors for separate torch/emissive histories; combined local lighting active";
@@ -303,12 +305,13 @@ namespace remix {
     return options;
   }
   void PathTracer::prepareConfiguration(const TraceOptions &options,
-                                        bool perspective, bool local,
+                                        bool perspective, bool local, bool emissive,
                                         uint32_t failedBackends,
                                         const std::string &failure) {
     auto &g = *m_gpu;
     g.preparedPerspective = perspective;
     g.preparedLocal = local;
+    g.preparedEmissive = emissive;
     g.requestedUpscaler = options.upscaler;
     g.fsrQuality = options.upscaler == upscale::Mode::Fsr31
                        ? options.fsrQuality

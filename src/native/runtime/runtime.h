@@ -429,7 +429,7 @@ private:
   bool m_loading = false, m_rasterPreparing = false;
   uint32_t m_reconstructionFailureMask = 0;
   std::string m_reconstructionFailureKey, m_reconstructionFailure;
-  bool m_localSourcesSeen = false;
+  bool m_localSourcesSeen = false, m_emissiveSourcesSeen = false;
   // When an upscaler profile first met a non-perspective camera (a menu or
   // loading screen) with no renderer yet: prepareSettings holds the first
   // preparation for the world's camera, within a bound.

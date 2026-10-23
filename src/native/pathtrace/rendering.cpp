@@ -412,7 +412,6 @@ namespace remix {
     else if (emissiveHold)
       --emissiveHold;
     const bool hasEmissiveLights = lighting.hasEmissive || emissiveHold;
-    emissiveSeen |= hasEmissiveLights;
     emissionHistory = std::move(lighting.history);
     lightBvh = std::move(lighting.combined);
     lightVisibility = std::move(lighting.visibility);

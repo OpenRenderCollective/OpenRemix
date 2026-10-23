@@ -81,7 +81,7 @@ namespace remix {
     FrameGenerationInputs frameGeneration() const;
     void setNgx(std::shared_ptr<upscale::Ngx> ngx);
     void prepareConfiguration(const TraceOptions &options, bool perspective,
-                              bool local, uint32_t failedBackends = 0,
+                              bool local, bool emissive, uint32_t failedBackends = 0,
                               const std::string &failure = {});
     bool finishPreparation(VkQueue queue);
     void beginFrame(const TraceOptions &options, const RasterRenderer &resources);

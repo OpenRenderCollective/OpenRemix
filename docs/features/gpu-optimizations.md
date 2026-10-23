@@ -80,3 +80,15 @@ glslang does not yet accept the EXT form).
   scene costing no more than the pure ones means there is no divergence for
   per-class hit shaders to remove).
   `REMIX_PATH_FIXED_SEED` makes every frame draw the same samples.
+
+
+### Scene-dependent temporal preparation
+
+Path tracing treats emissive-source eligibility as a prepared resource contract alongside perspective
+and local-light eligibility. Source discovery is sticky for the enabled backend; the requested key
+includes its split-lighting requirement. Candidate initialization and required pipeline compilation
+run on the existing preparation workers, and activation retains the existing queue-idle/retirement
+boundary. The active tracer uses its immutable prepared emissive hint, keeping combined lighting
+while a split-layout replacement is pending. Temporary emitter visibility changes can still request
+lazy sampler variants, but do not rebuild temporal targets. Genuine preparation failures retain the
+existing diagnostics/fallback behavior; NOT_READY is not globally suppressed.

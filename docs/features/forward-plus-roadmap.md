@@ -1132,6 +1132,18 @@ and transport preserve values above one; ordinary and frozen LDR paths remain su
 three-texture HDR, animated/procedural skies and server overrides remain outside static decoding;
 procedural skies still need an explicit frozen live reference. Normal game capture is unchanged.
 
-A cold path-traced configuration combination returned Vulkan NOT_READY during preparation; the fully
-specified known tracing configuration completed cleanly. Keep the former preparation case as a
-separate follow-up; do not attribute it to HDR or accept its incomplete capture as evidence.
+The cold path-traced NOT_READY failure was traced to late emissive discovery changing temporal
+lighting layouts in place after activation. Emissive-source eligibility now joins the existing local
+source/camera resource key and compiler-worker preparation. The active renderer retains combined
+lighting while its replacement is prepared; emissive visibility changes keep the accepted layout.
+The old render-time emissive layout flag was removed rather than retaining two competing policies.
+
+The original failure is reproduced with one compiler worker. The fixed renderer remains active for
+that stress run's 100000-frame budget, though its optional shader queue outlasts that budget; that run
+is not an accepted capture. A complete four-worker repeat reaches 57/57 pipelines and passes
+synchronization validation. A public-API regression adds an emitter after startup, verifies continued
+presentation and TAA, then warms lazy light-sampler variants and checks repeated hide/show cycles
+without more renderer preparation or temporal allocation changes. That regression and a pixel/hash-
+identical Forward+ comparison pass validation; pipeline preparation CPU checks also pass. These are
+stability/compatibility checks, not FPS acceptance. Older rejected controls hit validation-layer queue
+state timeouts during cleanup; that separate issue is not claimed fixed.

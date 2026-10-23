@@ -472,7 +472,6 @@ namespace remix {
     // Emissive (surface) lights were present: only then is local lighting
     // split by family or into a separate pass (API "torch" lights alone use
     // the combined local signal).
-    bool emissiveSeen = false;
     uint32_t emissiveHold = 0; // frames the emissive estimator outlasts the last emissive light
     bool postLocalDenoise = false, postLocalDenoiseRequested = false;
 
@@ -901,7 +900,7 @@ namespace remix {
     std::chrono::steady_clock::time_point epoch = std::chrono::steady_clock::now();
 
     bool preparing = false, preparedRasterPrimary = true;
-    bool preparedPerspective = false, preparedLocal = false;
+    bool preparedPerspective = false, preparedLocal = false, preparedEmissive = false;
     void createRawPipelines();
     void configureFrame(const TraceOptions &options, bool perspective,
                         bool local);

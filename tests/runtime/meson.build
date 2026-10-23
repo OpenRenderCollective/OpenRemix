@@ -31,6 +31,13 @@ profile_test = executable('remix-profiles-test', 'profiles.cpp',
   dependencies : filesystem_dep)
 test('Configuration profiles and unsaved actions', profile_test, args : ['@CONFIG_DIR@'])
 if get_option('gpu_tests')
+  if not metal_backend
+    emissive_preparation_test = executable('remix-emissive-preparation-test', 'emissive_preparation.cpp',
+      include_directories : [test_includes, include_directories('../../samples')],
+      dependencies : [sdl3_dep, filesystem_dep], link_with : remix)
+    test('Late emissive lights prepare split temporal lighting', emissive_preparation_test,
+      env : ['REMIX_PIPELINE_THREADS=4', 'REMIX_FG_PRESENT_METERING=0'], timeout : 1200, is_parallel : false)
+  endif
   profile_runtime_test = executable('remix-profile-runtime-test', 'profile_runtime.cpp',
     '../../src/native/runtime/settings.cpp', '../../src/native/runtime/profiles.cpp',
     include_directories : [test_includes, include_directories('../../samples')],
