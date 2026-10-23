@@ -38,6 +38,11 @@ work and depth ordering while preserving colour/decal order and offscreen shadow
 Local pipeline/material/buffer binding reuse likewise preserved the sampled image but failed to
 show a repeatable normal-runtime end-to-end benefit, and was removed. Keep rejected experiments
 out of the shipping draw path; assess depth-only ordering separately from colour/decal order.
+Stable nearest-bounds depth ordering also remains rejected: it preserved sampled coverage but
+increased measured fragment work, and its full-resolution timing benefit varied with trial order.
+The existing prepass-off option needs other maps and light-heavy/moving views before any default
+change. Preserve the full-resolution normal-runtime baseline; small fixed-view differences are
+not evidence of gameplay FPS parity.
 Next isolate the dominant opaque receiver work with bounded fragment/receiver diagnostics, preserving
 ordinary draw order and checking omitted ranges. Investigate the observed increase in local-shadow
 GPU time when the independent baked-highlight budget is reduced: compare selected emitter identities,
