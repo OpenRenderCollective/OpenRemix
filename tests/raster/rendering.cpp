@@ -1,6 +1,7 @@
 #include "raster/renderer.h"
 #include "forward/renderer.h"
 #include "forward/bake/controller.h"
+#include "forward/bake/sun_depth.h"
 #include "forward/bake/cache_persistence.h"
 #include "forward/bake/cache.h"
 #include "forward/mixed/directional_fields.h"
@@ -3177,6 +3178,7 @@ namespace {
   }
 #include "styled_indirect.h"
 #include "local_shadow_plane.h"
+#include "sun_depth_lifecycle.h"
 #include "auto_exposure.h"
   void bakingTests() {
     Target target(64, 64, true);
@@ -5051,6 +5053,7 @@ int main(int argc, char **argv) try {
   else if (argc>2 && std::strcmp(argv[2],"decal-lighting")==0) terrainLightingTests(true);
   else if (argc>2 && std::strcmp(argv[2],"clear-visibility")==0) clearVisibilityTests();
   else if (argc>2 && std::strcmp(argv[2],"mixed-sun")==0) sunLightingTests();
+  else if (argc>2 && std::strcmp(argv[2],"sun-depth-lifecycle")==0) sunDepthLifecycleTests();
   else if (argc>2 && std::strcmp(argv[2],"probe-blend")==0) reflectionTests(directory, true);
   else if (argc>2 && std::strcmp(argv[2],"sky-reflections")==0) {
     reflectionTests(directory, true, false, true, 1);

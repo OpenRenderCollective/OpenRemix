@@ -47,6 +47,9 @@ if get_option('gpu_tests')
     args : [meson.current_build_dir() / 'hardware-reflection-readback', 'hardware-reflections'], timeout : 180)
   test('Forward+ SSR transport and MSAA guide readback', raster_test,
     args : [meson.current_build_dir() / 'reflection-readback', 'reflections'], timeout : 120)
+  test('Forward+ sun depth cancellation, scene replacement and warm publication', raster_test,
+    args : [meson.current_build_dir() / 'sun-depth-lifecycle-readback', 'sun-depth-lifecycle'],
+    env : ['REMIX_DEBUG_BAKE_SUN_DEPTH=1'], timeout : 180)
   test('Forward+ baked irradiance publication and surface readback', raster_test,
     args : [meson.current_build_dir() / 'bake-readback', 'baking'], timeout : 120)
   test('Forward+ mixed dynamic local shadows, cache and MSAA', raster_test,

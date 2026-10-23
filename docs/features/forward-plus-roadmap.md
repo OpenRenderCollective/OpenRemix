@@ -1312,6 +1312,12 @@ cover glass, partial/empty/full source-over coverage, empty cutouts, opaque hits
 This is material-aware coverage gating, not layered coloured transmission in the depth field. Retain
 that limitation and recheck real-map glass/water alongside the live transition acceptance.
 
+A controller-level render fixture now cancels both tracing and cache-save phases, replaces frozen
+scene lighting while retaining the old volume, verifies warm depth restore without capture, compares
+cold/warm unmapped receiver pixels, replaces MSAA attachments and unloads. Synchronization validation
+passes. This covers synthetic controller publication/lifetime, not large real-map transitions or
+interactive moving-shadow quality.
+
 Next cover live map transitions and moving actors,
 and measure the steady-state and total bake costs. Confirm unsupported/over-budget fallback,
 transmissive casters and finite sun shape before enabling a default. The existing static-cascade
