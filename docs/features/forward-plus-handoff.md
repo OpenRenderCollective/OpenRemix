@@ -503,6 +503,17 @@ See the adapter's `tools/probe_editor/README.md` for the existing native Qt cube
 Authored references align with **hls00amrl**, not hls01amrl. Use combined cubemap/probe volumes and their
 independent capture origins, not ordinary point entities alone. New standalone tools should prefer C#.
 
+Refract reference inspection of the local s&box Source1 importer/shader confirms normal-frame
+selection by `$bumpframe` and tint sampling through transformed normal UVs. The shield proxy
+names `$dudvmap` but writes `$bumpframe`; matching only the animated texture name would miss
+its normal playback. Existing native sheet tint uses base UVs, so adapter creation alone
+would not represent this material. Keep the artistic refraction amount separate from IOR,
+define passive optical tint conversion explicitly, and preserve replacement keys.
+Adapter `4297c7a` fixes a prerequisite: water normal cache/upload identity now includes the
+playback rate, so shared texture names with different rates cannot alias the same mutable
+runtime texture. Proxy and relay compile; live multi-rate validation and Refract integration
+remain pending. This change is not deployed.
+
 A 2026-10-24 installed-build recheck confirms this is still a pre-bake publication blocker:
 614/615 resolved materials, retained geometry present, active bake hash zero. No GPU/FPS
 timings from that attempt are accepted. Temporary HL2 mounts and protected settings were
