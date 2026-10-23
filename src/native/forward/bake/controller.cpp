@@ -422,6 +422,11 @@ namespace remix::forward::bake {
               job.failed = true;
               status(REMIXAPI_BAKE_FAILED_EXT, "Invalid attributed irradiance readback");
             }
+          } else if (submission.receiverSite) {
+            if (!job.receiverSites || !job.receiverSites->observe(submission.first, results)) {
+              job.failed = true;
+              status(REMIXAPI_BAKE_FAILED_EXT, "Invalid receiver site readback ownership");
+            }
           } else if (submission.reflectionReceiver) {
             if (!job.receiverAudit || !job.receiverAudit->observe(submission.first, results)) {
               job.failed = true;
@@ -478,6 +483,7 @@ namespace remix::forward::bake {
                                   ? sizeof(VisibilityResult) : sizeof(Result));
         if (!submission.styled && !submission.reference && !submission.probeDepth) (submission.sunDepth ? job.sunDepthReceived
          : submission.radiance ? job.captureReceived
+         : submission.receiverSite ? job.receiverSiteReceived
          : submission.reflectionReceiver ? job.receiverReceived
          : submission.reflectionGeometry ? job.geometryReceived
          : submission.reflectionSite     ? job.siteReceived
@@ -502,7 +508,7 @@ namespace remix::forward::bake {
                             : submission.visibility || submission.direct || submission.directionalField ||
                               submission.overflowVisibility || submission.probeLocal     ? Work::Visibility
                             : submission.sun || submission.probeSun                  ? Work::Sun
-                            : submission.reflectionSite                              ? Work::Site
+                            : submission.reflectionSite || submission.receiverSite  ? Work::Site
                             : submission.radiance                                    ? Work::Reflection
                             : submission.surface                                     ? Work::Surface
                                                                                      : Work::Irradiance;
@@ -963,33 +969,7 @@ namespace remix::forward::bake {
       status(REMIXAPI_BAKE_PREPARING_EXT, "Selecting reflection captures");
       return;
     }
-    if (job.receiverAudit) {
-      const auto rays = job.receiverAudit->rays();
-      if (job.receiverReceived == rays.size()) {
-        const auto owner = m_job;
-        const bool retry = !job.receiverRetried;
-        job.receiverRetried = true;
-        job.ticket = m_pipelines->prepare("forward-receiver-report-" + std::to_string(++generation), [owner, retry] {
-          if (retry && probes::retryReceiverAudit(*owner->source, owner->captures, *owner->receiverAudit,
-                                                 owner->cancellation.get_token())) return;
-          probes::dumpReceiverAudit(*owner->source, owner->captures, *owner->receiverAudit,
-                                   owner->cancellation.get_token());
-          owner->receiverAudit.reset();
-        });
-      } else if (job.receiverNext < rays.size()) {
-        auto &submission = m_submissions[m_slot];
-        if (submission.job) throw std::logic_error("Receiver audit slot reused before its fence");
-        const uint32_t count = job.count(Work::Geometry, config, uint32_t(rays.size() - job.receiverNext), 1);
-        job.transport->recordGeometry(command, m_slot, rays.subspan(job.receiverNext, count));
-        submission.job = m_job;
-        submission.reflectionReceiver = true;
-        submission.first = job.receiverNext;
-        submission.count = count;
-        job.receiverNext += count;
-      }
-      status(REMIXAPI_BAKE_TRACING_EXT, "Checking optional receiver-to-capture visibility");
-      return;
-    }
+    if (recordReceiverDiagnostics(command, config)) return;
     if (job.captureReceived == job.captureWork.rays().size()) {
       job.filtering = true;
       const auto owner = m_job;

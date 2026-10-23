@@ -8,6 +8,11 @@ namespace remix::scene { struct BakeScene; }
 namespace remix::forward::probes {
   struct FittedRegion;
   class ReceiverAudit;
+  class ReceiverSiteAudit;
+  std::unique_ptr<ReceiverSiteAudit> prepareReceiverSites(const scene::BakeScene &source,
+      const ReceiverAudit &audit, std::stop_token cancelled = {}) noexcept;
+  void dumpReceiverSites(const scene::BakeScene &source, const ReceiverSiteAudit &audit,
+      std::stop_token cancelled = {}) noexcept;
   // Optional bounded hardware diagnostic; absent environment request means no
   // receiver sampling, pair storage or extra GPU traversal.
   std::unique_ptr<ReceiverAudit> prepareReceiverAudit(const scene::BakeScene &source,

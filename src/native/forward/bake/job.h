@@ -16,6 +16,7 @@
 #include "forward/probes/evaluation.h"
 #include "forward/probes/capture_work.h"
 #include "forward/probes/receiver_audit.h"
+#include "forward/probes/receiver_sites.h"
 #include <atomic>
 #include <chrono>
 #include <filesystem>
@@ -122,6 +123,8 @@ namespace remix::forward::bake {
     std::unique_ptr<probes::ReceiverAudit> receiverAudit;
     uint32_t receiverNext = 0, receiverReceived = 0;
     bool receiverRetried = false;
+    std::unique_ptr<probes::ReceiverSiteAudit> receiverSites;
+    uint32_t receiverSiteNext = 0, receiverSiteReceived = 0;
     probes::CaptureWork captureWork;
     uint64_t captureInputHash = 0;
     probes::Data specular;

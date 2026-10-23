@@ -498,7 +498,14 @@ share the 32768-ray cap and preserve prior evidence; duplicate owners and pendin
 are rejected. Reports include zero-based `candidateRank`. Existing output paths are refused. The report covers automatic captures before
 authored composition; it does not change selection, published lighting, cache identity or influence
 bounds. It adds diagnostic work only during a fresh bake; loading cached lighting bypasses it.
-A segment is sampled evidence only, particularly with alpha coverage, not proof of an empty volume. These
+A segment is sampled evidence only, particularly with alpha coverage, not proof of an empty volume.
+After the bounded search, the diagnostic proposes at most 512 sites 0.75 m along the normals of
+receivers with eight blocked candidates. Partition disagreements get priority but never authorize
+admission. The existing spherical hardware validator spends 64 directions per site (a separate
+32768-direction diagnostic cap), retaining readbacks through their fences. Results go to the request
+path plus `.sites.json`, including partition classification and sampled backface fractions.
+These are candidate locations only: receiver connectivity, clearance and projection fitting remain
+unproven. Neither the sites nor their radiance are inserted into the published reflection set. These
 measurements do not change selection or permit growth through walls.
 Version 2 also exports up to 8192 deterministic, area-weighted `receivers` from the frozen surface
 charts. Positions use host scene units; `sceneScale` converts lengths to metres. Each sample includes

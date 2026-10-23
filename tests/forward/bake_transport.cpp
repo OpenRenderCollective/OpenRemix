@@ -11,6 +11,7 @@
 #include "forward/half.h"
 #include "forward/probes/receiver_visibility.h"
 #include "forward/probes/receiver_audit.h"
+#include "forward/probes/receiver_sites.h"
 #include "gpu_fixture.h"
 #include "sun_depth_shaders/embedded.h"
 #include "probe_queries.h"
@@ -1351,6 +1352,13 @@ namespace {
     require(results[0].statistics[0] > .95f && results[1].statistics[0] < .05f &&
                 results[0].statistics[2] == 64 && results[1].statistics[2] == 64,
             "Hardware candidate queries reject an origin inside a static prop while retaining free space");
+    probes::ReceiverSite inside, outside;
+    inside.point = points[0]; outside.point = points[1];
+    probes::ReceiverSiteAudit admission({inside, outside});
+    require(admission.observe(1, std::span(results).subspan(1)) &&
+                admission.observe(0, std::span(results).first(1)) && admission.complete() &&
+                admission.known(0) && !admission.sampledFree(0) && admission.sampledFree(1),
+            "Receiver-driven local sites use the existing hardware inside/outside admission rule");
     for (const auto &value : results)
       require(value.irradiance[0] == Vec4{}, "Site validation does not evaluate environment lighting");
     std::printf("Capture origin back-face fractions: inside %.3f, outside %.3f\n", results[0].statistics[0],

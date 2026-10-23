@@ -1,6 +1,7 @@
 #include "forward/probes/receiver_visibility.h"
 #include "forward/probes/receiver_pairs.h"
 #include "forward/probes/receiver_audit.h"
+#include "forward/probes/receiver_sites.h"
 #include <limits>
 #include <stdexcept>
 
@@ -137,4 +138,41 @@ int main() {
   rejected = false;
   try { rounds.append({firstRound[0]}); } catch (const std::invalid_argument &) { rejected = true; }
   require(rejected && rounds.complete() && rounds.rays().size() == 12);
+  remix::scene::BakeScene source;
+  source.sceneScale = .0254f;
+  require(p::receiverSites(source, receivers, rounds).empty()); // A visible retry forbids unnecessary new sites.
+  auto unsupported = std::vector<p::ReceiverPair>(firstRound.begin(), firstRound.begin() + 4);
+  unsupported.insert(unsupported.end(), retry.begin(), retry.end());
+  p::ReceiverAudit noCapture(unsupported, .01f);
+  require(noCapture.observe(0, blocked));
+  auto partition = std::make_shared<remix::scene::VisibilityPartition>();
+  partition->closed = true; partition->clusterCount = 1; partition->leafClusters = {-1};
+  partition->nodes.push_back({{0, 0, 1, 1000}, {-1, -1}});
+  source.partition = partition;
+  const auto sites = p::receiverSites(source, receivers, noCapture);
+  require(sites.size() == 1 && sites[0].partitionDisagreement &&
+              sites[0].receiver == firstRound[0].receiver &&
+              std::abs(sites[0].point.position[2] - .75f / source.sceneScale) < 1e-4f);
+  p::ReceiverSiteAudit admission({sites[0], sites[0], sites[0]});
+  auto freeSite = geometry(0); freeSite.statistics = {0, .5f, 64, 0};
+  auto insideSite = freeSite; insideSite.statistics = {.75f, .25f, 64, 0};
+  auto invalidSite = freeSite; invalidSite.statistics[2] = 0;
+  require(!admission.sampledFree(0) && admission.observe(2, {&invalidSite, 1}) &&
+              admission.observe(0, {&freeSite, 1}) && admission.observe(1, {&insideSite, 1}));
+  require(admission.complete() && admission.sampledFree(0) && admission.known(1) &&
+              !admission.sampledFree(1) && !admission.known(2) && !admission.observe(0, {&freeSite, 1}));
+  std::vector<p::ReceiverPair> several;
+  for (uint32_t owner : {1u, 3u, 5u})
+    for (auto pair : unsupported) { pair.receiver = owner; several.push_back(pair); }
+  p::ReceiverAudit severalBlocked(several, .01f);
+  std::vector<Result> allBlocked(several.size(), geometry(1));
+  require(severalBlocked.observe(0, allBlocked));
+  partition->nodes[0] = {{0, 1, 0, 4}, {-1, -2}};
+  partition->leafClusters = {-1, 0};
+  const auto priority = p::receiverSites(source, receivers, severalBlocked, 1);
+  require(priority.size() == 1 && priority[0].receiver == 5 && priority[0].partitionDisagreement);
+  rejected = false;
+  try { p::receiverSites(source, receivers, severalBlocked, 1, stop.get_token()); }
+  catch (const std::runtime_error &) { rejected = true; }
+  require(rejected);
 }

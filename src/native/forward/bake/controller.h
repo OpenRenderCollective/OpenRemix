@@ -77,7 +77,7 @@ namespace remix::forward::bake {
       bool preparation = false, radiance = false, surface = false, visibility = false, reflectionSite = false,
            sun = false, sunDepth = false, sunDepthCache = false, probeSun = false, probeLocal = false, overflowVisibility = false, reflectionGeometry = false,
            sunAntialiasing = false, direct = false, directionalField = false, reference = false, probeDepth = false,
-           reflectionReceiver = false;
+           reflectionReceiver = false, receiverSite = false;
     };
     VkPhysicalDevice m_physical;
     VkDevice m_device;
@@ -115,5 +115,6 @@ namespace remix::forward::bake {
     void recordProbeDepth(VkCommandBuffer command, const Config &config);
     void recordProbeLocal(VkCommandBuffer command, const Config &config);
     void recordReflections(VkCommandBuffer command, const Config &config);
+    bool recordReceiverDiagnostics(VkCommandBuffer command, const Config &config);
   };
 } // namespace remix::forward::bake

@@ -3,6 +3,7 @@
 #include "forward/probes/receivers.h"
 #include "forward/probes/receiver_pairs.h"
 #include "forward/probes/receiver_audit.h"
+#include "forward/probes/receiver_sites.h"
 #include "scene/bake_scene.h"
 #include <algorithm>
 #include <bit>
@@ -16,12 +17,58 @@
 #include <unordered_set>
 
 namespace remix::forward::probes {
+  std::unique_ptr<ReceiverSiteAudit> prepareReceiverSites(const scene::BakeScene &source,
+      const ReceiverAudit &audit, std::stop_token cancelled) noexcept {
+    const char *prefix = std::getenv("REMIX_DEBUG_PROBE_RECEIVER_VISIBILITY");
+    if (!prefix || !*prefix) return {};
+    try {
+      if (std::filesystem::exists(std::string(prefix) + ".sites.json"))
+        throw std::runtime_error("Receiver site report already exists");
+      const auto receivers = sampleReceivers(source, 8192, cancelled);
+      return std::make_unique<ReceiverSiteAudit>(receiverSites(source, receivers, audit, 512, cancelled));
+    } catch (const std::exception &error) {
+      std::fprintf(stderr, "Receiver site audit unavailable: %s\n", error.what());
+      return {};
+    }
+  }
+  void dumpReceiverSites(const scene::BakeScene &source, const ReceiverSiteAudit &audit,
+      std::stop_token cancelled) noexcept {
+    const char *prefix = std::getenv("REMIX_DEBUG_PROBE_RECEIVER_VISIBILITY");
+    if (!prefix || !*prefix) return;
+    try {
+      const auto path = std::string(prefix) + ".sites.json";
+      if (!audit.complete() || std::filesystem::exists(path)) throw std::runtime_error("Receiver sites incomplete or report exists");
+      std::ofstream output(path);
+      output.exceptions(std::ios::failbit | std::ios::badbit);
+      output.precision(9);
+      output << "{\"version\":1,\"sceneHash\":\"" << source.contentHash << "\",\"sceneScale\":"
+             << source.sceneScale << ",\"offsetMetres\":0.75,\"samplesPerSite\":" << ReceiverSiteAudit::samples
+             << ",\"receiverConnectionTested\":false,\"sites\":[\n";
+      for (size_t i = 0; i < audit.sites().size(); ++i) {
+        if (cancelled.stop_requested()) throw std::runtime_error("Receiver site report superseded");
+        const auto &site = audit.sites()[i];
+        output << (i ? ",\n" : "") << "{\"receiver\":" << site.receiver << ",\"position\":["
+               << site.point.position[0] << ',' << site.point.position[1] << ',' << site.point.position[2]
+               << "],\"partitionDisagreement\":" << (site.partitionDisagreement ? "true" : "false")
+               << ",\"sitePartitionCluster\":" << (source.partition ? source.partition->cluster(site.point.position.data()) : -1)
+               << ",\"backfaceFraction\":";
+        if (std::isfinite(audit.backface(i))) output << audit.backface(i);
+        else output << "null";
+        output << ",\"classification\":\"" << (!audit.known(i) ? "unknown" :
+            audit.sampledFree(i) ? "sampled-free" : "sampled-inside") << "\"}";
+      }
+      output << "\n]}\n";
+    } catch (const std::exception &error) {
+      std::fprintf(stderr, "Receiver site report unavailable: %s\n", error.what());
+    }
+  }
   std::unique_ptr<ReceiverAudit> prepareReceiverAudit(const scene::BakeScene &source,
       std::span<const Capture> captures, std::stop_token cancelled) noexcept {
     const char *path = std::getenv("REMIX_DEBUG_PROBE_RECEIVER_VISIBILITY");
     if (!path || !*path) return {};
     try {
-      if (std::filesystem::exists(path)) throw std::runtime_error("Receiver audit report already exists");
+      if (std::filesystem::exists(path) || std::filesystem::exists(std::string(path) + ".sites.json"))
+        throw std::runtime_error("Receiver audit report already exists");
       const auto receivers = sampleReceivers(source, 8192, cancelled);
       return std::make_unique<ReceiverAudit>(
           receiverPairs(receivers, captures, .002f / source.sceneScale, 32768, 4, cancelled),

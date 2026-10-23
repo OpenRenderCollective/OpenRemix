@@ -71,7 +71,7 @@ forward_projection_test = executable('remix-forward-projection-test', 'evaluatio
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Reflection candidate geometry assessment and bounded streaming', forward_projection_test)
 receiver_visibility_test = executable('remix-receiver-visibility-test', 'receiver_visibility.cpp',
-  '../../src/native/forward/probes/receiver_pairs.cpp', '../../src/native/forward/probes/data.cpp',
+  '../../src/native/forward/probes/receiver_pairs.cpp', '../../src/native/forward/probes/receiver_sites.cpp', '../../src/native/forward/probes/data.cpp',
   '../../src/native/forward/lighting.cpp', link_with : scene_library,
   include_directories : test_includes, cpp_args : test_cpp_args)
 test('Reflection receiver segments preserve unknown and blocked coverage', receiver_visibility_test)
