@@ -84,7 +84,10 @@ namespace remix::forward {
     // Queue-idle activation retains published bake metadata before the first frame.
     void activate(uint32_t slot);
     void selectFrame(uint32_t slot); // caller has waited for this slot's fence
-    void prepare(VkCommandBuffer command, RasterRenderer &resources, float seconds = -1);
+    // Negative animationSeconds uses the renderer clock. Explicit time supports
+    // deterministic rendering tests independently of exposure adaptation.
+    void prepare(VkCommandBuffer command, RasterRenderer &resources, float seconds = -1,
+                 double animationSeconds = -1);
     void composite(VkCommandBuffer command);  // inside the output render pass
     void background(VkCommandBuffer command); // before raster sky and the world composite
     const Statistics &statistics() const;

@@ -514,6 +514,21 @@ playback rate, so shared texture names with different rates cannot alias the sam
 runtime texture. Proxy and relay compile; live multi-rate validation and Refract integration
 remain pending. This change is not deployed.
 
+Native optical tint scrolling is now implemented as an optional engine-agnostic measured-sheet
+control, with separate UV rates and a streamed clock. Forward+ shares one animation time
+between live surfaces and ray transport; exposure adaptation keeps its independent input.
+Ray-scene identity depends on rates, not ticking time. Vulkan path-tracer primary/continuation
+and light visibility share the tint UV helper; procedural material flags also include tint.
+Nonstationary tint remains ineligible for frozen bake snapshots: stationary/time-averaged
+optical transport, actual Refract material creation, tint conversion and proxy integration
+remain open. Do not claim this API alone unblocks Trainstation or provides Metal parity.
+This source change is not deployed.
+CPU validation, frozen-bake refusal/restored hash, stable live acceleration keys, descriptor
+and procedural-clock ownership checks pass. GPU transport and Forward+ MSAA surface tests
+exercise tint shifting/wrapping; exposure, path-tracer primary-sheet and light-visibility
+regressions pass. Affected shader source/binary checks pass. Nonprogressive path-tracer
+animated image acceptance, Source adapter integration and static tint averaging remain open.
+
 A 2026-10-24 installed-build recheck confirms this is still a pre-bake publication blocker:
 614/615 resolved materials, retained geometry present, active bake hash zero. No GPU/FPS
 timings from that attempt are accepted. Temporary HL2 mounts and protected settings were

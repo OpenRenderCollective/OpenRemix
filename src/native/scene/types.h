@@ -139,6 +139,7 @@ namespace remix {
       // retains legacy tinted-sheet shading; positive thickness denotes a sheet.
       float refractiveIndex = 1.5f, transmittanceDistance = 0;
       float thinWallThickness = 0; // positive: measured parallel sheet, not a containing volume
+      float transmittanceScroll[2] = {}; // tint UV units per animation second; live sheets only
       bool bakeSmoothBoundary = false; // explicit mean interface; live ripple normals are excluded
       float emission[3] = {};
       bool suppressEmissionLight = false;

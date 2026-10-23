@@ -28,7 +28,7 @@ namespace remix::forward::bake {
     Vec4 position, normal, uv, color;
   };
   struct Material {
-    DrawData shading;
+    DrawData shading; // dielectric remap[0/1].w store transmission-tint UV scroll rates
     // RGB image layers; fourth word: float bits of sheet thickness / measurement distance.
     UInt4 textures{}, flags{};
     Vec4 optics{}; // RGB extinction (body) or normal optical depth (sheet), refractive index
@@ -75,7 +75,7 @@ namespace remix::forward::bake {
   constexpr uint32_t lightingComponentFlag = 8, containingMediaFlag = 64, lightingComponentShift = 8;
   struct Frame {
     Matrix dome;
-    Vec4 sunDirection{}, sunRadiance{}, domeRadiance{}, trace{};
+    Vec4 sunDirection{}, sunRadiance{}, domeRadiance{}, trace{}; // domeRadiance.w: live tint animation seconds
     UInt4 counts{}, control{};
   };
   static_assert(sizeof(Vertex) == 64 && sizeof(Material) == 320);

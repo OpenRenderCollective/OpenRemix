@@ -25,6 +25,7 @@ namespace remix::forward::water {
                        material.thinWallThickness};
     std::copy_n(material.scroll, 4, result.scroll01.begin());
     std::copy_n(material.scroll + 4, 2, result.scroll2.begin());
+    std::copy_n(material.transmittanceScroll, 2, result.scroll2.begin() + 2);
     return result;
   }
 } // namespace remix::forward::water

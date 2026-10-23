@@ -100,6 +100,16 @@ distance. PBR roughness/normals and the shared SSR/cubemap/hardware reflection p
 The primary sheet assumes air outside both interfaces. Nested sheets and sheets inside camera media
 still need integration in this pass; do not enable the Source `Refract`
 adapter mapping until its stable optical tint and animation policy is explicit.
+`remixapi_MaterialTransmittanceScrollEXT` optionally moves a measured finite sheet's tint UVs
+by signed UV-units/second rates. Forward+ surface/ray transport and Vulkan path tracing share
+the material animation clock; zero rates preserve existing behavior and GPU record sizes.
+The rates are immutable scene data while time streams per frame, so ticking alone does not
+rebuild live ray geometry. Progressive path tracing keeps its fixed material clock. Nonfinite
+rates and non-sheet use are rejected. Nonzero tint scroll cannot enter a frozen bake: a
+stationary transport/averaging policy is still required. This is a Vulkan feature; Metal optical
+integration remains pending. Source Refract translation, tint conversion and proxy support
+are separate adapter work, and are not enabled by this control alone.
+
 Vulkan path-tracer light visibility uses the same measured sheet absorption and two-interface
 Fresnel model. Its optical records are keyed by existing albedo descriptors, in an optional buffer
 owned by each completed frame slot. The surface table remains 256 bytes per record and the frame

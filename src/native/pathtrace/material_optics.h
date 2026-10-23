@@ -10,8 +10,8 @@ namespace remix::trace {
   // Private, full-precision sheet data shared by persistent and rebuilt tables.
   // Zero thickness keeps legacy alpha sheets and containing bodies unchanged.
   struct SheetMaterial {
-    std::array<float, 4> depth{};
-    std::array<float, 4> parameters{}; // IOR, thickness, thickness/measurement, reserved
+    std::array<float, 4> depth{}; // normal optical depth RGB, tint scroll U
+    std::array<float, 4> parameters{}; // IOR, thickness, thickness/measurement, tint scroll V
     bool operator==(const SheetMaterial &) const = default;
   };
   static_assert(sizeof(SheetMaterial) == 32 && offsetof(SheetMaterial, parameters) == 16);
@@ -21,6 +21,8 @@ namespace remix::trace {
     if (const auto sheet = scene::measuredSheet(material)) {
       std::copy(sheet->normalDepth.begin(), sheet->normalDepth.end(), result.depth.begin());
       result.parameters = {material.refractiveIndex, material.thinWallThickness, sheet->thicknessRatio, 0};
+      result.depth[3] = material.transmittanceScroll[0];
+      result.parameters[3] = material.transmittanceScroll[1];
     }
     return result;
   }

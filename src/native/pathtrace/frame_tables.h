@@ -48,6 +48,10 @@ namespace remix::trace::detail {
     return std::any_of(material.scroll, material.scroll + count,
                        [](float rate) { return rate != 0; });
   }
+  inline bool hasScrollingTint(const scene::Material &material) {
+    return material.texture && scene::measuredSheet(material).has_value() &&
+           (material.transmittanceScroll[0] != 0 || material.transmittanceScroll[1] != 0);
+  }
   struct TraceSurface {
     uint64_t vertices = 0, indices = 0;
     float tint[4] = {}, uv[4] = {}, factor[4] = {};
@@ -259,7 +263,7 @@ namespace remix::trace {
     using MapKey = std::tuple<const scene::Texture *, uint8_t, uint8_t, uint8_t>;
     struct Flags {
       bool blended = false, decal = false, receivers = false;
-      bool scrollingNormals = false;
+      bool usesAnimationTime = false;
       // Opaque surfaces that hold SHARC entries only with sharcGlossySurfaces
       // (static, smoother than the policy's roughness) or sharcDynamicSurfaces
       // (moving; sharp ones need both).
@@ -268,7 +272,7 @@ namespace remix::trace {
         blended |= o.blended;
         decal |= o.decal;
         receivers |= o.receivers;
-        scrollingNormals |= o.scrollingNormals;
+        usesAnimationTime |= o.usesAnimationTime;
         sharpReceivers |= o.sharpReceivers;
         dynamicReceivers |= o.dynamicReceivers;
         dynamicSharpReceivers |= o.dynamicSharpReceivers;
@@ -595,9 +599,8 @@ namespace remix::trace {
       Flags f;
       f.blended = surface.blend.enabled;
       f.decal = surface.decal;
-      // Only Source water's active normal layers consume animationTime.
-      // Other normal encodings and unused scroll layers are time independent.
-      f.scrollingNormals = detail::hasScrollingNormals(material);
+      // Unused textures/layers do not advance the procedural material clock.
+      f.usesAnimationTime = detail::hasScrollingNormals(material) || detail::hasScrollingTint(material);
       const bool rough = !material.pbr || material.roughnessTexture ||
                          material.roughness >= REMIX_SHARC_PBR_MIN_ROUGHNESS;
       const bool opaque = !surface.blend.enabled, fixed = surface.classification == 0;

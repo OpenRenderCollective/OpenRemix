@@ -120,7 +120,7 @@ namespace remix::forward::ray {
       frame.world->releasePending = true;
     }
     if (frame.world)
-      frame.world->transport.updateLighting(g.slot, lights, sun, dome, distance);
+      frame.world->transport.updateLighting(g.slot, lights, sun, dome, distance, float(seconds));
     g.statistics.active = bool(frame.world);
     if (frame.world)
       std::snprintf(g.statistics.status, sizeof(g.statistics.status), "Live ray scene active");

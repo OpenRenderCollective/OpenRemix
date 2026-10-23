@@ -8,7 +8,8 @@ void loadSheet(inout Hit hit, Surface surface, vec2 uv) {
     return;
   hit.sheetIndex = surface.textureState.x + 1u;
   SheetMaterial sheet = SheetMaterials(frame.sheetMaterials).data[hit.sheetIndex - 1u];
-  vec3 tint = materialTexel(surface, surface.textureState.x, uv).rgb;
+  vec2 tintUv = sheetTintUv(sheet, uv);
+  vec3 tint = materialTexel(surface, surface.textureState.x, tintUv).rgb;
   hit.sheetDepth = min(sheet.depth.rgb - log(clamp(tint, vec3(1e-6), vec3(1))) * sheet.parameters.z, vec3(80));
   hit.pbr = true;
   hit.rm.y = 0; // A transmitting dielectric has no metallic or diffuse lobe.

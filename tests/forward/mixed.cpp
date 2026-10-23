@@ -778,6 +778,19 @@ int main() {
           "Analytic light edits stream fresh data without invalidating "
           "geometry/atlas reuse");
   auto current = resources.retained(handle)->records[0];
+  auto optical = current;
+  optical.material = std::make_shared<scene::Material>(*current.material);
+  optical.material->transmission = optical.material->bakeSmoothBoundary = true;
+  optical.material->refractiveIndex = 1.5f;
+  optical.material->transmittanceDistance = 1;
+  optical.material->thinWallThickness = .25f;
+  optical.material->transmittanceScroll[0] = .5f;
+  const auto tintStart = capture({&optical, 1}, 0), tintLater = capture({&optical, 1}, 10);
+  require(tintStart.key == tintLater.key,
+          "The streamed optical tint clock never invalidates live acceleration identity");
+  optical.material->transmittanceScroll[0] = .25f;
+  require(capture({&optical, 1}, 0).key != tintStart.key,
+          "Changing optical tint rates changes immutable transport material identity");
   current.reflectionOnly = true;
   const auto reflectionOnly = capture({&current, 1});
   require(!forward::accepts(current) && reflectionOnly.inputs.triangles.size() == frozen.inputs.triangles.size() &&

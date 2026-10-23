@@ -1278,6 +1278,19 @@ typedef struct remixapi_MaterialNormalScrollEXT {
   float base[2], layer1[2], layer2[2];
 } remixapi_MaterialNormalScrollEXT;
 
+// Optional MaterialInfo pNext for a measured finite dielectric sheet. Its
+// transmission tint samples uv + rate * animationSeconds. A host can use the
+// same rate as its normal texture, without encoding engine-specific semantics.
+// Progressive rendering uses its fixed animation clock. Nonzero rates cannot
+// enter a frozen bake until the host supplies a stationary transport material.
+// Existing materials retain zero rates and their established cache identities.
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_TRANSMITTANCE_SCROLL_EXT ((remixapi_StructType)0x7fff1070)
+typedef struct remixapi_MaterialTransmittanceScrollEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  float rate[2];
+} remixapi_MaterialTransmittanceScrollEXT;
+
 // Optional pNext on opaque MaterialInfo: how the roughness and metallic maps'
 // texels become values, so a game's own masks serve as PBR maps unconverted.
 // Per map: x = texel[channel]; inverted, x = 1 - x; x = x^exponent; then

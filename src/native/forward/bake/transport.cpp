@@ -438,11 +438,11 @@ namespace remix::forward::bake {
   }
   void Transport::updateLighting(uint32_t index, std::span<const TransportLight> lights,
                                  const scene::DistantLight &sun, const scene::DomeLight &dome,
-                                 float distance) {
+                                 float distance, float animationSeconds) {
     auto &g = *m_gpu;
-    if (!std::isfinite(distance) || distance <= g.options.bias * 2 ||
+    if (!std::isfinite(animationSeconds) || !std::isfinite(distance) || distance <= g.options.bias * 2 ||
         !std::isfinite(distance / g.source->sceneScale))
-      throw std::invalid_argument("Invalid live radiance range");
+      throw std::invalid_argument("Invalid live radiance range or animation time");
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(g.physical, &properties);
     if (lights.size_bytes() > properties.limits.maxStorageBufferRange || lights.size() > UINT32_MAX)
@@ -460,6 +460,7 @@ namespace remix::forward::bake {
                                      .pBufferInfo = &buffer};
     vkUpdateDescriptorSets(g.device, 1, &write, 0, nullptr);
     auto frame = lightingFrame(sun, dome, distance, g.options.bias, g.source->sceneScale);
+    frame.domeRadiance[3] = animationSeconds; // tint clock; independent of acceleration identity
     frame.counts[1] = uint32_t(lights.size());
     slot.lighting = frame;
   }

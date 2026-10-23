@@ -438,6 +438,23 @@ namespace {
     require(measuredSheet->thinWallThickness == .25f && measuredSheet->transmittanceDistance == 300 &&
                 measuredSheet->refractiveIndex == 1.333f,
             "A positive measured sheet retains finite thickness and optical units");
+    remixapi_MaterialTransmittanceScrollEXT tintScroll{};
+    tintScroll.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_TRANSMITTANCE_SCROLL_EXT;
+    tintScroll.pNext = &body;
+    tintScroll.rate[0] = .125f;
+    tintScroll.rate[1] = -.25f;
+    bodyInfo.pNext = &tintScroll;
+    bodyInfo.hash = 0x682;
+    r.createMaterial(bodyInfo, handle);
+    const auto scrollingSheet = drawn(r, quad(r, 0x683, handle));
+    require(scrollingSheet->transmittanceScroll[0] == .125f && scrollingSheet->transmittanceScroll[1] == -.25f,
+            "Measured sheets retain independent signed tint scroll rates");
+    tintScroll.rate[0] = std::numeric_limits<float>::infinity();
+    rejected([&] { r.createMaterial(bodyInfo, handle); });
+    tintScroll.rate[0] = .125f;
+    body.thinWallThickness_value = 0;
+    rejected([&] { r.createMaterial(bodyInfo, handle); }); // no containing-body texture model
+    bodyInfo.pNext = &body;
     body.thinWallThickness_value = -1;
     rejected([&] { r.createMaterial(bodyInfo, handle); });
     body.thinWallThickness_value = std::numeric_limits<float>::quiet_NaN();

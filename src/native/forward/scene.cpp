@@ -30,7 +30,7 @@ namespace remix::forward {
     }
     return staticBounds;
   }
-  void Renderer::Gpu::prepareFrame(VkCommandBuffer command, RasterRenderer &resources) {
+  void Renderer::Gpu::prepareFrame(VkCommandBuffer command, RasterRenderer &resources, double seconds) {
     Statistics::CpuRecording::Preparation cpu;
     auto began = std::chrono::steady_clock::now();
     auto step = [&](double &milliseconds) {
@@ -69,7 +69,6 @@ namespace remix::forward {
         }
       }
     const auto eye = transformPoint(scene::inverse(resources.view()), {0, 0, 0});
-    const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - epoch).count();
     shadowSelection = shadowPlanner.update(sources, eye, options.localShadows ? options.localShadowLights : 0,
                                            options.lightCutoff, options.localShadowDistance,
                                            options.sceneScale, resources.bakeScene(), seconds,

@@ -59,7 +59,8 @@ namespace remix::scene {
         return hash.value;
       }
       std::pair<std::shared_ptr<Material>, uint64_t> material(const std::shared_ptr<Material> &source) {
-        if (!source || source->fps || (source->normalEncoding == 5 && !source->bakeSmoothBoundary) ||
+        if (!source || source->fps || source->transmittanceScroll[0] != 0 || source->transmittanceScroll[1] != 0 ||
+            (source->normalEncoding == 5 && !source->bakeSmoothBoundary) ||
             (source->bakeSmoothBoundary && !validSmoothBoundary(*source)))
           throw invalid;
         if (auto found = materials.find(source.get()); found != materials.end())

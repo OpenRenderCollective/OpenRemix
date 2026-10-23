@@ -9,6 +9,7 @@ Medium materialMedium(RayMaterial material) { return Medium(material.optics.rgb,
 bool dielectric(RayMaterial material) { return (material.flags.w & 4u) != 0u; }
 bool thinDielectric(RayMaterial material) { return (material.flags.w & 16u) != 0u; }
 DielectricSheet materialSheet(RayMaterial material, vec2 uv, float cosine, float incidentIndex) {
+  uv += vec2(material.shading.remap[0].w, material.shading.remap[1].w) * rayFrame.domeRadiance.w;
   vec3 tint = sampleMap(material.textures.x, uv, material.flags.xyz).rgb;
   vec3 tintDepth = -log(clamp(tint, vec3(1e-6), vec3(1))) * uintBitsToFloat(material.textures.w);
   vec3 opticalDepth = min(material.optics.rgb + tintDepth, vec3(80));

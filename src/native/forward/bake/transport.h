@@ -117,7 +117,7 @@ namespace remix::forward::bake {
     // Stream current analytic lighting into a completed frame slot without
     // rebuilding geometry. Dome texture membership still belongs to the atlas.
     void updateLighting(uint32_t slot, std::span<const TransportLight> lights, const scene::DistantLight &sun,
-                        const scene::DomeLight &dome, float distance);
+                        const scene::DomeLight &dome, float distance, float animationSeconds = 0);
     // Repeated batches in one submission share slot constants: keep count and
     // bounces fixed, padding a short tail with inactive rays when necessary.
     void recordDeviceRadiance(VkCommandBuffer command, uint32_t slot, uint32_t count, uint32_t bounces = 3);

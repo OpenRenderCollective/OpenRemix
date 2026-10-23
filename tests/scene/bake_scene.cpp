@@ -289,6 +289,14 @@ int main() {
   boundary = boundarySource;
   scene::freezeBakeScene(boundary);
   require(boundary.contentHash != sheetHash, "Thickness edits invalidate the frozen sheet");
+  const auto stationarySheetHash = boundary.contentHash;
+  water->transmittanceScroll[0] = .125f;
+  rejected([&] { scene::freezeBakeScene(boundarySource); });
+  water->transmittanceScroll[0] = 0;
+  boundary = boundarySource;
+  scene::freezeBakeScene(boundary);
+  require(boundary.contentHash == stationarySheetHash,
+          "Clearing optical animation restores the unchanged stationary bake identity");
   water->thinWallThickness = 0;
   water->bakeSmoothBoundary = false;
   rejected([&] { scene::freezeBakeScene(boundarySource); });

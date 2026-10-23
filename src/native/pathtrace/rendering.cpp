@@ -627,11 +627,11 @@ namespace remix {
     std::copy_n(resources.cameraMedium().data(), 4, frame.cameraMedium);
     frame.upAxis = float(std::min(options.volumetricUpAxis, 2u));
     static const auto animationStart = std::chrono::steady_clock::now();
-    if (flags.scrollingNormals && !options.accumulate) {
-      // Only animated normal maps need a changing clock in the scene signature.
+    if (flags.usesAnimationTime && !options.accumulate) {
+      // Animated normal and optical tint maps need a changing material clock.
       // Progressive reference rendering freezes them at time zero so successive
       // samples describe the same surface instead of resetting history forever.
-      // Ordinary water animation remains wrapped before float precision suffers.
+      // Ordinary material animation remains wrapped before float precision suffers.
       const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - animationStart).count();
       frame.animationTime = float(std::fmod(seconds, 4096.0));
     }

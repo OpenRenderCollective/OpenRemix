@@ -29,4 +29,9 @@ int main() {
   const auto scaled = trace::sheetMaterial(material);
   require(scaled.depth == optical.depth && scaled.parameters[2] == optical.parameters[2],
           "A common unit conversion preserves sheet absorption and texture measurement");
+  material.transmittanceScroll[0] = .125f;
+  material.transmittanceScroll[1] = -.25f;
+  const auto scrolling = trace::sheetMaterial(material);
+  require(scrolling.depth[3] == .125f && scrolling.parameters[3] == -.25f,
+          "Sheet descriptors retain independent full-precision tint animation rates");
 }

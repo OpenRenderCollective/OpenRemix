@@ -58,6 +58,11 @@ namespace remix::forward::bake {
                 (draw.reflectionOnly ? reflectionOnlyFlag : 0u) |
                 (modulate ? modulatingDecalFlag : 0u)}});
       if (dielectric) {
+        // Live transport follows the current optical tint clock. Frozen scenes
+        // reject nonstationary tint, so ordinary bake inputs remain unchanged.
+        auto &mapped = result.materials.back().shading;
+        mapped.remap[0][3] = source.transmittanceScroll[0];
+        mapped.remap[1][3] = source.transmittanceScroll[1];
         auto &optics = result.materials.back().optics;
         std::copy(medium->extinction.begin(), medium->extinction.end(), optics.begin());
         optics[3] = medium->refractiveIndex;

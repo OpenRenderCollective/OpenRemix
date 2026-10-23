@@ -4,6 +4,7 @@
 #include "runtime/pipelines.h"
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <stdexcept>
 
@@ -229,7 +230,11 @@ namespace remix::forward {
       check(vkResetDescriptorPool(g.device, frame.pool, 0));
     g.retireGeometry();
   }
-  void Renderer::prepare(VkCommandBuffer command, RasterRenderer &resources, float seconds) {
+  void Renderer::prepare(VkCommandBuffer command, RasterRenderer &resources, float seconds, double animationSeconds) {
+    if (!std::isfinite(animationSeconds))
+      throw std::invalid_argument("Invalid animation time");
+    if (animationSeconds < 0)
+      animationSeconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - m_gpu->epoch).count();
     Statistics::CpuRecording cpu;
     auto began = std::chrono::steady_clock::now();
     auto step = [&](double &milliseconds) {
@@ -248,9 +253,7 @@ namespace remix::forward {
     step(cpu.bake);
     if (m_gpu->liveScene) {
       gpu::GpuScope liveTime(command, "Forward+ live ray scene");
-      const double seconds =
-          std::chrono::duration<double>(std::chrono::steady_clock::now() - m_gpu->epoch).count();
-      m_gpu->liveScene->prepare(command, resources, m_gpu->options, seconds);
+      m_gpu->liveScene->prepare(command, resources, m_gpu->options, animationSeconds);
     }
     auto &frame = m_gpu->frames[m_gpu->slot];
     frame.giScene = VK_NULL_HANDLE;
@@ -270,7 +273,7 @@ namespace remix::forward {
     }
     step(cpu.liveScene);
     gpu::GpuScope uploadTime(command, "Forward+ frame uploads");
-    m_gpu->prepareFrame(command, resources);
+    m_gpu->prepareFrame(command, resources, animationSeconds);
     cpu.preparation = m_gpu->statistics.cpuRecording.preparation;
     uploadTime.close();
     step(cpu.frame);

@@ -108,6 +108,23 @@
       require(std::abs(results[pixel].irradiance[0][0] - expected) < 3e-4f,
               "Sheet UVs modulate measured absorption on either side of a tinted pane");
     }
+    auto scrollingScene = std::make_shared<scene::BakeScene>(*tintedScene);
+    scrollingScene->draws[0].material = std::make_shared<scene::Material>(*tintedScene->draws[0].material);
+    scrollingScene->draws[0].material->transmittanceScroll[0] = .5f;
+    scrollingScene->draws[0].material->wrapU = 1;
+    bake::Transport scrolling;
+    prepare(scrolling, scrollingScene, "scrolling-thin-dielectric");
+    for (uint32_t step = 0; step < 3; ++step) {
+      fixture.begin();
+      scrolling.updateLighting(0, {}, scrollingScene->sun, scrollingScene->dome, 1000, float(step));
+      scrolling.recordRadiance(fixture.command, 0, tintRays, 1);
+      fixture.finish();
+      bake::Result animated[2];
+      scrolling.read(0, animated);
+      for (uint32_t pixel = 0; pixel < 2; ++pixel)
+        require(std::abs(animated[pixel].irradiance[0][0] - results[(pixel + step) % 2].irradiance[0][0]) < 3e-4f,
+                "A streamed tint clock shifts and wraps sheet absorption without rebuilding geometry");
+    }
     // Surround the point with sheets on all six axes. They must not hide the
     // containing volume's exits during the initial-medium lookup.
     auto body = sheet;

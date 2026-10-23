@@ -269,12 +269,15 @@ vec3 transmissionColor(vec3 color, bool tinted) { return tinted ? color : vec3(1
 #include "../../forward/shaders/dielectric.glsl"
 struct SheetMaterial { vec4 depth, parameters; };
 layout(buffer_reference,std430,buffer_reference_align=16) readonly buffer SheetMaterials { SheetMaterial data[]; };
+vec2 sheetTintUv(SheetMaterial sheet, vec2 uv) {
+  return uv + vec2(sheet.depth.w, sheet.parameters.w) * frame.animationTime;
+}
 vec3 sheetTransmission(Surface s, vec4 color, uint triangle, vec2 bary, float cosine, float t) {
   if ((s.material.x & 256u) != 0u && frame.sheetMaterials != 0) {
     SheetMaterial sheet = SheetMaterials(frame.sheetMaterials).data[s.textureState.x];
     // Light visibility has no camera footprint. Do not inherit UV gradients
     // left by shading the receiver; coverage traversal also uses the finest mip.
-    vec2 uv = intersectionUV(s, triangle, bary) * s.uv.xy + s.uv.zw;
+    vec2 uv = sheetTintUv(sheet, intersectionUV(s, triangle, bary)) * s.uv.xy + s.uv.zw;
     vec3 tint = textureLod(textures[nonuniformEXT(s.textureState.x)], uv, 0).rgb;
     vec3 depth = min(sheet.depth.rgb - log(clamp(tint, vec3(1e-6), vec3(1))) * sheet.parameters.z, vec3(80));
     return dielectricSheet(depth, 1, cosine, 1, sheet.parameters.x).transmission;

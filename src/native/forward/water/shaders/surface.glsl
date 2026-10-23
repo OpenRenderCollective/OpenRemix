@@ -93,7 +93,8 @@ void main() {
   float f0 = pow((index - 1) / (index + 1), 2);
   vec3 reflectedWeight = vec3(boundary.reflectance), specularF0 = vec3(f0);
   if (thinSheet) {
-    vec3 tintDepth = -log(clamp(texture(albedoMap, uv).rgb, vec3(1e-6), vec3(1))) * water.transmittance.w;
+    vec2 tintUv = uv + water.scroll2.zw * water.optical.y;
+    vec3 tintDepth = -log(clamp(texture(albedoMap, tintUv).rgb, vec3(1e-6), vec3(1))) * water.transmittance.w;
     vec3 depth = min(water.transmittance.rgb + tintDepth, vec3(80));
     DielectricSheet sheet = dielectricSheet(depth, 1, abs(dot(n, v)), 1, index);
     through = sheet.transmission;

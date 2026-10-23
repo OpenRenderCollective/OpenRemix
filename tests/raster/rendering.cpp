@@ -43,6 +43,7 @@ namespace {
     std::unique_ptr<remix::forward::Renderer> forward;
     uint32_t frameIndex = 0, forwardGeneration = 0;
     float exposureSeconds = -1;
+    double animationSeconds = -1;
     uint32_t queueFamily = VK_QUEUE_FAMILY_IGNORED;
     bool hardwareRay = false;
     std::unique_ptr<remix::pipeline::Service> pipelines;
@@ -326,7 +327,7 @@ namespace {
       while (!raster.preparePipelines(false, bool(forward), owner))
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
       raster.prepare(command,false,bool(forward), owner);
-      if (forward) forward->prepare(command,raster,exposureSeconds);
+      if (forward) forward->prepare(command,raster,exposureSeconds,animationSeconds);
       VkClearValue clear[2] = {};
       clear[1].depthStencil.depth = 1;
       const VkRenderPassBeginInfo rp = {.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,

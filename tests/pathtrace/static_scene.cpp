@@ -824,6 +824,16 @@ namespace {
     require(trace::detail::hasScrollingNormals(material), "Third normal layer did not animate");
     material.scroll[5] = 0;
     require(!trace::detail::hasScrollingNormals(material), "Stationary water advanced animation");
+    material.transmittanceScroll[0] = .25f;
+    require(!trace::detail::hasScrollingTint(material), "Opaque tint metadata does not advance animation");
+    material.transmission = true;
+    material.transmittanceDistance = 1;
+    material.thinWallThickness = .1f;
+    require(!trace::detail::hasScrollingTint(material), "A missing tint texture does not advance animation");
+    material.texture = std::make_shared<scene::Texture>();
+    require(trace::detail::hasScrollingTint(material), "A measured textured sheet advances its tint clock");
+    material.transmittanceScroll[0] = 0;
+    require(!trace::detail::hasScrollingTint(material), "Stationary optical tint preserves the fixed clock");
   }
 } // namespace
 

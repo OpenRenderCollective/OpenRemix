@@ -130,6 +130,13 @@ namespace remix {
         material->metallic = 0;
       }
     }
+    if (const auto *scroll = static_cast<const remixapi_MaterialTransmittanceScrollEXT *>(
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_TRANSMITTANCE_SCROLL_EXT))) {
+      finite(scroll->rate, 2);
+      if (!validSmoothBoundary(*material) || material->thinWallThickness <= 0)
+        throw invalid;
+      std::copy_n(scroll->rate, 2, material->transmittanceScroll);
+    }
     if (const auto *boundary = static_cast<const remixapi_MaterialBakeBoundaryEXT *>(
             extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_BAKE_BOUNDARY_EXT))) {
       if (boundary->smoothBoundary > 1 ||
@@ -235,6 +242,7 @@ namespace remix {
              std::equal(a.scroll, a.scroll + 6, b.scroll) && a.refractiveIndex == b.refractiveIndex &&
              a.transmittanceDistance == b.transmittanceDistance && a.bakeSmoothBoundary == b.bakeSmoothBoundary &&
              a.thinWallThickness == b.thinWallThickness &&
+             std::equal(a.transmittanceScroll, a.transmittanceScroll + 2, b.transmittanceScroll) &&
              a.pbr == b.pbr && std::equal(a.emission, a.emission + 3, b.emission) &&
              std::equal(a.tint, a.tint + 4, b.tint) && a.compare == b.compare && a.reference == b.reference &&
              a.drawAlpha == b.drawAlpha && a.translucent == b.translucent &&

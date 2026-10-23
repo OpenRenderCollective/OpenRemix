@@ -11,7 +11,7 @@ namespace remix::forward::water {
     Vec4 transmittance{};
     // IOR, animation seconds, normal layer count, thickness (zero for bodies).
     Vec4 optical{};
-    Vec4 scroll01{}, scroll2{};
+    Vec4 scroll01{}, scroll2{}; // scroll2.zw: independent transmission-tint scroll
   };
   static_assert(sizeof(MaterialData) == 64);
   MaterialData materialData(const scene::Material &material, double seconds);

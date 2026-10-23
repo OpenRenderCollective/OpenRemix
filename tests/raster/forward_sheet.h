@@ -98,5 +98,39 @@
       for (uint32_t c = 0; c < 3; ++c)
         require(std::abs(float(skyImage[centre + c]) - expected[c] * 255) < 4,
                 "Finite sheets transmit the visible sky even when opaque depth is absent");
+      const uint8_t striped[] = {64, 64, 64, 255, 192, 192, 192, 255};
+      texture.hash = 0xe30a;
+      texture.width = 2;
+      texture.data = striped;
+      texture.dataSize = sizeof(striped);
+      resources.createTexture(texture, image);
+      remixapi_MaterialTransmittanceScrollEXT scroll{};
+      scroll.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_TRANSMITTANCE_SCROLL_EXT;
+      scroll.pNext = &optical;
+      scroll.rate[0] = .5f;
+      info.pNext = &scroll;
+      info.hash = 0xe30b;
+#if defined(_WIN32)
+      info.albedoTexture = L"0xe30a";
+#else
+      info.albedoTexture = "0xe30a";
+#endif
+      info.wrapModeU = info.wrapModeV = 1;
+      resources.createMaterial(info, measured);
+      const auto animatedPane = quad(resources, 0xe30c, measured);
+      auto animated = [&](double seconds) {
+        target.animationSeconds = seconds;
+        camera(resources);
+        resources.drawInstance(instance(background, .3f));
+        auto surface = instance(animatedPane, -.2f);
+        surface.transform.matrix[0][0] = surface.transform.matrix[1][1] = .6f;
+        resources.drawInstance(surface);
+        return target.render();
+      };
+      const auto first = animated(0), shifted = animated(1), wrapped = animated(2);
+      const size_t sample = (32 * 64 + 24) * 4 + 2;
+      require(std::abs(int(first[sample]) - int(shifted[sample])) > 10 &&
+                  std::abs(int(first[sample]) - int(wrapped[sample])) <= 1,
+              "Live sheet tint UVs animate and wrap independently of geometry at every MSAA level");
     }
   }
