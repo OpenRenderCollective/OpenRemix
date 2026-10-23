@@ -1,5 +1,13 @@
 # Forward+ continuation guide
 
+Current testing installation: `forwardplus-bake-batch-20261024`, native binary
+`0f4a1ba` with adapter `09c6477`. It includes measured Refract imports, optical
+tint motion/stationary bake policy, canonical Source asset paths and batched
+bake pipeline compilation. Existing rendering defaults and user-authored
+assets are preserved; experimental probe batching remains opt-in. Earlier
+checkpoint/deployment descriptions below are historical. Foreground gameplay
+performance, wider visual parity and the remaining roadmap are still open.
+
 Current probe-batching executable diagnostics show generic world fragments growing from about
 110 KiB to 135 KiB and viewmodel fragments from about 156 KiB to 181 KiB; the fully mapped
 lightmap variant remains 105728 bytes. Both variants report 128 registers. This narrows the
@@ -512,7 +520,7 @@ define passive optical tint conversion explicitly, and preserve replacement keys
 Adapter `4297c7a` fixes a prerequisite: water normal cache/upload identity now includes the
 playback rate, so shared texture names with different rates cannot alias the same mutable
 runtime texture. Refract integration now shares these surface-normal resources; broader
-live multi-rate validation remains pending. This change is not deployed.
+live multi-rate validation remains pending. This change is now in the testing install.
 
 Native optical tint scrolling is now implemented as an optional engine-agnostic measured-sheet
 control, with separate UV rates and a streamed clock. Forward+ shares one animation time
@@ -526,12 +534,12 @@ axes must be covered, and mutable tint images remain rejected. Playback rate cha
 the averaged bake hash; live rays ignore the policy and keep actual rates. The adapter now
 creates supported Refract sheets with passive tint conversion and proxy bindings, unblocking
 Trainstation. Metal parity and broader visual qualification remain open.
-This source change is not deployed.
+This source change is now in the testing install.
 Averaging checks cover invalid/wrong/missing axis policies, immutable-image requirements,
 snapshot rate retention and stationary hash identity. GPU horizontal/vertical tint cases
 check the mean optical response, preserved unselected detail and clock-independent results.
 Live capture checks ensure bake-only flags neither alter live sampling nor force rebuilds.
-Affected source/binary checks pass; this component is still not deployed.
+Affected source/binary checks pass; this component is now in the testing install.
 CPU validation, frozen-bake refusal/restored hash, stable live acceleration keys, descriptor
 and procedural-clock ownership checks pass. GPU transport and Forward+ MSAA surface tests
 exercise tint shifting/wrapping; exposure, path-tracer primary-sheet and light-visibility
@@ -625,9 +633,9 @@ Repeated Source asset separators now normalize consistently for loose/VPK lookup
 
 This supersedes the earlier Trainstation missing-material blocker notes: complete
 relay static inputs and first bake/cache reuse are now working with the paired
-native/adapter candidate. The installed test game still uses the older package.
+native/adapter candidate. The installed test game now uses the paired package described above.
 Targeted animated-sheet visual validation, pathtracer parity, moving-camera cache
-stability and foreground in-game performance remain required before deployment.
+stability and foreground in-game performance remain open qualification work after the testing refresh.
 Do not treat relay completion or its small render target as game FPS acceptance.
 
 Controlled Refract comparison note: the earlier pathtracer close-up retained
@@ -643,4 +651,4 @@ variants retain their existing policy gates; shader modules, pipeline layouts
 and dispatch semantics are unchanged. This removes serial create/wait
 scheduling during cold compilation. Transport and cancellation validation,
 plus repeated Construct cold-start/image comparisons, pass. The testing
-installation has not yet been updated to this candidate.
+installation now includes this candidate.
