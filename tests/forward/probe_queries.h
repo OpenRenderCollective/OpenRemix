@@ -10,7 +10,8 @@ namespace remix::forward::test {
   // Runs the production probe lookup on the GPU against its CPU reference.
   // Uses the production HDR image owner and its compact projection table.
   inline void probeQueries(Fixture &fixture, const probes::Data &data, uint32_t skyCase = 0,
-                            bool directional = false, bool indexed = false, bool depth = false) {
+                            bool directional = false, bool indexed = false, bool depth = false,
+                            bool wideLights = false) {
     // Sky cases: open, closed, unusable, and hidden behind a distance boundary.
     struct Query {
       Vec4 position, reflected;
@@ -86,13 +87,13 @@ namespace remix::forward::test {
     std::vector<bake::VisibilityTask> pairs;
     std::vector<float> masks;
     for (uint32_t probe = 0; probe < 8; ++probe) {
-      for (uint32_t light = 0; light < 66; ++light) {
+      for (uint32_t light = 0; light < (wideLights ? 256u : 66u); ++light) {
         if (light == 1 && probe == 0) continue;
         pairs.push_back({probe, light, 0});
         masks.push_back(float(probe) / 7.f);
       }
     }
-    bake::ProbeVisibility local(8, 66, pairs, 32768, directional);
+    bake::ProbeVisibility local(8, wideLights ? 256u : 66u, pairs, wideLights ? 131072 : 32768, directional);
     if (directional) {
       std::vector<bake::VisibilityResult> results(pairs.size());
       for (size_t i = 0; i < pairs.size(); ++i) {

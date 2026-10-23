@@ -11,6 +11,9 @@ namespace remix::forward {
     pipeline::nameCode(lightmapVertShader, "forward.lightmap-vertex");
     pipeline::nameCode(fragShader, "forward.fragment");
     pipeline::nameCode(ssrFragShader, "forward.reflection-guides");
+    pipeline::nameCode(prepassedFragShader, "forward.prepassed-fragment");
+    pipeline::nameCode(prepassedSsrFragShader, "forward.prepassed-reflection-guides");
+    pipeline::nameCode(viewModelFragShader, "forward.viewmodel-fragment");
     pipeline::nameCode(opaqueDepthFragShader, "forward.opaque-depth");
     pipeline::nameCode(ray::gi::fragShader, "forward.live-gi");
     pipeline::nameCode(ray::gi::guidesShader, "forward.live-gi-guides");

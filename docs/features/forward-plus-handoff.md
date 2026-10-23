@@ -68,6 +68,12 @@ Further live diagnostic ablations retain one bake while independently disabling 
 selection. They identify substantial per-light receiver cost beyond aggregate probe reconstruction;
 these quality-changing runs do not justify lowering the defaults. Investigate bounded visibility lookup
 addressing next, retaining exact values, unknown coverage, directional ownership and sparse fallback.
+A bounded byte-rank prototype has since matched reference data but failed the white-room performance
+check; its production changes were removed. The wider256-light GPU lookup fixture remains. Compiler
+capture identifies high world/viewmodel fragment register use, but implausible local-memory values
+must not be reported as literal byte allocations. Investigate stencil layout/lifetimes next and verify
+both reconstruction and normal-runtime performance. Missing prepassed/viewmodel pipeline labels are
+registered on the branch for future captures.
 The branch's ordinary-water embedded fragment is now regenerated to match maintained sources; four
 water GPU suites and source/binary validation pass. That parity correction is not yet deployed, and
 native `ac33981` remains the installed checkpoint.

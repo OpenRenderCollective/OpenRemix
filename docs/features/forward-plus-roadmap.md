@@ -66,6 +66,13 @@ stays stable; disabling them changes lighting and is not an accepted optimizatio
 Next evaluate bounded direct-address probe visibility with exact stored values, unknown-coverage and
 attributed-field ownership preserved; compare it with the current ranked sparse rows on other maps.
 Do not attribute all local-light cost to storage until a controlled candidate establishes the benefit.
+The bounded byte-rank directory prototype preserves exact values but remains rejected: the white-room
+repeats show no benefit despite a small hall gain. Its production and GPU-format changes were removed;
+a wider-light-count GPU fixture remains. Compiler executable capture reports high register use in the
+world/viewmodel fragment variants. Its local-memory byte values have implausible high bits, so they
+are not accepted as spill-size evidence. Next investigate invocation-private stencil layout and lifetimes,
+using normal-runtime timings and reconstruction checks. Human-readable prepassed/viewmodel pipeline
+labels are now registered; compiler captures remain separate from performance acceptance.
 The branch also regenerates the stale ordinary-water fragment from current maintained source. Its
 source/binary and SPIR-V checks plus four water GPU suites pass. This correction is not yet deployed;
 the testing install remains native `ac33981`. Shared shader changes must account for ordinary water,
