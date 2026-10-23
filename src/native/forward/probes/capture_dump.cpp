@@ -43,19 +43,26 @@ namespace remix::forward::probes {
       return {};
     }
   }
+  std::unique_ptr<ReceiverFitAudit> prepareReceiverFits(const scene::BakeScene &source,
+      const ReceiverSiteAudit &audit, const ReceiverSiteChecks &checks, std::stop_token cancelled) noexcept {
+    try {
+      const auto receivers = sampleReceivers(source, 8192, cancelled);
+      return std::make_unique<ReceiverFitAudit>(fitReceiverSites(source, receivers, audit, checks, 32, cancelled),
+                                               audit.sites(), cancelled);
+    } catch (const std::exception &error) {
+      std::fprintf(stderr, "Receiver projection assessment unavailable: %s\n", error.what());
+      return {};
+    }
+  }
   void dumpReceiverSites(const scene::BakeScene &source, const ReceiverSiteAudit &audit,
-      const ReceiverSiteChecks *checks, std::stop_token cancelled) noexcept {
+      const ReceiverSiteChecks *checks, const ReceiverFitAudit *assessment, std::stop_token cancelled) noexcept {
     const char *prefix = std::getenv("REMIX_DEBUG_PROBE_RECEIVER_VISIBILITY");
     if (!prefix || !*prefix) return;
     try {
       const auto path = std::string(prefix) + ".sites.json";
       if (!audit.complete() || (checks && !checks->complete()) || std::filesystem::exists(path))
         throw std::runtime_error("Receiver sites incomplete or report exists");
-      ReceiverFits fits;
-      if (checks) {
-        const auto receivers = sampleReceivers(source, 8192, cancelled);
-        fits = fitReceiverSites(source, receivers, audit, *checks, 32, cancelled);
-      }
+      const auto fits = assessment ? assessment->finish() : ReceiverFits{};
       std::ofstream output(path);
       output.exceptions(std::ios::failbit | std::ios::badbit);
       output.precision(9);
@@ -89,7 +96,9 @@ namespace remix::forward::probes {
         else output << "null";
         output << '}';
       }
-      output << "\n],\"projectionFits\":{\"geometryAudited\":false,\"available\":"
+      output << "\n],\"projectionFits\":{\"geometryAudited\":" << (assessment ? "true" : "false")
+             << ",\"geometryRays\":" << (assessment ? assessment->rays().size() : 0)
+             << ",\"available\":"
              << (fits.available ? "true" : "false") << ",\"supported\":" << fits.supported
              << ",\"partitionRefused\":" << fits.partitionRefused << ",\"duplicates\":" << fits.duplicates
              << ",\"attempts\":[";
@@ -103,7 +112,27 @@ namespace remix::forward::probes {
           output << ",\"maximum\":"; vector(variant.projection.maximum);
           output << ",\"influenceMinimum\":"; vector(variant.influence.minimum);
           output << ",\"influenceMaximum\":"; vector(variant.influence.maximum);
-          output << ",\"coversReceiver\":" << (variant.coversReceiver ? "true" : "false") << '}';
+          output << ",\"coversReceiver\":" << (variant.coversReceiver ? "true" : "false") << ",\"geometry\":";
+          if (variant.geometry) {
+            const auto &g = *variant.geometry;
+            output << "{\"quality\":" << g.quality << ",\"missFraction\":" << g.missFraction
+                   << ",\"backfaceFraction\":" << g.backfaceFraction << ",\"faces\":[";
+            for (uint32_t face = 0; face < 6; ++face) {
+              const auto &a = g.faces[face];
+              output << (face ? "," : "") << "{\"solidAngleFraction\":" << a.solidAngleFraction << ",\"supportFraction\":" << a.supportFraction
+                     << ",\"nearFraction\":" << a.nearFraction << ",\"farFraction\":" << a.farFraction
+                     << ",\"missFraction\":" << a.missFraction << ",\"backfaceFraction\":" << a.backfaceFraction
+                     << ",\"meanRelativeResidual\":" << a.meanRelativeResidual << ",\"hitMinimum\":";
+              if (a.hitBounds.valid) vector(a.hitBounds.minimum);
+              else output << "null";
+              output << ",\"hitMaximum\":";
+              if (a.hitBounds.valid) vector(a.hitBounds.maximum);
+              else output << "null";
+              output << '}';
+            }
+            output << "]}";
+          } else output << "null";
+          output << '}';
         }
         output << "]}";
       }

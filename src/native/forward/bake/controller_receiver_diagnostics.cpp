@@ -65,10 +65,37 @@ namespace remix::forward::bake {
           status(REMIXAPI_BAKE_TRACING_EXT, "Checking local reflection site connectivity and clearance");
           return true;
         }
+        if (!job.receiverFitsPlanned) {
+          job.receiverFitsPlanned = true;
+          const auto owner = m_job;
+          job.ticket = m_pipelines->prepare("forward-receiver-fit-plan-" + std::to_string(++receiverDiagnosticGeneration), [owner] {
+            if (owner->receiverSiteChecks)
+              owner->receiverFits = probes::prepareReceiverFits(*owner->source, *owner->receiverSites,
+                  *owner->receiverSiteChecks, owner->cancellation.get_token());
+          });
+          return true;
+        }
+        if (job.receiverFits && job.receiverFitReceived < job.receiverFits->rays().size()) {
+          const auto rays = job.receiverFits->rays();
+          if (job.receiverFitNext < rays.size()) {
+            auto &submission = m_submissions[m_slot];
+            if (submission.job) throw std::logic_error("Local projection slot reused before its fence");
+            const uint32_t count = job.count(Work::Geometry, config, uint32_t(rays.size() - job.receiverFitNext), 1);
+            job.transport->recordGeometry(command, m_slot, rays.subspan(job.receiverFitNext, count));
+            submission.job = m_job;
+            submission.receiverFit = true;
+            submission.first = job.receiverFitNext;
+            submission.count = count;
+            job.receiverFitNext += count;
+          }
+          status(REMIXAPI_BAKE_TRACING_EXT, "Assessing optional local reflection projections");
+          return true;
+        }
         const auto owner = m_job;
         job.ticket = m_pipelines->prepare("forward-receiver-sites-" + std::to_string(++receiverDiagnosticGeneration), [owner] {
-          probes::dumpReceiverSites(*owner->source, *owner->receiverSites, owner->receiverSiteChecks.get(),
+          probes::dumpReceiverSites(*owner->source, *owner->receiverSites, owner->receiverSiteChecks.get(), owner->receiverFits.get(),
                                    owner->cancellation.get_token());
+          owner->receiverFits.reset();
           owner->receiverSiteChecks.reset();
           owner->receiverSites.reset();
         });

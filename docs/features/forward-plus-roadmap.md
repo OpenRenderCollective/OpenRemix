@@ -1775,7 +1775,16 @@ The optional receiver diagnostic now compares a bounded set of supported local o
 with the existing strict partition fitter. It records independent projection and influence
 bounds and whether each influence includes its originating surface sample. Sampled
 hardware support never overrides a solid partition origin. No new captures are published.
-Next assess these local fits against actual geometry, compare marginal receiver coverage
-and projection quality within the existing capture budget, then qualify visible room
+The optional pass now assesses these local fits against actual geometry using shared first-hit
+rays per origin and the existing projection evaluator. Near geometry, far geometry, misses and
+backfaces remain separate rather than becoming a single pass/fail score. Next compare marginal
+receiver coverage and projection quality within the existing capture budget, then qualify visible room
 transitions and wall leakage. A blocked receiver connection is not proof that the receiver
 is camera-invisible; do not remove bake charts on that evidence alone.
+
+The local-site geometry comparison exposes a backface classification discrepancy: spherical
+admission uses interpolated surface normals (excluding dielectrics), while geometry-only
+queries use hardware triangle facing. Resolve and regression-test that semantic difference
+before using local-fit backface statistics for acceptance or changing published captures.
+The sampled Construct comparison is diagnostic evidence, not a reason to discard receivers
+or loosen occupancy.

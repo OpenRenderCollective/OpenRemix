@@ -3,6 +3,32 @@
 #include <set>
 
 namespace remix::forward::probes {
+  ReceiverFitAudit::ReceiverFitAudit(ReceiverFits fits, std::span<const ReceiverSite> sites,
+                                   std::stop_token cancelled) : m_fits(std::move(fits)) {
+    if (m_fits.attempts.size() > 32 || sites.size() > 512)
+      throw std::invalid_argument("Local projection assessment budget exceeded");
+    std::vector<FittedRegion> regions;
+    for (const auto &fit : m_fits.attempts) {
+      if (fit.site >= sites.size() || fit.variants.size() > 3)
+        throw std::invalid_argument("Invalid local projection assessment owner");
+      const auto &point = sites[fit.site].point.position;
+      for (const auto &variant : fit.variants) {
+        FittedRegion region;
+        region.bounds = variant.projection;
+        region.site.position = {point[0], point[1], point[2]};
+        regions.push_back(region);
+      }
+    }
+    m_audit = std::make_unique<ProjectionAudit>(std::move(regions), cancelled);
+  }
+  ReceiverFits ReceiverFitAudit::finish() const {
+    auto result = m_fits;
+    const auto geometry = m_audit->finish();
+    size_t index = 0;
+    for (auto &fit : result.attempts)
+      for (auto &variant : fit.variants) variant.geometry = geometry.at(index++);
+    return result;
+  }
   ReceiverFits fitReceiverSites(const scene::BakeScene &source,
       std::span<const ReceiverSample> receivers, const ReceiverSiteAudit &admission,
       const ReceiverSiteChecks &checks, uint32_t budget, std::stop_token cancelled) {

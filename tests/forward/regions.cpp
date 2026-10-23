@@ -124,6 +124,41 @@ int main(int argc, char **argv) {
   const auto refused = p::fitReceiverSites(solidSource, std::span(&localReceiver, 1), admission, support);
   require(refused.partitionRefused == 1 && refused.attempts.empty(),
           "Sampled hardware support cannot override a solid partition origin");
+  p::ReceiverFitAudit fitAudit(localFits, admission.sites());
+  require(fitAudit.rays().size() == 6 * 8 * 8,
+          "Same-origin local projection variants share one geometry ray set");
+  bool premature = false;
+  try { (void)fitAudit.finish(); } catch (const std::logic_error &) { premature = true; }
+  require(premature, "Local projection evidence is unavailable before all readbacks retire");
+  std::vector<bake::Result> roomHits(fitAudit.rays().size());
+  for (size_t i = 0; i < roomHits.size(); ++i) {
+    const auto &ray = fitAudit.rays()[i];
+    float distance = std::numeric_limits<float>::max();
+    for (uint32_t axis = 0; axis < 3; ++axis)
+      if (std::abs(ray.normal[axis]) > 1e-10f) {
+        const float boundary = ray.normal[axis] > 0 ? room.maximum[axis] : room.minimum[axis];
+        distance = std::min(distance, (boundary - ray.position[axis]) / ray.normal[axis]);
+      }
+    roomHits[i].statistics = {0, 0, 1, 0};
+    roomHits[i].irradiance[0][3] = distance;
+  }
+  require(fitAudit.observe(0, roomHits), "Analytic room first-hit geometry accepted");
+  const auto assessed = fitAudit.finish();
+  require(assessed.attempts.size() == localFits.attempts.size(), "Geometry assessment preserves fit owners");
+  for (size_t i = 0; i < assessed.attempts[0].variants.size(); ++i) {
+    const auto &variant = assessed.attempts[0].variants[i];
+    require(variant.geometry && variant.geometry->geometryEvaluated && variant.geometry->quality > .99f &&
+            variant.geometry->missFraction == 0 && variant.geometry->backfaceFraction == 0 &&
+            variant.influence.minimum == localFits.attempts[0].variants[i].influence.minimum &&
+            variant.influence.maximum == localFits.attempts[0].variants[i].influence.maximum,
+            "Shared geometry attaches to each original fit without changing its influence");
+  }
+  p::ReceiverFitAudit nearAudit(localFits, admission.sites());
+  for (auto &hit : roomHits) hit.irradiance[0][3] = .01f;
+  require(nearAudit.observe(0, roomHits), "Intervening geometry evidence accepted");
+  const auto nearFits = nearAudit.finish();
+  for (const auto &face : nearFits.attempts[0].variants[0].geometry->faces)
+    require(face.nearFraction > .99f, "Near hits remain distinguishable from a matching room shell");
   localSource.partition.reset();
   require(!p::fitReceiverSites(localSource, std::span(&localReceiver, 1), admission, support).available,
           "Missing occupancy partition does not permit a projection fallback");

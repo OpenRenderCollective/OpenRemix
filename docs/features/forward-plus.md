@@ -512,9 +512,14 @@ ownership as the preceding passes. These are still sampled candidate locations, 
 volumes. The optional report also compares at most 32 spread-out supported origins using the strict
 partition fitter, retaining up to three projection variants and independent receiver influence bounds
 per origin. Solid partition origins are refused even when hardware samples passed. `projectionFits`
-records whether each influence contains its originating receiver; `geometryAudited` remains false.
-These fitted boxes still require actual-geometry assessment, marginal coverage comparison and bounded
-capture-slot allocation before publication. Neither the sites nor their
+records whether each influence contains its originating receiver. The diagnostic then runs the normal
+geometry assessment at eight samples per cube-face direction (384 rays per unique origin, at most
+12288 rays). Alternate boxes share those rays. Frame-fenced readbacks retain their own audit, and
+incomplete or duplicate readbacks cannot become completed evidence. `geometryAudited` and
+`geometryRays` describe that pass; each variant retains per-face near/far/miss/backface statistics
+and finite first-hit envelopes. These are sampled comparisons, not proof of an empty proxy or
+camera visibility. Marginal coverage comparison and bounded capture-slot allocation remain required
+before publication. Neither the sites nor their
 radiance are inserted into the published reflection set. These
 measurements do not change selection or permit growth through walls.
 Version 2 also exports up to 8192 deterministic, area-weighted `receivers` from the frozen surface
