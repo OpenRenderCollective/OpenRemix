@@ -1,5 +1,6 @@
 #include "forward/bake/transport.h"
 #include "forward/bake/budget.h"
+#include "forward/bake/sun_depth_layout.h"
 #include "forward/bake/probe_visibility.h"
 #include "forward/bake/probe_visibility_plan.h"
 #include "forward/bake/probe_depth.h"
@@ -135,6 +136,7 @@ namespace {
       return std::make_shared<scene::BakeScene>(*resources.bakeScene());
     }
   };
+#include "sun_depth_gpu.h"
 #include "indexed_visibility.h"
 #include "probe_visibility_gpu.h"
 #include "directional_capture_gpu.h"
@@ -1991,7 +1993,7 @@ namespace {
                 positiveZ[0], positiveZ[3], negativeZ[2]);
   }
 } // namespace
-int main() try {
+int main(int argc, char **argv) try {
   std::setvbuf(stdout, nullptr, _IONBF, 0);
   {
     test::Fixture fixture;
@@ -2018,6 +2020,11 @@ int main() try {
     vkGetPhysicalDeviceProperties(fixture.physical, &properties);
     pipeline::Service pipelines(fixture.device, properties, false);
     World world(fixture);
+    if (argc == 2 && std::strcmp(argv[1], "--sun-depth-only") == 0) {
+      sparseSunDepthPrototype(fixture, pipelines, world);
+      require(test::validationErrors == 0, "Sparse sun depth validation stayed clean");
+      return 0;
+    }
     if (std::getenv("REMIX_TEST_SURFACE_HEMISPHERE")) {
       surfaceHemisphere(fixture, pipelines, world);
       test::interiorSurfaceDonors(fixture, pipelines, world);

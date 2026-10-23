@@ -113,6 +113,8 @@ if get_option('gpu_tests')
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)
   test('Hardware diffuse bake transport and textured visibility', bake_transport_test, timeout : 180)
+  test('Sparse sun depth capture matches narrow opening and receiver height', bake_transport_test,
+    args : ['--sun-depth-only'], timeout : 180)
   forward_ray_test = executable('remix-forward-ray-test', 'ray_scene.cpp',
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)
