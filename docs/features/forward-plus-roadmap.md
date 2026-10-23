@@ -1303,6 +1303,15 @@ and explicit rejection of over-budget coverage. Tiling exhaustion declines the o
 than failing the ordinary lighting bake. These resource-level checks do not replace live map-change
 and moving-shadow acceptance.
 
+A first-hit field cannot represent coloured dielectric transmission or proportional source-over
+coverage. Capture now marks those nearest nonempty interfaces as unresolved rather than freezing a
+stochastic alpha decision or treating glass as opaque. Any unresolved filter tap requests the existing
+probe/shadow fallback; empty coverage remains a miss and fully opaque coverage retains exact depth.
+The version-2 sidecar preserves this explicit sentinel and rejects old payload semantics. GPU fixtures
+cover glass, partial/empty/full source-over coverage, empty cutouts, opaque hits and lookup fallback.
+This is material-aware coverage gating, not layered coloured transmission in the depth field. Retain
+that limitation and recheck real-map glass/water alongside the live transition acceptance.
+
 Next cover live map transitions and moving actors,
 and measure the steady-state and total bake costs. Confirm unsupported/over-budget fallback,
 transmissive casters and finite sun shape before enabling a default. The existing static-cascade

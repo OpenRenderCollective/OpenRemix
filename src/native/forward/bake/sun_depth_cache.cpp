@@ -4,7 +4,7 @@
 #include <cstring>
 namespace remix::forward::bake::sun_depth_cache {
   namespace {
-    constexpr uint32_t magic = 0x53444e50, version = 1;
+    constexpr uint32_t magic = 0x53444e50, version = 2;
     struct Shape { uint32_t extent; uint64_t packedWords, atlasWords; };
     Shape validate(const SunDepthLayout &layout, const SunDepthHeader &header) {
       const std::array<Vec3, 3> basis{Vec3{header.axisX[0],header.axisX[1],header.axisX[2]},
@@ -18,7 +18,7 @@ namespace remix::forward::bake::sun_depth_cache {
     }
     void finite(std::span<const float> values, float distance) {
       for (float value : values)
-        if (!std::isfinite(value) || (value < 0 && value != -1) || value > distance)
+        if (!std::isfinite(value) || (value < 0 && value != -1 && value != -2) || value > distance)
           throw std::invalid_argument("Invalid cached sun depth sample");
     }
     void rows(const SunDepthLayout &layout, Shape shape, std::stop_token cancelled, auto visit) {

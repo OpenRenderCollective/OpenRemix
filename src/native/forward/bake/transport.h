@@ -77,7 +77,8 @@ namespace remix::forward::bake {
     // Misses carry an explicit flag even when their distance reaches the cap.
     void recordGeometry(VkCommandBuffer command, uint32_t slot, std::span<const Point> rays);
     // Write one scene-unit first-hit distance per ray directly into caller-owned
-    // STORAGE_BUFFER memory; negative values mean misses. Traversal uses at least
+    // STORAGE_BUFFER memory; -1 means miss and -2 means unresolved transmission
+    // requiring the existing lighting fallback. Traversal uses at least
     // the frozen scene diagonal; place origins at its sun-facing boundary.
     // A positive distance overrides traversal range in scene units; zero uses the diagonal.
     // The caller owns output through the slot fence and supplies a concrete descriptor range/aligned offset.

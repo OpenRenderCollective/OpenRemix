@@ -48,7 +48,7 @@ bool sparseSunDepthVisibility(vec3 position, out float visibility) {
     uint index = (page * sunDepthAtlas.x + uint(texel.y)) * sunDepthAtlas.x + uint(texel.x);
     if (index >= sunDepthValues.length()) return false;
     float depth = sunDepthValues[index];
-    if (isnan(depth) || isinf(depth)) return false;
+    if (isnan(depth) || isinf(depth) || depth < -1) return false;
     vec2 weight = mix(1 - fraction, fraction, bvec2(x != 0, y != 0));
     visibility += weight.x * weight.y * float(depth < 0 || reference <= depth);
   }

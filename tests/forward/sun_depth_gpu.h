@@ -218,6 +218,16 @@ void sparseSunDepthPrototype(test::Fixture &fixture, pipeline::Service &pipeline
     require(range < 9 ? value < 0 : std::abs(value - 9) < 1e-4f,
             "Explicit depth range reaches casters beyond the default transport cap and preserves bounded misses");
   }
+  fixture.begin();
+  vkCmdFillBuffer(fixture.command, atlasDepth.handle, 0, layout.depthBytes, 0xc0000000u); // -2
+  const VkMemoryBarrier unresolved{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+      .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, .dstAccessMask = VK_ACCESS_SHADER_READ_BIT};
+  vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+      0,1,&unresolved,0,nullptr,0,nullptr);
+  fixture.finish();
+  const auto transmissionFallback = querySunDepth(fixture, layout, atlasDepth, receivers);
+  for (const auto &value : transmissionFallback)
+    require(value[1] == 0, "Unresolved transmission requests fallback rather than fully lit or fully shadowed lookup");
   std::printf("Sparse sun depth prototype: %u hits, %u misses, %zu receiver comparisons; %llu image bytes\n",
               hits, misses, receivers.size(), static_cast<unsigned long long>(layout.depthBytes));
 }

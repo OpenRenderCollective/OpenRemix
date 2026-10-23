@@ -65,6 +65,11 @@ bool covered(uint primitive, vec2 bary, bool front, uint seed) {
   const float alpha = baseColor(m, uv, vertex).a;
   if (!alphaPass(m.shading.state.y, uintBitsToFloat(m.shading.state.z), alpha))
     return false;
+#ifdef COMPACT_DEPTH
+  // A single depth cannot encode proportional coverage. Retain the nearest
+  // nonempty sheet so capture can explicitly request the lighting fallback.
+  if ((m.flags.w & 2u) != 0u) return alpha > 0;
+#endif
   // Thin source-over sheets represent coverage, not refraction. Independent
   // candidate decisions give proportional transmission through stacked sheets.
   // Candidate traversal order is unspecified. Derive a local decision from the

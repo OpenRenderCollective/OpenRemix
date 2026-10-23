@@ -34,6 +34,7 @@ int main(int argc, char **argv) {
       }
     }
     values[0] = -0.f;
+    values[1] = -2; // Explicit unresolved-transmission fallback survives persistence.
     auto store = [&](std::span<const float> data) {
       io::Writer output(file, 17, {});
       disk::write(output, layout, header, data);
@@ -65,7 +66,7 @@ int main(int argc, char **argv) {
     rejects([&] { io::Reader cancelled(file, 17, stop.get_token()); }, "Cancelled cache reads stop during integrity verification");
     auto bad = values; bad[0] = std::numeric_limits<float>::quiet_NaN();
     rejects([&] { store(bad); }, "Nonfinite captured depth cannot enter a persistent payload");
-    bad[0] = -2;
+    bad[0] = -3;
     rejects([&] { store(bad); }, "Unknown negative depth sentinel rejects");
     bad[0] = 9;
     rejects([&] { store(bad); }, "Depth beyond the captured caster span rejects");
@@ -73,7 +74,7 @@ int main(int argc, char **argv) {
     for (uint32_t mode = 0; mode < 5; ++mode) {
       {
         io::Writer output(file, 17, {});
-        output.pod(uint32_t(0x53444e50)); output.pod(uint32_t(mode == 0 ? 2 : 1));
+        output.pod(uint32_t(0x53444e50)); output.pod(uint32_t(mode == 0 ? 1 : 2));
         output.pod(header);
         auto directory = layout.directory;
         if (mode == 1) directory[0] = 0;
@@ -84,10 +85,10 @@ int main(int argc, char **argv) {
       }
       rejects([&] { load(header); }, "Checksummed but incompatible version, directory, count or truncated depth rejects");
     }
-    for (float invalid : {std::numeric_limits<float>::quiet_NaN(), -2.f, 9.f}) {
+    for (float invalid : {std::numeric_limits<float>::quiet_NaN(), -3.f, 9.f}) {
       {
         io::Writer output(file, 17, {});
-        output.pod(uint32_t(0x53444e50)); output.pod(uint32_t(1)); output.pod(header);
+        output.pod(uint32_t(0x53444e50)); output.pod(uint32_t(2)); output.pod(header);
         output.array(layout.directory); output.pod(uint64_t(tileCount*16));
         std::vector<float> malicious(tileCount*16, .5f);
         malicious[0] = invalid;

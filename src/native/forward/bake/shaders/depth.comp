@@ -17,7 +17,20 @@ void main() {
   seed = directionSeed(direction, seed);
   Hit hit;
   bool found = traceRay(point.position.xyz, direction, rayFrame.trace.x, seed, hit);
-  // Negative means an explicit miss, independent of the traversal distance cap.
+  // -1 is a miss; -2 requests fallback because one depth cannot represent
+  // dielectric transmission or proportional source-over coverage.
   uint destination = rayFrame.control.z != 0u ? floatBitsToUint(point.position.w) : rayFrame.control.y + index;
-  visibilityResults[destination] = found ? hit.distance : -1;
+  bool unresolved = false;
+  if (found) {
+    RayMaterial material = rayMaterials[rayTriangles[hit.primitive].w];
+    unresolved = dielectric(material);
+    if (!unresolved && (material.flags.w & 2u) != 0u) {
+      vec2 uv;
+      vec4 vertex;
+      vec3 normal, geometric;
+      attributes(hit.primitive, hit.bary, uv, vertex, normal, geometric);
+      unresolved = baseColor(material, uv, vertex).a < 1;
+    }
+  }
+  visibilityResults[destination] = unresolved ? -2 : found ? hit.distance : -1;
 }
