@@ -78,6 +78,12 @@ namespace remix::forward::probes {
         const bool missed = value.statistics[1] != 0;
         const double relative = (double(value.irradiance[0][3]) - exit) / std::max(double(exit), 1e-30);
         auto &statistics = m_statistics[regionIndex];
+        if (!missed) {
+          Vec3 hit;
+          for (uint32_t axis = 0; axis < 3; ++axis)
+            hit[axis] = region.site.position[axis] + direction[axis] * value.irradiance[0][3];
+          statistics.hitBounds[face].include(hit);
+        }
         for (auto *part : {&statistics.total, &statistics.faces[face]}) {
           if (!missed && value.irradiance[0][3] <= exit * 1.05f)
             part->agreement += weight;
@@ -113,6 +119,7 @@ namespace remix::forward::probes {
         const auto &part = m_statistics[i].faces[face];
         auto &output = regions[i].faces[face];
         output.solidAngleFraction = float(part.total / statistics.total);
+        output.hitBounds = m_statistics[i].hitBounds[face];
         if (part.total <= 0)
           continue;
         output.supportFraction = float(part.agreement / part.total);

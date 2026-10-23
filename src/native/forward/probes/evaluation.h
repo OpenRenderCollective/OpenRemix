@@ -22,6 +22,7 @@ namespace remix::forward::probes {
     struct RegionStatistics {
       Statistics total;
       std::array<Statistics, 6> faces;
+      std::array<Bounds, 6> hitBounds;
     };
     struct Origin {
       Vec3 position;

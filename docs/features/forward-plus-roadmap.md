@@ -118,7 +118,11 @@ Actual frozen receiver coverage must drive that work: displaced surfaces can sit
 occupancy and be classified solid even above their rendered surface. Candidate ranking alone cannot
 repair receivers outside every generated proxy. Add geometry-validated candidate/influence support
 for these surfaces, preserve doorway wall rejection, and measure cost before changing the default.
-Check both horizontal handoffs and vertical terrain/floor coverage rather than eye-height points alone. Ordinary lighting cache identity is unchanged by this refresh;
+Check both horizontal handoffs and vertical terrain/floor coverage rather than eye-height points alone.
+The bounded geometry audit now retains finite first-hit envelopes per proxy face, using existing
+readbacks rather than additional rays. These support geometry-aware fitting experiments but must not
+be used directly as enlarged boxes: each proxy-face group can mix different real surfaces, so
+localized receiver visibility and wall rejection remain required before automatic growth is accepted. Ordinary lighting cache identity is unchanged by this refresh;
 optional sun-depth policy/layout changes can recapture depth while retaining cached irradiance.
 Older cache files are not deleted. Broader map, quality and performance gates remain open.
 The native continuation adds chart-edge denoising, stable progressive history, surface-hemisphere

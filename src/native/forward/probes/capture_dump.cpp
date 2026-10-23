@@ -56,7 +56,14 @@ namespace remix::forward::probes {
                  << ",\"farFraction\":" << audit.farFraction
                  << ",\"missFraction\":" << audit.missFraction
                  << ",\"backfaceFraction\":" << audit.backfaceFraction
-                 << ",\"meanRelativeResidual\":" << audit.meanRelativeResidual << '}';
+                 << ",\"meanRelativeResidual\":" << audit.meanRelativeResidual
+                 << ",\"hitMinimum\":";
+          if (audit.hitBounds.valid) vector(audit.hitBounds.minimum);
+          else output << "null";
+          output << ",\"hitMaximum\":";
+          if (audit.hitBounds.valid) vector(audit.hitBounds.maximum);
+          else output << "null";
+          output << '}';
         }
         output << "]}";
       }

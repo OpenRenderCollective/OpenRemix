@@ -7,6 +7,9 @@ namespace remix::forward::probes {
     // Directions are grouped by the first proxy face they cross: +X,-X,+Y,-Y,+Z,-Z.
     float solidAngleFraction = 0, supportFraction = 0, nearFraction = 0, farFraction = 0;
     float missFraction = 0, backfaceFraction = 0, meanRelativeResidual = 0;
+    // World-space envelope of finite first hits crossing this proxy face.
+    // A diagnostic sample envelope, not a certified empty projection volume.
+    Bounds hitBounds;
   };
   struct FittedRegion {
     Bounds bounds;

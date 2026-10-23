@@ -89,6 +89,16 @@ int main() {
   require(audit.observe(0, values), "A valid batch remains usable after an invalid batch was refused");
   require(!audit.observe(0, values), "Duplicate readback cannot bias geometry preference");
   const auto assessed = audit.finish();
+  require(assessed[1].faces[5].hitBounds.valid &&
+              std::abs(assessed[1].faces[5].hitBounds.minimum[2]) < 1e-5f,
+          "First-hit envelopes retain the actual floor beyond the inset projection proxy");
+  auto displacedRooms = std::array{rooms[0], rooms[1], rooms[2]};
+  for (auto &room : displacedRooms) room.minimum[2] = -1;
+  p::ProjectionAudit displaced(candidates);
+  const auto displacedValues = geometry(displaced, displacedRooms);
+  require(displaced.observe(0, displacedValues), "Displaced floor readbacks remain valid geometry");
+  require(std::abs(displaced.finish()[1].faces[5].hitBounds.minimum[2] + 1) < 1e-5f,
+          "Geometry envelopes expose floors below BSP-derived candidate bounds without extending those bounds");
   const auto selected = p::selectRegions(assessed, 2);
   require(selected == std::vector<size_t>({1, 2}) && assessed[1].quality > assessed[0].quality + .2f,
           "Measured geometry selects both full-height rooms instead of the "
@@ -127,9 +137,9 @@ int main() {
             "A miss cannot masquerade as a supporting wall even at an "
             "identical reported distance");
     for (const auto &face : region.faces)
-      require(face.solidAngleFraction == 0 || (std::abs(face.missFraction - 1) < 1e-6f &&
-                  face.meanRelativeResidual == 0 && face.nearFraction == 0 && face.farFraction == 0),
-              "An all-miss face does not invent finite-hit geometry residuals");
+      require(!face.hitBounds.valid && (face.solidAngleFraction == 0 || (std::abs(face.missFraction - 1) < 1e-6f &&
+                  face.meanRelativeResidual == 0 && face.nearFraction == 0 && face.farFraction == 0)),
+              "An all-miss face does not invent finite-hit geometry residuals or bounds");
   }
   auto scaled = candidates;
   for (auto &region : scaled) {
