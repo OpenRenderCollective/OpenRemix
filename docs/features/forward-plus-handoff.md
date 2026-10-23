@@ -1,5 +1,17 @@
 # Forward+ continuation guide
 
+A fresh focused Construct off/on/on/off comparison on the deployed `b8c384a` DLL confirms the
+selected-probe batching tradeoff: white-room whole-GPU mean of per-run medians drops from
+9.787 to 8.297 ms (15.2%), while hall-east rises from 4.103 to 4.213 ms (2.7% slower)
+and the other hallway stays approximately unchanged. White-room opaque cost falls from
+7.177 to 5.859 ms. All four runs retain the same bake hash, confirmed Windows/game focus,
+DLL hashes and protected settings. These are fixed-view measurements with full-resolution
+SSR and 4x MSAA, not moving-gameplay FPS acceptance. First-pair upper-world image differences
+are at most 3 channel values in hall-east and 1 elsewhere; exposure/animation prevent a broad
+pixel-identical claim. The gathered field is about 2 MiB and is reused after completion.
+Keep batching opt-in; investigate receiver-level cost and hallway regressions before any
+default change, and retain the moving-gameplay/wider-map qualification tasks.
+
 The 2026-10-24 testing refresh deploys native `b8c384a` and adapter `a499842` from the immutable
 `forwardplus-reflection-only-20261024` package. All 155 owned files verify; only the native DLL,
 upstream license and runtime manifest changed. Ten protected settings/assets/launcher files
