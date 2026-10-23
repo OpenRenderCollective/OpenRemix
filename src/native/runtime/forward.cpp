@@ -49,6 +49,11 @@ namespace remix {
         << ", \"liveCasters\": " << state.liveCasters
         << ", \"emptyMovingShadowMaps\": " << state.emptyMovingShadowMaps
         << ", \"staticCasterPreparations\": " << state.staticCasterPreparations << '}'
+        << ",\n  \"probeVisibility\": {\"lights\": " << state.probeVisibility.lights
+        << ", \"groups\": " << state.probeVisibility.groups
+        << ", \"fieldBytes\": " << state.probeVisibility.fieldBytes
+        << ", \"residentBytes\": " << state.probeVisibility.residentBytes
+        << ", \"peakResidentBytes\": " << state.probeVisibility.peakResidentBytes << '}'
         << ",\n  \"exposure\": {\"current\": " << state.postProcessing.exposure
         << ", \"target\": " << state.postProcessing.target << ", \"limit\": " << state.postProcessing.limit
         << ", \"milliseconds\": " << state.postProcessing.milliseconds

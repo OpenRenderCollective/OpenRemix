@@ -55,12 +55,26 @@ Pipeline preparation runs on the existing worker. Directional moving corrections
 lookup, unsupported fields keep sparse fallback, and water/live GI keep their existing paths.
 The focused Construct colour-room comparison improves in both opposite-order repeats with unchanged
 light budgets and bake identity. Fixed room regions match; animated viewmodels prevent whole-screen
-pixel equivalence. The ordinary hall shows no clear benefit. Before enabling by default, test weighted
-unknown-coverage edges, moving selection churn, wider maps, preparation cost and peak residency, and
+pixel equivalence. The ordinary hall shows no clear benefit. Before enabling by default, test moving selection churn,
+wider maps, preparation cost and peak residency under churn, and
 resolve that hall tradeoff. The old validation layer reports the same unrecognized device-feature
 structure on/off; no new synchronization/descriptor error appears, but full runtime validation remains
 qualified by that compatibility message. Test-install bytes/settings were restored after owned runs.
 The roadmap's broader quality and deployment gates remain open.
+A receiver GPU fixture now compares the actual vector helper with both sparse GLSL and an independent
+CPU reconstruction for both sparse encodings and directional wrappers. It covers weighted holes on
+both sides of the tiny-weight cutoff, unsupported/insufficient stencils, 8/16 corners, group changes,
+stencil revisions and the full 64-light selection. The Crossfire opposite-order replay is pixel-identical
+with neutral timing; it exercises 456 lights with 16 selected highlights and 4 mixed slots, without
+establishing live gameplay performance. Diagnostics now expose active field, resident and peak buffer
+bytes, and a separate GPU preparation range. Peak accounting retains old submitted/abandoned owners
+until released; the receiver fixture checks this independently of current resident bytes.
+A 64-frame scripted Construct camera transition retains its bake identity; all five sampled images
+match the feature-off run within one display-channel value. It records about 2 MiB active/resident
+field storage and 5 MiB peak residency during selection changes. A fixed-view replay records a 4 MiB
+peak. These are measured cases, not a universal bound or an armed moving-gameplay acceptance. The
+preparation timer is absent from the completed steady-state timing window because reuse emits no
+gather; measure first use and sustained selection churn separately before judging preparation cost.
 
 The installed runtime has completed Windows-confirmed foreground Construct samples with the
 physgun, full-resolution SSR and stable bake identity. Source's own focus flag alone proved

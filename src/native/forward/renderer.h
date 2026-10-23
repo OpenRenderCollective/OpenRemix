@@ -43,6 +43,10 @@ namespace remix::forward {
     // Positive selected-aggregate response weights; the roles can overlap.
     uint32_t selectedHighlightLights = 0, selectedMixedShadowLights = 0;
     uint32_t requiredMixedLights = 0; // Clustered subset whose host requests a mixed response.
+    struct ProbeVisibility {
+      uint32_t lights = 0, groups = 0;
+      uint64_t fieldBytes = 0, residentBytes = 0, peakResidentBytes = 0;
+    } probeVisibility;
     uint64_t targetBytes = 0, geometryBytes = 0, bufferBytes = 0;
     uint64_t rigidUploadCreates = 0, rigidUploadReuses = 0, spareGeometryBytes = 0;
     uint64_t accelerationBytes = 0;

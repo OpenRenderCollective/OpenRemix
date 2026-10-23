@@ -28,7 +28,18 @@ namespace remix::forward {
     const auto memory = baking->memory();
     const auto authoredMemory = authoredReflections->memory();
     statistics.bufferBytes += memory.buffers + authoredMemory.buffers;
-    if (probeVisibility) statistics.bufferBytes += probeVisibility->bufferBytes();
+    auto &visibility = statistics.probeVisibility;
+    visibility = {};
+    if (probeVisibility) {
+      visibility.residentBytes = probeVisibility->bufferBytes();
+      visibility.peakResidentBytes = probeVisibility->peakBufferBytes();
+      statistics.bufferBytes += visibility.residentBytes;
+      if (const auto &field = frames[slot].probeVisibility) {
+        visibility.lights = uint32_t(field->lights().size());
+        visibility.groups = field->groups();
+        visibility.fieldBytes = field->bufferBytes();
+      }
+    }
     statistics.targetBytes = baseTargetBytes + memory.images + authoredMemory.images +
                              (waterPass ? waterPass->targetBytes() : 0) +
                              viewModelTarget->bytes() +

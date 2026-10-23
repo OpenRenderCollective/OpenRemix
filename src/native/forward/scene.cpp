@@ -338,7 +338,6 @@ namespace remix::forward {
           if (intersectsClip(bounds, frame.viewModelProjection)) append(draw, frame.viewModelCasters, true);
         }
     }
-    step(cpu.lighting);
     if (probeVisibility && !giSupported) {
       std::vector<uint32_t> selected;
       for (uint32_t i = 0; i < runtimeLights; ++i) {
@@ -357,6 +356,7 @@ namespace remix::forward {
       if (!frame.probeVisibility)
         for (auto &light : lights) light.responseWeights[2] = 0;
     }
+    step(cpu.lighting);
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physical, &properties);
     data.clusterInfo[0] = clusterListCapacity(runtimeLights, data.grid[3],

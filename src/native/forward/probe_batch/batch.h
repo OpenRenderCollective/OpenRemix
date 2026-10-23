@@ -52,6 +52,7 @@ namespace remix::forward::probe_batch {
     // Includes fields retained by submitted consumers after source/selection changes.
     // Source bake buffers remain accounted by the bake controller.
     uint64_t bufferBytes() const;
+    uint64_t peakBufferBytes() const;
 
   private:
     VkPhysicalDevice m_physical;

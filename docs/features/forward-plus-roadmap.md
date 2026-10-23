@@ -98,12 +98,26 @@ IDs, the full selection, budget rejection, cancellation and replacement lifetime
 checks cover world/MSAA, baked viewmodels and viewmodel SSR. A focused, armed Construct colour-room
 opposite-order comparison improves both repeats at stable bake identity and unchanged light budgets;
 fixed room regions retain matching lighting. The ordinary hall replay has no clear benefit and small
-order-dependent differences. Keep the prototype off by default: validate weighted unknown boundaries,
-more maps and moving selection changes, quantify preparation/resident cost, and resolve the hall
+order-dependent differences. Keep the prototype off by default: validate moving selection changes and wider maps,
+quantify preparation/resident cost under churn, and resolve the hall
 tradeoff before default/deployment acceptance. Runtime replay validation reports the same unknown
 newer device-feature structure in both on/off runs with the installed older validation layer; do not
 call those runs wholly validation-clean. No new gather/descriptor/synchronization message was observed.
-The testing install was restored byte-for-byte after owned diagnostic runs. This is an in-progress
+The testing install was restored byte-for-byte after owned diagnostic runs.
+A receiver GPU fixture now compares the actual vector helper with both sparse GLSL and an independent
+CPU reconstruction for both sparse encodings and directional wrappers. It covers weighted holes on
+both sides of the tiny-weight cutoff, unsupported/insufficient stencils, 8/16 corners, group changes,
+stencil revisions and the full 64-light selection. The Crossfire opposite-order replay is pixel-identical
+with neutral timing; it exercises 456 lights with 16 selected highlights and 4 mixed slots, without
+establishing live gameplay performance. Diagnostics now expose active field, resident and peak buffer
+bytes, and a separate GPU preparation range. Peak accounting retains old submitted/abandoned owners
+until released; the receiver fixture checks this independently of current resident bytes.
+A 64-frame scripted Construct camera transition retains its bake identity; all five sampled images
+match the feature-off run within one display-channel value. It records about 2 MiB active/resident
+field storage and 5 MiB peak residency during selection changes. A fixed-view replay records a 4 MiB
+peak. These are measured cases, not a universal bound or an armed moving-gameplay acceptance. The
+preparation timer is absent from the completed steady-state timing window because reuse emits no
+gather; measure first use and sustained selection churn separately before judging preparation cost. This is an in-progress
 optimization, not broad FPS/quality acceptance or a persistent bake-format change.
 The branch also regenerates the stale ordinary-water fragment from current maintained source. Its
 source/binary and SPIR-V checks plus four water GPU suites pass. This correction is not yet deployed;

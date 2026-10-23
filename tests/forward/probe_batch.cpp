@@ -3,6 +3,7 @@
 #include "forward/bake/probe_visibility.h"
 #include "forward/probe_batch/batch.h"
 #include "gpu_fixture.h"
+#include "probe_batch_query.h"
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -127,6 +128,7 @@ int main() try {
     auto field = cache.record(fixture.command, input.volume, lights);
     require(field && field != abandoned, "Recording alone cannot publish an unwritten reusable field");
     readback(fixture, *field, input.masks);
+    queryField(fixture, *input.volume, input.masks, *field);
     std::weak_ptr<const probe_batch::Field> discarded = abandoned;
     abandoned.reset();
     fixture.begin();
@@ -134,6 +136,8 @@ int main() try {
     require(reused == field, "A device-completed immutable field is reused without another gather");
     require(discarded.expired(), "Completed reuse releases abandoned cache-only producers");
     require(cache.bufferBytes() == field->bufferBytes(), "Abandoned resident storage is reclaimed after completed reuse");
+    require(cache.peakBufferBytes() == 2 * field->bufferBytes(),
+            "Peak residency includes abandoned and submitted owners after current storage shrinks");
     readback(fixture, *reused, input.masks);
     auto next = source(fixture, sorted, directional, 1);
     fixture.begin();
@@ -154,6 +158,7 @@ int main() try {
     auto largest = cache.record(fixture.command, next.volume, full);
     require(largest && largest->groups() == 16, "The full supported selection preserves every vector group");
     readback(fixture, *largest, next.masks);
+    queryField(fixture, *next.volume, next.masks, *largest);
     cache.reset();
     fixture.begin();
     readback(fixture, *field, input.masks); // Old submitted consumers remain valid.
@@ -188,7 +193,7 @@ int main() try {
     require(retained.expired(), "Completed consumers release obsolete source volumes without a cache leak");
   }
   require(validationErrors == 0, "Gather, cancellation, reuse and replacement are Vulkan validation clean");
-  std::puts("Selected probe visibility gather: scalar/directional, ranked/sorted, exact values and owners passed");
+  std::puts("Selected probe visibility: exact gather, weighted receiver coverage, group reuse and owners passed");
 } catch (VkResult error) {
   std::fprintf(stderr, "Probe visibility batch test failed: %d\n", int(error));
   return 1;

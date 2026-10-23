@@ -2,6 +2,7 @@
 #include "forward/bake/controller.h"
 #include "forward/probe_batch/shaders/embedded.h"
 #include "runtime/pipelines.h"
+#include "platform/gpu_timers.h"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -13,6 +14,12 @@ namespace remix::forward::probe_batch {
     VkPipelineLayout layout = VK_NULL_HANDLE;
     VkPipeline pipeline = VK_NULL_HANDLE;
     std::atomic<uint64_t> bufferBytes{0};
+    std::atomic<uint64_t> peakBufferBytes{0};
+    void account(uint64_t bytes) {
+      const auto resident = bufferBytes.fetch_add(bytes, std::memory_order_relaxed) + bytes;
+      auto peak = peakBufferBytes.load(std::memory_order_relaxed);
+      while (peak < resident && !peakBufferBytes.compare_exchange_weak(peak, resident, std::memory_order_relaxed)) {}
+    }
     explicit Resources(VkDevice target) : device(target) {}
     ~Resources() {
       if (pipeline) pipeline::destroyPipeline(device, pipeline, nullptr);
@@ -62,6 +69,9 @@ namespace remix::forward::probe_batch {
   uint64_t Cache::bufferBytes() const {
     return m_resources ? m_resources->bufferBytes.load(std::memory_order_relaxed) : 0;
   }
+  uint64_t Cache::peakBufferBytes() const {
+    return m_resources ? m_resources->peakBufferBytes.load(std::memory_order_relaxed) : 0;
+  }
   std::shared_ptr<const Field> Cache::record(VkCommandBuffer command,
       std::shared_ptr<const bake::Volume> source, std::span<const uint32_t> capturedLights) {
     const uint32_t probes = source ? source->irradianceHeader.dimensions[3] : 0;
@@ -105,12 +115,12 @@ namespace remix::forward::probe_batch {
     std::copy(capturedLights.begin(), capturedLights.end(), parameters.begin() + 4);
     next->m_parameters.create(m_physical, m_device, sizeof(parameters), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     next->m_bufferBytes += next->m_parameters.allocationBytes;
-    m_resources->bufferBytes.fetch_add(next->m_parameters.allocationBytes, std::memory_order_relaxed);
+    m_resources->account(next->m_parameters.allocationBytes);
     next->m_parameters.write(parameters.data(), sizeof(parameters));
     next->m_values.create(m_physical, m_device, bytes,
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, Buffer::Memory::Device);
     next->m_bufferBytes += next->m_values.allocationBytes;
-    m_resources->bufferBytes.fetch_add(next->m_values.allocationBytes, std::memory_order_relaxed);
+    m_resources->account(next->m_values.allocationBytes);
     const VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3};
     const VkDescriptorPoolCreateInfo pool{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .maxSets = 1, .poolSizeCount = 1, .pPoolSizes = &size};
@@ -128,6 +138,7 @@ namespace remix::forward::probe_batch {
     vkUpdateDescriptorSets(m_device, 3, writes, 0, nullptr);
     const VkEventCreateInfo event{.sType = VK_STRUCTURE_TYPE_EVENT_CREATE_INFO};
     check(vkCreateEvent(m_device, &event, nullptr, &next->m_completed));
+    gpu::GpuScope gather(command, "Forward+ selected probe visibility gather");
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, m_resources->pipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, m_resources->layout,
                             0, 1, &next->m_set, 0, nullptr);

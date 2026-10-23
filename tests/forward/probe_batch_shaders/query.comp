@@ -1,0 +1,43 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x = 64) in;
+#define IRRADIANCE_BINDING 0
+#include "../../../src/native/forward/shaders/irradiance.glsl"
+#include "../../../src/native/forward/shaders/probe-batch.glsl"
+struct Query { vec4 weights[4]; uvec4 indices[4]; uvec4 control; };
+layout(set = 0, binding = 1, std430) readonly buffer Queries {
+  uint capturedLights[64];
+  Query queries[];
+};
+layout(set = 0, binding = 2, std430) writeonly buffer Results { vec4 results[]; };
+layout(push_constant) uniform Count { uint count; } dispatch;
+void main() {
+  uint index = gl_GlobalInvocationID.x;
+  if (index >= dispatch.count) return;
+  Query query = queries[index];
+  // Exercise the actual receiver lookup with controlled stencils. The sparse
+  // lookup remains the independent reference, including tiny missing weights.
+  localStencilInitialized = true;
+  localStencilValid = query.control.y != 0u;
+  localStencilPosition = vec3(0);
+  localStencilNormal = vec3(0, 0, 1);
+  localStencilCount = query.control.x;
+  for (uint phase = 0u; phase < 2u; ++phase) {
+    ++localStencilRevision;
+    for (uint i = 0u; i < localStencilCount; ++i) {
+      uint source = phase == 0u ? i : localStencilCount - 1u - i;
+      localStencilWeights[i] = query.weights[source / 4u][source % 4u];
+      localStencilIndices[i] = query.indices[i / 4u][i % 4u];
+    }
+    for (uint iteration = 0u; iteration <= selectedProbeHeader.y; ++iteration) {
+      uint slot = iteration == selectedProbeHeader.y ? 0u :
+          (iteration % 2u == 0u ? iteration / 2u : selectedProbeHeader.y - 1u - iteration / 2u);
+      float batch = -1, sparse = -1, ignored;
+      bool foundBatch = batchedProbeVisibility(vec3(0), vec3(0, 0, 1), slot + 1u, batch);
+      bool foundSparse = bakedLocalProbeResponse(vec3(0), vec3(0, 0, 1), vec3(0, 0, 1),
+          capturedLights[slot], false, sparse, ignored);
+      results[(index * 2u + phase) * (selectedProbeHeader.y + 1u) + iteration] =
+          vec4(batch, sparse, float(foundBatch), float(foundSparse));
+    }
+  }
+}
