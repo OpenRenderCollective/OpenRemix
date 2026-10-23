@@ -53,6 +53,7 @@ namespace remix::forward {
     std::unique_ptr<viewmodel::SunShadow> viewModelSun;
     std::unique_ptr<shadows::Maps> viewModelLocalMaps;
     VkPipeline viewModelPipeline = VK_NULL_HANDLE;
+    VkPipeline viewModelEarlyPipeline = VK_NULL_HANDLE;
     std::unique_ptr<postfx::Renderer> postProcessing;
     VkDescriptorSetLayout postLayout = VK_NULL_HANDLE;
     std::unique_ptr<ray::Reflections> rayReflections;
@@ -91,6 +92,7 @@ namespace remix::forward {
       const lightmap::Geometry::Entry *lightmap = nullptr;
       Bounds worldBounds;
       bool captured = false;
+      bool unconditionalCoverage = false;
       scene::Draw source; // material, mesh and texture owners live through the fence
       VkDescriptorSet material = VK_NULL_HANDLE;
       uint32_t index = 0, count = 0;

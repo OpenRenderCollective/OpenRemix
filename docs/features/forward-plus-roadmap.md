@@ -11,6 +11,16 @@ reports. An implementation or synthetic test alone does not close an integration
 
 ## Continuation status (2026-10-23)
 
+The viewmodel continuation adds a default early-depth variant only for packed ALWAYS-alpha draws
+with camera backface rejection disabled. Its shader contains no discard instructions; cutouts and
+explicit camera culling retain the ordinary shader. This needs no second geometry pass or new target.
+Six GPU suites cover alpha comparisons, draw orders, MSAA, perspective camera culling, overlay/world
+shadows, baked probes, SSR, environment materials and animated frame slots. A focused opposite-order
+Construct comparison improves both viewmodel repeats, while separate invocation queries show fewer
+shader invocations at unchanged passing-sample/geometry counts. These are fixed-view results, not
+whole-roadmap gameplay acceptance. The private disable override is documented in the renderer guide.
+Deployment of this continuation is pending; the install checkpoint below still describes the prior DLL.
+
 The separate GMod testing install now uses native `ac33981` and adapter `28c28cb`. The latest
 incremental refresh adds early fragment rejection to prepassed world shading; only the native DLL
 and runtime manifest changed, and all ten settings/assets/launcher files verify unchanged. The

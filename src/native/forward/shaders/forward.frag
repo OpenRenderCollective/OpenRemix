@@ -6,6 +6,11 @@
 // early depth write, including at coplanar cutout boundaries.
 layout(early_fragment_tests) in;
 #endif
+#ifdef EARLY_OPAQUE
+// The host selects this variant only for ALWAYS alpha comparison and disabled
+// camera backface rejection. No discard can invalidate its early depth writes.
+layout(early_fragment_tests) in;
+#endif
 #if defined(LIVE_GI) || defined(WATER_RAY)
 #extension GL_EXT_ray_query : require
 #endif
@@ -62,14 +67,16 @@ vec3 directLightComponent(BrdfLobes light, uint view) {
 #else
 void main() {
   Material m = materials[draw.index];
-#ifndef SHADOW_PASS
+#if !defined(SHADOW_PASS) && !defined(EARLY_OPAQUE)
   // Camera visibility is independent of double-sided light transport. Walls
   // still occlude bake/GI/shadow rays when viewed from their hidden side.
   if ((m.state.w & 16u) != 0u && !gl_FrontFacing)
     discard;
 #endif
   vec4 surface = surfaceColor(m, uv, vertexColor);
+#ifndef EARLY_OPAQUE
   alphaTest(m, surface.a);
+#endif
 #ifdef LOCAL_SHADOW_PASS
   vec4 lightPosition = frame.localPositions[draw.cascade / 6u];
   gl_FragDepth = min(length(worldPosition - lightPosition.xyz) / lightPosition.w, 1);

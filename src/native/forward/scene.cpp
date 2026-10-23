@@ -148,6 +148,8 @@ namespace remix::forward {
         waterMaterials.push_back(water::materialData(*draw.material, seconds));
       }
       draws.push_back(materialData(draw, seconds));
+      const auto &state = draws.back().state;
+      out.unconditionalCoverage = state[1] == VK_COMPARE_OP_ALWAYS && (state[3] & 16u) == 0;
       commands.push_back(std::move(out));
     };
     for (const auto &draw : resources.draws()) {

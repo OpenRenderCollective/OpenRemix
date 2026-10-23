@@ -3536,7 +3536,7 @@ namespace {
     std::puts("Forward+ sky, world/raster coverage, absence and MSAA passed");
   }
   void cameraBackfaceTests() {
-    for (uint32_t samples : {1u, 2u, 4u}) {
+    for (uint32_t samples : {1u, 2u, 4u}) for (bool viewModel : {false, true}) {
       Target target;
       auto &r = target.raster;
       remix::forward::Options options;
@@ -3551,10 +3551,32 @@ namespace {
       culling.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_CAMERA_CULLING_EXT;
       culling.flags = REMIXAPI_INSTANCE_CAMERA_CULL_BACK_FACES_EXT;
       auto info = instance(mesh);
+      if (viewModel) info.categoryFlags = REMIXAPI_INSTANCE_CATEGORY_BIT_VIEW_MODEL;
       info.doubleSided = 1; // Light transport must remain double-sided.
       info.pNext = &culling;
       const auto render = [&] {
         camera(r);
+        if (viewModel) {
+          // Viewmodel correction requires perspective cameras. Identity
+          // projection leaves this as a compatibility-raster draw instead.
+          remixapi_CameraInfoParameterizedEXT parameters{};
+          parameters.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO_PARAMETERIZED_EXT;
+          parameters.position = {0, 0, -2};
+          parameters.forward = {0, 0, 1};
+          parameters.right = {1, 0, 0};
+          parameters.up = {0, 1, 0};
+          parameters.aspect = 1;
+          parameters.fovYInDegrees = 90;
+          parameters.nearPlane = .1f;
+          parameters.farPlane = 10;
+          remixapi_CameraInfo overlay{};
+          overlay.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO;
+          overlay.pNext = &parameters;
+          for (const auto type : {REMIXAPI_CAMERA_TYPE_WORLD, REMIXAPI_CAMERA_TYPE_VIEW_MODEL}) {
+            overlay.type = type;
+            r.setupCamera(overlay);
+          }
+        }
         r.drawInstance(info);
         return target.render();
       };

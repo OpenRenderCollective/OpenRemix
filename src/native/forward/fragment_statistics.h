@@ -9,6 +9,7 @@ namespace remix::forward {
   // Ranges never overlap and preserve draw order; exhausted capacity is reported.
   class FragmentStatistics {
   public:
+    static constexpr uint32_t viewModel = 6, viewModelEarly = 7;
     // The logical device must enable the supported pipelineStatisticsQuery and
     // occlusionQueryPrecise features (the native runtime does this at creation).
     FragmentStatistics(VkPhysicalDevice physical, VkDevice device);

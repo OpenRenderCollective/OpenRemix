@@ -95,7 +95,8 @@ namespace remix::forward {
     spareGeometry.clear();
     for (auto handle : {opaquePipeline, lightmapPipeline, partialLightmapPipeline, depthPipeline, depthLightmapPipeline,
                         shadowPipeline, localShadowPipeline,
-                        clusterPipeline, compositePipeline, viewModelPipeline, giOpaquePipeline, giLightmapPipeline,
+                        clusterPipeline, compositePipeline, viewModelPipeline, viewModelEarlyPipeline,
+                        giOpaquePipeline, giLightmapPipeline,
                         terrainPipeline, terrainLightmapPipeline, terrainPartialLightmapPipeline,
                         giTerrainPipeline, giTerrainLightmapPipeline})
       if (handle)

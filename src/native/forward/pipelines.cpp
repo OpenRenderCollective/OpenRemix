@@ -4,6 +4,7 @@
 #include "forward/ray/gi_shaders/embedded.h"
 #include "forward/shaders/embedded.h"
 #include "forward/water/shaders/embedded.h"
+#include <cstdlib>
 
 namespace remix::forward {
   void Renderer::Gpu::createPipelines(VkRenderPass output) {
@@ -14,6 +15,7 @@ namespace remix::forward {
     pipeline::nameCode(prepassedFragShader, "forward.prepassed-fragment");
     pipeline::nameCode(prepassedSsrFragShader, "forward.prepassed-reflection-guides");
     pipeline::nameCode(viewModelFragShader, "forward.viewmodel-fragment");
+    pipeline::nameCode(viewModelEarlyFragShader, "forward.viewmodel-early-fragment");
     pipeline::nameCode(opaqueDepthFragShader, "forward.opaque-depth");
     pipeline::nameCode(ray::gi::fragShader, "forward.live-gi");
     pipeline::nameCode(ray::gi::guidesShader, "forward.live-gi-guides");
@@ -189,6 +191,10 @@ namespace remix::forward {
     opaquePipeline = graphics(vertex, fragment, worldPass);
     const auto viewModelFragment = modules.add(viewModelFragShader, sizeof(viewModelFragShader));
     viewModelPipeline = graphics(vertex, viewModelFragment, viewModelTarget->pass(), Pass::ViewModel);
+    if (!std::getenv("REMIX_DEBUG_DISABLE_VIEWMODEL_EARLY_DEPTH")) {
+      const auto early = modules.add(viewModelEarlyFragShader, sizeof(viewModelEarlyFragShader));
+      viewModelEarlyPipeline = graphics(vertex, early, viewModelTarget->pass(), Pass::ViewModel);
+    }
     lightmapPipeline = graphics(lightmapVertex, fragment, worldPass, Pass::Opaque, true);
     partialLightmapPipeline = graphics(lightmapVertex, fragment, worldPass);
     depthPipeline = graphics(vertex, depthFragment, worldPass, Pass::Depth);

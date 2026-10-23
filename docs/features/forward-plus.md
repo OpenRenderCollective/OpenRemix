@@ -63,8 +63,9 @@ Frozen caster bounds are cached with the immutable scene. Per-frame frozen draw
 records and material descriptors are prepared only when a static sun cascade or
 local-light map needs rebuilding. `.shadow-preparation.bin` records that frame's
 prepared frozen draw count as one little-endian `uint32_t`.
-General transparency, viewmodels, decals and unsupported masking operations stay in compatibility
-rasterization. Measured transmission bodies and finite sheets use the late Forward+ refraction pass
+General transparency and unsupported masking operations stay in compatibility rasterization.
+Eligible viewmodels use the isolated Forward+ overlay; supported decals borrow receiver lighting
+and composite in the late surface pass. Measured transmission bodies and finite sheets use the late Forward+ refraction pass
 by default; this pass is currently owned by `water/`.
 The Rendering panel's Water refraction and reflections control, or `rtx.native.forward.water = 0`,
 restores compatibility rendering. An explicitly saved zero remains respected.
@@ -536,7 +537,8 @@ a separate surface-shading input and must not alter volume absorption or the fro
 
 The optional late water pass accepts measured transmission bodies with valid IOR and constant
 measurement colour/distance, ordinary depth testing/writes and opaque or source-over coverage.
-Thin sheets, unusual blend/depth state, decals and viewmodels retain compatibility rendering.
+Unusual blend/depth state retains compatibility rendering. Decals and viewmodels use their separate
+Forward+ surface/overlay passes rather than this water pass.
 Eligibility reads the resolved replacement material, as do baking and optional ray transport.
 Water geometry does not enter opaque shadow-caster lists or surface-lightmap charts.
 
@@ -991,6 +993,17 @@ and disables depth writes in its color pipeline. The matching prepass owns cover
 cutout discards in the shaded pass cannot write over an underlying surface. Prepass-off shading,
 viewmodels, terrain, water and shadow depth retain their separate shader/depth policies. Live GI
 retains its existing shader while also reusing the prepass depth without rewriting it.
+
+Viewmodels use a narrower default early-depth path without another geometry pass. The packed draw
+must have ALWAYS alpha comparison and camera backface rejection disabled. Only then may its shader
+omit both discard sites and write depth before shading. Other viewmodel materials retain the ordinary
+shader and depth policy. Eligibility uses the same packed state uploaded for that frame; source
+material assumptions or static/dynamic classification do not replace that check. Draw order, isolated
+overlay depth, world reflection guides and self/world shadow passes remain unchanged. Shader variants
+are prepared on the pipeline worker, and adjacent eligible draws reuse the selected pipeline.
+`REMIX_DEBUG_DISABLE_VIEWMODEL_EARLY_DEPTH` disables this optimization when present; remove it to
+restore the default. It is a diagnostic override, not a stored renderer setting. Optional fragment
+statistics distinguish ordinary viewmodel ranges (category 6) and eligible early ranges (category 7).
 
 For compiler inspection, start with `REMIX_PIPELINE_EXECUTABLES=1`, then create
 `pipelines.request` in the profile directory to write `pipelines.txt`. On supporting
