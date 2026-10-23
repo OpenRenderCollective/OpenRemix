@@ -1,4 +1,5 @@
 #include "forward/probes/receiver_visibility.h"
+#include "forward/probes/receiver_pairs.h"
 #include <limits>
 #include <stdexcept>
 
@@ -41,5 +42,48 @@ int main() {
   require(!p::receiverRay(receiver, {10, 20, -140}, .05f));
   bool rejected = false;
   try { p::receiverRay(receiver, {0, 0, 0}, 0); } catch (const std::invalid_argument &) { rejected = true; }
+  require(rejected);
+  std::vector<p::Capture> captures(3);
+  for (uint32_t i = 0; i < captures.size(); ++i) {
+    auto &capture = captures[i];
+    capture.position = {float(i == 2 ? 5 : 0), 0, 10};
+    capture.resolution = 8;
+    capture.bounds.include({capture.position[0] - 1, -1, 9});
+    capture.bounds.include({capture.position[0] + 1, 1, 11});
+  }
+  std::vector<p::ReceiverSample> receivers(200);
+  for (uint32_t i = 0; i < receivers.size(); ++i) {
+    receivers[i].position = {0, float(i), 0};
+    receivers[i].normal = {0, 0, 1};
+  }
+  const auto pairs = p::receiverPairs(receivers, captures, .01f, 8, 2);
+  require(pairs.size() == 8 && pairs[0].receiver == 25 && pairs[6].receiver == 175);
+  for (uint32_t i = 0; i < pairs.size(); ++i) require(pairs[i].capture == i % 2);
+  const auto repeated = p::receiverPairs(receivers, captures, .01f, 8, 2);
+  for (uint32_t i = 0; i < pairs.size(); ++i)
+    require(pairs[i].receiver == repeated[i].receiver && pairs[i].capture == repeated[i].capture);
+  receivers[0].position = {0, 0, 10};
+  const auto covered = p::receiverPairs(std::span(receivers).first(1), captures, .01f);
+  require(covered.empty());
+  auto rotated = captures[0];
+  rotated.position = {10, 20, 10};
+  rotated.worldToLocal = {{{0, 1, 0, -20}, {-1, 0, 0, 10}, {0, 0, 1, 0}}};
+  rotated.influence.include({-2, -2, 8});
+  rotated.influence.include({2, 2, 12});
+  auto edgeReceiver = receivers[0];
+  edgeReceiver.position = {10, 21.5f, 10};
+  require(p::receiverPairs(std::span(&edgeReceiver, 1), std::span(&rotated, 1), .01f).empty());
+  // Influence membership, not the smaller projection proxy, decides whether a query is needed.
+  const auto single = p::receiverPairs(receivers, std::span(captures).first(1), .01f, 8, 4);
+  require(single.size() == 8); // A single available capture must not waste a four-pair allocation.
+  std::stop_source stop;
+  stop.request_stop();
+  rejected = false;
+  try { p::receiverPairs(receivers, captures, .01f, 8, 2, stop.get_token()); }
+  catch (const std::runtime_error &) { rejected = true; }
+  require(rejected);
+  rejected = false;
+  try { p::receiverPairs(receivers, captures, .01f, 0); }
+  catch (const std::invalid_argument &) { rejected = true; }
   require(rejected);
 }

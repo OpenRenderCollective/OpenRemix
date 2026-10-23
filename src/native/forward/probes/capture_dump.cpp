@@ -1,6 +1,7 @@
 #include "forward/probes/capture_dump.h"
 #include "forward/probes/selection.h"
 #include "forward/probes/receivers.h"
+#include "forward/probes/receiver_pairs.h"
 #include "scene/bake_scene.h"
 #include <algorithm>
 #include <bit>
@@ -23,6 +24,8 @@ namespace remix::forward::probes {
       if (std::filesystem::exists(path))
         throw std::runtime_error("Candidate report exists; choose a fresh path");
       const auto receivers = sampleReceivers(source, 8192, cancelled);
+      // Report all bounded proposals; this plans rays but never submits them.
+      const auto pairs = receiverPairs(receivers, captures, .002f / source.sceneScale, 32768, 4, cancelled);
       std::ofstream output(path);
       output.exceptions(std::ios::failbit | std::ios::badbit);
       output.precision(9);
@@ -80,6 +83,22 @@ namespace remix::forward::probes {
                << ",\"draw\":" << receiver.draw << ",\"chart\":" << receiver.chart
                << ",\"firstIndex\":" << receiver.firstIndex
                << ",\"terrain\":" << (source.draws.at(receiver.draw).terrain ? "true" : "false") << '}';
+      }
+      output << "\n],\"visibilityCaptureOrigins\":[";
+      for (size_t i = 0; i < captures.size(); ++i) {
+        if (i) output << ',';
+        vector(captures[i].position);
+      }
+      output << "],\"visibilityPairs\":[\n";
+      for (size_t i = 0; i < pairs.size(); ++i) {
+        if (cancelled.stop_requested()) throw std::runtime_error("Receiver pair report superseded");
+        const auto &pair = pairs[i];
+        output << (i ? ",\n" : "") << "{\"receiver\":" << pair.receiver
+               << ",\"capture\":" << pair.capture << ",\"origin\":";
+        vector({pair.ray.point.position[0], pair.ray.point.position[1], pair.ray.point.position[2]});
+        output << ",\"direction\":";
+        vector({pair.ray.point.normal[0], pair.ray.point.normal[1], pair.ray.point.normal[2]});
+        output << ",\"distance\":" << pair.ray.distance << '}';
       }
       output << "\n]}\n";
     } catch (const std::exception &error) {

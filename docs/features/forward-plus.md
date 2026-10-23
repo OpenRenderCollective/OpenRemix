@@ -480,7 +480,14 @@ geometry transport, applying the geometric-normal offset exactly once. Interpret
 visible, blocked and unknown results: a short range-capped miss, incomplete metadata or an ambiguous
 endpoint never proves visibility. Backface intersections still block the segment. The caller must
 bound candidate pairs and retain GPU readbacks through their frame fences. This prototype is not
-yet connected to automatic influence growth or receiver selection. These
+yet connected to automatic influence growth or receiver selection.
+`receiver_pairs` plans at most four nearest front-facing captures per uncovered receiver, with
+explicit receiver/capture/ray caps, deterministic ties and cancellation. Its default 4096-ray budget
+spreads receiver selection through the sampled input. The optional candidate report exports the
+full bounded proposal list (at most 32768 pairs for 8192 samples) as `visibilityPairs`, without
+submitting those rays. Capture indices refer to `visibilityCaptureOrigins` in that report, not GPU
+image layers. Planning uses the automatic captures before authored composition; it does not prove
+visibility, authorize volume growth or guarantee that the nearest four include a usable capture. These
 measurements do not change selection or permit growth through walls.
 Version 2 also exports up to 8192 deterministic, area-weighted `receivers` from the frozen surface
 charts. Positions use host scene units; `sceneScale` converts lengths to metres. Each sample includes

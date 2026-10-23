@@ -125,8 +125,11 @@ be used directly as enlarged boxes: each proxy-face group can mix different real
 localized receiver visibility and wall rejection remain required before automatic growth is accepted.
 The receiver segment prototype now constructs normal-offset capture queries and conservatively
 interprets existing hardware geometry readbacks, including unknown short misses and endpoint hits.
-CPU and GPU wall/open-segment coverage is in place. Next, bound spatial pair planning and measure
-actual Construct terrain/doorway visibility before using these results to generate influence support. Ordinary lighting cache identity is unchanged by this refresh;
+CPU and GPU wall/open-segment coverage is in place. Bounded nearest-capture planning now skips
+covered samples, spreads budgeted receiver selection and preserves deterministic capture ties.
+Optional reports expose automatic-set proposals without executing rays; next, measure the focused
+Construct terrain/doorway segments on hardware before using them to generate influence support.
+Authored-composition pairing and nearest-neighbor sufficiency still need separate validation. Ordinary lighting cache identity is unchanged by this refresh;
 optional sun-depth policy/layout changes can recapture depth while retaining cached irradiance.
 Older cache files are not deleted. Broader map, quality and performance gates remain open.
 The native continuation adds chart-edge denoising, stable progressive history, surface-hemisphere
