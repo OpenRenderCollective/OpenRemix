@@ -27,6 +27,15 @@ previous barrel/crate fronts. Do not promote an all-axis depth clamp from the is
 ceiling improvement. Prioritize receiver-adjacent support and spatial reconstruction;
 require the full set of independently referenced faces before runtime qualification.
 
+Independent 8192-sample combined-lighting SH captures now isolate the housing
+placement problem further: sites 10-25 cm outside three measured faces reconstruct
+within about 0-10% luminance of their surface hemisphere references, whereas the
+published interpolated field is roughly 2-3 times too bright. SH angular order alone
+is therefore not the primary error at these sites. A 50 cm offset collapses one site
+almost to black, so arbitrary outward relocation is unsafe. Evaluate geometry-aware
+receiver-adjacent support within the fixed record budget, including intervening
+surfaces and thin geometry, before changing placement or interpolation defaults.
+
 ## Current automatic-cubemap delivery gates
 
 The receiver-supported local replacement path remains opt-in. Completed functional
