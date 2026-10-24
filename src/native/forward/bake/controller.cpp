@@ -1504,9 +1504,11 @@ namespace remix::forward::bake {
           // no camera-frame resources or controller state cross threads.
           auto prepare = [job, physical, device, config, lightCutoff, queueFamily] {
             job->prepareResources(physical, device, config, lightCutoff, queueFamily);
-            if (job->cacheHit)
+            if (job->cacheHit) {
               job->reflectionImage = std::make_unique<probes::ImageAsset>(
                   physical, device, job->specular, job->cancellation.get_token());
+              job->restoreLocalReflections(physical, device, config);
+            }
           };
           job->ticket =
               m_pipelines->prepare("forward-bake-" + std::to_string(++generation), std::move(prepare));

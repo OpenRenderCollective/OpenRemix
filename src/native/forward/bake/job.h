@@ -5,6 +5,7 @@
 #include "forward/bake/transport.h"
 #include "forward/bake/reference_capture.h"
 #include "forward/bake/style_work.h"
+#include "forward/bake/local_reflection_cache.h"
 #include "forward/bake/styled_direct.h"
 #include "forward/bake/probe_visibility.h"
 #include "forward/bake/sun_antialiasing.h"
@@ -140,6 +141,8 @@ namespace remix::forward::bake {
     std::shared_ptr<const probes::ReceiverCoverageEvidence> reflectionEvidence;
     std::unique_ptr<probes::LocalCaptureWork> localCaptureWork;
     std::shared_ptr<LocalReflections> localReflections;
+    std::shared_ptr<const local_cache::Snapshot> localReflectionCache;
+    void restoreLocalReflections(VkPhysicalDevice physical, VkDevice device, const Config &config);
     uint32_t localCaptureNext = 0, localCaptureReceived = 0;
     bool localCapturePlanned = false, localCaptureFiltered = false;
     probes::CaptureWork captureWork;

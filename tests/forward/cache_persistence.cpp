@@ -1,4 +1,5 @@
 #include "forward/bake/cache_persistence.h"
+#include "forward/bake/local_reflection_cache.h"
 #include "scene/fixtures.h"
 #include <future>
 #include <stdexcept>
@@ -34,6 +35,16 @@ int main() {
   require(cache::Persistence::retainedCharge(withScratch) >= directionalCharge +
               128 * (sizeof(ProbeDepth::Record) + sizeof(uint32_t) + sizeof(Grid::Origin)),
           "Probe depth, directory and retained origin storage obey the background writer memory budget");
+  const auto withoutLocal = cache::Persistence::retainedCharge(withScratch);
+  auto local = std::make_shared<local_cache::Snapshot>();
+  local->image.data.texels.resize(4096);
+  withScratch.localReflections = local;
+  require(cache::Persistence::retainedCharge(withScratch) >= withoutLocal +
+              local->image.data.texels.capacity() * sizeof(remix::forward::Vec4),
+          "Optional local reflection pixels participate in persistence admission");
+  cache::Persistence bounded(withoutLocal, [](const auto &, uint64_t, const cache::View &) { return true; });
+  require(!bounded.submit("oversized-local-reflections", 0, std::make_unique<cache::Snapshot>(withScratch)),
+          "Local reflection storage cannot bypass the background memory budget");
   std::promise<void> started, release;
   auto released = release.get_future().share();
   std::vector<uint64_t> written;

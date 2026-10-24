@@ -1,4 +1,5 @@
 #include "forward/bake/cache_persistence.h"
+#include "forward/bake/local_reflection_cache.h"
 #include <chrono>
 #include <cstdio>
 
@@ -7,7 +8,7 @@ namespace remix::forward::bake::cache {
     View view(const Snapshot &s) {
       return {s.grid, s.layout, s.mixed, s.captures, s.specular, s.pixels,
               s.surfaceSamples, s.directDiffuse, s.sun, s.styles,
-              s.localProbes ? &*s.localProbes : nullptr, s.directionalAttempted, s.directionals, s.directionalBudget};
+              s.localProbes ? &*s.localProbes : nullptr, s.directionalAttempted, s.directionals, s.directionalBudget, s.localReflections.get()};
     }
     template <typename T> uint64_t storage(const std::vector<T> &v) {
       return uint64_t(v.capacity()) * sizeof(T);
@@ -33,12 +34,18 @@ namespace remix::forward::bake::cache {
     if (s.localProbes)
       bytes += 2 * (s.localProbes->offsets().size_bytes() + s.localProbes->entries().size_bytes() +
                     s.localProbes->direct().size_bytes());
+    if (s.localReflections) bytes += local_cache::retainedBytes(*s.localReflections);
     // The captured source is shared with the published runtime, not duplicated.
     return bytes;
   }
   Persistence::Persistence(uint64_t byteBudget, Writer write)
       : budget(byteBudget), writer(write ? std::move(write) :
-            Writer([](const auto &file, uint64_t key, const View &data) { return cache::write(file, key, data); })) {}
+            Writer([](const auto &file, uint64_t key, const View &data) {
+              const bool saved = cache::write(file, key, data);
+              if (saved && data.localReflections)
+                (void)local_cache::write(local_cache::path(file), key, *data.localReflections);
+              return saved;
+            })) {}
   Persistence::~Persistence() {
     stop();
   }

@@ -19,6 +19,11 @@ material_constants_test = executable('remix-forward-material-constants-test', 'm
   '../../src/native/forward/material.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Forward+ draw constants preserve transforms and sRGB byte factors', material_constants_test)
+local_reflection_cache_test = executable('remix-local-reflection-cache-test', 'local_reflection_cache.cpp',
+  include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+  cpp_args : test_cpp_args)
+test('Local reflection cache evidence, identity and corruption guards', local_reflection_cache_test,
+  args : [meson.current_build_dir() / 'local-reflection-cache'])
 cache_persistence_test = executable('remix-cache-persistence-test', 'cache_persistence.cpp',
   include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
   cpp_args : test_cpp_args)

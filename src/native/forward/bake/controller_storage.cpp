@@ -121,6 +121,7 @@ namespace remix::forward::bake {
     snapshot->surfaceSamples = surfaceReceived;
     snapshot->directDiffuse = hasDirectDiffuse;
     snapshot->sun = hasSun;
+    snapshot->localReflections = std::move(localReflectionCache);
     return snapshot;
   }
 }

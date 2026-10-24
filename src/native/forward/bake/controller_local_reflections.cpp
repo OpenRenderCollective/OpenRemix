@@ -12,7 +12,7 @@ namespace remix::forward::bake {
     const char *enabled = std::getenv("REMIX_DEBUG_PROBE_LOCAL_CAPTURE");
     if (!enabled || std::strcmp(enabled, "1") != 0) return false;
     auto &job = *m_job;
-    // Cached bakes do not retain diagnostic evidence or a prepared transport.
+    // Warm loads restore prepared images directly and need no capture transport.
     if (!job.reflectionEvidence || !job.transport || !job.prepared) return false;
     static std::atomic_uint64_t generation = 0;
     if (!job.localCapturePlanned) {
@@ -57,13 +57,21 @@ namespace remix::forward::bake {
       const auto physical = m_physical;
       const auto device = m_device;
       job.ticket = m_pipelines->prepare("forward-local-reflection-filter-" + std::to_string(++generation),
-          [owner, physical, device] {
+          [owner, physical, device, keepCache = config.diskCache, detailTolerance = config.reflectionDetailTolerance] {
         WorkerPool workers;
         auto prepared = owner->localCaptureWork->finish(128, owner->cancellation.get_token(), &workers);
         probes::dumpLocalImage(prepared.data);
         owner->localReflections->ready = std::make_shared<const probes::CoverageReadyImage>(std::move(prepared.selection));
         owner->localReflections->image = std::make_shared<probes::ImageAsset>(physical, device, prepared.data,
                                                                           owner->cancellation.get_token());
+        if (keepCache && !owner->cacheFile.empty()) {
+          auto snapshot = std::make_shared<local_cache::Snapshot>();
+          snapshot->source = owner->source; snapshot->evidence = owner->reflectionEvidence;
+          snapshot->detailTolerance = detailTolerance;
+          snapshot->image.data = std::move(prepared.data);
+          snapshot->image.selection = *owner->localReflections->ready;
+          owner->localReflectionCache = std::move(snapshot);
+        }
         owner->localCaptureWork.reset();
         std::fprintf(stderr, "Prepared local reflection image: %u layers, %llu bytes\n",
             owner->localReflections->image->header().parameters[0],
@@ -74,4 +82,21 @@ namespace remix::forward::bake {
     }
     return false;
   }
+  void Controller::Job::restoreLocalReflections(VkPhysicalDevice physical, VkDevice device, const Config &config) {
+    const char *enabled = std::getenv("REMIX_DEBUG_PROBE_LOCAL_CAPTURE");
+    if (!enabled || std::strcmp(enabled, "1") != 0 || !cacheHit || !reflectionImage || cacheFile.empty()) return;
+    const auto baseline = probes::automaticCoverageBaseline(reflectionImage->header());
+    auto cached = local_cache::read(local_cache::path(cacheFile), cacheKey, source, config, baseline,
+                                    cancellation.get_token());
+    if (!cached) return; // Base irradiance and cubemaps remain a valid cache hit.
+    auto restored = std::make_shared<LocalReflections>();
+    restored->image = std::make_shared<probes::ImageAsset>(physical, device, cached->image.data, cancellation.get_token());
+    restored->ready = std::make_shared<const probes::CoverageReadyImage>(std::move(cached->image.selection));
+    reflectionEvidence = std::move(cached->evidence);
+    localReflections = std::move(restored);
+    localCapturePlanned = localCaptureFiltered = true;
+    std::fprintf(stderr, "Restored local reflection cache: %u layers, no capture rays\n",
+        localReflections->image->header().parameters[0]);
+  }
+
 }

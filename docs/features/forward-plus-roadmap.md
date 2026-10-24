@@ -1977,3 +1977,26 @@ inside the projection and preserving partition occupancy. Do not move faces to w
 envelopes or discard near hits as clutter without evidence. Then check moving receivers, overlap
 transitions, leakage and renderer cost across maps. Large underwater boxes must not win solely for
 geometric area or sampled visibility; neither establishes parallax accuracy.
+
+### Optional local reflection cache continuation
+
+Prepared local captures and compact receiver/fit evidence can now be persisted in an
+optional `.local-reflections-v1` companion to the ordinary lighting cache. The base
+cache format and diffuse identity remain unchanged. Warm preparation verifies the
+lighting key, content, receiver ordering, capture mapping and fitting policy before
+rebinding runtime generations and uploading the image through existing fenced owners.
+Missing or rejected companion files retain the ordinary lighting-cache hit. Both local
+capture and local selection requests remain opt-in; this is not a default promotion.
+CPU checks cover byte-exact round trips, generation rebinding, geometry/policy changes,
+invalid ownership, corruption, truncation and cancellation. Persistence admission now
+includes the retained local image and evidence. GPU upload/lifecycle checks pass with
+synchronization validation. An isolated four-bounce Construct cold/warm route restores
+four local captures without their transport rays on the warm run, with identical bake
+identity, content hashes, probe records and authored statistics; exposure differs.
+These are synthetic relay checks, not gameplay performance or visual acceptance.
+Legacy caches lacking the companion still cannot prepare local improvements without
+fresh evidence. Live edits/map transitions, underwater medium/path-length behavior,
+wider-map quality and default acceptance remain open. Earlier cached-path limitations
+above describe the state before this continuation.
+Corrupted-companion replay also preserves the base bake identity/content hashes and
+performs no local transport; checksum rejection falls back without a full bake.

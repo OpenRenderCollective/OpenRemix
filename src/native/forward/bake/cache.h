@@ -4,8 +4,10 @@
 #include "forward/mixed/data.h"
 #include "forward/probes/data.h"
 #include <filesystem>
+#include <memory>
 #include <optional>
 
+namespace remix::forward::bake::local_cache { struct Snapshot; }
 namespace remix::forward::bake::cache {
   struct Device {
     uint32_t vendor = 0, model = 0, driver = 0;
@@ -39,6 +41,7 @@ namespace remix::forward::bake::cache {
     bool directionalAttempted = false;
     std::span<const uint32_t> directionals{}; // empty after a whole-replacement budget decline
     uint64_t directionalBudget = 0; // zero on write selects the current layout allowance
+    const local_cache::Snapshot *localReflections = nullptr;
   };
   struct Snapshot {
     void takeGrid(Grid &source);
@@ -55,6 +58,7 @@ namespace remix::forward::bake::cache {
     bool directionalAttempted = false;
     std::vector<uint32_t> directionals;
     uint64_t directionalBudget = 0;
+    std::shared_ptr<const local_cache::Snapshot> localReflections;
   };
   // Misses, corruption, incompatible versions and unavailable files fall back
   // to tracing. Neither operation publishes resources or performs GPU work.
