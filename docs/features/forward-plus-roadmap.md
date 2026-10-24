@@ -151,6 +151,27 @@ chart comparison is not exact for the runtime subset. No runtime dependency was
 added. Next prototype parameterization separately from shared-budget packing and
 compare a genuinely baked vertex representation, with fidelity and total-cost gates.
 
+The [offline model-chart study](model-chart-study.md) CPU target validates complete imported
+face ownership, input and final UV mappings, native world-metric atlas fitting and
+fully mapped mesh output without a library/runtime dependency. Its synthetic smoke
+test is registered; real captured datasets remain separate offline evidence. CLI
+input is bounded `MCHART1` data, with optional `--baseline` to regenerate current
+consecutive charts on the same original indexed mesh. No model-bake default changes.
+
+For the indexed 4334-triangle dense model at 0.248 m manual spacing in exported
+local metric coordinates: current charts use 2276 bake points/6944 rectangle
+texels; default imported charts use 1805/5531; zero-seam-penalty imports use
+1483/4066. Input and final mapping validation and complete mesh coverage pass.
+This is not whole-map/global-phase, lighting fidelity or controllable-light proof.
+An exact position/normal vertex screen counts 5044 records, so a vertex path cannot
+be assumed cheaper in trace work or storage without matched-quality measurements.
+
+Shrinking xatlas temporary packing from approximately 512 to 64 nominal resolution
+only reduces the largest default case's packing from about 54 ms to 46 ms. The
+current public API still materializes output via packing. Next evaluate batching
+model parameterization/output to amortize this work, then qualify whole-map shared
+budget fit and lighting before adding a dependency or replacing the current path.
+
 Independent 8192-sample, three-bounce base-unstyled hemisphere references at 14
 charted housing triangle centres find candidate-policy-3 atlas/reference luminance
 ratios of 0.71-1.37, versus probe/reference ratios up to 14.42. This helped isolate

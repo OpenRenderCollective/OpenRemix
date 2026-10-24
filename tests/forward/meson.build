@@ -24,6 +24,10 @@ local_reflection_cache_test = executable('remix-local-reflection-cache-test', 'l
   cpp_args : test_cpp_args)
 test('Local reflection cache evidence, identity and corruption guards', local_reflection_cache_test,
   args : [meson.current_build_dir() / 'local-reflection-cache'])
+model_chart_study = executable('remix-model-chart-study', 'model_chart_study.cpp',
+  include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+  cpp_args : test_cpp_args)
+test('Imported model chart study preserves complete shared atlas coverage', model_chart_study)
 model_receivers_test = executable('remix-model-receivers-test', 'model_receivers.cpp',
   include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
   cpp_args : test_cpp_args)
