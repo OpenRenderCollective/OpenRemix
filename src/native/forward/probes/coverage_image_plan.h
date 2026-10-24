@@ -13,6 +13,7 @@ namespace remix::forward::probes {
   struct CoverageImagePlan {
     Header header;
     LayerIdentities identities{};
+    std::array<Header, 2> sources; // Exact Baseline/Local metadata expected at recording.
     std::vector<CoverageImageCopy> copies;
     CoveragePlanContext context;
   };

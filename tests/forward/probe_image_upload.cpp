@@ -1,4 +1,5 @@
 #include "forward/probes/image_asset.h"
+#include "forward/probes/coverage_image_plan.h"
 #include "gpu_fixture.h"
 #include <algorithm>
 #include <bit>
@@ -7,7 +8,7 @@
 using namespace remix::forward;
 using namespace remix::forward::test;
 
-void uploadCase(uint32_t count, uint32_t size, bool composition = false) {
+void uploadCase(uint32_t count, uint32_t size, bool composition = false, bool selection = false) {
   Fixture fixture(false); // No optional cube-array or descriptor-indexing features.
   probes::Data source;
   const uint32_t levels = std::bit_width(size), stride = probes::levelOffset(size, levels);
@@ -20,6 +21,7 @@ void uploadCase(uint32_t count, uint32_t size, bool composition = false) {
   if (composition) {
     require(count > 0 && count <= 32, "Composition fixture fits both sources within 64 layers");
     auto other = source;
+    if (selection) other.header.probes[0].position[0] = 42;
     for (size_t i = 0; i < other.texels.size(); ++i)
       other.texels[i] = {32 + float(i % 1000) / 32, 8, .5f, 1};
     second = std::make_unique<probes::ImageAsset>(fixture.physical, fixture.device, other);
@@ -40,7 +42,14 @@ void uploadCase(uint32_t count, uint32_t size, bool composition = false) {
     }
     source = std::move(expected);
     count *= 2;
-    combined = std::make_unique<probes::ImageAsset>(fixture.physical, fixture.device, plan);
+    if (selection) {
+      probes::CoverageImagePlan selected;
+      selected.header = plan.header;
+      selected.sources = {asset.header(), second->header()};
+      for (const auto &copy : plan.layers)
+        selected.copies.push_back({copy.automatic ? probes::CoverageImageSource::Local : probes::CoverageImageSource::Baseline, copy.layer});
+      combined = std::make_unique<probes::ImageAsset>(fixture.physical, fixture.device, selected);
+    } else combined = std::make_unique<probes::ImageAsset>(fixture.physical, fixture.device, plan);
   }
   auto &output = combined ? *combined : asset;
   auto packed = probes::prepareImage(source);
@@ -66,7 +75,18 @@ void uploadCase(uint32_t count, uint32_t size, bool composition = false) {
   asset.recordUpload(fixture.command);
   if (composition) {
     second->recordUpload(fixture.command);
-    combined->recordCompose(fixture.command, asset, *second);
+    if (selection) {
+      bool wrongSource = false;
+      try { combined->recordSelection(fixture.command, *second, asset); }
+      catch (const std::invalid_argument &) { wrongSource = true; }
+      // The image headers need distinct metadata to detect swapped source owners.
+      require(wrongSource, "Selection rejects changed source metadata before recording");
+      combined->recordSelection(fixture.command, asset, *second);
+      bool repeated = false;
+      try { combined->recordSelection(fixture.command, asset, *second); }
+      catch (const std::logic_error &) { repeated = true; }
+      require(repeated, "Selection records exactly once");
+    } else combined->recordCompose(fixture.command, asset, *second);
   }
   bool duplicate = false;
   try { asset.recordUpload(fixture.command); } catch (const std::logic_error &) { duplicate = true; }
@@ -108,6 +128,8 @@ int main() try {
   uploadCase(1, 512);
   uploadCase(1, 8, true);
   uploadCase(32, 8, true);
+  uploadCase(1, 8, true, true);
+  uploadCase(32, 8, true, true);
 } catch (VkResult error) {
   std::fprintf(stderr, "Reflection image upload failed: %d\n", int(error));
   return 1;

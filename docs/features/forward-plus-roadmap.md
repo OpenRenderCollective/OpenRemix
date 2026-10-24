@@ -1850,7 +1850,10 @@ keeping authored IDs and precedence while sorting records, identities and copy s
 It checks prepared geometry against the owned candidate geometry and rejects stale source contexts,
 protected replacements and incompatible image dimensions. Authored-only fallback policy is part of
 the context and cannot silently gain automatic captures. This remains CPU preparation support.
-Next: retain both GPU image owners, record the copies, recheck context at activation, and qualify
+GPU ImageAsset now accepts this explicit selection recipe, checks both source headers before
+recording, and shares the existing queue barriers and mip-copy implementation. The caller must
+retain both source image owners through the copy fence. This does not yet activate replacements.
+Next: wire retained owners and the copy fence into frame activation, recheck context, and qualify
 live authored edits and map changes before enabling local replacement publication by default.
 
 Before production integration, keep planner indices tied to canonical capture metadata rather than

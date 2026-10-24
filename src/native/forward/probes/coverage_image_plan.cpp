@@ -35,6 +35,7 @@ namespace remix::forward::probes {
     CoverageImagePlan result;
     result.header = published;
     result.context = plan.context;
+    result.sources = {published, local.header};
     std::set<uint64_t> authoredIds;
     float minimumAuthored = std::numeric_limits<float>::infinity(), automaticPriority = 0;
     bool hasAutomatic = false;

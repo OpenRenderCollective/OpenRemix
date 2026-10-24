@@ -1,4 +1,6 @@
 #include "forward/probes/image_asset.h"
+#include "forward/probes/coverage_image_plan.h"
+#include <cstring>
 #include <algorithm>
 #include <bit>
 #include <stdexcept>
@@ -31,6 +33,17 @@ namespace remix::forward::probes {
     if (m_layerCopies.empty() || m_layerCopies.size() != composition.header.parameters[0])
       throw std::invalid_argument("Invalid reflection composition layer count");
     initialize(physical, composition.header);
+  }
+  ImageAsset::ImageAsset(VkPhysicalDevice physical, VkDevice device, const CoverageImagePlan &plan)
+      : m_device(device), m_selectionSources(std::make_unique<std::array<Header, 2>>(plan.sources)) {
+    if (plan.copies.empty() || plan.copies.size() != plan.header.parameters[0])
+      throw std::invalid_argument("Invalid reflection selection layer count");
+    for (const auto &copy : plan.copies) {
+      if (copy.source != CoverageImageSource::Baseline && copy.source != CoverageImageSource::Local)
+        throw std::invalid_argument("Unknown reflection selection source");
+      m_layerCopies.push_back({copy.source == CoverageImageSource::Local, copy.layer});
+    }
+    initialize(physical, plan.header);
   }
   void ImageAsset::initialize(VkPhysicalDevice physical, const Header &header) {
     m_header = header;
@@ -93,11 +106,22 @@ namespace remix::forward::probes {
     m_uploaded = true;
   }
   void ImageAsset::recordCompose(VkCommandBuffer command, const ImageAsset &authored, const ImageAsset &automatic) {
-    if (m_uploaded || m_layerCopies.empty() || !authored.m_uploaded || !automatic.m_uploaded ||
-        this == &authored || this == &automatic)
+    if (m_selectionSources) throw std::logic_error("Reflection selection requires recordSelection");
+    recordCopies(command, authored, automatic);
+  }
+  void ImageAsset::recordSelection(VkCommandBuffer command, const ImageAsset &baseline, const ImageAsset &local) {
+    if (!m_selectionSources) throw std::logic_error("Reflection image has no selection recipe");
+    if (std::memcmp(&(*m_selectionSources)[0], &baseline.m_header, sizeof(Header)) ||
+        std::memcmp(&(*m_selectionSources)[1], &local.m_header, sizeof(Header)))
+      throw std::invalid_argument("Reflection selection source metadata changed");
+    recordCopies(command, baseline, local);
+  }
+  void ImageAsset::recordCopies(VkCommandBuffer command, const ImageAsset &first, const ImageAsset &second) {
+    if (m_uploaded || m_layerCopies.empty() || !first.m_uploaded || !second.m_uploaded ||
+        this == &first || this == &second || m_device != first.m_device || m_device != second.m_device)
       throw std::logic_error("Reflection composition requires uploaded independent sources");
     std::array<std::vector<VkImageCopy>, 2> copies;
-    const ImageAsset *sources[]{&authored, &automatic};
+    const ImageAsset *sources[]{&first, &second};
     for (uint32_t layer = 0; layer < m_layerCopies.size(); ++layer) {
       const auto source = m_layerCopies[layer];
       const auto &asset = *sources[source.automatic];

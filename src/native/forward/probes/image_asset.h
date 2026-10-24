@@ -5,6 +5,7 @@
 #include <memory>
 
 namespace remix::forward::probes {
+  struct CoverageImagePlan;
   struct Descriptors {
     VkDescriptorBufferInfo metadata{};
     VkDescriptorImageInfo radiance{};
@@ -17,6 +18,7 @@ namespace remix::forward::probes {
     ImageAsset(VkPhysicalDevice physical, VkDevice device, const Data &data,
                  std::stop_token cancelled = {});
     ImageAsset(VkPhysicalDevice physical, VkDevice device, const Composition &composition);
+    ImageAsset(VkPhysicalDevice physical, VkDevice device, const CoverageImagePlan &plan);
     ~ImageAsset();
     ImageAsset(const ImageAsset &) = delete;
     ImageAsset &operator=(const ImageAsset &) = delete;
@@ -24,6 +26,9 @@ namespace remix::forward::probes {
     // Both sources must have an upload recorded on this queue. Their owners
     // must survive the composition submission's fence, just like staging data.
     void recordCompose(VkCommandBuffer command, const ImageAsset &authored, const ImageAsset &automatic);
+    // Copy recipe only: caller rechecks scene context and retains both sources
+    // through the submission fence. Source metadata is checked before recording.
+    void recordSelection(VkCommandBuffer command, const ImageAsset &baseline, const ImageAsset &local);
     // Only after the upload submission's fence has completed.
     void releaseUpload();
     VkDescriptorBufferInfo metadata() const { return m_metadata->descriptor(); }
@@ -34,6 +39,7 @@ namespace remix::forward::probes {
     uint64_t bufferBytes() const;
     uint64_t imageBytes() const { return m_image->bytes; }
   private:
+    void recordCopies(VkCommandBuffer command, const ImageAsset &first, const ImageAsset &second);
     void initialize(VkPhysicalDevice physical, const Header &header);
     VkDevice m_device;
     Header m_header;
@@ -43,6 +49,7 @@ namespace remix::forward::probes {
     std::vector<VkBufferImageCopy> m_copies;
     std::vector<LayerCopy> m_layerCopies;
     uint32_t m_layers = 1, m_levels = 1;
+    std::unique_ptr<std::array<Header, 2>> m_selectionSources;
     bool m_uploaded = false;
   };
 }
