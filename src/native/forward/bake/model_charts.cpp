@@ -119,12 +119,7 @@ namespace remix::forward::bake {
                             double(source.sceneScale) * source.sceneScale;
         const double edges = std::hypot(a[0], a[1], a[2]) * std::hypot(b[0], b[1], b[2]);
         if (!(area > 1e-12) || std::hypot(cross[0], cross[1], cross[2]) <= edges * 1e-6) continue;
-        if (source.partition && source.partition->closed) {
-          std::array<float, 3> centre;
-          for (uint32_t axis = 0; axis < 3; ++axis)
-            centre[axis] = float((double(positions[0][axis]) + positions[1][axis] + positions[2][axis]) / 3);
-          if (source.partition->cluster(centre.data()) < 0) continue;
-        }
+        if (!playableReceiverTriangle(source, positions, cancelled)) continue;
         scene::BakeSurfaceChart chart{range.draw, uint32_t(first), 2, 2, {{0, 0}, {1, 0}, {0, 1}}};
         if (!result.empty() && join(source, result.back(), chart, cancelled)) continue;
         if (result.size() == maximumCharts) throw std::length_error("Model chart budget exhausted");

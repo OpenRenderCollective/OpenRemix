@@ -73,59 +73,46 @@ priority scores and finer spacing alone do not provide side-aware ownership.
 Do not repeat that standalone allocation change or leave its extra capture stage
 in default bakes. The existing allocation and cache policy are restored.
 
-Preparation now shares one validated uncharted indexed-range enumerator between
-model receiver sampling and the upcoming model-chart path. Authored chart holes,
-excluded draws and malformed ranges have CPU coverage. This is geometry plumbing;
-model surface baking is not enabled and rendered quality is unchanged.
+The static-model surface-bake candidate is available through
+`REMIX_DEBUG_BAKE_MODEL_CHARTS=1`, disabled by default, with private derived charts
+and a separate conditional cache key (policy 5). Shared range validation preserves
+caller-authored charts, retained draw bindings and the existing world-metric atlas
+budget. Bounded connected consecutive patches reject projected overlap, opposing
+faces and invalid curved mappings. No private index-reordering path remains.
 
-A bounded CPU model-chart candidate now generates planar per-triangle charts for
-uncharted rigid static opaque geometry. Tests exercise signed index ranges,
-transforms, authored-chart preservation, cancellation, degenerates and a shared
-world-metric atlas fit with actual surface receivers. It is not wired into bake
-jobs yet. Measure chart count/padding and normal-budget quality before enabling;
-per-triangle charts need coalescing if their padding takes excessive atlas space.
+The housing's bright triangular patches were missing surface coverage, not proven
+chart seams: its brightest checked pixels hit uncharted triangles 177, 213 and 231,
+which fell back to leaking probes. Their centres were inside solid BSP space while
+visible portions reached the room. Whole-triangle centroid rejection is replaced
+by conservative fragment traversal. Fully buried faces are excluded; partial
+triangles, missing/invalid topology and exhausted traversal budgets retain coverage.
+Tests include a playable fragment with solid centroid and all three corners,
+cancellation, fully buried faces and conservative traversal fallback.
 
-The private model-chart candidate is now wired to initial worker preparation via
-REMIX_DEBUG_BAKE_MODEL_CHARTS=1, with a separate conditional cache key. Normal
-Construct preparation generates 3904 charts after excluding solid-partition and
-near-collinear geometry; the 256-sample/3-bounce bake completes with 3801229 surface
-texels in four pages at 0.241 m spacing. This is not qualified: the lamp housing
-shows visible per-triangle lighting discontinuities. Next build connected model
-charts and seam treatment, compare independent references and wider views, and
-check static draw bindings/cache restoration. No default or deployment change.
+Normal Construct now generates 1380 model charts and 3792897 surface texels in
+four pages at 0.248 m spacing (previous candidate: 0.241 m). All three target faces
+are charted and the checked bright patches disappear in neutral indirect and
+shaded views. A cache reload is pixel-identical at the target camera, with zero
+grid/surface bake batches. Five neutral and five shaded cameras complete without
+validation errors; existing secret-room and probe-quality issues remain. These
+are frozen replay checks using synthetic sky, not live-game sky parity or default
+qualification. No deployment change has been made.
 
-Connected consecutive model charts (candidate policy 3) reduce Construct from
-3904 generated charts to 1245. Bounded merges reject projected overlap, opposing
-faces and invalid curved mappings; flat/curved receiver and retained-mesh mapping
-tests pass. The normal bake completes validation-clean at 3816442 surface texels
-and four pages, but triangular housing patches remain. This does not qualify the
-candidate. Next inspect actual housing chart connectivity and group nonconsecutive
-connected triangles in a private derived index stream while preserving authored
-ranges and live draw identity; then verify surface references and broader quality.
+Independent 8192-sample, three-bounce base-unstyled hemisphere references at 14
+charted housing triangle centres find candidate-policy-3 atlas/reference luminance
+ratios of 0.71-1.37, versus probe/reference ratios up to 14.42. This helped isolate
+the missing coverage. Policy 5 still needs fixed-coordinate world-atlas/reference
+comparisons, other maps, controllable-light and live-binding checks, memory and
+complete-frame cost gates before promotion. Dynamic receivers remain on probes.
 
-Bounded ray-receiver diagnostics now include up to 256 triangles and chart ranges
-per hit draw, with explicit truncation flags. Cached normal Construct inspection
-finds housing draw 830 has 140 triangles in 27 charts: 17 cross-chart geometric
-edges have matching endpoint normals, including 11 between nonconsecutive
-triangles. This confirms smooth-edge fragmentation, not the sole artifact cause.
-Use this measured topology for private connected-patch index ordering; preserve
-authored chart index ranges and original live binding identity.
+A smooth-edge connectivity reorder was tested and removed: housing chart count
+increased from 27 to 29 without fixing the patches. Passing geometry/binding tests
+was insufficient. Bounded receiver-ray diagnostics retain up to 256 triangles and
+chart ranges per hit draw, with explicit truncation flags, for future diagnosis.
 
-A private smooth-edge connectivity reorder (candidate policy 4) was tested and
-removed: normal Construct completed validation-clean, but housing charts increased
-27 to 29 and visible triangular patches did not improve. Source immutability,
-authored-range, winding, duplicate-UV attribute and live-binding tests passed;
-those invariants did not qualify visual quality. Retained candidate remains policy
-3, disabled by default. A separate cache-hit debugView 5 check confirms the patches
-exist in neutral indirect irradiance, excluding albedo/emission/specular/direct
-light as sole explanations. Next compare reconstructed atlas response against
-independent surface references before another chart-layout change.
-
-Next investigate actual surface baking for uncharted static models, preserving
-caller-authored charts, retained-draw bindings, the shared atlas budget, PBR and
-controllable-light behavior. Chart/padding overhead must be measured; a triangle
-per chart must not silently consume the world lightmap budget. Do not substitute
-runtime per-light direct work for a fully baked static-model path. The VRF viewer's
+Keep caller-authored charts, retained-draw bindings, the shared atlas budget, PBR
+and controllable-light behavior. Do not substitute runtime per-light direct work
+for a fully baked static-model path. The VRF viewer's
 [lighting-source selection](https://github.com/ValveResourceFormat/ValveResourceFormat/blob/a048d2cba7ccb94d584b83caf6f55ca66a177854/Renderer/Renderer/World/WorldLightingInfo.cs#L56-L72)
 supports lightmaps and baked vertex lighting before probe fallback; this is viewer
 implementation evidence, not a claim about every Valve engine configuration.

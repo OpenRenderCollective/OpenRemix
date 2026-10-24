@@ -122,6 +122,37 @@ int main(int argc, char **argv) try {
     require(b::modelCharts(patch, 2).size() == 2,
             "Opposing triangle orientations remain separate charts");
   }
+  {
+    s::BakeScene clipped;
+    auto partition = std::make_shared<s::VisibilityPartition>();
+    partition->closed = true; partition->clusterCount = 1;
+    partition->nodes = {{{1, 0, 0, 1}, {-1, 1}, {}}, {{1, 0, 0, -1}, {-2, -1}, {}}};
+    partition->leafClusters = {-1, 0};
+    clipped.partition = partition;
+    using Triangle = std::array<std::array<float, 3>, 3>;
+    const Triangle crossing{{{-4, -4, 0}, {-4, 4, 0}, {4, 0, 0}}};
+    require(partition->cluster(std::array<float,3>{-4.f/3, 0, 0}.data()) < 0 &&
+                b::playableReceiverTriangle(clipped, crossing),
+            "Playable triangle fragments survive even when centroid and all corners are solid");
+    require(!b::playableReceiverTriangle(clipped, Triangle{{{-4, -4, 0}, {-4, 4, 0}, {-3, 0, 0}}}),
+            "Fully buried triangles still consume no model chart space");
+    require(b::playableReceiverTriangle(clipped, Triangle{{{-4, -4, 0}, {-4, 4, 0}, {0, 0, 0}}}),
+            "Visible corner prevents rejecting a triangle whose centre is solid");
+    clipped.draws = {triangle()};
+    clipped.draws[0].classification = REMIXAPI_INSTANCE_STATIC_EXT;
+    for (uint32_t i = 0; i < 3; ++i)
+      std::copy(crossing[i].begin(), crossing[i].end(), clipped.draws[0].surface->vertices[i].position);
+    require(b::modelCharts(clipped, 8).size() == 1,
+            "Partially playable model triangles receive an actual lightmap chart");
+    std::stop_source stopped; stopped.request_stop();
+    try { b::playableReceiverTriangle(clipped, crossing, stopped.get_token()); require(false, "Cancelled BSP clipping continued"); }
+    catch (const std::runtime_error &) {}
+    partition->nodes = {{{1, 0, 0, 0}, {0, 0}, {}}};
+    require(b::playableReceiverTriangle(clipped, crossing),
+            "Partition traversal budget preserves coverage instead of guessing outside");
+    partition->nodes.clear();
+    require(b::playableReceiverTriangle(clipped, crossing), "Missing partition topology is conservative");
+  }
   s::BakeScene source;
   source.draws = {triangle()};
   auto sites = b::modelReceivers(source);

@@ -1,6 +1,7 @@
 #include "forward/bake/probe_receiver_geometry.h"
 #include "scene/bake_scene.h"
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 #include <tuple>
 
@@ -61,4 +62,71 @@ namespace remix::forward::bake {
     }
     return result;
   }
+  bool playableReceiverTriangle(const scene::BakeScene &source,
+      const std::array<std::array<float, 3>, 3> &positions, std::stop_token cancelled) {
+    check(cancelled);
+    for (const auto &p : positions)
+      for (float value : p)
+        if (!std::isfinite(value)) throw std::invalid_argument("Nonfinite receiver triangle");
+    if (!source.partition || !source.partition->closed) return true;
+    const auto &partition = *source.partition;
+    if (partition.nodes.empty()) return true;
+    std::array<float, 3> centre;
+    for (uint32_t axis = 0; axis < 3; ++axis)
+      centre[axis] = float((double(positions[0][axis]) + positions[1][axis] + positions[2][axis]) / 3);
+    if (partition.cluster(centre.data()) >= 0) return true;
+    for (const auto &p : positions) if (partition.cluster(p.data()) >= 0) return true;
+    using Point = std::array<double, 3>;
+    struct Fragment { int32_t node; std::vector<Point> polygon; };
+    Fragment root{0, {}};
+    for (const auto &p : positions) root.polygon.push_back({p[0], p[1], p[2]});
+    std::vector<Fragment> pending;
+    pending.push_back(std::move(root));
+    uint32_t visited = 0;
+    while (!pending.empty()) {
+      check(cancelled);
+      if (++visited > 4096) return true;
+      auto fragment = std::move(pending.back()); pending.pop_back();
+      if (fragment.node < 0) {
+        const auto leaf = uint64_t(-1 - int64_t(fragment.node));
+        if (leaf >= partition.leafClusters.size()) return true;
+        const auto cluster = partition.leafClusters[size_t(leaf)];
+        if (cluster >= 0) return true;
+        continue;
+      }
+      if (size_t(fragment.node) >= partition.nodes.size()) return true;
+      const auto &node = partition.nodes[size_t(fragment.node)];
+      std::vector<double> distances;
+      bool front = false, back = false;
+      for (const auto &p : fragment.polygon) {
+        const double distance = p[0] * node.plane[0] + p[1] * node.plane[1] + p[2] * node.plane[2] - node.plane[3];
+        if (!std::isfinite(distance)) return true;
+        distances.push_back(distance);
+        front |= distance >= 0; back |= distance < 0;
+      }
+      if (!front || !back) {
+        fragment.node = node.children[front ? 0 : 1];
+        pending.push_back(std::move(fragment));
+        continue;
+      }
+      for (uint32_t side = 0; side < 2; ++side) {
+        Fragment clipped{node.children[side], {}};
+        for (size_t i = 0; i < fragment.polygon.size(); ++i) {
+          const size_t j = (i + 1) % fragment.polygon.size();
+          const bool inside = side ? distances[i] <= 0 : distances[i] >= 0;
+          const bool nextInside = side ? distances[j] <= 0 : distances[j] >= 0;
+          if (inside) clipped.polygon.push_back(fragment.polygon[i]);
+          if (inside == nextInside) continue;
+          const double t = distances[i] / (distances[i] - distances[j]);
+          Point contact;
+          for (uint32_t axis = 0; axis < 3; ++axis)
+            contact[axis] = fragment.polygon[i][axis] + t * (fragment.polygon[j][axis] - fragment.polygon[i][axis]);
+          clipped.polygon.push_back(contact);
+        }
+        if (clipped.polygon.size() >= 3) pending.push_back(std::move(clipped));
+      }
+    }
+    return false;
+  }
+
 }
