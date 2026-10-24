@@ -41,6 +41,16 @@ for source, name in [('LICENSE.txt','NRD.txt'), ('External/MathLib/LICENSE.txt',
 shutil.copy2(root / 'third_party/nrd/README.remix.md', licenses / 'NRD-provenance.md')
 shutil.copy2(root / 'third_party/sharc/License.md', licenses / 'SHARC.md')
 shutil.copy2(root / 'third_party/sharc/README.md', licenses / 'SHARC-provenance.md')
+numos = root / 'third_party/numos/numos-sky'
+sky = any(o['name'] == 'sky' and o['value'] != 'disabled' for o in options)
+if sky and (numos / 'NOTICE').exists():
+    for source, name in [('LICENSE', 'NUMOS.txt'), ('NOTICE', 'NUMOS-NOTICE.txt'),
+                         ('THIRD_PARTY_NOTICES.md', 'NUMOS-THIRD_PARTY_NOTICES.md')]:
+        shutil.copy2(numos / source, licenses / name)
+    for name in ['LICENSE-MIT-NVIDIA.txt', 'LICENSE-MIT-contributors.txt',
+                 'LICENSE-MIT-Blender-sky.txt', 'LICENSE-DXVK-zlib.txt']:
+        shutil.copy2(numos / 'licenses' / name, licenses / ('NUMOS-' + name))
+    shutil.copy2(root / 'third_party/numos/README.remix.md', licenses / 'NUMOS-provenance.md')
 if not metal:
     shutil.copytree(root / 'include/vulkan/LICENSES', licenses / 'Vulkan-Headers')
     shutil.copy2(root / 'include/vulkan/LICENSE.md', licenses / 'Vulkan-Headers/NOTICE.md')

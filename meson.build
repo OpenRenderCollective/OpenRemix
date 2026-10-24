@@ -65,6 +65,7 @@ if not metal_backend
   subdir('third_party/dlss')
 endif
 subdir('third_party/xz-embedded')
+subdir('third_party/numos')
 subdir('src/native')
 subdir('samples/remix-native')
 # The benchmark uses narrow SDK paths and a desktop window.

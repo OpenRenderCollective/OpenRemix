@@ -1,6 +1,7 @@
 """Check retained headers, ImGui pin, exports and absence of renderer dependencies."""
 import ctypes
 import hashlib
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -17,6 +18,20 @@ for manifest, base in [(root / 'tests/abi/headers.sha256', root),
     for line in manifest.read_text().splitlines():
         checksum, filename = line.split('  ', 1)
         assert hashlib.sha256((base / filename).read_bytes()).hexdigest() == checksum, filename
+# A submodule has no checksum manifest: its gitlink and checkout must match the pin.
+numos = json.loads((root / 'third_party/numos/upstream.json').read_text())
+if (root / '.git').exists():
+    gitlink = subprocess.check_output(['git', '-C', root, 'ls-files', '-s', numos['path']], text=True).split()
+    assert gitlink[:2] == ['160000', numos['revision']], 'NUMOS gitlink differs from upstream.json'
+    if (root / numos['path'] / '.git').exists():
+        head = subprocess.check_output(['git', '-C', root / numos['path'], 'rev-parse', 'HEAD'], text=True).strip()
+        assert head == numos['revision'], 'NUMOS checkout differs from upstream.json; run git submodule update'
+# Apache-2.0 4(d): ThirdPartyLicenses.txt reproduces the NUMOS NOTICE.
+notice = root / numos['path'] / 'NOTICE'
+if notice.exists():
+    notices = (root / 'ThirdPartyLicenses.txt').read_text(encoding='utf-8')
+    for line in notice.read_text(encoding='utf-8').splitlines():
+        assert line.strip() in notices, 'ThirdPartyLicenses.txt lacks NUMOS NOTICE line: ' + line
 required_exports = (root / 'tests/abi/exports.txt').read_text().splitlines()
 required_exports += ['remixapi_GetReconstructionDiagnosticsEXT', 'remixapi_GetBackendCapabilitiesEXT', 'remixapi_GetTracingStatisticsEXT', 'remixapi_GetFramePerformanceEXT', 'remixapi_GetFrameBreakdownEXT', 'remixapi_GetGpuPassTimingsEXT',
              'remixapi_GetLocalLightGuidingStatisticsEXT', 'remixapi_GetLocalLightStatisticsEXT',

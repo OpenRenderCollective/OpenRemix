@@ -5,6 +5,7 @@ option('use_system_sdl', type : 'boolean', value : true, description : 'Use inst
 option('enable_tests', type : 'boolean', value : true)
 option('sharc', type : 'boolean', value : true, description : 'Build optional NVIDIA SHARC diffuse radiance caching.')
 option('nrd', type : 'boolean', value : true, description : 'Build the pinned diffuse REBLUR SH CPU library and Vulkan adapter.')
+option('sky', type : 'feature', value : 'auto', description : 'Build the NUMOS sky core library (needs the third_party/numos/numos-sky submodule).')
 option('gpu_tests', type : 'boolean', value : false, description : 'Run SDL/Vulkan lifecycle tests on a display and Vulkan device.')
 option('shader_tools', type : 'string', value : '',
   description : 'Cache of the pinned shader tools the build generates the shaders with (default: _work/tools/shader-toolchain).')
