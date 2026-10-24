@@ -1,5 +1,6 @@
 #include "ui/sky.h"
 #include "runtime/sky_quality.h"
+#include "ui/sky_ranges.h"
 #include "ui/widgets.h"
 #include <algorithm>
 #include <cfloat>
@@ -7,6 +8,7 @@
 #include <cstring>
 #include <imgui.h>
 #include <iterator>
+#include <string>
 #include <string_view>
 #if REMIX_HAS_NUMOS
 #include <numos/seed.h>
@@ -83,9 +85,64 @@ namespace remix::ui {
       sky.atmosphere[info.key] = numos::formatSetting(values, info);
     }
 
+    const SkySettingRange *curatedRange(std::string_view key) {
+      // rtx.atmosphere.moon<N>.field shares the "moon.field" entry.
+      std::string moon;
+      if (const auto dot = key.find('.'); key.starts_with("moon") && dot != key.npos)
+        key = moon.assign("moon").append(key.substr(dot));
+      for (const auto &range : skySettingRanges)
+        if (range.key == key)
+          return &range;
+      return nullptr;
+    }
+
+    // A curated control: a slider over the range, logarithmic where it spans
+    // decades, or a clamped drag where the range is too wide to slide.
+    bool curatedWidget(void *field, numos::SettingType type, const SkySettingRange &range, const char *label) {
+      const float lo = range.minValue, hi = range.maxValue;
+      const bool slide = hi - lo <= 1e5f;
+      ImGuiSliderFlags flags = ImGuiSliderFlags_AlwaysClamp;
+      if (lo > 0 && hi / lo >= 1000)
+        flags |= ImGuiSliderFlags_Logarithmic;
+      switch (type) {
+      case numos::SettingType::Int:
+      case numos::SettingType::Uint: {
+        const bool isInt = type == numos::SettingType::Int;
+        auto value = isInt ? int64_t(*static_cast<int32_t *>(field)) : int64_t(*static_cast<uint32_t *>(field));
+        const int64_t min = int64_t(lo), max = int64_t(hi);
+        const bool changed = slide ? ImGui::SliderScalar(label, ImGuiDataType_S64, &value, &min, &max, nullptr, flags)
+                                   : ImGui::DragScalar(label, ImGuiDataType_S64, &value, range.step, &min, &max,
+                                                       nullptr, flags);
+        if (changed && isInt)
+          *static_cast<int32_t *>(field) = int32_t(value);
+        else if (changed)
+          *static_cast<uint32_t *>(field) = uint32_t(value);
+        return changed;
+      }
+      case numos::SettingType::Float: {
+        auto &stored = *static_cast<float *>(field);
+        const float unit = range.metersPerSecond ? 1000.f : 1.f;
+        float value = stored * unit;
+        const char *format = range.format ? range.format : "%.5g";
+        if (!(slide ? ImGui::SliderFloat(label, &value, lo, hi, format, flags)
+                    : ImGui::DragFloat(label, &value, range.step, lo, hi, format, flags)))
+          return false;
+        stored = value / unit;
+        return true;
+      }
+      case numos::SettingType::Vec3:
+        return ImGui::DragFloat3(label, static_cast<float *>(field), range.step, lo, hi,
+                                 range.format ? range.format : "%.5g", ImGuiSliderFlags_AlwaysClamp);
+      default:
+        return false;
+      }
+    }
+
     bool settingWidget(numos::Settings &values, const numos::SettingInfo &info, const char *label) {
       auto *field = reinterpret_cast<uint8_t *>(&values) + info.offset;
       const bool low = bounded(info.minValue), high = bounded(info.maxValue);
+      if (const auto *range = curatedRange(shortKey(info)); range && info.type != numos::SettingType::Bool)
+        return curatedWidget(field, info.type, *range, label);
       switch (info.type) {
       case numos::SettingType::Bool:
         return ImGui::Checkbox(label, reinterpret_cast<bool *>(field));
