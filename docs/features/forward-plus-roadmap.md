@@ -111,6 +111,16 @@ triangles. This confirms smooth-edge fragmentation, not the sole artifact cause.
 Use this measured topology for private connected-patch index ordering; preserve
 authored chart index ranges and original live binding identity.
 
+A private smooth-edge connectivity reorder (candidate policy 4) was tested and
+removed: normal Construct completed validation-clean, but housing charts increased
+27 to 29 and visible triangular patches did not improve. Source immutability,
+authored-range, winding, duplicate-UV attribute and live-binding tests passed;
+those invariants did not qualify visual quality. Retained candidate remains policy
+3, disabled by default. A separate cache-hit debugView 5 check confirms the patches
+exist in neutral indirect irradiance, excluding albedo/emission/specular/direct
+light as sole explanations. Next compare reconstructed atlas response against
+independent surface references before another chart-layout change.
+
 Next investigate actual surface baking for uncharted static models, preserving
 caller-authored charts, retained-draw bindings, the shared atlas budget, PBR and
 controllable-light behavior. Chart/padding overhead must be measured; a triangle
