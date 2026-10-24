@@ -50,8 +50,10 @@ effective spacing and mapping coverage. An input/coverage failure exits nonzero.
 
 ## Limits of the evidence
 
-This tool studies one isolated model with no BSP partition, authored chart gaps,
-materials, lights, controllable groups or live draw bindings. A translated export
+This tool studies one draw with no BSP partition, authored chart gaps, materials,
+lights, controllable groups or live draw bindings. Composite datasets can contain
+several model geometries, but do not exercise their separate draw/material
+identities. A translated export
 also changes world-grid phase. Passing it does not qualify whole-map atlas fit,
 lighting accuracy, bake time, memory, frame cost or an unwrapper dependency.
 The default synthetic test does not exercise a captured external dataset.

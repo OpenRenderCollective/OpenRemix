@@ -172,6 +172,18 @@ current public API still materializes output via packing. Next evaluate batching
 model parameterization/output to amortize this work, then qualify whole-map shared
 budget fit and lighting before adding a dependency or replacing the current path.
 
+An eight-mesh batched offline pass keeps 6070 default charts and exact per-mesh
+input-corner references. Three runs take 352-364 ms total; packing remains about
+337-347 ms, so batching helps modestly rather than removing the cost. Native
+validation/fitting of the 32552-triangle composite study geometry passes at
+0.248 m: imported charts use 12175 bake points/33279 rectangle texels versus
+17730/45455 for current charts. Both allocate three 128-size pages. This uses one
+composite study draw with approximate original metric positions; it does not
+qualify material/draw identity, BSP exclusions, authored gaps, controllable-light
+semantics, lighting quality or whole-map capacity. Next is whole-map CPU budget
+preflight and a bounded in-engine candidate, not default promotion. No runtime
+dependency or deployment change has been made.
+
 Independent 8192-sample, three-bounce base-unstyled hemisphere references at 14
 charted housing triangle centres find candidate-policy-3 atlas/reference luminance
 ratios of 0.71-1.37, versus probe/reference ratios up to 14.42. This helped isolate
