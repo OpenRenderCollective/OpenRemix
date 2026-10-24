@@ -76,12 +76,29 @@ void compositeProbeGroup(vec3 group, float total, float coverage, float maximumC
 }
 vec3 probeParallaxDirection(ReflectionProbe record, vec3 position, vec3 reflected,
                            vec3 localPosition, vec3 localRay) {
-  float exitDistance = 3.402823e38;
-  for (uint c = 0; c < 3u; ++c)
-    if (abs(localRay[c]) > 1e-10) {
+  // Influence bounds can extend beyond the proxy. A miss must preserve the
+  // unprojected direction, rather than inventing a hit on an unrelated face.
+  float entryDistance = 0, exitDistance = 3.402823e38;
+  bool outside = any(lessThan(localPosition, record.minimum.xyz)) ||
+                 any(greaterThan(localPosition, record.maximum.xyz));
+  for (uint c = 0; c < 3u; ++c) {
+    if (abs(localRay[c]) <= 1e-10) {
+      if (localPosition[c] < record.minimum[c] || localPosition[c] > record.maximum[c])
+        return reflected;
+      continue;
+    }
+    if (outside) {
+      float a = (record.minimum[c] - localPosition[c]) / localRay[c];
+      float b = (record.maximum[c] - localPosition[c]) / localRay[c];
+      entryDistance = max(entryDistance, min(a, b));
+      exitDistance = min(exitDistance, max(a, b));
+      if (exitDistance < entryDistance) return reflected;
+    } else {
+      // Ordinary interior receivers need only the original far-plane division.
       float plane = localRay[c] > 0 ? record.maximum[c] : record.minimum[c];
       exitDistance = min(exitDistance, (plane - localPosition[c]) / localRay[c]);
     }
+  }
   vec3 corrected = position + reflected * exitDistance - record.position.xyz;
   if (exitDistance <= 0 || dot(corrected, corrected) < 1e-10) corrected = reflected;
   return corrected;

@@ -15,6 +15,28 @@ namespace remix::forward::probes {
     bool finite(Vec3 v) {
       return std::all_of(v.begin(), v.end(), [](float x) { return std::isfinite(x); });
     }
+    // Influence may extend outside the projection box. Only a ray intersecting
+    // all three slabs has a meaningful far-face point for box projection.
+    Vec3 parallaxDirection(const Record &record, Vec3 position, Vec3 reflected,
+                          Vec3 localPosition, Vec3 localRay) {
+      float entry = 0, exit = std::numeric_limits<float>::max();
+      for (uint32_t c = 0; c < 3; ++c) {
+        if (std::abs(localRay[c]) <= 1e-10f) {
+          if (localPosition[c] < record.minimum[c] || localPosition[c] > record.maximum[c])
+            return reflected;
+          continue;
+        }
+        const float a = (record.minimum[c] - localPosition[c]) / localRay[c];
+        const float b = (record.maximum[c] - localPosition[c]) / localRay[c];
+        entry = std::max(entry, std::min(a, b));
+        exit = std::min(exit, std::max(a, b));
+        if (exit < entry) return reflected;
+      }
+      Vec3 corrected;
+      for (uint32_t c = 0; c < 3; ++c)
+        corrected[c] = position[c] + reflected[c] * exit - record.position[c];
+      return exit <= 0 || dot(corrected, corrected) < 1e-10f ? reflected : corrected;
+    }
     float priorityCoverage(const Record &record, Vec3 local) {
       const Vec3 inverseWidth{record.maximum[3], record.influenceMinimum[3], record.influenceMaximum[3]};
       float coverage = 1;
@@ -408,7 +430,7 @@ namespace remix::forward::probes {
       const auto localPosition = projectionPoint(record.worldToLocal, position);
       const auto localRay = projectionDirection(record.worldToLocal, reflected);
       bool inside = true;
-      float exitDistance = std::numeric_limits<float>::max(), edge = 1;
+      float edge = 1;
       const Vec3 inverseWidth{record.maximum[3], record.influenceMinimum[3],
                               record.influenceMaximum[3]};
       float smallestHalf = std::numeric_limits<float>::max();
@@ -426,10 +448,6 @@ namespace remix::forward::probes {
         // feathering at a doorway. The small finite boundary weight cancels
         // between touching captures and avoids black/undefined corner weights.
         edge *= std::max(t * t * (3 - 2 * t), 1e-4f);
-        if (std::abs(localRay[c]) > 1e-10f) {
-          const float plane = localRay[c] > 0 ? record.maximum[c] : record.minimum[c];
-          exitDistance = std::min(exitDistance, (plane - localPosition[c]) / localRay[c]);
-        }
       }
       if (!inside) continue;
       if (record.minimum[3] != priority) {
@@ -437,11 +455,7 @@ namespace remix::forward::probes {
         if (!remaining) break;
         priority = record.minimum[3];
       }
-      Vec3 corrected;
-      for (uint32_t c = 0; c < 3; ++c)
-        corrected[c] = position[c] + reflected[c] * exitDistance - record.position[c];
-      if (exitDistance <= 0 || dot(corrected, corrected) < 1e-10f)
-        corrected = reflected;
+      const auto corrected = parallaxDirection(record, position, reflected, localPosition, localRay);
       auto mip = [&](uint32_t level) {
         const size_t start = probe * parameters[3] + levelOffset(parameters[1], level);
         const uint32_t size = parameters[1] >> level;

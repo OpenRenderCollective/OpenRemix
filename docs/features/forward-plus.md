@@ -1982,6 +1982,11 @@ can snap outward to nearby axis-aligned BSP planes, so a floor or wall at the bo
 its room's capture. Each snap is checked against whole-volume occupancy with the existing
 bounded trim tolerance; proximity alone never permits crossing a wall. This does not solve
 rotated-room fitting or guarantee coverage when the capture budget is exhausted.
+Influence outside the projection proxy uses a full ray/box intersection. A ray entering the proxy
+projects onto its actual far face; a ray missing any slab retains its unprojected cubemap direction.
+Interior receivers retain the original far-plane sampling path. This applies to ordinary, explicitly
+bound and viewmodel reflection sampling without changing capture allocation or volume blending.
+
 
 CPU policy coverage lives in `tests/forward`. GPU readback extends the existing raster fixture to check
 local-light contribution, sun-shadow occlusion, MSAA silhouette coverage, frame-slot reuse and HUD

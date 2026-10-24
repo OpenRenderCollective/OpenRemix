@@ -61,6 +61,10 @@ void samplingCase(uint32_t resolution) {
           capture.radiance[(face*captureSize+y)*captureSize+x] = {1+ray[0], 1+ray[1], 1+ray[2], 0};
         }
   }
+  // The rotated fallback's influence extends beyond its projection proxy;
+  // axis-parallel and diagonal queries must distinguish hits from slab misses.
+  captures[0].influence.include({-3, -2, -2});
+  captures[0].influence.include({3, 2, 2});
   captures[1].priority = 7;
   captures[1].influence.include({-.25f, -.25f, -1});
   captures[1].influence.include({.25f, .25f, .25f});
@@ -96,7 +100,7 @@ void samplingCase(uint32_t resolution) {
           for (Vec3 ray : {Vec3{1, 0, 0}, Vec3{-1, 0, 0}, Vec3{0, 1, 0}, Vec3{0, -1, 0},
                           Vec3{0, 0, 1}, Vec3{0, 0, -1}, Vec3{1, 1, 0}, Vec3{-1, -1, 0},
                           Vec3{1, 0, 1}, Vec3{-1, 0, -1}, Vec3{0, 1, 1}, Vec3{0, -1, -1},
-                          Vec3{1, 1, 1}, Vec3{-1, -1, -1}, Vec3{-1, .2f, 1}})
+                          Vec3{1, 1, 1}, Vec3{-1, -1, -1}, Vec3{-1, .2f, 1}, Vec3{.1f, -1, 0}, Vec3{1, -2, 0}})
             queries.push_back(
                 {{x, y, z, float(step) / steps}, {ray[0], ray[1], ray[2], 0}});
   if (resolution == 8) {

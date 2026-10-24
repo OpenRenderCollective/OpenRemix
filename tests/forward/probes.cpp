@@ -129,6 +129,22 @@ int main() {
   const auto outsideProxy = p::sample(independentData, {1.5f, 0, 0}, {1, 0, 0}, 0);
   require(outsideProxy && (*outsideProxy)[0] > 1.9f,
           "Influence beyond a projection face never reverses an outward reflected ray");
+  // The receiver remains in the wider influence, but its ray can miss the
+  // projection proxy through a parallel slab or disjoint entry/exit intervals.
+  for (Vec3 ray : {Vec3{-1, 0, 0}, Vec3{-1, -.1f, 0}, Vec3{-1, 1, 0}}) {
+    const auto missed = p::sample(independentData, {1.5f, 1.5f, 0}, ray, 0);
+    const auto unprojected = p::sample(data, {}, ray, 0);
+    require(missed && unprojected, "A projection miss retains its containing influence");
+    for (uint32_t c = 0; c < 3; ++c)
+      require(std::abs((*missed)[c] - (*unprojected)[c]) < 1e-5f,
+              "A ray missing the proxy preserves its unprojected cubemap direction");
+  }
+  const auto entering = p::sample(independentData, {1.5f, 1.5f, 0}, {-1, -2, 0}, 0);
+  const auto farFace = p::sample(data, {}, {.25f, -1, 0}, 0);
+  require(entering && farFace, "An outside receiver can reflect through its projection proxy");
+  for (uint32_t c = 0; c < 3; ++c)
+    require(std::abs((*entering)[c] - (*farFace)[c]) < 1e-5f,
+            "An entering reflected ray projects onto the actual far box face");
   const auto edgeA = p::sample(data, {0, 0, 0}, {1, 0, .9999f}, 0);
   const auto edgeB = p::sample(data, {0, 0, 0}, {.9999f, 0, 1}, 0);
   require(edgeA && edgeB && std::abs((*edgeA)[0] - (*edgeB)[0]) < .001f,

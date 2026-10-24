@@ -1923,6 +1923,12 @@ Beer-Lambert loss from the capture origin. Reusing it at a distant underwater re
 physical attenuation path: investigate capture/receiver medium and path-length differences as well
 as box geometry. More blur or a larger diffuse bounce budget is not an established remedy.
 
+A separate outside-proxy sampling defect is fixed in the CPU reference and shared GPU sampler.
+When influence extends beyond projection, parallel-slab and disjoint-interval misses now retain the
+unprojected direction instead of inventing a far-face hit. Entering rays still use the actual far face,
+and interior receivers retain their original shader path. Analytical miss/entry cases and translated,
+rotated GPU comparisons across roughness mips pass, along with authored edits and viewmodel SSR/
+environment readback. This does not establish a fix for the underwater receiver inside its proxy.
 Next: qualify live authored edits/map transitions, underwater capture lighting, and cached-bake
 preparation, then consider local replacement publication as a default.
 
