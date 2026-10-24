@@ -73,7 +73,12 @@ int main(int argc, char **argv) try {
     require(b::modelCharts(candidate, 8).size() == 1, "Dynamic geometry remains on volume lighting");
     candidate.draws[0].classification = REMIXAPI_INSTANCE_STATIC_EXT;
     try { b::modelCharts(candidate, 1); require(false, "Chart cap silently omitted static surfaces"); }
-    catch (const std::length_error &) {}
+    catch (const std::length_error &error) {
+      const std::string message(error.what());
+      require(message.find("1 charts across 1 draws; stopped at draw 1 index 0") != std::string::npos &&
+                  message.find("largest prefix consumers: [draw 0, charts 1, accepted triangles 1") != std::string::npos,
+              "Chart cap reports bounded ownership and partial-progress provenance");
+    }
     invalid([&] { b::modelCharts(candidate, 0); });
     std::stop_source stopped;
     stopped.request_stop();

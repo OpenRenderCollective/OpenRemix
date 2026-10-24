@@ -112,6 +112,24 @@ Do not simply raise the cap, silently drop models onto the leaking probe field,
 or introduce per-light static work. The existing default path is unaffected;
 this failure does not establish its bake behavior on the map. No deployment change.
 
+The dense-map cap now reports its stopped draw/index and the eight largest
+contributors in the processed prefix; full exceptions are retained on stderr
+because public status text is bounded. bm_c1a1b reaches 65536 charts across 757
+contributing draws before stopping at draw 1628/index 2466. The largest prefix
+consumer has 1232 charts for 4334 accepted triangles; another has 1080 charts for
+5280 triangles. These are partial traversal counts, not whole-map totals. This
+points to widespread chart fragmentation rather than a single exceptional draw.
+The cap and default behavior are unchanged.
+
+Next evaluate a connected mesh unwrapper against genuinely baked vertex lighting,
+measuring chart count, preparation time, memory and lighting fidelity on actual
+dense models. [xatlas](https://github.com/jpcy/xatlas) is an investigation candidate;
+its [mesh output API](https://github.com/jpcy/xatlas/blob/master/source/xatlas/xatlas.h)
+exposes chart face lists and original-vertex references, which could support
+attribute-preserving private bake geometry. No dependency has been added and no
+quality/performance benefit is established. Preserve authored chart ranges,
+retained draw identity, controllable lights and cancellation while evaluating it.
+
 Independent 8192-sample, three-bounce base-unstyled hemisphere references at 14
 charted housing triangle centres find candidate-policy-3 atlas/reference luminance
 ratios of 0.71-1.37, versus probe/reference ratios up to 14.42. This helped isolate

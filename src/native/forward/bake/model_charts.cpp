@@ -4,10 +4,37 @@
 #include "forward/lightmap/curved.h"
 #include <algorithm>
 #include <cmath>
+#include <map>
+#include <sstream>
 #include <stdexcept>
 
 namespace remix::forward::bake {
   namespace {
+    std::string exhausted(const scene::BakeScene &source,
+                          const std::vector<scene::BakeSurfaceChart> &charts, uint32_t draw, uint32_t first) {
+      struct Use { uint32_t draw = 0, charts = 0; uint64_t triangles = 0; };
+      std::map<uint32_t, Use> uses;
+      for (const auto &chart : charts) {
+        auto &use = uses[chart.draw];
+        use.draw = chart.draw; ++use.charts; use.triangles += chart.texcoords.size() / 3;
+      }
+      std::vector<Use> ranked;
+      for (const auto &[index, use] : uses) ranked.push_back(use);
+      std::sort(ranked.begin(), ranked.end(), [](const auto &a, const auto &b) {
+        return a.charts != b.charts ? a.charts > b.charts : a.draw < b.draw;
+      });
+      std::ostringstream out;
+      out << "Model chart budget exhausted: " << charts.size() << " charts across " << uses.size()
+          << " draws; stopped at draw " << draw << " index " << first << "; largest prefix consumers:";
+      for (size_t i = 0; i < std::min<size_t>(8, ranked.size()); ++i) {
+        const auto &use = ranked[i];
+        const auto &owner = source.draws[use.draw];
+        out << " [draw " << use.draw << ", charts " << use.charts << ", accepted triangles " << use.triangles
+            << ", draw triangles " << (owner.indexCount ? owner.indexCount : owner.surface->indices.size()) / 3
+            << ", material " << std::hex << (owner.material ? owner.material->sourceHash : 0) << std::dec << ']';
+      }
+      return out.str();
+    }
     // Keep charts bounded, contiguous and within one smooth connected patch.
     // Projection must remain injective; the existing chart validator rejects
     // folds/overlaps before a merge can replace its original triangles.
@@ -122,7 +149,7 @@ namespace remix::forward::bake {
         if (!playableReceiverTriangle(source, positions, cancelled)) continue;
         scene::BakeSurfaceChart chart{range.draw, uint32_t(first), 2, 2, {{0, 0}, {1, 0}, {0, 1}}};
         if (!result.empty() && join(source, result.back(), chart, cancelled)) continue;
-        if (result.size() == maximumCharts) throw std::length_error("Model chart budget exhausted");
+        if (result.size() == maximumCharts) throw std::length_error(exhausted(source, result, range.draw, uint32_t(first)));
         result.push_back(std::move(chart));
       }
     }

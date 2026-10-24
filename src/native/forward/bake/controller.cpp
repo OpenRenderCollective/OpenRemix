@@ -1684,6 +1684,8 @@ namespace remix::forward::bake {
     } catch (const std::exception &error) {
       if (m_job)
         m_job->failed = true;
+      // The public status text is bounded; retain full diagnostic provenance.
+      std::fprintf(stderr, "Forward+ bake failed: %s\n", error.what());
       status(REMIXAPI_BAKE_FAILED_EXT, error.what());
     }
     m_statistics.active = bool(m_volume);
