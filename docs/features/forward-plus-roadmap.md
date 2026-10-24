@@ -2,6 +2,13 @@
 
 ## Current lighting-quality focus
 
+Coplanar seam donors now retain their original receiver footprint, and sunlight
+edge refinement admits those verified aliases instead of skipping every
+filtering-only donor. Curved donors without a proven footprint remain excluded.
+Cache revision 33 separates the changed sunlight coverage. This corrects missing
+edge antialiasing, not probe leakage or chart-local indirect filtering bias.
+Continue checking sunlit boundaries and indirect discontinuities separately.
+
 Generated model-chart density is also a separate confirmed failure. Grazing
 projection faces and excessive curved metric expansion now split candidate
 patches rather than inflating their global atlas footprint. Whole-map CPU atlas

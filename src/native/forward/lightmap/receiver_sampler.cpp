@@ -17,6 +17,7 @@ namespace remix::forward::lightmap {
         layout.points.size() != layout.pointCharts.size() ||
         layout.points.size() != layout.addresses.size() ||
         (!layout.receiverSamples.empty() && layout.receiverSamples.size() != layout.points.size()) ||
+        (!layout.receiverSources.empty() && layout.receiverSources.size() != layout.points.size()) ||
         (!layout.points.empty() && !layout.pageSize))
       throw std::invalid_argument("Incomplete receiver sampling geometry");
     m_hits.reserve(8);
@@ -62,6 +63,15 @@ namespace remix::forward::lightmap {
   void ReceiverSampler::sample(uint32_t index, std::span<bake::Point> result) {
     if (result.size() != 4 && result.size() != 16)
       throw std::invalid_argument("Receiver quadrature requires four or sixteen sites");
+    if (!m_layout.receiverSources.empty()) {
+      const auto source = m_layout.receiverSources.at(index);
+      if (source != unowned) {
+        if (source >= m_layout.points.size() || m_layout.receiverSources.at(source) != unowned ||
+            (!m_layout.receiverSamples.empty() && !m_layout.receiverSamples.at(source)))
+          throw std::invalid_argument("Invalid seam receiver footprint source");
+        index = source;
+      }
+    }
     const auto &centre = m_layout.points.at(index);
     std::fill(result.begin(), result.end(), centre);
     // Verified seam extension donors already belong to neighbouring geometry.

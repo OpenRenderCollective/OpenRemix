@@ -5,6 +5,8 @@
 namespace remix::forward::lightmap {
   // Borrowed immutable geometry/layout must outlive this sampler. One caller
   // owns its reusable scratch: no full-map array of four expanded origins.
+  // Verified coplanar seam aliases reuse their original receiver footprint;
+  // other filtering donors retain their actual centre rather than extrapolation.
   class ReceiverSampler {
   public:
     ReceiverSampler(const scene::BakeScene &source, const Layout &layout);

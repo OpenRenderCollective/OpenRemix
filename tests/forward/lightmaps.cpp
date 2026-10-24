@@ -306,6 +306,30 @@ int main() {
     for (const auto &site : seamSampler.sample(0))
       require(site.position == extended.points[0].position && site.normal == extended.points[0].normal,
               "Verified seam-extension donors retain their original actual surface sites");
+    extended.receiverSources.assign(extended.points.size(), lm::unowned);
+    uint32_t footprintSource = lm::unowned;
+    for (uint32_t i = 0; i < extended.points.size(); ++i)
+      if (std::abs(extended.points[i].position[0] - 10) < 1e-5 &&
+          std::abs(extended.points[i].position[1]) < 1e-5) footprintSource = i;
+    require(footprintSource != lm::unowned, "Seam fixture has a complete central footprint");
+    extended.receiverSources[0] = footprintSource;
+    lm::ReceiverSampler sharedSampler(scene, extended);
+    const auto donorSites = sharedSampler.sample(0), sourceSites = sharedSampler.sample(footprintSource);
+    require(std::memcmp(donorSites.data(), sourceSites.data(), sizeof(donorSites)) == 0,
+            "Coplanar seam donors retain their source receiver's antialiasing footprint");
+    sunlightCoverage(sharedSampler, 0);
+    std::vector<lm::Sun> seamShadow(extended.points.size());
+    for (auto &value : seamShadow) value.visibility = 0;
+    seamShadow[0].visibility = 1;
+    auto edgeLayout = extended;
+    edgeLayout.owners[edgeLayout.addresses[0]] = 0;
+    edgeLayout.owners[edgeLayout.addresses[0] + 1] = footprintSource;
+    remix::forward::bake::SunAntialiasing seamEdges(scene, edgeLayout, seamShadow);
+    require(std::find(seamEdges.receivers().begin(), seamEdges.receivers().end(), 0) != seamEdges.receivers().end(),
+            "Sunlight edge refinement admits seam donors with verified source footprints");
+    extended.receiverSources[footprintSource] = 0;
+    refused([&] { sharedSampler.sample(0); });
+
   }
   const auto &a = layout.charts[0];
   for (uint32_t y = 0; y < 9; ++y)

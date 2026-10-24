@@ -75,6 +75,7 @@ namespace remix::forward::lightmap {
       layout.addresses.push_back(atlas);
       layout.sampleCenters.push_back(1);
       layout.receiverSamples.push_back(0);
+      if (!layout.receiverSources.empty()) layout.receiverSources.push_back(unowned);
       ++layout.seamSamples;
       ++layout.curvedSeamSamples;
     }

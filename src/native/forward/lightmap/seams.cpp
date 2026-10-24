@@ -135,7 +135,9 @@ namespace remix::forward::lightmap {
     const auto connected = patches(scene, layout, cancelled);
     Coverage coverage(scene, layout, connected, cancelled);
     using Key = std::tuple<uint32_t, int64_t, int64_t>;
-    std::map<Key, bake::Point> centers;
+    struct Center { bake::Point point; uint32_t source; };
+    std::map<Key, Center> centers;
+    layout.receiverSources.resize(layout.points.size(), unowned);
     auto coordinate = [&](uint32_t chart, uint32_t atlas) {
       const auto &allocation = layout.charts[chart];
       const auto &mapping = layout.mappings[chart];
@@ -148,7 +150,7 @@ namespace remix::forward::lightmap {
         check(cancelled);
       const auto chart = layout.pointCharts[i];
       if (layout.mappings[chart].worldGrid && layout.sampleCenters[i])
-        centers.try_emplace(coordinate(chart, layout.addresses[i]), layout.points[i]);
+        centers.try_emplace(coordinate(chart, layout.addresses[i]), Center{layout.points[i], uint32_t(i)});
     }
     // Snapshot values above, so extending one chart cannot move another donor.
     // Each added sample remains attributed to the receiving chart: mixed-light
@@ -167,7 +169,7 @@ namespace remix::forward::lightmap {
           const auto found = centers.find(coordinate(chart, atlas));
           if (found == centers.end())
             continue;
-          const auto &point = found->second;
+          const auto &point = found->second.point;
           if (layout.points[owner].position == point.position && layout.points[owner].normal == point.normal)
             continue;
           auto projected = [&](const bake::Point &sample) {
@@ -185,6 +187,7 @@ namespace remix::forward::lightmap {
           if (layout.addresses[owner] == atlas && layout.pointCharts[owner] == chart &&
               layout.sampleCenters[owner]) {
             layout.points[owner] = point;
+            layout.receiverSources[owner] = found->second.source;
             layout.sampleCenters[owner] = 1;
           } else {
             layout.owners[atlas] = uint32_t(layout.points.size());
@@ -193,6 +196,7 @@ namespace remix::forward::lightmap {
             layout.addresses.push_back(atlas);
             layout.sampleCenters.push_back(1);
             layout.receiverSamples.push_back(0);
+            layout.receiverSources.push_back(found->second.source);
           }
           ++layout.seamSamples;
         }

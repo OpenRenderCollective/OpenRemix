@@ -52,7 +52,7 @@ namespace remix::forward::bake::cache {
       return std::max(1u, (count + probeHeaderBlockSlots - 1) / probeHeaderBlockSlots);
     }
     // Bump whenever incompatible planning, transport or wire semantics change.
-    constexpr uint32_t algorithmRevision = 30; // interior surface samples cannot donate filtering energy
+    constexpr uint32_t algorithmRevision = 33; // coplanar seam donors retain source receiver quadrature
     void require(bool value) {
       if (!value)
         throw std::runtime_error("Invalid bake cache metadata");

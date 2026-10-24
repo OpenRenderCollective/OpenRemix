@@ -25,6 +25,9 @@ namespace remix::forward::lightmap {
     std::vector<uint32_t> pointCharts; // chart ownership of each actual surface sample
     // Receiver checks can share an address with an extended filtering sample.
     std::vector<uint32_t> addresses;
+    // Coplanar seam donors may reuse an original receiver footprint. Unowned
+    // entries retain their own sampling; curved donors have no planar alias.
+    std::vector<uint32_t> receiverSources;
     std::vector<uint8_t> receiverSamples; // true only for samples on the receiving chart itself
     std::vector<uint8_t> footprints;    // conservative bilinear support, excluding unused chart-box interiors
     std::vector<uint8_t> sampleCenters; // sample lies at its integer grid coordinate

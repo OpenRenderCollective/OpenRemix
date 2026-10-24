@@ -19,7 +19,7 @@ namespace remix::forward::bake::cache {
         storage(s.grid.lookup) + storage(s.grid.origins) + storage(s.grid.depth.records) +
         storage(s.layout.charts) + storage(s.layout.mappings) + storage(s.pixels) + storage(s.styles) +
         storage(s.layout.points) + storage(s.layout.pointCharts) + storage(s.layout.addresses) +
-        storage(s.layout.receiverSamples) + storage(s.layout.footprints) + storage(s.layout.sampleCenters) +
+        storage(s.layout.receiverSources) + storage(s.layout.receiverSamples) + storage(s.layout.footprints) + storage(s.layout.sampleCenters) +
         storage(s.layout.owners) + storage(s.mixed.charts) + storage(s.mixed.directCharts) +
         storage(s.mixed.tasks) + storage(s.mixed.remaining) + storage(s.mixed.next) +
         storage(s.captures) + storage(s.specular.texels) + storage(s.directionals);

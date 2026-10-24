@@ -18,7 +18,9 @@ namespace remix::forward::bake {
       const float visibility = sunlight[point].visibility;
       if (!std::isfinite(visibility) || visibility < 0 || visibility > 1)
         throw std::invalid_argument("Invalid sunlight edge visibility");
-      if (!layout.receiverSamples.empty() && !layout.receiverSamples[point])
+      const bool sharedFootprint = !layout.receiverSources.empty() &&
+          layout.receiverSources[point] != lightmap::unowned;
+      if (!layout.receiverSamples.empty() && !layout.receiverSamples[point] && !sharedFootprint)
         continue;
       const auto address = layout.addresses[point];
       if (address >= layout.owners.size())

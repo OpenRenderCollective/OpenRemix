@@ -1,6 +1,8 @@
 #include "forward/lighting.h"
 #include "forward/lightmap/data.h"
 #include "forward/lightmap/layout.h"
+#include "forward/lightmap/receiver_sampler.h"
+#include <cstring>
 #include "scene/fixtures.h"
 #include <algorithm>
 #include <cmath>
@@ -134,6 +136,18 @@ int main() {
   require(layout.luxelMetres == .5f && layout.seamSamples > 0 && layout.pages > 1,
           "A requested metre spacing creates connected border donors");
   density(scene, layout);
+  lm::ReceiverSampler receivers(scene, layout);
+  uint32_t sharedFootprints = 0;
+  for (uint32_t i = 0; i < layout.receiverSources.size(); ++i) {
+    const auto source = layout.receiverSources[i];
+    if (source == lm::unowned) continue;
+    const auto donorSites = receivers.sample(i), originalSites = receivers.sample(source);
+    require(std::memcmp(donorSites.data(), originalSites.data(), sizeof(donorSites)) == 0,
+            "Connected seam samples share their original geometry's antialiasing sites");
+    ++sharedFootprints;
+  }
+  require(sharedFootprints > 0, "Connected chart fixture exercises copied receiver footprints");
+
   std::vector<forward::bake::Result> values(layout.points.size());
   for (size_t i = 0; i < values.size(); ++i) {
     const auto &p = layout.points[i].position;
