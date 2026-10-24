@@ -55,15 +55,20 @@ namespace remix::trace {
   // either (every query includes both, as the two traversals did).
   // View models: only camera rays (and rays of paths that start on one)
   // include this bit; no other instance carries it.
-  constexpr uint8_t viewModelInstanceMask = 8;
+  constexpr uint8_t viewModelInstanceMask = 64;
   // Reflection-only instances (Draw::reflectionOnly): only bounce rays include
   // this bit; no other instance carries it.
   constexpr uint8_t reflectionOnlyInstanceMask = 16;
+  // The opaque world, which NUMOS's sky traces for the haze's shadows and its
+  // ground probes: NUMOS's shaders hard-code this bit (OBJECT_MASK_OPAQUE).
+  // Blended, decal, view-model and reflection-only instances lack it.
+  constexpr uint8_t skyOccluderInstanceMask = 8;
   constexpr uint8_t allInstancesMask = 0xff & ~viewModelInstanceMask & ~reflectionOnlyInstanceMask,
                     staticInstanceMask = 1, dynamicInstanceMask = 2,
                     blendedInstanceMask = 4, decalInstanceMask = 32;
   inline uint8_t instanceMask(bool combined, bool dynamic) {
-    return !combined ? allInstancesMask : dynamic ? dynamicInstanceMask : staticInstanceMask;
+    return !combined ? allInstancesMask
+                     : (dynamic ? dynamicInstanceMask : staticInstanceMask) | skyOccluderInstanceMask;
   }
   // rtx.native.pathtrace.combinedTlas: one TLAS over the static instances
   // followed by the dynamic ones. Any static change rebuilds it (as it

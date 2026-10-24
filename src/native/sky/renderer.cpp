@@ -52,8 +52,9 @@ namespace remix::sky {
     numos::Renderer numos;
     std::map<std::string, std::string> atmosphere;
     bool configured = false;
-    numos::GpuHandle environment = 0, missDepth = 0, depthImport = 0;
+    numos::GpuHandle environment = 0, missDepth = 0, depthImport = 0, sceneImport = 0;
     VkImageView depthView = VK_NULL_HANDLE;
+    VkAccelerationStructureKHR scene = VK_NULL_HANDLE;
     uint32_t renderWidth = 0, renderHeight = 0, missWidth = 0, missHeight = 0;
     uint32_t frameIndex = 0, lastCut = 0;
     numos::Camera camera{};
@@ -206,6 +207,13 @@ namespace remix::sky {
     inputs.renderHeight = frame.renderHeight;
     inputs.outputWidth = frame.outputWidth;
     inputs.outputHeight = frame.outputHeight;
+    if (frame.scene != m->scene) {
+      if (m->sceneImport)
+        m->bridge.forget(m->sceneImport);
+      m->sceneImport = frame.scene ? m->bridge.importAccelerationStructure(frame.scene) : 0;
+      m->scene = frame.scene;
+    }
+    inputs.opaqueTlas = m->sceneImport;
 
     m->bridge.begin(command);
     m->numos.beginFrame(m->bridge, inputs);

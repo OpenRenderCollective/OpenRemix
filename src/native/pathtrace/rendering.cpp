@@ -934,6 +934,9 @@ namespace remix {
                                           .metersPerUnit = options.sceneScale,
                                           .upAxis = options.volumetricUpAxis,
                                           .cameraCut = history.reset() || !skyReady};
+        // The combined TLAS, or the static one (the world) without it.
+        if (const auto &accel = tlas[topCombined ? 2 : 0].accel)
+          description.scene = accel->handle;
         gpu::GpuScope scope(command, "NUMOS sky");
         skyActive = numosSky->record(command, description);
         skyReady |= skyActive;

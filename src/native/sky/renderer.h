@@ -17,6 +17,10 @@ namespace remix::sky {
     float metersPerUnit = 1;
     uint32_t upAxis = 2; // 0 x, 1 y, 2 z
     bool cameraCut = false;
+    // The scene's TLAS, built this frame before record(), for the haze's
+    // shadows and the ground probes: NUMOS traces its opaque world bit
+    // (trace::skyOccluderInstanceMask). Null: unshadowed haze.
+    VkAccelerationStructureKHR scene = VK_NULL_HANDLE;
   };
 
   // The sun NUMOS puts in the scene: its propagation direction and radiance in

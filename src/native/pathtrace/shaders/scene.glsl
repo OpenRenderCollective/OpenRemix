@@ -99,7 +99,7 @@ layout(set=0,binding=3,std140) uniform Frame {
   vec4 volumeLightScales; // volumetrics: sun, lights, emissive surfaces, sky
 } frame;
 // Instance mask bit of view models (pathtrace/tlas_policy.h).
-const uint viewModelInstanceMask=8u;
+const uint viewModelInstanceMask=64u;
 // Instance mask bit of reflection-only instances (the player's own body):
 // bounce rays see them, camera, shadow and light-visibility rays do not.
 const uint reflectionOnlyInstanceMask=16u;
