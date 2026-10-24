@@ -15,6 +15,7 @@
 #include "forward/mixed/directional_capture.h"
 #include "forward/probes/evaluation.h"
 #include "forward/probes/capture_work.h"
+#include "forward/probes/local_capture_work.h"
 #include "forward/probes/receiver_audit.h"
 #include "forward/probes/receiver_sites.h"
 #include "forward/probes/receiver_site_checks.h"
@@ -137,6 +138,10 @@ namespace remix::forward::bake {
     std::unique_ptr<probes::ReceiverAudit> receiverFitCoverage;
     uint32_t receiverCoverageNext = 0, receiverCoverageReceived = 0;
     std::shared_ptr<const probes::ReceiverCoverageEvidence> reflectionEvidence;
+    std::unique_ptr<probes::LocalCaptureWork> localCaptureWork;
+    std::shared_ptr<LocalReflections> localReflections;
+    uint32_t localCaptureNext = 0, localCaptureReceived = 0;
+    bool localCapturePlanned = false, localCaptureFiltered = false;
     probes::CaptureWork captureWork;
     uint64_t captureInputHash = 0;
     probes::Data specular;

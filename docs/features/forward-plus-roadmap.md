@@ -1873,7 +1873,14 @@ CaptureWork/filter aliasing so same-origin shapes share rays and mip filtering. 
 are range-checked, duplicate-checked and validated atomically; finish produces filtered pixels and
 candidate-to-layer metadata together. This CPU preparation component still needs transport dispatch
 and renderer scheduling. It does not activate local captures on its own.
-Next: dispatch selected local radiance against frozen bake lighting and connect the frame handoff to
+REMIX_DEBUG_PROBE_LOCAL_CAPTURE=1 now schedules selected local radiance after ordinary bake
+filtering, using the same frozen transport, configured samples/bounces, adaptive GPU budget and
+fenced readback slots. A preparation worker filters and creates the local image; bake activation
+uploads it and retains its plan/ready metadata separately on the published volume. Its staging is
+released only at the upload fence and its allocation is included in memory statistics. This requires
+fresh retained diagnostic evidence; cached bakes skip it. The local image is not yet selected by
+rendering, so enabling this request alone changes bake work but not reflection appearance.
+Next: validate/recompose against the published authored baseline and connect the frame handoff to
 renderer publication, then qualify
 live authored edits and map changes before enabling local replacement publication by default.
 

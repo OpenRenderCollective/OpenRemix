@@ -369,6 +369,7 @@ namespace remix::forward::bake {
       submission.upload->staging.reset();
       if (submission.upload->sunDepth) submission.upload->sunDepth->releaseUpload();
       submission.upload->specular->releaseUpload();
+      if (submission.upload->localReflections) submission.upload->localReflections->image->releaseUpload();
     }
     if (submission.job) {
       auto &job = *submission.job;
@@ -421,6 +422,11 @@ namespace remix::forward::bake {
             } catch (const std::exception &) {
               job.failed = true;
               status(REMIXAPI_BAKE_FAILED_EXT, "Invalid attributed irradiance readback");
+            }
+          } else if (submission.localReflection) {
+            if (!job.localCaptureWork || !job.localCaptureWork->observe(submission.first, results)) {
+              job.failed = true;
+              status(REMIXAPI_BAKE_FAILED_EXT, "Invalid selected reflection radiance readback");
             }
           } else if (submission.receiverFitCoverage) {
             if (!job.receiverFitCoverage || !job.receiverFitCoverage->observe(submission.first, results)) {
@@ -497,6 +503,7 @@ namespace remix::forward::bake {
                               submission.probeSun || submission.probeLocal
                                   ? sizeof(VisibilityResult) : sizeof(Result));
         if (!submission.styled && !submission.reference && !submission.probeDepth) (submission.sunDepth ? job.sunDepthReceived
+         : submission.localReflection ? job.localCaptureReceived
          : submission.radiance ? job.captureReceived
          : submission.receiverFitCoverage ? job.receiverCoverageReceived
          : submission.receiverFit ? job.receiverFitReceived
@@ -527,7 +534,7 @@ namespace remix::forward::bake {
                               submission.overflowVisibility || submission.probeLocal     ? Work::Visibility
                             : submission.sun || submission.probeSun                  ? Work::Sun
                             : submission.reflectionSite || submission.receiverSite  ? Work::Site
-                            : submission.radiance                                    ? Work::Reflection
+                            : submission.radiance || submission.localReflection      ? Work::Reflection
                             : submission.surface                                     ? Work::Surface
                                                                                      : Work::Irradiance;
           if (!submission.reference)
@@ -1125,6 +1132,7 @@ namespace remix::forward::bake {
     if (volume->sunDepth) volume->sunDepth->recordUpload(command);
     volume->hash = m_hash;
     volume->reflectionEvidence = m_job->reflectionEvidence;
+    volume->localReflections = m_job->localReflections;
     if (!m_job->captures.empty()) {
       volume->content.captureInputs = m_job->captureInputHash;
       uint64_t captured = 1469598103934665603ull;
@@ -1289,6 +1297,7 @@ namespace remix::forward::bake {
     const VkBufferCopy copy{0, 0, bytes};
     vkCmdCopyBuffer(command, volume->staging->handle, volume->data->handle, 1, &copy);
     volume->specular->recordUpload(command);
+    if (volume->localReflections) volume->localReflections->image->recordUpload(command);
     VkImageMemoryBarrier surfaceReady{};
     volume->occlusion->upload(command, volume->staging->handle, occlusionOffset);
     if (volume->visibilityPages)
@@ -1548,6 +1557,7 @@ namespace remix::forward::bake {
             }
             if (recordSunDepth(command, config)) return;
           }
+          if (recordLocalReflections(command, config)) return;
           activate(command);
           return;
         }
@@ -1691,6 +1701,13 @@ namespace remix::forward::bake {
     auto addDepth = [&](const std::shared_ptr<SunDepth> &depth) {
       if (depth && depths.insert(depth.get()).second) result.buffers += depth->bytes();
     };
+    std::unordered_set<const probes::ImageAsset *> localImages;
+    auto addLocalImage = [&](const std::shared_ptr<const LocalReflections> &local) {
+      if (local && local->image && localImages.insert(local->image.get()).second) {
+        result.buffers += local->image->bufferBytes();
+        result.images += local->image->imageBytes();
+      }
+    };
     std::unordered_set<const Job *> jobs;
     auto addJob = [&](const std::shared_ptr<Job> &job) {
       if (!job || !job->initialized || !jobs.insert(job.get()).second)
@@ -1701,6 +1718,7 @@ namespace remix::forward::bake {
         result.buffers += job->reflectionImage->bufferBytes();
         result.images += job->reflectionImage->imageBytes();
       }
+      if (job->ticket->ready()) addLocalImage(job->localReflections);
       if (!job->transport)
         return; // a disk hit needs only geometry and the published volume upload
       const auto &transport = *job->transport;
@@ -1723,6 +1741,7 @@ namespace remix::forward::bake {
         result.images += volume->occlusion->bytes();
       if (volume->visibilityPages)
         result.images += volume->visibilityPages->bytes();
+      addLocalImage(volume->localReflections);
       result.buffers += volume->data->allocationBytes;
       result.buffers += volume->specular->bufferBytes();
       result.images += volume->specular->imageBytes();

@@ -14,9 +14,14 @@
 namespace remix {
   class RasterRenderer;
 }
-namespace remix::forward::probes { struct ReceiverCoverageEvidence; }
+namespace remix::forward::probes { struct ReceiverCoverageEvidence; struct ReceiverCoveragePlan; struct CoverageReadyImage; }
 namespace remix::forward::bake {
   class SunDepth;
+  struct LocalReflections {
+    std::shared_ptr<probes::ImageAsset> image;
+    std::shared_ptr<const probes::ReceiverCoveragePlan> plan;
+    std::shared_ptr<const probes::CoverageReadyImage> ready;
+  };
   struct Volume {
     uint64_t hash = 0;
     ContentHashes content;
@@ -25,6 +30,7 @@ namespace remix::forward::bake {
     std::shared_ptr<SunDepth> sunDepth;
     scene::DistantLight sun; // shape provenance for matching surface/probe static sunlight
     probes::Header reflectionHeader;
+    std::shared_ptr<const LocalReflections> localReflections; // Opt-in prepared captures, not active selection.
     std::shared_ptr<const probes::ReceiverCoverageEvidence> reflectionEvidence; // Optional completed local-fit diagnostics.
     GridHeader irradianceHeader;
     uint32_t usableIrradianceProbes = 0;
@@ -79,7 +85,7 @@ namespace remix::forward::bake {
       bool preparation = false, radiance = false, surface = false, visibility = false, reflectionSite = false,
            sun = false, sunDepth = false, sunDepthCache = false, probeSun = false, probeLocal = false, overflowVisibility = false, reflectionGeometry = false,
            sunAntialiasing = false, direct = false, directionalField = false, reference = false, probeDepth = false,
-           reflectionReceiver = false, receiverSite = false, receiverSiteCheck = false, receiverFit = false, receiverFitCoverage = false;
+           localReflection = false, reflectionReceiver = false, receiverSite = false, receiverSiteCheck = false, receiverFit = false, receiverFitCoverage = false;
     };
     VkPhysicalDevice m_physical;
     VkDevice m_device;
@@ -117,6 +123,7 @@ namespace remix::forward::bake {
     void recordProbeDepth(VkCommandBuffer command, const Config &config);
     void recordProbeLocal(VkCommandBuffer command, const Config &config);
     void recordReflections(VkCommandBuffer command, const Config &config);
+    bool recordLocalReflections(VkCommandBuffer command, const Config &config);
     bool recordReceiverDiagnostics(VkCommandBuffer command, const Config &config);
   };
 } // namespace remix::forward::bake
