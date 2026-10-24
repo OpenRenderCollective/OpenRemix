@@ -1858,7 +1858,11 @@ recording, and checks it again when the caller retires the copy after its frame 
 unsubmitted work records no commands; stale submitted work keeps its owners until retirement and
 produces no publication. The returned publication bundles image, identities and context. The frame
 controller must retain the transaction until its fence and check context again if activation is delayed.
-Next: connect candidate preparation and this transaction to actual renderer frame slots, then qualify
+SelectionFrames now retains submitted copies and sampled publications by fenced frame slot,
+retires copies only after selectFrame, and uses offer generations to prevent older completed work
+from replacing newer requests. Context is rechecked during record before activation. This frame
+handoff is GPU-tested but is not yet connected to the renderer or candidate preparation.
+Next: connect candidate preparation and this handoff to the renderer, then qualify
 live authored edits and map changes before enabling local replacement publication by default.
 
 Before production integration, keep planner indices tied to canonical capture metadata rather than

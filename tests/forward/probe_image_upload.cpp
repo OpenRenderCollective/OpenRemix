@@ -151,34 +151,70 @@ void selectionLifetimeCase(uint32_t stale) {
   selection.replacements = {{0,0,1}};
   probes::CoverageReadyImage local{localImage->header(), selection.context, {{0,0}}};
   const auto plan = probes::buildCoverageImagePlan(scene, baseline, selection, baselineImage->header(), {}, local);
-  probes::SelectionUpload upload(fixture.physical, fixture.device, plan, baselineImage, localImage);
+  auto upload = std::make_unique<probes::SelectionUpload>(fixture.physical, fixture.device, plan, baselineImage, localImage);
   std::weak_ptr<const probes::ImageAsset> oldBaseline = baselineImage, oldLocal = localImage;
+  if (stale >= 4) {
+    probes::SelectionFrames frames;
+    frames.offer(std::move(upload));
+    baselineImage.reset(); localImage.reset();
+    frames.selectFrame(0);
+    fixture.begin(); frames.record(fixture.command, scene, baseline); fixture.finish();
+    require(!frames.active(), "Copy is not published before its frame fence retires");
+    bool reusedSlot = false;
+    try { frames.record(VK_NULL_HANDLE, scene, baseline); } catch (const std::logic_error &) { reusedSlot = true; }
+    require(reusedSlot, "A submitted frame slot cannot record again before fence retirement");
+    if (stale == 5)
+      frames.offer(std::make_unique<probes::SelectionUpload>(fixture.physical, fixture.device, plan,
+                                                           oldBaseline.lock(), oldLocal.lock()));
+    frames.selectFrame(0);
+    if (stale == 6) ++scene.revision;
+    fixture.begin(); frames.record(fixture.command, scene, baseline); fixture.finish();
+    if (stale == 5) {
+      require(!frames.active(), "A newer offer prevents an older completed copy from publishing");
+      require(!oldBaseline.expired(), "Superseding copy retains its sources through its own fence");
+      frames.selectFrame(0);
+      fixture.begin(); frames.record(fixture.command, scene, baseline); fixture.finish();
+    }
+    require(bool(frames.active()) == (stale != 6), "Frame activation checks current context");
+    require(oldBaseline.expired() && oldLocal.expired(), "Frame retirement releases copy sources");
+    if (frames.active()) {
+      std::weak_ptr<const probes::ImageAsset> sampled = frames.active()->image;
+      ++scene.revision;
+      frames.selectFrame(1);
+      fixture.begin(); frames.record(fixture.command, scene, baseline); fixture.finish();
+      require(!frames.active() && !sampled.expired(), "Map change invalidates active output but retains sampled frames");
+      frames.selectFrame(0);
+      require(sampled.expired(), "Sampling owner retires only with its own frame slot");
+    }
+    require(validationErrors == 0, "Fenced frame publication is validation clean");
+    return;
+  }
   baselineImage.reset(); localImage.reset();
   require(!oldBaseline.expired() && !oldLocal.expired(), "Selection retains both source image owners");
   if (stale == 1) {
     ++scene.revision;
-    require(!upload.record(VK_NULL_HANDLE, scene, baseline), "Stale selection records no GPU commands");
+    require(!upload->record(VK_NULL_HANDLE, scene, baseline), "Stale selection records no GPU commands");
     require(oldBaseline.expired() && oldLocal.expired(), "Unsubmitted cancellation releases source owners");
     return;
   }
   fixture.begin();
-  require(upload.record(fixture.command, scene, baseline), "Current selection records its copy");
+  require(upload->record(fixture.command, scene, baseline), "Current selection records its copy");
   require(!oldBaseline.expired() && !oldLocal.expired(), "Submitted sources survive until their fence");
   fixture.finish();
   if (stale == 2) ++scene.revision;
   if (stale == 3) ++baseline.authoredRevision;
-  const auto published = upload.retire(scene, baseline);
+  const auto published = upload->retire(scene, baseline);
   require(bool(published) == !stale, "Fence retirement rejects stale scene or authored revision");
   require(oldBaseline.expired() && oldLocal.expired(), "Completed copy releases retained source images");
   if (published) require(published->image->header().parameters == plan.header.parameters &&
                          published->identities == plan.identities, "Publication retains image and aligned identities");
   bool repeated = false;
-  try { (void)upload.retire(scene, baseline); } catch (const std::logic_error &) { repeated = true; }
+  try { (void)upload->retire(scene, baseline); } catch (const std::logic_error &) { repeated = true; }
   require(repeated, "A copy cannot retire twice");
   require(validationErrors == 0, "Selection ownership and retirement are validation clean");
 }
 int main() try {
-  for (uint32_t stale = 0; stale < 4; ++stale) selectionLifetimeCase(stale);
+  for (uint32_t stale = 0; stale < 7; ++stale) selectionLifetimeCase(stale);
   uploadCase(0, 0);
   uploadCase(64, 8);
   uploadCase(1, 256);
