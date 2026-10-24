@@ -16,7 +16,8 @@ namespace remix::forward {
     bool autoExposure = false; // runtime profiles enable it; low-level callers retain explicit manual output
     float autoExposureTarget = .18f, autoExposureSpeed = 2, autoExposureCentre = .75f;
     float autoExposureMinEv = -8, autoExposureMaxEv = 4;
-    // 0 shaded, 1 baked irradiance, 2 analytic diffuse, 3 specular, 4 albedo, 5 unmapped irradiance.
+    // 0 shaded, 1 baked irradiance, 2 analytic diffuse, 3 specular, 4 albedo,
+    // 5 irradiance without normal maps, 6 bake coverage, 7 total diffuse.
     uint32_t debugView = 0;
     float lightCutoff = .001f;
     uint32_t clusterLights = 0; // zero adapts64..512; explicit1..1024 retains a bounded profiling override

@@ -1,5 +1,16 @@
 # Forward+ delivery roadmap
 
+## Current lighting-quality focus
+
+The normal-quality Construct review isolates a remaining back-spawn ceiling-fixture
+housing error to probe-lit diffuse response. Total diffuse (`debugView=7`) retains
+the excess brightness without emission or specular; coverage marks the housing as
+probe-lit and its surrounding ceiling as lightmapped. Investigate the contributing
+probe stencil, receiver visibility and SH angular reconstruction against irradiance
+at the actual housing before increasing world atlas density or changing roughness.
+Keep surface seams, emitter shape and prop lighting as separate acceptance cases.
+The synthetic painted-sky fallback still does not qualify live-game sky parity.
+
 ## Current automatic-cubemap delivery gates
 
 The receiver-supported local replacement path remains opt-in. Completed functional

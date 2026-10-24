@@ -767,8 +767,11 @@ background.
 
 The Rendering panel's Lighting view and `rtx.native.forward.debugView` isolate opaque-world components:
 0 is normal shaded output, 1 is neutral baked irradiance (or probe/ambient fallback), 2 is
-material-weighted analytic direct diffuse, 3 is direct specular, 4 is unlit albedo, and 5 is neutral baked irradiance
-evaluated with the mesh normals instead of normal maps.
+material-weighted analytic direct diffuse, 3 is direct specular, 4 is unlit albedo, 5 is neutral baked irradiance
+evaluated with the mesh normals instead of normal maps, 6 is bake coverage, and 7 is total diffuse.
+Total diffuse retains material colour and normal maps, baked/probe diffuse and remaining analytic
+diffuse while excluding emission and both direct/environment specular. Unlike analytic diffuse,
+it includes light already in the bake, allowing prop-lighting errors to be isolated without rebaking.
 Baked irradiance includes direct contributions already aggregated into the lightmap or
 probe table; analytic diffuse shows the remaining per-light response. Albedo includes
 material texture and vertex tint but excludes lighting and normal-map response.

@@ -57,7 +57,7 @@ layout(location = 2) out vec4 outReflectance;
 // Specialization removes diagnostic branches from ordinary world shading.
 layout(constant_id = 1) const uint LightingView = 0u;
 vec3 directLightComponent(BrdfLobes light, uint view) {
-  if (view == 2u) return light.diffuse;
+  if (view == 2u || view == 7u) return light.diffuse;
   if (view == 3u) return light.specular;
   return light.diffuse + light.specular;
 }
@@ -151,7 +151,8 @@ void main() {
     aggregateReceiver = true;
   }
 #endif
-  vec3 color = debugView >= 2u ? vec3(0) : surface.rgb * (1 - metallic) * ambient;
+  bool includeBakedDiffuse = debugView == 0u || debugView == 7u;
+  vec3 color = includeBakedDiffuse ? surface.rgb * (1 - metallic) * ambient : vec3(0);
   BrdfLobes sun = sunLightResponse(surfaceLightmap, surfaceLighting.w, worldPosition, depth, n, v,
                                    surface.rgb, roughness, metallic);
   color += directLightComponent(sun, debugView);

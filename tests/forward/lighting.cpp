@@ -673,7 +673,8 @@ int main() {
   require(remix::forward::bake::Config{}.denoiseLightmaps,
           "New bake configurations request indirect lightmap denoising by default");
   require(settings.forward.debugView == 0 &&
-              config::set(settings, "rtx.native.forward.debugView", "7") == config::SetResult::Invalid &&
+              config::set(settings, "rtx.native.forward.debugView", "8") == config::SetResult::Invalid &&
+              config::set(settings, "rtx.native.forward.debugView", "7") == config::SetResult::Success &&
               config::set(settings, "rtx.native.forward.debugView", "6") == config::SetResult::Success &&
               config::set(settings, "rtx.native.forward.debugView", "4") == config::SetResult::Success &&
               config::set(settings, "rtx.native.forward.debugView", "5") == config::SetResult::Success &&

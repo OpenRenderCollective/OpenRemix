@@ -880,7 +880,7 @@ namespace {
       };
       const auto shaded = render();
       const size_t at = (32 * 64 + 32) * 4;
-      for (uint32_t view : {1u, 2u, 3u, 4u, 5u, 6u}) {
+      for (uint32_t view : {1u, 2u, 3u, 4u, 5u, 6u, 7u}) {
         options.debugView = view;
         target.enableForward(options, true);
         const auto image = render();
@@ -894,6 +894,17 @@ namespace {
                 int(std::round(expected[2] * 255)),
                 view == 6 ? "Coverage marks an unbaked receiver red despite ambient and direct lighting"
                           : "Unlit albedo retains material colour without ambient, coloured lights or emission");
+        } else if (view == 7) {
+          require(image[at] > 20 && image[at + 1] > 5 && image[at + 2] > 5 && image[at] < shaded[at],
+                  "Total diffuse retains ambient and coloured direct diffuse while excluding red emission");
+          options.ambient = 0;
+          target.enableForward(options, true);
+          const auto directOnly = render();
+          options.debugView = 2;
+          target.enableForward(options, true);
+          require(render() == directOnly,
+                  "Without ambient or a bake, total diffuse matches analytic diffuse and excludes specular");
+          options.ambient = .2f;
         } else
           require(image[at] < 3 && image[at + 1] > 5 && image[at + 2] > 5,
                   "Direct diffuse/specular views isolate green local and blue sun light from red emission/ambient");
@@ -4508,7 +4519,7 @@ namespace {
             require(std::abs(int(composed[at]) - int(reflected[at])) <= 2,
                     "Late water composition preserves opaque SSR energy and coverage exactly once");
           if (samples == 4 && scale == 1) {
-            for (const uint32_t view : {1u, 5u, 6u}) {
+            for (const uint32_t view : {1u, 5u, 6u, 7u}) {
               options.debugView = view;
               target.enableForward(options);
               composeWater = false;
