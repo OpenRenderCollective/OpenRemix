@@ -5,9 +5,12 @@
 Coplanar seam donors now retain their original receiver footprint, and sunlight
 edge refinement admits those verified aliases instead of skipping every
 filtering-only donor. Curved donors without a proven footprint remain excluded.
-Cache revision 33 separates the changed sunlight coverage. This corrects missing
+Cache revision 34 separates the changed sunlight coverage. This corrects missing
 edge antialiasing, not probe leakage or chart-local indirect filtering bias.
 Continue checking sunlit boundaries and indirect discontinuities separately.
+Refinement decisions are shared across visible copies of a verified footprint:
+an edge detected in one chart also refines its source and other chart copies.
+This prevents a chart-local edge search from leaving one copy unrefined.
 
 Generated model-chart density is also a separate confirmed failure. Grazing
 projection faces and excessive curved metric expansion now split candidate

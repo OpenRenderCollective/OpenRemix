@@ -324,9 +324,18 @@ int main() {
     auto edgeLayout = extended;
     edgeLayout.owners[edgeLayout.addresses[0]] = 0;
     edgeLayout.owners[edgeLayout.addresses[0] + 1] = footprintSource;
+    auto localLayout = edgeLayout;
+    localLayout.receiverSources.clear();
+    remix::forward::bake::SunAntialiasing localEdges(scene, localLayout, seamShadow);
+    require(std::find(localEdges.receivers().begin(), localEdges.receivers().end(), footprintSource) ==
+                localEdges.receivers().end(),
+            "Source chart's own neighbourhood is clear before sharing its seam decision");
     remix::forward::bake::SunAntialiasing seamEdges(scene, edgeLayout, seamShadow);
     require(std::find(seamEdges.receivers().begin(), seamEdges.receivers().end(), 0) != seamEdges.receivers().end(),
             "Sunlight edge refinement admits seam donors with verified source footprints");
+    require(std::find(seamEdges.receivers().begin(), seamEdges.receivers().end(), footprintSource) !=
+                seamEdges.receivers().end(),
+            "A seam edge refines its source footprint even when that chart has no local edge");
     extended.receiverSources[footprintSource] = 0;
     refused([&] { sharedSampler.sample(0); });
 

@@ -12,12 +12,22 @@ namespace remix::forward::bake {
     if (sunlight.size() != layout.points.size() ||
         layout.owners.size() != uint64_t(layout.pageSize) * layout.pageSize * layout.pages)
       throw std::invalid_argument("Incomplete sunlight edge sampling layout");
+    const auto footprint = [&](uint32_t point) {
+      if (layout.receiverSources.empty() || layout.receiverSources[point] == lightmap::unowned) return point;
+      const auto source = layout.receiverSources[point];
+      if (source >= sunlight.size() || layout.receiverSources[source] != lightmap::unowned ||
+          (!layout.receiverSamples.empty() && !layout.receiverSamples[source]))
+        throw std::invalid_argument("Invalid sunlight seam footprint source");
+      return source;
+    };
+    std::vector<uint8_t> refine(sunlight.size());
     for (uint32_t point = 0; point < sunlight.size(); ++point) {
       if ((point & 1023u) == 0 && cancelled.stop_requested())
         throw std::runtime_error("Sunlight edge sampling superseded");
       const float visibility = sunlight[point].visibility;
       if (!std::isfinite(visibility) || visibility < 0 || visibility > 1)
         throw std::invalid_argument("Invalid sunlight edge visibility");
+      const auto sourcePoint = footprint(point);
       const bool sharedFootprint = !layout.receiverSources.empty() &&
           layout.receiverSources[point] != lightmap::unowned;
       if (!layout.receiverSamples.empty() && !layout.receiverSamples[point] && !sharedFootprint)
@@ -44,8 +54,17 @@ namespace remix::forward::bake {
           continue;
         edge |= std::abs(visibility - sunlight[neighbour].visibility) >= .0625f;
       }
-      if (edge)
-        m_points.push_back(point);
+      if (edge) refine[sourcePoint] = 1;
+    }
+    // A chart boundary can hide an edge from one copy's local neighbours.
+    // Every visible copy of the same proven footprint must make one decision.
+    for (uint32_t point = 0; point < sunlight.size(); ++point) {
+      if ((point & 1023u) == 0 && cancelled.stop_requested())
+        throw std::runtime_error("Sunlight edge sampling superseded");
+      if (!refine[footprint(point)]) continue;
+      const bool shared = !layout.receiverSources.empty() && layout.receiverSources[point] != lightmap::unowned;
+      if (!layout.receiverSamples.empty() && !layout.receiverSamples[point] && !shared) continue;
+      if (layout.owners.at(layout.addresses[point]) == point) m_points.push_back(point);
     }
   }
   std::vector<Point> SunAntialiasing::sites(uint32_t first, uint32_t count) {
