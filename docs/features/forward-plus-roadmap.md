@@ -78,6 +78,13 @@ model receiver sampling and the upcoming model-chart path. Authored chart holes,
 excluded draws and malformed ranges have CPU coverage. This is geometry plumbing;
 model surface baking is not enabled and rendered quality is unchanged.
 
+A bounded CPU model-chart candidate now generates planar per-triangle charts for
+uncharted rigid static opaque geometry. Tests exercise signed index ranges,
+transforms, authored-chart preservation, cancellation, degenerates and a shared
+world-metric atlas fit with actual surface receivers. It is not wired into bake
+jobs yet. Measure chart count/padding and normal-budget quality before enabling;
+per-triangle charts need coalescing if their padding takes excessive atlas space.
+
 Next investigate actual surface baking for uncharted static models, preserving
 caller-authored charts, retained-draw bindings, the shared atlas budget, PBR and
 controllable-light behavior. Chart/padding overhead must be measured; a triangle

@@ -1,4 +1,6 @@
 #include "forward/bake/model_receivers.h"
+#include "forward/bake/model_charts.h"
+#include "forward/lightmap/layout.h"
 #include "forward/bake/probe_receiver_geometry.h"
 #include "forward/bake/probe_receiver_report.h"
 #include "scene/bake_scene.h"
@@ -34,6 +36,53 @@ namespace {
   }
 }
 int main(int argc, char **argv) {
+  {
+    s::BakeScene candidate;
+    candidate.ready = true;
+    candidate.draws = {triangle(), triangle(2)};
+    for (auto &draw : candidate.draws) draw.classification = REMIXAPI_INSTANCE_STATIC_EXT;
+    auto &draw = candidate.draws[0];
+    draw.surface->indices = {99, 99, 99, 1, 2, 3};
+    draw.firstIndex = 3; draw.indexCount = 3; draw.vertexOffset = -1;
+    draw.model[0] = 2; draw.model[5] = 3; draw.model[12] = 10;
+    candidate.charts = {{1, 0, 2, 2, {{0, 0}, {1, 0}, {0, 1}}}};
+    auto charts = b::modelCharts(candidate, 8);
+    require(charts.size() == 1 && charts[0].draw == 0 && charts[0].firstIndex == 3 &&
+                candidate.charts.size() == 1 && candidate.charts[0].draw == 1,
+            "Derived model charts preserve signed ranges and caller-authored charts");
+    candidate.charts.insert(candidate.charts.end(), charts.begin(), charts.end());
+    s::validateBakeCharts(candidate.draws, candidate.charts);
+    remix::forward::lightmap::Options options;
+    options.pageSize = 64; options.maxPages = 1; options.maxTexels = 4096; options.fillBudget = true;
+    const auto layout = remix::forward::lightmap::fit(candidate, options);
+    require(layout.charts.size() == 2 && layout.pages == 1 && !layout.points.empty(),
+            "Derived triangles fit through the existing shared world-metric atlas");
+    bool generatedReceivers = false;
+    for (size_t i = 0; i < layout.points.size(); ++i)
+      if (layout.pointCharts[i] == 1 && layout.receiverSamples[i]) {
+        const auto &p = layout.points[i].position;
+        require(p[0] >= 9.99f && p[0] <= 16.01f && p[1] >= -.01f && p[1] <= 9.01f &&
+                    std::abs(p[2]) < .01f,
+                "Generated surface receivers use transformed model positions");
+        generatedReceivers = true;
+      }
+    require(generatedReceivers, "Generated charts produce actual surface receivers");
+    candidate.charts.clear();
+    candidate.draws[0].classification = REMIXAPI_INSTANCE_DYNAMIC_EXT;
+    require(b::modelCharts(candidate, 8).size() == 1, "Dynamic geometry remains on volume lighting");
+    candidate.draws[0].classification = REMIXAPI_INSTANCE_STATIC_EXT;
+    try { b::modelCharts(candidate, 1); require(false, "Chart cap silently omitted static surfaces"); }
+    catch (const std::length_error &) {}
+    invalid([&] { b::modelCharts(candidate, 0); });
+    std::stop_source stopped;
+    stopped.request_stop();
+    try { b::modelCharts(candidate, 8, stopped.get_token()); require(false, "Cancelled chart generation continued"); }
+    catch (const std::runtime_error &) {}
+    candidate.draws[1].surface->indices = {0, 0, 0};
+    require(b::modelCharts(candidate, 1).size() == 1, "Degenerate faces consume no model chart budget");
+    candidate.draws[0].surface->indices[3] = 999;
+    invalid([&] { b::modelCharts(candidate, 8); });
+  }
   s::BakeScene source;
   source.draws = {triangle()};
   auto sites = b::modelReceivers(source);
