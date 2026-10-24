@@ -2,6 +2,16 @@
 
 ## Current lighting-quality focus
 
+Generated model-chart density is also a separate confirmed failure. Grazing
+projection faces and excessive curved metric expansion now split candidate
+patches rather than inflating their global atlas footprint. Whole-map CPU atlas
+preflight is available to study authored and generated charts together without
+running lighting transport. Black Mesa still exceeds the runtime experiment's
+65,536-chart cap; a larger diagnostic allowance is not a qualified runtime cap.
+Next qualify completed lighting, coverage, memory and bake cost after this fix,
+then address chart count/packing without sacrificing atlas density. Static model
+charts remain opt-in; probe-lit dynamic objects still need the fixes below.
+
 Construct's back-spawn ceiling-fixture housing has a confirmed probe-lit diffuse
 error. Total diffuse (`debugView=7`) retains the excess without emission/specular;
 coverage distinguishes the housing from its lightmapped ceiling. The bounded

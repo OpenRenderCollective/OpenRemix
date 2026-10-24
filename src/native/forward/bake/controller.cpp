@@ -41,6 +41,19 @@ namespace remix::forward::bake {
   namespace {
     std::atomic<uint64_t> generation = 0;
     constexpr uint32_t reflectionSiteSamples = 64;
+    lightmap::Options surfaceAtlasOptions(const Config &config, const VkPhysicalDeviceLimits &limits) {
+      lightmap::Options atlas;
+      atlas.padding = 0;
+      atlas.pageSize = config.lightmapPageSizeForBudget();
+      atlas.luxelMetres = config.lightmapLuxelSize;
+      atlas.fillBudget = config.lightmapFitBudget;
+      atlas.maxTexels = config.lightmapTexels;
+      atlas.maxPages = std::min(256u, limits.maxImageArrayLayers / lightmap::atlasLayers);
+      if (atlas.pageSize > limits.maxImageDimension2D)
+        throw std::invalid_argument("Surface lightmap page exceeds device limit");
+      return atlas;
+    }
+
     template <typename T> void releaseStorage(std::vector<T> &values) {
       std::vector<T>().swap(values);
     }
@@ -134,6 +147,13 @@ namespace remix::forward::bake {
   }
   void Controller::Job::prepareResources(VkPhysicalDevice physical, VkDevice device, const Config &config,
                                          float lightCutoff, uint32_t queueFamily) {
+    VkPhysicalDeviceProperties properties;
+    vkGetPhysicalDeviceProperties(physical, &properties);
+    if (const char *path = std::getenv("REMIX_DEBUG_BAKE_MODEL_ATLAS_PREFLIGHT"); path && *path) {
+      writeModelAtlasPreflight(*source, surfaceAtlasOptions(config, properties.limits),
+                              std::filesystem::u8path(path), cancellation.get_token());
+      throw std::runtime_error("Model atlas preflight complete (diagnostic only; no bake scheduled)");
+    }
     if (const char *path = std::getenv("REMIX_DEBUG_BAKE_MODEL_PREFLIGHT"); path && *path) {
       writeModelPreflight(*source, std::filesystem::u8path(path), cancellation.get_token());
       throw std::runtime_error("Model eligibility preflight complete (diagnostic only; no bake scheduled)");
@@ -150,8 +170,7 @@ namespace remix::forward::bake {
                    source->charts.size(), charts.size());
       source = std::move(derived);
     }
-    VkPhysicalDeviceProperties properties;
-    vkGetPhysicalDeviceProperties(physical, &properties);
+
     const auto directLighting = (config.aggregateDiffuse || config.fullyBakedLights || config.bakedGeometryLights)
         ? staticAggregatePolicy(*source, config.fullyBakedLights ? DirectMode::Baked : DirectMode::BakedMixed,
                                  config.bakedGeometryLights)
@@ -249,17 +268,7 @@ namespace remix::forward::bake {
                  uint32_t((properties.limits.maxStorageBufferRange - sizeof(GridHeader) - directoryReserve -
                            (config.directionalProbeDepth ? 16 : 0)) /
                           (sizeof(Result) + (config.directionalProbeDepth ? sizeof(ProbeDepth::Record) : 0))));
-    lightmap::Options atlas;
-    // Vertex UVs address texel centres and carry explicit chart clamp bounds.
-    // The outward-rounded chart grid already contains its bilinear footprint.
-    atlas.padding = 0;
-    atlas.pageSize = config.lightmapPageSizeForBudget();
-    atlas.luxelMetres = config.lightmapLuxelSize;
-    atlas.fillBudget = config.lightmapFitBudget;
-    atlas.maxTexels = config.lightmapTexels;
-    atlas.maxPages = std::min(256u, properties.limits.maxImageArrayLayers / lightmap::atlasLayers);
-    if (atlas.pageSize > properties.limits.maxImageDimension2D)
-      throw std::invalid_argument("Surface lightmap page exceeds device limit");
+    const auto atlas = surfaceAtlasOptions(config, properties.limits);
     surfaceLayout = lightmap::fit(*source, atlas, cancellation.get_token());
     grid = placeRefinementBase(*source, placement, surfaceLayout, refinement, cancellation.get_token());
     if (std::getenv("REMIX_DEBUG_BAKE_GRID_PREFIX")) {

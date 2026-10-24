@@ -76,3 +76,28 @@ bake are performed. Without the environment variable, it does not run.
 Limits are 32,768 source draws, four million accepted triangles and two million
 source vertices in one draw. Vertex sets stream one draw at a time. Cancellation,
 file overwrite protection and geometry/count invariants are tested.
+
+## Whole-scene atlas preflight
+
+`REMIX_DEBUG_BAKE_MODEL_ATLAS_PREFLIGHT` names a fresh JSON output. It runs the
+same eligible triangle generator and native atlas fitter on a private scene
+containing both authored and generated model charts. Atlas settings and device
+limits are shared with ordinary preparation. No lighting transport, GPU bake
+allocation, cache publication or live draw replacement occurs.
+
+The study allows up to 1,048,576 model charts, further bounded by the minimum
+chart footprint and requested atlas capacity. The runtime model-chart experiment
+still has its separate 65,536-chart limit. A successful study does not qualify a
+larger runtime limit. Limits also include 32,768 draws and four million eligible
+triangles. Output includes density, rectangles, sample counts, stage CPU times
+and raw twenty-layer atlas bytes; that byte count is not measured total VRAM.
+
+The diagnostic deliberately stops preparation with `Model atlas preflight
+complete`; a nonzero replay exit alone does not establish success. Require the
+JSON result and completion message. Without the environment variable it does
+not run.
+
+Generated consecutive patches reject grazing projection faces and excessive
+metric expansion, splitting them into smaller charts instead. This protects
+shared atlas density; it does not alter authored charts or solve arbitrary
+model unwrapping. Candidate model cache identity includes the grouping policy.

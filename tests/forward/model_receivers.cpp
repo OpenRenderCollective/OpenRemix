@@ -161,6 +161,22 @@ int main(int argc, char **argv) try {
     partition->nodes.clear();
     require(b::playableReceiverTriangle(clipped, crossing), "Missing partition topology is conservative");
   }
+  {
+    s::BakeScene grazing;
+    grazing.draws = {triangle()};
+    auto &draw = grazing.draws[0];
+    draw.classification = REMIXAPI_INSTANCE_STATIC_EXT;
+    draw.surface->vertices[1].position[0] = 1;
+    draw.surface->vertices[2].position[0] = .2f;
+    draw.surface->vertices[2].position[1] = 1;
+    draw.surface->vertices[2].position[2] = -.75f;
+    auto d = draw.surface->vertices[0]; d.position[1] = -1e-7f; d.position[2] = 1;
+    draw.surface->vertices.push_back(d);
+    draw.surface->indices = {0, 1, 2, 1, 0, 3};
+    const auto charts = b::modelCharts(grazing, 8);
+    require(charts.size() == 2,
+            "Grazing projected faces split instead of inflating a generated patch metric");
+  }
   s::BakeScene source;
   source.draws = {triangle()};
   auto sites = b::modelReceivers(source);
@@ -291,6 +307,38 @@ int main(int argc, char **argv) try {
 
   require(argc == 2, "Supply an isolated manifest output path");
   const std::filesystem::path path(argv[1]);
+  {
+    s::BakeScene source;
+    source.ready = true;
+    source.draws = {triangle(-5), triangle()};
+    for (auto &draw : source.draws) draw.classification = REMIXAPI_INSTANCE_STATIC_EXT;
+    source.charts = {{0, 0, 2, 2, {{0, 0}, {1, 0}, {0, 1}}}};
+    remix::forward::lightmap::Options options;
+    options.padding = 0; options.pageSize = 64; options.maxPages = 1;
+    options.maxTexels = 4096; options.fillBudget = true;
+    auto report = path; report += ".atlas-preflight.json";
+    std::filesystem::remove(report);
+    b::writeModelAtlasPreflight(source, options, report);
+    std::ifstream input(report);
+    const std::string text(std::istreambuf_iterator<char>(input), {});
+    input.close();
+    require(text.find("\"authoredCharts\":1,\"eligibleModelTriangles\":1,\"generatedModelCharts\":1") != std::string::npos &&
+                text.find("\"allocatedTexels\":4096,\"pageSize\":64,\"pages\":1") != std::string::npos &&
+                source.charts.size() == 1,
+            "Whole atlas study fits authored and model geometry without mutating caller charts");
+    try { b::writeModelAtlasPreflight(source, options, report); require(false, "Atlas preflight overwrote output"); }
+    catch (const std::runtime_error &) {}
+    std::filesystem::remove(report);
+    std::stop_source stopped; stopped.request_stop();
+    try { b::writeModelAtlasPreflight(source, options, report, stopped.get_token()); require(false, "Cancelled atlas preflight continued"); }
+    catch (const std::runtime_error &) {}
+    require(!std::filesystem::exists(report), "Cancelled atlas preflight created output");
+    options.maxTexels = 4;
+    try { b::writeModelAtlasPreflight(source, options, report); require(false, "Atlas preflight ignored minimum chart capacity"); }
+    catch (const std::length_error &) {}
+    invalid([&] { b::modelCharts(source, 1048577); });
+  }
+
   {
     s::BakeScene inventory;
     inventory.draws = {triangle()};

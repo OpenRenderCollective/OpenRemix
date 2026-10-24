@@ -41,6 +41,9 @@ namespace remix::forward::bake {
       }
       const double length = std::hypot(normal[0], normal[1], normal[2]);
       for (auto &value : normal) value /= length;
+      uint32_t drop = 0;
+      for (uint32_t axis = 1; axis < 3; ++axis)
+        if (std::abs(normal[axis]) > std::abs(normal[drop])) drop = axis;
       for (size_t first = 3; first < points.size(); first += 3) {
         std::array<double, 3> n;
         for (uint32_t axis = 0; axis < 3; ++axis) {
@@ -49,11 +52,14 @@ namespace remix::forward::bake {
                     (double(points[first + 1][b]) - points[first][b]) * (double(points[first + 2][a]) - points[first][a]);
         }
         const double dot = n[0] * normal[0] + n[1] * normal[1] + n[2] * normal[2];
-        if (dot <= .5 * std::hypot(n[0], n[1], n[2])) return false;
+        const double magnitude = std::hypot(n[0], n[1], n[2]);
+        if (dot <= .5 * magnitude) return false;
+        // The dropped-axis projection must not view a face at grazing angles.
+        // Otherwise metric correction can inflate a tiny patch by kilometres.
+        const double projected = normal[drop] < 0 ? -n[drop] : n[drop];
+        if (projected < .5 * magnitude) return false;
       }
-      uint32_t drop = 0;
-      for (uint32_t axis = 1; axis < 3; ++axis)
-        if (std::abs(normal[axis]) > std::abs(normal[drop])) drop = axis;
+
       for (uint32_t uv = 0; uv < 2; ++uv) {
         const uint32_t axis = (drop + 1 + uv) % 3;
         double minimum = INFINITY, maximum = -INFINITY;
@@ -78,7 +84,25 @@ namespace remix::forward::bake {
         if (std::abs(distance) > .0001) planar = false;
       }
       if (!planar) {
-        try { lightmap::curvedCoordinates(source, merged, cancelled); }
+        try {
+          const auto curved = lightmap::curvedCoordinates(source, merged, cancelled);
+          std::array<double, 3> low{INFINITY, INFINITY, INFINITY}, high{-INFINITY, -INFINITY, -INFINITY};
+          for (const auto &p : points)
+            for (uint32_t axis = 0; axis < 3; ++axis) {
+              low[axis] = std::min(low[axis], double(p[axis]));
+              high[axis] = std::max(high[axis], double(p[axis]));
+            }
+          const double diameter = std::hypot(high[0] - low[0], high[1] - low[1], high[2] - low[2]) * source.sceneScale;
+          std::array<double, 2> uvLow{INFINITY, INFINITY}, uvHigh{-INFINITY, -INFINITY};
+          for (const auto &p : curved.metres)
+            for (uint32_t axis = 0; axis < 2; ++axis) {
+              uvLow[axis] = std::min(uvLow[axis], p[axis]);
+              uvHigh[axis] = std::max(uvHigh[axis], p[axis]);
+            }
+          // Split ill-conditioned generated patches rather than sacrificing
+          // global atlas density. Authored charts are never subject to this rule.
+          if (std::max(uvHigh[0] - uvLow[0], uvHigh[1] - uvLow[1]) > 4 * diameter + 1e-6) return false;
+        }
         catch (const std::invalid_argument &) { return false; }
       }
       chart = std::move(merged);
@@ -87,8 +111,8 @@ namespace remix::forward::bake {
   }
   std::vector<scene::BakeSurfaceChart> modelCharts(const scene::BakeScene &source,
       uint32_t maximumCharts, std::stop_token cancelled) {
-    if (!maximumCharts || maximumCharts > 65536)
-      throw std::invalid_argument("Model chart budget is 1..65536");
+    if (!maximumCharts || maximumCharts > 1048576)
+      throw std::invalid_argument("Model chart budget is 1..1048576");
     std::vector<scene::BakeSurfaceChart> result;
     forEachModelTriangle(source, [&](const ModelTriangle &triangle) {
       scene::BakeSurfaceChart chart{triangle.draw, triangle.firstIndex, 2, 2, {{0, 0}, {1, 0}, {0, 1}}};
