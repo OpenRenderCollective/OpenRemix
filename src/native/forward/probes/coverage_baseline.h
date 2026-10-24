@@ -21,11 +21,13 @@ namespace remix::forward::probes {
   struct CoverageBaselineSet {
     std::vector<CoverageVolume> volumes;
     std::array<uint32_t, 4> parameters{};
-    bool composed = false, disabled = false;
+    bool composed = false, disabled = false, automaticAllowed = true;
     uint64_t authoredSceneId = 0, authoredRevision = 0;
   };
   // Metadata only: no radiance copies. Source indices identify image layers,
   // not canonical cache entries. Composed output order follows its copy plan.
   CoverageBaselineSet automaticCoverageBaseline(std::span<const Capture> captures);
-  CoverageBaselineSet composedCoverageBaseline(const Composition &composition, uint64_t sceneId, uint64_t revision);
+  CoverageBaselineSet automaticCoverageBaseline(const Header &published);
+  CoverageBaselineSet composedCoverageBaseline(const Composition &composition, uint64_t sceneId, uint64_t revision,
+                                              bool automaticAllowed = true);
 }

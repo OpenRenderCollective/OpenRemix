@@ -1,6 +1,7 @@
 #include "forward/probes/composition.h"
 #include "forward/probes/coverage_baseline.h"
 #include "forward/probes/coverage_context.h"
+#include "forward/probes/coverage_image_plan.h"
 #include "forward/probes/identities.h"
 #include <limits>
 #include <stdexcept>
@@ -71,6 +72,53 @@ void testProbeComposition() {
     require(!p::matchesCoverageContext(context, scene, changedBaseline));
     changedBaseline = snapshot; ++changedBaseline.parameters[1];
     require(!p::matchesCoverageContext(context, scene, changedBaseline));
+    // Prepared captures may replace automatic layers, never authored layers.
+    auto localCapture = automaticCapture;
+    localCapture.position = {3,0,0};
+    localCapture.bounds.minimum[0] = 2; localCapture.bounds.maximum[0] = 4;
+    p::CoverageReadyImage local;
+    local.header.parameters = automaticHeader.parameters;
+    local.header.probes[0] = p::projectionRecord(localCapture);
+    local.context = context; local.layers = {{0,0}};
+    p::ReceiverCoveragePlan selection;
+    selection.context = context; selection.owners = {{0,0}}; selection.errors = {.1f};
+    selection.candidateRecords = {local.header.probes[0]}; selection.replacements = {{0,1,1}};
+    p::LayerIdentities ids{}; ids[0] = 123;
+    auto prepare = [&] { return p::buildCoverageImagePlan(scene, snapshot, selection, composition.header, ids, local); };
+    const auto copied = prepare();
+    require(copied.header.parameters[0] == 2 && copied.identities[0] == 123 && copied.identities[1] == 0 &&
+            copied.header.probes[0].position == composition.header.probes[0].position &&
+            copied.header.probes[1].position[0] == 3 && copied.header.probes[1].minimum[3] == -32769 &&
+            copied.copies[0].source == p::CoverageImageSource::Baseline &&
+            copied.copies[1].source == p::CoverageImageSource::Local);
+    selection.replacements[0].baseline = UINT32_MAX;
+    require(prepare().header.parameters[0] == 3);
+    auto rejectsImage = [&](auto action) {
+      bool failed = false;
+      try { action(); } catch (const std::invalid_argument &) { failed = true; }
+      require(failed);
+    };
+    selection.replacements[0].baseline = 0;
+    rejectsImage(prepare);
+    selection.replacements[0].baseline = 1;
+    local.header.probes[0].position[0] = 4;
+    rejectsImage(prepare);
+    local.header.probes[0].position[0] = 3;
+    ++local.context.revision;
+    rejectsImage(prepare);
+    local.context = context;
+    local.layers.push_back({0,0});
+    rejectsImage(prepare);
+    local.layers.pop_back();
+    selection.maximumError = std::numeric_limits<float>::quiet_NaN();
+    rejectsImage(prepare);
+    selection.maximumError = .2f;
+    auto authoredOnly = snapshot; authoredOnly.automaticAllowed = false;
+    selection.context = local.context = p::coveragePlanContext(scene, authoredOnly);
+    rejectsImage([&] { p::buildCoverageImagePlan(scene, authoredOnly, selection, composition.header, ids, local); });
+    const auto publishedAutomatic = p::automaticCoverageBaseline(automaticHeader);
+    require(!publishedAutomatic.composed && !publishedAutomatic.disabled &&
+            publishedAutomatic.volumes[0].record.position == automaticHeader.probes[0].position);
     composition.header.probes[0].position[0] = 99;
     require(snapshot.volumes[0].record.position[0] == 10);
     auto duplicate = p::compose(authoredHeader, automaticHeader);

@@ -24,12 +24,12 @@ namespace remix::forward::probes {
       if (cancelled.stop_requested()) throw std::runtime_error("Local reflection coverage plan superseded");
     };
     check();
-    if (snapshot.disabled || (snapshot.composed && baseline.empty())) {
+    if (snapshot.disabled || !snapshot.automaticAllowed || (snapshot.composed && baseline.empty())) {
       if (!baseline.empty()) throw std::invalid_argument("Disabled coverage baseline has active volumes");
       ReceiverCoveragePlan result;
       result.context = coveragePlanContext(source, snapshot);
       result.composedBaseline = snapshot.composed;
-      result.disabledBaseline = true;
+      result.disabledBaseline = snapshot.disabled;
       return result;
     }
     if (!coverage.complete() || baseline.size() > maxProbes || fits.attempts.size() > 32)
@@ -123,6 +123,15 @@ namespace remix::forward::probes {
         candidates.push_back({{}, residual});
         result.owners.push_back({a, v});
         result.errors.push_back(residual);
+        Record record;
+        for (uint32_t axis = 0; axis < 3; ++axis) {
+          record.minimum[axis] = variant.projection.minimum[axis];
+          record.maximum[axis] = variant.projection.maximum[axis];
+          record.influenceMinimum[axis] = variant.influence.minimum[axis];
+          record.influenceMaximum[axis] = variant.influence.maximum[axis];
+          record.position[axis] = variant.geometry->site.position[axis];
+        }
+        result.candidateRecords.push_back(record);
       }
     }
     for (size_t i = 0; i < coverage.pairs().size(); ++i) {

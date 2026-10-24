@@ -1845,6 +1845,14 @@ receipt alone does not make publication safe. Use published revision ownership, 
 Do not reuse a
 layer-index plan after a composition or map change.
 
+The prepared-image planner now produces an explicit retained-baseline/local-image copy recipe,
+keeping authored IDs and precedence while sorting records, identities and copy sources together.
+It checks prepared geometry against the owned candidate geometry and rejects stale source contexts,
+protected replacements and incompatible image dimensions. Authored-only fallback policy is part of
+the context and cannot silently gain automatic captures. This remains CPU preparation support.
+Next: retain both GPU image owners, record the copies, recheck context at activation, and qualify
+live authored edits and map changes before enabling local replacement publication by default.
+
 Before production integration, keep planner indices tied to canonical capture metadata rather than
 sorted GPU layers, replan against protected authored composition and validate both added rooms and
 regions served by removed captures. Preserve frame-publication ownership, diffuse bake identity and

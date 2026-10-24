@@ -27,6 +27,7 @@ namespace remix::forward::probes {
         context.scaleBits != std::bit_cast<uint32_t>(source.sceneScale)) return false;
     const auto &old = context.baseline;
     if (old.composed != baseline.composed || old.disabled != baseline.disabled ||
+        old.automaticAllowed != baseline.automaticAllowed ||
         old.authoredSceneId != baseline.authoredSceneId || old.authoredRevision != baseline.authoredRevision ||
         old.parameters != baseline.parameters || old.volumes.size() != baseline.volumes.size()) return false;
     for (size_t i = 0; i < old.volumes.size(); ++i) {

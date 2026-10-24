@@ -13,6 +13,7 @@ namespace remix::forward::probes {
     std::vector<CoverageReplacement> replacements;
     std::vector<std::array<uint32_t, 2>> owners; // Local attempt and variant.
     std::vector<float> errors;
+    std::vector<Record> candidateRecords; // Geometry approved by the footprint plan; pixel-dependent fields are deferred.
   };
   // Replan from one metadata snapshot; authored entries are locked. Visibility
   // evidence must belong to the same frozen scene. Unqueried samples remain unknown.
