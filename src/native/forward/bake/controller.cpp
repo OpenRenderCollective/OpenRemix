@@ -1,4 +1,5 @@
 #include "forward/bake/job.h"
+#include "forward/bake/model_charts.h"
 #include "forward/probes/priority_bands.h"
 #include "platform/workers.h"
 #include "forward/bake/storage_options.h"
@@ -132,6 +133,18 @@ namespace remix::forward::bake {
   }
   void Controller::Job::prepareResources(VkPhysicalDevice physical, VkDevice device, const Config &config,
                                          float lightCutoff, uint32_t queueFamily) {
+    // Initial preparation owns this job exclusively until its ticket completes.
+    // Keep caller identity/bindings intact and derive only private atlas inputs.
+    if (modelChartsRequested()) {
+      if (!config.lightmapFitBudget)
+        throw std::invalid_argument("Model charts require world-metric budget fitting");
+      auto charts = modelCharts(*source, 65536, cancellation.get_token());
+      auto derived = std::make_shared<scene::BakeScene>(*source);
+      derived->charts.insert(derived->charts.end(), charts.begin(), charts.end());
+      std::fprintf(stderr, "Forward+ model charts: authored %zu, generated %zu (candidate)\n",
+                   source->charts.size(), charts.size());
+      source = std::move(derived);
+    }
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physical, &properties);
     const auto directLighting = (config.aggregateDiffuse || config.fullyBakedLights || config.bakedGeometryLights)

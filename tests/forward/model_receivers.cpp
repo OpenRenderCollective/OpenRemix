@@ -195,6 +195,10 @@ int main(int argc, char **argv) {
   sites = b::modelReceivers(source);
   require(sites.size() == 1 && sites[0].draw == 1,
           "Geometry buried in a closed partition does not consume lighting support samples");
+  for (auto &draw : source.draws) draw.classification = REMIXAPI_INSTANCE_STATIC_EXT;
+  auto partitionCharts = b::modelCharts(source, 8);
+  require(partitionCharts.size() == 1 && partitionCharts[0].draw == 1,
+          "Solid-partition model faces consume no chart space");
   source.partition.reset();
   source.draws = {triangle()};
   source.draws[0].surface->indices[0] = 99;

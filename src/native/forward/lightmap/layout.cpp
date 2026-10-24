@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 namespace remix::forward::lightmap {
@@ -185,7 +186,9 @@ namespace remix::forward::lightmap {
       }
       if (queue.empty()) {
         if (fallbackArea == 0)
-          throw std::invalid_argument("Surface lightmap chart has no nondegenerate surface");
+          throw std::invalid_argument("Surface lightmap chart has no nondegenerate surface: draw " +
+                                      std::to_string(source.draw) + ", first index " +
+                                      std::to_string(source.firstIndex));
         // A subtexel face may miss every integer luxel centre. Its donor
         // still belongs to the actual surface, never an extrapolated plane.
         const uint32_t local = (fallbackY + options.padding) * paddedWidth + fallbackX + options.padding;

@@ -3,6 +3,14 @@
 #include <cstring>
 
 namespace remix::forward::bake {
+  inline bool modelChartsRequested() {
+    static const bool requested = [] {
+      const auto value = std::getenv("REMIX_DEBUG_BAKE_MODEL_CHARTS");
+      return value && std::strcmp(value, "1") == 0;
+    }();
+    return requested;
+  }
+
   inline bool directionalProbeDepthRequested() {
     static const bool requested = [] {
       const auto value = std::getenv("REMIX_DEBUG_DIRECTIONAL_PROBE_DEPTH");

@@ -1,4 +1,5 @@
 #include "forward/bake/cache.h"
+#include "forward/bake/storage_options.h"
 #include "forward/probes/priority_bands.h"
 #include "forward/bake/sparse_sh.h"
 #include "forward/bake/cache_io.h"
@@ -347,6 +348,10 @@ namespace remix::forward::bake::cache {
       // Diffuse-only bakes keep their existing cache keys.
       const uint32_t reflectionFit[] = {0x5245474eu, 1};
       raw = scene::fastHash(reflectionFit, sizeof(reflectionFit), raw);
+    }
+    if (modelChartsRequested()) {
+      const uint32_t modelCharts[] = {0x4d434852u, 1};
+      raw = scene::fastHash(modelCharts, sizeof(modelCharts), raw);
     }
     if (c.styledIndirect) {
       const uint32_t styleCodec[] = {0x5354594cu, sparse::version};

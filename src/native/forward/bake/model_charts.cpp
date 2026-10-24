@@ -9,6 +9,8 @@ namespace remix::forward::bake {
       uint32_t maximumCharts, std::stop_token cancelled) {
     if (!maximumCharts || maximumCharts > 65536)
       throw std::invalid_argument("Model chart budget is 1..65536");
+    if (!std::isfinite(source.sceneScale) || source.sceneScale <= 0)
+      throw std::invalid_argument("Invalid model chart scene scale");
     const auto ranges = unchartedReceiverRanges(source, cancelled);
     std::vector<scene::BakeSurfaceChart> result;
     for (const auto &range : ranges) {
@@ -33,7 +35,17 @@ namespace remix::forward::bake {
         }
         for (uint32_t axis = 0; axis < 3; ++axis)
           cross[axis] = a[(axis + 1) % 3] * b[(axis + 2) % 3] - a[(axis + 2) % 3] * b[(axis + 1) % 3];
-        if (!(std::hypot(cross[0], cross[1], cross[2]) > 0)) continue;
+        // Match the world-metric parameterizer's degeneracy threshold.
+        const double area = std::hypot(cross[0], cross[1], cross[2]) *
+                            double(source.sceneScale) * source.sceneScale;
+        const double edges = std::hypot(a[0], a[1], a[2]) * std::hypot(b[0], b[1], b[2]);
+        if (!(area > 1e-12) || std::hypot(cross[0], cross[1], cross[2]) <= edges * 1e-6) continue;
+        if (source.partition && source.partition->closed) {
+          std::array<float, 3> centre;
+          for (uint32_t axis = 0; axis < 3; ++axis)
+            centre[axis] = float((double(positions[0][axis]) + positions[1][axis] + positions[2][axis]) / 3);
+          if (source.partition->cluster(centre.data()) < 0) continue;
+        }
         if (result.size() == maximumCharts) throw std::length_error("Model chart budget exhausted");
         // Each triangle is planar and injective. The atlas fitter derives its
         // physical scale from transformed geometry, not these placeholder UVs.

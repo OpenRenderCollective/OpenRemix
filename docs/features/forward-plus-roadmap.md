@@ -85,6 +85,15 @@ world-metric atlas fit with actual surface receivers. It is not wired into bake
 jobs yet. Measure chart count/padding and normal-budget quality before enabling;
 per-triangle charts need coalescing if their padding takes excessive atlas space.
 
+The private model-chart candidate is now wired to initial worker preparation via
+REMIX_DEBUG_BAKE_MODEL_CHARTS=1, with a separate conditional cache key. Normal
+Construct preparation generates 3904 charts after excluding solid-partition and
+near-collinear geometry; the 256-sample/3-bounce bake completes with 3801229 surface
+texels in four pages at 0.241 m spacing. This is not qualified: the lamp housing
+shows visible per-triangle lighting discontinuities. Next build connected model
+charts and seam treatment, compare independent references and wider views, and
+check static draw bindings/cache restoration. No default or deployment change.
+
 Next investigate actual surface baking for uncharted static models, preserving
 caller-authored charts, retained-draw bindings, the shared atlas budget, PBR and
 controllable-light behavior. Chart/padding overhead must be measured; a triangle
