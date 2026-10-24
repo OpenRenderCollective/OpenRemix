@@ -130,6 +130,27 @@ attribute-preserving private bake geometry. No dependency has been added and no
 quality/performance benefit is established. Preserve authored chart ranges,
 retained draw identity, controllable lights and cancellation while evaluating it.
 
+A tested bounded OBJ diagnostic is available on chart-cap failure through
+`REMIX_DEBUG_BAKE_MODEL_CHART_MESH`: the largest prefix consumer uses that fresh
+path; up to seven others append `.draw-<index>.obj`. Each export is limited to
+32768 triangles and preserves signed index ranges, source vertex sharing, winding,
+material UVs and transformed normals. Positions are metres relative to the first
+corner, with source-index/origin metadata. Cancellation and overwrite guards are
+covered. No mesh is exported by default and no bake budget changes.
+
+An offline xatlas screen pinned to f700c7790aaa030e794b52ba7791a05c085faf0c
+compares those eight prefix draws: current charts 8233, library defaults 6070,
+zero seam penalties 4961. Output input-corner references remain valid; this does
+not establish seam/lighting quality. The largest draw has 219 exact-position
+edge-connected components (770 using original indices), so dense small parts are
+part of the problem. Three default runs on that indexed 4334-triangle mesh produce
+910 charts in about 57-59 ms, mostly packing. These are CPU screens on a selected
+prefix including repeated instances, not whole-map or foreground-FPS results.
+One full draw export includes faces excluded by runtime receiver tests, so its
+chart comparison is not exact for the runtime subset. No runtime dependency was
+added. Next prototype parameterization separately from shared-budget packing and
+compare a genuinely baked vertex representation, with fidelity and total-cost gates.
+
 Independent 8192-sample, three-bounce base-unstyled hemisphere references at 14
 charted housing triangle centres find candidate-policy-3 atlas/reference luminance
 ratios of 0.71-1.37, versus probe/reference ratios up to 14.42. This helped isolate

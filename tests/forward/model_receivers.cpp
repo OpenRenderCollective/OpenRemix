@@ -1,5 +1,6 @@
 #include "forward/bake/model_receivers.h"
 #include "forward/bake/model_charts.h"
+#include "forward/bake/model_chart_report.h"
 #include "forward/lightmap/layout.h"
 #include "forward/lightmap/data.h"
 #include "forward/bake/probe_receiver_geometry.h"
@@ -288,6 +289,74 @@ int main(int argc, char **argv) try {
 
   require(argc == 2, "Supply an isolated manifest output path");
   const std::filesystem::path path(argv[1]);
+  {
+    auto meshPath = path; meshPath += ".mesh.obj";
+    std::filesystem::remove(meshPath);
+    s::BakeScene exported;
+    exported.sceneScale = .5f; exported.draws = {triangle()};
+    auto &draw = exported.draws[0];
+    draw.model[0] = 2; draw.model[12] = 100;
+    draw.surface->indices = {99, 99, 99, 1, 2, 3};
+    draw.firstIndex = 3; draw.indexCount = 3; draw.vertexOffset = -1;
+    draw.surface->vertices[0].uv[0] = .25f;
+    b::writeModelChartMesh(exported, 0, meshPath);
+    std::ifstream input(meshPath);
+    const std::string mesh(std::istreambuf_iterator<char>(input), {});
+    input.close();
+    require(mesh.find("v 0 0 0\nvt 0.25 0") != std::string::npos &&
+                mesh.find("v 3 0 0") != std::string::npos && mesh.find("v 0 1.5 0") != std::string::npos &&
+                mesh.find("vn 0 0 1") != std::string::npos && mesh.find("f 1/1/1 2/2/2 3/3/3") != std::string::npos,
+            "Offline mesh export preserves signed ranges, winding, material UVs and metric transforms");
+    try { b::writeModelChartMesh(exported, 0, meshPath); require(false, "Mesh export overwrote an existing file"); }
+    catch (const std::runtime_error &) {}
+    std::filesystem::remove(meshPath);
+    draw.surface->indices.insert(draw.surface->indices.end(), {1, 2, 3});
+    draw.indexCount = 6;
+    b::writeModelChartMesh(exported, 0, meshPath);
+    std::ifstream sharedInput(meshPath);
+    const std::string shared(std::istreambuf_iterator<char>(sharedInput), {});
+    sharedInput.close();
+    const auto face = shared.find("f 1/1/1 2/2/2 3/3/3");
+    require(shared.find("f 1/1/1 2/2/2 3/3/3", face + 1) != std::string::npos &&
+                shared.find("# source_vertex 0") != std::string::npos &&
+                shared.find("# source_vertex 2") != std::string::npos &&
+                shared.find("# source_vertex 3") == std::string::npos,
+            "Offline mesh export preserves original shared-index connectivity");
+    std::filesystem::remove(meshPath);
+    std::stop_source stopped; stopped.request_stop();
+    try { b::writeModelChartMesh(exported, 0, meshPath, stopped.get_token()); require(false, "Cancelled mesh export continued"); }
+    catch (const std::runtime_error &) {}
+    require(!std::filesystem::exists(meshPath), "Cancelled mesh export created output");
+    draw.indexCount = 32769 * 3;
+    invalid([&] { b::writeModelChartMesh(exported, 0, meshPath); });
+    const char *oldMeshPath = std::getenv("REMIX_DEBUG_BAKE_MODEL_CHART_MESH");
+    const std::optional<std::string> previousMeshPath = oldMeshPath ? std::optional<std::string>(oldMeshPath) : std::nullopt;
+#ifdef _WIN32
+    _putenv_s("REMIX_DEBUG_BAKE_MODEL_CHART_MESH", meshPath.string().c_str());
+#else
+    setenv("REMIX_DEBUG_BAKE_MODEL_CHART_MESH", meshPath.string().c_str(), 1);
+#endif
+    s::BakeScene many;
+    for (uint32_t i = 0; i < 10; ++i) many.draws.push_back(triangle());
+    std::vector<s::BakeSurfaceChart> ownership;
+    for (uint32_t i = 0; i < 9; ++i) ownership.push_back({i, 0, 2, 2, {{0, 0}, {1, 0}, {0, 1}}});
+    b::modelChartBudgetFailure(many, ownership, 9, 0);
+    require(std::filesystem::exists(meshPath), "Requested budget-failure export is missing");
+    std::filesystem::remove(meshPath);
+    for (uint32_t i = 1; i <= 8; ++i) {
+      auto extra = meshPath; extra += ".draw-" + std::to_string(i) + ".obj";
+      require(std::filesystem::exists(extra) == (i < 8), "Budget-failure mesh corpus exceeds eight-draw bound");
+      if (i < 8) std::filesystem::remove(extra);
+    }
+#ifdef _WIN32
+    _putenv_s("REMIX_DEBUG_BAKE_MODEL_CHART_MESH", previousMeshPath ? previousMeshPath->c_str() : "");
+#else
+    if (previousMeshPath) setenv("REMIX_DEBUG_BAKE_MODEL_CHART_MESH", previousMeshPath->c_str(), 1);
+    else unsetenv("REMIX_DEBUG_BAKE_MODEL_CHART_MESH");
+#endif
+
+  }
+
   require(!std::filesystem::exists(path), "Model manifest fixture already exists");
   const char *key = "REMIX_DEBUG_BAKE_MODEL_RECEIVERS";
   const auto previous = std::getenv(key) ? std::optional<std::string>(std::getenv(key)) : std::nullopt;
