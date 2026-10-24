@@ -94,6 +94,15 @@ shows visible per-triangle lighting discontinuities. Next build connected model
 charts and seam treatment, compare independent references and wider views, and
 check static draw bindings/cache restoration. No default or deployment change.
 
+Connected consecutive model charts (candidate policy 3) reduce Construct from
+3904 generated charts to 1245. Bounded merges reject projected overlap, opposing
+faces and invalid curved mappings; flat/curved receiver and retained-mesh mapping
+tests pass. The normal bake completes validation-clean at 3816442 surface texels
+and four pages, but triangular housing patches remain. This does not qualify the
+candidate. Next inspect actual housing chart connectivity and group nonconsecutive
+connected triangles in a private derived index stream while preserving authored
+ranges and live draw identity; then verify surface references and broader quality.
+
 Next investigate actual surface baking for uncharted static models, preserving
 caller-authored charts, retained-draw bindings, the shared atlas budget, PBR and
 controllable-light behavior. Chart/padding overhead must be measured; a triangle

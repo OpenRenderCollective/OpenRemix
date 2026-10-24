@@ -1,6 +1,7 @@
 #include "forward/bake/model_receivers.h"
 #include "forward/bake/model_charts.h"
 #include "forward/lightmap/layout.h"
+#include "forward/lightmap/data.h"
 #include "forward/bake/probe_receiver_geometry.h"
 #include "forward/bake/probe_receiver_report.h"
 #include "scene/bake_scene.h"
@@ -35,7 +36,7 @@ namespace {
     require(false, "Invalid model receiver request accepted");
   }
 }
-int main(int argc, char **argv) {
+int main(int argc, char **argv) try {
   {
     s::BakeScene candidate;
     candidate.ready = true;
@@ -82,6 +83,44 @@ int main(int argc, char **argv) {
     require(b::modelCharts(candidate, 1).size() == 1, "Degenerate faces consume no model chart budget");
     candidate.draws[0].surface->indices[3] = 999;
     invalid([&] { b::modelCharts(candidate, 8); });
+  }
+  {
+    s::BakeScene patch;
+    patch.ready = true;
+    patch.draws = {triangle()};
+    auto &draw = patch.draws[0];
+    draw.classification = REMIXAPI_INSTANCE_STATIC_EXT;
+    auto vertex = draw.surface->vertices[0];
+    vertex.position[0] = vertex.position[1] = 3;
+    draw.surface->vertices.push_back(vertex);
+    draw.surface->indices = {0, 1, 2, 1, 3, 2};
+    auto charts = b::modelCharts(patch, 1);
+    require(charts.size() == 1 && charts[0].texcoords.size() == 6,
+            "Connected quad shares one model chart within a one-chart budget");
+    patch.charts = charts;
+    s::validateBakeCharts(patch.draws, patch.charts);
+    remix::forward::lightmap::Options options;
+    options.pageSize = 64; options.maxPages = 1; options.maxTexels = 4096; options.fillBudget = true;
+    require(!remix::forward::lightmap::fit(patch, options).points.empty(),
+            "Joined model chart produces real surface samples");
+    patch.charts.clear();
+    draw.surface->vertices[3].position[2] = .5f;
+    charts = b::modelCharts(patch, 1);
+    require(charts.size() == 1 && charts[0].texcoords.size() == 6,
+            "Smooth nonplanar connected triangles retain one injective chart");
+    patch.charts = charts;
+    const auto curvedLayout = remix::forward::lightmap::fit(patch, options);
+    const auto curvedMeshes = remix::forward::lightmap::meshes(patch, curvedLayout);
+    require(!curvedLayout.points.empty() && curvedMeshes.size() == 1 &&
+                remix::forward::lightmap::fullyMapped(curvedMeshes[0]),
+            "Connected curved model chart supplies complete retained-mesh lightmap bindings");
+    patch.charts.clear();
+    draw.surface->indices = {0, 1, 2, 0, 1, 2};
+    require(b::modelCharts(patch, 2).size() == 2,
+            "Overlapping triangles never merge into an invalid projected chart");
+    draw.surface->indices = {0, 1, 2, 1, 2, 3};
+    require(b::modelCharts(patch, 2).size() == 2,
+            "Opposing triangle orientations remain separate charts");
   }
   s::BakeScene source;
   source.draws = {triangle()};
@@ -249,3 +288,5 @@ int main(int argc, char **argv) {
   environment(previous ? previous->c_str() : nullptr);
   std::filesystem::remove(path);
 }
+
+catch (const std::exception &error) { std::fprintf(stderr, "Model receiver test failed: %s\n", error.what()); return 1; }

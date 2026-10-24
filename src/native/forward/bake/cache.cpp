@@ -350,7 +350,7 @@ namespace remix::forward::bake::cache {
       raw = scene::fastHash(reflectionFit, sizeof(reflectionFit), raw);
     }
     if (modelChartsRequested()) {
-      const uint32_t modelCharts[] = {0x4d434852u, 1};
+      const uint32_t modelCharts[] = {0x4d434852u, 3};
       raw = scene::fastHash(modelCharts, sizeof(modelCharts), raw);
     }
     if (c.styledIndirect) {
