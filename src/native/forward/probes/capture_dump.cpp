@@ -197,7 +197,8 @@ namespace remix::forward::probes {
       }
       output << "]},\"coveragePlan\":{\"baseline\":\"automatic-before-authored-composition\","
                 "\"tested\":" << (coverage ? "true" : "false") << ",\"maximumError\":" << plan.maximumError
-             << ",\"maximumChanges\":" << plan.maximumChanges << ",\"replacements\":[";
+             << ",\"maximumChanges\":" << plan.maximumChanges << ",\"surfaceSamples\":" << plan.surfaceSamples
+             << ",\"guardSamples\":" << plan.guardSamples << ",\"replacements\":[";
       for (size_t i = 0; i < plan.replacements.size(); ++i) {
         const auto &replacement = plan.replacements[i];
         const auto &owner = plan.owners.at(replacement.candidate);

@@ -1825,6 +1825,13 @@ uses the automatic pre-authored baseline and an experimental sampled-error gate,
 acceptance policy. Replan against final authored composition and qualify unsampled camera/dynamic
 coverage before publishing any replacement; geometric baseline coverage is weaker than visibility.
 
+Surface-only replacement trials exposed loss of airborne-prop reflections despite preserving every
+sampled world surface. The diagnostic planner now adds zero-weight capture-origin and interior-grid
+guards. They constrain spatial preservation without rewarding empty air as new surface coverage;
+new local captures cannot claim unobserved guard visibility. This remains a sampled conservative
+check, not full-volume preservation or unchanged radiance blending. Include removed-volume controls
+alongside newly covered rooms in every replacement trial.
+
 Before production integration, keep planner indices tied to canonical capture metadata rather than
 sorted GPU layers, replan against protected authored composition and validate both added rooms and
 regions served by removed captures. Preserve frame-publication ownership, diffuse bake identity and

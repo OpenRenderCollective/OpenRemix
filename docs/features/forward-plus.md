@@ -558,7 +558,13 @@ results. Its baseline is automatic captures before authored composition, not the
 Unqueried receivers have no visibility evidence. The optional `coveragePlan` then considers at most
 four additions/replacements under the 64-layer cap, using visibility-supported local footprints and
 an explicit experimental maximum sampled error of 0.2. It uses free layers first and preserves every
-currently covered sample. Unique ownership is recomputed after each swap; duplicate sample indices
+currently covered sample. Unique ownership is recomputed after each swap. In addition to the 8192 surface samples, each
+baseline capture supplies its origin and a 5x5x5 interior influence grid as zero-weight spatial
+guards (at most 8064 guards; the generic planner is bounded to 16384 total samples). Guards must
+remain covered but cannot earn surface-area gains. New local captures have no volume visibility
+evidence for these guards, so this plan conservatively relies on retained baseline captures for them.
+This addresses airborne-prop coverage missed by surface-only planning; it is still sampled volume
+preservation, not proof of complete coverage or unchanged blend quality. Duplicate sample indices
 are rejected. The generic planner protects authored captures, but this report's baseline is automatic
 before authored composition: do not apply its indices to a published authored-plus-automatic set.
 Zero sampled loss is not proof of whole-map, moving-object or camera-volume preservation. Readbacks retire through the existing frame fences;

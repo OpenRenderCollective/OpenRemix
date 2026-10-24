@@ -11,11 +11,11 @@ namespace remix::forward::probes {
       if (cancelled.stop_requested()) throw std::runtime_error("Reflection coverage planning superseded");
     };
     check();
-    if (areas.size() > 8192 || capacity > 64 || baseline.size() > capacity || candidates.size() > 192 ||
+    if (areas.size() > maximumCoverageSamples || capacity > 64 || baseline.size() > capacity || candidates.size() > 192 ||
         maximumChanges > 64 || !std::isfinite(maximumError) || maximumError < 0)
       throw std::invalid_argument("Invalid reflection coverage planning budget");
     for (const float area : areas)
-      if (!std::isfinite(area) || area <= 0) throw std::invalid_argument("Invalid receiver area");
+      if (!std::isfinite(area) || area < 0) throw std::invalid_argument("Invalid receiver area");
     auto validate = [&](const auto &options) {
       for (const auto &option : options) {
         check();

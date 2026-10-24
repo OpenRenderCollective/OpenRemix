@@ -35,6 +35,15 @@ int main() {
   const std::vector<CoverageCandidate> tied{{{2},.1f}, {{2},.05f}};
   const auto tie = planCoverageReplacements(areas, {}, tied, .2f, 1);
   require(tie.size() == 1 && tie[0].candidate == 1, "Equal area gains prefer smaller projection error");
+  const std::vector<float> guardedWeights{1, 0, 5};
+  const std::vector<CoverageBaseline> guardedBaseline{{{0,1},false}, {{0},false}};
+  const std::vector<CoverageCandidate> guardedCandidate{{{2},.1f}};
+  const auto guarded = planCoverageReplacements(guardedWeights, guardedBaseline, guardedCandidate, .2f, 2);
+  require(guarded.size() == 1 && guarded[0].baseline == 1 && guarded[0].gainedArea == 5,
+          "Zero-weight volume guards prevent a surface-preserving swap from losing spatial coverage");
+  const std::vector<CoverageCandidate> guardOnly{{{1},.1f}};
+  require(planCoverageReplacements(guardedWeights, {}, guardOnly, .2f, 1).empty(),
+          "Covering empty-space guards alone cannot earn a new capture layer");
   bool invalid = false;
   const std::vector<CoverageCandidate> duplicate{{{2,2},.1f}};
   try { (void)planCoverageReplacements(areas, {}, duplicate, .2f); }

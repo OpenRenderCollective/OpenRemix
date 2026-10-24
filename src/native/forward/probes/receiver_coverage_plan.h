@@ -6,6 +6,7 @@ namespace remix::forward::probes {
   struct ReceiverCoveragePlan {
     float maximumError = .2f;
     uint32_t maximumChanges = 4;
+    uint32_t surfaceSamples = 0, guardSamples = 0;
     std::vector<CoverageReplacement> replacements;
     std::vector<std::array<uint32_t, 2>> owners; // Local attempt and variant.
     std::vector<float> errors;

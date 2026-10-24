@@ -1,12 +1,13 @@
 #include "forward/probes/receiver_coverage_plan.h"
 #include <limits>
+#include <cmath>
 #include <stdexcept>
 
 namespace remix::forward::probes {
   namespace {
     bool contains(const Bounds &bounds, Vec3 position) {
       for (uint32_t axis = 0; axis < 3; ++axis)
-        if (position[axis] < bounds.minimum[axis] || position[axis] > bounds.maximum[axis]) return false;
+        if (!std::isfinite(position[axis]) || position[axis] < bounds.minimum[axis] || position[axis] > bounds.maximum[axis]) return false;
       return true;
     }
   }
@@ -19,8 +20,13 @@ namespace remix::forward::probes {
     check();
     if (!coverage.complete() || baseline.size() > maxProbes || fits.attempts.size() > 32)
       throw std::invalid_argument("Invalid local coverage planning inputs");
+    constexpr uint32_t axisSamples = 5, guardsPerCapture = 1 + axisSamples * axisSamples * axisSamples;
+    static_assert(8192 + maxProbes * guardsPerCapture <= maximumCoverageSamples);
     const auto receivers = sampleReceivers(source, 8192, cancelled);
+    ReceiverCoveragePlan result;
+    result.surfaceSamples = uint32_t(receivers.size());
     std::vector<float> areas;
+    areas.reserve(receivers.size() + baseline.size() * guardsPerCapture);
     std::vector<CoverageBaseline> current(baseline.size());
     for (const auto &capture : baseline) validateCapture(capture);
     for (uint32_t r = 0; r < receivers.size(); ++r) {
@@ -32,7 +38,44 @@ namespace remix::forward::probes {
                      projectionPoint(capture.worldToLocal, receivers[r].position))) current[b].receivers.push_back(r);
       }
     }
-    ReceiverCoveragePlan result;
+    // These points constrain preservation, but cannot earn surface-area gains.
+    // New local captures have no volume-ray evidence for them, so only existing
+    // baseline captures may provide their conservative coverage in this plan.
+    auto guard = [&](Vec3 position) {
+      check();
+      for (float value : position)
+        if (!std::isfinite(value)) throw std::invalid_argument("Nonfinite reflection volume guard");
+      const uint32_t sample = uint32_t(areas.size());
+      areas.push_back(0);
+      ++result.guardSamples;
+      for (uint32_t b = 0; b < baseline.size(); ++b) {
+        const auto &capture = baseline[b];
+        if (contains(capture.influence.valid ? capture.influence : capture.bounds,
+                     projectionPoint(capture.worldToLocal, position))) current[b].receivers.push_back(sample);
+      }
+    };
+    for (const auto &capture : baseline) {
+      guard(capture.position);
+      const auto &bounds = capture.influence.valid ? capture.influence : capture.bounds;
+      for (uint32_t x = 0; x < axisSamples; ++x)
+        for (uint32_t y = 0; y < axisSamples; ++y)
+          for (uint32_t z = 0; z < axisSamples; ++z) {
+            const uint32_t cell[3]{x, y, z};
+            Vec3 local{}, world{};
+            for (uint32_t axis = 0; axis < 3; ++axis)
+              local[axis] = float(double(bounds.minimum[axis]) +
+                  (double(bounds.maximum[axis]) - bounds.minimum[axis]) * (cell[axis] + .5) / axisSamples);
+            // Rigid inverse: transpose(R) * (local - translation).
+            for (uint32_t c = 0; c < 3; ++c) {
+              double coordinate = 0;
+              for (uint32_t axis = 0; axis < 3; ++axis)
+                coordinate += double(capture.worldToLocal[axis][c]) *
+                              (double(local[axis]) - capture.worldToLocal[axis][3]);
+              world[c] = float(coordinate);
+            }
+            guard(world);
+          }
+    }
     std::vector<CoverageCandidate> candidates;
     std::vector<uint32_t> offsets;
     for (uint32_t a = 0; a < fits.attempts.size(); ++a) {
