@@ -22,6 +22,12 @@
 #include <unordered_set>
 
 namespace remix::forward::probes {
+  namespace {
+    uint32_t coveredReceiverBudget() {
+      const char *request = std::getenv("REMIX_DEBUG_PROBE_REGIONAL_COVERAGE");
+      return request && std::string_view(request) == "1" ? 8192 : 0;
+    }
+  }
   std::unique_ptr<ReceiverSiteAudit> prepareReceiverSites(const scene::BakeScene &source,
       const ReceiverAudit &audit, std::stop_token cancelled) noexcept {
     const char *prefix = std::getenv("REMIX_DEBUG_PROBE_RECEIVER_VISIBILITY");
@@ -63,7 +69,7 @@ namespace remix::forward::probes {
     try {
       const auto receivers = sampleReceivers(source, 8192, cancelled);
       return std::make_unique<ReceiverAudit>(receiverFitPairs(receivers, baseline, fits.finish(source, cancelled),
-          .002f / source.sceneScale, 32768, cancelled), .001f / source.sceneScale);
+          .002f / source.sceneScale, 32768, cancelled, coveredReceiverBudget()), .001f / source.sceneScale);
     } catch (const std::exception &error) {
       std::fprintf(stderr, "Local receiver coverage unavailable: %s\n", error.what());
       return {};
@@ -82,6 +88,7 @@ namespace remix::forward::probes {
       const auto occupancy = source.partition && source.partition->closed
           ? std::make_unique<RegionQuery>(*source.partition, cancelled) : nullptr;
       const auto plan = coverage ? planReceiverCoverage(source, baseline, fits, *coverage, cancelled) : ReceiverCoveragePlan{};
+      const auto receivers = coverage ? sampleReceivers(source, 8192, cancelled) : std::vector<ReceiverSample>{};
       std::ofstream output(path);
       output.exceptions(std::ios::failbit | std::ios::badbit);
       output.precision(9);
@@ -194,12 +201,15 @@ namespace remix::forward::probes {
         output << "]}";
       }
       output << "]},\"localCoverage\":{\"tested\":" << (coverage ? "true" : "false")
-             << ",\"baseline\":\"automatic-before-authored-composition\",\"pairs\":[";
+             << ",\"baseline\":\"automatic-before-authored-composition\",\"coveredReceiverBudget\":"
+             << coveredReceiverBudget() << ",\"pairs\":[";
       if (coverage) for (size_t i = 0; i < coverage->pairs().size(); ++i) {
         if (cancelled.stop_requested()) throw std::runtime_error("Local coverage report superseded");
         const auto &pair = coverage->pairs()[i];
         output << (i ? "," : "") << "{\"receiver\":" << pair.receiver << ",\"attempt\":" << pair.capture
-               << ",\"segmentDistance\":" << pair.ray.distance << ",\"hitDistance\":";
+               << ",\"position\":";
+        vector(receivers.at(pair.receiver).position);
+        output << ",\"segmentDistance\":" << pair.ray.distance << ",\"hitDistance\":";
         if (std::isfinite(coverage->distance(i))) output << coverage->distance(i);
         else output << "null";
         output << ",\"visibility\":\"" << visibility(coverage->visibility()[i]) << "\"}";

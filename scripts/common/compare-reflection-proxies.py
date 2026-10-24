@@ -64,7 +64,9 @@ def compare(sites, audit, candidates):
     if not math.isfinite(scale) or scale <= 0:
         raise ValueError("Invalid scene scale")
     positions = {}
-    for pair in audit["pairs"]:
+    for pair in audit["pairs"] + sites["localCoverage"]["pairs"]:
+        if "position" not in pair:
+            continue
         receiver, position = pair["receiver"], vector(pair["position"])
         if receiver in positions and positions[receiver] != position:
             raise ValueError("Receiver positions disagree within the report")

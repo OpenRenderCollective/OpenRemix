@@ -2210,3 +2210,24 @@ bounds are hand-selected and not installed. Next derive bounded regional support
 suitable evidence (including already-covered receivers), then qualify coverage, leakage,
 medium/radiance parity and capture allocation. Do not substitute the incomplete uncovered
 receiver cohort or a global median score for an automatic fit.
+
+Experimental regional evidence preparation now addresses the audit's uncovered-only
+blind spot. A separate explicit request reserves at most 8,192 already-covered
+receiver/origin checks within the same 32,768 total ceiling; the default marginal cohort
+is unchanged. Local reports carry receiver positions so comparisons no longer require
+them to appear in the original uncovered audit. CPU checks cover rotated existing
+coverage, mixed/cohort budget sharing and invalid reservations. Older reports remain
+readable by the offline comparison tool.
+A normal-quality cached Construct upgrade executes 18,186 local pairs: the original
+9,994 marginal observations are identical and precede 8,192 new regional checks.
+Receiver 7692 near the reflective prop is now explicitly classified visible to both
+pool candidates, rather than being absent from local evidence. The two candidates have
+309 common observed-visible receivers in this run; their enlarged residual distributions
+still expose the near proxy's poor tail. The plan is unchanged on this fixture, the
+base lighting cache stays byte-identical, and the original sidecar is preserved. The
+relay completes without validation errors or synchronization hazards. Preparation uses
+an isolated hard link to the already-built normal cache to avoid duplicating its large
+payload; only the new local companion/report belongs to this run. Regional evidence is
+a foundation for bounded influence support, not a new automatic selection policy or
+normal-quality visual acceptance. Do not infer arbitrary unsampled volume support from
+these classified surface connections.

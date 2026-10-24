@@ -180,6 +180,19 @@ int main(int argc, char **argv) {
   require(limited.size() == 3 && limited[0].receiver < 8 && limited[1].receiver >= 8 &&
           limited[1].receiver < 17 && limited[2].receiver >= 17,
           "A bounded local coverage cohort spreads across receiver order instead of keeping a prefix");
+  const auto coveredPair = p::receiverFitPairs(std::span(&localReceiver, 1), std::span(&baseline, 1),
+                                               assessed, .002f, 3, {}, 1);
+  require(coveredPair.size() == 1 && coveredPair[0].receiver == 0,
+          "Regional diagnostics can explicitly sample an already-covered receiver");
+  auto mixedCohort = cohort;
+  for (size_t i = 10; i < mixedCohort.size(); ++i) mixedCohort[i].position[0] = 2;
+  const auto regional = p::receiverFitPairs(mixedCohort, std::span(&baseline, 1), assessed, .002f, 3, {}, 1);
+  require(regional.size() == 3 && regional[0].receiver >= 10 && regional[1].receiver >= 10 && regional[2].receiver < 10,
+          "Covered reservation shares the total budget with spread marginal checks, without duplicate owners");
+  bool oversizedRegionalRefused = false;
+  try { (void)p::receiverFitPairs(cohort, {}, assessed, .002f, 3, {}, 4); }
+  catch (const std::invalid_argument &) { oversizedRegionalRefused = true; }
+  require(oversizedRegionalRefused, "Regional reservation cannot exceed the total query budget");
   bool unassessedRefused = false;
   try { (void)p::receiverFitPairs(std::span(&localReceiver, 1), {}, localFits, .002f); }
   catch (const std::invalid_argument &) { unassessedRefused = true; }

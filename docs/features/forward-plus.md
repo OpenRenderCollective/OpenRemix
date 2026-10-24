@@ -2608,3 +2608,13 @@ using the recorded scene scale. Unknown/missing visibility is not accepted as su
 Inspect distributions and spatial rows together: a smaller median can conceal severe
 errors in another region. These values do not measure radiance, water transport or full
 volume coverage and must not become a selection score without visual qualification.
+
+`REMIX_DEBUG_PROBE_REGIONAL_COVERAGE=1` optionally reserves up to 8,192 of the
+existing 32,768 local receiver/origin checks for receivers already covered by the
+baseline. Remaining capacity serves marginal checks; unused reservation goes back to
+that cohort. Without this request, marginal-only pair ordering and budgets are unchanged.
+This preparation mode still requires a fresh receiver diagnostic request and does no
+work in ordinary bakes. Reports include the reservation and local receiver positions;
+the offline proxy comparison reads these while retaining older-report compatibility.
+Classified evidence may be retained in the optional companion. This expands evidence,
+not a full-volume proof, automatic influence fit or validated reflection-quality score.
