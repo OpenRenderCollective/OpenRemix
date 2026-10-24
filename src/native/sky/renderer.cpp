@@ -95,11 +95,29 @@ namespace remix::sky {
               {"AtmosphereCloudShadowMap", texture(out.cloudShadowMap)},
               {"AtmosphereCloudNoise3DSampler", texture(out.cloudNoiseSampler)},
               {"AtmosphereCloudSecondaryLut", texture(out.cloudSecondaryLut)},
+              {"NightSkyStarCells", texture(out.nightSkyStarCells)},
+              {"NightSkyStars", texture(out.nightSkyStars)},
+              {"NightSkyMilkyWay", texture(out.nightSkyMilkyWay)},
+              {"NightSkyStarlightLow", texture(out.nightSkyStarlightLow)},
+              {"NightSkyMoon", texture(out.nightSkyMoon)},
               {"atmosphereArgs", {.resource = args.buffer, .offset = args.offset, .size = args.size}}};
     }
   };
 
-  Renderer::Renderer(VkPhysicalDevice physical, VkDevice device) : m(std::make_unique<State>(physical, device)) {}
+  Renderer::Renderer(VkPhysicalDevice physical, VkDevice device) : m(std::make_unique<State>(physical, device)) {
+    // NUMOS copies the night sky and streams it to the GPU over the next frames.
+    std::vector<uint8_t> data[4];
+    for (size_t i = 0; i < std::size(data); ++i)
+      data[i] = nightSkyAsset(i);
+    m->numos.setNightSkyAssets({.stars = data[0].data(),
+                                .starsSize = data[0].size(),
+                                .milkyWay = data[1].data(),
+                                .milkyWaySize = data[1].size(),
+                                .starlightLow = data[2].data(),
+                                .starlightLowSize = data[2].size(),
+                                .moon = data[3].data(),
+                                .moonSize = data[3].size()});
+  }
 
   Renderer::~Renderer() {
     // The device is idle: NUMOS's resources go through the bridge's deferral

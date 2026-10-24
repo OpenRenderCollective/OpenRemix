@@ -12,6 +12,12 @@
 [[vk::binding(7)]] Texture2D<float4> AtmosphereCloudSecondaryLut;
 [[vk::binding(8)]] Texture2DArray BlueNoise;
 #define ATMOSPHERE_AVAILABLE
+[[vk::binding(22)]] StructuredBuffer<uint> NightSkyStarCells;
+[[vk::binding(23)]] StructuredBuffer<float4> NightSkyStars;
+[[vk::binding(24)]] StructuredBuffer<uint> NightSkyMilkyWay;
+[[vk::binding(25)]] Texture2D<float4> NightSkyStarlightLow;
+[[vk::binding(26)]] Texture2D<float4> NightSkyMoon;
+#define NIGHT_SKY_AVAILABLE
 // ATMOSPHERE_TRANSMITTANCE_LUT_AVAILABLE stays undefined, which leaves out the
 // planet's ground on purpose: game terrain or nothing covers the lower half.
 

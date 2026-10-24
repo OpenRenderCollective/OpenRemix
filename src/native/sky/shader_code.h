@@ -2,6 +2,7 @@
 #include "sky/shaders/embedded.h"
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 namespace remix::sky {
   // SPIR-V of an embedded NUMOS pass or adapter stage.
@@ -13,4 +14,7 @@ namespace remix::sky {
   // the process lifetime.
   ShaderCode numosShader(uint32_t pass);
   ShaderCode shader(Stage stage);
+  // The night sky's data in numos::NightSkyAssets order (embeddedNightSky),
+  // decompressed; empty where the build made none.
+  std::vector<uint8_t> nightSkyAsset(size_t index);
 } // namespace remix::sky
