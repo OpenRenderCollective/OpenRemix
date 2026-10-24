@@ -223,6 +223,28 @@ float emitterShaping(LightEmitter light,vec3 outgoing) {
   float edge=inner>outer?smoothstep(outer,inner,cosine):1;
   return ies*edge*(light.shaping.y>0?pow(max(cosine,0),light.shaping.y):1);
 }
+// Light cookie of a sphere light: slot + 1 in shaping.w, the projection's up
+// and tan(width / 2) in corners[0]; the frame's table gives each slot's
+// texture + 1. Dark outside the projection.
+layout(buffer_reference,std430,buffer_reference_align=4) readonly buffer LightCookies { uint textures[]; };
+vec3 emitterCookie(LightEmitter light,vec3 outgoing) {
+  if(light.shaping.w<.5||light.radiance.w!=0||frame.lightCookies==0)return vec3(1);
+  vec3 axis=light.directionCone.xyz;
+  float along=dot(axis,outgoing);
+  if(along<=0)return vec3(0);
+  vec3 up=light.corners[0].xyz,right=cross(axis,up);
+  vec2 uv=vec2(dot(outgoing,right),dot(outgoing,up))/(along*light.corners[0].w)*.5+.5;
+  if(any(lessThan(uv,vec2(0)))||any(greaterThan(uv,vec2(1))))return vec3(0);
+  uint index=LightCookies(frame.lightCookies).textures[uint(light.shaping.w+.5)-1u];
+  if(index==0u)return vec3(1);
+  // Colour times alpha: a mask in either works (alpha-only cookies are common).
+  vec4 texel=textureLod(textures[nonuniformEXT(index-1u)],vec2(uv.x,1-uv.y),0);
+  return texel.rgb*texel.a;
+}
+// What a light emits toward `outgoing`: shaping, IES profile and cookie.
+vec3 emitterRadiance(LightEmitter light,vec3 outgoing) {
+  return light.radiance.rgb*emitterShaping(light,outgoing)*emitterCookie(light,outgoing);
+}
 LocalCandidate triangleCandidate(LightEmitter light,Hit hit,inout uint state,bool angular,vec2 blue,uint stream) {
   LocalCandidate result;result.physical=result.specular=vec3(0);result.endpoint=hit.p;result.distance=0;
   vec3 a=light.corners[0].xyz,b=light.corners[1].xyz,c=light.corners[2].xyz;
@@ -245,7 +267,7 @@ LocalCandidate triangleCandidate(LightEmitter light,Hit hit,inout uint state,boo
   // Uniform area PDF 1/A, converted to solid angle: d^2/(A*cosEmitter).
   float integral=spherical?(emitterCosine>0?omega*max(0,dot(hit.n,direction))/3.14159265359:0)
                            :.5*twiceArea*geometry/(3.14159265359*distance2);
-  vec3 scale=light.radiance.rgb*emitterShaping(light,-direction)*integral
+  vec3 scale=emitterRadiance(light,-direction)*integral
       *localFalloff(dot(light.positionRadius.xyz-hit.p,light.positionRadius.xyz-hit.p))*frame.localScale.x;
   result.physical=materialResponse(hit,direction,result.specular)*scale;
   result.specular*=scale;
@@ -277,7 +299,7 @@ LocalCandidate localCandidate(LightEmitter light,Hit hit,inout uint state,bool a
   vec3 perpendicular=delta-direction*projected;
   float root=sqrt(max(0,radius*radius-dot(perpendicular,perpendicular)));
   float distance=max(0,inside?projected+root:projected-root);
-  vec3 scale=light.radiance.rgb*emitterShaping(light,-direction)*(2*oneMinusCos*cosine*attenuation)*frame.localScale.x;
+  vec3 scale=emitterRadiance(light,-direction)*(2*oneMinusCos*cosine*attenuation)*frame.localScale.x;
   result.physical=materialResponse(hit,direction,result.specular)*scale;
   result.specular*=scale;
   result.endpoint=hit.p+direction*distance;result.distance=distance;
@@ -585,7 +607,7 @@ vec3 localLighting(Hit hit,uint state,uint samples,out float lightDistance,bool 
       vec3 perpendicular=delta-direction*projected;
       float root=sqrt(max(0,radius*radius-dot(perpendicular,perpendicular)));
       distance=max(0,inside?projected+root:projected-root);
-      vec3 scale=light.radiance.rgb*emitterShaping(light,-direction)*(2*oneMinusCos*cosine*attenuation)*frame.localScale.x;
+      vec3 scale=emitterRadiance(light,-direction)*(2*oneMinusCos*cosine*attenuation)*frame.localScale.x;
       physical=materialResponse(hit,direction,physicalSpecular)*scale;physicalSpecular*=scale;
       endpoint=hit.p+direction*distance;
     }

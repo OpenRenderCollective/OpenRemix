@@ -100,5 +100,56 @@ int main() {
     }
     require(failed, "A light with a malformed profile was accepted");
   }
+  {
+    // Light cookies: a slot per texture, the projection's up made
+    // perpendicular to the axis, sphere lights only.
+    remix::NativeResources resources;
+    remixapi_LightInfoCookieEXT cookie{};
+    cookie.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_COOKIE_EXT;
+    cookie.texture = nullptr; // the white texture
+    cookie.up = {0, 1, 1};
+    cookie.fovDegrees = 90;
+    remixapi_LightInfoSphereEXT sphere{};
+    sphere.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT;
+    sphere.pNext = &cookie;
+    sphere.radius = .1f;
+    sphere.shaping_hasvalue = 1;
+    sphere.shaping_value.direction = {0, 0, -1};
+    sphere.shaping_value.coneAngleDegrees = 180;
+    remixapi_LightInfo info{};
+    info.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+    info.pNext = &sphere;
+    info.hash = 1;
+    info.radiance = {10, 10, 10};
+    remixapi_LightHandle first{}, second{};
+    resources.createLight(info, first);
+    info.hash = 2;
+    resources.createLight(info, second);
+    resources.drawLight(first);
+    resources.drawLight(second);
+    require(resources.cookieTextures().size() == 1, "Cookies with one texture did not share a slot");
+    for (const auto &light : resources.sphereLights()) {
+      require(light.cookie == 1, "A light lost its cookie");
+      require(approx(light.cookieUp[0], 0) && approx(light.cookieUp[1], 1) && approx(light.cookieUp[2], 0),
+              "The cookie's up was not made perpendicular to the axis");
+      require(approx(light.cookieTan, 1), "The cookie's width was not its field of view");
+    }
+    auto rejected = [&](const char *message) {
+      bool failed = false;
+      try {
+        remixapi_LightHandle other{};
+        info.hash = 9;
+        resources.createLight(info, other);
+      } catch (...) {
+        failed = true;
+      }
+      require(failed, message);
+    };
+    cookie.up = {0, 0, 2};
+    rejected("A cookie whose up lies along the axis was accepted");
+    cookie.up = {0, 1, 0};
+    cookie.fovDegrees = 180;
+    rejected("A cookie spanning 180 degrees was accepted");
+  }
   return 0;
 }

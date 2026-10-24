@@ -257,6 +257,17 @@ namespace remix {
     // IES profiles (remixapi_LightInfoIesProfileEXT), scene::kIesBins floats
     // each. Adding one makes a new vector, so a published frame keeps its own.
     std::shared_ptr<const std::vector<float>> iesProfiles() const { return m_iesProfiles; }
+    // Light cookies' textures (remixapi_LightInfoCookieEXT), by slot: a
+    // sphere light's cookie is its slot + 1. Slots are per texture and kept.
+    const std::vector<std::shared_ptr<scene::Texture>> &cookieTextures() const { return m_cookieTextures; }
+    std::shared_ptr<scene::Material> cookieMaterial() {
+      if (!m_cookieMaterial) {
+        m_cookieMaterial = std::make_shared<scene::Material>(*defaultMaterial());
+        m_cookieMaterial->filter = 1;
+        m_cookieMaterial->wrapU = m_cookieMaterial->wrapV = 3;
+      }
+      return m_cookieMaterial;
+    }
     void updateLight(remixapi_LightHandle handle, const remixapi_LightInfo &info);
     void destroyLight(remixapi_LightHandle handle);
     void drawLight(remixapi_LightHandle handle);
@@ -293,7 +304,7 @@ namespace remix {
     std::atomic<bool> m_keepCompressed{false};
     bool m_refreshGeometry = false;
     std::shared_ptr<scene::Texture> m_white;
-    std::shared_ptr<scene::Material> m_default, m_domeMaterial;
+    std::shared_ptr<scene::Material> m_default, m_domeMaterial, m_cookieMaterial;
     std::shared_ptr<const scene::VisibilityPartition> m_visibilityPartition;
     std::unordered_map<uint64_t, std::shared_ptr<scene::Material>> m_materials, m_modMaterials;
     // A mod material given the albedo of the material it replaces
@@ -334,6 +345,7 @@ namespace remix {
     std::shared_ptr<const std::vector<float>> m_iesProfiles;
     std::unordered_map<uint64_t, uint32_t> m_iesIndex;
     uint32_t iesProfile(std::string_view text);
+    std::vector<std::shared_ptr<scene::Texture>> m_cookieTextures;
     std::unordered_set<uint64_t> m_frameLights;
     // A published frame's sphere lights, as sphereLights() returned them at
     // publication (m_frameLights then only tells whether there are any).

@@ -143,8 +143,7 @@ vec3 volumeCandidate(LightEmitter light,vec3 p,float size,inout uint state,out v
   }
   vec3 delta=endpoint-p;
   if(dot(delta,delta)<=1e-12)return vec3(0);
-  float shaping=emitterShaping(light,-normalize(delta));
-  return light.radiance.rgb*(shaping*falloff*fraction*frame.localScale.x);
+  return emitterRadiance(light,-normalize(delta))*(falloff*fraction*frame.localScale.x);
 }
 // The local lights at a point of the medium, with two visibility rays. Up to
 // 64 lights: every one is evaluated. More: 32 candidates drawn from a cell

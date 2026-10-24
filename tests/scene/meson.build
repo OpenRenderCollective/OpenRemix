@@ -19,7 +19,7 @@ light_bvh_test = executable('remix-light-bvh-test', 'light_bvh.cpp',
 test('Analytic lights and importance hierarchy', light_bvh_test)
 ies_test = executable('remix-ies-test', 'ies.cpp',
   include_directories : test_includes, link_with : scene_library)
-test('IES profiles, parsing and light shaping', ies_test)
+test('IES profiles and light cookies', ies_test)
 emission_test = executable('remix-emission-test', 'emission.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Emission reduction and area light ownership', emission_test)

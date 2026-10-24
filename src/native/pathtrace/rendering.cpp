@@ -640,6 +640,26 @@ namespace remix {
         append(&fingerprint, sizeof(fingerprint));
       }
     }
+    // Light cookies: each slot's texture in this frame's texture table (+ 1).
+    {
+      const auto &cookies = resources.cookieTextures();
+      std::vector<uint32_t> table(cookies.size());
+      for (size_t i = 0; i < cookies.size(); ++i) {
+        if (!cookies[i])
+          continue;
+        if (textures.size() >= PathTracer::textureLimit)
+          throw VK_ERROR_TOO_MANY_OBJECTS;
+        table[i] = uint32_t(textures.size() + 1);
+        textures.push_back(resources.sampledTexture(resources.cookieMaterial(), cookies[i], command));
+        auto fingerprint = cookies[i]->fingerprint();
+        append(&fingerprint, sizeof(fingerprint));
+      }
+      if (lightCookies)
+        retiredBuffers.push_back(std::move(lightCookies));
+      if (!table.empty())
+        hostBuffer(lightCookies, table.data(), table.size() * sizeof(uint32_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+      frame.lightCookies = lightCookies ? lightCookies->address : 0;
+    }
     // Role CUT (remixapi_InstanceInfoMaskEXT): the coverage of the groups
     // whose instances the camera does not see, drawn by the raster renderer
     // ahead of this frame's passes. Its sources are in no table: their

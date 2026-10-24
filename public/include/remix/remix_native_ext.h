@@ -1273,6 +1273,24 @@ typedef struct remixapi_LightInfoIesProfileEXT {
   uint64_t size;
 } remixapi_LightInfoIesProfileEXT;
 
+// Optional pNext on LightInfo (sphere lights): a light cookie, a texture
+// projected from the light along its axis (as for IES profiles: the shaping's
+// direction, else straight down) like a slide projector. Within the
+// projection the light's radiance is multiplied by the texture's colour times
+// its alpha (so a mask may be in either), and outside it the light is dark: the texture's centre lies on the axis, its
+// top toward `up` and its width spans fovDegrees (0 to 180, exclusive). The
+// texture is named as material textures are (a CreateTexture hash "0x..." or
+// a file path). `up` must not be parallel to the axis. Cone shaping and an
+// IES profile still apply.
+#define REMIXAPI_STRUCT_TYPE_LIGHT_INFO_COOKIE_EXT ((remixapi_StructType)0x7fff101f)
+typedef struct remixapi_LightInfoCookieEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  remixapi_Path texture;
+  remixapi_Float3D up;
+  float fovDegrees;
+} remixapi_LightInfoCookieEXT;
+
 // A private value avoids the retained 0.1003 BC5 value (139).
 #define REMIXAPI_FORMAT_BC4_UNORM_EXT ((remixapi_Format)147)
 #define REMIXAPI_FORMAT_BC6H_UFLOAT_EXT ((remixapi_Format)143)

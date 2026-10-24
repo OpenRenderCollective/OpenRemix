@@ -278,6 +278,27 @@ namespace remix {
         std::copy(d.begin(), d.end(), prototype.direction);
       }
     }
+    if (auto *cookie = static_cast<const remixapi_LightInfoCookieEXT *>(
+            ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_COOKIE_EXT))) {
+      if (type != REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT || !std::isfinite(cookie->fovDegrees) ||
+          cookie->fovDegrees <= 0 || cookie->fovDegrees >= 180)
+        throw invalid;
+      Vec axis = unit(shaped ? vec(shaping.direction) : z), up = vec(cookie->up);
+      finite(up.data(), 3);
+      auto side = cross(axis, up);
+      if (length(side) < 1e-4f * std::max(length(up), 1e-30f))
+        throw invalid;
+      auto texture = texturePath(cookie->texture);
+      auto slot = std::find(m_cookieTextures.begin(), m_cookieTextures.end(), texture);
+      if (slot == m_cookieTextures.end())
+        slot = m_cookieTextures.insert(m_cookieTextures.end(), texture);
+      prototype.cookie = uint32_t(slot - m_cookieTextures.begin()) + 1;
+      // Up made perpendicular to the axis.
+      auto perpendicular = unit(cross(unit(side), axis));
+      std::copy(perpendicular.begin(), perpendicular.end(), prototype.cookieUp);
+      prototype.cookieTan = std::tan(cookie->fovDegrees * pi / 360);
+      std::copy(axis.begin(), axis.end(), prototype.direction);
+    }
     auto triangle = [&](Vec a, Vec b, Vec c, Vec direction) {
       if (length(cross(add(b, scale(a, -1)), add(c, scale(a, -1)))) < 1e-10f)
         return;

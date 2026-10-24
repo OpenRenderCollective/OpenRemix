@@ -132,7 +132,8 @@ namespace remix::trace::detail {
     float restirParams[4] = {};    // spatial radius (pixels), emitter count, reserved
     uint64_t regirRead = 0, regirWrite = 0, regirSlots = 0, regirReserved = 0;
     uint32_t regirConfig[4] = {}; // cell capacity, slots per cell, cells per world unit (float bits), active
-    uint64_t orcaTable = 0, orcaReserved = 0;
+    // lightCookies: each light cookie slot's texture in this frame's table + 1.
+    uint64_t orcaTable = 0, lightCookies = 0;
     uint32_t orcaConfig[4] = {}; // entry capacity, sparse tile size, voxel levels, active
     float orcaParams[4] = {};    // smallest voxel (world units), level growth, minimum samples, maximum relative error
     // remixapi_InstanceInfoMaskEXT CUT. cutConfig: first coverage texture + 1
@@ -553,6 +554,7 @@ namespace remix {
     // The IES profiles (NativeResources::iesProfiles) the buffer holds.
     std::shared_ptr<const std::vector<float>> iesUploaded;
     std::shared_ptr<Buffer> iesBuffer;
+    std::unique_ptr<Buffer> lightCookies; // this frame's cookie table (Frame::lightCookies)
     uint64_t lightBufferGeneration = 0, torchBufferGeneration = 0, emissiveBufferGeneration = 0;
     // The hierarchy (LightBvh::instance) each slot's buffers hold; with the
     // generation above, what an upload of only the changes builds on.

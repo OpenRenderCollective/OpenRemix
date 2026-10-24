@@ -69,7 +69,7 @@ layout(set=0,binding=3,std140) uniform Frame {
   vec4 restirParams; // spatial radius (pixels), emitter count, reserved
   uint64_t regirRead, regirWrite, regirSlots, regirReserved;
   uvec4 regirConfig; // cell capacity, slots per cell, cells per world unit (float bits), active
-  uint64_t orcaTable, orcaReserved;
+  uint64_t orcaTable, lightCookies; // lightCookies: each cookie slot's texture + 1
   uvec4 orcaConfig; // entry capacity, sparse tile size, voxel levels, active
   vec4 orcaParams; // smallest voxel (world units), level growth, minimum samples, maximum relative error (0: any)
   uvec4 cutConfig; // first cut coverage texture + 1 (0: nothing cuts), coverage textures
