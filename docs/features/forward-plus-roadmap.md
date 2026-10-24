@@ -1941,6 +1941,15 @@ errors and preserves diffuse hashes, authored statistics and the saved sidecar. 
 and underwater frames remain unchanged; connector changes are small. The comparison also includes
 the preceding outside-proxy fix, so it does not isolate priority-band image differences or establish
 whole-map visual/performance acceptance. Underwater medium/path-length work remains open.
+Completed-worker local-selection lifecycle coverage now complements queued cancellation tests.
+A synthetic frozen-chart fixture supplies completed fit/visibility evidence, prepares an actual output
+image, records its source copies and checks publication only after the submission fence. Scene and
+authored-context edits, equal-metadata image-owner replacements and cancellation after preparation
+must discard the output. Prepared local metadata is now compared with its retained image on the
+worker, refusing mismatched source metadata before output allocation or render-thread recording.
+This closes an isolated transaction/ownership gap, not live edited-map or map-transition acceptance;
+that integration and cached preparation remain open. Lifecycle cases live separately from generic
+image upload tests to keep their setup and synchronization requirements readable.
 Next: qualify live authored edits/map transitions, underwater capture lighting, and cached-bake
 preparation, then consider local replacement publication as a default.
 

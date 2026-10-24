@@ -104,7 +104,7 @@ if get_option('gpu_tests')
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)
   test('GPU oriented cubemap projection, priorities and roughness', forward_probe_sampling_test, timeout : 60)
-  forward_probe_image_test = executable('remix-forward-probe-image-test', 'probe_image_upload.cpp',
+  forward_probe_image_test = executable('remix-forward-probe-image-test', 'probe_image_upload.cpp', 'local_selection_preparation.cpp',
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)
   test('GPU HDR reflection image layers and mip uploads', forward_probe_image_test, timeout : 60)

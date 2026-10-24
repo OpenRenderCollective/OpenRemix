@@ -2,6 +2,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <stdexcept>
 
 namespace remix::forward::probes {
@@ -42,6 +43,8 @@ namespace remix::forward::probes {
       if (token.stop_requested()) throw std::runtime_error("Local selection superseded");
       if (!matchesCoverageContext(ready->context, *source, ready->context.baseline))
         throw std::invalid_argument("Prepared local radiance belongs to another frozen scene");
+      if (std::memcmp(&ready->header, &job->local->header(), sizeof(Header)))
+        throw std::invalid_argument("Prepared local radiance metadata does not belong to its image");
       std::vector<uint32_t> eligible;
       for (const auto &layer : ready->layers) eligible.push_back(layer.candidate);
       // Restrict before greedy selection; dropping replacements afterwards can

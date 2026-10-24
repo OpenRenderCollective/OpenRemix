@@ -2,8 +2,6 @@
 #include "forward/probes/priority_bands.h"
 #include "forward/probes/coverage_image_plan.h"
 #include "forward/probes/selection_upload.h"
-#include "forward/probes/local_selection_preparation.h"
-#include <future>
 #include "gpu_fixture.h"
 #include <algorithm>
 #include <bit>
@@ -11,6 +9,8 @@
 
 using namespace remix::forward;
 using namespace remix::forward::test;
+
+void testLocalSelectionPreparation();
 
 void uploadCase(uint32_t count, uint32_t size, bool composition = false, bool selection = false) {
   Fixture fixture(false); // No optional cube-array or descriptor-indexing features.
@@ -246,60 +246,8 @@ void selectionLifetimeCase(uint32_t stale) {
   require(repeated, "A copy cannot retire twice");
   require(validationErrors == 0, "Selection ownership and retirement are validation clean");
 }
-void selectionPreparationCase() {
-  Fixture fixture(false);
-  VkPhysicalDeviceProperties properties;
-  vkGetPhysicalDeviceProperties(fixture.physical, &properties);
-  remix::pipeline::Service service(fixture.device, properties, false);
-  probes::Capture capture;
-  capture.bounds.include({-1,-1,-1}); capture.bounds.include({1,1,1}); capture.resolution = 8;
-  probes::Data data;
-  data.header.parameters = {1,8,4,510}; data.header.probes[0] = probes::projectionRecord(capture);
-  data.texels.resize(510, {1,2,3,1});
-  probes::ReflectionSnapshot baseline;
-  baseline.image = std::make_shared<probes::ImageAsset>(fixture.physical, fixture.device, data);
-  baseline.baseline = probes::automaticCoverageBaseline(baseline.image->header());
-  auto source = std::make_shared<remix::scene::BakeScene>();
-  source->sceneId = 100; source->revision = 1; source->ready = true;
-  auto ready = std::make_shared<probes::CoverageReadyImage>();
-  ready->header = data.header; ready->context = probes::coveragePlanContext(*source, baseline.baseline); ready->layers = {{0,0}};
-  auto evidence = std::make_shared<probes::ReceiverCoverageEvidence>();
-  evidence->sourceContext = probes::coveragePlanContext(*source, {});
-  auto local = std::make_shared<probes::ImageAsset>(fixture.physical, fixture.device, data);
-  // Serial preparation behind a held gate makes cancellation deterministic.
-  // Reaching release proves that start/poll/cancel never wait for this worker.
-  std::promise<void> entered, release;
-  auto enteredFuture = entered.get_future();
-  auto releaseFuture = release.get_future();
-  service.prepare("local-selection-test-gate", [&] { entered.set_value(); releaseFuture.wait(); });
-  require(enteredFuture.wait_for(std::chrono::seconds(5)) == std::future_status::ready, "Preparation test gate starts");
-  {
-    probes::LocalSelectionPreparation preparation(fixture.physical, fixture.device, service);
-    preparation.start(source, baseline, evidence, ready, local);
-    require(preparation.pending() && preparation.memory() == std::array<uint64_t, 2>{},
-            "Queued local selection is pending without blocking for worker allocation");
-    auto changed = *source; ++changed.revision;
-    require(!preparation.poll(changed, baseline, local) && !preparation.pending(),
-            "Changed source cancels queued selection without waiting for the worker");
-    preparation.start(source, baseline, evidence, ready, local);
-    auto replacedBaseline = baseline;
-    replacedBaseline.image = local;
-    require(!preparation.poll(*source, replacedBaseline, local) && !preparation.pending(),
-            "Same-metadata baseline image replacement cancels queued preparation");
-    preparation.start(source, baseline, evidence, ready, local);
-    require(!preparation.poll(*source, baseline, baseline.image) && !preparation.pending(),
-            "Same-metadata local image replacement cancels queued preparation");
-    preparation.start(source, baseline, evidence, ready, local);
-    preparation.cancel();
-    require(!preparation.pending(), "Explicit cancellation discards queued selection");
-    preparation.start(source, baseline, evidence, ready, local);
-  }
-  release.set_value();
-  service.stop();
-  require(validationErrors == 0, "Preparation cancellation and shutdown are validation clean");
-}
 int main() try {
-  selectionPreparationCase();
+  testLocalSelectionPreparation();
   for (uint32_t stale = 0; stale < 8; ++stale) selectionLifetimeCase(stale);
   uploadCase(0, 0);
   uploadCase(64, 8);
