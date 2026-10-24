@@ -16,9 +16,35 @@ namespace remix::forward::probes {
       std::stop_token cancelled) {
     return planReceiverCoverage(source, automaticCoverageBaseline(baseline), fits, coverage, cancelled);
   }
+  ReceiverCoverageEvidence retainReceiverCoverage(const scene::BakeScene &source,
+      const ReceiverFits &fits, const ReceiverAudit &coverage) {
+    if (!coverage.complete() || fits.attempts.size() > 32 || coverage.pairs().size() > 32768)
+      throw std::invalid_argument("Cannot retain pending or oversized receiver coverage");
+    ReceiverCoverageEvidence result;
+    result.sourceContext = coveragePlanContext(source, CoverageBaselineSet{});
+    for (const auto &attempt : fits.attempts)
+      if (attempt.variants.size() > ReceiverSiteFit::maximumVariants)
+        throw std::invalid_argument("Retained receiver variants exceed capacity");
+    result.fits = fits;
+    result.observations.reserve(coverage.pairs().size());
+    for (size_t i = 0; i < coverage.pairs().size(); ++i) {
+      const auto &pair = coverage.pairs()[i];
+      if (pair.receiver >= 8192 || pair.capture >= fits.attempts.size())
+        throw std::invalid_argument("Invalid retained receiver coverage owner");
+      result.observations.push_back({pair.receiver, pair.capture, coverage.visibility()[i]});
+    }
+    return result;
+  }
   ReceiverCoveragePlan planReceiverCoverage(const scene::BakeScene &source,
       const CoverageBaselineSet &snapshot, const ReceiverFits &fits, const ReceiverAudit &coverage,
       std::stop_token cancelled) {
+    return planReceiverCoverage(source, snapshot, retainReceiverCoverage(source, fits, coverage), cancelled);
+  }
+  ReceiverCoveragePlan planReceiverCoverage(const scene::BakeScene &source,
+      const CoverageBaselineSet &snapshot, const ReceiverCoverageEvidence &evidence, std::stop_token cancelled) {
+    if (!matchesCoverageContext(evidence.sourceContext, source, CoverageBaselineSet{}))
+      throw std::invalid_argument("Retained receiver evidence belongs to a different frozen scene");
+    const auto &fits = evidence.fits;
     const auto &baseline = snapshot.volumes;
     auto check = [&] {
       if (cancelled.stop_requested()) throw std::runtime_error("Local reflection coverage plan superseded");
@@ -33,7 +59,7 @@ namespace remix::forward::probes {
       result.disabledBaseline = snapshot.disabled;
       return result;
     }
-    if (!coverage.complete() || baseline.size() > maxProbes || fits.attempts.size() > 32)
+    if (evidence.observations.size() > 32768 || baseline.size() > maxProbes || fits.attempts.size() > 32)
       throw std::invalid_argument("Invalid local coverage planning inputs");
     constexpr uint32_t axisSamples = 5, guardsPerCapture = 1 + axisSamples * axisSamples * axisSamples;
     static_assert(8192 + maxProbes * guardsPerCapture <= maximumCoverageSamples);
@@ -135,12 +161,11 @@ namespace remix::forward::probes {
         result.candidateRecords.push_back(record);
       }
     }
-    for (size_t i = 0; i < coverage.pairs().size(); ++i) {
+    for (const auto &pair : evidence.observations) {
       check();
-      const auto &pair = coverage.pairs()[i];
       if (pair.receiver >= receivers.size() || pair.capture >= fits.attempts.size())
         throw std::invalid_argument("Invalid local coverage observation owner");
-      if (coverage.visibility()[i] != ReceiverVisibility::Visible) continue;
+      if (pair.visibility != ReceiverVisibility::Visible) continue;
       const auto &variants = fits.attempts[pair.capture].variants;
       for (uint32_t v = 0; v < variants.size(); ++v)
         if (contains(variants[v].influence, receivers[pair.receiver].position))

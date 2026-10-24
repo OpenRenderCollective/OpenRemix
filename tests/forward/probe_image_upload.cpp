@@ -145,6 +145,31 @@ void selectionLifetimeCase(uint32_t stale) {
   require(noAutomatic.replacements.empty() && !noAutomatic.disabledBaseline &&
           probes::matchesCoverageContext(noAutomatic.context, scene, authoredOnly),
           "Authored-only policy preserves active volumes without automatic work");
+  probes::ReceiverFits retainedFits;
+  retainedFits.attempts.resize(1);
+  retainedFits.attempts[0].site = 17;
+  probes::ReceiverPair pair;
+  pair.ray.distance = 1; pair.ray.point.normal[0] = 1;
+  probes::ReceiverAudit audit({pair}, .01f);
+  bool pendingRefused = false;
+  try { (void)probes::retainReceiverCoverage(scene, retainedFits, audit); }
+  catch (const std::invalid_argument &) { pendingRefused = true; }
+  require(pendingRefused, "Pending visibility cannot become retained evidence");
+  remix::forward::bake::Result hit;
+  hit.irradiance[0][3] = 2; hit.statistics = {0,1,1,0};
+  require(audit.observe(0, std::span(&hit, 1)), "Completed visibility evidence is observed");
+  const auto evidence = probes::retainReceiverCoverage(scene, retainedFits, audit);
+  retainedFits.attempts[0].site = 99;
+  require(evidence.fits.attempts[0].site == 17 && evidence.observations.size() == 1 &&
+          evidence.observations[0].visibility == probes::ReceiverVisibility::Visible,
+          "Retained evidence owns fit metadata and classified visibility without query rays");
+  require(probes::planReceiverCoverage(scene, authoredOnly, evidence).replacements.empty(),
+          "Retained evidence replans against current fallback policy");
+  auto changedSource = scene; ++changedSource.chartRevision;
+  bool staleEvidence = false;
+  try { (void)probes::planReceiverCoverage(changedSource, authoredOnly, evidence); }
+  catch (const std::invalid_argument &) { staleEvidence = true; }
+  require(staleEvidence, "Changed frozen scene rejects retained receiver evidence");
   probes::ReceiverCoveragePlan selection;
   selection.context = probes::coveragePlanContext(scene, baseline);
   selection.owners = {{0,0}}; selection.errors = {0}; selection.candidateRecords = {localImage->header().probes[0]};

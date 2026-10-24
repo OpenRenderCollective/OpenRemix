@@ -2,6 +2,7 @@
 #include "forward/probes/capture_dump.h"
 #include "runtime/pipelines.h"
 #include <atomic>
+#include <cstdio>
 #include <stdexcept>
 
 namespace remix::forward::bake {
@@ -121,6 +122,12 @@ namespace remix::forward::bake {
         job.ticket = m_pipelines->prepare("forward-receiver-sites-" + std::to_string(++receiverDiagnosticGeneration), [owner] {
           probes::dumpReceiverSites(*owner->source, owner->captures, *owner->receiverSites, owner->receiverSiteChecks.get(), owner->receiverFits.get(), owner->receiverFitCoverage.get(),
                                    owner->cancellation.get_token());
+          if (owner->receiverFits && owner->receiverFitCoverage)
+            owner->reflectionEvidence = std::make_shared<const probes::ReceiverCoverageEvidence>(
+                probes::retainReceiverCoverage(*owner->source, owner->receiverFits->finish(), *owner->receiverFitCoverage));
+          if (owner->reflectionEvidence)
+            std::fprintf(stderr, "Retained local reflection evidence: %zu attempts, %zu visibility observations\n",
+                owner->reflectionEvidence->fits.attempts.size(), owner->reflectionEvidence->observations.size());
           owner->receiverFitCoverage.reset();
           owner->receiverFits.reset();
           owner->receiverSiteChecks.reset();

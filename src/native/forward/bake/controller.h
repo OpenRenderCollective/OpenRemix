@@ -14,6 +14,7 @@
 namespace remix {
   class RasterRenderer;
 }
+namespace remix::forward::probes { struct ReceiverCoverageEvidence; }
 namespace remix::forward::bake {
   class SunDepth;
   struct Volume {
@@ -24,6 +25,7 @@ namespace remix::forward::bake {
     std::shared_ptr<SunDepth> sunDepth;
     scene::DistantLight sun; // shape provenance for matching surface/probe static sunlight
     probes::Header reflectionHeader;
+    std::shared_ptr<const probes::ReceiverCoverageEvidence> reflectionEvidence; // Optional completed local-fit diagnostics.
     GridHeader irradianceHeader;
     uint32_t usableIrradianceProbes = 0;
     float sceneScale = 1;

@@ -4,6 +4,19 @@
 #include "forward/probes/receiver_fits.h"
 
 namespace remix::forward::probes {
+  struct ReceiverCoverageObservation {
+    uint32_t receiver = 0, capture = 0;
+    ReceiverVisibility visibility = ReceiverVisibility::Unknown;
+  };
+  // Compact completed evidence: no GPU transport, query rays or readback buffers.
+  // Receiver and attempt indices retain the deterministic planning input order.
+  struct ReceiverCoverageEvidence {
+    CoveragePlanContext sourceContext;
+    ReceiverFits fits;
+    std::vector<ReceiverCoverageObservation> observations;
+  };
+  ReceiverCoverageEvidence retainReceiverCoverage(const scene::BakeScene &source,
+      const ReceiverFits &fits, const ReceiverAudit &coverage);
   struct ReceiverCoveragePlan {
     CoveragePlanContext context;
     float maximumError = .2f;
@@ -19,6 +32,9 @@ namespace remix::forward::probes {
   // evidence must belong to the same frozen scene. Unqueried samples remain unknown.
   ReceiverCoveragePlan planReceiverCoverage(const scene::BakeScene &source,
       const CoverageBaselineSet &baseline, const ReceiverFits &fits, const ReceiverAudit &coverage,
+      std::stop_token cancelled = {});
+  ReceiverCoveragePlan planReceiverCoverage(const scene::BakeScene &source,
+      const CoverageBaselineSet &baseline, const ReceiverCoverageEvidence &evidence,
       std::stop_token cancelled = {});
   // Diagnostic automatic baseline, before authored composition. Do not apply
   // this plan to a published authored-plus-automatic set without replanning.

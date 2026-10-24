@@ -1862,7 +1862,13 @@ SelectionFrames now retains submitted copies and sampled publications by fenced 
 retires copies only after selectFrame, and uses offer generations to prevent older completed work
 from replacing newer requests. Context is rechecked during record before activation. This frame
 handoff is GPU-tested but is not yet connected to the renderer or candidate preparation.
-Next: connect candidate preparation and this handoff to the renderer, then qualify
+Completed optional receiver diagnostics now retain compact fitted-volume and classified-visibility
+evidence on the published bake volume. Query rays, transport and readback storage are released as
+before. The planner can reuse this evidence against a fresh baseline only when frozen-scene
+metadata still matches; unknown observations remain unknown. Cached bakes currently have no such
+evidence, and ordinary baking without the diagnostic request does not allocate it.
+Next: prepare selected local radiance from retained evidence and connect the frame handoff to
+renderer publication, then qualify
 live authored edits and map changes before enabling local replacement publication by default.
 
 Before production integration, keep planner indices tied to canonical capture metadata rather than

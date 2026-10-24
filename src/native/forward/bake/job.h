@@ -19,6 +19,7 @@
 #include "forward/probes/receiver_sites.h"
 #include "forward/probes/receiver_site_checks.h"
 #include "forward/probes/receiver_fits.h"
+#include "forward/probes/receiver_coverage_plan.h"
 #include <atomic>
 #include <chrono>
 #include <filesystem>
@@ -135,6 +136,7 @@ namespace remix::forward::bake {
     bool receiverCoveragePlanned = false;
     std::unique_ptr<probes::ReceiverAudit> receiverFitCoverage;
     uint32_t receiverCoverageNext = 0, receiverCoverageReceived = 0;
+    std::shared_ptr<const probes::ReceiverCoverageEvidence> reflectionEvidence;
     probes::CaptureWork captureWork;
     uint64_t captureInputHash = 0;
     probes::Data specular;

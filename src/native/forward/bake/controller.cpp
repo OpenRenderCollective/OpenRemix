@@ -1124,6 +1124,7 @@ namespace remix::forward::bake {
     volume->sunDepth = m_job->sunDepth;
     if (volume->sunDepth) volume->sunDepth->recordUpload(command);
     volume->hash = m_hash;
+    volume->reflectionEvidence = m_job->reflectionEvidence;
     if (!m_job->captures.empty()) {
       volume->content.captureInputs = m_job->captureInputHash;
       uint64_t captured = 1469598103934665603ull;
