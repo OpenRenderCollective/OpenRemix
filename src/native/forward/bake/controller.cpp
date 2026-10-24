@@ -258,6 +258,7 @@ namespace remix::forward::bake {
     surfaces.resize(surfaceLayout.points.size());
     Options options;
     options.directLighting = directLighting;
+    options.resampleIndirectLights = config.resampleIndirectLights;
     options.depthCapture = bool(sunDepth);
     mixedLights = std::make_shared<mixed::Plan>(
         mixed::plan(source, surfaceLayout, lightCutoff, cancellation.get_token(),

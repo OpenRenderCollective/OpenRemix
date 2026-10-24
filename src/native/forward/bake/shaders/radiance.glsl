@@ -109,6 +109,9 @@ float emitterShadowDistance(RayLight light, float distance) {
   return light.radiance.w > 0 ? distance - rayFrame.trace.y : distance;
 }
 #include "light_sampling.glsl"
+#ifdef BAKE_RESAMPLED_LIGHTS
+#include "light_resampling.glsl"
+#endif
 vec3 directLight(vec3 p, vec3 n, inout uint seed, Medium medium) {
   vec3 irradiance = vec3(0);
   if (any(greaterThan(rayFrame.sunRadiance.rgb, vec3(0)))) {
@@ -124,6 +127,12 @@ vec3 directLight(vec3 p, vec3 n, inout uint seed, Medium medium) {
   }
   if (rayFrame.counts.y == 0u)
     return irradiance;
+#ifdef BAKE_RESAMPLED_LIGHTS
+  // Extra offline proposal arithmetic replaces no visibility or bounce work.
+  // Radiance captures and single-light scenes keep their original estimator.
+  if (rayFrame.control.z == 0u && (rayFrame.control.w & 128u) != 0u && rayFrame.counts.y > 1u)
+    return irradiance + resampledDirectLight(p, n, seed, medium);
+#endif
   float selectionPdf;
   uint index = selectLight(p, n, random(seed), selectionPdf);
   bool contributes = lightingStyleSelected(uint(rayLights[index].shaping.w));

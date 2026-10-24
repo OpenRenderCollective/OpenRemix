@@ -308,6 +308,7 @@ namespace remix::forward::bake::cache {
     }();
     const uint32_t fields[] = {algorithmRevision,
                                uint32_t(c.directionalProbeDepth),
+                               uint32_t(c.resampleIndirectLights),
                                uint32_t(sizeof(GridHeader)),
                                uint32_t(sizeof(Result)),
                                lightmap::atlasLayers,

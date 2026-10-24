@@ -584,6 +584,7 @@ namespace remix::forward::bake {
                          (g.hasContainingMedia ? containingMediaFlag : 0u) |
                          (g.options.lightImportanceSampling && !slot.lighting ? 2u : 0u) |
                          (aggregate ? 4u : 0u) |
+                         (g.options.resampleIndirectLights ? resampledIndirectLightFlag : 0u) |
                          (receiverSites == 4    ? 16u
                           : receiverSites == 16 ? 32u
                                                 : 0u) |

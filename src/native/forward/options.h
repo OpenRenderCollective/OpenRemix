@@ -58,6 +58,7 @@ namespace remix::forward {
     bake::Config bakeConfiguration(bool liveGiActive) const {
       auto config = baking;
       config.directionalProbeDepth = bake::directionalProbeDepthRequested();
+      config.resampleIndirectLights = bake::indirectLightResamplingRequested();
       if (bakedLightingActive(liveGiActive)) {
         config.aggregateDiffuse = true;
         config.fullyBakedLights = false;

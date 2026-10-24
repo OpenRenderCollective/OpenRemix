@@ -17,6 +17,7 @@ namespace remix::forward::bake {
     uint32_t styleStorageMiB = 128; // encoded sparse SH, also bounded by device storage range
     bool relocateProbes = true; // bounded recovery of otherwise unused BSP-solid slots
     bool directionalProbeDepth = false; // private candidate until live quality/performance acceptance
+    bool resampleIndirectLights = false; // private variance candidate; same visibility-ray budget
     float gpuBudgetMs = 8; // zero selects fixed batch size; otherwise a measured GPU-time target
     float spacing = 2;     // metres; coarsened if necessary to respect maxProbes
     uint32_t maxProbes = 32768, samples = 256, bounces = 3, batch = 64, textureResolution = 256;

@@ -2,55 +2,49 @@
 
 ## Current lighting-quality focus
 
-The normal-quality Construct review isolates a remaining back-spawn ceiling-fixture
-housing error to probe-lit diffuse response. Total diffuse (`debugView=7`) retains
-the excess brightness without emission or specular; coverage marks the housing as
-probe-lit and its surrounding ceiling as lightmapped. Investigate the contributing
-probe stencil, receiver visibility and SH angular reconstruction against irradiance
-at the actual housing before increasing world atlas density or changing roughness.
-Keep surface seams, emitter shape and prop lighting as separate acceptance cases.
-The synthetic painted-sky fallback still does not qualify live-game sky parity.
+Construct's back-spawn ceiling-fixture housing has a confirmed probe-lit diffuse
+error. Total diffuse (`debugView=7`) retains the excess without emission/specular;
+coverage distinguishes the housing from its lightmapped ceiling. The bounded
+receiver-ray report reconstructs the neutral pixels and exposes bright probes
+connected through the roof slab, plus connections through the housing itself.
+Keep world-atlas seams, emitter shape and prop/probe lighting as separate cases.
+The synthetic painted-sky fallback does not qualify live-game sky parity.
 
-The bounded receiver-ray report now exposes the actual housing stencil. Several bright
-above-ceiling probes cross the roof slab, while other connections cross the housing itself.
-The reconstructed housing samples match the neutral diagnostic; independent high-sample
-surface references remain substantially darker. This is visibility/reconstruction work,
-not evidence to increase the world atlas budget. Check geometry-aware visibility and
-near-surface placement against this fixture plus the existing barrel/crate references;
-retain fixed memory and whole-frame cost gates. The earlier directional-depth option stays
-off by default because other receiver faces regressed. Blindly dropping blocked contributors
-also fails to reproduce the surface reference and is not an accepted fix.
+Independent 8192-sample SH captures 10-25 cm outside three housing faces are within
+about 0-10% luminance of surface hemisphere references; the published interpolated
+field is roughly 2-3 times too bright. A 50 cm offset makes one site almost black.
+Prioritize geometry-aware receiver-adjacent support within the fixed record budget,
+including intervening surfaces and thin geometry. Angular SH order alone is not
+the primary error at these sites, and arbitrary outward relocation is unsafe.
 
-An offline low-variance axial-moment guard also fails the receiver regression screen.
-It reduces through-ceiling support but over-darkens a neighboring housing sample and
-previous barrel/crate fronts. Do not promote an all-axis depth clamp from the isolated
-ceiling improvement. Prioritize receiver-adjacent support and spatial reconstruction;
-require the full set of independently referenced faces before runtime qualification.
+There is also stochastic probe error: matched 256-sample SH differs from the
+8192-sample result by roughly -40% to +38% at several 10-25 cm sites. This is one
+deterministic sequence, not a multi-seed variance estimate. OIDN filters surface
+lightmaps, not volume SH. Qualify probe convergence separately from placement;
+do not globally increase surface sample budgets or smooth coefficients across walls.
 
-Independent 8192-sample combined-lighting SH captures now isolate the housing
-placement problem further: sites 10-25 cm outside three measured faces reconstruct
-within about 0-10% luminance of their surface hemisphere references, whereas the
-published interpolated field is roughly 2-3 times too bright. SH angular order alone
-is therefore not the primary error at these sites. A 50 cm offset collapses one site
-almost to black, so arbitrary outward relocation is unsafe. Evaluate geometry-aware
-receiver-adjacent support within the fixed record budget, including intervening
-surfaces and thin geometry, before changing placement or interpolation defaults.
+Rejected shortcuts include blindly dropping blocked contributors, low-variance
+all-axis depth clamps and a single stratified indirect-light dimension. They trade
+leaks for dark neighboring faces or show no overall improvement. The earlier
+directional-depth option remains off because barrel/crate faces regressed.
+Stratifying only aggregate direct-light selection leaves this fixture unchanged;
+its explicit lights remain mixed, with no selected aggregate lights here.
 
-A matched 256-sample capture at those same housing-adjacent sites also exposes
-probe sampling error independently of placement: several 10-25 cm sites differ
-from the 8192-sample SH result by roughly -40% to +38% luminance. This is one
-deterministic sample sequence, not a multi-seed variance estimate. Existing OIDN
-filtering applies to surface lightmaps; it does not denoise the volume SH field.
-Qualify probe convergence as well as placement, with geometry-safe reconstruction
-and bounded additional bake work; avoid globally increasing every surface sample
-budget or smoothing probe coefficients across walls to hide these errors.
+Indirect-light proposal resampling is a private opt-in candidate:
+`REMIX_DEBUG_BAKE_LIGHT_RESAMPLING=1`. It evaluates four unshadowed light proposals
+and traces one selected visibility connection, with reservoir normalization and a
+shared proposal across styled components. Default behavior remains disabled;
+reflection/live-ray estimators retain the existing path. The option participates
+in bake cache identity. Initial 256-sample housing captures reduce mean absolute
+error at the six 10-25 cm sites from about 35% to 17%, but other sites regress.
+Independent wall-energy integration, styled-component additivity, reflection
+isolation and cache separation checks cover correctness, not general quality.
 
-Stratifying only aggregate direct-light selection leaves all 15 measured housing
-SH captures unchanged: Construct retains these explicit lights in the mixed path,
-with no aggregate-selected lights in this fixture. That candidate was removed
-despite passing analytic transport checks. Target indirect bounce/light sampling
-for the measured stochastic error; do not claim aggregate-only sampling changes
-improve this case or confuse separately attributed direct light with probe noise.
+Next gates: matched on/off captures, multiple sampling sequences and maps, the
+existing barrel/crate references, complete bake-time cost and unchanged physical
+record/storage budgets. Retain seam continuity, unknown fallback, arbitrary
+controllable groups and whole-frame cost gates. Do not promote this candidate or
+claim the housing leak fixed from the isolated convergence improvement.
 
 ## Current automatic-cubemap delivery gates
 

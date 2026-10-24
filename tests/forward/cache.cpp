@@ -66,6 +66,7 @@ int main(int argc, char **argv) {
     require(bc::key(source->contentHash, changed, .001f, device) != identity,
             "Every bake quality field participates in disk cache identity");
   };
+  qualityKey([](auto &c) { c.resampleIndirectLights = true; });
   {
     auto grouped = config;
     grouped.groupedStyledDirect = true;
