@@ -2000,3 +2000,17 @@ wider-map quality and default acceptance remain open. Earlier cached-path limita
 above describe the state before this continuation.
 Corrupted-companion replay also preserves the base bake identity/content hashes and
 performs no local transport; checksum rejection falls back without a full bake.
+
+A cached Construct live-sidecar continuation now changes authored priority and independent
+feathering after both initial authored publication and local selection are active. The
+production watcher publishes revision 2, reuses both authored captures with zero new
+capture rays, and replans the four local replacements. Final records show the requested
+priority 2 and 96-Source-unit feather band; bake identity/content hashes and the original
+user sidecar remain unchanged. The isolated relay exits successfully without validation
+errors or synchronization hazards. A separate edit during initial authored preparation
+also reaches the latest revision. These functional routes do not qualify all edit types,
+visual transitions or gameplay performance. GPU lifecycle regressions now additionally
+reject a completed worker after a scene-ID change, and reject submitted old-map output
+after its fence while retaining/releasing source images correctly. Actual in-process
+map switching, deletion/empty sets, capture-origin moves and underwater quality remain
+open before default publication acceptance.

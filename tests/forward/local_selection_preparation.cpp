@@ -63,7 +63,7 @@ namespace {
     require(validationErrors == 0, "Preparation cancellation and shutdown are validation clean");
   }
 
-  enum class Change { None, Scene, Authored, BaselineImage, LocalImage, Cancel, InvalidImageMetadata };
+  enum class Change { None, Scene, Map, SubmittedMap, Authored, BaselineImage, LocalImage, Cancel, InvalidImageMetadata };
   void completedPreparationCase(Change change) {
     Fixture fixture(false);
     VkPhysicalDeviceProperties properties;
@@ -143,6 +143,7 @@ namespace {
     }
     require(preparation.memory()[1] > 0, "Completed worker prepared an actual replacement image");
     if (change == Change::Scene) ++source->revision;
+    if (change == Change::Map) ++source->sceneId;
     if (change == Change::Authored) {
       baseline.baseline.composed = true;
       baseline.baseline.authoredSceneId = source->sceneId;
@@ -154,7 +155,7 @@ namespace {
       local = std::make_shared<probes::ImageAsset>(fixture.physical, fixture.device, data);
     if (change == Change::Cancel) preparation.cancel();
     auto upload = preparation.poll(*source, baseline, local);
-    require(bool(upload) == (change == Change::None) && !preparation.pending(),
+    require(bool(upload) == (change == Change::None || change == Change::SubmittedMap) && !preparation.pending(),
             "Only current completed work transfers a prepared upload to the renderer");
     require(preparation.memory() == std::array<uint64_t,2>{}, "Preparation releases transferred or superseded memory");
     if (upload) {
@@ -166,11 +167,13 @@ namespace {
       fixture.begin(); frames.record(fixture.command, *source, baseline.baseline); fixture.finish();
       require(!frames.active() && !oldBaseline.expired() && !oldLocal.expired(),
               "Worker-produced copy retains both source images until its submission retires");
+      if (change == Change::SubmittedMap) ++source->sceneId;
       frames.selectFrame(0);
       fixture.begin(); frames.record(fixture.command, *source, baseline.baseline); fixture.finish();
-      require(frames.active() && frames.active()->image->header().parameters[0] == 1 &&
+      require(bool(frames.active()) == (change != Change::SubmittedMap) &&
+                  (!frames.active() || frames.active()->image->header().parameters[0] == 1) &&
                   oldBaseline.expired() && oldLocal.expired(),
-              "Completed preparation publishes after its copy fence and releases source images");
+              "Retirement publishes current copies, discards old-map copies and releases their source owners");
     }
     service.stop();
     require(validationErrors == 0, "Completed preparation and edit lifecycle are validation clean");
@@ -178,7 +181,7 @@ namespace {
 }
 void testLocalSelectionPreparation() {
   queuedCancellationCase();
-  for (auto change : {Change::None, Change::Scene, Change::Authored, Change::BaselineImage,
+  for (auto change : {Change::None, Change::Scene, Change::Map, Change::SubmittedMap, Change::Authored, Change::BaselineImage,
                       Change::LocalImage, Change::Cancel, Change::InvalidImageMetadata})
     completedPreparationCase(change);
 }
