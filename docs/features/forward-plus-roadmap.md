@@ -1,5 +1,26 @@
 # Forward+ delivery roadmap
 
+## Current automatic-cubemap delivery gates
+
+The receiver-supported local replacement path remains opt-in. Completed functional
+checks include cached capture/evidence restoration, corrupted-companion fallback,
+priority/feather edits, explicit empty sets, sidecar removal and capture-origin edits.
+A cached Construct origin edit moves one authored capture 16 Source units: revision 2
+retraces exactly 98,304 rays (one 128px cubemap), reuses the other authored capture and
+immutable transport, and replans local selection. Diffuse bake identity/content hashes
+and the untouched authored record match the control; the original user sidecar remains
+byte-identical. The isolated relay completes without validation errors or synchronization
+hazards. This proves bounded recapture for this edit, not every origin or visual result.
+
+Remaining gates before default publication:
+- Actual in-process map switching, beyond the GPU scene-ID/fenced-retirement regressions.
+- Preparation for legacy lighting caches that lack local evidence/captures.
+- Underwater medium/path-length and projection mismatch against the path tracer.
+- Moving-receiver/doorway quality, wall leakage and broader-map performance acceptance.
+
+Earlier continuation paragraphs below retain historical limitations and measurements;
+this checklist supersedes their now-completed cache and live-sidecar functional gates.
+
 Current testing installation: `forwardplus-bake-batch-20261024`, native binary
 `0f4a1ba` with adapter `09c6477`. It includes measured Refract imports, optical
 tint motion/stationary bake policy, canonical Source asset paths and batched
