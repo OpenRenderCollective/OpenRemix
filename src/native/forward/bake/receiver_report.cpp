@@ -1,4 +1,5 @@
 #include "forward/bake/receiver_report.h"
+#include "forward/bake/probe_receiver_report.h"
 #include "forward/bake/spherical_harmonics.h"
 #include "forward/material.h"
 #include <algorithm>
@@ -124,6 +125,7 @@ namespace remix::forward::bake {
   void dumpReceiverReport(const scene::BakeScene &source, const lightmap::Layout &layout,
                           std::span<const uint16_t> pixels, const Grid &grid,
                           std::stop_token cancelled) noexcept {
+    dumpProbeReceiverReport(source, grid, cancelled);
     const char *path = std::getenv("REMIX_DEBUG_BAKE_RECEIVERS");
     if (!path || !*path) return;
     try {

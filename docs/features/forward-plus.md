@@ -782,6 +782,18 @@ views prepares a specialized shader while retaining the active bake; normal shad
 diagnostic branches. Exposure/display mapping still applies. These views locate an artifact's lighting
 component; they do not diagnose its sampling cause on their own.
 
+For a few specific rigid opaque receivers, set `REMIX_DEBUG_PROBE_RECEIVER_RAYS` to a
+fresh input file before bake/cache publication. Its format is a count (1..16), followed
+by that many `originX originY originZ directionX directionY directionZ` rows. Directions
+must be unit length; coordinates remain in host world units. Inputs are capped at 4 KiB.
+The worker writes `<input>.results.json` without extra GPU transport or cache changes.
+It picks retained triangles, interpolates vertex normals with the inverse-transpose transform, and records
+base-grid SH, probe origins, weights and broad distance moments. Existing output is protected.
+Misses remain null. Decals, alpha-tested, translucent, skinned and reflection-only geometry
+are excluded; normal maps and separate styled SH tables are not sampled. Compare these
+values with the no-normal-map irradiance view or a matching surface reference, rather than
+assuming they reproduce the final material-shaded image.
+
 For a fresh diagnostic bake, `REMIX_DEBUG_MASK_COSTS=1` together with
 `REMIX_DEBUG_BAKE_CAPTURE_PREFIX` writes `.overflow-mask-costs.bin`. It measures every partial
 overflow candidate before admission, including rejected masks: R8 texel populations, tile cardinality,

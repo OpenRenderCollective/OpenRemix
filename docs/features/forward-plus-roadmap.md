@@ -11,6 +11,16 @@ at the actual housing before increasing world atlas density or changing roughnes
 Keep surface seams, emitter shape and prop lighting as separate acceptance cases.
 The synthetic painted-sky fallback still does not qualify live-game sky parity.
 
+The bounded receiver-ray report now exposes the actual housing stencil. Several bright
+above-ceiling probes cross the roof slab, while other connections cross the housing itself.
+The reconstructed housing samples match the neutral diagnostic; independent high-sample
+surface references remain substantially darker. This is visibility/reconstruction work,
+not evidence to increase the world atlas budget. Check geometry-aware visibility and
+near-surface placement against this fixture plus the existing barrel/crate references;
+retain fixed memory and whole-frame cost gates. The earlier directional-depth option stays
+off by default because other receiver faces regressed. Blindly dropping blocked contributors
+also fails to reproduce the surface reference and is not an accepted fix.
+
 ## Current automatic-cubemap delivery gates
 
 The receiver-supported local replacement path remains opt-in. Completed functional
