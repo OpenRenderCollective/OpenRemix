@@ -20,8 +20,17 @@ relay runs pass validation; CPU tests cover disabled requests, cancellation, rep
 output protection and retained evidence despite existing reports. This completes the preparation
 gate, not the remaining reflection-quality or default-publication gates.
 
+A normal-quality, single-runtime Construct -> Flatgrass -> Construct relay sequence now
+passes completed-scene transitions. Flatgrass publishes its own bake hash and two automatic
+probes with no Construct-authored IDs. Returning restores all 64 Construct probe records and
+all recorded lighting content hashes; the four paired captures are pixel-identical. The
+Construct base cache and authored sidecar remain unchanged, preparation completes, and Vulkan
+validation reports no errors or synchronization hazards. The relay now supports bounded map
+sequences for repeatable lifecycle checks. This does not qualify live engine changelevel,
+transitions during unfinished capture preparation, or the remaining visual-quality gates.
+
 Remaining gates before default publication:
-- Actual in-process map switching, beyond the GPU scene-ID/fenced-retirement regressions.
+- Scene changes while local capture preparation is still in flight; completed relay transitions now pass.
 - Underwater medium/path-length and projection mismatch against the path tracer.
   A fixed-box far/near-origin control implicates placement; residual colour parity remains open.
   Reassessed receiver-near refinements now integrate experimentally; cold/warm checks pass.
