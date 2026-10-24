@@ -33,8 +33,11 @@ namespace remix::forward {
     const auto &volume = baking->volume();
     const auto snapshot = authoredReflections->snapshot(volume);
     const auto local = volume ? volume->localReflections : nullptr;
-    const bool available = enabled && localSelectionPreparation && source && source->ready && snapshot.image && local && local->image &&
-        local->ready && !local->ready->layers.empty() && volume->reflectionEvidence &&
+    // Disabled/author-only sets cannot accept automatic replacements. Retire
+    // existing selections without scheduling a worker that can only return empty.
+    const bool automaticAllowed = !snapshot.baseline.disabled && snapshot.baseline.automaticAllowed;
+    const bool available = enabled && automaticAllowed && localSelectionPreparation && source && source->ready &&
+        snapshot.image && local && local->image && local->ready && !local->ready->layers.empty() && volume->reflectionEvidence &&
         probes::matchesCoverageContext(local->ready->context, *source, local->ready->context.baseline);
     if (!available) {
       localSelections.invalidate();

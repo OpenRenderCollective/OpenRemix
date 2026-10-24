@@ -2014,3 +2014,17 @@ reject a completed worker after a scene-ID change, and reject submitted old-map 
 after its fence while retaining/releasing source images correctly. Actual in-process
 map switching, deletion/empty sets, capture-origin moves and underwater quality remain
 open before default publication acceptance.
+
+Cached Construct live-sidecar empty/removal checks now cover two more production
+watcher transitions after authored and local publications are active. An explicit empty
+set publishes zero local probes at revision 2. Removing the owned sidecar restores 64
+automatic/local probes with no authored identities. Both retain the same diffuse bake
+identity/content hashes and perform zero capture rays; the protected user sidecar stays
+byte-identical. Final-renderer repeats exit without validation errors or synchronization
+hazards. The renderer now skips local-selection preparation entirely for explicitly
+disabled or author-only policies, while retaining fenced retirement of existing work.
+Worker regressions cover both policies without output-image allocation; the authored
+edit/reuse and GPU image/lifecycle suites pass. These checks close these specific
+functional transitions, not pixel-level doorway quality or actual in-process map changes.
+Capture-origin edits, map switching, legacy-cache preparation and underwater reflections
+remain open before default publication acceptance.

@@ -63,7 +63,7 @@ namespace {
     require(validationErrors == 0, "Preparation cancellation and shutdown are validation clean");
   }
 
-  enum class Change { None, Scene, Map, SubmittedMap, Authored, BaselineImage, LocalImage, Cancel, InvalidImageMetadata };
+  enum class Change { None, Scene, Map, SubmittedMap, Disabled, AuthoredOnly, Authored, BaselineImage, LocalImage, Cancel, InvalidImageMetadata };
   void completedPreparationCase(Change change) {
     Fixture fixture(false);
     VkPhysicalDeviceProperties properties;
@@ -122,6 +122,13 @@ namespace {
     ready->layers = {{0,0}};
     if (change == Change::InvalidImageMetadata) ++ready->header.parameters[0];
 
+    if (change == Change::Disabled || change == Change::AuthoredOnly) {
+      baseline.baseline.composed = true;
+      baseline.baseline.disabled = change == Change::Disabled;
+      baseline.baseline.automaticAllowed = change != Change::AuthoredOnly;
+      baseline.baseline.authoredSceneId = source->sceneId;
+      baseline.baseline.authoredRevision = 1;
+    }
     probes::LocalSelectionPreparation preparation(fixture.physical, fixture.device, service);
     preparation.start(source, baseline, evidence, ready, local);
     // This serial marker follows the worker: it proves preparation has finished
@@ -139,6 +146,14 @@ namespace {
       require(refused && !preparation.pending() && preparation.memory() == std::array<uint64_t,2>{},
               "Worker rejects radiance metadata that does not belong to its retained image");
       service.stop();
+      return;
+    }
+    if (change == Change::Disabled || change == Change::AuthoredOnly) {
+      require(preparation.memory() == std::array<uint64_t,2>{} &&
+                  !preparation.poll(*source, baseline, local) && !preparation.pending(),
+              "Disabled automatic selection allocates no replacement image and publishes nothing");
+      service.stop();
+      require(validationErrors == 0, "Explicit reflection disable is validation clean");
       return;
     }
     require(preparation.memory()[1] > 0, "Completed worker prepared an actual replacement image");
@@ -181,7 +196,7 @@ namespace {
 }
 void testLocalSelectionPreparation() {
   queuedCancellationCase();
-  for (auto change : {Change::None, Change::Scene, Change::Map, Change::SubmittedMap, Change::Authored, Change::BaselineImage,
+  for (auto change : {Change::None, Change::Scene, Change::Map, Change::SubmittedMap, Change::Disabled, Change::AuthoredOnly, Change::Authored, Change::BaselineImage,
                       Change::LocalImage, Change::Cancel, Change::InvalidImageMetadata})
     completedPreparationCase(change);
 }
