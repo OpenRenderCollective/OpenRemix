@@ -16,6 +16,7 @@ Remaining gates before default publication:
 - Actual in-process map switching, beyond the GPU scene-ID/fenced-retirement regressions.
 - Preparation for legacy lighting caches that lack local evidence/captures.
 - Underwater medium/path-length and projection mismatch against the path tracer.
+  A fixed-box far/near-origin control implicates placement; residual colour parity remains open.
 - Moving-receiver/doorway quality, wall leakage and broader-map performance acceptance.
 
 Earlier continuation paragraphs below retain historical limitations and measurements;
@@ -2049,3 +2050,16 @@ edit/reuse and GPU image/lifecycle suites pass. These checks close these specifi
 functional transitions, not pixel-level doorway quality or actual in-process map changes.
 Capture-origin edits, map switching, legacy-cache preparation and underwater reflections
 remain open before default publication acceptance.
+
+An underwater fixed-box origin control now compares a protected 128px capture at
+(1826.47, 4645.57, -268.03) with one at the reflective receiver (827, 4256, -875).
+Projection/influence boxes, priority 10, roughness .15, metallic 1, four diffuse bounces,
+SSR-off policy and camera route are held fixed. Both runs preserve diffuse identity and
+content hashes, publish the intended capture, and complete without validation errors
+or synchronization hazards. The near capture removes the prominent angular split and
+shows a more plausible floor-shaped reflection, but remains bluer than the accumulated
+path-traced control. Moving the origin changes optical path lengths and proxy projection
+error together; this does not isolate absorption, prove the projection box correct, or
+justify removing attenuation. Do not blur away the difference or promote this hand-placed
+control as an automatic placement fix. Investigate receiver-near admitted origins and
+terrain/medium-aware transport parity, then repeat moving-receiver and boundary checks.
