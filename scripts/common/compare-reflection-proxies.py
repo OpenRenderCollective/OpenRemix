@@ -6,6 +6,7 @@ import json
 import math
 import statistics
 from pathlib import Path
+from reflection_regions import inside, propose_seeded_influence, support
 
 
 def load(path):
@@ -57,7 +58,7 @@ def candidate(specification):
     return tuple(map(int, fields))
 
 
-def compare(sites, audit, candidates):
+def compare(sites, audit, candidates, fit_error=None, clearance_metres=.1):
     if sites["sceneHash"] != audit["sceneHash"] or sites["sceneScale"] != audit["sceneScale"]:
         raise ValueError("Reports must belong to the same frozen scene and unit scale")
     scale = sites["sceneScale"]
@@ -95,6 +96,31 @@ def compare(sites, audit, candidates):
         results[name] = values
         metadata[name] = {"origin": origin, "selectedByDiagnosticPlan": (attempt, variant) in selected,
                           "observedVisible": summary(list(values.values()))}
+        if fit_error is not None:
+            cohort = {}
+            for pair in sites["localCoverage"]["pairs"]:
+                index = pair["receiver"]
+                if pair["attempt"] != attempt or index not in positions or not inside(positions[index], lower, upper):
+                    continue
+                label = "unknown"
+                if pair["visibility"] == "blocked":
+                    label = "bad"
+                elif pair["visibility"] == "visible" and index in values:
+                    label = "good" if values[index] <= fit_error else "bad"
+                cohort[index] = (positions[index], label)
+            training = [sample for index, sample in sorted(cohort.items()) if index % 2 == 0]
+            held_out = [sample for index, sample in sorted(cohort.items()) if index % 2 == 1]
+            proposal = propose_seeded_influence(origin, lower, upper, training, clearance_metres / scale, .002 / scale)
+            if proposal:
+                checks = support(held_out, proposal["minimum"], proposal["maximum"])
+                proposal["heldOutSupport"] = checks
+                proposal["minimumHeldOutGood"] = 8
+                proposal["heldOutChecksPass"] = checks["bad"] == 0 and checks["good"] >= 8
+            metadata[name]["influenceExperiment"] = {
+                "maximumErrorMetres": fit_error, "originClearanceMetres": clearance_metres,
+                "trainingSamples": len(training), "heldOutSamples": len(held_out),
+                "proposal": proposal, "scope": "Sampled proposal only; occupancy and rendering unverified"}
+
     common = sorted(set.intersection(*(set(values) for values in results.values())))
     if not common:
         raise ValueError("Candidates have no common observed-visible receivers")
@@ -116,11 +142,17 @@ def main():
     parser.add_argument("audit", type=Path, help="Matching receiver visibility .json report")
     parser.add_argument("--candidate", action="append", type=candidate, required=True)
     parser.add_argument("--output", type=Path, required=True, help="Owned output prefix for JSON and CSV")
+    parser.add_argument("--fit-error-metres", type=float, help="Optionally propose local influence with this residual bound")
+    parser.add_argument("--origin-clearance-metres", type=float, default=.1)
     args = parser.parse_args()
     if len(set(args.candidate)) < 2 or len(set(args.candidate)) != len(args.candidate):
         parser.error("Choose at least two distinct candidates")
+    if (not math.isfinite(args.origin_clearance_metres) or args.origin_clearance_metres <= 0 or
+            (args.fit_error_metres is not None and (not math.isfinite(args.fit_error_metres) or args.fit_error_metres <= 0))):
+        parser.error("Error and clearance limits must be finite and positive")
     try:
-        report, rows = compare(load(args.sites), load(args.audit), args.candidate)
+        report, rows = compare(load(args.sites), load(args.audit), args.candidate,
+                               args.fit_error_metres, args.origin_clearance_metres)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         outputs = [Path(str(args.output) + suffix) for suffix in [".json", ".csv"]]
         if any(path.exists() for path in outputs):

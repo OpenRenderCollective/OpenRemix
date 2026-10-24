@@ -21,6 +21,16 @@ Remaining gates before default publication:
   Normal-quality Construct still selects a different underwater origin and retains an angular region.
 - Moving-receiver/doorway quality, wall leakage and broader-map performance acceptance.
 
+The offline proxy comparison can now propose localized influence bounds from sampled
+receiver evidence (`--fit-error-metres`). A bounded seed-growth fallback avoids dead
+ends in greedy inward cuts; neither method certifies free space. Training and held-out
+receivers remain separate. Normal-quality Construct pool candidates produce proposals,
+but both fail held-out checks at 0.25 m and 0.5 m spatial residual limits. Do not publish
+these boxes or treat a lower median residual as visual acceptance. Improve capture
+placement and geometry/medium evidence, then repeat moving-receiver rendering checks.
+The successful hand-authored localized overlay remains a representation control,
+not evidence that automatic bounds are ready. This diagnostic changes no defaults.
+
 Earlier continuation paragraphs below retain historical limitations and measurements;
 this checklist supersedes their now-completed cache and live-sidecar functional gates.
 

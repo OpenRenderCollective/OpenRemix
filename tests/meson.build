@@ -1,4 +1,6 @@
 python = find_program('python3')
+test('Sampled reflection influence proposals', python,
+  args : [meson.current_source_dir() / 'reflection_regions.py'])
 add_test_setup('isolatedconfig', exe_wrapper : [python, meson.current_source_dir() / 'isolated_config.py'], is_default : true)
 test_include = include_directories('.')
 test_includes = [remix_public_include, native_include, test_include, image_include]
