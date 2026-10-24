@@ -36,6 +36,15 @@ almost to black, so arbitrary outward relocation is unsafe. Evaluate geometry-aw
 receiver-adjacent support within the fixed record budget, including intervening
 surfaces and thin geometry, before changing placement or interpolation defaults.
 
+A matched 256-sample capture at those same housing-adjacent sites also exposes
+probe sampling error independently of placement: several 10-25 cm sites differ
+from the 8192-sample SH result by roughly -40% to +38% luminance. This is one
+deterministic sample sequence, not a multi-seed variance estimate. Existing OIDN
+filtering applies to surface lightmaps; it does not denoise the volume SH field.
+Qualify probe convergence as well as placement, with geometry-safe reconstruction
+and bounded additional bake work; avoid globally increasing every surface sample
+budget or smoothing probe coefficients across walls to hide these errors.
+
 ## Current automatic-cubemap delivery gates
 
 The receiver-supported local replacement path remains opt-in. Completed functional
