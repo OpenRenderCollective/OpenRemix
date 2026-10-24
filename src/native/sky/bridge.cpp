@@ -113,7 +113,6 @@ namespace remix::sky {
         const auto &binding = pass.info.bindings[i];
         if (binding.set != 0)
           throw std::runtime_error("NUMOS pass binds a descriptor set other than 0");
-        pass.rayQuery |= binding.kind == numos::BindingKind::AccelerationStructure;
         bindings.push_back({.binding = binding.slot,
                             .descriptorType = descriptorType(binding.kind),
                             .descriptorCount = 1,
@@ -255,8 +254,7 @@ namespace remix::sky {
     ready = total = 0;
     for (uint32_t index = 0; index < m_passes.size(); ++index) {
       auto &pass = m_passes[index];
-      // The scene-traced passes run only with a TLAS, which NUMOS is not given.
-      if (pass.rayQuery || !needed(index))
+      if (!needed(index))
         continue;
       ++total;
       if (!pass.pipeline) {

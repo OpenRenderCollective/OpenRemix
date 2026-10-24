@@ -103,7 +103,6 @@ namespace remix::sky {
     struct Pass {
       numos::PassInfo info;
       ShaderCode code;
-      bool rayQuery = false;
       VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
       VkPipelineLayout layout = VK_NULL_HANDLE;
       VkPipeline pipeline = VK_NULL_HANDLE;
