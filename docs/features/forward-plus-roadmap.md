@@ -45,6 +45,13 @@ Qualify probe convergence as well as placement, with geometry-safe reconstructio
 and bounded additional bake work; avoid globally increasing every surface sample
 budget or smoothing probe coefficients across walls to hide these errors.
 
+Stratifying only aggregate direct-light selection leaves all 15 measured housing
+SH captures unchanged: Construct retains these explicit lights in the mixed path,
+with no aggregate-selected lights in this fixture. That candidate was removed
+despite passing analytic transport checks. Target indirect bounce/light sampling
+for the measured stochastic error; do not claim aggregate-only sampling changes
+improve this case or confuse separately attributed direct light with probe noise.
+
 ## Current automatic-cubemap delivery gates
 
 The receiver-supported local replacement path remains opt-in. Completed functional
