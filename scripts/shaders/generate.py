@@ -232,6 +232,8 @@ def use_tools(record):
     os.environ['PATH'] = os.pathsep.join(tools['path'] + [os.environ.get('PATH', '')])
     if 'spirv-cross' in tools:
         os.environ['REMIX_SPIRV_CROSS'] = tools['spirv-cross']
+    if 'slangc' in tools:
+        os.environ['REMIX_SLANGC'] = tools['slangc']
 
 
 def write_depfile(path, target):
@@ -243,7 +245,7 @@ def write_depfile(path, target):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     # metal translates the other backends' SPIR-V; 'all' leaves it out (it needs macOS and Xcode).
-    parser.add_argument('backend', choices=['postfx', 'upscale', 'raster', 'pathtrace', 'denoise', 'nrd', 'fsr31', 'metal', 'all'])
+    parser.add_argument('backend', choices=['postfx', 'upscale', 'raster', 'pathtrace', 'denoise', 'nrd', 'fsr31', 'metal', 'sky', 'all'])
     parser.add_argument('--output', type=Path, help='Generated src/native tree (the build\'s); default _work/shaders')
     parser.add_argument('--tools', type=Path, help='Pinned tools recorded by toolchain.py --output')
     parser.add_argument('--depfile', type=Path, help='Make-style dependencies of the generated files')
@@ -260,13 +262,16 @@ def main():
         use_tools(args.tools)
     selected = [*BACKENDS, 'nrd', 'fsr31'] if args.backend == 'all' else [args.backend]
     glsl = [backend for backend in selected if backend in BACKENDS]
-    if (args.check or args.validate) and (glsl or 'metal' in selected):
+    if (args.check or args.validate) and (glsl or 'metal' in selected or 'sky' in selected):
         parser.error('--check and --validate apply to the committed nrd and fsr31 SPIR-V only')
     if glsl:
         process(glsl)
     if 'metal' in selected:
         import metal
         metal.process()
+    if 'sky' in selected:
+        import sky
+        sky.process()
     if args.depfile:
         write_depfile(args.depfile, args.depfile_target)
     for backend in selected:
@@ -275,6 +280,6 @@ def main():
 
 
 if __name__ == '__main__':
-    # metal.py imports generate: one module, so it sees --output and records dependencies here.
+    # metal.py and sky.py import generate: one module, so it sees --output and records dependencies here.
     sys.modules['generate'] = sys.modules[__name__]
     main()

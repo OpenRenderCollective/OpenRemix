@@ -26,5 +26,20 @@
     "repository": "https://github.com/sambow23/SPIRV-Cross.git",
     "branch": "openremix-macos-compat",
     "revision": "9f9991c5454c262154e4918a263b60b5f26c75fc"
+  },
+  "slang": {
+    "release": "v2025.24",
+    "windows-x86_64": {
+      "url": "https://github.com/shader-slang/slang/releases/download/v2025.24/slang-2025.24-windows-x86_64.tar.gz",
+      "sha256": "ed76ab037e07c543257f238c5167031c5b5aebb9df556e96c38fe5f6becbae08"
+    },
+    "linux-x86_64": {
+      "url": "https://github.com/shader-slang/slang/releases/download/v2025.24/slang-2025.24-linux-x86_64.tar.gz",
+      "sha256": "ee605c1466e966c78f0af01a8442b7fe935ec439d26e2ccbef98501346c64e8b"
+    },
+    "macos-aarch64": {
+      "url": "https://github.com/shader-slang/slang/releases/download/v2025.24/slang-2025.24-macos-aarch64.tar.gz",
+      "sha256": "663728b0d3cc1ec837a3ec0924d829f042caf04f6b00759fb145cedde36765b5"
+    }
   }
 }

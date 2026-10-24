@@ -32,7 +32,10 @@ Readable shaders live in each renderer's `shaders` folder. The build generates t
 generated `embedded.h`, `embedded.bin` or `embedded_data.cpp`. The tools are glslang and
 SPIRV-Tools (and for Metal the SPIRV-Cross fork) at the revisions in `toolchain.lock.json`, which
 `scripts/shaders/toolchain.py` builds once per machine into `_work/tools/shader-toolchain`
-(`-Dshader_tools=` moves the cache). Only NRD's DXC SPIR-V (`denoise/shaders/nrd_embedded.h`),
+(`-Dshader_tools=` moves the cache). With NUMOS, it also fetches the pinned slangc release;
+`scripts/shaders/sky.py` compiles the NUMOS passes and `src/native/sky/shaders/*.comp.slang` and
+checks them against NUMOS's pass table and struct layouts (not its SPIR-V hashes, which come from
+a Remix-only slangc build). Only NRD's DXC SPIR-V (`denoise/shaders/nrd_embedded.h`),
 FSR 3.1's (`upscale/shaders/fsr31.h`) and the blue-noise tables stay committed; check them with
 `generate.py nrd --check` / `fsr31 --check`.
 Path-tracing SPIR-V is optimized with `spirv-opt -O` (inlined modules compile about twice as

@@ -10,7 +10,8 @@ shader_env = {'PYTHONDONTWRITEBYTECODE' : '1'}
 shader_tools = custom_target('shader-tools',
   output : 'shader-tools.json',
   command : [shader_python, shader_scripts / 'toolchain.py', '--output', '@OUTPUT@',
-             '--cache', get_option('shader_tools')] + (metal_backend ? ['--metal'] : []),
+             '--cache', get_option('shader_tools')] + (metal_backend ? ['--metal'] : []) +
+             (numos_enabled and not metal_backend ? ['--slang'] : []),
   depend_files : files('../../scripts/shaders/toolchain.py', '../../scripts/shaders/toolchain.lock.json'),
   env : shader_env, console : true)
 shader_generate = [shader_python, shader_scripts / 'generate.py', '--tools', shader_tools,
@@ -21,6 +22,9 @@ subdir('denoise/shaders')
 subdir('postfx/shaders')
 subdir('upscale/shaders')
 subdir('pathtrace/shaders')
+if numos_enabled and not metal_backend
+  subdir('sky/shaders')
+endif
 image_include = include_directories('../../third_party', is_system : true)
 # Metal builds share the API, scene, platform and settings code and replace the
 # Vulkan runtime and renderers with src/native/metal (one backend per build).
@@ -78,6 +82,11 @@ subdir('denoise')
 subdir('postfx')
 subdir('upscale')
 subdir('pathtrace')
+sky_libraries = []
+if numos_enabled
+  subdir('sky')
+  sky_libraries = [sky_library]
+endif
 imgui_vulkan = static_library('remix_imgui_vulkan', 'ui/vulkan_backend.cpp',
   include_directories : [native_include, imgui_include],
   dependencies : vulkan_dep, link_with : pipeline_library,
@@ -100,7 +109,7 @@ endif
 remix = shared_library('remix',
   api_sources + runtime_sources + ui_sources,
   name_prefix : system == 'windows' ? '' : 'lib',
-  link_with : usd_libraries + [shell_platform, imgui_vulkan, scene_library, raster_library, pathtrace_library, denoise_library, upscale_library], dependencies : shell_deps,
+  link_with : usd_libraries + sky_libraries + [shell_platform, imgui_vulkan, scene_library, raster_library, pathtrace_library, denoise_library, upscale_library], dependencies : shell_deps,
   include_directories : [remix_public_include, native_include, image_include], cpp_args : shell_args,
   link_args : shell_link_args, link_depends : 'api/remix.map',
   gnu_symbol_visibility : 'hidden',
