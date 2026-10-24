@@ -2566,8 +2566,9 @@ This path remains off by default. `REMIX_DEBUG_PROBE_LOCAL_CAPTURE=1` prepares a
 most four additional local captures. `REMIX_DEBUG_PROBE_LOCAL_SELECTION=1` enables
 fenced publication of their replacement plan. Fresh preparation currently requires
 `REMIX_DEBUG_PROBE_RECEIVER_VISIBILITY` to name a new diagnostic report path; ordinary
-bakes do not allocate the admission/connection evidence. This diagnostic requirement
-and preparation for older caches remain delivery work, not a production setup flow.
+bakes do not allocate the admission/connection evidence. A lighting-cache hit lacking
+a local companion can use the same fresh diagnostic request to prepare only the missing
+local data. Report-independent preparation remains delivery work, not a production setup flow.
 
 Local origins require completed geometry admission, receiver connectivity and clearance.
 Projection variants retain independent receiver influence. Inward refinements must pass
@@ -2584,6 +2585,9 @@ and image/candidate ownership are checked before current runtime generations are
 A valid companion can restore local captures without their transport rays or a diagnostic
 request. Missing/corrupted companions retain the base lighting-cache hit. Older valid
 companions remain usable but do not acquire newly refined captures automatically.
+On a requested missing-companion upgrade, cached grid/surface/direct/sun fields are reused;
+only receiver checks and local captures run. The persistence queue writes the companion
+through an explicit local-only payload and leaves the base lighting file untouched.
 
 Planning/allocation runs on the preparation worker. Source image owners survive the copy
 fence; scene, authored revision and image ownership are checked before publication.

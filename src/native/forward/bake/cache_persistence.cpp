@@ -8,7 +8,7 @@ namespace remix::forward::bake::cache {
     View view(const Snapshot &s) {
       return {s.grid, s.layout, s.mixed, s.captures, s.specular, s.pixels,
               s.surfaceSamples, s.directDiffuse, s.sun, s.styles,
-              s.localProbes ? &*s.localProbes : nullptr, s.directionalAttempted, s.directionals, s.directionalBudget, s.localReflections.get()};
+              s.localProbes ? &*s.localProbes : nullptr, s.directionalAttempted, s.directionals, s.directionalBudget, s.localReflections.get(), s.localReflectionsOnly};
     }
     template <typename T> uint64_t storage(const std::vector<T> &v) {
       return uint64_t(v.capacity()) * sizeof(T);
@@ -41,6 +41,8 @@ namespace remix::forward::bake::cache {
   Persistence::Persistence(uint64_t byteBudget, Writer write)
       : budget(byteBudget), writer(write ? std::move(write) :
             Writer([](const auto &file, uint64_t key, const View &data) {
+              if (data.localReflectionsOnly)
+                return data.localReflections && local_cache::write(local_cache::path(file), key, *data.localReflections);
               const bool saved = cache::write(file, key, data);
               if (saved && data.localReflections)
                 (void)local_cache::write(local_cache::path(file), key, *data.localReflections);

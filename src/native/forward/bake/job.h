@@ -143,6 +143,8 @@ namespace remix::forward::bake {
     std::shared_ptr<LocalReflections> localReflections;
     std::shared_ptr<const local_cache::Snapshot> localReflectionCache;
     void restoreLocalReflections(VkPhysicalDevice physical, VkDevice device, const Config &config);
+    void prepareLocalReflectionUpgrade(VkPhysicalDevice physical, VkDevice device, const Config &config, uint32_t family);
+    bool localReflectionUpgrade = false;
     uint32_t localCaptureNext = 0, localCaptureReceived = 0;
     bool localCapturePlanned = false, localCaptureFiltered = false;
     probes::CaptureWork captureWork;

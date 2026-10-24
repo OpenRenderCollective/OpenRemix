@@ -1410,6 +1410,17 @@ namespace remix::forward::bake {
         std::fprintf(stderr, "Background bake cache unavailable: %s\n", error.what());
       }
     }
+    if (m_job->cacheHit && m_job->localReflectionCache && !m_job->cacheFile.empty()) {
+      try {
+        auto companion = std::make_unique<cache::Snapshot>();
+        companion->localReflections = std::move(m_job->localReflectionCache);
+        companion->localReflectionsOnly = true;
+        if (!cache::persistence().submit(m_job->cacheFile, m_job->cacheKey, std::move(companion)))
+          std::fprintf(stderr, "Local reflection companion budget busy; base cache unchanged\n");
+      } catch (const std::exception &error) {
+        std::fprintf(stderr, "Local reflection companion persistence unavailable: %s\n", error.what());
+      }
+    }
     m_job.reset();
     status(REMIXAPI_BAKE_READY_EXT, message);
   }
@@ -1508,6 +1519,7 @@ namespace remix::forward::bake {
               job->reflectionImage = std::make_unique<probes::ImageAsset>(
                   physical, device, job->specular, job->cancellation.get_token());
               job->restoreLocalReflections(physical, device, config);
+              job->prepareLocalReflectionUpgrade(physical, device, config, queueFamily);
             }
           };
           job->ticket =
@@ -1547,7 +1559,7 @@ namespace remix::forward::bake {
         m_statistics.probes = uint32_t(job.grid.tasks.size());
         m_statistics.completed = job.received;
         if (job.filtering) {
-          if (job.sunDepth && !job.sunDepth->restored()) {
+          if ((job.sunDepth && !job.sunDepth->restored()) || job.localReflectionUpgrade) {
             if (!job.prepared) {
               auto &submission = m_submissions[m_slot];
               if (submission.job) throw std::logic_error("Cached sun depth preparation reused a live slot");
@@ -1555,11 +1567,12 @@ namespace remix::forward::bake {
               job.prepared = true;
               submission.job = m_job;
               submission.preparation = true;
-              status(REMIXAPI_BAKE_PREPARING_EXT, "Preparing missing sun depth from cached lighting");
+              status(REMIXAPI_BAKE_PREPARING_EXT, "Preparing missing auxiliary data from cached lighting");
               return;
             }
             if (recordSunDepth(command, config)) return;
           }
+          if (job.localReflectionUpgrade && recordReceiverDiagnostics(command, config)) return;
           if (recordLocalReflections(command, config)) return;
           activate(command);
           return;

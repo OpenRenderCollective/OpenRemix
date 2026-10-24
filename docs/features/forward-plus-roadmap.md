@@ -14,7 +14,7 @@ hazards. This proves bounded recapture for this edit, not every origin or visual
 
 Remaining gates before default publication:
 - Actual in-process map switching, beyond the GPU scene-ID/fenced-retirement regressions.
-- Preparation for legacy lighting caches that lack local evidence/captures.
+- Report-independent preparation; legacy-cache upgrades now work with a fresh diagnostic request.
 - Underwater medium/path-length and projection mismatch against the path tracer.
   A fixed-box far/near-origin control implicates placement; residual colour parity remains open.
   Reassessed receiver-near refinements now integrate experimentally; cold/warm checks pass.
@@ -2117,3 +2117,23 @@ moving gameplay, reflected landmarks, doorway/wall leakage and wider-map accepta
 this check supports bounded non-regression on this fixture, not default promotion.
 The renderer guide now documents the experimental flags, refined-variant constraints,
 companion-cache behavior and publication ownership in one current section.
+
+Legacy lighting-cache hits can now prepare a missing local companion under the existing
+explicit local-capture and fresh receiver-diagnostic requests. The cached path creates
+only the transport needed for bounded admission/connectivity/geometry checks and local
+captures; grid, surface, direct visibility, sun and probe-depth work remain skipped.
+The existing fenced upload/publication path consumes the completed output. Persistence
+uses an explicit companion-only CPU payload, bounded by the same queue admission and
+memory accounting, without moving or rewriting the base lighting payload.
+A Construct cache copied without its local companion upgrades to four local captures;
+GPU work counters report zero points/batches for grid, surface, visibility, sun and
+probe depth. The base bake file is byte-identical afterward, and the companion is
+byte-identical to the independently generated fresh-bake companion. A subsequent load
+without receiver diagnostics restores all four captures with no local transport rays.
+Fresh/upgrade/warm reports agree except exposure and retain original authored data.
+Both relay runs complete without validation errors or synchronization hazards. Cache,
+background persistence and GPU image/lifecycle suites pass; the cache test independently
+proves a companion-only background write preserves an existing base file. Report-independent
+preparation, failed optional transport handling, map switching, wider quality/performance
+and default promotion remain open. This is an opt-in upgrade, not a diffuse rebake or an
+installed/default change; earlier legacy-cache limitations are historical.

@@ -42,6 +42,7 @@ namespace remix::forward::bake::cache {
     std::span<const uint32_t> directionals{}; // empty after a whole-replacement budget decline
     uint64_t directionalBudget = 0; // zero on write selects the current layout allowance
     const local_cache::Snapshot *localReflections = nullptr;
+    bool localReflectionsOnly = false;
   };
   struct Snapshot {
     void takeGrid(Grid &source);
@@ -59,6 +60,7 @@ namespace remix::forward::bake::cache {
     std::vector<uint32_t> directionals;
     uint64_t directionalBudget = 0;
     std::shared_ptr<const local_cache::Snapshot> localReflections;
+    bool localReflectionsOnly = false; // Companion upgrade; never replace the base cache.
   };
   // Misses, corruption, incompatible versions and unavailable files fall back
   // to tracing. Neither operation publishes resources or performs GPU work.

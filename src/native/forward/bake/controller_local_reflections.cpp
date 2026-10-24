@@ -82,6 +82,28 @@ namespace remix::forward::bake {
     }
     return false;
   }
+  void Controller::Job::prepareLocalReflectionUpgrade(VkPhysicalDevice physical, VkDevice device,
+      const Config &config, uint32_t family) {
+    const char *enabled = std::getenv("REMIX_DEBUG_PROBE_LOCAL_CAPTURE");
+    if (!enabled || std::strcmp(enabled, "1") || !cacheHit || localReflections) return;
+    auto audit = probes::prepareReceiverAudit(*source, captures, cancellation.get_token());
+    if (!audit) return; // No fresh diagnostic request: retain the ordinary cache-hit path.
+    if (!transport) {
+      Options options;
+      options.queueFamily = family;
+      options.batchPoints = Budget::maximumPoints;
+      options.rayBudget = Budget::maximumWork;
+      options.initialBatchPoints = 1024;
+      options.textureResolution = config.textureResolution;
+      options.lightingComponents = config.styledIndirect && !styleIds(*source).empty();
+      auto preparedTransport = std::make_unique<Transport>();
+      preparedTransport->initialize(physical, device, source, options);
+      transport = std::move(preparedTransport);
+    }
+    receiverAudit = std::move(audit);
+    localReflectionUpgrade = true;
+    std::fprintf(stderr, "Preparing local reflection companion from cached lighting; diffuse transport skipped\n");
+  }
   void Controller::Job::restoreLocalReflections(VkPhysicalDevice physical, VkDevice device, const Config &config) {
     const char *enabled = std::getenv("REMIX_DEBUG_PROBE_LOCAL_CAPTURE");
     if (!enabled || std::strcmp(enabled, "1") != 0 || !cacheHit || !reflectionImage || cacheFile.empty()) return;

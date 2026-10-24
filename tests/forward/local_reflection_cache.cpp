@@ -1,4 +1,5 @@
 #include "forward/bake/local_reflection_cache.h"
+#include "forward/bake/cache_persistence.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -67,6 +68,18 @@ int main(int argc, char **argv) {
   const auto file = directory / "local.bin", roundtrip = directory / "roundtrip.bin";
   require(cache::write(file, 42, source), "Valid local reflections persist");
   const auto original = bytes(file);
+  const auto baseFile = directory / "existing-lighting.bake";
+  { std::ofstream out(baseFile, std::ios::binary); out << "existing valid lighting must remain untouched"; }
+  const auto baseBytes = bytes(baseFile);
+  auto companion = std::make_unique<bake::cache::Snapshot>();
+  companion->localReflectionsOnly = true;
+  companion->localReflections = std::make_shared<cache::Snapshot>(fixture());
+  bake::cache::Persistence persistence;
+  require(persistence.submit(baseFile, 42, std::move(companion)), "Companion-only payload is admitted");
+  persistence.waitIdle();
+  require(bytes(baseFile) == baseBytes && cache::read(cache::path(baseFile), 42, source.source, config, {}),
+          "Background companion upgrade persists local data without rewriting the base lighting cache");
+
   auto current = std::make_shared<remix::scene::BakeScene>(*source.source);
   current->sceneId += 1; current->revision += 4; current->chartRevision += 7; current->reflectionRevision += 2;
   auto restored = cache::read(file, 42, current, config, {});
