@@ -1,4 +1,5 @@
 #include "forward/bake/model_receivers.h"
+#include "forward/bake/probe_receiver_geometry.h"
 #include "forward/bake/probe_receiver_report.h"
 #include "scene/bake_scene.h"
 #include <algorithm>
@@ -78,6 +79,26 @@ int main(int argc, char **argv) {
   require(b::modelReceivers(source).empty(), "Fully lightmapped geometry consumes no model sample budget");
   source.charts.push_back(source.charts[0]);
   invalid([&] { b::modelReceivers(source); });
+
+  // Shared range enumeration must preserve holes on both sides of authored coverage.
+  source = {};
+  source.draws = {triangle(), triangle()};
+  source.draws[0].surface->indices = {0, 1, 2, 0, 1, 2, 0, 1, 2};
+  source.charts = {{0, 3, 2, 2, {{0, 0}, {1, 0}, {0, 1}}}};
+  auto ranges = b::unchartedReceiverRanges(source);
+  require(ranges.size() == 3 && ranges[0].draw == 0 && ranges[0].firstIndex == 0 &&
+              ranges[0].indexCount == 3 && ranges[1].draw == 0 && ranges[1].firstIndex == 6 &&
+              ranges[1].indexCount == 3 && ranges[2].draw == 1 && ranges[2].indexCount == 3,
+          "Authored chart splits uncharted geometry into exact disjoint ranges");
+  source.draws[0].viewModel = true;
+  ranges = b::unchartedReceiverRanges(source);
+  require(ranges.size() == 1 && ranges[0].draw == 1,
+          "Excluded charted draw does not hide later uncharted receivers");
+  source.draws[0].viewModel = false;
+  source.charts[0].firstIndex = 1;
+  invalid([&] { b::unchartedReceiverRanges(source); });
+  source.charts[0].firstIndex = 9;
+  invalid([&] { b::unchartedReceiverRanges(source); });
 
   source = {};
   auto directional = triangle();

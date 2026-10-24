@@ -73,6 +73,11 @@ priority scores and finer spacing alone do not provide side-aware ownership.
 Do not repeat that standalone allocation change or leave its extra capture stage
 in default bakes. The existing allocation and cache policy are restored.
 
+Preparation now shares one validated uncharted indexed-range enumerator between
+model receiver sampling and the upcoming model-chart path. Authored chart holes,
+excluded draws and malformed ranges have CPU coverage. This is geometry plumbing;
+model surface baking is not enabled and rendered quality is unchanged.
+
 Next investigate actual surface baking for uncharted static models, preserving
 caller-authored charts, retained-draw bindings, the shared atlas budget, PBR and
 controllable-light behavior. Chart/padding overhead must be measured; a triangle
