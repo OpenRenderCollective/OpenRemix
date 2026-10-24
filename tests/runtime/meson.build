@@ -30,6 +30,11 @@ profile_test = executable('remix-profiles-test', 'profiles.cpp',
   '../../src/native/ui/profile_actions.cpp', include_directories : [remix_public_include, native_include],
   dependencies : filesystem_dep)
 test('Configuration profiles and unsaved actions', profile_test, args : ['@CONFIG_DIR@'])
+if numos_enabled
+  sky_settings_test = executable('remix-sky-settings-test', 'sky_settings.cpp', '../../src/native/runtime/settings.cpp',
+    include_directories : native_include, dependencies : numos_dep)
+  test('Sky settings and NUMOS keys in profiles', sky_settings_test)
+endif
 if get_option('gpu_tests')
   profile_runtime_test = executable('remix-profile-runtime-test', 'profile_runtime.cpp',
     '../../src/native/runtime/settings.cpp', '../../src/native/runtime/profiles.cpp',

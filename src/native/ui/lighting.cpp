@@ -1,5 +1,6 @@
 #include "pathtrace/volume_policy.h"
 #include "runtime/runtime.h"
+#include "ui/sky.h"
 #include "ui/widgets.h"
 #include <algorithm>
 #include <cmath>
@@ -364,5 +365,10 @@ namespace remix {
       if (options.accumulate)
         ImGui::TextWrapped("%s", "Progressive reference rendering bypasses SHARC.");
     }
+  }
+  void RemixNativeRuntime::drawSkyTab(config::Settings &settings) {
+    ui::SkyStatus status;
+    status.reason = "The sky renderer is not part of this build yet.";
+    ui::drawSkyTab(settings, status);
   }
 } // namespace remix

@@ -31,5 +31,6 @@ metal_shared_sources = files(
   '../ui/panel.cpp',
   '../ui/profile_actions.cpp',
   '../ui/profiles.cpp',
+  '../ui/sky.cpp',
   '../ui/style.cpp',
 )

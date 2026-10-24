@@ -30,7 +30,7 @@ image_include = include_directories('../../third_party', is_system : true)
 # Vulkan runtime and renderers with src/native/metal (one backend per build).
 filesystem_dep = cpp.find_library('stdc++fs', required : false)
 if metal_backend
-  shell_deps = [sdl3_dep, threads_dep, imgui_dep, metal_frameworks, nrd_dep]
+  shell_deps = [sdl3_dep, threads_dep, imgui_dep, metal_frameworks, nrd_dep, numos_dep]
   shell_args = ['-DREMIX_LIBRARY_EXPORTS=1'] + cpp.get_supported_arguments('-Wno-missing-field-initializers', '-Wno-unused-parameter')
   subdir('platform')
   subdir('api')
@@ -60,7 +60,7 @@ if metal_backend
     install : true)
   subdir_done()
 endif
-shell_deps = [sdl3_dep, vulkan_dep, threads_dep, imgui_dep, nrd_dep, fsr31_dep, dlss_dep]
+shell_deps = [sdl3_dep, vulkan_dep, threads_dep, imgui_dep, nrd_dep, fsr31_dep, dlss_dep, numos_dep]
 shell_args = ['-DREMIX_LIBRARY_EXPORTS=1'] + cpp.get_supported_arguments('-Wno-missing-field-initializers', '-Wno-unused-parameter')
 subdir('platform')
 subdir('api')

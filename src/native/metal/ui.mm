@@ -219,12 +219,15 @@ fragment half4 uiFragment(VertexOut in [[stage_in]], texture2d<half, access::sam
               runtime.drawLightingTab(settings);
               break;
             case 2:
-              runtime.drawPostProcessingTab(settings);
+              runtime.drawSkyTab(settings);
               break;
             case 3:
-              runtime.drawDiagnosticsTab(settings);
+              runtime.drawPostProcessingTab(settings);
               break;
             case 4:
+              runtime.drawDiagnosticsTab(settings);
+              break;
+            case 5:
               runtime.drawTexturesTab(settings);
               break;
             }

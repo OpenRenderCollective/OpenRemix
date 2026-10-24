@@ -7,6 +7,24 @@
 #include <vector>
 
 namespace remix::config {
+  // NUMOS sky, atmosphere and clouds (the Sky tab). Off by default.
+  struct SkySettings {
+    bool enabled = false;
+    // The game's sky geometry: hidden so that NUMOS draws in its place, drawn
+    // under NUMOS's clouds and air, or drawn over the whole sky.
+    enum class GameSky : uint32_t { Hide, Under, Over };
+    GameSky gameSky = GameSky::Hide;
+    // Scale from NUMOS radiance to the renderer's linear scene radiance.
+    float radianceScale = 1;
+    // Exposure of the sky in the raster backend, which has no tonemapper.
+    float rasterExposure = 1;
+    // The Sky tab's time and weather win over the game's API calls.
+    bool ignoreGameControl = false;
+    // NUMOS settings (rtx.atmosphere.*) the profile sets, by key. Values are
+    // normalised by NUMOS when the runtime is built with it.
+    std::map<std::string, std::string> atmosphere;
+    bool operator==(const SkySettings &) const = default;
+  };
   struct Settings {
     TraceOptions trace;
     uint32_t backend = 1;
@@ -56,6 +74,7 @@ namespace remix::config {
     // (remixapi_SubmitHostPassesEXT): off, submissions are dropped and the
     // frame is composed as without them. Experimental, so off by default.
     bool hostPasses = false;
+    SkySettings sky;
     // Hidden textures
     std::vector<uint64_t> hideTextures;
     bool operator==(const Settings &) const = default;
@@ -63,6 +82,8 @@ namespace remix::config {
   using UnknownSettings = std::map<std::string, std::string>;
   enum class SetResult { Success, Unknown, Invalid };
   SetResult set(Settings &settings, std::string_view key, std::string_view value);
+  // A NUMOS setting key (rtx.atmosphere.*).
+  bool isAtmosphereKey(std::string_view key);
   bool validate(const Settings &settings, std::string &error);
   std::string serialize(const Settings &settings, const UnknownSettings &unknown = {});
   // Transactional: all output arguments stay untouched on failure.

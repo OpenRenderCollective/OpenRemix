@@ -279,6 +279,7 @@ private:
   void drawUi(VkCommandBuffer commandBuffer);
   void drawRenderingTab(config::Settings &settings);
   void drawLightingTab(config::Settings &settings);
+  void drawSkyTab(config::Settings &settings);
   void drawPostProcessingTab(config::Settings &settings);
   void drawDiagnosticsTab(config::Settings &settings);
   void drawTexturesTab(config::Settings &settings);

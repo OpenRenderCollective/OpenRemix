@@ -198,6 +198,7 @@ namespace remix {
     // post_processing.cpp, diagnostics.cpp), shared with Vulkan builds.
     void drawRenderingTab(config::Settings &settings);
     void drawLightingTab(config::Settings &settings);
+    void drawSkyTab(config::Settings &settings);
     void drawPostProcessingTab(config::Settings &settings);
     void drawDiagnosticsTab(config::Settings &settings);
     void drawGpuPassTimings(bool enabled);

@@ -79,12 +79,15 @@ namespace remix {
               runtime.drawLightingTab(settings);
               break;
             case 2:
-              runtime.drawPostProcessingTab(settings);
+              runtime.drawSkyTab(settings);
               break;
             case 3:
-              runtime.drawDiagnosticsTab(settings);
+              runtime.drawPostProcessingTab(settings);
               break;
             case 4:
+              runtime.drawDiagnosticsTab(settings);
+              break;
+            case 5:
               runtime.drawTexturesTab(settings);
               break;
             }
