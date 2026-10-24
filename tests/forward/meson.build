@@ -24,6 +24,11 @@ local_reflection_cache_test = executable('remix-local-reflection-cache-test', 'l
   cpp_args : test_cpp_args)
 test('Local reflection cache evidence, identity and corruption guards', local_reflection_cache_test,
   args : [meson.current_build_dir() / 'local-reflection-cache'])
+model_receivers_test = executable('remix-model-receivers-test', 'model_receivers.cpp',
+  include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+  cpp_args : test_cpp_args)
+test('Uncharted model receivers preserve geometry, coverage and budgets', model_receivers_test,
+  args : [meson.current_build_dir() / 'model-receivers.json'])
 probe_receiver_report_test = executable('remix-probe-receiver-report-test', 'probe_receiver_report.cpp',
   include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
   cpp_args : test_cpp_args)
@@ -65,6 +70,7 @@ test('Sparse probe local-light visibility preserves unknown coverage and budgets
 
 forward_receiver_report_test = executable('remix-forward-receiver-report-test', 'receiver_report.cpp',
   '../../src/native/forward/bake/probe_receiver_report.cpp',
+  '../../src/native/forward/bake/model_receivers.cpp',
   '../../src/native/forward/bake/receiver_report.cpp', '../../src/native/forward/bake/receiver_projection.cpp', '../../src/native/forward/bake/receiver_tiles.cpp', '../../src/native/forward/bake/sun_depth_layout.cpp', '../../src/native/forward/bake/grid.cpp', '../../src/native/forward/bake/grid_sampling.cpp', '../../src/native/forward/bake/probe_depth.cpp', '../../src/native/forward/bake/grid_directory.cpp',
   '../../src/native/forward/lightmap/data.cpp', '../../src/native/forward/material.cpp',
   '../../src/native/forward/lighting.cpp',

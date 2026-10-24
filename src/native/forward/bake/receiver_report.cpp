@@ -126,6 +126,7 @@ namespace remix::forward::bake {
                           std::span<const uint16_t> pixels, const Grid &grid,
                           std::stop_token cancelled) noexcept {
     dumpProbeReceiverReport(source, grid, cancelled);
+    dumpModelReceiverReport(source, grid, cancelled);
     const char *path = std::getenv("REMIX_DEBUG_BAKE_RECEIVERS");
     if (!path || !*path) return;
     try {

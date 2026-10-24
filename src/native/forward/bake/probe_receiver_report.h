@@ -22,4 +22,8 @@ namespace remix::forward::bake {
   // Existing output is protected; failures never affect bake publication.
   void dumpProbeReceiverReport(const scene::BakeScene &source, const Grid &grid,
                                std::stop_token cancelled = {}) noexcept;
+  // Fresh JSON path in REMIX_DEBUG_BAKE_MODEL_RECEIVERS. Bounded uncharted
+  // geometry manifest with current probe estimates, not lighting references.
+  void dumpModelReceiverReport(const scene::BakeScene &source, const Grid &grid,
+                               std::stop_token cancelled = {}) noexcept;
 }

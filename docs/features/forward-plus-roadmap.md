@@ -55,6 +55,22 @@ Treat near-surface recovery, adaptive priorities and fixed-budget allocation
 together. The current scorer uses lightmapped receiver normals; uncharted static
 model receivers such as the housing need explicit consideration in that design.
 
+The native `modelReceivers` sampler now supplies bounded uncharted rigid-opaque
+triangle centres, with inverse-transpose normals and up to six representative
+directions per draw. It excludes charted ranges, overlays, skinning, uncertain
+alpha/transmission and centres inside closed-partition solid/unplayable leaves.
+Budget rounds span eligible draws before taking more directions from one model.
+`REMIX_DEBUG_BAKE_MODEL_RECEIVERS` writes a fresh geometry/current-base-estimate
+manifest on publication or cache load; this is not an independent light reference.
+
+Matched unstyled hemisphere references at the sampled housing orientations expose
+large errors that the current lightmapped-only scorer misses. Next: capture a
+bounded separate set of model lighting references before refinement, score their
+actual base-field errors alongside world receivers, and include their geometric
+support without copying or changing surface-atlas texel arrays. Preserve matching
+unstyled/component semantics, existing work/fence ownership and the fixed record
+budget. This sampler/diagnostic does not yet change allocation or runtime defaults.
+
 Use `scripts/common/compare-probe-receivers.py` for paired
 `REMIX_DEBUG_BAKE_RECEIVERS` reports. It requires identical scenes, positions,
 normals and surface references, compares common covered receivers, reports coverage

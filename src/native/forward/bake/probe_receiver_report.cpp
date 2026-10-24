@@ -1,4 +1,6 @@
 #include "forward/bake/probe_receiver_report.h"
+#include "forward/bake/probe_receiver_geometry.h"
+#include "forward/bake/model_receivers.h"
 #include "forward/bake/spherical_harmonics.h"
 #include "forward/material.h"
 #include "scene/bake_scene.h"
@@ -63,13 +65,8 @@ namespace remix::forward::bake {
     for (uint32_t drawIndex = 0; drawIndex < source.draws.size(); ++drawIndex) {
       check(cancelled);
       const auto &draw = source.draws[drawIndex];
-      if (!draw.surface || !draw.traced() || draw.decal || draw.viewModel || draw.reflectionOnly || draw.wireframe ||
-          draw.bones || draw.blend.enabled ||
-          (draw.material && (draw.material->transmission || draw.material->translucent))) continue;
+      if (!opaqueProbeReceiver(draw)) continue;
       const auto &surface = *draw.surface;
-      const uint32_t compare = draw.alphaOverride || (draw.material && draw.material->drawAlpha)
-          ? draw.compare : draw.material ? draw.material->compare : 7;
-      if (!draw.ignoreAlpha && compare != 7) continue; // No claim about alpha texel coverage.
       const size_t count = draw.indexCount ? draw.indexCount : surface.indices.size();
       if (draw.firstIndex > surface.indices.size() || count > surface.indices.size() - draw.firstIndex || count % 3)
         throw std::invalid_argument("Invalid probe receiver draw range");
@@ -122,6 +119,44 @@ namespace remix::forward::bake {
     return hits;
   }
 
+  void dumpModelReceiverReport(const scene::BakeScene &source, const Grid &grid, std::stop_token cancelled) noexcept {
+    const char *request = std::getenv("REMIX_DEBUG_BAKE_MODEL_RECEIVERS");
+    if (!request || !*request) return;
+    try {
+      const auto path = std::filesystem::u8path(request);
+      if (std::filesystem::exists(path)) throw std::runtime_error("Model receiver output already exists");
+      const auto sites = modelReceivers(source, 4096, cancelled);
+      std::ostringstream out;
+      out.imbue(std::locale::classic());
+      out.precision(9);
+      out << "{\"version\":1,\"sceneHash\":\"" << source.contentHash << "\",\"sceneScale\":" << source.sceneScale
+          << ",\"scope\":\"Uncharted rigid opaque triangle-centre geometry and current base probe estimates; no alpha texels, normal maps or independent lighting reference\",\"sites\":[";
+      for (size_t i = 0; i < sites.size(); ++i) {
+        check(cancelled);
+        const auto &site = sites[i];
+        const Vec3 position{site.point.position[0], site.point.position[1], site.point.position[2]};
+        const Vec3 normal{site.point.normal[0], site.point.normal[1], site.point.normal[2]};
+        out << (i ? "," : "") << "{\"draw\":" << site.draw << ",\"firstIndex\":" << site.firstIndex << ",\"position\":";
+        vector(out, position); out << ",\"normal\":"; vector(out, normal);
+        out << ",\"cluster\":";
+        if (source.partition && source.partition->closed) out << source.partition->cluster(position.data());
+        else out << "null";
+        out << ",\"probe\":";
+        if (const auto value = sample(grid, position, normal)) vector(out, *value);
+        else out << "null";
+        out << '}';
+      }
+      out << "]}\n";
+      check(cancelled);
+      const auto report = out.str();
+      if (std::filesystem::exists(path)) throw std::runtime_error("Model receiver output already exists");
+      std::ofstream output(path);
+      output.exceptions(std::ios::failbit | std::ios::badbit);
+      output << report;
+    } catch (const std::exception &error) {
+      std::fprintf(stderr, "Model receiver report unavailable: %s\n", error.what());
+    }
+  }
   void dumpProbeReceiverReport(const scene::BakeScene &source, const Grid &grid, std::stop_token cancelled) noexcept {
     const char *request = std::getenv("REMIX_DEBUG_PROBE_RECEIVER_RAYS");
     if (!request || !*request) return;
