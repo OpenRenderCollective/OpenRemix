@@ -2173,3 +2173,16 @@ Next test a bounded receiver/medium-aware fidelity objective or localized influe
 representation while preserving baseline guards, authored priority and the capture budget.
 Do not loosen admission/error thresholds, increase samples or claim that extra captures
 alone resolve this mismatch. Keep normal-quality and path-traced controls in acceptance.
+
+An offline receiver-space proxy comparison now checks the same 263 observed-visible
+receivers for the normal-quality underwater far/near alternatives. Against the sampled
+receiver endpoints, near has a lower median spatial residual (0.00238 m versus 0.0619 m)
+and wins at 152 receivers, but its mean is worse (7.12 m versus 1.71 m), with a 24.7 m
+90th percentile and a 48.7 m maximum. A global median score would hide this tail; these
+measurements do not justify swapping to the near proxy throughout its full influence.
+The maintained stdlib diagnostic exports per-receiver coordinates/errors and common-set
+summaries from matching reports, without GPU work or renderer policy changes. Analytical
+axis/diagonal/translated-origin and undefined-direction cases pass. Use its spatial rows
+to test localized influence or a regional fidelity objective while preserving existing
+coverage/guard and authored constraints. Underwater radiance/medium parity and normal-quality
+acceptance remain open; global score replacement and default promotion are not established.

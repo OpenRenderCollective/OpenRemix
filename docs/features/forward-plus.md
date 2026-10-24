@@ -2598,3 +2598,13 @@ in-process map switching and wider moving-receiver/doorway quality still require
 Canonical sidecar/cache records retain their layouts; derived shared-plane feather bands
 are rebuilt as GPU metadata for mixed-priority blending. See the roadmap for current
 visual, cache, performance and default-publication gates.
+
+For offline proxy comparisons, `scripts/common/compare-reflection-proxies.py` accepts
+matching receiver and site reports, two or more `--candidate ATTEMPT:VARIANT` arguments,
+and a fresh `--output` prefix under `_work/reports`. It exports JSON summaries and CSV
+rows over common observed-visible receivers. Residuals measure the distance between a
+sampled receiver and the proxy's far hit along the capture-to-receiver ray, converted
+using the recorded scene scale. Unknown/missing visibility is not accepted as support.
+Inspect distributions and spatial rows together: a smaller median can conceal severe
+errors in another region. These values do not measure radiance, water transport or full
+volume coverage and must not become a selection score without visual qualification.
