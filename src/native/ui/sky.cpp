@@ -240,6 +240,8 @@ namespace remix::ui {
       filter.Draw("Search");
       Checkbox("Only settings the profile sets", &changedOnly);
       const auto &infos = numos::settingInfos();
+      // The groups share names with the tab's own headers.
+      ImGui::PushID("All NUMOS settings");
       for (int group = 0; group < int(std::size(groups)); ++group) {
         std::vector<const numos::SettingInfo *> rows;
         for (const auto &info : infos)
@@ -255,6 +257,7 @@ namespace remix::ui {
           ImGui::TreePop();
         }
       }
+      ImGui::PopID();
     }
   } // namespace
 #endif
