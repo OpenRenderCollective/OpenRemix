@@ -63,12 +63,23 @@ void samplingCase(uint32_t resolution) {
   }
   // The rotated fallback's influence extends beyond its projection proxy;
   // axis-parallel and diagonal queries must distinguish hits from slab misses.
-  captures[0].influence.include({-3, -2, -2});
+  captures[0].influence.include({-3, -2, -1});
   captures[0].influence.include({3, 2, 2});
   captures[1].priority = 7;
   captures[1].influence.include({-.25f, -.25f, -1});
   captures[1].influence.include({.25f, .25f, .25f});
   for (auto &pixel : captures[1].radiance) pixel = {4, 0, 0, 0};
+  captures[1].blendDistance = .05f;
+  const auto original = captures[1];
+  constexpr uint32_t axes[] = {2, 0, 1};
+  for (uint32_t axis = 0; axis < 3; ++axis) {
+    const uint32_t from = axes[axis];
+    captures[1].bounds.minimum[axis] = original.bounds.minimum[from];
+    captures[1].bounds.maximum[axis] = original.bounds.maximum[from];
+    captures[1].influence.minimum[axis] = original.influence.minimum[from];
+    captures[1].influence.maximum[axis] = original.influence.maximum[from];
+    captures[1].worldToLocal[axis] = original.worldToLocal[from];
+  }
   captures[2].position = {10, 19, 30};
   captures[2].priority = 3;
   captures[2].blendDistance = .3f;
@@ -96,7 +107,7 @@ void samplingCase(uint32_t resolution) {
   for (uint32_t step = 0; step <= steps; ++step)
     for (float x : {9.f, 9.5f, 9.9f, 10.f, 10.2f, 10.5f, 11.f})
       for (float y : {17.f, 18.f, 19.f, 19.5f, 20.f, 20.2f, 20.225f, 20.24999f, 20.25001f, 21.f, 22.f, 23.f})
-        for (float z : {29.f, 30.f, 31.f})
+        for (float z : {29.f, 29.00001f, 29.0001f, 29.001f, 29.01f, 29.05f, 30.f, 31.f})
           for (Vec3 ray : {Vec3{1, 0, 0}, Vec3{-1, 0, 0}, Vec3{0, 1, 0}, Vec3{0, -1, 0},
                           Vec3{0, 0, 1}, Vec3{0, 0, -1}, Vec3{1, 1, 0}, Vec3{-1, -1, 0},
                           Vec3{1, 0, 1}, Vec3{-1, 0, -1}, Vec3{0, 1, 1}, Vec3{0, -1, -1},

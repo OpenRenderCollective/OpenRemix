@@ -2479,7 +2479,16 @@ composite front to back using their strongest edge coverage relative to the stro
 Once that strongest tier is reached it is opaque, so a single coverage maximum serves the traversal.
 This ratio cancels shared floor/wall bands rather than washing out priority at those boundaries. A sole
 capture remains normalized at every edge. Automatic fits keep identity frames and priority zero, and
-their equal-priority sampler retains one traversal without the priority-coverage prepass. Native probe reports
+their equal-priority sampler retains one traversal without the priority-coverage prepass.
+Priority bands use canonical inverse widths for exactly coincident outward world-space planes.
+This keeps shared floor/wall cancellation continuous when overlapping volumes have different
+blend distances, extents or local-axis order. Nearby distinct planes remain independent; no positional
+tolerance merges bevels or thin walls. A small derived table is prepared with each GPU publication,
+including composition and replacement images. It adds 2 KiB of metadata without changing canonical
+records, authored sidecars, capture textures or disk-cache layout. Equal-priority sets skip table
+preparation and retain the original spatial/confidence blend. Frame dumps of GPU `probe-records`
+include this derived tail; canonical publication dumps retain their existing Header layout.
+ Native probe reports
 include the frame and priority, and the bounds workbench can import them. The optional
 `projectionConfidence` field reports the raw geometric blend-confidence scalar; legacy zero means
 unknown and retains the sampler's unit-weight fallback. It is useful when comparing resolutions,

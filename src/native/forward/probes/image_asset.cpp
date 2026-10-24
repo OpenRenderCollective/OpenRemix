@@ -1,4 +1,5 @@
 #include "forward/probes/image_asset.h"
+#include "forward/probes/priority_bands.h"
 #include "forward/probes/coverage_image_plan.h"
 #include <cstring>
 #include <algorithm>
@@ -57,7 +58,7 @@ namespace remix::forward::probes {
     const VkExtent2D extent = count ? VkExtent2D{size, 6*size} : VkExtent2D{1, 1};
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physical, &properties);
-    if (sizeof(Header) > properties.limits.maxStorageBufferRange ||
+    if (sizeof(GpuHeader) > properties.limits.maxStorageBufferRange ||
         extent.height > properties.limits.maxImageDimension2D ||
         m_layers > properties.limits.maxImageArrayLayers)
       throw std::length_error("Reflection image exceeds device dimensions or metadata range");
@@ -68,9 +69,10 @@ namespace remix::forward::probes {
     if ((format.optimalTilingFeatures & required) != required)
       throw std::runtime_error("Device cannot sample uploaded RGBA16F reflection images");
     m_metadata = std::make_unique<Buffer>();
-    m_metadata->create(physical, m_device, sizeof(Header),
+    m_metadata->create(physical, m_device, sizeof(GpuHeader),
                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-    m_metadata->write(&m_header, sizeof(Header));
+    const GpuHeader metadata{m_header, priorityBands(m_header)};
+    m_metadata->write(&metadata, sizeof(metadata));
     m_image = std::make_unique<Image>();
     m_image->create(physical, m_device, extent, VK_FORMAT_R16G16B16A16_SFLOAT,
                      VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,

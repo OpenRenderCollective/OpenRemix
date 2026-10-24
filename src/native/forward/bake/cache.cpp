@@ -1,4 +1,5 @@
 #include "forward/bake/cache.h"
+#include "forward/probes/priority_bands.h"
 #include "forward/bake/sparse_sh.h"
 #include "forward/bake/cache_io.h"
 #include "forward/bake/cache_file.h"
@@ -268,7 +269,7 @@ namespace remix::forward::bake::cache {
       const uint32_t levels = uint32_t(std::bit_width(size));
       const uint32_t stride = size ? probes::levelOffset(size, levels) : 0;
       require(data.header.parameters == UInt4{count, size, levels, stride});
-      require(device.storageRange >= sizeof(probes::Header) &&
+      require(device.storageRange >= sizeof(probes::GpuHeader) &&
               (!count || count <= probes::imageCapacity(size, device.imageSize, device.imageLayers, device.storageRange)));
       data.texels = input.array<Vec4>(uint64_t(count) * stride);
       require(data.texels.size() == uint64_t(count) * stride);

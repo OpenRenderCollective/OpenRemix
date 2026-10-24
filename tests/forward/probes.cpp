@@ -1,4 +1,5 @@
 #include "forward/probes/data.h"
+#include "forward/probes/priority_bands.h"
 #include "platform/workers.h"
 #include <algorithm>
 #include <cmath>
@@ -75,10 +76,10 @@ int main() {
   testProbeComposition();
   cubeCorners();
   require(p::imageCapacity(128, 4096, 256, 128ull << 20) == 64 &&
-              p::imageCapacity(512, 4096, 256, sizeof(p::Header)) == 64 &&
-              p::imageCapacity(512, 3071, 256, sizeof(p::Header)) == 0 &&
-              p::imageCapacity(8, 4096, 16, sizeof(p::Header)) == 16 &&
-              p::imageCapacity(8, 4096, 256, sizeof(p::Header)-1) == 0,
+              p::imageCapacity(512, 4096, 256, sizeof(p::GpuHeader)) == 64 &&
+              p::imageCapacity(512, 3071, 256, sizeof(p::GpuHeader)) == 0 &&
+              p::imageCapacity(8, 4096, 16, sizeof(p::GpuHeader)) == 16 &&
+              p::imageCapacity(8, 4096, 256, sizeof(p::GpuHeader)-1) == 0,
           "Image capacity preserves captures within independent image and metadata limits");
 
   for (uint32_t face = 0; face < 6; ++face)
@@ -207,7 +208,7 @@ int main() {
     shared[1].influence.minimum[2] = -1;
     const auto blended = p::filter(shared, 64);
     for (float roughness : {0.f, .4f, 1.f})
-      for (float z : {0.f, -1.f})
+      for (float z : {0.f, -1.f, -.999999f, -.9999f, -.999f, -.99f, -.95f, -.9f})
         for (float t : {0.f, .25f, .5f, .75f, 1.f}) {
           const float alpha = t * t * (3 - 2 * t);
           const auto value = p::sample(blended, {.25f - .05f*t, 0, z}, {1, 0, 0}, roughness);
@@ -218,6 +219,33 @@ int main() {
             std::printf("Priority shared-floor blend t %.2f: %.7f %.7f %.7f\n", t,
                         (*value)[0], (*value)[1], (*value)[2]);
         }
+    // Reorder one volume's local axes without moving any world-space face.
+    // Shared priority bands must follow the planes, not local axis numbers.
+    auto permuted = blended;
+    auto &record = permuted.header.probes[1];
+    const auto original = record;
+    constexpr uint32_t axes[] = {2, 0, 1};
+    const Vec3 widths{original.maximum[3], original.influenceMinimum[3], original.influenceMaximum[3]};
+    for (uint32_t axis = 0; axis < 3; ++axis) {
+      const auto from = axes[axis];
+      record.minimum[axis] = original.minimum[from];
+      record.maximum[axis] = original.maximum[from];
+      record.influenceMinimum[axis] = original.influenceMinimum[from];
+      record.influenceMaximum[axis] = original.influenceMaximum[from];
+      record.worldToLocal[axis] = original.worldToLocal[from];
+    }
+    record.maximum[3] = widths[2]; record.influenceMinimum[3] = widths[0]; record.influenceMaximum[3] = widths[1];
+    for (float z : {-1.f, -.9999f, -.99f, 0.f}) {
+      const auto value = p::sample(permuted, {.2375f, 0, z}, {1, 0, 0}, .4f);
+      require(value && std::abs((*value)[0] - 3.375f) < 5e-5f &&
+                  std::abs((*value)[1] - .3125f) < 5e-5f,
+              "Coincident world planes keep priority fades invariant under local axis permutation");
+    }
+    auto nearby = blended.header;
+    nearby.probes[1].influenceMinimum[0] = nearby.probes[0].influenceMinimum[0] + .0001f;
+    const auto distinct = p::priorityBands(nearby);
+    require(distinct.minimum[0][0] != distinct.minimum[1][0],
+            "Nearby distinct boundaries do not share priority bands");
     auto top = shared[1];
     top.priority = 9;
     top.influence.minimum[0] = -.2375f;

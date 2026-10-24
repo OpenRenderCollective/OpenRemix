@@ -1,4 +1,5 @@
 #include "forward/bake/job.h"
+#include "forward/probes/priority_bands.h"
 #include "platform/workers.h"
 #include "forward/bake/storage_options.h"
 #include "forward/bake/budget.h"
@@ -300,8 +301,8 @@ namespace remix::forward::bake {
                          bool hardware, uint32_t queueFamily)
       : m_physical(physical), m_device(device), m_pipelines(pipelines), m_queueFamily(queueFamily) {
     m_empty = std::make_unique<Buffer>();
-    m_empty->create(physical, device, sizeof(probes::Header), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-    const probes::Header empty{};
+    m_empty->create(physical, device, sizeof(probes::GpuHeader), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    const probes::GpuHeader empty{};
     m_empty->write(&empty, sizeof(empty));
     m_emptySunDepth = std::make_unique<Buffer>();
     m_emptySunDepth->create(physical, device, sizeof(SunDepthHeader), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);

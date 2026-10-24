@@ -1929,6 +1929,18 @@ unprojected direction instead of inventing a far-face hit. Entering rays still u
 and interior receivers retain their original shader path. Analytical miss/entry cases and translated,
 rotated GPU comparisons across roughness mips pass, along with authored edits and viewmodel SSR/
 environment readback. This does not establish a fix for the underwater receiver inside its proxy.
+Shared-floor priority blending now has an analytical continuity regression across differing
+feather widths. Previously a 15.625% doorway layer could become fully opaque immediately above
+a common floor because the two volumes scaled that floor band differently. Derived per-face bands
+now use the same width for exactly coincident outward world planes, including permuted local axes;
+spatial blend weights and canonical records remain unchanged. The 2 KiB GPU metadata extension is
+rebuilt for publication and does not alter disk-cache or sidecar formats. CPU analytical cases,
+rotated GPU sampling near the floor, finite HDR energy, uploads/composition/selection, cache integrity
+and viewmodel regressions pass. A low-atlas Construct synthetic route completes without validation
+errors and preserves diffuse hashes, authored statistics and the saved sidecar. Its checked main-room
+and underwater frames remain unchanged; connector changes are small. The comparison also includes
+the preceding outside-proxy fix, so it does not isolate priority-band image differences or establish
+whole-map visual/performance acceptance. Underwater medium/path-length work remains open.
 Next: qualify live authored edits/map transitions, underwater capture lighting, and cached-bake
 preparation, then consider local replacement publication as a default.
 

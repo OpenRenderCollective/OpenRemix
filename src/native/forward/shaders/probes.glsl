@@ -13,6 +13,7 @@ struct ReflectionProbe {
 layout(set = PROBE_SET, binding = PROBE_BINDING, std430) readonly buffer ReflectionProbes {
   uvec4 probeParameters;
   ReflectionProbe probes[64];
+  vec4 priorityMinimum[64], priorityMaximum[64];
 };
 #ifndef PROBE_IMAGE_BINDING
 #error Reflection consumers must bind the HDR radiance image
@@ -62,10 +63,11 @@ vec3 probeFeather(ReflectionProbe record, vec3 localPosition) {
   vec3 fade = clamp(distance * inverseWidth, 0, 1);
   return fade * fade * (3 - 2 * fade);
 }
-float probePriorityCoverage(vec3 fade) {
-  // A smaller finite limit keeps shared-face ratios defined without a visible
-  // priority step at the outer boundary, even for very bright HDR captures.
-  fade = max(fade, vec3(1e-12));
+float probePriorityCoverage(uint probe, ReflectionProbe record, vec3 localPosition) {
+  vec3 distance = min((localPosition - record.influenceMinimum.xyz) * priorityMinimum[probe].xyz,
+                      (record.influenceMaximum.xyz - localPosition) * priorityMaximum[probe].xyz);
+  vec3 t = clamp(distance, 0, 1);
+  vec3 fade = max(t * t * (3 - 2 * t), vec3(1e-12));
   return fade.x * fade.y * fade.z;
 }
 void compositeProbeGroup(vec3 group, float total, float coverage, float maximumCoverage,
@@ -154,7 +156,7 @@ bool probeRadiance(vec3 position, vec3 reflected, float roughness, out vec3 resu
       vec3 local;
       for (uint c = 0; c < 3u; ++c) local[c] = dot(record.worldToLocal[c], vec4(position, 1));
       if (any(lessThan(local, record.influenceMinimum.xyz)) || any(greaterThan(local, record.influenceMaximum.xyz))) continue;
-      maximumCoverage = max(maximumCoverage, probePriorityCoverage(probeFeather(record, local)));
+      maximumCoverage = max(maximumCoverage, probePriorityCoverage(probe, record, local));
     }
     if (maximumCoverage == 0) return false;
   }
@@ -210,7 +212,7 @@ bool probeRadiance(vec3 position, vec3 reflected, float roughness, out vec3 resu
     vec3 radiance = mix(probeMip(probe, low, corrected), probeMip(probe, high, corrected), lod - float(low));
     group += radiance * weight;
     total += weight;
-    if (layered) groupCoverage = max(groupCoverage, probePriorityCoverage(feather));
+    if (layered) groupCoverage = max(groupCoverage, probePriorityCoverage(probe, record, localPosition));
   }
   if (total > 0) {
     compositeProbeGroup(group, total, groupCoverage, maximumCoverage, result, remaining);

@@ -1,4 +1,5 @@
 #include "forward/probes/image_asset.h"
+#include "forward/probes/priority_bands.h"
 #include "forward/probes/coverage_image_plan.h"
 #include "forward/probes/selection_upload.h"
 #include "forward/probes/local_selection_preparation.h"
@@ -61,7 +62,7 @@ void uploadCase(uint32_t count, uint32_t size, bool composition = false, bool se
   Buffer readback;
   readback.create(fixture.physical, fixture.device, bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT, Buffer::Memory::Readback);
   const auto &image = output.image();
-  require(asset.metadata().range == sizeof(probes::Header), "Projection descriptor excludes radiance payload");
+  require(asset.metadata().range == sizeof(probes::GpuHeader), "Projection descriptor excludes radiance payload");
   require(output.radiance().sampler && output.radiance().imageView == image.view,
           "Image asset owns a complete combined sampler descriptor");
   bool earlyRelease = false;

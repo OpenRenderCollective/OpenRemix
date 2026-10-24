@@ -1,5 +1,6 @@
 #include "forward/probes/data.h"
 #include "forward/probes/priority_order.h"
+#include "forward/probes/priority_bands.h"
 #include "platform/workers.h"
 #include <algorithm>
 #include <bit>
@@ -37,15 +38,13 @@ namespace remix::forward::probes {
         corrected[c] = position[c] + reflected[c] * exit - record.position[c];
       return exit <= 0 || dot(corrected, corrected) < 1e-10f ? reflected : corrected;
     }
-    float priorityCoverage(const Record &record, Vec3 local) {
-      const Vec3 inverseWidth{record.maximum[3], record.influenceMinimum[3], record.influenceMaximum[3]};
+    float priorityCoverage(const Record &record, const PriorityBands &bands, uint32_t probe, Vec3 local) {
       float coverage = 1;
       for (uint32_t c = 0; c < 3; ++c) {
         if (local[c] < record.influenceMinimum[c] || local[c] > record.influenceMaximum[c]) return 0;
-        const float half = (record.influenceMaximum[c] - record.influenceMinimum[c]) * .5f;
-        const float distance = std::min(local[c] - record.influenceMinimum[c], record.influenceMaximum[c] - local[c]);
-        const float inverse = inverseWidth[c] > 0 ? inverseWidth[c] : 1 / (half * .2f);
-        const float t = std::clamp(distance * inverse, 0.f, 1.f);
+        const float distance = std::min((local[c] - record.influenceMinimum[c]) * bands.minimum[probe][c],
+                                        (record.influenceMaximum[c] - local[c]) * bands.maximum[probe][c]);
+        const float t = std::clamp(distance, 0.f, 1.f);
         coverage *= std::max(t * t * (3 - 2 * t), 1e-12f);
       }
       return coverage;
@@ -247,7 +246,7 @@ namespace remix::forward::probes {
                           uint32_t maximumLayers, uint64_t maximumMetadataBytes) {
     if (resolution < 8 || resolution > 512 || !std::has_single_bit(resolution))
       throw std::invalid_argument("Invalid reflection image resolution");
-    if (maximumMetadataBytes < sizeof(Header) || 6*resolution > maximumDimension) return 0;
+    if (maximumMetadataBytes < sizeof(GpuHeader) || 6*resolution > maximumDimension) return 0;
     return std::min(maxProbes, maximumLayers);
   }
   float projectionConfidence(const Capture &capture) {
@@ -399,6 +398,7 @@ namespace remix::forward::probes {
     const auto order = priorityOrder(data.header);
     const bool layered = data.header.probes[order[0]].minimum[3] !=
                          data.header.probes[order[parameters[0] - 1]].minimum[3];
+    const auto bands = priorityBands(data.header);
     float maximumCoverage = 1;
     // The strongest tier becomes opaque and ends compositing, so one global
     // maximum serves every visited tier. Ratios cancel shared floor/wall bands.
@@ -407,7 +407,7 @@ namespace remix::forward::probes {
       for (uint32_t i = 0; i < parameters[0]; ++i) {
         const auto &record = data.header.probes[i];
         maximumCoverage = std::max(maximumCoverage,
-            priorityCoverage(record, projectionPoint(record.worldToLocal, position)));
+            priorityCoverage(record, bands, i, projectionPoint(record.worldToLocal, position)));
       }
       if (!maximumCoverage) return {};
     }
@@ -479,7 +479,7 @@ namespace remix::forward::probes {
         group[c] += weight * radiance;
       }
       total += weight;
-      if (layered) groupCoverage = std::max(groupCoverage, priorityCoverage(record, localPosition));
+      if (layered) groupCoverage = std::max(groupCoverage, priorityCoverage(record, bands, probe, localPosition));
     }
     finishGroup();
     return found ? std::optional<Vec3>{result} : std::nullopt;
