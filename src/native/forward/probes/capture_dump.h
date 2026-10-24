@@ -22,8 +22,9 @@ namespace remix::forward::probes {
       const ReceiverAudit &audit, std::stop_token cancelled = {}) noexcept;
   void dumpReceiverSites(const scene::BakeScene &source, std::span<const Capture> baseline, const ReceiverSiteAudit &audit,
       const ReceiverSiteChecks *checks, const ReceiverFitAudit *fits, const ReceiverAudit *coverage, std::stop_token cancelled = {}) noexcept;
-  // Optional bounded hardware diagnostic; absent environment request means no
-  // receiver sampling, pair storage or extra GPU traversal.
+  // Bounded preparation for opt-in local captures or an explicit diagnostic.
+  // Reports are optional and existing report files never block retained evidence.
+  // With neither request there is no sampling, pair storage or GPU traversal.
   std::unique_ptr<ReceiverAudit> prepareReceiverAudit(const scene::BakeScene &source,
       std::span<const Capture> captures, std::stop_token cancelled = {}) noexcept;
   bool retryReceiverAudit(const scene::BakeScene &source, std::span<const Capture> captures,

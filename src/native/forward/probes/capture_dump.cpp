@@ -23,6 +23,10 @@
 
 namespace remix::forward::probes {
   namespace {
+    bool localCaptureRequested() {
+      const char *request = std::getenv("REMIX_DEBUG_PROBE_LOCAL_CAPTURE");
+      return request && std::string_view(request) == "1";
+    }
     uint32_t coveredReceiverBudget() {
       const char *request = std::getenv("REMIX_DEBUG_PROBE_REGIONAL_COVERAGE");
       return request && std::string_view(request) == "1" ? 8192 : 0;
@@ -31,9 +35,10 @@ namespace remix::forward::probes {
   std::unique_ptr<ReceiverSiteAudit> prepareReceiverSites(const scene::BakeScene &source,
       const ReceiverAudit &audit, std::stop_token cancelled) noexcept {
     const char *prefix = std::getenv("REMIX_DEBUG_PROBE_RECEIVER_VISIBILITY");
-    if (!prefix || !*prefix) return {};
+    const bool retainEvidence = localCaptureRequested();
+    if (!retainEvidence && (!prefix || !*prefix)) return {};
     try {
-      if (std::filesystem::exists(std::string(prefix) + ".sites.json"))
+      if (!retainEvidence && std::filesystem::exists(std::string(prefix) + ".sites.json"))
         throw std::runtime_error("Receiver site report already exists");
       const auto receivers = sampleReceivers(source, 8192, cancelled);
       return std::make_unique<ReceiverSiteAudit>(receiverSites(source, receivers, audit, 512, cancelled));
@@ -242,9 +247,11 @@ namespace remix::forward::probes {
   std::unique_ptr<ReceiverAudit> prepareReceiverAudit(const scene::BakeScene &source,
       std::span<const Capture> captures, std::stop_token cancelled) noexcept {
     const char *path = std::getenv("REMIX_DEBUG_PROBE_RECEIVER_VISIBILITY");
-    if (!path || !*path) return {};
+    const bool retainEvidence = localCaptureRequested();
+    if (!retainEvidence && (!path || !*path)) return {};
     try {
-      if (std::filesystem::exists(path) || std::filesystem::exists(std::string(path) + ".sites.json"))
+      if (!retainEvidence && (std::filesystem::exists(path) ||
+          std::filesystem::exists(std::string(path) + ".sites.json")))
         throw std::runtime_error("Receiver audit report already exists");
       const auto receivers = sampleReceivers(source, 8192, cancelled);
       return std::make_unique<ReceiverAudit>(

@@ -87,7 +87,7 @@ namespace remix::forward::bake {
     const char *enabled = std::getenv("REMIX_DEBUG_PROBE_LOCAL_CAPTURE");
     if (!enabled || std::strcmp(enabled, "1") || !cacheHit || localReflections) return;
     auto audit = probes::prepareReceiverAudit(*source, captures, cancellation.get_token());
-    if (!audit) return; // No fresh diagnostic request: retain the ordinary cache-hit path.
+    if (!audit) return; // Failed optional preparation retains the ordinary cache hit.
     if (!transport) {
       Options options;
       options.queueFamily = family;

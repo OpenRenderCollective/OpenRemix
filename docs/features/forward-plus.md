@@ -2564,11 +2564,12 @@ Source-specific HDR material selection and scaling belong to the adapter, not th
 
 This path remains off by default. `REMIX_DEBUG_PROBE_LOCAL_CAPTURE=1` prepares at
 most four additional local captures. `REMIX_DEBUG_PROBE_LOCAL_SELECTION=1` enables
-fenced publication of their replacement plan. Fresh preparation currently requires
-`REMIX_DEBUG_PROBE_RECEIVER_VISIBILITY` to name a new diagnostic report path; ordinary
-bakes do not allocate the admission/connection evidence. A lighting-cache hit lacking
-a local companion can use the same fresh diagnostic request to prepare only the missing
-local data. Report-independent preparation remains delivery work, not a production setup flow.
+fenced publication of their replacement plan. Local-capture preparation does not require
+`REMIX_DEBUG_PROBE_RECEIVER_VISIBILITY`; that optional setting only requests reports.
+An existing report never blocks retained evidence and is never overwritten. A lighting-cache
+hit lacking a local companion prepares only the missing local data without repeating diffuse
+transport. With neither local captures nor diagnostic reports requested, ordinary bakes do
+not allocate the admission/connection evidence.
 
 Local origins require completed geometry admission, receiver connectivity and clearance.
 Projection variants retain independent receiver influence. Inward refinements must pass
@@ -2613,8 +2614,8 @@ volume coverage and must not become a selection score without visual qualificati
 existing 32,768 local receiver/origin checks for receivers already covered by the
 baseline. Remaining capacity serves marginal checks; unused reservation goes back to
 that cohort. Without this request, marginal-only pair ordering and budgets are unchanged.
-This preparation mode still requires a fresh receiver diagnostic request and does no
-work in ordinary bakes. Reports include the reservation and local receiver positions;
+This reservation applies during local-capture preparation or an explicit receiver diagnostic;
+it does no work in ordinary bakes without either request. Reports include the reservation and local receiver positions;
 the offline proxy comparison reads these while retaining older-report compatibility.
 Classified evidence may be retained in the optional companion. This expands evidence,
 not a full-volume proof, automatic influence fit or validated reflection-quality score.

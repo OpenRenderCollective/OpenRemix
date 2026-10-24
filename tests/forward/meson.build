@@ -24,6 +24,11 @@ local_reflection_cache_test = executable('remix-local-reflection-cache-test', 'l
   cpp_args : test_cpp_args)
 test('Local reflection cache evidence, identity and corruption guards', local_reflection_cache_test,
   args : [meson.current_build_dir() / 'local-reflection-cache'])
+receiver_preparation_test = executable('remix-receiver-preparation-test', 'receiver_preparation.cpp',
+  include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+  cpp_args : test_cpp_args)
+test('Local reflection evidence preparation is independent of report files', receiver_preparation_test,
+  args : [meson.current_build_dir() / 'receiver-preparation-report.json'])
 cache_persistence_test = executable('remix-cache-persistence-test', 'cache_persistence.cpp',
   include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
   cpp_args : test_cpp_args)

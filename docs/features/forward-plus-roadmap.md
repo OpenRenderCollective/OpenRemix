@@ -12,9 +12,16 @@ and the untouched authored record match the control; the original user sidecar r
 byte-identical. The isolated relay completes without validation errors or synchronization
 hazards. This proves bounded recapture for this edit, not every origin or visual result.
 
+Local-capture preparation is now independent of diagnostic report paths. A normal-quality
+Construct legacy-cache upgrade produces the same companion bytes as report-backed preparation,
+preserves the base cache, and performs no diffuse, direct-visibility or probe-depth bake work.
+Its warm reload restores four local layers without capture or geometry rays. Both isolated
+relay runs pass validation; CPU tests cover disabled requests, cancellation, report-only fresh
+output protection and retained evidence despite existing reports. This completes the preparation
+gate, not the remaining reflection-quality or default-publication gates.
+
 Remaining gates before default publication:
 - Actual in-process map switching, beyond the GPU scene-ID/fenced-retirement regressions.
-- Report-independent preparation; legacy-cache upgrades now work with a fresh diagnostic request.
 - Underwater medium/path-length and projection mismatch against the path tracer.
   A fixed-box far/near-origin control implicates placement; residual colour parity remains open.
   Reassessed receiver-near refinements now integrate experimentally; cold/warm checks pass.
