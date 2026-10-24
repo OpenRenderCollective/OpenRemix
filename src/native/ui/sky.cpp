@@ -341,6 +341,12 @@ namespace remix::ui {
         ImGui::SetTooltip("Hidden: NUMOS draws in place of the game's sky geometry.\n"
                           "Under: the game's sky shows behind NUMOS's clouds and air.\n"
                           "Over: the game's sky covers NUMOS's sky.");
+      // The same setting as Lighting > Volumetrics > Up axis; the sky needs Y or Z.
+      int upAxis = settings.trace.volumetricUpAxis == 1 ? 0 : 1;
+      if (Combo("World up axis", &upAxis, "Y\0Z\0"))
+        settings.trace.volumetricUpAxis = upAxis == 0 ? 1u : 2u;
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("The game world's up axis. A wrong one turns the sky on its side.");
       auto values = effective(sky);
       drawQuality(sky, values);
       DragFloat("Radiance scale", &sky.radianceScale, sky.radianceScale * .01f, 1e-6f, 1e6f, "%.4g",

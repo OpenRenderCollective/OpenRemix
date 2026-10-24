@@ -84,10 +84,12 @@ namespace remix {
           ImGui::SetTooltip("Above the base height the medium thins to 37%% over this height. 0: uniform.");
         if (options.volumetricHeightFalloff > 0) {
           ui::DragFloat("Base height (m)", &options.volumetricBaseHeight, .25f, -100000, 100000, "%.2f");
-          int axis = int(std::min(options.volumetricUpAxis, 2u));
-          if (ui::Combo("Up axis", &axis, "X\0Y\0Z\0"))
-            options.volumetricUpAxis = uint32_t(axis);
         }
+        int axis = int(std::min(options.volumetricUpAxis, 2u));
+        if (ui::Combo("Up axis", &axis, "X\0Y\0Z\0"))
+          options.volumetricUpAxis = uint32_t(axis);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("The world's up axis, for the medium's height falloff and the sky.");
         ui::SliderFloat("March distance (m)", &options.volumetricMaxDistance, 10.f, 2000.f, "%.0f",
                         ImGuiSliderFlags_Logarithmic);
         if (ImGui::IsItemHovered())
