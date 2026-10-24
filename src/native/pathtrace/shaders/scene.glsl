@@ -38,7 +38,7 @@ layout(set=0,binding=3,std140) uniform Frame {
   mat4 camera;
   vec4 eye;
   vec4 lightDirection;
-  vec4 lightRadiance;
+  vec4 lightRadiance; // w: the sun's scale in volumetric media (volume.glsl)
   uvec4 config; // samples, indirect bounces, random sequence, accumulated frames
   uvec4 target; // width, height, structure mask, raster primary visibility
   vec4 jitter; // primary offset; z water reuse; w blue-noise sun/local bits
@@ -69,7 +69,7 @@ layout(set=0,binding=3,std140) uniform Frame {
   vec4 restirParams; // spatial radius (pixels), emitter count, reserved
   uint64_t regirRead, regirWrite, regirSlots, regirReserved;
   uvec4 regirConfig; // cell capacity, slots per cell, cells per world unit (float bits), active
-  uint64_t orcaTable, orcaReserved;
+  uint64_t orcaTable, lightCookies; // lightCookies: each cookie slot's texture + 1
   uvec4 orcaConfig; // entry capacity, sparse tile size, voxel levels, active
   vec4 orcaParams; // smallest voxel (world units), level growth, minimum samples, maximum relative error (0: any)
   uvec4 cutConfig; // first cut coverage texture + 1 (0: nothing cuts), coverage textures
@@ -89,7 +89,8 @@ layout(set=0,binding=3,std140) uniform Frame {
   vec4 cameraMedium; // remixapi_CameraMediumEXT: transmittance colour, measurement distance (0: in air)
   uint64_t sheetResults; // SheetResults: the sheet lighting pass's transport
   uint64_t skyGuideRead; // sky guiding: last frame's learned sky directions (0: none)
-  uint64_t skyGuideWrite, skyGuideReserved;
+  uint64_t skyGuideWrite;
+  uint64_t iesProfiles; // IES profiles (scene/ies.h): 256 floats each
   uvec4 skyGuideConfig; // slot capacity, cells per world unit (float bits), guided share (float bits), active
   mat4 inverseCameraRelative; // camera rays: world = point.xyz / point.w + eye.xyz
 } frame;

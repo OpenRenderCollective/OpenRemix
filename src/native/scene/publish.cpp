@@ -35,6 +35,8 @@ namespace remix {
     frame.m_skyRadiance = m_skyRadiance;
     frame.m_cameraMedium = m_cameraMedium;
     frame.m_light = m_light;
+    frame.m_iesProfiles = m_iesProfiles; // shared, immutable
+    frame.m_cookieTextures = m_cookieTextures;
     frame.m_dome = m_dome;
     frame.m_visibilityPartition = m_visibilityPartition; // shared, immutable
     // Lights resolve now, as the tracer would have at this Present: a light

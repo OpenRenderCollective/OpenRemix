@@ -1,4 +1,5 @@
 #include "scene/blackbody.h"
+#include "scene/ies.h"
 #include "scene/images.h"
 #include "scene/resources.h"
 #include "scene/validation.h"
@@ -104,13 +105,28 @@ namespace remix {
     return handle;
   }
 
+  uint32_t NativeResources::iesProfile(std::string_view text) {
+    const uint64_t hash = hashBytes(text.data(), text.size());
+    if (auto found = m_iesIndex.find(hash); found != m_iesIndex.end())
+      return found->second;
+    IesTable table;
+    if (!parseIes(text, table))
+      throw invalid;
+    auto next = std::make_shared<std::vector<float>>(m_iesProfiles ? *m_iesProfiles : std::vector<float>{});
+    next->insert(next->end(), table.begin(), table.end());
+    m_iesProfiles = std::move(next);
+    const auto profile = uint32_t(m_iesProfiles->size() / kIesBins);
+    m_iesIndex.emplace(hash, profile);
+    return profile;
+  }
+
   void NativeResources::createLight(const remixapi_LightInfo &info, remixapi_LightHandle &handle) {
     if (!info.hash)
       throw invalid;
     auto ext = [&](remixapi_StructType type) { return extension(info.pNext, type); };
     auto *usd = static_cast<const remixapi_LightInfoUSDEXT *>(ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_USD_EXT));
     Vec position{}, x{1, 0, 0}, y{0, 1, 0}, z{0, 0, -1}, radiance = vec(info.radiance);
-    float radius = .5f, width = 1, height = 1, span = 1, angle = .53f;
+    float radius = .5f, width = 1, height = 1, span = 1, angle = .53f, volumetric = 1;
     remixapi_LightInfoLightShaping shaping{};
     bool shaped = false;
     remixapi_StructType type{};
@@ -141,6 +157,7 @@ namespace remix {
                  value(usd->pConeSoftness, 0),
                  value(usd->pFocus, 0)};
       shaped = shaping.coneAngleDegrees < 180 || shaping.focusExponent > 0;
+      volumetric = value(usd->pVolumetricRadianceScale, 1);
     } else if (auto *v = static_cast<const remixapi_LightInfoSphereEXT *>(
                    ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT))) {
       type = v->sType;
@@ -148,6 +165,7 @@ namespace remix {
       radius = v->radius;
       shaped = v->shaping_hasvalue;
       shaping = v->shaping_value;
+      volumetric = v->volumetricRadianceScale;
     } else if (auto *v = static_cast<const remixapi_LightInfoRectEXT *>(
                    ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_RECT_EXT))) {
       type = v->sType;
@@ -159,6 +177,7 @@ namespace remix {
       height = v->ySize;
       shaped = v->shaping_hasvalue;
       shaping = v->shaping_value;
+      volumetric = v->volumetricRadianceScale;
     } else if (auto *v = static_cast<const remixapi_LightInfoDiskEXT *>(
                    ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISK_EXT))) {
       type = v->sType;
@@ -169,6 +188,7 @@ namespace remix {
       radius = 1;
       shaped = v->shaping_hasvalue;
       shaping = v->shaping_value;
+      volumetric = v->volumetricRadianceScale;
     } else if (auto *v = static_cast<const remixapi_LightInfoCylinderEXT *>(
                    ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_CYLINDER_EXT))) {
       type = v->sType;
@@ -178,11 +198,13 @@ namespace remix {
       z = cross(x, y);
       radius = v->radius;
       span = v->axisLength;
+      volumetric = v->volumetricRadianceScale;
     } else if (auto *v = static_cast<const remixapi_LightInfoDistantEXT *>(
                    ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT))) {
       type = v->sType;
       z = vec(v->direction);
       angle = v->angularDiameterDegrees;
+      volumetric = v->volumetricRadianceScale;
     } else if (ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT)) {
       // Dome data is handled below using the same retained light resource.
       type = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT;
@@ -193,7 +215,7 @@ namespace remix {
     finite(x.data(), 3);
     finite(y.data(), 3);
     finite(z.data(), 3);
-    for (float v : {radius, width, height, span, angle})
+    for (float v : {radius, width, height, span, angle, volumetric})
       if (!std::isfinite(v) || v < 0)
         throw invalid;
     for (float c : radiance)
@@ -250,6 +272,40 @@ namespace remix {
       prototype.softness = shaping.coneSoftness;
       prototype.focus = shaping.focusExponent;
     }
+    if (auto *ies = static_cast<const remixapi_LightInfoIesProfileEXT *>(
+            ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_IES_PROFILE_EXT))) {
+      if (!ies->data || !ies->size || type == REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT ||
+          type == REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT)
+        throw invalid;
+      prototype.ies = iesProfile({ies->data, size_t(ies->size)});
+      // The profile's axis: the shaping's direction, else the light's own.
+      if (!shaped) {
+        auto d = unit(z);
+        std::copy(d.begin(), d.end(), prototype.direction);
+      }
+    }
+    if (auto *cookie = static_cast<const remixapi_LightInfoCookieEXT *>(
+            ext(REMIXAPI_STRUCT_TYPE_LIGHT_INFO_COOKIE_EXT))) {
+      if (type != REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT || !std::isfinite(cookie->fovDegrees) ||
+          cookie->fovDegrees <= 0 || cookie->fovDegrees >= 180)
+        throw invalid;
+      Vec axis = unit(shaped ? vec(shaping.direction) : z), up = vec(cookie->up);
+      finite(up.data(), 3);
+      auto side = cross(axis, up);
+      if (length(side) < 1e-4f * std::max(length(up), 1e-30f))
+        throw invalid;
+      auto texture = texturePath(cookie->texture);
+      auto slot = std::find(m_cookieTextures.begin(), m_cookieTextures.end(), texture);
+      if (slot == m_cookieTextures.end())
+        slot = m_cookieTextures.insert(m_cookieTextures.end(), texture);
+      prototype.cookie = uint32_t(slot - m_cookieTextures.begin()) + 1;
+      // Up made perpendicular to the axis.
+      auto perpendicular = unit(cross(unit(side), axis));
+      std::copy(perpendicular.begin(), perpendicular.end(), prototype.cookieUp);
+      prototype.cookieTan = std::tan(cookie->fovDegrees * pi / 360);
+      std::copy(axis.begin(), axis.end(), prototype.direction);
+    }
+    prototype.volumetric = volumetric;
     auto triangle = [&](Vec a, Vec b, Vec c, Vec direction) {
       if (length(cross(add(b, scale(a, -1)), add(c, scale(a, -1)))) < 1e-10f)
         return;
@@ -278,6 +334,7 @@ namespace remix {
       definition.distant.angularDiameterDegrees = angle;
       std::copy(d.begin(), d.end(), definition.distant.direction);
       std::copy(radiance.begin(), radiance.end(), definition.distant.radiance);
+      definition.distant.volumetric = volumetric;
     } else if (type == REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT) {
       prototype.radius = radius * std::max({length(x), length(y), length(z)});
       if (prototype.radius > 0)

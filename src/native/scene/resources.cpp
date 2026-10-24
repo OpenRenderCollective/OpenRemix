@@ -50,6 +50,9 @@ namespace remix {
     m_skyRadiance = {};
     m_cameraMedium = {};
     m_lights.clear();
+    m_iesProfiles.reset();
+    m_iesIndex.clear();
+    m_cookieTextures.clear();
     m_light = {};
     m_dome = {};
     m_frameLights.clear();

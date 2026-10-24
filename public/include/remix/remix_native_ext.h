@@ -1255,6 +1255,42 @@ typedef struct remixapi_MaterialPbrRemapEXT {
   remixapi_MaterialPbrChannelEXT roughness, metallic;
 } remixapi_MaterialPbrRemapEXT;
 
+// Optional pNext on LightInfo (sphere, rect, disk and cylinder lights): an IES
+// photometric profile, the contents of an IESNA LM-63 file (not
+// null-terminated). The light's radiance in a direction is scaled by the
+// profile's candela at the angle from the light's axis, the profile's
+// brightest direction keeping it whole. The axis is the light shaping's
+// direction, or without shaping the light's own (rect and disk: their
+// direction; sphere: straight down, (0, 0, -1)); vertical angle 0 lies along
+// it. Profiles are taken as rotationally symmetric: horizontal angles are
+// averaged. Cone shaping still applies. Lights with the same contents share
+// one profile. Text that is no LM-63 profile, or emits nothing, is invalid.
+#define REMIXAPI_STRUCT_TYPE_LIGHT_INFO_IES_PROFILE_EXT ((remixapi_StructType)0x7fff101e)
+typedef struct remixapi_LightInfoIesProfileEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  const char *data;
+  uint64_t size;
+} remixapi_LightInfoIesProfileEXT;
+
+// Optional pNext on LightInfo (sphere lights): a light cookie, a texture
+// projected from the light along its axis (as for IES profiles: the shaping's
+// direction, else straight down) like a slide projector. Within the
+// projection the light's radiance is multiplied by the texture's colour times
+// its alpha (so a mask may be in either), and outside it the light is dark: the texture's centre lies on the axis, its
+// top toward `up` and its width spans fovDegrees (0 to 180, exclusive). The
+// texture is named as material textures are (a CreateTexture hash "0x..." or
+// a file path). `up` must not be parallel to the axis. Cone shaping and an
+// IES profile still apply.
+#define REMIXAPI_STRUCT_TYPE_LIGHT_INFO_COOKIE_EXT ((remixapi_StructType)0x7fff101f)
+typedef struct remixapi_LightInfoCookieEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  remixapi_Path texture;
+  remixapi_Float3D up;
+  float fovDegrees;
+} remixapi_LightInfoCookieEXT;
+
 // A private value avoids the retained 0.1003 BC5 value (139).
 #define REMIXAPI_FORMAT_BC4_UNORM_EXT ((remixapi_Format)147)
 #define REMIXAPI_FORMAT_BC6H_UFLOAT_EXT ((remixapi_Format)143)

@@ -59,8 +59,17 @@ namespace remix::scene {
       e.directionCone[3] = light.coneCos;
       e.shaping[0] = light.softness;
       e.shaping[1] = light.focus;
+      e.shaping[2] = float(light.ies);
       for (unsigned v = 0; v < 3; ++v)
         std::copy_n(light.corners[v], 3, e.corners[v]);
+      // Free in every emitter: the volumetric radiance scale.
+      e.corners[1][3] = light.volumetric;
+      // A sphere's corners are free: its cookie's projection.
+      if (light.cookie && !light.triangle) {
+        e.shaping[3] = float(light.cookie);
+        std::copy_n(light.cookieUp, 3, e.corners[0]);
+        e.corners[0][3] = light.cookieTan;
+      }
       return e;
     }
   } // namespace
@@ -69,7 +78,9 @@ namespace remix::scene {
     using Key = std::tuple<uint32_t, uint64_t, uint32_t, uint64_t>;
     Key keyOf(const SphereLight &light) { return {light.triangle, light.group, light.rank, light.id}; }
     bool sameGeometry(const SphereLight &a, const SphereLight &b) {
-      bool same = a.coneCos == b.coneCos && a.softness == b.softness && a.focus == b.focus &&
+      bool same = a.coneCos == b.coneCos && a.softness == b.softness && a.focus == b.focus && a.ies == b.ies &&
+                  a.cookie == b.cookie && a.cookieTan == b.cookieTan &&
+                  std::equal(a.cookieUp, a.cookieUp + 3, b.cookieUp) &&
                   std::equal(a.direction, a.direction + 3, b.direction) && a.radius == b.radius &&
                   std::equal(a.position, a.position + 3, b.position);
       for (unsigned v = 0; v < 3; ++v)

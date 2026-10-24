@@ -620,6 +620,7 @@ namespace remix {
     frame.sun[3] = localDebug ? (std::strcmp(localDebug, "budget") == 0 ? 2.f : 1.f) : 0.f;
     std::copy_n(light.direction, 3, frame.direction);
     std::copy_n(light.radiance, 3, frame.radiance);
+    frame.radiance[3] = light.volumetric; // the sun's scale in volumetric media (volume.glsl)
     if (options.sky)
       std::copy_n(resources.skyRadiance().data(), 3, frame.skyRadiance);
     if (options.sky && resources.dome().enabled) {
@@ -639,6 +640,26 @@ namespace remix {
         auto fingerprint = dome.texture->fingerprint();
         append(&fingerprint, sizeof(fingerprint));
       }
+    }
+    // Light cookies: each slot's texture in this frame's texture table (+ 1).
+    {
+      const auto &cookies = resources.cookieTextures();
+      std::vector<uint32_t> table(cookies.size());
+      for (size_t i = 0; i < cookies.size(); ++i) {
+        if (!cookies[i])
+          continue;
+        if (textures.size() >= PathTracer::textureLimit)
+          throw VK_ERROR_TOO_MANY_OBJECTS;
+        table[i] = uint32_t(textures.size() + 1);
+        textures.push_back(resources.sampledTexture(resources.cookieMaterial(), cookies[i], command));
+        auto fingerprint = cookies[i]->fingerprint();
+        append(&fingerprint, sizeof(fingerprint));
+      }
+      if (lightCookies)
+        retiredBuffers.push_back(std::move(lightCookies));
+      if (!table.empty())
+        hostBuffer(lightCookies, table.data(), table.size() * sizeof(uint32_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+      frame.lightCookies = lightCookies ? lightCookies->address : 0;
     }
     // Role CUT (remixapi_InstanceInfoMaskEXT): the coverage of the groups
     // whose instances the camera does not see, drawn by the raster renderer
@@ -905,6 +926,22 @@ namespace remix {
       frame.movedLights = movedLights ? movedLights->address : 0;
       frame.visibilityConfig[1] = uint32_t(moved.size());
     }
+    // IES profiles: uploaded when one is added (they are never changed).
+    if (const auto ies = resources.iesProfiles(); ies != iesUploaded) {
+      if (iesBuffer)
+        retiredBuffers.push_back(std::move(iesBuffer));
+      if (ies && !ies->empty()) {
+        if (deviceLocalScene)
+          iesBuffer = upload(command, ies->data(), ies->size() * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+        else {
+          std::unique_ptr<Buffer> host;
+          hostBuffer(host, ies->data(), ies->size() * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+          iesBuffer = std::move(host);
+        }
+      }
+      iesUploaded = ies;
+    }
+    frame.iesProfiles = iesBuffer ? iesBuffer->address : 0;
     // Classify the empty space just above a shading point (2 cm).
     frame.visibilityProbe[0] = .02f / options.sceneScale;
     // Paint lies at most this far above its receiver (5 cm; Source lifts 0.1 in).

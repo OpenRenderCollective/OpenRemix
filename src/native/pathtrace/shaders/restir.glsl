@@ -54,7 +54,7 @@ vec3 restirContribution(Hit hit,LightEmitter light,vec2 uv,out vec3 specular,out
   float cosX=dot(p.n,-w);if(p.twoSided)cosX=abs(cosX);
   if(cosS<=0||cosX<=0)return vec3(0);
   float attenuation=localFalloff(dot(light.positionRadius.xyz-hit.p,light.positionRadius.xyz-hit.p));
-  vec3 scale=light.radiance.rgb*emitterShaping(light,-w)*(cosS*cosX*attenuation/(3.14159265359*d2))*frame.localScale.x;
+  vec3 scale=emitterRadiance(light,-w)*(cosS*cosX*attenuation/(3.14159265359*d2))*frame.localScale.x;
   vec3 physical=materialResponse(hit,w,specular)*scale;
   specular*=scale;
   // Sphere lights are not geometry; triangle emitters are, so stop short of them.

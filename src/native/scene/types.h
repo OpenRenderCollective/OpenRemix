@@ -218,6 +218,14 @@ namespace remix {
       uint32_t triangle = 0; // 0 sphere, 1 one-sided, 2 two-sided
       float corners[3][3] = {};
       float direction[3] = {0, 0, -1}, coneCos = -1, softness = 0, focus = 0;
+      // IES profile (NativeResources::iesProfiles) + 1; 0: none.
+      uint32_t ies = 0;
+      // Light cookie (NativeResources::cookieTextures) + 1, 0: none; its
+      // projection's up and the tangent of half its width.
+      uint32_t cookie = 0;
+      float cookieUp[3] = {0, 0, 1}, cookieTan = 0;
+      // Scale of its light in volumetric media (the light's volumetricRadianceScale).
+      float volumetric = 1;
       // Emitter of an instance the host identified as dynamic
       // (remixapi_InstanceIdentityEXT): kept in the light tree's dynamic part.
       bool dynamic = false;
@@ -239,6 +247,8 @@ namespace remix {
       float direction[3] = {0, -1, 0}; // Direction in which light travels.
       float radiance[3] = {};
       float angularDiameterDegrees = 0;
+      // Scale of its light in volumetric media (the light's volumetricRadianceScale).
+      float volumetric = 1;
       bool isDistant = false;
       bool operator==(const DistantLight &) const = default;
     };

@@ -757,6 +757,7 @@ namespace remix::metal {
     frame.sun[2] = frame.sun[1] != 0 ? float(options.shadowDebug) : 0;
     std::copy_n(light.direction, 3, frame.direction);
     std::copy_n(light.radiance, 3, frame.radiance);
+    frame.radiance[3] = light.volumetric; // the sun's scale in volumetric media (volume.glsl)
     if (options.sky)
       std::copy_n(resources.skyRadiance().data(), 3, frame.skyRadiance);
     if (options.sky && resources.dome().enabled) {
