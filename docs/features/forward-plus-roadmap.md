@@ -64,12 +64,28 @@ Budget rounds span eligible draws before taking more directions from one model.
 manifest on publication or cache load; this is not an independent light reference.
 
 Matched unstyled hemisphere references at the sampled housing orientations expose
-large errors that the current lightmapped-only scorer misses. Next: capture a
-bounded separate set of model lighting references before refinement, score their
-actual base-field errors alongside world receivers, and include their geometric
-support without copying or changing surface-atlas texel arrays. Preserve matching
-unstyled/component semantics, existing work/fence ownership and the fixed record
-budget. This sampler/diagnostic does not yet change allocation or runtime defaults.
+large errors that the lightmapped-only scorer misses. A bounded GPU-reference
+prototype successfully promotes the housing region to 2 m within 32768 records,
+but it was removed: the resulting estimates are worse, including with the existing
+directional-depth option. Solid nodes near the roof recover toward the bright
+rooftop side, and their interpolation support extends below the slab. Better
+priority scores and finer spacing alone do not provide side-aware ownership.
+Do not repeat that standalone allocation change or leave its extra capture stage
+in default bakes. The existing allocation and cache policy are restored.
+
+Next investigate actual surface baking for uncharted static models, preserving
+caller-authored charts, retained-draw bindings, the shared atlas budget, PBR and
+controllable-light behavior. Chart/padding overhead must be measured; a triangle
+per chart must not silently consume the world lightmap budget. Do not substitute
+runtime per-light direct work for a fully baked static-model path. The VRF viewer's
+[lighting-source selection](https://github.com/ValveResourceFormat/ValveResourceFormat/blob/a048d2cba7ccb94d584b83caf6f55ca66a177854/Renderer/Renderer/World/WorldLightingInfo.cs#L56-L72)
+supports lightmaps and baked vertex lighting before probe fallback; this is viewer
+implementation evidence, not a claim about every Valve engine configuration.
+
+Dynamic-prop probe quality and side-aware volume interpolation remain required.
+Static-model surface bakes do not qualify or replace those goals. Retain fixed
+record/storage budgets, matching unstyled/component semantics, whole-field and
+repeated-stream comparisons, work/fence ownership and whole-frame cost gates.
 
 Use `scripts/common/compare-probe-receivers.py` for paired
 `REMIX_DEBUG_BAKE_RECEIVERS` reports. It requires identical scenes, positions,
