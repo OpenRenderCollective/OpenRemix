@@ -19,6 +19,7 @@ namespace remix::forward::bake {
   // Optional worker-only diagnostic, including cache hits. Input is a count
   // (1..16), then XYZ origins and XYZ unit directions, at most 4 KiB total.
   // REMIX_DEBUG_PROBE_RECEIVER_RAYS names the input; output appends .results.json.
+  // Includes at most 256 triangles/charts per hit draw, with truncation flags.
   // Existing output is protected; failures never affect bake publication.
   void dumpProbeReceiverReport(const scene::BakeScene &source, const Grid &grid,
                                std::stop_token cancelled = {}) noexcept;

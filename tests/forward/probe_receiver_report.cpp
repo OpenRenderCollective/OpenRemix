@@ -122,6 +122,9 @@ int main(int argc, char **argv) {
   require(output.find("\"sceneHash\":\"123\"") != std::string::npos &&
               output.find("\"draw\":1") != std::string::npos && output.find("\"normalizedWeight\":") != std::string::npos,
           "Probe report must retain scene identity, picked ownership and normalized contributions");
+  require(output.find("\"geometry\":{\"totalTriangles\":1,\"truncated\":false") != std::string::npos &&
+              output.find("\"vertex\":0,\"position\":[0,0,2]") != std::string::npos,
+          "Receiver report retains bounded hit-draw topology and transformed corners");
   const auto irradiance = output.find("\"irradiance\":[");
   require(irradiance != std::string::npos, "Covered receiver has no probe irradiance");
   std::istringstream values(output.substr(irradiance + 14));
@@ -130,6 +133,20 @@ int main(int argc, char **argv) {
   require(std::abs(value - .5f) < 1e-6f, "Report reconstruction changed constant-field energy");
   b::dumpProbeReceiverReport(source, grid);
   require(readOutput() == output, "Existing receiver report was overwritten");
+  std::filesystem::remove(outputPath);
+  source.draws[1].surface->indices.clear();
+  source.charts.clear();
+  for (uint32_t i = 0; i < 300; ++i) {
+    source.draws[1].surface->indices.insert(source.draws[1].surface->indices.end(), {0, 1, 2});
+    source.charts.push_back({1, i * 3, 2, 2, {{0, 0}, {1, 0}, {0, 1}}});
+  }
+  b::dumpProbeReceiverReport(source, grid);
+  const auto bounded = readOutput();
+  require(bounded.find("\"geometry\":{\"totalTriangles\":300,\"truncated\":true") != std::string::npos &&
+              bounded.find("\"totalCharts\":300,\"chartsTruncated\":true") != std::string::npos &&
+              bounded.find("\"chart\":255,") != std::string::npos &&
+              bounded.find("\"chart\":256,") == std::string::npos,
+          "Geometry and chart diagnostics explicitly cap oversized hit draws");
   std::filesystem::remove(outputPath);
   writeInput("17\n");
   b::dumpProbeReceiverReport(source, grid);

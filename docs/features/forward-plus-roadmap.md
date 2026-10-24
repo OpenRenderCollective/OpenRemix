@@ -103,6 +103,14 @@ candidate. Next inspect actual housing chart connectivity and group nonconsecuti
 connected triangles in a private derived index stream while preserving authored
 ranges and live draw identity; then verify surface references and broader quality.
 
+Bounded ray-receiver diagnostics now include up to 256 triangles and chart ranges
+per hit draw, with explicit truncation flags. Cached normal Construct inspection
+finds housing draw 830 has 140 triangles in 27 charts: 17 cross-chart geometric
+edges have matching endpoint normals, including 11 between nonconsecutive
+triangles. This confirms smooth-edge fragmentation, not the sole artifact cause.
+Use this measured topology for private connected-patch index ordering; preserve
+authored chart index ranges and original live binding identity.
+
 Next investigate actual surface baking for uncharted static models, preserving
 caller-authored charts, retained-draw bindings, the shared atlas budget, PBR and
 controllable-light behavior. Chart/padding overhead must be measured; a triangle

@@ -30,6 +30,50 @@ namespace remix::forward::bake {
       for (size_t i = 0; i < N; ++i) { if (i) out << ','; out << value[i]; }
       out << ']';
     }
+    void receiverGeometry(std::ostream &out, const scene::BakeScene &source, uint32_t drawIndex,
+                          std::stop_token cancelled) {
+      const auto &draw = source.draws[drawIndex];
+      const auto &surface = *draw.surface;
+      const auto normals = normalMatrix(draw.model);
+      const size_t count = draw.indexCount ? draw.indexCount : surface.indices.size();
+      const size_t triangles = std::min<size_t>(count / 3, 256);
+      out << ",\"geometry\":{\"totalTriangles\":" << count / 3
+          << ",\"truncated\":" << (triangles < count / 3 ? "true" : "false") << ",\"charts\":[";
+      uint32_t emitted = 0;
+      for (uint32_t i = 0; i < source.charts.size(); ++i) {
+        check(cancelled);
+        const auto &chart = source.charts[i];
+        if (chart.draw != drawIndex) continue;
+        if (emitted == 256) break;
+        if (emitted++) out << ',';
+        out << "{\"chart\":" << i << ",\"firstIndex\":" << chart.firstIndex
+            << ",\"indexCount\":" << chart.texcoords.size() << '}';
+      }
+      const auto chartCount = std::count_if(source.charts.begin(), source.charts.end(),
+          [&](const auto &chart) { return chart.draw == drawIndex; });
+      out << "],\"totalCharts\":" << chartCount << ",\"chartsTruncated\":"
+          << (chartCount > emitted ? "true" : "false") << ",\"triangles\":[";
+      for (size_t triangle = 0; triangle < triangles; ++triangle) {
+        check(cancelled);
+        const auto first = draw.firstIndex + triangle * 3;
+        if (triangle) out << ',';
+        out << "{\"firstIndex\":" << first << ",\"corners\":[";
+        for (uint32_t c = 0; c < 3; ++c) {
+          const auto index = int64_t(surface.indices[first + c]) + draw.vertexOffset;
+          const auto &v = surface.vertices.at(size_t(index));
+          const auto p = transformPoint(draw.model, {v.position[0], v.position[1], v.position[2]});
+          const auto n = transformVector(normals, {v.normal[0], v.normal[1], v.normal[2]});
+          for (uint32_t axis = 0; axis < 3; ++axis)
+            if (!std::isfinite(p[axis]) || !std::isfinite(n[axis]))
+              throw std::invalid_argument("Nonfinite receiver geometry");
+          if (c) out << ',';
+          out << "{\"vertex\":" << index << ",\"position\":"; vector(out, p);
+          out << ",\"normal\":"; vector(out, n); out << '}';
+        }
+        out << "]}";
+      }
+      out << "]}";
+    }
     std::vector<Grid::Origin> probeOrigins(const Grid &grid) {
       if (indexed(grid.header)) return directoryOrigins(grid);
       const uint32_t count = gridNodes(grid.header);
@@ -202,6 +246,7 @@ namespace remix::forward::bake {
             << (draw.material ? draw.material->sourceHash : 0) << "\",\"distance\":" << hit.distance << ",\"position\":";
         vector(out, hit.position); out << ",\"normal\":"; vector(out, hit.normal);
         out << ",\"geometricNormal\":"; vector(out, hit.geometricNormal);
+        receiverGeometry(out, source, hit.draw, cancelled);
         const auto value = sample(grid, hit.position, hit.normal);
         out << ",\"irradiance\":"; if (value) vector(out, *value); else out << "null";
         const auto stencil = probeStencil(grid, hit.position, hit.normal);
