@@ -25,7 +25,8 @@ namespace remix::forward::probes {
     };
     check();
     if (snapshot.disabled || !snapshot.automaticAllowed || (snapshot.composed && baseline.empty())) {
-      if (!baseline.empty()) throw std::invalid_argument("Disabled coverage baseline has active volumes");
+      if (snapshot.disabled && !baseline.empty())
+        throw std::invalid_argument("Disabled coverage baseline has active volumes");
       ReceiverCoveragePlan result;
       result.context = coveragePlanContext(source, snapshot);
       result.composedBaseline = snapshot.composed;

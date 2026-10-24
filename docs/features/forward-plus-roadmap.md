@@ -1853,7 +1853,12 @@ the context and cannot silently gain automatic captures. This remains CPU prepar
 GPU ImageAsset now accepts this explicit selection recipe, checks both source headers before
 recording, and shares the existing queue barriers and mip-copy implementation. The caller must
 retain both source image owners through the copy fence. This does not yet activate replacements.
-Next: wire retained owners and the copy fence into frame activation, recheck context, and qualify
+SelectionUpload now owns both source images and the prepared output, checks context before
+recording, and checks it again when the caller retires the copy after its frame fence. Stale
+unsubmitted work records no commands; stale submitted work keeps its owners until retirement and
+produces no publication. The returned publication bundles image, identities and context. The frame
+controller must retain the transaction until its fence and check context again if activation is delayed.
+Next: connect candidate preparation and this transaction to actual renderer frame slots, then qualify
 live authored edits and map changes before enabling local replacement publication by default.
 
 Before production integration, keep planner indices tied to canonical capture metadata rather than

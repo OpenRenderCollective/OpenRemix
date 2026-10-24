@@ -1,5 +1,6 @@
 #include "forward/probes/image_asset.h"
 #include "forward/probes/coverage_image_plan.h"
+#include "forward/probes/selection_upload.h"
 #include "gpu_fixture.h"
 #include <algorithm>
 #include <bit>
@@ -121,7 +122,63 @@ void uploadCase(uint32_t count, uint32_t size, bool composition = false, bool se
   std::printf("Reflection image: %u layers, %u-square faces, %u mips, %zu bytes passed\n",
               count, size, levels, bytes);
 }
+void selectionLifetimeCase(uint32_t stale) {
+  Fixture fixture(false);
+  probes::Capture capture;
+  capture.bounds.include({-1,-1,-1}); capture.bounds.include({1,1,1}); capture.resolution = 8;
+  probes::Data data;
+  data.header.parameters = {1,8,4,510};
+  data.header.probes[0] = probes::projectionRecord(capture);
+  data.texels.resize(510, {1,2,3,1});
+  auto baselineImage = std::make_shared<probes::ImageAsset>(fixture.physical, fixture.device, data);
+  auto localImage = std::make_shared<probes::ImageAsset>(fixture.physical, fixture.device, data);
+  fixture.begin();
+  baselineImage->recordUpload(fixture.command); localImage->recordUpload(fixture.command);
+  fixture.finish();
+  baselineImage->releaseUpload(); localImage->releaseUpload();
+  auto baseline = probes::automaticCoverageBaseline(baselineImage->header());
+  baseline.composed = true; baseline.authoredSceneId = 100; baseline.authoredRevision = 1;
+  remix::scene::BakeScene scene;
+  scene.sceneId = 100; scene.revision = 1; scene.ready = true;
+  auto authoredOnly = baseline; authoredOnly.automaticAllowed = false;
+  const auto noAutomatic = probes::planReceiverCoverage(scene, authoredOnly, {}, probes::ReceiverAudit({}, .1f));
+  require(noAutomatic.replacements.empty() && !noAutomatic.disabledBaseline &&
+          probes::matchesCoverageContext(noAutomatic.context, scene, authoredOnly),
+          "Authored-only policy preserves active volumes without automatic work");
+  probes::ReceiverCoveragePlan selection;
+  selection.context = probes::coveragePlanContext(scene, baseline);
+  selection.owners = {{0,0}}; selection.errors = {0}; selection.candidateRecords = {localImage->header().probes[0]};
+  selection.replacements = {{0,0,1}};
+  probes::CoverageReadyImage local{localImage->header(), selection.context, {{0,0}}};
+  const auto plan = probes::buildCoverageImagePlan(scene, baseline, selection, baselineImage->header(), {}, local);
+  probes::SelectionUpload upload(fixture.physical, fixture.device, plan, baselineImage, localImage);
+  std::weak_ptr<const probes::ImageAsset> oldBaseline = baselineImage, oldLocal = localImage;
+  baselineImage.reset(); localImage.reset();
+  require(!oldBaseline.expired() && !oldLocal.expired(), "Selection retains both source image owners");
+  if (stale == 1) {
+    ++scene.revision;
+    require(!upload.record(VK_NULL_HANDLE, scene, baseline), "Stale selection records no GPU commands");
+    require(oldBaseline.expired() && oldLocal.expired(), "Unsubmitted cancellation releases source owners");
+    return;
+  }
+  fixture.begin();
+  require(upload.record(fixture.command, scene, baseline), "Current selection records its copy");
+  require(!oldBaseline.expired() && !oldLocal.expired(), "Submitted sources survive until their fence");
+  fixture.finish();
+  if (stale == 2) ++scene.revision;
+  if (stale == 3) ++baseline.authoredRevision;
+  const auto published = upload.retire(scene, baseline);
+  require(bool(published) == !stale, "Fence retirement rejects stale scene or authored revision");
+  require(oldBaseline.expired() && oldLocal.expired(), "Completed copy releases retained source images");
+  if (published) require(published->image->header().parameters == plan.header.parameters &&
+                         published->identities == plan.identities, "Publication retains image and aligned identities");
+  bool repeated = false;
+  try { (void)upload.retire(scene, baseline); } catch (const std::logic_error &) { repeated = true; }
+  require(repeated, "A copy cannot retire twice");
+  require(validationErrors == 0, "Selection ownership and retirement are validation clean");
+}
 int main() try {
+  for (uint32_t stale = 0; stale < 4; ++stale) selectionLifetimeCase(stale);
   uploadCase(0, 0);
   uploadCase(64, 8);
   uploadCase(1, 256);
