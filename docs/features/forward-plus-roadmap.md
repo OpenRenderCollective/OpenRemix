@@ -2104,3 +2104,16 @@ These low-atlas, OIDN-off synthetic routes do not qualify final lightmaps, all r
 landmarks, doorway leakage or gameplay performance. The feature remains opt-in, older
 companions remain usable without gaining newly refined captures, and legacy-cache
 preparation, actual map switching and broader quality/default gates remain open.
+
+A four-bounce d1_trainstation_02 before/after moving-camera relay with full-resolution
+SSR now checks the refined-fit integration outside Construct. Both builds retain the
+same two selected replacements, gained-area estimates, diffuse identity/content hashes
+and 12,288 local geometry audit rays. Both exit without validation errors or sync hazards.
+Eight of thirteen captured frames are pixel-identical; five have localized differences
+(121-331 pixels, maximum display-channel differences 38-76), so this is not whole-route
+pixel identity. The inspected interior corridor is unchanged. Some outdoor route views
+expose relay geometry limitations and cannot establish gameplay visual quality. Keep
+moving gameplay, reflected landmarks, doorway/wall leakage and wider-map acceptance open;
+this check supports bounded non-regression on this fixture, not default promotion.
+The renderer guide now documents the experimental flags, refined-variant constraints,
+companion-cache behavior and publication ownership in one current section.

@@ -2559,3 +2559,38 @@ The optional immutable texture formats `REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT`
 and leave public ABI layouts unchanged. Dynamic byte-texture updates retain their existing format
 restrictions. This allows offline hosts to supply decoded sky radiance without a lossy LDR conversion;
 Source-specific HDR material selection and scaling belong to the adapter, not the native renderer.
+
+## Experimental receiver-supported cubemap selection
+
+This path remains off by default. `REMIX_DEBUG_PROBE_LOCAL_CAPTURE=1` prepares at
+most four additional local captures. `REMIX_DEBUG_PROBE_LOCAL_SELECTION=1` enables
+fenced publication of their replacement plan. Fresh preparation currently requires
+`REMIX_DEBUG_PROBE_RECEIVER_VISIBILITY` to name a new diagnostic report path; ordinary
+bakes do not allocate the admission/connection evidence. This diagnostic requirement
+and preparation for older caches remain delivery work, not a production setup flow.
+
+Local origins require completed geometry admission, receiver connectivity and clearance.
+Projection variants retain independent receiver influence. Inward refinements must pass
+whole-volume occupancy and reassessment from completed first-hit samples, improve the
+weighted absolute residual, and fit unused slots in the existing six-variant-per-origin
+budget. Original variants are retained. The configured detail tolerance bounds optional
+absolute plane uncertainty; it does not certify a surface. The replacement planner
+still uses its 0.20 error gate and protects authored roles and sampled baseline coverage.
+
+With disk caching enabled, filtered local pixels and compact evidence are saved through
+the background persistence queue in a `.local-reflections-v1` companion. Base lighting
+cache bytes and identity are unchanged. Content, deterministic receiver order, policy
+and image/candidate ownership are checked before current runtime generations are rebound.
+A valid companion can restore local captures without their transport rays or a diagnostic
+request. Missing/corrupted companions retain the base lighting-cache hit. Older valid
+companions remain usable but do not acquire newly refined captures automatically.
+
+Planning/allocation runs on the preparation worker. Source image owners survive the copy
+fence; scene, authored revision and image ownership are checked before publication.
+Live priority/feather edits reuse radiance, capture-origin edits retrace affected captures,
+empty authored sets disable local probes, and removing a sidecar restores automatic
+placement. Disabled or author-only policies skip local replacement preparation. Actual
+in-process map switching and wider moving-receiver/doorway quality still require acceptance.
+Canonical sidecar/cache records retain their layouts; derived shared-plane feather bands
+are rebuilt as GPU metadata for mixed-priority blending. See the roadmap for current
+visual, cache, performance and default-publication gates.
