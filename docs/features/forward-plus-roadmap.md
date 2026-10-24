@@ -1905,6 +1905,24 @@ this is a sampling seam or smoothing it away. The local-only dump request
 REMIX_DEBUG_PROBE_LOCAL_IMAGE names a fresh serialized Data file (header plus filtered RGBA32F
 mips, including unfiltered first-hit distance in base-mip alpha). It allocates/writes only when requested
 and avoids a whole-map raw capture dump. Keep this underwater case open before visual acceptance.
+A controlled one-versus-four-bounce follow-up on the same merged runtime separates capture
+illumination from projection quality. The selected local image retains bit-identical metadata and
+first-hit distances; 79,005 of capture zero's 79,265 initially black base texels gain nonzero indirect
+light. The previous one-bounce diagnostic therefore cannot qualify dark cubemap illumination.
+However, the underwater reflective prop still has the sharp region at four bounces with SSR disabled;
+increased indirect depth is not a demonstrated projection fix. Both synthetic moving-camera runs
+finish, preserve the authored sidecar, and report no validation errors. Keep production's three-bounce
+default unchanged. Compare this remaining region against path-traced reflection geometry and the
+other containing capture before altering filtering, box fits or blending. These low-atlas, OIDN-off
+fixtures do not establish final lightmap quality or three-bounce production visual acceptance.
+An accumulated, TAA-off path-traced control at the same underwater camera/material reflects the
+nearby pale floor instead of the strongly blue projected shape. It completes at four bounces and
+353 accumulation frames; the installed validation layer emits timeline-semaphore state warnings,
+so this is visual diagnostic evidence, not a clean validation result. Baked radiance already carries
+Beer-Lambert loss from the capture origin. Reusing it at a distant underwater receiver changes the
+physical attenuation path: investigate capture/receiver medium and path-length differences as well
+as box geometry. More blur or a larger diffuse bounce budget is not an established remedy.
+
 Next: qualify live authored edits/map transitions, underwater capture lighting, and cached-bake
 preparation, then consider local replacement publication as a default.
 
