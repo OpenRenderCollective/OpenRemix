@@ -184,6 +184,25 @@ semantics, lighting quality or whole-map capacity. Next is whole-map CPU budget
 preflight and a bounded in-engine candidate, not default promotion. No runtime
 dependency or deployment change has been made.
 
+Whole-scene model eligibility is now a reusable streaming visitor, independent
+of chart allocation. `REMIX_DEBUG_BAKE_MODEL_PREFLIGHT` writes a fresh bounded
+inventory and intentionally stops before GPU baking; see the
+[study guide](model-chart-study.md#whole-scene-eligibility-inventory). Full bm_c1a1b
+inventory completes with 2175 source draws, 9630 authored charts, 1279 accepted
+draws, 531397 triangles, 612288 source-vertex references and 6433.60 square metres
+of full admitted triangle area. It has 392 shared raw-geometry groups and 887
+potential repeated draws. This is not an atlas fit or a lighting bake. Reuse must
+account for transforms and eligible face subsets, and keep lighting per instance.
+
+The extraction retains the model chart cap/cache policy. Five cached neutral
+Construct views remain pixel-identical; nine of ten total neutral/shaded captures
+match the older baseline exactly. One shaded view differs by at most one 8-bit
+code value in 6347 pixels; two current-runtime repeats match each other exactly.
+Cause is not established, so do not claim whole-frame bit identity. Both repeats
+complete without validation errors and with zero grid/surface bake batches.
+Next is actual whole-map atlas planning and bounded unwrap integration, followed
+by lighting, controllable-group, binding and complete-cost checks before promotion.
+
 Independent 8192-sample, three-bounce base-unstyled hemisphere references at 14
 charted housing triangle centres find candidate-policy-3 atlas/reference luminance
 ratios of 0.71-1.37, versus probe/reference ratios up to 14.42. This helped isolate

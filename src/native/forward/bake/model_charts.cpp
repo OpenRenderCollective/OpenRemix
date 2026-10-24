@@ -1,6 +1,6 @@
 #include "forward/bake/model_charts.h"
 #include "forward/bake/model_chart_report.h"
-#include "forward/bake/probe_receiver_geometry.h"
+#include "forward/bake/model_triangles.h"
 #include "forward/material.h"
 #include "forward/lightmap/curved.h"
 #include <algorithm>
@@ -89,44 +89,14 @@ namespace remix::forward::bake {
       uint32_t maximumCharts, std::stop_token cancelled) {
     if (!maximumCharts || maximumCharts > 65536)
       throw std::invalid_argument("Model chart budget is 1..65536");
-    if (!std::isfinite(source.sceneScale) || source.sceneScale <= 0)
-      throw std::invalid_argument("Invalid model chart scene scale");
-    const auto ranges = unchartedReceiverRanges(source, cancelled);
     std::vector<scene::BakeSurfaceChart> result;
-    for (const auto &range : ranges) {
-      const auto &draw = source.draws[range.draw];
-      if (draw.classification != REMIXAPI_INSTANCE_STATIC_EXT) continue;
-      for (size_t first = range.firstIndex; first < size_t(range.firstIndex) + range.indexCount; first += 3) {
-        if (cancelled.stop_requested()) throw std::runtime_error("Model chart generation superseded");
-        std::array<Vec3, 3> positions;
-        for (uint32_t corner = 0; corner < 3; ++corner) {
-          const int64_t index = int64_t(draw.surface->indices[first + corner]) + draw.vertexOffset;
-          if (index < 0 || uint64_t(index) >= draw.surface->vertices.size())
-            throw std::invalid_argument("Invalid model chart vertex index");
-          const auto &vertex = draw.surface->vertices[size_t(index)];
-          positions[corner] = transformPoint(draw.model, {vertex.position[0], vertex.position[1], vertex.position[2]});
-          for (float value : positions[corner])
-            if (!std::isfinite(value)) throw std::invalid_argument("Nonfinite model chart position");
-        }
-        std::array<double, 3> a, b, cross;
-        for (uint32_t axis = 0; axis < 3; ++axis) {
-          a[axis] = double(positions[1][axis]) - positions[0][axis];
-          b[axis] = double(positions[2][axis]) - positions[0][axis];
-        }
-        for (uint32_t axis = 0; axis < 3; ++axis)
-          cross[axis] = a[(axis + 1) % 3] * b[(axis + 2) % 3] - a[(axis + 2) % 3] * b[(axis + 1) % 3];
-        // Match the world-metric parameterizer's degeneracy threshold.
-        const double area = std::hypot(cross[0], cross[1], cross[2]) *
-                            double(source.sceneScale) * source.sceneScale;
-        const double edges = std::hypot(a[0], a[1], a[2]) * std::hypot(b[0], b[1], b[2]);
-        if (!(area > 1e-12) || std::hypot(cross[0], cross[1], cross[2]) <= edges * 1e-6) continue;
-        if (!playableReceiverTriangle(source, positions, cancelled)) continue;
-        scene::BakeSurfaceChart chart{range.draw, uint32_t(first), 2, 2, {{0, 0}, {1, 0}, {0, 1}}};
-        if (!result.empty() && join(source, result.back(), chart, cancelled)) continue;
-        if (result.size() == maximumCharts) throw std::length_error(modelChartBudgetFailure(source, result, range.draw, uint32_t(first), cancelled));
-        result.push_back(std::move(chart));
-      }
-    }
+    forEachModelTriangle(source, [&](const ModelTriangle &triangle) {
+      scene::BakeSurfaceChart chart{triangle.draw, triangle.firstIndex, 2, 2, {{0, 0}, {1, 0}, {0, 1}}};
+      if (!result.empty() && join(source, result.back(), chart, cancelled)) return;
+      if (result.size() == maximumCharts)
+        throw std::length_error(modelChartBudgetFailure(source, result, triangle.draw, triangle.firstIndex, cancelled));
+      result.push_back(std::move(chart));
+    }, cancelled);
     return result;
   }
 }

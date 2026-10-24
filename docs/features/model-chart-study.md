@@ -57,3 +57,22 @@ identities. A translated export
 also changes world-grid phase. Passing it does not qualify whole-map atlas fit,
 lighting accuracy, bake time, memory, frame cost or an unwrapper dependency.
 The default synthetic test does not exercise a captured external dataset.
+
+## Whole-scene eligibility inventory
+
+`REMIX_DEBUG_BAKE_MODEL_PREFLIGHT` names a fresh JSON output for the initial
+preparation worker. It streams the same uncharted opaque static triangle
+eligibility used by the chart generator, independently of the chart cap. The
+report includes accepted counts, full admitted triangle area, source-vertex
+references per draw and shared raw-geometry groups. Area is not clipped visible
+area, and raw grouping does not establish reuse across different transforms or
+eligible face subsets. Lighting cannot be shared merely because geometry matches.
+
+This diagnostic stops preparation after writing the inventory: replay exits
+nonzero with `Model eligibility preflight complete`. That is intentional and
+must not be reported as a successful lighting bake. No charts, atlas fit or GPU
+bake are performed. Without the environment variable, it does not run.
+
+Limits are 32,768 source draws, four million accepted triangles and two million
+source vertices in one draw. Vertex sets stream one draw at a time. Cancellation,
+file overwrite protection and geometry/count invariants are tested.

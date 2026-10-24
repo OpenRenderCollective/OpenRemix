@@ -1,5 +1,7 @@
 #include "forward/bake/model_receivers.h"
 #include "forward/bake/model_charts.h"
+#include "forward/bake/model_triangles.h"
+#include "forward/bake/model_preflight.h"
 #include "forward/bake/model_chart_report.h"
 #include "forward/lightmap/layout.h"
 #include "forward/lightmap/data.h"
@@ -289,6 +291,44 @@ int main(int argc, char **argv) try {
 
   require(argc == 2, "Supply an isolated manifest output path");
   const std::filesystem::path path(argv[1]);
+  {
+    s::BakeScene inventory;
+    inventory.draws = {triangle()};
+    inventory.draws[0].classification = REMIXAPI_INSTANCE_STATIC_EXT;
+    inventory.draws.push_back(inventory.draws[0]);
+    inventory.draws.push_back(inventory.draws[0]); inventory.draws[2].viewModel = true;
+    uint32_t count = 0;
+    double area = 0;
+    b::forEachModelTriangle(inventory, [&](const b::ModelTriangle &triangle) {
+      ++count; area += triangle.areaSquareMetres;
+      require(triangle.firstIndex == 0 && triangle.positions[1][0] == 3,
+              "Model triangle stream preserves indexed geometry");
+    });
+    require(count == 2 && area == 9, "Triangle inventory streams full eligible geometry independently of chart cap");
+    try { b::modelCharts(inventory, 1); require(false, "Chart cap no longer rejects partial output"); }
+    catch (const std::length_error &) {}
+    auto report = path; report += ".preflight.json";
+    std::filesystem::remove(report);
+    b::writeModelPreflight(inventory, report);
+    std::ifstream input(report);
+    const std::string text(std::istreambuf_iterator<char>(input), {});
+    input.close();
+    require(text.find("\"acceptedDraws\":2,\"acceptedTriangles\":2,\"sourceVertexReferences\":6") != std::string::npos &&
+                text.find("\"areaSquareMetres\":9,\"rawGeometryGroups\":1,\"potentialRepeatedDraws\":1") != std::string::npos,
+            "Model inventory preserves per-draw counts and labels only potential raw geometry reuse");
+    try { b::writeModelPreflight(inventory, report); require(false, "Model preflight overwrote existing output"); }
+    catch (const std::runtime_error &) {}
+    std::filesystem::remove(report);
+    std::stop_source stopped; stopped.request_stop();
+    try { b::writeModelPreflight(inventory, report, stopped.get_token()); require(false, "Cancelled preflight continued"); }
+    catch (const std::runtime_error &) {}
+    require(!std::filesystem::exists(report), "Cancelled preflight wrote output");
+    invalid([&] { b::forEachModelTriangle(inventory, {}); });
+    inventory.draws.resize(32769);
+    try { b::writeModelPreflight(inventory, report); require(false, "Model preflight draw bound ignored"); }
+    catch (const std::length_error &) {}
+  }
+
   {
     auto meshPath = path; meshPath += ".mesh.obj";
     std::filesystem::remove(meshPath);

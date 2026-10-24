@@ -1,5 +1,6 @@
 #include "forward/bake/job.h"
 #include "forward/bake/model_charts.h"
+#include "forward/bake/model_preflight.h"
 #include "forward/probes/priority_bands.h"
 #include "platform/workers.h"
 #include "forward/bake/storage_options.h"
@@ -133,6 +134,10 @@ namespace remix::forward::bake {
   }
   void Controller::Job::prepareResources(VkPhysicalDevice physical, VkDevice device, const Config &config,
                                          float lightCutoff, uint32_t queueFamily) {
+    if (const char *path = std::getenv("REMIX_DEBUG_BAKE_MODEL_PREFLIGHT"); path && *path) {
+      writeModelPreflight(*source, std::filesystem::u8path(path), cancellation.get_token());
+      throw std::runtime_error("Model eligibility preflight complete (diagnostic only; no bake scheduled)");
+    }
     // Initial preparation owns this job exclusively until its ticket completes.
     // Keep caller identity/bindings intact and derive only private atlas inputs.
     if (modelChartsRequested()) {
