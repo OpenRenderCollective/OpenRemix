@@ -608,6 +608,22 @@ namespace remix {
     // this one is recorded once the camera's jitter is known.
     skyApplied = false;
 #if REMIX_HAS_NUMOS
+    // A sky failure must not take the frame with it: the sky stays off until
+    // its settings change.
+    const auto guardSky = [&](auto &&work) {
+      std::string error;
+      try {
+        work();
+        return;
+      } catch (const std::exception &exception) {
+        error = exception.what();
+      } catch (VkResult result) {
+        error = "Vulkan error " + std::to_string(int(result));
+      }
+      skyFailure = error;
+      skyActive = skyReady = false;
+      std::fprintf(stderr, "NUMOS sky stopped: %s\n", error.c_str());
+    };
     const bool numosActive =
         numosSky && skyReady && skySettings.enabled && skyUnavailable.empty() && skyFailure.empty();
     if (numosActive && numosSky->sun().active) {
@@ -617,6 +633,9 @@ namespace remix {
         light.radiance[i] = sun.radiance[i] * skySettings.radianceScale;
       }
       light.angularDiameterDegrees = sun.angularDiameterDegrees;
+    } else if (numosActive) {
+      // The sun is below NUMOS's horizon.
+      std::fill_n(light.radiance, 3, 0.f);
     }
 #endif
     if (options.overrideLight) {
@@ -895,35 +914,36 @@ namespace remix {
     std::copy_n(temporalFrame.jitter, 2, frame.jitter);
 #if REMIX_HAS_NUMOS
     skyActive = false;
-    if (skySettings.enabled && skyUnavailable.empty() && skyFailure.empty()) try {
-      if (!numosSky)
-        numosSky = std::make_shared<sky::Renderer>(physical, device);
-      numosSky->setSettings(skySettings);
-      sky::FrameDescription description{.view = resources.view(),
-                                        .projection = resources.projection(),
-                                        .previousView = temporalFrame.previousView,
-                                        .previousProjection =
-                                            history.reset() ? resources.projection() : previousProjection,
-                                        .jitter = {temporalFrame.jitter[0], temporalFrame.jitter[1]},
-                                        .renderWidth = extent.width,
-                                        .renderHeight = extent.height,
-                                        .outputWidth = displayExtent.width,
-                                        .outputHeight = displayExtent.height,
-                                        .metersPerUnit = options.sceneScale,
-                                        .upAxis = options.volumetricUpAxis,
-                                        .cameraCut = history.reset()};
-      gpu::GpuScope scope(command, "NUMOS sky");
-      skyActive = numosSky->record(command, description);
-      skyReady |= skyActive;
-      skyReason = numosSky->status();
-    } catch (const std::exception &error) {
-      // A sky failure must not take the frame with it: the sky goes off.
-      skyFailure = error.what();
-      skyActive = skyReady = false;
-      std::fprintf(stderr, "NUMOS sky stopped: %s\n", error.what());
-    }
-    else
+    if (skySettings.enabled && skyUnavailable.empty() && skyFailure.empty())
+      guardSky([&] {
+        if (!numosSky) {
+          numosSky = std::make_shared<sky::Renderer>(physical, device);
+          numosSky->selectFrame(frameIndex);
+        }
+        numosSky->setSettings(skySettings);
+        sky::FrameDescription description{.view = resources.view(),
+                                          .projection = resources.projection(),
+                                          .previousView = temporalFrame.previousView,
+                                          .previousProjection =
+                                              history.reset() ? resources.projection() : previousProjection,
+                                          .jitter = {temporalFrame.jitter[0], temporalFrame.jitter[1]},
+                                          .renderWidth = extent.width,
+                                          .renderHeight = extent.height,
+                                          .outputWidth = displayExtent.width,
+                                          .outputHeight = displayExtent.height,
+                                          .metersPerUnit = options.sceneScale,
+                                          .upAxis = options.volumetricUpAxis,
+                                          .cameraCut = history.reset() || !skyReady};
+        gpu::GpuScope scope(command, "NUMOS sky");
+        skyActive = numosSky->record(command, description);
+        skyReady |= skyActive;
+        skyReason = numosSky->status();
+      });
+    else {
+      // A sky enabled again starts from its own next frame, not a stale one.
+      skyReady = false;
       skyReason = skySettings.enabled ? "" : "Off.";
+    }
 #endif
     temporalFrame.jitter[2] = history.reset() ? temporalFrame.jitter[0] : previousJitter[0];
     temporalFrame.jitter[3] = history.reset() ? temporalFrame.jitter[1] : previousJitter[1];
@@ -1429,29 +1449,23 @@ namespace remix {
       timingPending = true;
     }
 #if REMIX_HAS_NUMOS
-    if (skyActive) try {
-      gpu::GpuScope scope(command, "NUMOS screen clouds");
-      const auto depth = denoiser ? denoiser->image(denoise::Depth) : upscale::Input{};
-      numosSky->recordPostDepth(command, depth.image, depth.view);
-    } catch (const std::exception &error) {
-      skyFailure = error.what();
-      skyActive = skyReady = false;
-      std::fprintf(stderr, "NUMOS sky stopped: %s\n", error.what());
-    }
+    if (skyActive)
+      guardSky([&] {
+        gpu::GpuScope scope(command, "NUMOS screen clouds");
+        const auto depth = denoiser ? denoiser->image(denoise::Depth) : upscale::Input{};
+        numosSky->recordPostDepth(command, depth.image, depth.view);
+      });
 #endif
     if (denoiser)
       denoiser->record(command);
 #if REMIX_HAS_NUMOS
-    if (skyActive && denoiser) try {
-      gpu::GpuScope scope(command, "NUMOS composite", extent);
-      const auto color = denoiser->image(denoise::Composed), depth = denoiser->image(denoise::Depth);
-      numosSky->recordComposite(command, color.image, color.view, depth.image, depth.view,
-                                numosSky->environmentScale() * skySettings.radianceScale, skySettings.gameSky);
-    } catch (const std::exception &error) {
-      skyFailure = error.what();
-      skyActive = skyReady = false;
-      std::fprintf(stderr, "NUMOS sky stopped: %s\n", error.what());
-    }
+    if (skyActive && denoiser)
+      guardSky([&] {
+        gpu::GpuScope scope(command, "NUMOS composite", extent);
+        const auto color = denoiser->image(denoise::Composed), depth = denoiser->image(denoise::Depth);
+        numosSky->recordComposite(command, color.image, color.view, depth.image, depth.view,
+                                  numosSky->environmentScale() * skySettings.radianceScale, skySettings.gameSky);
+      });
 #endif
     stageTime(9);
     if (stateProfile) {

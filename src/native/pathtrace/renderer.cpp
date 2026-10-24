@@ -102,9 +102,10 @@ namespace remix {
 #endif
   }
   void PathTracer::setSky(const config::SkySettings &settings, const std::string &unavailable) {
-    if (!(settings == m_gpu->skySettings))
+    if (!(settings == m_gpu->skySettings)) {
       m_gpu->skyFailure.clear();
-    m_gpu->skySettings = settings;
+      m_gpu->skySettings = settings;
+    }
     m_gpu->skyUnavailable = unavailable;
   }
   PathTracer::SkyStatus PathTracer::skyStatus() const {
