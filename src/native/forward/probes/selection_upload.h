@@ -19,6 +19,7 @@ namespace remix::forward::probes {
                     std::shared_ptr<const ImageAsset> baseline, std::shared_ptr<const ImageAsset> local);
     SelectionUpload(const SelectionUpload &) = delete;
     SelectionUpload &operator=(const SelectionUpload &) = delete;
+    std::array<uint64_t, 2> memory() const;
     // False means stale before submission; no commands were recorded.
     bool record(VkCommandBuffer command, const scene::BakeScene &source, const CoverageBaselineSet &baseline);
     // Call only after the copy submission's fence. Stale work releases its

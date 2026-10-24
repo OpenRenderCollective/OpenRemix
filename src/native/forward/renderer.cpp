@@ -30,7 +30,11 @@ namespace remix::forward {
     statistics.reflectionIdentities = identities ? *identities : probes::LayerIdentities{};
     const auto memory = baking->memory();
     const auto authoredMemory = authoredReflections->memory();
-    const auto selectedMemory = localSelections.memory();
+    auto selectedMemory = localSelections.memory();
+    if (localSelectionPreparation) {
+      const auto prepared = localSelectionPreparation->memory();
+      selectedMemory[0] += prepared[0]; selectedMemory[1] += prepared[1];
+    }
     statistics.bufferBytes += memory.buffers + authoredMemory.buffers + selectedMemory[0];
     auto &visibility = statistics.probeVisibility;
     visibility = {};
@@ -76,6 +80,7 @@ namespace remix::forward {
   Renderer::Renderer() = default;
   Renderer::~Renderer() = default;
   Renderer::Gpu::~Gpu() {
+    localSelectionPreparation.reset();
     viewModelSun.reset();
     viewModelLocalMaps.reset();
     waterPass.reset();
@@ -139,6 +144,7 @@ namespace remix::forward {
     auto next = std::make_unique<Gpu>();
     next->physical = physical;
     next->device = device;
+    if (pipelines) next->localSelectionPreparation = std::make_unique<probes::LocalSelectionPreparation>(physical, device, *pipelines);
     next->extent = extent;
     next->fragmentStatistics = std::make_unique<FragmentStatistics>(physical, device);
     next->options = options;

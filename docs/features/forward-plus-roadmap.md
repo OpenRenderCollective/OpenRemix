@@ -1888,10 +1888,12 @@ fence; SelectionFrames publishes descriptors, header and IDs together after reti
 viewmodel receiver masks and explicit authored receiver bindings use the same active publication.
 Changes to source image ownership or baseline context invalidate pending/active selections while
 submitted and sampled frames retain their owners. Output image memory is included in statistics.
-Preparation currently runs synchronously once per changed baseline in this diagnostic path and is
-timed; move planning/allocation to preparation workers before considering a default. Cached bakes
+LocalSelectionPreparation now runs planning and image allocation on the shared preparation queue,
+retaining immutable inputs and polling without waiting on the render thread. Superseded queued
+work is cancelled immediately, running work receives cancellation, and finished work must still
+match current scene metadata and both source-image owners before entering the copy queue. Cached bakes
 still have no retained evidence or prepared local captures.
-Next: qualify live authored edits/map transitions, moving camera/SSR-on coverage, and worker
+Next: qualify live authored edits/map transitions, moving camera/SSR-on coverage, and cached-bake
 preparation, then consider local replacement publication as a default.
 
 Before production integration, keep planner indices tied to canonical capture metadata rather than

@@ -6,6 +6,7 @@
 #include "forward/reflections.h"
 #include "forward/probes/authoring.h"
 #include "forward/probes/selection_upload.h"
+#include "forward/probes/local_selection_preparation.h"
 #include "forward/probe_batch/batch.h"
 #include "forward/renderer.h"
 #include "forward/resources.h"
@@ -71,6 +72,7 @@ namespace remix::forward {
     std::unique_ptr<probe_batch::Cache> probeVisibility;
     std::shared_ptr<probes::Authoring> authoredReflections;
     probes::SelectionFrames localSelections;
+    std::unique_ptr<probes::LocalSelectionPreparation> localSelectionPreparation;
     std::optional<probes::CoveragePlanContext> localSelectionAttempt;
     std::weak_ptr<const probes::ImageAsset> localSelectionBaseline, localSelectionImage;
     void prepareLocalReflections(VkCommandBuffer command, RasterRenderer &resources);

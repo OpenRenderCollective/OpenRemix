@@ -1,6 +1,5 @@
 #include "forward/gpu.h"
 #include "raster/renderer.h"
-#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -28,17 +27,19 @@ namespace remix::forward {
   void Renderer::Gpu::prepareLocalReflections(VkCommandBuffer command, RasterRenderer &resources) {
     const char *request = std::getenv("REMIX_DEBUG_PROBE_LOCAL_SELECTION");
     const bool enabled = request && std::strcmp(request, "1") == 0;
-    if (!enabled && !localSelections.needsContext()) return;
+    if (!enabled && !localSelections.needsContext() &&
+        (!localSelectionPreparation || !localSelectionPreparation->pending())) return;
     const auto source = resources.bakeScene();
     const auto &volume = baking->volume();
     const auto snapshot = authoredReflections->snapshot(volume);
     const auto local = volume ? volume->localReflections : nullptr;
-    const bool available = enabled && source && source->ready && snapshot.image && local && local->image &&
+    const bool available = enabled && localSelectionPreparation && source && source->ready && snapshot.image && local && local->image &&
         local->ready && !local->ready->layers.empty() && volume->reflectionEvidence &&
         probes::matchesCoverageContext(local->ready->context, *source, local->ready->context.baseline);
     if (!available) {
       localSelections.invalidate();
       localSelectionAttempt.reset();
+      if (localSelectionPreparation) localSelectionPreparation->cancel();
     } else if (!localSelectionAttempt ||
         !probes::matchesCoverageContext(*localSelectionAttempt, *source, snapshot.baseline) ||
         localSelectionBaseline.lock() != snapshot.image || localSelectionImage.lock() != local->image) {
@@ -47,27 +48,19 @@ namespace remix::forward {
       localSelectionBaseline = snapshot.image;
       localSelectionImage = local->image;
       try {
-        const auto began = std::chrono::steady_clock::now();
-        std::vector<uint32_t> eligible;
-        for (const auto &layer : local->ready->layers) eligible.push_back(layer.candidate);
-        // Restrict before greedy planning: dropping unavailable replacements
-        // afterwards could invalidate another replacement's preservation proof.
-        const auto plan = probes::planReceiverCoverage(*source, snapshot.baseline, *volume->reflectionEvidence, {}, eligible);
-        if (!plan.replacements.empty()) {
-          auto ready = *local->ready;
-          ready.context = plan.context;
-          // Radiance belongs to the same frozen scene. The builder also checks
-          // every selected box/frame/origin against the freshly approved plan.
-          const auto imagePlan = probes::buildCoverageImagePlan(*source, snapshot.baseline, plan,
-              snapshot.image->header(), snapshot.identities, ready);
-          localSelections.offer(std::make_unique<probes::SelectionUpload>(physical, device, imagePlan,
-                                                                          snapshot.image, local->image));
-          const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - began).count();
-          std::fprintf(stderr, "Local reflection selection: %zu replacements, %u output layers, %.3f ms preparation\n",
-              plan.replacements.size(), imagePlan.header.parameters[0], ms);
-        }
+        localSelectionPreparation->start(source, snapshot, volume->reflectionEvidence, local->ready, local->image);
       } catch (const std::exception &error) {
-        std::fprintf(stderr, "Local reflection selection refused: %s\n", error.what());
+        std::fprintf(stderr, "Local reflection preparation refused: %s\n", error.what());
+      }
+    }
+    if (available) {
+      try {
+        if (auto upload = localSelectionPreparation->poll(*source, snapshot, local->image))
+          localSelections.offer(std::move(upload));
+      } catch (VkResult error) {
+        std::fprintf(stderr, "Local reflection worker Vulkan failure: %d\n", int(error));
+      } catch (const std::exception &error) {
+        std::fprintf(stderr, "Local reflection worker refused: %s\n", error.what());
       }
     }
     // Context is supplied again after selectFrame observed the copy fence.

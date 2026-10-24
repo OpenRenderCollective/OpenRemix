@@ -11,6 +11,10 @@ namespace remix::forward::probes {
     m_output = std::make_shared<ImageAsset>(physical, device, plan);
     m_publication = {m_output, plan.identities, plan.context};
   }
+  std::array<uint64_t, 2> SelectionUpload::memory() const {
+    return m_publication.image ? std::array<uint64_t, 2>{m_publication.image->bufferBytes(), m_publication.image->imageBytes()}
+                               : std::array<uint64_t, 2>{};
+  }
   bool SelectionUpload::record(VkCommandBuffer command, const scene::BakeScene &source,
                                const CoverageBaselineSet &baseline) {
     if (m_state != State::Prepared) throw std::logic_error("Reflection selection is not pending recording");
