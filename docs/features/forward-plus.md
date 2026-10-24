@@ -573,7 +573,13 @@ radiance vectors are copied. Composed fallback priorities may use the internal s
 public authored range; geometry validation does not reinterpret that sentinel as a public priority.
 An empty composed set preserves explicit local-cubemap disable and cannot be refilled by planning.
 The current bake diagnostic still calls the automatic-baseline path; final-frame integration and
-publication of replacements remain separate work. Existing visibility evidence is usable only for
+publication of replacements remain separate work. Plans now own a metadata-only context containing
+the frozen scene identity/revisions, scale bits, composed scene/revision and exact baseline records,
+image dimensions and layer provenance. `matchesCoverageContext` rejects stale contexts by exact
+field/bit comparison, including signed zero, projection planes and feather metadata. Composed
+contexts must use the published owner's scene/revision, not a pending authored request, and cannot
+be created for another scene. Diagnostic context IDs alone are not a publication token: matching
+owned metadata and frame image ownership are still required at activation. Existing visibility evidence is usable only for
 the same frozen scene; formerly covered samples that were never queried remain unknown.
 Zero sampled loss is not proof of whole-map, moving-object or camera-volume preservation. Readbacks retire through the existing frame fences;
 no per-fragment visibility rays or radiance captures are added. Bounded capture-slot selection and

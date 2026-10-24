@@ -27,6 +27,7 @@ namespace remix::forward::probes {
     if (snapshot.disabled || (snapshot.composed && baseline.empty())) {
       if (!baseline.empty()) throw std::invalid_argument("Disabled coverage baseline has active volumes");
       ReceiverCoveragePlan result;
+      result.context = coveragePlanContext(source, snapshot);
       result.composedBaseline = snapshot.composed;
       result.disabledBaseline = true;
       return result;
@@ -37,6 +38,7 @@ namespace remix::forward::probes {
     static_assert(8192 + maxProbes * guardsPerCapture <= maximumCoverageSamples);
     const auto receivers = sampleReceivers(source, 8192, cancelled);
     ReceiverCoveragePlan result;
+    result.context = coveragePlanContext(source, snapshot);
     result.surfaceSamples = uint32_t(receivers.size());
     result.composedBaseline = snapshot.composed;
     std::vector<float> areas;
@@ -44,11 +46,13 @@ namespace remix::forward::probes {
     std::vector<CoverageBaseline> current(baseline.size());
     for (size_t i = 0; i < baseline.size(); ++i) {
       const auto &volume = baseline[i];
-      if (!validProjectionSpace(volume.worldToLocal) || !volume.influence.valid)
+      const auto bounds = volume.influenceBounds();
+      const auto position = volume.position();
+      if (!validProjectionSpace(volume.record.worldToLocal) || !bounds.valid)
         throw std::invalid_argument("Invalid coverage volume frame");
       for (uint32_t axis = 0; axis < 3; ++axis)
-        if (!std::isfinite(volume.influence.minimum[axis]) || !std::isfinite(volume.influence.maximum[axis]) ||
-            !std::isfinite(volume.position[axis]) || volume.influence.minimum[axis] >= volume.influence.maximum[axis])
+        if (!std::isfinite(bounds.minimum[axis]) || !std::isfinite(bounds.maximum[axis]) ||
+            !std::isfinite(position[axis]) || bounds.minimum[axis] >= bounds.maximum[axis])
           throw std::invalid_argument("Invalid coverage volume bounds");
       current[i].protectedCapture = volume.protectedCapture || (snapshot.composed && !volume.source.automatic);
     }
@@ -57,8 +61,8 @@ namespace remix::forward::probes {
       areas.push_back(receivers[r].areaMetresSquared);
       for (uint32_t b = 0; b < baseline.size(); ++b) {
         const auto &capture = baseline[b];
-        if (contains(capture.influence,
-                     projectionPoint(capture.worldToLocal, receivers[r].position))) current[b].receivers.push_back(r);
+        if (contains(capture.influenceBounds(),
+                     projectionPoint(capture.record.worldToLocal, receivers[r].position))) current[b].receivers.push_back(r);
       }
     }
     // These points constrain preservation, but cannot earn surface-area gains.
@@ -73,13 +77,13 @@ namespace remix::forward::probes {
       ++result.guardSamples;
       for (uint32_t b = 0; b < baseline.size(); ++b) {
         const auto &capture = baseline[b];
-        if (contains(capture.influence,
-                     projectionPoint(capture.worldToLocal, position))) current[b].receivers.push_back(sample);
+        if (contains(capture.influenceBounds(),
+                     projectionPoint(capture.record.worldToLocal, position))) current[b].receivers.push_back(sample);
       }
     };
     for (const auto &capture : baseline) {
-      guard(capture.position);
-      const auto &bounds = capture.influence;
+      guard(capture.position());
+      const auto bounds = capture.influenceBounds();
       for (uint32_t x = 0; x < axisSamples; ++x)
         for (uint32_t y = 0; y < axisSamples; ++y)
           for (uint32_t z = 0; z < axisSamples; ++z) {
@@ -92,8 +96,8 @@ namespace remix::forward::probes {
             for (uint32_t c = 0; c < 3; ++c) {
               double coordinate = 0;
               for (uint32_t axis = 0; axis < 3; ++axis)
-                coordinate += double(capture.worldToLocal[axis][c]) *
-                              (double(local[axis]) - capture.worldToLocal[axis][3]);
+                coordinate += double(capture.record.worldToLocal[axis][c]) *
+                              (double(local[axis]) - capture.record.worldToLocal[axis][3]);
               world[c] = float(coordinate);
             }
             guard(world);

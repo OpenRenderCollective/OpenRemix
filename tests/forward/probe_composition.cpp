@@ -1,5 +1,6 @@
 #include "forward/probes/composition.h"
 #include "forward/probes/coverage_baseline.h"
+#include "forward/probes/coverage_context.h"
 #include "forward/probes/identities.h"
 #include <limits>
 #include <stdexcept>
@@ -30,28 +31,61 @@ void testProbeComposition() {
     authoredHeader.probes[0] = p::projectionRecord(authoredCapture);
     automaticHeader.probes[0] = p::projectionRecord(automaticCapture);
     auto composition = p::compose(authoredHeader, automaticHeader);
-    const auto snapshot = p::composedCoverageBaseline(composition);
+    const auto snapshot = p::composedCoverageBaseline(composition, 100, 11);
     require(snapshot.composed && snapshot.volumes.size() == 2 && snapshot.volumes[0].protectedCapture &&
             !snapshot.volumes[1].protectedCapture && !snapshot.volumes[0].source.automatic &&
             snapshot.volumes[1].source.automatic && snapshot.volumes[1].source.layer == 0);
-    require(snapshot.volumes[0].position == authoredCapture.position &&
-            snapshot.volumes[0].worldToLocal == authoredCapture.worldToLocal &&
+    require(snapshot.volumes[0].position() == authoredCapture.position &&
+            snapshot.volumes[0].record.worldToLocal == authoredCapture.worldToLocal &&
             composition.header.probes[1].minimum[3] == -32769);
+    remix::scene::BakeScene scene;
+    scene.sceneId = 100; scene.revision = 7; scene.contentHash = 1234;
+    scene.chartRevision = 2; scene.reflectionRevision = 3; scene.ready = true;
+    const auto context = p::coveragePlanContext(scene, snapshot);
+    require(p::matchesCoverageContext(context, scene, snapshot));
+    require(!p::matchesCoverageContext({}, scene, snapshot));
+    auto wrongMap = scene; ++wrongMap.sceneId;
+    bool wrongMapRejected = false;
+    try { (void)p::coveragePlanContext(wrongMap, snapshot); }
+    catch (const std::invalid_argument &) { wrongMapRejected = true; }
+    require(wrongMapRejected);
+    auto changedScene = scene; ++changedScene.contentHash;
+    require(!p::matchesCoverageContext(context, changedScene, snapshot));
+    changedScene = scene; ++changedScene.revision;
+    require(!p::matchesCoverageContext(context, changedScene, snapshot));
+    changedScene = scene; ++changedScene.chartRevision;
+    require(!p::matchesCoverageContext(context, changedScene, snapshot));
+    changedScene = scene; changedScene.sceneScale = 2;
+    require(!p::matchesCoverageContext(context, changedScene, snapshot));
+    auto changedBaseline = snapshot; ++changedBaseline.authoredRevision;
+    require(!p::matchesCoverageContext(context, scene, changedBaseline));
+    changedBaseline = snapshot; changedBaseline.volumes[0].record.position[2] = -0.f;
+    require(!p::matchesCoverageContext(context, scene, changedBaseline));
+    changedBaseline = snapshot; ++changedBaseline.volumes[1].source.layer;
+    require(!p::matchesCoverageContext(context, scene, changedBaseline));
+    changedBaseline = snapshot; changedBaseline.volumes[0].record.influenceMaximum[0] += 1;
+    require(!p::matchesCoverageContext(context, scene, changedBaseline));
+    changedBaseline = snapshot; changedBaseline.volumes[0].record.minimum[0] -= .01f;
+    require(!p::matchesCoverageContext(context, scene, changedBaseline));
+    changedBaseline = snapshot; changedBaseline.volumes[0].record.maximum[3] += 1;
+    require(!p::matchesCoverageContext(context, scene, changedBaseline));
+    changedBaseline = snapshot; ++changedBaseline.parameters[1];
+    require(!p::matchesCoverageContext(context, scene, changedBaseline));
     composition.header.probes[0].position[0] = 99;
-    require(snapshot.volumes[0].position[0] == 10);
+    require(snapshot.volumes[0].record.position[0] == 10);
     auto duplicate = p::compose(authoredHeader, automaticHeader);
     duplicate.layers[1] = duplicate.layers[0];
     bool rejected = false;
-    try { (void)p::composedCoverageBaseline(duplicate); } catch (const std::invalid_argument &) { rejected = true; }
+    try { (void)p::composedCoverageBaseline(duplicate, 100, 11); } catch (const std::invalid_argument &) { rejected = true; }
     require(rejected);
     duplicate = p::compose(authoredHeader, automaticHeader);
     duplicate.layers.pop_back();
     rejected = false;
-    try { (void)p::composedCoverageBaseline(duplicate); } catch (const std::invalid_argument &) { rejected = true; }
+    try { (void)p::composedCoverageBaseline(duplicate, 100, 11); } catch (const std::invalid_argument &) { rejected = true; }
     require(rejected);
     auto disabledHeader = authoredHeader;
     disabledHeader.parameters[0] = 0;
-    const auto disabled = p::composedCoverageBaseline(p::compose(disabledHeader, automaticHeader));
+    const auto disabled = p::composedCoverageBaseline(p::compose(disabledHeader, automaticHeader), 100, 11);
     require(disabled.composed && disabled.disabled && disabled.volumes.empty());
     const auto plain = p::automaticCoverageBaseline(std::span(&automaticCapture, 1));
     require(!plain.composed && plain.volumes.size() == 1 && !plain.volumes[0].protectedCapture);

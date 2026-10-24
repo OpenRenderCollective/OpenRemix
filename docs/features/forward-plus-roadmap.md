@@ -1837,7 +1837,12 @@ preserves rotated volume frames and maps back to original image layers. Empty co
 explicit disable semantics. This is CPU planning support; the current bake report remains automatic
 before authored composition. Wire the composed snapshot into final-frame planning/publication and
 qualify live authored edits before treating this as integrated replacement support. Bind the baseline
-and plan to matching frozen-scene and authored-revision ownership before publication; do not reuse a
+and plan to matching frozen-scene and authored-revision ownership before publication. CPU plan
+contexts now own exact baseline records and record scene, chart, hint and authored revisions;
+bitwise metadata comparison rejects changed planes, feathering, dimensions or source-layer mapping.
+Wire that check into the frame activation path with retained image owners; the diagnostic's context
+receipt alone does not make publication safe. Use published revision ownership, not pending edits.
+Do not reuse a
 layer-index plan after a composition or map change.
 
 Before production integration, keep planner indices tied to canonical capture metadata rather than

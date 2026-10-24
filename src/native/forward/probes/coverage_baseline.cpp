@@ -1,5 +1,6 @@
 #include "forward/probes/coverage_baseline.h"
 #include <cmath>
+#include <bit>
 #include <set>
 #include <stdexcept>
 
@@ -10,17 +11,39 @@ namespace remix::forward::probes {
     for (uint32_t i = 0; i < captures.size(); ++i) {
       const auto &capture = captures[i];
       validateCapture(capture);
-      result.volumes.push_back({capture.influence.valid ? capture.influence : capture.bounds,
-                                capture.position, capture.worldToLocal, {true, i}, false});
+      if (i && capture.resolution != captures[0].resolution)
+        throw std::invalid_argument("Automatic coverage baseline has mixed image dimensions");
+      CoverageVolume volume;
+      const auto &influence = capture.influence.valid ? capture.influence : capture.bounds;
+      for (uint32_t axis = 0; axis < 3; ++axis) {
+        volume.record.minimum[axis] = capture.bounds.minimum[axis];
+        volume.record.maximum[axis] = capture.bounds.maximum[axis];
+        volume.record.influenceMinimum[axis] = influence.minimum[axis];
+        volume.record.influenceMaximum[axis] = influence.maximum[axis];
+        volume.record.position[axis] = capture.position[axis];
+      }
+      volume.record.minimum[3] = float(capture.priority);
+      volume.record.worldToLocal = capture.worldToLocal;
+      volume.blendDistance = capture.blendDistance;
+      volume.source = {true, i};
+      result.volumes.push_back(volume);
+    }
+    if (!captures.empty()) {
+      const auto resolution = captures[0].resolution;
+      const uint32_t levels = uint32_t(std::bit_width(resolution));
+      result.parameters = {uint32_t(captures.size()), resolution, levels, levelOffset(resolution, levels)};
     }
     return result;
   }
-  CoverageBaselineSet composedCoverageBaseline(const Composition &composition) {
+  CoverageBaselineSet composedCoverageBaseline(const Composition &composition, uint64_t sceneId, uint64_t revision) {
     const auto count = composition.header.parameters[0];
-    if (count > maxProbes || composition.layers.size() != count)
+    if (!sceneId || !revision || count > maxProbes || composition.layers.size() != count)
       throw std::invalid_argument("Composed coverage baseline has inconsistent layers");
     CoverageBaselineSet result;
+    result.parameters = composition.header.parameters;
     result.composed = true;
+    result.authoredSceneId = sceneId;
+    result.authoredRevision = revision;
     result.disabled = count == 0;
     std::set<std::pair<bool, uint32_t>> sources;
     for (uint32_t i = 0; i < count; ++i) {
@@ -44,8 +67,11 @@ namespace remix::forward::probes {
       }
       metadata.bounds.valid = metadata.influence.valid = true;
       validateCapture(metadata);
-      result.volumes.push_back({metadata.influence, metadata.position, metadata.worldToLocal,
-                                source, !source.automatic});
+      CoverageVolume volume;
+      volume.record = record;
+      volume.source = source;
+      volume.protectedCapture = !source.automatic;
+      result.volumes.push_back(volume);
     }
     return result;
   }

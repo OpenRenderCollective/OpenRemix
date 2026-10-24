@@ -1,10 +1,11 @@
 #pragma once
 #include "forward/probes/coverage_selection.h"
-#include "forward/probes/coverage_baseline.h"
+#include "forward/probes/coverage_context.h"
 #include "forward/probes/receiver_fits.h"
 
 namespace remix::forward::probes {
   struct ReceiverCoveragePlan {
+    CoveragePlanContext context;
     float maximumError = .2f;
     uint32_t maximumChanges = 4;
     uint32_t surfaceSamples = 0, guardSamples = 0;

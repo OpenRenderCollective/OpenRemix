@@ -198,7 +198,13 @@ namespace remix::forward::probes {
       output << "]},\"coveragePlan\":{\"baseline\":\"automatic-before-authored-composition\","
                 "\"tested\":" << (coverage ? "true" : "false") << ",\"maximumError\":" << plan.maximumError
              << ",\"maximumChanges\":" << plan.maximumChanges << ",\"surfaceSamples\":" << plan.surfaceSamples
-             << ",\"guardSamples\":" << plan.guardSamples << ",\"replacements\":[";
+             << ",\"guardSamples\":" << plan.guardSamples << ",\"context\":{\"valid\":"
+             << (plan.context.valid ? "true" : "false") << ",\"sceneId\":\"" << plan.context.sceneId
+             << "\",\"sourceRevision\":\"" << plan.context.revision << "\",\"contentHash\":\"" << plan.context.contentHash
+             << "\",\"chartRevision\":\"" << plan.context.chartRevision
+             << "\",\"reflectionRevision\":\"" << plan.context.reflectionRevision
+             << "\",\"authoredSceneId\":\"" << plan.context.baseline.authoredSceneId
+             << "\",\"authoredRevision\":\"" << plan.context.baseline.authoredRevision << "\"},\"replacements\":[";
       for (size_t i = 0; i < plan.replacements.size(); ++i) {
         const auto &replacement = plan.replacements[i];
         const auto &owner = plan.owners.at(replacement.candidate);
