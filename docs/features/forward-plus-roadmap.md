@@ -17,6 +17,7 @@ Remaining gates before default publication:
 - Preparation for legacy lighting caches that lack local evidence/captures.
 - Underwater medium/path-length and projection mismatch against the path tracer.
   A fixed-box far/near-origin control implicates placement; residual colour parity remains open.
+  Reassessed receiver-near refinements now integrate experimentally; cold/warm checks pass.
 - Moving-receiver/doorway quality, wall leakage and broader-map performance acceptance.
 
 Earlier continuation paragraphs below retain historical limitations and measurements;
@@ -2081,3 +2082,25 @@ validation errors or synchronization hazards. A sampled proposal is not a certif
 terrain plane. Next integrate only independently reassessed admissible variants within
 the existing per-site/capture budget, preserve receiver influence and authored roles,
 and qualify reflected landmarks, moving receivers, leakage and underwater colour.
+
+ReceiverFitAudit can now add inward-refined, independently reassessed alternatives to
+completed local fits. Originals remain in their original order; projection/influence
+duplicates are removed, retained receiver influence is unchanged, and only improving
+occupancy-checked alternatives fill unused slots up to the existing six-per-site cap.
+The visibility planner, report and retained evidence consume the same deterministic
+result. Hardware geometry rays are reused; the four-local-capture and 0.20 error limits
+remain unchanged. Analytical tests cover retained originals/influence, contraction,
+occupancy, full-capacity refusal and map-change cancellation. Geometry, cache and GPU
+image/lifecycle suites pass.
+A fresh four-bounce Construct route now selects the receiver-near underwater refinement
+at error 0.101 within its four replacements. The angular reflection split disappears
+on the checked prop, similar to the hand-placed near-origin control; underwater colour
+still differs from path tracing. The 12,288 geometry rays, base lighting hashes and
+authored-capture statistics match the control. Cold/warm cache routes publish identical
+probe records/content and authored statistics apart from exposure, with four local
+captures restored and zero local transport rays on the warm run. Runs complete without
+validation errors or synchronization hazards; the original user sidecar stays unchanged.
+These low-atlas, OIDN-off synthetic routes do not qualify final lightmaps, all reflected
+landmarks, doorway leakage or gameplay performance. The feature remains opt-in, older
+companions remain usable without gaining newly refined captures, and legacy-cache
+preparation, actual map switching and broader quality/default gates remain open.

@@ -124,7 +124,7 @@ namespace remix::forward::bake {
                                    owner->cancellation.get_token());
           if (owner->receiverFits && owner->receiverFitCoverage)
             owner->reflectionEvidence = std::make_shared<const probes::ReceiverCoverageEvidence>(
-                probes::retainReceiverCoverage(*owner->source, owner->receiverFits->finish(), *owner->receiverFitCoverage));
+                probes::retainReceiverCoverage(*owner->source, owner->receiverFits->finish(*owner->source, owner->cancellation.get_token()), *owner->receiverFitCoverage));
           if (owner->reflectionEvidence)
             std::fprintf(stderr, "Retained local reflection evidence: %zu attempts, %zu visibility observations\n",
                 owner->reflectionEvidence->fits.attempts.size(), owner->reflectionEvidence->observations.size());

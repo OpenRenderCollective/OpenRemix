@@ -273,6 +273,44 @@ int main(int argc, char **argv) {
     value.statistics = {0, 1, 1, 0};
   }
   require(detailAudit.observe(0, detailMisses), "Shared detail-comparison geometry completes");
+  auto refinementSource = localSource;
+  refinementSource.partition = std::make_shared<scene::VisibilityPartition>(partition());
+  p::ReceiverFits refinable;
+  refinable.available = true;
+  const auto refinementProxy = box({-2,-2,-2}, {2,2,2});
+  refinable.attempts.push_back({0, {{refinementProxy, room, true}}});
+  p::ReceiverSite centredSite{};
+  p::ReceiverFitAudit refinementAudit(refinable, std::span(&centredSite, 1));
+  std::vector<bake::Result> innerRoomHits;
+  for (const auto &ray : refinementAudit.rays()) {
+    float distance = std::numeric_limits<float>::max();
+    for (uint32_t c = 0; c < 3; ++c)
+      if (std::abs(ray.normal[c]) > 1e-8f) distance = std::min(distance, 1 / std::abs(ray.normal[c]));
+    bake::Result hit{}; hit.irradiance[0][3] = distance; hit.statistics[2] = 1;
+    innerRoomHits.push_back(hit);
+  }
+  require(refinementAudit.observe(0, innerRoomHits), "Analytic inset-room geometry completes");
+  const auto improvedFits = refinementAudit.finish(refinementSource);
+  const auto &improvedVariants = improvedFits.attempts[0].variants;
+  require(improvedVariants.size() == 2 && refinementAudit.finish().attempts[0].variants.size() == 1,
+          "Refinement adds a reassessed alternative without changing the original controls");
+  require(improvedVariants[0].projection.minimum == refinementProxy.minimum &&
+              improvedVariants[1].influence.minimum == room.minimum &&
+              improvedVariants[1].influence.maximum == room.maximum &&
+              improvedVariants[1].projection.minimum[2] > -1.01f &&
+              improvedVariants[1].projection.maximum[2] < 1.01f &&
+              p::emptyRegion(*refinementSource.partition, improvedVariants[1].projection),
+          "Refined projection contracts onto measured surfaces while preserving influence and occupancy");
+  refinable.attempts[0].variants.resize(p::ReceiverSiteFit::maximumVariants, refinable.attempts[0].variants[0]);
+  p::ReceiverFitAudit fullRefinementAudit(refinable, std::span(&centredSite, 1));
+  require(fullRefinementAudit.observe(0, innerRoomHits) &&
+              fullRefinementAudit.finish(refinementSource).attempts[0].variants.size() == p::ReceiverSiteFit::maximumVariants,
+          "Refinement never evicts original alternatives or exceeds their existing capacity");
+  std::stop_source refinementStop; refinementStop.request_stop();
+  bool refinementCancelled = false;
+  try { (void)refinementAudit.finish(refinementSource, refinementStop.get_token()); }
+  catch (const std::runtime_error &) { refinementCancelled = true; }
+  require(refinementCancelled, "Completed projection refinement still respects map-change cancellation");
   auto aliasedDetails = detailAudit.finish();
   auto &aliases = aliasedDetails.attempts[0].variants;
   aliases.resize(p::ReceiverSiteFit::maximumVariants, aliases.front());

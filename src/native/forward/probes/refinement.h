@@ -13,7 +13,7 @@ namespace remix::forward::probes {
     Bounds bounds;
     uint32_t faces = 0; // +X,-X,+Y,-Y,+Z,-Z bit order.
   };
-  // A diagnostic proposal, not a certified surface or accepted capture. Only
+  // A bounded proposal, not a certified surface or accepted capture. Only
   // contracts the existing box; preserve receiver influence separately. Input
   // occupancy must already be validated, and proposals require reassessment.
   std::optional<ProjectionRefinement> refineProjection(const FittedRegion &region, float margin,

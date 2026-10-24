@@ -62,7 +62,7 @@ namespace remix::forward::probes {
       std::span<const Capture> baseline, const ReceiverFitAudit &fits, std::stop_token cancelled) noexcept {
     try {
       const auto receivers = sampleReceivers(source, 8192, cancelled);
-      return std::make_unique<ReceiverAudit>(receiverFitPairs(receivers, baseline, fits.finish(),
+      return std::make_unique<ReceiverAudit>(receiverFitPairs(receivers, baseline, fits.finish(source, cancelled),
           .002f / source.sceneScale, 32768, cancelled), .001f / source.sceneScale);
     } catch (const std::exception &error) {
       std::fprintf(stderr, "Local receiver coverage unavailable: %s\n", error.what());
@@ -78,7 +78,7 @@ namespace remix::forward::probes {
       if (!audit.complete() || (checks && !checks->complete()) || (coverage && !coverage->complete()) ||
           std::filesystem::exists(path))
         throw std::runtime_error("Receiver sites incomplete or report exists");
-      const auto fits = assessment ? assessment->finish() : ReceiverFits{};
+      const auto fits = assessment ? assessment->finish(source, cancelled) : ReceiverFits{};
       const auto occupancy = source.partition && source.partition->closed
           ? std::make_unique<RegionQuery>(*source.partition, cancelled) : nullptr;
       const auto plan = coverage ? planReceiverCoverage(source, baseline, fits, *coverage, cancelled) : ReceiverCoveragePlan{};

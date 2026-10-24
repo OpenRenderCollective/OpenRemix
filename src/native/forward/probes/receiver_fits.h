@@ -29,6 +29,9 @@ namespace remix::forward::probes {
     std::span<const bake::Point> rays() const { return m_audit->rays(); }
     bool observe(uint32_t first, std::span<const bake::Result> results) { return m_audit->observe(first, results); }
     ReceiverFits finish() const;
+    // Retain original alternatives, adding only occupancy-checked improvements
+    // reassessed from completed rays, within the existing per-site budget.
+    ReceiverFits finish(const scene::BakeScene &source, std::stop_token cancelled = {}) const;
     std::vector<FittedRegion> reassess(std::vector<FittedRegion> regions) const {
       return m_audit->reassess(std::move(regions));
     }

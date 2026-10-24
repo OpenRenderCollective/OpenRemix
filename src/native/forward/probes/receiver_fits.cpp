@@ -1,5 +1,7 @@
 #include "forward/probes/receiver_fits.h"
 #include "forward/probes/selection.h"
+#include "forward/probes/refinement.h"
+#include <limits>
 #include <set>
 #include <algorithm>
 
@@ -28,6 +30,61 @@ namespace remix::forward::probes {
     size_t index = 0;
     for (auto &fit : result.attempts)
       for (auto &variant : fit.variants) variant.geometry = geometry.at(index++);
+    return result;
+  }
+  ReceiverFits ReceiverFitAudit::finish(const scene::BakeScene &source, std::stop_token cancelled) const {
+    if (cancelled.stop_requested()) throw std::runtime_error("Receiver refinement superseded");
+    auto result = finish();
+    if (!source.partition || !source.partition->closed) return result;
+    if (!std::isfinite(source.sceneScale) || source.sceneScale <= 0)
+      throw std::invalid_argument("Invalid refined projection scene scale");
+    RegionQuery occupancy(*source.partition, cancelled);
+    RefinementPolicy policy;
+    policy.maximumAbsoluteUncertainty = result.detailToleranceMetres / source.sceneScale;
+    auto residual = [](const FittedRegion &region) {
+      double total = 0, weight = 0;
+      for (const auto &face : region.faces) {
+        const double w = double(face.solidAngleFraction) * (1 - face.missFraction);
+        total += w * face.meanAbsoluteRelativeResidual;
+        weight += w;
+      }
+      return weight > 0 ? total / weight : std::numeric_limits<double>::infinity();
+    };
+    constexpr double minimumRelativeImprovement = .001;
+    for (auto &fit : result.attempts) {
+      if (cancelled.stop_requested()) throw std::runtime_error("Receiver refinement superseded");
+      if (fit.variants.size() == ReceiverSiteFit::maximumVariants) continue;
+      std::vector<ReceiverProjection> improvements;
+      for (const auto &original : fit.variants) {
+        const auto proposal = refineProjection(*original.geometry, .001f / source.sceneScale, policy);
+        if (!proposal) continue;
+        const RegionTolerance tolerance{original.detailTolerant ? policy.maximumAbsoluteUncertainty : 0};
+        if (!occupancy.contains(proposal->bounds, tolerance)) continue;
+        auto duplicate = [&](const ReceiverProjection &other) {
+          return other.projection.minimum == proposal->bounds.minimum &&
+                 other.projection.maximum == proposal->bounds.maximum &&
+                 other.influence.minimum == original.influence.minimum &&
+                 other.influence.maximum == original.influence.maximum;
+        };
+        if (std::any_of(fit.variants.begin(), fit.variants.end(), duplicate) ||
+            std::any_of(improvements.begin(), improvements.end(), duplicate)) continue;
+        auto geometry = *original.geometry;
+        geometry.bounds = proposal->bounds;
+        auto assessed = m_audit->reassess({geometry});
+        if (!(residual(assessed.front()) < residual(*original.geometry) * (1 - minimumRelativeImprovement))) continue;
+        auto improved = original; // Influence and receiver ownership stay unchanged.
+        improved.projection = proposal->bounds;
+        improved.geometry = std::move(assessed.front());
+        improvements.push_back(std::move(improved));
+      }
+      std::stable_sort(improvements.begin(), improvements.end(), [&](const auto &a, const auto &b) {
+        return residual(*a.geometry) < residual(*b.geometry);
+      });
+      for (auto &improved : improvements) {
+        if (fit.variants.size() == ReceiverSiteFit::maximumVariants) break;
+        fit.variants.push_back(std::move(improved));
+      }
+    }
     return result;
   }
   ReceiverFits fitReceiverSites(const scene::BakeScene &source,
