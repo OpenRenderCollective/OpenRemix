@@ -1,4 +1,5 @@
 #include "forward/probes/composition.h"
+#include "forward/probes/coverage_baseline.h"
 #include "forward/probes/identities.h"
 #include <limits>
 #include <stdexcept>
@@ -16,6 +17,46 @@ namespace {
   }
 }
 void testProbeComposition() {
+  {
+    p::Capture automaticCapture;
+    automaticCapture.bounds.include({-1,-1,-1}); automaticCapture.bounds.include({1,1,1});
+    automaticCapture.resolution = 8;
+    auto authoredCapture = automaticCapture;
+    authoredCapture.position = {10,20,0};
+    authoredCapture.worldToLocal = {{{0,-1,0,20},{1,0,0,-10},{0,0,1,0}}};
+    authoredCapture.priority = -32768;
+    p::Header authoredHeader, automaticHeader;
+    authoredHeader.parameters = automaticHeader.parameters = {1,8,4,510};
+    authoredHeader.probes[0] = p::projectionRecord(authoredCapture);
+    automaticHeader.probes[0] = p::projectionRecord(automaticCapture);
+    auto composition = p::compose(authoredHeader, automaticHeader);
+    const auto snapshot = p::composedCoverageBaseline(composition);
+    require(snapshot.composed && snapshot.volumes.size() == 2 && snapshot.volumes[0].protectedCapture &&
+            !snapshot.volumes[1].protectedCapture && !snapshot.volumes[0].source.automatic &&
+            snapshot.volumes[1].source.automatic && snapshot.volumes[1].source.layer == 0);
+    require(snapshot.volumes[0].position == authoredCapture.position &&
+            snapshot.volumes[0].worldToLocal == authoredCapture.worldToLocal &&
+            composition.header.probes[1].minimum[3] == -32769);
+    composition.header.probes[0].position[0] = 99;
+    require(snapshot.volumes[0].position[0] == 10);
+    auto duplicate = p::compose(authoredHeader, automaticHeader);
+    duplicate.layers[1] = duplicate.layers[0];
+    bool rejected = false;
+    try { (void)p::composedCoverageBaseline(duplicate); } catch (const std::invalid_argument &) { rejected = true; }
+    require(rejected);
+    duplicate = p::compose(authoredHeader, automaticHeader);
+    duplicate.layers.pop_back();
+    rejected = false;
+    try { (void)p::composedCoverageBaseline(duplicate); } catch (const std::invalid_argument &) { rejected = true; }
+    require(rejected);
+    auto disabledHeader = authoredHeader;
+    disabledHeader.parameters[0] = 0;
+    const auto disabled = p::composedCoverageBaseline(p::compose(disabledHeader, automaticHeader));
+    require(disabled.composed && disabled.disabled && disabled.volumes.empty());
+    const auto plain = p::automaticCoverageBaseline(std::span(&automaticCapture, 1));
+    require(!plain.composed && plain.volumes.size() == 1 && !plain.volumes[0].protectedCapture);
+  }
+
   {
     p::Header canonical;
     canonical.parameters[0] = 3;

@@ -1832,6 +1832,14 @@ new local captures cannot claim unobserved guard visibility. This remains a samp
 check, not full-volume preservation or unchanged radiance blending. Include removed-volume controls
 alongside newly covered rooms in every replacement trial.
 
+The coverage planner can now consume a metadata-only composed baseline that locks authored roles,
+preserves rotated volume frames and maps back to original image layers. Empty composed sets retain
+explicit disable semantics. This is CPU planning support; the current bake report remains automatic
+before authored composition. Wire the composed snapshot into final-frame planning/publication and
+qualify live authored edits before treating this as integrated replacement support. Bind the baseline
+and plan to matching frozen-scene and authored-revision ownership before publication; do not reuse a
+layer-index plan after a composition or map change.
+
 Before production integration, keep planner indices tied to canonical capture metadata rather than
 sorted GPU layers, replan against protected authored composition and validate both added rooms and
 regions served by removed captures. Preserve frame-publication ownership, diffuse bake identity and

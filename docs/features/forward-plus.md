@@ -567,6 +567,14 @@ This addresses airborne-prop coverage missed by surface-only planning; it is sti
 preservation, not proof of complete coverage or unchanged blend quality. Duplicate sample indices
 are rejected. The generic planner protects authored captures, but this report's baseline is automatic
 before authored composition: do not apply its indices to a published authored-plus-automatic set.
+The planner also accepts a metadata-only baseline built from the final composition copy plan.
+Authored roles are locked, rotated frames and original image-layer provenance are retained, and no
+radiance vectors are copied. Composed fallback priorities may use the internal sentinel outside the
+public authored range; geometry validation does not reinterpret that sentinel as a public priority.
+An empty composed set preserves explicit local-cubemap disable and cannot be refilled by planning.
+The current bake diagnostic still calls the automatic-baseline path; final-frame integration and
+publication of replacements remain separate work. Existing visibility evidence is usable only for
+the same frozen scene; formerly covered samples that were never queried remain unknown.
 Zero sampled loss is not proof of whole-map, moving-object or camera-volume preservation. Readbacks retire through the existing frame fences;
 no per-fragment visibility rays or radiance captures are added. Bounded capture-slot selection and
 visible room-transition acceptance remain required before publication. Neither the sites nor their

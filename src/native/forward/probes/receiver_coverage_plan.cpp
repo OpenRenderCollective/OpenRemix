@@ -14,10 +14,23 @@ namespace remix::forward::probes {
   ReceiverCoveragePlan planReceiverCoverage(const scene::BakeScene &source,
       std::span<const Capture> baseline, const ReceiverFits &fits, const ReceiverAudit &coverage,
       std::stop_token cancelled) {
+    return planReceiverCoverage(source, automaticCoverageBaseline(baseline), fits, coverage, cancelled);
+  }
+  ReceiverCoveragePlan planReceiverCoverage(const scene::BakeScene &source,
+      const CoverageBaselineSet &snapshot, const ReceiverFits &fits, const ReceiverAudit &coverage,
+      std::stop_token cancelled) {
+    const auto &baseline = snapshot.volumes;
     auto check = [&] {
       if (cancelled.stop_requested()) throw std::runtime_error("Local reflection coverage plan superseded");
     };
     check();
+    if (snapshot.disabled || (snapshot.composed && baseline.empty())) {
+      if (!baseline.empty()) throw std::invalid_argument("Disabled coverage baseline has active volumes");
+      ReceiverCoveragePlan result;
+      result.composedBaseline = snapshot.composed;
+      result.disabledBaseline = true;
+      return result;
+    }
     if (!coverage.complete() || baseline.size() > maxProbes || fits.attempts.size() > 32)
       throw std::invalid_argument("Invalid local coverage planning inputs");
     constexpr uint32_t axisSamples = 5, guardsPerCapture = 1 + axisSamples * axisSamples * axisSamples;
@@ -25,16 +38,26 @@ namespace remix::forward::probes {
     const auto receivers = sampleReceivers(source, 8192, cancelled);
     ReceiverCoveragePlan result;
     result.surfaceSamples = uint32_t(receivers.size());
+    result.composedBaseline = snapshot.composed;
     std::vector<float> areas;
     areas.reserve(receivers.size() + baseline.size() * guardsPerCapture);
     std::vector<CoverageBaseline> current(baseline.size());
-    for (const auto &capture : baseline) validateCapture(capture);
+    for (size_t i = 0; i < baseline.size(); ++i) {
+      const auto &volume = baseline[i];
+      if (!validProjectionSpace(volume.worldToLocal) || !volume.influence.valid)
+        throw std::invalid_argument("Invalid coverage volume frame");
+      for (uint32_t axis = 0; axis < 3; ++axis)
+        if (!std::isfinite(volume.influence.minimum[axis]) || !std::isfinite(volume.influence.maximum[axis]) ||
+            !std::isfinite(volume.position[axis]) || volume.influence.minimum[axis] >= volume.influence.maximum[axis])
+          throw std::invalid_argument("Invalid coverage volume bounds");
+      current[i].protectedCapture = volume.protectedCapture || (snapshot.composed && !volume.source.automatic);
+    }
     for (uint32_t r = 0; r < receivers.size(); ++r) {
       check();
       areas.push_back(receivers[r].areaMetresSquared);
       for (uint32_t b = 0; b < baseline.size(); ++b) {
         const auto &capture = baseline[b];
-        if (contains(capture.influence.valid ? capture.influence : capture.bounds,
+        if (contains(capture.influence,
                      projectionPoint(capture.worldToLocal, receivers[r].position))) current[b].receivers.push_back(r);
       }
     }
@@ -50,13 +73,13 @@ namespace remix::forward::probes {
       ++result.guardSamples;
       for (uint32_t b = 0; b < baseline.size(); ++b) {
         const auto &capture = baseline[b];
-        if (contains(capture.influence.valid ? capture.influence : capture.bounds,
+        if (contains(capture.influence,
                      projectionPoint(capture.worldToLocal, position))) current[b].receivers.push_back(sample);
       }
     };
     for (const auto &capture : baseline) {
       guard(capture.position);
-      const auto &bounds = capture.influence.valid ? capture.influence : capture.bounds;
+      const auto &bounds = capture.influence;
       for (uint32_t x = 0; x < axisSamples; ++x)
         for (uint32_t y = 0; y < axisSamples; ++y)
           for (uint32_t z = 0; z < axisSamples; ++z) {
