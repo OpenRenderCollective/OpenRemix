@@ -21,6 +21,12 @@ retain fixed memory and whole-frame cost gates. The earlier directional-depth op
 off by default because other receiver faces regressed. Blindly dropping blocked contributors
 also fails to reproduce the surface reference and is not an accepted fix.
 
+An offline low-variance axial-moment guard also fails the receiver regression screen.
+It reduces through-ceiling support but over-darkens a neighboring housing sample and
+previous barrel/crate fronts. Do not promote an all-axis depth clamp from the isolated
+ceiling improvement. Prioritize receiver-adjacent support and spatial reconstruction;
+require the full set of independently referenced faces before runtime qualification.
+
 ## Current automatic-cubemap delivery gates
 
 The receiver-supported local replacement path remains opt-in. Completed functional
