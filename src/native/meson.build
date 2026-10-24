@@ -81,12 +81,12 @@ subdir('raster')
 subdir('denoise')
 subdir('postfx')
 subdir('upscale')
-subdir('pathtrace')
 sky_libraries = []
 if numos_enabled
   subdir('sky')
   sky_libraries = [sky_library]
 endif
+subdir('pathtrace')
 imgui_vulkan = static_library('remix_imgui_vulkan', 'ui/vulkan_backend.cpp',
   include_directories : [native_include, imgui_include],
   dependencies : vulkan_dep, link_with : pipeline_library,

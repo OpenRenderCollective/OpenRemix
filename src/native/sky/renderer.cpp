@@ -1,0 +1,261 @@
+#include "sky/renderer.h"
+#include "sky/bridge.h"
+#include "upscale/camera.h"
+#include <numos/renderer.h>
+#include <numos/settings.h>
+#include <algorithm>
+#include <cmath>
+#include <iterator>
+#include <string_view>
+
+namespace remix::sky {
+  namespace {
+    // The adapters' binding table (scripts/shaders/sky.py), one entry per Stage.
+    const numos::PassBindingInfo adapterBindings[] = {
+#define NUMOS_PASS_BINDING(slot, set, kind, dim, format, variable)                                            \
+  {slot, set, numos::BindingKind::kind, numos::BindingDim::dim, format, variable},
+#include "sky/shaders/adapter_passes.inc"
+    };
+    const numos::PassInfo adapterPasses[] = {
+#define NUMOS_PASS(name, file, hash, x, y, z, push, first, count)                                             \
+  {#name, file, hash, {x, y, z}, push, adapterBindings + first, count},
+#include "sky/shaders/adapter_passes.inc"
+    };
+    static_assert(std::size(adapterPasses) == size_t(Stage::Count));
+
+    constexpr uint32_t environmentWidth = 512, environmentHeight = 256;
+    // A linear view depth at or beyond this is sky.
+    constexpr float missDepth = 1e10f;
+
+    struct EnvironmentPush {
+      float localToWorld[3][4];
+      uint32_t width, height, frameIndex, zUp;
+    };
+
+    std::vector<Bridge::HostPass> hostPasses() {
+      std::vector<Bridge::HostPass> passes;
+      for (uint32_t i = 0; i < uint32_t(Stage::Count); ++i)
+        passes.push_back({adapterPasses[i], shader(Stage(i))});
+      return passes;
+    }
+
+    numos::Vector3 vector(const float *v) { return {v[0], v[1], v[2]}; }
+  } // namespace
+
+  struct Renderer::State {
+    Bridge bridge;
+    numos::Renderer numos;
+    std::map<std::string, std::string> atmosphere;
+    bool configured = false;
+    numos::GpuHandle environment = 0, missDepth = 0, depthImport = 0;
+    VkImageView depthView = VK_NULL_HANDLE;
+    uint32_t renderWidth = 0, renderHeight = 0, missWidth = 0, missHeight = 0;
+    uint32_t frameIndex = 0, lastCut = 0;
+    std::chrono::steady_clock::time_point last{};
+    bool begun = false;
+    State(VkPhysicalDevice physical, VkDevice device) : bridge(physical, device, hostPasses()) {}
+
+    // Dispatches an adapter, binding NUMOS outputs and the host's resources by
+    // the shader variables' names.
+    void dispatch(Stage stage, const std::map<std::string_view, numos::Binding> &named, const void *push,
+                  uint32_t pushSize, uint32_t groupsX, uint32_t groupsY) {
+      const auto &info = adapterPasses[size_t(stage)];
+      std::vector<numos::Binding> bindings(info.bindingCount);
+      for (uint32_t i = 0; i < info.bindingCount; ++i) {
+        if (auto found = named.find(info.bindings[i].shaderVariable); found != named.end())
+          bindings[i] = found->second;
+        bindings[i].slot = info.bindings[i].slot;
+        bindings[i].kind = info.bindings[i].kind;
+      }
+      bridge.dispatch({.pass = numos::passCount() + uint32_t(stage),
+                       .bindings = bindings.data(),
+                       .bindingCount = uint32_t(bindings.size()),
+                       .pushConstants = push,
+                       .pushConstantSize = pushSize,
+                       .groupsX = groupsX,
+                       .groupsY = groupsY});
+    }
+
+    std::map<std::string_view, numos::Binding> outputs() {
+      const auto &out = numos.outputs();
+      const auto texture = [](numos::GpuHandle handle) { return numos::Binding{.resource = handle}; };
+      const auto args = bridge.uploadConstants(&out.args, sizeof(out.args));
+      return {{"AtmosphereTransmittanceLut", texture(out.transmittanceLut)},
+              {"AtmosphereMultiscatteringLut", texture(out.multiscatteringLut)},
+              {"AtmosphereSkyViewLut", texture(out.skyViewLut)},
+              {"AtmosphereSkyViewSampler", texture(out.skyViewSampler)},
+              {"AtmosphereCloudSkyTransmittanceLut", texture(out.cloudSkyTransmittanceLut)},
+              {"AtmosphereCloudShadowMap", texture(out.cloudShadowMap)},
+              {"AtmosphereCloudNoise3DSampler", texture(out.cloudNoiseSampler)},
+              {"AtmosphereCloudSecondaryLut", texture(out.cloudSecondaryLut)},
+              {"atmosphereArgs", {.resource = args.buffer, .offset = args.offset, .size = args.size}}};
+    }
+  };
+
+  Renderer::Renderer(VkPhysicalDevice physical, VkDevice device) : m(std::make_unique<State>(physical, device)) {}
+
+  Renderer::~Renderer() {
+    // The device is idle: NUMOS's resources go through the bridge's deferral
+    // and are freed with it.
+    m->numos.releaseGpuResources(m->bridge);
+  }
+
+  void Renderer::selectFrame(uint32_t slot) { m->bridge.selectFrame(slot); }
+
+  void Renderer::setSettings(const config::SkySettings &settings) {
+    if (m->configured && settings.atmosphere == m->atmosphere)
+      return;
+    numos::Settings values;
+    for (const auto &[key, value] : settings.atmosphere)
+      numos::setSetting(values, key, value);
+    m->numos.setSettings(values);
+    m->atmosphere = settings.atmosphere;
+    m->configured = true;
+  }
+
+  bool Renderer::record(VkCommandBuffer command, const FrameDescription &frame) {
+    m->begun = false;
+    if (frame.upAxis > 2 || frame.upAxis == 0) {
+      m_status = "The sky needs a Y-up or Z-up world (Lighting: volumetric up axis).";
+      return false;
+    }
+    uint32_t ready = 0, total = 0;
+    // Of the screen cloud pass's variants, only the one the settings select.
+    const auto &settings = m->numos.settings();
+    const auto cloud = settings.cloudProfilingMode == 9           ? numos::PassId::cloud_render_reference
+                       : settings.cloudPerformancePreset == 1 ? numos::PassId::cloud_render_fast
+                                                              : numos::PassId::cloud_render;
+    const auto needed = [&](uint32_t pass) {
+      const auto id = numos::PassId(pass);
+      return pass >= numos::passCount() ||
+             (id != numos::PassId::cloud_render && id != numos::PassId::cloud_render_fast &&
+              id != numos::PassId::cloud_render_reference) ||
+             id == cloud;
+    };
+    if (!m->bridge.preparePipelines(needed, ready, total)) {
+      m_status = "Compiling sky shaders (" + std::to_string(ready) + " of " + std::to_string(total) + ")";
+      return false;
+    }
+    m_status.clear();
+    const bool zUp = frame.upAxis == 2;
+    const auto now = std::chrono::steady_clock::now();
+    const float delta = m->frameIndex ? std::chrono::duration<float>(now - m->last).count() : 0.f;
+    m->last = now;
+
+    numos::FrameInputs inputs;
+    inputs.frameIndex = ++m->frameIndex;
+    inputs.deltaSeconds = std::clamp(delta, 0.f, .25f);
+    inputs.cameraCut = frame.cameraCut || inputs.frameIndex == 1;
+    if (inputs.cameraCut)
+      m->lastCut = inputs.frameIndex;
+    inputs.lastCameraCutFrame = m->lastCut;
+    const auto range = upscale::depthRange(frame.projection);
+    const bool rightHanded = frame.projection[11] < 0;
+    const float width = float(std::max(frame.renderWidth, 1u)), height = float(std::max(frame.renderHeight, 1u));
+    inputs.camera = numos::makeCamera(frame.view.data(), frame.projection.data(), frame.previousView.data(),
+                                      frame.previousProjection.data(), 2 * frame.jitter[0] / width,
+                                      2 * frame.jitter[1] / height, frame.renderWidth, frame.renderHeight,
+                                      range.nearPlane, rightHanded);
+    const auto viewToWorld = scene::inverse(frame.view), projectionToView = scene::inverse(frame.projection);
+    std::copy_n(viewToWorld.data(), 16, inputs.viewToWorld);
+    std::copy_n(projectionToView.data(), 16, inputs.projectionToView);
+    inputs.cameraPosition = inputs.cameraPositionGame = vector(viewToWorld.data() + 12);
+    // The view's forward axis in the world: +z for a left-handed view, -z for a right-handed one.
+    const float sign = rightHanded ? -1.f : 1.f;
+    numos::Vector3 forward{sign * viewToWorld[8], sign * viewToWorld[9], sign * viewToWorld[10]};
+    const float length = std::max(std::sqrt(forward.x * forward.x + forward.y * forward.y + forward.z * forward.z), 1e-6f);
+    inputs.cameraForward = {forward.x / length, forward.y / length, forward.z / length};
+    inputs.zUp = zUp;
+    inputs.hostUnitsPerMeter = 1.f / std::max(frame.metersPerUnit, 1e-6f);
+    inputs.renderWidth = frame.renderWidth;
+    inputs.renderHeight = frame.renderHeight;
+    inputs.outputWidth = frame.outputWidth;
+    inputs.outputHeight = frame.outputHeight;
+
+    m->bridge.begin(command);
+    m->numos.beginFrame(m->bridge, inputs);
+    m->begun = true;
+    m->renderWidth = frame.renderWidth;
+    m->renderHeight = frame.renderHeight;
+    if (!m->environment)
+      m->environment = m->bridge.createTexture({.type = numos::TextureType::Tex2D,
+                                                .format = numos::Format::RGBA16Float,
+                                                .width = environmentWidth,
+                                                .height = environmentHeight,
+                                                .debugName = "NUMOS environment"});
+    // The map's frame is Y up; a Z-up world maps (x, y, z) to (x, z, -y).
+    const float zUpRows[3][3] = {{1, 0, 0}, {0, 0, 1}, {0, -1, 0}};
+    const float yUpRows[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+    const auto &rows = zUp ? zUpRows : yUpRows;
+    EnvironmentPush push{.width = environmentWidth, .height = environmentHeight, .frameIndex = m->frameIndex,
+                         .zUp = zUp};
+    for (int r = 0; r < 3; ++r)
+      for (int c = 0; c < 3; ++c) {
+        m_domeTransform[r][c] = rows[r][c];
+        push.localToWorld[r][c] = rows[c][r];
+      }
+    m->bridge.barrier();
+    auto named = m->outputs();
+    named["environment"] = {.resource = m->environment};
+    m->dispatch(Stage::environment, named, &push, sizeof(push), (environmentWidth + 7) / 8,
+                (environmentHeight + 7) / 8);
+    m->bridge.end();
+
+    const auto &out = m->numos.outputs();
+    const float scale = 1.f / std::max(out.radianceScale, 1e-30f);
+    m_environmentScale = scale;
+    const auto &light = out.lights[numos::FrameOutputs::kSunLight];
+    m_sun.active = light.active;
+    m_sun.direction[0] = light.direction.x;
+    m_sun.direction[1] = light.direction.y;
+    m_sun.direction[2] = light.direction.z;
+    m_sun.radiance[0] = light.radiance.x * scale;
+    m_sun.radiance[1] = light.radiance.y * scale;
+    m_sun.radiance[2] = light.radiance.z * scale;
+    m_sun.angularDiameterDegrees = light.halfAngle * 2 * 57.2957795f;
+    return true;
+  }
+
+  void Renderer::recordPostDepth(VkCommandBuffer command, VkImage depthImage, VkImageView depthView) {
+    if (!m->begun)
+      return;
+    m->begun = false;
+    m->bridge.begin(command);
+    if (depthView != m->depthView) {
+      if (m->depthImport)
+        m->bridge.forget(m->depthImport);
+      m->depthImport = depthView ? m->bridge.importTexture(depthImage, depthView,
+                                                           {.format = numos::Format::R32Float,
+                                                            .width = m->renderWidth,
+                                                            .height = m->renderHeight})
+                                 : 0;
+      m->depthView = depthView;
+    }
+    auto depth = m->depthImport;
+    if (!depth) {
+      // Without the tracer's depth every pixel is sky.
+      if (m->missDepth && (m->missWidth != m->renderWidth || m->missHeight != m->renderHeight)) {
+        m->bridge.destroy(m->missDepth);
+        m->missDepth = 0;
+      }
+      if (!m->missDepth) {
+        m->missDepth = m->bridge.createTexture(
+            {.format = numos::Format::R32Float, .width = m->renderWidth, .height = m->renderHeight});
+        const float sky[4] = {missDepth, missDepth, missDepth, missDepth};
+        m->bridge.clearTexture(m->missDepth, sky);
+        m->missWidth = m->renderWidth;
+        m->missHeight = m->renderHeight;
+      }
+      depth = m->missDepth;
+    }
+    m->numos.dispatchPostDepth(m->bridge, depth, missDepth);
+    m->bridge.end();
+  }
+
+  VkDescriptorImageInfo Renderer::environment() const {
+    if (!m->environment)
+      return {};
+    return {m->bridge.sampler(m->numos.outputs().linearClampSampler), m->bridge.sampledView(m->environment),
+            VK_IMAGE_LAYOUT_GENERAL};
+  }
+} // namespace remix::sky

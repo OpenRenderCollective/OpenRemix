@@ -220,6 +220,9 @@ namespace remix::trace::detail {
   constexpr VkAccessFlags asWrite = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
 } // namespace remix::trace::detail
 
+namespace remix::sky {
+  class Renderer;
+}
 namespace remix {
   struct PathTracer::Gpu {
     remixapi_FramePerformanceEXT performance{.structSize = sizeof(remixapi_FramePerformanceEXT)};
@@ -490,6 +493,15 @@ namespace remix {
     } primaryRecording;
     void destroyPrimaryRecording(PrimaryRecording &recording);
     VkRenderPass skyPass{};
+    // The NUMOS sky (sky/renderer.h), created when first enabled. `skyReady`:
+    // it has outputs from an earlier frame; `skyApplied`: this frame's sky
+    // and sun are NUMOS's; `skyActive`: its work for this frame is recorded.
+    std::shared_ptr<sky::Renderer> numosSky;
+    config::SkySettings skySettings;
+    // skyFailure: the error that stopped the sky (it stays off until the
+    // sky settings change).
+    std::string skyUnavailable, skyReason, skyFailure;
+    bool skyReady = false, skyApplied = false, skyActive = false;
     VkFramebuffer skyFramebuffer{};
     uint32_t queueFamily{};
     std::unique_ptr<denoise::Renderer> denoiser;

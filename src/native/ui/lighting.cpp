@@ -368,7 +368,16 @@ namespace remix {
   }
   void RemixNativeRuntime::drawSkyTab(config::Settings &settings) {
     ui::SkyStatus status;
-    status.reason = "The sky renderer is not part of this build yet.";
+    if (!m_traceSupported)
+      status.reason = "The NUMOS sky needs the path tracer, which this device cannot run.";
+    else if (!m_pathTracer)
+      status.reason = "The NUMOS sky renders with the path tracer (Rendering: backend).";
+    else {
+      const auto sky = m_pathTracer->skyStatus();
+      status.supported = sky.supported;
+      status.active = sky.active;
+      status.reason = sky.reason;
+    }
     ui::drawSkyTab(settings, status);
   }
 } // namespace remix

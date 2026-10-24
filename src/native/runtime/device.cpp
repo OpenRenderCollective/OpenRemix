@@ -258,6 +258,16 @@ namespace remix {
     m_denoiseCapabilities = denoise::capabilities(selection.physicalDevice);
     const bool sharcSupported = REMIX_HAS_SHARC && m_traceSupported && vulkan11.storageBuffer16BitAccess &&
                                 vulkan12.shaderFloat16 && vulkan12.shaderBufferInt64Atomics;
+    // The NUMOS sky's shaders use scalar block layout and storage images of
+    // the extended formats, some declared without a format.
+    VkPhysicalDeviceFeatures skyFeatures{};
+    vkGetPhysicalDeviceFeatures(selection.physicalDevice, &skyFeatures);
+    m_skyUnavailable = !m_traceSupported                                ? m_traceUnavailable
+                       : !vulkan12.scalarBlockLayout                     ? "scalar block layout"
+                       : !skyFeatures.shaderStorageImageExtendedFormats  ? "extended storage image formats"
+                       : !skyFeatures.shaderStorageImageReadWithoutFormat ? "storage image reads without format"
+                       : !skyFeatures.shaderStorageImageWriteWithoutFormat ? "storage image writes without format"
+                                                                            : "";
     features.features = {};
     vulkan11 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, .pNext = &vulkan12};
     vulkan12 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, .pNext = &acceleration};
@@ -273,6 +283,12 @@ namespace remix {
       if (sharcSupported) {
         vulkan11.storageBuffer16BitAccess = VK_TRUE;
         vulkan12.shaderFloat16 = vulkan12.shaderBufferInt64Atomics = VK_TRUE;
+      }
+      if (m_skyUnavailable.empty()) {
+        vulkan12.scalarBlockLayout = VK_TRUE;
+        features.features.shaderStorageImageExtendedFormats = VK_TRUE;
+        features.features.shaderStorageImageReadWithoutFormat = VK_TRUE;
+        features.features.shaderStorageImageWriteWithoutFormat = VK_TRUE;
       }
     }
     if (m_denoiseCapabilities.taaSupported) {

@@ -1,4 +1,7 @@
 #include "pathtrace/gpu.h"
+#if REMIX_HAS_NUMOS
+#include "sky/renderer.h"
+#endif
 #include "pathtrace/sharc_policy.h"
 #include "scene/emission.h"
 #include <chrono>
@@ -601,6 +604,21 @@ namespace remix {
       frame.inverseCameraRelative = scene::multiply(toEye, frame.inverseCamera);
     }
     auto light = resources.light();
+    // The NUMOS sky's sun and sky come from its previous frame: its work for
+    // this one is recorded once the camera's jitter is known.
+    skyApplied = false;
+#if REMIX_HAS_NUMOS
+    const bool numosActive =
+        numosSky && skyReady && skySettings.enabled && skyUnavailable.empty() && skyFailure.empty();
+    if (numosActive && numosSky->sun().active) {
+      const auto &sun = numosSky->sun();
+      for (int i = 0; i < 3; ++i) {
+        light.direction[i] = sun.direction[i];
+        light.radiance[i] = sun.radiance[i] * skySettings.radianceScale;
+      }
+      light.angularDiameterDegrees = sun.angularDiameterDegrees;
+    }
+#endif
     if (options.overrideLight) {
       float norm =
           std::hypot(options.lightDirection[0], options.lightDirection[1], options.lightDirection[2]);
@@ -661,6 +679,21 @@ namespace remix {
         hostBuffer(lightCookies, table.data(), table.size() * sizeof(uint32_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
       frame.lightCookies = lightCookies ? lightCookies->address : 0;
     }
+#if REMIX_HAS_NUMOS
+    if (options.sky && numosActive) {
+      const auto environment = numosSky->environment();
+      if (environment.imageView && textures.size() < PathTracer::textureLimit) {
+        const float scale = numosSky->environmentScale() * skySettings.radianceScale;
+        std::fill_n(frame.skyRadiance, 3, scale);
+        frame.skyRadiance[3] = float(textures.size() + 1);
+        for (unsigned row = 0; row < 3; ++row)
+          for (unsigned col = 0; col < 4; ++col)
+            frame.domeTransform[row][col] = col < 3 ? numosSky->domeTransform()[row][col] : 0.f;
+        textures.push_back(environment);
+        skyApplied = true;
+      }
+    }
+#endif
     // Role CUT (remixapi_InstanceInfoMaskEXT): the coverage of the groups
     // whose instances the camera does not see, drawn by the raster renderer
     // ahead of this frame's passes. Its sources are in no table: their
@@ -860,6 +893,38 @@ namespace remix {
     if (upscaler)
       upscale::jitter(temporalFrame.jitter, sequence, extent, displayExtent);
     std::copy_n(temporalFrame.jitter, 2, frame.jitter);
+#if REMIX_HAS_NUMOS
+    skyActive = false;
+    if (skySettings.enabled && skyUnavailable.empty() && skyFailure.empty()) try {
+      if (!numosSky)
+        numosSky = std::make_shared<sky::Renderer>(physical, device);
+      numosSky->setSettings(skySettings);
+      sky::FrameDescription description{.view = resources.view(),
+                                        .projection = resources.projection(),
+                                        .previousView = temporalFrame.previousView,
+                                        .previousProjection =
+                                            history.reset() ? resources.projection() : previousProjection,
+                                        .jitter = {temporalFrame.jitter[0], temporalFrame.jitter[1]},
+                                        .renderWidth = extent.width,
+                                        .renderHeight = extent.height,
+                                        .outputWidth = displayExtent.width,
+                                        .outputHeight = displayExtent.height,
+                                        .metersPerUnit = options.sceneScale,
+                                        .upAxis = options.volumetricUpAxis,
+                                        .cameraCut = history.reset()};
+      gpu::GpuScope scope(command, "NUMOS sky");
+      skyActive = numosSky->record(command, description);
+      skyReady |= skyActive;
+      skyReason = numosSky->status();
+    } catch (const std::exception &error) {
+      // A sky failure must not take the frame with it: the sky goes off.
+      skyFailure = error.what();
+      skyActive = skyReady = false;
+      std::fprintf(stderr, "NUMOS sky stopped: %s\n", error.what());
+    }
+    else
+      skyReason = skySettings.enabled ? "" : "Off.";
+#endif
     temporalFrame.jitter[2] = history.reset() ? temporalFrame.jitter[0] : previousJitter[0];
     temporalFrame.jitter[3] = history.reset() ? temporalFrame.jitter[1] : previousJitter[1];
     temporalFrame.hitDistance[3] = rrActive() ? 1.f : 0.f;
@@ -1095,7 +1160,7 @@ namespace remix {
     clear[0].color.float32[3] = 1;
     // With a dome, the rasterized sky layer (3D skybox) is drawn over it:
     // alpha -1 marks pixels no sky geometry covered (any draw writes >= 0).
-    if (options.sky && resources.dome().enabled)
+    if (options.sky && (resources.dome().enabled || skyApplied))
       clear[0].color.float32[3] = -1;
     clear[1].depthStencil.depth = 1;
     VkRenderPassBeginInfo skyBegin{.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
@@ -1107,7 +1172,9 @@ namespace remix {
     {
       gpu::GpuScope scope(command, "Sky raster", extent);
       vkCmdBeginRenderPass(command, &skyBegin, VK_SUBPASS_CONTENTS_INLINE);
-      resources.record(command, true, false, temporalFrame.jitter, extent);
+      // The NUMOS sky can take the place of the game's sky geometry.
+      if (!skyApplied || skySettings.gameSky != config::SkySettings::GameSky::Hide)
+        resources.record(command, true, false, temporalFrame.jitter, extent);
       vkCmdEndRenderPass(command);
     }
     if (timestamps)
@@ -1361,6 +1428,17 @@ namespace remix {
       vkCmdWriteTimestamp(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, timestamps, 3);
       timingPending = true;
     }
+#if REMIX_HAS_NUMOS
+    if (skyActive) try {
+      gpu::GpuScope scope(command, "NUMOS screen clouds");
+      const auto depth = denoiser ? denoiser->image(denoise::Depth) : upscale::Input{};
+      numosSky->recordPostDepth(command, depth.image, depth.view);
+    } catch (const std::exception &error) {
+      skyFailure = error.what();
+      skyActive = skyReady = false;
+      std::fprintf(stderr, "NUMOS sky stopped: %s\n", error.what());
+    }
+#endif
     if (denoiser)
       denoiser->record(command);
     stageTime(9);

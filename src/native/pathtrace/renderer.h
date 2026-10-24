@@ -1,6 +1,7 @@
 #pragma once
 #include "denoise/renderer.h"
 #include "pathtrace/options.h"
+#include "runtime/settings.h"
 #include "postfx/renderer.h"
 #include "raster/renderer.h"
 #include "scene/trace_frame.h"
@@ -156,6 +157,14 @@ namespace remix {
     StaticStatistics staticStatistics() const;
     // Rebuilds the kept static tables from scratch every frame and compares.
     void setStaticValidation(bool enabled);
+    // The NUMOS sky: the profile's sky settings, and why the device cannot
+    // run it (empty when it can). Applies from the next prepared frame.
+    void setSky(const config::SkySettings &settings, const std::string &unavailable);
+    struct SkyStatus {
+      bool supported = false, active = false;
+      std::string reason; // why the sky is not active, or empty
+    };
+    SkyStatus skyStatus() const;
 
   private:
     struct Gpu;

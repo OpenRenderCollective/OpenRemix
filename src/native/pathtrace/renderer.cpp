@@ -1,4 +1,7 @@
 #include "pathtrace/gpu.h"
+#if REMIX_HAS_NUMOS
+#include "sky/renderer.h"
+#endif
 #include "pathtrace/shader_code.h"
 #include "runtime/pipelines.h"
 #include "upscale/ngx.h"
@@ -93,6 +96,29 @@ namespace remix {
   void PathTracer::selectFrame(uint32_t slot) {
     m_gpu->selectFrame(slot);
     m_gpu->postFallback->selectFrame(slot);
+#if REMIX_HAS_NUMOS
+    if (m_gpu->numosSky)
+      m_gpu->numosSky->selectFrame(slot);
+#endif
+  }
+  void PathTracer::setSky(const config::SkySettings &settings, const std::string &unavailable) {
+    if (!(settings == m_gpu->skySettings))
+      m_gpu->skyFailure.clear();
+    m_gpu->skySettings = settings;
+    m_gpu->skyUnavailable = unavailable;
+  }
+  PathTracer::SkyStatus PathTracer::skyStatus() const {
+    SkyStatus status;
+#if REMIX_HAS_NUMOS
+    status.supported = m_gpu->skyUnavailable.empty();
+    status.active = m_gpu->skyApplied;
+    status.reason = !status.supported          ? "The device lacks " + m_gpu->skyUnavailable + "."
+                    : !m_gpu->skyFailure.empty() ? "Stopped: " + m_gpu->skyFailure
+                                                 : m_gpu->skyReason;
+#else
+    status.reason = "This build has no NUMOS sky.";
+#endif
+    return status;
   }
   std::shared_ptr<postfx::State> PathTracer::exposureState() const { return m_gpu->postFallback->state(); }
   VkExtent2D PathTracer::renderExtent() const { return m_gpu->extent; }

@@ -555,6 +555,8 @@ void RemixNativeRuntime::presented() {
         if (m_pathTracer)
           m_pathTracer->setStaticValidation(settings.persistentStatic && settings.persistentStaticValidation);
       }
+      if (m_pathTracer)
+        m_pathTracer->setSky(m_profiles.current().sky, m_skyUnavailable);
       frame.setSkyTarget(m_pathTracer ? m_pathTracer->skyPass() : VK_NULL_HANDLE);
       m_rasterPreparing = !frame.preparePipelines(m_backend != 0);
       m_loading |= m_rasterPreparing;
@@ -834,6 +836,8 @@ void RemixNativeRuntime::presented() {
         if (m_pathTracer)
           m_pathTracer->setStaticValidation(settings.persistentStatic && settings.persistentStaticValidation);
       }
+      if (m_pathTracer)
+        m_pathTracer->setSky(m_profiles.current().sky, m_skyUnavailable);
       m_raster.setSkyTarget(m_pathTracer ? m_pathTracer->skyPass()
                                          : VK_NULL_HANDLE);
       m_rasterPreparing = !m_raster.preparePipelines(m_backend != 0);

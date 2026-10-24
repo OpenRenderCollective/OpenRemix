@@ -427,6 +427,8 @@ private:
   remixapi_DenoisingCapabilitiesEXT m_denoiseCapabilities{
       .structSize = sizeof(remixapi_DenoisingCapabilitiesEXT)};
   std::string m_traceUnavailable;
+  // Why the NUMOS sky cannot run on the device, or empty.
+  std::string m_skyUnavailable;
   PresentedScreenshot m_screenshot;
   bool m_screenshotSupported = false;
   std::shared_ptr<FrameSnapshot> m_lastFrame;
