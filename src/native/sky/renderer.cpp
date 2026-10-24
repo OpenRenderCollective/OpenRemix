@@ -166,9 +166,12 @@ namespace remix::sky {
       return matrix;
     };
     const auto projection = flipY(frame.projection), previousProjection = flipY(frame.previousProjection);
+    // NUMOS's jitter is a clip-space translation after the projection, so a
+    // pixel sees the direction projected to its centre minus the jitter. The
+    // tracer's pixel samples its centre plus the jitter, y down.
     inputs.camera = numos::makeCamera(frame.view.data(), projection.data(), frame.previousView.data(),
-                                      previousProjection.data(), 2 * frame.jitter[0] / width,
-                                      -2 * frame.jitter[1] / height, frame.renderWidth, frame.renderHeight,
+                                      previousProjection.data(), -2 * frame.jitter[0] / width,
+                                      2 * frame.jitter[1] / height, frame.renderWidth, frame.renderHeight,
                                       range.nearPlane, rightHanded);
     const auto viewToWorld = scene::inverse(frame.view), projectionToView = scene::inverse(projection);
     std::copy_n(viewToWorld.data(), 16, inputs.viewToWorld);

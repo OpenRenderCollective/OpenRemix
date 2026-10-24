@@ -63,9 +63,13 @@ void main(uint2 pixel : SV_DispatchThreadID)
   }
   const vec4 input = color[pixel];
   const float scale = max(push.scale, 1e-30f);
+  // The tracer's camera ray through this pixel, jittered as its sample was.
   const vec2 uv = cameraPixelCoordinateToScreenUV(camera, ivec2(pixel));
-  const CameraDirections ray = cameraScreenUVToDirection(camera, uv, false);
-  const float viewDistance = miss ? 0.0f : viewZ / max(abs(ray.viewDirection.z), 1e-6f);
+  const CameraDirections ray = cameraScreenUVToDirection(camera, uv, true);
+  // The composite helpers turn the distance back into view depth along the
+  // unjittered ray.
+  const float forwardPerDistance = max(abs(cameraScreenUVToDirection(camera, uv, false).viewDirection.z), 1e-6f);
+  const float viewDistance = miss ? 0.0f : viewZ / forwardPerDistance;
   vec3 radiance = input.rgb / scale;
   if (miss && push.gameSky == 0u)
   {
