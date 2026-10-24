@@ -18,6 +18,7 @@ Remaining gates before default publication:
 - Underwater medium/path-length and projection mismatch against the path tracer.
   A fixed-box far/near-origin control implicates placement; residual colour parity remains open.
   Reassessed receiver-near refinements now integrate experimentally; cold/warm checks pass.
+  Normal-quality Construct still selects a different underwater origin and retains an angular region.
 - Moving-receiver/doorway quality, wall leakage and broader-map performance acceptance.
 
 Earlier continuation paragraphs below retain historical limitations and measurements;
@@ -2137,3 +2138,21 @@ proves a companion-only background write preserves an existing base file. Report
 preparation, failed optional transport handling, map switching, wider quality/performance
 and default promotion remain open. This is an opt-in upgrade, not a diffuse rebake or an
 installed/default change; earlier legacy-cache limitations are historical.
+
+A normal-default Construct quality route now complements the cheap functional fixtures:
+1920x1080, 4x MSAA/full-resolution SSR, 256 bake samples, three bounces, 32,768 probe
+slots, 4,194,304 target surface texels and OIDN enabled. The actual bake contains
+3,837,562 surface texels across four 1024px pages at about 0.24 m spacing. OIDN reports
+6,483 charts and 4,059,932 processed texels (including chart preparation), 13.917 s;
+these are one synthetic-run diagnostics, not uncontended throughput acceptance.
+The inspected main-room and connector/ceiling captures are substantially cleaner than
+the 64-sample, quarter-million-texel, OIDN-off fixtures. Existing material highlights and
+all seam/lightmap quality gates still require matched-reference review. This normal route
+selects a different underwater capture: the receiver-near candidate that improved the
+cheap fixture is absent from the final set, and an angular blue reflected region remains.
+Do not describe the earlier local-fixture improvement as a normal-quality underwater fix.
+Investigate sampling/baseline/coverage ranking and preserve normal-quality controls before
+promoting automatic selection. Both the dense bake and OIDN execute; the run exits without
+validation errors/synchronization hazards and preserves the original authored sidecar.
+Future visual acceptance should use labeled normal-quality captures with recorded runtime
+hashes/settings; low-atlas transport fixtures remain useful only for their narrower gates.
