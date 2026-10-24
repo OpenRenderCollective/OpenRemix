@@ -555,7 +555,13 @@ at most 32768 selected geometry rays are allocated, spread across receiver order
 Existing rotated influence bounds are respected; invalid and back-facing segments are not queried.
 `localCoverage.pairs` records receiver indices, local attempt indices and visible/blocked/unknown
 results. Its baseline is automatic captures before authored composition, not the final published set.
-Unqueried receivers have no visibility evidence. Readbacks retire through the existing frame fences;
+Unqueried receivers have no visibility evidence. The optional `coveragePlan` then considers at most
+four additions/replacements under the 64-layer cap, using visibility-supported local footprints and
+an explicit experimental maximum sampled error of 0.2. It uses free layers first and preserves every
+currently covered sample. Unique ownership is recomputed after each swap; duplicate sample indices
+are rejected. The generic planner protects authored captures, but this report's baseline is automatic
+before authored composition: do not apply its indices to a published authored-plus-automatic set.
+Zero sampled loss is not proof of whole-map, moving-object or camera-volume preservation. Readbacks retire through the existing frame fences;
 no per-fragment visibility rays or radiance captures are added. Bounded capture-slot selection and
 visible room-transition acceptance remain required before publication. Neither the sites nor their
 radiance are inserted into the published reflection set. These

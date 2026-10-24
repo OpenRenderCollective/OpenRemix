@@ -1818,6 +1818,19 @@ An optional inward-only refinement proposal now uses named sample-support and re
 thresholds. It cannot enlarge the validated box or move the origin onto a face, and does not change
 receiver influence. The local report reassesses proposals from retained, completed first-hit samples without retracing. An analytic inner-room test
 checks improved projection agreement; broad, unsupported and outward planes cannot authorize shifts.
+A bounded diagnostic budget planner now proposes additions or replacements from visibility-supported
+receiver footprints. It preserves all currently covered samples, protects explicitly locked captures,
+uses free layers before swaps and recomputes unique ownership after every change. The current report
+uses the automatic pre-authored baseline and an experimental sampled-error gate, not a production
+acceptance policy. Replan against final authored composition and qualify unsampled camera/dynamic
+coverage before publishing any replacement; geometric baseline coverage is weaker than visibility.
+
+Before production integration, keep planner indices tied to canonical capture metadata rather than
+sorted GPU layers, replan against protected authored composition and validate both added rooms and
+regions served by removed captures. Preserve frame-publication ownership, diffuse bake identity and
+exact-ray radiance reuse. Reflection selection/cache revisioning must distinguish changed plans
+without needlessly invalidating surface/probe lighting.
+
 Cross-map qualification must include local fits that improve yet retain large absolute error.
 Do not convert improvement alone into automatic acceptance: receiver-supported origins can still
 produce poor boxes, especially in the deliberately uncovered regions targeted by this diagnostic.

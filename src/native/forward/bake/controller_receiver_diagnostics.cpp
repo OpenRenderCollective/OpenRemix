@@ -119,7 +119,7 @@ namespace remix::forward::bake {
         }
         const auto owner = m_job;
         job.ticket = m_pipelines->prepare("forward-receiver-sites-" + std::to_string(++receiverDiagnosticGeneration), [owner] {
-          probes::dumpReceiverSites(*owner->source, *owner->receiverSites, owner->receiverSiteChecks.get(), owner->receiverFits.get(), owner->receiverFitCoverage.get(),
+          probes::dumpReceiverSites(*owner->source, owner->captures, *owner->receiverSites, owner->receiverSiteChecks.get(), owner->receiverFits.get(), owner->receiverFitCoverage.get(),
                                    owner->cancellation.get_token());
           owner->receiverFitCoverage.reset();
           owner->receiverFits.reset();

@@ -6,6 +6,7 @@
 #include "forward/probes/receiver_sites.h"
 #include "forward/probes/receiver_site_checks.h"
 #include "forward/probes/receiver_fits.h"
+#include "forward/probes/receiver_coverage_plan.h"
 #include "forward/probes/refinement.h"
 #include "forward/probes/receiver_fit_pairs.h"
 #include "scene/bake_scene.h"
@@ -68,7 +69,7 @@ namespace remix::forward::probes {
       return {};
     }
   }
-  void dumpReceiverSites(const scene::BakeScene &source, const ReceiverSiteAudit &audit,
+  void dumpReceiverSites(const scene::BakeScene &source, std::span<const Capture> baseline, const ReceiverSiteAudit &audit,
       const ReceiverSiteChecks *checks, const ReceiverFitAudit *assessment, const ReceiverAudit *coverage, std::stop_token cancelled) noexcept {
     const char *prefix = std::getenv("REMIX_DEBUG_PROBE_RECEIVER_VISIBILITY");
     if (!prefix || !*prefix) return;
@@ -80,6 +81,7 @@ namespace remix::forward::probes {
       const auto fits = assessment ? assessment->finish() : ReceiverFits{};
       const auto occupancy = source.partition && source.partition->closed
           ? std::make_unique<RegionQuery>(*source.partition, cancelled) : nullptr;
+      const auto plan = coverage ? planReceiverCoverage(source, baseline, fits, *coverage, cancelled) : ReceiverCoveragePlan{};
       std::ofstream output(path);
       output.exceptions(std::ios::failbit | std::ios::badbit);
       output.precision(9);
@@ -192,6 +194,19 @@ namespace remix::forward::probes {
         if (std::isfinite(coverage->distance(i))) output << coverage->distance(i);
         else output << "null";
         output << ",\"visibility\":\"" << visibility(coverage->visibility()[i]) << "\"}";
+      }
+      output << "]},\"coveragePlan\":{\"baseline\":\"automatic-before-authored-composition\","
+                "\"tested\":" << (coverage ? "true" : "false") << ",\"maximumError\":" << plan.maximumError
+             << ",\"maximumChanges\":" << plan.maximumChanges << ",\"replacements\":[";
+      for (size_t i = 0; i < plan.replacements.size(); ++i) {
+        const auto &replacement = plan.replacements[i];
+        const auto &owner = plan.owners.at(replacement.candidate);
+        output << (i ? "," : "") << "{\"attempt\":" << owner[0] << ",\"variant\":" << owner[1]
+               << ",\"baselineCapture\":";
+        if (replacement.baseline == UINT32_MAX) output << "null";
+        else output << replacement.baseline;
+        output << ",\"gainedArea\":" << replacement.gainedArea
+               << ",\"error\":" << plan.errors.at(replacement.candidate) << '}';
       }
       output << "]}}\n";
     } catch (const std::exception &error) {

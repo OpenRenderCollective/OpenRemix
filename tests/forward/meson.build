@@ -271,3 +271,8 @@ sun_depth_cache_test = executable('remix-sun-depth-cache-test', 'sun_depth_cache
   link_with : scene_library, cpp_args : test_cpp_args)
 test('Sun depth cache validates identity and packs captured rows only', sun_depth_cache_test,
   args : [meson.current_build_dir() / 'sun-depth-cache'])
+
+coverage_selection_test = executable('remix-reflection-coverage-test', 'coverage_selection.cpp',
+  '../../src/native/forward/probes/coverage_selection.cpp',
+  include_directories : test_includes, cpp_args : test_cpp_args)
+test('Reflection coverage replacements preserve sampled baselines', coverage_selection_test)
