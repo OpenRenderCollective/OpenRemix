@@ -98,6 +98,20 @@ validation errors; existing secret-room and probe-quality issues remain. These
 are frozen replay checks using synthetic sky, not live-game sky parity or default
 qualification. No deployment change has been made.
 
+Crossfire also completes a normal 256-sample/three-bounce policy-5 bake with 223
+model charts, 3614696 surface texels, four pages and 0.0831 m spacing. Three
+stationary rooftop orientations were inspected in neutral/shaded modes; cache
+reloads record zero grid/surface batches and no validation errors. This is a
+functional/visual screen, not a fixed-reference accuracy or foreground-FPS gate.
+
+bm_c1a1b blocks promotion: the same normal-quality candidate exceeds the 65536
+model-chart safety cap during preparation, before publishing lighting. Dense-map
+model chart/representation cost must be measured and addressed with better
+bounded grouping/packing or genuinely baked vertex lighting under shared budgets.
+Do not simply raise the cap, silently drop models onto the leaking probe field,
+or introduce per-light static work. The existing default path is unaffected;
+this failure does not establish its bake behavior on the map. No deployment change.
+
 Independent 8192-sample, three-bounce base-unstyled hemisphere references at 14
 charted housing triangle centres find candidate-policy-3 atlas/reference luminance
 ratios of 0.71-1.37, versus probe/reference ratios up to 14.42. This helped isolate
