@@ -14,6 +14,14 @@ or frame-rate gains. Reduce chart count and filtering work without sacrificing
 coverage or density; qualify more maps before enabling model charts by default. Static model
 charts remain opt-in; probe-lit dynamic objects still need the fixes below.
 
+Model-chart preparation, full lighting publication and disk reload have now been
+exercised on Construct, Crossfire, c1a0 and bm_c1a1b at the normal sample budget.
+These checks do not establish complete visual quality or live-game frame cost.
+Keep the candidate opt-in while addressing visible lighting discontinuities,
+chart-heavy filtering cost and broader map/replacement coverage. Constant-field
+filter bypass and bounded per-chart queues already exist; do not reduce sample
+counts or merge unrelated chart images merely to make qualification faster.
+
 Construct's back-spawn ceiling-fixture housing has a confirmed probe-lit diffuse
 error. Total diffuse (`debugView=7`) retains the excess without emission/specular;
 coverage distinguishes the housing from its lightmapped ceiling. The bounded
