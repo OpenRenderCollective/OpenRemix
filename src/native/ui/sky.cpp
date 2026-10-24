@@ -270,8 +270,10 @@ namespace remix::ui {
         ImGui::TextWrapped("%s", status.reason.empty() ? "This backend does not render the sky." : status.reason.c_str());
       else if (sky.enabled && !status.active && !status.reason.empty())
         ImGui::TextWrapped("Inactive: %s", status.reason.c_str());
+      else if (status.active && status.gpuMilliseconds > 0)
+        ImGui::Text("Active, GPU %.2f ms", status.gpuMilliseconds);
       else if (status.active)
-        ImGui::Text("GPU: %.2f ms", status.gpuMilliseconds);
+        ImGui::TextUnformatted("Active");
       int gameSky = int(sky.gameSky);
       if (Combo("Game sky", &gameSky, "Hidden\0Under clouds and air\0Over the sky\0"))
         sky.gameSky = config::SkySettings::GameSky(gameSky);

@@ -159,11 +159,18 @@ namespace remix::sky {
     const auto range = upscale::depthRange(frame.projection);
     const bool rightHanded = frame.projection[11] < 0;
     const float width = float(std::max(frame.renderWidth, 1u)), height = float(std::max(frame.renderHeight, 1u));
-    inputs.camera = numos::makeCamera(frame.view.data(), frame.projection.data(), frame.previousView.data(),
-                                      frame.previousProjection.data(), 2 * frame.jitter[0] / width,
-                                      2 * frame.jitter[1] / height, frame.renderWidth, frame.renderHeight,
+    // NUMOS's clip space has +y up the screen (Remix's); the renderer's is Vulkan's, +y down.
+    const auto flipY = [](scene::Matrix matrix) {
+      for (int column = 0; column < 4; ++column)
+        matrix[column * 4 + 1] = -matrix[column * 4 + 1];
+      return matrix;
+    };
+    const auto projection = flipY(frame.projection), previousProjection = flipY(frame.previousProjection);
+    inputs.camera = numos::makeCamera(frame.view.data(), projection.data(), frame.previousView.data(),
+                                      previousProjection.data(), 2 * frame.jitter[0] / width,
+                                      -2 * frame.jitter[1] / height, frame.renderWidth, frame.renderHeight,
                                       range.nearPlane, rightHanded);
-    const auto viewToWorld = scene::inverse(frame.view), projectionToView = scene::inverse(frame.projection);
+    const auto viewToWorld = scene::inverse(frame.view), projectionToView = scene::inverse(projection);
     std::copy_n(viewToWorld.data(), 16, inputs.viewToWorld);
     std::copy_n(projectionToView.data(), 16, inputs.projectionToView);
     inputs.cameraPosition = inputs.cameraPositionGame = vector(viewToWorld.data() + 12);
