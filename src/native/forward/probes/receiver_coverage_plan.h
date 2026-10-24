@@ -35,7 +35,7 @@ namespace remix::forward::probes {
       std::stop_token cancelled = {});
   ReceiverCoveragePlan planReceiverCoverage(const scene::BakeScene &source,
       const CoverageBaselineSet &baseline, const ReceiverCoverageEvidence &evidence,
-      std::stop_token cancelled = {});
+      std::stop_token cancelled = {}, std::span<const uint32_t> eligibleCandidates = {});
   // Diagnostic automatic baseline, before authored composition. Do not apply
   // this plan to a published authored-plus-automatic set without replanning.
   ReceiverCoveragePlan planReceiverCoverage(const scene::BakeScene &source,

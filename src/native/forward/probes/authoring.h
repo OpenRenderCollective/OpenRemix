@@ -1,6 +1,7 @@
 #pragma once
 #include "forward/probes/data.h"
 #include "forward/probes/image_asset.h"
+#include "forward/probes/coverage_baseline.h"
 #include "scene/reflection_volumes.h"
 #include "forward/resources.h"
 #include "runtime/pipelines.h"
@@ -11,6 +12,11 @@ namespace remix::forward::bake { struct Volume; }
 namespace remix::forward::probes {
   // Reflection-only publication. Neither source ownership nor diffuse bake
   // buffers are modified; frame slots retain every sampled and submitted job.
+  struct ReflectionSnapshot {
+    std::shared_ptr<const ImageAsset> image;
+    CoverageBaselineSet baseline;
+    LayerIdentities identities{};
+  };
   struct AuthoringMemory { uint64_t buffers = 0, images = 0, acceleration = 0; };
   class Authoring {
   public:
@@ -26,6 +32,7 @@ namespace remix::forward::probes {
     void selectFrame(uint32_t slot);
     void record(VkCommandBuffer command, RasterRenderer &resources, const bake::Config &config,
                 const std::shared_ptr<const bake::Volume> &automatic, bool fallback);
+    ReflectionSnapshot snapshot(const std::shared_ptr<const bake::Volume> &automatic) const;
     Descriptors descriptor(Descriptors automatic) const;
     const Header *header() const;
     const LayerIdentities *identities() const;

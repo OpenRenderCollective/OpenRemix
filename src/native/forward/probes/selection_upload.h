@@ -25,6 +25,7 @@ namespace remix::forward::probes {
     // retained sources but cannot produce a publication. This does not wait.
     std::optional<SelectionPublication> retire(const scene::BakeScene &source, const CoverageBaselineSet &baseline);
   private:
+    friend class SelectionFrames;
     enum class State { Prepared, Recorded, Retired, Cancelled };
     State m_state = State::Prepared;
     SelectionPublication m_publication;
@@ -37,6 +38,8 @@ namespace remix::forward::probes {
   class SelectionFrames {
   public:
     void offer(std::unique_ptr<SelectionUpload> upload);
+    void invalidate();
+    std::array<uint64_t, 2> memory() const; // Output buffers/images; source owners belong to their controllers.
     void selectFrame(uint32_t slot);
     void record(VkCommandBuffer command, const scene::BakeScene &source, const CoverageBaselineSet &baseline);
     const SelectionPublication *active() const { return m_active.get(); }

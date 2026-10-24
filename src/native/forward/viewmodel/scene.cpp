@@ -71,9 +71,7 @@ namespace remix::forward {
         if (!draw.worldBounds.valid) { receivers = {}; break; }
         receivers.merge(draw.worldBounds);
       }
-      const auto authored = authoredReflections->header();
-      const auto volume = baking->volume();
-      const auto *header = authored ? authored : volume ? &volume->reflectionHeader : nullptr;
+      const auto *header = reflectionHeader();
       // Match the normal bias in the sky/probe query, not just the mesh bounds.
       auto candidates = header ? probes::receiverMask(*header, receivers, .002f / options.sceneScale)
                                : std::array<uint32_t, 2>{};

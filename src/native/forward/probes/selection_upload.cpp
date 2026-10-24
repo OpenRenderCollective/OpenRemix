@@ -1,5 +1,6 @@
 #include "forward/probes/selection_upload.h"
 #include <stdexcept>
+#include <unordered_set>
 
 namespace remix::forward::probes {
   SelectionUpload::SelectionUpload(VkPhysicalDevice physical, VkDevice device, const CoverageImagePlan &plan,
@@ -41,6 +42,30 @@ namespace remix::forward::probes {
   void SelectionFrames::offer(std::unique_ptr<SelectionUpload> upload) {
     if (!upload) throw std::invalid_argument("Missing reflection selection upload");
     m_pending = {std::move(upload), ++m_generation};
+  }
+  void SelectionFrames::invalidate() {
+    ++m_generation;
+    m_pending = {};
+    m_active.reset();
+  }
+  std::array<uint64_t, 2> SelectionFrames::memory() const {
+    std::array<uint64_t, 2> result{};
+    std::unordered_set<const ImageAsset *> images;
+    auto image = [&](const std::shared_ptr<const ImageAsset> &asset) {
+      if (asset && images.insert(asset.get()).second) {
+        result[0] += asset->bufferBytes();
+        result[1] += asset->imageBytes();
+      }
+    };
+    auto copy = [&](const Copy &item) { if (item.upload) image(item.upload->m_publication.image); };
+    copy(m_pending);
+    if (m_active) image(m_active->image);
+    for (const auto &frame : m_frames) {
+      copy(frame.copy);
+      if (frame.sampled) image(frame.sampled->image);
+    }
+    for (const auto &item : m_completed) copy(item);
+    return result;
   }
   void SelectionFrames::selectFrame(uint32_t slot) {
     auto &frame = m_frames.at(slot);

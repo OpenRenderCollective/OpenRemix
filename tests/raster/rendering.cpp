@@ -2291,6 +2291,14 @@ namespace {
                           target.forward->statistics().authoredReflections.publishedSceneId == snapshot->sceneId &&
                           target.forward->statistics().authoredReflections.publishedRevision == request.revision,
                       "Published authored identities follow priority-sorted GPU layers and their own request");
+              const auto publishedSnapshot = target.forward->reflectionAuthoring()->snapshot(target.forward->bakeController()->volume());
+              require(publishedSnapshot.image && publishedSnapshot.baseline.composed &&
+                          publishedSnapshot.baseline.authoredSceneId == snapshot->sceneId &&
+                          publishedSnapshot.baseline.authoredRevision == request.revision &&
+                          publishedSnapshot.identities[0] == 72 && publishedSnapshot.identities[1] == 71 &&
+                          publishedSnapshot.baseline.volumes[0].protectedCapture &&
+                          publishedSnapshot.image->header().parameters[0] == publishedSnapshot.baseline.volumes.size(),
+                      "Retained reflection snapshot couples actual image layers, authored roles and published identity");
               require(firstEdit[centre] > 40 && target.forward->statistics().authoredReflections.rays == 6*16*16,
                       "Authored capture publishes visible viewmodel reflections through the production path");
               require(target.forward->statistics().authoredReflections.captureScratchBytes == 0,
@@ -2378,6 +2386,10 @@ namespace {
                           "Pending capture transport retains its work list until readbacks retire");
                   require(pending.requested && pending.active && !pending.failed,
                           "Pending reflection edits expose the retained active set and request readiness separately");
+                  const auto retained = target.forward->reflectionAuthoring()->snapshot(target.forward->bakeController()->volume());
+                  require(retained.baseline.authoredRevision == pending.publishedRevision &&
+                              retained.baseline.authoredRevision < request.revision,
+                          "Snapshot uses the sampled authored revision while a newer edit is pending");
                   require(pending.publishedSceneId == snapshot->sceneId &&
                               pending.publishedRevision < request.revision,
                           "Pending edits retain the publication identity of the image actually sampled");

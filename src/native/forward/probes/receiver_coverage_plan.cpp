@@ -41,7 +41,8 @@ namespace remix::forward::probes {
     return planReceiverCoverage(source, snapshot, retainReceiverCoverage(source, fits, coverage), cancelled);
   }
   ReceiverCoveragePlan planReceiverCoverage(const scene::BakeScene &source,
-      const CoverageBaselineSet &snapshot, const ReceiverCoverageEvidence &evidence, std::stop_token cancelled) {
+      const CoverageBaselineSet &snapshot, const ReceiverCoverageEvidence &evidence, std::stop_token cancelled,
+      std::span<const uint32_t> eligibleCandidates) {
     if (!matchesCoverageContext(evidence.sourceContext, source, CoverageBaselineSet{}))
       throw std::invalid_argument("Retained receiver evidence belongs to a different frozen scene");
     const auto &fits = evidence.fits;
@@ -170,6 +171,16 @@ namespace remix::forward::probes {
       for (uint32_t v = 0; v < variants.size(); ++v)
         if (contains(variants[v].influence, receivers[pair.receiver].position))
           candidates[offsets[pair.capture] + v].receivers.push_back(pair.receiver);
+    }
+    if (!eligibleCandidates.empty()) {
+      std::vector<bool> eligible(candidates.size());
+      for (auto candidate : eligibleCandidates) {
+        if (candidate >= candidates.size() || eligible[candidate])
+          throw std::invalid_argument("Invalid prepared local candidate eligibility");
+        eligible[candidate] = true;
+      }
+      for (size_t i = 0; i < candidates.size(); ++i)
+        if (!eligible[i]) candidates[i].error = std::numeric_limits<float>::max();
     }
     result.replacements = planCoverageReplacements(areas, current, candidates, result.maximumError, maxProbes, result.maximumChanges, cancelled);
     return result;

@@ -34,7 +34,7 @@ namespace remix::forward::probes {
     std::vector<int32_t> reused, aliases;
     std::shared_ptr<Job> previous;
     uint32_t next = 0, received = 0, rayCount = 0;
-    bool prepared = false, filtering = false, sceneReused = false;
+    bool prepared = false, filtering = false, sceneReused = false, fallbackAllowed = false;
     void prepare(const std::shared_ptr<Job> &prior, const std::shared_ptr<const scene::BakeScene> &source,
                   VkPhysicalDevice physical, VkDevice device, uint32_t family, const bake::Config &config) {
       VkPhysicalDeviceProperties limits;
@@ -239,6 +239,7 @@ namespace remix::forward::probes {
       job->request = request;
       job->revision = m_revision;
       job->automatic = fallbackVolume;
+      job->fallbackAllowed = useFallback;
       const auto previous = m_active;
       job->previous = previous;
       const auto physical = m_physical;
@@ -300,6 +301,23 @@ namespace remix::forward::probes {
       retire();
     }
     m_frames[m_slot].sampled = m_active;
+  }
+  ReflectionSnapshot Authoring::snapshot(const std::shared_ptr<const bake::Volume> &automatic) const {
+    ReflectionSnapshot result;
+    if (m_active) {
+      result.image = std::shared_ptr<const ImageAsset>(m_active, m_active->image.get());
+      result.identities = m_active->identities;
+      Composition composition;
+      composition.header = result.image->header();
+      for (uint32_t i = 0; i < composition.header.parameters[0]; ++i)
+        composition.layers.push_back({result.identities[i] == 0, i});
+      result.baseline = composedCoverageBaseline(composition, m_active->request->sceneId,
+                                                 m_active->request->revision, m_active->fallbackAllowed);
+    } else if (automatic && automatic->specular) {
+      result.image = std::shared_ptr<const ImageAsset>(automatic, automatic->specular.get());
+      result.baseline = automaticCoverageBaseline(result.image->header());
+    }
+    return result;
   }
   Descriptors Authoring::descriptor(Descriptors automatic) const {
     return m_active ? m_active->image->descriptors() : automatic;

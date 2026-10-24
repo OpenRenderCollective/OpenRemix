@@ -1861,7 +1861,7 @@ controller must retain the transaction until its fence and check context again i
 SelectionFrames now retains submitted copies and sampled publications by fenced frame slot,
 retires copies only after selectFrame, and uses offer generations to prevent older completed work
 from replacing newer requests. Context is rechecked during record before activation. This frame
-handoff is GPU-tested but is not yet connected to the renderer or candidate preparation.
+handoff is connected only under the diagnostic local-selection request described below.
 Completed optional receiver diagnostics now retain compact fitted-volume and classified-visibility
 evidence on the published bake volume. Query rays, transport and readback storage are released as
 before. The planner can reuse this evidence against a fresh baseline only when frozen-scene
@@ -1871,8 +1871,8 @@ LocalCaptureWork now prepares at most four selected captures from the owned cand
 validates source ownership and destination protection before allocating radiance, and uses existing
 CaptureWork/filter aliasing so same-origin shapes share rays and mip filtering. Fenced readbacks
 are range-checked, duplicate-checked and validated atomically; finish produces filtered pixels and
-candidate-to-layer metadata together. This CPU preparation component still needs transport dispatch
-and renderer scheduling. It does not activate local captures on its own.
+candidate-to-layer metadata together. Transport dispatch and renderer scheduling are opt-in as described below; this CPU component
+does not activate local captures on its own.
 REMIX_DEBUG_PROBE_LOCAL_CAPTURE=1 now schedules selected local radiance after ordinary bake
 filtering, using the same frozen transport, configured samples/bounces, adaptive GPU budget and
 fenced readback slots. A preparation worker filters and creates the local image; bake activation
@@ -1880,9 +1880,19 @@ uploads it and retains its plan/ready metadata separately on the published volum
 released only at the upload fence and its allocation is included in memory statistics. This requires
 fresh retained diagnostic evidence; cached bakes skip it. The local image is not yet selected by
 rendering, so enabling this request alone changes bake work but not reflection appearance.
-Next: validate/recompose against the published authored baseline and connect the frame handoff to
-renderer publication, then qualify
-live authored edits and map changes before enabling local replacement publication by default.
+REMIX_DEBUG_PROBE_LOCAL_SELECTION=1 now connects the opt-in prepared captures to renderer
+publication. The renderer snapshots the actually published image, authored IDs/roles and revision,
+restricts replanning to available prepared candidates before greedy selection, and checks the local
+image against the same frozen scene and approved geometry. Source image owners survive the copy
+fence; SelectionFrames publishes descriptors, header and IDs together after retirement. World,
+viewmodel receiver masks and explicit authored receiver bindings use the same active publication.
+Changes to source image ownership or baseline context invalidate pending/active selections while
+submitted and sampled frames retain their owners. Output image memory is included in statistics.
+Preparation currently runs synchronously once per changed baseline in this diagnostic path and is
+timed; move planning/allocation to preparation workers before considering a default. Cached bakes
+still have no retained evidence or prepared local captures.
+Next: qualify live authored edits/map transitions, moving camera/SSR-on coverage, and worker
+preparation, then consider local replacement publication as a default.
 
 Before production integration, keep planner indices tied to canonical capture metadata rather than
 sorted GPU layers, replan against protected authored composition and validate both added rooms and

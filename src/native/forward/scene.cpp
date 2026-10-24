@@ -151,7 +151,7 @@ namespace remix::forward {
       if (!liquid && !staticOnly) {
         const auto binding = resources.materialReflection(draw.reflectionMaterial);
         if (binding.volumeId) {
-          const auto layer = authoredReflections->receiverLayer(binding.sceneId, binding.volumeId);
+          const auto layer = reflectionLayer(binding.sceneId, binding.volumeId);
           draws.back().maps[0] |= layer << reflectionLayerShift;
           if (layer) ++statistics.boundReflectionDraws;
           else ++statistics.unresolvedReflectionDraws;

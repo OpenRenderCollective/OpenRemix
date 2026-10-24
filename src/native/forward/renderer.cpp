@@ -24,13 +24,14 @@ namespace remix::forward {
     }
     statistics.reflectionSceneScale = volume ? volume->sceneScale : 1;
     statistics.authoredReflections = authoredReflections->statistics();
-    const auto authoredHeader = authoredReflections->header();
-    statistics.reflectionProbes = authoredHeader ? *authoredHeader : volume ? volume->reflectionHeader : probes::Header{};
-    const auto identities = authoredReflections->identities();
+    const auto header = reflectionHeader();
+    statistics.reflectionProbes = header ? *header : probes::Header{};
+    const auto identities = reflectionIdentities();
     statistics.reflectionIdentities = identities ? *identities : probes::LayerIdentities{};
     const auto memory = baking->memory();
     const auto authoredMemory = authoredReflections->memory();
-    statistics.bufferBytes += memory.buffers + authoredMemory.buffers;
+    const auto selectedMemory = localSelections.memory();
+    statistics.bufferBytes += memory.buffers + authoredMemory.buffers + selectedMemory[0];
     auto &visibility = statistics.probeVisibility;
     visibility = {};
     if (probeVisibility) {
@@ -52,7 +53,7 @@ namespace remix::forward {
         }
       }
     }
-    statistics.targetBytes = baseTargetBytes + memory.images + authoredMemory.images +
+    statistics.targetBytes = baseTargetBytes + memory.images + authoredMemory.images + selectedMemory[1] +
                              (waterPass ? waterPass->targetBytes() : 0) +
                              viewModelTarget->bytes() +
                              (viewModelSun ? viewModelSun->bytes() : 0) +
@@ -218,6 +219,7 @@ namespace remix::forward {
     g.postProcessing->selectFrame(slot);
     g.baking->selectFrame(slot);
     g.authoredReflections->selectFrame(slot);
+    g.localSelections.selectFrame(slot);
     if (g.reflections)
       g.reflections->selectFrame(slot);
     if (g.liveScene)
@@ -258,6 +260,7 @@ namespace remix::forward {
     const auto &baked = m_gpu->baking->volume();
     m_gpu->authoredReflections->record(command, resources,
         m_gpu->options.bakeConfiguration(m_gpu->giSupported), baked, m_gpu->options.authoredReflectionFallback);
+    m_gpu->prepareLocalReflections(command, resources);
     bakeTime.close();
     step(cpu.bake);
     if (m_gpu->liveScene) {

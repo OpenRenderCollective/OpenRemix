@@ -193,6 +193,7 @@ void selectionLifetimeCase(uint32_t stale) {
                                                            oldBaseline.lock(), oldLocal.lock()));
     frames.selectFrame(0);
     if (stale == 6) ++scene.revision;
+    if (stale == 7) frames.invalidate();
     fixture.begin(); frames.record(fixture.command, scene, baseline); fixture.finish();
     if (stale == 5) {
       require(!frames.active(), "A newer offer prevents an older completed copy from publishing");
@@ -200,9 +201,12 @@ void selectionLifetimeCase(uint32_t stale) {
       frames.selectFrame(0);
       fixture.begin(); frames.record(fixture.command, scene, baseline); fixture.finish();
     }
-    require(bool(frames.active()) == (stale != 6), "Frame activation checks current context");
+    require(bool(frames.active()) == (stale != 6 && stale != 7), "Frame activation checks current context");
     require(oldBaseline.expired() && oldLocal.expired(), "Frame retirement releases copy sources");
     if (frames.active()) {
+      const auto memory = frames.memory();
+      require(memory[0] == frames.active()->image->bufferBytes() && memory[1] == frames.active()->image->imageBytes(),
+              "Active and sampled reflection output memory is counted once");
       std::weak_ptr<const probes::ImageAsset> sampled = frames.active()->image;
       ++scene.revision;
       frames.selectFrame(1);
@@ -210,6 +214,7 @@ void selectionLifetimeCase(uint32_t stale) {
       require(!frames.active() && !sampled.expired(), "Map change invalidates active output but retains sampled frames");
       frames.selectFrame(0);
       require(sampled.expired(), "Sampling owner retires only with its own frame slot");
+      require(frames.memory() == std::array<uint64_t, 2>{}, "Retired reflection output releases memory accounting");
     }
     require(validationErrors == 0, "Fenced frame publication is validation clean");
     return;
@@ -239,7 +244,7 @@ void selectionLifetimeCase(uint32_t stale) {
   require(validationErrors == 0, "Selection ownership and retirement are validation clean");
 }
 int main() try {
-  for (uint32_t stale = 0; stale < 7; ++stale) selectionLifetimeCase(stale);
+  for (uint32_t stale = 0; stale < 8; ++stale) selectionLifetimeCase(stale);
   uploadCase(0, 0);
   uploadCase(64, 8);
   uploadCase(1, 256);

@@ -5,6 +5,7 @@
 #include "forward/highlight_selection.h"
 #include "forward/reflections.h"
 #include "forward/probes/authoring.h"
+#include "forward/probes/selection_upload.h"
 #include "forward/probe_batch/batch.h"
 #include "forward/renderer.h"
 #include "forward/resources.h"
@@ -69,8 +70,16 @@ namespace remix::forward {
     std::shared_ptr<bake::Controller> baking;
     std::unique_ptr<probe_batch::Cache> probeVisibility;
     std::shared_ptr<probes::Authoring> authoredReflections;
+    probes::SelectionFrames localSelections;
+    std::optional<probes::CoveragePlanContext> localSelectionAttempt;
+    std::weak_ptr<const probes::ImageAsset> localSelectionBaseline, localSelectionImage;
+    void prepareLocalReflections(VkCommandBuffer command, RasterRenderer &resources);
+    const probes::Header *reflectionHeader() const;
+    const probes::LayerIdentities *reflectionIdentities() const;
+    uint32_t reflectionLayer(uint64_t sceneId, uint64_t volumeId) const;
     probes::Descriptors reflectionDescriptor() const {
-      return authoredReflections->descriptor(baking->reflectionDescriptor());
+      const auto selected = localSelections.active();
+      return selected ? selected->image->descriptors() : authoredReflections->descriptor(baking->reflectionDescriptor());
     }
     std::unique_ptr<shadows::Maps> localMaps;
     shadows::Planner shadowPlanner;
