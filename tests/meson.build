@@ -1,4 +1,6 @@
 python = find_program('python3')
+test('Fixed probe receiver comparison and coverage gates', python,
+  args : [meson.current_source_dir() / 'probe_receiver_comparison.py'])
 test('Pinned shader compiler native version formats', python,
   args : [meson.current_source_dir() / 'shader_tools.py'])
 test('Sampled reflection influence proposals', python,

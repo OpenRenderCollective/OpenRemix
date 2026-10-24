@@ -45,6 +45,23 @@ sample offset to its site; default SH and hemisphere formats remain unchanged.
 Four offsets are a rejection screen, not independent-seed confidence intervals;
 the high-sample SH reference also retains uncertainty.
 
+A shorter-clearance relocation fallback was also rejected as a standalone fix.
+At 2 m spacing it can recover a valid near-ceiling slot, and independent SH there
+matches the housing references. The normal-budget housing field remains at 4 m,
+however, and its measured stencil is unchanged. Extra recovery also changes coarse
+scores and reallocates refinement elsewhere: an 8192-receiver surface-reference
+audit shows almost unchanged average/RMS error but severe new bright outliers.
+Treat near-surface recovery, adaptive priorities and fixed-budget allocation
+together. The current scorer uses lightmapped receiver normals; uncharted static
+model receivers such as the housing need explicit consideration in that design.
+
+Use `scripts/common/compare-probe-receivers.py` for paired
+`REMIX_DEBUG_BAKE_RECEIVERS` reports. It requires identical scenes, positions,
+normals and surface references, compares common covered receivers, reports coverage
+loss separately, and lists bounded worst regressions as well as improvements.
+These triangle-weighted comparisons are a rejection gate, not ground-truth volume
+lighting or full-map visual acceptance. Keep the repeated fixed-site stream gate.
+
 Next gates: geometry-aware receiver-adjacent support and targeted convergence,
 the existing barrel/crate references, multiple maps, complete bake-time cost and
 unchanged physical record/storage budgets. Retain seam continuity, unknown
