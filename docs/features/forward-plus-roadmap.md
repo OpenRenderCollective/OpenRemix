@@ -2156,3 +2156,20 @@ promoting automatic selection. Both the dense bake and OIDN execute; the run exi
 validation errors/synchronization hazards and preserves the original authored sidecar.
 Future visual acceptance should use labeled normal-quality captures with recorded runtime
 hashes/settings; low-atlas transport fixtures remain useful only for their narrower gates.
+
+Normal-quality underwater selection diagnosis narrows the remaining failure. A nearby
+candidate at approximately (950.45, 4559.11, -896.92) passes admission/connectivity and
+has a reassessed variant at error 0.0507, below 0.20; it is not rejected for geometry.
+Its observed visible footprint contains 267 receiver samples, versus 282 for the selected
+far origin (1826.47, 4645.57, -268.03). Their footprints overlap at 263 samples, and only
+four of the near candidate's samples remain uncovered after the final selection. These
+are classified sampled footprints, not a full visibility proof. The greedy coverage
+objective therefore favors the far capture before the near alternative can add useful
+new area. Projection error only breaks equal-gain ties; globally weighted proxy error
+also favors the wall-adjacent far origin (0.0184 versus 0.0507), despite the reflected
+underwater result. Mean visible connection distances are similar (about 40.9 m far and
+40.4 m near), so an unqualified nearest-origin distance heuristic is not established.
+Next test a bounded receiver/medium-aware fidelity objective or localized influence
+representation while preserving baseline guards, authored priority and the capture budget.
+Do not loosen admission/error thresholds, increase samples or claim that extra captures
+alone resolve this mismatch. Keep normal-quality and path-traced controls in acceptance.
