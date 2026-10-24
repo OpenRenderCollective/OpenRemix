@@ -1893,7 +1893,19 @@ retaining immutable inputs and polling without waiting on the render thread. Sup
 work is cancelled immediately, running work receives cancellation, and finished work must still
 match current scene metadata and both source-image owners before entering the copy queue. Cached bakes
 still have no retained evidence or prepared local captures.
-Next: qualify live authored edits/map transitions, moving camera/SSR-on coverage, and cached-bake
+The opt-in route has now been exercised with full-resolution SSR and moving camera fixtures on
+Trainstation and Construct, including reflective props in added regions and retained-volume controls.
+Construct's authored image records remain protected during automatic replacement. These are static
+BSP relay fixtures, not natural player routes or full-map/gameplay acceptance. Low surface-bake
+settings in these checks do not qualify existing lightmap artifacts or indirect-light quality.
+The underwater Construct receiver near (827, 4256, -875) still shows a sharp reflected region with
+SSR disabled. Its prepared local image contains finite-depth black regions next to lit blue regions;
+compare capture transport lighting/material/medium handling with the path tracer before assuming
+this is a sampling seam or smoothing it away. The local-only dump request
+REMIX_DEBUG_PROBE_LOCAL_IMAGE names a fresh serialized Data file (header plus filtered RGBA32F
+mips, including unfiltered first-hit distance in base-mip alpha). It allocates/writes only when requested
+and avoids a whole-map raw capture dump. Keep this underwater case open before visual acceptance.
+Next: qualify live authored edits/map transitions, underwater capture lighting, and cached-bake
 preparation, then consider local replacement publication as a default.
 
 Before production integration, keep planner indices tied to canonical capture metadata rather than

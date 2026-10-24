@@ -425,6 +425,22 @@ namespace remix::forward::probes {
   void dumpTransportData(const char *suffix, const void *data, size_t bytes) noexcept {
     dumpData(suffix, data, bytes, false, false);
   }
+  void dumpLocalImage(const Data &data) noexcept {
+    const char *request = std::getenv("REMIX_DEBUG_PROBE_LOCAL_IMAGE");
+    if (!request || !*request) return;
+    try {
+      const auto file = std::filesystem::path(request);
+      if (std::filesystem::exists(file)) throw std::runtime_error("Local image dump exists; choose a fresh file");
+      const auto bytes = serialize(data);
+      std::ofstream output(file, std::ios::binary);
+      output.exceptions(std::ios::failbit | std::ios::badbit);
+      output.write(reinterpret_cast<const char *>(bytes.data()), std::streamsize(bytes.size()));
+      output.close();
+      std::fprintf(stderr, "Wrote prepared local reflection image: %s\n", file.string().c_str());
+    } catch (const std::exception &error) {
+      std::fprintf(stderr, "Local reflection image dump unavailable: %s\n", error.what());
+    }
+  }
   void dumpCaptures(uint64_t sceneHash, std::span<const Capture> captures) noexcept {
     const char *prefix = std::getenv("REMIX_DEBUG_BAKE_CAPTURE_PREFIX");
     if (!prefix || !*prefix)

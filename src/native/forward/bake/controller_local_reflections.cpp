@@ -1,4 +1,5 @@
 #include "forward/bake/job.h"
+#include "forward/probes/capture_dump.h"
 #include "platform/workers.h"
 #include <atomic>
 #include <cstdio>
@@ -59,6 +60,7 @@ namespace remix::forward::bake {
           [owner, physical, device] {
         WorkerPool workers;
         auto prepared = owner->localCaptureWork->finish(128, owner->cancellation.get_token(), &workers);
+        probes::dumpLocalImage(prepared.data);
         owner->localReflections->ready = std::make_shared<const probes::CoverageReadyImage>(std::move(prepared.selection));
         owner->localReflections->image = std::make_shared<probes::ImageAsset>(physical, device, prepared.data,
                                                                           owner->cancellation.get_token());
