@@ -47,6 +47,11 @@ namespace remix::sky {
     // linear view depth (R32 float, GENERAL, render resolution, 1e10 and
     // above where nothing was hit), or null for an all-sky frame.
     void recordPostDepth(VkCommandBuffer command, VkImage depthImage, VkImageView depthView);
+    // NUMOS over the composed frame before upscaling, in place: `color` is
+    // RGBA16 float in GENERAL at render resolution, `depth` the view depth of
+    // recordPostDepth. `scale` turns NUMOS radiance into the frame's.
+    void recordComposite(VkCommandBuffer command, VkImage colorImage, VkImageView colorView, VkImage depthImage,
+                         VkImageView depthView, float scale, config::SkySettings::GameSky gameSky);
 
     // The environment as a dome: sampled in GENERAL layout, its texels scaled
     // by environmentScale(), looked up through domeTransform() (world to the

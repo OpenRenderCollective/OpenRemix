@@ -1441,6 +1441,18 @@ namespace remix {
 #endif
     if (denoiser)
       denoiser->record(command);
+#if REMIX_HAS_NUMOS
+    if (skyActive && denoiser) try {
+      gpu::GpuScope scope(command, "NUMOS composite", extent);
+      const auto color = denoiser->image(denoise::Composed), depth = denoiser->image(denoise::Depth);
+      numosSky->recordComposite(command, color.image, color.view, depth.image, depth.view,
+                                numosSky->environmentScale() * skySettings.radianceScale, skySettings.gameSky);
+    } catch (const std::exception &error) {
+      skyFailure = error.what();
+      skyActive = skyReady = false;
+      std::fprintf(stderr, "NUMOS sky stopped: %s\n", error.what());
+    }
+#endif
     stageTime(9);
     if (stateProfile) {
       const uint64_t values[] = {frame.config[2],

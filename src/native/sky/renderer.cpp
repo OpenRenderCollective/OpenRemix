@@ -31,6 +31,11 @@ namespace remix::sky {
       float localToWorld[3][4];
       uint32_t width, height, frameIndex, zUp;
     };
+    struct CompositePush {
+      uint32_t width, height, frameIndex, zUp;
+      float missDepth, scale;
+      uint32_t gameSky, reserved;
+    };
 
     std::vector<Bridge::HostPass> hostPasses() {
       std::vector<Bridge::HostPass> passes;
@@ -51,6 +56,8 @@ namespace remix::sky {
     VkImageView depthView = VK_NULL_HANDLE;
     uint32_t renderWidth = 0, renderHeight = 0, missWidth = 0, missHeight = 0;
     uint32_t frameIndex = 0, lastCut = 0;
+    numos::Camera camera{};
+    bool zUp = true, clouds = false;
     std::chrono::steady_clock::time_point last{};
     bool begun = false;
     State(VkPhysicalDevice physical, VkDevice device) : bridge(physical, device, hostPasses()) {}
@@ -175,6 +182,9 @@ namespace remix::sky {
     m->bridge.begin(command);
     m->numos.beginFrame(m->bridge, inputs);
     m->begun = true;
+    m->clouds = false;
+    m->camera = inputs.camera;
+    m->zUp = zUp;
     m->renderWidth = frame.renderWidth;
     m->renderHeight = frame.renderHeight;
     if (!m->environment)
@@ -250,6 +260,54 @@ namespace remix::sky {
     }
     m->numos.dispatchPostDepth(m->bridge, depth, missDepth);
     m->bridge.end();
+    m->clouds = true;
+  }
+
+  void Renderer::recordComposite(VkCommandBuffer command, VkImage colorImage, VkImageView colorView,
+                                 VkImage depthImage, VkImageView depthView, float scale,
+                                 config::SkySettings::GameSky gameSky) {
+    if (!m->clouds || !colorView || !depthView)
+      return;
+    m->clouds = false;
+    m->bridge.begin(command);
+    const numos::TextureDesc colorDesc{.format = numos::Format::RGBA16Float,
+                                       .width = m->renderWidth,
+                                       .height = m->renderHeight};
+    const auto color = m->bridge.importTexture(colorImage, colorView, colorDesc);
+    const auto depth = m->depthView == depthView
+                           ? m->depthImport
+                           : m->bridge.importTexture(depthImage, depthView,
+                                                     {.format = numos::Format::R32Float,
+                                                      .width = m->renderWidth,
+                                                      .height = m->renderHeight});
+    const auto &out = m->numos.outputs();
+    auto named = m->outputs();
+    const auto camera = m->bridge.uploadConstants(&m->camera, sizeof(m->camera));
+    const auto texture = [](numos::GpuHandle handle) { return numos::Binding{.resource = handle}; };
+    named["camera"] = {.resource = camera.buffer, .offset = camera.offset, .size = camera.size};
+    named["cloudRender"] = texture(out.cloudRender);
+    named["cloudDepth"] = texture(out.cloudDepth);
+    named["apNearScatter"] = texture(out.apNearScatter);
+    named["apFarScatter"] = texture(out.apFarScatter);
+    named["apFarTransmittance"] = texture(out.apFarTransmittance);
+    named["apFroxelAux"] = texture(out.apFroxelAux);
+    named["apLights"] = texture(out.apLights);
+    named["apLightClusters"] = texture(out.apLightClusters);
+    named["apSampler"] = texture(out.linearClampSampler);
+    named["linearViewZ"] = texture(depth);
+    named["color"] = texture(color);
+    const CompositePush push{.width = m->renderWidth,
+                             .height = m->renderHeight,
+                             .frameIndex = m->frameIndex,
+                             .zUp = m->zUp,
+                             .missDepth = missDepth,
+                             .scale = scale,
+                             .gameSky = uint32_t(gameSky)};
+    m->dispatch(Stage::composite, named, &push, sizeof(push), (m->renderWidth + 7) / 8, (m->renderHeight + 7) / 8);
+    m->bridge.end();
+    m->bridge.forget(color);
+    if (depth != m->depthImport)
+      m->bridge.forget(depth);
   }
 
   VkDescriptorImageInfo Renderer::environment() const {

@@ -105,6 +105,7 @@ def process():
         check_layout(gen_pass_table, gen_layout_checks, numos_dir)
         adapters = compile_adapters(build_shaders, adapter_dir)
         write(numos_dir, adapters, gen_pass_table.generate(adapter_dir))
-    generate.depend(PASS_TABLE, LAYOUT_CHECKS, *(NUMOS / 'tools').glob('*.py'),
+    # The adapter folder itself: adding an adapter changes its time stamp.
+    generate.depend(PASS_TABLE, LAYOUT_CHECKS, ADAPTERS, *(NUMOS / 'tools').glob('*.py'),
                     *(path for path in (NUMOS / 'shaders').rglob('*') if path.is_file()),
                     *(path for path in ADAPTERS.rglob('*') if path.is_file() and path.name != 'meson.build'))
