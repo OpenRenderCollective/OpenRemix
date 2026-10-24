@@ -1,4 +1,6 @@
 python = find_program('python3')
+test('Pinned shader compiler native version formats', python,
+  args : [meson.current_source_dir() / 'shader_tools.py'])
 test('Sampled reflection influence proposals', python,
   args : [meson.current_source_dir() / 'reflection_regions.py'])
 add_test_setup('isolatedconfig', exe_wrapper : [python, meson.current_source_dir() / 'isolated_config.py'], is_default : true)

@@ -45,4 +45,5 @@ def widen(binary):
     assembly = '\n'.join(replacements) + '\n'
     position = re.search(r'^\s*%\S+ = OpFunction\b', assembly, re.M).start()
     assembly = assembly[:position] + '\n'.join(declarations) + '\n' + assembly[position:]
-    subprocess.run(['spirv-as', '--target-env', 'vulkan1.2', '-o', str(binary)], input=assembly, text=True, check=True)
+    subprocess.run(['spirv-as', '--target-env', 'vulkan1.2', '-o', str(binary), '-'],
+                   input=assembly, text=True, check=True)

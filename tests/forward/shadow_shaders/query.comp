@@ -9,7 +9,7 @@ layout(set = 0, binding = 0, std140) uniform Parameters {
   vec4 splits;
   uvec4 target;
 } frame;
-struct Light { vec4 corners[4]; };
+struct Light { vec4 corners[3]; vec4 responseWeights; };
 layout(set = 0, binding = 3) uniform sampler2DArrayShadow sunShadow;
 #include "../../../src/native/forward/shaders/local-shadows.glsl"
 #include "../../../src/native/forward/shaders/sun-shadows.glsl"
@@ -26,6 +26,7 @@ void main() {
   Light light;
   light.corners[0] = vec4(0, 0, 0, query.control.x + 1u);
   light.corners[1] = vec4(0);
+  light.responseWeights = vec4(0);
   float visibility = query.control.z == 0u
       ? localShadowVisibility(light, query.position.xyz, query.normal.xyz, fixedVisibility)
       : sunShadowVisibility(query.position.xyz, query.position.w, fixedVisibility);
