@@ -85,10 +85,11 @@ containing both authored and generated model charts. Atlas settings and device
 limits are shared with ordinary preparation. No lighting transport, GPU bake
 allocation, cache publication or live draw replacement occurs.
 
-The study allows up to 1,048,576 model charts, further bounded by the minimum
-chart footprint and requested atlas capacity. The runtime model-chart experiment
-still has its separate 65,536-chart limit. A successful study does not qualify a
-larger runtime limit. Limits also include 32,768 draws and four million eligible
+The study and opt-in runtime model-chart experiment share a capacity limit:
+requested atlas texels divided by the minimum padded chart footprint, minus
+authored charts, with an absolute ceiling of 1,048,576 generated charts. Actual
+packing may still reject a scene; this bound does not promise a fit. A successful
+CPU study alone does not qualify completed lighting or runtime memory. Limits also include 32,768 draws and four million eligible
 triangles. Output includes density, rectangles, sample counts, stage CPU times
 and raw twenty-layer atlas bytes; that byte count is not measured total VRAM.
 

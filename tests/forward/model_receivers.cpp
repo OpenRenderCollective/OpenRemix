@@ -316,6 +316,18 @@ int main(int argc, char **argv) try {
     remix::forward::lightmap::Options options;
     options.padding = 0; options.pageSize = 64; options.maxPages = 1;
     options.maxTexels = 4096; options.fillBudget = true;
+    require(b::modelChartCapacity(options, 1) == 1023, "Minimum footprints bound model chart capacity");
+    options.maxPages = 2; options.maxTexels = 8192;
+    require(b::modelChartCapacity(options, 1) == 2047, "Atlas capacity accounts for multiple pages");
+    options.padding = 2;
+    require(b::modelChartCapacity(options, 1) == 226, "Atlas capacity includes chart padding");
+    options.padding = 0; options.maxPages = 1; options.maxTexels = 4096;
+    options.pageSize = 63;
+    invalid([&] { b::modelChartCapacity(options, 0); });
+    options.pageSize = 64;
+    require(b::modelChartCapacity(options, 1024) == 0, "Authored charts consume available capacity");
+    try { b::modelChartCapacity(options, 1025); require(false, "Impossible authored chart capacity accepted"); }
+    catch (const std::length_error &) {}
     auto report = path; report += ".atlas-preflight.json";
     std::filesystem::remove(report);
     b::writeModelAtlasPreflight(source, options, report);

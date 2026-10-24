@@ -163,7 +163,9 @@ namespace remix::forward::bake {
     if (modelChartsRequested()) {
       if (!config.lightmapFitBudget)
         throw std::invalid_argument("Model charts require world-metric budget fitting");
-      auto charts = modelCharts(*source, 65536, cancellation.get_token());
+      const auto capacity = modelChartCapacity(surfaceAtlasOptions(config, properties.limits), source->charts.size());
+      if (!capacity) throw std::length_error("No model chart capacity in surface atlas");
+      auto charts = modelCharts(*source, capacity, cancellation.get_token());
       auto derived = std::make_shared<scene::BakeScene>(*source);
       derived->charts.insert(derived->charts.end(), charts.begin(), charts.end());
       std::fprintf(stderr, "Forward+ model charts: authored %zu, generated %zu (candidate)\n",

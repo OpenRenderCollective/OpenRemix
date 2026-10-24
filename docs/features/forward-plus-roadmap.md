@@ -6,10 +6,12 @@ Generated model-chart density is also a separate confirmed failure. Grazing
 projection faces and excessive curved metric expansion now split candidate
 patches rather than inflating their global atlas footprint. Whole-map CPU atlas
 preflight is available to study authored and generated charts together without
-running lighting transport. Black Mesa still exceeds the runtime experiment's
-65,536-chart cap; a larger diagnostic allowance is not a qualified runtime cap.
-Next qualify completed lighting, coverage, memory and bake cost after this fix,
-then address chart count/packing without sacrificing atlas density. Static model
+running lighting transport. The opt-in runtime experiment now derives its chart
+limit from minimum padded atlas capacity, with an absolute 1,048,576-chart ceiling,
+instead of rejecting larger maps at 65,536 charts. Actual packing still must fit.
+A completed larger-map bake does not establish final quality, memory suitability
+or frame-rate gains. Reduce chart count and filtering work without sacrificing
+coverage or density; qualify more maps before enabling model charts by default. Static model
 charts remain opt-in; probe-lit dynamic objects still need the fixes below.
 
 Construct's back-spawn ceiling-fixture housing has a confirmed probe-lit diffuse
@@ -85,7 +87,7 @@ in default bakes. The existing allocation and cache policy are restored.
 
 The static-model surface-bake candidate is available through
 `REMIX_DEBUG_BAKE_MODEL_CHARTS=1`, disabled by default, with private derived charts
-and a separate conditional cache key (policy 5). Shared range validation preserves
+and a separate conditional cache key (policy 6). Shared range validation preserves
 caller-authored charts, retained draw bindings and the existing world-metric atlas
 budget. Bounded connected consecutive patches reject projected overlap, opposing
 faces and invalid curved mappings. No private index-reordering path remains.

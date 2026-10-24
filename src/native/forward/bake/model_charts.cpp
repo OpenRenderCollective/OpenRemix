@@ -4,6 +4,7 @@
 #include "forward/material.h"
 #include "forward/lightmap/curved.h"
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <stdexcept>
 
@@ -108,6 +109,17 @@ namespace remix::forward::bake {
       chart = std::move(merged);
       return true;
     }
+  }
+  uint32_t modelChartCapacity(const lightmap::Options &options, size_t authoredCharts) {
+    if (options.padding > 16 || options.pageSize < 8 || options.pageSize > 4096 || !std::has_single_bit(options.pageSize) ||
+        !options.maxPages || options.maxPages > 256 || !options.maxTexels || options.maxTexels > (64u << 20))
+      throw std::invalid_argument("Invalid model chart atlas capacity");
+    const uint64_t texels = std::min(options.maxTexels,
+        uint64_t(options.maxPages) * options.pageSize * options.pageSize);
+    const uint64_t side = 2 + 2 * options.padding;
+    const uint64_t charts = texels / (side * side);
+    if (authoredCharts > charts) throw std::length_error("Authored charts exceed minimum atlas capacity");
+    return uint32_t(std::min<uint64_t>(1048576, charts - authoredCharts));
   }
   std::vector<scene::BakeSurfaceChart> modelCharts(const scene::BakeScene &source,
       uint32_t maximumCharts, std::stop_token cancelled) {

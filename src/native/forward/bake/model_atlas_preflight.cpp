@@ -25,13 +25,7 @@ namespace remix::forward::bake {
         options.pageSize < 8 || options.pageSize > 4096 || !std::has_single_bit(options.pageSize) ||
         !options.maxPages || options.maxPages > 256 || !options.maxTexels || options.maxTexels > (64u << 20))
       throw std::invalid_argument("Invalid model atlas preflight source or budget");
-    const uint64_t capacity = std::min(options.maxTexels,
-        uint64_t(options.maxPages) * options.pageSize * options.pageSize);
-    const uint64_t minimumSide = 2 + 2 * options.padding;
-    const uint64_t maximumCharts = capacity / (minimumSide * minimumSide);
-    if (source.charts.size() > maximumCharts)
-      throw std::length_error("Authored charts leave no model chart capacity");
-    const auto modelLimit = uint32_t(std::min<uint64_t>(1048576, maximumCharts - source.charts.size()));
+    const auto modelLimit = modelChartCapacity(options, source.charts.size());
     std::fprintf(stderr, "Model atlas preflight: counting eligible triangles\n");
     const auto started = Clock::now();
     uint64_t triangles = 0;
