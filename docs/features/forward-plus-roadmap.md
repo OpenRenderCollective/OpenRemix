@@ -1867,7 +1867,13 @@ evidence on the published bake volume. Query rays, transport and readback storag
 before. The planner can reuse this evidence against a fresh baseline only when frozen-scene
 metadata still matches; unknown observations remain unknown. Cached bakes currently have no such
 evidence, and ordinary baking without the diagnostic request does not allocate it.
-Next: prepare selected local radiance from retained evidence and connect the frame handoff to
+LocalCaptureWork now prepares at most four selected captures from the owned candidate records,
+validates source ownership and destination protection before allocating radiance, and uses existing
+CaptureWork/filter aliasing so same-origin shapes share rays and mip filtering. Fenced readbacks
+are range-checked, duplicate-checked and validated atomically; finish produces filtered pixels and
+candidate-to-layer metadata together. This CPU preparation component still needs transport dispatch
+and renderer scheduling. It does not activate local captures on its own.
+Next: dispatch selected local radiance against frozen bake lighting and connect the frame handoff to
 renderer publication, then qualify
 live authored edits and map changes before enabling local replacement publication by default.
 

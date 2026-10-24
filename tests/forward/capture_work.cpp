@@ -1,4 +1,6 @@
 #include "forward/probes/capture_work.h"
+#include "forward/probes/local_capture_work.h"
+#include <limits>
 #include "scene/hash_stream.h"
 #include <cstdio>
 #include <cstdlib>
@@ -23,7 +25,52 @@ namespace {
     return result;
   }
 }
+void testLocalCaptureWork() {
+  auto base = capture(), alias = base;
+  alias.bounds.minimum[0] = -2;
+  alias.worldToLocal = {{{0,-1,0,0}, {1,0,0,0}, {0,0,1,0}}};
+  p::Header published;
+  published.parameters = {1,8,4,510}; published.probes[0] = p::projectionRecord(base);
+  const auto baseline = p::automaticCoverageBaseline(published);
+  remix::scene::BakeScene scene;
+  scene.sceneId = 100; scene.revision = 1; scene.ready = true;
+  p::ReceiverCoveragePlan plan;
+  plan.context = p::coveragePlanContext(scene, baseline);
+  plan.candidateRecords = {p::projectionRecord(base), p::projectionRecord(alias)};
+  plan.owners = {{0,0},{0,1}}; plan.errors = {0,0};
+  plan.replacements = {{1,0,1},{0,UINT32_MAX,2}};
+  p::LocalCaptureWork work(scene, baseline, plan, 8);
+  require(work.rays().size() == 384, "Selected same-origin local boxes share one six-face capture");
+  bool pending = false;
+  try { (void)work.finish(32); } catch (const std::logic_error &) { pending = true; }
+  require(pending, "Local image cannot filter before every readback retires");
+  std::vector<remix::forward::bake::Result> results(384);
+  for (uint32_t i = 0; i < results.size(); ++i) results[i].irradiance[0] = {float(i % 11), .5f, 2, 3};
+  auto broken = results;
+  broken.back().irradiance[0][0] = std::numeric_limits<float>::quiet_NaN();
+  require(!work.observe(0, broken), "Invalid local readback is rejected atomically");
+  require(work.observe(192, std::span(results).subspan(192)), "Out-of-order local tail retires");
+  require(!work.observe(192, std::span(results).subspan(192)), "Duplicate local readback is refused");
+  require(work.observe(0, std::span(results).first(192)) && work.complete(), "Every unique local readback completes");
+  const auto image = work.finish(32);
+  for (uint32_t i = 0; i < results.size(); ++i) base.radiance[i] = alias.radiance[i] = results[i].irradiance[0];
+  const p::Capture independent[]{alias,base};
+  require(p::serialize(image.data) == p::serialize(p::filter(independent, 32)),
+          "Prepared local image matches independent filtering with distinct projection records");
+  const auto composed = p::buildCoverageImagePlan(scene, baseline, plan, published, {}, image.selection);
+  require(composed.header.parameters[0] == 2 && composed.copies[0].source == p::CoverageImageSource::Local &&
+          composed.copies[0].layer == 0 && composed.copies[1].layer == 1,
+          "Selected candidate IDs map to the correct prepared image layers");
+  require(work.complete() && work.rays().empty() && !work.observe(0, {}),
+          "Finished local capture releases query work and rejects further readbacks");
+  auto changed = scene; ++changed.reflectionRevision;
+  invalid([&] { p::LocalCaptureWork stale(changed, baseline, plan, 8); });
+  invalid([&] { p::LocalCaptureWork wrongSize(scene, baseline, plan, 16); });
+  plan.replacements[1].candidate = 1;
+  invalid([&] { p::LocalCaptureWork duplicate(scene, baseline, plan, 8); });
+}
 void testCaptureWork() {
+  testLocalCaptureWork();
   auto base = capture(), alias = base, other = base;
   alias.bounds.include({-2,-2,-2});
   alias.bounds.include({2,2,2});
