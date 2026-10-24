@@ -48,7 +48,7 @@ for clang-cl, `scripts/linux/openusd-25.11-clang-cl.patch`) into `_work/deps/xwi
 later runs reuse them. It collects the runtime in `--output` (default
 `_work/dist/windows/openremix`) as a game loads it: `remix.dll` and its PDB, SDL3,
 TBB and the `usd_*.dll` side by side, OpenUSD's plugins in `usd/`, DLSS in
-`dlss/310.9.1/`. Files already in the folder that the build does not make (profiles,
+`dlss/310.9.1/` and Ray Reconstruction's CNN model in `dlss/310.2.1/`. Files already in the folder that the build does not make (profiles,
 caches, logs) are kept. `--tests` runs the CPU tests in an isolated Wine prefix.
 Use `--cmake /path/to/cmake` if CMake is outside PATH. Windows or Proton supplies the
 Vulkan loader, the GPU driver and the Visual C++ runtime (`vcruntime140.dll`,

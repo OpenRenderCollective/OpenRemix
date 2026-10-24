@@ -77,10 +77,15 @@ struct Ngx::Impl {
   static constexpr unsigned featureCount = 3;
   bool initialized{}, attempted{}, instanceReady[featureCount]{}, deviceReady[featureCount]{};
   NVSDK_NGX_Parameter *parameters{};
-  std::filesystem::path libraries;
-  std::wstring libraryPath, cachePath;
-  const wchar_t *paths[1]{};
+  // cnnLibraries: Ray Reconstruction's CNN model (an older release's RR
+  // library alone), searched first while that model is loaded.
+  std::filesystem::path libraries, cnnLibraries;
+  std::wstring libraryPath, cnnPath, cachePath;
+  const wchar_t *paths[2]{};
   NVSDK_NGX_FeatureCommonInfo common{};
+  bool cnnLoaded{};
+  // Features created and not yet released: NGX restarts only without any.
+  unsigned liveFeatures{};
   Impl() {
     caps.sdk = true;
     try {
@@ -89,9 +94,11 @@ struct Ngx::Impl {
       if (!std::filesystem::is_directory(libraries))
         libraries = moduleDirectory() / "upscale";
       libraryPath = libraries.wstring();
-      paths[0] = libraryPath.c_str();
-      common.PathListInfo.Path = paths;
-      common.PathListInfo.Length = 1;
+      cnnLibraries = moduleDirectory() / "dlss" / "310.2.1";
+      if (!std::filesystem::is_directory(cnnLibraries))
+        cnnLibraries = moduleDirectory() / "upscale" / "cnn";
+      cnnPath = cnnLibraries.wstring();
+      search(false);
       char *cache = SDL_GetPrefPath("openremix", "ngx-310.9.1");
       if (!cache)
         throw std::runtime_error("Writable NGX cache unavailable");
@@ -100,6 +107,21 @@ struct Ngx::Impl {
     } catch (const std::exception &e) {
       caps.reason = e.what();
     }
+  }
+  // NGX loads each feature's library from the first path that has it.
+  void search(bool cnn) {
+    paths[0] = cnn ? cnnPath.c_str() : libraryPath.c_str();
+    paths[1] = libraryPath.c_str();
+    common.PathListInfo.Path = paths;
+    common.PathListInfo.Length = cnn ? 2 : 1;
+  }
+  bool cnnPackaged() const {
+    std::error_code error;
+#ifdef _WIN32
+    return std::filesystem::is_regular_file(cnnLibraries / "nvngx_dlssd.dll", error);
+#else
+    return std::filesystem::is_regular_file(cnnLibraries / "libnvidia-ngx-dlssd.so.310.2.1", error);
+#endif
   }
   bool packaged(unsigned feature) const {
     std::error_code error;
@@ -224,6 +246,17 @@ void Ngx::initialize([[maybe_unused]] VkInstance instance, [[maybe_unused]] VkPh
     return;
   m->attempted = true;
   m->device = device;
+  start(instance, physical, device);
+#endif
+  std::lock_guard publish(capabilitiesMutex);
+  m->caps.initializationComplete = true;
+  publishedCapabilities = m->caps;
+}
+#if REMIX_HAS_DLSS
+void Ngx::start(VkInstance instance, VkPhysicalDevice physical, VkDevice device) {
+  m->caps.sr = m->caps.rr = m->caps.fg = false;
+  m->caps.reason.clear();
+  m->caps.fgReason.clear();
   try {
     if (!m->deviceReady[0] && !m->deviceReady[1] && !m->deviceReady[2])
       throw std::runtime_error("Packaged DLSS libraries or required Vulkan extensions unavailable");
@@ -275,10 +308,52 @@ void Ngx::initialize([[maybe_unused]] VkInstance instance, [[maybe_unused]] VkPh
     m->caps.reason = e.what();
     m->caps.fgReason = e.what();
   }
+  m->caps.rrCnnPackaged = m->cnnPackaged();
+  m->caps.rrCnn = m->cnnLoaded;
+}
 #endif
-  std::lock_guard publish(capabilitiesMutex);
+bool Ngx::useRayReconstructionModel([[maybe_unused]] bool cnn, std::string &reason) {
+  std::lock_guard lock(ngxMutex);
+#if REMIX_HAS_DLSS
+  if (!m->initialized || cnn == m->cnnLoaded)
+    return cnn == m->cnnLoaded;
+  if (cnn && !m->cnnPackaged()) {
+    reason = "The CNN Ray Reconstruction library (DLSS 310.2.1) is not packaged";
+    return false;
+  }
+  if (m->liveFeatures) {
+    reason = "The Ray Reconstruction model changes while no other DLSS feature is in use (turn frame generation off)";
+    return false;
+  }
+  // NGX loads a feature's library once: restart it with the other search order.
+  if (m->parameters)
+    NVSDK_NGX_VULKAN_DestroyParameters(m->parameters);
+  m->parameters = nullptr;
+  NVSDK_NGX_VULKAN_Shutdown1(m->device);
+  m->initialized = false;
+  m->search(cnn);
+  m->cnnLoaded = cnn;
+  start(instance, physical, m->device);
+  if (!m->caps.rr && cnn) {
+    reason = "The CNN Ray Reconstruction model is unavailable (" + m->caps.reason + ")";
+    if (m->parameters)
+      NVSDK_NGX_VULKAN_DestroyParameters(m->parameters);
+    m->parameters = nullptr;
+    if (m->initialized)
+      NVSDK_NGX_VULKAN_Shutdown1(m->device);
+    m->initialized = false;
+    m->search(false);
+    m->cnnLoaded = false;
+    start(instance, physical, m->device);
+  }
   m->caps.initializationComplete = true;
+  std::lock_guard publish(capabilitiesMutex);
   publishedCapabilities = m->caps;
+  return cnn == m->cnnLoaded;
+#else
+  reason = "DLSS SDK disabled at build time";
+  return !cnn;
+#endif
 }
 VkExtent2D Ngx::renderSize([[maybe_unused]] VkExtent2D display, [[maybe_unused]] uint32_t quality,
                            [[maybe_unused]] bool rr) {
@@ -331,8 +406,10 @@ struct NgxFeature::Impl {
       if (initializationPool)
         vkDestroyCommandPool(device, initializationPool, nullptr);
     }
-    if (feature)
+    if (feature) {
       NVSDK_NGX_VULKAN_ReleaseFeature(feature);
+      --context->m->liveFeatures;
+    }
     if (parameters)
       NVSDK_NGX_VULKAN_DestroyParameters(parameters);
   }
@@ -342,7 +419,8 @@ NgxFeature::NgxFeature() : m(std::make_unique<Impl>()) {}
 NgxFeature::~NgxFeature() = default;
 void NgxFeature::initialize([[maybe_unused]] std::shared_ptr<Ngx> context, [[maybe_unused]] uint32_t family,
                             [[maybe_unused]] VkExtent2D render, [[maybe_unused]] VkExtent2D display,
-                            [[maybe_unused]] uint32_t quality, [[maybe_unused]] bool rr) {
+                            [[maybe_unused]] uint32_t quality, [[maybe_unused]] bool rr,
+                            [[maybe_unused]] uint32_t rrPreset) {
   std::lock_guard lock(ngxMutex);
 #if REMIX_HAS_DLSS
   m->context = std::move(context);
@@ -375,15 +453,16 @@ void NgxFeature::initialize([[maybe_unused]] std::shared_ptr<Ngx> context, [[may
     const int flags = NVSDK_NGX_DLSS_Feature_Flags_IsHDR | NVSDK_NGX_DLSS_Feature_Flags_MVLowRes |
                       NVSDK_NGX_DLSS_Feature_Flags_AutoExposure;
     if (rr) {
-      // SDK 310.9.1 preset F records uninitialized internal image reads and
-      // transfer hazards on the Linux 615.71.09 driver. Preset E passes sync
-      // validation on Turing and uses the same input and sampling contract.
+      // The caller's preset (rrPreset, 0: E). SDK 310.9.1 preset F
+      // records uninitialized internal image reads and transfer hazards on the
+      // Linux 615.71.09 driver; preset E passes sync validation on Turing and
+      // uses the same input and sampling contract.
       for (const char *key : {NVSDK_NGX_Parameter_RayReconstruction_Hint_Render_Preset_DLAA,
                               NVSDK_NGX_Parameter_RayReconstruction_Hint_Render_Preset_Quality,
                               NVSDK_NGX_Parameter_RayReconstruction_Hint_Render_Preset_Balanced,
                               NVSDK_NGX_Parameter_RayReconstruction_Hint_Render_Preset_Performance,
                               NVSDK_NGX_Parameter_RayReconstruction_Hint_Render_Preset_UltraPerformance})
-        m->parameters->Set(key, int(NVSDK_NGX_RayReconstruction_Hint_Render_Preset_E));
+        m->parameters->Set(key, int(rrPreset ? rrPreset : uint32_t(NVSDK_NGX_RayReconstruction_Hint_Render_Preset_E)));
       NVSDK_NGX_DLSSD_Create_Params desc{};
       desc.InWidth = render.width;
       desc.InHeight = render.height;
@@ -396,6 +475,7 @@ void NgxFeature::initialize([[maybe_unused]] std::shared_ptr<Ngx> context, [[may
       desc.InUseHWDepth = NVSDK_NGX_DLSS_Depth_Type_HW;
       check(NGX_VULKAN_CREATE_DLSSD_EXT1(device, command, 1, 1, &m->feature, m->parameters, &desc),
             "DLSS RR creation");
+      ++m->context->m->liveFeatures;
     } else {
       // Keep SR on the validated K model for every quality mode; L/M have
       // the same internal uninitialized-image issue on the tested driver.
@@ -410,6 +490,7 @@ void NgxFeature::initialize([[maybe_unused]] std::shared_ptr<Ngx> context, [[may
       desc.InFeatureCreateFlags = flags;
       check(NGX_VULKAN_CREATE_DLSS_EXT1(device, command, 1, 1, &m->feature, m->parameters, &desc),
             "DLSS SR creation");
+      ++m->context->m->liveFeatures;
     }
     vkCheck(vkEndCommandBuffer(command));
     VkFenceCreateInfo fi{.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
@@ -563,8 +644,10 @@ struct NgxFrameGeneration::Impl {
       if (initializationPool)
         vkDestroyCommandPool(device, initializationPool, nullptr);
     }
-    if (feature)
+    if (feature) {
       NVSDK_NGX_VULKAN_ReleaseFeature(feature);
+      --context->m->liveFeatures;
+    }
     if (parameters)
       NVSDK_NGX_VULKAN_DestroyParameters(parameters);
   }
@@ -610,6 +693,7 @@ void NgxFrameGeneration::initialize([[maybe_unused]] std::shared_ptr<Ngx> contex
     desc.RenderHeight = render.height;
     desc.DynamicResolutionScaling = false;
     check(NGX_VK_CREATE_DLSSG(command, 1, 1, &m->feature, m->parameters, &desc), "DLSS Frame Generation creation");
+    ++m->context->m->liveFeatures;
     vkCheck(vkEndCommandBuffer(command));
     VkFenceCreateInfo fi{.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
     vkCheck(vkCreateFence(device, &fi, nullptr, &fence));

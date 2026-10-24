@@ -11,6 +11,13 @@ namespace remix {
     bool denoiser = true, taa = true, validation = false;
     upscale::Mode upscaler = upscale::Mode::Dlss;
     bool dlssRayReconstruction = true;
+    // Ray Reconstruction's model: 0 transformer (DLSS 310.9.1, preset E), 1 CNN
+    // (DLSS 310.2.1, preset C; about half the cost on Turing). With the
+    // override, dlssRayReconstructionPreset (NGX's 1-6, A-F) instead; a preset
+    // of the other model's library is replaced by the model's own.
+    uint32_t dlssRayReconstructionModel = 0;
+    bool dlssRayReconstructionPresetOverride = false;
+    uint32_t dlssRayReconstructionPreset = 5;
     uint32_t dlssQuality = 3;
     bool prism = true, gamma22 = true;
     bool autoExposure = true, bloom = true;
@@ -22,8 +29,17 @@ namespace remix {
     bool sigma = true;
     bool blueNoiseShadows = true;
     bool blueNoiseLocalLights = true;
+    // Blue-noise directions for a path's first bounce and its sky rays
+    // (skySamples): neighbouring pixels and frames probe the hemisphere
+    // evenly, so the denoiser averages spread samples instead of clumps.
+    bool blueNoiseSky = true;
     bool localLights = true, localDenoiser = true;
     bool torchLights = true, emissiveLights = true;
+    // Emissive triangles of one surface a light-tree leaf holds at most (1: a
+    // leaf per triangle). Sampling picks a leaf, then one of its triangles by
+    // power: each keeps its own shape and color, and the tree to build and
+    // descend is that many times smaller.
+    uint32_t emissiveClusterSize = 16;
     uint32_t emissiveCandidates = 1;
     // RIS candidates in sets of more than four sphere lights without emissive
     // surfaces (1: plain BVH sampling). Candidates compare unshadowed
@@ -75,6 +91,15 @@ namespace remix {
     // lights at their own surface. Off: sun and sky only there (local light
     // still reaches them through their reflection paths).
     bool sheetLocalLights = true;
+    // Layers behind the front translucent layer of a pixel take its light
+    // (per unit material factor) instead of their own light samples and
+    // paths: one lit layer per pixel, however many it passes. Off: every
+    // layer is lit (PBR layers, or all with translucentIndirect).
+    bool layerReuse = true;
+    // A translucent layer's paths end at their first hit: the radiance
+    // cache's light there (whatever the path's width), else the hit's direct
+    // light. Off: they continue like an opaque surface's paths.
+    bool shortSheetPaths = true;
     // Exclude local lights outside the shading point's potentially visible
     // clusters (remixapi_SetVisibilityPartitionEXT), when a partition is set.
     // ReSTIR DI for primary local lighting (implies separateLocalLighting 3):
@@ -169,8 +194,24 @@ namespace remix {
     // detail every frame; a higher rate keeps moving surfaces sharper and
     // leaves fewer frames to anti-alias them (0.05 is the rate at rest).
     float taaMotionRate = .15f;
-    // Indirect-light denoiser history cap in frames (0 = NRD's default).
+    // Indirect-light denoiser history in frames, 1-63 (0 = NRD's default,
+    // 0.5 s of frames). Longer averages away more of the sparse bounce light
+    // and follows lighting changes more slowly.
     uint32_t indirectHistoryFrames = 0;
+    // Sky visibility rays at a path's first surface (1-16), each in its own
+    // direction from the path's lobe. Indoors only a narrow set of directions
+    // reaches an opening: one ray finds it rarely and brightly, which boils
+    // after denoising. Each ray is a shadow query; the bounce path is unchanged.
+    uint32_t skySamples = 2;
+    // Sky rays at a translucent layer's surface (glass, water), at most
+    // skySamples: each lit layer casts them on top of the surface behind it.
+    uint32_t sheetSkySamples = 2;
+    // Sky guiding: each world cell (skyGuideCellSize meters over sceneScale)
+    // learns which directions its sky rays found the sky in, and the extra
+    // sky rays (skySamples above 1) sample those directions with share
+    // skyGuideShare, the rest by the BRDF. Diffuse and legacy surfaces only.
+    bool skyGuiding = true;
+    float skyGuideCellSize = 2, skyGuideShare = .5f;
     uint32_t restirCandidates = 32;     // initial light-tree candidates per pixel
     uint32_t restirSpatialSamples = 8; // neighbor reservoirs per pixel
     float restirSpatialRadius = 30;    // pixels
@@ -214,6 +255,10 @@ namespace remix {
     // PBR surfaces smoother than REMIX_SHARC_PBR_MIN_ROUGHNESS hold cache
     // entries as if they were that rough, where otherwise paths trace on.
     bool sharcGlossySurfaces = true;
+    // A path reads the cache only where its spread at the hit covers a cell
+    // (footprint > cell diagonal). Off: every cacheable vertex reads it,
+    // ~1.5 ms faster on df_range, but coarse far cells read too dark.
+    bool sharcFootprintTest = true;
     uint64_t sharcReset = 0; // Runtime action sequence; excluded from profiles.
     bool overrideLight = false;
     float lightDirection[3] = {-0.4f, -0.8f, -0.3f};

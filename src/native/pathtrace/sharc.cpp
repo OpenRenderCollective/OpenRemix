@@ -3,6 +3,7 @@
 #include "pathtrace/sharc_policy.h"
 #include "runtime/pipelines.h"
 #include <future>
+#include <thread>
 #include <utility>
 
 namespace remix {
@@ -144,6 +145,25 @@ namespace remix {
         prewarmLightingVariants(entry);
     }
     check(result);
+  }
+
+  // Off the compiler workers a pipeline another worker is still compiling
+  // answers VK_NOT_READY. Escaping the render thread, that failed the runtime
+  // for good (a frozen image); taken as a failure by temporal setup, it
+  // dropped split local lighting, or the denoiser and upscaler, for good.
+  // Each retry asks only for what is still missing.
+  void PathTracer::Gpu::awaitLightingPipelines(const std::vector<LightingRequest> &requests) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::minutes(2);
+    for (;;) {
+      try {
+        createLightingPipelines(requests);
+        return;
+      } catch (VkResult error) {
+        if (error != VK_NOT_READY || deferLighting || std::chrono::steady_clock::now() > deadline)
+          throw;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
   }
 
   void PathTracer::Gpu::finishLightingPipelines() {
@@ -376,7 +396,8 @@ namespace remix {
                                          options.sharcMaxUpdatePaths)
         ++sharc.downscale;
     frame.sharcConfig[0] = uint32_t(hasReceivers) | uint32_t(options.sharcDynamicSurfaces) << 1 |
-                           uint32_t(options.sharcGlossySurfaces) << 2;
+                           uint32_t(options.sharcGlossySurfaces) << 2 |
+                           uint32_t(!options.sharcFootprintTest) << 3;
     frame.sharcConfig[1] = sharc.stats.capacity;
     frame.sharcConfig[2] = sharc.downscale;
     frame.sharcConfig[3] = options.sharcDebug;

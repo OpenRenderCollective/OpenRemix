@@ -44,7 +44,7 @@ layout(set=0,binding=3,std140) uniform Frame {
   vec4 jitter; // primary offset; z water reuse; w blue-noise sun/local bits
   vec4 skyRadiance; // linear uniform environment; w reserved
   uint64_t sharcHash, sharcAccumulation, sharcResolved, sharcCounters;
-  uvec4 sharcConfig; // bits (1 active, 2 dynamic surfaces, 4 glossy surfaces), capacity, update downscale, debug view
+  uvec4 sharcConfig; // bits (1 active, 2 dynamic surfaces, 4 glossy surfaces, 8 no footprint test on queries), capacity, update downscale, debug view
   vec4 sharcGrid; // scene scale, update sample limit (multiple of the cell's mean; 0 none), accumulation frames, stale frames
   vec4 sharcPreviousCamera;
   vec4 sun;
@@ -59,7 +59,7 @@ layout(set=0,binding=3,std140) uniform Frame {
   uvec4 reuseConfig;
   uint64_t indirectResults, blueNoise;
   vec4 firefly; // outgoing local direct / indirect luminance limits; reserved
-  uvec4 pathConfig; // adaptive termination, minimum completed bounces, sheet flags (1 traced indirect, 2 local lights), secondary ray mask (bits 0-7; bit 8: a view model is traced)
+  uvec4 pathConfig; // adaptive termination, minimum completed bounces, sheet flags (1 traced indirect, 2 local lights; bits 8-12 sky rays at a first surface), secondary ray mask (bits 0-7; bit 8: a view model is traced)
   vec4 domeTransform[3];
   uint64_t visibilityNodes, visibilityLeaves, visibilityTable, movedLights;
   uvec4 visibilityConfig; // table row words, moved light count, reserved
@@ -88,7 +88,10 @@ layout(set=0,binding=3,std140) uniform Frame {
   vec4 volumeEye, volumePrevious; // the windows' centre this frame and last
   vec4 cameraMedium; // remixapi_CameraMediumEXT: transmittance colour, measurement distance (0: in air)
   uint64_t sheetResults; // SheetResults: the sheet lighting pass's transport
+  uint64_t skyGuideRead; // sky guiding: last frame's learned sky directions (0: none)
+  uint64_t skyGuideWrite;
   uint64_t sheetMaterials; // Optional measured-sheet optics, keyed by albedo descriptor.
+  uvec4 skyGuideConfig; // slot capacity, cells per world unit (float bits), guided share (float bits), active
   mat4 inverseCameraRelative; // camera rays: world = point.xyz / point.w + eye.xyz
 } frame;
 // Instance mask bit of view models (pathtrace/tlas_policy.h).
@@ -103,6 +106,11 @@ bool viewModelPath=false;
 uint secondaryMask(){return (frame.pathConfig.w&0xffu)|(viewModelPath?viewModelInstanceMask:0u);}
 // Bounce (reflection and indirect) rays: the secondary mask plus reflection-only instances.
 uint bounceMask(){return secondaryMask()|reflectionOnlyInstanceMask;}
+// Shadow and light-visibility rays pass paint (each query skips decal
+// surfaces): instances of decals alone are left out of their traversal, so a
+// ray leaving a painted wall does not visit every quad of paint above it.
+const uint decalInstanceMask=32u;
+uint shadowMask(){return secondaryMask()&~decalInstanceMask;}
 layout(set=0,binding=6) uniform sampler2D textures[4096];
 // remixapi_InstanceInfoMaskEXT CUT: the camera does not see a surface where
 // its mask group's coverage is set (state.w bits 16-21: the group). Coverage
@@ -297,10 +305,10 @@ uint alphaOperands(Surface s) {
   uint a=combineOp==2?0u:first,b=combineOp==1?0u:second;
   return uint(a==1||b==1)|uint(a==2||b==2)<<1;
 }
-float materialAlpha(Surface s, vec2 uv, float vertex, bool sampled) {
+// materialColor's alpha from the texture's alpha (texel) and the vertex's.
+float materialAlphaOf(Surface s, float texel, float vertex) {
   if ((s.state.w&1)!=0) return 1;
   uint op=s.state.x;
-  float texel=sampled?textureLod(textures[nonuniformEXT(s.textureState.x)],uv*s.uv.xy+s.uv.zw,0).a:1;
   uint first=(op>>8)&3,second=(op>>10)&3;
   float a=first==1?texel:first==2?vertex:first==3?s.factor.a:1;
   float b=second==1?texel:second==2?vertex:second==3?s.factor.a:1;
@@ -308,6 +316,11 @@ float materialAlpha(Surface s, vec2 uv, float vertex, bool sampled) {
   float alpha=(combineOp==1?a:combineOp==2?b:combineOp==6?min(a+b,1):min(a*b*(combineOp==4||combineOp==7?2:combineOp==5?4:1),1))*s.tint.a;
   if ((s.state.w&8)!=0) alpha*=.2;
   return clamp(alpha,0,1);
+}
+float materialAlpha(Surface s, vec2 uv, float vertex, bool sampled) {
+  if ((s.state.w&1)!=0) return 1;
+  float texel=sampled?textureLod(textures[nonuniformEXT(s.textureState.x)],uv*s.uv.xy+s.uv.zw,0).a:1;
+  return materialAlphaOf(s,texel,vertex);
 }
 vec4 materialColor(Surface s, vec4 texel, vec4 vertex) {
   vertex.rgb = linearColor(vertex.rgb);

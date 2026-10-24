@@ -3,12 +3,24 @@
 #include "scene/static_scene.h"
 #include <remix/remix_native_ext.h>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <tuple>
 
 namespace remix::scene {
 TraceFrame prepareTraceFrame(const std::vector<Draw> &draws, double seconds, bool filterEmission,
                              SurfaceEmissionCache &emissionCache, const StaticScene *statics) {
+  using Clock = std::chrono::steady_clock;
+  const bool timed = sceneTimings();
+  auto mark = timed ? Clock::now() : Clock::time_point{};
+  const auto spent = [&](double &into) {
+    if (!timed)
+      return;
+    const auto now = Clock::now();
+    into += std::chrono::duration<double, std::milli>(now - mark).count();
+    mark = now;
+  };
+  auto &costs = g_frameCosts;
   TraceFrame frame;
   frame.seconds = seconds;
   // Group whole mesh submissions, then sort persistent identities so caller
@@ -16,6 +28,7 @@ TraceFrame prepareTraceFrame(const std::vector<Draw> &draws, double seconds, boo
   for (const auto &draw : draws)
     if (draw.instanceId)
       frame.persistentIds.insert(draw.instanceId);
+  spent(costs.ids);
   uint64_t legacy = UINT64_MAX, legacyId = 0;
   frame.instances.reserve(draws.size());
   for (const auto &draw : draws) {
@@ -41,6 +54,7 @@ TraceFrame prepareTraceFrame(const std::vector<Draw> &draws, double seconds, boo
     }
     frame.instances.push({std::move(copy)});
   }
+  spent(costs.instances);
   const auto order = [](const auto &a, const auto &b) {
     return std::tie(a[0].draw.classification, a[0].draw.instanceId, a[0].draw.instanceIndex) <
            std::tie(b[0].draw.classification, b[0].draw.instanceId, b[0].draw.instanceIndex);
@@ -65,7 +79,10 @@ TraceFrame prepareTraceFrame(const std::vector<Draw> &draws, double seconds, boo
                       m[8] * (m[1] * m[6] - m[5] * m[2]);
     return std::abs(det) < 1e-12f;
   });
+  spent(costs.sort);
   frame.emitterFirst.reserve(frame.instances.size() + 1);
+  // As many as last frame: growing the list copied megabytes.
+  frame.emitters.reserve(emissionCache.emitterHint);
   for (auto instance : frame.instances) {
     frame.emitterFirst.push_back(uint32_t(frame.emitters.size()));
     bool emitting = false, dynamicEmitting = false;
@@ -90,10 +107,9 @@ TraceFrame prepareTraceFrame(const std::vector<Draw> &draws, double seconds, boo
       // light tree's dynamic part (LightBvh).
       const bool dynamic = draw.classification == REMIXAPI_INSTANCE_DYNAMIC_EXT &&
                            frame.persistentIds.count(draw.instanceId) != 0;
-      for (const auto &triangle : *reduction) {
-        frame.emitters.push_back({triangleEmitter(draw, triangle.index, triangle.radiance),
-                                  animated ? triangle.layout : 0, animated});
-        frame.emitters.back().light.dynamic = dynamic;
+      if (!reduction->empty()) {
+        frame.emitters.push_back({emissionCache.emitters(draw, reduction), reduction, animated, dynamic});
+        frame.emitterCount += reduction->size();
       }
       emitting |= !reduction->empty();
       dynamicEmitting |= dynamic && !reduction->empty();
@@ -102,6 +118,10 @@ TraceFrame prepareTraceFrame(const std::vector<Draw> &draws, double seconds, boo
     frame.dynamicEmittingInstances += dynamicEmitting;
   }
   frame.emitterFirst.push_back(uint32_t(frame.emitters.size()));
+  spent(costs.emitters);
+  costs.draws += draws.size();
+  costs.emitterCount += frame.emitterCount;
+  emissionCache.emitterHint = frame.emitters.size();
   emissionCache.prune();
   return frame;
 }

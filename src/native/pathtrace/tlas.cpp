@@ -18,6 +18,7 @@ namespace remix {
       instance.mask = input.viewModel        ? trace::viewModelInstanceMask
                       : input.reflectionOnly ? trace::reflectionOnlyInstanceMask
                       : input.blended        ? trace::blendedInstanceMask
+                      : input.decal          ? trace::decalInstanceMask
                                              : mask;
       instance.flags = trace::instanceFlags(input, faceCulling);
       instance.accelerationStructureReference = input.geometry;

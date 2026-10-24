@@ -29,3 +29,6 @@ b23436ed5040051ac8e81554c9af080f2463c941435bbc3b82222e5431a09499  include/nvsdk_
 4bc7ea5fcb2f32cf86bc2cb072e8d2860914a0be511cbdcb2fc206c1d9d83b80  lib/Windows_x86_64/rel/nvngx_dlssd.dll
 ff6e90eb78b827927dff5b4ecc6b1c870c2e9bca29ed9f48c7d348cc9e170b82  lib/Windows_x86_64/rel/nvngx_dlssg.dll
 4b6cecad7f1906571c94010241f650e4a5457e64fad49ddaccb82de79f6c2999  lib/Windows_x86_64/x64/nvsdk_ngx_d.lib
+21b5daec892b12bea692e66bc8fe45cf5902ccaf3a7b831e78050d8859881c37  LICENSE-310.2.1.txt
+d4a2696a90c9f49c143d7eb7491285bc2b8a3a8095ca96be4c424df9aaa03d7e  lib/Linux_x86_64/rel-310.2.1/libnvidia-ngx-dlssd.so.310.2.1
+599940728e5e93ae930adc36d90dad1f00cf92a5612488140a024dcaad00382e  lib/Windows_x86_64/rel-310.2.1/nvngx_dlssd.dll

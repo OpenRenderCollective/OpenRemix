@@ -12,6 +12,8 @@ struct NgxCapabilities {
   bool fg{};
   uint32_t fgMultiFrameMax{};
   std::string fgReason;
+  // Ray Reconstruction's CNN model: its library is packaged; it is loaded.
+  bool rrCnnPackaged{}, rrCnn{};
 };
 // Device lifetime; features hold a reference and must be released before shutdown.
 class Ngx {
@@ -26,11 +28,17 @@ public:
   void initialize(VkInstance instance, VkPhysicalDevice physical, VkDevice device);
   NgxCapabilities capabilities() const;
   VkExtent2D renderSize(VkExtent2D display, uint32_t quality, bool rr);
+  // Loads Ray Reconstruction's CNN model (an older release's library) or the
+  // current transformer models. NGX restarts for it, so only while no feature
+  // exists. False (with `reason`) leaves the loaded model.
+  bool useRayReconstructionModel(bool cnn, std::string &reason);
 
 private:
   friend class NgxFeature;
   friend class NgxFrameGeneration;
   struct Impl;
+  // (Re)initializes NGX and its capabilities (DLSS builds).
+  void start(VkInstance instance, VkPhysicalDevice physical, VkDevice device);
   std::unique_ptr<Impl> m;
   mutable std::mutex capabilitiesMutex;
   NgxCapabilities publishedCapabilities;
@@ -44,7 +52,7 @@ public:
   NgxFeature();
   ~NgxFeature();
   void initialize(std::shared_ptr<Ngx> context, uint32_t family, VkExtent2D render, VkExtent2D display,
-                  uint32_t quality, bool rr);
+                  uint32_t quality, bool rr, uint32_t rrPreset = 0);
   bool finishInitialization(VkQueue queue);
   uint64_t memoryBytes() const;
   void record(VkCommandBuffer command, Input color, Input depth, Input motion, Input output, Input exposure,

@@ -180,12 +180,15 @@ namespace remix::scene {
           set[w] |= from[w];
       };
       if (links[3] <= 1) {
-        const size_t light = links[2];
-        if (light >= statics || light >= m_unrestricted.size() || m_unrestricted[light])
-          std::fill_n(set, words, ~0ull); // dynamic part, or visible from everywhere
-        else
-          for (uint32_t k = 0; k < kClusters && m_lightClusters[light * kClusters + k] >= 0; ++k)
-            merge(columns.bits.data() + column(m_lightClusters[light * kClusters + k]));
+        // A leaf's emitters (LightBvh: consecutive, links[1] of them).
+        for (size_t light = links[2]; light < size_t(links[2]) + std::max(links[1], 1u); ++light)
+          if (light >= statics || light >= m_unrestricted.size() || m_unrestricted[light]) {
+            std::fill_n(set, words, ~0ull); // dynamic part, or visible from everywhere
+            break;
+          } else {
+            for (uint32_t k = 0; k < kClusters && m_lightClusters[light * kClusters + k] >= 0; ++k)
+              merge(columns.bits.data() + column(m_lightClusters[light * kClusters + k]));
+          }
       } else {
         for (unsigned child = 0; child < 2; ++child)
           if (links[child] >= count)

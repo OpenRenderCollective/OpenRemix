@@ -46,6 +46,28 @@ namespace remix::trace {
     bool update = false, staticChanged = false, keptPrefix = false;
   };
   inline AccelCosts g_accelNow, g_accelCosts;
+
+  // The CPU scene preparation (PathTracer::prepareScene) since this was last
+  // read (diagnostics), summed and of its slowest frame, by step: the frame's
+  // instances and emitters, the opacity cache prune, staging the lighting
+  // state, gathering the lights, the per-family trees, the combined tree's
+  // update and the light visibility table.
+  struct SceneCosts {
+    double total = 0, frame = 0, prune = 0, stage = 0, gather = 0, split = 0, tree = 0, visibility = 0;
+  };
+  struct SceneCostTotals {
+    SceneCosts sum, slowest;
+    uint64_t frames = 0;
+    uint32_t lights = 0; // the combined tree's input in the slowest frame
+  };
+  inline SceneCostTotals g_sceneCosts;
+
+  // Light hierarchy uploads since this was last read (diagnostics): whole
+  // copies, copies of only the changes, bytes and copy regions.
+  struct LightUploads {
+    uint64_t whole = 0, partial = 0, bytes = 0, regions = 0;
+  };
+  inline LightUploads g_lightUploads;
 } // namespace remix::trace
 
 namespace remix {
@@ -84,6 +106,9 @@ namespace remix {
                               bool local, bool emissive, uint32_t failedBackends = 0,
                               const std::string &failure = {});
     bool finishPreparation(VkQueue queue);
+    // Submits the setup of reconstruction recreated in place (a Ray
+    // Reconstruction model or preset change in beginFrame) ahead of the frame.
+    void finishReconstruction(VkQueue queue);
     void beginFrame(const TraceOptions &options, const RasterRenderer &resources);
     void selectFrame(uint32_t slot);
     void submitted();
@@ -100,6 +125,9 @@ namespace remix {
     // tracer's own copy of it; may expand the set into the draw list when a
     // frame cannot (NativeResources::expandStatic).
     scene::TraceFrame prepareScene(RasterRenderer &resources, const TraceOptions &options) const;
+    // Gives a prepared frame's lighting state back to the tracer when the
+    // frame is not traced (prepare takes it otherwise); a no-op after prepare.
+    void returnScene(scene::TraceFrame &frame) const;
     void prepare(VkCommandBuffer command, RasterRenderer &resources, const TraceOptions &options,
                  scene::TraceFrame &scene);
     void record(VkCommandBuffer command);

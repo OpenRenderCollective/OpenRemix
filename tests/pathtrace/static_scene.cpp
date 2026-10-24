@@ -150,11 +150,13 @@ namespace {
     scene::TemporalEpoch epoch{};
     bool filterEmission = false;
     std::vector<scene::TraceFrame::Surface> traced; // the frame's instances with the set's, in trace order
+    std::vector<scene::TraceFrame::Emitter> emitters; // the frame's with the set's, in trace order
     std::string validation;
 
     void prepare(NativeResources &resources) {
       frame = scene::prepareSceneFrame(resources, persistent ? &statics : nullptr, opacity, &workers, false, 0.25,
                                        filterEmission, emission);
+      emitters = scene::mergedEmitters(frame, persistent ? &statics : nullptr, filterEmission);
       // The traced instances before the tables consume them.
       traced.clear();
       std::vector<std::vector<scene::TraceFrame::Surface>> instances;
@@ -211,9 +213,9 @@ namespace {
         std::exit(1);
       }
     };
-    check(a.frame.emitters.size() == b.frame.emitters.size(), "emitter count");
-    for (size_t i = 0; i < a.frame.emitters.size(); ++i) {
-      const auto &x = a.frame.emitters[i], &y = b.frame.emitters[i];
+    check(a.emitters.size() == b.emitters.size(), "emitter count");
+    for (size_t i = 0; i < a.emitters.size(); ++i) {
+      const auto &x = a.emitters[i], &y = b.emitters[i];
       check(x.light == y.light && x.layout == y.layout && x.animated == y.animated, "emitter");
     }
     check(a.traced.size() == b.traced.size(), "traced surface count");
@@ -618,7 +620,7 @@ namespace {
         layouts += s.relayouts;
         temporal += s.temporalSurfaces;
         ++unitFrames;
-        emitterFrames += !kept.statics.emitting().empty() && !kept.frame.emitters.empty();
+        emitterFrames += !kept.statics.emitting().empty() && !kept.emitters.empty();
         for (size_t i = 0; i < kept.tables.prefixSurfaces(); ++i)
           mixedGroups += kept.tables.surface(i).triangleMap != 0;
         require(frame < 28 || frame == 249 || frame == 250 || s.relayouts == 0,

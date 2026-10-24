@@ -10,6 +10,7 @@ if has_dlss
     configure_file(input : '../../../third_party/dlss' / dlss_runtime_dir / binary,
       output : binary, copy : true)
   endforeach
+  subdir('cnn')
 endif
 configure_file(input : 'dlss-runtime.json.in', output : 'dlss-runtime.json',
   configuration : {'ENABLED' : has_dlss ? 'true' : 'false'})

@@ -93,7 +93,7 @@ namespace remix::denoise {
   struct LocalTuning {
     float antilagSigma = 2, antilagSensitivity = 3;
     uint32_t historyFrames = 16;
-    uint32_t indirectHistoryFrames = 0; // indirect REBLUR history cap; 0 = NRD's default
+    uint32_t indirectHistoryFrames = 0; // indirect REBLUR history (1-63); 0 = NRD's default
   };
   remixapi_DenoisingCapabilitiesEXT capabilities(VkPhysicalDevice physical);
   bool sigmaSupported(VkPhysicalDevice physical);

@@ -201,7 +201,8 @@ void jitter(float *xy, uint64_t frame, VkExtent2D render, VkExtent2D display) {
 }
 void Renderer::initialize(VkPhysicalDevice physical, VkDevice device,
                           uint32_t queueFamily, VkExtent2D render,
-                          VkExtent2D display, Backend backend, std::shared_ptr<Ngx> ngx, uint32_t quality) {
+                          VkExtent2D display, Backend backend, std::shared_ptr<Ngx> ngx, uint32_t quality,
+                          uint32_t rrPreset) {
   auto &g = *m_gpu;
   g.stats.backend = backend;
   g.device = device;
@@ -252,7 +253,7 @@ void Renderer::initialize(VkPhysicalDevice physical, VkDevice device,
     allocations.commit();
   } else {
     g.ngx = std::make_unique<NgxFeature>();
-    g.ngx->initialize(std::move(ngx), queueFamily, render, display, quality, backend == Backend::DlssRr);
+    g.ngx->initialize(std::move(ngx), queueFamily, render, display, quality, backend == Backend::DlssRr, rrPreset);
   }
   g.exposure = g.image(VK_FORMAT_R32_SFLOAT, {1,1});
   g.motion = g.image(VK_FORMAT_R32G32_SFLOAT, render);

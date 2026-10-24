@@ -17,7 +17,8 @@
 // Compare whole-frame time and workload counters when another pass changes.
 // Results are read after the frame slot's fence
 // (beginFrame), without waiting: a slot whose queries are not all available
-// is skipped.
+// is skipped. Each range is also a debug label (VK_EXT_debug_utils, when the
+// instance has it) so captures in Nsight or RenderDoc carry the pass names.
 namespace remix::gpu {
   class GpuTimers;
   // The recorder of the frame the calling thread is recording, or null.
@@ -44,6 +45,13 @@ namespace remix::gpu {
       vkGetPhysicalDeviceQueueFamilyProperties(physical, &count, families.data());
       m_validBits = queueFamily < count ? families[queueFamily].timestampValidBits : 0;
       m_period = properties.limits.timestampPeriod;
+      // Null without VK_EXT_debug_utils on the instance.
+      m_beginLabel = reinterpret_cast<PFN_vkCmdBeginDebugUtilsLabelEXT>(
+          vkGetDeviceProcAddr(device, "vkCmdBeginDebugUtilsLabelEXT"));
+      m_endLabel =
+          reinterpret_cast<PFN_vkCmdEndDebugUtilsLabelEXT>(vkGetDeviceProcAddr(device, "vkCmdEndDebugUtilsLabelEXT"));
+      if (!m_beginLabel || !m_endLabel)
+        m_beginLabel = nullptr, m_endLabel = nullptr;
     }
     // Before vkDestroyDevice, with the device idle.
     void shutdown() {
@@ -141,6 +149,10 @@ namespace remix::gpu {
       range.depth = uint32_t(m_open.size());
       range.begin = range.end = s.queries++;
       vkCmdWriteTimestamp(command, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, s.pool, range.begin);
+      if (m_beginLabel) {
+        const VkDebugUtilsLabelEXT label{.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT, .pLabelName = range.name};
+        m_beginLabel(command, &label);
+      }
       const auto id = uint32_t(s.ranges.size());
       s.ranges.push_back(range);
       m_open.push_back(id);
@@ -157,6 +169,8 @@ namespace remix::gpu {
         auto &range = m_recording->ranges[open];
         range.end = m_recording->queries++;
         vkCmdWriteTimestamp(command, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, m_recording->pool, range.end);
+        if (m_endLabel)
+          m_endLabel(command);
         if (open == id)
           break;
       }
@@ -202,6 +216,8 @@ namespace remix::gpu {
     VkDevice m_device = VK_NULL_HANDLE;
     uint32_t m_queueFamily = 0, m_validBits = 0;
     double m_period = 0;
+    PFN_vkCmdBeginDebugUtilsLabelEXT m_beginLabel = nullptr;
+    PFN_vkCmdEndDebugUtilsLabelEXT m_endLabel = nullptr;
     Slot m_slots[gpuFrameCount];
     Slot *m_recording = nullptr;
     VkCommandBuffer m_command = VK_NULL_HANDLE;

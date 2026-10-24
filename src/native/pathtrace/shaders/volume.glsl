@@ -184,7 +184,8 @@ vec3 volumeLocal(vec3 p,float size,inout uint state) {
       if(pmf<=0)continue;
       pmf*=float(count);
     }
-    vec3 radiance=volumeCandidate(emitters.data[nodes.data[leaf].links.z],p,size,state,endpoint)/pmf;
+    float share;uint emitter=leafEmitter(emitters,nodes.data[leaf].links,state,share);
+    vec3 radiance=volumeCandidate(emitters.data[emitter],p,size,state,endpoint)/(pmf*share);
     float weight=dot(radiance,vec3(.2126,.7152,.0722));
     if(weight<=0)continue;
     // The largest so far is held apart; the one it replaces joins the rest.

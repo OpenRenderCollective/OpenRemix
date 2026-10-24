@@ -132,6 +132,7 @@ namespace remix {
     m_guiWantsMouse = false;
     m_gameWantsText = false;
     m_guiWantsText = false;
+    m_startedTextInput = false;
     m_inputEvents.clear();
   }
 

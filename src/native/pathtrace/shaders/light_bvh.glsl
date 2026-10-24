@@ -7,6 +7,23 @@ layout(buffer_reference,std430,buffer_reference_align=16) readonly buffer LightN
 float lightRandom(inout uint state) {
   state=hash(state+0x9e3779b9u);return float(state>>8)*(1.0/16777216.0);
 }
+// A leaf's emitters are consecutive (links: leaf rank, emitter count, first
+// emitter, 1): one is chosen by its share of the leaf's power (shaping.z: the
+// running share through it, shaping.w: its own), which the caller's PDF takes.
+// A leaf of one draws no random number.
+uint leafEmitter(LightEmitters emitters,uvec4 links,inout uint state,out float share) {
+  share=1;
+  uint count=max(links.y,1u);
+  if(count==1)return links.z;
+  float u=lightRandom(state);
+  uint low=0,high=count-1;
+  while(low<high) {
+    uint middle=(low+high)/2;
+    if(u<emitters.data[links.z+middle].shaping.z)high=middle;else low=middle+1;
+  }
+  share=emitters.data[links.z+low].shaping.w;
+  return links.z+low;
+}
 float localFalloff(float distance2) {
   float reach=frame.localScale.y;
   if(reach<=0)return 1;
@@ -18,7 +35,10 @@ float lightWeight(LightNode node,vec3 p,vec3 n) {
   vec3 halfSize=.5*(node.maximum.xyz-node.minimumPower.xyz);
   vec3 delta=.5*(node.maximum.xyz+node.minimumPower.xyz)-p;
   float radius2=dot(halfSize,halfSize);
-  if(dot(delta,n)+sqrt(radius2)<=0)return 0;
+  // Cull by the box's farthest reach along the normal, not its enclosing
+  // sphere's: a wide cluster behind the receiving plane (lit windows of
+  // buildings beyond a wall) otherwise draws samples that all end at zero.
+  if(dot(delta,n)+dot(halfSize,abs(n))<=0)return 0;
   vec3 nearest=max(abs(delta)-halfSize,vec3(0));
   float cosine=min(1,(dot(delta,n)+sqrt(radius2))*inversesqrt(max(max(dot(delta,delta),radius2),1e-12)));
   // Nearest-box distance keeps nearby lights competitive, but becomes zero
@@ -117,7 +137,7 @@ bool localOccluder(accelerationStructureEXT scene,vec3 origin,vec3 direction,ino
   // With no blended geometry, any hardware-opaque hit blocks the segment.
   // Scenes containing transmitting layers keep ordered closest-hit traversal.
   uint flags=(firstOpaqueHit?gl_RayFlagsTerminateOnFirstHitEXT:gl_RayFlagsNoneEXT)|traceFlags();
-  rayQueryInitializeEXT(query,scene,flags,secondaryMask(),origin,0,direction,hit.t);
+  rayQueryInitializeEXT(query,scene,flags,shadowMask(),origin,0,direction,hit.t);
   while(rayQueryProceedEXT(query)) {
     if(rayQueryGetIntersectionTypeEXT(query,false)!=gl_RayQueryCandidateIntersectionTriangleEXT)continue;
     profileRay(17);
@@ -277,7 +297,9 @@ vec3 smallLocalLighting(LightNodes nodes,LightEmitters emitters,Hit hit,uint sta
     for(uint index=0;index<nodeCount;++index) {
       if(nodes.data[index].links.w!=1)continue;
       if(!lightNodeVisible(nodes,index,hit.p,hit.n))continue;
-      LocalCandidate candidate=localCandidate(emitters.data[nodes.data[index].links.z],hit,state,angular,blue,noiseBase+sampleIndex*8u+index);
+      float share;uint emitter=leafEmitter(emitters,nodes.data[index].links,state,share);
+      LocalCandidate candidate=localCandidate(emitters.data[emitter],hit,state,angular,blue,noiseBase+sampleIndex*8u+index);
+      candidate.physical/=share;candidate.specular/=share;
       float weight=localLuminance(candidate.physical);total+=weight;
       if(weight>0&&lightRandom(state)*total<weight) {selected=candidate;selectedIndex=index;}
       if(index==preferred)preferredSample=candidate;
@@ -354,7 +376,9 @@ vec3 resampledLocalLighting(LightNodes nodes,LightEmitters emitters,Hit hit,uint
       bool inCluster=lightInSubtree(nodes,index,guideRoot);
       pdf*=1-guideMix+(guideMix>0&&inCluster?guideMix/rootPdf:0);
       if(pdf<=0)continue;
-      LocalCandidate candidate=localCandidate(emitters.data[nodes.data[index].links.z],hit,state,true,blue,noiseBase+sampleIndex*8u+candidateIndex);
+      float share;uint emitter=leafEmitter(emitters,nodes.data[index].links,state,share);
+      pdf*=share;
+      LocalCandidate candidate=localCandidate(emitters.data[emitter],hit,state,true,blue,noiseBase+sampleIndex*8u+candidateIndex);
       vec3 physical=candidate.physical;
       candidate.physical/=pdf;candidate.specular/=pdf;
       float weight=localLuminance(candidate.physical);total+=weight;
@@ -446,6 +470,7 @@ void splitLocalLighting(Hit hit,uint state,uint samples,out vec3 torch,out vec3 
   vec3 torchSpecular,emissionSpecular;
   splitLocalLighting(hit,state,samples,torch,emission,torchDistance,emissionDistance,torchSpecular,emissionSpecular);
 }
+bool regirLookup=true; // localLighting may use ReGIR pools (false at directly seen surfaces)
 // Returns material-demodulated total radiance and its specular component.
 vec3 localLighting(Hit hit,uint state,uint samples,out float lightDistance,bool useGuiding,out vec3 specular,float threshold) {
   specular=vec3(0);lightDistance=0;
@@ -473,8 +498,12 @@ vec3 localLighting(Hit hit,uint state,uint samples,out float lightDistance,bool 
   if(enableSmallLights&&nodes.data[0].links.w<=4)
     return smallLocalLighting(nodes,emitters,hit,state,adaptiveSamples,guideKey,preferred,guideMix,lightDistance,useGuiding,blue,0u,specular,threshold);
   vec3 result=vec3(0);float distanceWeight=0;
-  // Bounce vertices draw from the cell's presampled pool (regir.glsl).
-  uint pool=useGuiding?regirNone:regirPool(hit.p,state);
+  // Bounce vertices draw from the cell's presampled pool (regir.glsl). Not
+  // directly seen surfaces (regirLookup false: transparent sheets): every
+  // pixel looking up a cell shares its few slots for the frame, so a slot
+  // whose light the cell rates unlikely but is near lit about one pixel in
+  // K with a large weight, cell-sized splotches the denoiser kept.
+  uint pool=useGuiding||!regirLookup?regirNone:regirPool(hit.p,state);
   for(uint sampleIndex=0;sampleIndex<adaptiveSamples;++sampleIndex) {
     bool guided=guideMix>0&&lightRandom(state)<guideMix;
     uint index=0;float selectionPdf=1,u=lightRandom(state);
@@ -497,60 +526,52 @@ vec3 localLighting(Hit hit,uint state,uint samples,out float lightDistance,bool 
     // Full mixture PDF, including the BVH component even for a guided draw.
     selectionPdf=(1-guideMix)*selectionPdf+(index==preferred?guideMix:0);
     if(selectionPdf<=0)continue;
-    LightEmitter light=emitters.data[nodes.data[index].links.z];
+    float share;uint emitter=leafEmitter(emitters,nodes.data[index].links,state,share);
+    selectionPdf*=share;
+    LightEmitter light=emitters.data[emitter];
+    // The sample's light (physical, its specular share), point and distance;
+    // a triangle or a sphere, then one visibility call site for both.
+    vec3 physical,physicalSpecular,endpoint;float distance;
     if(light.radiance.w!=0) {
       LocalCandidate candidate=triangleCandidate(light,hit,state,useGuiding,blue,sampleIndex*8u);
-      if(localLuminance(candidate.physical)<=0)continue;
-      vec3 estimate=candidate.physical/selectionPdf;
-      vec3 visibility=localVisibility(offsetRay(hit.p,hit.ng),candidate.endpoint);
-      vec3 contribution=estimate*visibility,specularContribution=candidate.specular/selectionPdf*visibility;
-      clampLighting(hit,contribution,specularContribution,threshold);
-      result+=contribution;specular+=specularContribution;
-      if(useGuiding)localDirection(candidate.endpoint-hit.p,contribution);
-      if(enableLocalGuiding&&useGuiding&&guideKey!=0&&(hash(state^0xd1b54a35u)&63u)==0)
-        trainLightGuide(guideKey,index,guided,visibility,candidate.physical,false);
-      float weight=localLuminance(estimate);
-      lightDistance+=candidate.distance*weight;distanceWeight+=weight;
-      continue;
+      physical=candidate.physical;physicalSpecular=candidate.specular;endpoint=candidate.endpoint;distance=candidate.distance;
+    } else {
+      vec3 delta=light.positionRadius.xyz-hit.p;
+      float distance2=dot(delta,delta),radius=light.positionRadius.w;
+      float attenuation=localFalloff(distance2);
+      if(attenuation==0)continue;
+      bool inside=distance2<=radius*radius;
+      vec3 axis=distance2>1e-20?delta*inversesqrt(distance2):hit.n;
+      float sinMax2=min(1,radius*radius/max(distance2,1e-20));
+      // Stable for small, distant lights: 1-sqrt(1-x) = x/(1+sqrt(1-x)).
+      float oneMinusCos=inside?2:sinMax2/(1+sqrt(max(0,1-sinMax2)));
+      vec2 sampleU=localEmitterSample(vec2(lightRandom(state),lightRandom(state)),blue,sampleIndex*8u);
+      float cosTheta=1-sampleU.x*oneMinusCos;
+      float sinTheta=sqrt(max(0,(1-cosTheta)*(1+cosTheta)));
+      float phi=6.28318530718*sampleU.y;
+      vec3 tangent=normalize(cross(abs(axis.z)<.999?vec3(0,0,1):vec3(0,1,0),axis));
+      vec3 direction=normalize(axis*cosTheta+sinTheta*(cos(phi)*tangent+sin(phi)*cross(axis,tangent)));
+      float cosine=max(0,dot(hit.n,direction));
+      if(cosine==0)continue;
+      float projected=dot(delta,direction);
+      vec3 perpendicular=delta-direction*projected;
+      float root=sqrt(max(0,radius*radius-dot(perpendicular,perpendicular)));
+      distance=max(0,inside?projected+root:projected-root);
+      vec3 scale=light.radiance.rgb*emitterShaping(light,-direction)*(2*oneMinusCos*cosine*attenuation)*frame.localScale.x;
+      physical=materialResponse(hit,direction,physicalSpecular)*scale;physicalSpecular*=scale;
+      endpoint=hit.p+direction*distance;
     }
-    // Keep the established sphere math in this fast path. Factoring its
-    // early-outs through a candidate return changes the driver's generated
-    // control flow at every secondary vertex in large-light scenes.
-    vec3 delta=light.positionRadius.xyz-hit.p;
-    float distance2=dot(delta,delta),radius=light.positionRadius.w;
-    float attenuation=localFalloff(distance2);
-    if(attenuation==0)continue;
-    bool inside=distance2<=radius*radius;
-    vec3 axis=distance2>1e-20?delta*inversesqrt(distance2):hit.n;
-    float sinMax2=min(1,radius*radius/max(distance2,1e-20));
-    // Stable for small, distant lights: 1-sqrt(1-x) = x/(1+sqrt(1-x)).
-    float oneMinusCos=inside?2:sinMax2/(1+sqrt(max(0,1-sinMax2)));
-    vec2 sampleU=localEmitterSample(vec2(lightRandom(state),lightRandom(state)),blue,sampleIndex*8u);
-    float cosTheta=1-sampleU.x*oneMinusCos;
-    float sinTheta=sqrt(max(0,(1-cosTheta)*(1+cosTheta)));
-    float phi=6.28318530718*sampleU.y;
-    vec3 tangent=normalize(cross(abs(axis.z)<.999?vec3(0,0,1):vec3(0,1,0),axis));
-    vec3 direction=normalize(axis*cosTheta+sinTheta*(cos(phi)*tangent+sin(phi)*cross(axis,tangent)));
-    float cosine=max(0,dot(hit.n,direction));
-    if(cosine==0)continue;
-    float projected=dot(delta,direction);
-    vec3 perpendicular=delta-direction*projected;
-    float root=sqrt(max(0,radius*radius-dot(perpendicular,perpendicular)));
-    float distance=max(0,inside?projected+root:projected-root);
-    vec3 specularResponse;
-    vec3 scale=light.radiance.rgb*emitterShaping(light,-direction)*(2*oneMinusCos*cosine*attenuation)*frame.localScale.x;
-    vec3 physical=materialResponse(hit,direction,specularResponse)*scale;
     // A spot light facing away or a back-facing response: no visibility ray.
     if(localLuminance(physical)<=0)continue;
     vec3 estimate=physical/selectionPdf;
-    vec3 visibility=localVisibility(offsetRay(hit.p,hit.ng),hit.p+direction*distance);
-    vec3 contribution=estimate*visibility,specularContribution=specularResponse*scale/selectionPdf*visibility;
+    vec3 visibility=localVisibility(offsetRay(hit.p,hit.ng),endpoint);
+    vec3 contribution=estimate*visibility,specularContribution=physicalSpecular/selectionPdf*visibility;
     clampLighting(hit,contribution,specularContribution,threshold);
     result+=contribution;specular+=specularContribution;
-    if(useGuiding)localDirection(direction,contribution);
+    if(useGuiding)localDirection(endpoint-hit.p,contribution);
     if(enableLocalGuiding&&useGuiding&&guideKey!=0&&(hash(state^0xd1b54a35u)&63u)==0)
       trainLightGuide(guideKey,index,guided,visibility,physical,false);
-    float weight=dot(estimate,vec3(.2126,.7152,.0722));
+    float weight=localLuminance(estimate);
     lightDistance+=distance*weight;distanceWeight+=weight;
   }
   lightDistance=distanceWeight>0?lightDistance/distanceWeight:0;

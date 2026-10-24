@@ -228,6 +228,12 @@ namespace remix {
       bool dynamic = false;
       uint32_t style = 0; // captured stationary style; excluded from shared indirect transport
       uint32_t bakeHint = 0; // optional engine-agnostic static representation preference
+      // Triangle emitters: the surface draw they belong to (0 for sphere
+      // lights) and their place in a spatial order of its emitters. The light
+      // tree keeps a surface's emitters together in that order and makes
+      // leaves of runs of them (LightBvh::setClusterSize).
+      uint64_t group = 0;
+      uint32_t rank = 0;
       bool operator==(const SphereLight &) const = default;
     };
     struct DomeLight {

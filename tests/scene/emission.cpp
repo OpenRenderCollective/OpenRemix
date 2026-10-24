@@ -112,12 +112,12 @@ int main() {
               suppressed.material->emission[0]==2 && !original->suppressEmissionLight,
           "Emission policy replacement changed visible radiance or queued material");
   SurfaceEmissionCache cache;
-  require(prepareTraceFrame({suppressed},0,false,cache).emitters.empty(),
+  require(prepareTraceFrame({suppressed},0,false,cache).flatEmitters().empty(),
           "Visible-only material generated area lights");
   policy.suppressLightGeneration=0;
   resources.createMaterial(info,handle);
   resources.drawInstance(instance(mesh));
-  require(prepareTraceFrame({resources.draws().back()},0,false,cache).emitters.size()==2,
+  require(prepareTraceFrame({resources.draws().back()},0,false,cache).flatEmitters().size()==2,
           "Re-enabling emission did not restore area lights");
   opaque.pNext=nullptr;
   resources.createMaterial(info,handle);

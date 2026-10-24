@@ -2,6 +2,7 @@
 #include "pathtrace/shader_code.h"
 #include "runtime/pipelines.h"
 #include <algorithm>
+#include <thread>
 #include "upscale/ngx.h"
 
 namespace remix {
@@ -35,17 +36,22 @@ namespace remix {
 
   void PathTracer::Gpu::configureIndirect(Frame &frame, const TraceOptions &options, bool querySharc) {
     indirectPass.active = false;
-    if (!indirectPlanned(options))
-      return;
     // Mode 1 (auto): only where the combined kernel's registers made it pay.
-    if (indirectPass.mode == 1 &&
-        (rrActive() || !denoiser || !postSplit || !splitLightingActive || !localIlluminationActive ||
-         (options.pbrLocalReuse && options.localDirectClamp == 0 && options.indirectClamp == 0) || querySharc ||
-         options.separateLocalLighting != 3))
+    const bool planned =
+        indirectPlanned(options) &&
+        !(indirectPass.mode == 1 &&
+          (rrActive() || !denoiser || !postSplit || !splitLightingActive || !localIlluminationActive ||
+           (options.pbrLocalReuse && options.localDirectClamp == 0 && options.indirectClamp == 0) || querySharc ||
+           options.separateLocalLighting != 3));
+    // Consumer base pipelines exist once the transport does.
+    if (!planned && !indirectPass.results)
       return;
     try {
       // The transport exists whenever a consumer base pipeline may run, with
-      // or without its producer (rendering.cpp clears it then).
+      // or without its producer (rendering.cpp clears it then): also after
+      // the pass is turned off (sparse rendering, no bounces), while the
+      // opaque pass's inline variant compiles. Without it the consumer reads
+      // through a null address: a GPU context-switch timeout (Xid 109).
       const VkDeviceSize bytes = VkDeviceSize(extent.width) * extent.height * 16;
       if (!indirectPass.results || indirectPass.results->size < bytes) {
         auto next = buffer(bytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, false);
@@ -53,6 +59,8 @@ namespace remix {
         indirectPass.results = std::move(next);
       }
       frame.indirectResults = indirectPass.results->address;
+      if (!planned)
+        return;
       // Normally part of the lighting batch (beginFrame, createRawPipelines);
       // here for a configuration that gained the pass later.
       if (!indirectPass.pipeline)
@@ -185,9 +193,15 @@ namespace remix {
     postLocal = local;
     postLocalDenoise = localDenoise;
     postSplit = split;
+    // Pipelines still compiling on the workers (VK_NOT_READY off a worker,
+    // also from the denoiser's own passes) are waited for, every feature
+    // kept: taken as a failure, that dropped split local lighting or the
+    // denoiser and upscaler for good.
+    const auto compileDeadline = std::chrono::steady_clock::now() + std::chrono::minutes(2);
     for (unsigned attempt = 0; attempt < 4; ++attempt) {
       postAttempted = true;
       std::string failure;
+      bool compiling = false;
       try {
         auto next = std::make_unique<denoise::Renderer>();
         next->initialize(physical, device, extent, reblur, queueFamily,
@@ -246,7 +260,7 @@ namespace remix {
         }
         if (reblur)
           make(trace::Stage::confidence, confidenceCompute);
-        createLightingPipelines(requests);
+        awaitLightingPipelines(requests);
         denoiser = std::move(next);
         return;
       } catch (VkResult r) {
@@ -254,11 +268,18 @@ namespace remix {
           throw;
         if (r == VK_ERROR_DEVICE_LOST)
           throw;
+        compiling = r == VK_NOT_READY && std::chrono::steady_clock::now() < compileDeadline;
         failure = "Temporal resource initialization failed (Vulkan " + std::to_string(r) + ")";
       } catch (const std::exception &e) {
         if (preparing)
           throw;
         failure = std::string("Temporal initialization failed: ") + e.what();
+      }
+      if (compiling) {
+        destroyPost();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        --attempt;
+        continue;
       }
       const bool retry = postSplit || postLocalDenoise || postLocal || postSigma;
       const bool dropSplit = postSplit;
@@ -317,6 +338,8 @@ namespace remix {
                        ? options.fsrQuality
                        : options.dlssQuality;
     g.rrRequested = options.dlssRayReconstruction;
+    g.rrCnnRequested = options.dlssRayReconstructionModel == 1;
+    g.rrPresetRequested = options.dlssRayReconstructionPresetOverride ? options.dlssRayReconstructionPreset : 0;
     g.failedBackends = failedBackends;
     g.fsrFailure = failure;
     // Schedule every pass's lighting pipelines before awaiting any of them.
@@ -335,6 +358,11 @@ namespace remix {
     g.preparing = false;
     return true;
   }
+  void PathTracer::finishReconstruction(VkQueue queue) {
+    auto &g = *m_gpu;
+    if (g.upscaler)
+      g.upscaler->finishInitialization(queue);
+  }
   void PathTracer::beginFrame(const TraceOptions &options,
                               const RasterRenderer &) {
     auto &g = *m_gpu;
@@ -347,11 +375,17 @@ namespace remix {
     const auto backend = !eligible || options.upscaler == upscale::Mode::Off ? upscale::Backend::Native :
         options.upscaler == upscale::Mode::Fsr31 ? upscale::Backend::Fsr31 : upscale::Backend::DlssSr;
     const auto quality = options.upscaler == upscale::Mode::Fsr31 ? options.fsrQuality : options.dlssQuality;
+    const bool rrCnn = options.dlssRayReconstructionModel == 1;
+    const uint32_t rrPreset = options.dlssRayReconstructionPresetOverride ? options.dlssRayReconstructionPreset : 0;
     bool changed = options.upscaler != g.requestedUpscaler || quality != g.fsrQuality || options.dlssRayReconstruction != g.rrRequested;
     if (changed) { g.failedBackends = 0; g.fsrFailure.clear(); }
     changed |= backend != g.requestedBackend;
+    // A model or preset change recreates Ray Reconstruction only.
+    changed |= options.dlssRayReconstruction && backend == upscale::Backend::DlssSr &&
+               (rrCnn != g.rrCnnRequested || rrPreset != g.rrPresetRequested);
     g.requestedUpscaler = options.upscaler; g.requestedBackend = backend;
     g.fsrQuality = quality; g.rrRequested = options.dlssRayReconstruction;
+    g.rrCnnRequested = rrCnn; g.rrPresetRequested = rrPreset;
     if (changed || !g.extent.width)
       g.createTarget();
     if (options.upscaler != upscale::Mode::Off && !options.accumulate && !options.sharcDebug) {
@@ -385,7 +419,9 @@ namespace remix {
     if (g.ngx) {
       auto caps = g.ngx->capabilities();
       result.srSupported = caps.sr; result.rrSupported = caps.rr; result.sdkAvailable = caps.sdk;
+      result.rrCnnPackaged = caps.rrCnnPackaged; result.rrCnn = caps.rrCnn;
     }
+    result.rrPreset = g.rrPresetCreated; result.rrNote = g.rrModelNote;
     result.failures += g.reconstructionFailures;
     result.frames += g.reconstructedFrames; result.resets += g.reconstructionResets;
     if (result.failure.empty()) result.failure = g.fsrFailure;
@@ -401,6 +437,10 @@ namespace remix {
       g.lightGuiding.writeIndex ^= 1;
       g.lightGuiding.valid = true;
       ++g.lightGuiding.stats.renderedFrames;
+    }
+    if (g.skyGuiding.active) {
+      g.skyGuiding.writeIndex ^= 1;
+      g.skyGuiding.valid = true;
     }
     if (g.pbrReuse.active) {
       g.pbrReuse.writeIndex ^= 1;

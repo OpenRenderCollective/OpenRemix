@@ -44,6 +44,11 @@ struct Statistics {
   uint64_t frames{}, resets{};
   float milliseconds{};
   std::string failure;
+  // Ray Reconstruction: the CNN model's library is packaged / loaded, the
+  // NGX preset created (1-6, A-F) and why the requested model is not loaded.
+  bool rrCnnPackaged{}, rrCnn{};
+  uint32_t rrPreset{};
+  std::string rrNote;
 };
 bool supportsCamera(const scene::Matrix &projection);
 VkExtent2D renderSize(VkExtent2D display, uint32_t quality);
@@ -54,7 +59,7 @@ public:
   ~Renderer();
   void initialize(VkPhysicalDevice physical, VkDevice device, uint32_t queueFamily, VkExtent2D render,
                   VkExtent2D display, Backend backend = Backend::Fsr31, std::shared_ptr<Ngx> ngx = {},
-                  uint32_t quality = 1);
+                  uint32_t quality = 1, uint32_t rrPreset = 0);
   void configureComposite(VkRenderPass pass, VkImageView stableDepth);
   void selectFrame(uint32_t slot);
   void composite(VkCommandBuffer command, bool encodeOutput, bool prism, bool gamma22, bool hardwareSrgb, VkDescriptorSet post);

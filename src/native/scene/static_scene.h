@@ -156,4 +156,11 @@ namespace remix::scene {
   TraceFrame prepareSceneFrame(NativeResources &resources, StaticScene *statics, OpacityCache &opacity,
                                WorkerPool *workers, bool opacityProfile, double seconds, bool filterEmission,
                                SurfaceEmissionCache &emissionCache);
+  // A frame's emitters in trace order: with frame.staticUnits, the set's
+  // (StaticScene::emitting) merged with the frame's own, which are all that
+  // frame.emitters holds; otherwise frame.emitters. PathTracer::prepareScene
+  // reads the two lists where they are (the light tree orders its input):
+  // merging copied every static emitter each frame.
+  std::vector<TraceFrame::Emitter> mergedEmitters(const TraceFrame &frame, const StaticScene *statics,
+                                                  bool filterEmission);
 } // namespace remix::scene

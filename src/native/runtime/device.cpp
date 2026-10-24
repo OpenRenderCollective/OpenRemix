@@ -57,6 +57,16 @@ namespace remix {
     for (const auto &extension : ngxExtensions)
       if (std::none_of(extensions.begin(), extensions.end(), [&](auto p) { return extension == p; }))
         extensions.push_back(extension.c_str());
+    // Debug labels name GPU timer passes in Nsight and RenderDoc (gpu_timers.h).
+    uint32_t available = 0;
+    vkEnumerateInstanceExtensionProperties(nullptr, &available, nullptr);
+    std::vector<VkExtensionProperties> availableExtensions(available);
+    vkEnumerateInstanceExtensionProperties(nullptr, &available, availableExtensions.data());
+    if (std::any_of(availableExtensions.begin(), availableExtensions.end(),
+                    [](const auto &e) { return std::strcmp(e.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0; }) &&
+        std::none_of(extensions.begin(), extensions.end(),
+                     [](auto p) { return std::strcmp(p, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0; }))
+      extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     uint32_t loaderVersion = VK_API_VERSION_1_1;
     if (auto enumerate = reinterpret_cast<PFN_vkEnumerateInstanceVersion>(
             vkGetInstanceProcAddr(nullptr, "vkEnumerateInstanceVersion")))

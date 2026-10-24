@@ -61,6 +61,18 @@ void RemixNativeRuntime::presented() {
   ++m_presentationCount;
 }
   namespace {
+    // A prepared frame that ends up not traced (presentation skipped, or an
+    // error on the way) gives its lighting state back to the tracer that
+    // prepared it, if that tracer is still the runtime's.
+    struct LightingReturn {
+      const std::unique_ptr<PathTracer> &tracer;
+      const PathTracer *owner = tracer.get();
+      scene::TraceFrame *frame = nullptr;
+      ~LightingReturn() {
+        if (frame && tracer && tracer.get() == owner)
+          tracer->returnScene(*frame);
+      }
+    };
     struct CompletePerformance {
       remixapi_FramePerformanceEXT &out;
       remixapi_FrameBreakdownEXT &breakdown;
@@ -637,6 +649,9 @@ void RemixNativeRuntime::presented() {
       setupTime.stop();
       if (m_pathTracer && m_targetBackend && !m_loading)
         traceScene = measured(p.sceneMilliseconds, [&] { return m_pathTracer->prepareScene(frame, m_traceOptions); });
+      LightingReturn lightingReturn{m_pathTracer};
+      if (traceScene)
+        lightingReturn.frame = &*traceScene;
       VkResult result = measured(p.fenceMilliseconds, [&] {
         return vkWaitForFences(m_device, 1, &m_frames[m_frameIndex].fence, VK_TRUE, 1000000000);
       });
@@ -862,6 +877,9 @@ void RemixNativeRuntime::presented() {
       if (m_pathTracer && m_targetBackend && !m_loading)
         traceScene = measured(p.sceneMilliseconds,
                               [&] { return m_pathTracer->prepareScene(m_raster, m_traceOptions); });
+      LightingReturn lightingReturn{m_pathTracer};
+      if (traceScene)
+        lightingReturn.frame = &*traceScene;
       // Bounded waits keep unavailable surfaces and a stalled GPU from blocking the caller indefinitely.
       VkResult result = measured(p.fenceMilliseconds, [&] {
         return vkWaitForFences(m_device, 1, &m_frames[m_frameIndex].fence, VK_TRUE, 1000000000);
@@ -1415,7 +1433,12 @@ void RemixNativeRuntime::presented() {
     // The API's scene, or the published frame (asynchronous presentation).
     auto &raster = renderer();
     if (m_pathTracer && !m_loading)
-      measured(breakdown.traceBeginMilliseconds, [&] { m_pathTracer->beginFrame(m_traceOptions, raster); });
+      measured(breakdown.traceBeginMilliseconds, [&] {
+        m_pathTracer->beginFrame(m_traceOptions, raster);
+        // Queue order puts reconstruction recreated in beginFrame ahead of this frame.
+        std::lock_guard lock(m_queueMutex);
+        m_pathTracer->finishReconstruction(m_queue);
+      });
     raster.setSkyTarget(m_pathTracer ? m_pathTracer->skyPass() : VK_NULL_HANDLE);
     if (!m_loading) {
       gpu::GpuScope scope(buffer, "Raster uploads and skinning");
@@ -1430,6 +1453,8 @@ void RemixNativeRuntime::presented() {
                             [&] { return m_pathTracer->prepareScene(raster, m_traceOptions); });
         traceScene = &*prepared;
       }
+      LightingReturn lightingReturn{m_pathTracer};
+      lightingReturn.frame = traceScene;
       // Role CUT (remixapi_InstanceInfoMaskEXT): the coverage that hides
       // traced instances from the camera, ahead of primary visibility.
       if (raster.cutCoverage().count) {

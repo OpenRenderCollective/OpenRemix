@@ -766,6 +766,7 @@ namespace remix::trace {
                            [](const auto &surface) { return surface.draw.blend.enabled && !surface.draw.decal; })};
       input.viewModel = draw.viewModel;
       input.reflectionOnly = draw.reflectionOnly;
+      input.decal = std::all_of(instance.begin(), instance.end(), [](const auto &surface) { return surface.draw.decal; });
       write(sceneCursor, model.data(), sizeof(model));
       write(sceneCursor, &view.fingerprint, sizeof(view.fingerprint));
       write(sceneCursor, &draw.instanceId, sizeof(draw.instanceId));

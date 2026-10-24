@@ -115,6 +115,9 @@ namespace remix {
     bool m_guiWantsMouse = false;
     bool m_gameWantsText = false;
     bool m_guiWantsText = false;
+    // Text input this window started: a host-owned (embedded) window's own
+    // text input, such as a game console's, is the host's to stop.
+    bool m_startedTextInput = false;
     std::deque<remixapi_InputEvent> m_inputEvents;
     float m_relativeX = 0.0f;
     float m_relativeY = 0.0f;

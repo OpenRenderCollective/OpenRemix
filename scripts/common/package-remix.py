@@ -150,15 +150,23 @@ if manifest['enabled'] and system in ('Linux', 'Windows'):
     isolated = output / ('lib' if system == 'Linux' else 'bin') / 'dlss' / manifest['version']
     isolated.mkdir(parents=True)
     binaries = ['libnvidia-ngx-dlss.so.310.9.1', 'libnvidia-ngx-dlssd.so.310.9.1'] if system == 'Linux' else ['nvngx_dlss.dll', 'nvngx_dlssd.dll', 'nvngx_dlssg.dll']
+    release = 'lib/Linux_x86_64/rel' if system == 'Linux' else 'lib/Windows_x86_64/rel'
     import hashlib
-    expected = {Path(name).name: digest for digest, name in
+    expected = {name: digest for digest, name in
                 (line.split('  ', 1) for line in (root / 'third_party/dlss/sources.sha256').read_text().splitlines())}
+    def copy_checked(source, vendored, target):
+        if hashlib.sha256(source.read_bytes()).hexdigest() != expected[vendored]:
+            raise RuntimeError('DLSS release library hash mismatch: ' + vendored)
+        shutil.copy2(source, target)
     for name in binaries:
-        source = build / 'src/native/upscale' / name
-        if hashlib.sha256(source.read_bytes()).hexdigest() != expected[name]:
-            raise RuntimeError('DLSS release library hash mismatch: ' + name)
-        shutil.copy2(source, isolated / name)
+        copy_checked(build / 'src/native/upscale' / name, release + '/' + name, isolated / name)
     for name in ('LICENSE.txt', 'README.remix.md', 'upstream.json', 'sources.sha256'):
         shutil.copy2(root / 'third_party/dlss' / name, isolated / name)
+    # Ray Reconstruction's CNN model comes from an older release (ngx.cpp).
+    cnn = isolated.parent / manifest['cnnVersion']
+    cnn.mkdir(parents=True)
+    name = 'libnvidia-ngx-dlssd.so.310.2.1' if system == 'Linux' else 'nvngx_dlssd.dll'
+    copy_checked(build / 'src/native/upscale/cnn' / name, release + '-310.2.1/' + name, cnn / name)
+    shutil.copy2(root / 'third_party/dlss/LICENSE-310.2.1.txt', cnn / 'LICENSE.txt')
     shutil.copy2(root / 'third_party/dlss/LICENSE.txt', licenses / 'DLSS.txt')
 print(output)

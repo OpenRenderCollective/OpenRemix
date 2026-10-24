@@ -167,7 +167,14 @@ namespace remix::trace::detail {
     // remixapi_CameraMediumEXT: transmittance colour, measurement distance (0: in air).
     float cameraMedium[4] = {};
     uint64_t sheetResults = 0; // SheetResults: the sheet lighting pass's transport
+    // Sky guiding (sky_guiding.cpp, sky_guiding.glsl): each world cell's
+    // learned sky directions, last frame's (read, 0: none yet) and this
+    // frame's. skyGuideConfig: slot capacity, cells per world unit (float
+    // bits), guided share of the extra sky rays (float bits), active.
+    uint64_t skyGuideRead = 0;
+    uint64_t skyGuideWrite = 0;
     uint64_t sheetMaterials = 0; // Optional measured-sheet optics; descriptor-indexed.
+    uint32_t skyGuideConfig[4] = {};
     // Camera rays (pathtrace.comp ray()): inverseCamera relative to the eye,
     // which the shader adds back. In single precision the absolute matrix
     // holds the eye's translation scaled by the inverse near plane, and loses
@@ -175,7 +182,8 @@ namespace remix::trace::detail {
     // as a view model jitters as the camera moves).
     Matrix inverseCameraRelative{};
   };
-  static_assert(sizeof(Frame) == 1136 && offsetof(Frame, inverseCameraRelative) == 1072 && offsetof(Frame, volumeGrid) == 912 && offsetof(Frame, volumePrevious) == 1024 && offsetof(Frame, sparseList) == 880 && offsetof(Frame, sparseConfig) == 896 && offsetof(Frame, cameraCull) == 864 && offsetof(Frame, cutConfig) == 816 && offsetof(Frame, orcaParams) == 800 && offsetof(Frame, regirConfig) == 752 && offsetof(Frame, restirCurrent) == 656 && offsetof(Frame, visibilityNodes) == 592 && offsetof(Frame, pathConfig) == 528 &&
+  static_assert(sizeof(Frame) == 1168 && offsetof(Frame, inverseCameraRelative) == 1104 &&
+                offsetof(Frame, sheetMaterials) == 1080 && offsetof(Frame, skyGuideRead) == 1064 && offsetof(Frame, skyGuideConfig) == 1088 && offsetof(Frame, volumeGrid) == 912 && offsetof(Frame, volumePrevious) == 1024 && offsetof(Frame, sparseList) == 880 && offsetof(Frame, sparseConfig) == 896 && offsetof(Frame, cameraCull) == 864 && offsetof(Frame, cutConfig) == 816 && offsetof(Frame, orcaParams) == 800 && offsetof(Frame, regirConfig) == 752 && offsetof(Frame, restirCurrent) == 656 && offsetof(Frame, visibilityNodes) == 592 && offsetof(Frame, pathConfig) == 528 &&
                 offsetof(Frame, firefly) == 512 && offsetof(Frame, indirectResults) == 496 &&
                 offsetof(Frame, lightGuideRead) == 384 && offsetof(Frame, lightGuideConfig) == 400 &&
                 offsetof(Frame, lightNodes) == 336 && offsetof(Frame, localConfig) == 352 &&
@@ -414,6 +422,12 @@ namespace remix {
     upscale::Mode requestedUpscaler = upscale::Mode::Off;
     upscale::Backend requestedBackend = upscale::Backend::Native;
     bool rrRequested = true;
+    // Ray Reconstruction's requested model (true: CNN) and preset (0: the
+    // model's own; else NGX's 1-6), the preset created and why the requested
+    // model is not the loaded one.
+    bool rrCnnRequested = false;
+    uint32_t rrPresetRequested = 0, rrPresetCreated = 0;
+    std::string rrModelNote;
     uint32_t failedBackends = 0;
     uint64_t reconstructionFailures = 0, reconstructedFrames = 0, reconstructionResets = 0;
     uint32_t reconstructionWarmFrames = 0;
@@ -499,6 +513,7 @@ namespace remix {
     std::vector<std::shared_ptr<Arena>> arenas;
     std::unique_ptr<Buffer> scratch, table, uniform, sheetMaterials;
     scene::LightBvh lightBvh;
+    std::vector<scene::SphereLight> lightInput; // prepareScene's gathered lights (storage kept)
     scene::LightVisibility lightVisibility;
     std::unique_ptr<Buffer> visibilityNodes, visibilityLeaves, visibilityTable;
     uint64_t visibilityPartitionVersion = 0, visibilityTableVersion = 0;
@@ -534,6 +549,11 @@ namespace remix {
     std::unique_ptr<Buffer> lightNodes, lightEmitters;
     std::unique_ptr<Buffer> movedLights; // this frame's scene::LightBvh::moved()
     uint64_t lightBufferGeneration = 0, torchBufferGeneration = 0, emissiveBufferGeneration = 0;
+    // The hierarchy (LightBvh::instance) each slot's buffers hold; with the
+    // generation above, what an upload of only the changes builds on.
+    uint64_t lightBufferInstance = 0, torchBufferInstance = 0, emissiveBufferInstance = 0;
+    scene::LightBvh::Ranges changedEmitters, changedNodes; // upload scratch
+    std::vector<uint8_t> lightUploadPacking;
     struct LightGuiding {
       static constexpr uint32_t capacity = 65536;
       std::unique_ptr<Buffer> history[2], readback;
@@ -547,6 +567,18 @@ namespace remix {
                                                         sizeof(remixapi_LocalLightGuidingStatisticsEXT)};
     } lightGuiding;
     void configureLightGuiding(Frame &frame, const TraceOptions &options);
+    // Sky guiding (sky_guiding.cpp): per world cell and facing, a histogram
+    // of the directions its first-surface sky rays found the sky in, trained
+    // this frame and read the next (two banks, like lightGuiding).
+    struct SkyGuiding {
+      static constexpr uint32_t capacity = 16384, stride = 68; // words per slot: key, total, 2 reserved, 64 bins
+      std::unique_ptr<Buffer> history[2];
+      uint32_t writeIndex = 0;
+      bool valid = false, attempted = false, active = false;
+      float cellSize = 0;
+    } skyGuiding;
+    void configureSkyGuiding(Frame &frame, const TraceOptions &options);
+    void beginSkyGuiding(VkCommandBuffer command);
     // ReSTIR DI (restir.cpp, restir.glsl).
     struct Restir {
       VkPipeline initial = VK_NULL_HANDLE, spatial = VK_NULL_HANDLE;
@@ -835,6 +867,7 @@ namespace remix {
           emissiveEmitters;
       std::unique_ptr<Buffer> sharcReadback, guidingReadback, reuseReadback, rayReadback;
       uint64_t lightGeneration = 0, torchGeneration = 0, emissiveGeneration = 0;
+      uint64_t lightInstance = 0, torchInstance = 0, emissiveInstance = 0;
       std::vector<std::unique_ptr<Buffer>> uploads;
       Staging staging;
       PrimaryRecording primaryRecording;
@@ -890,6 +923,9 @@ namespace remix {
     // separate passes' pipelines compile together. No pass reads its pipeline
     // handles before recording.
     void createLightingPipelines(const std::vector<LightingRequest> &requests);
+    // createLightingPipelines that waits (up to two minutes) for pipelines
+    // another worker is still compiling, for passes a frame cannot go without.
+    void awaitLightingPipelines(const std::vector<LightingRequest> &requests);
     void finishLightingPipelines();
     bool deferLighting = false;
     std::vector<LightingRequest> deferredLighting;

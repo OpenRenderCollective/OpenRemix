@@ -168,7 +168,8 @@ Reservoir restirInitial(Hit hit,uint state,float depth,ivec2 pixel) {
       u=min(u,.99999994);++level;
     }
     if(pmf<=0)continue;
-    uint emitter=nodes.data[index].links.z;
+    float share;uint emitter=leafEmitter(emitters,nodes.data[index].links,state,share);
+    pmf*=share;
     LightEmitter light=emitters.data[emitter];
     vec2 uv;float pdf;
     if(!restirSamplePoint(light,hit,vec2(lightRandom(state),lightRandom(state)),uv,pdf))continue;

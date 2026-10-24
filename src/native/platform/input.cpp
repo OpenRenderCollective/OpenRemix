@@ -104,7 +104,9 @@ namespace remix {
       return status;
     m_gameWantsText = enabled;
     syncTextInput(m_guiWantsText);
-    return SDL_TextInputActive(m_window) == (m_gameWantsText || m_guiWantsText)
+    const bool active = SDL_TextInputActive(m_window);
+    // An embedded window may keep the host's own text input on.
+    return active == (m_gameWantsText || m_guiWantsText) || (m_embedded && active)
                ? REMIXAPI_ERROR_CODE_SUCCESS
                : REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
   }
@@ -112,10 +114,16 @@ namespace remix {
   void RemixSdlWindow::syncTextInput(bool guiWantsText) {
     m_guiWantsText = guiWantsText;
     if (m_gameWantsText || m_guiWantsText) {
-      if (!SDL_TextInputActive(m_window))
+      if (!SDL_TextInputActive(m_window)) {
         SDL_StartTextInput(m_window);
-    } else if (SDL_TextInputActive(m_window)) {
-      SDL_StopTextInput(m_window);
+        m_startedTextInput = true;
+      }
+    } else {
+      // In a host's own window the host may have text input on for itself
+      // (Xash3D's console): stopping it every frame left the console deaf.
+      if (SDL_TextInputActive(m_window) && (!m_embedded || m_startedTextInput))
+        SDL_StopTextInput(m_window);
+      m_startedTextInput = false;
     }
   }
 

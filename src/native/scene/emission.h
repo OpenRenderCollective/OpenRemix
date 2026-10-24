@@ -30,9 +30,29 @@ public:
   };
   using Reduction = std::vector<Triangle>;
   std::shared_ptr<const Reduction> reduce(const Draw &draw, const std::array<float, 4> &uv);
+  // The draw's emitters, triangleEmitter of each triangle of its reduction
+  // (in its order): kept while the draw's identity, surface, transform,
+  // sidedness and reduction stay the same (a prop at rest is not transformed
+  // again every frame). Skinned draws are made each time. A list once
+  // returned is never changed (frames hold it).
+  std::shared_ptr<const std::vector<SphereLight>> emitters(const Draw &draw,
+                                                           const std::shared_ptr<const Reduction> &reduction);
+  // Also drops the emitters no draw asked for since the last prune.
   void prune();
+  size_t emitterHint = 0; // prepareTraceFrame's emitters last time
 
 private:
+  struct Emitters {
+    std::shared_ptr<const Reduction> reduction;
+    std::weak_ptr<Surface> surface;
+    Matrix model{};
+    uint64_t instanceId = 0, used = 0;
+    uint32_t instanceIndex = 0, surfaceIndex = 0;
+    bool doubleSided = false;
+    std::shared_ptr<std::vector<SphereLight>> lights;
+  };
+  std::unordered_map<uint64_t, Emitters> emitterEntries;
+  uint64_t emitterFrame = 1;
   using Key = std::tuple<std::array<float, 3>, std::array<float, 4>,
                          uint8_t, uint8_t, uint8_t, uint8_t, uint8_t, uint8_t, std::array<float, 4>>;
   struct Entry {
@@ -50,6 +70,11 @@ private:
   };
   std::unordered_map<const Surface *, SurfaceEntries> surfaces;
 };
+// Every triangle of a reduction as an emitter (triangleEmitter), in its order,
+// with the surface's group and their spatial ranks: a Morton order of the
+// triangles' centers in object space, so a rigid prop keeps them as it moves.
+void triangleEmitters(const Draw &draw, const SurfaceEmissionCache::Reduction &reduction,
+                      std::vector<SphereLight> &out);
 class EmissionHistory {
 public:
   void begin(uint64_t world, double seconds, uint32_t mode); // 0 raw, 1 smooth, 2 diagnostic freeze

@@ -1,6 +1,7 @@
 #include "scene/emission.h"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <functional>
 #include <mutex>
 
@@ -121,6 +122,91 @@ namespace remix::scene {
 
   void SurfaceEmissionCache::prune() {
     std::erase_if(surfaces, [](const auto &entry) { return entry.second.owner.expired(); });
+    std::erase_if(emitterEntries, [&](const auto &entry) { return entry.second.used != emitterFrame; });
+    ++emitterFrame;
+  }
+
+  void triangleEmitters(const Draw &draw, const SurfaceEmissionCache::Reduction &reduction,
+                        std::vector<SphereLight> &out) {
+    out.clear();
+    out.reserve(reduction.size());
+    for (const auto &triangle : reduction)
+      out.push_back(triangleEmitter(draw, triangle.index, triangle.radiance));
+    if (out.size() < 2)
+      return;
+    const auto &s = *draw.surface;
+    std::vector<std::array<float, 3>> centers(reduction.size());
+    float low[3], high[3];
+    std::fill_n(low, 3, std::numeric_limits<float>::max());
+    std::fill_n(high, 3, std::numeric_limits<float>::lowest());
+    for (size_t i = 0; i < reduction.size(); ++i) {
+      auto &center = centers[i];
+      center = {};
+      for (unsigned v = 0; v < 3; ++v) {
+        const auto &p = s.vertices[s.indices[reduction[i].index * 3 + v]].position;
+        for (unsigned c = 0; c < 3; ++c)
+          center[c] += p[c] / 3;
+      }
+      for (unsigned c = 0; c < 3; ++c) {
+        low[c] = std::min(low[c], center[c]);
+        high[c] = std::max(high[c], center[c]);
+      }
+    }
+    // 10 bits an axis, interleaved.
+    const auto spread = [](uint32_t x) {
+      x &= 1023;
+      x = (x | x << 16) & 0x030000FF;
+      x = (x | x << 8) & 0x0300F00F;
+      x = (x | x << 4) & 0x030C30C3;
+      return (x | x << 2) & 0x09249249;
+    };
+    std::vector<std::pair<uint32_t, uint32_t>> codes(reduction.size());
+    for (size_t i = 0; i < reduction.size(); ++i) {
+      uint32_t code = 0;
+      for (unsigned c = 0; c < 3; ++c) {
+        const float extent = high[c] - low[c];
+        const auto cell = uint32_t(extent > 0 ? std::min(1023.f, (centers[i][c] - low[c]) / extent * 1024) : 0);
+        code |= spread(cell) << c;
+      }
+      codes[i] = {code, uint32_t(i)};
+    }
+    std::sort(codes.begin(), codes.end());
+    for (uint32_t r = 0; r < codes.size(); ++r)
+      out[codes[r].second].rank = r;
+  }
+
+  std::shared_ptr<const std::vector<SphereLight>>
+  SurfaceEmissionCache::emitters(const Draw &draw, const std::shared_ptr<const Reduction> &reduction) {
+    // A list a frame may still hold is replaced, not changed.
+    const auto make = [&](std::shared_ptr<std::vector<SphereLight>> &lights) {
+      if (!lights || lights.use_count() > 1)
+        lights = std::make_shared<std::vector<SphereLight>>();
+      triangleEmitters(draw, *reduction, *lights);
+    };
+    if (draw.surface->bonesPerVertex && draw.bones) {
+      std::shared_ptr<std::vector<SphereLight>> lights;
+      make(lights);
+      return lights;
+    }
+    const Surface *surface = draw.surface.get();
+    const uint64_t identity[] = {draw.instanceId, uint64_t(draw.instanceIndex) << 32 | draw.surfaceIndex,
+                                 uint64_t(reinterpret_cast<uintptr_t>(surface))};
+    auto &entry = emitterEntries[hashBytes(identity, sizeof(identity))];
+    if (entry.reduction != reduction || entry.surface.lock().get() != surface || entry.model != draw.model ||
+        entry.instanceId != draw.instanceId || entry.instanceIndex != draw.instanceIndex ||
+        entry.surfaceIndex != draw.surfaceIndex || entry.doubleSided != draw.doubleSided ||
+        (!draw.instanceId && draw.mesh)) {
+      entry.reduction = reduction;
+      entry.surface = draw.surface;
+      entry.model = draw.model;
+      entry.instanceId = draw.instanceId;
+      entry.instanceIndex = draw.instanceIndex;
+      entry.surfaceIndex = draw.surfaceIndex;
+      entry.doubleSided = draw.doubleSided;
+      make(entry.lights);
+    }
+    entry.used = emitterFrame;
+    return entry.lights;
   }
 
   uint64_t emissionHistoryKey(const Draw &draw, uint32_t triangle) {
@@ -305,6 +391,7 @@ namespace remix::scene {
                                                  : uint64_t(reinterpret_cast<uintptr_t>(draw.mesh.get())),
                                  draw.instanceIndex, draw.surfaceIndex, triangle};
     light.id = hashBytes(identity, sizeof(identity));
+    light.group = hashBytes(identity, 3 * sizeof(identity[0])) | 1; // never 0 (sphere lights)
     light.triangle = draw.doubleSided ? 2 : 1;
     std::copy(radiance.begin(), radiance.end(), light.radiance);
     const auto &s = *draw.surface;

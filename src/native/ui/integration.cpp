@@ -77,7 +77,8 @@ namespace remix {
     if (ImGui::GetIO().BackendPlatformUserData) {
       ImGui_ImplSDL3_Shutdown();
     }
-    SDL_StopTextInput(m_window.handle());
+    if (!m_window.embedded())
+      SDL_StopTextInput(m_window.handle());
     ImGui::DestroyContext(m_gui);
     m_gui = nullptr;
     m_window.setEventHandler(nullptr, nullptr);

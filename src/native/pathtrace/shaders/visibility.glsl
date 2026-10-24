@@ -5,7 +5,7 @@ struct VisibilityHit { float t; bool blocked; vec3 p; vec3 n; vec3 transmission;
 void queryVisibility(accelerationStructureEXT scene,vec3 origin,vec3 direction,inout VisibilityHit hit,bool anyOpaque) {
   rayQueryEXT query;
   profileRay(8);
-  rayQueryInitializeEXT(query,scene,traceFlags(),secondaryMask(),origin,0,direction,hit.t);
+  rayQueryInitializeEXT(query,scene,traceFlags(),shadowMask(),origin,0,direction,hit.t);
   while(rayQueryProceedEXT(query)) {
     if(rayQueryGetIntersectionTypeEXT(query,false)!=gl_RayQueryCandidateIntersectionTriangleEXT)continue;
     profileRay(9);
@@ -58,7 +58,7 @@ struct NearestSheet { float t; uint surface; uint primitive; vec2 bary; vec3 p; 
 bool firstBlocker(accelerationStructureEXT scene,vec3 origin,vec3 direction,float maximum,inout NearestSheet sheet,uint profile) {
   rayQueryEXT query;
   profileRay(profile);
-  rayQueryInitializeEXT(query,scene,traceFlags()|gl_RayFlagsTerminateOnFirstHitEXT,secondaryMask(),origin,0,direction,maximum);
+  rayQueryInitializeEXT(query,scene,traceFlags()|gl_RayFlagsTerminateOnFirstHitEXT,shadowMask(),origin,0,direction,maximum);
   while(rayQueryProceedEXT(query)) {
     if(rayQueryGetIntersectionTypeEXT(query,false)!=gl_RayQueryCandidateIntersectionTriangleEXT)continue;
     profileRay(profile+1);

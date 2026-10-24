@@ -50,6 +50,9 @@ namespace remix {
     swap(lightBufferGeneration, frame.lightGeneration);
     swap(torchBufferGeneration, frame.torchGeneration);
     swap(emissiveBufferGeneration, frame.emissiveGeneration);
+    swap(lightBufferInstance, frame.lightInstance);
+    swap(torchBufferInstance, frame.torchInstance);
+    swap(emissiveBufferInstance, frame.emissiveInstance);
     swap(retiredPreviousVertices, frame.retiredVertices);
     for (unsigned i = 0; i < 3; ++i)
       swap(tlas[i].instances, frame.instances[i]);
@@ -387,7 +390,8 @@ namespace remix {
     };
     if (separateIndirect)
       requests.push_back({lightingStage(trace::Stage::indirect), layout, &indirectPass.pipeline, true});
-    createLightingPipelines(requests);
+    // The raw passes are what every frame falls back to.
+    awaitLightingPipelines(requests);
   }
 
   void PathTracer::configureTarget(VkRenderPass pass, VkExtent2D extent, bool encodeOutput,
@@ -410,10 +414,27 @@ namespace remix {
     for (auto backend = selectBackend(); backend != upscale::Backend::Native; backend = selectBackend()) {
       try {
         const bool dlss = backend != upscale::Backend::Fsr31;
+        uint32_t rrPreset = 0;
+        if (backend == upscale::Backend::DlssRr) {
+          // The model's library first (NGX restarts for it while no DLSS
+          // feature exists), then a preset of that library.
+          rrModelNote.clear();
+          ngx->useRayReconstructionModel(rrCnnRequested, rrModelNote);
+          const bool cnn = ngx->capabilities().rrCnn;
+          const bool own = cnn ? rrPresetRequested >= 1 && rrPresetRequested <= 3
+                               : rrPresetRequested >= 4 && rrPresetRequested <= 6;
+          // Defaults: C (CNN), E (transformer); D where the CNN model's library
+          // stayed loaded for a transformer request (it has no E).
+          if (own && rrCnnRequested == cnn)
+            rrPreset = rrPresetRequested;
+          else
+            rrPreset = cnn ? (rrCnnRequested ? 3u : 4u) : 5u;
+        }
         extent = dlss ? ngx->renderSize(displayExtent, fsrQuality, backend == upscale::Backend::DlssRr)
                       : upscale::renderSize(displayExtent, fsrQuality);
         auto next = std::make_unique<upscale::Renderer>();
-        next->initialize(physical, device, queueFamily, extent, displayExtent, backend, ngx, fsrQuality);
+        next->initialize(physical, device, queueFamily, extent, displayExtent, backend, ngx, fsrQuality, rrPreset);
+        rrPresetCreated = rrPreset;
         upscaler = std::move(next);
         break;
       } catch (VkResult result) {

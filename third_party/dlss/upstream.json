@@ -1,5 +1,15 @@
 {
   "repository": "https://github.com/NVIDIA/DLSS",
   "revision": "374959484e79a640feaba44c93ac8cfb0a03f5b5",
-  "version": "310.9.1"
+  "version": "310.9.1",
+  "cnnRayReconstruction": {
+    "repository": "https://github.com/NVIDIA/DLSS",
+    "revision": "af199869c51cf2d71cc64d3db5064788ff38eb02",
+    "version": "310.2.1",
+    "files": [
+      "lib/Linux_x86_64/rel/libnvidia-ngx-dlssd.so.310.2.1",
+      "lib/Windows_x86_64/rel/nvngx_dlssd.dll",
+      "LICENSE.txt"
+    ]
+  }
 }

@@ -8,6 +8,10 @@ if has_dlss
     link_args : [meson.current_source_dir() / ngx_library], dependencies : dl_dep)
   dlss_runtime_dir = system == 'linux' ? 'lib/Linux_x86_64/rel' : 'lib/Windows_x86_64/rel'
   dlss_binaries = system == 'linux' ? ['libnvidia-ngx-dlss.so.310.9.1', 'libnvidia-ngx-dlssd.so.310.9.1'] : ['nvngx_dlss.dll', 'nvngx_dlssd.dll', 'nvngx_dlssg.dll']
+  # Ray Reconstruction's CNN model (preset C): the last release with it,
+  # searched before the current one when that model is selected.
+  dlss_cnn_runtime_dir = system == 'linux' ? 'lib/Linux_x86_64/rel-310.2.1' : 'lib/Windows_x86_64/rel-310.2.1'
+  dlss_cnn_binary = system == 'linux' ? 'libnvidia-ngx-dlssd.so.310.2.1' : 'nvngx_dlssd.dll'
 endif
 if has_dlss
   dlss_install_dir = (system == 'windows' ? get_option('bindir') : get_option('libdir')) / 'dlss/310.9.1'
@@ -15,4 +19,7 @@ if has_dlss
     install_data(dlss_runtime_dir / binary, install_dir : dlss_install_dir)
   endforeach
   install_data('LICENSE.txt', 'upstream.json', 'sources.sha256', install_dir : dlss_install_dir)
+  dlss_cnn_install_dir = (system == 'windows' ? get_option('bindir') : get_option('libdir')) / 'dlss/310.2.1'
+  install_data(dlss_cnn_runtime_dir / dlss_cnn_binary, install_dir : dlss_cnn_install_dir)
+  install_data('LICENSE-310.2.1.txt', rename : 'LICENSE.txt', install_dir : dlss_cnn_install_dir)
 endif

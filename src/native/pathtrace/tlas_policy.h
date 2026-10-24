@@ -20,6 +20,9 @@ namespace remix::trace {
     bool viewModel = false;
     // Draw::reflectionOnly: reflectionOnlyInstanceMask only.
     bool reflectionOnly = false;
+    // Every surface is a decal (paint): decalInstanceMask only, which
+    // shadow and light-visibility rays exclude (they pass paint anyway).
+    bool decal = false;
     bool operator==(const InstanceInput &) const = default;
   };
   // VkGeometryInstanceFlagBitsKHR values (static_assert-ed in tlas.cpp):
@@ -58,7 +61,7 @@ namespace remix::trace {
   constexpr uint8_t reflectionOnlyInstanceMask = 16;
   constexpr uint8_t allInstancesMask = 0xff & ~viewModelInstanceMask & ~reflectionOnlyInstanceMask,
                     staticInstanceMask = 1, dynamicInstanceMask = 2,
-                    blendedInstanceMask = 4;
+                    blendedInstanceMask = 4, decalInstanceMask = 32;
   inline uint8_t instanceMask(bool combined, bool dynamic) {
     return !combined ? allInstancesMask : dynamic ? dynamicInstanceMask : staticInstanceMask;
   }

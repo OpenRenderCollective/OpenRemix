@@ -64,14 +64,21 @@ void main() {
   // Footprint per output pixel (visibilityProbe.z: render/output size).
   uvGradX=dFdx(uv)*frame.visibilityProbe.z;
   uvGradY=dFdy(uv)*frame.visibilityProbe.z;
-  vec3 emission,self;
-  vec4 albedo=materialSurface(s,uv,color,true,emission,self);
-  if(!visibleAlpha(s,albedo.a))discard;
 #ifdef STABLE_DEPTH
   // Blended sheets do not occlude raster particles or coplanar feedback.
   if((s.state.w&2)!=0)discard;
+  // Coverage only, as the G-buffer's alpha test: the texture's alpha, read
+  // only where the test and the combiner use it (no colour, no emission).
+  // Every opaque draw is shaded again here at output resolution.
+  if(s.state.y!=7u) {
+    float texel=(alphaOperands(s)&1u)!=0?materialTexel(s,s.textureState.x,uv).a:1;
+    if(!visibleAlpha(s,materialAlphaOf(s,texel,color.a)))discard;
+  }
   outDepth=1-worldDepth();
 #else
+  vec3 emission,self;
+  vec4 albedo=materialSurface(s,uv,color,true,emission,self);
+  if(!visibleAlpha(s,albedo.a))discard;
   vec3 n=normalize(normal);
   if(dot(n,direction)>0)n=-n;
   outPosition=vec4(position,1-worldDepth());

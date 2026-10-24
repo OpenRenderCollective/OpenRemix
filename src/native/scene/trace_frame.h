@@ -15,6 +15,16 @@ namespace remix::scene {
 class StaticScene;
 // CPU snapshots only: safe to construct while the previous GPU submission
 // is running. Temporal history and GPU uploads consume this after its fence.
+// prepareSceneFrame by step since this was last read (REMIX_SCENE_TIMINGS, ms
+// summed): the static set's sync, the frame-local static check, the
+// frame's identities, its instance list, their sort and checks, emission
+// and emitters, cached opacity partitions (workers) and new ones.
+struct FrameCosts {
+  double sync = 0, local = 0, ids = 0, instances = 0, sort = 0, emitters = 0, find = 0, partition = 0;
+  uint64_t frames = 0, draws = 0, surfaces = 0, emitterCount = 0;
+};
+inline FrameCosts g_frameCosts;
+
 struct TraceFrame {
   struct Surface {
     Draw draw;
@@ -26,6 +36,20 @@ struct TraceFrame {
     SphereLight light;
     uint64_t layout = 0;
     bool animated = false;
+  };
+  // A surface's emitters as the emission cache made them (shared, never
+  // changed), not copied per light: with tens of thousands of emissive
+  // triangles the copies cost milliseconds a frame. Each light's layout is
+  // its reduction triangle's; dynamic overrides SphereLight::dynamic.
+  struct EmitterRun {
+    std::shared_ptr<const std::vector<SphereLight>> lights;
+    std::shared_ptr<const std::vector<SurfaceEmissionCache::Triangle>> reduction;
+    bool animated = false, dynamic = false;
+    Emitter operator[](size_t i) const {
+      Emitter e{(*lights)[i], animated ? (*reduction)[i].layout : 0, animated};
+      e.light.dynamic = dynamic;
+      return e;
+    }
   };
   // Instances as ranges of one surface array: no allocation per instance.
   // instances[i] is a span of instance i's surfaces (mesh surface order).
@@ -82,18 +106,31 @@ struct TraceFrame {
   };
   double seconds = 0;
   InstanceList instances;
-  // Each instance's first emitter (instances.size() + 1 entries).
+  // Each instance's first emitter run (instances.size() + 1 entries).
   std::vector<uint32_t> emitterFirst;
   // The persistent static set (StaticScene) is traced with these instances;
   // instances then holds only the frame's other draws.
   bool staticUnits = false;
   IdSet persistentIds; // nonzero caller identities of the frame
-  std::vector<Emitter> emitters;
-  // Staged copies leave the last submitted lighting intact if presentation is skipped.
+  std::vector<EmitterRun> emitters;
+  size_t emitterCount = 0; // lights in emitters
+  // The emitters one by one (tests, mergedEmitters).
+  std::vector<Emitter> flatEmitters(size_t firstRun = 0, size_t endRun = SIZE_MAX) const {
+    std::vector<Emitter> out;
+    for (size_t r = firstRun; r < std::min(endRun, emitters.size()); ++r)
+      for (size_t i = 0; i < emitters[r].lights->size(); ++i)
+        out.push_back(emitters[r][i]);
+    return out;
+  }
+  // The tracer's lighting state, moved here to be updated for this frame and
+  // moved back when it is traced (PathTracer::prepare) or, if presentation is
+  // skipped, by PathTracer::returnScene (staged until then). A copy each frame
+  // cost milliseconds with tens of thousands of emissive triangles.
   struct Lighting {
     LightBvh combined, torch, emissive;
     LightVisibility visibility; // for combined
     EmissionHistory history;
+    bool staged = false, families = false; // families: torch and emissive were updated
     bool hasEmissive = false;
     // Statistics: see emittingInstances below; CPU time of the light update.
     uint32_t emittingInstances = 0, dynamicEmittingInstances = 0;

@@ -237,6 +237,12 @@ namespace remix::config {
                                  {"off", "auto", "fsr31", "dlss"}));
         result.push_back(choices("rtx.native.pathtrace.dlssRayReconstruction",
                                  FIELD(trace.dlssRayReconstruction), {"0", "1"}));
+        result.push_back(choices("rtx.native.pathtrace.dlssRayReconstructionModel",
+                                 FIELD(trace.dlssRayReconstructionModel), {"transformer", "cnn"}));
+        result.push_back(choices("rtx.native.pathtrace.dlssRayReconstructionPresetOverride",
+                                 FIELD(trace.dlssRayReconstructionPresetOverride), {"0", "1"}));
+        result.push_back(choices("rtx.native.pathtrace.dlssRayReconstructionPreset",
+                                 FIELD(trace.dlssRayReconstructionPreset), {"default", "A", "B", "C", "D", "E", "F"}));
         result.push_back(
             choices("rtx.native.pathtrace.primaryVisibility", FIELD(trace.rasterPrimary), {"ray", "raster"}));
         result.push_back(
@@ -253,6 +259,7 @@ namespace remix::config {
         TRACE(sigma, 0, 1);
         TRACE(blueNoiseShadows, 0, 1);
         TRACE(blueNoiseLocalLights, 0, 1);
+        TRACE(blueNoiseSky, 0, 1);
         TRACE(autoExposure, 0, 1);
         TRACE(exposure, .05, 8);
         TRACE(autoExposureTarget, .02, .6);
@@ -268,6 +275,7 @@ namespace remix::config {
         TRACE(localLights, 0, 1);
         TRACE(torchLights, 0, 1);
         TRACE(emissiveLights, 0, 1);
+        TRACE(emissiveClusterSize, 1, 64);
         TRACE(adaptiveLocalSampling, 0, 1);
         TRACE(stabilizeEmissiveLighting, 0, 1);
         TRACE(emissiveSolidAngleSampling, 0, 1);
@@ -289,6 +297,8 @@ namespace remix::config {
         TRACE(viewModelScale, .05f, 1);
         TRACE(primarySurfaceReplacement, 0, 1);
         TRACE(sheetLocalLights, 0, 1);
+        TRACE(layerReuse, 0, 1);
+        TRACE(shortSheetPaths, 0, 1);
         TRACE(sceneScale, .0001, 1000);
         TRACE(lightVisibilityCulling, 0, 1);
         TRACE(cameraBackFaceCulling, 0, 1);
@@ -322,7 +332,12 @@ namespace remix::config {
         TRACE(orcaLevels, 1, 8);
         TRACE(orcaMinSamples, 1, 64);
         TRACE(orcaMaxError, 0, 4);
-        TRACE(indirectHistoryFrames, 0, 64);
+        TRACE(indirectHistoryFrames, 0, 63);
+        TRACE(skySamples, 1, 16);
+        TRACE(sheetSkySamples, 1, 16);
+        TRACE(skyGuiding, 0, 1);
+        TRACE(skyGuideCellSize, .05, 100);
+        TRACE(skyGuideShare, 0, .95);
         TRACE(taaMotionRate, .05, 1);
         TRACE(movingGradients, 0, 1);
         TRACE(movingLightTolerance, .001, 10);
@@ -341,7 +356,7 @@ namespace remix::config {
         TRACE(restirPermutation, 0, 1);
         TRACE(localSamples, 1, 16);
         TRACE(shadowDebug, 0, 2);
-        TRACE(debugView, 0, 13);
+        TRACE(debugView, 0, 14);
         TRACE(taa, 0, 1);
         TRACE(waterIndirectReuse, 0, 1);
         TRACE(translucencyDenoiser, 0, 1);
@@ -360,6 +375,7 @@ namespace remix::config {
         TRACE(sharcMaxUpdatePaths, 0, 16777216);
         TRACE(sharcDynamicSurfaces, 0, 1);
         TRACE(sharcGlossySurfaces, 0, 1);
+        TRACE(sharcFootprintTest, 0, 1);
         TRACE(sky, 0, 1);
         TRACE(forceRebuild, 0, 1);
         TRACE(fsrSharpness, 0, 1);

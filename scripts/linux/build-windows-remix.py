@@ -224,6 +224,11 @@ pkg_config_libdir = '{prefix}/lib/pkgconfig'
     for name in ['nvngx_dlss.dll', 'nvngx_dlssd.dll', 'nvngx_dlssg.dll']:
         shutil.copy2(native / 'upscale' / name, runtime / name)
     shutil.copy2(root / 'third_party/dlss/LICENSE.txt', runtime / 'LICENSE.txt')
+    # Ray Reconstruction's CNN model comes from an older release (ngx.cpp).
+    cnn = output / 'dlss' / manifest['cnnVersion']
+    cnn.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(native / 'upscale/cnn/nvngx_dlssd.dll', cnn / 'nvngx_dlssd.dll')
+    shutil.copy2(root / 'third_party/dlss/LICENSE-310.2.1.txt', cnn / 'LICENSE.txt')
     print('Windows runtime:', output)
 
 

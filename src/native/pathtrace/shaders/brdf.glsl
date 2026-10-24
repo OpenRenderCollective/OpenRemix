@@ -96,7 +96,7 @@ vec3 materialSample(Hit hit,out vec3 direction,out vec3 specularWeight) {
   vec3 wo=transpose(basis)*hit.wo;
   if(wo.z<=0){direction=hit.n;return vec3(0);}
   float p=specularProbability(hit),choice=random();
-  vec2 u=vec2(random(),random());
+  vec2 u=directionRandom();
   float alpha=max(.001,hit.rm.x*hit.rm.x);
   vec3 wi=choice<p?sampleGgx(wo,alpha,u):eonSample(wo,hit.rm.x,u.x,u.y).xyz;
   direction=basis*wi;
@@ -121,7 +121,7 @@ vec3 lobeSample(Hit hit,bool diffuseLobe,out vec3 direction) {
   mat3 basis=shadingBasis(hit.n);
   vec3 wo=transpose(basis)*hit.wo;
   if(wo.z<=0){direction=hit.n;return vec3(0);}
-  vec2 u=vec2(random(),random());
+  vec2 u=directionRandom();
   float alpha=max(.001,hit.rm.x*hit.rm.x);
   vec3 wi=diffuseLobe?eonSample(wo,hit.rm.x,u.x,u.y).xyz:sampleGgx(wo,alpha,u);
   direction=basis*wi;

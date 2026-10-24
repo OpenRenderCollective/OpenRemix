@@ -219,10 +219,14 @@ namespace remix::denoise {
       }
       settings.hitDistanceReconstructionMode = nrd::HitDistanceReconstructionMode::OFF;
       settings.hitDistanceParameters = {frame.hitDistance[0], frame.hitDistance[1], frame.hitDistance[2]};
+      // Indirect light can take a set history (rtx.native.pathtrace.indirectHistoryFrames):
+      // shorter follows lighting changes faster, longer hides more noise.
       settings.maxAccumulatedFrameNum =
-          std::clamp(nrd::GetMaxAccumulatedFrameNum(nrd::REBLUR_DEFAULT_ACCUMULATION_TIME,
-                                                    1000.f / std::max(smoothedFrameMilliseconds, 1.f)),
-                     1u, nrd::REBLUR_MAX_HISTORY_FRAME_NUM);
+          indirect && localTuning.indirectHistoryFrames
+              ? std::min(localTuning.indirectHistoryFrames, nrd::REBLUR_MAX_HISTORY_FRAME_NUM)
+              : std::clamp(nrd::GetMaxAccumulatedFrameNum(nrd::REBLUR_DEFAULT_ACCUMULATION_TIME,
+                                                          1000.f / std::max(smoothedFrameMilliseconds, 1.f)),
+                           1u, nrd::REBLUR_MAX_HISTORY_FRAME_NUM);
       if (pass.pbr) {
         // PBR paths select one lobe per pixel (pathtrace.comp, primaryLobe):
         // the skipped lobe has hit distance 0, which REBLUR reconstructs from
@@ -284,10 +288,6 @@ namespace remix::denoise {
         }
       } else
         warmupFrames = std::max(32u, settings.maxAccumulatedFrameNum);
-      // Indirect light (SH and PBR lobes): a shorter history trades noise for
-      // faster response when lighting changes (rtx.native.pathtrace.indirectHistoryFrames).
-      if (indirect && localTuning.indirectHistoryFrames)
-        settings.maxAccumulatedFrameNum = std::min(settings.maxAccumulatedFrameNum, localTuning.indirectHistoryFrames);
       if (indirect) {
         // A fast history five times shorter than the main one, stabilized
         // over the main history's length.

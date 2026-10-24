@@ -9,6 +9,7 @@
 #include <functional>
 #include <limits>
 #include <random>
+#include <set>
 #include <remix/remix_native_ext.h>
 
 namespace {
@@ -581,5 +582,282 @@ int main() {
     require(bvh.nodes().empty() && bvh.lastBuildReason == LightBvh::Cleared && !visibility.table(),
             "Unloaded lights remained in the two-part hierarchy");
     std::puts("Dynamic part: static indices, visibility table, slots and settling passed");
+  }
+  {
+    // Lights that leave the host's view (its culling) keep their slots for
+    // kRetain updates, through builds, and return to them; gone longer, a
+    // build drops them.
+    std::mt19937 random(1531);
+    std::vector<SphereLight> all;
+    for (unsigned i = 0; i < 400; ++i) {
+      SphereLight light;
+      light.id = 10000 + i;
+      light.radius = .1f;
+      light.position[0] = float(random() % 400) / 10;
+      light.position[1] = float(random() % 400) / 10;
+      light.radiance[0] = 1;
+      all.push_back(light);
+    }
+    LightBvh bvh;
+    bvh.update(all);
+    const std::vector<SphereLight> few(all.begin(), all.begin() + 100);
+    for (uint64_t step = 0; step < 3 * LightBvh::kBuildInterval; ++step)
+      bvh.update(few);
+    require(bvh.builds == 1 && bvh.retiredSlots == 300 && bvh.active == 100,
+            "Lights out of view for a while rebuilt the hierarchy or lost their power");
+    auto withNew = few;
+    SphereLight added = all[0];
+    added.id = 99999;
+    added.position[0] = 55;
+    withNew.push_back(added);
+    // The first new light makes the dynamic part (a build); at rest it joins
+    // the static part (another).
+    bvh.update(withNew);
+    require(bvh.builds == 2 && bvh.lastBuildReason == LightBvh::FirstDynamic && bvh.retiredSlots == 300,
+            "A build dropped the slots of lights out of view for a while");
+    for (uint64_t step = 0; step < 3 * LightBvh::kBuildInterval && bvh.builds == 2; ++step)
+      bvh.update(withNew);
+    require(bvh.builds == 3 && bvh.lastBuildReason == LightBvh::Settled && bvh.retiredSlots == 300 &&
+                bvh.dynamicLights == 0,
+            "A settling build dropped the slots of lights out of view for a while");
+    auto back = all;
+    back.push_back(added);
+    bvh.update(back);
+    require(bvh.builds == 3 && bvh.retiredSlots == 0 && bvh.dynamicLights == 0 && bvh.active == 401,
+            "Lights back in view did not return to their slots");
+    for (uint64_t step = 0; step < LightBvh::kRetain + LightBvh::kBuildInterval + 1 &&
+                            bvh.lastBuildReason != LightBvh::Retired;
+         ++step)
+      bvh.update(withNew);
+    require(bvh.lastBuildReason == LightBvh::Retired && bvh.retiredSlots == 0 && bvh.staticLights == 101,
+            "Lights gone for good kept their slots");
+    // Input order does not matter: the same lights reversed are unchanged.
+    std::vector<SphereLight> reversed(withNew.rbegin(), withNew.rend());
+    const uint64_t generation = bvh.generation;
+    require(!bvh.update(reversed) && bvh.generation == generation, "Reordered input changed the hierarchy");
+    std::puts("Retained slots: lights out of view return to them, gone ones are dropped passed");
+  }
+  {
+    // Props of dynamic instances that leave the host's view and come back
+    // keep their dynamic slots (unlit) instead of rebuilding the dynamic
+    // part; slots gone kRetain updates go with the next rebuild.
+    const auto prop = [](uint64_t instance, float x) {
+      std::vector<SphereLight> lights;
+      for (unsigned i = 0; i < 20; ++i) {
+        SphereLight light;
+        light.id = instance * 1000 + i;
+        light.group = instance * 2 + 1;
+        light.rank = i;
+        light.triangle = 1;
+        light.dynamic = true;
+        light.radiance[0] = 1;
+        for (unsigned v = 0; v < 3; ++v) {
+          light.corners[v][0] = x + float(i % 5) + (v == 1);
+          light.corners[v][1] = float(i / 5) + (v == 2);
+          for (unsigned c = 0; c < 3; ++c)
+            light.position[c] += light.corners[v][c] / 3;
+        }
+        light.radius = 1;
+        lights.push_back(light);
+      }
+      return lights;
+    };
+    const auto join = [](std::initializer_list<std::vector<SphereLight>> parts) {
+      std::vector<SphereLight> all;
+      for (const auto &part : parts)
+        all.insert(all.end(), part.begin(), part.end());
+      return all;
+    };
+    SphereLight lamp;
+    lamp.id = 1;
+    lamp.radius = .1f;
+    lamp.radiance[0] = 1;
+    const auto a = prop(1, 0), b = prop(2, 10), c = prop(3, 20), d = prop(4, 30);
+    LightBvh bvh;
+    bvh.setClusterSize(4);
+    bvh.update(join({{lamp}, a, b}));
+    bvh.update(join({{lamp}, a, b}));
+    const uint64_t builds = bvh.builds, dynamicBuilds = bvh.dynamicBuilds;
+    for (unsigned step = 0; step < 200; ++step) {
+      const bool away = step % 3 != 0;
+      bvh.update(away ? join({{lamp}, a}) : join({{lamp}, a, b}));
+      require(bvh.unlitDynamicSlots == (away ? b.size() : 0) && bvh.dynamicLights == (away ? 20u : 40u) &&
+                  bvh.active == (away ? 21u : 41u),
+              "A prop out of view did not keep its slots unlit");
+    }
+    require(bvh.builds == builds && bvh.dynamicBuilds == dynamicBuilds,
+            "A prop leaving and entering the view rebuilt the dynamic part");
+    // A new prop rebuilds it once, keeping the slots of the one away.
+    bvh.update(join({{lamp}, a, c}));
+    bvh.update(join({{lamp}, a, c}));
+    require(bvh.dynamicBuilds == dynamicBuilds + 1 && bvh.unlitDynamicSlots == b.size(),
+            "A new prop did not rebuild the dynamic part once, keeping slots of one away");
+    // Gone kRetain updates, its slots go with the next rebuild.
+    for (uint64_t step = 0; step < LightBvh::kRetain; ++step)
+      bvh.update(step % 2 ? join({{lamp}, a, c}) : join({{lamp}, c, a}));
+    require(bvh.unlitDynamicSlots == b.size(), "Stale slots were dropped without a rebuild");
+    bvh.update(join({{lamp}, a, c, d}));
+    require(bvh.unlitDynamicSlots == 0 && bvh.dynamicLights == 60 && bvh.active == 61,
+            "A rebuild kept the slots of a prop gone for good");
+    std::puts("Dynamic slots: props out of view keep them, gone ones go with a rebuild passed");
+  }
+  {
+    // Upload deltas: an older copy of the emitters and nodes, patched with
+    // the ranges changedSince reports, equals the current ones; a build, or
+    // another hierarchy, needs a whole copy.
+    std::mt19937 random(77);
+    std::vector<SphereLight> lights;
+    for (unsigned i = 0; i < 3000; ++i) {
+      SphereLight light;
+      light.id = 1 + i;
+      light.group = 1 + 2 * (i / 30);
+      light.rank = i % 30;
+      light.triangle = 1;
+      light.dynamic = i >= 1500;
+      light.radiance[0] = 1 + float(i % 3);
+      for (unsigned v = 0; v < 3; ++v) {
+        light.corners[v][0] = float(i % 100) + (v == 1);
+        light.corners[v][1] = float(i / 100) + (v == 2);
+        for (unsigned c = 0; c < 3; ++c)
+          light.position[c] += light.corners[v][c] / 3;
+      }
+      light.radius = 1;
+      lights.push_back(light);
+    }
+    LightBvh bvh;
+    bvh.setClusterSize(8);
+    bvh.update(lights);
+    // Dynamic lights out of view keep their slots; settle the first builds.
+    for (unsigned step = 0; step < 2 * LightBvh::kBuildInterval; ++step)
+      bvh.update(lights);
+    LightBvh::Ranges emitterRanges, nodeRanges;
+    const auto copies = [&] { return std::pair{bvh.emitters(), bvh.nodes()}; };
+    for (unsigned round = 0; round < 20; ++round) {
+      const uint64_t since = bvh.generation;
+      auto [emitters, nodes] = copies();
+      for (unsigned step = 0; step < 1 + round % 4; ++step) {
+        auto frame = lights;
+        // A few static lights dim; dynamic props of 30 lights flicker out of
+        // view (a seventh of them, and five at random).
+        for (unsigned d = 0; d < 3; ++d)
+          frame[random() % 1500].radiance[1] = float(round + 1);
+        std::set<uint64_t> away;
+        for (unsigned p = 0; p < 5; ++p)
+          away.insert(50 + random() % 50);
+        std::erase_if(frame, [&](const SphereLight &light) {
+          const uint64_t prop = (light.id - 1) / 30;
+          return light.dynamic && (away.count(prop) || prop % 7 == round % 7);
+        });
+        bvh.update(frame);
+      }
+      require(bvh.changedSince(bvh.instance(), since, emitterRanges, nodeRanges),
+              "Refits asked for a whole upload");
+      require(emitters.size() == bvh.emitters().size() && nodes.size() == bvh.nodes().size(),
+              "Refits changed the hierarchy's size");
+      size_t patched = 0;
+      for (const auto &[first, end] : emitterRanges) {
+        std::copy(bvh.emitters().begin() + first, bvh.emitters().begin() + end, emitters.begin() + first);
+        patched += end - first;
+      }
+      for (const auto &[first, end] : nodeRanges)
+        std::copy(bvh.nodes().begin() + first, bvh.nodes().begin() + end, nodes.begin() + first);
+      require(std::memcmp(emitters.data(), bvh.emitters().data(), emitters.size() * sizeof(LightEmitter)) == 0 &&
+                  std::memcmp(nodes.data(), bvh.nodes().data(), nodes.size() * sizeof(LightNode)) == 0,
+              "Patched copy differs from the hierarchy");
+      require(patched < emitters.size() / 2, "Upload deltas cover most emitters");
+    }
+    require(bvh.changedSince(bvh.instance(), bvh.generation, emitterRanges, nodeRanges) && emitterRanges.empty() &&
+                nodeRanges.empty(),
+            "An up-to-date copy has changes");
+    LightBvh other;
+    other.update(lights);
+    require(!bvh.changedSince(other.instance(), bvh.generation, emitterRanges, nodeRanges),
+            "Another hierarchy's copy was patched");
+    const uint64_t before = bvh.generation;
+    auto grown = lights;
+    SphereLight added = lights[0];
+    added.id = 99999;
+    added.group = 99999;
+    grown.push_back(added);
+    bvh.update(grown); // a new dynamic-part light: the dynamic part is built again
+    require(!bvh.changedSince(bvh.instance(), before, emitterRanges, nodeRanges), "A build was patched");
+    std::puts("Upload deltas: patched copies match, builds and other hierarchies copy whole passed");
+  }
+  {
+    // Leaves of up to N emitters of one surface: runs of a group in rank
+    // order, power shares that sum to one, refits that keep them, and a
+    // cluster size of one that is a leaf per emitter.
+    std::vector<SphereLight> lights;
+    const unsigned sizes[] = {100, 70, 30};
+    for (unsigned g = 0; g < 3; ++g)
+      for (unsigned i = 0; i < sizes[g]; ++i) {
+        SphereLight light;
+        light.id = 20000 + g * 1000 + i;
+        light.triangle = 1;
+        light.group = 7 + g;
+        light.rank = (i * 37) % sizes[g];
+        light.radiance[0] = 1 + float(i % 3);
+        for (unsigned v = 0; v < 3; ++v) {
+          light.corners[v][0] = float(g * 50) + float(light.rank) * .5f + (v == 1);
+          light.corners[v][1] = (v == 2);
+          for (unsigned c = 0; c < 3; ++c)
+            light.position[c] += light.corners[v][c] / 3;
+        }
+        light.radius = 1;
+        lights.push_back(light);
+      }
+    for (unsigned i = 0; i < 5; ++i) {
+      SphereLight light;
+      light.id = 30000 + i;
+      light.radius = .1f;
+      light.position[2] = float(i);
+      light.radiance[1] = 1;
+      lights.push_back(light);
+    }
+    std::reverse(lights.begin(), lights.end()); // input order does not matter
+    LightBvh bvh;
+    bvh.setClusterSize(16);
+    require(bvh.update(lights), "Clustered hierarchy not built");
+    require(bvh.leafCount() == 5 + 7 + 5 + 2 && bvh.nodes().size() == 2 * bvh.leafCount() - 1,
+            "Groups were not cut into leaves of at most sixteen");
+    const auto checkLeaves = [&](const char *message) {
+      size_t covered = 0;
+      for (const auto &node : bvh.nodes()) {
+        if (node.links[3] != 1)
+          continue;
+        const uint32_t first = node.links[2], count = std::max(node.links[1], 1u);
+        double sum = 0, power = 0;
+        for (uint32_t e = first; e < first + count; ++e) {
+          const auto &light = bvh.lights()[e];
+          sum += bvh.emitters()[e].shaping[3];
+          power += light.radiance[0] + light.radiance[1];
+          if (e > first)
+            require(light.group == bvh.lights()[first].group && light.group && light.rank > bvh.lights()[e - 1].rank,
+                    message);
+        }
+        require(count <= 16 && std::abs(sum - 1) < 1e-5 && bvh.emitters()[first + count - 1].shaping[2] == 1 &&
+                    (power > 0) == (node.minimumPower[3] > 0),
+                message);
+        covered += count;
+      }
+      require(covered == bvh.emitters().size(), message);
+    };
+    checkLeaves("A leaf mixed surfaces, lost rank order or its power shares");
+    // A brighter triangle takes a larger share; the refit keeps the leaves.
+    auto brighter = lights;
+    for (auto &light : brighter)
+      if (light.id == 20005)
+        light.radiance[0] = 50;
+    const uint64_t builds = bvh.builds;
+    require(bvh.update(brighter) && bvh.builds == builds, "A brighter triangle rebuilt the hierarchy");
+    checkLeaves("A refit lost a leaf's power shares");
+    for (size_t e = 0; e < bvh.lights().size(); ++e)
+      if (bvh.lights()[e].id == 20005)
+        require(bvh.emitters()[e].shaping[3] > .5f, "A brighter triangle kept its share");
+    bvh.setClusterSize(1);
+    require(bvh.update(brighter) && bvh.builds == builds + 1 && bvh.leafCount() == brighter.size(),
+            "Cluster size one did not make a leaf per emitter");
+    checkLeaves("Single-emitter leaves lost their shares");
+    std::puts("Clusters: surface runs in rank order, power shares, refits and size one passed");
   }
 }

@@ -415,6 +415,14 @@ namespace remix {
     emissionHistory = std::move(lighting.history);
     lightBvh = std::move(lighting.combined);
     lightVisibility = std::move(lighting.visibility);
+    // The family trees come back whether or not this frame uses them: they
+    // are the state the next update starts from (an unused tree is uploaded
+    // when it is next used: its generation differs).
+    if (lighting.families) {
+      torchBvh = std::move(lighting.torch);
+      emissiveBvh = std::move(lighting.emissive);
+    }
+    lighting.staged = false;
     emittingInstances = lighting.emittingInstances;
     dynamicEmittingInstances = lighting.dynamicEmittingInstances;
     lightUpdateMilliseconds = lighting.updateMilliseconds;
@@ -468,26 +476,62 @@ namespace remix {
     // or their radiance reaches the image unfiltered through the opaque pass.
     splitLightingActive = options.separateLocalLighting != 0 &&
                           (postSplit || ((hasEmissiveLights || options.restir) && (!denoiser || rrActive())));
-    auto uploadLights = [&](scene::LightBvh &bvh, uint64_t &uploadedGeneration,
+    auto uploadLights = [&](scene::LightBvh &bvh, uint64_t &uploadedGeneration, uint64_t &uploadedInstance,
                             std::unique_ptr<Buffer> &nodes, std::unique_ptr<Buffer> &emitters) {
-      if ((!nodes || nodes->host == deviceLocalScene || uploadedGeneration != bvh.generation) &&
+      if ((!nodes || nodes->host == deviceLocalScene || uploadedGeneration != bvh.generation ||
+           uploadedInstance != bvh.instance()) &&
           !bvh.nodes().empty()) {
-        uploadedGeneration = bvh.generation;
+        const size_t nodeBytes = bvh.nodes().size() * sizeof(scene::LightNode);
+        const size_t emitterBytes = bvh.emitters().size() * sizeof(scene::LightEmitter);
         if (deviceLocalScene) {
           // This slot's own buffers, whose fence has completed: rewritten in
           // place while they are large enough. A new buffer per change (lights
           // that flicker or come and go change the set every frame, and its
           // size with it) allocated device memory on those frames, tens of ms
-          // at times.
+          // at times. Where the slot holds an earlier generation of the same
+          // hierarchy, only what changed since is copied.
+          const bool partial = nodes && emitters && !nodes->host && !emitters->host && nodes->size >= nodeBytes &&
+                               emitters->size >= emitterBytes &&
+                               bvh.changedSince(uploadedInstance, uploadedGeneration, changedEmitters, changedNodes);
           const auto place = [&](std::unique_ptr<Buffer> &out, const void *data, size_t size) {
             if (!out || out->host || out->size < size)
               out = buffer(size + size / 4, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                            false, true);
             const VkBufferCopy copy = {.srcOffset = stage(data, size), .size = size};
             vkCmdCopyBuffer(command, staging.buffer->handle, out->handle, 1, &copy);
+            trace::g_lightUploads.bytes += size;
+            ++trace::g_lightUploads.regions;
           };
-          place(nodes, bvh.nodes().data(), bvh.nodes().size() * sizeof(scene::LightNode));
-          place(emitters, bvh.emitters().data(), bvh.emitters().size() * sizeof(scene::LightEmitter));
+          const auto patch = [&](Buffer &out, const auto *data, const scene::LightBvh::Ranges &ranges) {
+            if (ranges.empty())
+              return;
+            // Packed into one staging write (each stage() flushes).
+            constexpr size_t stride = sizeof(*data);
+            std::vector<VkBufferCopy> copies;
+            copies.reserve(ranges.size());
+            auto &packed = lightUploadPacking;
+            packed.clear();
+            for (const auto &[first, end] : ranges) {
+              const size_t size = (end - first) * stride;
+              copies.push_back({.srcOffset = packed.size(), .dstOffset = first * stride, .size = size});
+              const auto *bytes = reinterpret_cast<const uint8_t *>(data + first);
+              packed.insert(packed.end(), bytes, bytes + size);
+            }
+            const VkDeviceSize base = stage(packed.data(), packed.size());
+            for (auto &copy : copies)
+              copy.srcOffset += base;
+            trace::g_lightUploads.bytes += packed.size();
+            vkCmdCopyBuffer(command, staging.buffer->handle, out.handle, uint32_t(copies.size()), copies.data());
+            trace::g_lightUploads.regions += copies.size();
+          };
+          ++(partial ? trace::g_lightUploads.partial : trace::g_lightUploads.whole);
+          if (partial) {
+            patch(*nodes, bvh.nodes().data(), changedNodes);
+            patch(*emitters, bvh.emitters().data(), changedEmitters);
+          } else {
+            place(nodes, bvh.nodes().data(), nodeBytes);
+            place(emitters, bvh.emitters().data(), emitterBytes);
+          }
         } else {
           // This slot's fence has completed; replace GPU-only allocations before
           // hostBuffer tries to map them when a diagnostic switches back.
@@ -495,21 +539,19 @@ namespace remix {
             nodes.reset();
           if (emitters && !emitters->host)
             emitters.reset();
-          hostBuffer(nodes, bvh.nodes().data(), bvh.nodes().size() * sizeof(scene::LightNode),
-                     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-          hostBuffer(emitters, bvh.emitters().data(), bvh.emitters().size() * sizeof(scene::LightEmitter),
-                     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+          hostBuffer(nodes, bvh.nodes().data(), nodeBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+          hostBuffer(emitters, bvh.emitters().data(), emitterBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
         }
+        uploadedGeneration = bvh.generation;
+        uploadedInstance = bvh.instance();
       }
     };
     const bool splitFamilies = splitLightingActive && options.separateLocalLighting != 3;
     if (splitFamilies) {
-      torchBvh = std::move(lighting.torch);
-      emissiveBvh = std::move(lighting.emissive);
-      uploadLights(torchBvh, torchBufferGeneration, torchNodes, torchEmitters);
-      uploadLights(emissiveBvh, emissiveBufferGeneration, emissiveNodes, emissiveEmitters);
+      uploadLights(torchBvh, torchBufferGeneration, torchBufferInstance, torchNodes, torchEmitters);
+      uploadLights(emissiveBvh, emissiveBufferGeneration, emissiveBufferInstance, emissiveNodes, emissiveEmitters);
     }
-    uploadLights(lightBvh, lightBufferGeneration, lightNodes, lightEmitters);
+    uploadLights(lightBvh, lightBufferGeneration, lightBufferInstance, lightNodes, lightEmitters);
     if (deviceLocalScene)
       barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
@@ -655,7 +697,10 @@ namespace remix {
     frame.firefly[1] = options.indirectClamp;
     frame.pathConfig[0] = rouletteActive;
     frame.pathConfig[1] = options.rouletteMinBounces;
-    frame.pathConfig[2] = (options.translucentIndirect ? 1u : 0u) | (options.sheetLocalLights ? 2u : 0u);
+    frame.pathConfig[2] = (options.translucentIndirect ? 1u : 0u) | (options.sheetLocalLights ? 2u : 0u) |
+                          (options.layerReuse ? 4u : 0u) | (options.shortSheetPaths ? 8u : 0u) |
+                          std::clamp(options.skySamples, 1u, 16u) << 8 |
+                          std::clamp(std::min(options.sheetSkySamples, options.skySamples), 1u, 16u) << 16;
     // Bits 0-7: the instance mask of shadow, light-visibility and bounce rays
     // (view models never; blended layers unless skipBlendedSecondaryRays is
     // off). Bit 8: a traced view model is in the frame (camera rays look for
@@ -680,7 +725,7 @@ namespace remix {
         options.sharcReset,     options.sharcCapacityLog2,       options.sharcSceneScale,
         options.sharcDownscale, options.sharcAccumulationFrames, options.sharcStaleFrames,
         options.sharcMotionFrames, options.sharcMaxUpdatePaths, options.sharcDynamicSurfaces,
-        options.sharcGlossySurfaces};
+        options.sharcGlossySurfaces, options.sharcFootprintTest};
     append(cacheSettings, sizeof(cacheSettings));
     append(&options.sharcFireflyClamp, sizeof(options.sharcFireflyClamp));
     const auto temporalEpoch = resources.temporalEpoch();
@@ -884,6 +929,7 @@ namespace remix {
     frame.emissiveNodes = emissiveNodes ? emissiveNodes->address : 0;
     frame.emissiveEmitters = emissiveEmitters ? emissiveEmitters->address : 0;
     configureLightGuiding(frame, options);
+    configureSkyGuiding(frame, options);
     configureRestir(frame, options, extent);
     configureRegir(frame, options);
     configureOrca(frame, options);
@@ -1035,6 +1081,7 @@ namespace remix {
     {
       gpu::GpuScope scope(command, "Light guiding clear");
       beginLightGuiding(command);
+      beginSkyGuiding(command);
     }
     auto stageTime = [&](uint32_t query) {
       if (timestamps)
@@ -1209,23 +1256,18 @@ namespace remix {
       stageTime(8);
     }
     stageTime(11);
-    {
-      // The front sheet's light (direct, paths, reused GI), for the
-      // composition below; this frame's opaque radiance and NRD outputs are
-      // available to its reuse.
-      gpu::GpuScope scope(command, "Sheet lighting (front sheet)", extent);
-      bindSelected(command, selectLightingPipeline(denoiser ? sheetTemporalCompute : sheetCompute));
-      vkCmdDispatch(command, (extent.width + 7) / 8, (extent.height + 7) / 8, 1);
-    }
-    barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
     // The multi-sheet pass compiles off the activation batch; until it is
     // ready the composition pass composes layered pixels from the front
     // sheet's light (REMIX_MULTI_SHEET_FALLBACK=1 keeps it so, for comparison).
-    static const bool forceFallback = [] {
+    // With layer reuse that is the multi-sheet pass's own result (deeper
+    // layers take the front one's light) at a fraction of its cost: the sheet
+    // lighting and composition passes are smaller stages (a screen of
+    // two-layer glass at 1129x635 on an RTX 2080: 18.8 ms -> 3.4 + 1.8 ms).
+    static const bool fallbackRequested = [] {
       const auto *value = std::getenv("REMIX_MULTI_SHEET_FALLBACK");
       return value && std::strcmp(value, "1") == 0;
     }();
+    const bool forceFallback = fallbackRequested || options.layerReuse;
     if (denoiser && !temporalTransparencyCompute && !multiSheetFailed && !forceFallback) {
       try {
         createLightingPipelines({{lightingStage(trace::Stage::temporalTransparency), temporalLayout,
@@ -1239,6 +1281,21 @@ namespace remix {
       }
     }
     const auto multiSheetPipeline = forceFallback ? VK_NULL_HANDLE : denoiser ? temporalTransparencyCompute : transparencyCompute;
+    {
+      // The front sheet's light (direct, paths, reused GI), for the
+      // composition below; this frame's opaque radiance and NRD outputs are
+      // available to its reuse. Layered pixels take it only when the
+      // composition pass composes them (the multi-sheet pass lights its own
+      // front sheet).
+      gpu::GpuScope scope(command, "Sheet lighting (front sheet)", extent);
+      const auto sheetPipeline = selectLightingPipeline(denoiser ? sheetTemporalCompute : sheetCompute);
+      if (!multiSheetPipeline)
+        selectedFeatures |= featureMultiSheetFallback;
+      bindSelected(command, sheetPipeline);
+      vkCmdDispatch(command, (extent.width + 7) / 8, (extent.height + 7) / 8, 1);
+    }
+    barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
     const auto singleTransparencyPipeline =
         selectLightingPipeline(denoiser ? singleTemporalTransparencyCompute : singleTransparencyCompute);
     if (!multiSheetPipeline)
@@ -1358,7 +1415,7 @@ namespace remix {
     using Clock = std::chrono::steady_clock;
     auto &g = *m_gpu;
     const char *profile = std::getenv("REMIX_OPACITY_PROFILE");
-    const auto start = profile ? Clock::now() : Clock::time_point{};
+    const auto start = Clock::now();
     if (!g.workers)
       g.workers = std::make_unique<WorkerPool>();
     const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - g.epoch).count();
@@ -1394,9 +1451,9 @@ namespace remix {
       frame = scene::prepareSceneFrame(resources, &g.statics, g.opacityCache, g.workers.get(), false, seconds,
                                        filterEmission, g.surfaceEmissionCache);
     }
-    const auto classified = profile ? Clock::now() : Clock::time_point{};
+    const auto classified = Clock::now();
     m_gpu->opacityCache.prune();
-    const auto pruned = profile ? Clock::now() : Clock::time_point{};
+    const auto pruned = Clock::now();
     if (std::getenv("REMIX_OPACITY_DIAGNOSTICS")) {
       uint64_t reasons[scene::OpacityPartition::Count] = {}, mixed = 0;
       auto count = [&](const scene::TraceFrame::Surface &surface) {
@@ -1420,35 +1477,92 @@ namespace remix {
         std::fprintf(stderr, " %s=%llu", names[i], static_cast<unsigned long long>(reasons[i]));
       std::fprintf(stderr, "\n");
     }
+    const auto stageStart = Clock::now();
     auto &staged = frame.lighting;
-    staged.combined = m_gpu->lightBvh;
-    staged.history = m_gpu->emissionHistory;
+    staged.combined = std::move(m_gpu->lightBvh);
+    staged.history = std::move(m_gpu->emissionHistory);
+    staged.visibility = std::move(m_gpu->lightVisibility);
+    staged.staged = true;
     const auto mode = options.freezeEmissiveRadiance ? 2u : options.stabilizeEmissiveLighting ? 1u : 0u;
     staged.history.begin(resources.temporalEpoch().world, frame.seconds,
                          options.emissiveLights && options.localLights ? mode : 0u);
     const auto lightStart = Clock::now();
-    auto lights = options.torchLights ? resources.sphereLights() : std::vector<scene::SphereLight>{};
+    const auto stageEnd = lightStart;
+    // Storage kept from frame to frame (megabytes with many emissive triangles).
+    auto &lights = m_gpu->lightInput;
+    lights.clear();
+    if (options.torchLights) {
+      const auto spheres = resources.sphereLights();
+      lights.assign(spheres.begin(), spheres.end());
+    }
     const auto sphereCount = lights.size();
-    for (const auto &source : frame.emitters) {
+    // The static set's emitters where the set keeps them (scene::mergedEmitters
+    // has them in trace order; the light tree orders its input itself), then
+    // the frame's own.
+    size_t emitterCount = frame.emitterCount;
+    if (frame.staticUnits)
+      for (const uint32_t slot : g.statics.emitting())
+        emitterCount += g.statics.units()[slot].emitters.size();
+    lights.reserve(sphereCount + emitterCount);
+    const auto gather = [&](const scene::TraceFrame::Emitter &source, bool animated) {
       auto light = source.light;
-      if (source.animated)
+      if (animated)
         staged.history.apply(light, source.layout);
       if (options.emissiveLights && light.radius > 1e-8f)
         lights.push_back(light);
+    };
+    if (frame.staticUnits)
+      for (const uint32_t slot : g.statics.emitting())
+        for (const auto &source : g.statics.units()[slot].emitters)
+          gather(source, filterEmission && source.animated);
+    // The frame's runs: each light copied once, into the tree's input.
+    for (const auto &run : frame.emitters) {
+      const auto &source = *run.lights;
+      for (size_t i = 0; i < source.size(); ++i) {
+        lights.push_back(source[i]);
+        auto &light = lights.back();
+        light.dynamic = run.dynamic;
+        if (run.animated)
+          staged.history.apply(light, (*run.reduction)[i].layout);
+        if (!options.emissiveLights || !(light.radius > 1e-8f))
+          lights.pop_back();
+      }
     }
     staged.history.end();
     staged.hasEmissive = lights.size() > sphereCount;
+    const auto gathered = Clock::now();
+    const auto lightCount = uint32_t(lights.size());
     // Per-family trees also for torch-only scenes: a split denoiser needs them.
     if (options.separateLocalLighting && options.separateLocalLighting != 3) {
-      staged.torch = m_gpu->torchBvh;
-      staged.emissive = m_gpu->emissiveBvh;
+      staged.torch = std::move(m_gpu->torchBvh);
+      staged.emissive = std::move(m_gpu->emissiveBvh);
+      staged.families = true;
+      staged.emissive.setClusterSize(options.emissiveClusterSize);
       staged.torch.update({lights.begin(), lights.begin() + sphereCount});
       staged.emissive.update({lights.begin() + sphereCount, lights.end()});
     }
-    staged.combined.update(std::move(lights));
-    staged.visibility = m_gpu->lightVisibility;
+    const auto split = Clock::now();
+    staged.combined.setClusterSize(options.emissiveClusterSize);
+    staged.combined.update(lights);
+    const auto treed = Clock::now();
     staged.visibility.update(resources.visibilityPartition(), staged.combined,
                              options.lightVisibilityCulling && options.localLights, .1f / options.sceneScale);
+    {
+      const auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
+      const auto end = Clock::now();
+      const trace::SceneCosts costs{ms(start, end),         ms(start, classified), ms(classified, pruned),
+                                    ms(stageStart, stageEnd), ms(stageEnd, gathered), ms(gathered, split),
+                                    ms(split, treed),         ms(treed, end)};
+      auto &totals = trace::g_sceneCosts;
+      auto &sum = totals.sum;
+      sum.total += costs.total, sum.frame += costs.frame, sum.prune += costs.prune, sum.stage += costs.stage;
+      sum.gather += costs.gather, sum.split += costs.split, sum.tree += costs.tree, sum.visibility += costs.visibility;
+      ++totals.frames;
+      if (costs.total > totals.slowest.total) {
+        totals.slowest = costs;
+        totals.lights = lightCount;
+      }
+    }
     staged.emittingInstances = frame.emittingInstances;
     staged.dynamicEmittingInstances = frame.dynamicEmittingInstances;
     staged.updateMilliseconds = std::chrono::duration<double, std::milli>(Clock::now() - lightStart).count();
@@ -1470,6 +1584,21 @@ namespace remix {
       }
     }
     return frame;
+  }
+
+  void PathTracer::returnScene(scene::TraceFrame &frame) const {
+    auto &lighting = frame.lighting;
+    if (!lighting.staged)
+      return;
+    auto &g = *m_gpu;
+    g.lightBvh = std::move(lighting.combined);
+    g.emissionHistory = std::move(lighting.history);
+    g.lightVisibility = std::move(lighting.visibility);
+    if (lighting.families) {
+      g.torchBvh = std::move(lighting.torch);
+      g.emissiveBvh = std::move(lighting.emissive);
+    }
+    lighting.staged = false;
   }
 
   // The frame's mesh views, in draw order: pass 0 finds the views whose lookup
