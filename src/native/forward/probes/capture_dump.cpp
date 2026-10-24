@@ -158,28 +158,37 @@ namespace remix::forward::probes {
             }
             output << "]}";
           } else output << "null";
+          auto writeRefinement = [&](RefinementPolicy policy) {
+            auto refinement = variant.geometry ? refineProjection(*variant.geometry, .001f / source.sceneScale, policy)
+                                               : std::nullopt;
+            const RegionTolerance tolerance{variant.detailTolerant ? fits.detailToleranceMetres / source.sceneScale : 0};
+            if (refinement && (!occupancy || !occupancy->contains(refinement->bounds, tolerance))) refinement.reset();
+            if (refinement) {
+              auto region = *variant.geometry;
+              region.bounds = refinement->bounds;
+              const auto reassessed = assessment->reassess({region});
+              output << "{\"reassessed\":true,\"faces\":" << refinement->faces << ",\"minimum\":";
+              vector(refinement->bounds.minimum);
+              output << ",\"maximum\":"; vector(refinement->bounds.maximum);
+              output << ",\"geometry\":{\"quality\":" << reassessed[0].quality << ",\"faces\":[";
+              for (uint32_t face = 0; face < 6; ++face) {
+                const auto &g = reassessed[0].faces[face];
+                output << (face ? "," : "") << "{\"solidAngleFraction\":" << g.solidAngleFraction
+                       << ",\"nearFraction\":" << g.nearFraction << ",\"farFraction\":" << g.farFraction
+                       << ",\"missFraction\":" << g.missFraction
+                       << ",\"meanRelativeResidual\":" << g.meanRelativeResidual << ",\"meanAbsoluteRelativeResidual\":" << g.meanAbsoluteRelativeResidual << '}';
+              }
+              output << "]}}";
+            } else output << "null";
+          };
           output << ",\"refinement\":";
-          auto refinement = variant.geometry ? refineProjection(*variant.geometry, .001f / source.sceneScale)
-                                             : std::nullopt;
-          const RegionTolerance tolerance{variant.detailTolerant ? fits.detailToleranceMetres / source.sceneScale : 0};
-          if (refinement && (!occupancy || !occupancy->contains(refinement->bounds, tolerance))) refinement.reset();
-          if (refinement) {
-            auto region = *variant.geometry;
-            region.bounds = refinement->bounds;
-            const auto reassessed = assessment->reassess({region});
-            output << "{\"reassessed\":true,\"faces\":" << refinement->faces << ",\"minimum\":";
-            vector(refinement->bounds.minimum);
-            output << ",\"maximum\":"; vector(refinement->bounds.maximum);
-            output << ",\"geometry\":{\"quality\":" << reassessed[0].quality << ",\"faces\":[";
-            for (uint32_t face = 0; face < 6; ++face) {
-              const auto &g = reassessed[0].faces[face];
-              output << (face ? "," : "") << "{\"solidAngleFraction\":" << g.solidAngleFraction
-                     << ",\"nearFraction\":" << g.nearFraction << ",\"farFraction\":" << g.farFraction
-                     << ",\"missFraction\":" << g.missFraction
-                     << ",\"meanRelativeResidual\":" << g.meanRelativeResidual << ",\"meanAbsoluteRelativeResidual\":" << g.meanAbsoluteRelativeResidual << '}';
-            }
-            output << "]}}";
-          } else output << "null";
+          writeRefinement({});
+          RefinementPolicy detailPolicy;
+          detailPolicy.maximumAbsoluteUncertainty = fits.detailToleranceMetres / source.sceneScale;
+          output << ",\"detailBoundedRefinement\":{\"maximumAbsoluteUncertainty\":"
+                 << detailPolicy.maximumAbsoluteUncertainty << ",\"proposal\":";
+          writeRefinement(detailPolicy);
+          output << '}';
           output << '}';
         }
         output << "]}";

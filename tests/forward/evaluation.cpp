@@ -343,18 +343,26 @@ int main() {
     face.plane->upper += .5f;
   }
   require(!p::refineProjection(uncertain, .001f), "Broad plane uncertainty cannot authorize contraction");
+  p::RefinementPolicy detailBudget;
+  detailBudget.maximumAbsoluteUncertainty = .6f;
+  require(p::refineProjection(uncertain, .001f, detailBudget).has_value(),
+          "Explicit scene-unit detail budget can propose a reassessable contraction near an origin");
+  detailBudget.maximumAbsoluteUncertainty = .49f;
+  require(!p::refineProjection(uncertain, .001f, detailBudget),
+          "Absolute uncertainty remains bounded by the supplied detail budget");
+  detailBudget.maximumAbsoluteUncertainty = .6f;
   auto outward = refinementInput;
   for (uint32_t face = 0; face < 6; ++face) {
     const float coordinate = face & 1u ? -3.f : 3.f;
     outward.faces[face].plane = p::ProjectionPlaneAudit{coordinate, coordinate, coordinate, 1, 64};
   }
-  require(!p::refineProjection(outward, .001f), "Measured planes beyond the proxy cannot grow it through walls");
+  require(!p::refineProjection(outward, .001f, detailBudget), "Measured planes beyond the proxy cannot grow it through walls");
   auto unsupported = refinementInput;
   for (auto &face : unsupported.faces) face.plane->sampleFraction = .5f;
-  require(!p::refineProjection(unsupported, .001f), "A minority of usable hits cannot move a projection face");
+  require(!p::refineProjection(unsupported, .001f, detailBudget), "A minority of usable hits cannot move a projection face");
   auto crossedOrigin = refinementInput;
   for (auto &face : crossedOrigin.faces) face.plane = p::ProjectionPlaneAudit{0, 0, 0, 1, 64};
-  require(!p::refineProjection(crossedOrigin, .001f), "No proposal may place the capture on its surface");
+  require(!p::refineProjection(crossedOrigin, .001f, detailBudget), "No proposal may place the capture on its surface");
   p::ProjectionAudit balancedError(rectangular);
   auto balancedValues = geometry(balancedError, rectangleRooms);
   for (size_t i = 0; i < balancedValues.size(); ++i)

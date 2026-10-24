@@ -6,6 +6,8 @@ namespace remix::forward::probes {
     uint32_t minimumSamples = 16;
     float minimumSampleFraction = .9f;
     float maximumRelativeUncertainty = .2f;
+    // Optional scene-unit detail budget for reassessed diagnostic proposals.
+    float maximumAbsoluteUncertainty = 0;
   };
   struct ProjectionRefinement {
     Bounds bounds;

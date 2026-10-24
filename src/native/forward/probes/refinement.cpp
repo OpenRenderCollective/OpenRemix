@@ -11,7 +11,8 @@ namespace remix::forward::probes {
     if (!std::isfinite(margin) || margin <= 0 || !policy.minimumSamples || policy.minimumSamples > maximumSamples ||
         !std::isfinite(policy.minimumSampleFraction) || policy.minimumSampleFraction <= 0 ||
         policy.minimumSampleFraction > 1 || !std::isfinite(policy.maximumRelativeUncertainty) ||
-        policy.maximumRelativeUncertainty <= 0 || policy.maximumRelativeUncertainty >= 1)
+        policy.maximumRelativeUncertainty <= 0 || policy.maximumRelativeUncertainty >= 1 ||
+        !std::isfinite(policy.maximumAbsoluteUncertainty) || policy.maximumAbsoluteUncertainty < 0)
       throw std::invalid_argument("Invalid projection refinement policy");
     if (!region.bounds.valid) throw std::invalid_argument("Invalid refinement projection");
     for (uint32_t axis = 0; axis < 3; ++axis)
@@ -32,7 +33,9 @@ namespace remix::forward::probes {
       const double distance = sign * (double(plane->median) - region.site.position[axis]);
       const double uncertainty = std::max(double(plane->median) - plane->lower,
                                           double(plane->upper) - plane->median);
-      if (distance <= 2 * double(margin) || uncertainty > policy.maximumRelativeUncertainty * distance) continue;
+      const double allowedUncertainty = std::max(policy.maximumRelativeUncertainty * distance,
+                                                double(policy.maximumAbsoluteUncertainty));
+      if (distance <= 2 * double(margin) || uncertainty > allowedUncertainty) continue;
       const float target = float(double(plane->median) - sign * margin);
       auto &coordinate = face & 1u ? result.bounds.minimum[axis] : result.bounds.maximum[axis];
       // A shift must exceed its observed uncertainty, and never grow through

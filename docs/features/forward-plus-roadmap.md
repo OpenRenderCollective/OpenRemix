@@ -2063,3 +2063,21 @@ error together; this does not isolate absorption, prove the projection box corre
 justify removing attenuation. Do not blur away the difference or promote this hand-placed
 control as an automatic placement fix. Investigate receiver-near admitted origins and
 terrain/medium-aware transport parity, then repeat moving-receiver and boundary checks.
+
+The near-underwater candidate was already admitted and fitted at approximately
+(827.58, 4256.26, -879.46), but its best original weighted absolute projection error
+is 0.342, above the unchanged 0.20 selection gate. Its proxy floor at -959.96 lies
+below terrain whose retained 10th/50th/90th hit coordinates are approximately
+-916.76/-908.78/-901.24. Strict relative-only refinement remains near 0.341.
+Optional diagnostic refinement now also reports a separately labeled scene-unit
+uncertainty budget derived from the configured detail tolerance. With the existing
+0.5 m budget, inward floor contraction to -908.74 and top contraction to -160.04
+passes occupancy and retained-geometry reassessment, reducing this candidate's error
+to 0.101. The original proposal/control remains in the report. Geometry audit rays
+remain 12,288 and the coverage-selection plan remains identical: no candidate is yet
+published from this alternative. CPU regressions check the absolute bound, support,
+interior origin and no outward growth; the fresh Construct relay completes without
+validation errors or synchronization hazards. A sampled proposal is not a certified
+terrain plane. Next integrate only independently reassessed admissible variants within
+the existing per-site/capture budget, preserve receiver influence and authored roles,
+and qualify reflected landmarks, moving receivers, leakage and underwater colour.
