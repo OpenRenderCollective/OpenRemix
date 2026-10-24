@@ -22,7 +22,8 @@ namespace remix::forward::bake {
     std::string token;
     input >> token;
     result.hemisphere = token == "hemisphere";
-    if (result.hemisphere) input >> token;
+    const bool offsets = token == "sh-offsets";
+    if (result.hemisphere || offsets) input >> token;
     const auto parsed = std::from_chars(token.data(), token.data() + token.size(), result.samples);
     if (parsed.ec != std::errc{} || parsed.ptr != token.data() + token.size() ||
         result.samples < 64 || result.samples > 8192)
@@ -33,6 +34,16 @@ namespace remix::forward::bake {
         throw std::invalid_argument("Reference capture requires at most 16 XYZ positions");
       for (float value : point.position)
         if (!std::isfinite(value)) throw std::invalid_argument("Non-finite reference position");
+      if (offsets) {
+        std::string offset;
+        input >> offset;
+        uint32_t firstSample = 0;
+        const auto parsedOffset = std::from_chars(offset.data(), offset.data() + offset.size(), firstSample);
+        if (parsedOffset.ec != std::errc{} || parsedOffset.ptr != offset.data() + offset.size() ||
+            firstSample > UINT32_MAX - result.samples)
+          throw std::invalid_argument("Invalid reference sample offset or overflowing sample range");
+        result.sampleOffsets.push_back(firstSample);
+      }
       if (result.hemisphere) {
         if (!(input >> point.normal[0] >> point.normal[1] >> point.normal[2]))
           throw std::invalid_argument("Hemisphere reference requires XYZ unit normals");
@@ -121,7 +132,9 @@ namespace remix::forward::bake {
         output << "]}";
         continue;
       }
-      output << "],\"irradiance\":[";
+      output << ']';
+      if (!sampleOffsets.empty()) output << ",\"firstSample\":" << sampleOffsets.at(i);
+      output << ",\"irradiance\":[";
       for (uint32_t j = 0; j < 9; ++j) {
         output << (j ? ",[" : "[");
         for (uint32_t c = 0; c < 3; ++c) output << (c ? "," : "") << m_results[i].irradiance[j][c];

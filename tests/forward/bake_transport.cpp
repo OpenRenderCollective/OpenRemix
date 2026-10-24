@@ -462,90 +462,6 @@ namespace {
     std::printf("128-light selection: uniform RMSE %.7f, importance %.7f; weighted mean %.7f, "
                 "analytic %.7f\n", std::sqrt(mse[0]), std::sqrt(mse[1]), mean[1], expected);
   }
-  void resampledIndirectEnergy(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
-    auto source = world.scene({world.wall(world.material({.diffuse = 1}), 1, 2)});
-    source->sun.isDistant = false;
-    source->dome.enabled = false;
-    source->lights.clear();
-    for (uint32_t i = 0; i < 128; ++i) {
-      scene::SphereLight light;
-      light.id = i + 1;
-      light.position[2] = -1;
-      light.radius = .1f;
-      light.radiance[0] = light.radiance[1] = light.radiance[2] = i ? .0001f : 1;
-      source->lights.push_back(light);
-    }
-    source->lights[1].style = 32;
-    source->lights[1].radiance[0] = source->lights[1].radiance[2] = 0;
-    source->lights[1].radiance[1] = 1;
-    // Independent midpoint quadrature of Lambertian wall radiance times the
-    // receiver's solid-angle Jacobian. No transport samples enter this oracle.
-    constexpr uint32_t side = 256;
-    constexpr double step = 4.0 / side, distance = 2 - .002;
-    double integral = 0;
-    for (uint32_t y = 0; y < side; ++y) for (uint32_t x = 0; x < side; ++x) {
-      const double px = -2 + (x + .5) * step, py = -2 + (y + .5) * step;
-      const double radial = px * px + py * py;
-      const double radiance = (1 + 126 * .0001) * .01 * distance /
-                              std::pow(radial + distance * distance, 1.5);
-      integral += radiance / std::pow(radial + 1, 1.5) * step * step;
-    }
-    const double expected = integral * .2820947918 * std::numbers::pi;
-    std::array<Vec4, 2> captured{};
-    for (uint32_t enabled = 0; enabled < 2; ++enabled) {
-      bake::Transport transport;
-      bake::Options options;
-      options.batchPoints = 1;
-      options.textureResolution = 16;
-      options.resampleIndirectLights = enabled != 0;
-      options.lightingComponents = true;
-      auto ticket = pipelines.prepare("bake-resampled-energy-" + std::to_string(enabled), [&] {
-        transport.initialize(fixture.physical, fixture.device, source, options);
-      });
-      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
-      while (!ticket->ready() && std::chrono::steady_clock::now() < deadline)
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-      require(ticket->ready(), "Resampled indirect fixture prepares");
-      ticket->check();
-      fixture.begin();
-      transport.recordPrepare(fixture.command, world.resources);
-      fixture.finish();
-      const bake::Point point{};
-      double mean = 0;
-      for (uint32_t batch = 0; batch < 16; ++batch) {
-        fixture.begin();
-        transport.recordBatch(fixture.command, 0, {&point, 1}, 1024, 1, batch * 1024);
-        fixture.finish();
-        bake::Result result;
-        transport.read(0, {&result, 1});
-        mean += result.irradiance[0][0] / 16;
-      }
-      require(std::abs(mean - expected) < expected * .04,
-              "Indirect light resampling preserves independently integrated wall energy");
-      std::array<bake::Result, 3> components;
-      const uint32_t groups[] = {0, 32, bake::Transport::combinedLighting};
-      for (uint32_t group = 0; group < 3; ++group) {
-        fixture.begin();
-        transport.recordComponent(fixture.command, 0, {&point, 1}, groups[group], 256, 1);
-        fixture.finish();
-        transport.read(0, {&components[group], 1});
-      }
-      for (uint32_t coefficient = 0; coefficient < 9; ++coefficient)
-        for (uint32_t color = 0; color < 3; ++color)
-          require(std::abs(components[0].irradiance[coefficient][color] +
-                           components[1].irradiance[coefficient][color] -
-                           components[2].irradiance[coefficient][color]) < 1e-6f,
-                  "Resampled styled groups preserve the shared proposal and combined energy");
-      const bake::Point ray{{0, 0, 0, 0}, {0, 0, 1, 0}};
-      fixture.begin();
-      transport.recordRadiance(fixture.command, 0, {&ray, 1}, 1, 64);
-      fixture.finish();
-      bake::Result result;
-      transport.read(0, {&result, 1});
-      captured[enabled] = result.irradiance[0];
-    }
-    require(captured[0] == captured[1], "Offline resampling leaves reflection radiance unchanged");
-  }
   void liveLighting(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
     const auto wall = world.wall(world.material({.diffuse = 1}), 1, 2);
     auto source = world.scene({wall});
@@ -2416,7 +2332,6 @@ int main(int argc, char **argv) try {
     embeddedEmitterVisibility(fixture, pipelines, world);
     emitterParity(fixture, pipelines, world);
     lightSelectionVariance(fixture, pipelines, world);
-    resampledIndirectEnergy(fixture, pipelines, world);
     aggregateDiffuse(fixture, pipelines, world);
     test::lightingComponents(fixture, pipelines, world);
     liveLighting(fixture, pipelines, world);

@@ -15,7 +15,6 @@ namespace remix::forward::bake {
     uint32_t initialBatchPoints = 0, queueFamily = VK_QUEUE_FAMILY_IGNORED;
     bool parallel = true; // sample-parallel offline transport; single radiance rays and site queries stay serial
     bool lightImportanceSampling = true; // static snapshots; live lighting retains uniform selection
-    bool resampleIndirectLights = false; // offline irradiance only; four proposals, one shadow connection
     bool lightingComponents = false; // retain styled power in the immutable component proposal
     DirectPolicy directLighting; // explicit fully baked diffuse membership; default preserves legacy output
     bool cpuReadback = true; // prefer CPU-cached results for baking

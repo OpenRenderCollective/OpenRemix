@@ -258,7 +258,6 @@ namespace remix::forward::bake {
     surfaces.resize(surfaceLayout.points.size());
     Options options;
     options.directLighting = directLighting;
-    options.resampleIndirectLights = config.resampleIndirectLights;
     options.depthCapture = bool(sunDepth);
     mixedLights = std::make_shared<mixed::Plan>(
         mixed::plan(source, surfaceLayout, lightCutoff, cancellation.get_token(),
@@ -1599,6 +1598,7 @@ namespace remix::forward::bake {
             if (submission.job) throw std::logic_error("Reference slot reused before its fence");
             const auto count = std::min(reference.hemisphere ? 256u : 1u, reference.tasks() - reference.next);
             const auto referencePoints = reference.batch(reference.next, count);
+            const uint32_t firstSample = reference.sampleOffsets.empty() ? 0 : reference.sampleOffsets.at(reference.next);
             if (reference.hemisphere && reference.combinedLighting)
               job.transport->recordRadianceComponent(command, m_slot, referencePoints, Transport::combinedLighting,
                                                      config.bounces);
@@ -1606,9 +1606,10 @@ namespace remix::forward::bake {
               job.transport->recordRadiance(command, m_slot, referencePoints, config.bounces);
             else if (reference.combinedLighting)
               job.transport->recordComponent(command, m_slot, referencePoints, Transport::combinedLighting,
-                                             reference.samples, config.bounces);
+                                             reference.samples, config.bounces, firstSample);
             else
-              job.transport->recordBatch(command, m_slot, referencePoints, reference.samples, config.bounces);
+              job.transport->recordBatch(command, m_slot, referencePoints, reference.samples, config.bounces,
+                                         firstSample);
             submission.job = m_job;
             submission.reference = true;
             submission.first = reference.next;

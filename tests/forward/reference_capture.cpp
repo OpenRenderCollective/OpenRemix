@@ -12,7 +12,8 @@ int main(int argc, char **argv) {
   std::filesystem::remove(output);
   { std::ofstream file(path); file << "4096\n1 2 3\n-4 5 6\n"; }
   auto capture = ReferenceCapture::load(path);
-  require(capture.samples == 4096 && capture.points.size() == 2 && capture.points[0].normal == remix::forward::Vec4{},
+  require(capture.samples == 4096 && capture.points.size() == 2 && capture.sampleOffsets.empty() &&
+              capture.points[0].normal == remix::forward::Vec4{},
           "Reference sites retain exact world positions and unbiased normals");
   Result value{};
   value.irradiance[0][0] = .25f;
@@ -45,12 +46,41 @@ int main(int argc, char **argv) {
   std::ifstream file(output);
   const std::string text((std::istreambuf_iterator<char>(file)), {});
   require(text.find("\"samples\":4096") != std::string::npos &&
+              text.find("\"firstSample\"") == std::string::npos &&
               text.find("\"position\":[-4,5,6]") != std::string::npos,
           "Completed output contains sampling budget and original positions");
   require(text.find("\"distanceMoments\":[[2,5,0.5,4096]") != std::string::npos &&
               text.find("\"statistics\":[0.125,0.25,4096,0]") != std::string::npos,
           "SH reference preserves raw visibility moments and transport statistics");
   file.close();
+  {
+    std::ofstream shifted(path);
+    shifted << "sh-offsets 256\n1 2 3 0\n1 2 3 1024\n";
+  }
+  auto shifted = ReferenceCapture::load(path);
+  require(!shifted.hemisphere && shifted.samples == 256 && shifted.tasks() == 2 &&
+              shifted.sampleOffsets == std::vector<uint32_t>{0, 1024} &&
+              shifted.points[0].position == shifted.points[1].position,
+          "Offset SH references preserve identical sites and distinct transport streams");
+  shifted.consume(1, std::span(&value, 1));
+  shifted.consume(0, std::span(&value, 1));
+  {
+    std::ifstream json(output);
+    const std::string result((std::istreambuf_iterator<char>(json)), {});
+    require(result.find("\"firstSample\":0") != std::string::npos &&
+                result.find("\"firstSample\":1024") != std::string::npos,
+            "Out-of-order reference output attributes each stream to its original site");
+  }
+  for (const auto *offset : {"", "-1", "1.5", "4294967296", "4294967040", "nan"}) {
+    { std::ofstream bad(path); bad << "sh-offsets 256\n1 2 3 " << offset; }
+    rejected = false;
+    try { ReferenceCapture::load(path); }
+    catch (const std::invalid_argument &) { rejected = true; }
+    require(rejected, "Malformed or overflowing reference sample ranges reject");
+  }
+  { std::ofstream boundary(path); boundary << "sh-offsets 256\n1 2 3 4294967039\n"; }
+  require(ReferenceCapture::load(path).sampleOffsets[0] == UINT32_MAX - 256,
+          "Largest non-overflowing reference sample range remains representable");
   for (const auto *input : {"63\n1 2 3", "8193\n1 2 3", "4096\n", "4096\n1 2 broken"}) {
     { std::ofstream bad(path); bad << input; }
     rejected = false;

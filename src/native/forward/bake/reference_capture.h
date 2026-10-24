@@ -8,6 +8,8 @@ namespace remix::forward::bake {
   // Private offline diagnostic, independent of probe placement/publication.
   // Input: sample count then XYZ sites (SH), or "hemisphere", sample count and
   // XYZ/unit-normal sites (cosine-weighted radiance integration, without SH).
+  // "sh-offsets", sample count, then XYZ/first-sample sites compares multiple
+  // deterministic streams at identical locations without moving the receiver.
   // SH output includes six distance-moment vec4s (+/-X, +/-Y, +/-Z) and
   // transport statistics so offline placement studies can reconstruct visibility.
   struct ReferenceCapture {
@@ -17,6 +19,7 @@ namespace remix::forward::bake {
     uint32_t tasks() const { return uint32_t(points.size()) * (hemisphere ? samples : 1); }
     std::vector<Point> batch(uint32_t first, uint32_t count) const;
     std::vector<Point> points;
+    std::vector<uint32_t> sampleOffsets; // empty for the original SH/hemisphere formats
     uint32_t samples = 0, next = 0, received = 0;
     uint32_t bounces = 0;
     uint64_t sceneHash = 0;

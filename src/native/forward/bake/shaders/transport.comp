@@ -6,7 +6,6 @@ layout(local_size_x = 64) in;
 #include "bindings.glsl"
 #include "material.glsl"
 #define OFFLINE_LIGHT_SELECTION
-#define BAKE_RESAMPLED_LIGHTS
 #include "radiance.glsl"
 #include "sample-sums.glsl"
 #include "../../shaders/probe-depth-mapping.glsl"

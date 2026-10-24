@@ -30,21 +30,27 @@ directional-depth option remains off because barrel/crate faces regressed.
 Stratifying only aggregate direct-light selection leaves this fixture unchanged;
 its explicit lights remain mixed, with no selected aggregate lights here.
 
-Indirect-light proposal resampling is a private opt-in candidate:
-`REMIX_DEBUG_BAKE_LIGHT_RESAMPLING=1`. It evaluates four unshadowed light proposals
-and traces one selected visibility connection, with reservoir normalization and a
-shared proposal across styled components. Default behavior remains disabled;
-reflection/live-ray estimators retain the existing path. The option participates
-in bake cache identity. Initial 256-sample housing captures reduce mean absolute
-error at the six 10-25 cm sites from about 35% to 17%, but other sites regress.
-Independent wall-energy integration, styled-component additivity, reflection
-isolation and cache separation checks cover correctness, not general quality.
+Indirect-light proposal resampling was removed after a repeated-stream screen.
+Its first 256-sample housing sequence looked better, but four offsets at six fixed
+sites increased relative luminance RMSE from 32% to 37% and maximum error from 56%
+to 121%, against 8192-sample SH at those same sites. Mean absolute error improved
+only from 29% to 25%. Passing analytic energy, component-additivity and cache tests
+did not establish useful scene convergence. Do not restore the candidate from the
+single-sequence result; no runtime switch or unused reservoir path remains.
 
-Next gates: matched on/off captures, multiple sampling sequences and maps, the
-existing barrel/crate references, complete bake-time cost and unchanged physical
-record/storage budgets. Retain seam continuity, unknown fallback, arbitrary
-controllable groups and whole-frame cost gates. Do not promote this candidate or
-claim the housing leak fixed from the isolated convergence improvement.
+The bounded offline reference tool retains `sh-offsets <sample-count>` input,
+followed by XYZ/first-sample rows (at most 16 sites, 4 KiB). This tests repeated
+streams at identical positions without geometry jitter. Output attributes each
+sample offset to its site; default SH and hemisphere formats remain unchanged.
+Four offsets are a rejection screen, not independent-seed confidence intervals;
+the high-sample SH reference also retains uncertainty.
+
+Next gates: geometry-aware receiver-adjacent support and targeted convergence,
+the existing barrel/crate references, multiple maps, complete bake-time cost and
+unchanged physical record/storage budgets. Retain seam continuity, unknown
+fallback, arbitrary controllable groups and whole-frame cost gates. Require
+repeated fixed-site streams before promoting a sampling change. The ceiling
+housing leak remains unresolved.
 
 ## Current automatic-cubemap delivery gates
 

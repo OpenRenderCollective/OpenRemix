@@ -75,7 +75,6 @@ namespace remix::forward::bake {
   };
   static_assert(sizeof(VisibilityResult) == 48);
   constexpr uint32_t lightingComponentFlag = 8, containingMediaFlag = 64, lightingComponentShift = 8;
-  constexpr uint32_t resampledIndirectLightFlag = 128;
   struct Frame {
     Matrix dome;
     Vec4 sunDirection{}, sunRadiance{}, domeRadiance{}, trace{}; // domeRadiance.w: live tint animation seconds
