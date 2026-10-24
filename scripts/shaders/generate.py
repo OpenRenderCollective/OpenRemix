@@ -109,10 +109,10 @@ def glslang(arguments, output):
     depfile = output.with_suffix('.d')
     subprocess.run(['glslangValidator', '-V', *arguments, '--depfile', str(depfile), '-o', str(output)],
                    check=True, stdout=subprocess.DEVNULL)
-    # "output: input include ...", spaces in paths escaped with a backslash.
-    # A Windows output path has a drive colon: the separator is the first one before a space.
+    # "output: input include ...", spaces and Windows drive colons in paths escaped with a backslash.
+    # The separator is the first colon before a space.
     text = re.split(r':\s', depfile.read_text(), maxsplit=1)[1].replace('\\\n', ' ')
-    paths = [path.replace('\\ ', ' ') for path in re.findall(r'(?:\\ |[^\s])+', text)]
+    paths = [path.replace('\\ ', ' ').replace('\\:', ':') for path in re.findall(r'(?:\\ |[^\s])+', text)]
     depend(*paths)
 
 

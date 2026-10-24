@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import tempfile
 
@@ -68,6 +69,17 @@ def spirv_cross(work, bin_dir):
     shutil.copy2(executable(work / 'spirv-cross-build', 'spirv-cross'), bin_dir / ('spirv-cross' + EXE))
 
 
+def remove_tree(path, ignore_errors=False):
+    """Removes a directory, including the read-only files Git checkouts hold on Windows."""
+    for parent, _, files in os.walk(path):
+        for name in files:
+            try:
+                os.chmod(os.path.join(parent, name), stat.S_IWRITE | stat.S_IREAD)
+            except OSError:
+                pass
+    shutil.rmtree(path, ignore_errors=ignore_errors)
+
+
 def toolset(cache, name, entries, make):
     """The cached toolset's bin directory, built on first use. Concurrent builds (several build
     directories) each build in a scratch directory and the first to finish publishes it."""
@@ -81,7 +93,7 @@ def toolset(cache, name, entries, make):
         (scratch / 'bin').mkdir()
         print(f'Building pinned {name} shader tools in {final} (once per machine)', flush=True)
         make(scratch / 'work', scratch / 'bin')
-        shutil.rmtree(scratch / 'work')
+        remove_tree(scratch / 'work')
         (scratch / 'complete').touch()
         try:
             scratch.rename(final)
@@ -89,7 +101,7 @@ def toolset(cache, name, entries, make):
             if not (final / 'complete').exists():
                 raise
     finally:
-        shutil.rmtree(scratch, ignore_errors=True)
+        remove_tree(scratch, ignore_errors=True)
     return final / 'bin'
 
 
