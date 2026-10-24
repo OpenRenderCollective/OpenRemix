@@ -12,7 +12,8 @@
 [[vk::binding(7)]] Texture2D<float4> AtmosphereCloudSecondaryLut;
 [[vk::binding(8)]] Texture2DArray BlueNoise;
 #define ATMOSPHERE_AVAILABLE
-#define ATMOSPHERE_TRANSMITTANCE_LUT_AVAILABLE
+// ATMOSPHERE_TRANSMITTANCE_LUT_AVAILABLE stays undefined, which leaves out the
+// planet's ground on purpose: game terrain or nothing covers the lower half.
 
 #include "numos/host/numos_host.slangh"
 
