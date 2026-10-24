@@ -2186,3 +2186,27 @@ axis/diagonal/translated-origin and undefined-direction cases pass. Use its spat
 to test localized influence or a regional fidelity objective while preserving existing
 coverage/guard and authored constraints. Underwater radiance/medium parity and normal-quality
 acceptance remain open; global score replacement and default promotion are not established.
+
+Normal-quality authored controls now test local influence separately from global proxy
+ranking. At 256 samples/three bounces/OIDN/4M texel budget and SSR disabled, a near pool
+capture at the admitted origin (950.45,4559.11,-896.92) with restricted influence improves
+the checked prop while the base diffuse hashes remain unchanged. This does not fit the
+influence automatically. An initial moving control disabled local replacements and lost
+the useful broad pool fallback; it is not accepted as a blend-isolation result.
+A corrected paired route includes the same explicit broad capture in both cases and adds
+only a priority-10 near overlay with influence [700,4100,-960]..[1100,4700,-760] and a
+64-Source-unit feather band. Automatic replacements remain disabled for isolation. A
+camera-relative reflective receiver moves from X=650 through the region to X=1150. The
+interior sphere ROI matches baseline exactly at the two exterior controls on each side;
+mean absolute display-channel differences grow through the entering band (0.94,5.01,6.71)
+and decline through the leaving band (6.41,4.99,1.12), then return to zero. These sampled
+frames support a smooth handoff in this fixture, not every continuous path or surface.
+The automatic set remains 59 captures with zero omissions, existing authored records
+match, and total layers rise from 62 to 63 within the 64-layer cap. Diffuse identity and
+content hashes remain unchanged. Both corrected runs reuse normal-quality cached lighting,
+exit without validation errors/synchronization hazards and preserve the original user
+sidecar. Localized influence is therefore a promising controlled representation; the
+bounds are hand-selected and not installed. Next derive bounded regional support from
+suitable evidence (including already-covered receivers), then qualify coverage, leakage,
+medium/radiance parity and capture allocation. Do not substitute the incomplete uncovered
+receiver cohort or a global median score for an automatic fit.
