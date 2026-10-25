@@ -1,12 +1,13 @@
 # Sky
 
 `rtx.native.sky.enabled` (0/1, default 0; the **Sky** tab, **NUMOS sky**) draws a
-physically based sky with the path tracer: atmosphere, volumetric clouds,
-weather, aerial perspective (haze, height fog, sun shafts), the sun, the moon,
-stars and lightning. It is [NUMOS](https://github.com/Kim2091/numos-sky) by
-Kim2091 (Sparkles), Apache-2.0, built from the `third_party/numos/numos-sky`
-submodule (`-Dsky=disabled` leaves it out). The raster backend and the Metal
-backend do not draw it yet.
+physically based sky: atmosphere, volumetric clouds, weather, aerial
+perspective (haze, height fog, sun shafts), the sun, the moon, stars and
+lightning. It is [NUMOS](https://github.com/Kim2091/numos-sky) by Kim2091
+(Sparkles), Apache-2.0, built from the `third_party/numos/numos-sky` submodule
+(`-Dsky=disabled` leaves it out). The path tracer uses it fully (below); the
+raster backend draws the sky, clouds and haze over its frame (Raster). The
+Metal backend does not draw it yet.
 
 ## What it does to the frame
 
@@ -25,6 +26,16 @@ backend do not draw it yet.
 - **Game sky.** `rtx.native.sky.gameSky`: `hide` (default) draws NUMOS in place
   of the game's sky, `under` keeps the game's sky behind the clouds and haze,
   `over` leaves sky pixels alone.
+
+## Raster
+
+With the raster backend, NUMOS's sky and clouds replace the game's sky (or
+sit over or under it, `gameSky`) and its haze covers the world, before the view
+model and the HUD. The frame is display-referred, so the sky's light is
+exposed by `rtx.native.sky.rasterExposure` (default 1) and tone mapped.
+There is no scene light: the game lights its own world. Without the path
+tracer's TLAS the haze is unshadowed and NUMOS uses the configured ground
+level.
 
 ## Settings
 
