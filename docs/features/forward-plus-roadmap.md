@@ -50,6 +50,11 @@ is below it. Keep bias/domain containment distinct from estimator variance.
 Some queries have no unblocked stencil support; rejection-only fixes can turn
 those pixels black. Next study receiver-side support and bias containment together
 without adding per-pixel geometry queries to the normal rendering path.
+A frozen-field study rejected globally reducing the normal bias to half, quarter
+or zero: identical 8192-site/surface-reference cohorts retained coverage but had
+worse mean and RMS errors, with severe local regressions. The temporary override
+was removed. Next test selective containment against local geometry while
+leaving valid bias offsets intact; do not treat zero bias as a general leak fix.
 The synthetic painted-sky fallback does not qualify live-game sky parity.
 
 Independent 8192-sample SH captures 10-25 cm outside three housing faces are within
