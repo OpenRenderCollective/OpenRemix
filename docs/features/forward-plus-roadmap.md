@@ -2809,3 +2809,14 @@ Source inspection also confirms selected slots are packed in runtime-light trave
 order and cluster lists preserve that order for unique captured lights. Do not add a
 light reorder to address an unobserved grouping mismatch or alter accumulation order
 without evidence. Keep the prototype opt-in and preserve the earlier live-room controls.
+
+
+A reversed-order white-room replay repeat adds timestamp-window-aligned NVIDIA telemetry
+and a longer warmup. Images, lighting identities and selected-light budgets remain
+identical. Paired total GPU cost is effectively neutral; batching reduces opaque-shading
+self time while depth time increases. Both modes stay in P0 with closely matched graphics
+clocks, so a coarse clock-state difference does not explain this repeat. Individual runs
+still vary; monitored fixed replay is not live gameplay/churn acceptance. Do not label
+the helper intrinsically slower or promote it from one favorable pass. Next isolate
+cross-pass cache/scheduling and receiver workload effects, preserving full-frame timing
+and independent quality checks. Keep the prototype opt-in.
