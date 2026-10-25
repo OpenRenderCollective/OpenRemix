@@ -151,21 +151,23 @@ namespace {
 #include "probe_visibility_gpu.h"
 #include "directional_capture_gpu.h"
 #include "dielectric_sheet.h"
-  void reflectionOnlyTransport(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
+  void transportGeometryRoles(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
     const auto wall = world.wall(world.material({.emission = 4}), 1, 4);
-    for (bool reflectionOnly : {false, true}) {
+    for (uint32_t role : {0u, 1u, 2u}) {
+      const bool reflectionOnly = role == 1, receiverOnly = role == 2;
       auto source = world.scene({wall});
       source->draws.front().reflectionOnly = reflectionOnly;
+      if (receiverOnly) source->receiverDraws = {1};
       bake::Transport transport;
       bake::Options options;
       options.batchPoints = 1;
-      auto job = pipelines.prepare(reflectionOnly ? "reflection-only-body" : "ordinary-body", [&] {
+      auto job = pipelines.prepare(receiverOnly ? "receiver-only-surface" : reflectionOnly ? "reflection-only-body" : "ordinary-body", [&] {
         transport.initialize(fixture.physical, fixture.device, source, options);
       });
       const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
       while (!job->ready() && std::chrono::steady_clock::now() < deadline)
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
-      require(job->ready(), "Reflection-only transport preparation completed");
+      require(job->ready(), "Transport geometry-role preparation completed");
       job->check();
       fixture.begin();
       transport.recordPrepare(fixture.command, world.resources);
@@ -176,14 +178,16 @@ namespace {
       transport.recordRadiance(fixture.command, 0, {&ray, 1}, 1);
       fixture.finish();
       transport.read(0, {&result, 1});
-      require(result.irradiance[0][0] > 1 && std::abs(result.irradiance[0][3] - 1) < .01f,
-              "Reflection rays retain the third-person body and its first-hit distance");
+      require(receiverOnly ? result.irradiance[0][0] == 0
+                           : result.irradiance[0][0] > 1 && std::abs(result.irradiance[0][3] - 1) < .01f,
+              "Reflection rays retain ordinary/body emission but never receiver-only geometry");
       fixture.begin();
       transport.recordGeometry(fixture.command, 0, {&ray, 1});
       fixture.finish();
       transport.read(0, {&result, 1});
-      require(reflectionOnly ? result.statistics[1] != 0 : std::abs(result.irradiance[0][3] - 1) < .01f,
-              "Visibility and probe placement ignore reflection-only bodies but retain ordinary occluders");
+      require((reflectionOnly || receiverOnly) ? result.statistics[1] != 0
+                                               : std::abs(result.irradiance[0][3] - 1) < .01f,
+              "Visibility and placement ignore receiver-only/body geometry and retain ordinary occluders");
     }
   }
   float evaluate(const bake::Result &value, Vec3 n, uint32_t channel) {
@@ -2315,7 +2319,7 @@ int main(int argc, char **argv) try {
     require(lit.irradiance[0][0] > .01f && shadowed.irradiance[0][0] < lit.irradiance[0][0] * .05f,
             "Hardware visibility shadows local-light indirect radiance without "
             "hiding the receiver patch");
-    reflectionOnlyTransport(fixture, pipelines, world);
+    transportGeometryRoles(fixture, pipelines, world);
     geometryNormalFacing(fixture, pipelines, world);
     captureProbe(fixture, pipelines, world);
     captureNoise(fixture, pipelines, world);

@@ -56,7 +56,7 @@ namespace remix::forward::shadows {
       m_instances.clear();
       if (m_source)
         for (uint32_t i = 0; i < m_source->draws.size(); ++i)
-          m_instances.emplace(m_source->draws[i].instanceId, i);
+          if (!m_source->receiverOnly(i)) m_instances.emplace(m_source->draws[i].instanceId, i);
       m_valid.fill(false);
       m_assigned.fill(false);
       m_strength.fill(0);

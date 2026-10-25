@@ -123,6 +123,14 @@ int main() {
   require(slot == 0 && selected.dirty[slot], "First map is dirty");
   require(planner.captured(resources.retained(retained)->records[0]),
           "Explicit immutable membership is recognized");
+  {
+    auto receiver = std::make_shared<scene::BakeScene>(*source);
+    receiver->receiverDraws = {1};
+    s::Planner liveReceiver;
+    liveReceiver.update({&light, 1}, {}, 1, .001f, 100, 1, receiver);
+    require(!liveReceiver.captured(resources.retained(retained)->records[0]),
+            "Receiver chart ownership never classifies a live caster as baked transport");
+  }
   auto draw = resources.retained(retained)->records[0];
   draw.instanceId++;
   require(!planner.captured(draw), "A settled actor sharing geometry is still a live caster");

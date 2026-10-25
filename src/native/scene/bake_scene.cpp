@@ -203,6 +203,9 @@ namespace remix::scene {
     }
   } // namespace
   void freezeBakeScene(BakeScene &scene) {
+    if (!scene.receiverDraws.empty() && (scene.receiverDraws.size() != scene.draws.size() ||
+        std::any_of(scene.receiverDraws.begin(), scene.receiverDraws.end(), [](auto role) { return role > 1; })))
+      throw REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
     validateBakeCharts(scene.draws, scene.charts);
     // Retain these triangles for bounce transport, without allocating primary
     // receiver charts for surfaces the camera must never see.
@@ -219,6 +222,7 @@ namespace remix::scene {
       chartHashes[chart.draw].push_back(hash.value);
     }
     Freezer freezer;
+    std::shared_ptr<Material> receiverMaterial;
     const bool diagnostics = bakeDiagnosticsEnabled();
     std::vector<BakeDrawFingerprint> fingerprints;
     std::array<uint64_t, 6> prefixes{};
@@ -231,6 +235,13 @@ namespace remix::scene {
         throw invalid;
       scene.bindings.push_back({draw.surface, draw.material});
       auto [surface, geometryHash] = freezer.surface(draw.surface);
+      // Primary irradiance depends on position/normal, not the receiver's
+      // editable albedo, emission, tint or texture animation. A neutral frozen
+      // material keeps those assets out of transport and cache dependencies.
+      if (scene.receiverOnly(drawIndex)) {
+        if (!receiverMaterial) receiverMaterial = std::make_shared<Material>();
+        draw.material = receiverMaterial;
+      }
       auto [material, materialHash] = freezer.material(draw.material);
       draw.surface = std::move(surface);
       draw.material = std::move(material);
@@ -245,6 +256,7 @@ namespace remix::scene {
       const auto chartHash = hash.value;
       hash.add(geometryHash);
       hash.add(materialHash);
+      if (scene.receiverOnly(drawIndex)) hash.add(uint32_t(0x52435652u));
       hash.add(draw.model);
       hash.add(draw.doubleSided);
       // Ordinary scenes keep their established cache identity. Only a scene
@@ -362,12 +374,17 @@ namespace remix {
     return true;
   }
   bool NativeResources::bakeRequestCurrent(const remixapi_BakeSceneInfoEXT &info) const {
-    const bool styled = info.version == REMIXAPI_BAKE_SCENE_STYLED_LIGHTS_VERSION_EXT;
+    const bool receivers = info.version == REMIXAPI_BAKE_SCENE_RECEIVERS_VERSION_EXT;
+    const bool styled = receivers || info.version == REMIXAPI_BAKE_SCENE_STYLED_LIGHTS_VERSION_EXT;
     const bool reflections = styled || info.version == REMIXAPI_BAKE_SCENE_REFLECTIONS_VERSION_EXT;
     const bool surfaces = reflections || info.version == REMIXAPI_BAKE_SCENE_SURFACES_VERSION_EXT;
     const bool bounded = surfaces || info.version == REMIXAPI_BAKE_SCENE_BOUNDS_VERSION_EXT;
     if (!m_bakeScene || m_bakeScene->hasBounds != bounded || m_bakeScene->partition != m_visibilityPartition)
       return false;
+    const auto *receiverInfo = receivers ? reinterpret_cast<const remixapi_BakeSceneReceiversInfoEXT *>(&info) : nullptr;
+    if (m_bakeScene->receiverInstances.size() != (receivers ? receiverInfo->receiverCount : 0) ||
+        (receivers && !std::equal(m_bakeScene->receiverInstances.begin(), m_bakeScene->receiverInstances.end(),
+                                  receiverInfo->receivers))) return false;
     if (reflections) {
       const auto &request = *reinterpret_cast<const remixapi_BakeSceneReflectionsInfoEXT *>(&info);
       if (m_bakeScene->reflectionRevision != request.reflectionRevision ||
@@ -430,8 +447,14 @@ namespace remix {
       m_publishedBakeLightsCurrent.reset();
       return;
     }
-    const bool styled = info->version == REMIXAPI_BAKE_SCENE_STYLED_LIGHTS_VERSION_EXT &&
-                         info->structSize == sizeof(remixapi_BakeSceneStyledLightsInfoEXT);
+    const bool receivers = info->version == REMIXAPI_BAKE_SCENE_RECEIVERS_VERSION_EXT &&
+                            info->structSize == sizeof(remixapi_BakeSceneReceiversInfoEXT);
+    const auto *receiverInfo = receivers ? reinterpret_cast<const remixapi_BakeSceneReceiversInfoEXT *>(info) : nullptr;
+    if (receivers && (receiverInfo->reserved || receiverInfo->receiverCount > info->instanceCount ||
+        (receiverInfo->receiverCount && !receiverInfo->receivers) ||
+        (info->state == REMIXAPI_BAKE_SCENE_LOADING_EXT && receiverInfo->receiverCount))) throw invalid;
+    const bool styled = receivers || (info->version == REMIXAPI_BAKE_SCENE_STYLED_LIGHTS_VERSION_EXT &&
+                         info->structSize == sizeof(remixapi_BakeSceneStyledLightsInfoEXT));
     const auto *styledInfo = styled ? reinterpret_cast<const remixapi_BakeSceneStyledLightsInfoEXT *>(info) : nullptr;
     if (styled && (styledInfo->reserved || styledInfo->styledLightCount > 4096 ||
                    (styledInfo->styledLightCount && !styledInfo->styledLights) ||
@@ -513,6 +536,18 @@ namespace remix {
       drawBases.emplace(entry->handle, next->draws.size());
       instances.emplace_back(entry->handle, entry->revision);
       next->draws.insert(next->draws.end(), entry->records.begin(), entry->records.end());
+    }
+    if (receivers && receiverInfo->receiverCount) {
+      next->receiverDraws.resize(next->draws.size());
+      std::unordered_set<uint64_t> receiverHandles;
+      for (uint32_t i = 0; i < receiverInfo->receiverCount; ++i) {
+        const auto handle = receiverInfo->receivers[i];
+        const auto base = drawBases.find(handle);
+        const auto *entry = retained(handle);
+        if (base == drawBases.end() || !entry || !receiverHandles.insert(handle).second) throw invalid;
+        next->receiverInstances.push_back(handle);
+        std::fill_n(next->receiverDraws.begin() + base->second, entry->records.size(), uint8_t(1));
+      }
     }
     if (surfaces) {
       next->chartRevision = surfaceInfo->chartRevision;

@@ -329,8 +329,9 @@ namespace remix::forward {
     const bool refreshSun = data.target[3] && std::any_of(frame.staticSunDirty.begin(), frame.staticSunDirty.end(),
                                                          [](bool dirty) { return dirty; });
     if ((refreshLocal || refreshSun) && shadowPlanner.source())
-      for (const auto &draw : shadowPlanner.source()->draws)
-        append(draw, frame.staticCommands, true);
+      for (size_t i = 0; i < shadowPlanner.source()->draws.size(); ++i)
+        if (!shadowPlanner.source()->receiverOnly(i))
+          append(shadowPlanner.source()->draws[i], frame.staticCommands, true);
     if (!frame.viewModelCommands.empty() && data.target[3]) {
       if (!viewModelSun) {
         viewModelSun = std::make_unique<viewmodel::SunShadow>();
@@ -343,7 +344,9 @@ namespace remix::forward {
       frame.viewModelProjection = viewmodel::sunProjection(receivers, allCasters, direction,
                                                            options.shadowResolution);
       if (shadowPlanner.source())
-        for (const auto &draw : shadowPlanner.source()->draws) {
+        for (size_t i = 0; i < shadowPlanner.source()->draws.size(); ++i) {
+          if (shadowPlanner.source()->receiverOnly(i)) continue;
+          const auto &draw = shadowPlanner.source()->draws[i];
           if (!accepts(draw)) continue;
           const auto bounds = transformBounds(geometry(draw)->bounds, draw.model);
           if (intersectsClip(bounds, frame.viewModelProjection)) append(draw, frame.viewModelCasters, true);

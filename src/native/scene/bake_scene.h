@@ -27,6 +27,11 @@ namespace remix::scene {
     std::array<float, 3> minimum{}, maximum{};
     std::shared_ptr<const VisibilityPartition> partition;
     std::vector<Draw> draws;
+    // Empty for ordinary scenes; otherwise one role per draw. Receiver-only
+    // geometry supplies sample locations, never transport triangles/materials.
+    std::vector<uint8_t> receiverDraws;
+    std::vector<uint64_t> receiverInstances; // request identity, not content
+    bool receiverOnly(size_t draw) const { return !receiverDraws.empty() && receiverDraws.at(draw) != 0; }
     std::vector<BakeDrawBinding> bindings;
     uint64_t chartRevision = 0; // scheduling identity, excluded from content hash
     std::vector<BakeSurfaceChart> charts;

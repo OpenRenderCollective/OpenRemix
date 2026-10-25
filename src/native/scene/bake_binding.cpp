@@ -19,7 +19,7 @@ namespace remix::scene {
     const auto &binding = scene.bindings[index];
     return draw.instanceId == expected.instanceId && draw.instanceIndex == expected.instanceIndex &&
            draw.surfaceIndex == expected.surfaceIndex && draw.surface == binding.surface.lock() &&
-           draw.material == binding.material.lock() && draw.model == expected.model &&
+           (scene.receiverOnly(index) || draw.material == binding.material.lock()) && draw.model == expected.model &&
            draw.firstIndex == expected.firstIndex && draw.indexCount == expected.indexCount &&
            draw.vertexOffset == expected.vertexOffset && draw.doubleSided == expected.doubleSided &&
            draw.reflectionOnly == expected.reflectionOnly &&

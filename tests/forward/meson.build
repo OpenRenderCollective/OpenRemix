@@ -5,6 +5,11 @@ forward_policy_test = executable('remix-forward-policy-test', 'lighting.cpp',
   '../../src/native/forward/viewmodel/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Forward+ cluster, cascade and configuration policy', forward_policy_test)
+receiver_only_test = executable('remix-bake-receivers-test', 'bake_receivers.cpp',
+  '../../src/native/forward/bake/data.cpp', '../../src/native/forward/material.cpp',
+  '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Receiver-only bake charts exclude transport and preserve live material edits', receiver_only_test)
 reference_capture_test = executable('remix-reference-capture-test', 'reference_capture.cpp',
   '../../src/native/forward/bake/reference_capture.cpp',
   '../../src/native/forward/lighting.cpp',

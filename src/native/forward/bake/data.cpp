@@ -26,7 +26,14 @@ namespace remix::forward::bake {
       result.textures.push_back({material, image});
       return layer;
     };
-    for (const auto &draw : scene.draws) {
+    for (size_t drawIndex = 0; drawIndex < scene.draws.size(); ++drawIndex) {
+      const auto &draw = scene.draws[drawIndex];
+      if (scene.receiverOnly(drawIndex)) {
+        // Preserve draw-to-material indices without uploading receiver assets
+        // or introducing their geometry into either software or HWRT traversal.
+        result.materials.emplace_back();
+        continue;
+      }
       const auto &surface = *draw.surface;
       const auto &source = *draw.material;
       const auto &blend = draw.blend;

@@ -2691,3 +2691,25 @@ are separate from normal reconstruction. `bake/reference_capture` owns independe
 transport queries and records captured partition classification without filtering or
 moving query sites. Keep policy experiments out of normal shading until their quality,
 coverage, cache behavior and runtime cost have been qualified.
+
+### Receiver-only bake geometry
+
+Version 6 of `SetBakeSceneEXT` accepts `remixapi_BakeSceneReceiversInfoEXT`.
+Its receiver handle list is a unique subset of the ordinary retained instance
+list. These fixed surfaces can own authored or generated charts, while their
+triangles and materials are excluded from bake ray transport. They do not
+become frozen local/sun/viewmodel shadow casters. Ordinary scene descriptors
+and an empty receiver list preserve the established content identity.
+
+The snapshot stores neutral receiver materials: animated textures, albedo and
+emission edits do not change static transport. Chart binding still requires
+the same instance, surface, placement, index range and coverage policy; material
+identity alone is ignored for receivers. Moving or replacing the geometry
+therefore falls back instead of reusing light from the old placement. The host
+must republish geometry changes and select genuinely stationary receivers.
+This API does not automatically classify game entities or make their visibility
+immutable. Live shadow policy remains independent of receiver chart ownership.
+
+The core supports this role; the GMod controllable-brush relay and representative
+quality/performance qualification remain pending. Existing brush behaviour and
+runtime defaults are unchanged until that host integration is qualified.

@@ -39,7 +39,9 @@ namespace remix::forward::bake {
       return {};
     }
     Bounds casters;
-    for (const auto &draw : source.draws) {
+    for (size_t i = 0; i < source.draws.size(); ++i) {
+      if (source.receiverOnly(i)) continue;
+      const auto &draw = source.draws[i];
       if (cancelled.stop_requested()) throw std::runtime_error("Sun depth preparation superseded");
       for (const auto &vertex : draw.surface->vertices) {
         const auto p = transformPoint(draw.model, {vertex.position[0],vertex.position[1],vertex.position[2]});

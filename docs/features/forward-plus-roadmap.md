@@ -3123,3 +3123,21 @@ and non-baked-shadow policy. Do not classify arbitrary brush entities as
 immutable occluders or put Source-specific policy in the core renderer.
 Selected-probe response remains an alternative optimisation target; existing
 batching stays opt-in pending representative live and replay acceptance.
+
+
+### Receiver-only bake API foundation
+
+The core now accepts an additive version-six receiver subset of retained bake
+instances. Receiver geometry can own charts without becoming transport geometry
+or a frozen local/sun/viewmodel caster. Neutral receiver material snapshots
+exclude editable assets/emission from static transport identity; live chart
+binding retains placement, geometry and coverage guards. Ordinary descriptors
+and an empty receiver subset preserve established content identity.
+Targeted CPU and GPU checks cover membership, atomic rejection, material edits,
+transport exclusion, shadow ownership, mixed MSAA shadows and controllable
+lighting. This is not a measured gameplay improvement or completed brush relay.
+Next implement the adapter's stationary controllable-brush receiver lifecycle,
+matching retained live draw identities and preserving visibility/material edits
+and movement fallback. Then qualify actual receiver lightmaps, cache stability
+and foreground performance in Construct and other maps before default/deployment
+changes. Adapter and playable/updater remain unchanged at this checkpoint.
