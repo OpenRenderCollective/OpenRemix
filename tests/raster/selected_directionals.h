@@ -238,6 +238,12 @@ void selectedDirectionalTests() {
           r.destroyRetained(&selfCaster, 1);
           require(render() == specular && target.forward->bakeController()->volume() == volume,
                   "Material and mixed-shadow changes restore specular without rebaking");
+          identity.instanceId = 0xd230;
+          identity.rasterVisible = 1;
+          override.material = white;
+          r.updateRetained(dynamicReceiver, edited);
+          require(render() == lit && target.forward->bakeController()->volume() == volume,
+                  "Returning to a diffuse material restores the ordinary probe shader without rebaking");
         }
       }
       unload();

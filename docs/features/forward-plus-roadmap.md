@@ -3245,3 +3245,36 @@ paths retain their existing shader selection. No default or playable deployment
 change. Continue Crossfire/c1a0, material edits/animation, unknown coverage and
 styled-light qualification before promotion. Local probe visibility remains a
 major remaining cost; this only removes unused diffuse gathers.
+
+
+### 26 October 2026 - map smoke checks and scoped batching follow-up
+
+The zero-diffuse material candidate has matched normal-quality Crossfire runs
+with no obvious GPU regression (about 1.9-2.0 ms yard, 2.7 ms indoors). All four
+comparison rectangles are identical and mode pairs share bake/content hashes.
+Private test mounting and weapon-pickup issues were corrected before accepting
+samples; failed/unresolved/held-weapon attempts are excluded.
+
+c1a0 reception/wall runs are functional smoke evidence, not isolated performance
+qualification. GPU is about 2.55-2.60/1.58-1.59 ms, but active map NPCs have different
+poses/draw counts between cold and warm sessions. The wall images are identical;
+reception differs around animated NPCs. Match map/NPC age and repeat before
+attributing small timing differences to the shader or promoting its defaults.
+
+The GPU fixture now returns black/metal probe receivers to ordinary white diffuse
+materials and requires exact original pixels with the same bake volume. Both
+ordinary and specialized tests pass with selected-probe batching also enabled,
+including Vulkan core/synchronization validation.
+
+One exploratory combined material-variant plus broad-probe-batch Construct run
+shows white-room GPU 6.26-6.35 ms, versus previous material-only 8.42-8.52 and
+original 9.74-9.77 ms. Bake/content hashes and room image rectangle match. Field
+residency is about 2 MiB (about 4 MiB peak) and reuses exceed 5000. This is not a
+fresh interleaved batching comparison. General batching has earlier tradeoffs.
+Next investigate material-scoped visibility batching with unchanged ordinary
+shader specialization, then repeat controls and unknown-coverage/material editing
+gates. Keep both experiments opt-in; no playable/default change has been made.
+
+Cold Crossfire adaptive probe placement still takes about 11.26 s. Denoising and
+styled reconstruction remain preparation costs to improve independently of frame
+shading. Continue the viewmodel/world coverage work with the SSR contract intact.
