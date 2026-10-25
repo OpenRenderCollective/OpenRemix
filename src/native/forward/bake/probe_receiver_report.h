@@ -26,7 +26,8 @@ namespace remix::forward::bake {
   // Optional worker-only diagnostic, including cache hits. Input is a count
   // (1..16), then XYZ origins and XYZ unit directions, at most 4 KiB total.
   // REMIX_DEBUG_PROBE_RECEIVER_RAYS names the input; output appends .results.json.
-  // Includes at most 256 triangles/charts per hit draw, with truncation flags.
+  // Includes at most 256 triangles/charts per hit draw, retaining the picked
+  // triangle and its owning chart even beyond the prefix, with truncation flags.
   // At most 16 segments per original/partition/opaque-limited stencil test blockers
   // against the exact biased query endpoint, excluding 0.1 mm at each end.
   // Visible-connection SH oracles retain missing support as null, never black.

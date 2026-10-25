@@ -32,8 +32,9 @@ namespace remix::forward::bake {
       for (size_t i = 0; i < N; ++i) { if (i) out << ','; out << value[i]; }
       out << ']';
     }
-    void receiverGeometry(std::ostream &out, const scene::BakeScene &source, uint32_t drawIndex,
+    void receiverGeometry(std::ostream &out, const scene::BakeScene &source, const ReceiverHit &hit,
                           std::stop_token cancelled) {
+      const auto drawIndex = hit.draw;
       const auto &draw = source.draws[drawIndex];
       const auto &surface = *draw.surface;
       const auto normals = normalMatrix(draw.model);
@@ -41,23 +42,36 @@ namespace remix::forward::bake {
       const size_t triangles = std::min<size_t>(count / 3, 256);
       out << ",\"geometry\":{\"totalTriangles\":" << count / 3
           << ",\"truncated\":" << (triangles < count / 3 ? "true" : "false") << ",\"charts\":[";
-      uint32_t emitted = 0;
+      std::vector<uint32_t> chartIndices;
+      uint32_t chartCount = 0;
+      std::optional<uint32_t> hitChart;
       for (uint32_t i = 0; i < source.charts.size(); ++i) {
         check(cancelled);
         const auto &chart = source.charts[i];
         if (chart.draw != drawIndex) continue;
-        if (emitted == 256) break;
+        ++chartCount;
+        if (chartIndices.size() < 256) chartIndices.push_back(i);
+        if (hit.firstIndex >= chart.firstIndex &&
+            size_t(hit.firstIndex) - chart.firstIndex < chart.texcoords.size()) hitChart = i;
+      }
+      // Spend the last slot on the picked receiver when it lies beyond the
+      // ordinary prefix. Preserve the original order for already-covered hits.
+      if (hitChart && std::find(chartIndices.begin(), chartIndices.end(), *hitChart) == chartIndices.end())
+        chartIndices.back() = *hitChart;
+      uint32_t emitted = 0;
+      for (const auto i : chartIndices) {
+        const auto &chart = source.charts[i];
         if (emitted++) out << ',';
         out << "{\"chart\":" << i << ",\"firstIndex\":" << chart.firstIndex
             << ",\"indexCount\":" << chart.texcoords.size() << '}';
       }
-      const auto chartCount = std::count_if(source.charts.begin(), source.charts.end(),
-          [&](const auto &chart) { return chart.draw == drawIndex; });
       out << "],\"totalCharts\":" << chartCount << ",\"chartsTruncated\":"
           << (chartCount > emitted ? "true" : "false") << ",\"triangles\":[";
       for (size_t triangle = 0; triangle < triangles; ++triangle) {
         check(cancelled);
-        const auto first = draw.firstIndex + triangle * 3;
+        const auto hitTriangle = (hit.firstIndex - draw.firstIndex) / 3;
+        const auto selected = triangle + 1 == triangles && hitTriangle >= triangles ? hitTriangle : triangle;
+        const auto first = draw.firstIndex + selected * 3;
         if (triangle) out << ',';
         out << "{\"firstIndex\":" << first << ",\"corners\":[";
         for (uint32_t c = 0; c < 3; ++c) {
@@ -320,7 +334,7 @@ namespace remix::forward::bake {
             << (draw.material ? draw.material->sourceHash : 0) << "\",\"distance\":" << hit.distance << ",\"position\":";
         vector(out, hit.position); out << ",\"normal\":"; vector(out, hit.normal);
         out << ",\"geometricNormal\":"; vector(out, hit.geometricNormal);
-        receiverGeometry(out, source, hit.draw, cancelled);
+        receiverGeometry(out, source, hit, cancelled);
         const auto value = sample(grid, hit.position, hit.normal);
         out << ",\"irradiance\":"; if (value) vector(out, *value); else out << "null";
         std::optional<float> containedBias;

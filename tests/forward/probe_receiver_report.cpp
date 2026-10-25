@@ -221,6 +221,22 @@ int main(int argc, char **argv) {
               bounded.find("\"chart\":256,") == std::string::npos,
           "Geometry and chart diagnostics explicitly cap oversized hit draws");
   std::filesystem::remove(outputPath);
+  auto &large = *source.draws[1].surface;
+  for (uint32_t c = 0; c < 3; ++c) {
+    auto vertex = large.vertices[c];
+    vertex.position[0] += 100;
+    large.vertices.push_back(vertex);
+  }
+  for (size_t i = 0; i < large.indices.size() - 3; ++i) large.indices[i] = 3 + uint32_t(i % 3);
+  b::dumpProbeReceiverReport(source, grid);
+  const auto lateHit = readOutput();
+  const auto topology = lateHit.substr(lateHit.find("\"triangles\":["));
+  require(lateHit.find("\"chart\":299,\"firstIndex\":897") != std::string::npos &&
+              lateHit.find("\"chart\":255,") == std::string::npos &&
+              topology.find("\"firstIndex\":897,") != std::string::npos &&
+              topology.find("\"firstIndex\":765,") == std::string::npos,
+          "Late picked triangles and chart ownership replace the last prefix slot without expanding the report");
+  std::filesystem::remove(outputPath);
   writeInput("17\n");
   b::dumpProbeReceiverReport(source, grid);
   require(!std::filesystem::exists(outputPath), "Over-budget report allocated output");
