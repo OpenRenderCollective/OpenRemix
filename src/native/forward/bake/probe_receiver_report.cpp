@@ -189,8 +189,32 @@ namespace remix::forward::bake {
       for (uint32_t c = 0; c < 3; ++c) center[c] = float((double(low[c]) + high[c]) * .5);
       return center;
     }
+    void anchorTargetConnections(std::ostream &out, const scene::BakeScene &source, const Grid &grid,
+        Vec3 position, uint32_t draw, std::span<const Grid::Origin> origins,
+        std::span<const uint32_t> nodes, std::stop_token cancelled) {
+      if (nodes.size() > 256) throw std::invalid_argument("Anchor target node budget exceeded");
+      out << ",\"targetProbes\":[";
+      for (size_t first = 0; first < nodes.size(); first += 16) {
+        ProbeStencil stencil{};
+        stencil.count = uint32_t(std::min<size_t>(16, nodes.size() - first));
+        stencil.receiverPositions.fill(position);
+        for (uint32_t c = 0; c < stencil.count; ++c) {
+          stencil.indices[c] = nodes[first + c];
+          stencil.weights[c] = 1;
+        }
+        const auto audit = probeConnections(source, grid, stencil, origins, cancelled, draw);
+        for (uint32_t c = 0; c < stencil.count; ++c) {
+          if (first + c) out << ',';
+          out << "{\"index\":" << stencil.indices[c] << ",\"tested\":"
+              << (audit.tested[c] ? "true" : "false") << ",\"blocked\":"
+              << (audit.blockers[c] ? "true" : "false") << '}';
+        }
+      }
+      out << ']';
+    }
     void surfaceAnchors(std::ostream &out, const scene::BakeScene &source, uint32_t drawIndex,
-        const Grid &grid, std::span<const Grid::Origin> origins, std::stop_token cancelled) {
+        const Grid &grid, std::span<const Grid::Origin> origins, std::span<const uint32_t> nodes,
+        std::stop_token cancelled) {
       struct Candidate { Vec3 position{}; double area = 0; size_t first = 0; int32_t cluster = -2; };
       std::array<Candidate, 6> candidates{};
       const auto &draw = source.draws[drawIndex];
@@ -253,7 +277,9 @@ namespace remix::forward::bake {
               << (audit.tested[c] ? "true" : "false") << ",\"blocked\":"
               << (audit.blockers[c] ? "true" : "false") << '}';
         }
-        out << "]}";
+        out << ']';
+        anchorTargetConnections(out, source, grid, candidate.position, drawIndex, origins, nodes, cancelled);
+        out << '}';
       }
       out << ']';
     }
@@ -284,7 +310,15 @@ namespace remix::forward::bake {
           }
         }
         out << ']';
-        surfaceAnchors(out, source, hit->draw, grid, origins, cancelled);
+        std::vector<uint32_t> nodes;
+        for (const auto &target : hits) {
+          if (!target || target->draw != hit->draw) continue;
+          const auto stencil = probeStencil(grid, target->position, target->normal);
+          for (uint32_t c = 0; c < stencil.count; ++c)
+            if (stencil.weights[c] > 0 && std::find(nodes.begin(), nodes.end(), stencil.indices[c]) == nodes.end())
+              nodes.push_back(stencil.indices[c]);
+        }
+        surfaceAnchors(out, source, hit->draw, grid, origins, nodes, cancelled);
         out << '}';
       }
       out << ']';

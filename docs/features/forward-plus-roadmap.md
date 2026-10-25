@@ -2630,3 +2630,15 @@ classify missing IDs as clear, compare partial cohorts as complete, or choose an
 solely by the lowest observed error. Next audit the union of target stencil nodes at each
 candidate, preserve target interpolation weights, and test receiver-side connectivity,
 multiple submeshes, moving objects and other maps before considering runtime support.
+
+
+The surface-anchor report now audits the fixed union of receiver stencil nodes at
+every candidate, separately from its own local stencil. Work is bounded by the existing
+sixteen-ray request and sixteen nodes per receiver, in batches of sixteen connections.
+The Construct housing comparison no longer loses coverage at candidates whose local
+stencils omitted required nodes: every admitted candidate supplies known support for
+the whole checked cohort, with lower error than the original interpolation in this
+fixture. Original receiver estimates remain unchanged. This supports further shared-mask
+research, not a production selection rule. Candidate disagreement persists; qualify
+support-region connectivity and motion before choosing a cache lifetime or runtime policy.
+Keep full target-node unions when comparing anchors, and retain missing/untested states.

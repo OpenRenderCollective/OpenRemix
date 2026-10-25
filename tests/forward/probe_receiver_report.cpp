@@ -137,6 +137,13 @@ int main(int argc, char **argv) {
           "Anchor must use the complete draw bounds independently of the picked point");
   require(output.find("\"surfaceAnchors\":[{\"direction\":4,\"firstIndex\":0,\"position\":[0.666666687,0.666666687,2.002") != std::string::npos,
           "Exposed anchor must use the playable triangle centroid offset two millimetres along its oriented normal");
+  const auto targetStart = output.find("\"targetProbes\":[");
+  require(targetStart != std::string::npos, "Surface anchor omitted receiver node union");
+  const auto targetEnd = output.find(']', targetStart);
+  const auto targetNodes = output.substr(targetStart, targetEnd - targetStart);
+  for (uint32_t node = 0; node < 8; ++node)
+    require(targetNodes.find("\"index\":" + std::to_string(node) + ',') != std::string::npos,
+            "Surface anchor must audit every contributing target node by global index");
   require(output.find("\"sceneHash\":\"123\"") != std::string::npos &&
               output.find("\"draw\":1") != std::string::npos && output.find("\"normalizedWeight\":") != std::string::npos,
           "Probe report must retain scene identity, picked ownership and normalized contributions");
