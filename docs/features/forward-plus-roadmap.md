@@ -2798,3 +2798,14 @@ static shadow updates stay zero. Do not call the replay a live gameplay FPS test
 attribute the cost to light clustering merely because many captured lights exist.
 Next isolate batch-helper shader cost and receiver eligibility while preserving live
 probe-heavy controls, preparation churn/lifetimes and wider-map acceptance.
+
+
+Pass-level review qualifies the latest batching replay slowdown: most of the room's
+paired difference appears in depth-prepass time, while opaque-shading self time is
+nearly unchanged. The hall delta is small and also includes depth variation. These
+ranges do not isolate a batch-helper arithmetic regression; investigate cross-pass cache,
+scheduling and run variation with hardware telemetry before changing reconstruction.
+Source inspection also confirms selected slots are packed in runtime-light traversal
+order and cluster lists preserve that order for unique captured lights. Do not add a
+light reorder to address an unobserved grouping mismatch or alter accumulation order
+without evidence. Keep the prototype opt-in and preserve the earlier live-room controls.
