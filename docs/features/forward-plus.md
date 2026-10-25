@@ -2737,6 +2737,8 @@ by live index subsets or material edits. The adapter must still enumerate full
 authoritative references independently of the camera and assign live identities;
 this core path alone does not provide a completed GMod brush relay.
 
-The core supports this role; the GMod controllable-brush relay and representative
-quality/performance qualification remain pending. Existing brush behaviour and
-runtime defaults are unchanged until that host integration is qualified.
+The GMod `func_brush` experiment was rejected and removed: these entities can
+move and remain probe-lit. Disabled baked-shadow casting does not prove that a
+brush is stationary. Generic receiver-only roles require a separate authoritative
+stationary-surface contract from the host; they do not classify game entities.
+Optimize movable receiver probe lighting without moving it into surface lightmaps.

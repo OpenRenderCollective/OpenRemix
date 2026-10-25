@@ -3177,3 +3177,26 @@ The temporary wrapper dump hook is removed and the normal wrapper rebuilt.
 Next implement the BSP candidate/reference/live-identity relay, independent of
 camera visibility, then qualify Construct quality/cache stability and real
 foreground performance. No gameplay gain/default/deployment is claimed yet.
+
+
+### 26 October 2026 - correction: movable func_brush stays probe-lit
+
+The user clarified that func_brush is movable and must remain probe-lit. The
+adapter experiment was reverted in full, including its classification, charts,
+reference lifetime module and flag. vrad_brush_cast_shadows=0 is an occlusion
+setting, not proof of immobility; authored-pose matching and movement fallback do
+not justify allocating a lightmap for an entity intended to move. It was never
+enabled in the playable package. The experimental white-room speedup is rejected
+as the implementation direction, not a candidate for default promotion.
+
+Supersedes earlier tasks proposing a controllable func_brush receiver relay.
+Keep stationary world surfaces and established static models in lightmaps;
+movable brushes, props and viewmodels use probes. Optimize the probe consumer,
+coverage/visibility lookup and baked-light evaluation without changing that
+ownership policy. Retain generic receiver-only native APIs only for hosts with
+an independent, authoritative stationary-surface contract; they do not authorize
+func_brush classification.
+
+Next: isolate the white-room probe cost while preserving materials/specular,
+styled-light response and unknown-coverage fallback. An unlit material can still
+have specular response, so skipping all lighting is not a valid shortcut.
