@@ -2634,3 +2634,15 @@ it does no work in ordinary bakes without either request. Reports include the re
 the offline proxy comparison reads these while retaining older-report compatibility.
 Classified evidence may be retained in the optional companion. This expands evidence,
 not a full-volume proof, automatic influence fit or validated reflection-quality score.
+
+
+### Offline probe diagnostic ownership
+
+`bake/probe_receiver_report` owns bounded ray requests, hit geometry and receiver
+estimates. `bake/probe_connection_audit` supplies shared opaque segment evidence;
+`bake/probe_anchor_report` owns geometry-derived anchor candidates and their receiver
+and probe connections. These diagnostics run only for explicit offline requests and
+are separate from normal reconstruction. `bake/reference_capture` owns independent
+transport queries and records captured partition classification without filtering or
+moving query sites. Keep policy experiments out of normal shading until their quality,
+coverage, cache behavior and runtime cost have been qualified.
