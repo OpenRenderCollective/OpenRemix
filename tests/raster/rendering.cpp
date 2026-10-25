@@ -2675,6 +2675,17 @@ namespace {
           const auto reversed = render(false, false, true, true);
           require((facing[centre] > world[centre] + 5) != (reversed[centre] > world[centre] + 5),
                   "Weapon backface coverage agrees with its colour pass for both windings");
+          weapon.pNext = nullptr;
+          weapon.transform.matrix[0][0] *= -1;
+          hidden.pNext = &coverage;
+          coverage.alphaTestCompareOp = 0;
+          require(render(true, false, true, true) == weaponAgain &&
+                      render(false, false, true, true, true) == weaponAgain,
+                  "Rejected alpha leaves world and self-shadow maps clear for weapon receivers");
+          coverage.alphaTestCompareOp = 4;
+          require(render(true, false, true, true) == dark &&
+                      render(false, false, true, true, true) == isolated,
+                  "Conditional alpha and opaque casters produce identical world and weapon self shadows");
           std::printf("Viewmodel %ux SSR %u local %u: lit %u, world-shadowed %u, overlay %u\n",
                       samples, unsigned(ssr), unsigned(local), bright[centre], dark[centre], overlay[centre]);
         }

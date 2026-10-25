@@ -73,9 +73,16 @@ void main() {
   if ((m.state.w & 16u) != 0u && !gl_FrontFacing)
     discard;
 #endif
+#ifdef SHADOW_PASS
+  // Opaque casters need depth only. Avoid fetching/composing their albedo just
+  // to evaluate an alpha comparison whose result is already known.
+  if (m.state.y == 0u) discard;
+  if (m.state.y != 7u) alphaTest(m, surfaceColor(m, uv, vertexColor).a);
+#else
   vec4 surface = surfaceColor(m, uv, vertexColor);
 #ifndef EARLY_OPAQUE
   alphaTest(m, surface.a);
+#endif
 #endif
 #ifdef LOCAL_SHADOW_PASS
   vec4 lightPosition = frame.localPositions[draw.cascade / 6u];

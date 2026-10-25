@@ -3019,3 +3019,26 @@ broader alpha-order test and a small RenderDoc repro caught it. Those earlier
 no-prepass runs are not optimization evidence. Temporary capture hooks and
 unhelpful barrier/shader experiments were removed. World coverage rejection is
 still a separate pending implementation; shadow cost remains another target.
+
+
+### Opaque shadow alpha work reduction
+
+Sun and local shadow shaders now skip albedo sampling/composition for ALWAYS
+alpha and discard NEVER immediately. Conditional alpha retains the original
+sampling/comparison; radial local depth, caster ownership, bias and filtering
+are unchanged. The generated shader control flow confirms the opaque bypass.
+No new setting or duplicate old implementation is retained.
+
+Targeted GPU regressions pass with synchronization validation for viewmodel
+shadows/MSAA, skinned shadows, mixed local maps, planar point-light self shadows
+and baked sunlight/moving casters. Existing 156 deterministic overlay images
+remain exact; 48 additional shadow-alpha readbacks verify rejected and passing
+conditional world/self casters.
+
+A fixed-sky, cache-hit, foreground Construct session pair has lower measured
+weapon sun-shadow and overlay cost. World/unarmed timings also vary, so no
+whole-frame FPS gain is accepted from that pair alone. Small live image
+differences remain distinct from exact deterministic fixture parity. Wider
+maps and repeatable timing remain open; maps still rebuild every frame. Audit
+complete input stability before attempting shadow reuse. A fragment-free opaque
+sun depth pipeline and world colour coverage rejection remain possible next steps.
