@@ -42,6 +42,35 @@ namespace {
       }
     }
   }
+  void zeroDiffuseEligibility() {
+    using remix::forward::zeroDiffuseMaterial;
+    remix::scene::Material m;
+    require(!zeroDiffuseMaterial(m), "Ordinary diffuse materials keep the generic shader");
+    m.metallic = 1;
+    require(zeroDiffuseMaterial(m), "Constant full metal has no diffuse lobe");
+    m.metallicTexture = std::make_shared<remix::scene::Texture>();
+    require(!zeroDiffuseMaterial(m), "A metallic texture overrides the constant proof");
+    m = {};
+    m.selfIllumination = 1;
+    require(zeroDiffuseMaterial(m), "Constant unmasked self illumination removes diffuse reflectance");
+    m.selfIllumination = 3;
+    require(zeroDiffuseMaterial(m), "Missing emission map supplies white emissive alpha");
+    m.emissionTexture = std::make_shared<remix::scene::Texture>();
+    require(!zeroDiffuseMaterial(m), "Animated or textured emission is not a draw-wide proof");
+    m.emissionTexture.reset();
+    m.selfIllumination = 2;
+    require(!zeroDiffuseMaterial(m), "Albedo alpha may retain diffuse reflectance");
+    m.selfIllumination = 1;
+    m.selfIlluminationScale = .999f;
+    require(!zeroDiffuseMaterial(m), "Partial self illumination stays diffuse");
+    m.selfIlluminationScale = std::numeric_limits<float>::infinity();
+    require(!zeroDiffuseMaterial(m), "Nonfinite self illumination cannot establish eligibility");
+    m = {};
+    m.tint[0] = m.tint[1] = m.tint[2] = 0;
+    require(zeroDiffuseMaterial(m), "Black final tint removes diffuse for every blend argument");
+    m.tint[2] = .001f;
+    require(!zeroDiffuseMaterial(m), "Even a small remaining colour keeps ordinary diffuse lighting");
+  }
   void benchmark(bool translated) {
     std::vector<Matrix> models;
     for (uint32_t i = 0; i < 1024; ++i) {
@@ -93,6 +122,7 @@ int main(int argc, char **argv) try {
     check(model); // Scale, shear, translation and non-affine fallback.
   }
   colorFactors();
+  zeroDiffuseEligibility();
   auto rotation = remix::scene::identity();
   rotation[0] = rotation[5] = 0;
   rotation[1] = 1;

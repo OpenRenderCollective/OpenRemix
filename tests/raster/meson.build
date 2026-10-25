@@ -66,6 +66,9 @@ if get_option('gpu_tests')
   test('Forward+ selected aggregate corrections beyond four on surfaces and dynamic probes', raster_test,
     args : [meson.current_build_dir() / 'selected-directional-readback', 'selected-directionals'],
     timeout : 240)
+  test('Forward+ zero-diffuse probe materials retain specular and mixed shadows', raster_test,
+    args : [meson.current_build_dir() / 'zero-diffuse-probe-readback', 'selected-directionals'],
+    env : ['REMIX_DEBUG_ZERO_DIFFUSE_MATERIAL=1'], timeout : 240)
   test('Forward+ finite cone direct lighting and analytic rejection', raster_test,
     args : [meson.current_build_dir() / 'finite-cone-readback', 'finite-cone'], timeout : 120)
   test('Forward+ styled baked visibility, toggles, mixed shadows and cache', raster_test,

@@ -28,7 +28,12 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
   uint directChannel = lightChannel(surfaceDirectLights, uint(light.shaping.w));
   bool bakedDiffuse = directChannel < 4u && directIrradiance[min(directChannel, 3u)] >= 0;
   bool movingShadow = movingLocalShadowRequired(light);
+#ifdef ZERO_DIFFUSE_MATERIAL
+  // Scalar visibility and specular remain; this material has no diffuse energy.
+  bool probeCorrection = false;
+#else
   bool probeCorrection = aggregateDiffuse && movingShadow;
+#endif
   float attributedDiffuse = bakedDiffuse ? directIrradiance[min(directChannel, 3u)] : 0;
   if (indexedSurfaceDirect() && (!aggregateDiffuse || probeCorrection))
     bakedDiffuse = surfaceDirectionalField(surfaceChart, uint(light.shaping.w), surfaceLightmap, n, attributedDiffuse);

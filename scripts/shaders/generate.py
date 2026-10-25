@@ -46,7 +46,7 @@ BACKENDS = {
     'live_ray': ('forward::ray', 'vulkan1.2', ('launch', 'merge')),
     'bake': ('forward::bake', 'vulkan1.2', ('atlas', 'transport', 'parallel', 'visibility', 'aggregate', 'aggregateParallel', 'depth')),
     'forward_test': ('forward::test', 'vulkan1.2', ('comp', 'probes', 'water')),
-    'forward': ('forward', 'vulkan1.1', ('vert', 'lightmapVert', 'frag', 'prepassedFrag', 'viewModelFrag', 'viewModelEarlyFrag', 'cluster', 'shadowVert', 'shadowFrag', 'opaqueDepthFrag', 'localShadowVert', 'localShadowFrag', 'compositeVert', 'compositeFrag', 'compositeSingle', 'ssrFrag', 'prepassedSsrFrag', 'ssrResolve', 'ssrResolveSingle', 'ssrReduce', 'ssrTrace', 'ssrFilter')),
+    'forward': ('forward', 'vulkan1.1', ('vert', 'lightmapVert', 'frag', 'prepassedFrag', 'viewModelFrag', 'viewModelEarlyFrag', 'cluster', 'shadowVert', 'shadowFrag', 'opaqueDepthFrag', 'localShadowVert', 'localShadowFrag', 'compositeVert', 'compositeFrag', 'compositeSingle', 'ssrFrag', 'prepassedSsrFrag', 'zeroDiffuseFrag', 'zeroDiffuseSsrFrag', 'zeroDiffusePrepassedFrag', 'zeroDiffusePrepassedSsrFrag', 'ssrResolve', 'ssrResolveSingle', 'ssrReduce', 'ssrTrace', 'ssrFilter')),
     'postfx': ('postfx', 'vulkan1.1', ('meter', 'resolve', 'down', 'up')),
     'upscale': ('upscale', 'vulkan1.2', ('comp', 'vert', 'frag')),
     'raster': ('raster', 'vulkan1.1', ('vert', 'frag', 'haloMask', 'haloVert', 'haloBlur', 'haloComposite', 'maskWithin', 'maskOverlay', 'spriteVert', 'spriteFrag')),
@@ -181,6 +181,8 @@ def defines_for(backend, stage, stages):
             'compositeVert': 'composite.vert', 'compositeFrag': 'composite.frag',
             'compositeSingle': 'composite.frag',
             'ssrFrag': 'forward.frag', 'prepassedFrag': 'forward.frag',
+            'zeroDiffuseFrag': 'forward.frag', 'zeroDiffuseSsrFrag': 'forward.frag',
+            'zeroDiffusePrepassedFrag': 'forward.frag', 'zeroDiffusePrepassedSsrFrag': 'forward.frag',
             'prepassedSsrFrag': 'forward.frag', 'viewModelFrag': 'forward.frag', 'viewModelEarlyFrag': 'forward.frag', 'ssrResolve': 'reflections.comp',
             'ssrResolveSingle': 'reflections.comp', 'ssrReduce': 'reflections.comp',
             'ssrTrace': 'reflections.comp', 'ssrFilter': 'reflections.comp',
@@ -189,8 +191,9 @@ def defines_for(backend, stage, stages):
         if stage in ('shadowVert', 'shadowFrag'): defines = ['-DSHADOW_PASS=1']
         if stage in ('localShadowVert', 'localShadowFrag'): defines = ['-DSHADOW_PASS=1', '-DLOCAL_SHADOW_PASS=1']
         if stage == 'compositeSingle': defines = ['-DSINGLE_SAMPLE=1']
-        if stage in ('ssrFrag', 'prepassedSsrFrag'): defines = ['-DREFLECTION_GUIDES=1']
-        if stage in ('prepassedFrag', 'prepassedSsrFrag'): defines += ['-DPREPASSED_WORLD=1']
+        if stage in ('ssrFrag', 'prepassedSsrFrag', 'zeroDiffuseSsrFrag', 'zeroDiffusePrepassedSsrFrag'): defines = ['-DREFLECTION_GUIDES=1']
+        if stage in ('prepassedFrag', 'prepassedSsrFrag', 'zeroDiffusePrepassedFrag', 'zeroDiffusePrepassedSsrFrag'): defines += ['-DPREPASSED_WORLD=1']
+        if stage.startswith('zeroDiffuse'): defines += ['-DZERO_DIFFUSE_MATERIAL=1']
         if stage in ('viewModelFrag', 'viewModelEarlyFrag'): defines = ['-DVIEWMODEL_PASS=1']
         if stage == 'viewModelEarlyFrag': defines += ['-DEARLY_OPAQUE=1']
         if stage in ('ssrResolve', 'ssrResolveSingle'): defines = ['-DSSR_RESOLVE=1']

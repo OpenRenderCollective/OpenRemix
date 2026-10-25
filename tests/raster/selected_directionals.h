@@ -202,6 +202,44 @@ void selectedDirectionalTests() {
               "Cached extra-light mixed correction restores exact shadowed pixels");
       r.destroyRetained(&actor, 1);
       require(render() == lit, "Removing the caster restores the original aggregate receiver without trails");
+      if (probes) {
+        // Live material changes must retain baked ownership and specular even
+        // when the material has no diffuse lobe. Run with the private material
+        // variant enabled as well as with the ordinary shader.
+        const auto volume = target.forward->bakeController()->volume();
+        for (bool metal : {false, true}) {
+          opaque.albedoConstant = metal ? remixapi_Float3D{1, 1, 1} : remixapi_Float3D{0, 0, 0};
+          opaque.metallicConstant = metal ? 1 : 0;
+          opaque.roughnessConstant = .45f;
+          materialInfo.hash = metal ? 0xd241 : 0xd240;
+          remixapi_MaterialHandle liveMaterial;
+          r.createMaterial(materialInfo, liveMaterial);
+          identity.instanceId = 0xd230;
+          identity.classification = REMIXAPI_INSTANCE_DYNAMIC_EXT;
+          identity.rasterVisible = 1;
+          remixapi_InstanceInfoMaterialEXT override{};
+          override.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_MATERIAL_EXT;
+          override.pNext = &identity;
+          override.material = liveMaterial;
+          auto edited = receiver;
+          edited.pNext = &override;
+          r.updateRetained(dynamicReceiver, edited);
+          const auto specular = render();
+          require(specular[centre] > 3 && specular[centre + 2] > 0,
+                  "Zero-diffuse probe materials retain selected baked red and blue specular");
+          identity.instanceId = 0xd231;
+          identity.rasterVisible = 0;
+          const auto selfCaster = r.createRetained(moving);
+          const auto occluded = render();
+          std::printf("Zero-diffuse %s probe %ux: red %u -> shadow %u, blue %u\n",
+              metal ? "metal" : "dielectric", samples, specular[centre], occluded[centre], specular[centre + 2]);
+          require(occluded[centre] < specular[centre] / 2,
+                  "Zero-diffuse probe specular still receives moving-object shadows");
+          r.destroyRetained(&selfCaster, 1);
+          require(render() == specular && target.forward->bakeController()->volume() == volume,
+                  "Material and mixed-shadow changes restore specular without rebaking");
+        }
+      }
       unload();
       if (dynamicReceiver) r.destroyRetained(&dynamicReceiver, 1);
     }

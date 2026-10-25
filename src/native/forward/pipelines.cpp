@@ -195,6 +195,17 @@ namespace remix::forward {
       return result;
     };
     opaquePipeline = graphics(vertex, fragment, worldPass);
+    // Private qualification keeps the ordinary compiled fragment path intact.
+    if (options.debugView == 0 && std::getenv("REMIX_DEBUG_ZERO_DIFFUSE_MATERIAL")) {
+      const auto code = options.depthPrepass
+          ? (options.reflections() ? zeroDiffusePrepassedSsrFragShader : zeroDiffusePrepassedFragShader)
+          : (options.reflections() ? zeroDiffuseSsrFragShader : zeroDiffuseFragShader);
+      const auto bytes = options.depthPrepass
+          ? (options.reflections() ? sizeof(zeroDiffusePrepassedSsrFragShader) : sizeof(zeroDiffusePrepassedFragShader))
+          : (options.reflections() ? sizeof(zeroDiffuseSsrFragShader) : sizeof(zeroDiffuseFragShader));
+      const auto zeroDiffuse = modules.add(code, bytes);
+      zeroDiffusePipeline = graphics(vertex, zeroDiffuse, worldPass);
+    }
     // Create depth first: colour becomes read-only only when this pipeline exists.
     // The private ablation remains off until whole-frame performance is qualified.
     if (viewModelPrepass)

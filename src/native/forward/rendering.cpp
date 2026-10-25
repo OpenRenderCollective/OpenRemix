@@ -1,4 +1,5 @@
 #include "forward/gpu.h"
+#include "forward/material.h"
 #include "platform/gpu_timers.h"
 #include <algorithm>
 #include <cstdio>
@@ -67,6 +68,8 @@ namespace remix::forward {
       else if (terrain) selected = !mapped ? terrainPipeline : mapped->fullyMapped ? terrainLightmapPipeline
                                                                                   : terrainPartialLightmapPipeline;
       else selected = !mapped ? opaquePipeline : mapped->fullyMapped ? lightmapPipeline : partialLightmapPipeline;
+      if (!depthOnly && !terrain && !gi && !mapped && zeroDiffusePipeline &&
+          zeroDiffuseMaterial(*draw.source.material)) selected = zeroDiffusePipeline;
       auto bindPipeline = [&](VkPipeline pipeline) {
         if (pipeline != boundPipeline) {
           vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);

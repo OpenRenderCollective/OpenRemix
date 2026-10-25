@@ -37,6 +37,14 @@ namespace remix::forward {
         result[c * 4 + r] = inverse[r * 4 + c];
     return result;
   }
+  bool zeroDiffuseMaterial(const scene::Material &m) {
+    if (!m.metallicTexture && m.metallic == 1) return true;
+    if (m.tint[0] == 0 && m.tint[1] == 0 && m.tint[2] == 0) return true;
+    // No emission map supplies the constant white texel in emissionLobes.
+    // Albedo-alpha self illumination remains spatially varying and is refused.
+    return !m.emissionTexture && (m.selfIllumination == 1 || m.selfIllumination == 3) &&
+           std::isfinite(m.selfIlluminationScale) && m.selfIlluminationScale >= 1;
+  }
   DrawData materialData(const scene::Draw &draw, double seconds) {
     const auto &m = *draw.material;
     DrawData data;

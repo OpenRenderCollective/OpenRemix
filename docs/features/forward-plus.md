@@ -2742,3 +2742,12 @@ move and remain probe-lit. Disabled baked-shadow casting does not prove that a
 brush is stationary. Generic receiver-only roles require a separate authoritative
 stationary-surface contract from the host; they do not classify game entities.
 Optimize movable receiver probe lighting without moving it into surface lightmaps.
+
+
+A private `REMIX_DEBUG_ZERO_DIFFUSE_MATERIAL=1` experiment selects a separate
+fragment shader for opaque unmapped world materials with a conservative proof of
+zero diffuse reflectance. It retains probe coverage, baked-light ownership,
+visibility, specular, emission and moving shadows; only unused diffuse gathers are
+removed. Ordinary forward shader blobs remain unchanged. It currently excludes
+mapped, terrain, water, live-GI and viewmodel paths. This is opt-in pending broader
+map/material qualification; it does not classify movable brushes as bake receivers.

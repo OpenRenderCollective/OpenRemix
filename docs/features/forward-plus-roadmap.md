@@ -3219,3 +3219,29 @@ the ordinary shader unchanged for other materials. Conservative material/texture
 blend eligibility and GPU readback for specular, mixed shadows, covered/uncovered
 probes, styled lights and metallic/emissive materials are required. Register or
 occupancy effects are hypotheses until measured. No default or deployment change.
+
+
+### 26 October 2026 - separate zero-diffuse probe shader candidate
+
+The replacement for the rejected runtime predicate uses separate fragment blobs
+and an opt-in world pipeline (`REMIX_DEBUG_ZERO_DIFFUSE_MATERIAL=1`). All 22 old
+forward shader blobs compare byte-identical. A conservative material helper proves
+zero diffuse for constant full metal without a metallic texture, black final RGB
+tint, or constant full self illumination without an emission texture. Textured,
+masked and partial cases keep ordinary shading unless another independent proof
+holds. Movable brushes remain probe-lit; no brush bake classification was added.
+
+Normal-quality same-binary enabled/disabled/enabled foreground Construct runs:
+white-room GPU 9.74-9.77 ms control versus 8.42-8.52 ms enabled, about 13% lower.
+Hall repeated timing is approximately 2.6 ms with either path. All three sessions
+retain identical bake and content hashes; the room image comparison is identical.
+This avoids the earlier broad hallway regression but is not all-map acceptance.
+
+CPU eligibility checks and selected-light GPU tests pass with the variant enabled
+and disabled. New black-dielectric and full-metal dynamic probe checks retain
+selected specular and moving shadows at 1x/4x MSAA without rebaking; their sampled
+pixels match both paths. Ordinary, mapped, terrain, water, live-GI and viewmodel
+paths retain their existing shader selection. No default or playable deployment
+change. Continue Crossfire/c1a0, material edits/animation, unknown coverage and
+styled-light qualification before promotion. Local probe visibility remains a
+major remaining cost; this only removes unused diffuse gathers.

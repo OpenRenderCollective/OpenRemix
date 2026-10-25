@@ -153,8 +153,13 @@ void main() {
   if (charted) {
     ambient = surfaceLighting.rgb / Pi;
     aggregateReceiver = true;
+#ifdef ZERO_DIFFUSE_MATERIAL
+  } else if (localProbeStencil(worldPosition, n)) {
+    ambient = vec3(0);
+#else
   } else if (bakedIrradiance(worldPosition, n, irradiance)) {
     ambient = irradiance / Pi;
+#endif
     aggregateReceiver = true;
   }
 #endif

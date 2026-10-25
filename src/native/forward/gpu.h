@@ -42,6 +42,7 @@ namespace remix::forward {
                depthPipeline = VK_NULL_HANDLE, depthLightmapPipeline = VK_NULL_HANDLE,
                shadowPipeline = VK_NULL_HANDLE, localShadowPipeline = VK_NULL_HANDLE,
                clusterPipeline = VK_NULL_HANDLE, compositePipeline = VK_NULL_HANDLE;
+    VkPipeline zeroDiffusePipeline = VK_NULL_HANDLE;
     VkSampler sampler = VK_NULL_HANDLE, shadowSampler = VK_NULL_HANDLE, surfaceSampler = VK_NULL_HANDLE,
               skySampler = VK_NULL_HANDLE;
     VkRenderPass worldPass = VK_NULL_HANDLE, shadowPass = VK_NULL_HANDLE;
