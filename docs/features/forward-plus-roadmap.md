@@ -3042,3 +3042,24 @@ differences remain distinct from exact deterministic fixture parity. Wider
 maps and repeatable timing remain open; maps still rebuild every frame. Audit
 complete input stability before attempting shadow reuse. A fragment-free opaque
 sun depth pipeline and world colour coverage rejection remain possible next steps.
+
+
+### Playable static-model default and shadow refresh
+
+The testing install is refreshed from `forwardplus-static-models-20261025`,
+native `20d5f30f` and adapter `b04b344c`. All 157 owned files verify; 101 current
+protected settings, launchers, authored cubemap bounds and replacement files
+remain byte-identical. Only proxy/native DLLs and the runtime manifest changed.
+The updater points to the new immutable package.
+
+Installed normal-quality Construct with actual frozen sky and no model-chart
+override generates 1407 model charts, loads compatible baked lighting and
+completes image/report publication without validation/synchronization diagnostics.
+Its fixed-view output matches the qualified reference exactly. A path-tracer
+measured-sheet GPU regression is also clean on the build runtime, without
+claiming installed RR coverage. The experimental weapon depth prepass and
+selected-probe batching remain off unless explicitly enabled.
+
+This qualifies the deployment and one fixed view; it does not close gameplay FPS,
+first-bake cost, dynamic probe support, seams/noise, cubemap placement, wider-map
+quality or the existing RR synchronization investigation.

@@ -19,9 +19,14 @@ It is not an accepted default FPS improvement. CS2 capture evidence confirms
 early weapon depth and later world colour rejection; our world coverage masking
 is still pending. No temporary RenderDoc test hooks remain in source.
 
-The playable installation below has NOT received these branch changes. Preserve
-its 97 protected files when packaging/deploying, and update this checkpoint only
-after verifying the new installed manifest and appropriate smoke tests.
+The playable installation now includes these qualified default changes from
+`forwardplus-static-models-20261025`: native `20d5f30f`, adapter `b04b344c`.
+All 157 owned files verify and 101 protected settings/assets remain unchanged.
+The isolated weapon depth prepass stays off. An installed normal-quality
+Construct check with actual captured sky and no model override generates 1407
+model charts, loads compatible cached lighting and matches the qualified fixed
+image exactly, without validation/synchronization diagnostics. This is not
+gameplay FPS acceptance or an installed path-tracer RR qualification.
 
 Quality-reference caveat: incoming-ray hemisphere references omit analytic
 receiver-direct lighting. Comparisons against fully baked aggregate surface or
@@ -31,15 +36,14 @@ reference format for normal-bearing surface irradiance with the bake's direct
 policy; it preserves SH and reconstructs irradiance at the supplied normal.
 This diagnostic correction does not change rendering defaults or existing bakes.
 
-Current testing installation: `forwardplus-receiver-runs-20261025`, native `bffda3a9`
-and adapter `382952d2`. All 157 deployed files verify, and 97 protected files
+Current testing installation: `forwardplus-static-models-20261025`, native `20d5f30f`
+and adapter `b04b344c`. All 157 deployed files verify, and 101 protected files
 (settings, launchers, authored bounds and replacements) remain byte-identical.
 This includes upstream integration, separate pinned DLSS CNN/Transformer packaging
 and redundant consecutive Forward+ draw-binding elimination, plus bounded receiver
-range specialization. Only the native DLL and runtime manifest changed in this
-refresh; adapter source changes since its previous checkpoint are tooling only.
-In that installed build, model
-charts and selected-probe batching remain opt-in. Earlier deployments below are
+range specialization. The proxy DLL, native DLL and runtime manifest changed in this refresh.
+Eligible static model charts now follow the runtime default; selected-probe
+batching and the isolated weapon depth prepass remain opt-in. Earlier deployments below are
 historical. Fixed-view checks do not establish moving-gameplay FPS or final quality.
 
 The earlier combined installed smoke produced Forward+ image and timing/report outputs. Its
