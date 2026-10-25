@@ -8,15 +8,18 @@ reference format for normal-bearing surface irradiance with the bake's direct
 policy; it preserves SH and reconstructs irradiance at the supplied normal.
 This diagnostic correction does not change rendering defaults or existing bakes.
 
-Current testing installation: `forwardplus-current-20261025`, native `2d9f578c`
-and adapter `ac46d523`. All 157 deployed files verify, and 97 protected files
+Current testing installation: `forwardplus-receiver-runs-20261025`, native `bffda3a9`
+and adapter `382952d2`. All 157 deployed files verify, and 97 protected files
 (settings, launchers, authored bounds and replacements) remain byte-identical.
 This includes upstream integration, separate pinned DLSS CNN/Transformer packaging
-and redundant consecutive Forward+ draw-binding elimination. Experimental model
+and redundant consecutive Forward+ draw-binding elimination, plus bounded receiver
+range specialization. Only the native DLL and runtime manifest changed in this
+refresh; adapter source changes since its previous checkpoint are tooling only.
+Experimental model
 charts and selected-probe batching remain opt-in. Earlier deployments below are
 historical. Fixed-view checks do not establish moving-gameplay FPS or final quality.
 
-The installed Forward+ smoke produced its image and timing/report outputs. Its
+The earlier combined installed smoke produced Forward+ image and timing/report outputs. Its
 Construct procedural sky was missing, so this is functional coverage rather than
 live-game lighting parity. The subsequent path-tracer stage produced no final
 capture and reported two synchronization write hazards inside DLSS RR resource
@@ -35,6 +38,9 @@ A fresh normal-budget installed Forward+ run using a validated frozen live sky
 then completes bake, authored capture readiness and final image/report publication
 without validation/synchronization diagnostics. This corrects that test's missing
 illumination; it does not establish that noisy probes, seams or all rooms are fixed.
+The latest installed Forward+ check uses that captured sky and matches the prior
+installed image exactly, with no validation/synchronization diagnostics. Runtime
+sample budgets, model-chart eligibility defaults and protected user assets stay intact.
 
 The branch also specializes bounded consecutive receiver ranges within partially
 charted opaque draws. Coverage, original triangle order and bake compatibility are
