@@ -2785,3 +2785,16 @@ so model geometry and host partition tests remain complementary. Do not infer us
 probe support from either cluster membership or backface validity alone. Boundary
 receiver transfer, sufficient same-side support and visible gameplay acceptance remain
 open; this metadata is diagnostic only and changes neither cache identity nor shading.
+
+
+A current-build two-view Construct replay repeat keeps selected-probe batching opt-in.
+Opposite-order on/off pairs use identical cached normal-budget lighting, fixed hall and
+white-room cameras, unchanged light budgets and full-resolution SSR. Completed timing
+windows are untruncated; images and lighting content hashes match exactly. Batching is
+slower on the paired means in both replay views, especially the room. This does not
+invalidate the earlier live brush-shell result, but it blocks general default promotion.
+Opaque shading/depth remain much larger than static shadow updates in these captures;
+static shadow updates stay zero. Do not call the replay a live gameplay FPS test or
+attribute the cost to light clustering merely because many captured lights exist.
+Next isolate batch-helper shader cost and receiver eligibility while preserving live
+probe-heavy controls, preparation churn/lifetimes and wider-map acceptance.
