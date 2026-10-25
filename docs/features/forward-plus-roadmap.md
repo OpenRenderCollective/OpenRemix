@@ -5,7 +5,8 @@
 Coplanar seam donors now retain their original receiver footprint, and sunlight
 edge refinement admits those verified aliases instead of skipping every
 filtering-only donor. Curved donors without a proven footprint remain excluded.
-Cache revision 34 separates the changed sunlight coverage. This corrects missing
+Sunlight coverage changed in cache revision 34; current revision 35 also
+constrains relocation clearance to the receiver side of solid boundaries. This corrects missing
 edge antialiasing, not probe leakage or chart-local indirect filtering bias.
 Continue checking sunlit boundaries and indirect discontinuities separately.
 Refinement decisions are shared across visible copies of a verified footprint:
@@ -2708,3 +2709,14 @@ one is slightly worse, and the large model errors remain. This is a containment 
 not a demonstrated visual-quality improvement or deployment qualification. Check the
 previous ceiling fixture, additional maps and cache reload before installing it; receiver
 binning and refinement priorities still use their existing policies.
+
+
+Revision-35 Construct cache reload now completes with zero grid, surface and visibility
+transport work. The original sixteen ceiling-housing receiver estimates match the prior
+field exactly, retaining all coverage; the containment change does not fix that fixture.
+The protected authored cubemap sidecar remains unchanged. Allocation inspection confirms
+that normal refinement ranks charted lightmap receivers; uncharted model geometry has
+no independent receiver-error references in that path. Investigate bounded model evidence
+separately from increasing the surface atlas budget, while retaining the documented
+rejection of earlier model-driven refinement that moved nodes through the ceiling.
+Containment alone does not establish that repeating that policy will succeed.
