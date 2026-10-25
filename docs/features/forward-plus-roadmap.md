@@ -2666,3 +2666,16 @@ not motion stability or multi-map acceptance: correlated candidates can still ag
 an incorrect result. Broaden to other prop geometries and disconnected/concave surfaces,
 then qualify an engine-agnostic runtime representation and cost before enabling any
 consensus policy. No normal-renderer visibility voting has been introduced.
+
+
+The first broader Construct check rejects equal-vote surface-anchor consensus as a
+general reconstruction policy. Sixteen model-surface sites across fifteen actual draws
+use the normal cached grid and independent base-only 8192-sample hemisphere references.
+One intended draw shares its exact tested position with another draw; actual ray ownership
+is retained. Consensus loses support at four sites (ties or no connected candidate), and
+its error is slightly worse on the twelve common covered sites, despite improvements
+on several fixtures. Some strongly underlit sites remain far from the reference under
+both methods. Do not promote the housing-only success, hide missing sites, relax ties
+or use a selective cohort to claim a global improvement. Keep consensus offline; next
+separate grid transport/placement errors from receiver interpolation and anchor failures
+at the regressing sites. The original renderer remains unchanged.
