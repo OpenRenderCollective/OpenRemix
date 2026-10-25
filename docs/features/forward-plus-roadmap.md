@@ -2585,3 +2585,25 @@ payload; only the new local companion/report belongs to this run. Regional evide
 a foundation for bounded influence support, not a new automatic selection policy or
 normal-quality visual acceptance. Do not infer arbitrary unsampled volume support from
 these classified surface connections.
+
+
+### Probe support sharing: next qualification
+
+The fixed Construct ceiling-housing study supports investigating shared opaque
+connection visibility while retaining each receiver's spatial interpolation weights.
+A constant SH value for the whole draw is not an accepted replacement: across the
+same anchor cohort it can worsen error, including when removing the normal-facing
+weight. One anchor has no clear support at all; missing support must remain unknown
+rather than becoming black or being treated as unobstructed.
+
+Next evaluate an independently geometry-derived anchor, without choosing a favorable
+camera sample. A draw anchor is not a complete object anchor when an instance has
+multiple submeshes. Check solid/interior anchors, missing stencil nodes, thin geometry,
+rotation and movement before proposing a runtime cache. Preserve per-point weights
+and distinguish opaque-only tests from alpha/transmission visibility. No shared-support
+policy is enabled in normal rendering, and no performance benefit is established yet.
+
+Visual acceptance must use the normal bake budget with denoising. Low-budget numerical
+diagnostic replays are not visual-quality acceptance captures; their surrounding scene
+may use reduced probes, texels and samples even when an independent reference query
+uses a high sample count. Keep these purposes explicit in run metadata and reporting.
