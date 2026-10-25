@@ -23,6 +23,11 @@ Refinement decisions are shared across visible copies of a verified footprint:
 an edge detected in one chart also refines its source and other chart copies.
 This prevents a chart-local edge search from leaving one copy unrefined.
 
+Generated charts can join exact position/normal duplicates across material UV
+seams. Material texture coordinates stay intact, while hard normal seams and
+nearby unmatched vertices remain separate. This reduces avoidable chart splits;
+broader filtering-cost and quality qualification is still required.
+
 Generated model-chart density is also a separate confirmed failure. Grazing
 projection faces and excessive curved metric expansion now split candidate
 patches rather than inflating their global atlas footprint. Whole-map CPU atlas

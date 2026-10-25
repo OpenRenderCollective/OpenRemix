@@ -131,6 +131,38 @@ int main(int argc, char **argv) try {
             "Opposing triangle orientations remain separate charts");
   }
   {
+    s::BakeScene seam;
+    seam.ready = true;
+    seam.draws = {triangle()};
+    auto &draw = seam.draws[0];
+    draw.classification = REMIXAPI_INSTANCE_STATIC_EXT;
+    const auto cornerB = draw.surface->vertices[1], cornerC = draw.surface->vertices[2];
+    auto d = cornerB;
+    d.position[1] = 3;
+    draw.surface->vertices.insert(draw.surface->vertices.end(), {cornerB, d, cornerC});
+    draw.surface->vertices[3].uv[0] = 100;
+    draw.surface->vertices[5].uv[1] = -100;
+    draw.surface->indices = {0, 1, 2, 3, 4, 5};
+    auto charts = b::modelCharts(seam, 1);
+    require(charts.size() == 1 && charts[0].texcoords.size() == 6,
+            "Duplicate material UV seam vertices share a connected lightmap chart");
+    s::validateBakeCharts(seam.draws, charts);
+    draw.surface->vertices[3].normal[0] = .5f;
+    require(b::modelCharts(seam, 2).size() == 2,
+            "Distinct shading normals preserve hard seams at coincident positions");
+    draw.surface->vertices[3].normal[0] = 0;
+    draw.surface->vertices[3].position[0] += .0001f;
+    require(b::modelCharts(seam, 2).size() == 2,
+            "Nearby unmatched vertices do not weld across a geometric gap");
+    draw.surface->vertices[3].position[0] = 3;
+    draw.vertexOffset = -1;
+    draw.firstIndex = 3;
+    draw.indexCount = 6;
+    draw.surface->indices = {99, 99, 99, 1, 2, 3, 4, 5, 6};
+    require(b::modelCharts(seam, 1).size() == 1,
+            "UV seam joining respects signed vertex offsets and indexed draw ranges");
+  }
+  {
     s::BakeScene clipped;
     auto partition = std::make_shared<s::VisibilityPartition>();
     partition->closed = true; partition->clusterCount = 1;

@@ -10,6 +10,17 @@
 
 namespace remix::forward::bake {
   namespace {
+    bool sameChartVertex(const scene::Draw &draw, uint32_t left, uint32_t right) {
+      if (left == right) return true;
+      const auto &vertices = draw.surface->vertices;
+      const auto &a = vertices.at(size_t(int64_t(left) + draw.vertexOffset));
+      const auto &b = vertices.at(size_t(int64_t(right) + draw.vertexOffset));
+      // Material UV seams duplicate vertices without splitting the lighting
+      // surface. Exact positions avoid welding nearby geometry; equal normals
+      // retain hard shading seams. Material UVs remain untouched.
+      return std::equal(a.position, a.position + 3, b.position) &&
+             std::equal(a.normal, a.normal + 3, b.normal);
+    }
     // Keep charts bounded, contiguous and within one smooth connected patch.
     // Projection must remain injective; the existing chart validator rejects
     // folds/overlaps before a merge can replace its original triangles.
@@ -23,7 +34,8 @@ namespace remix::forward::bake {
       for (uint32_t corner = 0; corner < 3; ++corner) {
         const auto index = indices[next.firstIndex + corner];
         const auto first = indices.begin() + chart.firstIndex;
-        if (std::find(first, first + chart.texcoords.size(), index) != first + chart.texcoords.size()) ++shared;
+        if (std::any_of(first, first + chart.texcoords.size(),
+                        [&](uint32_t other) { return sameChartVertex(draw, index, other); })) ++shared;
       }
       if (shared < 2) return false;
       auto merged = chart;
