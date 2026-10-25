@@ -2654,3 +2654,15 @@ does not resolve their differing probe masks in that case. Do not use connectivi
 as an anchor ranking metric or claim it proves lighting fidelity. Stable selection,
 visibility-transition behavior, instance ownership and broader quality/cost qualification
 remain open; the normal renderer still uses the existing probe reconstruction.
+
+
+Offline equal-vote consensus is a promising follow-up to surface-anchor selection.
+For the fixed housing cohort, majority visibility preserves complete support and improves
+reference agreement without selecting a favorable anchor. Requiring unanimous clear
+votes removes all support; accepting any clear vote retains more leakage. All three- and
+four-candidate subsets reproduce the full majority result in this fixture. Unknown votes,
+empty candidate sets and tied votes remain unknown, not fabricated visibility. This is
+not motion stability or multi-map acceptance: correlated candidates can still agree on
+an incorrect result. Broaden to other prop geometries and disconnected/concave surfaces,
+then qualify an engine-agnostic runtime representation and cost before enabling any
+consensus policy. No normal-renderer visibility voting has been introduced.
