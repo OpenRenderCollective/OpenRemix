@@ -74,6 +74,51 @@ namespace remix::forward::bake {
       }
       out << "]}";
     }
+    struct ConnectionAudit {
+      std::array<Vec3, 16> positions{};
+      std::array<bool, 16> tested{};
+      std::array<std::optional<ReceiverHit>, 16> blockers{};
+    };
+    ConnectionAudit probeConnections(const scene::BakeScene &source, const Grid &grid,
+        const ProbeStencil &stencil, std::span<const Grid::Origin> origins, std::stop_token cancelled) {
+      if (!(source.sceneScale > 0) || !std::isfinite(source.sceneScale))
+        throw std::invalid_argument("Invalid probe connection scene scale");
+      ConnectionAudit result;
+      std::array<float, 16> lengths{};
+      std::vector<ReceiverRay> rays;
+      std::vector<uint32_t> slots;
+      // Geometry-only evidence, not alpha/transmission visibility. Keep the
+      // exact biased endpoint, excluding both endpoints by 0.1 mm.
+      const float tolerance = .0001f / source.sceneScale;
+      for (uint32_t c = 0; c < stencil.count; ++c) {
+        if (stencil.weights[c] <= 0) continue;
+        const auto index = stencil.indices[c];
+        if (index >= origins.size()) throw std::invalid_argument("Invalid probe connection origin");
+        auto &position = result.positions[c];
+        position = origins[index].position;
+        if (uint32_t(grid.header.settings[2]) & 1u)
+          for (uint32_t axis = 0; axis < 3; ++axis) position[axis] += grid.probes.at(index).irradiance[axis][3];
+        Vec3 direction;
+        for (uint32_t axis = 0; axis < 3; ++axis)
+          direction[axis] = stencil.receiverPositions[c / 8][axis] - position[axis];
+        const float distance = std::sqrt(dot(direction, direction));
+        if (!std::isfinite(distance) || distance <= 2 * tolerance) continue;
+        ReceiverRay ray;
+        for (uint32_t axis = 0; axis < 3; ++axis) {
+          ray.direction[axis] = direction[axis] / distance;
+          ray.origin[axis] = position[axis] + ray.direction[axis] * tolerance;
+        }
+        rays.push_back(ray); slots.push_back(c);
+        lengths[c] = distance - 2 * tolerance;
+        result.tested[c] = true;
+      }
+      if (!rays.empty()) {
+        const auto hits = pickProbeReceivers(source, rays, cancelled);
+        for (size_t c = 0; c < slots.size(); ++c)
+          if (hits[c] && hits[c]->distance < lengths[slots[c]]) result.blockers[slots[c]] = hits[c];
+      }
+      return result;
+    }
     std::vector<Grid::Origin> probeOrigins(const Grid &grid) {
       if (indexed(grid.header)) return directoryOrigins(grid);
       const uint32_t count = gridNodes(grid.header);
@@ -252,6 +297,11 @@ namespace remix::forward::bake {
         const auto stencil = probeStencil(grid, hit.position, hit.normal);
         float total = 0;
         for (uint32_t c = 0; c < stencil.count; ++c) total += stencil.weights[c];
+        const auto audit = probeConnections(source, grid, stencil, origins, cancelled);
+        float blockedWeight = 0;
+        for (uint32_t c = 0; c < stencil.count; ++c)
+          if (audit.blockers[c] && total > 0) blockedWeight += stencil.weights[c] / total;
+        out << ",\"opaqueBlockedWeight\":" << blockedWeight;
         out << ",\"stencilCount\":" << stencil.count << ",\"weightSum\":" << total << ",\"probes\":[";
         const auto sh = irradianceBasis(hit.normal);
         bool first = true;
@@ -262,15 +312,22 @@ namespace remix::forward::bake {
           first = false;
           const uint32_t index = stencil.indices[c];
           const auto &probe = grid.probes.at(index);
-          auto position = origins.at(index).position;
-          if (uint32_t(grid.header.settings[2]) & 1u)
-            for (uint32_t axis = 0; axis < 3; ++axis) position[axis] += probe.irradiance[axis][3];
+          const auto &position = audit.positions[c];
           Vec3 rawIrradiance{};
           for (uint32_t j = 0; j < 9; ++j)
             for (uint32_t axis = 0; axis < 3; ++axis) rawIrradiance[axis] += probe.irradiance[j][axis] * sh[j];
           out << "{\"index\":" << index << ",\"stencilSlot\":" << c << ",\"weight\":" << weight
               << ",\"normalizedWeight\":" << (total > 0 ? weight / total : 0) << ",\"position\":";
-          vector(out, position); out << ",\"rawIrradiance\":"; vector(out, rawIrradiance);
+          vector(out, position);
+          out << ",\"receiverPosition\":"; vector(out, stencil.receiverPositions[c / 8]);
+          out << ",\"opaqueConnectionTested\":" << (audit.tested[c] ? "true" : "false")
+              << ",\"opaqueConnectionBlocked\":" << (audit.blockers[c] ? "true" : "false");
+          out << ",\"opaqueBlocker\":";
+          if (const auto &blocker = audit.blockers[c]) {
+            out << "{\"draw\":" << blocker->draw << ",\"firstIndex\":" << blocker->firstIndex
+                << ",\"position\":"; vector(out, blocker->position); out << '}';
+          } else out << "null";
+          out << ",\"rawIrradiance\":"; vector(out, rawIrradiance);
           out << ",\"spacing\":" << origins[index].spacing << ",\"sh\":[";
           for (uint32_t j = 0; j < 9; ++j) {
             if (j) out << ',';

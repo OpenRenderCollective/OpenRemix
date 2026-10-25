@@ -125,6 +125,11 @@ int main(int argc, char **argv) {
   require(output.find("\"geometry\":{\"totalTriangles\":1,\"truncated\":false") != std::string::npos &&
               output.find("\"vertex\":0,\"position\":[0,0,2]") != std::string::npos,
           "Receiver report retains bounded hit-draw topology and transformed corners");
+  require(output.find("\"opaqueConnectionBlocked\":true") != std::string::npos &&
+              output.find("\"opaqueConnectionBlocked\":false") != std::string::npos &&
+              output.find("\"opaqueBlocker\":{\"draw\":0") != std::string::npos &&
+              output.find("\"receiverPosition\":[0.5,0.5,2]") != std::string::npos,
+          "Probe connections distinguish an intervening opaque plane from the receiver endpoint");
   const auto irradiance = output.find("\"irradiance\":[");
   require(irradiance != std::string::npos, "Covered receiver has no probe irradiance");
   std::istringstream values(output.substr(irradiance + 14));

@@ -22,6 +22,7 @@ namespace remix::forward::bake {
         base[axis] = std::min(uint32_t(q), dimensions[axis] - 2);
         fraction[axis] = q - base[axis];
       }
+      result.receiverPositions[first / 8] = biased;
       float total = 0, support = 0;
       for (uint32_t corner = 0; corner < 8; ++corner) {
         std::array<uint32_t, 3> coordinate;

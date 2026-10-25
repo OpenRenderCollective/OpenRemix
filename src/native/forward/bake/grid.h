@@ -88,6 +88,7 @@ namespace remix::forward::bake {
   // node references the identical physical probe. Bits are -X,+X,-Y,+Y,-Z,+Z.
   std::vector<uint8_t> sharedPatchFaces(const Grid &grid);
   struct ProbeStencil {
+    std::array<Vec3, 2> receiverPositions{}; // exact biased coarse/fine query endpoints for diagnostics
     std::array<uint32_t, 16> indices{};
     std::array<float, 16> weights{};
     uint32_t count = 0;

@@ -20,6 +20,9 @@ namespace remix::forward::bake {
   // (1..16), then XYZ origins and XYZ unit directions, at most 4 KiB total.
   // REMIX_DEBUG_PROBE_RECEIVER_RAYS names the input; output appends .results.json.
   // Includes at most 256 triangles/charts per hit draw, with truncation flags.
+  // At most 16 contributing probe segments per hit test rigid opaque blockers
+  // against the exact biased query endpoint, excluding 0.1 mm at each end.
+  // A missing opaque blocker does not establish alpha/transmission visibility.
   // Existing output is protected; failures never affect bake publication.
   void dumpProbeReceiverReport(const scene::BakeScene &source, const Grid &grid,
                                std::stop_token cancelled = {}) noexcept;

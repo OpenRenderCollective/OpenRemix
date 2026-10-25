@@ -38,6 +38,18 @@ coverage distinguishes the housing from its lightmapped ceiling. The bounded
 receiver-ray report reconstructs the neutral pixels and exposes bright probes
 connected through the roof slab, plus connections through the housing itself.
 Keep world-atlas seams, emitter shape and prop/probe lighting as separate cases.
+The receiver-ray report now audits each nonzero stencil connection against
+rigid opaque geometry, retaining the exact biased coarse/fine endpoints, blocker
+ownership and normalized blocked-weight share. Missing eligible blockers do not
+establish alpha/transmission visibility. The audit is optional CPU work, with
+at most sixteen connections per receiver; reconstruction weights stay unchanged.
+
+Construct confirms both roof-side support leaking through opaque slabs and a
+normal-biased query crossing into a nearby ceiling even while the actual receiver
+is below it. Keep bias/domain containment distinct from estimator variance.
+Some queries have no unblocked stencil support; rejection-only fixes can turn
+those pixels black. Next study receiver-side support and bias containment together
+without adding per-pixel geometry queries to the normal rendering path.
 The synthetic painted-sky fallback does not qualify live-game sky parity.
 
 Independent 8192-sample SH captures 10-25 cm outside three housing faces are within
