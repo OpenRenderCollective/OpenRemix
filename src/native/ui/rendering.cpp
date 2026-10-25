@@ -156,6 +156,10 @@ namespace remix {
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Refines detected static sun-shadow edges across each luxel's surface area.\n"
                           "Adds a bounded sampling pass to new bakes; cached lighting reuses the result.");
+      ui::Checkbox("Lightmap static models", &forward.baking.modelLightmaps);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Bakes eligible opaque static mesh surfaces into the surface atlas.\n"
+                          "Dynamic objects retain probe lighting. Changing this rebuilds lighting once.");
       ui::Checkbox("Fit surface detail to atlas budget", &forward.baking.lightmapFitBudget);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Selects the finest consistent surface density that fits the atlas.\n"

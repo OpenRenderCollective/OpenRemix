@@ -27,6 +27,7 @@ int main(int argc, char **argv) {
   const fs::path root = argv[1];
   fs::create_directories(root);
   config::Settings changed;
+  changed.forward.baking.modelLightmaps = false;
   changed.backend = 0;
   changed.vsync = true;
   changed.clearColor = {.1f, .2f, .3f, .4f};
@@ -116,6 +117,8 @@ int main(int argc, char **argv) {
   config::Settings partial;
   partial.trace.samples = 5;
   require(parsed == partial, "Omitted keys leaked previous values");
+  require(parsed.forward.baking.modelLightmaps,
+          "Profiles written before static mesh lightmaps inherit the current runtime default");
   require(parsed.trace.translucencyDenoiser && parsed.trace.translucencyReuse,
           "Translucent denoising and opaque reuse must default on");
   require(unknown.at("future.setting") == "alpha = beta" && warnings.size() == 1,

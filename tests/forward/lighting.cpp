@@ -454,6 +454,16 @@ int main() {
   draw.viewModel = true;
   require(!accepts(draw), "Viewmodel camera is not world lighting");
   config::Settings settings;
+  require(settings.forward.baking.modelLightmaps && !bake::Config{}.modelLightmaps,
+          "Runtime profiles lightmap static meshes while low-level baking retains explicit eligibility control");
+  const auto withModels = settings.forward.baking;
+  require(config::set(settings, "rtx.native.forward.lightmapModels", "0") == config::SetResult::Success &&
+              !settings.forward.baking.modelLightmaps &&
+              !settings.forward.baking.sameLighting(withModels),
+          "Disabling static mesh lightmaps changes the bake policy");
+  require(config::set(settings, "rtx.native.forward.lightmapModels", "1") == config::SetResult::Success &&
+              config::set(settings, "rtx.native.forward.lightmapModels", "2") == config::SetResult::Invalid,
+          "Static mesh lightmap settings persist with boolean validation");
   require(settings.forward.autoExposure, "Forward+ runtime profiles enable automatic exposure by default");
   require(settings.forward.prism && settings.forward.gamma22,
           "Forward+ defaults to the shared path-traced Prism and gamma display transform");

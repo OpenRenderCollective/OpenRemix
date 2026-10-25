@@ -7,7 +7,7 @@ namespace remix::forward::bake {
   // still reject the result. A zero return leaves no model chart capacity.
   uint32_t modelChartCapacity(const lightmap::Options &options, size_t authoredCharts);
 
-  // Candidate charts for the existing world-metric atlas fitter. Caller charts
+  // Generate charts for the existing world-metric atlas fitter. Caller charts
   // remain untouched; generated ranges retain the original draw/index bindings.
   // The caller must append these to a derived snapshot and use fillBudget.
   // Explicit budget is 1..1048576; callers also enforce atlas capacity.

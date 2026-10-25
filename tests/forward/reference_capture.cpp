@@ -20,6 +20,7 @@ int main(int argc, char **argv) {
   region.partition = partition;
   capture.classify(region);
   require(capture.samples == 4096 && capture.points.size() == 2 && capture.sampleOffsets.empty() &&
+              !capture.baseLightingOnly &&
               capture.points[0].normal == remix::forward::Vec4{},
           "Reference sites retain exact world positions and unbiased normals");
   Result value{};
@@ -209,6 +210,37 @@ int main(int argc, char **argv) {
     try { ReferenceCapture::load(path); }
     catch (const std::invalid_argument &) { rejected = true; }
     require(rejected, "Surface streams reject missing/invalid offsets, range overflow and non-unit normals");
+  }
+  {
+    std::ofstream sites(path);
+    sites << "base surface-offsets 256\n1 2 3 0 0 -1 1024\n";
+  }
+  auto baseSurface = ReferenceCapture::load(path);
+  require(baseSurface.baseLightingOnly && baseSurface.surface && !baseSurface.hemisphere &&
+              baseSurface.sampleOffsets == std::vector<uint32_t>{1024} &&
+              baseSurface.batch(0, 1)[0].normal == remix::forward::Vec4{0, 0, -1, 0},
+          "Base-only references retain surface normals and sample-stream provenance");
+  baseSurface.consume(0, std::span(&surfaceValue, 1));
+  {
+    std::ifstream json(output);
+    const std::string result((std::istreambuf_iterator<char>(json)), {});
+    require(result.find("\"baseLightingOnly\":true") != std::string::npos &&
+                result.find("\"combinedLighting\":false") != std::string::npos &&
+                result.find("\"firstSample\":1024") != std::string::npos,
+            "Base reference output identifies its requested and effective lighting components");
+  }
+  { std::ofstream sites(path); sites << "base hemisphere 64\n1 2 3 0 0 1\n"; }
+  require(ReferenceCapture::load(path).hemisphere && ReferenceCapture::load(path).baseLightingOnly,
+          "The base prefix also preserves independent hemisphere integration");
+  { std::ofstream sites(path); sites << "base 64\n1 2 3\n"; }
+  require(ReferenceCapture::load(path).baseLightingOnly && !ReferenceCapture::load(path).surface,
+          "The base prefix preserves the original normal-free SH reference format");
+  for (const auto *input : {"base", "base base 64\n1 2 3", "base surface 64\n1 2 3 0 0 0"}) {
+    { std::ofstream bad(path); bad << input; }
+    rejected = false;
+    try { ReferenceCapture::load(path); }
+    catch (const std::invalid_argument &) { rejected = true; }
+    require(rejected, "Incomplete or repeated base prefixes and malformed surface sites are rejected");
   }
   std::filesystem::remove(path);
   std::filesystem::remove(output);

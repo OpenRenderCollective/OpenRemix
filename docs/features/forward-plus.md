@@ -828,6 +828,26 @@ Local adaptive refinement and transitions between resolutions remain unfinished.
 The changed placement policy uses a new bake-cache identity and needs one fresh
 bake; dense payload decoding remains available for legacy data.
 
+## Static mesh surface lightmaps
+
+Runtime profiles enable `rtx.native.forward.lightmapModels = 1`. Eligible opaque
+static mesh surfaces without host-authored charts receive generated charts in the
+same atlas budget as the world. Authored charts remain intact. Dynamic, skinned,
+viewmodel and otherwise ineligible surfaces retain their existing lighting paths.
+The Rendering panel exposes **Lightmap static models**; an explicitly saved zero
+disables generation. Low-level C++ bake configurations retain explicit opt-in.
+
+Changing eligibility changes bake identity and can require one fresh bake per map.
+Existing completed model-chart policy-7 caches remain compatible; the new runtime
+setting does not change their transport or chart policy. Runtime defaults keep the
+existing sample, atlas and probe budgets. Packing and chart-capacity limits still
+apply, and broader map/replacement quality and filtering-cost work remains open.
+
+For controlled developer comparisons, `REMIX_DEBUG_BAKE_MODEL_CHARTS=1` or `0`
+overrides the setting for that process. The override is resolved into the effective
+bake configuration before generation and cache lookup, so both use the same policy.
+Normal play does not require this override.
+
 ## Offline lightmap denoising
 
 Configure Meson with `-Doidn_root=<OpenImageDenoise installation prefix>` to enable the separate
@@ -1188,6 +1208,11 @@ takes XYZ/first-sample rows without normals. Offsets must leave the full sample
 range inside a 32-bit unsigned index. Each output retains its `firstSample` value.
 Compare repeated fixed-site streams before attributing a difference to sampling
 variance; a different atlas or adaptive probe layout is a separate experiment.
+Prefix a request with `base` (for example `base surface-offsets 8192`) to exclude
+separately attributed lighting components. Use that mode when comparing an extracted
+base atlas or base probe grid. Ordinary requests retain combined lighting where
+available. The output records both `baseLightingOnly` and effective `combinedLighting`;
+matching receiver coordinates alone does not make differently composed fields comparable.
 
 For inspection, `probes.request` in the profile directory writes `probes.json`
 from the published frame's immutable metadata. It lists the active content hash,

@@ -81,4 +81,7 @@ int main() {
   b.probeSamples = 0;
   b.samples *= 2;
   require(!a.sameLighting(b), "Sample quality still invalidates the bake");
+  b = a;
+  b.modelLightmaps = true;
+  require(!a.sameLighting(b), "Static mesh atlas eligibility changes lighting identity");
 }

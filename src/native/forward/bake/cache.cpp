@@ -353,7 +353,7 @@ namespace remix::forward::bake::cache {
       const uint32_t probeQuality[] = {0x5052534du, 2, c.probeSampleCount()};
       raw = scene::fastHash(probeQuality, sizeof(probeQuality), raw);
     }
-    if (modelChartsRequested()) {
+    if (c.modelLightmaps) {
       const uint32_t modelCharts[] = {0x4d434852u, 7}; // join matching geometry across material UV seams
       raw = scene::fastHash(modelCharts, sizeof(modelCharts), raw);
     }

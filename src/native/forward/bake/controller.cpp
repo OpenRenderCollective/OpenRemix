@@ -160,7 +160,7 @@ namespace remix::forward::bake {
     }
     // Initial preparation owns this job exclusively until its ticket completes.
     // Keep caller identity/bindings intact and derive only private atlas inputs.
-    if (modelChartsRequested()) {
+    if (config.modelLightmaps) {
       if (!config.lightmapFitBudget)
         throw std::invalid_argument("Model charts require world-metric budget fitting");
       const auto capacity = modelChartCapacity(surfaceAtlasOptions(config, properties.limits), source->charts.size());
@@ -168,7 +168,7 @@ namespace remix::forward::bake {
       auto charts = modelCharts(*source, capacity, cancellation.get_token());
       auto derived = std::make_shared<scene::BakeScene>(*source);
       derived->charts.insert(derived->charts.end(), charts.begin(), charts.end());
-      std::fprintf(stderr, "Forward+ model charts: authored %zu, generated %zu (candidate)\n",
+      std::fprintf(stderr, "Forward+ model charts: authored %zu, generated %zu\n",
                    source->charts.size(), charts.size());
       source = std::move(derived);
     }
@@ -319,7 +319,7 @@ namespace remix::forward::bake {
       reference->sceneHash = source->contentHash;
       reference->classify(*source);
       reference->bounces = config.bounces;
-      reference->combinedLighting = options.lightingComponents;
+      reference->combinedLighting = options.lightingComponents && !reference->baseLightingOnly;
     }
     transport = std::make_unique<Transport>();
     transport->initialize(physical, device, source, options);

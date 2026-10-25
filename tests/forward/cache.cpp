@@ -87,6 +87,7 @@ int main(int argc, char **argv) {
   qualityKey([](auto &c) { c.bakedGeometryLights = !c.bakedGeometryLights; });
   qualityKey([](auto &c) { c.antialiasSun = !c.antialiasSun; });
   qualityKey([](auto &c) { c.denoiseLightmaps = !c.denoiseLightmaps; });
+  qualityKey([](auto &c) { c.modelLightmaps = !c.modelLightmaps; });
   qualityKey([](auto &c) { c.relocateProbes = !c.relocateProbes; });
   qualityKey([](auto &c) { c.spacing += 1; });
   qualityKey([](auto &c) { c.maxProbes *= 2; });

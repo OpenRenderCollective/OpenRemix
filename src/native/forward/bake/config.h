@@ -12,6 +12,7 @@ namespace remix::forward::bake {
     bool antialiasSun = true; // bounded receiver-area refinement at detected shadow edges
     bool diskCache = true;
     bool denoiseLightmaps = true; // OIDN RTLightmap where available; unsupported builds retain raw transport
+    bool modelLightmaps = false; // runtime profiles enable eligible uncharted static mesh surfaces
     bool styledIndirect = false; // runtime profiles enable attributed components; low-level callers opt in
     bool groupedStyledDirect = false; // derive controllable direct groups from completed captures
     uint32_t styleStorageMiB = 128; // encoded sparse SH, also bounded by device storage range

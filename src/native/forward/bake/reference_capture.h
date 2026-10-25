@@ -15,6 +15,8 @@ namespace remix::forward::bake {
   // deterministic streams at identical locations without moving the receiver.
   // "surface-offsets" adds a first-sample index after each XYZ/unit-normal site
   // to measure surface-estimator variance with analytic direct lighting intact.
+  // Prefix any input with "base" to exclude separately attributed lighting
+  // components when comparing the base surface atlas or base probe grid.
   // SH output includes six distance-moment vec4s (+/-X, +/-Y, +/-Z) and
   // transport statistics so offline placement studies can reconstruct visibility.
   struct ReferenceCapture {
@@ -30,6 +32,7 @@ namespace remix::forward::bake {
     uint32_t bounces = 0;
     uint64_t sceneHash = 0;
     bool combinedLighting = false;
+    bool baseLightingOnly = false;
     bool hemisphere = false;
     bool surface = false;
 

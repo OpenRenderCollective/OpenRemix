@@ -1,14 +1,16 @@
 #pragma once
 #include <cstdlib>
 #include <cstring>
+#include <optional>
 
 namespace remix::forward::bake {
-  inline bool modelChartsRequested() {
-    static const bool requested = [] {
+  inline bool modelChartsRequested(bool enabled) {
+    static const std::optional<bool> requested = []() -> std::optional<bool> {
       const auto value = std::getenv("REMIX_DEBUG_BAKE_MODEL_CHARTS");
-      return value && std::strcmp(value, "1") == 0;
+      if (!value) return {};
+      return std::strcmp(value, "1") == 0;
     }();
-    return requested;
+    return requested.value_or(enabled);
   }
 
   inline bool directionalProbeDepthRequested() {
