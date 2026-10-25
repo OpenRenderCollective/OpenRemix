@@ -40,6 +40,11 @@ namespace remix::forward {
     if (gi)
       vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 2, 1, &frame.giScene, 0,
                               nullptr);
+    // State persists between consecutive draws. Keep this cache local to the
+    // pass so other cameras/passes cannot leave stale bindings behind.
+    VkPipeline boundPipeline = VK_NULL_HANDLE;
+    VkDescriptorSet boundMaterial = VK_NULL_HANDLE;
+    VkBuffer boundVertices = VK_NULL_HANDLE, boundIndices = VK_NULL_HANDLE;
     auto drawCommand = [&](const Command &draw) {
       if (!draw.source.rasterVisible)
         return;
@@ -53,17 +58,29 @@ namespace remix::forward {
       else if (terrain) selected = !mapped ? terrainPipeline : mapped->fullyMapped ? terrainLightmapPipeline
                                                                                   : terrainPartialLightmapPipeline;
       else selected = !mapped ? opaquePipeline : mapped->fullyMapped ? lightmapPipeline : partialLightmapPipeline;
-      vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, selected);
-      vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 1, 1, &draw.material, 0,
-                              nullptr);
+      if (selected != boundPipeline) {
+        vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, selected);
+        boundPipeline = selected;
+      }
+      if (draw.material != boundMaterial) {
+        vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 1, 1, &draw.material, 0,
+                                nullptr);
+        boundMaterial = draw.material;
+      }
       const uint32_t push[] = {draw.index, 0};
       vkCmdPushConstants(command, drawLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                          sizeof(push), push);
       const VkDeviceSize offset = 0;
       const auto vertices = mapped ? mapped->vertices->handle : draw.geometry->vertices->handle;
       const auto indices = mapped ? mapped->indices->handle : draw.geometry->indices->handle;
-      vkCmdBindVertexBuffers(command, 0, 1, &vertices, &offset);
-      vkCmdBindIndexBuffer(command, indices, 0, VK_INDEX_TYPE_UINT32);
+      if (vertices != boundVertices) {
+        vkCmdBindVertexBuffers(command, 0, 1, &vertices, &offset);
+        boundVertices = vertices;
+      }
+      if (indices != boundIndices) {
+        vkCmdBindIndexBuffer(command, indices, 0, VK_INDEX_TYPE_UINT32);
+        boundIndices = indices;
+      }
       vkCmdDrawIndexed(command, mapped ? mapped->count : draw.count, 1, mapped ? 0 : draw.source.firstIndex,
                        mapped ? 0 : draw.source.vertexOffset, 0);
     };

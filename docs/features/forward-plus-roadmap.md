@@ -1292,6 +1292,12 @@ fallback and measured output parity. Avoid another storage-format change without
 
 ### Profiling and authoring priorities
 
+World, terrain and depth command recording now retain identical consecutive
+pipeline, material and vertex/index bindings within each invocation. Draw order
+and per-draw push constants are preserved. Continue cross-map and foreground
+live-game qualification; this removes redundant renderer calls without replacing
+the broader engine capture/submission investigation.
+
 Investigate unexpected mid-map rebakes with explicit invalidation receipts: distinguish changed
 lighting content, replacement receiver bindings, settings and stale captured lights. Camera movement
 alone must not invalidate lighting. Keep genuine edits and late replacement assets correct; do not
