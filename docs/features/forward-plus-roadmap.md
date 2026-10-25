@@ -3424,3 +3424,20 @@ replace interpolation with the ray oracle or disable transition blending.
 
 No quality/default/deployment change. Private diagnostic run completed and
 restored all four settings files.
+
+
+### 2026-10-26 - Offline coarse transfer visibility candidate
+
+World-brush-only offline study precomputes coarse-to-fine donor visibility, fades
+its coarse-weight correction with existing fine coverage, then normalizes the
+shared stencil. CeilingRGB .170/.170/.166 -> .085/.088/.092, closer to independent
+.075/.077/.077 reference. Unblocked control unchanged; single-level queries retain
+existing behavior.100random algebra trials preserve constant energy/endpoints.
+This does not prove real patch continuity, prop quality, alpha/transmission, GPU
+cost or full-scene correctness. No production module/default/cache/deploy change.
+
+- [ ] Build private packed coarse-transfer prototype with conservative unknown
+  fallback and existing HWRT preparation, shared across diffuse/visibility/style
+  attribution. Test actual boundary crossings and relocated/shared donors.
+- [ ] Measure preparation/ray cost and shader/register/lookup overhead; estimated
+  Construct payload0.52MiB before metadata is not a measured allocation.
