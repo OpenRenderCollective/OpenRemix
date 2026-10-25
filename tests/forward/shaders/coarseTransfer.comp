@@ -11,6 +11,7 @@ struct Query {
 };
 layout(set=0, binding=0, std430) readonly buffer Queries { Query queries[]; };
 layout(set=0, binding=1, std430) writeonly buffer Results { vec4 results[]; };
+layout(set=0, binding=2, std430) readonly buffer Field { uint fieldWords[]; };
 void main() {
   uint index = gl_GlobalInvocationID.x;
   if (index >= queries.length()) return;
@@ -28,6 +29,13 @@ void main() {
         uint entry = c*8u+f, word = entry/4u;
         uint byteValue = (q.packed[word/4u][word%4u] >> ((entry%4u)*8u)) & 255u;
         bool known = (q.known[entry/32u] & (1u << (entry%32u))) != 0u;
+        if (q.control.w != 0u) {
+          uint patchOffset = q.control.w, side = fieldWords[patchOffset]+1u;
+          uint node = q.known.z+(f&1u)+((f>>1u)&1u)*side+(f>>2u)*side*side;
+          uint address = fieldWords[patchOffset+2u]+node*3u;
+          known = (fieldWords[address+2u] & (1u<<c)) != 0u;
+          byteValue = (fieldWords[address+c/4u] >> ((c%4u)*8u)) & 255u;
+        }
         visibility += w[8u+f] * (known ? float(byteValue)/255.0 : 1.0);
       }
       w[c] *= 1-share + share*visibility/fine;

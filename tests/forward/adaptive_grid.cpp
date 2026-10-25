@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 
 using namespace remix::forward;
 void refinementTests();
@@ -44,7 +45,9 @@ namespace {
     require(refused, "Malformed refinement metadata is rejected before sampling");
   }
 }
+#include "coarse_transfer_plan.h"
 int main() {
+  coarseTransferPlanTests(field());
   refinementTests();
   auto grid = field();
   const auto published = bake::publicationHeader(grid.header, grid.lookup.size());

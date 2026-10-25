@@ -2,7 +2,7 @@
 // Synthetic packed-field queries. CPU reference uses doubles and decodes the
 // byte matrix independently; no map or production shader is changed here.
 void coarseTransferSampling(test::Fixture &fixture, std::span<const uint8_t> capturedVisibility,
-                            std::span<const uint8_t> capturedKnown) {
+                            std::span<const uint8_t> capturedKnown, std::span<const uint32_t> fieldWords) {
   struct Query {
     std::array<Vec4,4> weights{};
     std::array<Vec4,16> values{};
@@ -26,8 +26,15 @@ void coarseTransferSampling(test::Fixture &fixture, std::span<const uint8_t> cap
       double visible = 0;
       for (uint32_t f=0; f<q.control[1]; ++f) {
         const auto entry = c*8+f, word = entry/4;
-        const bool known = (q.known[entry/32] & (1u << (entry%32))) != 0;
-        const auto value = uint8_t(q.packed[word/4][word%4] >> ((entry%4)*8));
+        bool known = (q.known[entry/32] & (1u << (entry%32))) != 0;
+        auto value = uint8_t(q.packed[word/4][word%4] >> ((entry%4)*8));
+        if (q.control[3]) {
+          const auto patch = q.control[3], side = fieldWords[patch]+1;
+          const auto node = q.known[2]+(f&1u)+((f>>1u)&1u)*side+(f>>2u)*side*side;
+          const auto address = fieldWords[patch+2]+node*3;
+          known = (fieldWords[address+2] & (1u<<c)) != 0;
+          value = uint8_t(fieldWords[address+c/4] >> ((c%4)*8));
+        }
         visible += weights[8+f] * (known ? double(value)/255 : 1);
       }
       weights[c] *= 1-share + share*visible/fine;
@@ -90,9 +97,26 @@ void coarseTransferSampling(test::Fixture &fixture, std::span<const uint8_t> cap
     for (auto &v : q.values) v = {.5f,.5f,.5f,1};
     append(q);
   }
+  require(fieldWords.size() > 4 && fieldWords[0] == bake::CoarseTransfer::magic,
+          "Sampling receives the completed hardware-prepared patch field");
+  const auto factor = fieldWords[fieldWords[4]], side = factor+1;
+  for (uint32_t z=0; z<factor; ++z) for (uint32_t y=0; y<factor; ++y) for (uint32_t x=0; x<factor; ++x)
+    for (uint32_t phase=0; phase<=16; ++phase) {
+      Query q;
+      q.control = {8,8,1,fieldWords[4]};
+      q.known[2] = (z*side+y)*side+x;
+      const float share = float(phase)/16;
+      for (uint32_t i=0; i<8; ++i) {
+        q.weights[i/4][i%4] = (1-share)/8;
+        q.weights[2+i/4][i%4] = share/8;
+        q.values[i] = {i<4 ? .1f : 1.5f,.2f,-.1f,1};
+        q.values[8+i] = {.075f,.2f,-.1f,1};
+      }
+      append(q);
+    }
   struct Gpu {
     VkDevice device;
-    Buffer input, output;
+    Buffer input, output, field;
     VkDescriptorSetLayout set{};
     VkPipelineLayout layout{};
     VkPipeline pipeline{};
@@ -106,12 +130,15 @@ void coarseTransferSampling(test::Fixture &fixture, std::span<const uint8_t> cap
   } gpu{fixture.device};
   gpu.input.create(fixture.physical,fixture.device,queries.size()*sizeof(Query),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   gpu.input.write(queries.data(),queries.size()*sizeof(Query));
+  gpu.field.create(fixture.physical,fixture.device,fieldWords.size_bytes(),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+  gpu.field.write(fieldWords.data(),fieldWords.size_bytes());
   gpu.output.create(fixture.physical,fixture.device,expected.size()*sizeof(Vec4),VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   const VkDescriptorSetLayoutBinding bindings[] = {
       {0,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,1,VK_SHADER_STAGE_COMPUTE_BIT,nullptr},
-      {1,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,1,VK_SHADER_STAGE_COMPUTE_BIT,nullptr}};
+      {1,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,1,VK_SHADER_STAGE_COMPUTE_BIT,nullptr},
+      {2,VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,1,VK_SHADER_STAGE_COMPUTE_BIT,nullptr}};
   const VkDescriptorSetLayoutCreateInfo setInfo{.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-      .bindingCount=2,.pBindings=bindings};
+      .bindingCount=3,.pBindings=bindings};
   check(vkCreateDescriptorSetLayout(fixture.device,&setInfo,nullptr,&gpu.set));
   const VkPipelineLayoutCreateInfo layoutInfo{.sType=VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
       .setLayoutCount=1,.pSetLayouts=&gpu.set};
@@ -125,7 +152,7 @@ void coarseTransferSampling(test::Fixture &fixture, std::span<const uint8_t> cap
               .module=shader,.pName="main"},.layout=gpu.layout};
   const auto result = vkCreateComputePipelines(fixture.device,VK_NULL_HANDLE,1,&pipelineInfo,nullptr,&gpu.pipeline);
   vkDestroyShaderModule(fixture.device,shader,nullptr); check(result);
-  const VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,2};
+  const VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,3};
   const VkDescriptorPoolCreateInfo poolInfo{.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
       .maxSets=1,.poolSizeCount=1,.pPoolSizes=&size};
   check(vkCreateDescriptorPool(fixture.device,&poolInfo,nullptr,&gpu.pool));
@@ -133,12 +160,12 @@ void coarseTransferSampling(test::Fixture &fixture, std::span<const uint8_t> cap
       .descriptorPool=gpu.pool,.descriptorSetCount=1,.pSetLayouts=&gpu.set};
   VkDescriptorSet set;
   check(vkAllocateDescriptorSets(fixture.device,&allocate,&set));
-  const VkDescriptorBufferInfo buffers[]{gpu.input.descriptor(),gpu.output.descriptor()};
-  VkWriteDescriptorSet writes[2]{};
-  for (uint32_t i=0; i<2; ++i) writes[i] = {.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+  const VkDescriptorBufferInfo buffers[]{gpu.input.descriptor(),gpu.output.descriptor(),gpu.field.descriptor()};
+  VkWriteDescriptorSet writes[3]{};
+  for (uint32_t i=0; i<3; ++i) writes[i] = {.sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
       .dstSet=set,.dstBinding=i,.descriptorCount=1,.descriptorType=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
       .pBufferInfo=&buffers[i]};
-  vkUpdateDescriptorSets(fixture.device,2,writes,0,nullptr);
+  vkUpdateDescriptorSets(fixture.device,3,writes,0,nullptr);
   fixture.begin();
   vkCmdBindPipeline(fixture.command,VK_PIPELINE_BIND_POINT_COMPUTE,gpu.pipeline);
   vkCmdBindDescriptorSets(fixture.command,VK_PIPELINE_BIND_POINT_COMPUTE,gpu.layout,0,1,&set,0,nullptr);

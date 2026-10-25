@@ -5,6 +5,7 @@
 #include "forward/bake/probe_visibility.h"
 #include "forward/bake/probe_visibility_plan.h"
 #include "forward/bake/probe_depth.h"
+#include "forward/bake/coarse_transfer.h"
 #include "forward/lightmap/layout.h"
 #include "forward/mixed/overflow.h"
 #include "forward/mixed/directional_capture.h"
@@ -2173,7 +2174,10 @@ int main(int argc, char **argv) try {
     World world(fixture);
     if (argc == 2 && std::strcmp(argv[1], "--coarse-transfer-only") == 0) {
       const auto transfer = coarseTransferPrototype(fixture, pipelines, world);
-      coarseTransferSampling(fixture, transfer.first, transfer.second);
+      for (uint32_t factor : {2u,4u,8u}) {
+        const auto field = coarseTransferPlannedCapture(fixture, pipelines, world, factor);
+        coarseTransferSampling(fixture, transfer.first, transfer.second, field);
+      }
       require(test::validationErrors == 0, "Coarse transfer validation stayed clean");
       return 0;
     }

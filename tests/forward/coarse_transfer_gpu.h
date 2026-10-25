@@ -138,3 +138,75 @@ auto coarseTransferPrototype(test::Fixture &fixture, pipeline::Service &pipeline
   std::puts("Coarse transfer prototype: opaque/clear/opening/unknown capture and normalized CPU reconstruction pass");
   return std::pair{visibility, known};
 }
+
+auto coarseTransferPlannedCapture(test::Fixture &fixture, pipeline::Service &pipelines, World &world,
+                                 uint32_t factor) {
+  const uint32_t side = factor+1, fineNodes = side*side*side;
+  bake::Grid grid;
+  grid.header.originSpacing = {-1,-1,0,2};
+  grid.header.dimensions = {2,2,2,8+fineNodes};
+  grid.header.settings = {.04f,.016f,4,0};
+  grid.probes.resize(8+fineNodes);
+  for (auto &probe : grid.probes) probe.statistics[3] = 1;
+  grid.lookup.resize(20+((fineNodes+3)&~3u));
+  for (uint32_t i=0; i<8; ++i) grid.lookup[i] = i+1;
+  grid.lookup[8] = bake::adaptiveDirectoryMagic;
+  grid.lookup[9] = factor; grid.lookup[10] = uint32_t(grid.lookup.size()); grid.lookup[11] = 8;
+  grid.lookup[12] = bake::patchReference(20,factor);
+  for (uint32_t i=0; i<fineNodes; ++i) grid.lookup[20+i] = i+9;
+  auto planned = bake::CoarseTransfer::plan(grid,{.maximumBytes=1u<<20,.maximumRays=8192});
+  require(planned && planned->rays() == fineNodes*8-8, "Bounded patch plan excludes eight coincident connections");
+  auto &plan = *planned;
+  const auto panel = world.quad(world.material({}), {{{-2,-2,1},{2,-2,1},{2,2,1},{-2,2,1}}});
+  auto scene = world.scene({panel});
+  bake::Options options;
+  options.depthCapture = true; options.batchPoints = 64;
+  bake::Transport transport;
+  auto preparation = pipelines.prepare("coarse-transfer-planned-capture-"+std::to_string(factor), [&] {
+    transport.initialize(fixture.physical,fixture.device,scene,options);
+  });
+  const auto deadline = std::chrono::steady_clock::now()+std::chrono::seconds(60);
+  while (!preparation->ready() && std::chrono::steady_clock::now()<deadline)
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  require(preparation->ready(), "Planned transfer transport preparation completes");
+  preparation->check();
+  Buffer output, readback;
+  output.create(fixture.physical,fixture.device,64*sizeof(float),
+      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_SRC_BIT,Buffer::Memory::Device);
+  readback.create(fixture.physical,fixture.device,64*sizeof(float),VK_BUFFER_USAGE_TRANSFER_DST_BIT,Buffer::Memory::Readback);
+  for (uint32_t first=0; first<plan.rays(); first+=64) {
+    const auto count = std::min(64u,plan.rays()-first), slot = (first/64)%gpuFrameCount;
+    const auto rays = plan.batch(first,count);
+    fixture.begin();
+    if (!first) transport.recordPrepare(fixture.command,world.resources);
+    transport.recordDepth(fixture.command,slot,rays,output.descriptor(),0,plan.maximumDistance());
+    const VkBufferCopy copy{0,0,count*sizeof(float)};
+    vkCmdCopyBuffer(fixture.command,output.handle,readback.handle,1,&copy);
+    const VkMemoryBarrier host{.sType=VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+        .srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,.dstAccessMask=VK_ACCESS_HOST_READ_BIT};
+    vkCmdPipelineBarrier(fixture.command,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,
+        0,1,&host,0,nullptr,0,nullptr);
+    fixture.finish();
+    std::array<float,64> depths;
+    readback.read(depths.data(),count*sizeof(float));
+    plan.consume(first,{depths.data(),count});
+  }
+  transport.releaseBuildInputs();
+  const auto words = plan.words();
+  const uint32_t patch = words[4], fields = words[patch+2];
+  uint32_t blocked = 0;
+  for (uint32_t node=0; node<fineNodes; ++node) for (uint32_t corner=0; corner<8; ++corner) {
+    const auto field = fields+node*3;
+    require((words[field+2] & (1u<<corner)) != 0, "Opaque planned connections all resolve");
+    const auto z = node/(side*side);
+    const bool expected = ((corner>>2)==0 && z>factor/2) || ((corner>>2)==1 && z<factor/2);
+    const auto value = (words[field+corner/4] >> ((corner%4)*8)) & 255u;
+    require(value == (expected ? 0u : 255u),
+            "Hardware-prepared patch field matches independent finite plane intersections");
+    blocked += value == 0;
+  }
+  require(blocked == 4*side*side*factor, "Packed patch matches the exact plane-crossing connection count");
+  std::printf("Planned coarse transfer %ux: %u GPU rays, %u resolved connections passed\n",
+              factor,plan.rays(),fineNodes*8);
+  return std::vector<uint32_t>(words.begin(),words.end());
+}

@@ -3473,3 +3473,21 @@ core/synchronization validation clean. No production shader/default/deploy chang
 - [ ] Integrate bounded per-patch storage/preparation and matching CPU/fragment
   sampling; test actual mixed-resolution boundaries, shared/relocated donors,
   styles, moving props/weapons, visual quality and preparation/frame costs.
+
+
+### 2026-10-26 - Bounded coarse-transfer planner and field round trip
+
+Experimental engine-independent CoarseTransfer planner now prepares finite GPU
+segments and per-patch packed fields under ray/owned-scratch budgets. Missing or
+unusable support retains explicit unknown; shared endpoints need no trace. Fenced
+readback validates before mutation, rejects duplicates and cannot publish partial
+fields. CPU budget/cancellation/relocation/fallback tests pass.
+Hardware capture -> planned field -> GPU reconstruction passes factors2/4/8 with
+909/1861/9477queries and clean core/synchronization validation. No controller,
+fragment, cache/default or playable integration yet; fixture is not map acceptance.
+
+- [x] Implement bounded per-patch planning/storage and test actual field round trip.
+- [ ] Add private live bake scheduling/publication and CPU/fragment sampling, with
+  coarse ID mismatch/old-cache fallback and real mixed-resolution boundary checks.
+- [ ] Validate styles, moving props/weapons, normal-bias crossings, Construct
+  quality and preparation/frame costs before considering default promotion.

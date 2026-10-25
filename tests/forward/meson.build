@@ -70,6 +70,7 @@ forward_grid_test = executable('remix-forward-grid-test', 'grid.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Irradiance grid placement and visibility reconstruction', forward_grid_test)
 adaptive_grid_test = executable('remix-adaptive-grid-test', 'adaptive_grid.cpp', 'refinement.cpp',
+  '../../src/native/forward/bake/coarse_transfer.cpp',
   '../../src/native/forward/bake/grid.cpp', '../../src/native/forward/bake/grid_sampling.cpp', '../../src/native/forward/bake/probe_depth.cpp',
   '../../src/native/forward/bake/adaptive_grid.cpp', '../../src/native/forward/bake/receiver_support.cpp', '../../src/native/forward/bake/refinement_builder.cpp', '../../src/native/forward/bake/sparse_grid.cpp',
   '../../src/native/forward/bake/relocation.cpp',
