@@ -161,6 +161,7 @@ int main() {
     // Bursts, clears and disabling.
     require(registry.burst(other, 25) == REMIXAPI_ERROR_CODE_SUCCESS, "Burst failed");
     require(registry.setEnabled(other, false) == REMIXAPI_ERROR_CODE_SUCCESS, "Disable failed");
+    // Frames longer than a quarter of a second count as a quarter.
     settings.seconds = 1;
     frame = registry.publish(settings);
     require(frame.emitters[0].spawn == 25, "A disabled emitter's burst was not spawned alone");
@@ -169,7 +170,7 @@ int main() {
     require(frame.emitters[0].reset && frame.emitters[0].spawn == 0, "Clear did not reset the emitter");
     // The spawn budget is shared in proportion.
     registry.setEnabled(other, true);
-    info.spawnRate = 1000;
+    info.spawnRate = 4000;
     registry.update(other, info);
     settings.spawnBudget = 100;
     frame = registry.publish(settings);
@@ -182,7 +183,7 @@ int main() {
     require(frame.emitters[0].capacity == 500 && frame.emitters[0].reset, "A resized emitter kept its slice");
     // FOLLOW_WEATHER scales the rate.
     info.flags = REMIXAPI_PARTICLE_FOLLOW_WEATHER_EXT;
-    info.spawnRate = 100;
+    info.spawnRate = 400;
     registry.update(other, info);
     settings.spawnBudget = 8192;
     settings.precipitation = .25f;
