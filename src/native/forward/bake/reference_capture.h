@@ -15,6 +15,7 @@ namespace remix::forward::bake {
   struct ReferenceCapture {
     static std::optional<ReferenceCapture> fromEnvironment();
     static ReferenceCapture load(const std::filesystem::path &path);
+    void classify(const scene::BakeScene &source);
     void consume(uint32_t first, std::span<const Result> values);
     uint32_t tasks() const { return uint32_t(points.size()) * (hemisphere ? samples : 1); }
     std::vector<Point> batch(uint32_t first, uint32_t count) const;
@@ -30,6 +31,7 @@ namespace remix::forward::bake {
     std::filesystem::path m_output;
     std::vector<Result> m_results;
     std::vector<bool> m_completed;
+    std::vector<int32_t> m_partitionClusters; // -2 unknown, -1 solid/unplayable
     std::vector<std::array<double, 3>> m_sums;
   };
 }

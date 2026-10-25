@@ -317,6 +317,7 @@ namespace remix::forward::bake {
     options.lightingComponents = config.styledIndirect && !styleIds(*source).empty();
     if (reference) {
       reference->sceneHash = source->contentHash;
+      reference->classify(*source);
       reference->bounces = config.bounces;
       reference->combinedLighting = options.lightingComponents;
     }

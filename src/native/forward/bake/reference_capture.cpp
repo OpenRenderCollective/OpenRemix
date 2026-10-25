@@ -9,6 +9,12 @@
 #include <stdexcept>
 
 namespace remix::forward::bake {
+  void ReferenceCapture::classify(const scene::BakeScene &source) {
+    m_partitionClusters.assign(points.size(), -2);
+    if (!source.partition || !source.partition->closed) return;
+    for (size_t i = 0; i < points.size(); ++i)
+      m_partitionClusters[i] = source.partition->cluster(points[i].position.data());
+  }
   std::optional<ReferenceCapture> ReferenceCapture::fromEnvironment() {
     const char *path = std::getenv("REMIX_DEBUG_BAKE_REFERENCE_POINTS");
     if (!path || !*path) return {};
@@ -121,7 +127,8 @@ namespace remix::forward::bake {
            << ",\"mode\":\"" << (hemisphere ? "hemisphere" : "sh") << "\",\"points\":[";
     for (size_t i = 0; i < points.size(); ++i) {
       if (i) output << ',';
-      output << "{\"position\":[";
+      output << "{\"partitionCluster\":" << (m_partitionClusters.empty() ? -2 : m_partitionClusters.at(i))
+             << ",\"position\":[";
       for (uint32_t c = 0; c < 3; ++c) output << (c ? "," : "") << points[i].position[c];
       if (hemisphere) {
         output << "],\"normal\":[";

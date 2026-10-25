@@ -12,6 +12,13 @@ int main(int argc, char **argv) {
   std::filesystem::remove(output);
   { std::ofstream file(path); file << "4096\n1 2 3\n-4 5 6\n"; }
   auto capture = ReferenceCapture::load(path);
+  remix::scene::BakeScene region;
+  auto partition = std::make_shared<remix::scene::VisibilityPartition>();
+  partition->closed = true; partition->clusterCount = 1;
+  partition->nodes = {{{1, 0, 0, 0}, {-1, -2}, {}}};
+  partition->leafClusters = {0, -1};
+  region.partition = partition;
+  capture.classify(region);
   require(capture.samples == 4096 && capture.points.size() == 2 && capture.sampleOffsets.empty() &&
               capture.points[0].normal == remix::forward::Vec4{},
           "Reference sites retain exact world positions and unbiased normals");
@@ -46,6 +53,8 @@ int main(int argc, char **argv) {
   std::ifstream file(output);
   const std::string text((std::istreambuf_iterator<char>(file)), {});
   require(text.find("\"samples\":4096") != std::string::npos &&
+              text.find("\"partitionCluster\":0,\"position\":[1,2,3]") != std::string::npos &&
+              text.find("\"partitionCluster\":-1,\"position\":[-4,5,6]") != std::string::npos &&
               text.find("\"firstSample\"") == std::string::npos &&
               text.find("\"position\":[-4,5,6]") != std::string::npos,
           "Completed output contains sampling budget and original positions");

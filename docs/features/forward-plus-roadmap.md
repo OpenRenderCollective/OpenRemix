@@ -2773,3 +2773,15 @@ The cohort is diagnostic model-surface sampling, not a proof that every selected
 is visible in ordinary gameplay. Preserve that distinction without dropping difficult
 sites from reports. Surface alignment alone is not an accepted general placement policy;
 verify usable same-side contributors and boundary-aware fallback before runtime work.
+
+
+Offline reference results now include each query point's captured BSP cluster, with
+unknown and solid/unplayable states explicit. Classification does not relocate points,
+filter results or alter transport. CPU output tests cover playable/solid points; a
+repeated Construct local-cell query preserves all prior SH, moments and statistics.
+It confirms that half the failed surface-aligned cell lies in BSP-solid space. The
+other fixture also contains backface-invalid nodes classified playable by the BSP,
+so model geometry and host partition tests remain complementary. Do not infer usable
+probe support from either cluster membership or backface validity alone. Boundary
+receiver transfer, sufficient same-side support and visible gameplay acceptance remain
+open; this metadata is diagnostic only and changes neither cache identity nor shading.
