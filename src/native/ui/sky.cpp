@@ -4,6 +4,7 @@
 #include "ui/widgets.h"
 #include "scene/particles.h"
 #include <algorithm>
+#include <cctype>
 #include <cfloat>
 #include <cmath>
 #include <cstring>
@@ -11,6 +12,8 @@
 #include <iterator>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 #if REMIX_HAS_NUMOS
 #include <numos/seed.h>
 #include <numos/settings.h>
@@ -187,16 +190,86 @@ namespace remix::ui {
       return false;
     }
 
+    // A setting's display name: skySettingLabels, or its key as words with a
+    // unit suffix as the unit ("cloudBaseHeightMeters": "Cloud base height
+    // (m)"). Moon settings are prefixed with their moon.
+    std::string settingLabel(const numos::SettingInfo &info) {
+      std::string_view key = shortKey(info);
+      std::string moon, lookup(key);
+      if (const auto dot = key.find('.'); key.starts_with("moon") && dot != key.npos) {
+        moon = "Moon " + std::string(key.substr(4, dot - 4)) + ": ";
+        lookup = "moon" + std::string(key.substr(dot));
+        key = key.substr(dot + 1);
+      }
+      for (const auto &entry : skySettingLabels)
+        if (entry.key == lookup)
+          return moon + std::string(entry.label);
+      std::vector<std::string> words;
+      for (size_t i = 0; i < key.size(); ++i) {
+        const char c = key[i], previous = i ? key[i - 1] : 0;
+        const bool upper = std::isupper(uint8_t(c)), digit = std::isdigit(uint8_t(c));
+        if (words.empty() || (upper && (std::islower(uint8_t(previous)) || std::isdigit(uint8_t(previous)))) ||
+            (digit && !std::isdigit(uint8_t(previous))))
+          words.emplace_back();
+        words.back() += c;
+      }
+      static const std::pair<std::string_view, std::string_view> units[] = {
+          {"Meters", "m"}, {"Km", "km"},          {"Deg", "deg"},       {"Degrees", "deg"},
+          {"Hours", "h"},  {"Minutes", "min"},    {"Seconds", "s"},     {"Stops", "stops"},
+          {"Pixels", "pixels"}};
+      static const std::string_view acronyms[] = {"LUT", "LOD", "SDF", "NVDF", "RT", "AP"};
+      std::string unit;
+      if (words.size() > 2 && words[words.size() - 2] == "World" && words.back() == "Units") {
+        unit = "world units";
+        words.resize(words.size() - 2);
+      } else if (words.size() > 1)
+        for (const auto &[suffix, name] : units)
+          if (words.back() == suffix) {
+            unit = name;
+            words.pop_back();
+            break;
+          }
+      std::string label = moon;
+      for (size_t i = 0; i < words.size(); ++i) {
+        auto word = words[i];
+        for (auto &ch : word)
+          ch = char(std::tolower(uint8_t(ch)));
+        const auto acronym = std::find_if(std::begin(acronyms), std::end(acronyms), [&](std::string_view entry) {
+          return entry.size() == word.size() && std::equal(entry.begin(), entry.end(), word.begin(), [](char a, char b) {
+                   return std::tolower(uint8_t(a)) == b;
+                 });
+        });
+        if (acronym != std::end(acronyms))
+          word = *acronym;
+        else if (i == 0)
+          word[0] = char(std::toupper(uint8_t(word[0])));
+        label += (i ? " " : "") + word;
+      }
+      return unit.empty() ? label : label + " (" + unit + ")";
+    }
+
+    // Remix Plus's note on a setting, or null.
+    const char *settingNote(const numos::SettingInfo &info) {
+      for (const auto &entry : skySettingNotes)
+        if (entry.key == shortKey(info))
+          return entry.label.data();
+      return nullptr;
+    }
+
     // One row: the widget with the description as tooltip and, for a value
     // the profile sets, a reset button.
     void settingRow(config::SkySettings &sky, numos::Settings &values, const numos::SettingInfo &info) {
       ImGui::PushID(info.key.c_str());
-      const std::string label(shortKey(info));
+      const std::string label = settingLabel(info);
       const bool set = sky.atmosphere.contains(info.key);
       if (field(label.c_str(), [&](const char *id) { return settingWidget(values, info, id); }))
         store(sky, values, info);
-      if (ImGui::IsItemHovered() && info.description)
-        ImGui::SetItemTooltip("%s\n\n%s", info.key.c_str(), info.description);
+      if (ImGui::IsItemHovered() && info.description) {
+        if (const char *note = settingNote(info))
+          ImGui::SetItemTooltip("%s\n\n%s\n\n%s", info.key.c_str(), info.description, note);
+        else
+          ImGui::SetItemTooltip("%s\n\n%s", info.key.c_str(), info.description);
+      }
       if (set) {
         ImGui::SameLine();
         if (ImGui::SmallButton("Reset"))
@@ -304,7 +377,8 @@ namespace remix::ui {
         std::vector<const numos::SettingInfo *> rows;
         for (const auto &info : infos)
           if (!numos::isDeprecated(info) && groupOf(shortKey(info)) == group &&
-              (!changedOnly || sky.atmosphere.contains(info.key)) && filter.PassFilter(info.key.c_str()))
+              (!changedOnly || sky.atmosphere.contains(info.key)) &&
+              (filter.PassFilter(info.key.c_str()) || filter.PassFilter(settingLabel(info).c_str())))
             rows.push_back(&info);
         if (rows.empty())
           continue;
