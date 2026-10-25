@@ -103,6 +103,35 @@ int main() {
   }
   {
     lm::Mesh mesh;
+    mesh.vertices.resize(6);
+    for (uint32_t i = 0; i < 3; ++i) mesh.vertices[i].coordinate[3] = 1;
+    mesh.indices = {0, 1, 2, 2, 1, 0, 3, 4, 5, 0, 3, 2, 0, 1, 2};
+    const auto original = mesh.indices;
+    using Coverage = lm::ReceiverCoverage;
+    require(lm::receiverRuns(mesh) == std::vector<lm::ReceiverRun>{{0, 6, Coverage::Mapped},
+                {6, 3, Coverage::Unmapped}, {9, 3, Coverage::Mixed}, {12, 3, Coverage::Mapped}} &&
+                mesh.indices == original,
+            "Receiver ranges preserve triangle order, coalesce only consecutive coverage and retain mixed corners");
+    std::stop_source stopped;
+    stopped.request_stop();
+    refused([&] { lm::receiverRuns(mesh, stopped.get_token()); });
+    mesh.indices.push_back(0);
+    refused([&] { lm::receiverRuns(mesh); });
+    mesh.indices.clear();
+    require(lm::receiverRuns(mesh).empty(), "Empty meshes have no receiver ranges");
+    for (uint32_t triangle = 0; triangle < 17; ++triangle) {
+      const uint32_t first = (triangle & 1u) ? 3 : 0;
+      mesh.indices.insert(mesh.indices.end(), {first, first + 1, first + 2});
+    }
+    const auto fragmented = mesh.indices;
+    mesh.indices.resize(16 * 3);
+    require(lm::receiverRuns(mesh).size() == 16, "The receiver range limit includes exactly sixteen runs");
+    mesh.indices = fragmented;
+    require(lm::receiverRuns(mesh).empty() && mesh.indices == fragmented,
+            "Fragmented coverage retains a single generic draw without reordering or dropping triangles");
+  }
+  {
+    lm::Mesh mesh;
     mesh.vertices.resize(3);
     mesh.vertices[0].directLights = {7, 2, 7, ~0u};
     mesh.vertices[1].directLights = {2, ~0u, ~0u, ~0u};

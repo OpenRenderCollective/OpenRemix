@@ -25,6 +25,16 @@ namespace remix::forward::lightmap {
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
   };
+  enum class ReceiverCoverage { Unmapped, Mapped, Mixed };
+  struct ReceiverRun {
+    uint32_t firstIndex = 0, indexCount = 0;
+    ReceiverCoverage coverage = ReceiverCoverage::Unmapped;
+    bool operator==(const ReceiverRun &) const = default;
+  };
+  // Consecutive triangle ranges preserve coplanar/decal order. A triangle
+  // with mixed corner coverage retains the generic shader. More than sixteen
+  // runs returns an empty list, keeping a fragmented mesh in one generic draw.
+  std::vector<ReceiverRun> receiverRuns(const Mesh &mesh, std::stop_token cancelled = {});
   std::vector<uint32_t> directOwners(const Mesh &mesh);
   bool fullyMapped(const Mesh &mesh);
   // Duplicate only vertices whose chart coordinates disagree, preserving

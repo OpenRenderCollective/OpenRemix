@@ -1138,6 +1138,17 @@ cutout discards in the shaded pass cannot write over an underlying surface. Prep
 viewmodels, terrain, water and shadow depth retain their separate shader/depth policies. Live GI
 retains its existing shader while also reusing the prepass depth without rewriting it.
 
+Partially charted opaque draws can use consecutive receiver ranges without changing
+triangle order or vertex/index buffers. Fully charted ranges use the lightmap-only
+shader; uncharted ranges use probe lighting with the same lightmap vertex stride.
+Mixed-corner triangles retain generic selection. More than sixteen ranges keeps
+the whole mesh in its existing generic draw, bounding added draw-call work.
+Depth, shadow, terrain and live-GI passes keep their ordinary draw handling.
+This changes command recording only; existing bake payloads remain compatible.
+Receiver timing scopes classify source draws, so a partially mapped timing scope
+may include several specialized ranges. `REMIX_DEBUG_FORWARD_DRAW_COUNTS` also
+reports the emitted range counts separately from the source-draw classifications.
+
 Viewmodels use a narrower default early-depth path without another geometry pass. The packed draw
 must have ALWAYS alpha comparison and camera backface rejection disabled. Only then may its shader
 omit both discard sites and write depth before shading. Other viewmodel materials retain the ordinary

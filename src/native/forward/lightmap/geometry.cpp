@@ -22,6 +22,7 @@ namespace remix::forward::lightmap {
       entry.draw = mesh.draw;
       entry.count = uint32_t(mesh.indices.size());
       entry.fullyMapped = fullyMapped(mesh);
+      if (!entry.fullyMapped) entry.receiverRuns = receiverRuns(mesh, cancelled);
       entry.directOwners = directOwners(mesh);
       entry.vertices = std::make_unique<Buffer>();
       entry.indices = std::make_unique<Buffer>();

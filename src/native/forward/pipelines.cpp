@@ -104,14 +104,17 @@ namespace remix::forward {
                                                    .dynamicStateCount = 2,
                                                    .pDynamicStates = states};
     enum class Pass { Opaque, Shadow, Composite, Terrain, Depth, ViewModel };
+    using Coverage = lightmap::ReceiverCoverage;
     auto graphics = [&](VkShaderModule vs, VkShaderModule fs, VkRenderPass pass, Pass mode = Pass::Opaque,
-                         bool fullyMapped = false) {
+                         Coverage coverage = Coverage::Mixed) {
       const bool shadow = mode == Pass::Shadow, composite = mode == Pass::Composite;
       const bool terrain = mode == Pass::Terrain, depthOnly = mode == Pass::Depth;
-      // Ordinary vertices have no chart coordinates. Keep partially mapped
-      // lightmap vertices generic so their uncovered triangles retain probes.
+      // Ordinary vertices have no chart coordinates. Lightmap vertex ranges
+      // can specialize either coverage without changing their buffer stride.
+      // Mixed triangles retain the generic lightmap/probe selection.
       const uint32_t values[] = {options.debugView, uint32_t(bake::directionalFieldsRequested()),
-                                  uint32_t(fullyMapped), uint32_t(vs == vertex),
+                                  uint32_t(coverage == Coverage::Mapped),
+                                  uint32_t(coverage == Coverage::Unmapped || vs == vertex),
                                   uint32_t(probeVisibility != nullptr)};
       const VkSpecializationMapEntry entries[] = {{1, 0, sizeof(uint32_t)},
                                                   {2, sizeof(uint32_t), sizeof(uint32_t)},
@@ -195,12 +198,13 @@ namespace remix::forward {
       const auto early = modules.add(viewModelEarlyFragShader, sizeof(viewModelEarlyFragShader));
       viewModelEarlyPipeline = graphics(vertex, early, viewModelTarget->pass(), Pass::ViewModel);
     }
-    lightmapPipeline = graphics(lightmapVertex, fragment, worldPass, Pass::Opaque, true);
+    lightmapPipeline = graphics(lightmapVertex, fragment, worldPass, Pass::Opaque, Coverage::Mapped);
     partialLightmapPipeline = graphics(lightmapVertex, fragment, worldPass);
+    unmappedLightmapPipeline = graphics(lightmapVertex, fragment, worldPass, Pass::Opaque, Coverage::Unmapped);
     depthPipeline = graphics(vertex, depthFragment, worldPass, Pass::Depth);
     depthLightmapPipeline = graphics(lightmapVertex, depthFragment, worldPass, Pass::Depth);
     terrainPipeline = graphics(vertex, terrainFragment, worldPass, Pass::Terrain);
-    terrainLightmapPipeline = graphics(lightmapVertex, terrainFragment, worldPass, Pass::Terrain, true);
+    terrainLightmapPipeline = graphics(lightmapVertex, terrainFragment, worldPass, Pass::Terrain, Coverage::Mapped);
     terrainPartialLightmapPipeline = graphics(lightmapVertex, terrainFragment, worldPass, Pass::Terrain);
     if (giSupported) {
       giOpaquePipeline = graphics(vertex, giFragment, worldPass);

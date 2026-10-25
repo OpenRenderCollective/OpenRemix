@@ -29,6 +29,25 @@ namespace remix::forward::lightmap {
         throw std::runtime_error("Surface lightmap data preparation superseded");
     }
   } // namespace
+  std::vector<ReceiverRun> receiverRuns(const Mesh &mesh, std::stop_token cancelled) {
+    if (mesh.indices.size() % 3 || mesh.indices.size() > UINT32_MAX)
+      throw std::invalid_argument("Receiver runs require bounded triangle-list indices");
+    std::vector<ReceiverRun> result;
+    for (uint32_t first = 0; first < mesh.indices.size(); first += 3) {
+      if ((first & 1023u) == 0) check(cancelled);
+      uint32_t mapped = 0;
+      for (uint32_t corner = 0; corner < 3; ++corner)
+        mapped += mesh.vertices.at(mesh.indices[first + corner]).coordinate[3] >= .5f;
+      const auto coverage = mapped == 3 ? ReceiverCoverage::Mapped
+                          : mapped == 0 ? ReceiverCoverage::Unmapped : ReceiverCoverage::Mixed;
+      if (result.empty() || result.back().coverage != coverage) {
+        if (result.size() == 16) return {};
+        result.push_back({first, 3, coverage});
+      } else
+        result.back().indexCount += 3;
+    }
+    return result;
+  }
   std::vector<Mesh> meshes(const scene::BakeScene &scene, const Layout &layout, std::stop_token cancelled,
                            std::span<const bake::UInt4> lightChannels,
                            std::span<const bake::UInt4> directChannels) {

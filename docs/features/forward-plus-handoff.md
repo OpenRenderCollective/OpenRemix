@@ -36,6 +36,14 @@ then completes bake, authored capture readiness and final image/report publicati
 without validation/synchronization diagnostics. This corrects that test's missing
 illumination; it does not establish that noisy probes, seams or all rooms are fixed.
 
+The branch also specializes bounded consecutive receiver ranges within partially
+charted opaque draws. Coverage, original triangle order and bake compatibility are
+preserved; fragmented meshes retain a single generic draw. Static model charts
+remain opt-in. Continue their wider-map quality/cost qualification separately from
+dynamic-prop volume support; static model gaps can be much smaller than a useful
+volume interpolation cell. Rejecting all blocked stencil contributors alone is
+not a complete lighting solution when no clear support remains.
+
 Current probe-batching executable diagnostics show generic world fragments growing from about
 110 KiB to 135 KiB and viewmodel fragments from about 156 KiB to 181 KiB; the fully mapped
 lightmap variant remains 105728 bytes. Both variants report 128 registers. This narrows the

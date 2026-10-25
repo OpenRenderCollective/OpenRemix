@@ -38,6 +38,7 @@ namespace remix::forward {
     VkPipelineLayout layout = VK_NULL_HANDLE, compositeLayout = VK_NULL_HANDLE;
     VkPipeline opaquePipeline = VK_NULL_HANDLE, lightmapPipeline = VK_NULL_HANDLE,
                partialLightmapPipeline = VK_NULL_HANDLE,
+               unmappedLightmapPipeline = VK_NULL_HANDLE,
                depthPipeline = VK_NULL_HANDLE, depthLightmapPipeline = VK_NULL_HANDLE,
                shadowPipeline = VK_NULL_HANDLE, localShadowPipeline = VK_NULL_HANDLE,
                clusterPipeline = VK_NULL_HANDLE, compositePipeline = VK_NULL_HANDLE;

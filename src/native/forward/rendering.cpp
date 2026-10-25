@@ -20,18 +20,27 @@ namespace remix::forward {
     static const bool debugDraws = std::getenv("REMIX_DEBUG_FORWARD_DRAW_COUNTS") != nullptr;
     static thread_local uint64_t reported = 0;
     if (debugDraws && !depthOnly && !terrain && baking->volume() && baking->volume()->hash != reported) {
-      std::array<uint64_t, 3> counts{}, indices{};
+      std::array<uint64_t, 3> counts{}, indices{}, receiverRuns{};
       for (const auto &draw : frame.commands) {
         if (!draw.source.rasterVisible || !intersectsClip(draw.worldBounds, frame.data.camera)) continue;
         const uint32_t kind = !draw.lightmap ? 0 : draw.lightmap->fullyMapped ? 1 : 2;
         ++counts[kind];
         indices[kind] += draw.lightmap ? draw.lightmap->count : draw.count;
+        if (!gi && draw.lightmap && !draw.lightmap->receiverRuns.empty()) {
+          for (const auto &run : draw.lightmap->receiverRuns)
+            ++receiverRuns[run.coverage == lightmap::ReceiverCoverage::Unmapped ? 0
+                         : run.coverage == lightmap::ReceiverCoverage::Mapped ? 1 : 2];
+        } else ++receiverRuns[kind];
       }
       std::fprintf(stderr, "Forward visible draw pipelines: unmapped=%llu/%llu indices, mapped=%llu/%llu indices, "
                            "partial=%llu/%llu indices, liveGI=%u\n",
                    static_cast<unsigned long long>(counts[0]), static_cast<unsigned long long>(indices[0]),
                    static_cast<unsigned long long>(counts[1]), static_cast<unsigned long long>(indices[1]),
                    static_cast<unsigned long long>(counts[2]), static_cast<unsigned long long>(indices[2]), unsigned(gi));
+      std::fprintf(stderr, "Forward emitted receiver runs: unmapped=%llu mapped=%llu mixed=%llu\n",
+                   static_cast<unsigned long long>(receiverRuns[0]),
+                   static_cast<unsigned long long>(receiverRuns[1]),
+                   static_cast<unsigned long long>(receiverRuns[2]));
       reported = baking->volume()->hash;
     }
     const auto drawLayout = gi ? giLayout : layout;
@@ -58,10 +67,14 @@ namespace remix::forward {
       else if (terrain) selected = !mapped ? terrainPipeline : mapped->fullyMapped ? terrainLightmapPipeline
                                                                                   : terrainPartialLightmapPipeline;
       else selected = !mapped ? opaquePipeline : mapped->fullyMapped ? lightmapPipeline : partialLightmapPipeline;
-      if (selected != boundPipeline) {
-        vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, selected);
-        boundPipeline = selected;
-      }
+      auto bindPipeline = [&](VkPipeline pipeline) {
+        if (pipeline != boundPipeline) {
+          vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+          boundPipeline = pipeline;
+        }
+      };
+      const bool splitReceivers = mapped && !mapped->receiverRuns.empty() && !depthOnly && !terrain && !gi;
+      if (!splitReceivers) bindPipeline(selected);
       if (draw.material != boundMaterial) {
         vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 1, 1, &draw.material, 0,
                                 nullptr);
@@ -81,10 +94,19 @@ namespace remix::forward {
         vkCmdBindIndexBuffer(command, indices, 0, VK_INDEX_TYPE_UINT32);
         boundIndices = indices;
       }
-      vkCmdDrawIndexed(command, mapped ? mapped->count : draw.count, 1, mapped ? 0 : draw.source.firstIndex,
-                       mapped ? 0 : draw.source.vertexOffset, 0);
+      if (splitReceivers) {
+        for (const auto &run : mapped->receiverRuns) {
+          bindPipeline(run.coverage == lightmap::ReceiverCoverage::Mapped ? lightmapPipeline
+                     : run.coverage == lightmap::ReceiverCoverage::Unmapped ? unmappedLightmapPipeline
+                                                                          : partialLightmapPipeline);
+          vkCmdDrawIndexed(command, run.indexCount, 1, run.firstIndex, 0, 0);
+        }
+      } else
+        vkCmdDrawIndexed(command, mapped ? mapped->count : draw.count, 1, mapped ? 0 : draw.source.firstIndex,
+                         mapped ? 0 : draw.source.vertexOffset, 0);
     };
-    // Time consecutive receiver runs without changing coplanar/decal ordering.
+    // Time consecutive source-draw classes without changing coplanar/decal order.
+    // A partially mapped source draw may emit several specialized receiver runs.
     // Terrain blending and depth passes keep their ordinary timing scopes.
     static const bool profileReceivers = std::getenv("REMIX_DEBUG_FORWARD_RECEIVER_TIMINGS") != nullptr;
     const bool receiverTimings = profileReceivers && gpu::timing();

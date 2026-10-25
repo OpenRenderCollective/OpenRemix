@@ -102,7 +102,8 @@ namespace remix::forward {
     }
     geometries.clear();
     spareGeometry.clear();
-    for (auto handle : {opaquePipeline, lightmapPipeline, partialLightmapPipeline, depthPipeline, depthLightmapPipeline,
+    for (auto handle : {opaquePipeline, lightmapPipeline, partialLightmapPipeline, unmappedLightmapPipeline,
+                        depthPipeline, depthLightmapPipeline,
                         shadowPipeline, localShadowPipeline,
                         clusterPipeline, compositePipeline, viewModelPipeline, viewModelEarlyPipeline,
                         giOpaquePipeline, giLightmapPipeline,

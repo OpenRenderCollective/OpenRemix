@@ -1315,6 +1315,15 @@ fallback and measured output parity. Avoid another storage-format change without
 
 ### Profiling and authoring priorities
 
+Partially charted opaque meshes now specialize consecutive mapped/unmapped
+triangle ranges while preserving draw order. At most sixteen ranges are emitted;
+fragmented meshes and mixed-corner triangles retain the generic shader. Depth,
+terrain, shadow and live-GI handling stays separate. Continue broader-map and
+moving-gameplay frame-cost checks; this does not promote static model charts.
+Keep static-model surface-lightmap qualification distinct from dynamic-prop
+volume support, particularly for narrow gaps with no clear stencil contributor.
+
+
 World, terrain and depth command recording now retain identical consecutive
 pipeline, material and vertex/index bindings within each invocation. Draw order
 and per-draw push constants are preserved. Continue cross-map and foreground
