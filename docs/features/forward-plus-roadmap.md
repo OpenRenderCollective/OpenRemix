@@ -68,6 +68,18 @@ the all-blocked case, but substantial blocked weight remains and other points
 can regress. The host partition omits model detail, so this is not a full opaque-
 geometry containment test. Next compare that fuller geometry oracle and
 receiver-side support/domain reconstruction before designing cheap GPU metadata.
+The camera diagnostic now also limits bias against eligible rigid opaque model
+geometry, and reports exact tested-connection SH reweighting alongside the
+original estimate. Endpoints exclude 0.1 mm; absent support is null, not black.
+These are optional CPU oracles, not additional queries in normal shading.
+
+Matched high-sample hemisphere references at selected housing pixels confirm
+bias clipping alone is insufficient. Clipping plus connection rejection is
+substantially closer there and restores a site lost by rejection alone, but
+still underlights on average. Do not promote either unilateral shortcut. Next
+study reusable geometric support/domain data, including compact-object support
+caches, against these fixed references and wider maps; require coverage, movement
+stability and measured cost before choosing a runtime representation.
 The synthetic painted-sky fallback does not qualify live-game sky parity.
 
 Independent 8192-sample SH captures 10-25 cm outside three housing faces are within

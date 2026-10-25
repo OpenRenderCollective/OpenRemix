@@ -43,6 +43,12 @@ int main(int argc, char **argv) {
   require(hits[0] && hits[0]->draw == 1 && hits[0]->distance == 2 && !hits[1] &&
               hits[2] && hits[2]->draw == 0 && hits[2]->distance == 3 && !hits[3],
           "Ray picks must select nearest front/back intersections and preserve misses");
+  const std::array<b::ReceiverRay, 1> normalRay{{{{.5f, .5f, 0}, {0, 0, 1}}}};
+  const auto clipped = b::opaqueBiasLimits(source, normalRay, 4);
+  require(clipped[0] < 2 && clipped[0] > 1.99f && b::opaqueBiasLimits(source, normalRay, 1)[0] == 1 &&
+              b::opaqueBiasLimits(source, normalRay, 2)[0] == 2 && b::opaqueBiasLimits(source, normalRay, 0)[0] == 0,
+          "Opaque bias limits include intervening model geometry while preserving clear/end-only segments");
+  invalid([&] { b::opaqueBiasLimits(source, {}, 1); });
   require(hits[0]->normal[2] < 0 && hits[2]->normal[2] > 0 && hits[0]->geometricNormal[2] == -1,
           "Receiver normals must face the query origin");
 
@@ -143,8 +149,31 @@ int main(int argc, char **argv) {
   float value = 0;
   values >> value;
   require(std::abs(value - .5f) < 1e-6f, "Report reconstruction changed constant-field energy");
+  const auto visible = output.find("\"opaqueVisibleIrradiance\":[");
+  require(visible != std::string::npos, "Clear opaque probe support was not reported");
+  std::istringstream visibleValues(output.substr(visible + std::string("\"opaqueVisibleIrradiance\":[").size()));
+  visibleValues >> value;
+  require(std::abs(value - .5f) < 1e-6f, "Visible-weight renormalization changed constant-field energy");
   b::dumpProbeReceiverReport(source, grid);
   require(readOutput() == output, "Existing receiver report was overwritten");
+  std::filesystem::remove(outputPath);
+  const auto originalGrid = grid;
+  grid.header.settings[2] = 1;
+  for (auto &probe : grid.probes) probe.irradiance[2][3] = 4.4f;
+  auto blocker = triangle(3);
+  blocker.surface->vertices[1].position[0] = 100;
+  blocker.surface->vertices[2].position[1] = 100;
+  source.draws.push_back(blocker);
+  b::dumpProbeReceiverReport(source, grid);
+  const auto blockedOutput = readOutput();
+  const auto blockedKey = blockedOutput.find("\"opaqueBlockedWeight\":");
+  require(blockedKey != std::string::npos, "All-blocked fixture has no weighted connection report");
+  std::istringstream blockedValues(blockedOutput.substr(blockedKey + std::string("\"opaqueBlockedWeight\":").size()));
+  blockedValues >> value;
+  require(value > .999f && blockedOutput.find("\"irradiance\":[") != std::string::npos &&
+              blockedOutput.find("\"opaqueVisibleIrradiance\":null") != std::string::npos,
+          "A covered all-blocked stencil reports missing oracle support rather than fabricated black lighting");
+  grid = originalGrid; source.draws.pop_back();
   std::filesystem::remove(outputPath);
   source.draws[1].surface->indices.clear();
   source.charts.clear();

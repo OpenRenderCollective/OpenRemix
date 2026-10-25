@@ -74,6 +74,16 @@ namespace remix::forward::bake {
       }
       out << "]}";
     }
+    void validateReceiverRays(std::span<const ReceiverRay> rays) {
+      if (rays.empty() || rays.size() > 16) throw std::invalid_argument("Probe receiver ray budget is 1..16");
+      for (const auto &ray : rays) {
+        for (uint32_t c = 0; c < 3; ++c)
+          if (!std::isfinite(ray.origin[c]) || !std::isfinite(ray.direction[c]))
+            throw std::invalid_argument("Nonfinite probe receiver ray");
+        if (std::abs(dot(ray.direction, ray.direction) - 1) > 1e-4f)
+          throw std::invalid_argument("Probe receiver ray direction must be unit length");
+      }
+    }
     struct ConnectionAudit {
       std::array<Vec3, 16> positions{};
       std::array<bool, 16> tested{};
@@ -119,6 +129,42 @@ namespace remix::forward::bake {
       }
       return result;
     }
+    std::optional<Vec3> opaqueVisibleIrradiance(const Grid &grid, Vec3 normal,
+        const ProbeStencil &stencil, const ConnectionAudit &audit) {
+      const auto sh = irradianceBasis(normal);
+      Vec3 value{};
+      float total = 0;
+      for (uint32_t c = 0; c < stencil.count; ++c) {
+        if (!audit.tested[c] || audit.blockers[c] || stencil.weights[c] <= 0) continue;
+        const float weight = stencil.weights[c];
+        const auto &probe = grid.probes.at(stencil.indices[c]);
+        for (uint32_t j = 0; j < 9; ++j)
+          for (uint32_t axis = 0; axis < 3; ++axis) value[axis] += weight * probe.irradiance[j][axis] * sh[j];
+        total += weight;
+      }
+      if (total < 1e-4f) return {};
+      for (auto &channel : value) channel = std::max(0.f, channel / total);
+      return value;
+    }
+    struct BiasEstimate {
+      std::optional<Vec3> irradiance, visibleIrradiance;
+      float blockedWeight = 0;
+    };
+    BiasEstimate estimateBias(const scene::BakeScene &source, Grid &privateGrid, const ReceiverHit &hit,
+        std::span<const Grid::Origin> origins, float bias, std::stop_token cancelled) {
+      privateGrid.header.settings[0] = bias;
+      BiasEstimate result{sample(privateGrid, hit.position, hit.normal)};
+      const auto stencil = probeStencil(privateGrid, hit.position, hit.normal);
+      const auto audit = probeConnections(source, privateGrid, stencil, origins, cancelled);
+      result.visibleIrradiance = opaqueVisibleIrradiance(privateGrid, hit.normal, stencil, audit);
+      float sum = 0, blocked = 0;
+      for (uint32_t c = 0; c < stencil.count; ++c) {
+        sum += stencil.weights[c];
+        if (audit.blockers[c]) blocked += stencil.weights[c];
+      }
+      if (sum > 0) result.blockedWeight = blocked / sum;
+      return result;
+    }
     std::vector<Grid::Origin> probeOrigins(const Grid &grid) {
       if (indexed(grid.header)) return directoryOrigins(grid);
       const uint32_t count = gridNodes(grid.header);
@@ -157,14 +203,7 @@ namespace remix::forward::bake {
   std::vector<std::optional<ReceiverHit>> pickProbeReceivers(const scene::BakeScene &source,
       std::span<const ReceiverRay> rays, std::stop_token cancelled) {
     check(cancelled);
-    if (rays.empty() || rays.size() > 16) throw std::invalid_argument("Probe receiver ray budget is 1..16");
-    for (const auto &ray : rays) {
-      for (uint32_t c = 0; c < 3; ++c)
-        if (!std::isfinite(ray.origin[c]) || !std::isfinite(ray.direction[c]))
-          throw std::invalid_argument("Nonfinite probe receiver ray");
-      if (std::abs(dot(ray.direction, ray.direction) - 1) > 1e-4f)
-        throw std::invalid_argument("Probe receiver ray direction must be unit length");
-    }
+    validateReceiverRays(rays);
     std::vector<std::optional<ReceiverHit>> hits(rays.size());
     std::vector<double> closest(rays.size(), std::numeric_limits<double>::infinity());
     for (uint32_t drawIndex = 0; drawIndex < source.draws.size(); ++drawIndex) {
@@ -262,6 +301,24 @@ namespace remix::forward::bake {
       std::fprintf(stderr, "Model receiver report unavailable: %s\n", error.what());
     }
   }
+  std::vector<float> opaqueBiasLimits(const scene::BakeScene &source,
+      std::span<const ReceiverRay> normalRays, float bias, std::stop_token cancelled) {
+    check(cancelled);
+    if (normalRays.empty() || normalRays.size() > 16 || !std::isfinite(bias) || bias < 0 ||
+        !(source.sceneScale > 0) || !std::isfinite(source.sceneScale))
+      throw std::invalid_argument("Invalid opaque bias study");
+    validateReceiverRays(normalRays);
+    std::vector<float> limits(normalRays.size(), bias);
+    const float epsilon = .0001f / source.sceneScale;
+    if (bias <= 2 * epsilon) return limits;
+    std::vector<ReceiverRay> rays(normalRays.begin(), normalRays.end());
+    for (auto &ray : rays)
+      for (uint32_t c = 0; c < 3; ++c) ray.origin[c] += ray.direction[c] * epsilon;
+    const auto hits = pickProbeReceivers(source, rays, cancelled);
+    for (size_t i = 0; i < hits.size(); ++i)
+      if (hits[i] && hits[i]->distance < bias - 2 * epsilon) limits[i] = std::max(0.f, hits[i]->distance);
+    return limits;
+  }
   void dumpProbeReceiverReport(const scene::BakeScene &source, const Grid &grid, std::stop_token cancelled) noexcept {
     const char *request = std::getenv("REMIX_DEBUG_PROBE_RECEIVER_RAYS");
     if (!request || !*request) return;
@@ -280,9 +337,18 @@ namespace remix::forward::bake {
       input >> std::ws;
       if (!input.eof()) throw std::invalid_argument("Trailing probe receiver input");
       const auto hits = pickProbeReceivers(source, rays, cancelled);
+      std::array<std::optional<float>, 16> opaqueLimits{};
+      std::vector<ReceiverRay> normalRays;
+      std::vector<uint32_t> normalSlots;
+      for (uint32_t i = 0; i < hits.size(); ++i)
+        if (hits[i]) { normalRays.push_back({hits[i]->position, hits[i]->normal}); normalSlots.push_back(i); }
+      if (!normalRays.empty()) {
+        const auto limits = opaqueBiasLimits(source, normalRays, grid.header.settings[0], cancelled);
+        for (size_t i = 0; i < limits.size(); ++i) opaqueLimits[normalSlots[i]] = limits[i];
+      }
       const auto origins = probeOrigins(grid);
       std::optional<Grid> containmentGrid;
-      if (source.partition && source.partition->closed && grid.probes.size() <= 65536) containmentGrid = grid;
+      if (grid.probes.size() <= 65536) containmentGrid = grid;
       std::ostringstream out;
       out.imbue(std::locale::classic());
       out.precision(9);
@@ -317,24 +383,28 @@ namespace remix::forward::bake {
         out << ",\"containedBiasWorldUnits\":";
         if (containedBias) {
           out << *containedBias;
-          containmentGrid->header.settings[0] = *containedBias;
-          const auto containedValue = sample(*containmentGrid, hit.position, hit.normal);
+          const auto estimate = estimateBias(source, *containmentGrid, hit, origins, *containedBias, cancelled);
           out << ",\"containedIrradiance\":";
-          if (containedValue) vector(out, *containedValue); else out << "null";
-          const auto containedStencil = probeStencil(*containmentGrid, hit.position, hit.normal);
-          const auto containedAudit = probeConnections(source, *containmentGrid, containedStencil, origins, cancelled);
-          float sum = 0, blocked = 0;
-          for (uint32_t c = 0; c < containedStencil.count; ++c) {
-            sum += containedStencil.weights[c];
-            if (containedAudit.blockers[c]) blocked += containedStencil.weights[c];
-          }
-          out << ",\"containedOpaqueBlockedWeight\":" << (sum > 0 ? blocked / sum : 0);
+          if (estimate.irradiance) vector(out, *estimate.irradiance); else out << "null";
+          out << ",\"containedOpaqueBlockedWeight\":" << estimate.blockedWeight;
 
         } else out << "null,\"containedIrradiance\":null";
+        out << ",\"opaqueBiasLimit\":";
+        if (containmentGrid && opaqueLimits[i]) {
+          const auto estimate = estimateBias(source, *containmentGrid, hit, origins, *opaqueLimits[i], cancelled);
+          out << "{\"biasWorldUnits\":" << *opaqueLimits[i] << ",\"irradiance\":";
+          if (estimate.irradiance) vector(out, *estimate.irradiance); else out << "null";
+          out << ",\"visibleIrradiance\":";
+          if (estimate.visibleIrradiance) vector(out, *estimate.visibleIrradiance); else out << "null";
+          out << ",\"blockedWeight\":" << estimate.blockedWeight << '}';
+        } else out << "null";
         const auto stencil = probeStencil(grid, hit.position, hit.normal);
         float total = 0;
         for (uint32_t c = 0; c < stencil.count; ++c) total += stencil.weights[c];
         const auto audit = probeConnections(source, grid, stencil, origins, cancelled);
+        const auto visible = opaqueVisibleIrradiance(grid, hit.normal, stencil, audit);
+        out << ",\"opaqueVisibleIrradiance\":";
+        if (visible) vector(out, *visible); else out << "null";
         float blockedWeight = 0;
         for (uint32_t c = 0; c < stencil.count; ++c)
           if (audit.blockers[c] && total > 0) blockedWeight += stencil.weights[c] / total;

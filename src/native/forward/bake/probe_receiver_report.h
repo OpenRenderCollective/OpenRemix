@@ -20,12 +20,18 @@ namespace remix::forward::bake {
   // Alpha texels, normal maps, transmission and skinned geometry are excluded.
   std::vector<std::optional<ReceiverHit>> pickProbeReceivers(const scene::BakeScene &source,
       std::span<const ReceiverRay> rays, std::stop_token cancelled = {});
+  // Intersection-limited normal bias for 1..16 surface-origin/unit-normal rays.
+  // Endpoints exclude 0.1 mm; this does not prove a closed free-space domain
+  // or account for alpha/transmission. Never used by normal shading.
+  std::vector<float> opaqueBiasLimits(const scene::BakeScene &source,
+      std::span<const ReceiverRay> normalRays, float bias, std::stop_token cancelled = {});
   // Optional worker-only diagnostic, including cache hits. Input is a count
   // (1..16), then XYZ origins and XYZ unit directions, at most 4 KiB total.
   // REMIX_DEBUG_PROBE_RECEIVER_RAYS names the input; output appends .results.json.
   // Includes at most 256 triangles/charts per hit draw, with truncation flags.
-  // At most 16 segments per original/contained stencil test rigid opaque blockers
+  // At most 16 segments per original/partition/opaque-limited stencil test blockers
   // against the exact biased query endpoint, excluding 0.1 mm at each end.
+  // Visible-connection SH oracles retain missing support as null, never black.
   // A missing opaque blocker does not establish alpha/transmission visibility.
   // Existing output is protected; failures never affect bake publication.
   void dumpProbeReceiverReport(const scene::BakeScene &source, const Grid &grid,
