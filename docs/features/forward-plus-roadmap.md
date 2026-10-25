@@ -2694,3 +2694,17 @@ receiver-aware allocation/placement while protecting thin-surface containment an
 fixed global probe budget; prior placement/refinement regressions remain applicable.
 Run metadata now explicitly separates reduced surrounding replay quality from independent
 8192-sample reference queries. These diagnostic images are not visual-quality acceptance.
+
+
+Relocation now constrains receiver-normal clearance to the first closed-partition solid
+interval. Previously a long offset could cross a thin wall/ceiling and end in playable
+space on the wrong side. The shared CPU helper also serves the existing diagnostic;
+unknown/already-solid starts remain inadmissible. A thin-slab regression covers playable
+endpoints separated by solid space. Bake algorithm revision 35 prevents reuse of old
+placement results. Grid, adaptive-grid, cache and receiver-diagnostic tests pass.
+A fresh normal-budget Construct bake retains the full checked receiver coverage and
+stays within the original probe record budget. Most checked estimates are identical;
+one is slightly worse, and the large model errors remain. This is a containment fix,
+not a demonstrated visual-quality improvement or deployment qualification. Check the
+previous ceiling fixture, additional maps and cache reload before installing it; receiver
+binning and refinement priorities still use their existing policies.

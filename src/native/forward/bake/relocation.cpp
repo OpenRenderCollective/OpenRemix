@@ -1,4 +1,5 @@
 #include "forward/bake/grid.h"
+#include "forward/bake/receiver_clearance.h"
 #include "forward/lightmap/layout.h"
 #include <algorithm>
 #include <cmath>
@@ -27,11 +28,14 @@ namespace remix::forward::bake {
       if (!layout.receiverSamples.empty() && !layout.receiverSamples[point]) continue;
       const auto &receiver = layout.points[point];
       const Vec3 normal = normalized({receiver.normal[0], receiver.normal[1], receiver.normal[2]});
+      const auto contained = partitionContainedBias(scene,
+          {receiver.position[0], receiver.position[1], receiver.position[2]}, normal, clearance);
+      if (!contained) continue;
       Vec4 p = receiver.position;
       std::array<uint32_t, 3> coordinate;
       bool inside = true;
       for (uint32_t c = 0; c < 3; ++c) {
-        p[c] += normal[c] * clearance;
+        p[c] += normal[c] * *contained;
         const float cell = std::round((p[c] - h.originSpacing[c]) / h.originSpacing[3]);
         if (!std::isfinite(cell) || cell < 0 || cell >= h.dimensions[c]) {
           inside = false;

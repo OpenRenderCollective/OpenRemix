@@ -380,22 +380,6 @@ namespace remix::forward::bake {
     }
   }
 
-  std::optional<float> partitionContainedBias(const scene::BakeScene &source,
-      Vec3 position, Vec3 normal, float bias) {
-    if (!source.partition || !source.partition->closed || !(source.sceneScale > 0) ||
-        !std::isfinite(source.sceneScale) || !std::isfinite(bias) || bias < 0) return {};
-    const float epsilon = .0001f / source.sceneScale, initial = std::min(epsilon, bias);
-    Vec3 start, end;
-    for (uint32_t c = 0; c < 3; ++c) {
-      start[c] = position[c] + normal[c] * initial;
-      end[c] = position[c] + normal[c] * bias;
-    }
-    const auto interval = source.partition->firstSolid(start.data(), end.data());
-    using State = scene::VisibilityPartition::SegmentState;
-    if (interval.state == State::Clear) return bias;
-    if (interval.state != State::Solid || interval.fraction <= 0) return {};
-    return std::max(0.f, float(initial + (bias - initial) * interval.fraction) - epsilon);
-  }
   std::vector<std::optional<ReceiverHit>> pickProbeReceivers(const scene::BakeScene &source,
       std::span<const ReceiverRay> rays, std::stop_token cancelled, uint32_t excludedDraw) {
     check(cancelled);

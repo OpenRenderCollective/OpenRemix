@@ -1,12 +1,9 @@
 #pragma once
 #include "forward/bake/grid.h"
+#include "forward/bake/receiver_clearance.h"
 #include <stop_token>
 
 namespace remix::forward::bake {
-  // Diagnostic only: preserve a clear normal bias, otherwise stop before the
-  // first solid/unplayable interval of a closed host partition. Unknown stays absent.
-  std::optional<float> partitionContainedBias(const scene::BakeScene &source,
-      Vec3 position, Vec3 normal, float bias);
   struct ReceiverRay {
     Vec3 origin{}, direction{}; // host units; unit direction
   };

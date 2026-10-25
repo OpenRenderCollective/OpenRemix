@@ -199,6 +199,15 @@ int main() {
                         {{-.4f, -1, 1, 0}, {1, 0, 0, 0}},
                         {{-.4f, 1, 1, 0}, {1, 0, 0, 0}}};
     receivers.receiverSamples = {1, 1, 1, 0};
+    auto thin = moved;
+    const auto originalNodes = split->nodes;
+    split->nodes = {{{1, 0, 0, -.5f}, {1, -2}, {0, 0}},
+                    {{1, 0, 0, -.3f}, {2, -1}, {0, 0}},
+                    {{1, 0, 0, -.25f}, {-1, -2}, {0, 0}}};
+    require(bake::relocate(thin, region, receivers) == 3 &&
+                thin.points[0].position[0] < -.3f && thin.points[0].position[0] > -.301f,
+            "Relocation clearance must stop before a thin slab even when the full endpoint is playable");
+    split->nodes = originalNodes;
     const auto original = moved.points;
     require(bake::relocate(moved, region, receivers) == 3 && moved.tasks.size() == 7 && moved.points.size() == 8,
             "Relocation reuses only unused slots within the existing allocation");
