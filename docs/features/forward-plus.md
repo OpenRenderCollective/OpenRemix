@@ -2032,15 +2032,16 @@ buffer growth through completed slots. Run with Vulkan synchronization validatio
 REMIX_VULKAN_VALIDATION=1
 VK_LAYER_VALIDATE_SYNC=1
 meson test -C <build> --print-errorlogs
-python scripts/shaders/generate.py forward --check
-python scripts/shaders/generate.py forward --validate
-python scripts/shaders/generate.py bake --check
-python scripts/shaders/generate.py bake --validate
-python scripts/shaders/generate.py live_ray --check
-python scripts/shaders/generate.py live_ray --validate
-python scripts/shaders/generate.py live_gi --check
-python scripts/shaders/generate.py live_gi --validate
+meson compile -C <build> remix
+python scripts/shaders/generate.py nrd --check
+python scripts/shaders/generate.py fsr31 --check
 ```
+
+GLSL compilation, SPIR-V validation and embedding run through the pinned build toolchain.
+Forward+, bake, water, live ray effects and GPU fixtures generate their headers in the
+build directory; do not commit generated binaries. Editing an included GLSL file invalidates
+its generated target through the recorded dependency file. `--check` and `--validate`
+apply only to the separately committed NRD and FSR 3.1 binaries.
 
 Synthetic readback does not establish GMod map compatibility or performance. Test dense lights, moving
 casters, map changes, late materials, masks, water, 3D skyboxes and backend/resize transitions in the host.

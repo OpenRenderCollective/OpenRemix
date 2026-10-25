@@ -2,6 +2,7 @@
 #include "api/imgui_compat.h"
 #include <algorithm>
 #include <imgui.h>
+#include <string>
 
 namespace remix::ui {
   bool drawPanel(config::Profiles &profiles, ProfileUi &profileUi, void *user, DrawSettingsTab drawTab) {
@@ -21,8 +22,20 @@ namespace remix::ui {
     const bool minimal = viewport->WorkSize.y < 200 * scale;
     if (!minimal) {
       const bool compact = width <= 340 * scale;
-      ImGui::TextUnformatted(compact ? "OpenRemix" : "OpenRemix / F12");
+      ImGui::TextUnformatted("OpenRemix");
       ImGui::SameLine();
+      if (!compact) {
+        // The panel's shortcut: click, then press it (ui/menu_shortcut.cpp).
+        const std::string label =
+            (profileUi.capturingMenuShortcut ? std::string("Press a shortcut...") : profileUi.menuShortcut) +
+            "###Panel shortcut";
+        if (ImGui::SmallButton(label.c_str()))
+          profileUi.captureMenuShortcut = true;
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Shortcut that opens and closes this panel.\nClick, then press a key while holding "
+                            "the modifiers to use (Alt, Ctrl, Shift).\nEscape keeps the current shortcut.");
+        ImGui::SameLine();
+      }
       if (ImGui::SmallButton(compact ? (panel.right ? "<" : ">")
                                      : (panel.right ? "Dock left" : "Dock right")))
         panel.right = !panel.right;
@@ -32,7 +45,7 @@ namespace remix::ui {
       if (ImGui::SmallButton(compact ? "X" : "Close"))
         open = false;
       if (compact && ImGui::IsItemHovered())
-        ImGui::SetTooltip("Close developer panel (F12)");
+        ImGui::SetTooltip("Close developer panel (%s)", profileUi.menuShortcut.c_str());
     }
     const bool hasPlugin = remixapi_imgui_HasDrawCallback() != 0;
     // Tabs before kMods edit the profile's settings.
@@ -53,7 +66,7 @@ namespace remix::ui {
         if (ImGui::TabItemButton("X", ImGuiTabItemFlags_Trailing))
           open = false;
         if (ImGui::IsItemHovered())
-          ImGui::SetTooltip("Close developer panel (F12)");
+          ImGui::SetTooltip("Close developer panel (%s)", profileUi.menuShortcut.c_str());
       }
       for (int i = 0; i < tabCount; ++i) {
         const auto flags =

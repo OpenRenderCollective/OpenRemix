@@ -226,13 +226,17 @@ void main() {
       direct*=SIGMA_BackEnd_UnpackShadow(imageLoad(shadowOutput,p)).yzw;
 #endif
       vec3 local=vec3(0);
+      // A PBR pixel's local input holds only the diffuse lobe while REBLUR runs
+      // (its specular joins the PBR signal, addPbrLocalSpecular); without
+      // REBLUR it holds both lobes and stays unfiltered.
+      bool localDenoised=temporal.local.x!=0&&(material.a<1.5||temporal.flags.y!=0);
 #ifdef LOCAL_PASS
       if(temporal.local.w!=0?temporal.families.x!=0:temporal.local.y!=0)
-        local=REBLUR_BackEnd_UnpackRadianceAndNormHitDist(temporal.local.x!=0&&material.a<1.5?imageLoad(localOutput,p):imageLoad(localInput,p)).rgb;
+        local=REBLUR_BackEnd_UnpackRadianceAndNormHitDist(localDenoised?imageLoad(localOutput,p):imageLoad(localInput,p)).rgb;
 #endif
 #ifdef SPLIT_LOCAL_PASS
       if(temporal.families.y!=0)
-        local+=REBLUR_BackEnd_UnpackRadianceAndNormHitDist(temporal.local.x!=0&&material.a<1.5?imageLoad(emissiveOutput,p):imageLoad(emissiveInput,p)).rgb;
+        local+=REBLUR_BackEnd_UnpackRadianceAndNormHitDist(localDenoised?imageLoad(emissiveOutput,p):imageLoad(emissiveInput,p)).rgb;
 #endif
       color=direct+safeRadiance(indirect+local)*material.rgb+safeRadiance(specular);
       Mirror mirror=loadMirror(p);

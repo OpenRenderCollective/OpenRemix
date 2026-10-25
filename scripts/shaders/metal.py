@@ -1,21 +1,20 @@
-"""Metal libraries of the native Metal backend, translated from the checked-in SPIR-V.
+"""Metal libraries of the native Metal backend, translated from the Vulkan backends' SPIR-V.
 
 SPIR-V --pinned SPIRV-Cross fork--> MSL --xcrun metal--> AIR --metallib--> one library per stage,
-each an XZ stream in src/native/metal/shaders/embedded.bin. The input is the SPIR-V the Vulkan
+each an XZ stream in metal/shaders/embedded.bin of the build's generated tree (generate.py --output),
+which the build generates before this from the same sources. The input is the SPIR-V the Vulkan
 backends embed, so both backends run the same shaders; for the backends embedded after spirv-opt -O
 (pathtrace), the same GLSL and defines compiled by glslang without it: Apple's compiler service
 fails on the fully inlined lighting kernels and builds the structured ones in seconds. Descriptor sets become argument buffers at
 buffer(set); embedded.h maps every (set, binding) of a stage to its argument buffer IDs, so the
-host binds resources by their Vulkan set and binding. --check compares the recorded SPIR-V digests
-only and needs no tools.
+host binds resources by their Vulkan set and binding.
 """
-import hashlib, json, os, re, struct, subprocess, tempfile
+import hashlib, json, os, re, struct, subprocess, tempfile, threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import generate
 
 ROOT = generate.ROOT
-TARGET = ROOT / 'src/native/metal/shaders/embedded.h'
 LOCK = json.loads(Path(__file__).with_name('toolchain.lock.json').read_text())['spirv-cross-msl']
 # MSL 3.0 / macOS 13: the authored deployment target of the macOS builds.
 MSL_VERSION, METAL_STD, MACOS_MIN = '30000', 'metal3.0', '13.0'
@@ -86,22 +85,29 @@ for index, identifier in enumerate(NRD_IDENTIFIERS):
 NONE = 0xffff
 
 
+# process() translates stages on a thread pool: every worker may ask first.
+_cache_lock = threading.Lock()
+
+
 def spirv(backend, stage, cache={}):
     """The SPIR-V a Vulkan backend embeds for one stage."""
     if backend == 'nrd':
-        if backend not in cache:
-            text = (ROOT / 'src/native/denoise/shaders/nrd_embedded.h').read_text()
-            arrays = dict(re.findall(r'inline constexpr uint32_t (shader\d+)\[\] = \{(.*?)\};', text, re.S))
-            cache[backend] = []
-            for name in re.findall(r'\{"[^"]+", (shader\d+), sizeof', text):
-                words = [int(word, 16) for word in re.findall(r'0x[0-9a-fA-F]+', arrays[name])]
-                cache[backend].append(struct.pack('<' + 'I' * len(words), *words))
+        with _cache_lock:
+            if backend not in cache:
+                text = (ROOT / 'src/native/denoise/shaders/nrd_embedded.h').read_text()
+                arrays = dict(re.findall(r'inline constexpr uint32_t (shader\d+)\[\] = \{(.*?)\};', text, re.S))
+                stages = []
+                for name in re.findall(r'\{"[^"]+", (shader\d+), sizeof', text):
+                    words = [int(word, 16) for word in re.findall(r'0x[0-9a-fA-F]+', arrays[name])]
+                    stages.append(struct.pack('<' + 'I' * len(words), *words))
+                cache[backend] = stages
         return cache[backend][int(stage)]
     if backend in generate.OPTIMIZED:
-        if backend not in cache:
-            cache[backend] = generate.decompressed_stages(backend)
+        with _cache_lock:
+            if backend not in cache:
+                cache[backend] = generate.decompressed_stages(backend)
         return cache[backend][stage]
-    text = (ROOT / 'src/native' / backend / 'shaders/embedded.h').read_text()
+    text = (generate.OUTPUT / backend / 'shaders/embedded.h').read_text()
     match = re.search(r'\b' + stage + r'Shader\[\] = \{(.*?)\};', text, re.S)
     words = [int(word, 16) for word in re.findall(r'0x[0-9a-fA-F]+', match[1])]
     return struct.pack('<' + 'I' * len(words), *words)
@@ -152,9 +158,8 @@ def structured(backend, stage, path, extra=()):
     _, environment, stages = generate.BACKENDS[backend]
     defines, source = generate.defines_for(backend, stage, stages)
     defines = defines + list(extra)
-    subprocess.run(['glslangValidator', '-V', '--target-env', environment, *defines,
-                    '-I' + str(ROOT / 'third_party/nrd/Shaders'), '-I' + str(ROOT / 'third_party/sharc/include'),
-                    '-o', str(path), str(source)], check=True, stdout=subprocess.DEVNULL)
+    generate.glslang(['--target-env', environment, *defines, '-I' + str(ROOT / 'third_party/nrd/Shaders'),
+                      '-I' + str(ROOT / 'third_party/sharc/include'), str(source)], path)
 
 
 def mode_variant(backend, stage, path, mode):
@@ -164,9 +169,9 @@ def mode_variant(backend, stage, path, mode):
     glsl = path.with_suffix('.comp')
     glsl.write_text(source.read_text().replace('pass.mode', f'{mode}u'))
     raw = path.with_suffix('.raw.spv')
-    subprocess.run(['glslangValidator', '-V', '--target-env', environment, *defines, '-I' + str(source.parent),
-                    '-I' + str(ROOT / 'third_party/nrd/Shaders'), '-o', str(raw), str(glsl)],
-                   check=True, stdout=subprocess.DEVNULL)
+    generate.glslang(['--target-env', environment, *defines, '-I' + str(source.parent),
+                      '-I' + str(ROOT / 'third_party/nrd/Shaders'), str(glsl)], raw)
+    generate.depend(source)
     subprocess.run(['spirv-opt', '-O', str(raw), '-o', str(path)], check=True)
 
 
@@ -252,30 +257,19 @@ def header(results, blob_offsets):
               'struct NrdShader {', '  const char *identifier;', '  Stage stage;', '};',
               'inline constexpr NrdShader nrdShaders[] = {']
     lines += [f'  {{"{identifier}", Stage::nrd{index}}},' for index, identifier in enumerate(NRD_IDENTIFIERS)]
-    lines += ['};', '} // namespace remix::metal::shaders', '']
+    lines += ['};', '// embedded.bin (embedded_data.cpp).', 'extern const unsigned char embeddedData[];',
+              'extern const size_t embeddedDataBytes;', '} // namespace remix::metal::shaders', '']
     return '\n'.join(lines)
 
 
-def check_digests():
-    text = TARGET.read_text()
-    for name, (backend, stage, *_) in STAGES.items():
-        match = re.search(r'"' + name + r'", .*"([0-9a-f]{16})"\},', text)
-        if not match or match[1] != digest(spirv(backend, stage)):
-            raise SystemExit(f'{TARGET}: {name} was translated from different SPIR-V; '
-                             'run scripts/shaders/generate.py metal')
-
-
-def process(check=False, validate=False):
-    if check or validate:
-        check_digests()
-        return
+def process():
     spirv_cross = os.environ.get('REMIX_SPIRV_CROSS', 'spirv-cross')
     run = subprocess.run([spirv_cross, '--version'], capture_output=True, text=True)
     version = run.stdout + run.stderr
     # The commit is reported by git describe: "9f9991c" or "...-g9f9991c5".
     if not re.search(r'(?<![0-9a-f])' + LOCK['revision'][:7], version):
         raise SystemExit(f'Metal shaders require SPIRV-Cross {LOCK["repository"]} at {LOCK["revision"][:8]}; '
-                         'build it with scripts/shaders/fetch-spirv-cross.py and set REMIX_SPIRV_CROSS')
+                         'build it with scripts/shaders/toolchain.py --metal (the build does) and pass --tools')
     with tempfile.TemporaryDirectory() as temporary, ThreadPoolExecutor(max_workers=os.cpu_count() or 1) as pool:
         tasks = {name: pool.submit(compile_stage, name, spirv_cross, temporary) for name in STAGES}
         results = {name: task.result() for name, task in tasks.items()}
@@ -283,6 +277,10 @@ def process(check=False, validate=False):
     for name in STAGES:
         offsets[name] = len(blob)
         blob += results[name][2]
-    TARGET.parent.mkdir(parents=True, exist_ok=True)
-    TARGET.write_text(header(results, offsets))
-    TARGET.with_suffix('.bin').write_bytes(bytes(blob))
+    target = generate.OUTPUT / 'metal/shaders/embedded.h'
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(header(results, offsets))
+    target.with_suffix('.bin').write_bytes(bytes(blob))
+    target.with_name('embedded_data.cpp').write_text(generate.embedded_data('generate.py metal', 'metal::shaders'))
+    # The committed NRD SPIR-V is translated too.
+    generate.depend(ROOT / 'src/native/denoise/shaders/nrd_embedded.h')

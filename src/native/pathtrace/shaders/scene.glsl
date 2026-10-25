@@ -38,7 +38,7 @@ layout(set=0,binding=3,std140) uniform Frame {
   mat4 camera;
   vec4 eye;
   vec4 lightDirection;
-  vec4 lightRadiance;
+  vec4 lightRadiance; // w: the sun's scale in volumetric media (volume.glsl)
   uvec4 config; // samples, indirect bounces, random sequence, accumulated frames
   uvec4 target; // width, height, structure mask, raster primary visibility
   vec4 jitter; // primary offset; z water reuse; w blue-noise sun/local bits
@@ -67,9 +67,10 @@ layout(set=0,binding=3,std140) uniform Frame {
   uint64_t restirCurrent, restirHistoryRead, restirHistoryWrite, restirRemap;
   uvec4 restirConfig; // candidates, spatial samples, temporal M cap, flags (1 initial visibility)
   vec4 restirParams; // spatial radius (pixels), emitter count, reserved
-  uint64_t regirRead, regirWrite, regirSlots, regirReserved;
+  uint64_t regirRead, regirWrite, regirSlots;
+  uint64_t caustics; // caustics: strength, contrast (visibility.glsl causticTint)
   uvec4 regirConfig; // cell capacity, slots per cell, cells per world unit (float bits), active
-  uint64_t orcaTable, orcaReserved;
+  uint64_t orcaTable, lightCookies; // lightCookies: each cookie slot's texture + 1
   uvec4 orcaConfig; // entry capacity, sparse tile size, voxel levels, active
   vec4 orcaParams; // smallest voxel (world units), level growth, minimum samples, maximum relative error (0: any)
   uvec4 cutConfig; // first cut coverage texture + 1 (0: nothing cuts), coverage textures
@@ -90,9 +91,13 @@ layout(set=0,binding=3,std140) uniform Frame {
   uint64_t sheetResults; // SheetResults: the sheet lighting pass's transport
   uint64_t skyGuideRead; // sky guiding: last frame's learned sky directions (0: none)
   uint64_t skyGuideWrite;
-  uint64_t sheetMaterials; // Optional measured-sheet optics, keyed by albedo descriptor.
+  uint64_t iesProfiles; // IES profiles (scene/ies.h): 256 floats each
+
   uvec4 skyGuideConfig; // slot capacity, cells per world unit (float bits), guided share (float bits), active
   mat4 inverseCameraRelative; // camera rays: world = point.xyz / point.w + eye.xyz
+  uint64_t localProbeRead, localProbeWrite; // local occlusion probes: last frame's (0: none), this frame's
+  vec4 localProbeParams; // movingShadowBlur, reserved
+  uint64_t sheetMaterials; // Optional measured-sheet optics, keyed by albedo descriptor.
 } frame;
 // Instance mask bit of view models (pathtrace/tlas_policy.h).
 const uint viewModelInstanceMask=8u;
@@ -104,8 +109,10 @@ const uint reflectionOnlyInstanceMask=16u;
 bool viewModelPath=false;
 // The instance mask of shadow, light-visibility and bounce rays.
 uint secondaryMask(){return (frame.pathConfig.w&0xffu)|(viewModelPath?viewModelInstanceMask:0u);}
-// Bounce (reflection and indirect) rays: the secondary mask plus reflection-only instances.
-uint bounceMask(){return secondaryMask()|reflectionOnlyInstanceMask;}
+// Bounce (reflection and indirect) rays: the secondary mask plus reflection-only instances,
+// except on a view model's path: the player's own body, drawn around the camera, flickered in
+// the weapon's reflections and bounced light onto it.
+uint bounceMask(){return secondaryMask()|(viewModelPath?0u:reflectionOnlyInstanceMask);}
 // Shadow and light-visibility rays pass paint (each query skips decal
 // surfaces): instances of decals alone are left out of their traversal, so a
 // ray leaving a painted wall does not visit every quad of paint above it.
@@ -213,8 +220,10 @@ mat3 materialBasis(vec3 n,vec3 e1,vec3 e2,vec2 u1,vec2 u2) {
   if(abs(det)>1e-10&&dot(b,(e2*u1.x-e1*u2.x)/det)<0)b=-b;
   return mat3(t,b,n);
 }
-vec3 materialNormal(Surface s,vec2 uv,mat3 basis,vec3 wo) {
-  if(s.pbrTextures.z==0)return basis[2];
+// A material's normal map at uv in tangent space, before normalizing (z at
+// least .001); zero without a map or where it holds no direction.
+vec3 materialLocalNormal(Surface s,vec2 uv) {
+  if(s.pbrTextures.z==0)return vec3(0);
   vec3 local;
   if((s.pbrTextures.w&16)!=0) {
     // Source's water (normal encoding 5; frame_tables.h materialFields): the
@@ -234,8 +243,13 @@ vec3 materialNormal(Surface s,vec2 uv,mat3 basis,vec3 wo) {
   if((s.pbrTextures.w&1)!=0)local.z=sqrt(max(0,1-dot(local.xy,local.xy)));
   if(s.pbrTextures.w==2) { local.xy=vec2(local.x+local.y,local.x-local.y)*.5; local.z=1-abs(local.x)-abs(local.y); }
   if((s.pbrTextures.w&4)!=0)local.y=-local.y;
-  if(dot(local,local)<1e-8)return basis[2];
-  vec3 n=normalize(basis*vec3(local.xy,max(local.z,.001)));
+  if(dot(local,local)<1e-8)return vec3(0);
+  return vec3(local.xy,max(local.z,.001));
+}
+vec3 materialNormal(Surface s,vec2 uv,mat3 basis,vec3 wo) {
+  vec3 local=materialLocalNormal(s,uv);
+  if(local==vec3(0))return basis[2];
+  vec3 n=normalize(basis*local);
   // A backfacing mapped normal cannot define a reflective hemisphere for wo.
   return dot(n,wo)>1e-4?n:basis[2];
 }

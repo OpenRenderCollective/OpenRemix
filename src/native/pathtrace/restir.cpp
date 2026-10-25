@@ -84,6 +84,40 @@ void PathTracer::Gpu::configureRestir(Frame &frame, const TraceOptions &options,
   r.historyValid = true; // this frame writes it
 }
 
+// The split local pass's occlusion probes: each pixel's share of its local
+// light that its shadow rays let through, compared the next frame to restart
+// local history where an occluder moved. ReSTIR re-tests its own history
+// samples instead.
+void PathTracer::Gpu::configureLocalProbes(Frame &frame, const TraceOptions &options, VkExtent2D extent) {
+  auto &p = localProbes;
+  const bool active = options.localHistoryConfidence && splitLightingActive && denoiser && postSplit &&
+                      localIlluminationActive && !restir.active;
+  frame.localProbeRead = frame.localProbeWrite = 0;
+  if (!active) {
+    p.valid = false;
+    return;
+  }
+  // Must match struct LocalProbe in pathtrace.comp.
+  constexpr VkDeviceSize kProbeBytes = 32;
+  if (!p.buffers[0] || p.width != extent.width || p.height != extent.height) {
+    for (auto &b : p.buffers) {
+      if (b)
+        retiredBuffers.push_back(std::move(b));
+      b = buffer(VkDeviceSize(extent.width) * extent.height * kProbeBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false);
+    }
+    p.width = extent.width;
+    p.height = extent.height;
+    p.valid = false;
+  }
+  if (history.reset())
+    p.valid = false;
+  p.writeIndex ^= 1;
+  frame.localProbeWrite = p.buffers[p.writeIndex]->address;
+  frame.localProbeRead = p.valid ? p.buffers[p.writeIndex ^ 1]->address : 0;
+  frame.localProbeParams[0] = options.movingShadowBlur;
+  p.valid = true; // this frame writes it
+}
+
 // Replaces the split local-lighting dispatch: initial and temporal
 // resampling, then spatial resampling and shading into the local signal.
 void PathTracer::Gpu::recordRestir(VkCommandBuffer command, VkExtent2D extent) {

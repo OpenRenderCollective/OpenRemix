@@ -627,6 +627,7 @@ namespace remix {
     frame.sun[3] = localDebug ? (std::strcmp(localDebug, "budget") == 0 ? 2.f : 1.f) : 0.f;
     std::copy_n(light.direction, 3, frame.direction);
     std::copy_n(light.radiance, 3, frame.radiance);
+    frame.radiance[3] = light.volumetric; // the sun's scale in volumetric media (volume.glsl)
     if (options.sky)
       std::copy_n(resources.skyRadiance().data(), 3, frame.skyRadiance);
     if (options.sky && resources.dome().enabled) {
@@ -646,6 +647,26 @@ namespace remix {
         auto fingerprint = dome.texture->fingerprint();
         append(&fingerprint, sizeof(fingerprint));
       }
+    }
+    // Light cookies: each slot's texture in this frame's texture table (+ 1).
+    {
+      const auto &cookies = resources.cookieTextures();
+      std::vector<uint32_t> table(cookies.size());
+      for (size_t i = 0; i < cookies.size(); ++i) {
+        if (!cookies[i])
+          continue;
+        if (textures.size() >= PathTracer::textureLimit)
+          throw VK_ERROR_TOO_MANY_OBJECTS;
+        table[i] = uint32_t(textures.size() + 1);
+        textures.push_back(resources.sampledTexture(resources.cookieMaterial(), cookies[i], command));
+        auto fingerprint = cookies[i]->fingerprint();
+        append(&fingerprint, sizeof(fingerprint));
+      }
+      if (lightCookies)
+        retiredBuffers.push_back(std::move(lightCookies));
+      if (!table.empty())
+        hostBuffer(lightCookies, table.data(), table.size() * sizeof(uint32_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+      frame.lightCookies = lightCookies ? lightCookies->address : 0;
     }
     // Role CUT (remixapi_InstanceInfoMaskEXT): the coverage of the groups
     // whose instances the camera does not see, drawn by the raster renderer
@@ -676,6 +697,12 @@ namespace remix {
       // Ordinary material animation remains wrapped before float precision suffers.
       const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - animationStart).count();
       frame.animationTime = float(std::fmod(seconds, 4096.0));
+    }
+    if (options.caustics && options.causticsStrength > 0) {
+      const uint64_t strength = uint64_t(std::lround(std::clamp(options.causticsStrength, 0.f, 1.f) * 255));
+      const uint64_t contrast = uint64_t(std::lround(std::clamp(options.causticsContrast, 0.f, 7.96875f) * 32));
+      const uint64_t depth = uint64_t(trace::detail::halfBits(options.causticsDepth / options.sceneScale));
+      frame.caustics = strength | contrast << 8 | depth << 16;
     }
     frame.config[1] = options.bounces;
     frame.target[0] = extent.width;
@@ -915,6 +942,22 @@ namespace remix {
       frame.movedLights = movedLights ? movedLights->address : 0;
       frame.visibilityConfig[1] = uint32_t(moved.size());
     }
+    // IES profiles: uploaded when one is added (they are never changed).
+    if (const auto ies = resources.iesProfiles(); ies != iesUploaded) {
+      if (iesBuffer)
+        retiredBuffers.push_back(std::move(iesBuffer));
+      if (ies && !ies->empty()) {
+        if (deviceLocalScene)
+          iesBuffer = upload(command, ies->data(), ies->size() * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+        else {
+          std::unique_ptr<Buffer> host;
+          hostBuffer(host, ies->data(), ies->size() * sizeof(float), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+          iesBuffer = std::move(host);
+        }
+      }
+      iesUploaded = ies;
+    }
+    frame.iesProfiles = iesBuffer ? iesBuffer->address : 0;
     // Classify the empty space just above a shading point (2 cm).
     frame.visibilityProbe[0] = .02f / options.sceneScale;
     // Paint lies at most this far above its receiver (5 cm; Source lifts 0.1 in).
@@ -931,6 +974,7 @@ namespace remix {
     configureLightGuiding(frame, options);
     configureSkyGuiding(frame, options);
     configureRestir(frame, options, extent);
+    configureLocalProbes(frame, options, extent);
     configureRegir(frame, options);
     configureOrca(frame, options);
     if (options.pbrLocalReuse) {
@@ -1544,6 +1588,13 @@ namespace remix {
     const auto split = Clock::now();
     staged.combined.setClusterSize(options.emissiveClusterSize);
     staged.combined.update(lights);
+    {
+      std::lock_guard lock(scene::g_lightTreeSaveMutex);
+      if (!scene::g_lightTreeSavePath.empty()) {
+        staged.combined.save(scene::g_lightTreeSavePath.c_str());
+        scene::g_lightTreeSavePath.clear();
+      }
+    }
     const auto treed = Clock::now();
     staged.visibility.update(resources.visibilityPartition(), staged.combined,
                              options.lightVisibilityCulling && options.localLights, .1f / options.sceneScale);

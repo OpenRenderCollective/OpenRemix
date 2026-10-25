@@ -17,7 +17,9 @@ _Static_assert(sizeof(remixapi_BakeSurfaceChartEXT) == 40, "Bake surface chart e
 _Static_assert(offsetof(remixapi_BakeSurfaceChartEXT, texcoords) == 32, "Bake chart coordinate alignment");
 _Static_assert(sizeof(remixapi_BakeSceneSurfacesInfoEXT) == 104, "Bake surfaces descriptor ABI");
 _Static_assert(offsetof(remixapi_BakeSceneSurfacesInfoEXT, charts) == 96, "Bake chart array alignment");
-_Static_assert(sizeof(remixapi_BakeStatisticsEXT) == 256, "Bake statistics extension ABI");
+_Static_assert(sizeof(remixapi_BakeStatisticsEXT) == 272, "Bake statistics extension ABI");
+_Static_assert(offsetof(remixapi_BakeStatisticsEXT, reflectionRequested) == 256,
+               "Bake statistics legacy prefix ABI");
 _Static_assert(offsetof(remixapi_BakeSceneInfoEXT, instances) == 40, "Bake scene array alignment");
 _Static_assert(sizeof(remixapi_MaterialInfoEmissionEXT) == 24, "Material emission extension ABI");
 _Static_assert(offsetof(remixapi_MaterialInfoEmissionEXT, suppressLightGeneration) == 16,

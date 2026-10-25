@@ -271,6 +271,8 @@ namespace remix::config {
         TRACE(bloom, 0, 1);
         TRACE(bloomIntensity, 0, 1);
         TRACE(bloomRadius, 0, 1);
+        TRACE(contrast, 0, 1);
+        TRACE(contrastAmount, .5, 2);
         TRACE(prism, 0, 1);
         TRACE(gamma22, 0, 1);
         TRACE(localLights, 0, 1);
@@ -292,6 +294,7 @@ namespace remix::config {
         TRACE(localAntilagSensitivity, .1, 16);
         TRACE(localHistoryFrames, 2, 64);
         TRACE(localHistoryConfidence, 0, 1);
+        TRACE(movingShadowBlur, .01, 1);
         TRACE(translucentIndirect, 0, 1);
         TRACE(skipBlendedSecondaryRays, 0, 1);
         TRACE(viewModel, 0, 1);
@@ -360,6 +363,10 @@ namespace remix::config {
         TRACE(debugView, 0, 14);
         TRACE(taa, 0, 1);
         TRACE(waterIndirectReuse, 0, 1);
+        TRACE(caustics, 0, 1);
+        TRACE(causticsStrength, 0, 1);
+        TRACE(causticsContrast, 0, 7.96875);
+        TRACE(causticsDepth, 0, 100);
         TRACE(translucencyDenoiser, 0, 1);
         TRACE(translucencyReuse, 0, 1);
         TRACE(pbrLocalReuse, 0, 1);

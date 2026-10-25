@@ -37,6 +37,8 @@ namespace remix {
 
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+      if (menuShortcut(event))
+        continue;
       if (m_eventHandler != nullptr) {
         m_eventHandler(&event, m_eventUserData);
       }
@@ -79,6 +81,105 @@ namespace remix {
     m_guiWantsMouse = mouse;
   }
 
+  namespace {
+    uint32_t menuModifiers(SDL_Keymod mod) {
+      return (mod & SDL_KMOD_ALT ? RemixSdlWindow::MenuAlt : 0) | (mod & SDL_KMOD_CTRL ? RemixSdlWindow::MenuCtrl : 0) |
+             (mod & SDL_KMOD_SHIFT ? RemixSdlWindow::MenuShift : 0) | (mod & SDL_KMOD_GUI ? RemixSdlWindow::MenuGui : 0);
+    }
+  } // namespace
+
+  void RemixSdlWindow::setMenuShortcut(remixapi_Key key, uint32_t modifiers) {
+    const auto scancode = toScancode(key);
+    if (scancode == SDL_SCANCODE_UNKNOWN)
+      return;
+    m_menuScancode = scancode;
+    m_menuModifiers = modifiers & (MenuAlt | MenuCtrl | MenuShift | MenuGui);
+  }
+
+  bool RemixSdlWindow::takeCapturedMenuShortcut(remixapi_Key &key, uint32_t &modifiers) {
+    if (!m_menuCaptured)
+      return false;
+    m_menuCaptured = false;
+    key = m_capturedKey;
+    modifiers = m_capturedModifiers;
+    return true;
+  }
+
+  bool RemixSdlWindow::takeMenuToggle() {
+    const bool toggle = (m_menuToggles & 1) != 0;
+    m_menuToggles = 0;
+    return toggle;
+  }
+
+  std::string RemixSdlWindow::shortcutName(remixapi_Key key, uint32_t modifiers) {
+    std::string name;
+#if defined(__APPLE__)
+    const char *gui = "Cmd+";
+#elif defined(_WIN32)
+    const char *gui = "Win+";
+#else
+    const char *gui = "Super+";
+#endif
+    if (modifiers & MenuCtrl)
+      name += "Ctrl+";
+    if (modifiers & MenuAlt)
+      name += "Alt+";
+    if (modifiers & MenuShift)
+      name += "Shift+";
+    if (modifiers & MenuGui)
+      name += gui;
+    const char *keyName = SDL_GetScancodeName(toScancode(key));
+    return name + (keyName && *keyName ? keyName : "?");
+  }
+
+  bool RemixSdlWindow::menuShortcut(const SDL_Event &event) {
+    if (SDL_GetWindowFromEvent(&event) != m_window)
+      return false;
+    if (event.type == SDL_EVENT_TEXT_INPUT) {
+      // macOS types a character for Option+key (Option+X: an approximately-equal sign).
+      const bool swallow = m_swallowText;
+      m_swallowText = false;
+      return swallow;
+    }
+    if (event.type != SDL_EVENT_KEY_DOWN && event.type != SDL_EVENT_KEY_UP)
+      return false;
+    const auto scancode = event.key.scancode;
+    if (event.type == SDL_EVENT_KEY_UP) {
+      if (scancode != m_swallowedKey)
+        return false;
+      m_swallowedKey = SDL_SCANCODE_UNKNOWN;
+      return true;
+    }
+    if (event.key.repeat)
+      return scancode == m_swallowedKey;
+    m_swallowText = false; // A key's text follows its press.
+    const bool modifier = scancode >= SDL_SCANCODE_LCTRL && scancode <= SDL_SCANCODE_RGUI;
+    if (m_capturingMenu && !modifier) {
+      m_capturingMenu = false;
+      const auto key = fromScancode(scancode);
+      if (scancode != SDL_SCANCODE_ESCAPE && key) {
+        m_capturedKey = key;
+        m_capturedModifiers = menuModifiers(event.key.mod);
+        m_menuCaptured = true;
+      }
+    } else if (scancode == m_menuScancode && menuModifiers(event.key.mod) == m_menuModifiers) {
+      ++m_menuToggles;
+    } else {
+      return false;
+    }
+    m_swallowedKey = scancode;
+    m_swallowText = true;
+    return true;
+  }
+
+  remixapi_Key RemixSdlWindow::fromScancode(SDL_Scancode scancode) {
+    for (uint32_t key = REMIXAPI_KEY_A; key <= REMIXAPI_KEY_PAGE_DOWN; ++key) {
+      if (toScancode(static_cast<remixapi_Key>(key)) == scancode)
+        return static_cast<remixapi_Key>(key);
+    }
+    return remixapi_Key{};
+  }
+
   void RemixSdlWindow::queueInput(const remixapi_InputEvent &event) {
     if (m_inputEvents.size() >= 4096) {
       m_inputEvents.clear();
@@ -99,12 +200,7 @@ namespace remix {
     case SDL_EVENT_KEY_DOWN:
     case SDL_EVENT_KEY_UP:
       input.type = REMIXAPI_INPUT_KEY;
-      for (uint32_t key = REMIXAPI_KEY_A; key <= REMIXAPI_KEY_PAGE_DOWN; ++key) {
-        if (toScancode(static_cast<remixapi_Key>(key)) == event.key.scancode) {
-          input.code = key;
-          break;
-        }
-      }
+      input.code = fromScancode(event.key.scancode);
       if (!input.code)
         return;
       input.down = event.key.down;

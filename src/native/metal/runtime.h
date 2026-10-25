@@ -12,6 +12,7 @@
 #include "platform/window.h"
 #include "runtime/profiles.h"
 #include "scene/free_camera.h"
+#include "ui/menu_shortcut.h"
 #include "ui/profiles.h"
 #include <remix/remix_c.h>
 #include <remix/remix_native_ext.h>
@@ -168,6 +169,11 @@ namespace remix {
       m_uiState = state;
       if (state == REMIXAPI_UI_STATE_NONE)
         m_window.setGuiCapture(false, false);
+    }
+    // After each event pump (remixapi_PumpEvents): the panel's own shortcut.
+    void menuShortcut() {
+      if (ui::menuShortcut(m_window, m_profiles, m_profileUi, m_uiState != REMIXAPI_UI_STATE_NONE))
+        setUiState(m_uiState == REMIXAPI_UI_STATE_NONE ? REMIXAPI_UI_STATE_ADVANCED : REMIXAPI_UI_STATE_NONE);
     }
     scene::FreeCameraState &freeCamera() { return m_freeCamera; }
 

@@ -427,6 +427,7 @@ namespace remix::metal {
     }
     staged.history.end();
     staged.hasEmissive = lights.size() > sphereCount;
+    staged.combined.setClusterSize(options.emissiveClusterSize);
     staged.combined.update(std::move(lights));
     return frame;
   }
@@ -476,10 +477,14 @@ namespace remix::metal {
                             MTLAccelerationStructureInstanceOptionTriangleFrontFacingWindingCounterClockwise);
           instance.options = MTLAccelerationStructureInstanceOptions(remix::trace::instanceFlags(input, faceCulling));
           // pathtrace/tlas.cpp: view models only under their own mask (camera
-          // rays), blended layers under theirs (secondary rays may skip them).
-          instance.mask = input.viewModel ? remix::trace::viewModelInstanceMask
-                          : input.blended ? remix::trace::blendedInstanceMask
-                                          : remix::trace::allInstancesMask;
+          // rays), reflection-only instances under theirs (bounce rays), blended
+          // layers under theirs (secondary rays may skip them), decals under
+          // theirs (shadow rays pass them).
+          instance.mask = input.viewModel        ? remix::trace::viewModelInstanceMask
+                          : input.reflectionOnly ? remix::trace::reflectionOnlyInstanceMask
+                          : input.blended        ? remix::trace::blendedInstanceMask
+                          : input.decal          ? remix::trace::decalInstanceMask
+                                                 : remix::trace::allInstancesMask;
           instance.intersectionFunctionTableOffset = 0;
           instance.accelerationStructureIndex = entry->second;
           instance.userID = input.customIndex;
@@ -739,16 +744,20 @@ namespace remix::metal {
       const bool sunNoise = options.blueNoiseShadows && frame.sun[1] && frame.sun[0] > 0;
       const bool localNoise = options.blueNoiseLocalLights && frame.localConfig[0] && denoiser && c.reblur &&
                               c.localDenoise && !options.accumulate;
-      if (sunNoise || localNoise) {
+      // First-surface bounce and sky directions: a repeating 32-frame pattern
+      // is for the denoiser, never for a progressive reference.
+      const bool skyNoise = options.blueNoiseSky && denoiser && c.reblur && !options.accumulate;
+      if (sunNoise || localNoise || skyNoise) {
         if (!blueNoise)
           blueNoise = buffer(remix::trace::blueNoiseSamples, sizeof(remix::trace::blueNoiseSamples));
         frame.blueNoise = blueNoise->address;
-        frame.jitter[3] = float(uint32_t(sunNoise) | uint32_t(localNoise) << 1);
+        frame.jitter[3] = float(uint32_t(sunNoise) | uint32_t(localNoise) << 1 | uint32_t(skyNoise) << 2);
       }
     }
     frame.sun[2] = frame.sun[1] != 0 ? float(options.shadowDebug) : 0;
     std::copy_n(light.direction, 3, frame.direction);
     std::copy_n(light.radiance, 3, frame.radiance);
+    frame.radiance[3] = light.volumetric; // the sun's scale in volumetric media (volume.glsl)
     if (options.sky)
       std::copy_n(resources.skyRadiance().data(), 3, frame.skyRadiance);
     if (options.sky && resources.dome().enabled) {
@@ -797,20 +806,31 @@ namespace remix::metal {
     const bool roulette = rouletteActive;
     frame.pathConfig[0] = roulette;
     frame.pathConfig[1] = options.rouletteMinBounces;
-    // Sheet flags (1 traced indirect, 2 local lights) and the secondary ray
-    // mask: bounce rays may skip blended layers.
+    // Sheet flags (1 traced indirect, 2 local lights) and the sky rays at a
+    // path's first surface (bits 8-15) and a sheet's (bits 16-23).
     frame.pathConfig[2] = (options.translucentIndirect ? 1u : 0u) | (options.sheetLocalLights ? 2u : 0u) |
-                          (options.layerReuse ? 4u : 0u) | (options.shortSheetPaths ? 8u : 0u);
+                          (options.layerReuse ? 4u : 0u) | (options.shortSheetPaths ? 8u : 0u) |
+                          std::clamp(options.skySamples, 1u, 16u) << 8 |
+                          std::clamp(std::min(options.sheetSkySamples, options.skySamples), 1u, 16u) << 16;
     // Bits 0-7: the instance mask of shadow, light-visibility and bounce rays
     // (view models never; blended layers unless skipBlendedSecondaryRays is
     // off). Bit 8: a traced view model is in the frame (camera rays look for
     // it first).
     frame.pathConfig[3] = (options.skipBlendedSecondaryRays ? 0xffu & ~uint32_t(remix::trace::blendedInstanceMask) : 0xffu) &
-                          ~uint32_t(remix::trace::viewModelInstanceMask);
+                          ~uint32_t(remix::trace::viewModelInstanceMask) &
+                          ~uint32_t(remix::trace::reflectionOnlyInstanceMask);
     if (prepared.viewModel)
       frame.pathConfig[3] |= 0x100u;
     std::copy_n(resources.cameraMedium().data(), 4, frame.cameraMedium);
     frame.upAxis = float(std::min(options.volumetricUpAxis, 2u));
+    // pathtrace/rendering.cpp: light through translucent surfaces with a normal
+    // map draws caustics (visibility.glsl causticTint).
+    if (options.caustics && options.causticsStrength > 0) {
+      const uint64_t strength = uint64_t(std::lround(std::clamp(options.causticsStrength, 0.f, 1.f) * 255));
+      const uint64_t contrast = uint64_t(std::lround(std::clamp(options.causticsContrast, 0.f, 7.96875f) * 32));
+      const uint64_t depth = uint64_t(remix::trace::detail::halfBits(options.causticsDepth / options.sceneScale));
+      frame.caustics = strength | contrast << 8 | depth << 16;
+    }
 
     // Classify the empty space just above a shading point (2 cm); paint lies
     // at most 5 cm above its receiver; texture footprints are in output
@@ -989,6 +1009,7 @@ namespace remix::metal {
     configureSparse(command, frame, options);
     configureRegir(frame, options, frame.localConfig[0] != 0);
     configureLightGuiding(frame, options, frame.localScale[2] > 1);
+    configureSkyGuiding(frame, options);
     // Lights that changed since the previous frame (pathtrace/rendering.cpp):
     // the local denoiser drops history where they changed the light.
     {
@@ -1078,6 +1099,7 @@ namespace remix::metal {
     recordVolume(command);
     recordSparse(command);
     beginLightGuiding(command);
+    beginSkyGuiding(command);
     if (sharcUpdate)
       recordSharc(command);
     if (denoiser) {
@@ -1253,7 +1275,7 @@ namespace remix::metal {
       const auto fragmentPush = library(stable ? Stage::depthFrag : Stage::gbufferFrag).push;
       for (size_t i = 0; i < tables.primaryCount(); ++i) {
         const auto &draw = tables.primary(i);
-        if ((stable && draw.blended) || draw.viewModel != (part == 1))
+        if ((stable && draw.blended) || draw.viewModel != (part == 1) || draw.reflectionOnly)
           continue;
         PrimaryPush push{draw.model,
                          {stable ? 0.f : jitter[0], stable ? 0.f : jitter[1]},
@@ -1290,6 +1312,10 @@ namespace remix::metal {
       lightGuiding.writeIndex ^= 1;
       lightGuiding.valid = true;
       ++lightGuiding.stats.renderedFrames;
+    }
+    if (skyGuiding.active) {
+      skyGuiding.writeIndex ^= 1;
+      skyGuiding.valid = true;
     }
     statics.committed(prepareSerial, frame().retiredStates);
     if (sharc.stats.active && sharc.hasReceivers) {
@@ -1491,7 +1517,8 @@ namespace remix::metal {
                                          options.sharcMaxUpdatePaths)
         ++sharc.downscale;
     frame.sharcConfig[0] = uint32_t(hasReceivers) | uint32_t(options.sharcDynamicSurfaces) << 1 |
-                           uint32_t(options.sharcGlossySurfaces) << 2;
+                           uint32_t(options.sharcGlossySurfaces) << 2 |
+                           uint32_t(!options.sharcFootprintTest) << 3;
     frame.sharcConfig[1] = sharc.stats.capacity;
     frame.sharcConfig[2] = sharc.downscale;
     frame.sharcConfig[3] = options.sharcDebug;
@@ -1853,6 +1880,48 @@ namespace remix::metal {
       return;
     const auto &bank = lightGuiding.history[lightGuiding.writeIndex];
     id<MTLBlitCommandEncoder> blit = blitEncoder(command, @"Light guiding clear");
+    [blit fillBuffer:bank->handle range:NSMakeRange(0, bank->size) value:0];
+    [blit endEncoding];
+  }
+
+  // pathtrace/sky_guiding.cpp configureSkyGuiding. Only the extra sky rays of a
+  // path's first surface sample the learned directions, so it is active with
+  // skySamples above one, a sky, and the denoiser (a progressive reference
+  // keeps plain BRDF sampling).
+  void PathTracer::Gpu::configureSkyGuiding(Frame &frame, const TraceOptions &options) {
+    auto &g = skyGuiding;
+    g.active = false;
+    frame.skyGuideRead = frame.skyGuideWrite = 0;
+    std::fill_n(frame.skyGuideConfig, 4, 0u);
+    if (!options.skyGuiding || options.skySamples < 2 || frame.skyRadiance[3] == 0 || !options.sky ||
+        !denoiser || options.accumulate)
+      return;
+    if (!g.history[0]) {
+      const size_t bytes = size_t(SkyGuiding::capacity) * SkyGuiding::stride * 4;
+      g.history[0] = buffer(nullptr, bytes);
+      g.history[1] = buffer(nullptr, bytes);
+    }
+    const float cellUnits = options.skyGuideCellSize / options.sceneScale;
+    if (history.reset() || g.cellSize != cellUnits)
+      g.valid = false;
+    g.cellSize = cellUnits;
+    frame.skyGuideRead = g.valid ? g.history[g.writeIndex ^ 1]->address : 0;
+    frame.skyGuideWrite = g.history[g.writeIndex]->address;
+    const float scale = 1.f / cellUnits, share = std::clamp(options.skyGuideShare, 0.f, .95f);
+    frame.skyGuideConfig[0] = SkyGuiding::capacity;
+    std::memcpy(&frame.skyGuideConfig[1], &scale, 4);
+    std::memcpy(&frame.skyGuideConfig[2], &share, 4);
+    frame.skyGuideConfig[3] = 1;
+    g.active = true;
+  }
+
+  // As beginLightGuiding: the read bank stays immutable for the frame; clear
+  // the bank this frame trains before any pass's atomics.
+  void PathTracer::Gpu::beginSkyGuiding(id<MTLCommandBuffer> command) {
+    if (!skyGuiding.active)
+      return;
+    const auto &bank = skyGuiding.history[skyGuiding.writeIndex];
+    id<MTLBlitCommandEncoder> blit = blitEncoder(command, @"Sky guiding clear");
     [blit fillBuffer:bank->handle range:NSMakeRange(0, bank->size) value:0];
     [blit endEncoding];
   }

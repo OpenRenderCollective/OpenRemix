@@ -1,5 +1,6 @@
 #pragma once
 #include "runtime/settings.h"
+#include <remix/remix_c.h>
 #include <filesystem>
 #include <set>
 #include <utility>
@@ -10,6 +11,9 @@ namespace remix::config {
     bool right = false;
     float width = 520;
     int tab = 0;
+    // The panel's shortcut (RemixSdlWindow::setMenuShortcut): a key and exactly
+    // the modifiers held with it (1 Alt, 2 Ctrl, 4 Shift, 8 Cmd/Win). Alt+X.
+    uint32_t menuKey = REMIXAPI_KEY_X, menuModifiers = 1;
     bool operator==(const PanelState &) const = default;
   };
 

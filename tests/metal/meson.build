@@ -1,7 +1,3 @@
-# The Metal backend's libraries match the SPIR-V they were translated from
-# (no shader tools needed: scripts/shaders/generate.py metal --check).
-test('Metal libraries match the embedded SPIR-V', python,
-  args : [meson.project_source_root() / 'scripts/shaders/generate.py', 'metal', '--check'])
 # The Metal copies of the panel's tabs (src/native/metal/ui) match the current upstream tabs.
 test('Metal UI copies match the upstream tabs', python,
   args : [meson.project_source_root() / 'scripts/macos/metal-ui.py'])

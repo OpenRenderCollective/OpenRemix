@@ -1,4 +1,4 @@
-denoise_library = static_library('remix_denoise', 'renderer.cpp', 'nrd.cpp',
+denoise_library = static_library('remix_denoise', 'renderer.cpp', 'nrd.cpp', denoise_shaders,
   link_with : pipeline_library,
   dependencies : [vulkan_dep, nrd_dep],
   include_directories : [remix_public_include, native_include],

@@ -3,8 +3,12 @@
 All builds use Meson/Ninja and Clang. Initialize the `include/vulkan` submodule.
 SDL3 remains pinned to 3.4.14; `scripts/common/build-dependencies.py` verifies the
 archive checksum and builds only SDL3. Dear ImGui v1.92.9b is vendored with checksums.
-PNG/DDS decoders and embedded raster shaders are included in the source tree.
-They add no runtime library or normal-build shader compiler dependency.
+PNG/DDS decoders are included in the source tree. The build generates the renderer's
+SPIR-V (and on Metal builds its libraries) with glslang and SPIRV-Tools at the revisions in
+`scripts/shaders/toolchain.lock.json`: the first build on a machine fetches them with Git and
+builds them with CMake for the build machine (about a minute), cached in
+`_work/tools/shader-toolchain` for every build directory (`-Dshader_tools=` moves the cache).
+None of this adds a runtime dependency.
 Use fresh build directories when switching from the removed renderer.
 
 ## Linux x64 / glibc 2.28
@@ -12,7 +16,7 @@ Use fresh build directories when switching from the removed renderer.
 Use Rocky Linux 8 (or a compatible sysroot) for portable binaries. Building on a newer
 distribution does not establish a glibc 2.28 baseline. The CI job builds and packages
 inside Rocky Linux 8 and rejects runtime, SDL3 or sample binaries requiring newer glibc.
-Clang, Python 3.9+, Meson, CMake, Ninja, Vulkan loader development files and SDL platform
+Clang, Python 3.9+, Meson, CMake, Ninja, Git, Vulkan loader development files and SDL platform
 headers are required. The system supplies libvulkan and the GPU driver.
 
 ```sh

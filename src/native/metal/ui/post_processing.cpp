@@ -26,6 +26,26 @@ namespace remix {
         ImGui::TextWrapped("%s", shadows.unavailableReason);
       ImGui::BeginDisabled(rrActive);
       ui::Checkbox("Denoise local lighting", &options.localDenoiser);
+      ImGui::BeginDisabled(!options.localDenoiser);
+      int localHistory = int(options.localHistoryFrames);
+      if (ui::SliderInt("Local light history", &localHistory, 2, 64))
+        options.localHistoryFrames = uint32_t(localHistory);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Frames REBLUR averages local lighting over. Longer is cleaner; moving shadows\n"
+                          "and switched lights take longer to settle.");
+      ui::SliderFloat("Local anti-lag sigma", &options.localAntilagSigma, .1f, 16.f, "%.2f",
+                      ImGuiSliderFlags_Logarithmic);
+      ui::SliderFloat("Local anti-lag sensitivity", &options.localAntilagSensitivity, .1f, 16.f, "%.2f",
+                      ImGuiSliderFlags_Logarithmic);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("REBLUR anti-lag for local lighting: lower values drop history sooner where the\n"
+                          "light changed (faster shadows, more noise right after a change).");
+      ui::SliderFloat("Moving shadow blur", &options.movingShadowBlur, .01f, 1.f, "%.3f", ImGuiSliderFlags_Logarithmic);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Spatial smoothing where a moving object's shadow just arrived or left (the\n"
+                          "denoiser restarted those pixels). Lower: sharper, grainier moving shadows.\n"
+                          "Higher: smoother, paler. Settles to normal over eight frames.");
+      ImGui::EndDisabled();
       ImGui::EndDisabled();
       ImGui::BeginDisabled(fsr.active);
       ui::Checkbox("Native resolution TAA", &options.taa);
@@ -51,6 +71,12 @@ namespace remix {
       } else
         ImGui::TextDisabled("%s", "Automatic exposure and bloom are not available on this backend (manual exposure applies).");
       if (!post.failure.empty()) ImGui::TextWrapped("%s", post.failure.c_str());
+      ui::Checkbox("Contrast before tonemapping", &options.contrast);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Per-channel contrast around middle grey (0.18), applied after exposure:\n"
+                          "colour = (colour / 0.18)^contrast * 0.18. Counters a flat, grey look.");
+      if (options.contrast)
+        ui::SliderFloat("Contrast", &options.contrastAmount, .5f, 2.f, "%.2f");
       ui::Checkbox("Prism tonemapping", &options.prism);
       ui::Checkbox("Gamma 2.2 output", &options.gamma22);
       for (auto [label, threshold] : {std::pair{"Local direct clamp", &options.localDirectClamp},

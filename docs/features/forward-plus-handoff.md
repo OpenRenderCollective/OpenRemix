@@ -300,8 +300,11 @@ Follow repository `AGENTS.md`. Use Visual Studio x64 developer PowerShell, clang
 Vulkan SDK. `scripts/windows/build-remix.ps1` is the portable Windows entry point; it builds dependencies
 and runs tests. Existing local configured builds can use `meson compile -C <build> remix` and
 `meson test -C <build> --print-errorlogs`. GPU suites require supported hardware and their build option.
-Use `python scripts/shaders/generate.py <backend> --check` and separately `--validate`; these flags are
-mutually exclusive. Affected backends: forward, live_gi, water, water_ray, probe_test, forward_test, style_test.
+The build generates and validates GLSL-derived SPIR-V with the pinned shader toolchain,
+including Forward+, live GI, water and the GPU fixtures. Generated headers belong in the
+build directory and are not committed. `generate.py nrd --check` and `fsr31 --check`
+verify the separately committed DXC binaries; `--validate` is an alternative for those two
+backends. Do not use these modes for GLSL backends.
 
 Relevant suites include adaptive ownership/energy/transitions, per-region GPU addressing/styles,
 shared-face biased queries, cache integrity, hardware transport, aggregate/mixed corrections,

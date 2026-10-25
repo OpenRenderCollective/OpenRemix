@@ -620,7 +620,8 @@ void Renderer::record(VkCommandBuffer command, upscale::Input hdr,
   }
   const float values[] = {bypass ? 1.f : options.exposure,
                           bloom ? options.bloomIntensity : 0.f,
-                          float(!bypass && options.autoExposure), 0};
+                          float(!bypass && options.autoExposure),
+                          !bypass && options.contrast ? options.contrastAmount : 0.f};
   std::memcpy(f.uniform->mapped, values, sizeof(values));
   const auto bloomView =
       bloom ? (g.up.empty() ? g.down[0]->view : g.up[0]->view) : g.dummy->view;

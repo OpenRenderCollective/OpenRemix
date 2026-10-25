@@ -169,6 +169,8 @@ namespace remix {
       material->sourceHash = material->texture->getHash();
     }
     material->normalTexture = dataTexturePath(info.normalTexture);
+    // Light through a translucent surface is focused by its waves or bumps.
+    material->caustics = material->translucent && material->normalTexture;
     // Water shares the packed remap fields (frame_tables.h materialFields).
     if (material->normalEncoding == 5 && (material->roughnessTexture || material->metallicTexture))
       throw invalid;
@@ -261,7 +263,7 @@ namespace remix {
              a.pbr == b.pbr && std::equal(a.emission, a.emission + 3, b.emission) &&
              std::equal(a.tint, a.tint + 4, b.tint) && a.compare == b.compare && a.reference == b.reference &&
              a.drawAlpha == b.drawAlpha && a.translucent == b.translucent &&
-             a.transmission == b.transmission && a.filter == b.filter && a.wrapU == b.wrapU &&
+             a.transmission == b.transmission && a.caustics == b.caustics && a.filter == b.filter && a.wrapU == b.wrapU &&
              a.wrapV == b.wrapV && a.rows == b.rows && a.columns == b.columns && a.fps == b.fps;
     };
     if (previous == m_materials.end() || !equal(*previous->second, *material)) {

@@ -1,18 +1,29 @@
 #!/usr/bin/env python3
-"""Regenerate or verify embedded renderer SPIR-V; normal builds need no shader tools."""
+"""Generate the renderer's embedded SPIR-V at build time, or regenerate or verify the committed NRD and FSR 3.1 SPIR-V.
+
+The build (src/native/meson.build) runs it with the pinned tools of toolchain.py; its output is not committed."""
 import argparse
+import json
 import lzma
 from concurrent.futures import ThreadPoolExecutor
 import os
 from pathlib import Path
 import re
 import struct
+import sys
 import subprocess
 import tempfile
+import threading
 import nrd
 import fsr31
 
 ROOT = Path(__file__).resolve().parents[2]
+# Where the generated backends are written and read (--output): the build passes its
+# src/native, so the sources' "pathtrace/shaders/embedded.h" includes find them.
+OUTPUT = ROOT / '_work/shaders/src/native'
+# Every file a glslang compile read (--depfile).
+DEPENDENCIES = set()
+_dependencies_lock = threading.Lock()
 # Backends whose SPIR-V is optimized with spirv-opt -O (fully inlined) and stored
 # XZ-compressed in embedded.bin. Inlined modules are ~10x larger, but NVIDIA's
 # driver compiles them about twice as fast; the runtime decompresses on use.
@@ -76,6 +87,14 @@ def shader_directory(backend):
     if backend == 'forward_test':
         return ROOT / 'tests/forward/shaders'
     return ROOT / 'src/native' / backend / 'shaders'
+
+
+def generated_directory(backend):
+    source = shader_directory(backend)
+    native = ROOT / 'src/native'
+    if source.is_relative_to(native):
+        return OUTPUT / source.relative_to(native)
+    return OUTPUT.parent.parent / source.relative_to(ROOT)
 
 
 def defines_for(backend, stage, stages):
@@ -207,16 +226,38 @@ def defines_for(backend, stage, stages):
     return defines, source
 
 
+def depfile_inputs(text):
+    """Decode glslang's Make paths before resolving Windows drive letters."""
+    dependencies = re.split(r':\s', text, maxsplit=1)[1].replace('\\\n', ' ')
+    tokens = re.findall(r'(?:\\[ :#\\]|[^\s])+', dependencies)
+    return [re.sub(r'\\([ :#\\])', r'\1', token).replace('$$', '$') for token in tokens]
+
+
+def glslang(arguments, output):
+    """glslangValidator -V, recording the files it read."""
+    depfile = output.with_suffix('.d')
+    subprocess.run(['glslangValidator', '-V', *arguments, '--depfile', str(depfile), '-o', str(output)],
+                   check=True, stdout=subprocess.DEVNULL)
+    depend(*depfile_inputs(depfile.read_text()))
+
+
+def depend(*paths):
+    """Record inputs of the generated files; a scratch copy (metal.py's mode variants) is not one."""
+    resolved = [Path(path).resolve() for path in paths]
+    with _dependencies_lock:
+        DEPENDENCIES.update(str(path) for path in resolved if path.is_relative_to(ROOT))
+
+
 def compile_stage(backend, stage, temporary):
     """SPIR-V words of one stage, compiled and validated; for an optimized
     backend, the optimized module and its XZ stream."""
     _, environment, stages = BACKENDS[backend]
     defines, source = defines_for(backend, stage, stages)
     binary = Path(temporary) / (backend + '-' + stage + '.spv')
-    subprocess.run(['glslangValidator', '-V', '--target-env', environment, *defines,
-                    '-I' + str(ROOT/'third_party/nrd/Shaders'), '-I' + str(ROOT/'third_party/sharc/include'),
-                    '-o', str(binary), str(source)], check=True, stdout=subprocess.DEVNULL)
+    glslang(['--target-env', environment, *defines, '-I' + str(ROOT/'third_party/nrd/Shaders'),
+             '-I' + str(ROOT/'third_party/sharc/include'), str(source)], binary)
     if backend in OPTIMIZED or backend in INLINED:
+
         optimized = binary.with_suffix('.opt.spv')
         subprocess.run(['spirv-opt', '-O', '--target-env=' + environment, str(binary), '-o', str(optimized)],
                        check=True)
@@ -236,7 +277,8 @@ def compress(data):
 
 def decompressed_stages(backend):
     """SPIR-V of every stage from a compressed backend's embedded.h and embedded.bin."""
-    directory = shader_directory(backend)
+    directory = generated_directory(backend)
+
     blob = (directory / 'embedded.bin').read_bytes()
     entries = re.findall(r'\{(\d+)u, (\d+)u, (\d+)u\}, // (\w+)', (directory / 'embedded.h').read_text())
     stages = {}
@@ -247,23 +289,6 @@ def decompressed_stages(backend):
         stages[stage] = data
     return stages
 
-
-def validate_stage(backend, stage, text, temporary):
-    _, environment, _ = BACKENDS[backend]
-    target = shader_directory(backend) / 'embedded.h'
-    binary = Path(temporary) / (backend + '-' + stage + '.spv')
-    if backend in OPTIMIZED:
-        data = text.get(stage)
-        if data is None:
-            raise SystemExit(f'{target}: missing {stage} shader')
-        binary.write_bytes(data)
-    else:
-        match = re.search(stage + r'Shader\[\] = \{(.*?)\};', text, re.S)
-        if not match:
-            raise SystemExit(f'{target}: missing {stage} shader')
-        words = [int(word, 16) for word in re.findall(r'0x[0-9a-fA-F]+', match[1])]
-        binary.write_bytes(struct.pack('<' + 'I' * len(words), *words))
-    subprocess.run(['spirv-val', '--target-env', environment, str(binary)], check=True)
 
 
 def compressed_output(backend, stages, results):
@@ -282,35 +307,42 @@ def compressed_output(backend, stages, results):
         header += f'  {{{len(blob)}u, {len(packed)}u, {len(data)}u}}, // {stage}\n'
         blob += packed
     header += '};\ninline constexpr const char *stageNames[] = {\n'
-    header += ''.join(f'  "{stage}",\n' for stage in stages) + '};\n}\n'
+    header += ''.join(f'  "{stage}",\n' for stage in stages) + '};\n'
+    header += '// embedded.bin (embedded_data.cpp).\nextern const unsigned char embeddedData[];\nextern const size_t embeddedDataBytes;\n}\n'
     return header, bytes(blob)
 
 
-def process(backends, check, validate, jobs=None):
+def embedded_data(generator, namespace):
+    """embedded_data.cpp: the blob beside it, by #embed (found next to the including file)."""
+    return ('// Generated by scripts/shaders/' + generator + '; do not edit.\n'
+            '#include <cstddef>\n'
+            '#if defined(__clang__)\n'
+            '#pragma clang diagnostic ignored "-Wc23-extensions"\n'
+            '#pragma clang diagnostic ignored "-Wc++11-narrowing"\n'
+            '#endif\n'
+            'namespace remix::' + namespace + ' {\n'
+            'extern const unsigned char embeddedData[];\nextern const size_t embeddedDataBytes;\n'
+            'const unsigned char embeddedData[] = {\n#embed "embedded.bin"\n};\n'
+            'const size_t embeddedDataBytes = sizeof(embeddedData);\n}\n')
+
+
+def process(backends, jobs=None):
     """Compiles every stage of the backends concurrently, one task per stage."""
     with tempfile.TemporaryDirectory() as temporary, \
             ThreadPoolExecutor(max_workers=jobs or os.cpu_count() or 1) as pool:
-        if validate:
-            texts = {b: decompressed_stages(b) if b in OPTIMIZED else
-                     (shader_directory(b) / 'embedded.h').read_text() for b in backends}
-            tasks = [pool.submit(validate_stage, b, stage, texts[b], temporary)
-                     for b in backends for stage in BACKENDS[b][2]]
-            for task in tasks:
-                task.result()
-            return
+
         tasks = {(b, stage): pool.submit(compile_stage, b, stage, temporary)
                  for b in backends for stage in BACKENDS[b][2]}
         for backend in backends:
             namespace, _, stages = BACKENDS[backend]
-            target = shader_directory(backend) / 'embedded.h'
+            target = generated_directory(backend) / 'embedded.h'
+            target.parent.mkdir(parents=True, exist_ok=True)
+
             if backend in OPTIMIZED:
                 header, blob = compressed_output(backend, stages, {s: tasks[backend, s].result() for s in stages})
-                if check:
-                    if target.read_text() != header or target.with_suffix('.bin').read_bytes() != blob:
-                        raise SystemExit(f'{target}: embedded shaders differ from these shader tools')
-                else:
-                    target.write_text(header)
-                    target.with_suffix('.bin').write_bytes(blob)
+                target.write_text(header)
+                target.with_suffix('.bin').write_bytes(blob)
+                target.with_name('embedded_data.cpp').write_text(embedded_data('generate.py ' + backend, namespace))
                 continue
             output = ('// Generated by scripts/shaders/generate.py ' + backend + '; do not edit.\n'
                       '#pragma once\n#include <cstdint>\nnamespace remix::' + namespace + ' {\n')
@@ -321,37 +353,63 @@ def process(backends, check, validate, jobs=None):
                     output += '  ' + ', '.join(f'0x{x:08x}' for x in words[i:i+8]) + ',\n'
                 output += '};\n'
             output += '}\n'
-            if check:
-                if target.read_text() != output:
-                    raise SystemExit(f'{target}: embedded shaders differ from this glslang version')
-            else:
-                target.write_text(output)
+            target.write_text(output)
+
+
+def use_tools(record):
+    """The pinned tools toolchain.py recorded, ahead of any installed ones."""
+    tools = json.loads(Path(record).read_text())
+    os.environ['PATH'] = os.pathsep.join(tools['path'] + [os.environ.get('PATH', '')])
+    if 'spirv-cross' in tools:
+        os.environ['REMIX_SPIRV_CROSS'] = tools['spirv-cross']
+
+
+def write_depfile(path, target):
+    def escape(name):
+        return name.replace('\\', '/').replace(':', '\\:').replace(' ', '\\ ')
+    Path(path).write_text(escape(target) + ': ' + ' '.join(escape(d) for d in sorted(DEPENDENCIES)) + '\n')
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     # metal translates the other backends' SPIR-V; 'all' leaves it out (it needs macOS and Xcode).
     parser.add_argument('backend', choices=[*BACKENDS, 'nrd', 'fsr31', 'metal', 'all'])
-    parser.add_argument('--jobs', type=int, help='Maximum concurrent GLSL compilation/validation tasks')
+    parser.add_argument('--jobs', type=int, help='Maximum concurrent GLSL compilation tasks')
+    parser.add_argument('--output', type=Path, help='Generated src/native tree (the build\'s); default _work/shaders/src/native')
+    parser.add_argument('--tools', type=Path, help='Pinned tools recorded by toolchain.py --output')
+    parser.add_argument('--depfile', type=Path, help='Make-style dependencies of the generated files')
+    parser.add_argument('--depfile-target', default='', help='The output the depfile names')
+
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument('--check', action='store_true', help='Compare generated output without modifying files')
-    mode.add_argument('--validate', action='store_true', help='Validate checked-in SPIR-V using only spirv-val')
+    # Only NRD's and FSR 3.1's SPIR-V is committed; the other backends' is generated by the build.
+    mode.add_argument('--check', action='store_true', help='nrd, fsr31: compare generated output without modifying files')
+    mode.add_argument('--validate', action='store_true', help='nrd, fsr31: validate committed SPIR-V using only spirv-val')
     args = parser.parse_args()
     if args.jobs is not None and args.jobs < 1:
-        parser.error('--jobs must be a positive integer')
+        parser.error('--jobs must be positive')
+    global OUTPUT
+    if args.output:
+        OUTPUT = args.output.resolve()
+    if args.tools:
+        use_tools(args.tools)
     selected = [*BACKENDS, 'nrd', 'fsr31'] if args.backend == 'all' else [args.backend]
     glsl = [backend for backend in selected if backend in BACKENDS]
-    if args.jobs is not None and not glsl:
-        parser.error('--jobs requires a GLSL backend')
+    if (args.check or args.validate) and (glsl or 'metal' in selected):
+        parser.error('--check and --validate apply to the committed nrd and fsr31 SPIR-V only')
     if glsl:
-        process(glsl, args.check, args.validate, args.jobs)
+        process(glsl, args.jobs)
+
     if 'metal' in selected:
         import metal
-        metal.process(args.check, args.validate)
+        metal.process()
+    if args.depfile:
+        write_depfile(args.depfile, args.depfile_target)
     for backend in selected:
         if backend in ('nrd', 'fsr31'):
             (nrd if backend == 'nrd' else fsr31).process(args.check, args.validate)
 
 
 if __name__ == '__main__':
+    # metal.py imports generate: one module, so it sees --output and records dependencies here.
+    sys.modules['generate'] = sys.modules[__name__]
     main()

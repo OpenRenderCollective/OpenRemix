@@ -1,4 +1,26 @@
 native_include = include_directories('.')
+# The renderer's shaders are generated at build time (scripts/shaders/generate.py) into
+# this build directory, where the sources' "pathtrace/shaders/embedded.h" includes find
+# them; none of the output is committed. The tools are built at pinned revisions, once
+# per machine (scripts/shaders/toolchain.py), so every machine generates the same SPIR-V.
+shader_python = find_program('python3')
+shader_scripts = meson.project_source_root() / 'scripts/shaders'
+# Generation imports these modules; bytecode would land in the source tree.
+shader_env = {'PYTHONDONTWRITEBYTECODE' : '1'}
+shader_tools = custom_target('shader-tools',
+  output : 'shader-tools.json',
+  command : [shader_python, shader_scripts / 'toolchain.py', '--output', '@OUTPUT@',
+             '--cache', get_option('shader_tools')] + (metal_backend ? ['--metal'] : []),
+  depend_files : files('../../scripts/shaders/toolchain.py', '../../scripts/shaders/toolchain.lock.json'),
+  env : shader_env, console : true)
+shader_generate = [shader_python, shader_scripts / 'generate.py', '--jobs', '4', '--tools', shader_tools,
+                   '--output', meson.current_build_dir(), '--depfile', '@DEPFILE@', '--depfile-target', '@OUTPUT0@']
+shader_generator_files = files('../../scripts/shaders/generate.py', '../../scripts/shaders/metal.py')
+subdir('raster/shaders')
+subdir('denoise/shaders')
+subdir('postfx/shaders')
+subdir('upscale/shaders')
+subdir('pathtrace/shaders')
 image_include = include_directories('../../third_party', is_system : true)
 # Metal builds share the API, scene, platform and settings code and replace the
 # Vulkan runtime and renderers with src/native/metal (one backend per build).
@@ -14,8 +36,11 @@ if metal_backend
     subdir('usd')
   endif
   subdir('metal')
+  subdir('metal/shaders')
   remix = shared_library('remix',
-    api_sources + metal_shared_sources + metal_sources,
+    # The Metal sources include the Vulkan backends' generated headers too (pathtrace/gpu.h).
+    api_sources + metal_shared_sources + metal_sources + [metal_shaders[0], metal_shaders[2]] +
+      [raster_shaders, denoise_shaders, postfx_shaders, upscale_shaders, pathtrace_shaders[0]],
     name_prefix : 'lib',
     link_with : usd_libraries + [shell_platform, scene_library],
     dependencies : shell_deps + [xz_dep, filesystem_dep],

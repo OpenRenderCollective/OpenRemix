@@ -64,7 +64,7 @@ float regirWeight(LightNode node,vec3 lo,vec3 hi) {
   vec3 delta=.5*(node.maximum.xyz+node.minimumPower.xyz)-.5*(lo+hi);
   vec3 nearest=max(abs(delta)-halfSize-.5*(hi-lo),vec3(0));
   float near2=dot(nearest,nearest),radius2=dot(halfSize,halfSize);
-  float distance2=max(near2,.01*radius2);
+  float distance2=max(sqrt(near2*dot(delta,delta)),.01*radius2);
   return localFalloff(near2)*node.minimumPower.w/max(max(distance2,node.maximum.w),1e-12);
 }
 #ifdef REGIR_PRESAMPLE_PASS

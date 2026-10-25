@@ -178,8 +178,7 @@ int main(int argc, char **argv) {
               {mesh(0xd4, panel, light), true}};
   }
   if (!status)
-    std::fprintf(stderr, "F12: settings panel\n");
-  bool panel = false, f12 = false;
+    std::fprintf(stderr, "Alt+X: settings panel (the runtime's shortcut; set it in the panel's header)\n");
 
   // One frame: camera, instances and presentation (with the capture request).
   auto drawFrame = [&](const remixapi_WindowState &state, bool capture = false) {
@@ -226,16 +225,6 @@ int main(int argc, char **argv) {
     remixapi_WindowState state = {};
     if (!check(api.GetWindowState(&state), "GetWindowState") || state.closeRequested)
       break;
-    // F12 toggles the developer panel (the host owns the shortcut).
-    remixapi_Bool down = false;
-    if (check(api.IsKeyDown(REMIXAPI_KEY_F12, &down), "IsKeyDown") && down && !f12) {
-      panel = !panel;
-      check(api.SetUIState(panel ? REMIXAPI_UI_STATE_ADVANCED : REMIXAPI_UI_STATE_NONE), "SetUIState");
-    }
-    f12 = down;
-    // Closing the panel with its own button.
-    if (panel && api.GetUIState() == REMIXAPI_UI_STATE_NONE)
-      panel = false;
     drawFrame(state, screenshot && frame + 1 == maxFrames);
     std::this_thread::sleep_for(std::chrono::milliseconds(state.drawableWidth ? 1 : 50));
   }

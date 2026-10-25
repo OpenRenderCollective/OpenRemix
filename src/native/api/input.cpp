@@ -31,8 +31,10 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_PumpEvents() {
   std::lock_guard lock(g_apiMutex);
   try {
     const auto status = g_runtime.window().pumpEvents();
-    if (status == REMIXAPI_ERROR_CODE_SUCCESS)
+    if (status == REMIXAPI_ERROR_CODE_SUCCESS) {
+      g_runtime.menuShortcut();
       g_runtime.completeScreenshot();
+    }
     return status;
   } catch (const std::bad_alloc &) {
     return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;

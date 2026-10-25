@@ -24,6 +24,10 @@ namespace remix {
     float exposure = .98f, autoExposureTarget = .2f, autoExposureSpeed = 2;
     float autoExposureCentre = .75f, autoExposureMinEv = -16.3f, autoExposureMaxEv = 3.1f;
     float bloomIntensity = .01f, bloomRadius = .85f;
+    // Per-channel contrast before the tonemapper, pivoting on middle grey:
+    // c = (c / .18)^contrastAmount * .18 after exposure.
+    bool contrast = false;
+    float contrastAmount = 1.15f;
     uint32_t fsrQuality = 3;
     float fsrSharpness = 0.f;
     bool sigma = true;
@@ -63,6 +67,11 @@ namespace remix {
     // Drop local-light history where moved lights or moved occluders (a closing
     // door; ReSTIR history samples re-tested) changed the light.
     bool localHistoryConfidence = true;
+    // Where a moving object's shadow just arrived or left (the denoiser
+    // restarted the pixel), the share of the light distance the local
+    // denoiser is told, rising to all of it over eight frames: lower keeps
+    // the moving shadow sharper and grainier, higher smoother and paler.
+    float movingShadowBlur = .125f;
     // Trace an indirect continuation path from each transparent sheet (glass,
     // blended surfaces). Off: a non-PBR sheet takes the denoised indirect light
     // of the surface behind it (much cheaper; transparent layers cost about a
@@ -235,6 +244,16 @@ namespace remix {
     float sunAngularDiameter = -1; // -1 inherits the distant light's diameter.
     bool rasterPrimary = true;
     bool waterIndirectReuse = true;
+    // Caustics: light through translucent surfaces with normal maps (water,
+    // bumpy glass) focused by their waves or bumps. Strength scales the
+    // bending (.4: as the material bends it); contrast raises the result to a
+    // power (past 1, brighter lines and darker gaps).
+    bool caustics = true;
+    float causticsStrength = .4f, causticsContrast = 1;
+    // Caustics fade in over this depth (meters, see sceneScale) behind the
+    // surface: shallow water and thin glass have none, as light has not yet
+    // been focused. 0: at once.
+    float causticsDepth = .5f;
     bool translucencyDenoiser = true, translucencyReuse = true;
     bool pbrLocalReuse = true; // Experimental previous-frame secondary local lighting.
     bool sky = true;

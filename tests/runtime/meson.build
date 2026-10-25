@@ -27,7 +27,7 @@ endif
 
 profile_test = executable('remix-profiles-test', 'profiles.cpp',
   '../../src/native/runtime/settings.cpp', '../../src/native/runtime/profiles.cpp',
-  '../../src/native/ui/profile_actions.cpp', include_directories : native_include,
+  '../../src/native/ui/profile_actions.cpp', include_directories : [remix_public_include, native_include],
   dependencies : filesystem_dep)
 test('Configuration profiles and unsaved actions', profile_test, args : ['@CONFIG_DIR@'])
 if get_option('gpu_tests')

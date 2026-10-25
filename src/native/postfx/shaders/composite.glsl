@@ -5,5 +5,10 @@ vec3 postColor(vec3 color, vec2 uv) {
   if(postSettings.values.y>0)
     color=mix(color,textureLod(bloomImage,uv,0).rgb,postSettings.values.y);
   float automatic=postSettings.values.z>0 ? postState.exposureState.x : 1;
-  return color*(postSettings.values.x*automatic);
+  color*=postSettings.values.x*automatic;
+  // Per-channel contrast around middle grey, before the tonemapper (w: the
+  // exponent; 0 off).
+  if(postSettings.values.w>0)
+    color=pow(max(color,vec3(0))/.18,vec3(postSettings.values.w))*.18;
+  return color;
 }

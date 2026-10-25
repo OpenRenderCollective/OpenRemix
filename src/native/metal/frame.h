@@ -42,7 +42,8 @@ namespace remix::metal::trace {
     uint64_t restirCurrent = 0, restirHistoryRead = 0, restirHistoryWrite = 0, restirRemap = 0;
     uint32_t restirConfig[4] = {}; // candidates, spatial samples, temporal M cap, flags (1 initial visibility)
     float restirParams[4] = {};    // spatial radius (pixels), emitter count, reserved
-    uint64_t regirRead = 0, regirWrite = 0, regirSlots = 0, regirReserved = 0;
+    uint64_t regirRead = 0, regirWrite = 0, regirSlots = 0;
+    uint64_t caustics = 0; // pathtrace/gpu.h: strength, contrast, half float focus depth; 0 off
     uint32_t regirConfig[4] = {}; // cell capacity, slots per cell, cells per world unit (float bits), active
     uint64_t orcaTable = 0, orcaReserved = 0;
     uint32_t orcaConfig[4] = {}; // entry capacity, sparse tile size, voxel levels, active
@@ -78,15 +79,28 @@ namespace remix::metal::trace {
     // remixapi_CameraMediumEXT: transmittance colour, measurement distance (0: in air).
     float cameraMedium[4] = {};
     uint64_t sheetResults = 0; // SheetResults: the sheet lighting pass's transport
-    uint64_t reserved = 0;
+    // Sky guiding (sky_guiding.glsl): each world cell's learned sky directions,
+    // last frame's (read, 0: none yet) and this frame's. skyGuideConfig: slot
+    // capacity, cells per world unit (float bits), guided share (float bits), active.
+    uint64_t skyGuideRead = 0;
+    uint64_t skyGuideWrite = 0, skyGuideReserved = 0;
+    uint32_t skyGuideConfig[4] = {};
     // Camera rays (pathtrace.comp ray()): inverseCamera relative to the eye,
     // which the shader adds back. In single precision the absolute matrix
     // holds the eye's translation scaled by the inverse near plane, and loses
     // the ray directions to rounding far from the origin (near geometry such
     // as a view model jitters as the camera moves).
     Matrix inverseCameraRelative{};
+    // Local occlusion probes (pathtrace.comp, localOcclusionConfidence): per
+    // pixel, the arrived share of its local light, last frame's (0: none)
+    // and this frame's. localProbeParams: movingShadowBlur, reserved.
+    uint64_t localProbeRead = 0, localProbeWrite = 0;
+    float localProbeParams[4] = {};
   };
-  static_assert(sizeof(Frame) == 1136 && offsetof(Frame, inverseCameraRelative) == 1072 && offsetof(Frame, volumeGrid) == 912 && offsetof(Frame, volumePrevious) == 1024 && offsetof(Frame, sparseList) == 880 && offsetof(Frame, sparseConfig) == 896 && offsetof(Frame, cameraCull) == 864 && offsetof(Frame, cutConfig) == 816 && offsetof(Frame, orcaParams) == 800 && offsetof(Frame, regirConfig) == 752 && offsetof(Frame, restirCurrent) == 656 && offsetof(Frame, visibilityNodes) == 592 && offsetof(Frame, pathConfig) == 528 &&
+  static_assert(sizeof(Frame) == 1200 && offsetof(Frame, localProbeRead) == 1168 &&
+                offsetof(Frame, localProbeParams) == 1184 &&
+                offsetof(Frame, inverseCameraRelative) == 1104 &&
+                offsetof(Frame, skyGuideRead) == 1064 && offsetof(Frame, skyGuideConfig) == 1088 && offsetof(Frame, volumeGrid) == 912 && offsetof(Frame, volumePrevious) == 1024 && offsetof(Frame, sparseList) == 880 && offsetof(Frame, sparseConfig) == 896 && offsetof(Frame, cameraCull) == 864 && offsetof(Frame, cutConfig) == 816 && offsetof(Frame, orcaParams) == 800 && offsetof(Frame, regirConfig) == 752 && offsetof(Frame, restirCurrent) == 656 && offsetof(Frame, visibilityNodes) == 592 && offsetof(Frame, pathConfig) == 528 &&
                 offsetof(Frame, firefly) == 512 && offsetof(Frame, indirectResults) == 496 &&
                 offsetof(Frame, lightGuideRead) == 384 && offsetof(Frame, lightGuideConfig) == 400 &&
                 offsetof(Frame, lightNodes) == 336 && offsetof(Frame, localConfig) == 352 &&

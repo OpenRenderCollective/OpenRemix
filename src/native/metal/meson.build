@@ -27,6 +27,7 @@ metal_shared_sources = files(
   '../runtime/profiles.cpp',
   '../runtime/settings.cpp',
   '../ui/mods.cpp',
+  '../ui/menu_shortcut.cpp',
   '../ui/panel.cpp',
   '../ui/profile_actions.cpp',
   '../ui/profiles.cpp',

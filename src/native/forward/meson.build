@@ -1,3 +1,11 @@
+subdir('shaders')
+subdir('bake/shaders')
+subdir('probe_batch/shaders')
+subdir('ray/shaders')
+subdir('ray/gi_shaders')
+subdir('water/shaders')
+subdir('water/ray_shaders')
+
 oidn_deps = []
 oidn_args = []
 if get_option('oidn_root') != ''
@@ -12,6 +20,7 @@ lightmap_denoise_library = static_library('remix_lightmap_denoise', 'lightmap/de
   cpp_args : oidn_args, gnu_symbol_visibility : 'hidden', pic : true)
 
 forward_library = static_library('remix_forward',
+  forward_shaders, bake_shaders, probe_batch_shaders, live_ray_shaders, live_gi_shaders, water_shaders, water_ray_shaders,
   'probe_batch/batch.cpp',
   'bake/reference_capture.cpp',
   'bake/probe_receiver_report.cpp',

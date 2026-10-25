@@ -1,7 +1,7 @@
 #pragma once
 // The tracer's frame-pacing diagnostics that the API layer reads by name
-// (api/lifecycle.cpp timings.request). The Vulkan tracer declares the first
-// three in pathtrace/renderer.h beside its Vulkan types; these are copies of
+// (api/lifecycle.cpp timings.request). The Vulkan tracer declares these
+// in pathtrace/renderer.h beside its Vulkan types; these are copies of
 // them for Metal builds, which time none of those Vulkan steps (they stay
 // zero). The sparse and volumetric states come from the shared headers.
 #include "pathtrace/block_costs.h"
@@ -32,4 +32,17 @@ namespace remix::trace {
     bool update = false, staticChanged = false, keptPrefix = false;
   };
   inline AccelCosts g_accelNow, g_accelCosts;
+  struct SceneCosts {
+    double total = 0, frame = 0, prune = 0, stage = 0, gather = 0, split = 0, tree = 0, visibility = 0;
+  };
+  struct SceneCostTotals {
+    SceneCosts sum, slowest;
+    uint64_t frames = 0;
+    uint32_t lights = 0;
+  };
+  inline SceneCostTotals g_sceneCosts;
+  struct LightUploads {
+    uint64_t whole = 0, partial = 0, bytes = 0, regions = 0;
+  };
+  inline LightUploads g_lightUploads;
 } // namespace remix::trace

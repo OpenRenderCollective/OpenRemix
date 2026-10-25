@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 #include <numeric>
 #include <tuple>
@@ -58,8 +59,17 @@ namespace remix::scene {
       e.directionCone[3] = light.coneCos;
       e.shaping[0] = light.softness;
       e.shaping[1] = light.focus;
+      e.shaping[2] = float(light.ies);
       for (unsigned v = 0; v < 3; ++v)
         std::copy_n(light.corners[v], 3, e.corners[v]);
+      // Free in every emitter: the volumetric radiance scale.
+      e.corners[1][3] = light.volumetric;
+      // A sphere's corners are free: its cookie's projection.
+      if (light.cookie && !light.triangle) {
+        e.shaping[3] = float(light.cookie);
+        std::copy_n(light.cookieUp, 3, e.corners[0]);
+        e.corners[0][3] = light.cookieTan;
+      }
       return e;
     }
   } // namespace
@@ -68,7 +78,9 @@ namespace remix::scene {
     using Key = std::tuple<uint32_t, uint64_t, uint32_t, uint64_t>;
     Key keyOf(const SphereLight &light) { return {light.triangle, light.group, light.rank, light.id}; }
     bool sameGeometry(const SphereLight &a, const SphereLight &b) {
-      bool same = a.coneCos == b.coneCos && a.softness == b.softness && a.focus == b.focus &&
+      bool same = a.coneCos == b.coneCos && a.softness == b.softness && a.focus == b.focus && a.ies == b.ies &&
+                  a.cookie == b.cookie && a.cookieTan == b.cookieTan &&
+                  std::equal(a.cookieUp, a.cookieUp + 3, b.cookieUp) &&
                   std::equal(a.direction, a.direction + 3, b.direction) && a.radius == b.radius &&
                   std::equal(a.position, a.position + 3, b.position);
       for (unsigned v = 0; v < 3; ++v)
@@ -769,11 +781,12 @@ namespace remix::scene {
       // The count median on the widest axis keeps the tree balanced, but it
       // can keep a small nearby light with huge distant emitters (a 3D
       // skybox's lit windows) for several levels, where the shared box's
-      // distance regularization starves it. Take a surface area heuristic
-      // (by perimeter) split instead when it is at least twice as cheap,
-      // above a depth bound. It reads only the emitters' positions and
-      // counts, which refits keep: a refit must match a rebuild (power and
-      // radius change by refit).
+      // distance regularization starves it; so do a few lights far below a
+      // map, stretching a box 16000 units. Take a surface area heuristic
+      // (by perimeter) split instead when it is at least a fifth cheaper,
+      // above a depth bound (uniform grids keep the median up to about .85).
+      // It reads only the emitters' positions and counts, which refits keep:
+      // a refit must match a rebuild (power and radius change by refit).
       if (level < m_splitDepthLimit) {
         std::vector<Extent> extents(end - begin), suffix(end - begin + 1);
         for (uint32_t i = begin; i < end; ++i) {
@@ -816,7 +829,7 @@ namespace remix::scene {
             }
           }
         }
-        if (bestCost < .5 * medianCost) {
+        if (bestCost < .8 * medianCost) {
           axis = bestAxis;
           middle = bestSplit;
         }
@@ -922,6 +935,17 @@ namespace remix::scene {
     return (1 - t) * (1 - t) * (1 + 2 * t);
   }
 
+  bool LightBvh::save(const char *path) const {
+    FILE *out = std::fopen(path, "wb");
+    if (!out)
+      return false;
+    const uint32_t counts[2] = {uint32_t(m_nodes.size()), uint32_t(m_emitters.size())};
+    const bool written = std::fwrite(counts, sizeof(counts), 1, out) == 1 &&
+                         std::fwrite(m_nodes.data(), sizeof(LightNode), m_nodes.size(), out) == m_nodes.size() &&
+                         std::fwrite(m_emitters.data(), sizeof(LightEmitter), m_emitters.size(), out) == m_emitters.size();
+    return std::fclose(out) == 0 && written;
+  }
+
   double LightBvh::weight(const LightNode &node, const float position[3], const float normal[3],
                           double range) {
     double distance2 = 0, radius2 = 0, toward = 0, reach = 0, nearest2 = 0;
@@ -941,7 +965,9 @@ namespace remix::scene {
       return 0;
     const double cosine =
         std::min(1., (toward + std::sqrt(radius2)) / std::sqrt(std::max({distance2, radius2, 1.e-12})));
+    // Nearest-box times center distance (light_bvh.glsl).
+    const double regularized = std::max(std::sqrt(nearest2 * distance2), .01 * radius2);
     return falloff(nearest2, range) * node.minimumPower[3] * cosine /
-           std::max({nearest2, .01 * radius2, double(node.maximum[3]), 1.e-12});
+           std::max({regularized, double(node.maximum[3]), 1.e-12});
   }
 } // namespace remix::scene

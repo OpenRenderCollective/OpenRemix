@@ -165,6 +165,16 @@ namespace remix::config {
             m_panel.width = std::clamp(width, 240.f, 1600.f);
         } else if (key == "panel.tab" && value.size() == 1 && value[0] >= '0' && value[0] <= '5')
           m_panel.tab = value[0] - '0';
+        else if (key == "panel.menuKey" || key == "panel.menuModifiers") {
+          uint32_t number = 0;
+          const auto end = value.data() + value.size();
+          if (std::from_chars(value.data(), end, number).ptr != end)
+            continue;
+          if (key == "panel.menuKey" && number >= REMIXAPI_KEY_A && number <= REMIXAPI_KEY_PAGE_DOWN)
+            m_panel.menuKey = number;
+          else if (key == "panel.menuModifiers" && number <= 15)
+            m_panel.menuModifiers = number;
+        }
       }
     }
     refresh();
@@ -377,7 +387,9 @@ namespace remix::config {
     const auto text = "# OpenRemix session state (not rendering settings)\nlastProfile = " + m_last +
                       "\npanel.side = " + (m_panel.right ? "right" : "left") +
                       "\npanel.width = " + std::to_string(m_panel.width) +
-                      "\npanel.tab = " + std::to_string(m_panel.tab) + "\n";
+                      "\npanel.tab = " + std::to_string(m_panel.tab) +
+                      "\npanel.menuKey = " + std::to_string(m_panel.menuKey) +
+                      "\npanel.menuModifiers = " + std::to_string(m_panel.menuModifiers) + "\n";
     if (!atomicWrite(m_directory / "state.conf", text, true, error)) {
       if (!m_message.empty())
         m_message += '\n';

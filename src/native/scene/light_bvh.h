@@ -3,6 +3,8 @@
 #include "scene/types.h"
 #include <array>
 #include <atomic>
+#include <mutex>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -26,6 +28,10 @@ namespace remix::scene {
     uint32_t links[4] = {};
   };
   static_assert(sizeof(LightEmitter) == 112 && sizeof(LightNode) == 48);
+  // Dev aid (lighttree.request, api/lifecycle.cpp): the renderer saves its
+  // next combined light tree to this path (LightBvh::save) and clears it.
+  inline std::mutex g_lightTreeSaveMutex;
+  inline std::string g_lightTreeSavePath;
   // A sphere light that moved, reshaped, changed power or switched on/off since
   // the previous update: its emitter now and before (zero radiance when absent).
   struct MovedLight {
@@ -90,6 +96,9 @@ namespace remix::scene {
     uint32_t leafCount() const { return uint32_t(m_clusters.size()); }
     const std::vector<LightEmitter> &emitters() const { return m_emitters; }
     const std::vector<LightNode> &nodes() const { return m_nodes; }
+    // The node and emitter counts (two uint32), then the nodes and emitters
+    // as uploaded, for offline analysis of selection probabilities.
+    bool save(const char *path) const;
     // The lights in emitter order: static slots (by type and identity, as
     // built; unlit when the light is gone), then the dynamic lights.
     const std::vector<SphereLight> &lights() const { return m_lights; }

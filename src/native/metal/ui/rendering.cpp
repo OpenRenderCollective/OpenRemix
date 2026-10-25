@@ -101,6 +101,16 @@ namespace remix {
         ImGui::SetTooltip("Samples torches and other local lights at water and glossy glass surfaces.\n"
                           "Off: sun and sky only there; reflections still show locally lit surroundings.");
       ImGui::EndDisabled();
+      ui::Checkbox("Deeper translucent layers reuse the front layer's light", &options.layerReuse);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Layers behind the first translucent layer of a pixel (the back of a glass pane,\n"
+                          "a window seen through another) take its light instead of sampling lights and\n"
+                          "tracing paths of their own: one lit layer per pixel. Off: every layer is lit.");
+      ui::Checkbox("Short reflection paths on translucent layers", &options.shortSheetPaths);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Paths from glass and other translucent layers end at their first hit, lit there by\n"
+                          "the radiance cache or by its direct light. Off: they bounce on like an opaque\n"
+                          "surface's paths (deeper bounces in glass reflections, much slower).");
       ImGui::BeginDisabled(rrActive || options.indirectClamp > 0);
       ui::Checkbox("Reuse opaque lighting through translucency", &options.translucencyReuse);
       if (ImGui::IsItemHovered())
@@ -112,6 +122,23 @@ namespace remix {
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Shares diffuse lighting across small flat water patches with TAA or FSR.\nEdges, "
                           "overlapping layers and raw reference rendering retain full sampling.");
+      ui::Checkbox("Caustics", &options.caustics);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Light through water and bumpy glass is focused by their normal maps' waves\n"
+                          "and bumps into caustics on what it lights.");
+      ImGui::BeginDisabled(!options.caustics);
+      ui::SliderFloat("Caustics strength", &options.causticsStrength, 0.f, 1.f, "%.2f");
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("How strongly the surface bends the light (.4: as water and glass do).");
+      ui::SliderFloat("Caustics focus depth (m)", &options.causticsDepth, 0.f, 4.f, "%.2f");
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Caustics fade in over this depth behind the surface: shallow water and thin\n"
+                          "glass have none, as light has not yet been focused. 0: at once.");
+      ui::SliderFloat("Caustics contrast", &options.causticsContrast, 0.f, 6.f, "%.2f");
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Exaggerates the caustics: past 1, brighter lines and darker gaps\n"
+                          "(not physical; for surfaces whose waves barely focus the light).");
+      ImGui::EndDisabled();
       ImGui::BeginDisabled(rrActive || options.localDirectClamp > 0 || options.indirectClamp > 0);
       ui::Checkbox("Experimental PBR lighting reuse", &options.pbrLocalReuse);
       ImGui::EndDisabled();

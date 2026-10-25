@@ -134,7 +134,7 @@ namespace remix::metal::denoise {
         pixel = MTLPixelFormatR32Float;
       if (i == PsrMirror)
         pixel = MTLPixelFormatRGBA32Uint;
-      if (i == Motion || i == FrontMotion)
+      if (i == Motion || i == FrontMotion || i == LocalMotion)
         pixel = MTLPixelFormatRGBA32Float;
       if (i == Penumbra)
         pixel = MTLPixelFormatR16Float;
@@ -149,6 +149,8 @@ namespace remix::metal::denoise {
         h = (height + 4) / 5;
       } else if (i == MovingA || i == MovingB)
         w = h = 1;
+      if (i == LocalMotion)
+        w = local ? width : 1, h = local ? height : 1;
       g.images[i] = g.texture(pixel, w, h);
     }
     for (auto &uniform : g.uniforms)
@@ -475,7 +477,9 @@ namespace remix::metal::denoise {
       case R::OUT_SHADOW_TRANSLUCENCY:
         return images[ShadowOutput];
       case R::IN_MV:
-        return images[pass.foreground ? FrontMotion : Motion];
+        return images[pass.foreground                                      ? FrontMotion
+                      : pass.local || (pass.pbr && local && frame.local[0]) ? LocalMotion
+                                                                            : Motion];
       case R::IN_NORMAL_ROUGHNESS:
         return images[pass.foreground ? FrontNormal : Normal];
       case R::IN_VIEWZ:

@@ -1,4 +1,19 @@
 {
+  "glslang": {
+    "repository": "https://github.com/KhronosGroup/glslang.git",
+    "tag": "vulkan-sdk-1.4.350.0",
+    "revision": "275822a6261ee689aadb1da5f09a0ec2f058685c"
+  },
+  "spirv-tools": {
+    "repository": "https://github.com/KhronosGroup/SPIRV-Tools.git",
+    "tag": "vulkan-sdk-1.4.350.0",
+    "revision": "0539c81f69a3daeb706fd3477dca61435b475156"
+  },
+  "spirv-headers": {
+    "repository": "https://github.com/KhronosGroup/SPIRV-Headers.git",
+    "tag": "vulkan-sdk-1.4.350.0",
+    "revision": "ad9184e76a66b1001c29db9b0a3e87f646c64de0"
+  },
   "dxc": {
     "release": "v1.9.2602.24",
     "version": "1.9.0.5191",

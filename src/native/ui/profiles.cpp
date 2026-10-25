@@ -52,7 +52,7 @@ namespace remix::ui {
     const auto path = profiles.folder().u8string();
     ImGui::TextWrapped("%s", reinterpret_cast<const char *>(path.c_str()));
     ImGui::TextWrapped(
-        "Add .conf files here, then Refresh. Saving is explicit; closing F12 keeps edits in memory.");
+        "Add .conf files here, then Refresh. Saving is explicit; closing the panel keeps edits in memory.");
     feedback(profiles);
   }
 

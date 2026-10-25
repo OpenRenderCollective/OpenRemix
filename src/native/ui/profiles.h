@@ -20,6 +20,10 @@ namespace remix::ui {
     char name[256]{};
     bool nameDialog = false, duplicate = false, focusName = false;
     bool restoreTab = true;
+    // The panel's shortcut (ui/menu_shortcut.cpp): its name, whether the next key
+    // pressed becomes it, and the header button's request for that.
+    std::string menuShortcut = "Alt+X";
+    bool capturingMenuShortcut = false, captureMenuShortcut = false;
   };
   void drawProfiles(config::Profiles &profiles, ProfileUi &ui);
   void drawProfileFooter(config::Profiles &profiles, ProfileUi &ui);

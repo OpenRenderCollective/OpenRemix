@@ -2830,3 +2830,27 @@ batching or disabling the prepass globally. Prepass-off shifts work into opaque 
 other scenes, overdraw, moving/viewmodel receivers and live brush shells remain necessary
 controls. Keep both current defaults. Avoid attributing inclusive opaque/depth timings to
 independent costs or promoting a setting from sequential fixed-view batches alone.
+
+
+### Official-main integration checkpoint
+
+The feature branches incorporate official native main through `3d2b7f54` and adapter
+main through `b89a651`. Forward+ and its GPU fixtures now follow upstream build-time
+shader generation with pinned tools; generated headers/binaries are not committed.
+Windows scratch cleanup, dependency escaping and manual output paths have regression
+coverage. The combined path-tracing frame retains both IES and measured-sheet data,
+with explicit uniform alignment and generated-SPIR-V offset checks. Legacy bake-statistics
+prefix handling remains compatible; the stale layout assertion and Python audit DLL
+search environment are corrected.
+
+Selected CPU/ABI, UI, hardware transport/ownership, measured-sheet and input tests pass.
+A reduced-budget two-backend adapter replay completes, but its first cold run reports
+NVIDIA low-latency timeline diagnostics. A low-latency-disabled control is clean. Keep
+that distinction: this is not blanket validation, visual-quality, gameplay performance
+or deployment acceptance. Investigate the latency path with suitable validation/driver
+controls before closing it. The playable install remains unchanged.
+
+Upstream path-traced IES profiles, cookies and related light/media features are retained;
+Forward+ parity is not established by merging them. Follow up with immutable capture,
+cache identity, transport/shading and GPU quality coverage when adding those features.
+The existing probe-quality, static-model, cubemap, live-game and bake-time gates remain.

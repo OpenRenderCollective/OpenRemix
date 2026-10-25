@@ -26,18 +26,23 @@ Shared build/package tools are in `scripts/common`; platform entry points are in
 Keep local outputs under `_work/{build,deps,packages,reports}`. Meson manages its SDL fallback
 source/cache under `subprojects`; `SDL3.wrap` is tracked.
 
-Readable shaders and generated SPIR-V are co-located in each renderer's `shaders` folder.
-Normal builds need no shader compiler. Use `python3 scripts/shaders/generate.py all --check`
-and `--validate` to check source/binary agreement and SPIR-V validity.
+Readable shaders live in each renderer's `shaders` folder. The build generates their SPIR-V
+(and the Metal libraries) into the build directory with `scripts/shaders/generate.py`; never commit
+generated `embedded.h`, `embedded.bin` or `embedded_data.cpp`. The tools are glslang and
+SPIRV-Tools (and for Metal the SPIRV-Cross fork) at the revisions in `toolchain.lock.json`, which
+`scripts/shaders/toolchain.py` builds once per machine into `_work/tools/shader-toolchain`
+(`-Dshader_tools=` moves the cache). Only NRD's DXC SPIR-V (`denoise/shaders/nrd_embedded.h`),
+FSR 3.1's (`upscale/shaders/fsr31.h`) and the blue-noise tables stay committed; check them with
+`generate.py nrd --check` / `fsr31 --check`.
 Path-tracing SPIR-V is optimized with `spirv-opt -O` (inlined modules compile about twice as
 fast on NVIDIA) and stored as XZ streams in `pathtrace/shaders/embedded.bin`; `embedded.h`
-indexes them and `trace::shader()` decompresses a stage on first use (vendored XZ Embedded).
-Regeneration needs glslang and SPIRV-Tools and compiles every stage concurrently.
+indexes them, `embedded_data.cpp` embeds the blob and `trace::shader()` decompresses a stage on
+first use (vendored XZ Embedded).
 Standalone driver probes in `tools/vulkan-probes` require `-Dvulkan_probes=true` and shader tools.
 Experimental MoltenVK tooling in `tools/moltenvk` remains separate from SDK-based platform builds.
 `-Dgpu_backend=metal` builds the native Metal backend in `src/native/metal` instead of the Vulkan
-runtime (macOS; see `docs/features/metal-backend.md`). Its libraries are generated from the same
-shaders by `scripts/shaders/generate.py metal`; check them with `generate.py metal --check`.
+runtime (macOS; see `docs/features/metal-backend.md`). The build generates its libraries from the
+same shaders (`scripts/shaders/generate.py metal`).
 
 Preserve `ref/`, Git history, linked worktrees, and archived evidence. Do not discard ignored
 artifacts without an explicit cleanup scope from the user. Track architecture and feature docs only;

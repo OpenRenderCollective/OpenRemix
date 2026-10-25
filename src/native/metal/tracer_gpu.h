@@ -220,6 +220,18 @@ namespace remix::metal {
     void beginLightGuiding(id<MTLCommandBuffer> command);
     void finishLightGuiding(id<MTLCommandBuffer> command);
     void readLightGuiding();
+    // Sky guiding (pathtrace/sky_guiding.cpp): per world cell and facing, a
+    // histogram of the directions its first-surface sky rays found the sky in,
+    // trained this frame and read the next (two banks, like lightGuiding).
+    struct SkyGuiding {
+      static constexpr uint32_t capacity = 16384, stride = 68; // words per slot: key, total, 2 reserved, 64 bins
+      std::shared_ptr<Buffer> history[2];
+      uint32_t writeIndex = 0;
+      bool valid = false, active = false;
+      float cellSize = 0;
+    } skyGuiding;
+    void configureSkyGuiding(Frame &frame, const TraceOptions &options);
+    void beginSkyGuiding(id<MTLCommandBuffer> command);
     // pathtrace/ray_profile.cpp (REMIX_RAY_PROFILE=file): structural ray
     // counters from one pixel in 64, appended to a CSV per completed frame.
     // Timing comparisons must run without it.

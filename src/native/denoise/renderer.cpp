@@ -23,10 +23,10 @@ namespace remix::denoise {
     require(f.shaderStorageImageExtendedFormats, "extended storage-image formats");
     // The temporal set is used alongside the tracer set (ten storage images,
     // 4096 textures, two acceleration structures, a storage buffer and a UBO).
-    require(p.limits.maxPerStageDescriptorStorageImages >= BaseImageCount + 36 &&
-                p.limits.maxDescriptorSetStorageImages >= BaseImageCount + 36,
+    require(p.limits.maxPerStageDescriptorStorageImages >= BaseImageCount + 37 &&
+                p.limits.maxDescriptorSetStorageImages >= BaseImageCount + 37,
             "temporal storage-image descriptor limit");
-    require(p.limits.maxPerStageResources >= 4096 + BaseImageCount + 41, "temporal per-stage resource limit");
+    require(p.limits.maxPerStageResources >= 4096 + BaseImageCount + 42, "temporal per-stage resource limit");
     const VkFormat formats[] = {VK_FORMAT_R16G16B16A16_SFLOAT,
                                 VK_FORMAT_R32G32B32A32_SFLOAT,
                                 VK_FORMAT_R32_SFLOAT,
@@ -65,9 +65,9 @@ namespace remix::denoise {
       return false;
     VkPhysicalDeviceProperties p;
     vkGetPhysicalDeviceProperties(physical, &p);
-    if (p.limits.maxPerStageDescriptorStorageImages < SigmaImageCount + 34 ||
-        p.limits.maxDescriptorSetStorageImages < SigmaImageCount + 34 ||
-        p.limits.maxPerStageResources < 4096 + SigmaImageCount + 39)
+    if (p.limits.maxPerStageDescriptorStorageImages < SigmaImageCount + 35 ||
+        p.limits.maxDescriptorSetStorageImages < SigmaImageCount + 35 ||
+        p.limits.maxPerStageResources < 4096 + SigmaImageCount + 40)
       return false;
     for (auto format : {VK_FORMAT_R32_UINT, VK_FORMAT_R8G8_UNORM, VK_FORMAT_R8G8B8A8_UNORM}) {
       VkFormatProperties fp;
@@ -87,9 +87,9 @@ namespace remix::denoise {
     VkPhysicalDeviceProperties p;
     vkGetPhysicalDeviceProperties(physical, &p);
     const uint32_t count = BaseImageCount + (sigma ? 3 : 0) + (split ? 4 : 2);
-    return p.limits.maxPerStageDescriptorStorageImages >= count + 36 &&
-           p.limits.maxDescriptorSetStorageImages >= count + 36 &&
-           p.limits.maxPerStageResources >= 4096 + count + 41;
+    return p.limits.maxPerStageDescriptorStorageImages >= count + 37 &&
+           p.limits.maxDescriptorSetStorageImages >= count + 37 &&
+           p.limits.maxPerStageResources >= 4096 + count + 42;
   }
   uint32_t Renderer::Gpu::memoryType(uint32_t bits, VkMemoryPropertyFlags flags) {
     for (uint32_t i = 0; i < memory.memoryTypeCount; ++i)
@@ -244,7 +244,7 @@ namespace remix::denoise {
       if (i == Depth || i == PreviousDepth || i == Confidence || i == RrHitDistance || i == FrontDepth || i == FrontConfidence ||
           i == LocalConfidence)
         format = VK_FORMAT_R32_SFLOAT;
-      if (i == Motion || i == FrontMotion)
+      if (i == Motion || i == FrontMotion || i == LocalMotion)
         format = VK_FORMAT_R32G32B32A32_SFLOAT;
       if (i == PsrMirror)
         format = VK_FORMAT_R32G32B32A32_UINT;
@@ -259,6 +259,8 @@ namespace remix::denoise {
         size = {(extent.width + 4) / 5, (extent.height + 4) / 5};
       else if (i == MovingA || i == MovingB)
         size = {1, 1};
+      if (i == LocalMotion)
+        size = local ? extent : VkExtent2D{1, 1};
       g.images[i] = g.texture(format, size);
     }
     g.uniform = g.buffer(sizeof(Frame));
@@ -289,7 +291,7 @@ namespace remix::denoise {
                                               &g.inputLayout));
     VkDescriptorPoolSize sizes[] = {
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-         BaseImageCount + 28 + (sigma ? 3u : 0u) + (local ? 2u : 0u) + (g.split ? 2u : 0u)},
+         BaseImageCount + 29 + (sigma ? 3u : 0u) + (local ? 2u : 0u) + (g.split ? 2u : 0u)},
         {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1}};
     for (auto &size : sizes)
       size.descriptorCount *= gpuFrameCount;

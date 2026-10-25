@@ -26,6 +26,32 @@ namespace remix {
       if (overrideSize)
         ui::SliderFloat("Sun diameter (degrees)", &options.sunAngularDiameter, 0.f, 3.f, "%.3f");
       ui::Checkbox("Sky illumination", &options.sky);
+      if (options.sky) {
+        int rays = int(options.skySamples);
+        if (ui::SliderInt("Sky rays per pixel", &rays, 1, 16))
+          options.skySamples = uint32_t(rays);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Sky visibility rays at each pixel's surface, averaged. Indoors few directions\n"
+                            "reach an opening, so one ray finds the sky rarely and brightly and the light\n"
+                            "boils; more rays steady it. Each is one shadow ray.");
+        int sheetRays = int(std::min(options.sheetSkySamples, options.skySamples));
+        if (ui::SliderInt("Sky rays on translucent layers", &sheetRays, 1, int(options.skySamples)))
+          options.sheetSkySamples = uint32_t(sheetRays);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Sky rays at glass and water surfaces, at most the rays above. Each lit layer\n"
+                            "casts them on top of the surface behind it, so fewer keep glass cheap.");
+        ImGui::BeginDisabled(options.skySamples < 2);
+        ui::Checkbox("Sky guiding", &options.skyGuiding);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Each area learns which directions reach the sky (openings, windows) and the\n"
+                            "extra sky rays aim there. Diffuse and legacy surfaces; needs 2 or more rays.");
+        if (options.skyGuiding) {
+          ui::SliderFloat("Guided share", &options.skyGuideShare, 0.f, .95f, "%.2f");
+          ui::DragFloat("Sky guide cell size", &options.skyGuideCellSize, .01f, .05f, 100, "%.2f m");
+          options.skyGuideCellSize = std::clamp(options.skyGuideCellSize, .05f, 100.f);
+        }
+        ImGui::EndDisabled();
+      }
     }
     if (ImGui::CollapsingHeader("Volumetrics")) {
       ui::Checkbox("Volumetric fog", &options.volumetrics);
@@ -130,6 +156,15 @@ namespace remix {
       ui::Checkbox("Emissive lighting", &options.emissiveLights);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Controls light cast onto the world. Emissive textures remain visible.");
+      {
+        int cluster = int(std::clamp(options.emissiveClusterSize, 1u, 64u));
+        if (ui::SliderInt("Emissive triangles per light cluster", &cluster, 1, 64))
+          options.emissiveClusterSize = uint32_t(cluster);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Neighbouring glowing triangles of a surface are grouped (1: none). Each keeps its\n"
+                            "shape and color; larger groups make the light tree cheaper to update and walk, at\n"
+                            "some noise close to large glowing surfaces.");
+      }
       ui::Checkbox("Adaptive local-light sampling", &options.adaptiveLocalSampling);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Smoothly raises the local-light sample budget toward four near important light "
@@ -159,6 +194,11 @@ namespace remix {
             "one shadow ray. Helps a dominant nearby light (a flashlight) among many distant ones.");
       ImGui::BeginDisabled(rrActive);
       ui::Checkbox("Blue noise local lights", &options.blueNoiseLocalLights);
+      ui::Checkbox("Blue noise bounce and sky directions", &options.blueNoiseSky);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Each pixel's first bounce and sky rays take directions from a blue-noise sequence:\n"
+                          "neighbouring pixels and frames cover the sky evenly, which steadies the light\n"
+                          "after denoising. No extra rays.");
       ImGui::EndDisabled();
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Uses blue noise for primary torch and emissive sample positions with local "
@@ -202,8 +242,11 @@ namespace remix {
       }
       {
         int history = int(options.indirectHistoryFrames);
-        if (ui::SliderInt("Indirect denoiser history (0 = default)", &history, 0, 64))
+        if (ui::SliderInt("Indirect denoiser history (0 = default)", &history, 0, 63))
           options.indirectHistoryFrames = uint32_t(history);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Frames REBLUR averages bounce light over. The default is half a second of frames.\n"
+                            "Longer hides more boiling; lighting changes take longer to settle.");
       }
       ui::Checkbox("Presampled light cells (ReGIR)", &options.regir);
       if (ImGui::IsItemHovered())
@@ -289,6 +332,10 @@ namespace remix {
       ui::SliderFloat("Update sample limit (x cell mean, 0: none)", &options.sharcFireflyClamp, 0, 100);
       ui::Checkbox("Cache on moving surfaces", &options.sharcDynamicSurfaces);
       ui::Checkbox("Cache on glossy surfaces", &options.sharcGlossySurfaces);
+      ui::Checkbox("Footprint test on cache reads", &options.sharcFootprintTest);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("On: a path reads cached lighting only where it has spread wider than a cache cell.\n"
+                          "Off: faster (fewer traced bounces), but coarse distant cells can read too dark.");
       auto cache = sharcStatistics();
       ImGui::TextWrapped("%s | %u / %u entries | %.1f MiB",
                          cache.active ? (cache.updatePaths ? "Caching" : "Enabled (idle)") : "Inactive",

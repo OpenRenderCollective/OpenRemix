@@ -26,10 +26,9 @@ uint leafEmitter(LightEmitters emitters,uvec4 links,inout uint state,out float s
 }
 float localFalloff(float distance2) {
   float reach=frame.localScale.y;
-  if(reach<=0)return 1;
   // Preserve the inner 75%; a C1 fade reaches exactly zero at the bound.
   float t=clamp((distance2*frame.localScale.w-.5625)*(16.0/7.0),0,1);
-  return (1-t)*(1-t)*(1+2*t);
+  return reach<=0?1:(1-t)*(1-t)*(1+2*t);
 }
 float lightWeight(LightNode node,vec3 p,vec3 n) {
   vec3 halfSize=.5*(node.maximum.xyz-node.minimumPower.xyz);
@@ -38,7 +37,9 @@ float lightWeight(LightNode node,vec3 p,vec3 n) {
   // Cull by the box's farthest reach along the normal, not its enclosing
   // sphere's: a wide cluster behind the receiving plane (lit windows of
   // buildings beyond a wall) otherwise draws samples that all end at zero.
-  if(dot(delta,n)+dot(halfSize,abs(n))<=0)return 0;
+  // (A select, not an early return: the tree walk interleaves two samples'
+  // weights, which a branch per child would serialize.)
+  bool facing=dot(delta,n)+dot(halfSize,abs(n))>0;
   vec3 nearest=max(abs(delta)-halfSize,vec3(0));
   float cosine=min(1,(dot(delta,n)+sqrt(radius2))*inversesqrt(max(max(dot(delta,delta),radius2),1e-12)));
   // Nearest-box distance keeps nearby lights competitive, but becomes zero
@@ -46,8 +47,13 @@ float lightWeight(LightNode node,vec3 p,vec3 n) {
   // into its smallest emitter-sized distance: that starves sibling clusters
   // and produces enormous inverse-PDF samples. A tenth of the cluster radius
   // regularizes this importance estimate; emitter radiance is unchanged.
-  float distance2=max(dot(nearest,nearest),.01*radius2);
-  return localFalloff(dot(nearest,nearest))*node.minimumPower.w*cosine/max(max(distance2,node.maximum.w),1e-12);
+  // Alone, the nearest distance also credits a tall box's whole flux to its
+  // closest corner: a cluster of street lamps whose box reaches down to a
+  // tunnel ceiling starved the tunnel's own light. The product with the
+  // center distance keeps nearby boxes ahead of far ones.
+  float distance2=max(sqrt(dot(nearest,nearest)*dot(delta,delta)),.01*radius2);
+  float weight=localFalloff(dot(nearest,nearest))*node.minimumPower.w*cosine/max(max(distance2,node.maximum.w),1e-12);
+  return facing?weight:0;
 }
 // Potentially visible lights (remixapi_SetVisibilityPartitionEXT): the
 // shading point's cluster comes from the host's BSP; a table row per cluster
@@ -87,6 +93,21 @@ bool lightNodeVisible(LightNodes nodes,uint index,vec3 p,vec3 n) {
 }
 float nodeWeight(LightNodes nodes,uint index,vec3 p,vec3 n) {
   return lightNodeVisible(nodes,index,p,n)?lightWeight(nodes.data[index],p,n):0;
+}
+// lightNodeVisible as a factor, without branches, for the interleaved walk.
+// table: culling applies (visibilityTableApplies). Without a table, a word of
+// the node buffer stands in for the load and the result is 1.
+float lightNodeVisibility(LightNodes nodes,uint index,bool table) {
+  uint word=table?uint(visibilityRow)*frame.visibilityConfig.x+(index>>5):0u;
+  uint bits=VisibilityWords(table?frame.visibilityTable:uint64_t(nodes)).data[word];
+  return !table||index>=frame.visibilityConfig.z||(bits>>(index&31u)&1u)!=0?1.0:0.0;
+}
+// Whether lightNodeVisible consults the table at p; brings visibilityRow up
+// to date for lightNodeVisibility.
+bool visibilityTableApplies(LightNodes nodes,vec3 p,vec3 n) {
+  if(!visibilityCulling||frame.visibilityTable==0||uint64_t(nodes)!=frame.lightNodes||frame.visibilityConfig.z==0)return false;
+  lightNodeVisible(nodes,0,p,n);
+  return visibilityRow>=0;
 }
 // A fixed topological cut keeps all nearby clusters in the budget estimate.
 // Following only the largest-weight child can abruptly choose an unrelated
@@ -168,6 +189,8 @@ bool localOccluder(accelerationStructureEXT scene,vec3 origin,vec3 direction,ino
   hit.n=normalize(cross(model*vec4(b-a,0),model*vec4(c-a,0)));
   if(dot(hit.n,direction)>0)hit.n=-hit.n;
   hit.transmission=sheetTransmission(s,color,tri/3,bary,abs(dot(hit.n,direction)),hit.t);
+  if((s.state.w&2048u)!=0)hit.transmission*=causticTint(s,tri/3,bary,hit.t);
+
   return false;
 }
 vec3 localVisibility(vec3 origin,vec3 endpoint) {
@@ -200,14 +223,46 @@ vec3 localVisibility(vec3 origin,vec3 endpoint) {
 // A sphere candidate includes solid-angle weighting, but not discrete selection.
 struct LocalCandidate { vec3 physical; vec3 specular; vec3 endpoint; float distance; };
 #include "triangle_sampling.glsl"
+// IES profile (scene/ies.h): 256 samples from 0 to 180 degrees off the axis.
+layout(buffer_reference,std430,buffer_reference_align=4) readonly buffer IesProfiles { float bins[]; };
+float iesProfile(float profile,float cosine) {
+  if(profile<.5||frame.iesProfiles==0)return 1;
+  float x=acos(clamp(cosine,-1,1))*(255/3.14159265359);
+  uint i=min(uint(x),254u),base=(uint(profile+.5)-1u)*256u+i;
+  IesProfiles table=IesProfiles(frame.iesProfiles);
+  return mix(table.bins[base],table.bins[base+1],x-float(i));
+}
 float emitterShaping(LightEmitter light,vec3 outgoing) {
   float cosine=dot(light.directionCone.xyz,outgoing);
   float outer=light.directionCone.w;
-  if(outer<=-1)return light.shaping.y>0?pow(max(cosine,0),light.shaping.y):1;
+  float ies=iesProfile(light.shaping.z,cosine);
+  if(outer<=-1)return ies*(light.shaping.y>0?pow(max(cosine,0),light.shaping.y):1);
   if(cosine<=outer)return 0;
   float inner=cos(acos(clamp(outer,-1,1))*(1-clamp(light.shaping.x,0,1)));
   float edge=inner>outer?smoothstep(outer,inner,cosine):1;
-  return edge*(light.shaping.y>0?pow(max(cosine,0),light.shaping.y):1);
+  return ies*edge*(light.shaping.y>0?pow(max(cosine,0),light.shaping.y):1);
+}
+// Light cookie of a sphere light: slot + 1 in shaping.w, the projection's up
+// and tan(width / 2) in corners[0]; the frame's table gives each slot's
+// texture + 1. Dark outside the projection.
+layout(buffer_reference,std430,buffer_reference_align=4) readonly buffer LightCookies { uint textures[]; };
+vec3 emitterCookie(LightEmitter light,vec3 outgoing) {
+  if(light.shaping.w<.5||light.radiance.w!=0||frame.lightCookies==0)return vec3(1);
+  vec3 axis=light.directionCone.xyz;
+  float along=dot(axis,outgoing);
+  if(along<=0)return vec3(0);
+  vec3 up=light.corners[0].xyz,right=cross(axis,up);
+  vec2 uv=vec2(dot(outgoing,right),dot(outgoing,up))/(along*light.corners[0].w)*.5+.5;
+  if(any(lessThan(uv,vec2(0)))||any(greaterThan(uv,vec2(1))))return vec3(0);
+  uint index=LightCookies(frame.lightCookies).textures[uint(light.shaping.w+.5)-1u];
+  if(index==0u)return vec3(1);
+  // Colour times alpha: a mask in either works (alpha-only cookies are common).
+  vec4 texel=textureLod(textures[nonuniformEXT(index-1u)],vec2(uv.x,1-uv.y),0);
+  return texel.rgb*texel.a;
+}
+// What a light emits toward `outgoing`: shaping, IES profile and cookie.
+vec3 emitterRadiance(LightEmitter light,vec3 outgoing) {
+  return light.radiance.rgb*emitterShaping(light,outgoing)*emitterCookie(light,outgoing);
 }
 LocalCandidate triangleCandidate(LightEmitter light,Hit hit,inout uint state,bool angular,vec2 blue,uint stream) {
   LocalCandidate result;result.physical=result.specular=vec3(0);result.endpoint=hit.p;result.distance=0;
@@ -231,7 +286,7 @@ LocalCandidate triangleCandidate(LightEmitter light,Hit hit,inout uint state,boo
   // Uniform area PDF 1/A, converted to solid angle: d^2/(A*cosEmitter).
   float integral=spherical?(emitterCosine>0?omega*max(0,dot(hit.n,direction))/3.14159265359:0)
                            :.5*twiceArea*geometry/(3.14159265359*distance2);
-  vec3 scale=light.radiance.rgb*emitterShaping(light,-direction)*integral
+  vec3 scale=emitterRadiance(light,-direction)*integral
       *localFalloff(dot(light.positionRadius.xyz-hit.p,light.positionRadius.xyz-hit.p))*frame.localScale.x;
   result.physical=materialResponse(hit,direction,result.specular)*scale;
   result.specular*=scale;
@@ -263,7 +318,7 @@ LocalCandidate localCandidate(LightEmitter light,Hit hit,inout uint state,bool a
   vec3 perpendicular=delta-direction*projected;
   float root=sqrt(max(0,radius*radius-dot(perpendicular,perpendicular)));
   float distance=max(0,inside?projected+root:projected-root);
-  vec3 scale=light.radiance.rgb*emitterShaping(light,-direction)*(2*oneMinusCos*cosine*attenuation)*frame.localScale.x;
+  vec3 scale=emitterRadiance(light,-direction)*(2*oneMinusCos*cosine*attenuation)*frame.localScale.x;
   result.physical=materialResponse(hit,direction,result.specular)*scale;
   result.specular*=scale;
   result.endpoint=hit.p+direction*distance;result.distance=distance;
@@ -272,13 +327,25 @@ LocalCandidate localCandidate(LightEmitter light,Hit hit,inout uint state,bool a
 float localLuminance(vec3 value) { return dot(value,vec3(.2126,.7152,.0722)); }
 // Luminance-weighted direction (xyz) and weight (w) of the local-light samples
 // at the opaque primary vertex: the SH direction of their contribution to the
-// denoised PBR signal (addPbrLocal).
+// denoised PBR specular signal (addPbrLocalSpecular).
 vec4 localLightDirection=vec4(0);
 void localDirection(vec3 toward,vec3 contribution) {
 #ifdef TEMPORAL
   float length2=dot(toward,toward),weight=localLuminance(contribution);
   if(!(length2>0)||!(weight>0)||!(weight<1e30))return;
   localLightDirection+=vec4(toward*(weight*inversesqrt(length2)),weight);
+#endif
+}
+// The primary vertex's local light this frame with and without its shadow
+// rays (luminance of the samples' estimates): their ratio is the share of the
+// light that arrived. The next frame compares it (localOcclusionConfidence,
+// pathtrace.comp). Recorded while the pass that compares it sets localProbing.
+float localShadowed=0,localUnshadowed=0;bool localProbing=false;
+void noteLocalProbe(vec3 visibility,vec3 estimate) {
+#ifdef TEMPORAL
+  float unshadowed=localLuminance(estimate);
+  if(!localProbing||!(unshadowed>0)||!(unshadowed<1e30))return;
+  localUnshadowed+=unshadowed;localShadowed+=localLuminance(estimate*visibility);
 #endif
 }
 // Stratified light candidates for very small sets (RT Gems II, ch. 22-23).
@@ -311,6 +378,7 @@ vec3 smallLocalLighting(LightNodes nodes,LightEmitters emitters,Hit hit,uint sta
     float pdf=(1-mixWeight)*localLuminance(selected.physical)/total+(selectedIndex==preferred?mixWeight:0);
     vec3 estimate=selected.physical/pdf;
     vec3 visibility=localVisibility(offsetRay(hit.p,hit.ng),selected.endpoint);
+    noteLocalProbe(visibility,estimate);
     vec3 contribution=estimate*visibility,specularContribution=selected.specular/pdf*visibility;
     clampLighting(hit,contribution,specularContribution,threshold);
     result+=contribution;specular+=specularContribution;
@@ -389,6 +457,7 @@ vec3 resampledLocalLighting(LightNodes nodes,LightEmitters emitters,Hit hit,uint
     if(total<=0)continue;
     vec3 estimate=selected.physical*(total/(float(count)*localLuminance(selected.physical)));
     vec3 visibility=localVisibility(offsetRay(hit.p,hit.ng),selected.endpoint);
+    noteLocalProbe(visibility,estimate);
     vec3 contribution=estimate*visibility,specularContribution=selected.specular*(total/(float(count)*localLuminance(selected.physical)))*visibility;
     clampLighting(hit,contribution,specularContribution,threshold);
     result+=contribution;specular+=specularContribution;
@@ -470,6 +539,41 @@ void splitLocalLighting(Hit hit,uint state,uint samples,out vec3 torch,out vec3 
   vec3 torchSpecular,emissionSpecular;
   splitLocalLighting(hit,state,samples,torch,emission,torchDistance,emissionDistance,torchSpecular,emissionSpecular);
 }
+// One level of a sample's descent from its children's weights (a, b), all
+// selects; a finished walk (walking false) keeps its state.
+void lightStep(float a,float b,uvec2 children,inout uint index,inout float pdf,inout float u,inout bool walking) {
+  bool dead=a==0&&b==0,step=walking&&!dead;
+  float probability=lightSplit(a,b);
+  bool left=u<probability;
+  float share=left?probability:1-probability;
+  index=step?(left?children.x:children.y):index;
+  pdf=walking?(dead?0:pdf*share):pdf;
+  u=step?min((left?u:u-probability)/share,0.99999994):u;
+  walking=step;
+}
+// Two samples' descents, interleaved. A level is a chain of dependent loads
+// and weight math that a single walk cannot overlap (the pass stalled on
+// instruction dependencies, not memory); the second chain fills that latency.
+// Each walk is exactly the one-sample walk. ub < 0: walk only the first.
+void lightWalkPair(LightNodes nodes,vec3 p,vec3 n,float ua,float ub,
+                   out uint indexA,out float pdfA,out uint indexB,out float pdfB) {
+  indexA=indexB=0;pdfA=1;pdfB=ub<0?-1:1;
+  bool activeA=true,activeB=ub>=0,table=visibilityTableApplies(nodes,p,n);
+  uvec2 rootChildren=nodes.data[0].links.xy;
+  for(;;) {
+    uvec4 linksA=nodes.data[indexA].links,linksB=nodes.data[indexB].links;
+    activeA=activeA&&linksA.w>1;activeB=activeB&&linksB.w>1;
+    if(!activeA&&!activeB)break;
+    // A finished walk weighs the root's children: valid, discarded loads.
+    uvec2 childrenA=activeA?linksA.xy:rootChildren,childrenB=activeB?linksB.xy:rootChildren;
+    float a0=lightNodeVisibility(nodes,childrenA.x,table)*lightWeight(nodes.data[childrenA.x],p,n);
+    float a1=lightNodeVisibility(nodes,childrenA.y,table)*lightWeight(nodes.data[childrenA.y],p,n);
+    float b0=lightNodeVisibility(nodes,childrenB.x,table)*lightWeight(nodes.data[childrenB.x],p,n);
+    float b1=lightNodeVisibility(nodes,childrenB.y,table)*lightWeight(nodes.data[childrenB.y],p,n);
+    lightStep(a0,a1,childrenA,indexA,pdfA,ua,activeA);
+    lightStep(b0,b1,childrenB,indexB,pdfB,ub,activeB);
+  }
+}
 bool regirLookup=true; // localLighting may use ReGIR pools (false at directly seen surfaces)
 // Returns material-demodulated total radiance and its specular component.
 vec3 localLighting(Hit hit,uint state,uint samples,out float lightDistance,bool useGuiding,out vec3 specular,float threshold) {
@@ -504,9 +608,26 @@ vec3 localLighting(Hit hit,uint state,uint samples,out float lightDistance,bool 
   // whose light the cell rates unlikely but is near lit about one pixel in
   // K with a large weight, cell-sized splotches the denoiser kept.
   uint pool=useGuiding||!regirLookup?regirNone:regirPool(hit.p,state);
+  // The tree (or pool) variates of the samples that are not guided are
+  // stratified, (j + xi)/walked: samples no longer pile onto one bright
+  // cluster by chance. Each keeps its marginal distribution, so every
+  // estimate and PDF is as before; only their sum varies less.
+  uint guideSeed=hash(state^0x67756964u),walkSeed=hash(state^0x7374726au),walked=0,stratum=0;
+  // Tree walks go in pairs: the next unguided sample's (stratum's) leaf and
+  // PDF wait here (pendingPdf < 0: none).
+  uint pendingIndex=0;float pendingPdf=-1;
   for(uint sampleIndex=0;sampleIndex<adaptiveSamples;++sampleIndex) {
-    bool guided=guideMix>0&&lightRandom(state)<guideMix;
-    uint index=0;float selectionPdf=1,u=lightRandom(state);
+    uint guideState=hash(guideSeed+sampleIndex);
+    walked+=guideMix>0&&lightRandom(guideState)<guideMix?0u:1u;
+  }
+  for(uint sampleIndex=0;sampleIndex<adaptiveSamples;++sampleIndex) {
+    uint guideState=hash(guideSeed+sampleIndex);
+    bool guided=guideMix>0&&lightRandom(guideState)<guideMix;
+    uint index=0;float selectionPdf=1,u=0;
+    if(!guided) {
+      uint strataState=hash(walkSeed+stratum*0x9e3779b9u);
+      u=min((float(stratum++)+lightRandom(strataState))/float(walked),.99999994);
+    }
     if(guided) {
       if(preferredPdf<0)preferredPdf=lightBasePdf(nodes,hit,preferred);
       index=preferred;selectionPdf=preferredPdf;
@@ -514,14 +635,15 @@ vec3 localLighting(Hit hit,uint state,uint samples,out float lightDistance,bool 
     else if(pool!=regirNone) {
       if(!regirSample(pool,u,index,selectionPdf))continue;
     }
-    else while(nodes.data[index].links.w>1) {
-      uvec4 links=nodes.data[index].links;
-      float a=nodeWeight(nodes,links.x,hit.p,hit.n),b=nodeWeight(nodes,links.y,hit.p,hit.n);
-      if(a==0&&b==0){selectionPdf=0;break;}
-      float probability=lightSplit(a,b);
-      if(u<probability) {index=links.x;selectionPdf*=probability;u/=probability;}
-      else {index=links.y;selectionPdf*=1-probability;u=(u-probability)/(1-probability);}
-      u=min(u,0.99999994);
+    else if(pendingPdf>=0) {index=pendingIndex;selectionPdf=pendingPdf;pendingPdf=-1;}
+    else {
+      // The next stratum's variate, exactly as its own sample draws it.
+      float next=-1;
+      if(stratum<walked) {
+        uint strataState=hash(walkSeed+stratum*0x9e3779b9u);
+        next=min((float(stratum)+lightRandom(strataState))/float(walked),.99999994);
+      }
+      lightWalkPair(nodes,hit.p,hit.n,u,next,index,selectionPdf,pendingIndex,pendingPdf);
     }
     // Full mixture PDF, including the BVH component even for a guided draw.
     selectionPdf=(1-guideMix)*selectionPdf+(index==preferred?guideMix:0);
@@ -557,7 +679,7 @@ vec3 localLighting(Hit hit,uint state,uint samples,out float lightDistance,bool 
       vec3 perpendicular=delta-direction*projected;
       float root=sqrt(max(0,radius*radius-dot(perpendicular,perpendicular)));
       distance=max(0,inside?projected+root:projected-root);
-      vec3 scale=light.radiance.rgb*emitterShaping(light,-direction)*(2*oneMinusCos*cosine*attenuation)*frame.localScale.x;
+      vec3 scale=emitterRadiance(light,-direction)*(2*oneMinusCos*cosine*attenuation)*frame.localScale.x;
       physical=materialResponse(hit,direction,physicalSpecular)*scale;physicalSpecular*=scale;
       endpoint=hit.p+direction*distance;
     }
@@ -565,6 +687,7 @@ vec3 localLighting(Hit hit,uint state,uint samples,out float lightDistance,bool 
     if(localLuminance(physical)<=0)continue;
     vec3 estimate=physical/selectionPdf;
     vec3 visibility=localVisibility(offsetRay(hit.p,hit.ng),endpoint);
+    noteLocalProbe(visibility,estimate);
     vec3 contribution=estimate*visibility,specularContribution=physicalSpecular/selectionPdf*visibility;
     clampLighting(hit,contribution,specularContribution,threshold);
     result+=contribution;specular+=specularContribution;

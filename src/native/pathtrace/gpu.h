@@ -100,9 +100,9 @@ namespace remix::trace::detail {
   };
   // TraceSurface: pathtrace/frame_tables.h.
   static_assert(sizeof(TraceVertex) == 48);
-  struct Frame {
+  struct alignas(16) Frame {
     Matrix inverseCamera, camera;
-    float eye[4] = {}, direction[4] = {}, radiance[4] = {};
+    float eye[4] = {}, direction[4] = {}, radiance[4] = {}; // radiance w: the sun's volumetric scale
     uint32_t config[4] = {}, target[4] = {};
     float jitter[4] = {};      // primary offset; z water reuse, w blue-noise sun/local bits
     float skyRadiance[4] = {}; // linear uniform environment; w reserved
@@ -130,9 +130,14 @@ namespace remix::trace::detail {
     uint64_t restirCurrent = 0, restirHistoryRead = 0, restirHistoryWrite = 0, restirRemap = 0;
     uint32_t restirConfig[4] = {}; // candidates, spatial samples, temporal M cap, flags (1 initial visibility)
     float restirParams[4] = {};    // spatial radius (pixels), emitter count, reserved
-    uint64_t regirRead = 0, regirWrite = 0, regirSlots = 0, regirReserved = 0;
+    uint64_t regirRead = 0, regirWrite = 0, regirSlots = 0;
+    // Caustics (visibility.glsl causticTint): strength (8 bits) and contrast
+    // (8 bits, in 32nds), then the half float focus depth in world units
+    // (bits 16-31); 0 off.
+    uint64_t caustics = 0;
     uint32_t regirConfig[4] = {}; // cell capacity, slots per cell, cells per world unit (float bits), active
-    uint64_t orcaTable = 0, orcaReserved = 0;
+    // lightCookies: each light cookie slot's texture in this frame's table + 1.
+    uint64_t orcaTable = 0, lightCookies = 0;
     uint32_t orcaConfig[4] = {}; // entry capacity, sparse tile size, voxel levels, active
     float orcaParams[4] = {};    // smallest voxel (world units), level growth, minimum samples, maximum relative error
     // remixapi_InstanceInfoMaskEXT CUT. cutConfig: first coverage texture + 1
@@ -173,7 +178,10 @@ namespace remix::trace::detail {
     // bits), guided share of the extra sky rays (float bits), active.
     uint64_t skyGuideRead = 0;
     uint64_t skyGuideWrite = 0;
-    uint64_t sheetMaterials = 0; // Optional measured-sheet optics; descriptor-indexed.
+    // IES profiles (scene/ies.h): kIesBins floats each, a light's
+    // shaping.z the profile + 1.
+    uint64_t iesProfiles = 0;
+
     uint32_t skyGuideConfig[4] = {};
     // Camera rays (pathtrace.comp ray()): inverseCamera relative to the eye,
     // which the shader adds back. In single precision the absolute matrix
@@ -181,9 +189,19 @@ namespace remix::trace::detail {
     // the ray directions to rounding far from the origin (near geometry such
     // as a view model jitters as the camera moves).
     Matrix inverseCameraRelative{};
+    // Local occlusion probes (pathtrace.comp, localOcclusionConfidence): per
+    // pixel, the arrived share of its local light, last frame's (0: none)
+    // and this frame's. localProbeParams: movingShadowBlur, reserved.
+    uint64_t localProbeRead = 0, localProbeWrite = 0;
+    float localProbeParams[4] = {};
+    uint64_t sheetMaterials = 0; // Optional measured-sheet optics; descriptor-indexed.
   };
-  static_assert(sizeof(Frame) == 1168 && offsetof(Frame, inverseCameraRelative) == 1104 &&
-                offsetof(Frame, sheetMaterials) == 1080 && offsetof(Frame, skyGuideRead) == 1064 && offsetof(Frame, skyGuideConfig) == 1088 && offsetof(Frame, volumeGrid) == 912 && offsetof(Frame, volumePrevious) == 1024 && offsetof(Frame, sparseList) == 880 && offsetof(Frame, sparseConfig) == 896 && offsetof(Frame, cameraCull) == 864 && offsetof(Frame, cutConfig) == 816 && offsetof(Frame, orcaParams) == 800 && offsetof(Frame, regirConfig) == 752 && offsetof(Frame, restirCurrent) == 656 && offsetof(Frame, visibilityNodes) == 592 && offsetof(Frame, pathConfig) == 528 &&
+  static_assert(sizeof(Frame) == 1216 && offsetof(Frame, sheetMaterials) == 1200 &&
+                offsetof(Frame, iesProfiles) == 1080 && offsetof(Frame, localProbeRead) == 1168 &&
+                offsetof(Frame, localProbeParams) == 1184 &&
+                offsetof(Frame, inverseCameraRelative) == 1104 &&
+                offsetof(Frame, skyGuideRead) == 1064 && offsetof(Frame, skyGuideConfig) == 1088 && offsetof(Frame, volumeGrid) == 912 && offsetof(Frame, volumePrevious) == 1024 && offsetof(Frame, sparseList) == 880 && offsetof(Frame, sparseConfig) == 896 && offsetof(Frame, cameraCull) == 864 && offsetof(Frame, cutConfig) == 816 && offsetof(Frame, orcaParams) == 800 && offsetof(Frame, regirConfig) == 752 && offsetof(Frame, restirCurrent) == 656 && offsetof(Frame, visibilityNodes) == 592 && offsetof(Frame, pathConfig) == 528 &&
+
                 offsetof(Frame, firefly) == 512 && offsetof(Frame, indirectResults) == 496 &&
                 offsetof(Frame, lightGuideRead) == 384 && offsetof(Frame, lightGuideConfig) == 400 &&
                 offsetof(Frame, lightNodes) == 336 && offsetof(Frame, localConfig) == 352 &&
@@ -548,6 +566,10 @@ namespace remix {
     bool postCombinedDirect = false;
     std::unique_ptr<Buffer> lightNodes, lightEmitters;
     std::unique_ptr<Buffer> movedLights; // this frame's scene::LightBvh::moved()
+    // The IES profiles (NativeResources::iesProfiles) the buffer holds.
+    std::shared_ptr<const std::vector<float>> iesUploaded;
+    std::shared_ptr<Buffer> iesBuffer;
+    std::unique_ptr<Buffer> lightCookies; // this frame's cookie table (Frame::lightCookies)
     uint64_t lightBufferGeneration = 0, torchBufferGeneration = 0, emissiveBufferGeneration = 0;
     // The hierarchy (LightBvh::instance) each slot's buffers hold; with the
     // generation above, what an upload of only the changes builds on.
@@ -589,6 +611,14 @@ namespace remix {
       std::vector<std::pair<uint64_t, uint32_t>> keys;
     } restir;
     void configureRestir(Frame &frame, const TraceOptions &options, VkExtent2D extent);
+    // Local occlusion probes (restir.cpp; pathtrace.comp, localOcclusionConfidence):
+    // last frame's and this frame's, ping-pong.
+    struct LocalProbes {
+      std::unique_ptr<Buffer> buffers[2];
+      uint32_t writeIndex = 0, width = 0, height = 0;
+      bool valid = false;
+    } localProbes;
+    void configureLocalProbes(Frame &frame, const TraceOptions &options, VkExtent2D extent);
     // Presampled light pools per world cell (regir.cpp, regir.glsl).
     struct Regir {
       static constexpr uint32_t capacity = 1u << 15, slots = 64;

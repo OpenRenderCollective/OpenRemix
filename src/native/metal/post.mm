@@ -213,7 +213,8 @@ namespace remix::metal::post {
       ++g.stats.bloomFrames;
     }
     const float values[] = {bypass ? 1.f : options.exposure, bloom ? options.bloomIntensity : 0.f,
-                            float(!bypass && options.autoExposure), 0};
+                            float(!bypass && options.autoExposure),
+                            !bypass && options.contrast ? options.contrastAmount : 0.f};
     std::memcpy(g.settings[g.slot].contents, values, sizeof(values));
     // The exposure the frame used, for statistics once it completes.
     id<MTLBlitCommandEncoder> blit = blitEncoder(command, @"Exposure readback");

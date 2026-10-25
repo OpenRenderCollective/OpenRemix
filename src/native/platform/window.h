@@ -74,6 +74,21 @@ namespace remix {
 
     void setEventHandler(EventHandler handler, void *userData);
     void setGuiCapture(bool keyboard, bool mouse);
+
+    // The developer panel's shortcut (config::PanelState): a key and exactly the
+    // modifiers held with it. A press toggles the panel (takeMenuToggle); it, its
+    // repeats, its release and any text it types reach neither ImGui nor the host.
+    enum MenuModifier : uint32_t { MenuAlt = 1, MenuCtrl = 2, MenuShift = 4, MenuGui = 8 };
+    void setMenuShortcut(remixapi_Key key, uint32_t modifiers);
+    // The next key pressed, with the modifiers held, becomes the shortcut
+    // (takeCapturedMenuShortcut); Escape keeps the current one.
+    void captureMenuShortcut() { m_capturingMenu = true; }
+    void cancelMenuShortcutCapture() { m_capturingMenu = false; }
+    bool capturingMenuShortcut() const { return m_capturingMenu; }
+    bool takeCapturedMenuShortcut(remixapi_Key &key, uint32_t &modifiers);
+    // Whether the shortcut was pressed an odd number of times since the last call.
+    bool takeMenuToggle();
+    static std::string shortcutName(remixapi_Key key, uint32_t modifiers);
     void requestClose() { m_closeRequested = true; }
 
     SDL_Window *handle() const { return m_window; }
@@ -97,6 +112,10 @@ namespace remix {
     remixapi_ErrorCode checkPresentThread() const;
     void setSdlError(const char *operation) const;
     static SDL_Scancode toScancode(remixapi_Key key);
+    static remixapi_Key fromScancode(SDL_Scancode scancode);
+    // Whether the event belongs to the panel's shortcut (and is kept from ImGui
+    // and the host).
+    bool menuShortcut(const SDL_Event &event);
     static uint32_t toMouseButtons(SDL_MouseButtonFlags buttons);
     void queueInput(const remixapi_InputEvent &event);
     void processInput(const SDL_Event &event);
@@ -125,6 +144,15 @@ namespace remix {
     float m_wheelY = 0.0f;
     EventHandler m_eventHandler = nullptr;
     void *m_eventUserData = nullptr;
+    SDL_Scancode m_menuScancode = SDL_SCANCODE_X;
+    uint32_t m_menuModifiers = MenuAlt;
+    // The shortcut's key while it is held, and whether its press may type next.
+    SDL_Scancode m_swallowedKey = SDL_SCANCODE_UNKNOWN;
+    bool m_swallowText = false;
+    bool m_capturingMenu = false, m_menuCaptured = false;
+    remixapi_Key m_capturedKey{};
+    uint32_t m_capturedModifiers = 0;
+    uint32_t m_menuToggles = 0;
     mutable std::string m_lastError;
   };
 

@@ -42,10 +42,11 @@ records the tabs after porting.
 
 ## Shaders
 
-The Metal backend runs the same shaders as the Vulkan one. `scripts/shaders/generate.py metal`
-translates each stage with the pinned SPIRV-Cross fork (`toolchain.lock.json`,
-`spirv-cross-msl`; build it with `scripts/shaders/fetch-spirv-cross.py`) and compiles it with
-Xcode's `metal` into one XZ-compressed library per stage. Path tracing stages are translated
+The Metal backend runs the same shaders as the Vulkan one. The build generates the Vulkan SPIR-V
+and then, with `scripts/shaders/generate.py metal`, translates each stage with the pinned
+SPIRV-Cross fork (`toolchain.lock.json`, `spirv-cross-msl`, built by
+`scripts/shaders/toolchain.py --metal`) and compiles it with Xcode's `metal` into one
+XZ-compressed library per stage, which `embedded_data.cpp` embeds. Path tracing stages are translated
 from glslang's SPIR-V before `spirv-opt -O`: Apple's compiler service fails on the fully inlined
 lighting kernels. Descriptor sets become argument buffers at `buffer(set)`; `embedded.h` maps
 each stage's Vulkan `(set, binding)` to argument buffer IDs, so the host binds by the Vulkan
@@ -56,9 +57,7 @@ texture in its translation, and Apple GPUs read those through a slower, coherent
 therefore also has a variant of its own (`denoiseMode0`..`5` and the sigma/local families), with
 the mode fixed and dead code removed, in which the images it only reads are plain textures.
 
-`generate.py metal --check` needs no tools: it compares the SPIR-V digests recorded in
-`embedded.h` with the embedded Vulkan SPIR-V. Regenerate the Metal libraries after changing a
-translated stage (after regenerating its Vulkan SPIR-V). `generate.py all` leaves Metal out. The
+A changed shader regenerates the Metal libraries with the Vulkan SPIR-V in the same build. The
 std140 sizes of the blocks the host writes come from reflection, and `metal/frame.h` checks its
 copies of them at compile time: a field added to `scene.glsl`'s `Frame` fails the build.
 

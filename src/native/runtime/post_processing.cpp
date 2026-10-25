@@ -14,6 +14,8 @@ void copyPost(TraceOptions &out, const TraceOptions &in) {
   out.bloom = in.bloom;
   out.bloomIntensity = in.bloomIntensity;
   out.bloomRadius = in.bloomRadius;
+  out.contrast = in.contrast;
+  out.contrastAmount = in.contrastAmount;
 }
 } // namespace
 void RemixNativeRuntime::preparePostProcessing() {

@@ -38,32 +38,6 @@ the shader's alpha test (`acceptCandidate`).
 Baking runs on the CPU when a surface's partition is first proved, so enabling
 micromaps (or a new alpha-tested mesh) costs one proof per surface.
 
-## Shader execution reordering
-
-`rtx.native.pathtrace.shaderExecutionReordering` (0/1, experimental) runs the
-opaque lighting pass, and the separate indirect pass, as ray-generation shaders
-compiled from the same source with `RAYGEN` defined (`raygen.h`/`raygen.bin`,
-`scripts/shaders/generate.py raygen`). The pass uses ray queries only; the
-pipeline has one ray-generation group, launched with `vkCmdTraceRaysKHR`. The
-shader calls `reorderThreadNV` once per indirect bounce with a hint made of hit
-or miss, material class and normal octant (`VK_NV_ray_tracing_invocation_reorder`;
-glslang does not yet accept the EXT form).
-
-- Each ray-generation pipeline is specialized exactly like the compute variant
-  that `selectLightingPipeline` chose, compiles in the background, and falls
-  back to compute until ready or on failure.
-- GPU pass timings name the pass `Trace opaque (SER): ...` when it ran.
-- Results equal the compute pass up to floating-point rounding: the pipeline is
-  compiled separately.
-- OpenRemix shades every material with one shader, so reordering cannot group
-  work by hit shader; it can only improve memory and traversal coherence, while
-  each reorder saves and restores the invocation's state. On the scenes tested
-  so far the reordered pass has been slower than compute. Compare the two pass
-  timings on your own content before keeping it enabled.
-- `REMIX_SER_REORDER` (diagnostic) selects the reorder strategy: 0 none, 1 after
-  every scene query by hit surface, 2 per bounce by hit class (default), 3 per
-  bounce by ray direction.
-
 ## Tests
 
 - `remix-micromap-test`: hardware-measured order anchors, table nesting, and a

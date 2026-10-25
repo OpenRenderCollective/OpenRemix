@@ -527,6 +527,8 @@ namespace {
     bodyInfo.hash = 0x67;
     r.createMaterial(bodyInfo, handle);
     const auto sheet = drawn(r, quad(r, 0x68, handle));
+    const auto originalBody = body;
+    const auto originalBodyInfo = bodyInfo;
     require(sheet->transmission && !sheet->pbr && sheet->transmittanceDistance == 0,
             "Thin translucent sheet");
     body.thinWallThickness_value = .25f;
@@ -598,6 +600,36 @@ namespace {
     body.transmittanceColor.x = .1f;
     boundary.smoothBoundary = 2;
     rejected([&] { r.createMaterial(bodyInfo, handle); });
+    body = originalBody;
+    bodyInfo = originalBodyInfo;
+    require(sheet->transmission && !sheet->pbr && sheet->transmittanceDistance == 0, "Thin translucent sheet");
+
+    // Caustics: translucent materials with a normal map, water and glass alike.
+    require(!water2->caustics && !sheet->caustics, "Caustics without a normal map");
+#ifdef _WIN32
+    bodyInfo.normalTexture = L"0x61";
+#else
+    bodyInfo.normalTexture = "0x61";
+#endif
+    body.thinWallThickness_hasvalue = 0;
+    bodyInfo.hash = 0x69;
+    r.createMaterial(bodyInfo, handle);
+    require(drawn(r, quad(r, 0x6a, handle))->caustics, "Water with a normal map has caustics");
+    body.thinWallThickness_hasvalue = 1;
+    bodyInfo.hash = 0x6b;
+    r.createMaterial(bodyInfo, handle);
+    require(drawn(r, quad(r, 0x6c, handle))->caustics, "Glass with a normal map has caustics");
+    remixapi_MaterialInfoOpaqueEXT plain{};
+    plain.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+    plain.opacityConstant = 1;
+    remixapi_MaterialInfo plainInfo{};
+    plainInfo.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+    plainInfo.pNext = &plain;
+    plainInfo.normalTexture = bodyInfo.normalTexture;
+    plainInfo.hash = 0x6d;
+    r.createMaterial(plainInfo, handle);
+    require(!drawn(r, quad(r, 0x6e, handle))->caustics, "Caustics on an opaque material");
+
   }
 } // namespace
 

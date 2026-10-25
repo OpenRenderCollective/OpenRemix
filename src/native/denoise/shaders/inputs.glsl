@@ -73,6 +73,9 @@ layout(set=1,binding=55,rgba16f) uniform image2D pbrSpecularOutputSh1;
 // light, and the pose-change estimate of the indirect change.
 layout(set=1,binding=56,rgba16f) uniform image2D movingA;
 layout(set=1,binding=57,rgba16f) uniform image2D movingB;
+// The local-light passes' motion vectors (guideMotion, pointed off screen
+// where an occluder moved: localOcclusionConfidence).
+layout(set=1,binding=58,rgba32f) uniform image2D localMotion;
 layout(set=1,binding=25,std140) uniform TemporalFrame {
   mat4 view;
   mat4 previousView;

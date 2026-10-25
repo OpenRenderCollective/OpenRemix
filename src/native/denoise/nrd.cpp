@@ -231,9 +231,9 @@ namespace remix::denoise {
         // PBR paths select one lobe per pixel (pathtrace.comp, primaryLobe):
         // the skipped lobe has hit distance 0, which REBLUR reconstructs from
         // its 3x3 neighbours, and NRD requires a prepass for such signals.
-        // The radii stay below NRD's GI defaults (30 and 50 pixels): this
-        // signal also carries direct local light (addPbrLocal), whose cast
-        // shadows a wide prepass spreads.
+        // The radii stay below NRD's GI defaults (30 and 50 pixels): the
+        // specular signal also carries direct local light
+        // (addPbrLocalSpecular), whose cast shadows a wide prepass spreads.
         settings.hitDistanceReconstructionMode = nrd::HitDistanceReconstructionMode::AREA_3X3;
         settings.diffusePrepassBlurRadius = 4.f;
         settings.specularPrepassBlurRadius = 8.f;
@@ -271,8 +271,13 @@ namespace remix::denoise {
         settings.diffusePrepassBlurRadius = 0.f;
         settings.minBlurRadius = .5f;
         settings.maxBlurRadius = 8.f;
-        settings.historyFixBasePixelStride = 2;
-        settings.historyFixFrameNum = 1;
+        // No history fix: it rebuilds a pixel without history from neighbours
+        // weighted by their history length. Where the occlusion re-test
+        // (localOcclusionConfidence) restarted a pixel because a moving
+        // object's shadow just reached it, the lit neighbours have long
+        // histories and won, and a fast shadow faded out. A restarted pixel
+        // keeps its own estimate (many light samples per pixel) instead.
+        settings.historyFixFrameNum = 0;
         settings.maxAccumulatedFrameNum =
             std::min(settings.maxAccumulatedFrameNum, responsive ? 2u : localTuning.historyFrames);
         settings.antilagSettings.luminanceSigmaScale = localTuning.antilagSigma;
@@ -321,7 +326,12 @@ namespace remix::denoise {
       case R::OUT_SHADOW_TRANSLUCENCY:
         return *images[ShadowOutput];
       case R::IN_MV:
-        return *images[pass.foreground ? FrontMotion : Motion];
+        // The PBR pass carries local light's specular lobe on PBR surfaces
+        // (addPbrLocalSpecular): it restarts where an occluder moved too,
+        // in frames whose local pass wrote LocalMotion.
+        return *images[pass.foreground                                      ? FrontMotion
+                       : pass.local || (pass.pbr && local && frame.local[0]) ? LocalMotion
+                                                                             : Motion];
       case R::IN_NORMAL_ROUGHNESS:
         return *images[pass.foreground ? FrontNormal : Normal];
       case R::IN_VIEWZ:

@@ -4,6 +4,7 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 #extension GL_EXT_nonuniform_qualifier : require
 #extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_control_flow_attributes : require // [[dont_unroll]] (visibility.glsl causticTint)
 #ifdef ORCA_SPARSE_PASS
 #extension GL_EXT_shader_atomic_int64 : require
 #endif
@@ -1083,30 +1084,26 @@ int primaryLobe(Hit primary,ivec2 pixel,uint sequence,uint sampleIndex,out float
   probability=diffuseLobe?diffuseProbability:1-diffuseProbability;
   return diffuseLobe?0:1;
 }
-// Local NEE and continuation share one PBR diffuse/specular history. The same
-// selected light, visibility and PDF feed both lobes; no additional rays.
-// Their SH direction is the mean direction of the light samples.
-void addPbrLocal(ivec2 pixel,Hit hit,vec3 total,vec3 specular,float distance) {
-  vec3 factor=materialFactor(hit);
-  vec3 diffuseFactor=imageLoad(guideAlbedo,pixel).rgb;
+// Local NEE's specular lobe on a PBR surface joins the PBR specular history,
+// which the specular denoiser needs (the local pass is diffuse only). Its
+// diffuse lobe stays in the local pass: there it keeps the local history,
+// anti-lag and history confidence, so cast shadows follow moving objects
+// instead of the indirect light's half-second history. Same selected light,
+// visibility and PDF for both lobes; no additional rays. The SH direction is
+// the mean direction of the light samples.
+void addPbrLocalSpecular(ivec2 pixel,Hit hit,vec3 specular,float distance) {
   vec3 specularFactor=imageLoad(pbrSpecularFactor,pixel).rgb;
-  vec4 diffuse=REBLUR_BackEnd_UnpackRadianceAndNormHitDist(imageLoad(sh0,pixel));
   vec4 reflected=REBLUR_BackEnd_UnpackRadianceAndNormHitDist(imageLoad(pbrSpecularInput,pixel));
-  vec3 addedDiffuse=safeRadiance(max(total-specular,vec3(0))*factor/diffuseFactor);
-  vec3 addedSpecular=safeRadiance(specular*factor/specularFactor);
-  diffuse.rgb+=addedDiffuse;
+  vec3 addedSpecular=safeRadiance(specular*materialFactor(hit)/specularFactor);
   reflected.rgb+=addedSpecular;
   float z=imageLoad(guideDepth,pixel).x;
-  diffuse.a=nearestDistance(diffuse.a,REBLUR_FrontEnd_GetNormHitDist(distance,z,temporal.hitDistance.xyz,1));
   reflected.a=nearestDistance(reflected.a,REBLUR_FrontEnd_GetNormHitDist(distance,z,temporal.hitDistance.xyz,hit.rm.x));
-  imageStore(sh0,pixel,REBLUR_FrontEnd_PackRadianceAndNormHitDist(diffuse.rgb,diffuse.a,true));
   imageStore(pbrSpecularInput,pixel,REBLUR_FrontEnd_PackRadianceAndNormHitDist(reflected.rgb,reflected.a,true));
   // SH1 is linear: luminance (YCoCg Y, as NRD packs it) times direction.
   vec3 direction=localLightDirection.xyz/max(localLightDirection.w,1e-20);
   Mirror mirror=loadMirror(pixel);
   if(mirror.replaced)direction=mirrorVector(mirror,direction);
   const vec3 luma=vec3(.25,.5,.25);
-  imageStore(sh1,pixel,imageLoad(sh1,pixel)+vec4(direction*dot(addedDiffuse,luma),0));
   imageStore(pbrSpecularSh1,pixel,imageLoad(pbrSpecularSh1,pixel)+vec4(direction*dot(addedSpecular,luma),0));
 }
 #endif
@@ -1358,6 +1355,63 @@ float localHistoryConfidence(Hit hit,vec3 signal) {
   }
   return 1-smoothstep(.05,.5,change/max(max(level,localLuminance(signal)),1e-8));
 }
+// Occluders that moved (a carried prop, a swinging door) between a still light
+// and a still surface: nothing above notices, and the cast shadow fades while
+// the object moves. Each pixel keeps the share of its local light that its
+// shadow rays let through (localShadowed / localUnshadowed, light_bvh.glsl;
+// many samples, no extra ray), averaged over recent frames. A frame whose
+// share crosses from lit to shadowed against that average (above .7, below
+// .3), or the reverse, and still across the next frame, makes its history
+// stale. Partial shares and their noise average toward the middle and never
+// cross. A normal-mapped crack under the subpixel jitter can cross for a
+// frame (its shading normal reweights which part of a partly hidden light
+// counts) and comes back the next; a moving object's shadow stays. (A single
+// re-tested sample missed about half of a moving shadow's pixels.) ReSTIR
+// re-tests its own history samples instead (restirOcclusionChange). Call
+// after the estimators ran with localProbing set; writes this frame's probe.
+// localOcclusionAge: frames since the pixel's last change (localBlurScale).
+struct LocalProbe { vec4 light; vec4 point; }; // light: x 1 while a crossing waits for its second frame, y the average before it, w the arrived share's recent average (-1: no local light); surface point, age
+layout(buffer_reference,std430,buffer_reference_align=16) buffer LocalProbes { LocalProbe data[]; };
+float localOcclusionAge=255;
+float localOcclusionConfidence(ivec2 pixel,Hit hit) {
+  float confidence=1;localOcclusionAge=255;
+  float share=localUnshadowed>0?clamp(localShadowed/localUnshadowed,0,1):-1,pendingAverage=0;
+  bool pending=false;
+  vec4 motion=imageLoad(guideMotion,pixel);
+  ivec2 at=ivec2(floor(vec2(pixel)+.5+frame.jitter.xy+motion.xy-temporal.jitter.zw));
+  if(frame.localProbeRead!=0&&motion.w!=0&&all(greaterThanEqual(at,ivec2(0)))&&all(lessThan(at,ivec2(frame.target.xy)))) {
+    LocalProbe previous=LocalProbes(frame.localProbeRead).data[uint(at.x)+uint(at.y)*frame.target.x];
+    // The same surface point: within 1% of its distance (a pixel's footprint
+    // is far smaller at render resolutions), so a moved surface is not tested.
+    float near=.01*max(distance(hit.p,frame.eye.xyz),1);
+    if(dot(previous.point.xyz-hit.p,previous.point.xyz-hit.p)<=near*near) {
+      float average=previous.light.w;
+      if(average>=0&&share>=0) {
+        // A crossing waiting since the last frame is judged against the
+        // average from before it.
+        bool waiting=previous.light.x>.5;
+        float before=waiting?previous.light.y:average;
+        bool crossed=min(before,share)<.3&&max(before,share)>.7;
+        confidence=crossed&&waiting?0:1;
+        pending=crossed&&!waiting;pendingAverage=before;
+        share=crossed&&waiting?share:pending?average:mix(before,share,.25);
+      }
+      localOcclusionAge=confidence<.5?0:min(previous.point.w+1,255);
+    }
+  }
+  if(frame.localProbeWrite!=0)
+    LocalProbes(frame.localProbeWrite).data[uint(pixel.x)+uint(pixel.y)*frame.target.x]=
+        LocalProbe(vec4(pending?1:0,pendingAverage,0,share),vec4(hit.p,localOcclusionAge));
+  return confidence;
+}
+// The local denoiser's hit distance scale. REBLUR widens its spatial blur with
+// the hit distance (contact hardening) and for pixels with little history,
+// which are all of a fast shadow's restarted pixels: averaged with the lit
+// surface around them, the shadow paled. A pixel whose occlusion changed
+// within the last frames reports a short distance, so it stays sharp while
+// its history rebuilds (from rtx.native.pathtrace.movingShadowBlur to all of
+// the distance over eight frames).
+float localBlurScale() { return mix(frame.localProbeParams.x,1,clamp(localOcclusionAge/8,0,1)); }
 #include "translucency.glsl"
 #endif
 // Indirect light at a transparent sheet without tracing from it (dxvk-remix,
@@ -1618,7 +1672,9 @@ void main() {
   if(normal.a<=0)Reservoirs(frame.restirHistoryWrite).data[uint(pixel.x)+uint(pixel.y)*frame.target.x]=restirEmpty();
 #endif
   vec3 torch=vec3(0),emissive=vec3(0),torchSpecular=vec3(0),emissiveSpecular=vec3(0);float torchDistance=0,emissiveDistance=0;
-  float historyConfidence=1;
+  float historyConfidence=1,occlusionConfidence=1;
+  if(normal.a<=0&&frame.localProbeWrite!=0)
+    LocalProbes(frame.localProbeWrite).data[uint(pixel.x)+uint(pixel.y)*frame.target.x]=LocalProbe(vec4(0,0,0,-1),vec4(0,0,0,255));
   if(normal.a>0) {
     vec3 origin,direction;
     ray((vec2(pixel)+.5+frame.jitter.xy)/vec2(frame.target.xy)*2-1,frame.inverseCameraRelative,frame.eye.xyz,origin,direction);
@@ -1629,16 +1685,21 @@ void main() {
 #ifdef RESTIR_SPATIAL
     torch=restirShade(hit,pixel,hash(state^0x53504154u),imageLoad(guideDepth,pixel).x,torchDistance,torchSpecular);
 #else
+    localProbing=frame.localProbeWrite!=0;
     if(!enableSplitLighting||frame.splitLocal.x==3)
       torch=localLighting(hit,state,frame.localConfig.y,torchDistance,true,torchSpecular);
     else
       splitLocalLighting(hit,state,frame.localConfig.y,torch,emissive,torchDistance,emissiveDistance,torchSpecular,emissiveSpecular);
+    localProbing=false;
 #endif
     storeReuse(pixel,hit,materialFactor(hit)*(torch+emissive));
     historyConfidence=localHistoryConfidence(hit,torch);
 #ifdef RESTIR_SPATIAL
-    historyConfidence=min(historyConfidence,1-restirOcclusionChange);
+    occlusionConfidence=1-restirOcclusionChange;
+#else
+    occlusionConfidence=localOcclusionConfidence(pixel,hit);
 #endif
+    historyConfidence=min(historyConfidence,occlusionConfidence);
     historyConfidence=min(historyConfidence,movingSurfaceConfidence(max(imageLoad(guideMotion,pixel).w-1,0)));
     // Capture the unfiltered signal before PBR routing clears or remodulates
     // the local buffers. The opaque pass already wrote black for empty pixels.
@@ -1649,20 +1710,26 @@ void main() {
     }
     if(hit.pbr) {
       if(temporal.flags.y!=0&&temporal.local.x!=0) {
-        addPbrLocal(pixel,hit,torch+emissive,torchSpecular+emissiveSpecular,nearestDistance(torchDistance,emissiveDistance));
-        torch=emissive=vec3(0);
-      } else {
-        vec3 scale=materialFactor(hit)/imageLoad(guideAlbedo,pixel).rgb;
-        torch*=scale;emissive*=scale;
+        addPbrLocalSpecular(pixel,hit,torchSpecular+emissiveSpecular,nearestDistance(torchDistance,emissiveDistance));
+        torch=max(torch-torchSpecular,vec3(0));emissive=max(emissive-emissiveSpecular,vec3(0));
       }
+      vec3 scale=materialFactor(hit)/imageLoad(guideAlbedo,pixel).rgb;
+      torch*=scale;emissive*=scale;
     }
   }
   float z=imageLoad(guideDepth,pixel).x;
-  float td=normal.a>0?REBLUR_FrontEnd_GetNormHitDist(torchDistance,z,temporal.hitDistance.xyz,1):0;
-  float ed=normal.a>0?REBLUR_FrontEnd_GetNormHitDist(emissiveDistance,z,temporal.hitDistance.xyz,1):0;
+  float blurScale=normal.a>0?localBlurScale():1;
+  float td=normal.a>0?REBLUR_FrontEnd_GetNormHitDist(torchDistance*blurScale,z,temporal.hitDistance.xyz,1):0;
+  float ed=normal.a>0?REBLUR_FrontEnd_GetNormHitDist(emissiveDistance*blurScale,z,temporal.hitDistance.xyz,1):0;
   imageStore(localInput,pixel,REBLUR_FrontEnd_PackRadianceAndNormHitDist(torch,td,true));
   imageStore(emissiveInput,pixel,REBLUR_FrontEnd_PackRadianceAndNormHitDist(emissive,ed,true));
   imageStore(localConfidence,pixel,vec4(historyConfidence));
+  // Where an occluder moved, REBLUR restarts the pixel (an off-screen motion
+  // vector reads as a disocclusion): history confidence 0 still keeps about
+  // half of a long history, and a fast-moving shadow never darkened.
+  vec4 localMv=imageLoad(guideMotion,pixel);
+  if(occlusionConfidence<.5)localMv.xy=-2*vec2(frame.target.xy);
+  imageStore(localMotion,pixel,localMv);
   return;
 #elif defined(SHARC_UPDATE_PASS)
   updateCache(pixel);return;
@@ -1896,12 +1963,14 @@ void main() {
   vec3 storedLocal=local;
   if(opaque&&primary.pbr) {
     if(temporal.flags.y!=0&&temporal.local.x!=0) {
-      addPbrLocal(pixel,primary,local,localSpecular,localDistance);
-      storedLocal=vec3(0);
-    } else storedLocal*=materialFactor(primary)/diffuseFactor;
+      addPbrLocalSpecular(pixel,primary,localSpecular,localDistance);
+      storedLocal=max(local-localSpecular,vec3(0));
+    }
+    storedLocal*=materialFactor(primary)/diffuseFactor;
   }
   imageStore(localInput,pixel,REBLUR_FrontEnd_PackRadianceAndNormHitDist(storedLocal,normalizedDistance,true));
   imageStore(localConfidence,pixel,vec4(opaque?min(localHistoryConfidence(primary,local),movingSurfaceConfidence(objectPixels)):1.));
+  imageStore(localMotion,pixel,imageLoad(guideMotion,pixel));
 #ifdef SPLIT_LOCAL_PASS
   float emissiveHitDistance=opaque?REBLUR_FrontEnd_GetNormHitDist(emissiveDistance,z,temporal.hitDistance.xyz,1):0;
   imageStore(emissiveInput,pixel,REBLUR_FrontEnd_PackRadianceAndNormHitDist(emissive,emissiveHitDistance,true));

@@ -113,7 +113,10 @@ namespace remix::trace::detail {
     if (material.normalEncoding == 5) {
       for (unsigned i = 0; i < 3; ++i)
         decodeOut[1 + i] = detail::halfBits(material.scroll[2 * i]) | detail::halfBits(material.scroll[2 * i + 1]) << 16;
-      normal = material.scrollLayers == 3 ? 48 : 16;
+      // Two-channel maps (BC5) reconstruct Z here too (bit 0), as other encodings do:
+      // without it Z read 0 and the water's normals lay flat along its surface.
+      normal = (material.scrollLayers == 3 ? 48 : 16) |
+               uint32_t(material.normalTexture && material.normalTexture->pixels.twoChannel);
       return;
     }
     normal = material.normalEncoding == 1   ? 2
@@ -762,8 +765,14 @@ namespace remix::trace {
                geometry.diagonal * scale, geometry.revision,
                std::none_of(instance.begin(), instance.end(),
                             [](const auto &surface) { return surface.draw.doubleSided; }),
+               // Wholly blended instances may be left out of shadow and bounce rays
+               // (skipBlendedSecondaryRays); surfaces drawing caustics stay in them, the
+               // light through them carrying the caustics.
                std::all_of(instance.begin(), instance.end(),
-                           [](const auto &surface) { return surface.draw.blend.enabled && !surface.draw.decal; })};
+                           [](const auto &surface) {
+                             return surface.draw.blend.enabled && !surface.draw.decal &&
+                                    !surface.draw.material->caustics;
+                           })};
       input.viewModel = draw.viewModel;
       input.reflectionOnly = draw.reflectionOnly;
       input.decal = std::all_of(instance.begin(), instance.end(), [](const auto &surface) { return surface.draw.decal; });
@@ -818,6 +827,8 @@ namespace remix::trace {
                          uint32_t(draw.classification == 0) << 4 |
                          uint32_t(material.translucent && !surface.decal) << 5 | uint32_t(surface.decal) << 6 |
                          (surface.decal ? detail::decalMode(b) : 0u) << 7 |
+                         // Bit 11: light through it draws caustics.
+                         uint32_t(material.caustics) << 11 |
                          // remixapi_InstanceInfoMaskEXT CUT: the group (bits 16-21) whose
                          // coverage hides the surface from camera rays.
                          uint32_t(surface.cutGroup) << 16 |

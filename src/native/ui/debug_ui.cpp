@@ -65,7 +65,7 @@ namespace remix {
       }
       if (!m_preparationFailure.empty())
         ImGui::TextWrapped("%s", m_preparationFailure.c_str());
-      ImGui::TextUnformatted("F12: settings and diagnostics");
+      ImGui::Text("%s: settings and diagnostics", m_profileUi.menuShortcut.c_str());
       ImGui::End();
     }
     if (m_backend == config::Backend::ForwardPlus)

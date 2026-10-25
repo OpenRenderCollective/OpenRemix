@@ -283,7 +283,7 @@ int main(int argc, char **argv) {
       check(api.CreateMeshBatched(&info, &mesh), "CreateMesh");
   }
   if (!status)
-    std::fprintf(stderr, "F12: settings panel (free camera: Rendering tab)\n");
+    std::fprintf(stderr, "Alt+X: settings panel (free camera: Rendering tab; the shortcut is set in the panel's header)\n");
 
   using Tracing = remixapi_ErrorCode(REMIXAPI_CALL *)(remixapi_TracingStatisticsEXT *);
   const auto tracingOf = reinterpret_cast<Tracing>(dlsym(library, "remixapi_GetTracingStatisticsEXT"));
@@ -292,7 +292,6 @@ int main(int argc, char **argv) {
   auto windowStart = Clock::now();
   unsigned windowFrames = 0;
   double gpuSum = 0;
-  bool panel = false, f12 = false;
 
   auto drawFrame = [&](const remixapi_WindowState &state, bool capture = false) {
     // Down the nave from its east end, at eye height, looking west.
@@ -338,14 +337,6 @@ int main(int argc, char **argv) {
     remixapi_WindowState state = {};
     if (!check(api.GetWindowState(&state), "GetWindowState") || state.closeRequested)
       break;
-    remixapi_Bool down = false;
-    if (check(api.IsKeyDown(REMIXAPI_KEY_F12, &down), "IsKeyDown") && down && !f12) {
-      panel = !panel;
-      check(api.SetUIState(panel ? REMIXAPI_UI_STATE_ADVANCED : REMIXAPI_UI_STATE_NONE), "SetUIState");
-    }
-    f12 = down;
-    if (panel && api.GetUIState() == REMIXAPI_UI_STATE_NONE)
-      panel = false;
     drawFrame(state, screenshot && frame + 1 == maxFrames);
     if (!state.drawableWidth) {
       std::this_thread::sleep_for(std::chrono::milliseconds(50));

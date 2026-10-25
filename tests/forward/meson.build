@@ -118,39 +118,49 @@ forward_regions_test = executable('remix-forward-regions-test', 'regions.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('BSP reflection region occupancy and room fitting', forward_regions_test)
 if get_option('gpu_tests')
-  probe_batch_test = executable('remix-probe-batch-test', 'probe_batch.cpp',
+  subdir('probe_batch_shaders')
+  subdir('sun_depth_shaders')
+  subdir('cluster_shaders')
+  subdir('shadow_shaders')
+  subdir('probe_shaders')
+  subdir('style_shaders')
+  subdir('mask_shaders')
+  subdir('water_shaders')
+  subdir('shaders')
+  forward_gpu_shaders = [probe_batch_test_shaders, sun_depth_test_shaders, cluster_test_shaders, shadow_test_shaders, probe_test_shaders, style_test_shaders, mask_test_shaders, water_test_shaders, forward_test_shaders]
+  probe_batch_test = executable('remix-probe-batch-test', forward_gpu_shaders, 'probe_batch.cpp',
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)
   test('Selected probe visibility gather preserves values and completed ownership', probe_batch_test, timeout : 60)
-  cluster_gpu_test = executable('remix-forward-cluster-gpu-test', 'clusters_gpu.cpp',
+  cluster_gpu_test = executable('remix-forward-cluster-gpu-test', forward_gpu_shaders, 'clusters_gpu.cpp',
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)
   test('Clustered baked fallback GPU membership and independent overflow', cluster_gpu_test, timeout : 120)
-  shadow_filter_test = executable('remix-forward-shadow-filter-test', 'shadow_filter.cpp',
+  shadow_filter_test = executable('remix-forward-shadow-filter-test', forward_gpu_shaders, 'shadow_filter.cpp',
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)
   test('Fractional point and sun shadow filtering with receiver-plane and baked exclusion', shadow_filter_test, timeout : 60)
-  forward_probe_sampling_test = executable('remix-forward-probe-sampling-test', 'probe_sampling.cpp',
+  forward_probe_sampling_test = executable('remix-forward-probe-sampling-test', forward_gpu_shaders, 'probe_sampling.cpp',
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)
   test('GPU oriented cubemap projection, priorities and roughness', forward_probe_sampling_test, timeout : 60)
-  forward_probe_image_test = executable('remix-forward-probe-image-test', 'probe_image_upload.cpp', 'local_selection_preparation.cpp',
+  forward_probe_image_test = executable('remix-forward-probe-image-test', forward_gpu_shaders, 'probe_image_upload.cpp', 'local_selection_preparation.cpp',
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)
   test('GPU HDR reflection image layers and mip uploads', forward_probe_image_test, timeout : 60)
-  forward_mask_decode_test = executable('remix-forward-mask-decode-test', 'mask_decode.cpp',
+  forward_mask_decode_test = executable('remix-forward-mask-decode-test', forward_gpu_shaders, 'mask_decode.cpp',
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)
   test('GPU visibility tile decoding and bilinear boundaries', forward_mask_decode_test, timeout : 60)
-  water_snapshot_test = executable('remix-forward-water-snapshot-test', 'water_snapshot.cpp',
+  water_snapshot_test = executable('remix-forward-water-snapshot-test', forward_gpu_shaders, 'water_snapshot.cpp',
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)
   test('Water opaque HDR and actual MSAA depth snapshots', water_snapshot_test, timeout : 60)
-  water_test = executable('remix-forward-water-test', 'water.cpp',
+  water_test = executable('remix-forward-water-test', forward_gpu_shaders, 'water.cpp',
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)
   test('Water boundary optics and opaque-depth refraction queries', water_test, timeout : 60)
-  bake_transport_test = executable('remix-bake-transport-test', 'bake_transport.cpp',
+  bake_transport_test = executable('remix-bake-transport-test', forward_gpu_shaders, 'bake_transport.cpp',
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)
   test('Hardware diffuse bake transport and textured visibility', bake_transport_test, timeout : 180)
@@ -158,11 +168,11 @@ if get_option('gpu_tests')
     args : ['--sun-depth-only'], timeout : 180)
   test('Sun depth owners preserve moving receivers across replacement and cancellation', bake_transport_test,
     args : ['--sun-depth-owner-only'], timeout : 180)
-  forward_ray_test = executable('remix-forward-ray-test', 'ray_scene.cpp',
+  forward_ray_test = executable('remix-forward-ray-test', forward_gpu_shaders, 'ray_scene.cpp',
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)
   test('Forward+ hardware ray scene and candidate traversal', forward_ray_test, timeout : 60)
-  forward_lifecycle_test = executable('remix-forward-lifecycle-test', 'lifecycle.cpp',
+  forward_lifecycle_test = executable('remix-forward-lifecycle-test', forward_gpu_shaders, 'lifecycle.cpp',
     include_directories : [test_includes, include_directories('../../samples')],
     dependencies : sdl3_dep, link_with : remix, cpp_args : test_cpp_args)
   test('Forward+ runtime backend transitions and publication', forward_lifecycle_test,
@@ -195,7 +205,7 @@ test('Local shadow projection, selection and explicit caster membership', forwar
 forward_budget_test = executable('remix-forward-budget-test', 'budget.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Forward+ adaptive bake work and lighting identity', forward_budget_test)
-forward_cache_test = executable('remix-forward-cache-test', 'cache.cpp',
+forward_cache_test = executable('remix-forward-cache-test', bake_shaders, 'cache.cpp',
   '../../src/native/forward/bake/probe_depth.cpp',
   '../../src/native/forward/bake/sparse_sh.cpp', '../../src/native/forward/bake/styles.cpp',
   '../../src/native/forward/bake/cache.cpp', '../../src/native/forward/bake/grid_directory.cpp', '../../src/native/forward/bake/probe_visibility.cpp', '../../src/native/forward/bake/probe_visibility_gpu.cpp', '../../src/native/forward/bake/policy.cpp', '../../src/native/forward/probes/data.cpp',
@@ -259,7 +269,7 @@ style_work_test = executable('remix-bake-style-work-test', 'style_work.cpp',
 test('Attributed workspace preserves group ownership across fences and cancellation', style_work_test)
 
 if get_option('gpu_tests')
-  sparse_style_gpu_test = executable('remix-bake-sparse-style-gpu-test', 'sparse_sh_gpu.cpp',
+  sparse_style_gpu_test = executable('remix-bake-sparse-style-gpu-test', forward_gpu_shaders, 'sparse_sh_gpu.cpp',
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)
   test('Sparse styled GPU surface and probe reconstruction', sparse_style_gpu_test, timeout : 120)

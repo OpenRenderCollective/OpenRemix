@@ -614,6 +614,7 @@ int main() {
     // kRetain updates, through builds, and return to them; gone longer, a
     // build drops them.
     std::mt19937 random(1531);
+
     std::vector<SphereLight> all;
     for (unsigned i = 0; i < 400; ++i) {
       SphereLight light;

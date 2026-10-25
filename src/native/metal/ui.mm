@@ -204,7 +204,7 @@ fragment half4 uiFragment(VertexOut in [[stage_in]], texture2d<half, access::sam
       ImGui::ProgressBar(stats.requested ? float(double(stats.completed) / double(stats.requested)) : 0.f,
                          ImVec2(280, 0), progress);
       ImGui::Text("Elapsed: %.1f s", preparationSeconds());
-      ImGui::TextUnformatted("F12: settings and diagnostics");
+      ImGui::Text("%s: settings and diagnostics", m_profileUi.menuShortcut.c_str());
       ImGui::End();
     }
     if (m_uiState != REMIXAPI_UI_STATE_NONE) {
