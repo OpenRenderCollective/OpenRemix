@@ -411,7 +411,9 @@ namespace remix::ui {
       ImGui::SetTooltip("New particles a frame, shared by the emitters; the rest are dropped.");
     SliderFloat("Precipitation", &particles.precipitation, 0.f, 1.f, "%.2f");
     if (ImGui::IsItemHovered())
-      ImGui::SetTooltip("The weather's precipitation: scales the rate of emitters that follow the weather.");
+      ImGui::SetTooltip("Scales the rate of emitters that follow the weather while the NUMOS sky is off;
+"
+                        "with the sky on, its weather's precipitation does.");
     ImGui::SeparatorText("Test emitters");
     Checkbox("Rain", &particles.rain);
     ImGui::SameLine();

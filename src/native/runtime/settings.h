@@ -31,7 +31,8 @@ namespace remix::config {
     bool enabled = true;
     uint32_t budget = 65536;     // live particles of all emitters
     uint32_t spawnBudget = 8192; // spawns a frame
-    // FOLLOW_WEATHER's scale of the spawn rate, 0..1.
+    // FOLLOW_WEATHER's scale of the spawn rate, 0..1, while the NUMOS sky
+    // does not run (its weather's precipitation applies when it does).
     float precipitation = 1;
     // The test emitters: a rain and a snow camera volume, at a share of
     // their presets' rates, kept out from under cover (path tracer).

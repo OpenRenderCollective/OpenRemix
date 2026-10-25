@@ -17,6 +17,8 @@ struct Frame {
   vec4 depthScale;      // view depth = y / (depth - x); z: 1 when the scene's depth is bound
   vec4 dome[3];         // world to the environment's frame (rows); w: its scale, target width, height
   uvec4 counts;         // frame number, emitters, spawn groups, simulate groups
+  vec4 cloudShadow[3];  // world position (w 1) to the clouds' shadow box, (u, v, slice) in [0, 1]
+  uvec4 cloudShadowConfig; // 1 with the clouds' shadow, slices
 };
 
 struct Emitter {

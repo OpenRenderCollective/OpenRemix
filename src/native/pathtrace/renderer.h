@@ -94,13 +94,19 @@ namespace remix {
     // What lit the frame last prepared, for effects drawn over it (particles):
     // the sun (propagation direction, radiance), the sky (radiance; w above
     // zero with an environment, which `environment` samples through
-    // domeTransform, scaled by the radiance) and the scene's TLAS.
+    // domeTransform, scaled by the radiance), the clouds' shadow on the sun
+    // (sky::Renderer::cloudShadow; a null view without one), the up axis in
+    // effect and the scene's TLAS.
     struct OverlayLighting {
       float sunDirection[3] = {0, 0, -1};
       float sunRadiance[3] = {};
       float skyRadiance[4] = {};
       VkDescriptorImageInfo environment{};
       float domeTransform[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+      VkDescriptorImageInfo cloudShadow{};
+      float cloudShadowTransform[3][4] = {};
+      uint32_t cloudShadowSlices = 0;
+      uint32_t upAxis = 2;
       VkAccelerationStructureKHR scene = VK_NULL_HANDLE;
     };
     OverlayLighting overlayLighting() const;

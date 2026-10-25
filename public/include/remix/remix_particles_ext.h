@@ -11,8 +11,8 @@
 // and the UI. They are no part of the scene: never traced, never casting
 // shadows or light, never in reflections. Particles are lit by the sun and
 // the sky: with the path tracer, through a camera-centred grid of the sun's
-// visibility (one shadow ray a cell, a quarter of the cells a frame) and the
-// sky's mean radiance; with the raster backend, by the unshadowed sun and
+// visibility (the NUMOS clouds' shadow and one shadow ray a cell, a quarter
+// of the cells a frame) and the sky's mean radiance; with the raster backend, by the unshadowed sun and
 // the scene's sky colour.
 //
 // Resolve the functions as named exports (GetProcAddress / dlsym). Every
@@ -44,8 +44,9 @@ typedef uint64_t remixapi_ParticleEmitterHandleEXT; // 0: none
 #define REMIXAPI_PARTICLE_PRESET_SNOW_EXT 2u
 
 // FOLLOW_WEATHER: the spawn rate is scaled by the weather's precipitation,
-// 0..1 (rtx.native.particles.precipitation, which a host sets with
-// SetConfigVariable and the Sky tab shows).
+// 0..1: while the NUMOS sky runs, the intensity in force there (the game's,
+// remix_sky_ext.h, or its weather preset's); otherwise
+// rtx.native.particles.precipitation (SetConfigVariable, the Sky tab).
 // SHELTER (path tracer only): a particle is not spawned where the opaque
 // world is above it, and dies where its initial direction of travel meets
 // the opaque world (one ray each at spawn). Rain stays out of rooms and

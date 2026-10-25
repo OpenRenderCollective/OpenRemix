@@ -731,6 +731,12 @@ namespace remix {
     for (unsigned row = 0; row < 3; ++row)
       for (unsigned col = 0; col < 3; ++col)
         overlay.domeTransform[row][col] = frame.domeTransform[row][col];
+    overlay.cloudShadow = frame.cloudShadowConfig[0] && frame.cloudShadowConfig[0] <= textures.size()
+                              ? textures[frame.cloudShadowConfig[0] - 1]
+                              : VkDescriptorImageInfo{};
+    std::copy_n(&frame.cloudShadow[0][0], 12, &overlay.cloudShadowTransform[0][0]);
+    overlay.cloudShadowSlices = frame.cloudShadowConfig[1];
+    overlay.upAxis = std::min(options.volumetricUpAxis, 2u);
     // Role CUT (remixapi_InstanceInfoMaskEXT): the coverage of the groups
     // whose instances the camera does not see, drawn by the raster renderer
     // ahead of this frame's passes. Its sources are in no table: their

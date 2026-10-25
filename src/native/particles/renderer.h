@@ -29,6 +29,10 @@ namespace remix::particles {
     float environmentScale = 1;
     float domeTransform[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
     VkAccelerationStructureKHR scene = VK_NULL_HANDLE;
+    // The clouds' shadow on the sun (sky::Renderer::cloudShadow), or a null view.
+    VkDescriptorImageInfo cloudShadow{};
+    float cloudShadowTransform[3][4] = {};
+    uint32_t cloudShadowSlices = 0;
     float exposure = 1;
     uint32_t display[4] = {}; // prism, gamma 2.2, encode, hardware sRGB (display.glsl)
   };

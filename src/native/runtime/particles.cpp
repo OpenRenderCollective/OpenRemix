@@ -33,8 +33,11 @@ namespace remix {
     publish.budget = p.budget;
     publish.spawnBudget = p.spawnBudget;
     publish.metersPerUnit = settings.trace.sceneScale;
-    publish.upAxis = settings.trace.volumetricUpAxis;
-    publish.precipitation = p.precipitation;
+    // Auto (3) is resolved by the path tracer from the camera.
+    publish.upAxis = settings.trace.volumetricUpAxis < 3 ? settings.trace.volumetricUpAxis : m_particleUpAxis;
+    // The sky's weather when it runs (the game's or its preset's), else the setting.
+    const auto sky = skyState();
+    publish.precipitation = sky.active ? sky.precipitation : p.precipitation;
     publish.rain = p.rain;
     publish.snow = p.snow;
     publish.shelter = p.shelter;
@@ -61,7 +64,7 @@ namespace remix {
     inputs.view = raster.view(REMIXAPI_CAMERA_TYPE_WORLD);
     inputs.time = float(std::chrono::duration<double>(std::chrono::steady_clock::now() - m_particleStart).count());
     inputs.metersPerUnit = m_traceOptions.sceneScale;
-    inputs.upAxis = m_traceOptions.volumetricUpAxis;
+    inputs.upAxis = m_traceOptions.volumetricUpAxis < 3 ? m_traceOptions.volumetricUpAxis : m_particleUpAxis;
     const bool hardwareSrgb =
         m_swapchainFormat == VK_FORMAT_R8G8B8A8_SRGB || m_swapchainFormat == VK_FORMAT_B8G8R8A8_SRGB;
     const uint32_t encode = m_srgb && !hardwareSrgb;
@@ -79,6 +82,10 @@ namespace remix {
         inputs.environmentScale = (lighting.skyRadiance[0] + lighting.skyRadiance[1] + lighting.skyRadiance[2]) / 3;
       }
       inputs.scene = lighting.scene;
+      inputs.cloudShadow = lighting.cloudShadow;
+      std::memcpy(inputs.cloudShadowTransform, lighting.cloudShadowTransform, sizeof(inputs.cloudShadowTransform));
+      inputs.cloudShadowSlices = lighting.cloudShadowSlices;
+      inputs.upAxis = m_particleUpAxis = lighting.upAxis;
       // The composite's exposure (postfx/shaders/composite.glsl), as the
       // last completed frame measured it.
       const auto &options = m_traceOptions;

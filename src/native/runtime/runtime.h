@@ -466,6 +466,7 @@ private:
   std::unique_ptr<particles::Renderer> m_particles;
   scene::ParticleFrame m_particleFrame;
   std::chrono::steady_clock::time_point m_particleClock{}, m_particleStart = std::chrono::steady_clock::now();
+  uint32_t m_particleUpAxis = 2; // the up axis the last traced frame resolved
   bool m_snapshotSupported = false, m_snapshotAllocationFailed = false;
   bool m_initialized = false;
   uint64_t m_presentationCount = 0;

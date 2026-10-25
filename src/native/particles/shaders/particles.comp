@@ -1,7 +1,8 @@
 #version 460
 // Particle simulation, one pass per PASS value:
 //   LIGHT     the sky's mean radiance (first group) and a quarter of the light
-//             volume's cells: the sun's visibility by one shadow ray (TRACED)
+//             volume's cells: the sun's visibility, the clouds' shadow and one
+//             shadow ray (TRACED)
 //   SIMULATE  last frame's particles aged, moved and lit; survivors compacted
 //             into the target pool, per emitter slice
 //   SPAWN     the frame's new particles appended to their slices; past a
@@ -16,6 +17,20 @@ layout(local_size_x=64) in;
 #ifdef TRACED
 layout(set=1,binding=0) uniform accelerationStructureEXT scene;
 layout(set=1,binding=1) uniform sampler2D environment;
+// The clouds' transmittance toward the sun: horizontal slices side by side.
+layout(set=1,binding=2) uniform sampler2D cloudShadows;
+float cloudShadow(vec3 p) {
+  if (frame.cloudShadowConfig.x == 0u) return 1.0;
+  vec3 box = clamp(vec3(dot(frame.cloudShadow[0], vec4(p, 1)), dot(frame.cloudShadow[1], vec4(p, 1)),
+                        dot(frame.cloudShadow[2], vec4(p, 1))), 0.0, 1.0);
+  float slices = float(frame.cloudShadowConfig.y), slice = box.z * (slices - 1.0);
+  float lower = min(floor(slice), slices - 2.0);
+  float width = float(textureSize(cloudShadows, 0).x);
+  float u = clamp(box.x, .5 * slices / width, 1.0 - .5 * slices / width);
+  float a = textureLod(cloudShadows, vec2((u + lower) / slices, box.y), 0.0).r;
+  float b = textureLod(cloudShadows, vec2((u + lower + 1.0) / slices, box.y), 0.0).r;
+  return mix(a, b, clamp(slice - lower, 0.0, 1.0));
+}
 // The opaque world (trace::skyOccluderInstanceMask).
 const uint occluderMask = 8u;
 // The distance to the opaque world along a ray, or NO_HIT; nearest only when asked.
@@ -85,8 +100,10 @@ void main() {
   vec3 centre = (vec3(world) + .5) * frame.volumeOrigin.w;
   float visible = 1.0;
 #ifdef TRACED
-  if (dot(frame.sunRadiance.rgb, vec3(1)) > 0.0)
-    visible = traceDistance(centre, frame.sunDirection.xyz, 1e7, false) < NO_HIT ? 0.0 : 1.0;
+  if (dot(frame.sunRadiance.rgb, vec3(1)) > 0.0) {
+    visible = cloudShadow(centre);
+    if (visible > 0.0 && traceDistance(centre, frame.sunDirection.xyz, 1e7, false) < NO_HIT) visible = 0.0;
+  }
 #endif
   light[4 + stored] = visible;
 }

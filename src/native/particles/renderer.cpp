@@ -26,8 +26,10 @@ namespace remix::particles {
       float depthScale[4];
       float dome[3][4];
       uint32_t counts[4];
+      float cloudShadow[3][4];
+      uint32_t cloudShadowConfig[4];
     };
-    static_assert(sizeof(GpuFrame) == 336);
+    static_assert(sizeof(GpuFrame) == 400);
     struct GpuEmitter {
       float transform[3][4];
       float extent[4];
@@ -232,8 +234,12 @@ namespace remix::particles {
           {.binding = 1,
            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
            .descriptorCount = 1,
+           .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT},
+          {.binding = 2,
+           .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+           .descriptorCount = 1,
            .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT}};
-      info.bindingCount = 2;
+      info.bindingCount = 3;
       info.pBindings = traced;
       check(pipeline::createDescriptorSetLayout(device, &info, nullptr, &tracedLayout));
       const VkDescriptorSetLayout tracedSets[] = {poolLayout, tracedLayout};
@@ -397,7 +403,7 @@ namespace remix::particles {
         s.readback = buffer(physical, device, 16, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
         std::memset(s.readback->mapped, 0, 16);
         const VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 8},
-                                              {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2 * (maxEmitters + 2)},
+                                              {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2 * (maxEmitters + 3)},
                                               {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1}};
         const VkDescriptorPoolCreateInfo info{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
                                               .maxSets = maxEmitters + 2,
@@ -589,6 +595,12 @@ namespace remix::particles {
       for (int c = 0; c < 3; ++c)
         f.dome[r][c] = inputs.domeTransform[r][c];
     f.dome[0][3] = inputs.environmentScale;
+    const bool clouds = tracedReady && inputs.cloudShadow.imageView != VK_NULL_HANDLE && inputs.cloudShadowSlices >= 2;
+    if (clouds) {
+      std::memcpy(f.cloudShadow, inputs.cloudShadowTransform, sizeof(f.cloudShadow));
+      f.cloudShadowConfig[0] = 1;
+      f.cloudShadowConfig[1] = inputs.cloudShadowSlices;
+    }
     const uint32_t emitterCount = uint32_t(std::min<size_t>(frame.emitters.size(), maxEmitters));
     uint32_t simulateGroups = 0, spawns = 0;
     g.blends.assign(emitterCount, 0);
@@ -679,9 +691,9 @@ namespace remix::particles {
           .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
           .accelerationStructureCount = 1,
           .pAccelerationStructures = &inputs.scene};
-      const VkDescriptorImageInfo image =
-          environment ? inputs.environment
-                      : VkDescriptorImageInfo{g.sampler, g.whiteView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+      const VkDescriptorImageInfo white{g.sampler, g.whiteView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+      const VkDescriptorImageInfo image = environment ? inputs.environment : white;
+      const VkDescriptorImageInfo shadow = clouds ? inputs.cloudShadow : white;
       const VkWriteDescriptorSet tracedWrites[] = {
           {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
            .pNext = &accel,
@@ -694,8 +706,14 @@ namespace remix::particles {
            .dstBinding = 1,
            .descriptorCount = 1,
            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-           .pImageInfo = &image}};
-      vkUpdateDescriptorSets(g.device, 2, tracedWrites, 0, nullptr);
+           .pImageInfo = &image},
+          {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+           .dstSet = tracedSet,
+           .dstBinding = 2,
+           .descriptorCount = 1,
+           .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+           .pImageInfo = &shadow}};
+      vkUpdateDescriptorSets(g.device, 3, tracedWrites, 0, nullptr);
     }
 
     // The passes.
