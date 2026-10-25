@@ -146,13 +146,14 @@ namespace remix {
     // far one sees through it (meters; 5% of the light is left there) and
     // volumetricColor what it scatters. volumetricHeightFalloff > 0 thins
     // either above volumetricBaseHeight along volumetricUpAxis (0 X, 1 Y,
-    // 2 Z): the height, in meters, over which the density falls to 37%.
+    // 2 Z, 3 Auto: Y or Z from the camera; the NUMOS sky follows it too):
+    // the height, in meters, over which the density falls to 37%.
     // volumetricScattering scales the scattered light; the medium fills at
     // most the first volumetricMaxDistance meters of a camera ray.
     bool volumetrics = false, volumetricOverride = true;
     float volumetricDistance = 2000, volumetricColor[3] = {1, 1, 1};
     float volumetricHeightFalloff = 0, volumetricBaseHeight = 0;
-    uint32_t volumetricUpAxis = 2;
+    uint32_t volumetricUpAxis = 3;
     float volumetricScattering = 1, volumetricMaxDistance = 250;
     // Each source's share of the scattered light, on top of a light's own
     // volumetricRadianceScale: the sun, lights (sphere, rect, disk, cylinder),

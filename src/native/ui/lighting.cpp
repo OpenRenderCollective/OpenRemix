@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <imgui.h>
+#include <string_view>
 #include <utility>
 
 namespace remix {
@@ -83,8 +84,8 @@ namespace remix {
         if (options.volumetricHeightFalloff > 0) {
           ui::DragFloat("Base height (m)", &options.volumetricBaseHeight, .25f, -100000, 100000, "%.2f");
         }
-        int axis = int(std::min(options.volumetricUpAxis, 2u));
-        if (ui::Combo("Up axis", &axis, "X\0Y\0Z\0"))
+        int axis = int(std::min(options.volumetricUpAxis, 3u));
+        if (ui::Combo("Up axis", &axis, "X\0Y\0Z\0Auto (from the camera)\0"))
           options.volumetricUpAxis = uint32_t(axis);
         if (ImGui::IsItemHovered())
           ImGui::SetTooltip("The world's up axis, for the medium's height falloff and the sky.");
@@ -379,6 +380,11 @@ namespace remix {
       status.supported = sky.supported;
       status.active = sky.active;
       status.reason = sky.reason;
+      // With GPU pass timers on: the sky's passes ("NUMOS sky", "NUMOS screen
+      // clouds", "NUMOS composite").
+      for (const auto &pass : m_gpuTimers.latest().passes)
+        if (std::string_view(pass.name).starts_with("NUMOS "))
+          status.gpuMilliseconds += float(pass.milliseconds);
     }
     ui::drawSkyTab(settings, status);
   }

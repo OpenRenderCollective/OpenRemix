@@ -97,6 +97,8 @@ layout(set=0,binding=3,std140) uniform Frame {
   uint64_t localProbeRead, localProbeWrite; // local occlusion probes: last frame's (0: none), this frame's
   vec4 localProbeParams; // movingShadowBlur, reserved
   vec4 volumeLightScales; // volumetrics: sun, lights, emissive surfaces, sky
+  vec4 cloudShadow[3]; // rows: world position (w 1) to the sky's cloud shadow box, (u, v, slice) in [0, 1]
+  uvec4 cloudShadowConfig; // its texture + 1 (0: no cloud shadow), slices, reserved
 } frame;
 // Instance mask bit of view models (pathtrace/tlas_policy.h).
 const uint viewModelInstanceMask=64u;
@@ -182,6 +184,21 @@ vec3 environmentRadiance(vec3 direction) {
   vec3 d=normalize(vec3(dot(frame.domeTransform[0].xyz,direction),dot(frame.domeTransform[1].xyz,direction),dot(frame.domeTransform[2].xyz,direction)));
   vec2 uv=vec2(atan(d.z,d.x)/(2*3.14159265359)+.5,acos(clamp(d.y,-1,1))/3.14159265359);
   return frame.skyRadiance.rgb*textureLod(textures[nonuniformEXT(uint(frame.skyRadiance.w)-1)],uv,0).rgb;
+}
+// The clouds' transmittance toward the sun at p (the NUMOS sky's cloud
+// shadow box, its edge beyond it): horizontal slices side by side, blended
+// between the two around p's height.
+float cloudShadow(vec3 p) {
+  if(frame.cloudShadowConfig.x==0u)return 1;
+  vec3 box=clamp(vec3(dot(frame.cloudShadow[0],vec4(p,1)),dot(frame.cloudShadow[1],vec4(p,1)),dot(frame.cloudShadow[2],vec4(p,1))),0,1);
+  float slices=float(frame.cloudShadowConfig.y),slice=box.z*(slices-1),lower=min(floor(slice),slices-2);
+  // Inside each slice, half a texel from its sides.
+  vec2 size=vec2(textureSize(textures[nonuniformEXT(frame.cloudShadowConfig.x-1u)],0));
+  float u=clamp(box.x,.5*slices/size.x,1-.5*slices/size.x);
+  uint index=frame.cloudShadowConfig.x-1u;
+  float a=textureLod(textures[nonuniformEXT(index)],vec2((u+lower)/slices,box.y),0).r;
+  float b=textureLod(textures[nonuniformEXT(index)],vec2((u+lower+1)/slices,box.y),0).r;
+  return mix(a,b,clamp(slice-lower,0,1));
 }
 // Perceptual roughness and metalness; albedo is the linear material colour.
 // A roughness (map 0) or metallic (1) texel's value (frame_tables.h

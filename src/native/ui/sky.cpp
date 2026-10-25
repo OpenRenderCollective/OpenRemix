@@ -332,8 +332,11 @@ namespace remix::ui {
         ImGui::TextWrapped("Inactive: %s", status.reason.c_str());
       else if (status.active && status.gpuMilliseconds > 0)
         ImGui::Text("Active, GPU %.2f ms", status.gpuMilliseconds);
-      else if (status.active)
+      else if (status.active) {
         ImGui::TextUnformatted("Active");
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Turn on GPU pass timers (Diagnostics) to see the sky's GPU time here.");
+      }
       int gameSky = int(sky.gameSky);
       if (Combo("Game sky", &gameSky, "Hidden\0Under clouds and air\0Over the sky\0"))
         sky.gameSky = config::SkySettings::GameSky(gameSky);
@@ -342,9 +345,10 @@ namespace remix::ui {
                           "Under: the game's sky shows behind NUMOS's clouds and air.\n"
                           "Over: the game's sky covers NUMOS's sky.");
       // The same setting as Lighting > Volumetrics > Up axis; the sky needs Y or Z.
-      int upAxis = settings.trace.volumetricUpAxis == 1 ? 0 : 1;
-      if (Combo("World up axis", &upAxis, "Y\0Z\0"))
-        settings.trace.volumetricUpAxis = upAxis == 0 ? 1u : 2u;
+      const uint32_t axes[] = {3, 1, 2};
+      int upAxis = settings.trace.volumetricUpAxis == 1 ? 1 : settings.trace.volumetricUpAxis == 2 ? 2 : 0;
+      if (Combo("World up axis", &upAxis, "Auto (from the camera)\0Y\0Z\0"))
+        settings.trace.volumetricUpAxis = axes[upAxis];
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("The game world's up axis. A wrong one turns the sky on its side.");
       auto values = effective(sky);

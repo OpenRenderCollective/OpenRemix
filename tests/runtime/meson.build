@@ -1,6 +1,8 @@
 runtime_test = executable('remix-runtime-test', 'lifecycle.cpp',
   include_directories : [test_includes, include_directories('../../samples')], dependencies : [sdl3_dep, dl_dep, threads_dep])
 test('API stubs and failed startup cleanup', runtime_test, args : [remix.full_path()], timeout : 30)
+test('Sky API before startup', executable('remix-sky-api-test', 'sky_api.cpp',
+  include_directories : test_includes, dependencies : [dl_dep]), args : [remix.full_path()], timeout : 30)
 host_pass_test = executable('remix-host-pass-test', 'host_passes.cpp',
   include_directories : test_includes, dependencies : [dl_dep, threads_dep])
 if get_option('gpu_tests')

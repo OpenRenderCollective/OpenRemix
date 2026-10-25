@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstring>
 #include <map>
+#include <mutex>
 #include <tuple>
 #include <unordered_set>
 
@@ -195,9 +196,15 @@ namespace remix::trace::detail {
     // Volumetrics: each source's share of the scattered light (sun, lights,
     // emissive surfaces, sky; the volumetric*Scale options).
     float volumeLightScales[4] = {1, 1, 1, 1};
+    // The NUMOS sky's cloud shadow (sky::Renderer::cloudShadow): rows taking
+    // a world position (w 1) to (u, v, slice) in its box; cloudShadowConfig:
+    // its texture + 1 (0: none), slices.
+    float cloudShadow[3][4] = {};
+    uint32_t cloudShadowConfig[4] = {};
   };
-  static_assert(sizeof(Frame) == 1216 && offsetof(Frame, localProbeRead) == 1168 &&
+  static_assert(sizeof(Frame) == 1280 && offsetof(Frame, localProbeRead) == 1168 &&
                 offsetof(Frame, localProbeParams) == 1184 && offsetof(Frame, volumeLightScales) == 1200 &&
+                offsetof(Frame, cloudShadow) == 1216 && offsetof(Frame, cloudShadowConfig) == 1264 &&
                 offsetof(Frame, inverseCameraRelative) == 1104 &&
                 offsetof(Frame, skyGuideRead) == 1064 && offsetof(Frame, skyGuideConfig) == 1088 && offsetof(Frame, volumeGrid) == 912 && offsetof(Frame, volumePrevious) == 1024 && offsetof(Frame, sparseList) == 880 && offsetof(Frame, sparseConfig) == 896 && offsetof(Frame, cameraCull) == 864 && offsetof(Frame, cutConfig) == 816 && offsetof(Frame, orcaParams) == 800 && offsetof(Frame, regirConfig) == 752 && offsetof(Frame, restirCurrent) == 656 && offsetof(Frame, visibilityNodes) == 592 && offsetof(Frame, pathConfig) == 528 &&
                 offsetof(Frame, firefly) == 512 && offsetof(Frame, indirectResults) == 496 &&
@@ -498,6 +505,10 @@ namespace remix {
     // and sun are NUMOS's; `skyActive`: its work for this frame is recorded.
     std::shared_ptr<sky::Renderer> numosSky;
     config::SkySettings skySettings;
+    config::SkyControl skyControl;
+    // The sky's last frame, for the API's thread.
+    mutable std::mutex skyStateMutex;
+    config::SkyState skyState;
     // skyFailure: the error that stopped the sky (it stays off until the
     // sky settings change).
     std::string skyUnavailable, skyReason, skyFailure;
@@ -507,6 +518,12 @@ namespace remix {
     std::unique_ptr<denoise::Renderer> denoiser;
     VkPipeline temporalCompute{}, confidenceCompute{};
     VkPipelineLayout temporalLayout{};
+    // The world's up axis for volumetricUpAxis Auto (1 Y, 2 Z): game cameras
+    // do not roll, so their right axis stays horizontal and their up axis
+    // leans toward the world's (observeUpAxis).
+    float cameraUpScore[3] = {};
+    uint32_t detectedUpAxis = 2;
+    void observeUpAxis(const scene::Matrix &view);
     uint64_t shadowFrames = 0, shadowResets = 0;
     bool sigmaCapable = false, localCapable[2] = {};
     bool postSigma = false, postSigmaRequested = false;

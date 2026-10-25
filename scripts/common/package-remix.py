@@ -30,7 +30,7 @@ for directory in ['bin', 'lib', 'include/remix', 'share/remix/licenses']:
 licenses = output / 'share/remix/licenses'
 for name in ['LICENSE', 'ThirdPartyLicenses.txt', 'README.md']:
     shutil.copy2(root / name, output / 'share/remix' / name)
-for name in ['remix.h', 'remix_c.h', 'remix_native_ext.h', 'remix_reconstruction_ext.h']:
+for name in ['remix.h', 'remix_c.h', 'remix_native_ext.h', 'remix_reconstruction_ext.h', 'remix_sky_ext.h']:
     shutil.copy2(root / 'public/include/remix' / name, output / 'include/remix' / name)
 shutil.copy2(root / 'third_party/imgui/LICENSE.txt', licenses / 'ImGui.txt')
 shutil.copy2(root / 'third_party/image/LICENSES.txt', licenses / 'ImageDecoders.txt')

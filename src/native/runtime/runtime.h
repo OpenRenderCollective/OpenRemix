@@ -153,6 +153,10 @@ public:
   // remixapi_SetConfigDefaultEXT: a host's default (config::Profiles::setDefault).
   remixapi_ErrorCode configureDefault(const char *key, const char *value);
   remixapi_BackendCapabilitiesEXT backendCapabilities() const;
+  // remix_sky_ext.h: the game's control over the sky (under the API lock),
+  // and what the sky did last frame.
+  config::SkyControl &skyControl() { return m_skyControl; }
+  config::SkyState skyState() const;
   remixapi_TracingStatisticsEXT tracingStatistics() const;
   remixapi_SharcStatisticsEXT sharcStatistics() const;
   // Low latency: asked for by the setting, and in effect (the path tracing
@@ -429,6 +433,7 @@ private:
   std::string m_traceUnavailable;
   // Why the NUMOS sky cannot run on the device, or empty.
   std::string m_skyUnavailable;
+  config::SkyControl m_skyControl;
   PresentedScreenshot m_screenshot;
   bool m_screenshotSupported = false;
   std::shared_ptr<FrameSnapshot> m_lastFrame;

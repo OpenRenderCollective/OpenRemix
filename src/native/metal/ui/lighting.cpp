@@ -85,8 +85,8 @@ namespace remix {
         if (options.volumetricHeightFalloff > 0) {
           ui::DragFloat("Base height (m)", &options.volumetricBaseHeight, .25f, -100000, 100000, "%.2f");
         }
-        int axis = int(std::min(options.volumetricUpAxis, 2u));
-        if (ui::Combo("Up axis", &axis, "X\0Y\0Z\0"))
+        int axis = int(std::min(options.volumetricUpAxis, 3u));
+        if (ui::Combo("Up axis", &axis, "X\0Y\0Z\0Auto (from the camera)\0"))
           options.volumetricUpAxis = uint32_t(axis);
         if (ImGui::IsItemHovered())
           ImGui::SetTooltip("The world's up axis, for the medium's height falloff and the sky.");

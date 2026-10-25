@@ -3,6 +3,7 @@
 #include "upscale/camera.h"
 #include <numos/renderer.h>
 #include <numos/settings.h>
+#include <numos/weather.h>
 #include <algorithm>
 #include <cmath>
 #include <iterator>
@@ -36,6 +37,15 @@ namespace remix::sky {
       float missDepth, scale;
       uint32_t gameSky, reserved;
     };
+    // The cloud shadow box around the camera: 4 km across in 8 m texels, and
+    // 512 m high in slices 1/3 of that apart (shadows change slowly with
+    // height below the clouds).
+    constexpr uint32_t cloudShadowSize = 512;
+    constexpr float cloudShadowWidthMeters = 4096, cloudShadowHeightMeters = 512;
+    struct CloudShadowPush {
+      float origin[4], axisU[4], axisV[4], axisSlice[4];
+      uint32_t size, slices, zUp, reserved;
+    };
 
     std::vector<Bridge::HostPass> hostPasses() {
       std::vector<Bridge::HostPass> passes;
@@ -52,7 +62,15 @@ namespace remix::sky {
     numos::Renderer numos;
     std::map<std::string, std::string> atmosphere;
     bool configured = false;
-    numos::GpuHandle environment = 0, missDepth = 0, depthImport = 0, sceneImport = 0;
+    // The game's control (remix_sky_ext.h) and what of it is applied.
+    config::SkyControl control;
+    bool game = true, timeOverride = false;
+    uint64_t timeGeneration = 0, weatherGeneration = 0, lightningGeneration = 0;
+    numos::WeatherBlender weather;
+    bool weatherActive = false, weatherWanted = false;
+    float weatherElapsed = 0, weatherDuration = 0;
+    config::SkyState state;
+    numos::GpuHandle environment = 0, cloudShadow = 0, missDepth = 0, depthImport = 0, sceneImport = 0;
     VkImageView depthView = VK_NULL_HANDLE;
     VkAccelerationStructureKHR scene = VK_NULL_HANDLE;
     uint32_t renderWidth = 0, renderHeight = 0, missWidth = 0, missHeight = 0;
@@ -128,14 +146,30 @@ namespace remix::sky {
 
   void Renderer::selectFrame(uint32_t slot) { m->bridge.selectFrame(slot); }
 
-  void Renderer::setSettings(const config::SkySettings &settings) {
-    if (m->configured && settings.atmosphere == m->atmosphere)
+  void Renderer::setSettings(const config::SkySettings &settings, const config::SkyControl &control) {
+    m->game = !settings.ignoreGameControl;
+    m->control = control;
+    // The game's time of day replaces the profile's; a new one moves the
+    // running clock (timeCycleEnable) to it.
+    const bool time = m->game && control.time;
+    if (m->configured && settings.atmosphere == m->atmosphere && time == m->timeOverride &&
+        (!time || control.timeGeneration == m->timeGeneration))
       return;
     numos::Settings values;
     for (const auto &[key, value] : settings.atmosphere)
       numos::setSetting(values, key, value);
+    if (time) {
+      values.timeOfDayHours = std::clamp(control.timeOfDayHours, 0.f, 24.f);
+      if (control.dayOfYear > 0)
+        values.dayOfYear = std::clamp(control.dayOfYear, 1, 365);
+      values.timeCycleEnable = control.dayLengthMinutes > 0;
+      if (values.timeCycleEnable)
+        values.dayLengthMinutes = std::max(control.dayLengthMinutes, .01f);
+    }
     m->numos.setSettings(values);
     m->atmosphere = settings.atmosphere;
+    m->timeOverride = time;
+    m->timeGeneration = control.timeGeneration;
     m->configured = true;
   }
 
@@ -215,6 +249,45 @@ namespace remix::sky {
     }
     inputs.opaqueTlas = m->sceneImport;
 
+    // The game's weather eases in from the weather in force; cleared, it
+    // eases back to the profile's and then lets go.
+    const auto &control = m->control;
+    const bool wantWeather = m->game && control.weather;
+    if (wantWeather != m->weatherWanted || (wantWeather && control.weatherGeneration != m->weatherGeneration)) {
+      const auto &base = m->numos.settings();
+      auto target = numos::weatherFromSettings(base);
+      numos::WeatherPreset preset;
+      if (wantWeather && !control.preset.empty() && numos::weatherPresetFromName(control.preset.c_str(), preset))
+        target = numos::weatherPreset(preset, base);
+      size_t count = 0;
+      const auto *fields = numos::weatherFields(count);
+      for (size_t i = 0; wantWeather && i < count; ++i)
+        if (const auto found = control.fields.find(fields[i].name); found != control.fields.end())
+          target.*fields[i].member = found->second;
+      if (!m->weatherActive)
+        m->weather = numos::WeatherBlender(numos::weatherFromSettings(base));
+      m->weather.setTarget(target, control.transitionSeconds);
+      m->weatherActive = true;
+      m->weatherWanted = wantWeather;
+      m->weatherGeneration = control.weatherGeneration;
+      m->weatherElapsed = 0;
+      m->weatherDuration = std::max(control.transitionSeconds, 0.f);
+    }
+    if (m->weatherActive) {
+      m->weather.update(inputs.deltaSeconds);
+      m->weatherElapsed += inputs.deltaSeconds;
+      inputs.weather = &m->weather.current();
+      if (!m->weatherWanted && !m->weather.transitioning())
+        m->weatherActive = false;
+    }
+    if (control.lightningGeneration != m->lightningGeneration) {
+      m->lightningGeneration = control.lightningGeneration;
+      inputs.lightningStrike = m->game;
+      inputs.lightningStrikeAtPosition = control.lightningAtPosition;
+      inputs.lightningStrikePosition = {control.lightningPosition[0], control.lightningPosition[1],
+                                        control.lightningPosition[2]};
+    }
+
     m->bridge.begin(command);
     m->numos.beginFrame(m->bridge, inputs);
     m->begun = true;
@@ -245,20 +318,104 @@ namespace remix::sky {
     named["environment"] = {.resource = m->environment};
     m->dispatch(Stage::environment, named, &push, sizeof(push), (environmentWidth + 7) / 8,
                 (environmentHeight + 7) / 8);
+
+    if (!m->cloudShadow)
+      m->cloudShadow = m->bridge.createTexture({.type = numos::TextureType::Tex2D,
+                                                .format = numos::Format::R16Float,
+                                                .width = cloudShadowSize * cloudShadowSlices,
+                                                .height = cloudShadowSize,
+                                                .debugName = "NUMOS cloud shadow"});
+    // The box's horizontal axes and up axis in the world, its corner snapped
+    // to whole texels so the shadows hold still as the camera moves.
+    const float unitsPerMeter = inputs.hostUnitsPerMeter;
+    const float boxWidth = cloudShadowWidthMeters * unitsPerMeter, boxHeight = cloudShadowHeightMeters * unitsPerMeter;
+    const float texel = boxWidth / cloudShadowSize, step = boxHeight / (cloudShadowSlices - 1);
+    const float axes[3][3] = {{1, 0, 0}, {0, float(zUp), float(!zUp)}, {0, float(!zUp), float(zUp)}};
+    const float eye[3] = {inputs.cameraPosition.x, inputs.cameraPosition.y, inputs.cameraPosition.z};
+    const auto along = [&](int axis) { return axes[axis][0] * eye[0] + axes[axis][1] * eye[1] + axes[axis][2] * eye[2]; };
+    const float corner[3] = {std::floor((along(0) - boxWidth / 2) / texel) * texel,
+                             std::floor((along(1) - boxWidth / 2) / texel) * texel,
+                             std::floor((along(2) - boxHeight / 2) / step) * step};
+    const float extent[3] = {boxWidth, boxWidth, boxHeight};
+    CloudShadowPush shadowPush{.size = cloudShadowSize, .slices = cloudShadowSlices, .zUp = zUp};
+    float *pushAxes[3] = {shadowPush.axisU, shadowPush.axisV, shadowPush.axisSlice};
+    for (int a = 0; a < 3; ++a) {
+      for (int c = 0; c < 3; ++c) {
+        shadowPush.origin[c] += axes[a][c] * corner[a];
+        pushAxes[a][c] = axes[a][c] * extent[a];
+        m_cloudShadowTransform[a][c] = axes[a][c] / extent[a];
+      }
+      m_cloudShadowTransform[a][3] = -corner[a] / extent[a];
+    }
+    named.erase("environment");
+    named["cloudShadow"] = {.resource = m->cloudShadow};
+    m->dispatch(Stage::cloud_shadow, named, &shadowPush, sizeof(shadowPush),
+                (cloudShadowSize * cloudShadowSlices + 7) / 8, (cloudShadowSize + 7) / 8);
     m->bridge.end();
 
     const auto &out = m->numos.outputs();
     const float scale = 1.f / std::max(out.radianceScale, 1e-30f);
     m_environmentScale = scale;
-    const auto &light = out.lights[numos::FrameOutputs::kSunLight];
-    m_sun.active = light.active;
-    m_sun.direction[0] = light.direction.x;
-    m_sun.direction[1] = light.direction.y;
-    m_sun.direction[2] = light.direction.z;
-    m_sun.radiance[0] = light.radiance.x * scale;
-    m_sun.radiance[1] = light.radiance.y * scale;
-    m_sun.radiance[2] = light.radiance.z * scale;
-    m_sun.angularDiameterDegrees = light.halfAngle * 2 * 57.2957795f;
+    // The scene has one distant light: the brightest of NUMOS's sun, moons and
+    // lightning, by illuminance (radiance over the disc's solid angle). A
+    // strike kilometres away lights the scene as a disc of its sphere's
+    // radiance and angular size would.
+    m_sun = {};
+    float brightest = 0;
+    uint32_t kind = 0;
+    for (uint32_t index = 0; index < std::size(out.lights); ++index) {
+      const auto &light = out.lights[index];
+      if (!light.active)
+        continue;
+      Sun candidate{.active = true, .cloudShadowed = light.cloudShadowed};
+      float halfAngle = light.halfAngle;
+      numos::Vector3 direction = light.direction;
+      if (light.type == numos::EmittedLight::Type::Sphere) {
+        const numos::Vector3 offset{inputs.cameraPosition.x - light.position.x,
+                                    inputs.cameraPosition.y - light.position.y,
+                                    inputs.cameraPosition.z - light.position.z};
+        const float distance = std::sqrt(offset.x * offset.x + offset.y * offset.y + offset.z * offset.z);
+        if (distance <= light.radius)
+          continue;
+        direction = {offset.x / distance, offset.y / distance, offset.z / distance};
+        halfAngle = std::asin(light.radius / distance);
+      }
+      candidate.direction[0] = direction.x;
+      candidate.direction[1] = direction.y;
+      candidate.direction[2] = direction.z;
+      candidate.radiance[0] = light.radiance.x * scale;
+      candidate.radiance[1] = light.radiance.y * scale;
+      candidate.radiance[2] = light.radiance.z * scale;
+      candidate.angularDiameterDegrees = halfAngle * 2 * 57.2957795f;
+      const float sine = std::sin(halfAngle);
+      const float illuminance = (.2126f * candidate.radiance[0] + .7152f * candidate.radiance[1] +
+                                 .0722f * candidate.radiance[2]) * sine * sine;
+      if (illuminance > brightest) {
+        brightest = illuminance;
+        m_sun = candidate;
+        kind = index == numos::FrameOutputs::kSunLight         ? 1
+               : index == numos::FrameOutputs::kLightningLight ? 3
+                                                               : 2;
+      }
+    }
+
+    auto &state = m->state;
+    state.active = true;
+    state.light = kind;
+    std::copy_n(m_sun.direction, 3, state.lightDirection);
+    state.timeOfDayHours = m->numos.simulationState().timeOfDayHours;
+    state.weatherTransition =
+        m->weatherActive && m->weatherDuration > 0 ? std::min(m->weatherElapsed / m->weatherDuration, 1.f) : 1.f;
+    state.cloudCoverage = inputs.weather ? inputs.weather->cloudCoverageMean : m->numos.settings().cloudCoverageMean;
+    state.preset = m->weatherWanted ? control.preset : std::string();
+    // Rain falls from the stormy presets unless the game says otherwise.
+    float precipitation = 0;
+    if (m->weatherWanted && control.precipitation >= 0)
+      precipitation = control.precipitation;
+    else if (numos::WeatherPreset preset;
+             m->weatherWanted && numos::weatherPresetFromName(control.preset.c_str(), preset))
+      precipitation = preset == numos::WeatherPreset::Storm ? 1.f : preset == numos::WeatherPreset::Drizzle ? .35f : 0.f;
+    state.precipitation = precipitation;
     return true;
   }
 
@@ -344,6 +501,15 @@ namespace remix::sky {
     m->bridge.forget(color);
     if (depth != m->depthImport)
       m->bridge.forget(depth);
+  }
+
+  const config::SkyState &Renderer::state() const { return m->state; }
+
+  VkDescriptorImageInfo Renderer::cloudShadow() const {
+    if (!m->cloudShadow)
+      return {};
+    return {m->bridge.sampler(m->numos.outputs().linearClampSampler), m->bridge.sampledView(m->cloudShadow),
+            VK_IMAGE_LAYOUT_GENERAL};
   }
 
   VkDescriptorImageInfo Renderer::environment() const {

@@ -101,12 +101,18 @@ namespace remix {
       m_gpu->numosSky->selectFrame(slot);
 #endif
   }
-  void PathTracer::setSky(const config::SkySettings &settings, const std::string &unavailable) {
+  void PathTracer::setSky(const config::SkySettings &settings, const config::SkyControl &control,
+                          const std::string &unavailable) {
     if (!(settings == m_gpu->skySettings)) {
       m_gpu->skyFailure.clear();
       m_gpu->skySettings = settings;
     }
+    m_gpu->skyControl = control;
     m_gpu->skyUnavailable = unavailable;
+  }
+  config::SkyState PathTracer::skyState() const {
+    std::lock_guard lock(m_gpu->skyStateMutex);
+    return m_gpu->skyState;
   }
   PathTracer::SkyStatus PathTracer::skyStatus() const {
     SkyStatus status;

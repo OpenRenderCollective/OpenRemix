@@ -417,6 +417,10 @@ namespace remix {
     }
     return result;
   }
+  config::SkyState RemixNativeRuntime::skyState() const {
+    return m_pathTracer ? m_pathTracer->skyState() : config::SkyState{};
+  }
+
   remixapi_BackendCapabilitiesEXT RemixNativeRuntime::backendCapabilities() const {
     remixapi_BackendCapabilitiesEXT result = {.structSize = sizeof(result),
                                               .supportedBackends = m_traceSupported ? 3u : 1u,

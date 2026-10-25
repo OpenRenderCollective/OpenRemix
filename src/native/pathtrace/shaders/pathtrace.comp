@@ -592,13 +592,13 @@ vec3 sunVisibility(Hit receiver,ivec2 pixel,out float blockerDistance) {
     direction=normalize(center+frame.sun.x*sqrt(u)*(cos(angle)*t+sin(angle)*cross(center,t)));
   }
   if(dot(receiver.n,direction)<=0)return vec3(0);
-  vec3 transmission=vec3(1),origin=offsetRay(receiver.p,receiver.ng);
+  vec3 transmission=vec3(cloudShadow(receiver.p)),origin=offsetRay(receiver.p,receiver.ng);
   float distance=0;blockerDistance=65504;
 #ifndef SIGMA_PASS
   // Only SIGMA reads the blocker distance. Without it this is the same
   // layered transmission as shadow(): zero at any blocker, otherwise the
   // product of at most 31 sheets. Early-out layers keep that result.
-  if(shadowEarlyOut)return shadow(origin,direction);
+  if(shadowEarlyOut)return transmission*shadow(origin,direction);
 #endif
   for(uint layer=0;layer<32;++layer) {
     VisibilityHit hit=visibilityHit(origin,direction,false);
@@ -647,6 +647,7 @@ vec3 direct(Hit hit,bool primary,out vec3 specular,out float distance) {
       weight=materialSample(hit,direction,lobeSpecular);
     }
     vec3 visibility=shadow(offsetRay(hit.p,hit.ng),direction);
+    if(source==0)visibility*=cloudShadow(hit.p);
     if(source==1)visibility*=environmentRadiance(direction);
     local+=weight*visibility;specular+=lobeSpecular*visibility;
   }

@@ -591,6 +591,7 @@ namespace remix {
     frame.inverseCamera = scene::inverse(frame.camera);
     const auto eye = scene::inverse(resources.view());
     std::copy_n(eye.data() + 12, 3, frame.eye);
+    observeUpAxis(eye);
     // Camera rays: the view and the projection inverted separately, without
     // the eye's translation (Frame::inverseCameraRelative).
     try {
@@ -634,7 +635,7 @@ namespace remix {
       }
       light.angularDiameterDegrees = sun.angularDiameterDegrees;
     } else if (numosActive) {
-      // The sun is below NUMOS's horizon.
+      // No NUMOS light is above the horizon.
       std::fill_n(light.radiance, 3, 0.f);
     }
 #endif
@@ -710,6 +711,13 @@ namespace remix {
             frame.domeTransform[row][col] = col < 3 ? numosSky->domeTransform()[row][col] : 0.f;
         textures.push_back(environment);
         skyApplied = true;
+      }
+      const auto cloudShadow = numosSky->cloudShadow();
+      if (cloudShadow.imageView && numosSky->sun().cloudShadowed && textures.size() < PathTracer::textureLimit) {
+        std::copy_n(&numosSky->cloudShadowTransform()[0][0], 12, &frame.cloudShadow[0][0]);
+        frame.cloudShadowConfig[0] = uint32_t(textures.size() + 1);
+        frame.cloudShadowConfig[1] = sky::Renderer::cloudShadowSlices;
+        textures.push_back(cloudShadow);
       }
     }
 #endif
@@ -920,7 +928,7 @@ namespace remix {
           numosSky = std::make_shared<sky::Renderer>(physical, device);
           numosSky->selectFrame(frameIndex);
         }
-        numosSky->setSettings(skySettings);
+        numosSky->setSettings(skySettings, skyControl);
         sky::FrameDescription description{.view = resources.view(),
                                           .projection = resources.projection(),
                                           .previousView = temporalFrame.previousView,
@@ -941,11 +949,16 @@ namespace remix {
         skyActive = numosSky->record(command, description);
         skyReady |= skyActive;
         skyReason = numosSky->status();
+        std::lock_guard lock(skyStateMutex);
+        skyState = numosSky->state();
+        skyState.active = skyActive;
       });
     else {
       // A sky enabled again starts from its own next frame, not a stale one.
       skyReady = false;
       skyReason = skySettings.enabled ? "" : "Off.";
+      std::lock_guard lock(skyStateMutex);
+      skyState = {};
     }
 #endif
     temporalFrame.jitter[2] = history.reset() ? temporalFrame.jitter[0] : previousJitter[0];

@@ -1,5 +1,6 @@
 #pragma once
 #include "runtime/settings.h"
+#include "runtime/sky_control.h"
 #include "scene/types.h"
 #include <chrono>
 #include <memory>
@@ -23,10 +24,12 @@ namespace remix::sky {
     VkAccelerationStructureKHR scene = VK_NULL_HANDLE;
   };
 
-  // The sun NUMOS puts in the scene: its propagation direction and radiance in
-  // the renderer's units.
+  // The distant light NUMOS puts in the scene (its sun, a moon or a lightning
+  // flash): its propagation direction and radiance in the renderer's units.
   struct Sun {
     bool active = false;
+    // The clouds' shadow (Renderer::cloudShadow) applies to it.
+    bool cloudShadowed = false;
     float direction[3] = {0, 0, -1};
     float radiance[3] = {};
     float angularDiameterDegrees = .53f;
@@ -43,7 +46,11 @@ namespace remix::sky {
 
     // After the slot's fence.
     void selectFrame(uint32_t slot);
-    void setSettings(const config::SkySettings &settings);
+    // The profile's sky settings and the game's control over them
+    // (remix_sky_ext.h), before record().
+    void setSettings(const config::SkySettings &settings, const config::SkyControl &control);
+    // What the sky did in the last record() (inactive while it has not run).
+    const config::SkyState &state() const;
     // Records the frame's sky work; false (and nothing recorded) while its
     // pipelines compile or the frame cannot have a sky (status() says why).
     bool record(VkCommandBuffer command, const FrameDescription &frame);
@@ -64,6 +71,13 @@ namespace remix::sky {
     float environmentScale() const { return m_environmentScale; }
     const float (&domeTransform() const)[3][3] { return m_domeTransform; }
     const Sun &sun() const { return m_sun; }
+    // The clouds' transmittance toward the sun around the camera: one R16
+    // float texture in GENERAL layout holding cloudShadowSlices horizontal
+    // slices side by side. cloudShadowTransform() rows take a world position
+    // (w = 1) to (u, v, slice) in [0, 1]; null before the first bake.
+    VkDescriptorImageInfo cloudShadow() const;
+    const float (&cloudShadowTransform() const)[3][4] { return m_cloudShadowTransform; }
+    static constexpr uint32_t cloudShadowSlices = 4;
     const std::string &status() const { return m_status; }
 
   private:
@@ -71,6 +85,7 @@ namespace remix::sky {
     std::unique_ptr<State> m;
     float m_environmentScale = 1;
     float m_domeTransform[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+    float m_cloudShadowTransform[3][4] = {};
     Sun m_sun;
     std::string m_status;
   };
