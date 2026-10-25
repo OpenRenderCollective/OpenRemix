@@ -1,4 +1,6 @@
 python = find_program('python3')
+test('Windows DLSS bundles preserve separate pinned RR models', python,
+  args : [meson.current_source_dir() / 'package_runtime.py'])
 test('Fixed probe receiver comparison and coverage gates', python,
   args : [meson.current_source_dir() / 'probe_receiver_comparison.py'])
 test('Pinned shader compiler native version formats', python,

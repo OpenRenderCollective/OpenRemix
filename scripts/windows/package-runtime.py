@@ -44,6 +44,30 @@ class Bundle:
             }
 
 
+def bundle_dlss(bundle, root, build, manifest):
+    expected = {name: digest for digest, name in
+                (line.split("  ", 1) for line in
+                 (root / "third_party/dlss/sources.sha256").read_text().splitlines())}
+
+    def checked(source, vendored, destination):
+        if hashlib.sha256(source.read_bytes()).hexdigest() != expected[vendored]:
+            raise ValueError("DLSS release library hash mismatch: " + vendored)
+        bundle.copy(source, destination)
+
+    release = "lib/Windows_x86_64/rel"
+    destination = Path("dlss") / manifest["version"]
+    for name in ("nvngx_dlss.dll", "nvngx_dlssd.dll", "nvngx_dlssg.dll"):
+        checked(build / "src/native/upscale" / name, release + "/" + name, destination / name)
+    for name in ("LICENSE.txt", "README.remix.md", "upstream.json", "sources.sha256"):
+        bundle.copy(root / "third_party/dlss" / name, destination / name)
+    # CNN and Transformer RR have the same DLL name but separate pinned releases.
+    # Preserve the vendored path when looking up hashes and isolate both copies.
+    cnn = manifest["cnnVersion"]
+    checked(build / "src/native/upscale/cnn/nvngx_dlssd.dll",
+            release + "-" + cnn + "/nvngx_dlssd.dll", Path("dlss") / cnn / "nvngx_dlssd.dll")
+    bundle.copy(root / "third_party/dlss" / ("LICENSE-" + cnn + ".txt"), Path("dlss") / cnn / "LICENSE.txt")
+
+
 def package(build, sdl, output):
     root = Path(__file__).resolve().parents[2]
     options = {
@@ -117,17 +141,7 @@ def package(build, sdl, output):
 
     dlss = json.loads((build / "src/native/upscale/dlss-runtime.json").read_text())
     if dlss["enabled"]:
-        expected = {Path(name).name: digest for digest, name in
-                    (line.split("  ", 1) for line in
-                     (root / "third_party/dlss/sources.sha256").read_text().splitlines())}
-        for name in ("nvngx_dlss.dll", "nvngx_dlssd.dll", "nvngx_dlssg.dll"):
-            source = build / "src/native/upscale" / name
-            if hashlib.sha256(source.read_bytes()).hexdigest() != expected[name]:
-                raise ValueError("DLSS release library hash mismatch: " + name)
-            bundle.copy(source, Path("dlss") / dlss["version"] / name)
-        for name in ("LICENSE.txt", "README.remix.md", "upstream.json", "sources.sha256"):
-            bundle.copy(root / "third_party/dlss" / name,
-                        Path("dlss") / dlss["version"] / name)
+        bundle_dlss(bundle, root, build, dlss)
     bundle.write()
     manifest = {
         "build": str(build),
