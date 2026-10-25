@@ -3157,3 +3157,23 @@ rather than an identity-only shortcut. Preserve the independent live shadow
 policy and editable materials. Enumerate candidates independently of camera
 visibility; do not introduce camera-driven main-scene rebakes or declare a
 first-visible subset complete. Adapter/playable/updater remain unchanged.
+
+
+### Stable live receiver triangle subsets
+
+Private Construct captures identify dynamic index buffers on all six shell
+brushes. Eleven observed subsets match exact oriented BSP face fan triangles;
+retaining one camera's transient engine mesh is not a complete receiver relay.
+The core now transfers chart data to exact oriented live subsets while keeping
+live UVs, normals and vertex colours. Explicit identity/replica/surface and
+bounded pose checks remain; changed/unknown/ambiguous geometry falls back.
+Derived buffers reuse content across new mesh objects, remain volume-owned and
+are bounded by 128 variants/32 MiB GPU allocations. CPU directories have a
+separate conservative budget and cancellation. Ordinary strict bindings remain.
+Six CPU/GPU suites pass, including real surface readback at 1/2/4x MSAA with
+probes deliberately outside coverage, changing subsets/materials without a
+rebake, movement fallback, mixed shadows and grouped controllable lighting.
+The temporary wrapper dump hook is removed and the normal wrapper rebuilt.
+Next implement the BSP candidate/reference/live-identity relay, independent of
+camera visibility, then qualify Construct quality/cache stability and real
+foreground performance. No gameplay gain/default/deployment is claimed yet.

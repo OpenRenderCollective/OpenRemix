@@ -2704,19 +2704,38 @@ and an empty receiver list preserve the established content identity.
 The snapshot stores neutral receiver materials: animated textures, albedo and
 emission edits do not change static transport. Chart binding still requires
 the same instance, surface, placement, index range and coverage policy; material
-identity alone is ignored for receivers. Moving or replacing the geometry
-therefore falls back instead of reusing light from the old placement. The host
+identity alone is ignored for receivers. The validated triangle subset path
+below handles fresh live meshes; other geometry changes or movement fall back
+instead of reusing light from the old placement. The host
 must republish geometry changes and select genuinely stationary receivers.
 This API does not automatically classify game entities or make their visibility
 immutable. Live shadow policy remains independent of receiver chart ownership.
 
 A host can retain an invisible receiver reference with `ChangeSceneInstancesEXT`
 and submit its live surface separately with `DrawInstance`. Supply the same
-explicit `InstanceIdentityEXT`, mesh and placement to both descriptions. The
+explicit `InstanceIdentityEXT` and compatible geometry/placement to both descriptions. The
 invisible reference is accepted during the first capture and subsequent reuse,
 but contributes no duplicate frame draw. Ordinary invisible transport instances
 remain invalid bake inputs. This avoids making receiver visibility depend on
 the runtime's retained-scene submission order.
+
+Receiver-only inputs also support fresh live meshes containing an oriented
+triangle subset of the reference. `lightmap/receiver_triangles` transfers chart
+coordinates, bounds and light owners while preserving live UVs, normals and
+vertex colours. Triangle positions/winding must match exactly; identity,
+replica/surface indices and pose must agree. Matrix roundoff has a small
+component allowance plus a 10-micrometre world-space bound. Unknown, uncharted
+or ambiguous triangles fall back; duplicate source ownership cannot choose an
+arbitrary chart. This does not classify arbitrary dynamic objects as static.
+
+The volume owns derived receiver buffers without moving or evicting entries
+referenced by frames. Content comparison reuses buffers across fresh mesh
+objects; the cache is capped at 128 variants and 32 MiB of GPU allocations,
+with a separate conservative 32 MiB CPU directory budget. Exhaustion keeps
+existing entries and falls back for new variants. Main bake identity is unchanged
+by live index subsets or material edits. The adapter must still enumerate full
+authoritative references independently of the camera and assign live identities;
+this core path alone does not provide a completed GMod brush relay.
 
 The core supports this role; the GMod controllable-brush relay and representative
 quality/performance qualification remain pending. Existing brush behaviour and

@@ -10,6 +10,14 @@ receiver_only_test = executable('remix-bake-receivers-test', 'bake_receivers.cpp
   '../../src/native/forward/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Receiver-only bake charts exclude transport and preserve live material edits', receiver_only_test)
+receiver_triangles_test = executable('remix-receiver-triangles-test', 'receiver_triangles.cpp',
+  include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+  cpp_args : test_cpp_args)
+test('Live receiver triangle subsets preserve attributes and chart ownership', receiver_triangles_test)
+if get_option('gpu_tests')
+  test('Receiver subset GPU buffers reuse content and retain bounded ownership', receiver_triangles_test,
+    args : ['gpu'])
+endif
 reference_capture_test = executable('remix-reference-capture-test', 'reference_capture.cpp',
   '../../src/native/forward/bake/reference_capture.cpp',
   '../../src/native/forward/lighting.cpp',

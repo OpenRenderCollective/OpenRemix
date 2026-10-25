@@ -1842,7 +1842,9 @@ namespace {
     resources.createMesh(info, mesh);
     return mesh;
   }
+#include "receiver_subset_readback.h"
   void surfaceLightmapTests(bool curved = false, bool split = false) {
+    if (!curved && !split) receiverSubsetReadback();
     for (bool ssr : {false, true})
       for (uint32_t samples : {1u, 2u, 4u}) {
         Target target(64, 64, true);

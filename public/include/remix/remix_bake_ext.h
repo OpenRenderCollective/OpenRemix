@@ -123,14 +123,16 @@ typedef struct remixapi_BakeSceneStyledLightsInfoEXT {
 // scene.instances: their fixed geometry can own charts but never occludes rays,
 // reflects bounce light or emits into this bake. Their live materials remain
 // editable; only the frozen geometry/placement determines receiver coverage.
-// Geometry and placement changes require republishing, and live binding rejects
-// a moved or replaced mesh. Visibility and material edits do not make a receiver
+// Geometry and placement changes require republishing. Fresh live meshes may
+// reuse charts only for exact oriented triangle subsets at the captured pose.
+// Moved or changed geometry falls back. Visibility/material edits do not make a receiver
 // into an immutable transport surface. Duplicate or unknown handles are refused.
 // Hosts retain responsibility for selecting stationary receivers; do not include
 // a moving object merely because it was motionless during one camera frame.
 // Receiver handles may have visible=false in ChangeSceneInstancesEXT, keeping
 // a bake reference out of frame submission while the host supplies live draws
-// with the same explicit identity/mesh/placement. Visibility is not bake content.
+// with the same explicit identity and compatible geometry/placement.
+// Visibility is not bake content.
 #define REMIXAPI_BAKE_SCENE_RECEIVERS_VERSION_EXT 6u
 typedef struct remixapi_BakeSceneReceiversInfoEXT {
   remixapi_BakeSceneStyledLightsInfoEXT styled;
