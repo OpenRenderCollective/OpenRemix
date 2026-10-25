@@ -3141,3 +3141,19 @@ matching retained live draw identities and preserving visibility/material edits
 and movement fallback. Then qualify actual receiver lightmaps, cache stability
 and foreground performance in Construct and other maps before default/deployment
 changes. Adapter and playable/updater remain unchanged at this checkpoint.
+
+
+### Invisible receiver reference lifecycle
+
+Receiver-only capture now permits retained instances with visible=false,
+using the existing scene visibility API. Direct live draws share an explicit
+identity/mesh/placement with their invisible capture reference. Both submission
+orders are covered, with no duplicate frame geometry. Invisible ordinary
+transport is still refused; three CPU lifecycle/API suites pass and the runtime
+builds. This does not yet connect the GMod brush relay or establish an FPS gain.
+Construct's six func_brush shell entities all have nonzero authored origins and
+local model bounds, plus vrad_brush_cast_shadows=0. Support authored transforms
+rather than an identity-only shortcut. Preserve the independent live shadow
+policy and editable materials. Enumerate candidates independently of camera
+visibility; do not introduce camera-driven main-scene rebakes or declare a
+first-visible subset complete. Adapter/playable/updater remain unchanged.

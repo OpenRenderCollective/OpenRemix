@@ -128,6 +128,9 @@ typedef struct remixapi_BakeSceneStyledLightsInfoEXT {
 // into an immutable transport surface. Duplicate or unknown handles are refused.
 // Hosts retain responsibility for selecting stationary receivers; do not include
 // a moving object merely because it was motionless during one camera frame.
+// Receiver handles may have visible=false in ChangeSceneInstancesEXT, keeping
+// a bake reference out of frame submission while the host supplies live draws
+// with the same explicit identity/mesh/placement. Visibility is not bake content.
 #define REMIXAPI_BAKE_SCENE_RECEIVERS_VERSION_EXT 6u
 typedef struct remixapi_BakeSceneReceiversInfoEXT {
   remixapi_BakeSceneStyledLightsInfoEXT styled;

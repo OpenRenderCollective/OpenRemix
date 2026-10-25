@@ -426,7 +426,9 @@ namespace remix {
       if (handle != info.instances[i])
         return false;
       const auto *entry = retained(handle);
-      if (!entry || entry->revision != revision || retainedStale(*entry) || !entry->visible ||
+      const bool receiver = std::find(m_bakeScene->receiverInstances.begin(), m_bakeScene->receiverInstances.end(),
+                                       handle) != m_bakeScene->receiverInstances.end();
+      if (!entry || entry->revision != revision || retainedStale(*entry) || (!entry->visible && !receiver) ||
           entry->resolvedModGeneration != m_modGeneration)
         return false;
     }
@@ -526,11 +528,15 @@ namespace remix {
     }
     std::vector<std::pair<uint64_t, uint64_t>> instances, lights;
     std::unordered_set<uint64_t> seen;
+    std::unordered_set<uint64_t> receiverHandles;
+    if (receivers)
+      for (uint32_t i = 0; i < receiverInfo->receiverCount; ++i)
+        if (!receiverHandles.insert(receiverInfo->receivers[i]).second) throw invalid;
     std::unordered_map<uint64_t, size_t> drawBases;
     for (uint32_t i = 0; i < info->instanceCount; ++i) {
       const auto *entry = retained(info->instances[i]);
       if (!entry || !seen.insert(entry->handle).second || !entry->mesh || entry->watch || !entry->placed ||
-          entry->description.hidden || !entry->visible || retainedStale(*entry) ||
+          entry->description.hidden || (!entry->visible && !receiverHandles.contains(entry->handle)) || retainedStale(*entry) ||
           entry->resolvedModGeneration != m_modGeneration)
         throw invalid;
       drawBases.emplace(entry->handle, next->draws.size());
@@ -539,12 +545,11 @@ namespace remix {
     }
     if (receivers && receiverInfo->receiverCount) {
       next->receiverDraws.resize(next->draws.size());
-      std::unordered_set<uint64_t> receiverHandles;
       for (uint32_t i = 0; i < receiverInfo->receiverCount; ++i) {
         const auto handle = receiverInfo->receivers[i];
         const auto base = drawBases.find(handle);
         const auto *entry = retained(handle);
-        if (base == drawBases.end() || !entry || !receiverHandles.insert(handle).second) throw invalid;
+        if (base == drawBases.end() || !entry) throw invalid;
         next->receiverInstances.push_back(handle);
         std::fill_n(next->receiverDraws.begin() + base->second, entry->records.size(), uint8_t(1));
       }

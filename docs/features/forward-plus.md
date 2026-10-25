@@ -2710,6 +2710,14 @@ must republish geometry changes and select genuinely stationary receivers.
 This API does not automatically classify game entities or make their visibility
 immutable. Live shadow policy remains independent of receiver chart ownership.
 
+A host can retain an invisible receiver reference with `ChangeSceneInstancesEXT`
+and submit its live surface separately with `DrawInstance`. Supply the same
+explicit `InstanceIdentityEXT`, mesh and placement to both descriptions. The
+invisible reference is accepted during the first capture and subsequent reuse,
+but contributes no duplicate frame draw. Ordinary invisible transport instances
+remain invalid bake inputs. This avoids making receiver visibility depend on
+the runtime's retained-scene submission order.
+
 The core supports this role; the GMod controllable-brush relay and representative
 quality/performance qualification remain pending. Existing brush behaviour and
 runtime defaults are unchanged until that host integration is qualified.

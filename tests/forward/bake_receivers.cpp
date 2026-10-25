@@ -8,8 +8,15 @@ using namespace remix::test;
 int main() {
   NativeResources resources;
   const auto mesh = quad(resources, 2, material(resources, 1, 1, 0, 0));
+  remixapi_InstanceIdentityEXT receiverIdentity{};
+  receiverIdentity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+  receiverIdentity.instanceId = 12345;
+  receiverIdentity.classification = REMIXAPI_INSTANCE_STATIC_EXT;
+  receiverIdentity.rasterVisible = 1;
+  auto receiverInfo = instance(mesh, 2);
+  receiverInfo.pNext = &receiverIdentity;
   const uint64_t instances[]{resources.createRetained(instance(mesh)),
-                              resources.createRetained(instance(mesh, 2))};
+                              resources.createRetained(receiverInfo)};
   remixapi_BakeSceneReceiversInfoEXT request{};
   auto &surfaces = request.styled.reflections.surfaces;
   auto &bounds = surfaces.bounds;
@@ -87,6 +94,43 @@ int main() {
   malformed.receiverDraws = {0, 2};
   rejected([&] { scene::freezeBakeScene(malformed); });
 
+  remixapi_SceneInstanceChangeEXT visibility{};
+  visibility.instance = instances[1];
+  visibility.fields = REMIXAPI_SCENE_INSTANCE_VISIBLE_EXT;
+  visibility.visible = 0;
+  resources.updateRetained(&visibility, 1);
+  resources.setBakeScene(&info);
+  require(resources.bakeScene() == captured,
+          "An invisible receiver reference reuses its bake independently of frame submission");
+  resources.finishFrame();
+  resources.drawRetained(nullptr);
+  require(resources.draws().size() == 1 && resources.draws()[0].instanceId != captured->draws[1].instanceId,
+          "Invisible bake references never add duplicate live geometry");
+  remixapi_InstanceIdentityEXT identity{};
+  identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+  identity.instanceId = receiverIdentity.instanceId;
+  identity.classification = REMIXAPI_INSTANCE_STATIC_EXT;
+  identity.rasterVisible = 1;
+  auto liveInfo = instance(mesh, 2);
+  liveInfo.pNext = &identity;
+  resources.drawInstance(liveInfo);
+  require(resources.draws().size() == 2 && scene::matchesBakeDraw(*captured, 1, resources.draws().back()),
+          "A direct live draw binds to an invisible bake reference without a duplicate retained draw");
+  resources.finishFrame();
+  resources.drawInstance(liveInfo);
+  resources.drawRetained(nullptr);
+  require(std::count_if(resources.draws().begin(), resources.draws().end(), [&](const auto &draw) {
+            return draw.instanceId == identity.instanceId;
+          }) == 1,
+          "Direct-before-retained ordering also submits the receiver exactly once");
+  request.receiverCount = 0;
+  rejected([&] { resources.setBakeScene(&info); });
+  request.receiverCount = 1;
+  resources.setBakeScene(nullptr);
+  resources.setBakeScene(&info);
+  require(resources.bakeScene()->contentHash == captured->contentHash,
+          "A first capture also accepts invisible receiver references without changing content");
+  const auto invisible = resources.bakeScene();
   request.reserved = 1;
   rejected([&] { resources.setBakeScene(&info); });
   request.reserved = 0;
@@ -97,7 +141,9 @@ int main() {
   request.receiverCount = 2;
   request.receivers = duplicate;
   rejected([&] { resources.setBakeScene(&info); });
-  require(resources.bakeScene() == captured, "Invalid receiver lists leave the previous snapshot intact");
+  require(resources.bakeScene() == invisible, "Invalid receiver lists leave the previous snapshot intact");
+  visibility.visible = 1;
+  resources.updateRetained(&visibility, 1);
   request.receiverCount = 0;
   request.receivers = nullptr;
   resources.setBakeScene(&info);
