@@ -2760,3 +2760,16 @@ to represent that directional irradiance. Next test geometry-aware local placeme
 retains multiple usable, same-side contributors; guard against isolated surviving probes,
 renormalization artifacts, thin solids and field discontinuities under movement.
 Do not extrapolate the two-position SH comparison to arbitrary high-frequency lighting.
+
+
+A surface-aligned 4 cm SH-stencil feasibility check separates the two difficult sites.
+Normal offsets are 2..42 mm, with deterministic tangent axes and no post-trace relocation.
+The underlit fixture's near-face interpolation approaches its independent surface
+reference with complete near-face weight. The other site still loses half its near-face
+weight to backface-invalid nodes and becomes overlit when the survivors are renormalized.
+Exact-position SH has substantial backface incidence there, so receiver validity and
+geometry-boundary/partition-side behavior need checking before allocating more density.
+The cohort is diagnostic model-surface sampling, not a proof that every selected point
+is visible in ordinary gameplay. Preserve that distinction without dropping difficult
+sites from reports. Surface alignment alone is not an accepted general placement policy;
+verify usable same-side contributors and boundary-aware fallback before runtime work.
