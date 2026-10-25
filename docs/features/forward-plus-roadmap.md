@@ -2947,3 +2947,32 @@ These integrations do not establish Forward+ feature parity.
 
 Lighting quality, bake time and measured opaque-shading bottlenecks remain higher
 priorities than enabling these additional effects by default.
+
+
+### Viewmodel performance investigation
+
+The current world depth prepass does not include viewmodels. Viewmodels render
+after world/reflection work into an independent MSAA HDR/depth target to preserve
+overlay ordering and world-space reflection guides. Eligible opaque weapon draws
+already use early fragment tests, but have no dedicated depth-only prepass.
+
+GPU diagnostics now separate viewmodel colour/attachment work from its local and
+sun shadow passes; the existing overlay range remains inclusive. The adapter frame
+CSV appends `viewmodelColorMs` without changing the public runtime API.
+
+- [x] Qualify fixed-camera, no-prop, repeated unarmed/pistol/physgun blocks using
+  foreground/status-gated samples and unchanged baked-lighting hashes. This
+  establishes one Construct hall case, not all weapons/maps or PT parity.
+- [ ] Evaluate a viewmodel-only depth prepass, preserving alpha coverage, equal
+  depth ties, draw ordering, MSAA, SSR, world depth and isolated self shadows.
+- [ ] Evaluate early weapon coverage rejection for world colour independently
+  from reflection-guide depth. Do not write weapon depth into world SSR inputs.
+- [ ] Study a supplied Source 2 capture's depth/stencil and pass ordering before
+  claiming equivalent behaviour; a colour cutout alone is insufficient evidence.
+
+The controlled hall run isolates a real equipped-weapon GPU increase while world
+depth timing changes little. The viewmodel overlay includes substantial shadow
+work as well as colour shading. Host intervals and native CPU recording also
+increase; do not assume the hall is GPU-bound or attribute every FPS loss to
+weapon pixel shading. Keep per-frame sums separate from sums of pass medians.
+Severe user-reported drops and wider maps still require reproduction.
