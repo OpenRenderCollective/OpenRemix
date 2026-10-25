@@ -74,6 +74,9 @@ namespace remix::forward::bake {
       for (size_t first = 0; first + 2 < mesh.indices.size(); first += 3)
         triangles += charted(mesh, first);
     const auto count = uint32_t(std::min(uint64_t(maximumSamples), triangles));
+    std::optional<Grid> containmentGrid;
+    if (source.partition && source.partition->closed && grid.probes.size() <= 65536)
+      containmentGrid = grid; // bounded diagnostic copy; published data stays immutable
     std::vector<ReceiverComparison> result;
     result.reserve(count);
     uint64_t ordinal = 0;
@@ -117,6 +120,25 @@ namespace remix::forward::bake {
           receiver.covered = true;
           receiver.probe = *value;
         }
+        if (containmentGrid) {
+          if ((result.size() & 63u) == 0 && cancelled.stop_requested())
+            throw std::runtime_error("Receiver containment study superseded");
+          const float bias = grid.header.settings[0];
+          if (const auto proposal = partitionContainedBias(source, receiver.position, receiver.normal, bias)) {
+            const float contained = *proposal;
+            receiver.containedBias = contained;
+            if (contained == bias) {
+              receiver.containedCovered = receiver.covered;
+              receiver.containedProbe = receiver.probe;
+            } else {
+              containmentGrid->header.settings[0] = contained;
+              if (const auto value = sample(*containmentGrid, receiver.position, receiver.normal)) {
+                receiver.containedCovered = true;
+                receiver.containedProbe = *value;
+              }
+            }
+          }
+        }
         result.push_back(receiver);
       }
     }
@@ -158,6 +180,7 @@ namespace remix::forward::bake {
       output << "{\"version\":1,\"sceneHash\":\"" << source.contentHash
              << "\",\"scope\":\"Triangle-centre indirect irradiance at shared positions/vertex normals; published probe bias applies; no normal maps, materials or direct lights; triangle-weighted, not area-weighted\","
              << "\"sampled\":" << receivers.size() << ",\"covered\":" << covered
+             << ",\"containmentScope\":\"CPU closed-partition oracle; bounded private grid copy; one coarse-bias cap inherited by fine queries; not a production rule\""
              << ",\"probeSpacingWorldUnits\":" << grid.header.originSpacing[3]
              << ",\"meanSurfaceLuminance\":" << surface / denominator
              << ",\"meanProbeLuminance\":" << probe / denominator
@@ -178,6 +201,10 @@ namespace remix::forward::bake {
         vector(output, r.surface);
         output << ",\"covered\":" << (r.covered ? "true" : "false") << ",\"probe\":";
         vector(output, r.probe);
+        output << ",\"containedBias\":";
+        if (r.containedBias) output << *r.containedBias; else output << "null";
+        output << ",\"containedCovered\":" << (r.containedCovered ? "true" : "false") << ",\"containedProbe\":";
+        vector(output, r.containedProbe);
         output << '}';
       }
       output << "\n]";

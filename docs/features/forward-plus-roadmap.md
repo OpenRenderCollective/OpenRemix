@@ -55,6 +55,19 @@ or zero: identical 8192-site/surface-reference cohorts retained coverage but had
 worse mean and RMS errors, with severe local regressions. The temporary override
 was removed. Next test selective containment against local geometry while
 leaving valid bias offsets intact; do not treat zero bias as a general leak fix.
+The reports now retain a bounded closed-partition containment oracle alongside
+the published estimate. A near-to-far segment walk detects thin solid/unplayable
+intervals even with playable endpoints; invalid, open or budget-exhausted data
+remain unknown. It preserves clear bias offsets and caps a private coarse bias
+when a crossing is found; fine queries inherit that conservative cap. Grid
+copies are limited to 65536 records. No shading or cache data is modified.
+
+The world triangle-centre cohort rarely exercises this defect. Camera-picked
+housing points do: partition containment restores some clear connections in
+the all-blocked case, but substantial blocked weight remains and other points
+can regress. The host partition omits model detail, so this is not a full opaque-
+geometry containment test. Next compare that fuller geometry oracle and
+receiver-side support/domain reconstruction before designing cheap GPU metadata.
 The synthetic painted-sky fallback does not qualify live-game sky parity.
 
 Independent 8192-sample SH captures 10-25 cm outside three housing faces are within

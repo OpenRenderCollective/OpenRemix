@@ -107,6 +107,10 @@ int main(int argc, char **argv) {
   }
   source.draws = {triangle(5), triangle(2)};
   source.contentHash = 123;
+  auto partition = std::make_shared<s::VisibilityPartition>();
+  partition->closed = true; partition->clusterCount = 1; partition->leafClusters = {0, -1};
+  partition->nodes.push_back({{0, 0, 1, 3}, {-2, -1}, {0, 0}});
+  source.partition = partition;
   auto writeInput = [&](const char *text) { std::ofstream(inputPath) << text; };
   writeInput("1\n.5 .5 0 0 0 1\n");
   environment(nullptr);
@@ -130,6 +134,9 @@ int main(int argc, char **argv) {
               output.find("\"opaqueBlocker\":{\"draw\":0") != std::string::npos &&
               output.find("\"receiverPosition\":[0.5,0.5,2]") != std::string::npos,
           "Probe connections distinguish an intervening opaque plane from the receiver endpoint");
+  require(output.find("\"containedIrradiance\":[") != std::string::npos &&
+              output.find("\"containedOpaqueBlockedWeight\":") != std::string::npos,
+          "Closed-partition pixel diagnostics retain the alternative estimate and blocked support");
   const auto irradiance = output.find("\"irradiance\":[");
   require(irradiance != std::string::npos, "Covered receiver has no probe irradiance");
   std::istringstream values(output.substr(irradiance + 14));

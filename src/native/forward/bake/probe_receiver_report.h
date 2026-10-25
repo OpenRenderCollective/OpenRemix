@@ -3,6 +3,10 @@
 #include <stop_token>
 
 namespace remix::forward::bake {
+  // Diagnostic only: preserve a clear normal bias, otherwise stop before the
+  // first solid/unplayable interval of a closed host partition. Unknown stays absent.
+  std::optional<float> partitionContainedBias(const scene::BakeScene &source,
+      Vec3 position, Vec3 normal, float bias);
   struct ReceiverRay {
     Vec3 origin{}, direction{}; // host units; unit direction
   };
@@ -20,7 +24,7 @@ namespace remix::forward::bake {
   // (1..16), then XYZ origins and XYZ unit directions, at most 4 KiB total.
   // REMIX_DEBUG_PROBE_RECEIVER_RAYS names the input; output appends .results.json.
   // Includes at most 256 triangles/charts per hit draw, with truncation flags.
-  // At most 16 contributing probe segments per hit test rigid opaque blockers
+  // At most 16 segments per original/contained stencil test rigid opaque blockers
   // against the exact biased query endpoint, excluding 0.1 mm at each end.
   // A missing opaque blocker does not establish alpha/transmission visibility.
   // Existing output is protected; failures never affect bake publication.

@@ -364,6 +364,32 @@ int main() {
     std::puts(
         "1331 torches: interior receiver energy and selection variance passed");
   }
+  {
+    VisibilityPartition p;
+    p.closed = true; p.clusterCount = 1; p.leafClusters = {0, -1};
+    VisibilityPartition::Node a{}, b{};
+    a.plane[0] = b.plane[0] = 1; a.plane[3] = 2; b.plane[3] = 3;
+    a.children[0] = 1; a.children[1] = -1;
+    b.children[0] = -1; b.children[1] = -2;
+    p.nodes = {a, b};
+    const float start[3] = {0,0,0}, end[3] = {4,0,0}, clear[3] = {1,0,0}, solid[3] = {2.5f,0,0};
+    using State = VisibilityPartition::SegmentState;
+    require(p.firstSolid(start, end).state == State::Solid && p.firstSolid(start, end).fraction == .5,
+            "Segment traversal finds a thin solid even when both endpoints are playable");
+    require(p.firstSolid(end, start).fraction == .25 && p.firstSolid(solid, end).fraction == 0 &&
+                p.firstSolid(start, clear).state == State::Clear,
+            "Segment traversal preserves direction, solid starts and entirely free intervals");
+    require(p.firstSolid(start, end, 1).state == State::Unknown,
+            "Insufficient traversal budget cannot claim a clear segment");
+    p.nodes[0].children[1] = 0;
+    require(p.firstSolid(start, clear).state == State::Unknown, "Cyclic partitions exhaust their bounded walk");
+    p.nodes[0].children[1] = 9999;
+    require(p.firstSolid(start, clear).state == State::Unknown, "Malformed children cannot prove free space");
+    p.nodes[0].plane[0] = 0;
+    require(p.firstSolid(start, end).state == State::Unknown, "A zero-normal plane supplies no segment proof");
+    p.closed = false;
+    require(p.firstSolid(start, end).state == State::Unknown, "Open partitions cannot prove solid containment");
+  }
   // Lights that come and go, and the emitters of dynamic instances, live in
   // the hierarchy's dynamic part: the static part keeps its indices (no
   // build), and the visibility table, which covers the static nodes only,

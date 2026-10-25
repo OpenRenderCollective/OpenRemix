@@ -216,6 +216,30 @@ int main() {
       require(std::abs(receiver.surface[c] - receiver.probe[c]) < 1e-6f,
               "Constant surface and probe irradiance agree without an exposure conversion");
   }
+  {
+    auto guardedSource = source;
+    auto partition = std::make_shared<scene::VisibilityPartition>();
+    partition->closed = true; partition->clusterCount = 1; partition->leafClusters = {0, -1};
+    partition->nodes.push_back({{0, 0, 1, .1f}, {-2, -1}, {0, 0}});
+    guardedSource.partition = partition;
+    auto guardedGrid = grid;
+    guardedGrid.header.settings[0] = .2f;
+    const auto contained = bake::compareReceivers(guardedSource, layout, pixels, guardedGrid);
+    require(contained[0].containedBias && *contained[0].containedBias > .09f &&
+                *contained[0].containedBias < .1f && contained[0].containedCovered &&
+                guardedGrid.header.settings[0] == .2f,
+            "Containment oracle shortens only the private query bias before a solid boundary");
+    require(std::abs(contained[0].containedProbe[0] - contained[0].probe[0]) < 1e-6,
+            "Selective bias preserves a constant irradiance field");
+    partition->nodes[0].plane[3] = -.1f;
+    partition->nodes[0].children[0] = -1; partition->nodes[0].children[1] = -2;
+    const auto clear = bake::compareReceivers(guardedSource, layout, pixels, guardedGrid);
+    require(clear[0].containedBias && *clear[0].containedBias == .2f,
+            "A free normal-bias segment remains untouched");
+    partition->closed = false;
+    require(!bake::compareReceivers(guardedSource, layout, pixels, guardedGrid)[0].containedBias,
+            "An open partition supplies no containment estimate");
+  }
   for (uint32_t texel = 0; texel < 16; ++texel)
     pixels[(2 * 16 + texel) * 4] = 0xb800; // signed L1 z coefficient: -.5
   for (auto &probe : grid.probes) probe.irradiance[2][0] = -.5f;

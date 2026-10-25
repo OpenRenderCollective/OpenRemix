@@ -10,6 +10,9 @@ namespace remix::forward::bake {
     Vec3 position{}, normal{}, surface{}, probe{};
     Vec4 coordinate{};
     bool covered = false;
+    std::optional<float> containedBias; // closed-partition CPU oracle; absent means unknown/unavailable
+    Vec3 containedProbe{};
+    bool containedCovered = false;
   };
   // Bounded, deterministic triangle-centre samples of the same published
   // indirect atlas and volume used by shading. No material/direct-light terms.
@@ -27,6 +30,9 @@ namespace remix::forward::bake {
   // Optional worker-side diagnostic, also usable after an exact cache hit.
   // REMIX_DEBUG_BAKE_RECEIVERS names a fresh JSON file. Distant-light reports
   // also include complete charted receiver bounds in sun-space metres.
+  // A closed host partition also supplies a CPU containment oracle, bounded
+  // to 65536 probe records. It caps one coarse bias (fine queries inherit it),
+  // reports unknown starts explicitly, and never changes published shading.
   // Failures never fail baking.
   void dumpReceiverReport(const scene::BakeScene &source, const lightmap::Layout &layout,
                           std::span<const uint16_t> pixels, const Grid &grid,
