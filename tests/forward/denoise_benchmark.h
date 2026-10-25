@@ -1,4 +1,5 @@
 #pragma once
+#include "forward/lightmap/denoise_chart.h"
 #include "forward/lightmap/denoise_filter.h"
 #include <algorithm>
 #include <barrier>
@@ -17,12 +18,11 @@ namespace remix::forward::test {
     std::vector<float> output;
   };
   inline DenoiseBenchmarkResult denoiseWorker(std::span<const float> original, uint32_t side, uint32_t charts,
-                                              uint32_t cpuThreads, std::barrier<> &ready) {
+                                              uint32_t cpuThreads, uint32_t queued, std::barrier<> &ready) {
     using namespace lightmap;
     using namespace lightmap::denoising;
     bool arrived = false;
     try {
-      constexpr uint32_t queued = 8;
       std::vector<std::vector<float>> packets(queued, std::vector<float>(original.begin(), original.end()));
       DenoiseStatistics statistics;
       Filter filter(statistics, original.size_bytes(), HostTransfers::Pageable, FilterDispatch::Ordinary,
@@ -36,12 +36,13 @@ namespace remix::forward::test {
       const auto start = std::chrono::steady_clock::now();
       uint64_t digest = 1469598103934665603ull;
       for (uint32_t chart = 0; chart < charts; chart += queued) {
-        for (auto &packet : packets) {
+        const auto active = std::span(packets).first(std::min(queued, charts - chart));
+        for (auto &packet : active) {
           std::copy(original.begin(), original.end(), packet.begin());
           filter.enqueue(packet, side, side, 0, side, side);
         }
         filter.finish();
-        for (const auto &packet : packets) {
+        for (const auto &packet : active) {
           filter.validate(packet);
           for (float value : packet) {
             digest ^= std::bit_cast<uint32_t>(value);
@@ -59,14 +60,21 @@ namespace remix::forward::test {
   }
   // Optional CPU scheduling benchmark. Identical packets and output digests
   // distinguish scheduling changes from changes to filtering or chart context.
-  inline void denoiseBenchmark(uint32_t workers = 1) {
+  inline void denoiseBenchmark(uint32_t workers = 1, uint32_t requestedQueued = 8) {
     using namespace lightmap;
     using namespace lightmap::denoising;
     if (workers != 1 && workers != 2 && workers != 4)
       throw std::invalid_argument("CPU benchmark workers must be 1, 2 or 4");
-    for (uint32_t side : {32u, 64u}) {
+    if (!requestedQueued || requestedQueued > 32)
+      throw std::invalid_argument("CPU benchmark queue cap must be 1..32");
+    for (uint32_t side : {16u, 32u, 64u}) {
       constexpr uint32_t fields = 9, charts = 512;
       const size_t plane = size_t(side) * side * 3;
+      // Match production's shared byte budget, including the chart's original
+      // and filtered L0. Large images cannot queue extra packets for free.
+      const size_t chartBytes = plane * (fields + 2) * sizeof(float);
+      const auto queued = uint32_t(std::min<size_t>(requestedQueued,
+          std::max<size_t>(1, queueBudgetBytes / workers / chartBytes)));
       std::vector<float> original(plane * fields);
       for (uint32_t band = 0; band < fields; ++band)
         for (size_t pixel = 0; pixel < plane; ++pixel)
@@ -78,7 +86,8 @@ namespace remix::forward::test {
       try {
         for (uint32_t i = 0; i < workers; ++i)
           jobs.push_back(std::async(std::launch::async, [&] {
-            return denoiseWorker(original, side, charts / workers, workers == 1 ? 0 : 32 / workers, ready);
+            return denoiseWorker(original, side, charts / workers, workers == 1 ? 0 : 32 / workers,
+                                  queued, ready);
           }));
       } catch (...) {
         for (size_t i = jobs.size(); i < workers; ++i)
@@ -103,9 +112,9 @@ namespace remix::forward::test {
         packetDigest ^= std::bit_cast<uint32_t>(value);
         packetDigest *= 1099511628211ull;
       }
-      std::printf("CPU denoise benchmark: side=%u charts=%u workers=%u seconds=%.6f monitored=%u "
+      std::printf("CPU denoise benchmark: side=%u charts=%u workers=%u queued=%u seconds=%.6f monitored=%u "
                   "workerDigest=%llu packetDigest=%llu\n",
-                  side, charts, workers, seconds, monitored, static_cast<unsigned long long>(digest),
+                  side, charts, workers, queued, seconds, monitored, static_cast<unsigned long long>(digest),
                   static_cast<unsigned long long>(packetDigest));
       std::fflush(stdout);
     }

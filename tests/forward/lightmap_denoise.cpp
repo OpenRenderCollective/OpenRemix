@@ -395,15 +395,15 @@ namespace {
 } // namespace
 int main(int argc, char **argv) try {
 #ifdef REMIX_OIDN
-  if ((argc == 2 || argc == 3) && std::string_view(argv[1]) == "--cpu-benchmark") {
-    uint32_t workers = 1;
-    if (argc == 3) {
-      const std::string_view text(argv[2]);
-      const auto parsed = std::from_chars(text.data(), text.data() + text.size(), workers);
+  if (argc >= 2 && argc <= 4 && std::string_view(argv[1]) == "--cpu-benchmark") {
+    uint32_t workers = 1, queued = 8;
+    for (int i = 2; i < argc; ++i) {
+      const std::string_view text(argv[i]);
+      const auto parsed = std::from_chars(text.data(), text.data() + text.size(), i == 2 ? workers : queued);
       if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size())
-        throw std::invalid_argument("Invalid CPU benchmark worker count");
+        throw std::invalid_argument("Invalid CPU benchmark worker count or queue cap");
     }
-    remix::forward::test::denoiseBenchmark(workers);
+    remix::forward::test::denoiseBenchmark(workers, queued);
     return 0;
   }
 #endif

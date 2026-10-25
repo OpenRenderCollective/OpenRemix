@@ -1,7 +1,7 @@
 # CPU denoising scheduling benchmark
 
 Run `remix-forward-lightmap-denoise-test --cpu-benchmark` to measure the production
-filter on 512 independent charts at each of two image sizes, 32 and 64 pixels.
+filter on 512 independent charts at each of three image sizes, 16, 32 and 64 pixels.
 The regular test invocation still runs the chart isolation, directional SH,
 metadata and cancellation checks.
 
@@ -11,15 +11,22 @@ split the same 512 charts and use a nominal 32-thread budget through per-device
 limits. OIDN environment overrides still take precedence. Models warm before a
 shared start barrier. Reported time is the slowest queue's measured duration.
 
-The benchmark explicitly requests the CPU device, prepares the model before
-timing, and queues eight chart packets before each synchronization. Every chart
+An optional queue-cap argument compares synchronization frequency, for example
+`remix-forward-lightmap-denoise-test --cpu-benchmark 4 32`. The default cap is
+eight; valid caps are 1 through 32. Actual packets are also limited by production's
+shared byte budget, including each chart's original and filtered L0. Larger
+images can therefore have a lower effective cap. The final partial packet group
+still processes every chart exactly once.
+
+The benchmark explicitly requests the CPU device and prepares the model before
+timing. Every chart
 starts with the same deterministic nine-field input. It reports elapsed time,
 progress-monitored execution count, a per-worker digest, and a single-packet
 digest. Each worker must produce the same fields and digest for its equal share
 of the charts. Packet digests remain comparable across worker counts; whole-worker
 digests change when each worker processes fewer charts. These checks
 help detect output changes when comparing scheduling experiments; they
-does not replace the regular quality tests. Timings include packet copies,
+do not replace the regular quality tests. Timings include packet copies,
 validation and digest calculation.
 
 OIDN's `OIDN_NUM_THREADS` environment override can test thread counts without
