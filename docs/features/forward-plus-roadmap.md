@@ -2976,3 +2976,21 @@ work as well as colour shading. Host intervals and native CPU recording also
 increase; do not assume the hall is GPU-bound or attribute every FPS loss to
 weapon pixel shading. Keep per-frame sums separate from sums of pass medians.
 Severe user-reported drops and wider maps still require reproduction.
+
+
+### Source 2 capture evidence for early viewmodel coverage
+
+A supplied CS2 Vulkan capture replays successfully in RenderDoc 1.46. Its main
+2560x1440 8x MSAA depth/stencil target receives world depth first, then weapon
+depth before main world colour. Sampled viewport depth ranges are 0-0.95 for
+world and 0-0.1 for weapon. The intermediate world colour export visibly leaves
+the weapon silhouette unshaded. Sampled world colour draws also reject stencil
+bit 0 when set. There is an intervening stencil clear/classification pass; do
+not assume a weapon depth-pass stencil value survives directly into colour.
+
+This confirms early coverage rejection in one real reference capture. It does
+not establish all Source 2 backends, isolate its performance contribution or
+explain downstream SSR/depth reconstruction. Qualify weapon depth and world
+coverage rejection independently, keeping our world reflection guides correct.
+Numeric depth ranges depend on projection conventions and are not portable
+constants to copy. The second supplied capture fails file parsing.
