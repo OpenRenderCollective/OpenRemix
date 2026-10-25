@@ -3441,3 +3441,20 @@ cost or full-scene correctness. No production module/default/cache/deploy change
   attribution. Test actual boundary crossings and relocated/shared donors.
 - [ ] Measure preparation/ray cost and shader/register/lookup overhead; estimated
   Construct payload0.52MiB before metadata is not a measured allocation.
+
+
+### 2026-10-26 - Hardware preparation fixture for coarse transfer
+
+Test-only coarse_transfer_gpu fixture now captures finite coarse-to-fine depths
+with existing HWRT transport and validates blocked/clear/opening/beyond-endpoint
+classification. Cutouts stay clear; proportional and dielectric coverage retains
+explicit unknown fallback. CPU reference reconstruction using captured bytes
+preserves constant/black lighting, transition endpoints and additive components.
+Meson GPU test passes with core/synchronization validation, no diagnostics.
+No production shader/grid/cache/default/deployment change.
+
+- [x] Validate hardware coarse-transfer geometry preparation and conservative
+  reference classification in a focused fixture.
+- [ ] Implement bounded packed sampling in CPU/GPU reconstruction; validate real
+  boundary crossings, relocated/shared donors, props/weapons and preparation/frame
+  cost. Synthetic geometry capture plus CPU blending is not renderer acceptance.
