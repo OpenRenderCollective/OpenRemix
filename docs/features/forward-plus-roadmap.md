@@ -3389,3 +3389,18 @@ runtime attribution.
   boundary isolation and matched seam/noise checks. Do not gain time by silently
   dropping denoising or reducing sample quality.
 - [ ] Include confirmed clearance reuse in the next validated playable package.
+
+
+### 2026-10-26 - Playable deployment refreshed
+
+Playable GarrysModWithRTX2 and local updater now use immutable package
+forwardplus-probe-planning-20261026 (native daf54c57, adapter6495e0c). Verified157
+owned files,101protected files unchanged. Includes receiver-clearance reuse and
+probe allocation diagnostics; experimental lighting flags remain off by default.
+Installed normal-quality Construct fixed-view replay passes with exact historical
+image parity and clean Vulkan validation. Path-tracer primary sheet/energy GPU
+regression passes; no installed PT RR or gameplay FPS qualification claimed.
+
+- [x] Include confirmed clearance reuse in a validated playable package.
+- [ ] Continue Construct probe placement/visibility and seam/noise quality work.
+- [ ] Study tiny-chart denoising costs with quality-preserving comparisons.
