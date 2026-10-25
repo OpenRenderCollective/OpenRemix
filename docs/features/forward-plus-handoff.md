@@ -789,3 +789,22 @@ func_brush classification.
 Next: isolate the white-room probe cost while preserving materials/specular,
 styled-light response and unknown-coverage fallback. An unlit material can still
 have specular response, so skipping all lighting is not a valid shortcut.
+
+
+### 26 October 2026 - rejected runtime zero-diffuse probe shortcut
+
+A combined runtime shader trial skipped diffuse SH and directional diffuse
+correction gathers for exactly zero diffuse materials, preserving probe ownership
+and scalar/specular visibility. Movable func_brush stayed on probes throughout.
+Normal-quality foreground Construct before/candidate/restored samples show room
+GPU 9.86-9.99 -> 9.17 ms, but hall 2.62-2.71 -> 3.01-3.05 ms. Room image comparison
+is identical; this is narrow evidence, not broad quality acceptance. The combined
+trial does not isolate the two gathers, and changing depth timing prevents a
+simple instruction-only interpretation. Candidate shader edits were removed and
+the ordinary renderer rebuilt; no flags or unused pipeline paths remain.
+
+Next investigate separately selected zero-diffuse material variants while keeping
+the ordinary shader unchanged for other materials. Conservative material/texture/
+blend eligibility and GPU readback for specular, mixed shadows, covered/uncovered
+probes, styled lights and metallic/emissive materials are required. Register or
+occupancy effects are hypotheses until measured. No default or deployment change.
