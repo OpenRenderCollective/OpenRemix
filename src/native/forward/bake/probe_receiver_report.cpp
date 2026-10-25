@@ -189,6 +189,74 @@ namespace remix::forward::bake {
       for (uint32_t c = 0; c < 3; ++c) center[c] = float((double(low[c]) + high[c]) * .5);
       return center;
     }
+    void surfaceAnchors(std::ostream &out, const scene::BakeScene &source, uint32_t drawIndex,
+        const Grid &grid, std::span<const Grid::Origin> origins, std::stop_token cancelled) {
+      struct Candidate { Vec3 position{}; double area = 0; size_t first = 0; int32_t cluster = -2; };
+      std::array<Candidate, 6> candidates{};
+      const auto &draw = source.draws[drawIndex];
+      const auto &surface = *draw.surface;
+      const size_t count = draw.indexCount ? draw.indexCount : surface.indices.size();
+      out << ",\"surfaceAnchors\":[";
+      // Same complete-geometry budget as the midpoint; never rank a truncated prefix.
+      if (!count || count > 98304 || count % 3 || draw.firstIndex > surface.indices.size() ||
+          count > surface.indices.size() - draw.firstIndex || !(source.sceneScale > 0) ||
+          !std::isfinite(source.sceneScale)) { out << ']'; return; }
+      const auto normals = normalMatrix(draw.model);
+      for (size_t first = draw.firstIndex; first < draw.firstIndex + count; first += 3) {
+        if (first % 1024 < 3) check(cancelled);
+        std::array<Vec3, 3> points;
+        Vec3 shading{};
+        for (uint32_t c = 0; c < 3; ++c) {
+          const auto &v = surface.vertices.at(size_t(int64_t(surface.indices[first + c]) + draw.vertexOffset));
+          points[c] = transformPoint(draw.model, {v.position[0], v.position[1], v.position[2]});
+          const auto n = transformVector(normals, {v.normal[0], v.normal[1], v.normal[2]});
+          for (uint32_t axis = 0; axis < 3; ++axis) shading[axis] += n[axis];
+        }
+        auto normal = crossDouble(difference(points[1], points[0]), difference(points[2], points[0]));
+        const double area = std::sqrt(dotDouble(normal, normal));
+        if (!(area > 0) || !std::isfinite(area)) continue;
+        const double alignment = normal[0]*shading[0] + normal[1]*shading[1] + normal[2]*shading[2];
+        if (!std::isfinite(alignment) || std::abs(alignment) < area * 1e-8) continue;
+        for (auto &value : normal) value *= (alignment < 0 ? -1 : 1) / area;
+        uint32_t axis = 0;
+        for (uint32_t c = 1; c < 3; ++c)
+          if (std::abs(normal[c]) > std::abs(normal[axis])) axis = c;
+        auto &candidate = candidates[axis * 2 + (normal[axis] < 0)];
+        if (area <= candidate.area) continue;
+        Vec3 position;
+        bool finite = true;
+        for (uint32_t c = 0; c < 3; ++c) {
+          position[c] = float((double(points[0][c]) + points[1][c] + points[2][c]) / 3 +
+              normal[c] * (.002 / source.sceneScale));
+          finite &= std::isfinite(position[c]);
+        }
+        if (!finite) continue;
+        const auto cluster = source.partition && source.partition->closed ? source.partition->cluster(position.data()) : -2;
+        // Only independently classified playable surfaces compete for an anchor.
+        if (cluster < 0) continue;
+        candidate = {position, area, first, cluster};
+      }
+      bool emitted = false;
+      for (uint32_t direction = 0; direction < candidates.size(); ++direction) {
+        const auto &candidate = candidates[direction];
+        if (!candidate.area) continue;
+        if (emitted) out << ',';
+        emitted = true;
+        out << "{\"direction\":" << direction << ",\"firstIndex\":" << candidate.first
+            << ",\"position\":"; vector(out, candidate.position);
+        out << ",\"partitionCluster\":" << candidate.cluster << ",\"probes\":[";
+        const auto stencil = probeStencil(grid, candidate.position, Vec3{});
+        const auto audit = probeConnections(source, grid, stencil, origins, cancelled, drawIndex);
+        for (uint32_t c = 0; c < stencil.count; ++c) {
+          if (c) out << ',';
+          out << "{\"index\":" << stencil.indices[c] << ",\"tested\":"
+              << (audit.tested[c] ? "true" : "false") << ",\"blocked\":"
+              << (audit.blockers[c] ? "true" : "false") << '}';
+        }
+        out << "]}";
+      }
+      out << ']';
+    }
     void drawAnchors(std::ostream &out, const scene::BakeScene &source, const Grid &grid,
         std::span<const Grid::Origin> origins, std::span<const std::optional<ReceiverHit>> hits,
         std::stop_token cancelled) {
@@ -215,7 +283,9 @@ namespace remix::forward::bake {
                 << (audit.blockers[c] ? "true" : "false") << '}';
           }
         }
-        out << "]}";
+        out << ']';
+        surfaceAnchors(out, source, hit->draw, grid, origins, cancelled);
+        out << '}';
       }
       out << ']';
     }

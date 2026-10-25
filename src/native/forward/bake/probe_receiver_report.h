@@ -35,6 +35,8 @@ namespace remix::forward::bake {
   // Visible-connection SH oracles retain missing support as null, never black.
   // Unique hit draws also report unbiased AABB-midpoint stencils, excluding the
   // same draw from blockers. Bounds scan at most 32,768 triangles; unknown stays null.
+  // Surface candidates rank complete playable triangles by area per signed dominant
+  // normal axis, using a 2 mm offset. This does not prove segment connectivity.
   // A missing opaque blocker does not establish alpha/transmission visibility.
   // Existing output is protected; failures never affect bake publication.
   void dumpProbeReceiverReport(const scene::BakeScene &source, const Grid &grid,

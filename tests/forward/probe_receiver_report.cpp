@@ -135,6 +135,8 @@ int main(int argc, char **argv) {
   const auto output = readOutput();
   require(output.find("\"drawAnchors\":[{\"draw\":1,\"center\":[1,1,2],\"partitionCluster\":0") != std::string::npos,
           "Anchor must use the complete draw bounds independently of the picked point");
+  require(output.find("\"surfaceAnchors\":[{\"direction\":4,\"firstIndex\":0,\"position\":[0.666666687,0.666666687,2.002") != std::string::npos,
+          "Exposed anchor must use the playable triangle centroid offset two millimetres along its oriented normal");
   require(output.find("\"sceneHash\":\"123\"") != std::string::npos &&
               output.find("\"draw\":1") != std::string::npos && output.find("\"normalizedWeight\":") != std::string::npos,
           "Probe report must retain scene identity, picked ownership and normalized contributions");
@@ -180,6 +182,12 @@ int main(int argc, char **argv) {
               blockedOutput.find("\"opaqueVisibleIrradiance\":null") != std::string::npos,
           "A covered all-blocked stencil reports missing oracle support rather than fabricated black lighting");
   grid = originalGrid; source.draws.pop_back();
+  std::filesystem::remove(outputPath);
+  partition->leafClusters = {-1, -1};
+  b::dumpProbeReceiverReport(source, grid);
+  require(readOutput().find("\"surfaceAnchors\":[]") != std::string::npos,
+          "Triangles inside solid space must not supply exposed support anchors");
+  partition->leafClusters = {0, -1};
   std::filesystem::remove(outputPath);
   source.draws[1].surface->indices.clear();
   source.charts.clear();

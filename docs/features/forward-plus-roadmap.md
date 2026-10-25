@@ -2617,3 +2617,16 @@ containment or substitute a favorable camera pixel. Next investigate determinist
 exposed-surface anchors or multiple bounded support regions; validate the host partition
 classification, receiver-side connectivity and submesh ownership before runtime use.
 An embedded fixture's geometric centre cannot be assumed to represent room lighting.
+
+
+A bounded exposed-surface diagnostic now ranks complete playable triangles by area
+within six signed dominant-normal directions. It aligns geometric normals with vertex
+normals, offsets centroids outward by 2 mm, rejects unknown/solid partition positions,
+and excludes only the source draw from opaque blockers. This is an opt-in report, not
+normal shading. CPU checks cover independent centroids and rejection of solid anchors.
+The first normal-quality cached Construct check finds useful surface candidates but also
+finds missing target probe IDs for some candidates in the same playable cluster. Do not
+classify missing IDs as clear, compare partial cohorts as complete, or choose an anchor
+solely by the lowest observed error. Next audit the union of target stencil nodes at each
+candidate, preserve target interpolation weights, and test receiver-side connectivity,
+multiple submeshes, moving objects and other maps before considering runtime support.
