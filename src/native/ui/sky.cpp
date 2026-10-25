@@ -2,6 +2,7 @@
 #include "runtime/sky_quality.h"
 #include "ui/sky_ranges.h"
 #include "ui/widgets.h"
+#include "scene/particles.h"
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
@@ -319,7 +320,7 @@ namespace remix::ui {
   } // namespace
 #endif
 
-  void drawSkyTab(config::Settings &settings, const SkyStatus &status) {
+  static void drawSky(config::Settings &settings, const SkyStatus &status) {
     auto &sky = settings.sky;
 #if REMIX_HAS_NUMOS
     if (ImGui::CollapsingHeader("Sky", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -385,5 +386,58 @@ namespace remix::ui {
     (void)status;
     ImGui::TextWrapped("This build has no NUMOS sky (third_party/numos/numos-sky was not checked out).");
 #endif
+  }
+
+  // Particle emitters: the API's and these test emitters. Nothing spawns
+  // unless an emitter asks.
+  static void drawParticles(config::ParticleSettings &particles) {
+    if (!ImGui::CollapsingHeader("Particles"))
+      return;
+    ImGui::PushID("Particles");
+    const auto statistics = scene::particles().statistics();
+    Checkbox("Particles", &particles.enabled);
+    if (ImGui::IsItemHovered())
+      ImGui::SetTooltip("Simulate and draw particle emitters (rain, snow and the API's emitters).");
+    if (particles.enabled && !statistics.enabled && statistics.simulatedFrames == 0)
+      ImGui::TextWrapped("This backend does not draw particles.");
+    int budget = int(particles.budget), spawnBudget = int(particles.spawnBudget);
+    if (SliderInt("Particle budget", &budget, 1024, 262144, "%d", ImGuiSliderFlags_Logarithmic))
+      particles.budget = uint32_t(std::clamp(budget, 1024, 262144));
+    if (ImGui::IsItemHovered())
+      ImGui::SetTooltip("Live particles of all emitters. A change clears every emitter.");
+    if (SliderInt("Spawns per frame", &spawnBudget, 64, 65536, "%d", ImGuiSliderFlags_Logarithmic))
+      particles.spawnBudget = uint32_t(std::clamp(spawnBudget, 64, 65536));
+    if (ImGui::IsItemHovered())
+      ImGui::SetTooltip("New particles a frame, shared by the emitters; the rest are dropped.");
+    SliderFloat("Precipitation", &particles.precipitation, 0.f, 1.f, "%.2f");
+    if (ImGui::IsItemHovered())
+      ImGui::SetTooltip("The weather's precipitation: scales the rate of emitters that follow the weather.");
+    ImGui::SeparatorText("Test emitters");
+    Checkbox("Rain", &particles.rain);
+    ImGui::SameLine();
+    Checkbox("Snow", &particles.snow);
+    SliderFloat("Intensity", &particles.intensity, 0.f, 1.f, "%.2f");
+    if (ImGui::IsItemHovered())
+      ImGui::SetTooltip("The test emitters' share of their presets' spawn rates.");
+    Checkbox("Shelter", &particles.shelter);
+    if (ImGui::IsItemHovered())
+      ImGui::SetTooltip("Keep rain and snow out from under cover and stop them on surfaces (path tracing).");
+    Checkbox("Follow weather", &particles.followWeather);
+    if (ImGui::IsItemHovered())
+      ImGui::SetTooltip("Scale the test emitters by the precipitation.");
+    ImGui::SeparatorText("Statistics");
+    ImGui::Text("Emitters: %u (%u active)", statistics.emitters, statistics.activeEmitters);
+    ImGui::Text("Live: %u of %u allocated, budget %u", statistics.liveParticles, statistics.allocatedParticles,
+                statistics.budget);
+    ImGui::Text("Spawns: %u, dropped %u, sheltered %u", statistics.spawnsRequested, statistics.spawnsDropped,
+                statistics.spawnsSheltered);
+    if (statistics.gpuMilliseconds > 0)
+      ImGui::Text("GPU %.2f ms", statistics.gpuMilliseconds);
+    ImGui::PopID();
+  }
+
+  void drawSkyTab(config::Settings &settings, const SkyStatus &status) {
+    drawSky(settings, status);
+    drawParticles(settings.particles);
   }
 } // namespace remix::ui

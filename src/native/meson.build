@@ -22,6 +22,9 @@ subdir('denoise/shaders')
 subdir('postfx/shaders')
 subdir('upscale/shaders')
 subdir('pathtrace/shaders')
+if not metal_backend
+  subdir('particles/shaders')
+endif
 if numos_enabled and not metal_backend
   subdir('sky/shaders')
 endif
@@ -87,6 +90,7 @@ if numos_enabled
   sky_libraries = [sky_library]
 endif
 subdir('pathtrace')
+subdir('particles')
 imgui_vulkan = static_library('remix_imgui_vulkan', 'ui/vulkan_backend.cpp',
   include_directories : [native_include, imgui_include],
   dependencies : vulkan_dep, link_with : pipeline_library,
@@ -109,7 +113,7 @@ endif
 remix = shared_library('remix',
   api_sources + runtime_sources + ui_sources,
   name_prefix : system == 'windows' ? '' : 'lib',
-  link_with : usd_libraries + sky_libraries + [shell_platform, imgui_vulkan, scene_library, raster_library, pathtrace_library, denoise_library, upscale_library], dependencies : shell_deps,
+  link_with : usd_libraries + sky_libraries + [shell_platform, imgui_vulkan, scene_library, raster_library, pathtrace_library, denoise_library, upscale_library, particles_library], dependencies : shell_deps,
   include_directories : [remix_public_include, native_include, image_include], cpp_args : shell_args,
   link_args : shell_link_args, link_depends : 'api/remix.map',
   gnu_symbol_visibility : 'hidden',

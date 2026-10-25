@@ -1,5 +1,6 @@
 #include <remix/remix_native_ext.h>
 #include <remix/remix_reconstruction_ext.h>
+#include <remix/remix_particles_ext.h>
 #include <SDL3/SDL.h>
 #include <array>
 #include <cstdio>
@@ -203,6 +204,50 @@ int main(int argc, char **argv) {
               pixels[2] < 80 && pixels[3] == 255,
           "Screenshot color/BGRA conversion");
   stbi_image_free(pixels);
+  {
+    // Particle emitters: a burst in front of the camera is simulated and
+    // counted once its frames complete.
+    remixapi_CameraInfoParameterizedEXT parameters{};
+    parameters.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO_PARAMETERIZED_EXT;
+    parameters.right = {1, 0, 0};
+    parameters.up = {0, 1, 0};
+    parameters.forward = {0, 0, 1};
+    parameters.aspect = 4.f / 3;
+    parameters.fovYInDegrees = 90;
+    parameters.nearPlane = .1f;
+    parameters.farPlane = 100;
+    remixapi_CameraInfo camera{};
+    camera.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO;
+    camera.pNext = &parameters;
+    remixapi_ParticleEmitterInfoEXT emitter{};
+    emitter.sType = REMIXAPI_STRUCT_TYPE_PARTICLE_EMITTER_INFO_EXT;
+    emitter.shape = REMIXAPI_PARTICLE_SHAPE_SPHERE_EXT;
+    emitter.flags = REMIXAPI_PARTICLE_UNLIT_EXT;
+    emitter.maxParticles = 256;
+    emitter.transform = {{{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 5}}};
+    emitter.extent = {1, 1, 1};
+    emitter.lifetimeMin = emitter.lifetimeMax = 60;
+    emitter.sizeStart = emitter.sizeEnd = .2f;
+    emitter.colorStart = emitter.colorEnd = {1, 1, 1, 1};
+    remixapi_ParticleEmitterHandleEXT handle = 0;
+    ok(remixapi_CreateParticleEmitterEXT(&emitter, &handle));
+    emitter.maxParticles = 70000;
+    require(remixapi_UpdateParticleEmitterEXT(handle, &emitter) == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS,
+            "Too many particles accepted");
+    ok(remixapi_BurstParticleEmitterEXT(handle, 100));
+    remixapi_ParticleStatisticsEXT particles{};
+    particles.structSize = sizeof(particles);
+    for (int frame = 0; frame < 30 && !particles.liveParticles; ++frame) {
+      ok(api.SetupCamera(&camera));
+      ok(api.Present(nullptr));
+      ok(remixapi_GetParticleStatisticsEXT(&particles));
+    }
+    require(particles.emitters == 1 && particles.liveParticles == 100 && particles.allocatedParticles == 256,
+            "Burst particles were not simulated");
+    ok(remixapi_DestroyParticleEmitterEXT(handle));
+    require(remixapi_DestroyParticleEmitterEXT(handle) == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS,
+            "A destroyed emitter was destroyed again");
+  }
   ok(api.Shutdown());
   count = 99;
   require(remixapi_PollInputEvents(nullptr, 0, &count) == REMIXAPI_ERROR_CODE_NOT_INITIALIZED && !count,

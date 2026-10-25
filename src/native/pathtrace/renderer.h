@@ -91,6 +91,19 @@ namespace remix {
     // float, GENERAL layout, render resolution): what host passes sample as
     // REMIXAPI_HOST_TARGET_VIEW_DEPTH_EXT. None without a denoiser.
     VkImageView viewDepth() const;
+    // What lit the frame last prepared, for effects drawn over it (particles):
+    // the sun (propagation direction, radiance), the sky (radiance; w above
+    // zero with an environment, which `environment` samples through
+    // domeTransform, scaled by the radiance) and the scene's TLAS.
+    struct OverlayLighting {
+      float sunDirection[3] = {0, 0, -1};
+      float sunRadiance[3] = {};
+      float skyRadiance[4] = {};
+      VkDescriptorImageInfo environment{};
+      float domeTransform[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+      VkAccelerationStructureKHR scene = VK_NULL_HANDLE;
+    };
+    OverlayLighting overlayLighting() const;
     upscale::Statistics upscalingStatistics() const;
     // What frame generation needs of the frame just prepared: the upscaler's
     // depth and motion and the cameras of this and the previous frame

@@ -36,6 +36,7 @@ namespace remix {
     g.stagingBuffers = g.stagingAllocated = 0;
     g.commands.clear();
     g.sprite.soft = 0;
+    g.sprite.requested = false;
     g.sprite.captured = false;
     m_profile.recycledBuffers = g.uploads.size();
     for (auto &buffer : g.uploads)

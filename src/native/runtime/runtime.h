@@ -23,6 +23,7 @@
 #pragma once
 
 #include "pathtrace/renderer.h"
+#include "particles/renderer.h"
 #include "platform/gpu_frames.h"
 #include "platform/gpu_timers.h"
 #include "platform/present_queue.h"
@@ -347,6 +348,15 @@ private:
   void finishDeferredPresent();
   static bool processEvent(const SDL_Event *event, void *userData);
   void updateFreeCamera();
+  // Particle emitters (runtime/particles.cpp). publishParticles: Present
+  // setup (render thread idle): the registry's frame for the render thread
+  // and the last completed frame's statistics for the registry.
+  // simulateParticles: the frame's compute passes, outside a render pass;
+  // true when drawParticles has something to draw inside the target pass,
+  // after the world layer (it captures the scene's depth first if no one has).
+  void publishParticles();
+  bool simulateParticles(VkCommandBuffer buffer);
+  void drawParticles(VkCommandBuffer buffer, VkRenderPassBeginInfo &pass);
 
   RemixSdlWindow m_window;
   RasterRenderer m_raster;
@@ -452,6 +462,10 @@ private:
   bool m_screenshotSupported = false;
   std::shared_ptr<FrameSnapshot> m_lastFrame;
   HostPasses m_hostPasses; // remixapi_HostPassEXT replay; needs the snapshot's swapchain usage
+  // Particles: render-owned, except the frame Present publishes (render thread idle).
+  std::unique_ptr<particles::Renderer> m_particles;
+  scene::ParticleFrame m_particleFrame;
+  std::chrono::steady_clock::time_point m_particleClock{}, m_particleStart = std::chrono::steady_clock::now();
   bool m_snapshotSupported = false, m_snapshotAllocationFailed = false;
   bool m_initialized = false;
   uint64_t m_presentationCount = 0;

@@ -68,12 +68,25 @@ namespace remix {
     return true;
   }
 
-  bool RasterRenderer::wantsSceneDepth() const { return m_gpu && m_gpu->sprite.soft != 0; }
+  bool RasterRenderer::wantsSceneDepth() const {
+    return m_gpu && (m_gpu->sprite.soft != 0 || m_gpu->sprite.requested);
+  }
+
+  void RasterRenderer::requestSceneDepth() {
+    if (m_gpu)
+      m_gpu->sprite.requested = true;
+  }
+
+  VkDescriptorImageInfo RasterRenderer::sceneDepth() const {
+    if (!m_gpu || !m_gpu->sprite.captured || !m_gpu->sprite.depth)
+      return {};
+    return {m_gpu->sprite.sampler, m_gpu->sprite.depth->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+  }
 
   void RasterRenderer::captureSceneDepth(VkCommandBuffer command) {
     auto &g = *m_gpu;
     auto &s = g.sprite;
-    if (!s.soft || s.failed || !g.depth)
+    if ((!s.soft && !s.requested) || s.failed || !g.depth)
       return;
     try {
       if (!s.depth) {

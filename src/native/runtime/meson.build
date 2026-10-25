@@ -8,6 +8,7 @@ runtime_sources = files(
   'frame_generation.cpp',
   'frame_snapshot.cpp',
   'host_passes.cpp',
+  'particles.cpp',
   'presentation.cpp',
   'raster_sky.cpp',
   'runtime.cpp',

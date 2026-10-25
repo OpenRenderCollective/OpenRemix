@@ -447,6 +447,7 @@ namespace remix {
       VkDescriptorSet set = VK_NULL_HANDLE;
       bool failed = false;
       uint32_t soft = 0;     // this frame's commands with SOFT_DEPTH
+      bool requested = false; // particles sample the copy this frame
       bool captured = false; // this frame's depth is in the copy
     } sprite;
     // The layout and shader modules; false when they cannot be created.

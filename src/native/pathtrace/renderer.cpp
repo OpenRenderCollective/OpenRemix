@@ -132,6 +132,12 @@ namespace remix {
   VkImageView PathTracer::viewDepth() const {
     return m_gpu->denoiser ? m_gpu->denoiser->image(denoise::Depth).view : VK_NULL_HANDLE;
   }
+  PathTracer::OverlayLighting PathTracer::overlayLighting() const {
+    auto out = m_gpu->overlay;
+    const auto &accel = m_gpu->tlas[m_gpu->topCombined ? 2 : 0].accel;
+    out.scene = accel ? accel->handle : VK_NULL_HANDLE;
+    return out;
+  }
   void PathTracer::setPostProcessing(postfx::Renderer *renderer, bool retainExposure) {
     m_gpu->postProcessing = renderer ? renderer : m_gpu->postFallback.get();
     m_gpu->retainPostExposure = retainExposure;

@@ -235,6 +235,9 @@ namespace remix {
     m_ngx.reset();
     m_raster.shutdownGpu();
     m_hostPasses.destroy();
+    m_particles.reset();
+    m_particleFrame = {};
+    m_particleClock = {};
     m_pipelines.reset();
     m_activePreparationKey.clear();
     m_failedPreparationKey.clear();

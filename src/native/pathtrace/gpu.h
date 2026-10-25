@@ -814,6 +814,8 @@ namespace remix {
     // while the static inputs do not change.
     trace::CombinedTlasPolicy combinedPolicy;
     std::vector<VkAccelerationStructureInstanceKHR> combinedStatic, combinedDynamic;
+    // The frame's sun and sky (PathTracer::overlayLighting).
+    OverlayLighting overlay;
     uint64_t combinedStaticStamp = 0;
     bool combinedStaticValid = false;
     void buildCombinedTop(VkCommandBuffer command, const std::vector<trace::InstanceInput> &staticInputs,

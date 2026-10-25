@@ -404,6 +404,8 @@ namespace remix {
     m_pipelines = std::make_unique<pipeline::Service>(m_device, m_properties,
                                                       pipelineFeedback);
     m_hostPasses.initialize(m_physicalDevice, m_device);
+    // Ray queries are enabled with tracing.
+    m_particles = std::make_unique<particles::Renderer>(m_physicalDevice, m_device, m_traceSupported);
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
 

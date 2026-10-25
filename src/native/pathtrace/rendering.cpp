@@ -721,6 +721,16 @@ namespace remix {
       }
     }
 #endif
+    // The sun and sky effects drawn over the frame are lit by.
+    std::copy_n(frame.direction, 3, overlay.sunDirection);
+    std::copy_n(frame.radiance, 3, overlay.sunRadiance);
+    std::copy_n(frame.skyRadiance, 4, overlay.skyRadiance);
+    overlay.environment = frame.skyRadiance[3] > 0 && size_t(frame.skyRadiance[3]) <= textures.size()
+                              ? textures[size_t(frame.skyRadiance[3]) - 1]
+                              : VkDescriptorImageInfo{};
+    for (unsigned row = 0; row < 3; ++row)
+      for (unsigned col = 0; col < 3; ++col)
+        overlay.domeTransform[row][col] = frame.domeTransform[row][col];
     // Role CUT (remixapi_InstanceInfoMaskEXT): the coverage of the groups
     // whose instances the camera does not see, drawn by the raster renderer
     // ahead of this frame's passes. Its sources are in no table: their
