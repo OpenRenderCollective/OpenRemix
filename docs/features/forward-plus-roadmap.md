@@ -2607,3 +2607,13 @@ Visual acceptance must use the normal bake budget with denoising. Low-budget num
 diagnostic replays are not visual-quality acceptance captures; their surrounding scene
 may use reduced probes, texels and samples even when an independent reference query
 uses a high sample count. Keep these purposes explicit in run metadata and reporting.
+
+
+The first geometry-derived draw-midpoint check is rejected for the Construct ceiling
+housing: its complete draw AABB centre lies in solid/unplayable BSP space. The
+normal-quality cached replay preserves the original receiver estimates, but this
+anchor yields no admissible support for the fixed receiver cohort. Do not bypass
+containment or substitute a favorable camera pixel. Next investigate deterministic
+exposed-surface anchors or multiple bounded support regions; validate the host partition
+classification, receiver-side connectivity and submesh ownership before runtime use.
+An embedded fixture's geometric centre cannot be assumed to represent room lighting.
