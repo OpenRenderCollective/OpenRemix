@@ -40,3 +40,6 @@ compressed_test = executable('remix-compressed-texture-test', 'compressed.cpp',
 test('Compressed BC textures, coverage and aliasing', compressed_test)
 usd_lights_test = executable('remix-usd-lights-test', 'usd_lights.cpp', include_directories : test_includes, link_with : scene_library)
 test('USD light conversion and BC4 BC6H assets', usd_lights_test)
+particles_test = executable('remix-particles-test', 'particles.cpp',
+  include_directories : test_includes, link_with : scene_library)
+test('Particle emitters: validation, presets, slices and spawns', particles_test)

@@ -43,6 +43,10 @@ required_exports += ['remixapi_GetReconstructionDiagnosticsEXT', 'remixapi_GetBa
 required_exports += ['remixapi_AddSceneInstancesEXT', 'remixapi_SetSceneInstanceEXT', 'remixapi_ChangeSceneInstancesEXT',
              'remixapi_RemoveSceneInstancesEXT', 'remixapi_DrawSceneInstancesEXT']
 required_exports += ['remixapi_UpdateTextureEXT', 'remixapi_GetTextureStatisticsEXT']
+required_exports += ['remixapi_CreateParticleEmitterEXT', 'remixapi_UpdateParticleEmitterEXT',
+             'remixapi_SetParticleEmitterTransformEXT', 'remixapi_SetParticleEmitterEnabledEXT',
+             'remixapi_BurstParticleEmitterEXT', 'remixapi_ClearParticleEmitterEXT',
+             'remixapi_DestroyParticleEmitterEXT', 'remixapi_SetParticleBudgetEXT', 'remixapi_GetParticleStatisticsEXT']
 required_exports += ['remixapi_EditorConfigureSharedFrame', 'remixapi_LoadUSDSceneEXT', 'remixapi_DrawUSDSceneEXT', 'remixapi_ReloadUSDSceneEXT', 'remixapi_DestroyUSDSceneEXT', 'remixapi_GetUSDDiagnosticsEXT', 'remixapi_ConfigureUSDModsEXT', 'remixapi_GetUSDModsDiagnosticEXT']
 cross_windows = library.suffix.lower() == '.dll' and sys.platform != 'win32'
 if cross_windows:

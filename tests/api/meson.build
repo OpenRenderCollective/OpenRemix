@@ -9,6 +9,9 @@ if system != 'windows'
   test('Library loader', loader_test, args : [remix.full_path(), '--native-runtime'])
   test('C++ SDK wrapper', cpp_test, args : [remix.full_path()])
 endif
+particles_api_test = executable('remix-particles-api-test', 'particles.cpp',
+  include_directories : remix_public_include, link_with : remix)
+test('Particle exports before startup', particles_api_test)
 if get_option('gpu_tests')
   extension_test = executable('remix-native-extensions-test', 'native_extensions.cpp',
     include_directories : test_includes, dependencies : [sdl3_dep, threads_dep, filesystem_dep], link_with : remix)

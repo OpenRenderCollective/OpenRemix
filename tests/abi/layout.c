@@ -1,6 +1,7 @@
 #include <remix/remix_native_ext.h>
 #include <remix/remix_editor_ext.h>
 #include <remix/remix_usd_ext.h>
+#include <remix/remix_particles_ext.h>
 #if defined(_WIN32)
 #include "windows_layout.h"
 #else
@@ -45,4 +46,9 @@ _Static_assert(sizeof(remixapi_HostPassEXT) == 272, "Host pass ABI");
 _Static_assert(sizeof(remixapi_HostPassListEXT) == 32, "Host pass list ABI");
 _Static_assert(sizeof(remixapi_HostPassStatisticsEXT) == 72, "Host pass statistics ABI");
 _Static_assert(sizeof(remixapi_InstanceInfoWireframeEXT) == 24, "Wireframe instance ABI");
+_Static_assert(sizeof(remixapi_ParticleEmitterInfoEXT) == 232, "Particle emitter ABI");
+_Static_assert(offsetof(remixapi_ParticleEmitterInfoEXT, transform) == 40, "Particle emitter transform");
+_Static_assert(offsetof(remixapi_ParticleEmitterInfoEXT, colorStart) == 168, "Particle emitter colours");
+_Static_assert(offsetof(remixapi_ParticleEmitterInfoEXT, texture) == 216, "Particle emitter texture");
+_Static_assert(sizeof(remixapi_ParticleStatisticsEXT) == 56, "Particle statistics ABI");
 int main(void) { return 0; }

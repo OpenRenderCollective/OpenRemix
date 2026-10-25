@@ -350,6 +350,15 @@ namespace remix::config {
         result.push_back(scalar("rtx.native.sky.radianceScale", FIELD(sky.radianceScale), 1e-6, 1e6));
         result.push_back(scalar("rtx.native.sky.rasterExposure", FIELD(sky.rasterExposure), .01, 100));
         result.push_back(scalar("rtx.native.sky.ignoreGameControl", FIELD(sky.ignoreGameControl), 0, 1));
+        result.push_back(scalar("rtx.native.particles.enabled", FIELD(particles.enabled), 0, 1));
+        result.push_back(scalar("rtx.native.particles.budget", FIELD(particles.budget), 1024, 262144));
+        result.push_back(scalar("rtx.native.particles.spawnBudget", FIELD(particles.spawnBudget), 64, 65536));
+        result.push_back(scalar("rtx.native.particles.precipitation", FIELD(particles.precipitation), 0, 1));
+        result.push_back(scalar("rtx.native.particles.rain", FIELD(particles.rain), 0, 1));
+        result.push_back(scalar("rtx.native.particles.snow", FIELD(particles.snow), 0, 1));
+        result.push_back(scalar("rtx.native.particles.shelter", FIELD(particles.shelter), 0, 1));
+        result.push_back(scalar("rtx.native.particles.followWeather", FIELD(particles.followWeather), 0, 1));
+        result.push_back(scalar("rtx.native.particles.intensity", FIELD(particles.intensity), 0, 1));
         result.push_back({
             "rtx.hideInstanceTextures",
             [](const Settings &s) {

@@ -25,6 +25,20 @@ namespace remix::config {
     std::map<std::string, std::string> atmosphere;
     bool operator==(const SkySettings &) const = default;
   };
+  // Particle emitters (remix_particles_ext.h) and the Sky tab's test
+  // emitters. Particles exist only where the API or these settings ask.
+  struct ParticleSettings {
+    bool enabled = true;
+    uint32_t budget = 65536;     // live particles of all emitters
+    uint32_t spawnBudget = 8192; // spawns a frame
+    // FOLLOW_WEATHER's scale of the spawn rate, 0..1.
+    float precipitation = 1;
+    // The test emitters: a rain and a snow camera volume, at a share of
+    // their presets' rates, kept out from under cover (path tracer).
+    bool rain = false, snow = false, shelter = true, followWeather = false;
+    float intensity = .5f;
+    bool operator==(const ParticleSettings &) const = default;
+  };
   struct Settings {
     TraceOptions trace;
     uint32_t backend = 1;
@@ -75,6 +89,7 @@ namespace remix::config {
     // frame is composed as without them. Experimental, so off by default.
     bool hostPasses = false;
     SkySettings sky;
+    ParticleSettings particles;
     // Hidden textures
     std::vector<uint64_t> hideTextures;
     bool operator==(const Settings &) const = default;
