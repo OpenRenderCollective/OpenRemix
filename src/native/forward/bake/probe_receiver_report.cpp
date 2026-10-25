@@ -90,7 +90,7 @@ namespace remix::forward::bake {
       std::array<std::optional<ReceiverHit>, 16> blockers{};
     };
     ConnectionAudit probeConnections(const scene::BakeScene &source, const Grid &grid,
-        const ProbeStencil &stencil, std::span<const Grid::Origin> origins, std::stop_token cancelled) {
+        const ProbeStencil &stencil, std::span<const Grid::Origin> origins, std::stop_token cancelled, uint32_t excludedDraw = UINT32_MAX) {
       if (!(source.sceneScale > 0) || !std::isfinite(source.sceneScale))
         throw std::invalid_argument("Invalid probe connection scene scale");
       ConnectionAudit result;
@@ -123,7 +123,7 @@ namespace remix::forward::bake {
         result.tested[c] = true;
       }
       if (!rays.empty()) {
-        const auto hits = pickProbeReceivers(source, rays, cancelled);
+        const auto hits = pickProbeReceivers(source, rays, cancelled, excludedDraw);
         for (size_t c = 0; c < slots.size(); ++c)
           if (hits[c] && hits[c]->distance < lengths[slots[c]]) result.blockers[slots[c]] = hits[c];
       }
@@ -165,6 +165,60 @@ namespace remix::forward::bake {
       if (sum > 0) result.blockedWeight = blocked / sum;
       return result;
     }
+    // Diagnostic draw anchor, not an instance anchor: submeshes may be separate draws.
+    std::optional<Vec3> drawCenter(const scene::Draw &draw, std::stop_token cancelled) {
+      if (!draw.surface) return {};
+      const auto &surface = *draw.surface;
+      const size_t count = draw.indexCount ? draw.indexCount : surface.indices.size();
+      if (!count || count > 98304 || count % 3 || draw.firstIndex > surface.indices.size() ||
+          count > surface.indices.size() - draw.firstIndex) return {};
+      Vec3 low, high;
+      low.fill(std::numeric_limits<float>::infinity());
+      high.fill(-std::numeric_limits<float>::infinity());
+      for (size_t i = 0; i < count; ++i) {
+        if (i % 1024 == 0) check(cancelled);
+        const auto index = int64_t(surface.indices[draw.firstIndex + i]) + draw.vertexOffset;
+        const auto &v = surface.vertices.at(size_t(index));
+        const auto point = transformPoint(draw.model, {v.position[0], v.position[1], v.position[2]});
+        for (uint32_t c = 0; c < 3; ++c) {
+          if (!std::isfinite(point[c])) return {};
+          low[c] = std::min(low[c], point[c]); high[c] = std::max(high[c], point[c]);
+        }
+      }
+      Vec3 center;
+      for (uint32_t c = 0; c < 3; ++c) center[c] = float((double(low[c]) + high[c]) * .5);
+      return center;
+    }
+    void drawAnchors(std::ostream &out, const scene::BakeScene &source, const Grid &grid,
+        std::span<const Grid::Origin> origins, std::span<const std::optional<ReceiverHit>> hits,
+        std::stop_token cancelled) {
+      std::vector<uint32_t> draws;
+      out << ",\"drawAnchors\":[";
+      for (const auto &hit : hits) {
+        if (!hit || std::find(draws.begin(), draws.end(), hit->draw) != draws.end()) continue;
+        if (!draws.empty()) out << ',';
+        draws.push_back(hit->draw);
+        const auto center = drawCenter(source.draws[hit->draw], cancelled);
+        out << "{\"draw\":" << hit->draw << ",\"center\":";
+        if (center) vector(out, *center); else out << "null";
+        const auto cluster = center && source.partition && source.partition->closed ?
+            source.partition->cluster(center->data()) : -2;
+        out << ",\"partitionCluster\":" << cluster
+            << ",\"scope\":\"Bounded draw AABB midpoint; no normal bias; self draw excluded; anchor stencil only\",\"probes\":[";
+        if (center && cluster != -1) {
+          const auto stencil = probeStencil(grid, *center, Vec3{});
+          const auto audit = probeConnections(source, grid, stencil, origins, cancelled, hit->draw);
+          for (uint32_t c = 0; c < stencil.count; ++c) {
+            if (c) out << ',';
+            out << "{\"index\":" << stencil.indices[c] << ",\"tested\":"
+                << (audit.tested[c] ? "true" : "false") << ",\"blocked\":"
+                << (audit.blockers[c] ? "true" : "false") << '}';
+          }
+        }
+        out << "]}";
+      }
+      out << ']';
+    }
     std::vector<Grid::Origin> probeOrigins(const Grid &grid) {
       if (indexed(grid.header)) return directoryOrigins(grid);
       const uint32_t count = gridNodes(grid.header);
@@ -201,15 +255,17 @@ namespace remix::forward::bake {
     return std::max(0.f, float(initial + (bias - initial) * interval.fraction) - epsilon);
   }
   std::vector<std::optional<ReceiverHit>> pickProbeReceivers(const scene::BakeScene &source,
-      std::span<const ReceiverRay> rays, std::stop_token cancelled) {
+      std::span<const ReceiverRay> rays, std::stop_token cancelled, uint32_t excludedDraw) {
     check(cancelled);
     validateReceiverRays(rays);
+    if (excludedDraw != UINT32_MAX && excludedDraw >= source.draws.size())
+      throw std::invalid_argument("Invalid excluded receiver draw");
     std::vector<std::optional<ReceiverHit>> hits(rays.size());
     std::vector<double> closest(rays.size(), std::numeric_limits<double>::infinity());
     for (uint32_t drawIndex = 0; drawIndex < source.draws.size(); ++drawIndex) {
       check(cancelled);
       const auto &draw = source.draws[drawIndex];
-      if (!opaqueProbeReceiver(draw)) continue;
+      if (drawIndex == excludedDraw || !opaqueProbeReceiver(draw)) continue;
       const auto &surface = *draw.surface;
       const size_t count = draw.indexCount ? draw.indexCount : surface.indices.size();
       if (draw.firstIndex > surface.indices.size() || count > surface.indices.size() - draw.firstIndex || count % 3)
@@ -364,7 +420,9 @@ namespace remix::forward::bake {
         out << "{\"origin\":"; vector(out, rays[i].origin);
         out << ",\"direction\":"; vector(out, rays[i].direction); out << '}';
       }
-      out << "],\"hits\":[";
+      out << ']';
+      drawAnchors(out, source, grid, origins, hits, cancelled);
+      out << ",\"hits\":[";
       for (size_t i = 0; i < hits.size(); ++i) {
         check(cancelled);
         if (i) out << ',';

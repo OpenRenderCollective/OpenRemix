@@ -43,6 +43,10 @@ int main(int argc, char **argv) {
   require(hits[0] && hits[0]->draw == 1 && hits[0]->distance == 2 && !hits[1] &&
               hits[2] && hits[2]->draw == 0 && hits[2]->distance == 3 && !hits[3],
           "Ray picks must select nearest front/back intersections and preserve misses");
+  const auto excluded = b::pickProbeReceivers(source, std::span(rays).first(1), {}, 1);
+  require(excluded[0] && excluded[0]->draw == 0 && excluded[0]->distance == 5,
+          "Anchor connections must exclude only the specified draw");
+  invalid([&] { b::pickProbeReceivers(source, rays, {}, 2); });
   const std::array<b::ReceiverRay, 1> normalRay{{{{.5f, .5f, 0}, {0, 0, 1}}}};
   const auto clipped = b::opaqueBiasLimits(source, normalRay, 4);
   require(clipped[0] < 2 && clipped[0] > 1.99f && b::opaqueBiasLimits(source, normalRay, 1)[0] == 1 &&
@@ -129,6 +133,8 @@ int main(int argc, char **argv) {
     return std::string(std::istreambuf_iterator<char>(input), {});
   };
   const auto output = readOutput();
+  require(output.find("\"drawAnchors\":[{\"draw\":1,\"center\":[1,1,2],\"partitionCluster\":0") != std::string::npos,
+          "Anchor must use the complete draw bounds independently of the picked point");
   require(output.find("\"sceneHash\":\"123\"") != std::string::npos &&
               output.find("\"draw\":1") != std::string::npos && output.find("\"normalizedWeight\":") != std::string::npos,
           "Probe report must retain scene identity, picked ownership and normalized contributions");
