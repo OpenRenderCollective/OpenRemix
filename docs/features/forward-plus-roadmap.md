@@ -2746,3 +2746,17 @@ local support may require a deliberate representation change with CPU/GPU/cache 
 Do not silently enlarge the record budget or describe requested spacing as achieved
 spacing. Runtime/benchmark reporting must distinguish requested, fitted coarse and
 finest allocated density; finest anywhere is not density at every receiver.
+
+
+Local 0.25 m SH-cell feasibility checks do not resolve the selected high-error surfaces.
+One cell has only one backface-valid corner; naive renormalization over that survivor
+worsens its estimate. Another retains six valid corners but remains well below its
+surface reference. These are simple trilinear feasibility estimates, not the complete
+production visibility reconstruction, and cannot justify a denser regular-grid default.
+Independent 8192-sample SH queries at the exact surface-reference positions closely
+match hemisphere integration for both checked normals. This narrows these particular
+failures toward spatial support/placement rather than inability of the stored SH format
+to represent that directional irradiance. Next test geometry-aware local placement that
+retains multiple usable, same-side contributors; guard against isolated surviving probes,
+renormalization artifacts, thin solids and field discontinuities under movement.
+Do not extrapolate the two-position SH comparison to arbitrary high-frequency lighting.
