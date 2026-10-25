@@ -97,6 +97,7 @@ layout(set=0,binding=3,std140) uniform Frame {
   mat4 inverseCameraRelative; // camera rays: world = point.xyz / point.w + eye.xyz
   uint64_t localProbeRead, localProbeWrite; // local occlusion probes: last frame's (0: none), this frame's
   vec4 localProbeParams; // movingShadowBlur, reserved
+  vec4 volumeLightScales; // volumetrics: sun, lights, emissive surfaces, sky
   uint64_t sheetMaterials; // Optional measured-sheet optics, keyed by albedo descriptor.
 } frame;
 // Instance mask bit of view models (pathtrace/tlas_policy.h).

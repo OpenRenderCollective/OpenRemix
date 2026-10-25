@@ -109,10 +109,17 @@ void volumeMarch(vec3 origin,vec3 direction,float far,out vec3 inscatter,out flo
   inscatter*=frame.volumeMedium.rgb*frame.volumeParams.z;
 }
 #ifdef VOLUME_UPDATE_PASS
+// A local emitter's volumetric radiance scale times its source's share
+// (lights, emissive surfaces: Frame::volumeLightScales). Emissive surfaces
+// store theirs negated less one (light_bvh.cpp).
+float volumeEmitterScale(LightEmitter light) {
+  float v=light.corners[1].w;
+  return v<0?(-1-v)*frame.volumeLightScales.z:v*frame.volumeLightScales.y;
+}
 // What a local light sends to a point of the medium, unshadowed: its radiance
 // times its solid angle from there over 4 pi (isotropic phase). Distances
 // under half a cell are held there: a cell stands for its volume, and the
-// light's volumetric radiance scale (corners[1].w) applies. `endpoint`: the
+// light's volumetric radiance scale (volumeEmitterScale) applies. `endpoint`: the
 // point of the emitter to test visibility to.
 vec3 volumeCandidate(LightEmitter light,vec3 p,float size,inout uint state,out vec3 endpoint) {
   endpoint=p;
@@ -144,7 +151,7 @@ vec3 volumeCandidate(LightEmitter light,vec3 p,float size,inout uint state,out v
   }
   vec3 delta=endpoint-p;
   if(dot(delta,delta)<=1e-12)return vec3(0);
-  return emitterRadiance(light,-normalize(delta))*(falloff*fraction*frame.localScale.x*light.corners[1].w);
+  return emitterRadiance(light,-normalize(delta))*(falloff*fraction*frame.localScale.x*volumeEmitterScale(light));
 }
 // The local lights at a point of the medium, with two visibility rays. Up to
 // 64 lights: every one is evaluated. More: 32 candidates drawn from a cell
@@ -215,7 +222,7 @@ void volumeUpdate(uint index) {
     vec3 sky=vec3(0);
     for(uint i=0;i<16u;++i) {
       float z=1-2*lightRandom(state),angle=6.28318530718*lightRandom(state),r=sqrt(max(0,1-z*z));
-      sky+=environmentRadiance(vec3(r*cos(angle),r*sin(angle),z))*(1.0/16.0);
+      sky+=environmentRadiance(vec3(r*cos(angle),r*sin(angle),z))*(frame.volumeLightScales.w/16.0);
     }
     if(any(isnan(sky))||any(isinf(sky)))sky=vec3(0);
     vec4 stored=cells.data[skyFirst+total];
@@ -223,7 +230,7 @@ void volumeUpdate(uint index) {
     float count=min(stored.w+1,32);
     stored=vec4(mix(stored.rgb,sky,1/count),count);
     cells.data[skyFirst+total]=stored;
-    cells.data[total]=vec4(stored.rgb+.25*frame.lightRadiance.rgb*frame.lightRadiance.w,count);
+    cells.data[total]=vec4(stored.rgb+.25*frame.lightRadiance.rgb*frame.lightRadiance.w*frame.volumeLightScales.x,count);
     return;
   }
   uint level=index/perLevel,local=index%perLevel;
@@ -270,13 +277,13 @@ void volumeUpdate(uint index) {
       vec3 t=normalize(cross(abs(centre.z)<.999?vec3(0,0,1):vec3(0,1,0),centre));
       direction=normalize(centre+frame.sun.x*sqrt(u)*(cos(angle)*t+sin(angle)*cross(centre,t)));
     }
-    light+=.25*frame.lightRadiance.rgb*frame.lightRadiance.w*shadow(p,direction);
+    light+=.25*frame.lightRadiance.rgb*frame.lightRadiance.w*frame.volumeLightScales.x*shadow(p,direction);
   }
   // The environment: two uniform directions (their density cancels the phase).
   for(uint i=0;i<2u;++i) {
     float z=1-2*lightRandom(state),angle=6.28318530718*lightRandom(state),r=sqrt(max(0,1-z*z));
     vec3 direction=vec3(r*cos(angle),r*sin(angle),z);
-    vec3 radiance=environmentRadiance(direction);
+    vec3 radiance=environmentRadiance(direction)*frame.volumeLightScales.w;
     if(any(greaterThan(radiance,vec3(0))))sky+=.5*radiance*shadow(p,direction);
   }
   light+=volumeLocal(p,size,state);

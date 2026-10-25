@@ -1758,6 +1758,10 @@ namespace remix::metal {
     constants.volumeParams[1] = reachMeters / options.sceneScale;
     constants.volumeParams[2] = std::max(options.volumetricScattering, 0.f);
     constants.volumeParams[3] = options.volumetricBaseHeight / options.sceneScale;
+    const float scales[4] = {options.volumetricSunScale, options.volumetricLightScale, options.volumetricEmissiveScale,
+                             options.volumetricSkyScale};
+    for (unsigned i = 0; i < 4; ++i)
+      constants.volumeLightScales[i] = std::max(scales[i], 0.f);
     std::copy_n(medium.albedo, 3, constants.volumeMedium);
     constants.volumeMedium[3] = medium.extinction;
     std::fill_n(constants.volumeHeight, 4, 0.f);

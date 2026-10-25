@@ -178,8 +178,8 @@ namespace remix::trace::detail {
     // bits), guided share of the extra sky rays (float bits), active.
     uint64_t skyGuideRead = 0;
     uint64_t skyGuideWrite = 0;
-    // IES profiles (scene/ies.h): kIesBins floats each, a light's
-    // shaping.z the profile + 1.
+    // IES profiles (scene/ies.h): kIesBins floats each, a sphere emitter's
+    // corners[2].x the profile + 1.
     uint64_t iesProfiles = 0;
 
     uint32_t skyGuideConfig[4] = {};
@@ -194,11 +194,13 @@ namespace remix::trace::detail {
     // and this frame's. localProbeParams: movingShadowBlur, reserved.
     uint64_t localProbeRead = 0, localProbeWrite = 0;
     float localProbeParams[4] = {};
+    // Volumetric source shares: sun, lights, emissive surfaces, sky.
+    float volumeLightScales[4] = {1, 1, 1, 1};
     uint64_t sheetMaterials = 0; // Optional measured-sheet optics; descriptor-indexed.
   };
-  static_assert(sizeof(Frame) == 1216 && offsetof(Frame, sheetMaterials) == 1200 &&
-                offsetof(Frame, iesProfiles) == 1080 && offsetof(Frame, localProbeRead) == 1168 &&
-                offsetof(Frame, localProbeParams) == 1184 &&
+  static_assert(sizeof(Frame) == 1232 && offsetof(Frame, sheetMaterials) == 1216 &&
+                offsetof(Frame, volumeLightScales) == 1200 && offsetof(Frame, iesProfiles) == 1080 &&
+                offsetof(Frame, localProbeRead) == 1168 && offsetof(Frame, localProbeParams) == 1184 &&
                 offsetof(Frame, inverseCameraRelative) == 1104 &&
                 offsetof(Frame, skyGuideRead) == 1064 && offsetof(Frame, skyGuideConfig) == 1088 && offsetof(Frame, volumeGrid) == 912 && offsetof(Frame, volumePrevious) == 1024 && offsetof(Frame, sparseList) == 880 && offsetof(Frame, sparseConfig) == 896 && offsetof(Frame, cameraCull) == 864 && offsetof(Frame, cutConfig) == 816 && offsetof(Frame, orcaParams) == 800 && offsetof(Frame, regirConfig) == 752 && offsetof(Frame, restirCurrent) == 656 && offsetof(Frame, visibilityNodes) == 592 && offsetof(Frame, pathConfig) == 528 &&
 

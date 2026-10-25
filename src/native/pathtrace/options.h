@@ -154,6 +154,10 @@ namespace remix {
     float volumetricHeightFalloff = 0, volumetricBaseHeight = 0;
     uint32_t volumetricUpAxis = 2;
     float volumetricScattering = 1, volumetricMaxDistance = 250;
+    // Each source's share of the scattered light, on top of a light's own
+    // volumetricRadianceScale: the sun, lights (sphere, rect, disk, cylinder),
+    // emissive surfaces, the sky.
+    float volumetricSunScale = 1, volumetricLightScale = 1, volumetricEmissiveScale = 1, volumetricSkyScale = 1;
     // The scattered light is held in volumetricLevels nested grids of
     // volumetricCells^3 cells around the camera, the first of
     // volumetricCellSize meters and each next one twice as coarse. A cell is

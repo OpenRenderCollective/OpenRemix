@@ -323,6 +323,10 @@ namespace remix::config {
         TRACE(volumetricBaseHeight, -100000, 100000);
         TRACE(volumetricUpAxis, 0, 2);
         TRACE(volumetricScattering, 0, 100);
+        TRACE(volumetricSunScale, 0, 16);
+        TRACE(volumetricLightScale, 0, 16);
+        TRACE(volumetricEmissiveScale, 0, 16);
+        TRACE(volumetricSkyScale, 0, 16);
         TRACE(volumetricMaxDistance, 1, 100000);
         TRACE(volumetricCellSize, .02f, 16);
         TRACE(volumetricCells, 16, 96);

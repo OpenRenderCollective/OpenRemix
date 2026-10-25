@@ -68,6 +68,16 @@ namespace remix {
           ui::ColorEdit3("Scattering color", options.volumetricColor);
         }
         ui::SliderFloat("Scattered light", &options.volumetricScattering, 0.f, 8.f, "%.2f");
+        if (ImGui::TreeNode("Scattered light by source")) {
+          ui::SliderFloat("Sun", &options.volumetricSunScale, 0.f, 4.f, "%.2f");
+          ui::SliderFloat("Lights", &options.volumetricLightScale, 0.f, 4.f, "%.2f");
+          if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Sphere, rect, disk and cylinder lights (map lights, lamps, the flashlight).\n"
+                              "Each light's own volumetric radiance scale applies as well.");
+          ui::SliderFloat("Emissive surfaces", &options.volumetricEmissiveScale, 0.f, 4.f, "%.2f");
+          ui::SliderFloat("Sky", &options.volumetricSkyScale, 0.f, 4.f, "%.2f");
+          ImGui::TreePop();
+        }
         ui::SliderFloat("Height falloff (m)", &options.volumetricHeightFalloff, 0.f, 500.f, "%.1f");
         if (ImGui::IsItemHovered())
           ImGui::SetTooltip("Above the base height the medium thins to 37%% over this height. 0: uniform.");

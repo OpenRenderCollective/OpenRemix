@@ -235,26 +235,26 @@ float iesProfile(float profile,float cosine) {
 float emitterShaping(LightEmitter light,vec3 outgoing) {
   float cosine=dot(light.directionCone.xyz,outgoing);
   float outer=light.directionCone.w;
-  float ies=iesProfile(light.shaping.z,cosine);
+  float ies=iesProfile(light.radiance.w==0?light.corners[2].x:0,cosine); // spheres only
   if(outer<=-1)return ies*(light.shaping.y>0?pow(max(cosine,0),light.shaping.y):1);
   if(cosine<=outer)return 0;
   float inner=cos(acos(clamp(outer,-1,1))*(1-clamp(light.shaping.x,0,1)));
   float edge=inner>outer?smoothstep(outer,inner,cosine):1;
   return ies*edge*(light.shaping.y>0?pow(max(cosine,0),light.shaping.y):1);
 }
-// Light cookie of a sphere light: slot + 1 in shaping.w, the projection's up
+// Light cookie of a sphere light: slot + 1 in corners[2].y, the projection's up
 // and tan(width / 2) in corners[0]; the frame's table gives each slot's
 // texture + 1. Dark outside the projection.
 layout(buffer_reference,std430,buffer_reference_align=4) readonly buffer LightCookies { uint textures[]; };
 vec3 emitterCookie(LightEmitter light,vec3 outgoing) {
-  if(light.shaping.w<.5||light.radiance.w!=0||frame.lightCookies==0)return vec3(1);
+  if(light.radiance.w!=0||light.corners[2].y<.5||frame.lightCookies==0)return vec3(1);
   vec3 axis=light.directionCone.xyz;
   float along=dot(axis,outgoing);
   if(along<=0)return vec3(0);
   vec3 up=light.corners[0].xyz,right=cross(axis,up);
   vec2 uv=vec2(dot(outgoing,right),dot(outgoing,up))/(along*light.corners[0].w)*.5+.5;
   if(any(lessThan(uv,vec2(0)))||any(greaterThan(uv,vec2(1))))return vec3(0);
-  uint index=LightCookies(frame.lightCookies).textures[uint(light.shaping.w+.5)-1u];
+  uint index=LightCookies(frame.lightCookies).textures[uint(light.corners[2].y+.5)-1u];
   if(index==0u)return vec3(1);
   // Colour times alpha: a mask in either works (alpha-only cookies are common).
   vec4 texel=textureLod(textures[nonuniformEXT(index-1u)],vec2(uv.x,1-uv.y),0);

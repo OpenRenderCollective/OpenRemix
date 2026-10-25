@@ -97,6 +97,10 @@ void PathTracer::Gpu::configureVolume(VkCommandBuffer command, Frame &frame, con
   frame.volumeParams[1] = reachMeters / options.sceneScale;
   frame.volumeParams[2] = std::max(options.volumetricScattering, 0.f);
   frame.volumeParams[3] = options.volumetricBaseHeight / options.sceneScale;
+  const float scales[4] = {options.volumetricSunScale, options.volumetricLightScale, options.volumetricEmissiveScale,
+                           options.volumetricSkyScale};
+  for (unsigned i = 0; i < 4; ++i)
+    frame.volumeLightScales[i] = std::max(scales[i], 0.f);
   std::copy_n(medium.albedo, 3, frame.volumeMedium);
   frame.volumeMedium[3] = medium.extinction;
   std::fill_n(frame.volumeHeight, 4, 0.f);
