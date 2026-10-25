@@ -2679,3 +2679,18 @@ both methods. Do not promote the housing-only success, hide missing sites, relax
 or use a selective cohort to claim a global improvement. Keep consensus offline; next
 separate grid transport/placement errors from receiver interpolation and anchor failures
 at the regressing sites. The original renderer remains unchanged.
+
+
+Independent hemisphere checks at the strongest contributing probe origins now distinguish
+field accuracy from receiver-space variation for three large-error model sites. At the
+two severely underlit surfaces, contributing probe positions remain genuinely much dimmer
+than their surface references; correcting stored coefficients alone cannot recover that
+near-surface energy. At the overlit surface, strongly weighted probe positions genuinely
+receive bright lighting even though its surface reference is darker. Some stored-versus-
+reference probe errors also remain (sampling and SH truncation are not separated here).
+This is evidence for inadequate spatial representation around sharp lighting changes,
+not a reason to globally raise samples or zero visibility weights. Next test localized
+receiver-aware allocation/placement while protecting thin-surface containment and the
+fixed global probe budget; prior placement/refinement regressions remain applicable.
+Run metadata now explicitly separates reduced surrounding replay quality from independent
+8192-sample reference queries. These diagnostic images are not visual-quality acceptance.
