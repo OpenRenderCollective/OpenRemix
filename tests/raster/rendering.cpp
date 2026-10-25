@@ -2046,7 +2046,8 @@ namespace {
                       split ? "Stitched curved" : curved ? "Curved" : "Planar", samples, ssr ? "on" : "off", unsigned(first[left + 1]), unsigned(first[right + 1]));
       }
   }
-  void viewModelLightingTests(bool probeTest = false, bool reflectionTest = false, bool authoringTest = false) {
+  void viewModelLightingTests(const std::filesystem::path &directory, bool probeTest = false,
+                              bool reflectionTest = false, bool authoringTest = false) {
     for (bool ssr : {false, true})
       for (bool local : {false, true})
         for (uint32_t samples : {1u, 2u, 4u}) {
@@ -2087,6 +2088,7 @@ namespace {
             opaque.roughnessConstant = roughness;
             opaque.metallicConstant = metallic;
             opaque.alphaTestType = 7;
+            opaque.useDrawCallAlphaState = 1;
             remixapi_MaterialInfo info{};
             info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
             info.hash = hash;
@@ -2191,6 +2193,7 @@ namespace {
               r.setupCamera(camera);
             }
           };
+          uint32_t captureIndex = 0;
           auto render = [&](bool shadow, bool behindWall, bool drawWeapon, bool lit,
                              bool selfShadow = false, bool compatibilityOverlay = false) {
             cameras();
@@ -2215,7 +2218,17 @@ namespace {
               r.drawInstance(overlay);
             }
             if (lit) r.drawLight(sun);
-            return target.render();
+            auto image = target.render();
+            if (!probeTest) {
+              // Deterministic full-frame evidence for depth/ordering ablations,
+              // beyond the feature's selected-pixel assertions below.
+              const auto name = "weapon-" + std::to_string(ssr) + "-" + std::to_string(local) + "-" +
+                  std::to_string(samples) + "-" + std::to_string(captureIndex++) + ".rgba";
+              std::ofstream output(directory / name, std::ios::binary);
+              output.write(reinterpret_cast<const char *>(image.data()), image.size());
+              require(bool(output), "Viewmodel comparison image was saved");
+            }
+            return image;
           };
           const size_t centre = (32 * 64 + 32) * 4;
           if (probeTest) {
@@ -2641,6 +2654,27 @@ namespace {
                 require(std::abs(int(world[pixel + c]) - int(isolated[pixel + c])) <= 1,
                         "Self-shadow casters affect only viewmodel receivers");
             }
+          remixapi_InstanceInfoBlendEXT coverage{};
+          coverage.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BLEND_EXT;
+          coverage.alphaTestEnabled = 1;
+          coverage.alphaTestCompareOp = 0; // NEVER must not leave depth/coverage behind.
+          weapon.pNext = &coverage;
+          require(render(false, false, true, true) == world,
+                  "Rejected weapon alpha cannot hide the world or leave overlay depth");
+          coverage.alphaTestCompareOp = 4; // GREATER with opaque input exercises conditional coverage.
+          coverage.alphaTestReferenceValue = 128;
+          require(render(false, false, true, true) == weaponAgain,
+                  "Passing conditional weapon alpha preserves the opaque colour result");
+          remixapi_InstanceInfoCameraCullingEXT culling{};
+          culling.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_CAMERA_CULLING_EXT;
+          culling.flags = REMIXAPI_INSTANCE_CAMERA_CULL_BACK_FACES_EXT;
+          weapon.pNext = &culling;
+          weapon.doubleSided = 1; // Keep transport two-sided; cull only camera coverage.
+          const auto facing = render(false, false, true, true);
+          weapon.transform.matrix[0][0] *= -1;
+          const auto reversed = render(false, false, true, true);
+          require((facing[centre] > world[centre] + 5) != (reversed[centre] > world[centre] + 5),
+                  "Weapon backface coverage agrees with its colour pass for both windings");
           std::printf("Viewmodel %ux SSR %u local %u: lit %u, world-shadowed %u, overlay %u\n",
                       samples, unsigned(ssr), unsigned(local), bright[centre], dark[centre], overlay[centre]);
         }
@@ -5253,11 +5287,11 @@ int main(int argc, char **argv) try {
   else if (argc>2 && std::strcmp(argv[2],"compact-occlusion")==0) compactOcclusionTests();
   else if (argc>2 && std::strcmp(argv[2],"overflow-specular")==0) compactOcclusionTests(true);
   else if (argc>2 && std::strcmp(argv[2],"overflow-masks")==0) compactOcclusionTests(true, true);
-  else if (argc>2 && std::strcmp(argv[2],"viewmodel-lighting")==0) viewModelLightingTests();
-  else if (argc>2 && std::strcmp(argv[2],"viewmodel-probes")==0) viewModelLightingTests(true);
-  else if (argc>2 && std::strcmp(argv[2],"authored-reflections")==0) viewModelLightingTests(true, true, true);
+  else if (argc>2 && std::strcmp(argv[2],"viewmodel-lighting")==0) viewModelLightingTests(directory);
+  else if (argc>2 && std::strcmp(argv[2],"viewmodel-probes")==0) viewModelLightingTests(directory, true);
+  else if (argc>2 && std::strcmp(argv[2],"authored-reflections")==0) viewModelLightingTests(directory, true, true, true);
   else if (argc>2 && std::strcmp(argv[2],"viewmodel-ssr")==0) reflectionTests(directory, false, false, false, 4, true);
-  else if (argc>2 && std::strcmp(argv[2],"viewmodel-environment")==0) viewModelLightingTests(true, true);
+  else if (argc>2 && std::strcmp(argv[2],"viewmodel-environment")==0) viewModelLightingTests(directory, true, true);
   else if (argc>2 && std::strcmp(argv[2],"terrain-lighting")==0) terrainLightingTests();
   else if (argc>2 && std::strcmp(argv[2],"decal-lighting")==0) terrainLightingTests(true);
   else if (argc>2 && std::strcmp(argv[2],"clear-visibility")==0) clearVisibilityTests();

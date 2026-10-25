@@ -2994,3 +2994,28 @@ explain downstream SSR/depth reconstruction. Qualify weapon depth and world
 coverage rejection independently, keeping our world reflection guides correct.
 Numeric depth ranges depend on projection conventions and are not portable
 constants to copy. The second supplied capture fails file parsing.
+
+
+### Viewmodel depth prepass prototype and acceptance gates
+
+A private `REMIX_DEBUG_VIEWMODEL_DEPTH_PREPASS=1` ablation now writes matching
+alpha/backface depth into the independent weapon target before colour. Colour
+depth is read-only only when the depth pipeline exists. Shared draw submission
+preserves ordering and transforms; world depth, SSR guides and isolated shadows
+remain unchanged. Default stays off. GPU scopes distinguish target, depth and
+colour; frame CSV appends `viewmodelDepthMs`.
+
+Five final-source GPU regressions pass with synchronization validation, including
+all alpha comparisons in both submission orders and 1x/2x/4x MSAA, weapon shadows,
+probe inheritance, SSR and environment response. All 156 deterministic overlay
+fixture readbacks exactly match the baseline. A real foreground Construct run
+confirms the prepass executes on pistol and physgun with unchanged baked content.
+Colour shading is cheaper in this hall, but world/shadow and whole-frame timings
+vary enough that no default FPS improvement is accepted. Keep the opt-in private
+until wider maps/weapons and repeatable whole-frame measurements justify it.
+
+An initial wiring error enabled read-only colour without creating depth; the
+broader alpha-order test and a small RenderDoc repro caught it. Those earlier
+no-prepass runs are not optimization evidence. Temporary capture hooks and
+unhelpful barrier/shader experiments were removed. World coverage rejection is
+still a separate pending implementation; shadow cost remains another target.

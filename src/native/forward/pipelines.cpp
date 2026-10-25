@@ -103,12 +103,14 @@ namespace remix::forward {
                                                        VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
                                                    .dynamicStateCount = 2,
                                                    .pDynamicStates = states};
-    enum class Pass { Opaque, Shadow, Composite, Terrain, Depth, ViewModel };
+    enum class Pass { Opaque, Shadow, Composite, Terrain, Depth, ViewModel, ViewModelDepth };
     using Coverage = lightmap::ReceiverCoverage;
+    const bool viewModelPrepass = std::getenv("REMIX_DEBUG_VIEWMODEL_DEPTH_PREPASS") != nullptr;
     auto graphics = [&](VkShaderModule vs, VkShaderModule fs, VkRenderPass pass, Pass mode = Pass::Opaque,
                          Coverage coverage = Coverage::Mixed) {
       const bool shadow = mode == Pass::Shadow, composite = mode == Pass::Composite;
-      const bool terrain = mode == Pass::Terrain, depthOnly = mode == Pass::Depth;
+      const bool terrain = mode == Pass::Terrain, depthOnly = mode == Pass::Depth || mode == Pass::ViewModelDepth;
+      const bool viewModel = mode == Pass::ViewModel || mode == Pass::ViewModelDepth;
       // Ordinary vertices have no chart coordinates. Lightmap vertex ranges
       // can specialize either coverage without changing their buffer stride.
       // Mixed triangles retain the generic lightmap/probe selection.
@@ -151,7 +153,8 @@ namespace remix::forward {
           // A prepassed world draw only shades existing coverage. In particular,
           // forced early tests must not write depth before its cutout discard.
           // Other cameras and shadow/depth passes retain their own depth writes.
-          .depthWriteEnable = !terrain && !(mode == Pass::Opaque && options.depthPrepass),
+          .depthWriteEnable = !terrain && !(mode == Pass::Opaque && options.depthPrepass) &&
+                              !(mode == Pass::ViewModel && viewModelDepthPipeline),
           .depthCompareOp = composite ? VK_COMPARE_OP_ALWAYS : VK_COMPARE_OP_LESS_OR_EQUAL};
       const VkPipelineColorBlendAttachmentState attachment{
           .blendEnable = composite || terrain,
@@ -166,7 +169,7 @@ namespace remix::forward {
       const VkPipelineColorBlendStateCreateInfo blend{
           .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
           .attachmentCount = shadow                                ? 0u
-                             : composite || terrain || mode == Pass::ViewModel || !options.reflections() ? 1u
+                             : composite || terrain || viewModel || !options.reflections() ? 1u
                                                                    : 3u,
           .pAttachments = shadow ? nullptr : attachments};
       const VkGraphicsPipelineCreateInfo info{.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
@@ -192,6 +195,10 @@ namespace remix::forward {
       return result;
     };
     opaquePipeline = graphics(vertex, fragment, worldPass);
+    // Create depth first: colour becomes read-only only when this pipeline exists.
+    // The private ablation remains off until whole-frame performance is qualified.
+    if (viewModelPrepass)
+      viewModelDepthPipeline = graphics(vertex, depthFragment, viewModelTarget->pass(), Pass::ViewModelDepth);
     const auto viewModelFragment = modules.add(viewModelFragShader, sizeof(viewModelFragShader));
     viewModelPipeline = graphics(vertex, viewModelFragment, viewModelTarget->pass(), Pass::ViewModel);
     if (!std::getenv("REMIX_DEBUG_DISABLE_VIEWMODEL_EARLY_DEPTH")) {

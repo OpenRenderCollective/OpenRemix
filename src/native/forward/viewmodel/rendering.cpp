@@ -55,34 +55,42 @@ namespace remix::forward {
         casters(frame.viewModelCommands, false);
       });
     }
-    // Keep colour/attachment cost separate from the shadow maps above. The
-    // outer overlay range remains inclusive for whole-feature comparisons.
-    gpu::GpuScope colorTime(command, "Forward+ viewmodel color", extent);
+    // The depth shader repeats the same alpha/backface coverage as colour.
+    // Prepassed colour pipelines leave depth read-only, including cutouts.
+    gpu::GpuScope targetTime(command, "Forward+ viewmodel target", extent);
     viewModelTarget->record(command, [&] {
-      VkPipeline activePipeline = VK_NULL_HANDLE;
-      vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &frame.viewModelScene, 0, nullptr);
-      for (const auto &draw : frame.viewModelCommands) {
-        if (!draw.source.rasterVisible || !intersectsClip(draw.worldBounds, frame.data.camera)) continue;
-        // Per-draw ranges distinguish hidden close-up geometry from the world
-        // receiver runs without changing overlay order or its isolated depth.
-        const auto pipeline = viewModelEarlyPipeline && draw.unconditionalCoverage
-            ? viewModelEarlyPipeline : viewModelPipeline;
-        fragmentStatistics->begin(command, pipeline == viewModelEarlyPipeline
-            ? FragmentStatistics::viewModelEarly : FragmentStatistics::viewModel);
-        if (pipeline != activePipeline) {
-          vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-          activePipeline = pipeline;
+      auto drawModels = [&](bool depthOnly) {
+        VkPipeline activePipeline = VK_NULL_HANDLE;
+        vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1,
+                                &frame.viewModelScene, 0, nullptr);
+        for (const auto &draw : frame.viewModelCommands) {
+          if (!draw.source.rasterVisible || !intersectsClip(draw.worldBounds, frame.data.camera)) continue;
+          const auto pipeline = depthOnly ? viewModelDepthPipeline
+              : viewModelEarlyPipeline && draw.unconditionalCoverage ? viewModelEarlyPipeline : viewModelPipeline;
+          if (!depthOnly)
+            fragmentStatistics->begin(command, pipeline == viewModelEarlyPipeline
+                ? FragmentStatistics::viewModelEarly : FragmentStatistics::viewModel);
+          if (pipeline != activePipeline) {
+            vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            activePipeline = pipeline;
+          }
+          vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 1, 1, &draw.material, 0, nullptr);
+          const uint32_t push[] = {draw.index, 0};
+          vkCmdPushConstants(command, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                             0, sizeof(push), push);
+          const VkDeviceSize offset = 0;
+          vkCmdBindVertexBuffers(command, 0, 1, &draw.geometry->vertices->handle, &offset);
+          vkCmdBindIndexBuffer(command, draw.geometry->indices->handle, 0, VK_INDEX_TYPE_UINT32);
+          vkCmdDrawIndexed(command, draw.count, 1, draw.source.firstIndex, draw.source.vertexOffset, 0);
+          if (!depthOnly) fragmentStatistics->end(command);
         }
-        vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 1, 1, &draw.material, 0, nullptr);
-        const uint32_t push[] = {draw.index, 0};
-        vkCmdPushConstants(command, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(push), push);
-        const VkDeviceSize offset = 0;
-        vkCmdBindVertexBuffers(command, 0, 1, &draw.geometry->vertices->handle, &offset);
-        vkCmdBindIndexBuffer(command, draw.geometry->indices->handle, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdDrawIndexed(command, draw.count, 1, draw.source.firstIndex, draw.source.vertexOffset, 0);
-        fragmentStatistics->end(command);
+      };
+      if (viewModelDepthPipeline) {
+        gpu::GpuScope depthTime(command, "Forward+ viewmodel depth prepass", extent);
+        drawModels(true);
       }
+      gpu::GpuScope colorTime(command, "Forward+ viewmodel color", extent);
+      drawModels(false);
     });
   }
 } // namespace remix::forward
