@@ -2,6 +2,21 @@
 
 ## Current lighting-quality focus
 
+Quality qualification must distinguish reduced-budget smoke tests, normal-budget
+controlled comparisons, and live-game appearance references. The replay quality
+preset now requires sky data instead of accepting a missing-sky fallback; procedural
+skies require a frozen live capture. Record completed publication, actual sky and
+display transform before interpreting noise, brightness or reflection differences.
+The latest installed Forward+ functional capture omitted Construct's procedural
+sky and therefore does not qualify its live lighting appearance. Preserve valid
+controlled component studies, but do not present them as final visual acceptance.
+
+An installed Forward+/path-tracer transition smoke reached Forward+ capture but
+not the final path-traced image. Two synchronization write hazards were reported
+inside DLSS RR resource clears. Isolate RR on/off and backend-transition versus
+fresh-start cases before deciding ownership; the combined smoke remains incomplete.
+
+
 Reference coverage is a prerequisite for the quality work below. Incoming-ray
 hemisphere integration omits analytic direct lighting at the receiver, while
 fully baked surface and probe aggregates can include it. Such references cannot

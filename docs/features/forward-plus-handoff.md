@@ -8,14 +8,33 @@ reference format for normal-bearing surface irradiance with the bake's direct
 policy; it preserves SH and reconstructs irradiance at the supplied normal.
 This diagnostic correction does not change rendering defaults or existing bakes.
 
-Current testing installation: `forwardplus-bake-batch-20261024`, native binary
-`0f4a1ba` with adapter `09c6477`. It includes measured Refract imports, optical
-tint motion/stationary bake policy, canonical Source asset paths and batched
-bake pipeline compilation. Existing rendering defaults and user-authored
-assets are preserved; experimental probe batching remains opt-in. Earlier
-checkpoint/deployment descriptions below are historical. Focused fixed-view
-Trainstation qualification passes; moving gameplay, wider visual parity and
-the remaining roadmap are still open.
+Current testing installation: `forwardplus-current-20261025`, native `2d9f578c`
+and adapter `ac46d523`. All 157 deployed files verify, and 97 protected files
+(settings, launchers, authored bounds and replacements) remain byte-identical.
+This includes upstream integration, separate pinned DLSS CNN/Transformer packaging
+and redundant consecutive Forward+ draw-binding elimination. Experimental model
+charts and selected-probe batching remain opt-in. Earlier deployments below are
+historical. Fixed-view checks do not establish moving-gameplay FPS or final quality.
+
+The installed Forward+ smoke produced its image and timing/report outputs. Its
+Construct procedural sky was missing, so this is functional coverage rather than
+live-game lighting parity. The subsequent path-tracer stage produced no final
+capture and reported two synchronization write hazards inside DLSS RR resource
+clears. No replay process remains; its final exit code was not retained. Do not
+describe that combined run as passing or attribute the hazards to first-party
+code without isolating them. Repeat with and without RR under matched conditions.
+
+Quality replay captures must supply actual map sky data. The quality preset now
+requires a usable sky; Construct's procedural `painted` sky needs a frozen live
+capture. Missing-sky diagnostic captures remain useful for controlled algorithm
+comparisons, but cannot qualify the game's lighting appearance. Normal sample
+budgets alone are insufficient: record sky, exposure, materials, bake completion,
+and experimental coverage as well. Existing noise/seam/probe issues remain open.
+The required-sky guard rejects missing Construct sky before any presentation.
+A fresh normal-budget installed Forward+ run using a validated frozen live sky
+then completes bake, authored capture readiness and final image/report publication
+without validation/synchronization diagnostics. This corrects that test's missing
+illumination; it does not establish that noisy probes, seams or all rooms are fixed.
 
 Current probe-batching executable diagnostics show generic world fragments growing from about
 110 KiB to 135 KiB and viewmodel fragments from about 156 KiB to 181 KiB; the fully mapped
