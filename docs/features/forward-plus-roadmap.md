@@ -3088,3 +3088,19 @@ Playable install/updater remain unchanged. Prioritize the measured white-room
 opaque receiver/field bottleneck before further small shadow-path experiments.
 Audit exact-zero response pruning carefully: finite-emitter SH and fallback/mixed
 corrections prevent naive shading-normal or cone rejection.
+
+
+### White-room receiver cost: narrowed by diagnostic ablation
+
+Foreground fixed-camera Construct trials with identical normal-quality baked
+content and the same binary place white-room opaque shading excluding depth at
+7.99/7.92 ms normally versus 1.75/1.76 ms when per-light response is omitted.
+This removes visible lighting and is diagnostic only. Styled surface omission
+leaves that cost near 8 ms; cluster building costs roughly 0.02-0.04 ms.
+Investigate per-receiver light loops, coverage fallbacks, visibility and highlight
+response before redesigning styled storage or further small shadow optimisations.
+Snapshots show 16 selected lights plus a 120-light baked fallback tail; establish
+which pixels actually use that tail rather than interpreting global counts as
+per-pixel work. Preserve finite-emitter and mixed-shadow correctness.
+All temporary diagnostic source switches were removed, exact originals restored
+and the normal runtime rebuilt. Playable install/updater remain unchanged.
