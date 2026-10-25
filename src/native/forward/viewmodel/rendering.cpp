@@ -55,6 +55,9 @@ namespace remix::forward {
         casters(frame.viewModelCommands, false);
       });
     }
+    // Keep colour/attachment cost separate from the shadow maps above. The
+    // outer overlay range remains inclusive for whole-feature comparisons.
+    gpu::GpuScope colorTime(command, "Forward+ viewmodel color", extent);
     viewModelTarget->record(command, [&] {
       VkPipeline activePipeline = VK_NULL_HANDLE;
       vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &frame.viewModelScene, 0, nullptr);
