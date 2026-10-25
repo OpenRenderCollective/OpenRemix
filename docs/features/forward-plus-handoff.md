@@ -1,5 +1,28 @@
 # Forward+ continuation guide
 
+Current branch checkpoint (2026-10-25): runtime profiles enable eligible static
+model lightmaps by default (`c819cf30`); `rtx.native.forward.lightmapModels=0`
+disables them, while dynamic objects keep probe lighting. Base-only surface
+references separate aggregate base lighting from styled components. This source
+change has normal-quality multi-map/cache and private live-game qualification;
+remaining probe, seam, noise, bake-time and broad performance work stays open.
+
+Opaque sun/local shadow alpha work is reduced (`58571eda`): ALWAYS bypasses
+albedo sampling and NEVER discards immediately, preserving conditional alpha.
+GPU shadow regressions pass and existing 156 deterministic overlay images remain
+exact. A live Construct pair has lower weapon sun-shadow cost, but world/unarmed
+variation prevents accepting its entire whole-frame difference as a shader gain.
+
+The isolated weapon depth prepass (`97bfb6af`) remains a private opt-in via
+`REMIX_DEBUG_VIEWMODEL_DEPTH_PREPASS=1`, with alpha/MSAA/SSR correctness coverage.
+It is not an accepted default FPS improvement. CS2 capture evidence confirms
+early weapon depth and later world colour rejection; our world coverage masking
+is still pending. No temporary RenderDoc test hooks remain in source.
+
+The playable installation below has NOT received these branch changes. Preserve
+its 97 protected files when packaging/deploying, and update this checkpoint only
+after verifying the new installed manifest and appropriate smoke tests.
+
 Quality-reference caveat: incoming-ray hemisphere references omit analytic
 receiver-direct lighting. Comparisons against fully baked aggregate surface or
 probe fields therefore need a component audit before their error measurements
@@ -15,7 +38,7 @@ This includes upstream integration, separate pinned DLSS CNN/Transformer packagi
 and redundant consecutive Forward+ draw-binding elimination, plus bounded receiver
 range specialization. Only the native DLL and runtime manifest changed in this
 refresh; adapter source changes since its previous checkpoint are tooling only.
-Experimental model
+In that installed build, model
 charts and selected-probe batching remain opt-in. Earlier deployments below are
 historical. Fixed-view checks do not establish moving-gameplay FPS or final quality.
 
@@ -45,7 +68,7 @@ sample budgets, model-chart eligibility defaults and protected user assets stay 
 The branch also specializes bounded consecutive receiver ranges within partially
 charted opaque draws. Coverage, original triangle order and bake compatibility are
 preserved; fragmented meshes retain a single generic draw. Static model charts
-remain opt-in. Continue their wider-map quality/cost qualification separately from
+are now a runtime-profile default on the branch. Continue their wider-map quality/cost qualification separately from
 dynamic-prop volume support; static model gaps can be much smaller than a useful
 volume interpolation cell. Rejecting all blocked stencil contributors alone is
 not a complete lighting solution when no clear support remains.
