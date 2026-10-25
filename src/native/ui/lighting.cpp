@@ -371,21 +371,24 @@ namespace remix {
   }
   void RemixNativeRuntime::drawSkyTab(config::Settings &settings) {
     ui::SkyStatus status;
-    if (!m_traceSupported)
-      status.reason = "The NUMOS sky needs the path tracer, which this device cannot run.";
-    else if (!m_pathTracer)
-      status.reason = "The NUMOS sky renders with the path tracer (Rendering: backend).";
-    else {
+    if (!m_pathTracer) {
+      // The raster backend's sky (raster_sky.cpp).
+      status.supported = m_skyUnavailable.empty();
+      status.active = m_rasterSkyActive;
+      status.reason = !status.supported             ? "The device lacks " + m_skyUnavailable + "."
+                      : !m_rasterSkyFailure.empty() ? "Stopped: " + m_rasterSkyFailure
+                                                    : std::string();
+    } else {
       const auto sky = m_pathTracer->skyStatus();
       status.supported = sky.supported;
       status.active = sky.active;
       status.reason = sky.reason;
-      // With GPU pass timers on: the sky's passes ("NUMOS sky", "NUMOS screen
-      // clouds", "NUMOS composite").
-      for (const auto &pass : m_gpuTimers.latest().passes)
-        if (std::string_view(pass.name).starts_with("NUMOS "))
-          status.gpuMilliseconds += float(pass.milliseconds);
     }
+    // With GPU pass timers on: the sky's passes ("NUMOS sky", "NUMOS screen
+    // clouds", "NUMOS composite").
+    for (const auto &pass : m_gpuTimers.latest().passes)
+      if (std::string_view(pass.name).starts_with("NUMOS "))
+        status.gpuMilliseconds += float(pass.milliseconds);
     ui::drawSkyTab(settings, status);
   }
 } // namespace remix

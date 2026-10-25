@@ -39,7 +39,8 @@ namespace remix::sky {
   // rays that miss the scene baked into an equirectangular environment.
   class Renderer {
   public:
-    Renderer(VkPhysicalDevice physical, VkDevice device);
+    // rayQuery: the device traces rays (the scene TLAS may be given).
+    Renderer(VkPhysicalDevice physical, VkDevice device, bool rayQuery = true);
     ~Renderer();
     Renderer(const Renderer &) = delete;
     Renderer &operator=(const Renderer &) = delete;
@@ -63,6 +64,21 @@ namespace remix::sky {
     // recordPostDepth. `scale` turns NUMOS radiance into the frame's.
     void recordComposite(VkCommandBuffer command, VkImage colorImage, VkImageView colorView, VkImage depthImage,
                          VkImageView depthView, float scale, config::SkySettings::GameSky gameSky);
+
+    // The raster renderer's sky, after record() and the world's draws:
+    // recordRasterPostDepth takes the target's depth (a depth-aspect view in
+    // GENERAL layout, cleared to clearDepth where nothing was drawn) and runs
+    // the screen clouds; recordRasterComposite then writes what the target is
+    // multiplied by and what is added after (rasterTransmittance,
+    // rasterAddition: RGBA16 float, GENERAL, render resolution). exposure
+    // turns NUMOS radiance into the display's; linearTarget: the target
+    // blends linear values (an sRGB format).
+    void recordRasterPostDepth(VkCommandBuffer command, VkImage depthImage, VkImageView depthView,
+                               const scene::Matrix &projection, float clearDepth);
+    bool recordRasterComposite(VkCommandBuffer command, float exposure, config::SkySettings::GameSky gameSky,
+                               bool linearTarget);
+    VkDescriptorImageInfo rasterAddition() const;
+    VkDescriptorImageInfo rasterTransmittance() const;
 
     // The environment as a dome: sampled in GENERAL layout, its texels scaled
     // by environmentScale(), looked up through domeTransform() (world to the

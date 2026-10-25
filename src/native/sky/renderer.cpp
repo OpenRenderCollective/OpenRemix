@@ -3,11 +3,13 @@
 #include "upscale/camera.h"
 #include <numos/renderer.h>
 #include <numos/settings.h>
+#include <numos/shaders.h>
 #include <numos/weather.h>
 #include <algorithm>
 #include <cmath>
 #include <iterator>
 #include <string_view>
+#include <utility>
 
 namespace remix::sky {
   namespace {
@@ -46,6 +48,16 @@ namespace remix::sky {
       float origin[4], axisU[4], axisV[4], axisSlice[4];
       uint32_t size, slices, zUp, reserved;
     };
+    struct RasterDepthPush {
+      float inverseZ[4], inverseW[4];
+      uint32_t width, height;
+      float clearDepth, missDepth;
+    };
+    struct RasterCompositePush {
+      uint32_t width, height, frameIndex, zUp;
+      float missDepth, exposure;
+      uint32_t gameSky, flags;
+    };
 
     std::vector<Bridge::HostPass> hostPasses() {
       std::vector<Bridge::HostPass> passes;
@@ -71,12 +83,15 @@ namespace remix::sky {
     float weatherElapsed = 0, weatherDuration = 0;
     config::SkyState state;
     numos::GpuHandle environment = 0, cloudShadow = 0, missDepth = 0, depthImport = 0, sceneImport = 0;
+    // The raster renderer's linear depth and composite images.
+    numos::GpuHandle rasterDepth = 0, rasterAddition = 0, rasterTransmittance = 0;
+    uint32_t rasterWidth = 0, rasterHeight = 0;
     VkImageView depthView = VK_NULL_HANDLE;
     VkAccelerationStructureKHR scene = VK_NULL_HANDLE;
     uint32_t renderWidth = 0, renderHeight = 0, missWidth = 0, missHeight = 0;
     uint32_t frameIndex = 0, lastCut = 0;
     numos::Camera camera{};
-    bool zUp = true, clouds = false;
+    bool zUp = true, clouds = false, rayQuery = true;
     std::chrono::steady_clock::time_point last{};
     bool begun = false;
     State(VkPhysicalDevice physical, VkDevice device) : bridge(physical, device, hostPasses()) {}
@@ -123,7 +138,9 @@ namespace remix::sky {
     }
   };
 
-  Renderer::Renderer(VkPhysicalDevice physical, VkDevice device) : m(std::make_unique<State>(physical, device)) {
+  Renderer::Renderer(VkPhysicalDevice physical, VkDevice device, bool rayQuery)
+      : m(std::make_unique<State>(physical, device)) {
+    m->rayQuery = rayQuery;
     // NUMOS copies the night sky and streams it to the GPU over the next frames.
     std::vector<uint8_t> data[4];
     for (size_t i = 0; i < std::size(data); ++i)
@@ -187,6 +204,13 @@ namespace remix::sky {
                                                               : numos::PassId::cloud_render;
     const auto needed = [&](uint32_t pass) {
       const auto id = numos::PassId(pass);
+      if (pass < numos::passCount() && !m->rayQuery) {
+        // Without ray queries the scene-traced passes never run (no TLAS).
+        const auto &info = numos::passInfo(pass);
+        for (uint32_t i = 0; i < info.bindingCount; ++i)
+          if (info.bindings[i].kind == numos::BindingKind::AccelerationStructure)
+            return false;
+      }
       return pass >= numos::passCount() ||
              (id != numos::PassId::cloud_render && id != numos::PassId::cloud_render_fast &&
               id != numos::PassId::cloud_render_reference) ||
@@ -504,6 +528,99 @@ namespace remix::sky {
   }
 
   const config::SkyState &Renderer::state() const { return m->state; }
+
+  void Renderer::recordRasterPostDepth(VkCommandBuffer command, VkImage depthImage, VkImageView depthView,
+                                       const scene::Matrix &projection, float clearDepth) {
+    if (!m->begun)
+      return;
+    m->begun = false;
+    m->bridge.begin(command);
+    if (m->rasterWidth != m->renderWidth || m->rasterHeight != m->renderHeight) {
+      for (auto *texture : {&m->rasterDepth, &m->rasterAddition, &m->rasterTransmittance})
+        if (*texture)
+          m->bridge.destroy(std::exchange(*texture, 0));
+      m->rasterWidth = m->renderWidth;
+      m->rasterHeight = m->renderHeight;
+    }
+    const auto create = [&](numos::Format format, const char *name) {
+      return m->bridge.createTexture(
+          {.format = format, .width = m->renderWidth, .height = m->renderHeight, .debugName = name});
+    };
+    if (!m->rasterDepth) {
+      m->rasterDepth = create(numos::Format::R32Float, "NUMOS raster depth");
+      m->rasterAddition = create(numos::Format::RGBA16Float, "NUMOS raster addition");
+      m->rasterTransmittance = create(numos::Format::RGBA16Float, "NUMOS raster transmittance");
+    }
+    const auto depth = m->bridge.importTexture(
+        depthImage, depthView, {.format = numos::Format::R32Float, .width = m->renderWidth, .height = m->renderHeight});
+    // The inverse projection's z and w rows (column-major).
+    const auto inverse = scene::inverse(projection);
+    RasterDepthPush push{.width = m->renderWidth, .height = m->renderHeight, .clearDepth = clearDepth,
+                         .missDepth = missDepth};
+    for (int c = 0; c < 4; ++c) {
+      push.inverseZ[c] = inverse[c * 4 + 2];
+      push.inverseW[c] = inverse[c * 4 + 3];
+    }
+    m->dispatch(Stage::raster_depth, {{"depth", {.resource = depth}}, {"linearViewZ", {.resource = m->rasterDepth}}},
+                &push, sizeof(push), (m->renderWidth + 7) / 8, (m->renderHeight + 7) / 8);
+    m->bridge.barrier();
+    m->numos.dispatchPostDepth(m->bridge, m->rasterDepth, missDepth);
+    m->bridge.end();
+    m->bridge.forget(depth);
+    m->clouds = true;
+  }
+
+  bool Renderer::recordRasterComposite(VkCommandBuffer command, float exposure,
+                                       config::SkySettings::GameSky gameSky, bool linearTarget) {
+    if (!m->clouds || !m->rasterDepth)
+      return false;
+    m->clouds = false;
+    m->bridge.begin(command);
+    const auto &out = m->numos.outputs();
+    auto named = m->outputs();
+    const auto camera = m->bridge.uploadConstants(&m->camera, sizeof(m->camera));
+    const auto texture = [](numos::GpuHandle handle) { return numos::Binding{.resource = handle}; };
+    named["camera"] = {.resource = camera.buffer, .offset = camera.offset, .size = camera.size};
+    named["cloudRender"] = texture(out.cloudRender);
+    named["cloudDepth"] = texture(out.cloudDepth);
+    named["apNearScatter"] = texture(out.apNearScatter);
+    named["apFarScatter"] = texture(out.apFarScatter);
+    named["apFarTransmittance"] = texture(out.apFarTransmittance);
+    named["apFroxelAux"] = texture(out.apFroxelAux);
+    named["apLights"] = texture(out.apLights);
+    named["apLightClusters"] = texture(out.apLightClusters);
+    named["apSampler"] = texture(out.linearClampSampler);
+    named["linearViewZ"] = texture(m->rasterDepth);
+    named["addition"] = texture(m->rasterAddition);
+    named["transmittance"] = texture(m->rasterTransmittance);
+    const RasterCompositePush push{.width = m->renderWidth,
+                                   .height = m->renderHeight,
+                                   .frameIndex = m->frameIndex,
+                                   .zUp = m->zUp,
+                                   .missDepth = missDepth,
+                                   .exposure = exposure / std::max(out.radianceScale, 1e-30f),
+                                   .gameSky = uint32_t(gameSky),
+                                   .flags = linearTarget ? 1u : 0u};
+    m->bridge.barrier();
+    m->dispatch(Stage::raster_composite, named, &push, sizeof(push), (m->renderWidth + 7) / 8,
+                (m->renderHeight + 7) / 8);
+    m->bridge.end();
+    return true;
+  }
+
+  VkDescriptorImageInfo Renderer::rasterAddition() const {
+    if (!m->rasterAddition)
+      return {};
+    return {m->bridge.sampler(m->numos.outputs().linearClampSampler), m->bridge.sampledView(m->rasterAddition),
+            VK_IMAGE_LAYOUT_GENERAL};
+  }
+
+  VkDescriptorImageInfo Renderer::rasterTransmittance() const {
+    if (!m->rasterTransmittance)
+      return {};
+    return {m->bridge.sampler(m->numos.outputs().linearClampSampler), m->bridge.sampledView(m->rasterTransmittance),
+            VK_IMAGE_LAYOUT_GENERAL};
+  }
 
   VkDescriptorImageInfo Renderer::cloudShadow() const {
     if (!m->cloudShadow)

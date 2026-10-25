@@ -452,6 +452,18 @@ namespace remix {
     // The layout and shader modules; false when they cannot be created.
     bool prepareSprite();
     void destroySprite();
+    // The NUMOS sky over the target (raster/sky.cpp): fullscreen draws that
+    // multiply it by the sky's transmittance, then add its light.
+    struct SkyComposite {
+      VkPipelineLayout layout = VK_NULL_HANDLE; // one sampled image (setLayout)
+      VkShaderModule vertex = VK_NULL_HANDLE, fragment = VK_NULL_HANDLE;
+      VkPipeline multiply = VK_NULL_HANDLE, add = VK_NULL_HANDLE;
+      // Per frame slot: the transmittance's and the addition's sets.
+      VkDescriptorSet sets[gpuFrameCount][2] = {};
+    } skyComposite;
+    // False while the pipelines compile.
+    bool prepareSkyComposite();
+    void destroySkyComposite();
     bool prepareMask();
     // The coverage passes: every run, or (early) the runs marked early.
     void recordMaskRuns(VkCommandBuffer command, bool early);

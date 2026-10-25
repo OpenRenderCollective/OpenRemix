@@ -31,7 +31,7 @@ OPTIMIZED = {'pathtrace'}
 BACKENDS = {
     'postfx': ('postfx', 'vulkan1.2', ('meter', 'resolve', 'down', 'up')),
     'upscale': ('upscale', 'vulkan1.2', ('comp', 'vert', 'frag')),
-    'raster': ('raster', 'vulkan1.1', ('vert', 'frag', 'haloMask', 'haloVert', 'haloBlur', 'haloComposite', 'maskWithin', 'maskOverlay', 'spriteVert', 'spriteFrag')),
+    'raster': ('raster', 'vulkan1.1', ('vert', 'frag', 'haloMask', 'haloVert', 'haloBlur', 'haloComposite', 'maskWithin', 'maskOverlay', 'spriteVert', 'spriteFrag', 'skyComposite')),
     'pathtrace': ('trace', 'vulkan1.2', ('vert', 'frag', 'comp', 'temporal', 'transparency', 'temporalTransparency', 'frontGuides', 'psr', 'regirPresample', 'volumeUpdate', 'orcaSparse', 'sharcOrcaSparse', 'singleTransparency', 'singleTemporalTransparency', 'sharcSingleTransparency', 'sharcSingleTemporalTransparency', 'confidence', 'gbufferVert', 'gbufferFrag', 'depthFrag', 'sharcUpdate', 'sharcResolve', 'sharcQuery', 'sharcTransparency', 'sharcTemporal', 'sharcTemporalTransparency', 'sharcConfidence', 'sigmaTemporal', 'sharcSigmaTemporal', 'localTemporal', 'localSigmaTemporal', 'sharcLocalTemporal', 'sharcLocalSigmaTemporal', 'splitLocalTemporal', 'splitLocalSigmaTemporal', 'sharcSplitLocalTemporal', 'sharcSplitLocalSigmaTemporal', 'splitLocalDirect', 'splitRestirInitial', 'splitRestirSpatial', 'indirectTemporal', 'sharcIndirectTemporal', 'vertexAssemble', 'sparseCompact', 'sparseArgs', 'indirect', 'sharcIndirect', 'sheetLighting', 'sheetLightingTemporal', 'sharcSheetLighting', 'sharcSheetLightingTemporal')),
     'denoise': ('denoise', 'vulkan1.2', ('comp', 'sigma', 'local', 'localSigma', 'splitLocal', 'splitLocalSigma')),
 }
@@ -99,6 +99,9 @@ def defines_for(backend, stage, stages):
         # with sprite vertices, frame and sequence blending and soft depth.
         defines = ['-DSPRITE=1']
         source = directory / ('raster.vert' if stage == 'spriteVert' else 'raster.frag')
+    if backend == 'raster' and stage == 'skyComposite':
+        # The NUMOS sky's fullscreen composite (raster/sky.cpp).
+        source = directory / 'sky.frag'
     if stage == 'sharcResolve': source = directory / 'sharc-resolve.comp'
     if stage == 'vertexAssemble': source = directory / 'vertex-assemble.comp'
     return defines, source

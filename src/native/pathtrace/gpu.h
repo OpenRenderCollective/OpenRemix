@@ -13,6 +13,7 @@
 #include "scene/light_bvh.h"
 #include "scene/opacity.h"
 #include "scene/static_scene.h"
+#include "scene/up_axis.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -518,12 +519,8 @@ namespace remix {
     std::unique_ptr<denoise::Renderer> denoiser;
     VkPipeline temporalCompute{}, confidenceCompute{};
     VkPipelineLayout temporalLayout{};
-    // The world's up axis for volumetricUpAxis Auto (1 Y, 2 Z): game cameras
-    // do not roll, so their right axis stays horizontal and their up axis
-    // leans toward the world's (observeUpAxis).
-    float cameraUpScore[3] = {};
-    uint32_t detectedUpAxis = 2;
-    void observeUpAxis(const scene::Matrix &view);
+    // The world's up axis for volumetricUpAxis Auto.
+    scene::UpAxisDetector upAxis;
     uint64_t shadowFrames = 0, shadowResets = 0;
     bool sigmaCapable = false, localCapable[2] = {};
     bool postSigma = false, postSigmaRequested = false;

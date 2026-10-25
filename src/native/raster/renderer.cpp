@@ -43,6 +43,7 @@ namespace remix {
     destroyMask();
     destroyHalo();
     destroySprite();
+    destroySkyComposite();
     depth.reset();
     pass = VK_NULL_HANDLE;
     extent = {};

@@ -226,6 +226,8 @@ namespace remix {
     m_screenshot.reset(m_device);
     shutdownUi();
     m_pathTracer.reset();
+    m_rasterSky.reset();
+    m_rasterSkyReady = false;
     m_postProcessing.reset();
     m_exposureState.reset();
     m_postFailure.clear();

@@ -9,6 +9,7 @@ runtime_sources = files(
   'frame_snapshot.cpp',
   'host_passes.cpp',
   'presentation.cpp',
+  'raster_sky.cpp',
   'runtime.cpp',
   'screenshot.cpp',
   'swapchain.cpp',

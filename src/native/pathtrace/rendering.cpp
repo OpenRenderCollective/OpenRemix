@@ -591,7 +591,7 @@ namespace remix {
     frame.inverseCamera = scene::inverse(frame.camera);
     const auto eye = scene::inverse(resources.view());
     std::copy_n(eye.data() + 12, 3, frame.eye);
-    observeUpAxis(eye);
+    upAxis.observe(eye);
     // Camera rays: the view and the projection inverted separately, without
     // the eye's translation (Frame::inverseCameraRelative).
     try {

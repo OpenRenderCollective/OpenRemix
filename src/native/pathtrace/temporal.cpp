@@ -2,7 +2,6 @@
 #include "pathtrace/shader_code.h"
 #include "runtime/pipelines.h"
 #include <algorithm>
-#include <cmath>
 #include <thread>
 #include "upscale/ngx.h"
 
@@ -312,27 +311,8 @@ namespace remix {
     if (caps.sr && allowed(upscale::Backend::DlssSr)) return upscale::Backend::DlssSr;
     return upscale::Backend::Native;
   }
-  void PathTracer::Gpu::observeUpAxis(const scene::Matrix &viewToWorld) {
-    // Per world axis, averaged over about a second: how far the camera's up
-    // axis points along it, less how far its right axis does.
-    const float right = std::hypot(viewToWorld[0], viewToWorld[1], viewToWorld[2]),
-                up = std::hypot(viewToWorld[4], viewToWorld[5], viewToWorld[6]);
-    if (!(right > 1e-6f && up > 1e-6f))
-      return;
-    for (int i = 0; i < 3; ++i) {
-      const float score = std::abs(viewToWorld[4 + i]) / up - std::abs(viewToWorld[i]) / right;
-      cameraUpScore[i] += (score - cameraUpScore[i]) * .02f;
-    }
-    // Only a clear difference changes the axis.
-    if (detectedUpAxis == 2 && cameraUpScore[1] > cameraUpScore[2] + .2f)
-      detectedUpAxis = 1;
-    else if (detectedUpAxis == 1 && cameraUpScore[2] > cameraUpScore[1] + .2f)
-      detectedUpAxis = 2;
-  }
-
   TraceOptions PathTracer::Gpu::effectiveOptions(TraceOptions options) const {
-    if (options.volumetricUpAxis > 2)
-      options.volumetricUpAxis = detectedUpAxis;
+    options.volumetricUpAxis = upAxis.resolve(options.volumetricUpAxis);
     if (rrActive()) {
       options.denoiser = options.localDenoiser = options.sigma = options.taa = false;
       options.blueNoiseShadows = options.blueNoiseLocalLights = false;

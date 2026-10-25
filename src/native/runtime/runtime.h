@@ -37,6 +37,7 @@
 #include "ui/menu_shortcut.h"
 #include "ui/profiles.h"
 #include "scene/free_camera.h"
+#include "scene/up_axis.h"
 #include <remix/remix_c.h>
 #include <remix/remix_editor_ext.h>
 #include <atomic>
@@ -47,6 +48,9 @@ struct ImGuiContext;
 
 namespace remix {
 class FrameSnapshot;
+namespace sky {
+  class Renderer;
+}
 class RemixNativeRuntime {
 public:
   RemixNativeRuntime() = default;
@@ -375,6 +379,16 @@ private:
   scene::FreeCameraState m_freeCamera;
   std::shared_ptr<upscale::Ngx> m_ngx;
   std::unique_ptr<PathTracer> m_pathTracer;
+  // The raster backend's NUMOS sky (raster_sky.cpp): recordRasterSky before
+  // the target pass, false without a sky this frame; compositeRasterSky after
+  // the world's layers, inside the pass, which it leaves and re-enters.
+  bool recordRasterSky(VkCommandBuffer buffer, RasterRenderer &raster);
+  void compositeRasterSky(VkCommandBuffer buffer, RasterRenderer &raster, VkRenderPassBeginInfo &pass);
+  std::shared_ptr<sky::Renderer> m_rasterSky;
+  std::string m_rasterSkyFailure;
+  scene::Matrix m_rasterSkyView{}, m_rasterSkyProjection{};
+  bool m_rasterSkyReady = false, m_rasterSkyActive = false;
+  scene::UpAxisDetector m_rasterUpAxis;
   std::shared_ptr<postfx::State> m_exposureState;
   std::unique_ptr<postfx::Renderer> m_postProcessing;
   struct PreparedPost {

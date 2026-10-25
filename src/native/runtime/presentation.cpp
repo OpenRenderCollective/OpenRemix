@@ -1507,6 +1507,10 @@ void RemixNativeRuntime::presented() {
     if (!m_asyncActive)
       drawUi(VK_NULL_HANDLE);
     lap(breakdown.uiMilliseconds);
+    // The raster backend's NUMOS sky records its frame outside the pass.
+    const bool rasterSky = !m_loading && !m_pathTracer && recordRasterSky(buffer, raster);
+    const bool rasterSkyHides =
+        rasterSky && m_profiles.current().sky.gameSky == config::SkySettings::GameSky::Hide;
     {
       // Includes the swapchain pass's clear and, when the GPU runs ahead of
       // presentation, its wait for the acquired image.
@@ -1522,12 +1526,12 @@ void RemixNativeRuntime::presented() {
       const bool masks = !m_loading && raster.maskRuns() != 0;
       // Frame generation takes the frame as it is before the UI layer.
       const bool hudless = generated.count && m_frameGeneration && !m_loading;
-      const bool split = halos || masks || hudless;
+      const bool split = halos || masks || hudless || rasterSky;
       // The host's screen-space passes (remixapi_HostPassEXT) take the frame,
       // view model included, between render passes before its UI layer.
       const bool hostPasses = !m_loading && m_snapshotSupported && m_hostPasses.pending();
       const int sceneLayers = split ? 1 : hostPasses ? 2 : 3;
-      const bool skipSky = m_pathTracer != nullptr;
+      const bool skipSky = m_pathTracer != nullptr || rasterSkyHides;
       auto recordHostPasses = [&] {
         gpu::GpuScope hostTime(buffer, "Host passes", m_swapchainExtent);
         // The scene's depth stays in the target's depth attachment.
@@ -1553,8 +1557,12 @@ void RemixNativeRuntime::presented() {
         }
         gpu::GpuScope overlay(buffer, "Raster overlay (HUD, effects)", m_swapchainExtent);
         raster.record(buffer, false, true, nullptr, {}, 0, sceneLayers, masks ? 1 : 0);
-      } else if (!m_loading)
-        raster.record(buffer, false, false, nullptr, {}, 0, sceneLayers, masks ? 1 : 0);
+      } else if (!m_loading) {
+        raster.record(buffer, false, rasterSkyHides, nullptr, {}, 0, sceneLayers, masks ? 1 : 0);
+        scope.close();
+        if (rasterSky)
+          compositeRasterSky(buffer, raster, pass);
+      }
       scope.close();
       if (masks) {
         {
