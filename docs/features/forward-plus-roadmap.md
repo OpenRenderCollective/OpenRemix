@@ -3104,3 +3104,22 @@ which pixels actually use that tail rather than interpreting global counts as
 per-pixel work. Preserve finite-emitter and mixed-shadow correctness.
 All temporary diagnostic source switches were removed, exact originals restored
 and the normal runtime rebuilt. Playable install/updater remain unchanged.
+
+
+### Controllable brush receiver coverage confirmed
+
+Current normal-bake Construct coverage captures show the white-room view is
+98.6 percent probe-lit in the sampled upper image, with no uncovered pixels;
+the hall is predominantly surface-lit. This does not support the full baked
+fallback tail as the main cause of that white-room cost. It confirms the
+previously identified controllable func_brush shell workload.
+A per-light sparse-layout metadata hoist passes grouped/gather correctness
+checks but shows no live performance benefit: room shading remains near
+8.2 ms and the hall is slower in the paired trial. The candidate is removed
+and normal shaders rebuilt; avoid repeating it without new evidence.
+Prioritize stable receiver-only chart support for stationary controllable
+brushes, independently preserving editable materials, transforms, visibility
+and non-baked-shadow policy. Do not classify arbitrary brush entities as
+immutable occluders or put Source-specific policy in the core renderer.
+Selected-probe response remains an alternative optimisation target; existing
+batching stays opt-in pending representative live and replay acceptance.
