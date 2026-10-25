@@ -2686,6 +2686,10 @@ namespace {
           require(render(true, false, true, true) == dark &&
                       render(false, false, true, true, true) == isolated,
                   "Conditional alpha and opaque casters produce identical world and weapon self shadows");
+          hidden.pNext = &culling;
+          require(render(true, false, true, true) == dark &&
+                      render(false, false, true, true, true) == isolated,
+                  "Camera backface rejection cannot suppress opaque world or weapon self-shadow casters");
           std::printf("Viewmodel %ux SSR %u local %u: lit %u, world-shadowed %u, overlay %u\n",
                       samples, unsigned(ssr), unsigned(local), bright[centre], dark[centre], overlay[centre]);
         }

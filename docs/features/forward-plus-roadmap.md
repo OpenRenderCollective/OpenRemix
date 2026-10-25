@@ -3063,3 +3063,28 @@ selected-probe batching remain off unless explicitly enabled.
 This qualifies the deployment and one fixed view; it does not close gameplay FPS,
 first-bake cost, dynamic probe support, seams/noise, cubemap placement, wider-map
 quality or the existing RR synchronization investigation.
+
+
+### Vertex-only opaque sun trial: rejected and removed
+
+A vertex-only sun-shadow prototype preserved conditional alpha, local radial
+depth and camera-independent caster membership. GPU regressions and exact 204
+fixture images passed; a small RenderDoc capture confirms six actual shadow
+draws without a fragment stage. A null-module/GI layout classification issue was
+found and corrected in the trial before those checks.
+
+Foreground fixed-sky/cache-hit Construct off/on/off sessions retain identical
+runtime binaries and baked content. Apparent first-pair improvements do not
+survive the repeat control: the repeat off run is faster in both equipped-weapon
+whole-GPU cases, and the on-run physgun sun range is worse than both controls.
+World/unarmed variation remains substantial. This evidence does not prove a
+repeatable benefit or a universal hardware result.
+
+The prototype, extra flag/pipeline/command field, binding helper and temporary
+capture hooks are removed from production. The local patch/evidence is retained
+for future isolated testing. The new camera-policy shadow regression remains;
+four restored-path GPU regressions pass and all 228 expanded images agree.
+Playable install/updater remain unchanged. Prioritize the measured white-room
+opaque receiver/field bottleneck before further small shadow-path experiments.
+Audit exact-zero response pruning carefully: finite-emitter SH and fallback/mixed
+corrections prevent naive shading-normal or cone rejection.
