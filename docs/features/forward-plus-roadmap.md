@@ -3368,3 +3368,24 @@ Full irradiance hashes are not identical; measured grid SH maximum difference
 - [ ] Check larger-map planning/scratch behavior before including in next package.
 - [ ] Continue targeted probe placement/interpolation quality work; clearance
   reuse is a bake-speed improvement, not a fix for the Construct ceiling leak.
+
+
+### 2026-10-26 - Larger-map clearance-cache acceptance and denoiser cost
+
+Normal-quality bm_c1a1b BSP relay completed neutral/shaded stages, exit0, no Vulkan
+core/synchronization validation errors; protected playable files unchanged. Probe
+planning3.044s/relocation1.364s,21.9Mclearance results reused,51.3MiBtemporary
+scratch. Historical successful cache has byte-identical grid header, trace tasks,
+refinement directory and XYZ relocation offsets. Historical8.802splanning is not
+a controlled performance pair. This clears the large-map functional/scratch gate
+for the planning optimization; playable deployment remains separate.
+
+Base/styled OIDN80.146/11.818s. Current and historical allocations have145031charts,
+4.116Mrectangle texels ->41.619M16-aligned image texels before constant skips;
+104948charts <=4x4. Treat geometric padding as a measured expansion, not isolated
+runtime attribution.
+
+- [ ] Study small-chart denoising/compact directional representation with chart
+  boundary isolation and matched seam/noise checks. Do not gain time by silently
+  dropping denoising or reducing sample quality.
+- [ ] Include confirmed clearance reuse in the next validated playable package.
