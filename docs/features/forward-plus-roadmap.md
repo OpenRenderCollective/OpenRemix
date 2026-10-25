@@ -2,6 +2,16 @@
 
 ## Current lighting-quality focus
 
+Reference coverage is a prerequisite for the quality work below. Incoming-ray
+hemisphere integration omits analytic direct lighting at the receiver, while
+fully baked surface and probe aggregates can include it. Such references cannot
+establish total-lighting error against those aggregates. Requalify earlier
+reference-based placement and reconstruction conclusions with matching lighting
+components before choosing defaults. The offline `surface` reference format
+retains receiver normals and uses the surface irradiance estimator, including
+the aggregate direct-light policy. Keep sampling noise, spatial interpolation,
+normal bias and missing lighting components separate in these comparisons.
+
 Coplanar seam donors now retain their original receiver footprint, and sunlight
 edge refinement admits those verified aliases instead of skipping every
 filtering-only donor. Curved donors without a proven footprint remain excluded.

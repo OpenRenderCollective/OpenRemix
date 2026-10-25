@@ -1,4 +1,6 @@
 #include "forward/bake/reference_capture.h"
+#include "forward/bake/spherical_harmonics.h"
+#include <algorithm>
 #include <cmath>
 #include <bit>
 #include <charconv>
@@ -28,8 +30,9 @@ namespace remix::forward::bake {
     std::string token;
     input >> token;
     result.hemisphere = token == "hemisphere";
+    result.surface = token == "surface";
     const bool offsets = token == "sh-offsets";
-    if (result.hemisphere || offsets) input >> token;
+    if (result.hemisphere || result.surface || offsets) input >> token;
     const auto parsed = std::from_chars(token.data(), token.data() + token.size(), result.samples);
     if (parsed.ec != std::errc{} || parsed.ptr != token.data() + token.size() ||
         result.samples < 64 || result.samples > 8192)
@@ -50,13 +53,13 @@ namespace remix::forward::bake {
           throw std::invalid_argument("Invalid reference sample offset or overflowing sample range");
         result.sampleOffsets.push_back(firstSample);
       }
-      if (result.hemisphere) {
+      if (result.hemisphere || result.surface) {
         if (!(input >> point.normal[0] >> point.normal[1] >> point.normal[2]))
-          throw std::invalid_argument("Hemisphere reference requires XYZ unit normals");
+          throw std::invalid_argument("Surface reference requires XYZ unit normals");
         const Vec3 normal{point.normal[0], point.normal[1], point.normal[2]};
         const float lengthSquared = dot(normal, normal);
         if (!std::isfinite(lengthSquared) || std::abs(lengthSquared - 1) > 1e-4f)
-          throw std::invalid_argument("Invalid hemisphere reference unit normal");
+          throw std::invalid_argument("Invalid surface reference unit normal");
       }
       result.points.push_back(point);
     }
@@ -124,7 +127,7 @@ namespace remix::forward::bake {
     output << std::setprecision(9) << "{\"version\":1,\"sceneHash\":\"" << sceneHash
            << "\",\"samples\":" << samples << ",\"bounces\":" << bounces
            << ",\"combinedLighting\":" << (combinedLighting ? "true" : "false")
-           << ",\"mode\":\"" << (hemisphere ? "hemisphere" : "sh") << "\",\"points\":[";
+           << ",\"mode\":\"" << (hemisphere ? "hemisphere" : surface ? "surface" : "sh") << "\",\"points\":[";
     for (size_t i = 0; i < points.size(); ++i) {
       if (i) output << ',';
       output << "{\"partitionCluster\":" << (m_partitionClusters.empty() ? -2 : m_partitionClusters.at(i))
@@ -140,6 +143,18 @@ namespace remix::forward::bake {
         continue;
       }
       output << ']';
+      if (surface) {
+        const Vec3 normal{points[i].normal[0], points[i].normal[1], points[i].normal[2]};
+        output << ",\"normal\":[" << normal[0] << ',' << normal[1] << ',' << normal[2]
+               << "],\"diffuseIrradiance\":[";
+        const auto basis = irradianceBasis(normalized(normal));
+        for (uint32_t c = 0; c < 3; ++c) {
+          double value = 0;
+          for (uint32_t j = 0; j < 9; ++j) value += basis[j] * m_results[i].irradiance[j][c];
+          output << (c ? "," : "") << std::max(value, 0.0);
+        }
+        output << ']';
+      }
       if (!sampleOffsets.empty()) output << ",\"firstSample\":" << sampleOffsets.at(i);
       output << ",\"irradiance\":[";
       for (uint32_t j = 0; j < 9; ++j) {

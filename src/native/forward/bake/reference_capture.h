@@ -8,6 +8,9 @@ namespace remix::forward::bake {
   // Private offline diagnostic, independent of probe placement/publication.
   // Input: sample count then XYZ sites (SH), or "hemisphere", sample count and
   // XYZ/unit-normal sites (cosine-weighted radiance integration, without SH).
+  // "surface", sample count and XYZ/unit-normal sites uses the surface bake
+  // estimator, including aggregate analytic direct lighting and SH anchoring.
+  // Hemisphere rays alone do not include analytic direct light at the receiver.
   // "sh-offsets", sample count, then XYZ/first-sample sites compares multiple
   // deterministic streams at identical locations without moving the receiver.
   // SH output includes six distance-moment vec4s (+/-X, +/-Y, +/-Z) and
@@ -26,6 +29,7 @@ namespace remix::forward::bake {
     uint64_t sceneHash = 0;
     bool combinedLighting = false;
     bool hemisphere = false;
+    bool surface = false;
 
   private:
     std::filesystem::path m_output;

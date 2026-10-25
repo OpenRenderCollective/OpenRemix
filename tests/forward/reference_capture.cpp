@@ -156,6 +156,29 @@ int main(int argc, char **argv) {
   try { ReferenceCapture::load(path); }
   catch (const std::invalid_argument &) { rejected = true; }
   require(rejected, "Invalid receiver normals cannot create hemisphere rays");
+  { std::ofstream sites(path); sites << "surface 8192\n1 2 3 0 0 -1\n"; }
+  auto surface = ReferenceCapture::load(path);
+  require(surface.surface && !surface.hemisphere && surface.tasks() == 1 && surface.samples == 8192,
+          "Surface references dispatch one full irradiance estimate per site, not primary radiance rays");
+  const auto sites = surface.batch(0, 1);
+  require(sites[0].position == remix::forward::Vec4{1, 2, 3, 0} &&
+              sites[0].normal == remix::forward::Vec4{0, 0, -1, 0},
+          "Surface reference transport retains receiver positions and normals for direct-light integration");
+  Result surfaceValue{};
+  surfaceValue.irradiance[2][0] = -2;
+  surface.consume(0, std::span(&surfaceValue, 1));
+  {
+    std::ifstream json(output);
+    const std::string result((std::istreambuf_iterator<char>(json)), {});
+    require(result.find("\"mode\":\"surface\"") != std::string::npos &&
+                result.find("\"normal\":[0,0,-1],\"diffuseIrradiance\":[0.977205") != std::string::npos,
+            "Surface reference reconstructs irradiance in the supplied normal, preserving directional SH");
+  }
+  { std::ofstream bad(path); bad << "surface 64\n1 2 3 0 0 2\n"; }
+  rejected = false;
+  try { ReferenceCapture::load(path); }
+  catch (const std::invalid_argument &) { rejected = true; }
+  require(rejected, "Surface references reject non-unit normals before transport");
   std::filesystem::remove(path);
   std::filesystem::remove(output);
 }

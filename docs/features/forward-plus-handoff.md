@@ -1,5 +1,13 @@
 # Forward+ continuation guide
 
+Quality-reference caveat: incoming-ray hemisphere references omit analytic
+receiver-direct lighting. Comparisons against fully baked aggregate surface or
+probe fields therefore need a component audit before their error measurements
+or inferred placement policies can be trusted. Use the offline `surface`
+reference format for normal-bearing surface irradiance with the bake's direct
+policy; it preserves SH and reconstructs irradiance at the supplied normal.
+This diagnostic correction does not change rendering defaults or existing bakes.
+
 Current testing installation: `forwardplus-bake-batch-20261024`, native binary
 `0f4a1ba` with adapter `09c6477`. It includes measured Refract imports, optical
 tint motion/stationary bake policy, canonical Source asset paths and batched
