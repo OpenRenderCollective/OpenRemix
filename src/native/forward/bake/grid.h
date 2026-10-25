@@ -103,8 +103,12 @@ namespace remix::forward::bake {
                    std::stop_token cancelled = {});
   // Reuse untraced solid/outside slots near chart receivers. Each axis remains
   // within .45 cell widths of its original node; the allocation never grows.
+  class RelocationCache;
+  // Optional scratch is bound to this immutable scene and the original receiver
+  // layout. sourceReceivers maps each local receiver to that original index.
   uint32_t relocate(Grid &grid, const scene::BakeScene &scene, const lightmap::Layout &layout,
-                     std::stop_token cancelled = {});
+                     std::stop_token cancelled = {}, RelocationCache *cache = nullptr,
+                     std::span<const uint32_t> sourceReceivers = {});
   // Grid-only alpha slots 0..2 retain the displacement of the actual trace
   // origin. Surface/capture Result alpha channels keep their own contracts.
   void storeProbe(Grid &grid, uint32_t index, const Result &value);

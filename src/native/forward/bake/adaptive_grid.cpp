@@ -5,6 +5,9 @@
 #include "forward/lightmap/layout.h"
 #include <algorithm>
 #include <cmath>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 
 namespace remix::forward::bake {
   namespace {
@@ -122,6 +125,8 @@ namespace remix::forward::bake {
         layout.points.size() > UINT32_MAX)
       throw std::invalid_argument("Invalid adaptive irradiance inputs");
     check(cancelled);
+    const bool timing = std::getenv("REMIX_DEBUG_BAKE_TIMING") != nullptr;
+    const auto began = timing ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     const auto &h = grid.header;
     const uint32_t nodes = gridNodes(h);
     const float spacing = h.originSpacing[3] / refinement.factor;
@@ -145,6 +150,7 @@ namespace remix::forward::bake {
       }
       if (inside) receivers[(base[2] * h.dimensions[1] + base[1]) * h.dimensions[0] + base[0]].push_back(i);
     }
+    const auto binned = timing ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     double energy = 0;
     uint32_t valid = 0;
     for (const auto &probe : grid.probes) {
@@ -171,6 +177,11 @@ namespace remix::forward::bake {
     std::vector<uint32_t> priority;
     priority.reserve(candidates.size());
     for (const auto &candidate : candidates) priority.push_back(candidate.cell);
+    if (timing)
+      std::fprintf(stderr, "Forward refinement priority: %zu receivers, %zu candidate cells, "
+                           "bin_ms=%.3f score_ms=%.3f\n", layout.points.size(), priority.size(),
+                   std::chrono::duration<double, std::milli>(binned - began).count(),
+                   std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - binned).count());
     return buildRefinement(grid, scene, layout, refinement, receivers, priority, cancelled);
   }
 } // namespace remix::forward::bake

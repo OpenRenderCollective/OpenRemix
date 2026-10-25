@@ -1,5 +1,6 @@
 #include "forward/bake/adaptive_grid.h"
 #include "forward/bake/receiver_support.h"
+#include "forward/bake/relocation_cache.h"
 #include "forward/lightmap/layout.h"
 #include "forward/half.h"
 #include <algorithm>
@@ -46,6 +47,44 @@ namespace {
     scene.partition = partition;
     lightmap::Layout layout;
     layout.points = {{{2,2,2,0}, {0,0,1,0}}};
+    {
+      auto receivers = layout;
+      receivers.points.push_back({{0,2,2,0}, {1,0,0,0}}); // solid-side receiver, rejected
+      bake::RelocationCache cache(scene, receivers);
+      cache.clearance(.25f);
+      const auto first = cache.position(0), invalid = cache.position(1);
+      require(first && !invalid && cache.position(0) == first && !cache.position(1) &&
+                  cache.queries() == 2 && cache.hits() == 2,
+              "Relocation scratch reuses both admissible and rejected immutable receivers");
+      cache.clearance(.25f);
+      require(cache.position(0) == first && cache.queries() == 2,
+              "Equal-clearance levels retain receiver preparation");
+      cache.clearance(.125f);
+      const auto smaller = cache.position(0);
+      require(smaller && (*smaller)[2] == 2.125f && cache.queries() == 3,
+              "Changed clearance recomputes positions rather than reusing a different level");
+      bake::Grid a;
+      a.header.originSpacing = {.5f,.5f,.5f,4};
+      a.header.dimensions = {2,2,2,8};
+      a.points.resize(8); a.probes.resize(8);
+      for (uint32_t i = 0; i < 8; ++i)
+        a.points[i].position = {.5f+float(i & 1u)*4, .5f+float((i>>1u)&1u)*4, .5f+float(i>>2u)*4,0};
+      auto b = a;
+      auto subset = a;
+      const std::array<uint32_t,2> indices{0,1};
+      const auto relocated = bake::relocate(a, scene, receivers);
+      require(relocated > 0 && relocated == bake::relocate(b, scene, receivers, {}, &cache, indices) &&
+                  a.tasks == b.tasks && a.header.settings == b.header.settings &&
+                  std::memcmp(a.points.data(), b.points.data(), a.points.size()*sizeof(bake::Point)) == 0,
+              "Cached relocation preserves exact candidate selection, order and positions");
+      lightmap::Layout local;
+      local.points.push_back(receivers.points[0]);
+      const std::array<uint32_t,1> sourceIndex{0};
+      require(bake::relocate(subset, scene, local, {}, &cache, sourceIndex) == relocated &&
+                  subset.tasks == a.tasks &&
+                  std::memcmp(subset.points.data(), a.points.data(), a.points.size()*sizeof(bake::Point)) == 0,
+              "A patch subset uses original receiver IDs when reusing clearance results");
+    }
     bake::Config config;
     config.spacing = 1;
     config.maxProbes = 512;

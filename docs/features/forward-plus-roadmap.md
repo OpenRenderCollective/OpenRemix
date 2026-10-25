@@ -3351,3 +3351,20 @@ control used cache. No playable/default change.
 - [ ] Profile adaptive planning and chart filtering stages before attributing all
   bake delay to ray tracing. Retain rejection evidence for planar/proximity-only
   interpolation heuristics that previously darkened valid prop faces.
+
+
+### 2026-10-26 - Remove repeated receiver clearance work in refinement
+
+Planning-local relocation cache now reuses immutable receiver clearance across
+overlapping patches; exact clearance changes invalidate scratch. Candidate order,
+containment rule, probe budget and placement remain unchanged. Native build and
+adaptive CPU tests pass, including nonempty exact relocation and subset mapping.
+Fresh Construct planning 10.917s -> 4.195s in one pair; relocation8.532s ->1.902s.
+27.5M queries reused,6.48M performed,61.1MiB temporary payload. Probe header, task
+order, directory and XYZ relocation offsets byte-identical across cold caches.
+Full irradiance hashes are not identical; measured grid SH maximum difference
+2.384e-7. No frame-rate or total bake-time claim and no playable deployment.
+
+- [ ] Check larger-map planning/scratch behavior before including in next package.
+- [ ] Continue targeted probe placement/interpolation quality work; clearance
+  reuse is a bake-speed improvement, not a fix for the Construct ceiling leak.

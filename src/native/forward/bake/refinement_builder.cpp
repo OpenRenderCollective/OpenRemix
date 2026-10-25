@@ -1,7 +1,11 @@
 #include "forward/bake/refinement_builder.h"
 #include "forward/bake/receiver_support.h"
+#include "forward/bake/relocation_cache.h"
 #include "forward/lightmap/layout.h"
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <map>
 
 namespace remix::forward::bake {
@@ -28,6 +32,17 @@ namespace remix::forward::bake {
       if (cancelled.stop_requested()) throw std::runtime_error("Probe refinement superseded");
     };
     const auto header = grid.header;
+    const bool timing = std::getenv("REMIX_DEBUG_BAKE_TIMING") != nullptr;
+    double neighbourhoodMs = 0, supportMs = 0, relocationMs = 0;
+    uint64_t receiverVisits = 0;
+    uint32_t attempts = 0;
+    auto measured = [&](double &milliseconds, auto &&work) {
+      const auto began = timing ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+      auto result = work();
+      if (timing) milliseconds += std::chrono::duration<double, std::milli>(
+          std::chrono::steady_clock::now() - began).count();
+      return result;
+    };
     const uint32_t nodes = gridNodes(header), coarseRecords = uint32_t(grid.probes.size());
     std::map<Key, uint32_t> records;
     for (uint32_t node = 0; node < nodes; ++node) {
@@ -43,6 +58,8 @@ namespace remix::forward::bake {
     std::vector<uint32_t> uses(coarseRecords);
     uint32_t active = coarseRecords;
     bool relocated = header.settings[2] == 3;
+    std::optional<RelocationCache> relocationCache;
+    if (policy.relocate) relocationCache.emplace(scene, layout);
     for (uint32_t factor = 2; factor <= policy.factor; factor *= 2) {
       const uint32_t side = factor + 1, fineNodes = side * side * side;
       const float spacing = header.originSpacing[3] / factor;
@@ -62,10 +79,16 @@ namespace remix::forward::bake {
         // Only relocation needs neighbours, within its .45-cell reach. Avoid
         // scanning a full root-cell halo for this first coverage pass.
         const float searchHalo = (factor == 2 ? spacing * .45f : spacing * 2) + .25f / scene.sceneScale;
-        const auto neighbourhood = nearbyReceivers(header, layout, receivers, cell, searchHalo, cancelled);
+        ++attempts;
+        const auto neighbourhood = measured(neighbourhoodMs, [&] {
+          return nearbyReceivers(header, layout, receivers, cell, searchHalo, cancelled);
+        });
+        receiverVisits += neighbourhood.size();
         local.points.reserve(neighbourhood.size());
         for (uint32_t receiver : neighbourhood) local.points.push_back(layout.points[receiver]);
-        const auto support = receiverSupport(fine.header, local, spacing * 2, cancelled);
+        const auto support = measured(supportMs, [&] {
+          return receiverSupport(fine.header, local, spacing * 2, cancelled);
+        });
         fine.points.resize(fineNodes);
         fine.probes.resize(fineNodes);
         std::vector<Coordinate> positions(fineNodes);
@@ -81,7 +104,9 @@ namespace remix::forward::bake {
         }
         bool moved = false;
         if (policy.relocate) {
-          moved = relocate(fine, scene, local, cancelled) != 0;
+          moved = measured(relocationMs, [&] {
+            return relocate(fine, scene, local, cancelled, &*relocationCache, neighbourhood);
+          }) != 0;
           std::erase_if(fine.tasks, [&](uint32_t node) { return !support[node]; });
         }
         Patch next{factor, std::vector<uint32_t>(fineNodes)};
@@ -138,6 +163,16 @@ namespace remix::forward::bake {
         patches.insert_or_assign(cell, std::move(next));
       }
     }
+    if (timing)
+      std::fprintf(stderr, "Forward refinement planning: %u patch attempts, %llu receiver visits, "
+                           "neighbourhood_ms=%.3f support_ms=%.3f relocation_ms=%.3f\n",
+                   attempts, static_cast<unsigned long long>(receiverVisits),
+                   neighbourhoodMs, supportMs, relocationMs);
+    if (timing && relocationCache)
+      std::fprintf(stderr, "Forward refinement clearance: %llu queries, %llu reused, %zu scratch bytes\n",
+                   static_cast<unsigned long long>(relocationCache->queries()),
+                   static_cast<unsigned long long>(relocationCache->hits()),
+                   layout.points.size() * (sizeof(Vec4) + sizeof(uint8_t)));
     if (patches.empty()) return 0;
     check();
     Grid result;
