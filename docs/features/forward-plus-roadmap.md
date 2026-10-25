@@ -3404,3 +3404,23 @@ regression passes; no installed PT RR or gameplay FPS qualification claimed.
 - [x] Include confirmed clearance reuse in a validated playable package.
 - [ ] Continue Construct probe placement/visibility and seam/noise quality work.
 - [ ] Study tiny-chart denoising costs with quality-preserving comparisons.
+
+
+### 2026-10-26 - Independent reference identifies coarse transition leakage
+
+8192-direction base-lighting hemisphere integration at Construct ceiling gives
+indirectRGBabout .075/.077/.077 versus probe .170/.170/.166. Reference remains
+similar over tested normal-bias offsets. This shares our scene/transport and has
+unquantified Monte Carlo uncertainty; it is not another physical renderer.
+Coarse stencil receives21%weight but contributes about75%of red lighting through
+above-ceiling probes. Fine normalized estimate .053/.058/.064 is closer but low.
+Dropping all opaque-blocked connections also underestimates, so do not blindly
+replace interpolation with the ray oracle or disable transition blending.
+
+- [ ] Prototype bounded visibility for coarse contributions at refinement
+  boundaries; preserve constant energy, continuity, valid-black, unknown fallback
+  and controllable attribution; test moving props/boundary crossings.
+- [ ] Match free-space and wall probe queries to saved independent controls.
+
+No quality/default/deployment change. Private diagnostic run completed and
+restored all four settings files.
