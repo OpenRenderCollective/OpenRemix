@@ -2737,16 +2737,6 @@ by live index subsets or material edits. The adapter must still enumerate full
 authoritative references independently of the camera and assign live identities;
 this core path alone does not provide a completed GMod brush relay.
 
-The GMod adapter has an opt-in relay (`OPENREMIX_PROXY_BRUSH_RECEIVERS=1`)
-for unparented `func_brush` models explicitly marked not to cast baked shadows.
-It enumerates BSP faces independently of the camera, supplies planar charts where
-Source has no lightmap dimensions, and retains invisible neutral references.
-Exact oriented live triangles at the authored placement borrow those charts while
-keeping their current materials, visibility and live shadow policy. A material
-part split across distinct live meshes in the same frame keeps ordinary probe
-fallback rather than dropping geometry or publishing duplicate identities.
-
-Construct's white-room fixed views have surface coverage, and a private lit-material
-control responds to its switchable lights without changing the bake. Other brush
-classes, moved/edited parts, reflection capture and broader map qualification
-remain unfinished. Runtime defaults and the playable package remain unchanged.
+The core supports this role; the GMod controllable-brush relay and representative
+quality/performance qualification remain pending. Existing brush behaviour and
+runtime defaults are unchanged until that host integration is qualified.

@@ -3177,31 +3177,3 @@ The temporary wrapper dump hook is removed and the normal wrapper rebuilt.
 Next implement the BSP candidate/reference/live-identity relay, independent of
 camera visibility, then qualify Construct quality/cache stability and real
 foreground performance. No gameplay gain/default/deployment is claimed yet.
-
-
-### 26 October 2026 - controllable brush lightmap relay checkpoint
-
-- Added an opt-in GMod relay (`OPENREMIX_PROXY_BRUSH_RECEIVERS=1`) for unparented
-  `func_brush` models explicitly opting out of baked shadow casting. Immutable
-  BSP/material references and planar face charts are independent of visible draws;
-  live exact oriented triangles borrow the reference at its authored placement.
-  Materials, visibility and live caster policy stay game-owned. Unknown, moved,
-  ambiguous or split material parts retain ordinary probe fallback.
-- Construct white-room fixed-view coverage is charted. A private lit-material
-  on/off/on lightstyle control retains bake/content identity and reproduces the
-  original lit image after switching back on. Warm-cache loading works. The
-  original room material is UnlitGeneric, so white screenshots are not diffuse
-  correctness evidence. Both adapter targets build; all 23 adapter tests pass.
-- Same-binary foreground off/on/off samples reduce white-room GPU cost from
-  9.71-9.97 ms to 5.64-5.66 ms at normal bake quality. Opaque shading excluding
-  depth falls from 7.92-8.08 ms to 3.49-3.55 ms. Hall GPU is 2.49-2.73 ms in
-  controls versus 2.73-2.80 ms enabled, and room depth cost increases. These
-  tradeoffs still need explanation before enabling by default.
-- Remaining: live movement/visibility/material tool acceptance, split draw
-  ownership, more brush types/maps, depth cost and hall regression, and deliberate
-  transport/reflection policy. These receiver-only references do not contribute
-  transport, static occlusion or cubemap capture; do not broaden classification
-  simply to obtain a performance gain. The playable package is unchanged.
-- The usable CS2 capture confirms early viewmodel depth and a weapon-shaped hole
-  in later world colour. It does not establish runtime speed or all stencil/SSR
-  semantics. Continue viewmodel coverage rejection qualification independently.
