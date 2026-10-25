@@ -3278,3 +3278,35 @@ gates. Keep both experiments opt-in; no playable/default change has been made.
 Cold Crossfire adaptive probe placement still takes about 11.26 s. Denoising and
 styled reconstruction remain preparation costs to improve independently of frame
 shading. Continue the viewmodel/world coverage work with the SSR contract intact.
+
+
+### 2026-10-26 - Reference lighting re-audit priorities
+
+User reports noisier Construct lightmaps, insufficient/artifact-prone prop probes,
+and continued frame/bake cost. Re-audit CS2, Alyx and s&box before default changes.
+Initial source comparison confirms multiple reference baked formats; four indexed
+entries are not proof of a universal CS2 light limit. Our sparse SH/visibility
+interpolation is materially more complex than a filtered ambient-cube atlas.
+
+- [ ] Freeze playable quality/config/cache/cameras; separate raw sampling noise,
+  directional reconstruction, chart seams/dilation and probe interpolation in
+  Construct back-spawn room, bend, secret room and diagonal-opening main room.
+- [ ] Export actual atlas occupancy/world texel scale and actual coarse/refined
+  probe density, relocation, invalid support and boundary confidence.
+- [ ] Compare geometry-aware receiver density and compact filtered probe bricks
+  with border-safe interpolation; preserve scalable generic controllable lights.
+- [ ] Verify indexed layer reuse over interpolation neighborhoods; point-sample
+  IDs, filter strengths, avoid all-baked-light pixel loops.
+- [ ] Measure cold/warm bake stages including visibility planning, HWRT, styles,
+  OIDN, encoding; optimize costs without silently lowering playable quality.
+- [ ] Compare compact directional lightmap reconstruction/storage with current SH;
+  validate static sun edges independently of indirect denoising.
+- [ ] Extend source evidence with decoded CS2 volume metadata/capture bindings
+  and independent Alyx evidence; viewer and s&box are not production CS2 proof.
+
+Current defaults still 256 samples/3 bounces/OIDN, 4M surface texel budget, 32768
+probe budget and 2m requested coarse spacing plus sparse fitting/refinement. No
+quality regression is diagnosed yet, and no defaults/deployment changed. Existing
+Construct measurements identify opaque receiver shading as the white-room GPU
+hotspot; depth prepass already defaults on. Keep material specialization private
+until its acceptance gates pass. Movable func_brush remains probe-lit.
