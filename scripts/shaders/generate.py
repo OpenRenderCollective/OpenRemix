@@ -34,7 +34,10 @@ BACKENDS = {
     'raster': ('raster', 'vulkan1.1', ('vert', 'frag', 'haloMask', 'haloVert', 'haloBlur', 'haloComposite', 'maskWithin', 'maskOverlay', 'spriteVert', 'spriteFrag', 'skyComposite')),
     'pathtrace': ('trace', 'vulkan1.2', ('vert', 'frag', 'comp', 'temporal', 'transparency', 'temporalTransparency', 'frontGuides', 'psr', 'regirPresample', 'volumeUpdate', 'orcaSparse', 'sharcOrcaSparse', 'singleTransparency', 'singleTemporalTransparency', 'sharcSingleTransparency', 'sharcSingleTemporalTransparency', 'confidence', 'gbufferVert', 'gbufferFrag', 'depthFrag', 'sharcUpdate', 'sharcResolve', 'sharcQuery', 'sharcTransparency', 'sharcTemporal', 'sharcTemporalTransparency', 'sharcConfidence', 'sigmaTemporal', 'sharcSigmaTemporal', 'localTemporal', 'localSigmaTemporal', 'sharcLocalTemporal', 'sharcLocalSigmaTemporal', 'splitLocalTemporal', 'splitLocalSigmaTemporal', 'sharcSplitLocalTemporal', 'sharcSplitLocalSigmaTemporal', 'splitLocalDirect', 'splitRestirInitial', 'splitRestirSpatial', 'indirectTemporal', 'sharcIndirectTemporal', 'vertexAssemble', 'sparseCompact', 'sparseArgs', 'indirect', 'sharcIndirect', 'sheetLighting', 'sheetLightingTemporal', 'sharcSheetLighting', 'sharcSheetLightingTemporal')),
     'denoise': ('denoise', 'vulkan1.2', ('comp', 'sigma', 'local', 'localSigma', 'splitLocal', 'splitLocalSigma')),
+    'particles': ('particles', 'vulkan1.1', ('simulate', 'spawn', 'args', 'vert', 'frag', 'light', 'spawnTraced')),
 }
+# Stages that need a newer target than their backend's (ray queries: SPIR-V 1.4).
+STAGE_ENVIRONMENTS = {('particles', 'light'): 'vulkan1.2', ('particles', 'spawnTraced'): 'vulkan1.2'}
 
 
 def defines_for(backend, stage, stages):
@@ -102,6 +105,13 @@ def defines_for(backend, stage, stages):
     if backend == 'raster' and stage == 'skyComposite':
         # The NUMOS sky's fullscreen composite (raster/sky.cpp).
         source = directory / 'sky.frag'
+    if backend == 'particles' and stage not in ('vert', 'frag'):
+        # Particles: one compute source, a pass per stage; the traced stages
+        # with ray queries against the scene.
+        defines = ['-DPASS_' + {'simulate': 'SIMULATE', 'spawn': 'SPAWN', 'args': 'ARGS', 'light': 'LIGHT',
+                                'spawnTraced': 'SPAWN'}[stage] + '=1']
+        if stage in ('light', 'spawnTraced'): defines += ['-DTRACED=1']
+        source = directory / 'particles.comp'
     if stage == 'sharcResolve': source = directory / 'sharc-resolve.comp'
     if stage == 'vertexAssemble': source = directory / 'vertex-assemble.comp'
     return defines, source
@@ -130,6 +140,7 @@ def compile_stage(backend, stage, temporary):
     """SPIR-V words of one stage, compiled and validated; for an optimized
     backend, the optimized module and its XZ stream."""
     _, environment, stages = BACKENDS[backend]
+    environment = STAGE_ENVIRONMENTS.get((backend, stage), environment)
     defines, source = defines_for(backend, stage, stages)
     binary = Path(temporary) / (backend + '-' + stage + '.spv')
     glslang(['--target-env', environment, *defines, '-I' + str(ROOT/'third_party/nrd/Shaders'),
@@ -248,7 +259,7 @@ def write_depfile(path, target):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     # metal translates the other backends' SPIR-V; 'all' leaves it out (it needs macOS and Xcode).
-    parser.add_argument('backend', choices=['postfx', 'upscale', 'raster', 'pathtrace', 'denoise', 'nrd', 'fsr31', 'metal', 'sky', 'all'])
+    parser.add_argument('backend', choices=['postfx', 'upscale', 'raster', 'pathtrace', 'denoise', 'particles', 'nrd', 'fsr31', 'metal', 'sky', 'all'])
     parser.add_argument('--output', type=Path, help='Generated src/native tree (the build\'s); default _work/shaders')
     parser.add_argument('--tools', type=Path, help='Pinned tools recorded by toolchain.py --output')
     parser.add_argument('--depfile', type=Path, help='Make-style dependencies of the generated files')
