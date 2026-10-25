@@ -21,6 +21,9 @@ namespace remix::forward {
       irradiance.slots = header.dimensions[3];
       irradiance.usable = volume->usableIrradianceProbes;
       irradiance.spacingMetres = header.originSpacing[3] * volume->sceneScale;
+      irradiance.finestSpacingMetres = volume->finestIrradianceSpacing * volume->sceneScale;
+      irradiance.coarseRecords = volume->coarseIrradianceProbes;
+      irradiance.patchCounts = volume->irradiancePatchCounts;
     }
     statistics.reflectionSceneScale = volume ? volume->sceneScale : 1;
     statistics.authoredReflections = authoredReflections->statistics();

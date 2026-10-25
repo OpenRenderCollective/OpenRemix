@@ -1177,6 +1177,20 @@ namespace remix::forward::bake {
     volume->irradianceHeader = grid.header;
     volume->usableIrradianceProbes = uint32_t(std::count_if(
         grid.probes.begin(), grid.probes.end(), [](const Result &probe) { return probe.statistics[3] >= .5f; }));
+    volume->coarseIrradianceProbes = uint32_t(grid.probes.size());
+    volume->finestIrradianceSpacing = grid.header.originSpacing[3];
+    if (adaptive(grid.header)) {
+      const auto nodes = gridNodes(grid.header);
+      volume->coarseIrradianceProbes = grid.lookup[nodes + 3];
+      for (uint32_t cell = 0; cell < nodes; ++cell) {
+        const auto reference = grid.lookup[nodes + 4 + cell];
+        if (!patchOffset(reference)) continue;
+        const auto factor = patchFactor(reference, grid.lookup[nodes + 1]);
+        ++volume->irradiancePatchCounts[std::countr_zero(factor) - 1];
+        volume->finestIrradianceSpacing = std::min(volume->finestIrradianceSpacing,
+                                                  grid.header.originSpacing[3] / factor);
+      }
+    }
     volume->mixedLights = std::make_shared<mixed::Bindings>(m_job->mixedLights->lights);
     mixed::dumpOwnership(*m_job->mixedLights, m_job->surfaceLayout);
     const size_t baseBytes = gridBytes(grid);

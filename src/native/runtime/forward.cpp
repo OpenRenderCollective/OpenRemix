@@ -83,7 +83,11 @@ namespace remix {
         << ", \"dimensions\": [" << state.irradianceGrid.dimensions[0] << ", "
         << state.irradianceGrid.dimensions[1] << ", " << state.irradianceGrid.dimensions[2]
         << "], \"slots\": " << state.irradianceGrid.slots << ", \"usable\": "
-        << state.irradianceGrid.usable << '}'
+        << state.irradianceGrid.usable
+        << ", \"finestSpacingMetres\": " << state.irradianceGrid.finestSpacingMetres
+        << ", \"coarseRecords\": " << state.irradianceGrid.coarseRecords
+        << ", \"patchCounts2x4x8x\": [" << state.irradianceGrid.patchCounts[0] << ", "
+        << state.irradianceGrid.patchCounts[1] << ", " << state.irradianceGrid.patchCounts[2] << "]}"
         << ",\n  \"metersPerUnit\": " << state.reflectionSceneScale
         << ",\n  \"resolution\": " << header.parameters[1] << ",\n  \"probes\": [";
     auto vector = [&](const auto &v) { out << '[' << v[0] << ", " << v[1] << ", " << v[2] << ']'; };

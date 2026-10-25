@@ -3310,3 +3310,25 @@ quality regression is diagnosed yet, and no defaults/deployment changed. Existin
 Construct measurements identify opaque receiver shading as the white-room GPU
 hotspot; depth prepass already defaults on. Keep material specialization private
 until its acceptance gates pass. Movable func_brush remains probe-lit.
+
+
+### 2026-10-26 - Construct probe density and leakage evidence
+
+Published diagnostics now distinguish coarse records, finest spacing and 2x/4x/8x
+patch counts without per-frame grid scans or GPU readbacks. Construct cached bake
+has 3757 coarse records, 32763 total (31818 usable); 351 patches at 4m and 33 at
+2m over a 16m coarse field. Do not describe the whole field as 2m density.
+An opaque connection oracle at the hall ceiling finds about 22% blocked stencil
+weight and a large change when blocked connections are removed. This is a focused
+visibility/reconstruction candidate, not a verified general fix.
+
+- [ ] Compare directional probe depth and targeted refinement at this ceiling
+  against opaque connection evidence and final images; measure quality, storage,
+  shader cost and bake time before promoting a policy.
+- [ ] Validate allocation around the user-reported main-room props, rather than
+  treating global coverage or aggregate patch counts as local lighting quality.
+
+8192 triangle-centre indirect comparisons have 8185 covered; median absolute
+luminance difference .025, p95 .500 versus our surface bake. This is not displayed
+pixel error or independent ground truth. Containment-bias capping alone scarcely
+changes these results. No playable defaults, quality settings or bakes changed.

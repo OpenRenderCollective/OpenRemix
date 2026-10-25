@@ -34,6 +34,10 @@ namespace remix::forward::bake {
     std::shared_ptr<const probes::ReceiverCoverageEvidence> reflectionEvidence; // Optional completed local-fit diagnostics.
     GridHeader irradianceHeader;
     uint32_t usableIrradianceProbes = 0;
+    // Immutable placement diagnostics, computed once when the volume publishes.
+    std::array<uint32_t, 3> irradiancePatchCounts{}; // 2x, 4x, 8x
+    uint32_t coarseIrradianceProbes = 0;
+    float finestIrradianceSpacing = 0; // scene units, before sceneScale
     float sceneScale = 1;
     std::array<uint32_t, 4> occlusionParameters{}; // stride + compact-atlas flag, charts, width, indexed-mask tail
     uint32_t surfaceDirectOffset = 0; // sparse directional table in the R32_UINT lookup; zero keeps atlas SH

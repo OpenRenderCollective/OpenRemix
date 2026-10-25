@@ -64,6 +64,9 @@ namespace remix::forward {
       std::array<uint32_t, 3> dimensions{};
       uint32_t slots = 0, usable = 0;
       float spacingMetres = 0;
+      float finestSpacingMetres = 0;
+      uint32_t coarseRecords = 0;
+      std::array<uint32_t, 3> patchCounts{}; // 2x, 4x, 8x; not uniform coverage
     } irradianceGrid;
     float reflectionSceneScale = 1;
     remixapi_BakeStatisticsEXT baking{.structSize = sizeof(remixapi_BakeStatisticsEXT)};
