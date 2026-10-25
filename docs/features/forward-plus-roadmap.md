@@ -3458,3 +3458,18 @@ No production shader/grid/cache/default/deployment change.
 - [ ] Implement bounded packed sampling in CPU/GPU reconstruction; validate real
   boundary crossings, relocated/shared donors, props/weapons and preparation/frame
   cost. Synthetic geometry capture plus CPU blending is not renderer acceptance.
+
+
+### 2026-10-26 - Packed GPU coarse-transfer reconstruction fixture
+
+Test-only shader now decodes byte visibility with separate known bits and applies
+normalized coarse correction.773queries match independent double-precision CPU
+reference, including actual hardware-captured data, signed fields, valid black,
+unknown/missing fallback, coarse-only/fine-only and invalid count guards. Vulkan
+core/synchronization validation clean. No production shader/default/deploy change.
+
+- [x] Validate packed GPU reconstruction contract against CPU reference and actual
+  hardware-prepared visibility in the focused fixture.
+- [ ] Integrate bounded per-patch storage/preparation and matching CPU/fragment
+  sampling; test actual mixed-resolution boundaries, shared/relocated donors,
+  styles, moving props/weapons, visual quality and preparation/frame costs.

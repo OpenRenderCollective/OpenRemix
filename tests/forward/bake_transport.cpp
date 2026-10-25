@@ -148,6 +148,7 @@ namespace {
 #include "sun_depth_owner.h"
 #include "sun_depth_transmission.h"
 #include "coarse_transfer_gpu.h"
+#include "coarse_transfer_sampling.h"
 #include "indexed_visibility.h"
 #include "probe_visibility_gpu.h"
 #include "directional_capture_gpu.h"
@@ -2171,7 +2172,8 @@ int main(int argc, char **argv) try {
     pipeline::Service pipelines(fixture.device, properties, false);
     World world(fixture);
     if (argc == 2 && std::strcmp(argv[1], "--coarse-transfer-only") == 0) {
-      coarseTransferPrototype(fixture, pipelines, world);
+      const auto transfer = coarseTransferPrototype(fixture, pipelines, world);
+      coarseTransferSampling(fixture, transfer.first, transfer.second);
       require(test::validationErrors == 0, "Coarse transfer validation stayed clean");
       return 0;
     }

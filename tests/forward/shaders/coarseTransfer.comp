@@ -1,0 +1,41 @@
+#version 460
+layout(local_size_x = 64) in;
+// Test-only packed contract: one byte per coarse/fine connection, plus a
+// separate known bit. Unknown values never attenuate an ordinary contribution.
+struct Query {
+  vec4 weights[4];
+  vec4 values[16];
+  uvec4 packed[4];
+  uvec4 control; // coarse count, fine count, field present, unused
+  uvec4 known;
+};
+layout(set=0, binding=0, std430) readonly buffer Queries { Query queries[]; };
+layout(set=0, binding=1, std430) writeonly buffer Results { vec4 results[]; };
+void main() {
+  uint index = gl_GlobalInvocationID.x;
+  if (index >= queries.length()) return;
+  Query q = queries[index];
+  if (q.control.x > 8u || q.control.y > 8u) { results[index] = vec4(0); return; }
+  float w[16], fine = 0, coarse = 0;
+  for (uint i=0u; i<16u; ++i) w[i] = q.weights[i/4u][i%4u];
+  for (uint i=0u; i<q.control.x; ++i) coarse += w[i];
+  for (uint i=0u; i<q.control.y; ++i) fine += w[8u+i];
+  float share = coarse+fine > 1e-6 ? fine/(coarse+fine) : 0;
+  if (q.control.z != 0u && fine > 1e-6) {
+    for (uint c=0u; c<q.control.x; ++c) {
+      float visibility = 0;
+      for (uint f=0u; f<q.control.y; ++f) {
+        uint entry = c*8u+f, word = entry/4u;
+        uint byteValue = (q.packed[word/4u][word%4u] >> ((entry%4u)*8u)) & 255u;
+        bool known = (q.known[entry/32u] & (1u << (entry%32u))) != 0u;
+        visibility += w[8u+f] * (known ? float(byteValue)/255.0 : 1.0);
+      }
+      w[c] *= 1-share + share*visibility/fine;
+    }
+  }
+  vec4 value = vec4(0);
+  float total = 0;
+  for (uint i=0u; i<q.control.x; ++i) { value += w[i]*q.values[i]; total += w[i]; }
+  for (uint i=0u; i<q.control.y; ++i) { value += w[8u+i]*q.values[8u+i]; total += w[8u+i]; }
+  results[index] = total >= 1e-4 ? value/total : vec4(0);
+}

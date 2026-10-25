@@ -1,6 +1,6 @@
 // Private transfer-field prototype. Geometry is captured on the GPU; reference
 // reconstruction stays on the CPU until the shader/storage contract is tested.
-void coarseTransferPrototype(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
+auto coarseTransferPrototype(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
   const std::array<Vec3, 3> coarse{{{-1,0,2}, {1,0,0}, {0,0,2}}};
   const std::array<Vec3, 2> fine{{{-1,0,0}, {0,0,0}}};
   constexpr float epsilon = .0001f;
@@ -136,4 +136,5 @@ void coarseTransferPrototype(test::Fixture &fixture, pipeline::Service &pipeline
   require(std::abs(reconstruct(fallback,.8f,1.5f,.1f,.075f)-.29f) < 1e-6f,
           "Unknown transfer preserves the ordinary blended estimate");
   std::puts("Coarse transfer prototype: opaque/clear/opening/unknown capture and normalized CPU reconstruction pass");
+  return std::pair{visibility, known};
 }
