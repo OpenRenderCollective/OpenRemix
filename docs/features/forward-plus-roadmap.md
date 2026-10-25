@@ -2642,3 +2642,15 @@ fixture. Original receiver estimates remain unchanged. This supports further sha
 research, not a production selection rule. Candidate disagreement persists; qualify
 support-region connectivity and motion before choosing a cache lifetime or runtime policy.
 Keep full target-node unions when comparing anchors, and retain missing/untested states.
+
+
+Surface-anchor diagnostics now report candidate-to-receiver connectivity independently
+of candidate-to-probe masks. Receiver endpoints use 2 mm offsets along the picked
+geometric normal; closed-partition interval traversal and eligible opaque blockers are
+reported separately. Missing/too-short links are absent, not implicitly clear. The
+CPU thin-slab fixture rejects a solid crossing even with playable endpoints. All admitted
+Construct housing candidates connect clearly to the fixed receiver cohort, so this guard
+does not resolve their differing probe masks in that case. Do not use connectivity alone
+as an anchor ranking metric or claim it proves lighting fidelity. Stable selection,
+visibility-transition behavior, instance ownership and broader quality/cost qualification
+remain open; the normal renderer still uses the existing probe reconstruction.

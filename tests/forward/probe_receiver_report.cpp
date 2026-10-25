@@ -144,6 +144,9 @@ int main(int argc, char **argv) {
   for (uint32_t node = 0; node < 8; ++node)
     require(targetNodes.find("\"index\":" + std::to_string(node) + ',') != std::string::npos,
             "Surface anchor must audit every contributing target node by global index");
+  require(output.find("\"receivers\":[{\"ray\":0,\"endpoint\":[0.5,0.5,1.998") != std::string::npos &&
+              output.find("\"partition\":\"clear\",\"opaqueBlocked\":false") != std::string::npos,
+          "Anchor connectivity must retain receiver-side offsets and classify the clear segment");
   require(output.find("\"sceneHash\":\"123\"") != std::string::npos &&
               output.find("\"draw\":1") != std::string::npos && output.find("\"normalizedWeight\":") != std::string::npos,
           "Probe report must retain scene identity, picked ownership and normalized contributions");
@@ -189,6 +192,14 @@ int main(int argc, char **argv) {
               blockedOutput.find("\"opaqueVisibleIrradiance\":null") != std::string::npos,
           "A covered all-blocked stencil reports missing oracle support rather than fabricated black lighting");
   grid = originalGrid; source.draws.pop_back();
+  std::filesystem::remove(outputPath);
+  const auto originalPartition = *partition;
+  partition->nodes = {{{1, 0, 0, .6f}, {-1, 1}, {0, 0}},
+                      {{1, 0, 0, .56f}, {-2, -1}, {0, 0}}};
+  b::dumpProbeReceiverReport(source, grid);
+  require(readOutput().find("\"partition\":\"solid\",\"opaqueBlocked\":false") != std::string::npos,
+          "Playable endpoints do not imply connectivity through a thin solid partition interval");
+  *partition = originalPartition;
   std::filesystem::remove(outputPath);
   partition->leafClusters = {-1, -1};
   b::dumpProbeReceiverReport(source, grid);

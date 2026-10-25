@@ -212,9 +212,46 @@ namespace remix::forward::bake {
       }
       out << ']';
     }
+    void anchorReceiverConnections(std::ostream &out, const scene::BakeScene &source, Vec3 position,
+        uint32_t draw, std::span<const std::optional<ReceiverHit>> hits, std::stop_token cancelled) {
+      using State = scene::VisibilityPartition::SegmentState;
+      std::vector<ReceiverRay> rays;
+      std::vector<uint32_t> slots;
+      std::array<Vec3, 16> endpoints{};
+      std::array<float, 16> lengths{};
+      const float epsilon = .0001f / source.sceneScale;
+      for (uint32_t i = 0; i < hits.size(); ++i) {
+        if (!hits[i] || hits[i]->draw != draw) continue;
+        ReceiverRay ray{position};
+        for (uint32_t c = 0; c < 3; ++c) {
+          endpoints[i][c] = hits[i]->position[c] + hits[i]->geometricNormal[c] * (.002f / source.sceneScale);
+          ray.direction[c] = endpoints[i][c] - position[c];
+        }
+        const float distance = std::sqrt(dot(ray.direction, ray.direction));
+        if (!std::isfinite(distance) || distance <= 2 * epsilon) continue;
+        for (uint32_t c = 0; c < 3; ++c) {
+          ray.direction[c] /= distance;
+          ray.origin[c] += ray.direction[c] * epsilon;
+        }
+        rays.push_back(ray); slots.push_back(i); lengths[i] = distance - 2 * epsilon;
+      }
+      std::vector<std::optional<ReceiverHit>> blockers;
+      if (!rays.empty()) blockers = pickProbeReceivers(source, rays, cancelled, draw);
+      out << ",\"receivers\":[";
+      for (size_t c = 0; c < slots.size(); ++c) {
+        const auto slot = slots[c];
+        const auto interval = source.partition ? source.partition->firstSolid(position.data(), endpoints[slot].data()) :
+            scene::VisibilityPartition::SegmentResult{};
+        if (c) out << ',';
+        out << "{\"ray\":" << slot << ",\"endpoint\":"; vector(out, endpoints[slot]);
+        out << ",\"partition\":\"" << (interval.state == State::Clear ? "clear" : interval.state == State::Solid ? "solid" : "unknown")
+            << "\",\"opaqueBlocked\":" << (blockers[c] && blockers[c]->distance < lengths[slot] ? "true" : "false") << '}';
+      }
+      out << ']';
+    }
     void surfaceAnchors(std::ostream &out, const scene::BakeScene &source, uint32_t drawIndex,
         const Grid &grid, std::span<const Grid::Origin> origins, std::span<const uint32_t> nodes,
-        std::stop_token cancelled) {
+        std::span<const std::optional<ReceiverHit>> hits, std::stop_token cancelled) {
       struct Candidate { Vec3 position{}; double area = 0; size_t first = 0; int32_t cluster = -2; };
       std::array<Candidate, 6> candidates{};
       const auto &draw = source.draws[drawIndex];
@@ -279,6 +316,7 @@ namespace remix::forward::bake {
         }
         out << ']';
         anchorTargetConnections(out, source, grid, candidate.position, drawIndex, origins, nodes, cancelled);
+        anchorReceiverConnections(out, source, candidate.position, drawIndex, hits, cancelled);
         out << '}';
       }
       out << ']';
@@ -318,7 +356,7 @@ namespace remix::forward::bake {
             if (stencil.weights[c] > 0 && std::find(nodes.begin(), nodes.end(), stencil.indices[c]) == nodes.end())
               nodes.push_back(stencil.indices[c]);
         }
-        surfaceAnchors(out, source, hit->draw, grid, origins, nodes, cancelled);
+        surfaceAnchors(out, source, hit->draw, grid, origins, nodes, hits, cancelled);
         out << '}';
       }
       out << ']';

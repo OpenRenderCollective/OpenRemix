@@ -39,6 +39,8 @@ namespace remix::forward::bake {
   // normal axis, using a 2 mm offset. This does not prove segment connectivity.
   // Each candidate also audits the union of hit-draw target nodes (at most 256),
   // in batches of sixteen connections; absent/untested support remains unknown.
+  // Receiver links independently report closed-partition and opaque blockers,
+  // targeting 2 mm geometric-normal offsets. Very short/invalid links stay absent.
   // A missing opaque blocker does not establish alpha/transmission visibility.
   // Existing output is protected; failures never affect bake publication.
   void dumpProbeReceiverReport(const scene::BakeScene &source, const Grid &grid,
