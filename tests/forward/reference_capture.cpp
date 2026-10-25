@@ -179,6 +179,37 @@ int main(int argc, char **argv) {
   try { ReferenceCapture::load(path); }
   catch (const std::invalid_argument &) { rejected = true; }
   require(rejected, "Surface references reject non-unit normals before transport");
+  {
+    std::ofstream sites(path);
+    sites << "surface-offsets 256\n1 2 3 0 0 -1 0\n1 2 3 0 0 -1 1024\n";
+  }
+  auto surfaceStreams = ReferenceCapture::load(path);
+  require(surfaceStreams.surface && surfaceStreams.samples == 256 && surfaceStreams.tasks() == 2 &&
+              surfaceStreams.sampleOffsets == std::vector<uint32_t>{0, 1024},
+          "Surface convergence streams retain independent sample offsets");
+  const auto streamSites = surfaceStreams.batch(0, 2);
+  require(streamSites[0].position == streamSites[1].position &&
+              streamSites[0].normal == remix::forward::Vec4{0, 0, -1, 0} &&
+              streamSites[0].normal == streamSites[1].normal,
+          "Changing the surface stream never moves or rotates the receiver");
+  surfaceStreams.consume(0, std::span(&surfaceValue, 1));
+  surfaceStreams.consume(1, std::span(&surfaceValue, 1));
+  {
+    std::ifstream json(output);
+    const std::string result((std::istreambuf_iterator<char>(json)), {});
+    require(result.find("\"mode\":\"surface\"") != std::string::npos &&
+                result.find("\"firstSample\":1024") != std::string::npos &&
+                result.find("\"diffuseIrradiance\":[0.977205") != std::string::npos,
+            "Surface stream output retains the estimator, normal reconstruction and sample provenance");
+  }
+  for (const auto *row : {"1 2 3 0 0 -1", "1 2 3 0 0 -1 -1", "1 2 3 0 0 -1 4294967040",
+                          "1 2 3 0 0 2 0"}) {
+    { std::ofstream bad(path); bad << "surface-offsets 256\n" << row << '\n'; }
+    rejected = false;
+    try { ReferenceCapture::load(path); }
+    catch (const std::invalid_argument &) { rejected = true; }
+    require(rejected, "Surface streams reject missing/invalid offsets, range overflow and non-unit normals");
+  }
   std::filesystem::remove(path);
   std::filesystem::remove(output);
 }

@@ -26,6 +26,14 @@ components before choosing defaults. The offline `surface` reference format
 retains receiver normals and uses the surface irradiance estimator, including
 the aggregate direct-light policy. Keep sampling noise, spatial interpolation,
 normal bias and missing lighting components separate in these comparisons.
+Fixed-site `surface-offsets` diagnostics now preserve receiver normals and
+analytic direct lighting across repeated sample streams. Use these to screen
+estimator convergence independently of atlas filtering and published probe
+reconstruction. Raising the shared bake budget can also change adaptive probe
+allocation and reflection work; a normal/higher-budget image pair alone does
+not isolate surface noise. Keep coverage/domain fixes and convergence separate,
+and qualify targeted quality allocation before increasing global defaults.
+
 
 Coplanar seam donors now retain their original receiver footprint, and sunlight
 edge refinement admits those verified aliases instead of skipping every

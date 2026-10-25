@@ -1169,6 +1169,14 @@ and the reserved transport value. Existing irradiance fields retain their format
 `hemisphere <samples>` input takes XYZ and unit-normal sites and exports independent cosine-integrated
 irradiance instead. These diagnostics do not change published probe positions or lighting buffers.
 Check captured scene inputs, including the dome texture, before comparing separate runs.
+Incoming-ray hemisphere integration omits analytic direct light at the receiver.
+Use `surface <samples>` followed by XYZ/unit-normal rows for the surface bake's
+direct-plus-indirect irradiance estimator. For repeated deterministic streams,
+`surface-offsets <samples>` takes XYZ/unit-normal/first-sample rows; `sh-offsets`
+takes XYZ/first-sample rows without normals. Offsets must leave the full sample
+range inside a 32-bit unsigned index. Each output retains its `firstSample` value.
+Compare repeated fixed-site streams before attributing a difference to sampling
+variance; a different atlas or adaptive probe layout is a separate experiment.
 
 For inspection, `probes.request` in the profile directory writes `probes.json`
 from the published frame's immutable metadata. It lists the active content hash,

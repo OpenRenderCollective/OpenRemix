@@ -30,8 +30,8 @@ namespace remix::forward::bake {
     std::string token;
     input >> token;
     result.hemisphere = token == "hemisphere";
-    result.surface = token == "surface";
-    const bool offsets = token == "sh-offsets";
+    result.surface = token == "surface" || token == "surface-offsets";
+    const bool offsets = token == "sh-offsets" || token == "surface-offsets";
     if (result.hemisphere || result.surface || offsets) input >> token;
     const auto parsed = std::from_chars(token.data(), token.data() + token.size(), result.samples);
     if (parsed.ec != std::errc{} || parsed.ptr != token.data() + token.size() ||
@@ -43,6 +43,14 @@ namespace remix::forward::bake {
         throw std::invalid_argument("Reference capture requires at most 16 XYZ positions");
       for (float value : point.position)
         if (!std::isfinite(value)) throw std::invalid_argument("Non-finite reference position");
+      if (result.hemisphere || result.surface) {
+        if (!(input >> point.normal[0] >> point.normal[1] >> point.normal[2]))
+          throw std::invalid_argument("Surface reference requires XYZ unit normals");
+        const Vec3 normal{point.normal[0], point.normal[1], point.normal[2]};
+        const float lengthSquared = dot(normal, normal);
+        if (!std::isfinite(lengthSquared) || std::abs(lengthSquared - 1) > 1e-4f)
+          throw std::invalid_argument("Invalid surface reference unit normal");
+      }
       if (offsets) {
         std::string offset;
         input >> offset;
@@ -52,14 +60,6 @@ namespace remix::forward::bake {
             firstSample > UINT32_MAX - result.samples)
           throw std::invalid_argument("Invalid reference sample offset or overflowing sample range");
         result.sampleOffsets.push_back(firstSample);
-      }
-      if (result.hemisphere || result.surface) {
-        if (!(input >> point.normal[0] >> point.normal[1] >> point.normal[2]))
-          throw std::invalid_argument("Surface reference requires XYZ unit normals");
-        const Vec3 normal{point.normal[0], point.normal[1], point.normal[2]};
-        const float lengthSquared = dot(normal, normal);
-        if (!std::isfinite(lengthSquared) || std::abs(lengthSquared - 1) > 1e-4f)
-          throw std::invalid_argument("Invalid surface reference unit normal");
       }
       result.points.push_back(point);
     }

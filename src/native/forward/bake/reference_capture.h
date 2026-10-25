@@ -13,6 +13,8 @@ namespace remix::forward::bake {
   // Hemisphere rays alone do not include analytic direct light at the receiver.
   // "sh-offsets", sample count, then XYZ/first-sample sites compares multiple
   // deterministic streams at identical locations without moving the receiver.
+  // "surface-offsets" adds a first-sample index after each XYZ/unit-normal site
+  // to measure surface-estimator variance with analytic direct lighting intact.
   // SH output includes six distance-moment vec4s (+/-X, +/-Y, +/-Z) and
   // transport statistics so offline placement studies can reconstruct visibility.
   struct ReferenceCapture {
