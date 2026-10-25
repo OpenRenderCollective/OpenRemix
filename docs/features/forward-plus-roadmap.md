@@ -2732,3 +2732,17 @@ slightly higher cohort RMS. Single-run planning time is similar in scale to revi
 this is not a bake-speed improvement claim. Keep the candidate undeployed while studying
 which allocations changed and guarding broader quality. Correct topological assignment
 does not itself establish better sampling distribution or lighting fidelity.
+
+
+A same-budget spacing sensitivity check rejects changing the default request from 2 m
+to 0.5 m as a quality fix. Under the same 32,768-record ceiling, budget fitting grows
+the coarse allocation substantially and leaves fewer records for fine levels. Actual
+finest allocation becomes coarser than baseline, despite the smaller requested setting.
+The fixed sixteen-site model cohort retains coverage but worsens overall error, with
+more regressions than improvements. Keep the original setting. Next decouple coarse
+coverage from local refinement demand and evaluate receiver-aware marginal allocation;
+the current bounded directory supports only 2x/4x/8x cell subdivisions, so truly small
+local support may require a deliberate representation change with CPU/GPU/cache parity.
+Do not silently enlarge the record budget or describe requested spacing as achieved
+spacing. Runtime/benchmark reporting must distinguish requested, fitted coarse and
+finest allocated density; finest anywhere is not density at every receiver.
