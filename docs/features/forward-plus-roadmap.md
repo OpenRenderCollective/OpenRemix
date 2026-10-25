@@ -3332,3 +3332,22 @@ visibility/reconstruction candidate, not a verified general fix.
 luminance difference .025, p95 .500 versus our surface bake. This is not displayed
 pixel error or independent ground truth. Containment-bias capping alone scarcely
 changes these results. No playable defaults, quality settings or bakes changed.
+
+
+### 2026-10-26 - Directional probe depth acceptance result
+
+Existing private 8x8 octahedral probe-depth candidate does not fix the identified
+Construct ceiling leakage: opaque blocked stencil weight .21861 -> .21836, with
+nearly unchanged irradiance. Keep it private. Another wall improved, so the
+feature is active but not sufficient. Covered sampled receivers fell 8185->8169;
+common-site indirect MAE improved only .10836->.10754 against our surface bake.
+One controlled camera pair showed no GPU win (white room about 9.94->10.08-10.21ms).
+Fresh-bake planning 10.793s and main/styled OIDN16.085/4.603s establish CPU/planning
+work worth profiling; no isolated incremental bake-time claim is valid because
+control used cache. No playable/default change.
+
+- [ ] Test targeted receiver-adjacent placement/refinement with dynamic props and
+  independent hemisphere reference, keeping record budget and transitions honest.
+- [ ] Profile adaptive planning and chart filtering stages before attributing all
+  bake delay to ray tracing. Retain rejection evidence for planar/proximity-only
+  interpolation heuristics that previously darkened valid prop faces.
