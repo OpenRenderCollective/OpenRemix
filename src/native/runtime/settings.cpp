@@ -188,6 +188,7 @@ namespace remix::config {
         result.push_back(scalar("rtx.native.forward.bakeProbes", FIELD(forward.baking.maxProbes), 64, 1048576));
         result.push_back(scalar("rtx.native.forward.probeRelocation", FIELD(forward.baking.relocateProbes), 0, 1));
         result.push_back(scalar("rtx.native.forward.bakeSamples", FIELD(forward.baking.samples), 64, 8192));
+        result.push_back(scalar("rtx.native.forward.bakeProbeSamples", FIELD(forward.baking.probeSamples), 0, 8192));
         result.push_back(scalar("rtx.native.forward.bakeBounces", FIELD(forward.baking.bounces), 1, 8));
         result.push_back(scalar("rtx.native.forward.bakeBatch", FIELD(forward.baking.batch), 1, 1024));
         result.push_back(scalar("rtx.native.forward.bakeGpuBudget", FIELD(forward.baking.gpuBudgetMs), 0, 16));

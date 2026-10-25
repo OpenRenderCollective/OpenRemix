@@ -44,6 +44,7 @@ namespace remix::forward::bake {
     uint32_t probeDepthNext = 0, probeDepthReceived = 0;
     Refinement refinement;
     bool refinementPlanned = false;
+    bool finalProbePass = false; // a separate quality pass must not drive adaptive placement
     void refineProbes(const Config &config);
     lightmap::Layout surfaceLayout;
     std::vector<Result> surfaces;

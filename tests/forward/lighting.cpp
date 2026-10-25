@@ -501,6 +501,7 @@ int main() {
   config::Settings restored;
   require(config::set(settings, "rtx.native.forward.bakeProbes", "63") == config::SetResult::Invalid &&
               config::set(settings, "rtx.native.forward.bakeSamples", "8193") == config::SetResult::Invalid &&
+              config::set(settings, "rtx.native.forward.bakeProbeSamples", "8193") == config::SetResult::Invalid &&
               config::set(settings, "rtx.native.forward.bakeTextureResolution", "48") ==
                   config::SetResult::Invalid,
           "Reject unsupported bake budgets and atlas dimensions");
@@ -508,6 +509,12 @@ int main() {
               config::set(settings, "rtx.native.forward.bakeSpacing", "3.5") == config::SetResult::Success &&
               config::set(settings, "rtx.native.forward.bakeSamples", "512") == config::SetResult::Success,
           "Bake controls participate in runtime configuration");
+  require(config::set(settings, "rtx.native.forward.bakeProbeSamples", "1024") == config::SetResult::Success &&
+              settings.forward.baking.probeSampleCount() == 1024 && settings.forward.baking.samples == 512,
+          "Volume probe quality changes independently of surface quality");
+  require(config::set(settings, "rtx.native.forward.bakeProbeSamples", "0") == config::SetResult::Success &&
+              settings.forward.baking.probeSampleCount() == 512,
+          "Zero probe sample override inherits the existing surface budget");
   config::UnknownSettings unknown;
   require(config::set(settings, "rtx.native.forward.reflectionProbes", "65") == config::SetResult::Invalid &&
               config::set(settings, "rtx.native.forward.reflectionResolution", "48") ==

@@ -273,6 +273,7 @@ namespace remix::forward::bake {
     const auto atlas = surfaceAtlasOptions(config, properties.limits);
     surfaceLayout = lightmap::fit(*source, atlas, cancellation.get_token());
     grid = placeRefinementBase(*source, placement, surfaceLayout, refinement, cancellation.get_token());
+    finalProbePass = !refinement.factor;
     if (std::getenv("REMIX_DEBUG_BAKE_GRID_PREFIX")) {
       const auto support = receiverSupport(grid.header, surfaceLayout, 0, cancellation.get_token());
       probes::dumpPublishedData(".receiver-support.bin", support.data(), support.size());
@@ -1531,7 +1532,7 @@ namespace remix::forward::bake {
         if (m_volume || m_statistics.state == REMIXAPI_BAKE_FAILED_EXT)
           return;
         if (!m_job) {
-          if (!config.samples || config.samples > 8192 || !config.bounces || config.bounces > 8 ||
+          if (!config.samples || config.samples > 8192 || config.probeSamples > 8192 || !config.bounces || config.bounces > 8 ||
               !config.batch || config.batch > 1024 ||
               ((config.styledIndirect || config.groupedStyledDirect) && (!config.styleStorageMiB || config.styleStorageMiB > 512)))
             throw std::invalid_argument("Invalid bake batch settings");
@@ -1664,6 +1665,14 @@ namespace remix::forward::bake {
             status(REMIXAPI_BAKE_PREPARING_EXT, "Refining irradiance probe placement");
             return;
           }
+          if (!job.finalProbePass && config.probeSampleCount() != config.samples) {
+            // Keep the adaptive allocator's reference budget unchanged. Only
+            // after placement is fixed may probe quality change its estimates.
+            job.finalProbePass = true;
+            job.next = job.received = 0;
+            status(REMIXAPI_BAKE_TRACING_EXT, "Improving final irradiance probe quality");
+            return;
+          }
           if (config.directionalProbeDepth && job.probeDepthReceived < job.grid.tasks.size())
             recordProbeDepth(command, config);
           else recordProbeSun(command, config);
@@ -1673,14 +1682,15 @@ namespace remix::forward::bake {
         if (submission.job)
           throw std::logic_error("Bake slot reused before its fence");
         if (job.next < job.grid.tasks.size()) {
+          const auto samples = job.finalProbePass ? config.probeSampleCount() : config.samples;
           const uint32_t count =
-              job.count(Work::Irradiance, config, uint32_t(job.grid.tasks.size() - job.next), config.samples,
+              job.count(Work::Irradiance, config, uint32_t(job.grid.tasks.size() - job.next), samples,
                         config.bounces);
           std::vector<Point> points;
           points.reserve(count);
           for (uint32_t i = 0; i < count; ++i)
             points.push_back(job.grid.points[job.grid.tasks[job.next + i]]);
-          job.transport->recordBatch(command, m_slot, points, config.samples, config.bounces);
+          job.transport->recordBatch(command, m_slot, points, samples, config.bounces);
           submission.job = m_job;
           submission.first = job.next;
           submission.count = count;

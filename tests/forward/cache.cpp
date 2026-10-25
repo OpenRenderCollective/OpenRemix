@@ -51,6 +51,10 @@ int main(int argc, char **argv) {
   execution.diskCache = false;
   require(bc::key(source->contentHash, execution, .001f, device) == identity,
           "Cache identity excludes scheduling and cache preferences");
+  execution.probeSamples = config.samples;
+  require(bc::key(source->contentHash, execution, .001f, device) == identity,
+          "Explicit inherited probe samples preserve the existing cache identity");
+  execution.probeSamples = 0;
   execution.samples *= 2;
   require(bc::key(source->contentHash, execution, .001f, device) != identity &&
               bc::key(source->contentHash + 1, config, .001f, device) != identity &&
@@ -87,6 +91,7 @@ int main(int argc, char **argv) {
   qualityKey([](auto &c) { c.spacing += 1; });
   qualityKey([](auto &c) { c.maxProbes *= 2; });
   qualityKey([](auto &c) { c.bounces += 1; });
+  qualityKey([](auto &c) { c.probeSamples = c.samples * 2; });
   qualityKey([](auto &c) { c.textureResolution *= 2; });
   qualityKey([](auto &c) { c.reflectionProbes += 1; });
   qualityKey([](auto &c) { c.reflectionResolution *= 2; });

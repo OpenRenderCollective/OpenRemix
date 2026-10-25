@@ -20,6 +20,8 @@ namespace remix::forward::bake {
     float gpuBudgetMs = 8; // zero selects fixed batch size; otherwise a measured GPU-time target
     float spacing = 2;     // metres; coarsened if necessary to respect maxProbes
     uint32_t maxProbes = 32768, samples = 256, bounces = 3, batch = 64, textureResolution = 256;
+    uint32_t probeSamples = 0; // zero inherits samples; volume transport only, including styled components
+    uint32_t probeSampleCount() const { return probeSamples ? probeSamples : samples; }
     uint32_t reflectionProbes = 64, reflectionResolution = 128;
     float reflectionDetailTolerance = .5f; // metres; zero requires entirely empty boxes
     uint32_t lightmapPageSize = 1024, lightmapTexels = 4194304;
@@ -34,6 +36,8 @@ namespace remix::forward::bake {
     bool operator==(const Config &) const = default;
     bool sameLighting(const Config &other) const {
       auto a = *this, b = other;
+      a.probeSamples = a.probeSampleCount();
+      b.probeSamples = b.probeSampleCount();
       a.batch = b.batch = 0;
       a.gpuBudgetMs = b.gpuBudgetMs = 0;
       a.diskCache = b.diskCache = false;

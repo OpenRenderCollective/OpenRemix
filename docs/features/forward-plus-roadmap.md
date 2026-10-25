@@ -53,6 +53,21 @@ deterministic sequence, not a multi-seed variance estimate. OIDN filters surface
 lightmaps, not volume SH. Qualify probe convergence separately from placement;
 do not globally increase surface sample budgets or smooth coefficients across walls.
 
+`rtx.native.forward.bakeProbeSamples` now provides a separate volume-transport
+budget (0 inherits `bakeSamples`, explicit values up to 8192). It covers base
+and styled probe coefficients, not surface transport, reflections or shadow
+visibility. Adaptive placement retains the original sample budget, followed by
+a separate final-quality pass when needed; raising coefficient quality must
+not silently move the allocator to different cells. Equal effective sample
+counts preserve existing cache identity. The default remains inherited.
+
+Repeated fixed-site captures show better convergence at 1024 than 256 samples,
+but published-field gains are modest and local regressions remain. Do not
+confuse lower estimator variance with solved side/domain ownership. A direct
+quality override during refinement was rejected because it changed allocation
+and produced severe new outliers. Continue geometry-aware field work and wider
+map checks before selecting a higher default.
+
 Rejected shortcuts include blindly dropping blocked contributors, low-variance
 all-axis depth clamps and a single stratified indirect-light dimension. They trade
 leaks for dark neighboring faces or show no overall improvement. The earlier

@@ -349,6 +349,10 @@ namespace remix::forward::bake::cache {
       const uint32_t reflectionFit[] = {0x5245474eu, 1};
       raw = scene::fastHash(reflectionFit, sizeof(reflectionFit), raw);
     }
+    if (c.probeSampleCount() != c.samples) {
+      const uint32_t probeQuality[] = {0x5052534du, 2, c.probeSampleCount()};
+      raw = scene::fastHash(probeQuality, sizeof(probeQuality), raw);
+    }
     if (modelChartsRequested()) {
       const uint32_t modelCharts[] = {0x4d434852u, 6};
       raw = scene::fastHash(modelCharts, sizeof(modelCharts), raw);

@@ -73,6 +73,12 @@ int main() {
   b.gpuBudgetMs = 0;
   b.diskCache = false;
   require(a.sameLighting(b) && a != b, "Execution edits preserve the lighting identity");
+  b.probeSamples = b.samples;
+  require(a.sameLighting(b), "Explicit inherited probe quality preserves lighting identity");
+  b.probeSamples *= 4;
+  require(!a.sameLighting(b) && a.samples == b.samples,
+          "Probe quality can change without raising surface sample counts");
+  b.probeSamples = 0;
   b.samples *= 2;
   require(!a.sameLighting(b), "Sample quality still invalidates the bake");
 }

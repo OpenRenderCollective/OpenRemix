@@ -38,8 +38,9 @@ namespace remix::forward::bake {
     if (next < total) {
       auto &submission = m_submissions[m_slot];
       if (submission.job) throw std::logic_error("Styled bake slot reused before its fence");
+      const auto samples = surface ? config.samples : config.probeSampleCount();
       const auto count = job.count(surface ? Work::Surface : Work::Irradiance,
-                                   config, total - next, config.samples, config.bounces);
+                                   config, total - next, samples, config.bounces);
       std::vector<Point> probes;
       std::span<const Point> points;
       if (surface) {
@@ -49,7 +50,7 @@ namespace remix::forward::bake {
         for (uint32_t i = 0; i < count; ++i) probes.push_back(job.grid.points[tasks[next + i]]);
         points = probes;
       }
-      job.transport->recordComponent(command, m_slot, points, work.style(), config.samples, config.bounces);
+      job.transport->recordComponent(command, m_slot, points, work.style(), samples, config.bounces);
       submission.job = m_job;
       submission.surface = surface;
       submission.styled = work.style();
