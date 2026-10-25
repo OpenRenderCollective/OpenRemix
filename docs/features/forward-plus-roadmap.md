@@ -7,9 +7,11 @@ controlled comparisons, and live-game appearance references. The replay quality
 preset now requires sky data instead of accepting a missing-sky fallback; procedural
 skies require a frozen live capture. Record completed publication, actual sky and
 display transform before interpreting noise, brightness or reflection differences.
-The latest installed Forward+ functional capture omitted Construct's procedural
-sky and therefore does not qualify its live lighting appearance. Preserve valid
-controlled component studies, but do not present them as final visual acceptance.
+An earlier installed Forward+ functional capture omitted Construct's procedural
+sky and therefore does not qualify its live lighting appearance. Later checks use
+a captured live sky. Preserve valid controlled component studies, but do not
+present them as complete visual acceptance. Current status in this section
+supersedes older dated experimental checkpoints later in this file.
 
 An installed Forward+/path-tracer transition smoke reached Forward+ capture but
 not the final path-traced image. Two synchronization write hazards were reported
@@ -26,6 +28,9 @@ components before choosing defaults. The offline `surface` reference format
 retains receiver normals and uses the surface irradiance estimator, including
 the aggregate direct-light policy. Keep sampling noise, spatial interpolation,
 normal bias and missing lighting components separate in these comparisons.
+Base-only reference requests now make lighting composition explicit: prefix a
+request with `base` to compare extracted base atlas/grid data without styled
+additions. Keep those comparisons separate from complete shader-output checks.
 Fixed-site `surface-offsets` diagnostics now preserve receiver normals and
 analytic direct lighting across repeated sample streams. Use these to screen
 estimator convergence independently of atlas filtering and published probe
@@ -58,18 +63,23 @@ preflight is available to study authored and generated charts together without
 running lighting transport. The opt-in runtime experiment now derives its chart
 limit from minimum padded atlas capacity, with an absolute 1,048,576-chart ceiling,
 instead of rejecting larger maps at 65,536 charts. Actual packing still must fit.
-A completed larger-map bake does not establish final quality, memory suitability
-or frame-rate gains. Reduce chart count and filtering work without sacrificing
-coverage or density; qualify more maps before enabling model charts by default. Static model
-charts remain opt-in; probe-lit dynamic objects still need the fixes below.
+Runtime profiles now enable eligible static mesh lightmaps by default through
+`rtx.native.forward.lightmapModels`; low-level bake callers retain explicit control.
+The existing atlas budget is shared with world surfaces, and completed policy-7
+model caches remain compatible. Reduce chart count and filtering work without
+sacrificing coverage or density. Broader map/replacement quality and memory-cost
+qualification remains open; dynamic objects still need the volume fixes below.
 
 Model-chart preparation, full lighting publication and disk reload have now been
 exercised on Construct, Crossfire, c1a0 and bm_c1a1b at the normal sample budget.
-These checks do not establish complete visual quality or live-game frame cost.
-Keep the candidate opt-in while addressing visible lighting discontinuities,
-chart-heavy filtering cost and broader map/replacement coverage. Constant-field
-filter bypass and bounded per-chart queues already exist; do not reduce sample
-counts or merge unrelated chart images merely to make qualification faster.
+Runtime-default cache reuse without developer overrides is qualified on those
+maps. A private live Construct check also preserves baked content through camera
+changes, physics-prop creation/removal and weapon switching, with static shadow
+updates remaining zero. Continue visible seam/noise, moving-receiver, replacement,
+chart-heavy filtering and wider-map work; default promotion does not close those
+quality/performance gates. Constant-field filter bypass and bounded per-chart
+queues already exist; do not reduce sample counts or merge unrelated chart images
+merely to make qualification faster.
 
 Construct's back-spawn ceiling-fixture housing has a confirmed probe-lit diffuse
 error. Total diffuse (`debugView=7`) retains the excess without emission/specular;
@@ -2907,3 +2917,33 @@ Upstream path-traced IES profiles, cookies and related light/media features are 
 Forward+ parity is not established by merging them. Follow up with immutable capture,
 cache identity, transport/shading and GPU quality coverage when adding those features.
 The existing probe-quality, static-model, cubemap, live-game and bake-time gates remain.
+
+
+### Projected textures and volumetric lighting after official-main merge
+
+Official native main through `ea3f2965` and adapter main through `6543b6f`
+are integrated into the feature branches. Animated projected-light cookies now
+reach the shared light API; the shared adapter light creator preserves these
+extensions, volumetric radiance scale 1, and existing surface-emitter baking hints.
+Path tracing retains the IES/cookie slot fix and per-source volumetric scales;
+its GPU frame includes both volumetric controls and measured-sheet optics.
+These integrations do not establish Forward+ feature parity.
+
+- [ ] Forward+ projected textures: carry immutable cookie texture identity,
+  projection basis/FOV and frame changes into backend-owned light data and
+  descriptors; apply colour-times-alpha masking consistently to diffuse/specular
+  lighting and optional ray effects. Preserve cone fallback before upload.
+- [ ] Keep moving/animated projected lights on the live path. If static cookies
+  become bakeable, include their texture/content/projection in bake identity,
+  transport and reflection captures without animation-triggered map rebakes.
+- [ ] Forward+ volumetric fog: design a bounded, depth-composited scattering
+  pass with shadowed sun/local lights, cookie support, temporal stability and
+  camera-medium handling. Preserve per-light volumetric radiance scale and
+  separate sun/light/emissive/sky controls; do not multiply surface lighting.
+- [ ] Validate cookie orientation, outside-frustum darkness, alpha-only and
+  animated cookies, texture arrival/replacement, shadowing, viewmodels and
+  backend transitions. Profile volumetric memory/time and light-heavy maps
+  before selecting defaults; retain the fully baked surface performance path.
+
+Lighting quality, bake time and measured opaque-shading bottlenecks remain higher
+priorities than enabling these additional effects by default.
