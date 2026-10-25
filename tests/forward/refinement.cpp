@@ -100,6 +100,23 @@ namespace {
 void refinementTests() {
   narrowPlacementTests();
   {
+    auto grid = base();
+    scene::BakeScene scene;
+    scene.sceneScale = 1;
+    auto partition = std::make_shared<scene::VisibilityPartition>();
+    partition->closed = true; partition->clusterCount = 1; partition->leafClusters = {0, -1};
+    partition->nodes = {{{1, 0, 0, 4}, {1, -1}, {}},
+                        {{1, 0, 0, 4.05f}, {-1, -2}, {}}};
+    scene.partition = partition;
+    lightmap::Layout layout;
+    layout.points = {{{3.95f, 2, 2, 0}, {1, 0, 0, 0}}};
+    require(bake::refineGrid(grid, scene, layout, {2, 1000, false}) == 1,
+            "Thin-wall receiver must retain a refinement patch");
+    const auto nodes = bake::gridNodes(grid.header);
+    require(grid.lookup[nodes + 4] != 0 && grid.lookup[nodes + 5] == 0,
+            "Refinement belongs to the receiver-side cell instead of crossing a thin solid interval");
+  }
+  {
     bake::GridHeader header;
     header.originSpacing = {0, 0, 0, 1};
     header.dimensions = {7, 7, 7, 343};

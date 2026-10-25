@@ -52,7 +52,7 @@ namespace remix::forward::bake::cache {
       return std::max(1u, (count + probeHeaderBlockSlots - 1) / probeHeaderBlockSlots);
     }
     // Bump whenever incompatible planning, transport or wire semantics change.
-    constexpr uint32_t algorithmRevision = 35; // relocation clearance stays on the receiver side of solids
+    constexpr uint32_t algorithmRevision = 36; // refinement binning and relocation share contained clearance
     void require(bool value) {
       if (!value)
         throw std::runtime_error("Invalid bake cache metadata");

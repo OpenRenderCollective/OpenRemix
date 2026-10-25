@@ -1,6 +1,7 @@
 #include "forward/bake/adaptive_grid.h"
 #include "forward/bake/spherical_harmonics.h"
 #include "forward/bake/refinement_builder.h"
+#include "forward/bake/receiver_clearance.h"
 #include "forward/lightmap/layout.h"
 #include <algorithm>
 #include <cmath>
@@ -131,10 +132,13 @@ namespace remix::forward::bake {
       if (!layout.receiverSamples.empty() && !layout.receiverSamples[i]) continue;
       const auto &point = layout.points[i];
       const Vec3 normal = normalized({point.normal[0], point.normal[1], point.normal[2]});
+      const auto contained = partitionContainedBias(scene,
+          {point.position[0], point.position[1], point.position[2]}, normal, clearance);
+      if (!contained) continue;
       std::array<uint32_t, 3> base;
       bool inside = true;
       for (uint32_t axis = 0; axis < 3; ++axis) {
-        const float q = (point.position[axis] + normal[axis] * clearance - h.originSpacing[axis]) /
+        const float q = (point.position[axis] + normal[axis] * *contained - h.originSpacing[axis]) /
                         h.originSpacing[3];
         if (!std::isfinite(q) || q < 0 || q >= h.dimensions[axis] - 1) { inside = false; break; }
         base[axis] = uint32_t(q);

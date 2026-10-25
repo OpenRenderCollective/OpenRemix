@@ -5,8 +5,8 @@
 Coplanar seam donors now retain their original receiver footprint, and sunlight
 edge refinement admits those verified aliases instead of skipping every
 filtering-only donor. Curved donors without a proven footprint remain excluded.
-Sunlight coverage changed in cache revision 34; current revision 35 also
-constrains relocation clearance to the receiver side of solid boundaries. This corrects missing
+Sunlight coverage changed in cache revision 34; current candidate revision 36 also
+constrains relocation and refinement binning to the receiver side of solids. This corrects missing
 edge antialiasing, not probe leakage or chart-local indirect filtering bias.
 Continue checking sunlit boundaries and indirect discontinuities separately.
 Refinement decisions are shared across visible copies of a verified footprint:
@@ -2720,3 +2720,15 @@ no independent receiver-error references in that path. Investigate bounded model
 separately from increasing the surface atlas budget, while retaining the documented
 rejection of earlier model-driven refinement that moved nodes through the ceiling.
 Containment alone does not establish that repeating that policy will succeed.
+
+
+Refinement receiver binning now uses the same contained clearance as relocation,
+preventing a receiver near a thin slab from allocating its patch across the slab.
+A cell-ownership regression checks the actual adaptive directory, and adaptive/cache
+CPU tests pass. Candidate cache revision 36 isolates this changed allocation policy.
+A fresh normal-budget Construct bake preserves checked coverage and the global record
+budget but changes four model-site estimates, with mixed improvements/regressions and
+slightly higher cohort RMS. Single-run planning time is similar in scale to revision 35;
+this is not a bake-speed improvement claim. Keep the candidate undeployed while studying
+which allocations changed and guarding broader quality. Correct topological assignment
+does not itself establish better sampling distribution or lighting fidelity.
