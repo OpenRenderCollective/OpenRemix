@@ -2820,3 +2820,13 @@ still vary; monitored fixed replay is not live gameplay/churn acceptance. Do not
 the helper intrinsically slower or promote it from one favorable pass. Next isolate
 cross-pass cache/scheduling and receiver workload effects, preserving full-frame timing
 and independent quality checks. Keep the prototype opt-in.
+
+
+The prepass-off isolation retains exact images against the matched prepass-on white-room
+captures. With aligned telemetry and unchanged cached lighting/selected budgets, batching
+still has a small paired full-frame cost increase without the depth pass. This does not
+identify a single cause for the earlier depth variation, and does not justify enabling
+batching or disabling the prepass globally. Prepass-off shifts work into opaque shading;
+other scenes, overdraw, moving/viewmodel receivers and live brush shells remain necessary
+controls. Keep both current defaults. Avoid attributing inclusive opaque/depth timings to
+independent costs or promoting a setting from sequential fixed-view batches alone.
