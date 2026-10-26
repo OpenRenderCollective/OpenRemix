@@ -18,6 +18,8 @@ namespace remix::forward::bake {
       out.imbue(std::locale::classic());
       out << std::setprecision(9) << "{\"version\":1,\"sceneHash\":\"" << sceneHash
           << "\",\"analyticLocalDirectPolicy\":" << (gridAnalyticDirectPolicy ? "true" : "false")
+          << ",\"rootOriginSpacing\":[" << grid.header.originSpacing[0] << "," << grid.header.originSpacing[1]
+          << "," << grid.header.originSpacing[2] << "," << grid.header.originSpacing[3] << "]"
           << ",\"baseGridOnly\":true,\"scope\":\"CPU probe reconstruction at reference sites; normal bias retained; excludes separately attributed styles, analytic sunlight and material response\",\"points\":[";
       auto vector = [&](const Vec3 &value) {
         out << '[' << value[0] << ',' << value[1] << ',' << value[2] << ']';
@@ -51,7 +53,19 @@ namespace remix::forward::bake {
             raw[c] += grid.probes[index].irradiance[j][c] * sh[j];
           out << "{\"slot\":" << slot << ",\"index\":" << index << ",\"weight\":" << weight
               << ",\"rawIrradiance\":";
-          vector(raw); out << '}';
+          vector(raw);
+          out << ",\"traceOrigin\":";
+          if (grid.points.size() == grid.probes.size()) {
+            const auto &origin = grid.points[index].position;
+            vector({origin[0], origin[1], origin[2]});
+          } else out << "null"; // Do not guess an origin from an incomplete CPU snapshot.
+          out << ",\"backfaceFraction\":" << grid.probes[index].statistics[0]
+              << ",\"missFraction\":" << grid.probes[index].statistics[1];
+          out << ",\"nominalSpacing\":";
+          if (grid.origins.size() == grid.probes.size()) out << grid.origins[index].spacing;
+          else if (!indexed(grid.header)) out << grid.header.originSpacing[3];
+          else out << "null";
+          out << '}';
         }
         out << "]}";
       }

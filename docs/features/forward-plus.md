@@ -2787,3 +2787,10 @@ policy, not a guarantee of nonzero light. Hemisphere/sphere incoming-radiance
 modes omit analytic receiver direct; comparing them directly with a complete
 baked probe is not a complete-lighting error measurement. Use matching scalar
 surface/SH controls when evaluating the aggregate field.
+
+
+Reference grid donor records include retained `traceOrigin`, `nominalSpacing`,
+`backfaceFraction` and `missFraction`, plus root origin/spacing metadata. Missing
+CPU positions/origins are reported as null; diagnostics never infer exact trace
+locations from probe indices alone. These fields help compare placement policies
+without conflating record count, local spacing, relocation and capture variation.

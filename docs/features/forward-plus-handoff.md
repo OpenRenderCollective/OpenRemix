@@ -983,3 +983,26 @@ VRF viewer uses six-face ambient-cube volumes; accurate axial donor values at th
 same locations still leave the spatial error. Representation change alone is not
 supported as this case's fix. No default or playable change; surface quality and
 performance work remain active. Uncertainty and shared-transport limits remain.
+
+
+### 2026-10-26 - Probe budget controls and exact donor diagnostics
+
+At2048probe samples and unchanged surface quality,65536budget/requested1m retains
+all six prior131072 site values exactly (query patch2m). Median/max matched luma
+errors6.58%/15.18%; RGB vector errors7.67%/21.93%. Blue remains28% low on one face.
+65536/requested2m gives13.17% median luma error despite nominal2m at those queries;
+root lattice/relocation/capture controls matter.32768/requested1m gives mixed gains
+(median11.19%, maximum26.15% versus sample-only12.62%/41.45%); not a blanket fix.
+
+- [x] Halve promising quality budget with six-site equality, not whole-map parity.
+- [x] Compare original-spacing and original-budget policies at equal sample count.
+- [x] Include RGB error and actual physical record costs; no FPS/bake-time claims.
+- [x] Add exact retained trace origin, spacing and visibility statistics to reference
+  grid report; null for unavailable CPU data. Native build and live origins verified.
+- [ ] Check exact relocation/terrain geometry validity and refinement priorities.
+- [ ] Qualify65536/1m/2048 across other rooms/maps, motion/styles/leakage and costs.
+- [ ] Improve selective placement within smaller budgets before default promotion.
+
+No normal rendering/default/playable changes. Physical probe payload16MiB at64k
+excludes auxiliary/staging storage. Ordinary selected-light gather inactive here;
+qualify experimental residency separately. Continue surface and performance roadmap.
