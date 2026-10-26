@@ -3868,3 +3868,27 @@ noise/seams, denoising cost and frame profiling remain independent priorities.
   validation; retain distinct correctness runs, focus gates and stage evidence.
 - [ ] Continue weapon world-coverage masking/material/probe/reflection work.
   Isolated shader or nested-scope savings do not establish an FPS improvement.
+
+
+### 2026-10-26 - Chart-safe bicubic lightmap experiment
+
+- [ ] Compare optional cubic B-spline reconstruction with existing bilinear
+  filtering for sun-edge stair steps and chart seams; retain bilinear default
+  until image quality, motion and GPU costs are measured. Not a bake-noise fix.
+- [ ] Clamp every expanded filter tap to its own chart; test tiny charts, atlas
+  edges, displacements, signed SH and normal-map response. Apply consistent
+  reconstruction to base/styled lighting and relevant direct correction fields
+  so mixed-shadow subtraction does not use an incompatible lighting footprint.
+- [ ] Evaluate ringing/overshoot before any sharper interpolating cubic kernel.
+  Four bilinear fetches per field for B-spline still multiply atlas fetch cost;
+  benchmark actual complete shading, not just kernel arithmetic.
+
+### 2026-10-26 - Construct light-heavy room isolation
+
+- [x] Reproduce room-versus-hall GPU slowdown with focused cached production
+  runs. Static shadow updates stay zero; map rendering/clustering is small.
+- [x] Baked-irradiance view removes most of the room opaque cost while retaining
+  base/styled SH reconstruction. Remaining local-light response is a priority.
+- [ ] Isolate baked visibility, attributed mixed-shadow correction and PCF costs
+  without removing required lighting. Diffuse/specular diagnostic views still
+  share substantial visibility/shadow work and do not isolate those costs alone.
