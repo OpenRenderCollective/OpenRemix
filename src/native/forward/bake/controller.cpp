@@ -320,7 +320,8 @@ namespace remix::forward::bake {
       reference->classify(*source);
       reference->bounces = reference->geometry ? 1 : config.bounces;
       reference->maximumGeometryDistance = options.distance / source->sceneScale;
-      reference->analyticReceiverDirectPolicy = !reference->geometry && !reference->usesRadianceRays() &&
+      reference->analyticReceiverDirectPolicy =
+          !reference->geometry && !reference->incomingIrradiance && !reference->usesRadianceRays() &&
           (config.aggregateDiffuse || config.fullyBakedLights || config.bakedGeometryLights);
       reference->combinedLighting = !reference->geometry && options.lightingComponents && !reference->baseLightingOnly;
     }
@@ -1689,6 +1690,10 @@ namespace remix::forward::bake {
                                                      config.bounces);
             else if (reference.usesRadianceRays())
               job.transport->recordRadiance(command, m_slot, referencePoints, config.bounces);
+            else if (reference.incomingIrradiance)
+              job.transport->recordIncomingIrradiance(command, m_slot, referencePoints, reference.samples,
+                  config.bounces, firstSample, reference.combinedLighting
+                      ? std::optional<uint32_t>(Transport::combinedLighting) : std::nullopt);
             else if (reference.combinedLighting)
               job.transport->recordComponent(command, m_slot, referencePoints, Transport::combinedLighting,
                                              reference.samples, config.bounces, firstSample);

@@ -51,6 +51,11 @@ namespace remix::forward::bake {
     // cosine integral at that normal; both retain directional irradiance SH.
     void recordBatch(VkCommandBuffer command, uint32_t slot, std::span<const Point> points, uint32_t samples,
                      uint32_t bounces = 3, uint32_t firstSample = 0);
+    // Offline SH control: identical transport/proposal, omitting only analytic
+    // direct NEE at the receiver. Geometry moments and path lighting remain.
+    void recordIncomingIrradiance(VkCommandBuffer command, uint32_t slot, std::span<const Point> points,
+                                  uint32_t samples, uint32_t bounces = 3, uint32_t firstSample = 0,
+                                  std::optional<uint32_t> component = {});
     // Separate authored lighting: 0 is the unstyled base, 1..127 a captured
     // style group, and combinedLighting includes all groups for reference.
     // Requires Options.lightingComponents. Components share random paths and
@@ -193,10 +198,10 @@ namespace remix::forward::bake {
                           VkDescriptorBufferInfo output, uint32_t firstWord, bool indexed, float distance);
     void record(VkCommandBuffer command, uint32_t slot, std::span<const Point> points, uint32_t samples,
                 uint32_t bounces, uint32_t firstSample, Mode mode,
-                std::optional<uint32_t> component = {}, uint32_t receiverSites = 1);
+                std::optional<uint32_t> component = {}, uint32_t receiverSites = 1, bool receiverDirect = true);
     void dispatch(VkCommandBuffer command, uint32_t slot, uint32_t count, uint32_t samples, uint32_t bounces,
                   uint32_t firstSample, Mode mode, std::optional<uint32_t> component = {},
-                  uint32_t receiverSites = 1);
+                  uint32_t receiverSites = 1, bool receiverDirect = true);
     void recordTaskVisibility(VkCommandBuffer command, uint32_t slot, std::span<const Point> receivers,
                               std::span<const VisibilityTask> tasks, uint32_t samples, bool validatedReceivers,
                               bool directDiffuse = false);

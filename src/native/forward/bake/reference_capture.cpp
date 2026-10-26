@@ -37,8 +37,9 @@ namespace remix::forward::bake {
     result.hemisphere = token == "hemisphere";
     result.sphere = token == "sphere";
     result.surface = token == "surface" || token == "surface-offsets";
-    const bool offsets = token == "sh-offsets" || token == "surface-offsets";
-    if (result.usesRadianceRays() || result.surface || offsets) input >> token;
+    result.incomingIrradiance = token == "incoming-sh" || token == "incoming-sh-offsets";
+    const bool offsets = token == "sh-offsets" || token == "surface-offsets" || token == "incoming-sh-offsets";
+    if (result.usesRadianceRays() || result.surface || offsets || result.incomingIrradiance) input >> token;
     if (result.geometry) result.samples = 1;
     else {
       const auto parsed = std::from_chars(token.data(), token.data() + token.size(), result.samples);
@@ -147,12 +148,14 @@ namespace remix::forward::bake {
     if (received != tasks()) return;
     std::ofstream output(m_output, std::ios::trunc);
     output.exceptions(std::ios::failbit | std::ios::badbit);
+    const char *mode = geometry ? "geometry" : incomingIrradiance ? "incoming-sh" : hemisphere ? "hemisphere"
+                           : sphere ? "sphere" : surface ? "surface" : "sh";
     output << std::setprecision(9) << "{\"version\":1,\"sceneHash\":\"" << sceneHash
            << "\",\"samples\":" << samples << ",\"bounces\":" << bounces
            << ",\"combinedLighting\":" << (combinedLighting ? "true" : "false")
            << ",\"analyticReceiverDirectPolicy\":" << (analyticReceiverDirectPolicy ? "true" : "false")
            << ",\"baseLightingOnly\":" << (baseLightingOnly ? "true" : "false")
-           << ",\"mode\":\"" << (geometry ? "geometry" : hemisphere ? "hemisphere" : sphere ? "sphere" : surface ? "surface" : "sh") << "\",\"points\":[";
+           << ",\"mode\":\"" << mode << "\",\"points\":[";
     for (size_t i = 0; i < points.size(); ++i) {
       if (i) output << ',';
       output << "{\"partitionCluster\":" << (m_partitionClusters.empty() ? -2 : m_partitionClusters.at(i))

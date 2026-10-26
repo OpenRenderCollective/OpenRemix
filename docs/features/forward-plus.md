@@ -1206,6 +1206,13 @@ direct-plus-indirect irradiance estimator. For repeated deterministic streams,
 `surface-offsets <samples>` takes XYZ/unit-normal/first-sample rows; `sh-offsets`
 takes XYZ/first-sample rows without normals. Offsets must leave the full sample
 range inside a 32-bit unsigned index. Each output retains its `firstSample` value.
+For a matched SH control without analytic direct NEE at the receiver, use
+`incoming-sh <samples>` with XYZ rows or `incoming-sh-offsets <samples>` with
+XYZ/first-sample rows. Path lighting, geometry moments, component selection and
+sample streams are retained; `analyticReceiverDirectPolicy` is false and the
+output mode is `incoming-sh`. This does not disable bounced local-light transport.
+Subtract matched full/incoming coefficients to study receiver-direct sampling;
+compare positions, offsets, scene inputs and geometry metadata first.
 Compare repeated fixed-site streams before attributing a difference to sampling
 variance; a different atlas or adaptive probe layout is a separate experiment.
 Prefix a request with `base` (for example `base surface-offsets 8192`) to exclude

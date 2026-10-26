@@ -20,6 +20,8 @@ namespace remix::forward::bake {
   // deterministic streams at identical locations without moving the receiver.
   // "surface-offsets" adds a first-sample index after each XYZ/unit-normal site
   // to measure surface-estimator variance with analytic direct lighting intact.
+  // "incoming-sh" or "incoming-sh-offsets" uses the same SH transport while
+  // omitting analytic direct NEE at the receiver; bounced/path lighting remains.
   // Prefix any input with "base" to exclude separately attributed lighting
   // components when comparing the base surface atlas or base probe grid.
   // SH output includes six distance-moment vec4s (+/-X, +/-Y, +/-Z) and
@@ -46,6 +48,7 @@ namespace remix::forward::bake {
     bool sphere = false;
     bool surface = false;
     bool geometry = false;
+    bool incomingIrradiance = false;
     float maximumGeometryDistance = 0; // scene units, configured by transport owner
 
   private:

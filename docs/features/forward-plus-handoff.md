@@ -1082,3 +1082,21 @@ rejected. Reference viewer shaders do not reveal the native CS2 baker.
   data and seam isolation; measured denoising dominates probe trace time here.
 
 No default/playable change. Median quality alone is insufficient acceptance.
+
+
+### 2026-10-26 - Isolate incoming probe capture variance
+
+- [x] Add bounded incoming-SH reference capture using existing irradiance
+  transport with receiver-direct NEE disabled only for that dispatch.
+- [x] Matched 256/8192-sample controls at the dominant Construct crate donor
+  isolate a large incoming-light shortfall; receiver-direct mean is similar.
+- [x] Parsing/range/output and HWRT transport tests cover the split and normal
+  direct-light restoration on slot reuse. No shader/default/published layout change.
+- [ ] Evaluate environment importance sampling with correct MIS, progressive
+  path dimensions and variance-guided probe sampling. Current textured dome
+  contributes on path misses; hit-point NEE currently samples sun/local lights.
+- [ ] Retain spatial support/placement and SH representation controls; converged
+  captures at a different position do not prove correct prop lighting.
+
+No quality preset or playable update from this diagnostic alone. Surface
+noise/seams, denoising cost and frame profiling remain independent priorities.

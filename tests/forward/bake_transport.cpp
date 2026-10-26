@@ -583,6 +583,27 @@ namespace {
     bake::Result actual, indirect;
     aggregate.read(0, {&actual, 1});
     legacy.read(0, {&indirect, 1});
+    fixture.begin();
+    aggregate.recordIncomingIrradiance(fixture.command, 1, {&point, 1}, 8192, 1);
+    fixture.finish();
+    bake::Result incoming;
+    aggregate.read(1, {&incoming, 1});
+    for (uint32_t coefficient = 0; coefficient < 9; ++coefficient)
+      for (uint32_t channel = 0; channel < 3; ++channel)
+        require(std::abs(incoming.irradiance[coefficient][channel] - indirect.irradiance[coefficient][channel]) < 1e-5f,
+                "Incoming-only control matches transport without analytic receiver direct light");
+    require(incoming.moments == actual.moments && incoming.statistics == actual.statistics,
+            "Receiver-direct selection preserves path geometry and transport statistics");
+    fixture.begin();
+    aggregate.recordBatch(fixture.command, 1, {&point, 1}, 8192, 1);
+    fixture.finish();
+    bake::Result resumed;
+    aggregate.read(1, {&resumed, 1});
+    require(resumed.irradiance == actual.irradiance && resumed.moments == actual.moments &&
+                resumed.statistics == actual.statistics,
+            "Incoming-only diagnostics cannot disable receiver direct lighting on a reused slot");
+
+
     bake::VisibilityPoint connections[] = {{point, 0}, {point, 1}, {point, 2}};
     fixture.begin();
     aggregate.recordVisibility(fixture.command, 1, connections, 8192, true);

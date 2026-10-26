@@ -239,6 +239,11 @@ namespace remix::forward::bake {
                               uint32_t samples, uint32_t bounces, uint32_t firstSample) {
     record(command, index, points, samples, bounces, firstSample, Mode::Irradiance);
   }
+  void Transport::recordIncomingIrradiance(VkCommandBuffer command, uint32_t slot, std::span<const Point> points,
+                                           uint32_t samples, uint32_t bounces, uint32_t firstSample,
+                                           std::optional<uint32_t> component) {
+    record(command, slot, points, samples, bounces, firstSample, Mode::Irradiance, component, 1, false);
+  }
   void Transport::recordComponent(VkCommandBuffer command, uint32_t index, std::span<const Point> points,
                                   uint32_t component, uint32_t samples, uint32_t bounces,
                                   uint32_t firstSample) {
@@ -380,7 +385,7 @@ namespace remix::forward::bake {
   }
   void Transport::record(VkCommandBuffer command, uint32_t index, std::span<const Point> points,
                          uint32_t samples, uint32_t bounces, uint32_t firstSample, Mode mode,
-                         std::optional<uint32_t> component, uint32_t receiverSites) {
+                         std::optional<uint32_t> component, uint32_t receiverSites, bool receiverDirect) {
     auto &g = *m_gpu;
     if (g.options.deviceLocalBatches)
       throw std::logic_error("Device-local batches require GPU-produced points");
@@ -428,7 +433,7 @@ namespace remix::forward::bake {
     auto &slot = g.slots.at(index);
     slot.points->write(points.data(), points.size_bytes());
     dispatch(command, index, uint32_t(points.size() / receiverSites), samples, bounces, firstSample, mode,
-             component, receiverSites);
+             component, receiverSites, receiverDirect);
   }
   Transport::DeviceBatch Transport::deviceBatch(uint32_t index) const {
     const auto &g = *m_gpu;
@@ -544,7 +549,7 @@ namespace remix::forward::bake {
   }
   void Transport::dispatch(VkCommandBuffer command, uint32_t index, uint32_t count, uint32_t samples,
                            uint32_t bounces, uint32_t firstSample, Mode mode,
-                           std::optional<uint32_t> component, uint32_t receiverSites) {
+                           std::optional<uint32_t> component, uint32_t receiverSites, bool receiverDirect) {
     auto &g = *m_gpu;
     auto &slot = g.slots.at(index);
     if (slot.externalDepth) {
@@ -583,7 +588,7 @@ namespace remix::forward::bake {
                      uint32_t(g.hasDielectrics) |
                          (g.hasContainingMedia ? containingMediaFlag : 0u) |
                          (g.options.lightImportanceSampling && !slot.lighting ? 2u : 0u) |
-                         (aggregate ? 4u : 0u) |
+                         (aggregate && receiverDirect ? 4u : 0u) |
                          (receiverSites == 4    ? 16u
                           : receiverSites == 16 ? 32u
                                                 : 0u) |

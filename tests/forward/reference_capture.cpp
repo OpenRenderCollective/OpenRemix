@@ -321,12 +321,33 @@ int main(int argc, char **argv) {
   { std::ofstream sites(path); sites << "base 64\n1 2 3\n"; }
   require(ReferenceCapture::load(path).baseLightingOnly && !ReferenceCapture::load(path).surface,
           "The base prefix preserves the original normal-free SH reference format");
-  for (const auto *input : {"base", "base base 64\n1 2 3", "base surface 64\n1 2 3 0 0 0"}) {
+  for (const auto *input : {"base", "base base 64\n1 2 3", "base surface 64\n1 2 3 0 0 0",
+                             "incoming-sh-offsets 64\n1 2 3", "incoming-sh-offsets 64\n1 2 3 4294967295"}) {
     { std::ofstream bad(path); bad << input; }
     rejected = false;
     try { ReferenceCapture::load(path); }
     catch (const std::invalid_argument &) { rejected = true; }
-    require(rejected, "Incomplete or repeated base prefixes and malformed surface sites are rejected");
+    require(rejected, "Malformed reference prefixes, normals and incoming sample ranges are rejected");
+  }
+  for (const auto *mode : {"incoming-sh", "incoming-sh-offsets"}) {
+    { std::ofstream sites(path); sites << "base " << mode << " 256\n1 2 3";
+      if (std::string(mode) == "incoming-sh-offsets") sites << " 1024";
+      sites << '\n'; }
+    auto incoming = ReferenceCapture::load(path);
+    require(incoming.incomingIrradiance && incoming.baseLightingOnly && !incoming.usesRadianceRays() &&
+                incoming.tasks() == 1 && incoming.batch(0, 1)[0].normal == remix::forward::Vec4{},
+            "Incoming SH preserves normal-free bounded transport and base component selection");
+    require((incoming.sampleOffsets.empty() && std::string(mode) == "incoming-sh") ||
+                incoming.sampleOffsets == std::vector<uint32_t>{1024},
+            "Incoming SH retains explicit sample streams without inventing an offset");
+    Result value{};
+    value.irradiance[0][0] = 1;
+    incoming.consume(0, std::span(&value, 1));
+    std::ifstream receipt(output);
+    const std::string text((std::istreambuf_iterator<char>(receipt)), {});
+    require(text.find("\"mode\":\"incoming-sh\"") != std::string::npos &&
+                text.find("\"analyticReceiverDirectPolicy\":false") != std::string::npos,
+            "Incoming SH output explicitly identifies its estimator and excluded receiver-direct policy");
   }
   std::filesystem::remove(path);
   std::filesystem::remove(output);
