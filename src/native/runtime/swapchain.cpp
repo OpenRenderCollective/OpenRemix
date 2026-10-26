@@ -287,14 +287,27 @@ namespace remix {
                          VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
                          VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
     };
+    // Export the final colour layout transition as well as attachment writes.
+    // HDR presentation samples this target after leaving the developer-UI pass.
+    // An implicit bottom-of-pipe dependency cannot make that transition visible
+    // to a subsequent fragment-shader read.
+    const VkSubpassDependency dependencies[] = {
+        dependency,
+        {.srcSubpass = 0,
+         .dstSubpass = VK_SUBPASS_EXTERNAL,
+         .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+         .dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+         .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+         .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT},
+    };
     const VkRenderPassCreateInfo pass = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
         .attachmentCount = 2,
         .pAttachments = attachments,
         .subpassCount = 1,
         .pSubpasses = &subpass,
-        .dependencyCount = 1,
-        .pDependencies = &dependency,
+        .dependencyCount = uint32_t(std::size(dependencies)),
+        .pDependencies = dependencies,
     };
     if (pipeline::createRenderPass(m_device, &pass, nullptr, &m_renderPass) !=
         VK_SUCCESS) {

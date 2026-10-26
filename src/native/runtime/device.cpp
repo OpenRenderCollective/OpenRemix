@@ -393,8 +393,14 @@ namespace remix {
     // NVIDIA Reflex. Its sleep is signalled on a timeline semaphore (core in
     // Vulkan 1.2, enabled through the 1.2 features the tracer's chain holds).
     m_lowLatencySupported = !m_headless && m_traceSupported && m_instanceApiVersion >= VK_API_VERSION_1_2 &&
-                            supportsDeviceExtension(selection.physicalDevice, VK_NV_LOW_LATENCY_2_EXTENSION_NAME);
+                            supportsDeviceExtension(selection.physicalDevice, VK_NV_LOW_LATENCY_2_EXTENSION_NAME) &&
+                            supportsDeviceExtension(selection.physicalDevice, VK_KHR_PRESENT_ID_EXTENSION_NAME);
     if (m_lowLatencySupported) {
+      // low_latency2 depends on present_id even when this frame's Reflex mode
+      // is off. Enabling the extension does not enable the optional ID feature.
+      if (std::none_of(extensions.begin(), extensions.end(),
+                       [](auto p) { return std::strcmp(p, VK_KHR_PRESENT_ID_EXTENSION_NAME) == 0; }))
+        extensions.push_back(VK_KHR_PRESENT_ID_EXTENSION_NAME);
       vulkan12.timelineSemaphore = VK_TRUE;
       if (std::none_of(extensions.begin(), extensions.end(),
                        [](auto p) { return std::strcmp(p, VK_NV_LOW_LATENCY_2_EXTENSION_NAME) == 0; }))

@@ -7,6 +7,14 @@ namespace remix {
       if (result != VK_SUCCESS)
         throw result;
     }
+    void namePipeline(VkDevice device, VkPipeline pipeline, const char *name) {
+      const auto setName = reinterpret_cast<PFN_vkSetDebugUtilsObjectNameEXT>(
+          vkGetDeviceProcAddr(device, "vkSetDebugUtilsObjectNameEXT"));
+      if (!setName) return;
+      const VkDebugUtilsObjectNameInfoEXT info{.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT,
+          .objectType = VK_OBJECT_TYPE_PIPELINE, .objectHandle = uint64_t(pipeline), .pObjectName = name};
+      setName(device, &info);
+    }
   } // namespace
 
   // Plain Vulkan objects throughout: created on the thread presenting (which
@@ -212,6 +220,7 @@ namespace remix {
                                                 .layout = m_layout,
                                                 .renderPass = m_pass};
         check(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &m_pipeline));
+        namePipeline(device, m_pipeline, "HDR10 fullscreen encode");
 
         // The UI scale, in the frame's pass: colour = target x constant,
         // alpha kept; no depth test.
@@ -243,6 +252,7 @@ namespace remix {
         scale.layout = m_uiLayout;
         scale.renderPass = mainPass;
         check(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &scale, nullptr, &m_uiPipeline));
+        namePipeline(device, m_uiPipeline, "HDR UI brightness scale");
       } catch (...) {
         for (auto module : modules)
           if (module)
