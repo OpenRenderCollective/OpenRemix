@@ -1260,3 +1260,16 @@ noise/seams, denoising cost and frame profiling remain independent priorities.
 - [ ] Isolate baked visibility, attributed mixed-shadow correction and PCF costs
   without removing required lighting. Diffuse/specular diagnostic views still
   share substantial visibility/shadow work and do not isolate those costs alone.
+
+
+### 2026-10-26 - Probe-lit white-room visibility batching
+
+- [x] Coverage view identifies most visible white-room surfaces as probe-lit.
+  Existing optional selected-probe visibility batching lowers shaded room cost
+  in the controlled comparison; a fixed image matches baseline exactly.
+- [ ] Qualify Crossfire, another probe-heavy scene, moving casters, style toggles,
+  viewmodels, unknown coverage, memory churn and Vulkan synchronization before
+  promoting the batch feature. Keep opt-in until complete-frame gates pass.
+- [x] VRF reference contains conditional cubic B-spline baked-shadow-mask
+  filtering. Do not treat this as proof all native Source 2 lightmap fields use
+  bicubic reconstruction; evaluate the appropriate fields independently.
