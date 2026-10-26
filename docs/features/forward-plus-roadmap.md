@@ -3917,3 +3917,13 @@ noise/seams, denoising cost and frame profiling remain independent priorities.
   REMIX_DEBUG_DISABLE_PROBE_BATCH. No quality/cache/public-layout change.
 - [ ] Continue broader moving-gameplay/map profiling. Construct is the measured
   beneficiary; Crossfire repeats do not establish a general speedup.
+
+
+### 2026-10-26 - Playable probe visibility batching refresh
+
+- [x] Deploy native 298c1224 with adapter 6495e0cd using the immutable
+  forwardplus-probe-batch-default-20261026 package; updater points to it.
+- [x] Verify all owned files, protected settings/assets, DLL binary identity,
+  ABI/export checks and installed normal-quality cached Construct image parity.
+- [ ] Continue broader map/gameplay profiling and the remaining quality roadmap.
+  This deployment changes visibility lookup scheduling, not bake quality presets.

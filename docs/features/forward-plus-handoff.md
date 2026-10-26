@@ -1282,3 +1282,13 @@ noise/seams, denoising cost and frame profiling remain independent priorities.
 - [x] VRF reference contains conditional cubic B-spline baked-shadow-mask
   filtering. Do not treat this as proof all native Source 2 lightmap fields use
   bicubic reconstruction; evaluate the appropriate fields independently.
+
+
+### 2026-10-26 - Playable probe visibility batching refresh
+
+- [x] Deploy native 298c1224 with adapter 6495e0cd using the immutable
+  forwardplus-probe-batch-default-20261026 package; updater points to it.
+- [x] Verify all owned files, protected settings/assets, DLL binary identity,
+  ABI/export checks and installed normal-quality cached Construct image parity.
+- [ ] Continue broader map/gameplay profiling and the remaining quality roadmap.
+  This deployment changes visibility lookup scheduling, not bake quality presets.
