@@ -3638,3 +3638,25 @@ root lattice/relocation/capture controls matter.32768/requested1m gives mixed ga
 No normal rendering/default/playable changes. Physical probe payload16MiB at64k
 excludes auxiliary/staging storage. Ordinary selected-light gather inactive here;
 qualify experimental residency separately. Continue surface and performance roadmap.
+
+
+### 2026-10-26 - Geometry-blocked fine donors; depth filter trial rejected
+
+Exact donor-to-query CPU rigid opaque-segment checks find horizontal geometry
+before eight of sixteen connections. Blocked normalized contribution14.8% at
+barrel front and.65% side in original-budget placement. CPU check ignores alpha/
+transmission; finite HWRT material-coverage confirmation remains required.
+
+- [x] Verify actual trace origins/biased endpoints against complete retained geometry.
+- [x] Existing private directional-depth mode does not reliably suppress these
+  links (18.8%/7.1% known blocked shares versus14.8%/.65% ordinary).
+- [x] Per-tap visibility-filter prototype passes synthetic/CPU/GPU tests but fails
+  map controls (15.3%/9.1% blocked shares, worse lighting); candidate removed.
+- [x] Original source/native restored; cached image parity and clean validation;
+  playable files unchanged. No rejected path/flag retained.
+- [ ] Confirm finite HWRT coverage, inspect tap mixing, and evaluate geometry-aware
+  fine donor selection/relocation without creating missing-lighting holes.
+
+Directional-depth remains private/off. Keep64k quality candidate, wider map/room,
+styles/motion/color, runtime/bake/memory costs, surface quality and coarse-transfer
+lifecycle/cache gates active. No default/playable change.
