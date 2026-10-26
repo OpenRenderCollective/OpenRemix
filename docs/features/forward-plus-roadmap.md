@@ -3937,3 +3937,13 @@ noise/seams, denoising cost and frame profiling remain independent priorities.
   ABI/exports and live cached toggle/actual-submission checks pass.
 - [ ] Broaden image/motion/seam and frame-cost checks; bilinear remains default.
   Cubic filtering smooths reconstruction but does not solve bake noise.
+
+
+### 2026-10-26 - Playable optional bicubic filter
+
+- [x] Deploy native 3747beee with adapter 6495e0cd; updater uses immutable
+  forwardplus-bicubic-lightmaps-20261026 package.
+- [x] Installed bilinear and bicubic checks pass validation/cache/model-chart
+  gates, with submitted option values confirmed. Bilinear image is unchanged.
+- [x] Preserve all protected settings/replacements/authored bounds; checkbox
+  remains optional/off by default, with no rebake required.
