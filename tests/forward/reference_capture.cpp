@@ -22,6 +22,7 @@ int main(int argc, char **argv) {
   partition->leafClusters = {0, -1};
   region.partition = partition;
   capture.classify(region);
+  capture.analyticReceiverDirectPolicy = true;
   require(capture.samples == 4096 && capture.points.size() == 2 && capture.sampleOffsets.empty() &&
               !capture.baseLightingOnly &&
               capture.points[0].normal == remix::forward::Vec4{},
@@ -56,7 +57,8 @@ int main(int argc, char **argv) {
   capture.consume(0, std::span(&value, 1));
   std::ifstream file(output);
   const std::string text((std::istreambuf_iterator<char>(file)), {});
-  require(text.find("\"samples\":4096") != std::string::npos &&
+  require(text.find("\"analyticReceiverDirectPolicy\":true") != std::string::npos &&
+              text.find("\"samples\":4096") != std::string::npos &&
               text.find("\"partitionCluster\":0,\"position\":[1,2,3]") != std::string::npos &&
               text.find("\"partitionCluster\":-1,\"position\":[-4,5,6]") != std::string::npos &&
               text.find("\"firstSample\"") == std::string::npos &&
@@ -185,6 +187,7 @@ int main(int argc, char **argv) {
     const std::string result((std::istreambuf_iterator<char>(json)), {});
     const auto start = result.find("\"irradiance\":[");
     require(start != std::string::npos && result.find("\"mode\":\"sphere\"") != std::string::npos &&
+                result.find("\"analyticReceiverDirectPolicy\":false") != std::string::npos &&
                 result.find("distanceMoments") == std::string::npos && result.find("statistics") == std::string::npos,
             "Sphere output identifies CPU SH projection without inventing visibility statistics");
     std::istringstream coefficients(result.substr(start+13));

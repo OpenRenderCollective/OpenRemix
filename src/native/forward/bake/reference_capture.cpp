@@ -145,6 +145,7 @@ namespace remix::forward::bake {
     output << std::setprecision(9) << "{\"version\":1,\"sceneHash\":\"" << sceneHash
            << "\",\"samples\":" << samples << ",\"bounces\":" << bounces
            << ",\"combinedLighting\":" << (combinedLighting ? "true" : "false")
+           << ",\"analyticReceiverDirectPolicy\":" << (analyticReceiverDirectPolicy ? "true" : "false")
            << ",\"baseLightingOnly\":" << (baseLightingOnly ? "true" : "false")
            << ",\"mode\":\"" << (hemisphere ? "hemisphere" : sphere ? "sphere" : surface ? "surface" : "sh") << "\",\"points\":[";
     for (size_t i = 0; i < points.size(); ++i) {

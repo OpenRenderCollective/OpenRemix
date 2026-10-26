@@ -2779,3 +2779,11 @@ with fenced batches and no probe interpolation or analytic receiver term. Prefix
 moments/statistics because individual radiance rays do not provide those probe
 records. This isolates angular reconstruction for comparison with hemisphere
 reference capture; transport and finite-sampling uncertainty remain shared.
+
+
+Reference diagnostics expose `analyticReceiverDirectPolicy`; paired grid reports
+expose `analyticLocalDirectPolicy`. These describe enabled aggregate local-light
+policy, not a guarantee of nonzero light. Hemisphere/sphere incoming-radiance
+modes omit analytic receiver direct; comparing them directly with a complete
+baked probe is not a complete-lighting error measurement. Use matching scalar
+surface/SH controls when evaluating the aggregate field.

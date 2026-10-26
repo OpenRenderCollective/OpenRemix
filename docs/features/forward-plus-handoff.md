@@ -961,3 +961,25 @@ Construct12site run has clean Vulkan validation and restored host settings.
 
 Angular approximation and bias alone do not explain the larger tested prop-field
 errors. No default/playable change; continue surface quality and performance work.
+
+
+### 2026-10-26 - Matched lighting terms and finer probe placement
+
+Earlier hemisphere/sphere percentage comparisons omit analytic receiver direct;
+they are incoming-only differences, not complete physical probe errors. Added
+explicit analytic-lighting policy metadata to reference and CPU grid diagnostics
+so matching-term comparisons can be checked. Native build and reference tests pass.
+
+- [x] Complete8192sample query/donor SH and surface reference comparisons.
+- [x] Direct donor-face integrations isolate angular versus spatial effects.
+- [x] Matched full-lighting reference: baseline median21.9% luminance error;
+  2048sample-only12.6%; replacing donor captures still leaves barrel side42% low.
+- [x] Combined finer-placement/high-sample131k-budget experiment yields median6.6%,
+  maximum15.2% at six sites; barrel-side error.7%. Actual query patch2m, not1m.
+- [ ] Equal-sample/lattice budget controls, smaller-budget placement prioritization.
+- [ ] Real frame/bake/memory costs, styles, motion, leakage and broader map quality.
+
+VRF viewer uses six-face ambient-cube volumes; accurate axial donor values at the
+same locations still leave the spatial error. Representation change alone is not
+supported as this case's fix. No default or playable change; surface quality and
+performance work remain active. Uncertainty and shared-transport limits remain.

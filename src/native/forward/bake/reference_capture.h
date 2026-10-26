@@ -27,7 +27,7 @@ namespace remix::forward::bake {
     static ReferenceCapture load(const std::filesystem::path &path);
     void classify(const scene::BakeScene &source);
     void consume(uint32_t first, std::span<const Result> values);
-    void reportGrid(const Grid &grid) const noexcept;
+    void reportGrid(const Grid &grid, bool gridAnalyticDirectPolicy) const noexcept;
     uint32_t tasks() const { return uint32_t(points.size()) * (usesRadianceRays() ? samples : 1); }
     bool usesRadianceRays() const { return hemisphere || sphere; }
     std::vector<Point> batch(uint32_t first, uint32_t count) const;
@@ -37,6 +37,7 @@ namespace remix::forward::bake {
     uint32_t bounces = 0;
     uint64_t sceneHash = 0;
     bool combinedLighting = false;
+    bool analyticReceiverDirectPolicy = false; // enabled policy, not a guarantee of nonzero direct light
     bool baseLightingOnly = false;
     bool hemisphere = false;
     bool sphere = false;

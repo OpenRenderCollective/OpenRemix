@@ -319,6 +319,8 @@ namespace remix::forward::bake {
       reference->sceneHash = source->contentHash;
       reference->classify(*source);
       reference->bounces = config.bounces;
+      reference->analyticReceiverDirectPolicy = !reference->usesRadianceRays() &&
+          (config.aggregateDiffuse || config.fullyBakedLights || config.bakedGeometryLights);
       reference->combinedLighting = options.lightingComponents && !reference->baseLightingOnly;
     }
     transport = std::make_unique<Transport>();
@@ -1098,7 +1100,8 @@ namespace remix::forward::bake {
             owner->surfacePixels =
                 lightmap::pixels(owner->surfaceLayout, owner->surfaces, owner->cancellation.get_token(),
                                  owner->visibility, owner->direct, owner->sun);
-            if (owner->reference) owner->reference->reportGrid(owner->grid);
+            if (owner->reference) owner->reference->reportGrid(owner->grid,
+                config.aggregateDiffuse || config.fullyBakedLights || config.bakedGeometryLights);
             if (coarseTransferCpuReportsRequested() && owner->coarseTransferWords) {
               auto candidate = owner->grid;
               candidate.coarseTransferWords = owner->coarseTransferWords;

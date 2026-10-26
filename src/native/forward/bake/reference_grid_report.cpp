@@ -7,7 +7,7 @@
 #include <locale>
 
 namespace remix::forward::bake {
-  void ReferenceCapture::reportGrid(const Grid &grid) const noexcept {
+  void ReferenceCapture::reportGrid(const Grid &grid, bool gridAnalyticDirectPolicy) const noexcept {
     if (!hemisphere && !surface) return;
     try {
       auto path = m_output;
@@ -17,7 +17,8 @@ namespace remix::forward::bake {
       out.exceptions(std::ios::failbit | std::ios::badbit);
       out.imbue(std::locale::classic());
       out << std::setprecision(9) << "{\"version\":1,\"sceneHash\":\"" << sceneHash
-          << "\",\"baseGridOnly\":true,\"scope\":\"CPU probe reconstruction at reference sites; normal bias retained; excludes separately attributed styles, analytic sunlight and material response\",\"points\":[";
+          << "\",\"analyticLocalDirectPolicy\":" << (gridAnalyticDirectPolicy ? "true" : "false")
+          << ",\"baseGridOnly\":true,\"scope\":\"CPU probe reconstruction at reference sites; normal bias retained; excludes separately attributed styles, analytic sunlight and material response\",\"points\":[";
       auto vector = [&](const Vec3 &value) {
         out << '[' << value[0] << ',' << value[1] << ',' << value[2] << ']';
       };
