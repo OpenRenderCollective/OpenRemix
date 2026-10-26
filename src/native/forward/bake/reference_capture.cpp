@@ -34,9 +34,10 @@ namespace remix::forward::bake {
       input >> token;
     }
     result.hemisphere = token == "hemisphere";
+    result.sphere = token == "sphere";
     result.surface = token == "surface" || token == "surface-offsets";
     const bool offsets = token == "sh-offsets" || token == "surface-offsets";
-    if (result.hemisphere || result.surface || offsets) input >> token;
+    if (result.usesRadianceRays() || result.surface || offsets) input >> token;
     const auto parsed = std::from_chars(token.data(), token.data() + token.size(), result.samples);
     if (parsed.ec != std::errc{} || parsed.ptr != token.data() + token.size() ||
         result.samples < 64 || result.samples > 8192)
@@ -70,9 +71,10 @@ namespace remix::forward::bake {
     if (result.points.empty()) throw std::invalid_argument("Empty reference capture");
     result.m_output = path;
     result.m_output += ".results.json";
-    if (!result.hemisphere) result.m_results.resize(result.points.size());
+    if (!result.usesRadianceRays()) result.m_results.resize(result.points.size());
     result.m_completed.resize(result.tasks());
     if (result.hemisphere) result.m_sums.resize(result.points.size());
+    if (result.sphere) result.m_sphereSums.resize(result.points.size());
     return result;
   }
   std::vector<Point> ReferenceCapture::batch(uint32_t first, uint32_t count) const {
@@ -80,22 +82,28 @@ namespace remix::forward::bake {
     std::vector<Point> result;
     result.reserve(count);
     for (uint32_t task = first; task < first + count; ++task) {
-      auto point = points[hemisphere ? task / samples : task];
-      if (hemisphere) {
+      auto point = points[usesRadianceRays() ? task / samples : task];
+      if (usesRadianceRays()) {
         const auto ordinal = task % samples;
-        const Vec3 normal = normalized({point.normal[0], point.normal[1], point.normal[2]});
+        const Vec3 normal = hemisphere ? normalized({point.normal[0], point.normal[1], point.normal[2]})
+                                       : Vec3{0, 0, 1};
         const Vec3 tangent = normalized(cross(std::abs(normal[2]) < .99f ? Vec3{0, 0, 1} : Vec3{1, 0, 0}, normal));
         const Vec3 bitangent = cross(normal, tangent);
-        const float cosine = std::sqrt((float(ordinal) + .5f) / samples);
+        const float cosine = hemisphere ? std::sqrt((float(ordinal) + .5f) / samples)
+                                        : 1 - 2 * (float(ordinal) + .5f) / samples;
         const float radius = std::sqrt(1 - cosine * cosine);
         const uint32_t rotation = std::bit_cast<uint32_t>(point.position[0]) * 73856093u ^
                                   std::bit_cast<uint32_t>(point.position[1]) * 19349663u ^
                                   std::bit_cast<uint32_t>(point.position[2]) * 83492791u;
         const double phase = double(ordinal * 0x61c88647u + rotation) / 4294967296.0;
         const double phi = phase * 2 * std::numbers::pi;
-        for (uint32_t c = 0; c < 3; ++c)
-          point.normal[c] = normal[c] * cosine + radius *
-              (tangent[c] * float(std::cos(phi)) + bitangent[c] * float(std::sin(phi)));
+        if (sphere) {
+          point.normal = {radius * float(std::cos(phi)), radius * float(std::sin(phi)), cosine, 0};
+        } else {
+          for (uint32_t c = 0; c < 3; ++c)
+            point.normal[c] = normal[c] * cosine + radius *
+                (tangent[c] * float(std::cos(phi)) + bitangent[c] * float(std::sin(phi)));
+        }
       }
       result.push_back(point);
     }
@@ -109,7 +117,7 @@ namespace remix::forward::bake {
       for (const auto &coefficient : values[i].irradiance)
         for (float value : coefficient)
           if (!std::isfinite(value)) throw std::invalid_argument("Non-finite reference irradiance");
-      if (!hemisphere) {
+      if (!usesRadianceRays()) {
         for (const auto &moment : values[i].moments)
           for (float value : moment)
             if (!std::isfinite(value)) throw std::invalid_argument("Non-finite reference distance moments");
@@ -117,8 +125,14 @@ namespace remix::forward::bake {
           if (!std::isfinite(value)) throw std::invalid_argument("Non-finite reference statistics");
       }
     }
+    const auto directions = sphere ? batch(first, uint32_t(values.size())) : std::vector<Point>{};
     for (size_t i = 0; i < values.size(); ++i) {
-      if (hemisphere) {
+      if (sphere) {
+        const auto &direction = directions[i].normal;
+        const auto sh = irradianceBasis({direction[0], direction[1], direction[2]});
+        for (uint32_t j = 0; j < 9; ++j) for (uint32_t c = 0; c < 3; ++c)
+          m_sphereSums[(first + i) / samples][j][c] += double(sh[j]) * values[i].irradiance[0][c];
+      } else if (hemisphere) {
         for (uint32_t c = 0; c < 3; ++c)
           m_sums[(first + i) / samples][c] += values[i].irradiance[0][c];
       } else m_results[first + i] = values[i];
@@ -132,7 +146,7 @@ namespace remix::forward::bake {
            << "\",\"samples\":" << samples << ",\"bounces\":" << bounces
            << ",\"combinedLighting\":" << (combinedLighting ? "true" : "false")
            << ",\"baseLightingOnly\":" << (baseLightingOnly ? "true" : "false")
-           << ",\"mode\":\"" << (hemisphere ? "hemisphere" : surface ? "surface" : "sh") << "\",\"points\":[";
+           << ",\"mode\":\"" << (hemisphere ? "hemisphere" : sphere ? "sphere" : surface ? "surface" : "sh") << "\",\"points\":[";
     for (size_t i = 0; i < points.size(); ++i) {
       if (i) output << ',';
       output << "{\"partitionCluster\":" << (m_partitionClusters.empty() ? -2 : m_partitionClusters.at(i))
@@ -164,9 +178,13 @@ namespace remix::forward::bake {
       output << ",\"irradiance\":[";
       for (uint32_t j = 0; j < 9; ++j) {
         output << (j ? ",[" : "[");
-        for (uint32_t c = 0; c < 3; ++c) output << (c ? "," : "") << m_results[i].irradiance[j][c];
+        const double convolution = j == 0 ? std::numbers::pi : j < 4 ? 2 * std::numbers::pi / 3 : std::numbers::pi / 4;
+        for (uint32_t c = 0; c < 3; ++c)
+          output << (c ? "," : "") << (sphere ? m_sphereSums[i][j][c] * (4 * std::numbers::pi / samples) * convolution
+                                             : m_results[i].irradiance[j][c]);
         output << ']';
       }
+      if (sphere) { output << "]}"; continue; }
       output << "],\"distanceMoments\":[";
       for (uint32_t face = 0; face < 6; ++face) {
         output << (face ? ",[" : "[");

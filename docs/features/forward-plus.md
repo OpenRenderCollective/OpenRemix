@@ -2769,3 +2769,13 @@ hemisphere/surface reference point captures also emit a `.results.grid.json`
 comparison with the ordinary CPU base-grid stencil, retained normal bias and
 per-donor weights/projections. It excludes separately attributed styles and
 material response; it is not an independent physical-renderer reference.
+
+
+Reference point input `sphere <samples>` followed by XYZ sites integrates
+incoming radiance over the full sphere and projects cosine-convolved SH on the
+CPU. It uses the same64..8192sample and16site bounds as other reference modes,
+with fenced batches and no probe interpolation or analytic receiver term. Prefix
+`base` to exclude separately attributed components. Sphere output omits distance
+moments/statistics because individual radiance rays do not provide those probe
+records. This isolates angular reconstruction for comparison with hemisphere
+reference capture; transport and finite-sampling uncertainty remain shared.

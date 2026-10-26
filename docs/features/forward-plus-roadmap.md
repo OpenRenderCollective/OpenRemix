@@ -3572,3 +3572,24 @@ or default change justified. Reference shares transport and has unquantified
 Monte Carlo error; not full Source2 or physical-reference acceptance. Surface/
 sun/capture hashes match baseline when only probe samples change. Continue
 surface quality, frame cost and bake-time work; playable remains unchanged.
+
+
+### 2026-10-26 - Angular versus spatial probe reconstruction
+
+Added bounded sphere reference mode: incoming radiance projected to cosine-
+convolved SH on CPU, with no analytic receiver term or probe interpolation.
+Analytic constant/linear six-axis, moment, batch and readback tests pass. Private
+Construct12site run has clean Vulkan validation and restored host settings.
+
+- [x] Match incoming-radiance terms for SH versus hemisphere comparison.
+- [x] Six same-position SH controls differ by1.1-7.7% luminance; biased positions
+  differ by0.1-6.7% versus original hemisphere reference. Shared transport and
+  unquantified Monte Carlo/quadrature uncertainty; not physical-renderer proof.
+- [x] Offline weight ablations reject simple trilinear/facing/visibility removal
+  as a consistent fix; no production interpolation change.
+- [ ] Compare actual donor-origin high-sample fields/variance against receiver sites.
+- [ ] Evaluate selective receiver-driven placement and interpolation with leakage,
+  style, motion, map-variety and frame/bake-cost controls.
+
+Angular approximation and bias alone do not explain the larger tested prop-field
+errors. No default/playable change; continue surface quality and performance work.

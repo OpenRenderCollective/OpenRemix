@@ -8,6 +8,8 @@ namespace remix::forward::bake {
   // Private offline diagnostic, independent of probe placement/publication.
   // Input: sample count then XYZ sites (SH), or "hemisphere", sample count and
   // XYZ/unit-normal sites (cosine-weighted radiance integration, without SH).
+  // "sphere", sample count and XYZ sites projects incoming radiance into SH
+  // on the CPU, without analytic receiver lighting or probe interpolation.
   // "surface", sample count and XYZ/unit-normal sites uses the surface bake
   // estimator, including aggregate analytic direct lighting and SH anchoring.
   // Hemisphere rays alone do not include analytic direct light at the receiver.
@@ -26,7 +28,8 @@ namespace remix::forward::bake {
     void classify(const scene::BakeScene &source);
     void consume(uint32_t first, std::span<const Result> values);
     void reportGrid(const Grid &grid) const noexcept;
-    uint32_t tasks() const { return uint32_t(points.size()) * (hemisphere ? samples : 1); }
+    uint32_t tasks() const { return uint32_t(points.size()) * (usesRadianceRays() ? samples : 1); }
+    bool usesRadianceRays() const { return hemisphere || sphere; }
     std::vector<Point> batch(uint32_t first, uint32_t count) const;
     std::vector<Point> points;
     std::vector<uint32_t> sampleOffsets; // empty for the original SH/hemisphere formats
@@ -36,6 +39,7 @@ namespace remix::forward::bake {
     bool combinedLighting = false;
     bool baseLightingOnly = false;
     bool hemisphere = false;
+    bool sphere = false;
     bool surface = false;
 
   private:
@@ -44,5 +48,6 @@ namespace remix::forward::bake {
     std::vector<bool> m_completed;
     std::vector<int32_t> m_partitionClusters; // -2 unknown, -1 solid/unplayable
     std::vector<std::array<double, 3>> m_sums;
+    std::vector<std::array<std::array<double, 3>, 9>> m_sphereSums;
   };
 }

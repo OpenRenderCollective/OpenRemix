@@ -1,5 +1,8 @@
 #include "forward/bake/reference_capture.h"
 #include "scene/fixtures.h"
+#include "forward/bake/spherical_harmonics.h"
+#include <sstream>
+#include <numbers>
 #include <fstream>
 #include <limits>
 #include <cmath>
@@ -151,6 +154,60 @@ int main(int argc, char **argv) {
     require(result.find("\"distanceMoments\"") == std::string::npos &&
                 result.find("\"statistics\"") == std::string::npos,
             "Hemisphere output does not invent SH visibility moments from individual radiance rays");
+  }
+  {
+    std::ofstream sphereInput(path); sphereInput << "base sphere 8192\n1 2 3\n";
+  }
+  auto sphere = ReferenceCapture::load(path);
+  require(sphere.sphere && sphere.usesRadianceRays() && !sphere.hemisphere && sphere.tasks() == 8192 && sphere.baseLightingOnly,
+          "Sphere references expand XYZ sites into incoming-radiance rays without receiver normals");
+  const auto sphereRays = sphere.batch(0, sphere.tasks());
+  std::vector<Result> sphereValues(sphereRays.size());
+  double zMean = 0, zSquaredMean = 0;
+  for (size_t i = 0; i < sphereRays.size(); ++i) {
+    const auto &direction = sphereRays[i].normal;
+    require(std::abs(direction[0]*direction[0]+direction[1]*direction[1]+direction[2]*direction[2]-1) < 1e-5f,
+            "Uniform sphere rays retain unit directions");
+    zMean += direction[2]; zSquaredMean += direction[2]*direction[2];
+    sphereValues[i].irradiance[0] = {1+.2f*direction[0],2,0,0};
+  }
+  require(std::abs(zMean / sphereRays.size()) < 1e-8 &&
+              std::abs(zSquaredMean / sphereRays.size()-1./3) < 1e-6,
+          "Sphere quadrature covers both hemispheres with the uniform second moment");
+  const auto sphereSplit = sphere.batch(13, 37);
+  require(std::equal(sphereSplit.begin(), sphereSplit.end(), sphereRays.begin()+13,
+                    [](const auto &a, const auto &b) { return a.position == b.position && a.normal == b.normal; }),
+          "Sphere directions are independent of GPU batch boundaries");
+  sphere.consume(4097, std::span(sphereValues).subspan(4097));
+  sphere.consume(0, std::span(sphereValues).first(4097));
+  {
+    std::ifstream json(output);
+    const std::string result((std::istreambuf_iterator<char>(json)), {});
+    const auto start = result.find("\"irradiance\":[");
+    require(start != std::string::npos && result.find("\"mode\":\"sphere\"") != std::string::npos &&
+                result.find("distanceMoments") == std::string::npos && result.find("statistics") == std::string::npos,
+            "Sphere output identifies CPU SH projection without inventing visibility statistics");
+    std::istringstream coefficients(result.substr(start+13));
+    std::array<std::array<double,3>,9> encoded{};
+    char separator;
+    coefficients >> separator;
+    require(separator == '[', "Sphere SH starts with a coefficient array");
+    for (uint32_t j = 0; j < 9; ++j) {
+      coefficients >> separator; require(separator == '[', "Sphere SH retains coefficient tuples");
+      for (uint32_t c = 0; c < 3; ++c) {
+        coefficients >> encoded[j][c] >> separator;
+        require(separator == (c == 2 ? ']' : ','), "Sphere SH tuples contain exactly RGB");
+      }
+      coefficients >> separator; require(separator == (j == 8 ? ']' : ','), "Sphere SH has exactly nine bands");
+    }
+    for (const auto &normal : std::array<remix::forward::Vec3,6>{{{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}}}) {
+      const auto sh = irradianceBasis(normal);
+      std::array<double,3> projected{};
+      for (uint32_t j = 0; j < 9; ++j) for (uint32_t c = 0; c < 3; ++c) projected[c] += sh[j]*encoded[j][c];
+      require(std::abs(projected[0]-std::numbers::pi*(1+.2*2./3*normal[0])) < .001 &&
+                  std::abs(projected[1]-2*std::numbers::pi) < .001 && projected[2] == 0,
+              "Radiance-to-SH reconstructs analytic constant and linear lighting on all six axes");
+    }
   }
   { std::ofstream bad(path); bad << "hemisphere 64\n1 2 3 0 0 0\n"; }
   rejected = false;
