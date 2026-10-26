@@ -68,6 +68,21 @@ def bundle_dlss(bundle, root, build, manifest):
     bundle.copy(root / "third_party/dlss" / ("LICENSE-" + cnn + ".txt"), Path("dlss") / cnn / "LICENSE.txt")
 
 
+def bundle_numos(bundle, root, build):
+    # Match the configured build, including sky=auto with no submodule checkout.
+    targets = json.loads((build / "meson-info/intro-targets.json").read_text())
+    if not any(target["name"] == "numos" for target in targets):
+        return
+    source = root / "third_party/numos/numos-sky"
+    for name, destination in (("LICENSE", "NUMOS.txt"), ("NOTICE", "NUMOS-NOTICE.txt"),
+                              ("THIRD_PARTY_NOTICES.md", "NUMOS-THIRD_PARTY_NOTICES.md")):
+        bundle.copy(source / name, "licenses/" + destination)
+    for name in ("LICENSE-MIT-NVIDIA.txt", "LICENSE-MIT-contributors.txt",
+                 "LICENSE-MIT-Blender-sky.txt", "LICENSE-DXVK-zlib.txt"):
+        bundle.copy(source / "licenses" / name, "licenses/NUMOS-" + name)
+    bundle.copy(root / "third_party/numos/README.remix.md", "licenses/NUMOS-provenance.md")
+
+
 def package(build, sdl, output):
     root = Path(__file__).resolve().parents[2]
     options = {
@@ -96,6 +111,7 @@ def package(build, sdl, output):
     }
     for source, name in notices.items():
         bundle.copy(root / source, "licenses/" + name)
+    bundle_numos(bundle, root, build)
     bundle.tree(root / "include/vulkan/LICENSES", "licenses/Vulkan-Headers")
     bundle.copy(root / "include/vulkan/LICENSE.md", "licenses/Vulkan-Headers/NOTICE.md")
     # The pinned SDL fallback may use SDL3_shared.dll instead of SDL3.dll.
