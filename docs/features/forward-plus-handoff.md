@@ -1128,3 +1128,16 @@ noise/seams, denoising cost and frame profiling remain independent priorities.
 - [ ] Test primary/path sampling and convergence at equal tracing work.
 - [ ] Keep ambient-cube runtime/storage work separate from noise, spatial
   support, arbitrary-normal interpolation, visibility and styled-light gates.
+
+
+### 2026-10-26 - Reject blanket primary rotation; retain matched controls
+
+- [x] Reference-only full sphere rotation conserves energy in HWRT fixture but
+  worsens Construct red/green stream variation. Entire candidate removed.
+- [x] Retained matched SH/cube projection and bounded sphere phases; no normal
+  rendering/default/public-layout change. Low-sample cube variance still matters.
+- [ ] Prioritize convergence-aware probe sampling/work allocation with minimum
+  work, rare-event and broader spatial/style/motion/color validation.
+- [ ] Compare nine RGB SH lightmap fields with VRF-supported directional/ZH3
+  variants for angular error, storage, fetch and denoising cost. No free-quality
+  or native Valve-baker parity claim; keep surface and probe issues separate.
