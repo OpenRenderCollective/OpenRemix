@@ -843,8 +843,6 @@ namespace remix {
     append(&options.emissiveSolidAngleSampling, sizeof(options.emissiveSolidAngleSampling));
     append(&emissionMode, sizeof(emissionMode));
     append(&options.fsrSharpness, sizeof(options.fsrSharpness));
-    append(&options.prism, sizeof(options.prism));
-    append(&options.gamma22, sizeof(options.gamma22));
     append(&options.neuralUplift, sizeof(options.neuralUplift));
     append(&options.neuralUpliftPasses, sizeof(options.neuralUpliftPasses));
     append(&options.neuralUpliftPreset, sizeof(options.neuralUpliftPreset));
@@ -1935,13 +1933,8 @@ namespace remix {
             .pClearValues = clear};
         vkCmdBeginRenderPass(command, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-        // g.tonemapTarget is a linear R16G16B16A16_SFLOAT attachment, not _SRGB.
-        // Force software display encoding (sRGB or gamma 2.2) so DLSS-NR receives
-        // display-encoded LDR colors, and cancel hardware sRGB later in blit.frag.
-        const bool tonemapEncodeOutput = g.encodeOutput || g.hardwareSrgb;
         if (g.upscaler && !g.debugView) {
-          g.upscaler->composite(command, tonemapEncodeOutput, g.prism, g.gamma22, false,
-                                g.postProcessing->bindings(), true);
+          g.upscaler->composite(command, g.display, g.postProcessing->bindings());
         } else {
           VkViewport viewport = {0, 0, float(g.displayExtent.width), float(g.displayExtent.height), 0, 1};
           VkRect2D scissor = {{0, 0}, g.displayExtent};
@@ -1951,15 +1944,19 @@ namespace remix {
           const auto postSet = g.postProcessing->bindings();
           vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.layout, 1, 1, &postSet, 0, nullptr);
           for (uint32_t i = 0; i < 2; ++i) {
-            const uint32_t push[] = {i,
-                                     uint32_t(tonemapEncodeOutput),
-                                     uint32_t(g.prism),
-                                     uint32_t(g.gamma22),
-                                     0u,
-                                     g.displayExtent.width,
-                                     g.displayExtent.height};
+            struct {
+              uint32_t additive, falseColor, width, height, display;
+              float peakNits, paperWhiteNits;
+            } push{i,
+                   uint32_t(g.falseColorView),
+                   g.displayExtent.width,
+                   g.displayExtent.height,
+                   uint32_t(g.display.hdr10),
+                   g.display.peakNits,
+                   g.display.paperWhiteNits};
+            static_assert(sizeof(push) <= featuresOffset);
             vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.tonemapComposite[i]);
-            vkCmdPushConstants(command, g.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), push);
+            vkCmdPushConstants(command, g.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
             vkCmdDraw(command, 3, 1, 0, 0);
           }
         }
@@ -2031,7 +2028,7 @@ namespace remix {
       vkCmdSetScissor(command, 0, 1, &scissor);
       vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.blitPipeline);
       vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.blitLayout, 0, 1, &g.blitSet, 0, nullptr);
-      const uint32_t push[] = {uint32_t(g.hardwareSrgb), uint32_t(!g.upscaler || g.debugView)};
+      const uint32_t push[] = {0u, uint32_t(!g.upscaler || g.debugView)};
       vkCmdPushConstants(command, g.blitLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), push);
       vkCmdDraw(command, 3, 1, 0, 0);
       g.neuralUpliftRan = false;
