@@ -3787,3 +3787,13 @@ noise/seams, denoising cost and frame profiling remain independent priorities.
   shapes. Account for real changing-mask graph costs and verify actual map cost.
 - [ ] Continue compact directional/ZH lightmap and convergence-aware probe work;
   neural filtering remains a larger measured cost than the retained packing loop.
+
+
+### 2026-10-26 - Playable denoising packing refresh
+
+- [x] Deploy verified native 2f85c4a7 with adapter 6495e0cd to the persistent
+  GarrysModWithRTX2 test installation; updater targets the immutable package.
+- [x] Owned-file verification, protected settings/mod preservation, installed
+  cached Construct image parity and Vulkan validation pass.
+- [ ] Device-calibration warmup and larger neural/runtime costs still need work.
+  This deployment does not change quality presets or establish an FPS/bake win.
