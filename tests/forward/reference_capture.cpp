@@ -212,6 +212,53 @@ int main(int argc, char **argv) {
               "Radiance-to-SH reconstructs analytic constant and linear lighting on all six axes");
     }
   }
+  {
+    std::ifstream json(output);
+    const std::string result((std::istreambuf_iterator<char>(json)), {});
+    const std::string key = "\"ambientCubeIrradiance\":";
+    const auto start = result.find(key);
+    require(start != std::string::npos &&
+                result.find("\"ambientCubeFaceOrder\":\"+X,-X,+Y,-Y,+Z,-Z\"") != std::string::npos,
+            "Matched sphere output declares its ambient-face order");
+    std::istringstream faces(result.substr(start + key.size()));
+    char separator;
+    faces >> separator; require(separator == '[', "Ambient cube begins with an array");
+    for (uint32_t face = 0; face < 6; ++face) {
+      faces >> separator; require(separator == '[', "Ambient cube faces contain RGB tuples");
+      std::array<double,3> rgb;
+      for (uint32_t c = 0; c < 3; ++c) {
+        faces >> rgb[c] >> separator;
+        require(separator == (c == 2 ? ']' : ','), "Ambient face has exactly three channels");
+      }
+      const double x = face == 0 ? 1 : face == 1 ? -1 : 0;
+      require(std::abs(rgb[0] - std::numbers::pi * (1 + .2 * 2./3 * x)) < .001 &&
+                  std::abs(rgb[1] - 2 * std::numbers::pi) < .001 && rgb[2] == 0,
+              "Positive face integration reproduces constant and linear lighting from the same SH rays");
+      faces >> separator; require(separator == (face == 5 ? ']' : ','), "Ambient cube has exactly six faces");
+    }
+  }
+  { std::ofstream input(path); input << "sphere 64\n1 2 3\n"; }
+  const auto originalSphere = ReferenceCapture::load(path).batch(0,64);
+  { std::ofstream input(path); input << "base sphere-offsets 64\n1 2 3 0\n1 2 3 8192\n"; }
+  auto phasedSphere = ReferenceCapture::load(path);
+  const auto phasedRays = phasedSphere.batch(0,128);
+  require(phasedSphere.sphere && !phasedSphere.incomingIrradiance && phasedSphere.baseLightingOnly &&
+              phasedSphere.sampleOffsets == std::vector<uint32_t>{0,8192},
+          "Sphere phases preserve incoming-only projection and explicit component policy");
+  require(std::equal(originalSphere.begin(),originalSphere.end(),phasedRays.begin(),
+                    [](const auto &a,const auto &b) { return a.position == b.position && a.normal == b.normal; }) &&
+              phasedRays[0].normal != phasedRays[64].normal && phasedRays[0].position == phasedRays[64].position,
+          "Phase zero preserves old rays; another phase changes directions at the identical origin");
+  const auto crossed = phasedSphere.batch(55,21);
+  require(std::equal(crossed.begin(),crossed.end(),phasedRays.begin()+55,
+                    [](const auto &a,const auto &b) { return a.position == b.position && a.normal == b.normal; }),
+          "Phased sphere rays remain stable when GPU batches cross site boundaries");
+  for (const char *row : {"1 2 3", "1 2 3 -1", "1 2 3 4294967295"}) {
+    { std::ofstream input(path); input << "sphere-offsets 64\n" << row << '\n'; }
+    bool invalid = false;
+    try { ReferenceCapture::load(path); } catch (const std::invalid_argument &) { invalid = true; }
+    require(invalid, "Sphere phases reject missing, negative and overflowing sample offsets");
+  }
   { std::ofstream bad(path); bad << "hemisphere 64\n1 2 3 0 0 0\n"; }
   rejected = false;
   try { ReferenceCapture::load(path); }

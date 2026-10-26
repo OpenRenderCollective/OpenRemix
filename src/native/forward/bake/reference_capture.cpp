@@ -35,10 +35,10 @@ namespace remix::forward::bake {
     }
     result.geometry = token == "geometry";
     result.hemisphere = token == "hemisphere";
-    result.sphere = token == "sphere";
+    result.sphere = token == "sphere" || token == "sphere-offsets";
     result.surface = token == "surface" || token == "surface-offsets";
     result.incomingIrradiance = token == "incoming-sh" || token == "incoming-sh-offsets";
-    const bool offsets = token == "sh-offsets" || token == "surface-offsets" || token == "incoming-sh-offsets";
+    const bool offsets = token == "sh-offsets" || token == "surface-offsets" || token == "incoming-sh-offsets" || token == "sphere-offsets";
     if (result.usesRadianceRays() || result.surface || offsets || result.incomingIrradiance) input >> token;
     if (result.geometry) result.samples = 1;
     else {
@@ -80,7 +80,7 @@ namespace remix::forward::bake {
     if (!result.usesRadianceRays()) result.m_results.resize(result.points.size());
     result.m_completed.resize(result.tasks());
     if (result.hemisphere) result.m_sums.resize(result.points.size());
-    if (result.sphere) result.m_sphereSums.resize(result.points.size());
+    if (result.sphere) result.m_sphereProjection.resize(result.points.size());
     return result;
   }
   std::vector<Point> ReferenceCapture::batch(uint32_t first, uint32_t count) const {
@@ -101,7 +101,8 @@ namespace remix::forward::bake {
         const uint32_t rotation = std::bit_cast<uint32_t>(point.position[0]) * 73856093u ^
                                   std::bit_cast<uint32_t>(point.position[1]) * 19349663u ^
                                   std::bit_cast<uint32_t>(point.position[2]) * 83492791u;
-        const double phase = double(ordinal * 0x61c88647u + rotation) / 4294967296.0;
+        const uint32_t phaseOffset = sampleOffsets.empty() ? 0 : sampleOffsets.at(task / samples);
+        const double phase = double((ordinal + phaseOffset) * 0x61c88647u + rotation) / 4294967296.0;
         const double phi = phase * 2 * std::numbers::pi;
         if (sphere) {
           point.normal = {radius * float(std::cos(phi)), radius * float(std::sin(phi)), cosine, 0};
@@ -135,9 +136,9 @@ namespace remix::forward::bake {
     for (size_t i = 0; i < values.size(); ++i) {
       if (sphere) {
         const auto &direction = directions[i].normal;
-        const auto sh = irradianceBasis({direction[0], direction[1], direction[2]});
-        for (uint32_t j = 0; j < 9; ++j) for (uint32_t c = 0; c < 3; ++c)
-          m_sphereSums[(first + i) / samples][j][c] += double(sh[j]) * values[i].irradiance[0][c];
+        const auto &value = values[i].irradiance[0];
+        m_sphereProjection[(first + i) / samples].add(
+            {direction[0], direction[1], direction[2]}, {value[0], value[1], value[2]});
       } else if (hemisphere) {
         for (uint32_t c = 0; c < 3; ++c)
           m_sums[(first + i) / samples][c] += values[i].irradiance[0][c];
@@ -194,15 +195,23 @@ namespace remix::forward::bake {
       }
       if (!sampleOffsets.empty()) output << ",\"firstSample\":" << sampleOffsets.at(i);
       output << ",\"irradiance\":[";
+      const auto projected = sphere ? m_sphereProjection[i].sphericalHarmonics() : RadianceProjection::Sh{};
       for (uint32_t j = 0; j < 9; ++j) {
         output << (j ? ",[" : "[");
-        const double convolution = j == 0 ? std::numbers::pi : j < 4 ? 2 * std::numbers::pi / 3 : std::numbers::pi / 4;
         for (uint32_t c = 0; c < 3; ++c)
-          output << (c ? "," : "") << (sphere ? m_sphereSums[i][j][c] * (4 * std::numbers::pi / samples) * convolution
+          output << (c ? "," : "") << (sphere ? projected[j][c]
                                              : m_results[i].irradiance[j][c]);
         output << ']';
       }
-      if (sphere) { output << "]}"; continue; }
+      if (sphere) {
+        output << "],\"ambientCubeFaceOrder\":\"+X,-X,+Y,-Y,+Z,-Z\",\"ambientCubeIrradiance\":[";
+        const auto cube = m_sphereProjection[i].ambientCube();
+        for (uint32_t face = 0; face < 6; ++face) {
+          output << (face ? ",[" : "[") << cube[face][0] << ',' << cube[face][1] << ',' << cube[face][2] << ']';
+        }
+        output << "]}";
+        continue;
+      }
       output << "],\"distanceMoments\":[";
       for (uint32_t face = 0; face < 6; ++face) {
         output << (face ? ",[" : "[");

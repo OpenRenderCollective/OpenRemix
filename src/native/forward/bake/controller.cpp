@@ -1682,7 +1682,8 @@ namespace remix::forward::bake {
             if (submission.job) throw std::logic_error("Reference slot reused before its fence");
             const auto count = std::min(reference.geometry ? 16u : reference.usesRadianceRays() ? 256u : 1u, reference.tasks() - reference.next);
             const auto referencePoints = reference.batch(reference.next, count);
-            const uint32_t firstSample = reference.sampleOffsets.empty() ? 0 : reference.sampleOffsets.at(reference.next);
+            const uint32_t firstSample = reference.sampleOffsets.empty() || reference.usesRadianceRays()
+                ? 0 : reference.sampleOffsets.at(reference.next);
             if (reference.geometry)
               job.transport->recordGeometry(command, m_slot, referencePoints);
             else if (reference.usesRadianceRays() && reference.combinedLighting)

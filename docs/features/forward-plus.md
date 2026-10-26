@@ -1199,6 +1199,13 @@ Distances use host world units. `statistics` contains back-face fraction, miss f
 and the reserved transport value. Existing irradiance fields retain their format. The alternative
 `hemisphere <samples>` input takes XYZ and unit-normal sites and exports independent cosine-integrated
 irradiance instead. These diagnostics do not change published probe positions or lighting buffers.
+Sphere captures additionally export `ambientCubeIrradiance`: six cosine-weighted
+face integrals from the exact same incoming samples as their SH coefficients.
+`ambientCubeFaceOrder` is `+X,-X,+Y,-Y,+Z,-Z`; these are linear irradiance values,
+not fitted SH coefficients or a Source 2 binary texture format. `sphere-offsets`
+takes XYZ/first-sample rows; the phase is applied to CPU-generated directions,
+independently of GPU batch boundaries. It retains the `sphere` output mode and
+exports each site's `firstSample`. Analytical direct receiver light stays excluded.
 Check captured scene inputs, including the dome texture, before comparing separate runs.
 Incoming-ray hemisphere integration omits analytic direct light at the receiver.
 Use `surface <samples>` followed by XYZ/unit-normal rows for the surface bake's

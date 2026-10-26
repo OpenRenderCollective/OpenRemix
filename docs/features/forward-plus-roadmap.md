@@ -3748,3 +3748,15 @@ noise/seams, denoising cost and frame profiling remain independent priorities.
 - [ ] Evaluate progressive path dimensions and variance-guided probe allocation.
 - [ ] Preserve spatial support, styles/motion/color/cost gates, surface denoising
   and runtime profiling priorities. HDR-map sky sampling remains unqualified.
+
+
+### 2026-10-26 - Matched SH and ambient-cube capture
+
+- [x] Reuse identical incoming rays for CPU SH and six positive ambient faces.
+  Explicit sphere phases preserve origins, old zero-phase rays and batch stability.
+- [x] Constant/linear projection and bounded request/output tests pass.
+- [x] Construct matched controls show lower high-sample cube axis error but no
+  general low-sample noise improvement. No renderer representation/default change.
+- [ ] Test primary/path sampling and convergence at equal tracing work.
+- [ ] Keep ambient-cube runtime/storage work separate from noise, spatial
+  support, arbitrary-normal interpolation, visibility and styled-light gates.

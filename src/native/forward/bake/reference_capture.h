@@ -1,5 +1,6 @@
 #pragma once
 #include "forward/bake/data.h"
+#include "forward/bake/radiance_projection.h"
 #include <filesystem>
 #include <optional>
 #include <span>
@@ -10,6 +11,8 @@ namespace remix::forward::bake {
   // XYZ/unit-normal sites (cosine-weighted radiance integration, without SH).
   // "sphere", sample count and XYZ sites projects incoming radiance into SH
   // on the CPU, without analytic receiver lighting or probe interpolation.
+  // The same rays also accumulate six positive cosine-weighted ambient faces.
+  // "sphere-offsets" adds a per-site first-sample phase for matched-stream studies.
   // "geometry" followed by XYZ/unit-direction rays captures HWRT first hits
   // with material coverage; no lighting samples or invented SH values. Refractive
   // interfaces can be first hits too; this mode does not integrate transmission.
@@ -57,6 +60,6 @@ namespace remix::forward::bake {
     std::vector<bool> m_completed;
     std::vector<int32_t> m_partitionClusters; // -2 unknown, -1 solid/unplayable
     std::vector<std::array<double, 3>> m_sums;
-    std::vector<std::array<std::array<double, 3>, 9>> m_sphereSums;
+    std::vector<RadianceProjection> m_sphereProjection;
   };
 }
