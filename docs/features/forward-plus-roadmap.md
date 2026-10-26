@@ -3989,3 +3989,8 @@ noise/seams, denoising cost and frame profiling remain independent priorities.
 - Deployment gate after upstream merge: investigate sampled-read/render-pass transition synchronization and startup vertex binding validation errors in presentation/snapshots; errors also appeared with HDR requested off, so HDR-only attribution is unconfirmed.
 
 - Presentation validation follow-up: explicit outgoing colour dependency and HDR pipeline names added; low_latency2 now declares its present_id dependency. New local validation layer reports no errors in the Construct hall/weapon run. Old SDK fullscreen built-in vertex reports match a known validation issue; the newer-layer control is also clean without the explicit dependency, so older sync diagnostics alone are not proof of a hardware race. Clean-source deployment and broader runtime validation remain separate gates.
+
+
+### Playable receiver-lighting checkpoint (2026-10-27)
+
+The testing install now uses native 35e80cf3 and adapter 26dc7770 from a clean package. Bicubic reconstruction defaults on, viewmodel sunlight separates static fallback from moving/self shadows, and sun filter taps use the geometric receiver plane. Existing settings, material replacements and authored cubemap data are preserved. The experimental static depth batch is excluded. Outdoor automatic reflection coverage, the exact reported prop triangle artifact, broader performance work, and conservative pruning of unused viewmodel static fallback draws remain open.

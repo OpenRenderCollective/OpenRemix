@@ -1335,3 +1335,8 @@ noise/seams, denoising cost and frame profiling remain independent priorities.
   depth buckets, compatible shared geometry and preserved per-object culling.
   VRF aggregate multi-draw is a reference; native CS2 capture parity is unproven.
   Count API calls and logical indirect draws separately when batching is added.
+
+
+### Playable receiver-lighting checkpoint (2026-10-27)
+
+The testing install now uses native 35e80cf3 and adapter 26dc7770 from a clean package. Bicubic reconstruction defaults on, viewmodel sunlight separates static fallback from moving/self shadows, and sun filter taps use the geometric receiver plane. Existing settings, material replacements and authored cubemap data are preserved. The experimental static depth batch is excluded. Outdoor automatic reflection coverage, the exact reported prop triangle artifact, broader performance work, and conservative pruning of unused viewmodel static fallback draws remain open.
