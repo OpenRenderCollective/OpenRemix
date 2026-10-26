@@ -18,8 +18,8 @@ void main() {
   float size = mix(e.size.x, e.size.y, t) * p.data.x;
   vec4 c = mix(e.colorStart, e.colorEnd, t);
   vec3 radiance = c.rgb * unpackLight(p.light) + e.emission.rgb;
-  color = vec4(displayColor(radiance * frame.worldUp.w, frame.display.x, frame.display.y, frame.display.z,
-                            frame.display.w),
+  color = vec4(displayColor(radiance * frame.worldUp.w, frame.display.x & 1u, uintBitsToFloat(frame.display.y),
+                            uintBitsToFloat(frame.display.z)),
                c.a);
   const vec2 corners[6] = vec2[6](vec2(-1, -1), vec2(1, -1), vec2(1, 1), vec2(-1, -1), vec2(1, 1), vec2(-1, 1));
   vec2 q = corners[gl_VertexIndex % 6];

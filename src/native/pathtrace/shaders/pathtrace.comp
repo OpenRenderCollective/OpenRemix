@@ -325,8 +325,8 @@ Hit closest(vec3 origin,vec3 direction,float maximum,bool motion) {
     minimum=uintBitsToFloat(floatBitsToUint(hit.t)+1u);
     if(layers==0u)first=hit;
     if(hit.decalMode!=0u) {
-      // mod2x is authored in sRGB (128 is neutral): scale so linear(128/255) maps to one.
-      through*=hit.color.rgb*(hit.decalMode==2u?4.634:1.);
+      // mod2x is authored gamma-encoded (128 is neutral): scale so (128/255)^2.2 maps to one.
+      through*=hit.color.rgb*(hit.decalMode==2u?4.5554:1.);
     } else {
       float weight=remaining*hit.color.a;
       color+=through*hit.color.a*hit.color.rgb;normal+=weight*hit.n;emission+=through*hit.color.a*hit.emission;

@@ -32,5 +32,5 @@ namespace remix::ui {
   using DrawSettingsTab = void (*)(void *, int, config::Settings &);
   bool drawPanel(config::Profiles &profiles, ProfileUi &ui, void *user, DrawSettingsTab drawTab);
   void toolkitStyle();
-  void toolkitColors(bool hardwareSrgb);
+  void toolkitColors();
 } // namespace remix::ui

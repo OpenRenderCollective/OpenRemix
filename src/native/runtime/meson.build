@@ -7,6 +7,7 @@ runtime_sources = files(
   'device.cpp',
   'frame_generation.cpp',
   'frame_snapshot.cpp',
+  'hdr_output.cpp',
   'host_passes.cpp',
   'particles.cpp',
   'presentation.cpp',

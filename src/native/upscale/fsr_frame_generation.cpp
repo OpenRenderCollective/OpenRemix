@@ -20,6 +20,13 @@ void checkFfx(FfxErrorCode result, const char *step) {
     throw std::runtime_error(std::string("FSR 3.1 frame generation: ") + step + " failed (" +
                              std::to_string(int(result)) + ")");
 }
+// The 10-bit swapchain formats hold HDR10 (ST.2084 PQ) frames
+// (runtime/hdr_output.h); the 8-bit ones gamma encoded SDR.
+FfxBackbufferTransferFunction transferFunction(VkFormat format) {
+  return format == VK_FORMAT_A2B10G10R10_UNORM_PACK32 || format == VK_FORMAT_A2R10G10B10_UNORM_PACK32
+             ? FFX_BACKBUFFER_TRANSFER_FUNCTION_PQ
+             : FFX_BACKBUFFER_TRANSFER_FUNCTION_SRGB;
+}
 // The formats of the resources the effects share with their caller
 // (ffxFrameInterpolationGetSharedResourceDescriptions,
 // ffxOpticalflowGetSharedResourceDescriptions).
@@ -321,9 +328,10 @@ void FsrFrameGeneration::record(VkCommandBuffer command, Input backbuffer, Input
   flow.opticalFlowSCD = g.sceneChange.resource();
   flow.reset = reset;
   // The images hold the frame as displayed. The luminance range is read for
-  // the HDR transfer functions only.
-  flow.backbufferTransferFunction = FFX_BACKBUFFER_TRANSFER_FUNCTION_SRGB;
-  flow.minMaxLuminance = {0, 0};
+  // the HDR transfer functions only: PQ's whole range.
+  flow.backbufferTransferFunction = transferFunction(g.format);
+  const float maxLuminance = flow.backbufferTransferFunction == FFX_BACKBUFFER_TRANSFER_FUNCTION_PQ ? 10000.f : 0.f;
+  flow.minMaxLuminance = {0, maxLuminance};
   checkFfx(ffxOpticalflowContextDispatch(&g.opticalFlow, &flow), "optical flow");
 
   // 3. Interpolation: writes the frame halfway to `output` and copies its
@@ -361,7 +369,9 @@ void FsrFrameGeneration::record(VkCommandBuffer command, Input backbuffer, Input
     return value ? uint32_t(std::strtoul(value, nullptr, 10)) : 0u;
   }();
   dispatch.flags = debugFlags;
-  dispatch.backBufferTransferFunction = FFX_BACKBUFFER_TRANSFER_FUNCTION_SRGB;
+  dispatch.backBufferTransferFunction = transferFunction(g.format);
+  dispatch.minMaxLuminance[0] = 0;
+  dispatch.minMaxLuminance[1] = dispatch.backBufferTransferFunction == FFX_BACKBUFFER_TRANSFER_FUNCTION_PQ ? 10000.f : 0.f;
   // A step other than one resets the interpolation; discontinuities are
   // passed as `reset` instead, so the counter only ever steps.
   dispatch.frameID = g.frame;

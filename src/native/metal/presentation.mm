@@ -279,8 +279,7 @@ namespace remix {
       g.layer.drawableSize = CGSizeMake(g.width, g.height);
     }
     g.layer.displaySyncEnabled = m_vsync;
-    const bool encode = !m_srgb ? false : g.format != MTLPixelFormatBGRA8Unorm_sRGB;
-    m_raster.gpu().configureTarget(g.format, g.width, g.height, encode);
+    m_raster.gpu().configureTarget(g.format, g.width, g.height, true);
     updateFreeCamera();
     m_raster.applyFreeCamera(m_freeCamera);
     prepareSettings(g.width, g.height);

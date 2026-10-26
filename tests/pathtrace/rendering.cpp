@@ -74,9 +74,7 @@ int main(int argc, char **argv) {
     return 0;
   }
   ok(api.SetConfigVariable("rtx.native.backend", "pathtrace"));
-  // The baseline lighting/composition checks expect the original sRGB transfer.
-  ok(api.SetConfigVariable("rtx.native.pathtrace.prism", "0"));
-  ok(api.SetConfigVariable("rtx.native.pathtrace.gamma22", "0"));
+  // The baseline lighting/composition checks decode the gamma 2.2 output.
   if (const char *primary = std::getenv("REMIX_TEST_PRIMARY_VISIBILITY"))
     ok(api.SetConfigVariable("rtx.native.pathtrace.primaryVisibility", primary));
   if (argc > 2 && std::string(argv[2]) == "init-failure") {
@@ -659,7 +657,7 @@ int main(int argc, char **argv) {
           unsigned rows = 0;
           auto linear = [](unsigned char byte) {
             const float value = byte / 255.f;
-            return value <= .04045f ? value / 12.92f : std::pow((value + .055f) / 1.055f, 2.4f);
+            return std::pow(value, 2.2f);
           };
           for (int y = h / 4; y < 3 * h / 4; ++y) {
             ++rows;
@@ -866,7 +864,7 @@ int main(int argc, char **argv) {
       for (int y = h / 2 - 12; y < h / 2 + 12; ++y)
         for (int x = w / 2 - 12; x < w / 2 + 12; ++x) {
           const double c = double(bytes[(y * w + x) * 4]) / 255;
-          values.push_back(c <= .04045 ? c / 12.92 : std::pow((c + .055) / 1.055, 2.4));
+          values.push_back(std::pow(c, 2.2));
         }
       stbi_image_free(bytes);
       return values;

@@ -256,7 +256,7 @@ vec3 emitterCookie(LightEmitter light,vec3 outgoing) {
   uint index=LightCookies(frame.lightCookies).textures[uint(light.corners[2].y+.5)-1u];
   if(index==0u)return vec3(1);
   // Colour times alpha: a mask in either works (alpha-only cookies are common).
-  vec4 texel=textureLod(textures[nonuniformEXT(index-1u)],vec2(uv.x,1-uv.y),0);
+  vec4 texel=slotTexel(index-1u,textureLod(textures[nonuniformEXT(index-1u)],vec2(uv.x,1-uv.y),0));
   return texel.rgb*texel.a;
 }
 // What a light emits toward `outgoing`: shaping, IES profile and cookie.

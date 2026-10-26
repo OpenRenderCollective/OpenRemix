@@ -34,7 +34,10 @@ namespace remix::particles {
     float cloudShadowTransform[3][4] = {};
     uint32_t cloudShadowSlices = 0;
     float exposure = 1;
-    uint32_t display[4] = {}; // prism, gamma 2.2, encode, hardware sRGB (display.glsl)
+    // Bit 0 HDR10 (displayColor in pathtrace/shaders/display.glsl), bit 1 the
+    // environment holds sRGB-encoded texels (decoded with pow 2.2); the peak
+    // and paper white nits (float bits; read with HDR10 only); reserved.
+    uint32_t display[4] = {};
   };
 
   class Renderer {

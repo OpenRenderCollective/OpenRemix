@@ -34,7 +34,8 @@ namespace remix::trace {
   };
   // Transmittance left at the "visibility distance" a medium is described by.
   inline constexpr float volumeVisibility = .05f;
-  inline float volumeLinear(float c) { return c <= .04045f ? c / 12.92f : std::pow((c + .055f) / 1.055f, 2.4f); }
+  // A display-encoded value (gamma 2.2) to linear.
+  inline float volumeLinear(float c) { return std::pow(c, 2.2f); }
   inline Medium volumeMedium(const TraceOptions &options, const GameFog &fog) {
     Medium medium;
     if (!options.volumetrics)

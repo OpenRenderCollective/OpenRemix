@@ -44,6 +44,12 @@ namespace remix::config {
     TraceOptions trace;
     uint32_t backend = 1;
     bool vsync = false;
+    // HDR10 output (runtime/hdr_output.h): BT.2020 ST.2084 PQ while Windows
+    // has HDR on for the window's display, SDR otherwise. The scene is tone
+    // mapped towards hdrPeakNits with its white at hdrPaperWhiteNits; the HUD
+    // and the developer UI are shown with their white at hdrUiNits.
+    bool hdr = true;
+    float hdrPeakNits = 1000, hdrPaperWhiteNits = 203, hdrUiNits = 203;
     std::array<float, 4> clearColor = {0.025f, 0.035f, 0.055f, 1.f};
     // Upload BC textures as GPU BC images instead of decoding them on the CPU.
     // Applies to textures created after the change; no restart needed.

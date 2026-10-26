@@ -4,6 +4,7 @@
 #endif
 #include "pathtrace/sharc_policy.h"
 #include "scene/emission.h"
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -37,8 +38,8 @@ namespace remix {
     const bool faceCulling = opacityCache.oneSidedOpaqueEnabled();
     debugView = options.debugView;
     const bool falseColor = debugView != 0 && debugView != 6 && debugView != 7;
-    prism = options.prism && !falseColor;
-    gamma22 = options.gamma22 && !falseColor;
+    // The false colour debug views are shown without the tone curve.
+    falseColorView = falseColor;
     if (timestamps) {
       vkCmdResetQueryPool(command, timestamps, 0, 12);
       vkCmdWriteTimestamp(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, timestamps, 0);
@@ -71,6 +72,8 @@ namespace remix {
                               : options.stabilizeEmissiveLighting ? 1u
                                                                   : 0u;
     std::vector<VkDescriptorImageInfo> textures;
+    // The slots of textures holding sRGB-encoded texels (frame.srgbTextures).
+    std::vector<uint32_t> srgbSlots;
     // The scene signature: sky draws first, the tables' segments, then the
     // frame's lighting and settings (append writes to the current segment).
     trace::SceneSignature signature;
@@ -182,18 +185,33 @@ namespace remix {
           return resources.sampledEmission(request.material, command);
         }
       };
+      // After sampled(request) created its image.
+      auto srgb = [&](const trace::DescriptorRequest &request) {
+        const auto &material = *request.material;
+        return resources.textureSrgb(request.kind == trace::DescriptorRequest::Albedo ? material.texture.get()
+                                     : request.kind == trace::DescriptorRequest::Map  ? request.texture->get()
+                                                                                       : material.emissionTexture.get());
+      };
       textures.reserve(tables.requestCount() + 1);
       if (const auto *prefix = tables.prefix()) {
         if (prefixTexturesGeneration != prefix->generation) {
           prefixTextures.clear();
-          for (const auto &request : prefix->requests)
+          prefixSrgbSlots.clear();
+          for (const auto &request : prefix->requests) {
             prefixTextures.push_back(sampled(request));
+            if (srgb(request))
+              prefixSrgbSlots.push_back(uint32_t(prefixTextures.size() - 1));
+          }
           prefixTexturesGeneration = prefix->generation;
         }
         textures = prefixTextures;
+        srgbSlots = prefixSrgbSlots;
       }
-      for (const auto &request : tables.tail().requests)
+      for (const auto &request : tables.tail().requests) {
         textures.push_back(sampled(request));
+        if (srgb(request))
+          srgbSlots.push_back(uint32_t(textures.size() - 1));
+      }
     }
     uploadTime.close();
     breakdown.traceInstances += tables.instanceCount();
@@ -675,6 +693,8 @@ namespace remix {
         auto material = resources.domeMaterial();
         frame.skyRadiance[3] = float(textures.size() + 1);
         textures.push_back(resources.sampledTexture(material, dome.texture, command));
+        if (resources.textureSrgb(dome.texture.get()))
+          srgbSlots.push_back(uint32_t(textures.size() - 1));
         auto fingerprint = dome.texture->fingerprint();
         append(&fingerprint, sizeof(fingerprint));
       }
@@ -690,6 +710,8 @@ namespace remix {
           throw VK_ERROR_TOO_MANY_OBJECTS;
         table[i] = uint32_t(textures.size() + 1);
         textures.push_back(resources.sampledTexture(resources.cookieMaterial(), cookies[i], command));
+        if (resources.textureSrgb(cookies[i].get()))
+          srgbSlots.push_back(uint32_t(textures.size() - 1));
         auto fingerprint = cookies[i]->fingerprint();
         append(&fingerprint, sizeof(fingerprint));
       }
@@ -728,6 +750,9 @@ namespace remix {
     overlay.environment = frame.skyRadiance[3] > 0 && size_t(frame.skyRadiance[3]) <= textures.size()
                               ? textures[size_t(frame.skyRadiance[3]) - 1]
                               : VkDescriptorImageInfo{};
+    overlay.environmentSrgb = frame.skyRadiance[3] > 0 &&
+                              std::find(srgbSlots.begin(), srgbSlots.end(), uint32_t(frame.skyRadiance[3]) - 1) !=
+                                  srgbSlots.end();
     for (unsigned row = 0; row < 3; ++row)
       for (unsigned col = 0; col < 3; ++col)
         overlay.domeTransform[row][col] = frame.domeTransform[row][col];
@@ -749,6 +774,9 @@ namespace remix {
       textures.insert(textures.end(), cut.images, cut.images + cut.count);
       append(&cut.digest, sizeof(cut.digest));
     }
+    static_assert(PathTracer::textureLimit <= 32 * 128);
+    for (const uint32_t slot : srgbSlots)
+      frame.srgbTextures[slot >> 7][(slot >> 5) & 3] |= 1u << (slot & 31);
     // remixapi_InstanceInfoCameraCullingEXT: what the camera sees of the scene
     // is part of its signature (the flags applied, the visible set).
     configureCameraCulling(command, frame, options, resources);
@@ -1881,7 +1909,7 @@ namespace remix {
   void PathTracer::record(VkCommandBuffer command) {
     auto &g = *m_gpu;
     if (g.upscaler && !g.debugView) {
-      g.upscaler->composite(command, g.encodeOutput, g.prism, g.gamma22, g.hardwareSrgb, g.postProcessing->bindings());
+      g.upscaler->composite(command, g.display, g.postProcessing->bindings());
       return;
     }
     VkViewport viewport = {0, 0, float(g.displayExtent.width), float(g.displayExtent.height), 0, 1};
@@ -1892,15 +1920,19 @@ namespace remix {
     const auto postSet = g.postProcessing->bindings();
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.layout, 1, 1, &postSet, 0, nullptr);
     for (uint32_t i = 0; i < 2; ++i) {
-      const uint32_t push[] = {i,
-                               uint32_t(g.encodeOutput),
-                               uint32_t(g.prism),
-                               uint32_t(g.gamma22),
-                               uint32_t(g.hardwareSrgb),
-                               g.displayExtent.width,
-                               g.displayExtent.height};
+      struct {
+        uint32_t additive, falseColor, width, height, display;
+        float peakNits, paperWhiteNits;
+      } push{i,
+             uint32_t(g.falseColorView),
+             g.displayExtent.width,
+             g.displayExtent.height,
+             uint32_t(g.display.hdr10),
+             g.display.peakNits,
+             g.display.paperWhiteNits};
+      static_assert(sizeof(push) <= featuresOffset);
       vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.composite[i]);
-      vkCmdPushConstants(command, g.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), push);
+      vkCmdPushConstants(command, g.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
       vkCmdDraw(command, 3, 1, 0, 0);
     }
   }

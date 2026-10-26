@@ -17,7 +17,7 @@ namespace remix::metal::trace {
     float eye[4] = {}, direction[4] = {}, radiance[4] = {};
     uint32_t config[4] = {}, target[4] = {};
     float jitter[4] = {};      // primary offset; z water reuse, w blue-noise sun/local bits
-    float skyRadiance[4] = {}; // linear uniform environment; w reserved
+    float skyRadiance[4] = {}; // linear uniform environment; w: its texture + 1, -1 a uniform dome
     uint64_t sharcHash = 0, sharcAccumulation = 0, sharcResolved = 0, sharcCounters = 0;
     uint32_t sharcConfig[4] = {};
     float sharcGrid[4] = {}, sharcPreviousCamera[4] = {};
@@ -102,8 +102,12 @@ namespace remix::metal::trace {
     // The NUMOS sky's cloud shadow (unused here: zero turns it off).
     float cloudShadow[3][4] = {};
     uint32_t cloudShadowConfig[4] = {};
+    // A bit per texture slot (slot / 32, its bit slot % 32): the slot holds
+    // sRGB-encoded texels (stored UNORM), decoded with pow 2.2 (scene.glsl).
+    uint32_t srgbTextures[32][4] = {};
   };
-  static_assert(sizeof(Frame) == 1280 && offsetof(Frame, localProbeRead) == 1168 &&
+  static_assert(sizeof(Frame) == 1792 && offsetof(Frame, srgbTextures) == 1280 &&
+                offsetof(Frame, localProbeRead) == 1168 &&
                 offsetof(Frame, localProbeParams) == 1184 && offsetof(Frame, volumeLightScales) == 1200 &&
                 offsetof(Frame, cloudShadow) == 1216 && offsetof(Frame, cloudShadowConfig) == 1264 &&
                 offsetof(Frame, inverseCameraRelative) == 1104 &&

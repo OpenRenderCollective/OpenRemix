@@ -110,7 +110,8 @@ namespace remix::trace::detail {
                                             : (material.normalEncoding == 3 ? 4 : 0) |
                                                   uint32_t(material.normalTexture && material.normalTexture->pixels.twoChannel);
   }
-  inline float linear(float c) { return c <= .04045f ? c / 12.92f : std::pow((c + .055f) / 1.055f, 2.4f); }
+  // A display-encoded value (gamma 2.2) to linear.
+  inline float linear(float c) { return std::pow(c, 2.2f); }
   // Decal paint mode (TraceSurface state bits 7-8): 0 alpha-over, 1 multiply
   // (DST_COLOR*ZERO or ZERO*SRC_COLOR), 2 double multiply (DST_COLOR*SRC_COLOR, mod2x).
   inline uint32_t decalMode(const scene::Blend &b) {

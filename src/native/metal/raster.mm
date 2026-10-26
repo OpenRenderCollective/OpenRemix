@@ -11,7 +11,8 @@ namespace remix::metal {
   using namespace scene;
 
   namespace {
-    float linear(float c) { return c <= .04045f ? c / 12.92f : std::pow((c + .055f) / 1.055f, 2.4f); }
+    // A display-encoded value (gamma 2.2) to linear.
+    float linear(float c) { return std::pow(c, 2.2f); }
     // Vulkan enumerants as stored in scene::Blend and scene::Draw.
     MTLBlendFactor blendFactor(uint32_t factor) {
       static constexpr MTLBlendFactor table[] = {
@@ -49,16 +50,14 @@ namespace remix::metal {
     };
     BlockFormat blockFormat(uint32_t format) {
       switch (format) {
+      // sRGB blocks are stored UNORM like the rest: the shaders decode them (pow 2.2).
       case REMIXAPI_FORMAT_BC1_RGB_SRGB:
-        return {MTLPixelFormatBC1_RGBA_sRGB, true};
       case REMIXAPI_FORMAT_BC1_RGB_UNORM:
         return {MTLPixelFormatBC1_RGBA, true};
       case REMIXAPI_FORMAT_BC1_RGBA_SRGB_EXT:
-        return {MTLPixelFormatBC1_RGBA_sRGB};
       case REMIXAPI_FORMAT_BC1_RGBA_UNORM_EXT:
         return {MTLPixelFormatBC1_RGBA};
       case REMIXAPI_FORMAT_BC3_SRGB:
-        return {MTLPixelFormatBC3_RGBA_sRGB};
       case REMIXAPI_FORMAT_BC3_UNORM:
         return {MTLPixelFormatBC3_RGBA};
       case REMIXAPI_FORMAT_BC4_UNORM_EXT:
@@ -70,27 +69,15 @@ namespace remix::metal {
       case REMIXAPI_FORMAT_BC6H_SFLOAT_EXT:
         return {MTLPixelFormatBC6H_RGBFloat};
       case REMIXAPI_FORMAT_BC7_SRGB:
-        return {MTLPixelFormatBC7_RGBAUnorm_sRGB};
       case REMIXAPI_FORMAT_BC7_UNORM:
         return {MTLPixelFormatBC7_RGBAUnorm};
       default:
         return {};
       }
     }
-    // Same-class UNORM counterpart used by linear data-map views.
-    MTLPixelFormat linearFormat(MTLPixelFormat format) {
-      switch (format) {
-      case MTLPixelFormatRGBA8Unorm_sRGB:
-        return MTLPixelFormatRGBA8Unorm;
-      case MTLPixelFormatBC1_RGBA_sRGB:
-        return MTLPixelFormatBC1_RGBA;
-      case MTLPixelFormatBC3_RGBA_sRGB:
-        return MTLPixelFormatBC3_RGBA;
-      case MTLPixelFormatBC7_RGBAUnorm_sRGB:
-        return MTLPixelFormatBC7_RGBAUnorm;
-      default:
-        return format;
-      }
+    bool srgbBlock(uint32_t format) {
+      return format == REMIXAPI_FORMAT_BC1_RGB_SRGB || format == REMIXAPI_FORMAT_BC1_RGBA_SRGB_EXT ||
+             format == REMIXAPI_FORMAT_BC3_SRGB || format == REMIXAPI_FORMAT_BC7_SRGB;
     }
     // raster/pipelines.cpp pipelineKey, plus the target and the stages.
     constexpr uint64_t skyBit = uint64_t(1) << 34, maskedBit = uint64_t(1) << 35, spriteBit = uint64_t(1) << 36;
@@ -138,9 +125,6 @@ namespace remix::metal {
       halo.composite[0] = halo.composite[1] = nil;
       displayFormat = format;
       encodeOutput = encode;
-      // UNORM targets blend display-encoded values (halo composite flags bit 1).
-      linearTarget = format != MTLPixelFormatBGRA8Unorm && format != MTLPixelFormatRGBA8Unorm &&
-                     format != MTLPixelFormatBGR10A2Unorm && format != MTLPixelFormatRGB10A2Unorm;
     }
     if (!depth || width != w || height != h) {
       retire(depth);
@@ -241,14 +225,13 @@ namespace remix::metal {
 
   Raster::Gpu::TextureGpu Raster::Gpu::uploadPixels(const std::shared_ptr<Texture> &owner, const Pixels &p) {
     const uint32_t levels = std::max<uint32_t>(1, uint32_t(p.hdrMips.empty() ? p.mips.size() : p.hdrMips.size()));
-    const auto format = !p.hdrMips.empty() ? MTLPixelFormatRGBA32Float
-                        : p.srgb           ? MTLPixelFormatRGBA8Unorm_sRGB
-                                           : MTLPixelFormatRGBA8Unorm;
+    // sRGB texels stay encoded: the shaders decode them (pow 2.2).
+    const auto format = !p.hdrMips.empty() ? MTLPixelFormatRGBA32Float : MTLPixelFormatRGBA8Unorm;
     const size_t texel = !p.hdrMips.empty() ? 16 : 4;
-    // sRGB images may later gain a linear alias view (data maps).
-    auto usage = MTLTextureUsageShaderRead | (p.srgb ? MTLTextureUsagePixelFormatView : 0);
     // Unified memory: shared textures are written directly, as host-visible staging would be.
-    TextureGpu value{owner, texture2d(device, format, p.width, p.height, usage, levels, MTLStorageModeShared)};
+    TextureGpu value{owner, texture2d(device, format, p.width, p.height, MTLTextureUsageShaderRead, levels,
+                                      MTLStorageModeShared)};
+    value.srgb = p.srgb && p.hdrMips.empty();
     uint32_t width = std::max(1u, p.width), height = std::max(1u, p.height);
     for (uint32_t i = 0; i < levels; ++i) {
       const void *bytes = p.hdrMips.empty() ? static_cast<const void *>(p.mips[i].data())
@@ -271,13 +254,9 @@ namespace remix::metal {
     const auto &p = source->pixels;
     auto &c = *p.compressed;
     // A linear data map of an sRGB compressed texture shares the source's
-    // image through a UNORM view: no second copy.
+    // image, read without the decode: no second copy.
     if (const auto &base = source->encodedSource; base && base->pixels.compressed == p.compressed) {
-      auto &image = texture(base);
-      const auto format = linearFormat(image.texture.pixelFormat);
-      TextureGpu value{source, format == image.texture.pixelFormat
-                                   ? image.texture
-                                   : [image.texture newTextureViewWithPixelFormat:format]};
+      TextureGpu value{source, texture(base).texture};
       return textures.emplace(source.get(), std::move(value)).first->second;
     }
     auto release = [&] { std::vector<uint8_t>().swap(c.upload); };
@@ -301,7 +280,7 @@ namespace remix::metal {
                                                                         height:p.height
                                                                      mipmapped:NO];
     descriptor.mipmapLevelCount = c.levels;
-    descriptor.usage = MTLTextureUsageShaderRead | (p.srgb ? MTLTextureUsagePixelFormatView : 0);
+    descriptor.usage = MTLTextureUsageShaderRead;
     descriptor.storageMode = MTLStorageModeShared;
     // BC4 is sampled as (r, r, r, 1) and BC1 RGB with opaque alpha, as the Vulkan views.
     if (c.block == 4)
@@ -313,6 +292,7 @@ namespace remix::metal {
     TextureGpu value{source, [device newTextureWithDescriptor:descriptor]};
     check(value.texture, "compressed texture");
     value.compressed = true;
+    value.srgb = srgbBlock(c.format);
     const size_t blockSize = (c.block == 1 || c.block == 4) ? 8 : 16;
     size_t offset = 0;
     uint32_t width = p.width, height = p.height;
@@ -351,13 +331,15 @@ namespace remix::metal {
 
   SampledImage Raster::Gpu::sampledMaterial(const std::shared_ptr<Material> &source) {
     auto &mat = material(source);
-    return {textures.at(source->texture.get()).texture, mat.sampler};
+    const auto &image = textures.at(source->texture.get());
+    return {image.texture, mat.sampler, image.srgb};
   }
 
   SampledImage Raster::Gpu::sampledTexture(const std::shared_ptr<Material> &source,
                                            const std::shared_ptr<Texture> &image) {
     auto &mat = material(source);
-    return {texture(image).texture, mat.sampler};
+    const auto &value = texture(image);
+    return {value.texture, mat.sampler, value.srgb};
   }
 
   uint64_t Raster::Gpu::key(const Draw &draw, Target target) {
@@ -746,8 +728,10 @@ namespace remix::metal {
       const float reference = draw.alphaOverride ? draw.reference : mat.reference;
       std::memcpy(&out.push.state[2], &reference, sizeof(reference));
       // Sky draws into the tracer's linear sky image never encode (state.w
-      // bit 1, cleared by record); bit 4: drawn outside the coverage.
+      // bit 1, cleared by record); bit 2: sRGB-encoded texels; bit 4: drawn
+      // outside the coverage.
       out.push.state[3] = uint32_t(draw.ignoreAlpha) | (g.encodeOutput ? 2u : 0u) |
+                          (g.textures.at(draw.material->texture.get()).srgb ? 4u : 0u) |
                           (slot >= 0 && outside ? 16u : 0u) | spriteFlags << 5;
       out.push.factor[0] = linear(float((b.factor >> 16) & 255) / 255);
       out.push.factor[1] = linear(float((b.factor >> 8) & 255) / 255);

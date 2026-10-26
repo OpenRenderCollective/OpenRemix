@@ -243,7 +243,7 @@ namespace remix {
     float m_clearColor[4] = {0.025f, 0.035f, 0.055f, 1.0f};
     remixapi_UIState m_uiState = REMIXAPI_UI_STATE_NONE;
     ImGuiContext *m_gui = nullptr;
-    bool m_initialized = false, m_frameStarted = false, m_vsync = false, m_srgb = true;
+    bool m_initialized = false, m_frameStarted = false, m_vsync = false;
     bool m_traceSupported = false, m_disableProfiles = false, m_disableMods = false;
     std::atomic<bool> m_failed{false};
   };

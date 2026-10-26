@@ -62,6 +62,16 @@ namespace remix {
     vkEnumerateInstanceExtensionProperties(nullptr, &available, nullptr);
     std::vector<VkExtensionProperties> availableExtensions(available);
     vkEnumerateInstanceExtensionProperties(nullptr, &available, availableExtensions.data());
+    // HDR10 output's ST.2084 swapchain colour space (runtime/hdr_output.h).
+    m_swapchainColorSpace =
+        !m_headless &&
+        std::any_of(availableExtensions.begin(), availableExtensions.end(), [](const auto &e) {
+          return std::strcmp(e.extensionName, VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME) == 0;
+        });
+    if (m_swapchainColorSpace &&
+        std::none_of(extensions.begin(), extensions.end(),
+                     [](auto p) { return std::strcmp(p, VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME) == 0; }))
+      extensions.push_back(VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME);
     if (std::any_of(availableExtensions.begin(), availableExtensions.end(),
                     [](const auto &e) { return std::strcmp(e.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0; }) &&
         std::none_of(extensions.begin(), extensions.end(),

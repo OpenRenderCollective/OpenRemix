@@ -18,8 +18,8 @@ namespace remix::metal {
     // runtime's resource key): changing any prepares a new tracer.
     struct Configuration {
       // Render (tracing) and display (output) sizes: they differ with upscaling.
+      // The display is UNORM: the composite writes gamma 2.2 values.
       uint32_t width = 0, height = 0, displayWidth = 0, displayHeight = 0, displayFormat = 0;
-      bool encodeOutput = false, hardwareSrgb = false;
       bool reblur = false, taa = false, sigma = false, local = false, localDenoise = false;
       bool sharc = false, validation = false;
       uint32_t sharcCapacityLog2 = 0;
@@ -39,7 +39,7 @@ namespace remix::metal {
       // the world camera supports reconstruction. device: an id<MTLDevice>.
       static Configuration of(void *device, const TraceOptions &options, bool frameGeneration, bool local,
                               bool perspective, uint32_t displayWidth, uint32_t displayHeight,
-                              uint32_t displayFormat, bool encodeOutput, bool hardwareSrgb);
+                              uint32_t displayFormat);
       bool temporal() const { return reblur || taa || sigma || reconstruction; }
     };
     PathTracer();

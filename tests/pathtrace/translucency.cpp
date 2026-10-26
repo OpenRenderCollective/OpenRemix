@@ -84,7 +84,7 @@ int main(int argc, char **argv) {
         (std::string("rtx.native.pathtrace.") + key).c_str(), value));
   };
   for (const char *key :
-       {"autoExposure", "bloom", "taa", "sigma", "sharc", "prism", "gamma22",
+       {"autoExposure", "bloom", "taa", "sigma", "sharc",
         "adaptiveLocalSampling", "blueNoiseLocalLights", "waterIndirectReuse",
         "translucencyReuse"})
     config(key, "0");

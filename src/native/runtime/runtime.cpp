@@ -85,7 +85,8 @@ namespace remix {
     m_frameIndex = 0;
     const char *frames = std::getenv("REMIX_FRAMES_IN_FLIGHT");
     m_frameCount = frames && std::strcmp(frames, "1") == 0 ? 1u : gpuFrameCount;
-    m_srgb = !info.disableSrgbConversionForOutput;
+    // info.disableSrgbConversionForOutput is accepted but ignored: the output
+    // is always gamma 2.2 encoded (UNORM swapchain).
     try {
       if (!m_disableProfiles)
         m_profiles.startup();

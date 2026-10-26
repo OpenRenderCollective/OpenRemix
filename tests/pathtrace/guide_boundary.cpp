@@ -187,8 +187,7 @@ int main(int argc, char **argv) {
         std::array<float, 3> pixel{};
         for (int c = 0; c < 3; ++c) {
           float v = data[(y * w + x) * 4 + c] / 255.f;
-          pixel[c] =
-              v <= .04045f ? v / 12.92f : std::pow((v + .055f) / 1.055f, 2.4f);
+          pixel[c] = std::pow(v, 2.2f);
         }
         result.push_back(pixel);
       }

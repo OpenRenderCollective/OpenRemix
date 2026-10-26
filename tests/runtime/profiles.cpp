@@ -47,8 +47,6 @@ int main(int argc, char **argv) {
   t.exposure = 2.3f; t.autoExposureTarget = .13f; t.autoExposureSpeed = 3.7f;
   t.autoExposureCentre = .62f; t.autoExposureMinEv = -10; t.autoExposureMaxEv = 5;
   t.bloomIntensity = .21f; t.bloomRadius = .74f;
-  t.prism = false;
-  t.gamma22 = false;
   t.fsrQuality = 4;
   t.fsrSharpness = .37f;
   t.sigma = false;

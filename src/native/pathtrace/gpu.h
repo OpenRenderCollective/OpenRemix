@@ -107,7 +107,7 @@ namespace remix::trace::detail {
     float eye[4] = {}, direction[4] = {}, radiance[4] = {}; // radiance w: the sun's volumetric scale
     uint32_t config[4] = {}, target[4] = {};
     float jitter[4] = {};      // primary offset; z water reuse, w blue-noise sun/local bits
-    float skyRadiance[4] = {}; // linear uniform environment; w reserved
+    float skyRadiance[4] = {}; // linear uniform environment; w: its texture + 1, -1 a uniform dome
     uint64_t sharcHash = 0, sharcAccumulation = 0, sharcResolved = 0, sharcCounters = 0;
     uint32_t sharcConfig[4] = {};
     float sharcGrid[4] = {}, sharcPreviousCamera[4] = {};
@@ -202,8 +202,12 @@ namespace remix::trace::detail {
     // its texture + 1 (0: none), slices.
     float cloudShadow[3][4] = {};
     uint32_t cloudShadowConfig[4] = {};
+    // A bit per texture slot (slot / 32, its bit slot % 32): the slot holds
+    // sRGB-encoded texels (stored UNORM), decoded with pow 2.2 (scene.glsl).
+    uint32_t srgbTextures[32][4] = {};
   };
-  static_assert(sizeof(Frame) == 1280 && offsetof(Frame, localProbeRead) == 1168 &&
+  static_assert(sizeof(Frame) == 1792 && offsetof(Frame, srgbTextures) == 1280 &&
+                offsetof(Frame, localProbeRead) == 1168 &&
                 offsetof(Frame, localProbeParams) == 1184 && offsetof(Frame, volumeLightScales) == 1200 &&
                 offsetof(Frame, cloudShadow) == 1216 && offsetof(Frame, cloudShadowConfig) == 1264 &&
                 offsetof(Frame, inverseCameraRelative) == 1104 &&
@@ -438,9 +442,10 @@ namespace remix {
       const char *value = std::getenv("REMIX_PROFILE_EVERY_FRAME");
       return value && std::strcmp(value, "1") == 0;
     }();
-    bool timingPending = false, imagesInitialized = false, encodeOutput = false;
+    bool timingPending = false, imagesInitialized = false;
     uint32_t debugView = 0;
-    bool prism = true, gamma22 = true, hardwareSrgb = false;
+    bool falseColorView = false; // the debug view in false colour: shown without the tone curve
+    PathTracer::DisplayOutput display;
     VkExtent2D extent = {}, displayExtent = {};
     VkRenderPass displayPass{};
     VkFormat displayDepthFormat{};
@@ -852,6 +857,7 @@ namespace remix {
     uint64_t tableVersion = 0;
     // The static prefix's texture descriptors, resolved once per prefix.
     std::vector<VkDescriptorImageInfo> prefixTextures;
+    std::vector<uint32_t> prefixSrgbSlots; // prefixTextures' sRGB-encoded slots
     uint64_t prefixTexturesGeneration = 0;
     bool staticValidation = false, staticMismatchLogged = false;
     PathTracer::StaticStatistics staticStatistics;

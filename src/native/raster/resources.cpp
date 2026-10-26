@@ -66,15 +66,12 @@ namespace remix {
     VkFormat blockFormat(uint32_t format) {
       switch (format) {
       case REMIXAPI_FORMAT_BC1_RGB_SRGB:
-        return VK_FORMAT_BC1_RGB_SRGB_BLOCK;
       case REMIXAPI_FORMAT_BC1_RGB_UNORM:
         return VK_FORMAT_BC1_RGB_UNORM_BLOCK;
       case REMIXAPI_FORMAT_BC1_RGBA_SRGB_EXT:
-        return VK_FORMAT_BC1_RGBA_SRGB_BLOCK;
       case REMIXAPI_FORMAT_BC1_RGBA_UNORM_EXT:
         return VK_FORMAT_BC1_RGBA_UNORM_BLOCK;
       case REMIXAPI_FORMAT_BC3_SRGB:
-        return VK_FORMAT_BC3_SRGB_BLOCK;
       case REMIXAPI_FORMAT_BC3_UNORM:
         return VK_FORMAT_BC3_UNORM_BLOCK;
       case REMIXAPI_FORMAT_BC4_UNORM_EXT:
@@ -86,29 +83,17 @@ namespace remix {
       case REMIXAPI_FORMAT_BC6H_SFLOAT_EXT:
         return VK_FORMAT_BC6H_SFLOAT_BLOCK;
       case REMIXAPI_FORMAT_BC7_SRGB:
-        return VK_FORMAT_BC7_SRGB_BLOCK;
       case REMIXAPI_FORMAT_BC7_UNORM:
         return VK_FORMAT_BC7_UNORM_BLOCK;
       default:
         return VK_FORMAT_UNDEFINED;
       }
     }
-    // Same-class UNORM counterpart used by linear data-map views.
-    VkFormat linearFormat(VkFormat format) {
-      switch (format) {
-      case VK_FORMAT_R8G8B8A8_SRGB:
-        return VK_FORMAT_R8G8B8A8_UNORM;
-      case VK_FORMAT_BC1_RGB_SRGB_BLOCK:
-        return VK_FORMAT_BC1_RGB_UNORM_BLOCK;
-      case VK_FORMAT_BC1_RGBA_SRGB_BLOCK:
-        return VK_FORMAT_BC1_RGBA_UNORM_BLOCK;
-      case VK_FORMAT_BC3_SRGB_BLOCK:
-        return VK_FORMAT_BC3_UNORM_BLOCK;
-      case VK_FORMAT_BC7_SRGB_BLOCK:
-        return VK_FORMAT_BC7_UNORM_BLOCK;
-      default:
-        return format;
-      }
+    // sRGB-encoded block formats: stored as UNORM like the rest, the shaders
+    // decode them (pow 2.2).
+    bool srgbBlock(uint32_t format) {
+      return format == REMIXAPI_FORMAT_BC1_RGB_SRGB || format == REMIXAPI_FORMAT_BC1_RGBA_SRGB_EXT ||
+             format == REMIXAPI_FORMAT_BC3_SRGB || format == REMIXAPI_FORMAT_BC7_SRGB;
     }
   } // namespace
 
@@ -306,9 +291,8 @@ namespace remix {
                                                                     const Pixels &p, VkCommandBuffer command,
                                                                     VkImageCreateFlags flags) {
     const uint32_t available = uint32_t(p.mips.size());
-    const VkFormat format = !p.hdrMips.empty() ? VK_FORMAT_R32G32B32A32_SFLOAT
-                            : p.srgb           ? VK_FORMAT_R8G8B8A8_SRGB
-                                               : VK_FORMAT_R8G8B8A8_UNORM;
+    // sRGB texels stay encoded: the shaders decode them (pow 2.2).
+    const VkFormat format = !p.hdrMips.empty() ? VK_FORMAT_R32G32B32A32_SFLOAT : VK_FORMAT_R8G8B8A8_UNORM;
     const auto queryBegin = std::chrono::steady_clock::now();
     uint32_t skip = textureMipSkip(p.width, p.height, available);
     textureCosts.query +=
@@ -328,6 +312,7 @@ namespace remix {
     const uint32_t levels = available - skip;
     TextureGpu value{source, std::move(allocated)};
     value.view = value.data->view;
+    value.srgb = p.srgb && p.hdrMips.empty();
     // Level bytes go straight into the staging buffer.
     auto level = [&](uint32_t i) -> std::pair<const uint8_t *, size_t> {
       i += skip;
@@ -387,25 +372,12 @@ namespace remix {
     const auto &p = source->pixels;
     auto &c = *p.compressed;
     // A linear data map of an sRGB compressed texture (dataTexturePath) shares
-    // the source's mutable-format image through a UNORM view: no second copy.
+    // the source's image, read without the decode: no second copy.
     if (const auto &base = source->encodedSource; base && base->pixels.compressed == p.compressed) {
-      auto &image = *texture(base, command).data;
-      if (linearFormat(image.format) == image.format)
-        return textures.emplace(source.get(), TextureGpu{source, nullptr, image.view}).first->second;
-      if (!image.linearView) {
-        const VkImageViewCreateInfo info = {.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-                                            .image = image.image,
-                                            .viewType = VK_IMAGE_VIEW_TYPE_2D,
-                                            .format = linearFormat(image.format),
-                                            .components = image.components,
-                                            .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, image.levels, 0, 1}};
-        check(vkCreateImageView(device, &info, nullptr, &image.linearView));
-      }
-      TextureGpu value{source, nullptr, image.linearView};
-      return textures.emplace(source.get(), std::move(value)).first->second;
+      const auto view = texture(base, command).view;
+      return textures.emplace(source.get(), TextureGpu{source, nullptr, view}).first->second;
     }
-    // sRGB images may later gain a linear alias view.
-    const VkImageCreateFlags flags = p.srgb ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : 0;
+    const VkImageCreateFlags flags = 0;
     auto release = [&] { std::vector<uint8_t>().swap(c.upload); };
     const VkFormat format = textureCompression ? blockFormat(c.format) : VK_FORMAT_UNDEFINED;
     if (c.upload.empty() || format == VK_FORMAT_UNDEFINED) {
@@ -465,6 +437,7 @@ namespace remix {
     }
     TextureGpu value{source, std::move(allocated)};
     value.view = value.data->view;
+    value.srgb = srgbBlock(c.format);
     std::vector<VkBufferImageCopy> copies;
     VkDeviceSize first = 0, offset = 0;
     for (uint32_t i = 0; i < skip; ++i)
@@ -563,6 +536,13 @@ namespace remix {
     m_gpu->material(source, command);
     auto &texture = m_gpu->texture(image, command);
     return {m_gpu->materials.at(source.get())->sampler, texture.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+  }
+
+  bool RasterRenderer::textureSrgb(const scene::Texture *texture) const {
+    if (!m_gpu || !texture)
+      return false;
+    auto it = m_gpu->textures.find(texture);
+    return it != m_gpu->textures.end() && it->second.srgb;
   }
 
   VkImageView RasterRenderer::textureView(const scene::Texture *texture) const {

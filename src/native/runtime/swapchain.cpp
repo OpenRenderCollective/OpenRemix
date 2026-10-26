@@ -102,10 +102,13 @@ namespace remix {
       return REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE;
     }
     const VkSurfaceFormatKHR format = chooseSurfaceFormat(formats);
+    // With HDR10 the snapshot, host passes and screenshots take the float
+    // back buffer; frame generation still copies the swapchain images.
+    const bool hdr10 = format.colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT;
     m_screenshotSupported =
         (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) &&
         (format.format == VK_FORMAT_B8G8R8A8_SRGB || format.format == VK_FORMAT_B8G8R8A8_UNORM ||
-         format.format == VK_FORMAT_R8G8B8A8_SRGB || format.format == VK_FORMAT_R8G8B8A8_UNORM);
+         format.format == VK_FORMAT_R8G8B8A8_SRGB || format.format == VK_FORMAT_R8G8B8A8_UNORM || hdr10);
     VkFormatProperties formatProperties{};
     vkGetPhysicalDeviceFormatProperties(m_physicalDevice, format.format,
                                         &formatProperties);
@@ -176,6 +179,7 @@ namespace remix {
     }
     m_swapchainFormat = format.format;
     m_swapchainExtent = extent;
+    m_swapchainHdr10 = hdr10;
     if (vkGetSwapchainImagesKHR(m_device, m_swapchain, &imageCount, nullptr) != VK_SUCCESS ||
         imageCount < 2) {
       return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
@@ -227,17 +231,21 @@ namespace remix {
 
   remixapi_ErrorCode RemixNativeRuntime::createAttachments() {
     m_snapshotAllocationFailed = false;
+    // HDR10: the frame's passes draw into a float back buffer (GENERAL, as
+    // the shared image of headless mode), which HdrOutput encodes into the
+    // swapchain image.
+    const bool backBuffer = m_headless || m_swapchainHdr10;
     VkAttachmentDescription attachments[] = {
         {
-            .format = m_swapchainFormat,
+            .format = m_swapchainHdr10 ? HdrOutput::backBufferFormat : m_swapchainFormat,
             .samples = VK_SAMPLE_COUNT_1_BIT,
             .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
             .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
             .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-            .initialLayout = m_headless ? VK_IMAGE_LAYOUT_GENERAL
+            .initialLayout = backBuffer ? VK_IMAGE_LAYOUT_GENERAL
                                         : VK_IMAGE_LAYOUT_UNDEFINED,
-            .finalLayout = m_headless ? VK_IMAGE_LAYOUT_GENERAL
+            .finalLayout = backBuffer ? VK_IMAGE_LAYOUT_GENERAL
                                       : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
         },
         {
@@ -305,9 +313,9 @@ namespace remix {
     attachments[1].initialLayout = attachments[1].finalLayout;
     if (pipeline::createRenderPass(m_device, &pass, nullptr, &m_resumePass) != VK_SUCCESS)
       return fail();
-    const bool hardwareSrgb =
-        m_swapchainFormat == VK_FORMAT_R8G8B8A8_SRGB || m_swapchainFormat == VK_FORMAT_B8G8R8A8_SRGB;
-    renderer().configureTarget(m_renderPass, m_swapchainExtent, m_srgb && !hardwareSrgb, hardwareSrgb);
+    // The UNORM swapchain (or HDR10's float back buffer) takes display values:
+    // the draws encode gamma 2.2.
+    renderer().configureTarget(m_renderPass, m_swapchainExtent, true);
     const uint32_t count = static_cast<uint32_t>(m_swapchainImages.size());
     m_imageViews.resize(count);
     m_framebuffers.resize(count);
@@ -334,6 +342,13 @@ namespace remix {
       if (vkCreateImageView(m_device, &view, nullptr, &m_imageViews[i]) != VK_SUCCESS) {
         return fail();
       }
+      const VkSemaphoreCreateInfo semaphore = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+      if (vkCreateSemaphore(m_device, &semaphore, nullptr, &m_renderFinished[i]) != VK_SUCCESS) {
+        return fail();
+      }
+      // HDR10's passes draw into its back buffers' framebuffers instead.
+      if (m_swapchainHdr10)
+        continue;
       const VkImageView views[] = {m_imageViews[i], renderer().depthView()};
       const VkFramebufferCreateInfo framebuffer = {
           .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
@@ -347,9 +362,13 @@ namespace remix {
       if (vkCreateFramebuffer(m_device, &framebuffer, nullptr, &m_framebuffers[i]) != VK_SUCCESS) {
         return fail();
       }
-      const VkSemaphoreCreateInfo semaphore = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-      if (vkCreateSemaphore(m_device, &semaphore, nullptr, &m_renderFinished[i]) != VK_SUCCESS) {
-        return fail();
+    }
+    if (m_swapchainHdr10) {
+      try {
+        m_hdrOutput.create(m_physicalDevice, m_device, m_swapchainFormat, m_swapchainExtent, m_imageViews,
+                           gpuFrameCount, m_renderPass, renderer().depthView());
+      } catch (VkResult result) {
+        return fail(result);
       }
     }
     return REMIXAPI_ERROR_CODE_SUCCESS;
@@ -369,6 +388,7 @@ namespace remix {
     }
     m_screenshot.reset(m_device, true);
     shutdownUiVulkan();
+    m_hdrOutput.destroy();
     if (!m_commandBuffers.empty()) {
       vkFreeCommandBuffers(m_device, m_commandPool, static_cast<uint32_t>(m_commandBuffers.size()),
                            m_commandBuffers.data());
@@ -419,12 +439,38 @@ namespace remix {
     m_swapchainExtent = {};
   }
 
-  VkSurfaceFormatKHR
-  RemixNativeRuntime::chooseSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &formats) const {
-    const std::array<VkFormat, 2> kPreferredFormats = {
-        m_srgb ? VK_FORMAT_B8G8R8A8_SRGB : VK_FORMAT_B8G8R8A8_UNORM,
-        m_srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM,
-    };
+  bool RemixNativeRuntime::wantsHdr10() const {
+    return !m_headless && m_swapchainColorSpace && m_profiles.current().hdr && m_window.hdrEnabled();
+  }
+
+  PathTracer::DisplayOutput RemixNativeRuntime::displayOutput() const {
+    if (!m_hdrOutput.active())
+      return {};
+    const auto &settings = m_profiles.current();
+    const auto nits = HdrNits{settings.hdrPeakNits, settings.hdrPaperWhiteNits, settings.hdrUiNits}.clamped();
+    return {true, nits.peak, nits.paperWhite};
+  }
+
+  VkSurfaceFormatKHR RemixNativeRuntime::chooseSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &formats) {
+    // HDR10: a 10-bit ST.2084 format; a driver without one presents SDR.
+    m_hdr10Requested = wantsHdr10();
+    if (m_hdr10Requested) {
+      for (VkFormat preferred : HdrOutput::swapchainFormats)
+        for (const VkSurfaceFormatKHR &available : formats)
+          if (available.format == preferred && available.colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT) {
+            m_hdrStatus.clear();
+            return available;
+          }
+      m_hdrStatus = "the display offers no 10-bit ST.2084 (HDR10) swapchain format";
+    } else {
+      m_hdrStatus = m_headless                       ? "headless presentation"
+                    : !m_swapchainColorSpace          ? "VK_EXT_swapchain_colorspace is unavailable"
+                    : !m_profiles.current().hdr       ? "turned off"
+                                                      : "Windows HDR is off for this display";
+    }
+    // UNORM only: every output shader encodes gamma 2.2 itself, so an sRGB
+    // format's hardware encode would apply a second curve.
+    const std::array<VkFormat, 2> kPreferredFormats = {VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_R8G8B8A8_UNORM};
     for (VkFormat preferred : kPreferredFormats) {
       for (const VkSurfaceFormatKHR &available : formats) {
         if (available.format == preferred && available.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
@@ -435,6 +481,9 @@ namespace remix {
     if (formats.front().format == VK_FORMAT_UNDEFINED) {
       return {kPreferredFormats[0], VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
     }
+    for (const VkSurfaceFormatKHR &available : formats)
+      if (available.format != VK_FORMAT_B8G8R8A8_SRGB && available.format != VK_FORMAT_R8G8B8A8_SRGB)
+        return available;
     return formats.front();
   }
 

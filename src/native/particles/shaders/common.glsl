@@ -13,7 +13,7 @@ struct Frame {
   vec4 volumeOrigin;    // world position of the volume's cell (0, 0, 0); w: cell size
   ivec4 volumeCell;     // the volume's first cell, in cells; w: the quarter of cells updated
   uvec4 volumeSize;     // cells along x, y, z; w: emitters
-  uvec4 display;        // prism, gamma 2.2, encode, hardware sRGB
+  uvec4 display;        // x bit 0: HDR10 (displayColor), bit 1: the environment's texels are sRGB-encoded (gamma 2.2); peak, paper white nits (float bits); reserved
   vec4 depthScale;      // view depth = y / (depth - x); z: 1 when the scene's depth is bound
   vec4 dome[3];         // world to the environment's frame (rows); w: its scale, target width, height
   uvec4 counts;         // frame number, emitters, spawn groups, simulate groups

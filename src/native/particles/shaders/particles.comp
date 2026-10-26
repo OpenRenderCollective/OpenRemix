@@ -74,7 +74,8 @@ void main() {
     vec3 d = normalize(vec3(dot(frame.dome[0].xyz, direction), dot(frame.dome[1].xyz, direction),
                             dot(frame.dome[2].xyz, direction)));
     vec2 uv = vec2(atan(d.z, d.x) / 6.28318531 + .5, acos(clamp(d.y, -1.0, 1.0)) / 3.14159265);
-    sums[index] = frame.ambient.w != 0.0 ? textureLod(environment, uv, 0.0).rgb : vec3(0);
+    vec3 sky = frame.ambient.w != 0.0 ? textureLod(environment, uv, 0.0).rgb : vec3(0);
+    sums[index] = (frame.display.x & 2u) != 0u ? pow(sky, vec3(2.2)) : sky;
     barrier();
     for (uint stride = 32u; stride > 0u; stride /= 2u) {
       if (index < stride) sums[index] += sums[index + stride];

@@ -185,9 +185,7 @@ int main(int argc, char **argv) {
       for (int x = w / 2 - 32; x < w / 2 + 32; ++x)
         for (unsigned c = 0; c < 2; ++c) {
           float value = data[(y * w + x) * 4 + c] / 255.f;
-          mean[c] += value <= .04045f
-                         ? value / 12.92f
-                         : std::pow((value + .055f) / 1.055f, 2.4f);
+          mean[c] += std::pow(value, 2.2f);
         }
     stbi_image_free(data);
     for (auto &value : mean)
@@ -195,7 +193,7 @@ int main(int argc, char **argv) {
     return mean;
   };
   for (auto key : {"bounces", "taa", "localDenoiser", "localGuiding",
-                   "accumulate", "prism", "gamma22"})
+                   "accumulate"})
     config(key, "0");
   config("denoiser", "off");
   config("adaptiveLocalSampling", "1");

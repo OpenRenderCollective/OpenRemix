@@ -65,9 +65,11 @@ namespace remix {
     inputs.time = float(std::chrono::duration<double>(std::chrono::steady_clock::now() - m_particleStart).count());
     inputs.metersPerUnit = m_traceOptions.sceneScale;
     inputs.upAxis = m_traceOptions.volumetricUpAxis < 3 ? m_traceOptions.volumetricUpAxis : m_particleUpAxis;
-    const bool hardwareSrgb =
-        m_swapchainFormat == VK_FORMAT_R8G8B8A8_SRGB || m_swapchainFormat == VK_FORMAT_B8G8R8A8_SRGB;
-    const uint32_t encode = m_srgb && !hardwareSrgb;
+    // Shown as the composite shows the scene (displayColor).
+    const auto display = displayOutput();
+    inputs.display[0] = display.hdr10 ? 1u : 0u;
+    std::memcpy(&inputs.display[1], &display.peakNits, sizeof(float));
+    std::memcpy(&inputs.display[2], &display.paperWhiteNits, sizeof(float));
     if (m_pathTracer && m_backend != 0) {
       const auto lighting = m_pathTracer->overlayLighting();
       for (int i = 0; i < 3; ++i) {
@@ -90,8 +92,7 @@ namespace remix {
       // last completed frame measured it.
       const auto &options = m_traceOptions;
       inputs.exposure = options.exposure * (options.autoExposure ? postProcessingStatistics().exposure : 1.f);
-      const uint32_t display[4] = {options.prism, options.gamma22, encode, hardwareSrgb};
-      std::copy_n(display, 4, inputs.display);
+      inputs.display[0] |= lighting.skyRadiance[3] > 0 && lighting.environmentSrgb ? 2u : 0u;
     } else {
       // The raster backend: the scene's sun and sky colour, unshadowed and
       // shown without a tonemapper.
@@ -102,8 +103,6 @@ namespace remix {
         inputs.ambient[i] = raster.skyRadiance()[i];
       }
       inputs.exposure = m_profiles.current().sky.rasterExposure;
-      inputs.display[2] = encode;
-      inputs.display[3] = hardwareSrgb;
     }
     const auto texture = [&raster](uint64_t handle, VkCommandBuffer command) -> VkDescriptorImageInfo {
       const auto it = raster.textures().find(handle);

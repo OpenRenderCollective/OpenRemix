@@ -94,7 +94,7 @@ fragment half4 uiFragment(VertexOut in [[stage_in]], texture2d<half, access::sam
     s_uiGpu = m_gpu.get();
     io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset | ImGuiBackendFlags_RendererHasTextures;
     ui::toolkitStyle();
-    ui::toolkitColors(m_gpu->format == MTLPixelFormatBGRA8Unorm_sRGB);
+    ui::toolkitColors();
     if (!ImGui_ImplSDL3_InitForMetal(m_window.handle()))
       return false;
     const float scale = SDL_GetWindowDisplayScale(m_window.handle());

@@ -293,9 +293,6 @@ namespace remix {
         const auto extent = m_swapchainExtent;
         const auto depthFormat = renderer().depthFormat();
         const auto depth = renderer().depthView();
-        const bool srgb = m_swapchainFormat == VK_FORMAT_R8G8B8A8_SRGB ||
-                          m_swapchainFormat == VK_FORMAT_B8G8R8A8_SRGB;
-        const bool encode = m_srgb && !srgb;
         const auto options = normalized(settings.trace);
         const auto ngx = m_ngx;
         const auto exposureState = m_exposureState;
@@ -317,8 +314,7 @@ namespace remix {
           tracer->initialize(physical, device, family, true,
                              options.rasterPrimary, exposureState);
           tracer->setNgx(ngx);
-          tracer->configureTarget(pass, extent, encode, depthFormat, depth,
-                                  srgb);
+          tracer->configureTarget(pass, extent, depthFormat, depth);
           tracer->prepareConfiguration(options, perspective, local,
                                        failedBackends, reconstructionFailure);
           next->tracer = std::move(tracer);

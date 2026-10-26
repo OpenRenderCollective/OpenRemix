@@ -73,8 +73,6 @@ namespace remix {
                           "colour = (colour / 0.18)^contrast * 0.18. Counters a flat, grey look.");
       if (options.contrast)
         ui::SliderFloat("Contrast", &options.contrastAmount, .5f, 2.f, "%.2f");
-      ui::Checkbox("Prism tonemapping", &options.prism);
-      ui::Checkbox("Gamma 2.2 output", &options.gamma22);
       for (auto [label, threshold] : {std::pair{"Local direct clamp", &options.localDirectClamp},
                                       std::pair{"Indirect clamp", &options.indirectClamp}}) {
         float value = *threshold;
@@ -107,6 +105,20 @@ namespace remix {
       ImGui::TextWrapped("Confidence %.2f / NRD %.2f / TAA %.2f ms | %.1f MiB",
                          denoising.gpuConfidenceMilliseconds, denoising.gpuDenoiseMilliseconds,
                          denoising.gpuTaaMilliseconds, double(denoising.memoryBytes) / (1024 * 1024));
+    }
+    // Only while Windows has HDR on for the window's display: SDR has no HDR10 settings.
+    if (!m_headless && m_window.hdrEnabled() &&
+        ImGui::CollapsingHeader("HDR10 output", ImGuiTreeNodeFlags_DefaultOpen)) {
+      ui::Checkbox("HDR10 output", &settings.hdr);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("BT.2020 primaries, ST.2084 PQ, 10-bit swapchain. Off: SDR.");
+      if (m_hdrOutput.active()) {
+        ui::SliderFloat("Peak brightness (nits)", &settings.hdrPeakNits, 80, 10000, "%.0f", ImGuiSliderFlags_Logarithmic);
+        ui::SliderFloat("Paper white (nits)", &settings.hdrPaperWhiteNits, 80, 1000, "%.0f");
+        ui::SliderFloat("UI brightness (nits)", &settings.hdrUiNits, 80, 1000, "%.0f");
+      } else {
+        ImGui::TextWrapped("HDR10 output inactive: %s", m_hdrStatus.c_str());
+      }
     }
   }
 } // namespace remix

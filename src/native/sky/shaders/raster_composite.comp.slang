@@ -42,7 +42,7 @@
 
 // gameSky: 0 hidden (NUMOS's sky replaces the miss), 1 under (the game's sky
 // stays behind the clouds and air), 2 over (sky pixels are left alone).
-// flags: 1 the target blends linear values (an sRGB format).
+// flags: reserved (zero).
 struct RasterCompositePush
 {
   uint width;
@@ -109,12 +109,9 @@ void main(uint2 pixel : SV_DispatchThreadID)
   // Exposed and tone mapped toward the display's range.
   added = max(added, vec3(0.0f)) * push.exposure;
   added = added / (1.0f + added);
-  if ((push.flags & 1u) == 0u)
-  {
-    // A display-referred target blends encoded values.
-    added = pow(added, vec3(1.0f / 2.2f));
-    kept = pow(kept, vec3(1.0f / 2.2f));
-  }
+  // The display-referred target blends encoded values (gamma 2.2).
+  added = pow(added, vec3(1.0f / 2.2f));
+  kept = pow(kept, vec3(1.0f / 2.2f));
   addition[pixel] = vec4(added, 1.0f);
   transmittance[pixel] = vec4(kept, 1.0f);
 }

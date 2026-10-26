@@ -52,7 +52,7 @@ int main(int argc, char **argv) {
   auto config = [&](const char *key, const char *value) {
     ok(api.SetConfigVariable((std::string("rtx.native.pathtrace.") + key).c_str(), value));
   };
-  for (auto key : {"sharc", "sigma", "localGuiding", "prism", "gamma22"}) config(key, "0");
+  for (auto key : {"sharc", "sigma", "localGuiding"}) config(key, "0");
   config("bounces", "1");
   config("samples", "1");
   for (const char *bad : {"12", "-1", "1.5", "garbage"})
@@ -155,7 +155,7 @@ int main(int argc, char **argv) {
     Image image(width * height);
     for (size_t i = 0; i < image.size(); ++i) for (unsigned c = 0; c < 3; ++c) {
       float v = data[i * 4 + c] / 255.f;
-      image[i][c] = v <= .04045f ? v / 12.92f : std::pow((v + .055f) / 1.055f, 2.4f);
+      image[i][c] = std::pow(v, 2.2f);
     }
     stbi_image_free(data); return image;
   };
@@ -243,10 +243,6 @@ int main(int argc, char **argv) {
     if (mode >= 2) require(sample(images[10])[0] > .8f, "Stable indirect confidence unexpectedly low");
     auto after = sample(capture(prefix + "final-after", 0));
     near(before, after, .035f, "Diagnostic contaminated final lighting history");
-    config("prism", "1"); config("gamma22", "1");
-    near(sample(capture(prefix + "albedo-display", 1)), sample(images[1]), .001f,
-         "Display transform changed albedo diagnostic");
-    config("prism", "0"); config("gamma22", "0");
     showGlass = true;
     near(sample(capture(prefix + "glass-albedo", 1)), {.1f, 1, .2f}, .012f,
          "Geometry debug does not show first transparent surface");

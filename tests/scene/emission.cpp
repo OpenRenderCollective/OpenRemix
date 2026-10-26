@@ -68,7 +68,7 @@ int main() {
   m.emission[0] = 2;
   const float uv[] = {1,1,0,0};
   auto color = triangleEmission(draw,0,uv);
-  require(std::abs(color[0] - .43172f)<.0001f && color[1]==0, "UV region/linear emission average");
+  require(std::abs(color[0] - .43904f)<.0001f && color[1]==0, "UV region/linear emission average");
   require(triangleEmission(draw,0,uv)==color && m.emissionCache.size()==1, "Emission reduction cache");
   auto light = triangleEmitter(draw,0,color);
   require(light.triangle==1 && std::abs(light.position[0]-1.f/3)<1e-6f, "Area emitter centroid");
@@ -124,7 +124,7 @@ int main() {
   resources.drawInstance(instance(mesh));
   require(!resources.draws().back().material->suppressEmissionLight,
           "Absent emission policy did not preserve default light generation");
-  // Exercise every encoded channel, including both sides of the sRGB knee.
+  // Exercise every encoded channel value (sRGB-encoded: gamma 2.2).
   // Uniform texels have an analytic average independent of UV quadrature.
   m.emissionTexture = std::make_shared<Texture>();
   for (bool srgb : {false, true})
@@ -132,9 +132,7 @@ int main() {
       m.emissionCache.clear();
       m.emissionTexture->pixels = {1, 1, srgb, {{uint8_t(byte), uint8_t(byte), uint8_t(byte), 255}}};
       const float encoded = byte / 255.f;
-      const float linear = !srgb                ? encoded
-                           : encoded <= .04045f ? encoded / 12.92f
-                                                : std::pow((encoded + .055f) / 1.055f, 2.4f);
+      const float linear = !srgb ? encoded : std::pow(encoded, 2.2f);
       const auto reduced = triangleEmission(draw, 0, uv);
       for (unsigned c = 0; c < 3; ++c)
         require(std::abs(reduced[c] - linear * m.emission[c]) < 1e-5f,

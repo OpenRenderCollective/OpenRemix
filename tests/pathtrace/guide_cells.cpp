@@ -189,7 +189,7 @@ int main(int argc, char **argv) {
       for (unsigned c = 0; c < 3; ++c) {
         double v = pixel[c];
         mean[c] +=
-            (v <= .04045 ? v / 12.92 : std::pow((v + .055) / 1.055, 2.4)) /
+            std::pow(v, 2.2) /
             image.size();
       }
     return mean;
@@ -199,8 +199,6 @@ int main(int argc, char **argv) {
   config("taa", "0");
   config("localSamples", "1");
   config("emissiveCandidates", "4");
-  config("prism", "1");
-  config("gamma22", "0");
   config("debugView", "6");
   auto wall = quad(2, 4, -8, 8, -8, 8, white);
   auto red = material({0, 0, 0}, 1, 2, {1, .02f, .01f});
@@ -229,7 +227,6 @@ int main(int argc, char **argv) {
   for (const char *primary : {"raster", "ray"}) {
     config("primaryVisibility", primary);
     config("debugView", "6");
-    config("prism", "1");
     config("accumulate", "0");
     config("localSamples", "1");
     std::array<Image, 2> averages;
@@ -269,7 +266,6 @@ int main(int argc, char **argv) {
     // proposals preserved energy. Average before encoding/clipping; debug
     // presentation deliberately bypasses accumulation, so use final output.
     config("debugView", "0");
-    config("prism", "0");
     config("accumulate", "1");
     config("localSamples", "4");
     std::array<std::array<double, 3>, 2> means;

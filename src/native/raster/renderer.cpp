@@ -171,15 +171,13 @@ namespace remix {
     m_profile = std::exchange(other.m_profile, {});
   }
 
-  void RasterRenderer::configureTarget(VkRenderPass pass, VkExtent2D extent, bool encodeOutput,
-                                       bool linearTarget) {
+  void RasterRenderer::configureTarget(VkRenderPass pass, VkExtent2D extent, bool encodeOutput) {
     auto &g = *m_gpu;
     g.destroyTarget();
     g.pass = pass;
     g.skyPass = VK_NULL_HANDLE;
     g.extent = extent;
     g.encodeOutput = encodeOutput;
-    g.linearTarget = linearTarget;
     g.depth = g.image(extent.width, extent.height, 1, g.depthFormat, true);
   }
 

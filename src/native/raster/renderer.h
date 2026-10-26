@@ -69,10 +69,10 @@ namespace remix {
       m_worstProfile = {};
       return worst;
     }
-    // linearTarget: the target has an sRGB format (fixed-function blending is
-    // linear); otherwise blending operates on display-referred values.
-    void configureTarget(VkRenderPass pass, VkExtent2D extent, bool encodeOutput = false,
-                         bool linearTarget = false);
+    // The target is UNORM: fixed-function blending operates on what is
+    // written. encodeOutput: draws write display values (gamma 2.2, the
+    // swapchain's); otherwise linear ones.
+    void configureTarget(VkRenderPass pass, VkExtent2D extent, bool encodeOutput = false);
     void setSkyTarget(VkRenderPass pass);
     void destroyTarget(); // Caller has completed all submitted work.
     void shutdownGpu();
@@ -147,8 +147,6 @@ namespace remix {
     // sampled, target resolution). False while its pipelines compile.
     bool recordSkyComposite(VkCommandBuffer command, const VkDescriptorImageInfo &transmittance,
                             const VkDescriptorImageInfo &addition);
-    // The target blends linear values (an sRGB format).
-    bool linearTarget() const;
     // The target's depth attachment (depthView's image).
     VkImage depthImage() const;
 
@@ -160,6 +158,9 @@ namespace remix {
                                          const std::shared_ptr<scene::Texture> &texture,
                                          VkCommandBuffer command);
     VkImageView textureView(const scene::Texture *texture) const;
+    // The texture's image holds sRGB-encoded texels (stored UNORM): shaders
+    // sampling it as colour decode them with pow 2.2.
+    bool textureSrgb(const scene::Texture *texture) const;
 
     // Changes whenever prepare() uploaded new pixels of a dynamic texture
     // (remixapi_UpdateTextureEXT): the images are not what the last frame saw.

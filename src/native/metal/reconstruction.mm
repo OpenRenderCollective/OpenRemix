@@ -2,6 +2,7 @@
 // composite around MetalFX's temporal scaler (FSR 3.1 / DLSS-SR's place) and
 // temporal denoised scaler (DLSS Ray Reconstruction's place).
 #include "metal/reconstruction.h"
+#include "scene/display.h"
 #include "upscale/camera.h"
 #import <MetalFX/MetalFX.h>
 #include <algorithm>
@@ -290,9 +291,8 @@ kernel void extractRoughness(texture2d<float, access::read> normalRoughness [[te
   }
 
   // upscale/renderer.cpp composite.
-  void Renderer::composite(id<MTLRenderCommandEncoder> encoder, id<MTLTexture> stableDepth, bool encodeOutput,
-                           bool prism, bool gamma22, bool hardwareSrgb, id<MTLBuffer> exposure, id<MTLTexture> bloom,
-                           id<MTLSamplerState> bloomSampler, id<MTLBuffer> postSettings, uint32_t slot) {
+  void Renderer::composite(id<MTLRenderCommandEncoder> encoder, id<MTLTexture> stableDepth, id<MTLBuffer> exposure,
+                           id<MTLTexture> bloom, id<MTLSamplerState> bloomSampler, id<MTLBuffer> postSettings, uint32_t slot) {
     auto &g = *m_gpu;
     if (!g.compositePipeline) {
       auto *descriptor = [MTLRenderPipelineDescriptor new];
@@ -324,8 +324,13 @@ kernel void extractRoughness(texture2d<float, access::read> normalRoughness [[te
     [encoder setFragmentBuffer:g.postSet.current() offset:0 atIndex:1];
     g.compositeSet.use(encoder, MTLRenderStageFragment);
     g.postSet.use(encoder, MTLRenderStageFragment);
-    const uint32_t settings[] = {uint32_t(encodeOutput), uint32_t(prism), uint32_t(gamma22), uint32_t(hardwareSrgb)};
-    [encoder setFragmentBytes:settings length:sizeof(settings) atIndex:library(Stage::reconstructFrag).push];
+    // upscale.frag's constants: SDR.
+    const scene::DisplayOutput display;
+    const struct {
+      uint32_t display;
+      float peakNits, paperWhiteNits;
+    } settings{uint32_t(display.hdr10), display.peakNits, display.paperWhiteNits};
+    [encoder setFragmentBytes:&settings length:sizeof(settings) atIndex:library(Stage::reconstructFrag).push];
     [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
   }
 

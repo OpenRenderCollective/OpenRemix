@@ -1,9 +1,8 @@
 #include "ui/profiles.h"
-#include <cmath>
 #include <imgui.h>
 
 namespace remix::ui {
-  void toolkitColors(bool hardwareSrgb) {
+  void toolkitColors() {
     ImGui::StyleColorsDark();
     auto &s = ImGui::GetStyle();
     s.Colors[ImGuiCol_WindowBg] = ImVec4(.188f, .188f, .188f, .98f);
@@ -21,14 +20,6 @@ namespace remix::ui {
     s.Colors[ImGuiCol_TabSelected] = ImVec4(.11f, .42f, .51f, 1);
     s.Colors[ImGuiCol_TabHovered] = ImVec4(.22f, .33f, .36f, 1);
     s.Colors[ImGuiCol_CheckMark] = ImVec4(.35f, .75f, .85f, 1);
-    if (hardwareSrgb) {
-      for (auto &color : s.Colors) {
-        for (float *channel : {&color.x, &color.y, &color.z}) {
-          const float value = *channel;
-          *channel = value <= .04045f ? value / 12.92f : std::pow((value + .055f) / 1.055f, 2.4f);
-        }
-      }
-    }
   }
   void toolkitStyle() {
     ImGui::StyleColorsDark();
@@ -41,6 +32,6 @@ namespace remix::ui {
     s.FramePadding = ImVec2(5, 3);
     s.ItemSpacing = ImVec2(6, 5);
     s.ScrollbarSize = 14;
-    toolkitColors(false);
+    toolkitColors();
   }
 } // namespace remix::ui

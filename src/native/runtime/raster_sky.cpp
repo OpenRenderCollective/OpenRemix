@@ -90,7 +90,7 @@ namespace remix {
     try {
       m_rasterSky->recordRasterPostDepth(buffer, raster.depthImage(), raster.depthView(), raster.projection(), 1.f);
       composed = m_rasterSky->recordRasterComposite(buffer, settings.sky.rasterExposure * settings.sky.radianceScale,
-                                                    settings.sky.gameSky, raster.linearTarget());
+                                                    settings.sky.gameSky);
     } catch (const std::exception &exception) {
       m_rasterSkyFailure = exception.what();
     } catch (VkResult result) {

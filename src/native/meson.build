@@ -111,7 +111,8 @@ elif system == 'linux'
   shell_rpath = '$ORIGIN'
 endif
 remix = shared_library('remix',
-  api_sources + runtime_sources + ui_sources,
+  # runtime/hdr_output.cpp embeds the upscaler's HDR10 present stage.
+  api_sources + runtime_sources + ui_sources + [upscale_shaders],
   name_prefix : system == 'windows' ? '' : 'lib',
   link_with : usd_libraries + sky_libraries + [shell_platform, imgui_vulkan, scene_library, raster_library, pathtrace_library, denoise_library, upscale_library, particles_library], dependencies : shell_deps,
   include_directories : [remix_public_include, native_include, image_include], cpp_args : shell_args,

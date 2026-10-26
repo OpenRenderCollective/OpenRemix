@@ -31,6 +31,7 @@
 #include "platform/window.h"
 #include "raster/renderer.h"
 #include "runtime/frame_generation.h"
+#include "runtime/hdr_output.h"
 #include "runtime/host_passes.h"
 #include "runtime/pipelines.h"
 #include "runtime/profiles.h"
@@ -277,8 +278,13 @@ private:
   void destroySwapchain();
   void destroyVulkan();
   bool supportsDeviceExtension(VkPhysicalDevice device, const char *name) const;
-  VkSurfaceFormatKHR
-  chooseSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &formats) const;
+  // Sets m_hdr10Requested and m_hdrStatus.
+  VkSurfaceFormatKHR chooseSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &formats);
+  // HDR10 output is wanted: the setting is on and Windows has HDR on for the
+  // window's display (not headless; VK_EXT_swapchain_colorspace enabled).
+  bool wantsHdr10() const;
+  // The tone curve's peak and scale for displayColor (1 and 1 without HDR10).
+  PathTracer::DisplayOutput displayOutput() const;
   VkPresentModeKHR
   choosePresentMode(const std::vector<VkPresentModeKHR> &modes) const;
   bool initializeUi();
@@ -616,7 +622,6 @@ private:
   std::atomic<int> m_deferredResult{VK_SUCCESS};
   std::chrono::steady_clock::time_point m_lastRenderedPresent{};
   double m_renderedInterval = 0; // smoothed milliseconds between rendered frames
-  bool m_srgb = true;
   remixapi_UIState m_uiState = REMIXAPI_UI_STATE_NONE;
   float m_clearColor[4] = {0.025f, 0.035f, 0.055f, 1.0f};
   char m_input[256] = {};
@@ -638,6 +643,12 @@ private:
   bool m_sharedPresented = false;
   VkSwapchainKHR m_swapchain = VK_NULL_HANDLE;
   VkFormat m_swapchainFormat = VK_FORMAT_UNDEFINED;
+  // HDR10 output (runtime/hdr_output.h): active while the swapchain is
+  // ST.2084. m_hdr10Requested: the swapchain was asked for it, which a change
+  // of wantsHdr10() recreates; m_hdrStatus: why it is inactive.
+  HdrOutput m_hdrOutput;
+  bool m_swapchainColorSpace = false, m_hdr10Requested = false, m_swapchainHdr10 = false;
+  std::string m_hdrStatus;
   VkExtent2D m_swapchainExtent = {};
   std::vector<VkImage> m_swapchainImages;
   std::vector<VkImageView> m_imageViews;

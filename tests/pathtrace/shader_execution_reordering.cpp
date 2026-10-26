@@ -95,7 +95,7 @@ int main(int argc, char **argv) {
   auto config = [&](const char *key, const char *value) {
     ok(api.SetConfigVariable((std::string("rtx.native.pathtrace.") + key).c_str(), value));
   };
-  for (const char *key : {"prism", "gamma22", "sharc", "sigma", "taa", "autoExposure", "bloom", "accumulate"})
+  for (const char *key : {"sharc", "sigma", "taa", "autoExposure", "bloom", "accumulate"})
     config(key, "0");
   config("primaryVisibility", "ray");
   config("denoiser", "off");

@@ -378,7 +378,8 @@ namespace remix {
       out.push.state[3] =
           uint32_t(draw.ignoreAlpha) |
           (g.encodeOutput && !(g.skyPass && draw.camera == REMIXAPI_CAMERA_TYPE_SKY) ? 2u : 0u) |
-          (slot >= 0 && outside ? 16u : 0u) | spriteFlags << 5;
+          (g.textures.at(draw.material->texture.get()).srgb ? 4u : 0u) | (slot >= 0 && outside ? 16u : 0u) |
+          spriteFlags << 5;
       out.push.factor[0] = linear(float((b.factor >> 16) & 255) / 255);
       out.push.factor[1] = linear(float((b.factor >> 8) & 255) / 255);
       out.push.factor[2] = linear(float(b.factor & 255) / 255);

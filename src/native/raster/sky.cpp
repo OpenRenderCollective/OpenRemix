@@ -165,6 +165,5 @@ namespace remix {
     return true;
   }
 
-  bool RasterRenderer::linearTarget() const { return m_gpu && m_gpu->linearTarget; }
   VkImage RasterRenderer::depthImage() const { return m_gpu && m_gpu->depth ? m_gpu->depth->image : VK_NULL_HANDLE; }
 } // namespace remix

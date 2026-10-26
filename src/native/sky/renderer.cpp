@@ -571,7 +571,7 @@ namespace remix::sky {
   }
 
   bool Renderer::recordRasterComposite(VkCommandBuffer command, float exposure,
-                                       config::SkySettings::GameSky gameSky, bool linearTarget) {
+                                       config::SkySettings::GameSky gameSky) {
     if (!m->clouds || !m->rasterDepth)
       return false;
     m->clouds = false;
@@ -599,8 +599,7 @@ namespace remix::sky {
                                    .zUp = m->zUp,
                                    .missDepth = missDepth,
                                    .exposure = exposure / std::max(out.radianceScale, 1e-30f),
-                                   .gameSky = uint32_t(gameSky),
-                                   .flags = linearTarget ? 1u : 0u};
+                                   .gameSky = uint32_t(gameSky)};
     m->bridge.barrier();
     m->dispatch(Stage::raster_composite, named, &push, sizeof(push), (m->renderWidth + 7) / 8,
                 (m->renderHeight + 7) / 8);

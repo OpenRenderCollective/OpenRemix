@@ -524,7 +524,7 @@ void RemixNativeRuntime::presented() {
       // new settings) while the presenter shows the previous frame.
       std::unique_lock queueLock(m_queueMutex, std::defer_lock);
       if (m_recreateSurface || m_rebuild || !m_swapchain || m_vsync != m_presenterVsync ||
-          m_frameGenerationRequested != m_presenterFrameGeneration ||
+          m_frameGenerationRequested != m_presenterFrameGeneration || wantsHdr10() != m_hdr10Requested ||
           state.drawableWidth != m_swapchainExtent.width || state.drawableHeight != m_swapchainExtent.height) {
         status = recreateSwapchain();
         if (status != REMIXAPI_ERROR_CODE_SUCCESS) {
@@ -811,7 +811,7 @@ void RemixNativeRuntime::presented() {
       std::unique_lock queueLock(m_queueMutex, std::defer_lock);
       if (!m_headless && (m_recreateSurface || m_rebuild || !m_swapchain || m_vsync != m_presenterVsync ||
                           m_frameGenerationRequested != m_presenterFrameGeneration ||
-                          state.drawableWidth != m_swapchainExtent.width ||
+                          wantsHdr10() != m_hdr10Requested || state.drawableWidth != m_swapchainExtent.width ||
                           state.drawableHeight != m_swapchainExtent.height)) {
         status = recreateSwapchain();
         if (status != REMIXAPI_ERROR_CODE_SUCCESS) {
@@ -1463,8 +1463,27 @@ void RemixNativeRuntime::presented() {
     std::copy(std::begin(m_clearColor), std::end(m_clearColor), clear[0].color.float32);
     clear[1].depthStencil.depth = 1;
     const auto image = m_swapchainImages[imageIndex];
+    // HDR10 (runtime/hdr_output.h): the frame's passes, its snapshot, the
+    // host passes and screenshots take the float back buffer of this frame's
+    // slot, which is encoded into the swapchain image after the developer UI.
+    const bool hdr = m_hdrOutput.active();
+    const auto target = hdr ? m_hdrOutput.backBuffer(m_frameIndex) : image;
+    const auto targetFormat = hdr ? HdrOutput::backBufferFormat : m_swapchainFormat;
     const auto layout =
-        m_headless ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        m_headless || hdr ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    const auto &settings = m_profiles.current();
+    const HdrNits nits{settings.hdrPeakNits, settings.hdrPaperWhiteNits, settings.hdrUiNits};
+    // The HUD layer and the developer UI at their own brightness
+    // (HdrOutput::scaleUi).
+    auto drawUiLayer = [&](auto &&draw) {
+      if (hdr)
+        m_hdrOutput.scaleUi(buffer, 1 / nits.uiScale());
+      draw();
+      if (hdr)
+        m_hdrOutput.scaleUi(buffer, nits.uiScale());
+    };
+    if (hdr)
+      m_hdrOutput.prepare(buffer, m_frameIndex);
     bool capture =
         !m_loading && m_snapshotSupported && !m_snapshotAllocationFailed;
     auto lapStart = std::chrono::steady_clock::now();
@@ -1473,11 +1492,11 @@ void RemixNativeRuntime::presented() {
       phase += std::chrono::duration<double, std::milli>(now - lapStart).count();
       lapStart = now;
     };
-    if (capture && (!m_lastFrame || !m_lastFrame->matches(m_swapchainFormat,
+    if (capture && (!m_lastFrame || !m_lastFrame->matches(targetFormat,
                                                           m_swapchainExtent))) {
       try {
         m_lastFrame = FrameSnapshot::create(
-            m_physicalDevice, m_device, m_swapchainFormat, m_swapchainExtent);
+            m_physicalDevice, m_device, targetFormat, m_swapchainExtent);
       } catch (VkResult error) {
         if (error == VK_ERROR_DEVICE_LOST)
           throw;
@@ -1495,7 +1514,7 @@ void RemixNativeRuntime::presented() {
       m_frames[m_frameIndex].snapshot = m_lastFrame;
     if (restore) {
       gpu::GpuScope scope(buffer, "Last-frame snapshot restore", m_swapchainExtent);
-      m_lastFrame->restore(buffer, image, m_swapchainExtent, layout);
+      m_lastFrame->restore(buffer, target, m_swapchainExtent, layout);
     }
     lap(breakdown.snapshotMilliseconds);
     // Particle emitters: their compute passes, after the tracer's TLAS.
@@ -1503,7 +1522,7 @@ void RemixNativeRuntime::presented() {
     VkRenderPassBeginInfo pass = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .renderPass = restore ? m_overlayPass : m_renderPass,
-        .framebuffer = m_framebuffers[imageIndex],
+        .framebuffer = hdr ? m_hdrOutput.framebuffer(m_frameIndex) : m_framebuffers[imageIndex],
         .renderArea = {{0, 0}, m_swapchainExtent},
         .clearValueCount = 2,
         .pClearValues = clear,
@@ -1520,7 +1539,7 @@ void RemixNativeRuntime::presented() {
     {
       // Includes the swapchain pass's clear and, when the GPU runs ahead of
       // presentation, its wait for the acquired image.
-      gpu::GpuScope scope(buffer, m_pathTracer && !m_loading ? "Composite, tonemap and prism" : "Raster scene",
+      gpu::GpuScope scope(buffer, m_pathTracer && !m_loading ? "Composite and tonemap" : "Raster scene",
                           m_swapchainExtent);
       vkCmdBeginRenderPass(buffer, &pass, VK_SUBPASS_CONTENTS_INLINE);
       // Halo outlines (remixapi_InstanceInfoHaloEXT) composite over the world
@@ -1538,18 +1557,25 @@ void RemixNativeRuntime::presented() {
       // The host's screen-space passes (remixapi_HostPassEXT) take the frame,
       // view model included, between render passes before its UI layer.
       const bool hostPasses = !m_loading && m_snapshotSupported && m_hostPasses.pending();
-      const int sceneLayers = split ? 1 : hostPasses ? 2 : 3;
+      // HDR10 draws the UI layer on its own, at the UI brightness.
+      const bool hudApart = hostPasses || hdr;
+      const int sceneLayers = split ? 1 : hudApart ? 2 : 3;
       const bool skipSky = m_pathTracer != nullptr || rasterSkyHides;
       auto recordHostPasses = [&] {
         gpu::GpuScope hostTime(buffer, "Host passes", m_swapchainExtent);
         // The scene's depth stays in the target's depth attachment.
         vkCmdEndRenderPass(buffer);
-        m_hostPasses.record(buffer, m_frameIndex, image, m_swapchainFormat, m_swapchainExtent, layout,
+        m_hostPasses.record(buffer, m_frameIndex, target, targetFormat, m_swapchainExtent, layout,
                             m_pathTracer ? m_pathTracer->viewDepth() : VK_NULL_HANDLE);
         pass.renderPass = m_resumePass;
         vkCmdBeginRenderPass(buffer, &pass, VK_SUBPASS_CONTENTS_INLINE);
       };
+      auto recordHud = [&] {
+        gpu::GpuScope overlay(buffer, "Raster overlay (HUD)", m_swapchainExtent);
+        drawUiLayer([&] { raster.record(buffer, false, true, nullptr, {}, 3, 3); });
+      };
       if (!m_loading && m_pathTracer) {
+        m_pathTracer->setDisplayOutput(displayOutput());
         m_pathTracer->record(buffer);
         scope.close();
         // Soft sprite overlays (remixapi_InstanceInfoSpriteEXT) sample the
@@ -1599,7 +1625,7 @@ void RemixNativeRuntime::presented() {
       }
       if (particles && !hudless)
         drawParticles(buffer, pass);
-      if (split && !hudless && !hostPasses) {
+      if (split && !hudless && !hudApart) {
         gpu::GpuScope overlay(buffer, "Raster overlay (view model, HUD)", m_swapchainExtent);
         raster.record(buffer, false, true, nullptr, {}, 2, 3);
       } else if (split) {
@@ -1612,33 +1638,41 @@ void RemixNativeRuntime::presented() {
         if (hudless) {
           // The scene's depth stays in the target's depth attachment.
           vkCmdEndRenderPass(buffer);
+          // HDR10: the features take PQ frames, so the frame without HUD is
+          // encoded into the swapchain image first (the finished frame
+          // replaces it after the developer UI).
+          if (hdr)
+            m_hdrOutput.encode(buffer, m_frameIndex, imageIndex, nits.clamped().paperWhite);
           m_frameGeneration->captureHudless(buffer, image);
           pass.renderPass = m_resumePass;
           vkCmdBeginRenderPass(buffer, &pass, VK_SUBPASS_CONTENTS_INLINE);
           if (particles)
             drawParticles(buffer, pass);
         }
-        gpu::GpuScope overlay(buffer, "Raster overlay (HUD)", m_swapchainExtent);
-        raster.record(buffer, false, true, nullptr, {}, 3, 3);
-      } else if (hostPasses) {
-        recordHostPasses();
-        gpu::GpuScope overlay(buffer, "Raster overlay (HUD)", m_swapchainExtent);
-        raster.record(buffer, false, true, nullptr, {}, 3, 3);
+        recordHud();
+      } else if (hudApart) {
+        if (hostPasses)
+          recordHostPasses();
+        recordHud();
       }
     }
     lap(breakdown.compositeMilliseconds);
     if (capture) {
       gpu::GpuScope scope(buffer, "Last-frame snapshot capture", m_swapchainExtent);
       vkCmdEndRenderPass(buffer);
-      m_lastFrame->capture(buffer, image, layout);
+      m_lastFrame->capture(buffer, target, layout);
       pass.renderPass = m_overlayPass;
       vkCmdBeginRenderPass(buffer, &pass, VK_SUBPASS_CONTENTS_INLINE);
     }
     lap(breakdown.snapshotMilliseconds);
     {
       gpu::GpuScope scope(buffer, "Developer UI", m_swapchainExtent);
-      drawUi(buffer);
+      drawUiLayer([&] { drawUi(buffer); });
       vkCmdEndRenderPass(buffer);
+    }
+    if (hdr) {
+      gpu::GpuScope scope(buffer, "HDR10 encode (BT.2020 PQ)", m_swapchainExtent);
+      m_hdrOutput.encode(buffer, m_frameIndex, imageIndex, nits.clamped().paperWhite);
     }
     lap(breakdown.uiMilliseconds);
     if (generated.count)
@@ -1658,8 +1692,13 @@ void RemixNativeRuntime::presented() {
       const bool takeGenerated = generatedShots == 1 || (generatedShots == 2 && (captures & 1));
       const uint32_t shown = takeGenerated && generated.count ? generated.index[0] : imageIndex;
       gpu::GpuScope scope(buffer, "Screenshot readback", m_swapchainExtent);
-      m_screenshot.record(m_physicalDevice, m_device, buffer, m_swapchainImages[shown], m_swapchainExtent,
-                          m_swapchainFormat);
+      // HDR10: the back buffer, gamma 2.2 with 1.0 at UI white, clipped to SDR.
+      if (hdr)
+        m_screenshot.record(m_physicalDevice, m_device, buffer, target, m_swapchainExtent, targetFormat,
+                            VK_IMAGE_LAYOUT_GENERAL);
+      else
+        m_screenshot.record(m_physicalDevice, m_device, buffer, m_swapchainImages[shown], m_swapchainExtent,
+                            m_swapchainFormat, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
     }
     if (m_headless)
       sharedBarrier(buffer, false);

@@ -432,18 +432,17 @@ namespace remix {
     awaitLightingPipelines(requests);
   }
 
-  void PathTracer::configureTarget(VkRenderPass pass, VkExtent2D extent, bool encodeOutput,
-                                   VkFormat depthFormat, VkImageView depthView, bool hardwareSrgb) {
+  void PathTracer::configureTarget(VkRenderPass pass, VkExtent2D extent, VkFormat depthFormat,
+                                   VkImageView depthView) {
     auto &g = *m_gpu;
     g.displayPass = pass;
     g.displayExtent = extent;
     g.displayDepthFormat = depthFormat;
     g.displayDepth = depthView;
-    g.encodeOutput = encodeOutput;
-    g.hardwareSrgb = hardwareSrgb;
     if (!g.preparing)
       g.createTarget();
   }
+  void PathTracer::setDisplayOutput(const DisplayOutput &output) { m_gpu->display = output; }
   void PathTracer::Gpu::createTarget() {
     if (!preparing)
       check(vkDeviceWaitIdle(device));

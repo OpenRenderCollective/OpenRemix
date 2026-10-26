@@ -46,9 +46,8 @@ namespace remix::metal::reconstruction {
                 const float *jitter, bool reset, const Guides &guides = {});
     // The display composite (upscale.frag): post-processing, display encoding
     // and the stable depth for raster overlays.
-    void composite(id<MTLRenderCommandEncoder> encoder, id<MTLTexture> stableDepth, bool encodeOutput, bool prism,
-                   bool gamma22, bool hardwareSrgb, id<MTLBuffer> exposure, id<MTLTexture> bloom,
-                   id<MTLSamplerState> bloomSampler, id<MTLBuffer> postSettings, uint32_t slot);
+    void composite(id<MTLRenderCommandEncoder> encoder, id<MTLTexture> stableDepth, id<MTLBuffer> exposure,
+                   id<MTLTexture> bloom, id<MTLSamplerState> bloomSampler, id<MTLBuffer> postSettings, uint32_t slot);
     id<MTLTexture> output() const;
     // Render-resolution inputs frame interpolation shares.
     id<MTLTexture> deviceDepth() const;

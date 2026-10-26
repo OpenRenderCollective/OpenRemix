@@ -39,11 +39,8 @@ void main() {
 layout(set=1,binding=0) uniform sampler2D mask;
 layout(push_constant) uniform Composite {
   vec4 color;  // display-referred rgb; a: times the halo is composited
-  uint flags;  // 1 additive, 2 the target blends linear values (sRGB format)
+  uint flags;  // 1 additive
 } halo;
-vec3 linearColor(vec3 c) {
-  return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), greaterThan(c, vec3(0.04045)));
-}
 void main() {
   ivec2 pixel = ivec2(gl_FragCoord.xy);
   // Only outside the silhouette (the reference's stencil test).
@@ -52,11 +49,9 @@ void main() {
   if (coverage <= 0.0) discard;
   // Display-referred like the reference's 8-bit targets: the blurred colour
   // is colour * coverage (additive, over black) or the blend from white to
-  // the colour (otherwise). On a linear-blending target it is decoded so the
-  // hardware accumulates as the game's sRGB-write blending does.
+  // the colour (otherwise).
   bool additive = (halo.flags & 1u) != 0u;
   vec3 value = additive ? halo.color.rgb * coverage : mix(vec3(1.0), halo.color.rgb, coverage);
-  if ((halo.flags & 2u) != 0u) value = linearColor(value);
   // Additive: dst + value, color.a times. Otherwise dst * value, color.a times.
   result = vec4(additive ? value * halo.color.a : pow(value, vec3(halo.color.a)), 1.0);
 }

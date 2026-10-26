@@ -529,7 +529,7 @@ namespace {
     pixel(modulate(half, .75f, fade, dstColor, 0), 32, 32, 128, 128, 128, "Multiplying sprite faded out");
     // A target that blends display values: dst x src x 2 as the host has it.
     target.outputEncoding(true);
-    const auto display = material(r, 0x5a, .21404114f, .21404114f, .21404114f);
+    const auto display = material(r, 0x5a, .21763764f, .21763764f, .21763764f);
     pixel(modulate(display, .25f, fade, dstColor, srcColor), 32, 32, 64, 64, 64, "Mod2x sprite, display target");
     pixel(modulate(display, .75f, fade, dstColor, srcColor), 32, 32, 128, 128, 128,
           "Mod2x sprite faded out, display target");
@@ -724,7 +724,7 @@ namespace {
     const uint8_t grey[] = {128, 128, 128, 255};
     r.registerUiTexture(99, 1, 1, REMIXAPI_FORMAT_R8G8B8A8_UNORM, grey, 4);
     ui(r, 99, 0xffffffff);
-    pixel(target.render(), 32, 32, 55, 55, 55, "UI display-color decoding into linear target");
+    pixel(target.render(), 32, 32, 56, 56, 56, "UI display-color decoding into linear target");
     const uint8_t blue[] = {0, 0, 255, 255};
     r.registerUiTexture(1, 1, 1, REMIXAPI_FORMAT_R8G8B8A8_UNORM, blue, 4);
     ui(r, 1, 0xffffffff, true, .9f);
@@ -740,7 +740,7 @@ namespace {
     pixel(target.render(), 32, 32, 128, 0, 0, "Screen tint");
     r.setTint(0, 0, 0, 0);
     target.outputEncoding(true);
-    const auto greyMaterial = material(r, 100, .21404114f, .21404114f, .21404114f);
+    const auto greyMaterial = material(r, 100, .21763764f, .21763764f, .21763764f);
     r.drawInstance(instance(quad(r, 101, greyMaterial)));
     pixel(target.render(), 32, 32, 128, 128, 128, "UNORM-only output encoding");
     target.outputEncoding(false);

@@ -71,12 +71,11 @@ namespace remix::sky {
     // the screen clouds; recordRasterComposite then writes what the target is
     // multiplied by and what is added after (rasterTransmittance,
     // rasterAddition: RGBA16 float, GENERAL, render resolution). exposure
-    // turns NUMOS radiance into the display's; linearTarget: the target
-    // blends linear values (an sRGB format).
+    // turns NUMOS radiance into the display's (gamma 2.2 encoded, as the
+    // UNORM target blends).
     void recordRasterPostDepth(VkCommandBuffer command, VkImage depthImage, VkImageView depthView,
                                const scene::Matrix &projection, float clearDepth);
-    bool recordRasterComposite(VkCommandBuffer command, float exposure, config::SkySettings::GameSky gameSky,
-                               bool linearTarget);
+    bool recordRasterComposite(VkCommandBuffer command, float exposure, config::SkySettings::GameSky gameSky);
     VkDescriptorImageInfo rasterAddition() const;
     VkDescriptorImageInfo rasterTransmittance() const;
 

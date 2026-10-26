@@ -187,8 +187,6 @@ namespace remix::config {
         TRACE(bloomRadius, 0, 1);
         TRACE(contrast, 0, 1);
         TRACE(contrastAmount, .5, 2);
-        TRACE(prism, 0, 1);
-        TRACE(gamma22, 0, 1);
         TRACE(localLights, 0, 1);
         TRACE(torchLights, 0, 1);
         TRACE(emissiveLights, 0, 1);
@@ -339,6 +337,10 @@ namespace remix::config {
         result.push_back(
             scalar("rtx.native.scene.persistentStaticValidation", FIELD(persistentStaticValidation), 0, 1));
         result.push_back(scalar("rtx.native.asyncPresent", FIELD(asyncPresent), 0, 1));
+        result.push_back(scalar("rtx.native.hdr", FIELD(hdr), 0, 1));
+        result.push_back(scalar("rtx.native.hdrPeakNits", FIELD(hdrPeakNits), 80, 10000));
+        result.push_back(scalar("rtx.native.hdrPaperWhiteNits", FIELD(hdrPaperWhiteNits), 80, 1000));
+        result.push_back(scalar("rtx.native.hdrUiNits", FIELD(hdrUiNits), 80, 1000));
         result.push_back(scalar("rtx.native.frameGeneration", FIELD(frameGeneration), 0, 1));
         result.push_back(choices("rtx.native.frameGenerationBackend", FIELD(frameGenerationBackend),
                                  {"auto", "dlss", "fsr31"}));

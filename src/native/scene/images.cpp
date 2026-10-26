@@ -779,7 +779,7 @@ namespace remix::scene {
       std::array<float, 256> table{};
       for (int i = 0; i < 256; ++i) {
         const float c = i / 255.f;
-        table[i] = c <= .04045f ? c / 12.92f : std::pow((c + .055f) / 1.055f, 2.4f);
+        table[i] = std::pow(c, 2.2f); // sRGB-encoded: gamma 2.2
       }
       return table;
     }();
@@ -787,7 +787,7 @@ namespace remix::scene {
       std::array<uint8_t, 4097> table{};
       for (int i = 0; i <= 4096; ++i) {
         const float c = i / 4096.f;
-        table[i] = uint8_t(std::lround((c <= .0031308f ? c * 12.92f : 1.055f * std::pow(c, 1 / 2.4f) - .055f) * 255));
+        table[i] = uint8_t(std::lround(std::pow(c, 1 / 2.2f) * 255));
       }
       return table;
     }();
