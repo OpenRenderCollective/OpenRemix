@@ -155,32 +155,47 @@ namespace {
 #ifdef REMIX_OIDN
   void deviceCalibrationPreservesInput() {
     lightmap::Layout layout;
-    layout.pageSize = 256;
+    constexpr uint32_t charts = 4096, cell = 33, columns = 64;
+    layout.pageSize = columns * cell;
     layout.pages = 1;
-    layout.owners.resize(256 * 256, lightmap::unowned);
+    layout.owners.resize(size_t(layout.pageSize) * layout.pageSize, lightmap::unowned);
     std::vector<bake::Result> values;
-    std::vector<std::vector<uint32_t>> points(4096);
-    for (uint32_t chart = 0; chart < 4096; ++chart) {
-      layout.charts.push_back({0, (chart % 64) * 4, (chart / 64) * 4, 4, 4});
+    std::vector<std::vector<uint32_t>> points(charts);
+    for (uint32_t chart = 0; chart < charts; ++chart) {
+      const uint32_t side = chart % 3 == 0 ? 4 : chart % 3 == 1 ? 17 : 33;
+      layout.charts.push_back({0, (chart % columns) * cell, (chart / columns) * cell, side, side});
       const auto &a = layout.charts.back();
-      for (uint32_t y = 0; y < 4; ++y)
-        for (uint32_t x = 0; x < 4; ++x) {
-          const uint32_t index = uint32_t(values.size()), address = (a.y + y) * 256 + a.x + x;
-          layout.owners[address] = index;
+      const uint32_t first = uint32_t(values.size());
+      // Four chart-local donors provide varying coefficients without allocating
+      // a large Result for every temporary denoiser image texel.
+      for (uint32_t y = 0; y < 2; ++y)
+        for (uint32_t x = 0; x < 2; ++x) {
+          const uint32_t index = uint32_t(values.size()), address = (a.y + y) * layout.pageSize + a.x + x;
           layout.addresses.push_back(address);
           layout.pointCharts.push_back(chart);
           layout.points.push_back({});
           points[chart].push_back(index);
           bake::Result value;
-          for (uint32_t c = 0; c < 9; ++c)
-            value.irradiance[c] = {.2f + .01f * x, .1f + .02f * y, .3f + .01f * (x + y), 7};
+          value.irradiance[0] = {.2f + .01f * x, .1f + .02f * y, .3f + .01f * (x + y), 7};
+          for (uint32_t band = 1; band < 9; ++band) {
+            value.irradiance[band] = {.01f * band + .01f * x, -.015f * band + .01f * y,
+                                     .02f * band + .005f * (x + y), 7};
+            if (chart % 5 == 0)
+              for (uint32_t c = 0; c < 3; ++c)
+                value.irradiance[band][c] = value.irradiance[0][c] * -.2f;
+          }
           value.moments[0] = {1, 2, 3, 4};
           values.push_back(value);
         }
+      for (uint32_t y = 0; y < side; ++y)
+        for (uint32_t x = 0; x < side; ++x)
+          layout.owners[(a.y + y) * layout.pageSize + a.x + x] = first + (y % 2) * 2 + x % 2;
     }
+    const auto plan = lightmap::denoising::deviceProbePlan(layout, points, 16);
+    require(plan.size() == 3, "Calibration fixture covers all padded image-size bins and packet transitions");
     const auto before = values;
     lightmap::DenoiseStatistics statistics;
-    (void)lightmap::denoising::chooseDevice(layout, values, points, 16, 16 * 16 * 3 * 9 * sizeof(float),
+    (void)lightmap::denoising::chooseDevice(layout, values, points, 16, 48 * 48 * 3 * 9 * sizeof(float),
         lightmap::HostTransfers::Pinned, lightmap::FilterDispatch::Automatic, {}, statistics);
     require(std::memcmp(values.data(), before.data(), values.size() * sizeof(bake::Result)) == 0,
             "Device calibration never applies trial filtering to captured lighting or metadata");

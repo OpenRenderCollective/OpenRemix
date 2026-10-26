@@ -3797,3 +3797,25 @@ noise/seams, denoising cost and frame profiling remain independent priorities.
   cached Construct image parity and Vulkan validation pass.
 - [ ] Device-calibration warmup and larger neural/runtime costs still need work.
   This deployment does not change quality presets or establish an FPS/bake win.
+
+
+### 2026-10-26 - Reference comparison priorities
+
+- [x] Reject paired device-calibration warmup after real styled filtering regresses;
+  preserve production policy. Expanded tests cover all three chart-size bins,
+  varying field masks and exact preservation of captured input and metadata.
+- [ ] Compare compact directional lightmaps against current nine RGB fields using
+  identical captured transport: arbitrary normals, colored light, normal maps,
+  seams, filtering time, memory and runtime fetch cost. VRF is a viewer reference,
+  not evidence of the native Valve bake implementation.
+- [ ] Improve probe convergence and spatial support independently. Matched-ray
+  ambient-cube controls do not establish a low-sample noise fix. Qualify denser
+  placement against walls/floors, dynamic props and controllable light groups.
+- [ ] Recheck Construct spawn-back room, connecting bend, secret room and slatted
+  main hall at normal deployed quality; distinguish capture noise from chart
+  seams, packing and probe interpolation. Do not lower quality for acceptance.
+- [ ] Repeat foreground CPU/GPU stage profiling with and without the viewmodel;
+  depth prepass already exists. Establish current opaque, shadow, SSR and probe
+  costs before selecting the next runtime optimization.
+- [ ] Device forecasting must represent real chart shapes and active-field graph
+  transitions; do not tune device preference thresholds to one map.
