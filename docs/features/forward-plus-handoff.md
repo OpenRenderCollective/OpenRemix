@@ -1199,3 +1199,15 @@ noise/seams, denoising cost and frame profiling remain independent priorities.
   normal-map perturbations, colored lights, seams and interpolation on current
   quality captures. Measure actual filtering/storage/runtime cost; theoretical
   field count alone does not establish a bake or frame improvement.
+
+
+### 2026-10-26 - Surface-constrained compact lighting candidate
+
+- [x] Extend identical-input study to recent six-site surface references and
+  normal-map tilt rings. Geometric-axis compact fit preserves value and angular
+  gradient at the surface normal; aggregate small-angle loss is promising.
+- [ ] Qualify per-receiver outliers: current study still shows substantial worst
+  cases, especially at large tilt. No default/representation change accepted.
+- [ ] Before implementation, verify varying-normal interpolation/displacements,
+  seams, signed corrected coefficients, colored lights, actual normal maps and
+  rough specular use. Compare denoising and actual runtime costs separately.
