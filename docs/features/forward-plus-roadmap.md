@@ -3681,3 +3681,20 @@ No GPU shader/public API/default change. CPU tests and native build pass.
 
 Existing8x8 remains private/off; rejected per-tap change remains removed. Continue
 64k quality-policy, placement, surface noise/seams, denoising and frame/bake roadmap.
+
+
+### 2026-10-26 - Reject blanket 16x16 probe visibility upgrade
+
+- [x] Private prototype expands directional geometry fields to 16x16, including
+  four-result output stride, fenced readback, GPU addressing and cache identity.
+- [x] CPU/cache/GPU reconstruction and independent HWRT multi-probe checks pass.
+- [x] Construct controls confirm much lower cross-floor donor contribution, but
+  worse total lighting error. Candidate removed; no default/playable change.
+- [ ] Improve geometry-aware local probe support/placement and interpolation;
+  validate both clear and blocked connections, color, styles and motion.
+- [ ] Qualify 64k adaptive placement across rooms/maps and memory/bake/frame cost.
+- [ ] Continue surface noise/seams/denoising, lightmap packing and runtime baked
+  light-loop profiling independently. Representation or density alone is no fix.
+
+Existing 8x8 directional field remains private/off; per-tap filtering remains
+rejected. Reference viewer shaders do not reveal the native CS2 baker.
