@@ -12,12 +12,16 @@ namespace bc = remix::forward::bake::cache;
 namespace f = remix::forward;
 int main(int argc, char **argv) {
   require(argc == 2, "Supply a scratch directory");
-  for (size_t offset : {size_t(0), size_t((1u << 23) - 1), size_t(1u << 23), size_t((1u << 24) + 1)})
-    for (bool styled : {false, true}) for (bool depth : {false, true}) {
-      const auto bits = std::bit_cast<uint32_t>(f::bake::publicationSettings(offset, styled, depth));
-      require((bits & 0x7fffffffu) / 2 == offset && bool(bits & 1) == styled && bool(bits >> 31) == depth,
+  for (size_t offset : {size_t(0), size_t((1u << 23) - 1), size_t(1u << 23), size_t((1u << 24) + 1), size_t((1u << 29) - 1)})
+    for (bool styled : {false, true}) for (bool depth : {false, true}) for (bool transfer : {false, true}) {
+      const auto bits = std::bit_cast<uint32_t>(f::bake::publicationSettings(offset, styled, depth, transfer));
+      require((bits & 0x3fffffffu) / 2 == offset && bool(bits & 0x40000000u) == transfer && bool(bits & 1) == styled && bool(bits >> 31) == depth,
               "Published local offsets and style flags retain exact uint32 bits beyond float precision");
     }
+  bool rejectedOffset = false;
+  try { f::bake::publicationSettings(size_t(1) << 29, false); }
+  catch (const std::length_error &) { rejectedOffset = true; }
+  require(rejectedOffset, "Oversized offsets cannot alias the transfer/depth flags");
   const auto root = std::filesystem::path(argv[1]) / ("case-" + std::to_string(std::random_device{}()));
   std::filesystem::create_directories(root);
   const auto file = root / "lighting.bake";

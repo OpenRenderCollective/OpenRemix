@@ -1209,14 +1209,26 @@ namespace remix::forward::bake {
     }
     volume->mixedLights = std::make_shared<mixed::Bindings>(m_job->mixedLights->lights);
     mixed::dumpOwnership(*m_job->mixedLights, m_job->surfaceLayout);
-    const size_t baseBytes = gridBytes(grid);
+    const size_t legacyBytes = gridBytes(grid);
     const auto &publishedStyles = m_job->groupedStyles.styles.empty() ? m_job->styleWords : m_job->groupedStyles.words;
     const size_t styleBytes = publishedStyles.size() * sizeof(uint32_t);
     volume->styledLighting = styleBytes != 0;
     volume->groupedStyles = m_job->groupedStyles.styles;
-    const size_t localOffset = (baseBytes + styleBytes + 15) & ~size_t(15);
     const auto localWords = m_job->localProbes ? m_job->localProbes->words() : std::vector<uint32_t>{};
     const size_t localBytes = localWords.size() * sizeof(uint32_t);
+    auto transfer = coarseTransferSamplingRequested() ? volume->coarseTransferWords : nullptr;
+    if (transfer) {
+      VkPhysicalDeviceProperties properties;
+      vkGetPhysicalDeviceProperties(m_physical, &properties);
+      const size_t combined = ((legacyBytes + styleBytes + transfer->size() * sizeof(uint32_t) + 15) & ~size_t(15)) + localBytes;
+      if (combined > properties.limits.maxStorageBufferRange) {
+        std::fprintf(stderr, "Forward coarse transfer sampling declined: combined buffer exceeds device storage range\n");
+        transfer.reset();
+      }
+    }
+    const size_t transferBytes = transfer ? transfer->size() * sizeof(uint32_t) : 0;
+    const size_t baseBytes = legacyBytes + transferBytes;
+    const size_t localOffset = (baseBytes + styleBytes + 15) & ~size_t(15);
     const size_t bytes = localOffset + localBytes;
     const auto specular = probes::serialize(m_job->specular);
     probes::dumpPublishedData(".probes-published.bin", specular.data(), specular.size());
@@ -1285,7 +1297,7 @@ namespace remix::forward::bake {
     probes::dumpPublishedData(".visibility-pages.bin", pageStatistics, sizeof(pageStatistics));
     std::vector<std::byte> data(bytes);
     auto gpuHeader = publicationHeader(grid.header, grid.lookup.size());
-    gpuHeader.settings[3] = publicationSettings(0, false, !grid.depth.empty());
+    gpuHeader.settings[3] = publicationSettings(0, false, !grid.depth.empty(), transferBytes != 0);
     std::memcpy(data.data(), &gpuHeader, sizeof(GridHeader));
     std::memcpy(data.data() + sizeof(GridHeader), grid.probes.data(), grid.probes.size() * sizeof(Result));
     if (!grid.lookup.empty())
@@ -1296,6 +1308,10 @@ namespace remix::forward::bake {
       const size_t offset = sizeof(GridHeader) + grid.probes.size() * sizeof(Result) + lookupBytes(grid);
       grid.depth.write(std::span(data).subspan(offset, grid.depth.bytes()));
     }
+    if (transferBytes) {
+      std::memcpy(data.data() + legacyBytes, transfer->data(), transferBytes);
+      std::fprintf(stderr, "Forward coarse transfer sampling enabled: %zu GPU bytes\n", transferBytes);
+    }
     // Hash once at publication, before releasing staging data. Diagnostics can
     // then distinguish input identity from changes in the actual baked result
     // without a GPU readback or a mutable worker-state dependency.
@@ -1305,14 +1321,14 @@ namespace remix::forward::bake {
       volume->content.styledIndirect = scene::fastHash(publishedStyles.data(), styleBytes) | 1;
       std::memcpy(data.data() + baseBytes, publishedStyles.data(), styleBytes);
       auto header = gpuHeader;
-      header.settings[3] = publicationSettings(0, true, !grid.depth.empty());
+      header.settings[3] = publicationSettings(0, true, !grid.depth.empty(), transferBytes != 0);
       std::memcpy(data.data(), &header, sizeof(header));
       probes::dumpPublishedData(".styled-irradiance.bin", publishedStyles.data(), styleBytes);
     }
     if (localBytes) {
       std::memcpy(data.data() + localOffset, localWords.data(), localBytes);
       auto header = gpuHeader;
-      header.settings[3] = publicationSettings((localOffset - sizeof(GridHeader)) / 16, styleBytes != 0, !grid.depth.empty());
+      header.settings[3] = publicationSettings((localOffset - sizeof(GridHeader)) / 16, styleBytes != 0, !grid.depth.empty(), transferBytes != 0);
       std::memcpy(data.data(), &header, sizeof(header));
       volume->content.grid = scene::fastHash(localWords.data(), localBytes, volume->content.grid) | 1;
       probes::dumpPublishedData(".local-probe-visibility.bin", localWords.data(), localBytes);

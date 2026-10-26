@@ -6,6 +6,7 @@ bool localStencilValid = false;
 vec3 localStencilPosition, localStencilNormal;
 uint localStencilIndices[16];
 float localStencilWeights[16];
+uint localStencilFineNodes[8];
 uint localStencilCount = 0u;
 uint localStencilRevision = 0u;
 
@@ -32,6 +33,7 @@ float bakeCellStencil(vec3 position, vec3 normal, uvec3 dimensions, uvec3 start,
     vec3 factors = mix(1 - fraction, fraction, vec3(upper));
     float weight = factors.x * factors.y * factors.z;
     uint index = (coordinate.z * dimensions.y + coordinate.y) * dimensions.x + coordinate.x;
+    if (first == 8u) localStencilFineNodes[corner] = index;
     if (bakeAddressingMode() >= 2u) {
       uint record = bakeLookupWord(directory + index);
       if (record == 0u) continue;
@@ -128,6 +130,7 @@ bool localProbeStencil(vec3 position, vec3 normal) {
     localStencilWeights[corner] *= coarseTotal >= 1e-4 ? (1 - blend) / coarseTotal : 0;
     localStencilWeights[8u + corner] *= blend / fineTotal;
   }
+  applyCoarseTransfer(cell, factor, block, localStencilIndices, localStencilFineNodes, localStencilWeights);
   localStencilCount = 16u;
   localStencilValid = true;
   return true;

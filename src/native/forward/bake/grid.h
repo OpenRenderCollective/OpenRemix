@@ -23,15 +23,16 @@ namespace remix::forward::bake {
     // add 1 for relocated origins), zero. Published GPU settings.z contains
     // uint32 bits: low3 addressing mode, remaining bits directory vec4 count.
     // Published GPU settings.w
-    // contains uint32 bits (not a numeric float): bit0 styled-SH presence, bit31 directional-depth
-    // presence; bits1..30 hold the sparse local-table offset in vec4 probe-array-relative records.
+    // contains uint32 bits (not a numeric float): bit0 styled-SH, bit30 coarse-transfer,
+    // bit31 directional-depth; bits1..29 hold the local-table offset in vec4 records.
     Vec4 settings{};
   };
   static_assert(sizeof(GridHeader) == 48);
-  inline float publicationSettings(size_t localTableRecords, bool styled, bool depth = false) {
-    if (localTableRecords >= (uint64_t(1) << 30))
+  inline float publicationSettings(size_t localTableRecords, bool styled, bool depth = false, bool transfer = false) {
+    if (localTableRecords >= (uint64_t(1) << 29))
       throw std::length_error("Local probe table offset exceeds uint32 header encoding");
-    return std::bit_cast<float>(uint32_t(localTableRecords * 2) | uint32_t(styled) | (depth ? 0x80000000u : 0u));
+    return std::bit_cast<float>(uint32_t(localTableRecords * 2) | uint32_t(styled) | (depth ? 0x80000000u : 0u) |
+                                (transfer ? 0x40000000u : 0u));
   }
   struct Grid {
     GridHeader header;

@@ -2,8 +2,8 @@
 #include "forward/bake/grid.h"
 
 namespace remix::forward::bake {
-  // Experimental geometry-only field. Words are not part of the published grid
-  // or disk cache yet. Missing/unknown connections retain ordinary reconstruction.
+  // Experimental geometry-only field. Private GPU publication is optional; disk
+  // caches do not contain it. Unknown connections retain ordinary reconstruction.
   class CoarseTransfer {
   public:
     struct Options {

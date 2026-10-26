@@ -45,7 +45,7 @@ struct ProbeLightReference {
   uint table, light, direct, records;
 };
 bool resolveProbeLight(uint capturedLight, out ProbeLightReference reference) {
-  uint table = (floatBitsToUint(bakeSettings.w) & 0x7fffffffu) / 2u;
+  uint table = (floatBitsToUint(bakeSettings.w) & 0x3fffffffu) / 2u;
   if (capturedLight == 0u || table == 0u || localProbeWord(table, 0u) != 0x56504c52u ||
       localProbeWord(table, 2u) != bakeDimensions.w) return false;
   uint direct = 0u;

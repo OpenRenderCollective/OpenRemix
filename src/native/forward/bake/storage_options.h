@@ -4,6 +4,13 @@
 #include <optional>
 
 namespace remix::forward::bake {
+  inline bool coarseTransferSamplingRequested() {
+    static const bool requested = [] {
+      const auto value = std::getenv("REMIX_DEBUG_COARSE_TRANSFER_SAMPLE");
+      return value && std::strcmp(value, "1") == 0;
+    }();
+    return requested;
+  }
   inline bool coarseTransferCpuReportsRequested() {
     static const bool requested = [] {
       const auto value = std::getenv("REMIX_DEBUG_COARSE_TRANSFER_CPU_REPORTS");
@@ -16,7 +23,7 @@ namespace remix::forward::bake {
       const auto value = std::getenv("REMIX_DEBUG_COARSE_TRANSFER_PREPARE");
       return value && std::strcmp(value, "1") == 0;
     }();
-    return requested || coarseTransferCpuReportsRequested();
+    return requested || coarseTransferCpuReportsRequested() || coarseTransferSamplingRequested();
   }
   inline bool modelChartsRequested(bool enabled) {
     static const std::optional<bool> requested = []() -> std::optional<bool> {

@@ -32,6 +32,7 @@ uint bakeDirectoryRecords() {
 vec3 styledProbeIrradiance(uint index, float sh[9]);
 #endif
 #include "probe-depth.glsl"
+#include "coarse-transfer.glsl"
 #include "grid-stencil.glsl"
 bool bakedIrradiance(vec3 position, vec3 normal, out vec3 result) {
   if (!localProbeStencil(position, normal))

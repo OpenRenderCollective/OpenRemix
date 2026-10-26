@@ -2751,3 +2751,12 @@ visibility, specular, emission and moving shadows; only unused diffuse gathers a
 removed. Ordinary forward shader blobs remain unchanged. It currently excludes
 mapped, terrain, water, live-GI and viewmodel paths. This is opt-in pending broader
 map/material qualification; it does not classify movable brushes as bake receivers.
+
+
+Private `REMIX_DEBUG_COARSE_TRANSFER_SAMPLE=1` prepares geometry-only coarse/fine
+probe connection visibility and publishes it in the existing volume buffer. The
+shared probe stencil applies the correction to all lighting channels. Unknown
+connections retain fallback. It bypasses lighting caches and remains off by
+default pending prop/viewmodel quality, lifecycle, cache-upgrade and frame-cost
+qualification. `REMIX_DEBUG_COARSE_TRANSFER_CPU_REPORTS=1` separately enables CPU
+diagnostic reconstruction; neither flag changes normal bake quality settings.

@@ -3529,3 +3529,23 @@ baked components remain unchanged. No new playable deployment.
 - [ ] Add fragment publication/sampling and verify CPU/GPU parity before enabling.
 - [ ] Qualify biased queries, transitions, styles, moving props/weapons and cache upgrades.
 - [ ] Continue surface noise/seams, tiny-chart denoising and frame-cost work.
+
+
+### 2026-10-26 - Private GPU coarse probe transfer
+
+Production shared probe stencil can now sample the prepared immutable visibility
+field under REMIX_DEBUG_COARSE_TRANSFER_SAMPLE=1. Field shares the volume buffer;
+GPU publication checks combined device storage range. Header bit30 marks transfer,
+bits1..29 retain local-table offset; styled/depth tables remain independently
+addressed. Disk cache and ordinary defaults unchanged.
+
+- [x] GPU publication and production decoder, including styled/depth coexistence.
+- [x] All-axis CPU/GPU reconstruction parity, shared boundaries and changed blends.
+- [x] Private normal-quality Construct candidate/control; clean core/sync validation.
+- [x] Flag-off cached replay retains exact historical fixed-view image parity.
+- [ ] Main-room props remain too dark; tested prop rectangles unchanged by correction.
+- [ ] Diagnose actual prop stencils/material response versus independent reference.
+- [ ] Qualify moving props/weapons, styles, invalidation, cache upgrade and frame cost.
+- [ ] Continue surface seam/noise, density allocation and tiny-chart OIDN work.
+
+No playable deployment or general performance/lighting-quality acceptance yet.

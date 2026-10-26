@@ -5,7 +5,7 @@
 #define STYLE_SCALE(style) frame.styleScales[(style) / 4u][(style) % 4u]
 #endif
 uint styleWord(uint offset) {
-  return bakeRecords[bakeDimensions.w * 16u + bakeDirectoryRecords() + bakeDepthRecords() + offset / 4u][offset % 4u];
+  return bakeRecords[bakeDimensions.w * 16u + bakeDirectoryRecords() + bakeDepthRecords() + bakeTransferRecords() + offset / 4u][offset % 4u];
 }
 bool styledLightingAvailable() {
   if ((floatBitsToUint(bakeSettings.w) & 1u) == 0u) return false;

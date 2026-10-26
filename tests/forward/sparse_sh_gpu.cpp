@@ -1,5 +1,6 @@
 #include "forward/bake/sparse_sh.h"
 #include "forward/bake/grid.h"
+#include "forward/bake/coarse_transfer.h"
 #include "forward/bake/spherical_harmonics.h"
 #include "forward/half.h"
 #include "forward/lightmap/data.h"
@@ -8,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <string_view>
 
 using namespace remix;
 using namespace remix::forward;
@@ -16,11 +18,12 @@ namespace b = remix::forward::bake;
 namespace s = b::sparse;
 namespace lm = remix::forward::lightmap;
 int main(int argc, char **argv) try {
+  const bool transfer = argc > 1 && std::string_view(argv[1]).starts_with("adaptive-transfer");
   const bool localFactor = argc > 1 && std::strcmp(argv[1], "adaptive-localfactor") == 0;
-  const bool stitched = argc > 1 && std::strcmp(argv[1], "adaptive-stitched") == 0;
-  const bool depth = argc > 1 && std::strcmp(argv[1], "adaptive-depth") == 0;
+  const bool stitched = (argc > 1 && std::strcmp(argv[1], "adaptive-stitched") == 0) || (transfer && std::string_view(argv[1]).ends_with("stitched"));
+  const bool depth = (argc > 1 && std::strcmp(argv[1], "adaptive-depth") == 0) || (transfer && std::string_view(argv[1]).ends_with("depth"));
   const bool fineFallback = argc > 1 && std::strcmp(argv[1], "adaptive-fallback") == 0;
-  const bool refined = depth || stitched || localFactor || fineFallback ||
+  const bool refined = transfer || depth || stitched || localFactor || fineFallback ||
                        (argc > 1 && std::strcmp(argv[1], "adaptive") == 0);
   const uint32_t probeCount = stitched ? 57 : refined ? 35 : 8;
   Fixture fixture(false);
@@ -139,7 +142,18 @@ int main(int argc, char **argv) try {
       }
     base.depth.validate(probeCount);
   }
-  const size_t baseBytes = b::gridBytes(base);
+  std::vector<uint32_t> transferWords;
+  if (transfer) {
+    auto plan = b::CoarseTransfer::plan(base,{});
+    require(bool(plan), "Adaptive fixture admits geometry transfer preparation");
+    std::vector<float> visibility(plan->rays(),-1);
+    for (uint32_t i = 0; i < visibility.size(); ++i) visibility[i] = i % 5 == 0 ? -2.f : i % 3 ? 0.f : -1.f;
+    plan->consume(0,visibility);
+    transferWords.assign(plan->words().begin(),plan->words().end());
+    base.coarseTransferWords = std::make_shared<const std::vector<uint32_t>>(transferWords);
+  }
+  const size_t legacyBytes = b::gridBytes(base);
+  const size_t baseBytes = legacyBytes + transferWords.size() * sizeof(uint32_t);
   std::vector<std::byte> encoded((baseBytes + words.size() * 4 + 15) / 16 * 16);
   const auto publishedHeader = b::publicationHeader(base.header, base.lookup.size());
   std::memcpy(encoded.data(), &publishedHeader, sizeof(publishedHeader));
@@ -151,6 +165,7 @@ int main(int argc, char **argv) try {
     const auto offset = sizeof(b::GridHeader) + base.probes.size() * sizeof(b::Result) + b::lookupBytes(base);
     base.depth.write(std::span(encoded).subspan(offset, base.depth.bytes()));
   }
+  if (transfer) std::memcpy(encoded.data() + legacyBytes, transferWords.data(), transferWords.size() * 4);
   std::memcpy(encoded.data() + baseBytes, words.data(), words.size() * 4);
   gpu.grid.create(fixture.physical, fixture.device, encoded.size(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   gpu.grid.write(encoded.data(), encoded.size());
@@ -176,6 +191,16 @@ int main(int argc, char **argv) try {
     queries.push_back({{x,0,0,0}, {n[0],n[1],n[2],0}, {2,0,0,0}});
   if (stitched) for (float x : {.9999f, 1.f, 1.0001f}) for (const auto &n : normals)
     queries.push_back({{x, 0, 0, 0}, {n[0], n[1], n[2], 0}, {2, 0, 0, 0}});
+  if (transfer) {
+    // Exercise all axes, outside support, biased boundaries and partial blends;
+    // surface-only queries cannot prove the new probe decoder is in use.
+    const float positions[] = {-1.001f,-1.f,-.999f,-.75f,-.5f,0.f,.5f,.75f,.999f,1.f,1.001f};
+    for (float z : positions) for (float y : positions) for (float x : positions)
+      for (const auto &n : normals) {
+        queries.push_back({{x,y,z,0}, {n[0],n[1],n[2],0}, {2,0,0,0}});
+        if (stitched) queries.push_back({{x+2,y,z,0}, {n[0],n[1],n[2],0}, {2,0,0,0}});
+      }
+  }
   queries.push_back({{.5f,.5f,-1,1}, {0,0,1,0}, {0,0,0,0}});
   queries.push_back({{.5f,.5f,0,0}, {0,0,1,0}, {0,0,0,0}});
   gpu.weights.create(fixture.physical, fixture.device, 32 * sizeof(Vec4), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
@@ -263,7 +288,7 @@ int main(int argc, char **argv) try {
       value[c] += sh[j] * half::decode(half::encode(baseSurface[0].irradiance[j][c]));
     return value;
   };
-  float maximumError = 0;
+  float maximumError = 0, maximumTransferEffect = 0;
   const Vec4 scenarios[] = {{0,0,1,0},{1,0,1,0},{.5f,.75f,1,0},{1,1,1,0},{1,1,0,0}};
   for (const auto &scenario : scenarios) {
     std::array<Vec4,32> weights{};
@@ -271,7 +296,7 @@ int main(int argc, char **argv) try {
     weights[97/4][97%4] = scenario[1];
     gpu.weights.write(weights.data(),sizeof(weights));
     auto header = b::publicationHeader(base.header, base.lookup.size());
-    header.settings[3] = b::publicationSettings(0, scenario[2] != 0, depth);
+    header.settings[3] = b::publicationSettings(0, scenario[2] != 0, depth, transfer);
     gpu.grid.write(&header,sizeof(header));
     const b::StyleScale scales[] = {{32,scenario[2] ? scenario[0] : 0,b::StyleStatus::Ready},
                                    {97,scenario[2] ? scenario[1] : 0,b::StyleStatus::Ready}};
@@ -281,6 +306,8 @@ int main(int argc, char **argv) try {
       for (uint32_t j = 0; j < 9; ++j) for (uint32_t c = 0; c < 3; ++c)
         combined.probes[i].irradiance[j][c] += scale.value * coefficients[j][c];
     }
+    auto uncorrected = combined;
+    uncorrected.coarseTransferWords.reset();
     fixture.begin();
     vkCmdBindPipeline(fixture.command,VK_PIPELINE_BIND_POINT_COMPUTE,gpu.pipeline);
     vkCmdBindDescriptorSets(fixture.command,VK_PIPELINE_BIND_POINT_COMPUTE,gpu.layout,0,1,&set,0,nullptr);
@@ -317,6 +344,11 @@ int main(int argc, char **argv) try {
         const auto value = b::sample(combined,{q.coordinate[0],q.coordinate[1],q.coordinate[2]},normal);
         found = bool(value);
         if (value) expected = *value;
+        if (transfer && value) {
+          const auto ordinary = b::sample(uncorrected,{q.coordinate[0],q.coordinate[1],q.coordinate[2]},normal);
+          if (ordinary) for (uint32_t c = 0; c < 3; ++c)
+            maximumTransferEffect = std::max(maximumTransferEffect,std::abs((*ordinary)[c]-expected[c]));
+        }
       }
       require((values[i][3] > .5f) == found,"Sparse GPU sampling preserves receiver coverage");
       for (uint32_t c = 0; c < 3; ++c) {
@@ -327,6 +359,8 @@ int main(int argc, char **argv) try {
       }
     }
   }
+  if (transfer) require(maximumTransferEffect > 1e-4f,"Production GPU parity exercises an actual changed coarse/fine blend");
+  std::printf("Maximum transfer correction %.9g\n",maximumTransferEffect);
   require(validationErrors == 0,"Sparse style storage and lookup are Vulkan validation clean");
   std::printf("Sparse GPU style SH: %zu samples across5states, tile/page boundaries, signed mix, relocated probes; maxerror %.9g\n",
               queries.size()*std::size(scenarios),maximumError);

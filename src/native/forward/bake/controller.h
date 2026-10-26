@@ -34,7 +34,7 @@ namespace remix::forward::bake {
     std::shared_ptr<const probes::ReceiverCoverageEvidence> reflectionEvidence; // Optional completed local-fit diagnostics.
     GridHeader irradianceHeader;
     uint32_t usableIrradianceProbes = 0;
-    // Private preparation experiment; not consumed by renderer sampling yet.
+    // Immutable private transfer candidate; GPU publication requires an explicit sampling flag.
     std::shared_ptr<const std::vector<uint32_t>> coarseTransferWords;
     // Immutable placement diagnostics, computed once when the volume publishes.
     std::array<uint32_t, 3> irradiancePatchCounts{}; // 2x, 4x, 8x

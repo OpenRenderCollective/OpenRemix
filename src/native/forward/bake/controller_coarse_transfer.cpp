@@ -61,7 +61,7 @@ namespace remix::forward::bake {
         const auto elapsed = std::chrono::duration<double,std::milli>(
             std::chrono::steady_clock::now()-owner->coarseTransferBegan).count();
         std::fprintf(stderr,"Forward coarse transfer prepared: %u rays, %zu payload bytes, %llu owned scratch bytes; "
-                            "planning_ms=%.3f gpu_ms=%.3f readback_ms=%.3f wall_ms=%.3f; sampling inactive\n",
+                            "planning_ms=%.3f gpu_ms=%.3f readback_ms=%.3f wall_ms=%.3f; pending volume publication\n",
                      owner->coarseTransfer->rays(),words.size_bytes(),
                      static_cast<unsigned long long>(owner->coarseTransfer->scratchBytes()),
                      owner->coarseTransferPlanningMs,owner->coarseTransferGpuMs,owner->coarseTransferReadbackMs,elapsed);
