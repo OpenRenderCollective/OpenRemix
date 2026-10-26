@@ -272,6 +272,15 @@ namespace {
               require(packet[(band * 32 * 32 + y * 32 + x) * 3 + c] ==
                           packet[(band * 32 * 32 + std::min(y,30u) * 32 + std::min(x,16u)) * 3 + c],
                       "Temporary padding continues chart-edge lighting instead of injecting black signed boundaries");
+    const std::vector<float> encoded(packet.begin(), packet.end());
+    const size_t plane = size_t(image.width()) * image.height() * 3;
+    for (uint32_t batch = 1; batch <= 9; ++batch)
+      for (uint32_t first = 0; first < 9; first += batch) {
+        const uint32_t count = std::min(batch, 9 - first);
+        const auto split = image.pack(first, count);
+        require(std::equal(split.begin(), split.end(), encoded.begin() + first * plane),
+                "Splitting SH bands preserves exact encoded values and chart-edge padding");
+      }
     const auto statistics = lightmap::denoise(layout, values);
     // The supported OIDN 2.5 network uses the same 32x32 tensor for all three
     // shapes. A future unknown OIDN version deliberately keeps native shapes.
@@ -395,6 +404,10 @@ namespace {
 } // namespace
 int main(int argc, char **argv) try {
 #ifdef REMIX_OIDN
+  if (argc == 2 && std::string_view(argv[1]) == "--chart-pack-benchmark") {
+    remix::forward::test::denoisePackBenchmark();
+    return 0;
+  }
   if (argc >= 2 && argc <= 4 && std::string_view(argv[1]) == "--cpu-benchmark") {
     uint32_t workers = 1, queued = 8;
     for (int i = 2; i < argc; ++i) {

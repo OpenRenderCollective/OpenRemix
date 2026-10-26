@@ -11,6 +11,44 @@
 
 #ifdef REMIX_OIDN
 namespace remix::forward::test {
+  inline void denoisePackBenchmark() {
+    using namespace lightmap;
+    for (uint32_t side : {64u, 256u, 512u}) {
+      const uint32_t count = side * side, iterations = side == 64 ? 128 : side == 256 ? 32 : 16;
+      Layout layout;
+      layout.pageSize = side;
+      layout.pages = 1;
+      layout.charts.push_back({0, 0, 0, side, side});
+      layout.points.resize(count);
+      layout.pointCharts.resize(count);
+      layout.addresses.resize(count);
+      layout.owners.resize(count);
+      std::vector<bake::Result> values(count);
+      for (uint32_t i = 0; i < count; ++i) {
+        layout.addresses[i] = layout.owners[i] = i;
+        for (uint32_t band = 0; band < 9; ++band)
+          for (uint32_t c = 0; c < 3; ++c)
+            values[i].irradiance[band][c] = (band ? -.2f : 1.f) +
+              .01f * float((i * 17 + band * 31 + c * 3) % 29);
+      }
+      denoising::Chart chart(layout, 0, values, layout.owners, {});
+      double seconds = 0;
+      uint64_t digest = 1469598103934665603ull;
+      for (uint32_t iteration = 0; iteration < iterations; ++iteration)
+        for (uint32_t first = 0; first < 9; first += chart.fieldsPerBatch()) {
+          const auto began = std::chrono::steady_clock::now();
+          const auto fields = chart.pack(first, std::min(chart.fieldsPerBatch(), 9 - first));
+          seconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();
+          if (iteration + 1 == iterations)
+            for (float value : fields) {
+              digest ^= std::bit_cast<uint32_t>(value);
+              digest *= 1099511628211ull;
+            }
+        }
+      std::printf("Chart pack benchmark: side=%u iterations=%u fieldsPerBatch=%u seconds=%.6f digest=%llu\n",
+                  side, iterations, chart.fieldsPerBatch(), seconds, static_cast<unsigned long long>(digest));
+    }
+  }
   struct DenoiseBenchmarkResult {
     double seconds;
     uint32_t monitored;
@@ -63,8 +101,8 @@ namespace remix::forward::test {
   inline void denoiseBenchmark(uint32_t workers = 1, uint32_t requestedQueued = 8) {
     using namespace lightmap;
     using namespace lightmap::denoising;
-    if (workers != 1 && workers != 2 && workers != 4)
-      throw std::invalid_argument("CPU benchmark workers must be 1, 2 or 4");
+    if (workers != 1 && workers != 2 && workers != 4 && workers != 8)
+      throw std::invalid_argument("CPU benchmark workers must be 1, 2, 4 or 8");
     if (!requestedQueued || requestedQueued > 32)
       throw std::invalid_argument("CPU benchmark queue cap must be 1..32");
     for (uint32_t side : {16u, 32u, 64u}) {

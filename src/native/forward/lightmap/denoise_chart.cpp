@@ -72,16 +72,18 @@ namespace remix::forward::lightmap::denoising {
     if (!count || count > m_batch || first >= coefficientCount || count > coefficientCount - first)
       throw std::invalid_argument("Invalid lightmap coefficient batch");
     auto output = std::span(m_fields).first(m_plane * count);
-    for (uint32_t slot = 0; slot < count; ++slot) {
+    // Resolve each atlas donor once and consume its requested coefficients
+    // together. Separate band scans repeatedly traverse the same ownership and
+    // large Result records, particularly when the chart exceeds CPU caches.
+    for (uint32_t y = 0; y < m_allocation.height; ++y) {
       check(m_cancelled);
-      const uint32_t coefficient = first + slot;
-      for (uint32_t y = 0; y < m_allocation.height; ++y) {
-        check(m_cancelled);
-        for (uint32_t x = 0; x < m_allocation.width; ++x) {
-          const auto donor = owner(x, y);
+      for (uint32_t x = 0; x < m_allocation.width; ++x) {
+        const auto &source = m_results[owner(x, y)];
+        for (uint32_t slot = 0; slot < count; ++slot) {
+          const uint32_t coefficient = first + slot;
           for (uint32_t c = 0; c < 3; ++c) {
             const size_t k = (size_t(y) * m_width + x) * 3 + c;
-            float value = m_results[donor].irradiance[coefficient][c];
+            float value = source.irradiance[coefficient][c];
             if (!std::isfinite(value))
               throw std::invalid_argument("Invalid indirect SH band");
             // Convolved SH has |Ln/L0| <= 1.155 for L1 and .56 for L2.
@@ -92,6 +94,8 @@ namespace remix::forward::lightmap::denoising {
           }
         }
       }
+    }
+    for (uint32_t slot = 0; slot < count; ++slot) {
       // Alignment is an implementation detail, not a black lighting boundary.
       // Continue only this chart's values into the temporary right/bottom pad.
       // Signed SH padding at -1 can otherwise create coloured reconstruction

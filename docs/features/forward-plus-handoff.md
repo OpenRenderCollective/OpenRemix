@@ -1141,3 +1141,17 @@ noise/seams, denoising cost and frame profiling remain independent priorities.
 - [ ] Compare nine RGB SH lightmap fields with VRF-supported directional/ZH3
   variants for angular error, storage, fetch and denoising cost. No free-quality
   or native Valve-baker parity claim; keep surface and probe issues separate.
+
+
+### 2026-10-26 - Pack denoising coefficients with one donor visit
+
+- [x] Pack requested SH bands together per texel; keep normalization, chart
+  padding, cancellation, metadata and memory budgets. No format/default change.
+- [x] All split sizes preserve exact packet bytes; fresh Construct transport
+  and filtered fingerprints match the prior full-quality control.
+- [x] Retain bounded packing benchmark and eight-queue analysis option only;
+  production still uses existing queue/callback policies. No map-level gain claim.
+- [ ] Audit serial versus parallel device-calibration warmup asymmetry across
+  shapes. Account for real changing-mask graph costs and verify actual map cost.
+- [ ] Continue compact directional/ZH lightmap and convergence-aware probe work;
+  neural filtering remains a larger measured cost than the retained packing loop.
