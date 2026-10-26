@@ -3843,3 +3843,14 @@ noise/seams, denoising cost and frame profiling remain independent priorities.
 - [ ] Before implementation, verify varying-normal interpolation/displacements,
   seams, signed corrected coefficients, colored lights, actual normal maps and
   rough specular use. Compare denoising and actual runtime costs separately.
+
+
+### 2026-10-26 - Compact fit filtering qualification
+
+- [x] Retain isolated offline polynomial/fit/interpolation controls with tests for
+  surface value, derivative, residual, rotation and fixed-normal interpolation.
+- [x] Demonstrate varying-normal filtering is not exact even for identical
+  world-space lighting; per-texel exactness does not qualify displacements.
+- [ ] Solve normal variation and signed corrected-constant denoising before any
+  runtime candidate. Existing positive-L0 filter normalization is incompatible
+  with a direct five-field substitution. Keep production full SH unchanged.
