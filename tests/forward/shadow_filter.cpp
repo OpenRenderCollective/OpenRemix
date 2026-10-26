@@ -99,6 +99,10 @@ int main(int argc, char **argv) try {
     for (uint32_t y = 0; y < resolution; ++y)
       for (uint32_t x = 0; x < resolution; ++x)
         sun[(layer * resolution + y) * resolution + x] = layer < 4 ? .25f : x < resolution / 2 ? .1f : 1;
+  // A distinct close-up moving layer exposes accidental static reapplication.
+  for (uint32_t y = 0; y < resolution; ++y)
+    for (uint32_t x = 0; x < resolution; ++x)
+      sun[(resolution + y) * resolution + x] = x < resolution / 2 ? .1f : 1;
   upload(fixture, gpu.fixed, fixed, 18);
   upload(fixture, gpu.moving, moving, 18);
   upload(fixture, gpu.sun, sun, 8);
@@ -126,6 +130,10 @@ int main(int argc, char **argv) try {
   queries.push_back({{0, 0, 4, 0}, {0, 0, 1, 0}, {2, 0, 0, 0}});
   queries.push_back({{0, 0, 4, 0}, {0, 0, 1, 0}, {2, 1, 0, 0}});
   queries.push_back({{0, 0, .5f, .5f}, {0, 0, 1, 0}, {0, 1, 1, 0}});
+  const auto viewModelFirst = queries.size();
+  queries.push_back({{.75f, 0, .5f, .5f}, {0, 0, 1, 0}, {0, 0, 2, 0}});
+  queries.push_back({{.75f, 0, .5f, .5f}, {0, 0, 1, 0}, {0, 1, 2, 0}});
+  queries.push_back({{-.75f, 0, .5f, .5f}, {0, 0, 1, 0}, {0, 0, 2, 0}});
   gpu.parameters.create(fixture.physical, fixture.device, sizeof(parameters),
                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
   gpu.parameters.write(&parameters, sizeof(parameters));
@@ -249,6 +257,9 @@ int main(int argc, char **argv) try {
               values[exclusionFirst + 2][0] < .001f,
           "Baked static exclusion and static/dynamic composition remain "
           "independent of filtering");
+  require(values[viewModelFirst][0] > .999f && values[viewModelFirst + 1][0] < .001f &&
+              values[viewModelFirst + 2][0] < .001f,
+          "Viewmodel mixed shadows exclude static occlusion only for baked receivers, retaining moving shadows");
   require(validationErrors == 0, "Shadow filter readback is Vulkan validation clean");
 } catch (VkResult error) {
   std::fprintf(stderr, "Shadow filtering GPU test failed: %d\n", int(error));

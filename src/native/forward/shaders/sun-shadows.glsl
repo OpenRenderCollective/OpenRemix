@@ -1,7 +1,7 @@
 #include "shadow-filter.glsl"
 // Cascades 0..3 contain complete frozen geometry; 4..7 contain current casters
 // outside that snapshot. Matching lightmaps/probes replace the frozen term.
-float sunShadowVisibility(vec3 p, float depth, bool includeStatic) {
+float sunShadowVisibilityLayers(vec3 p, float depth, bool includeStatic, bool viewModel) {
   if (frame.target.w == 0u || depth > frame.splits.w)
     return 1;
   int cascade = depth < frame.splits.x ? 0 : depth < frame.splits.y ? 1 : depth < frame.splits.z ? 2 : 3;
@@ -25,15 +25,20 @@ float sunShadowVisibility(vec3 p, float depth, bool includeStatic) {
     for (int x = 0; x < 4; ++x) {
       float weight = weightsX[x] * weightsY[y];
       vec2 uv = (base + vec2(x, y) + .5) * texel;
-#ifdef VIEWMODEL_PASS
-      // The close-up cascade contains both world occluders and the weapon.
-      // Only this receiver pass can sample it; world shadows never see it.
-      visibility += weight * texture(sunShadow, vec4(uv, 0, reference));
-#else
-      float moving = texture(sunShadow, vec4(uv, cascade + 4, reference));
-      float frozen = includeStatic ? texture(sunShadow, vec4(uv, cascade, reference)) : 1;
+      // The viewmodel has one close-up pair; the world has four cascade pairs.
+      uint movingLayer = viewModel ? 1u : uint(cascade + 4);
+      uint staticLayer = viewModel ? 0u : uint(cascade);
+      float moving = texture(sunShadow, vec4(uv, movingLayer, reference));
+      float frozen = includeStatic ? texture(sunShadow, vec4(uv, staticLayer, reference)) : 1;
       visibility += weight * min(moving, frozen);
-#endif
     }
   return visibility;
+}
+
+float sunShadowVisibility(vec3 p, float depth, bool includeStatic) {
+#ifdef VIEWMODEL_PASS
+  return sunShadowVisibilityLayers(p, depth, includeStatic, true);
+#else
+  return sunShadowVisibilityLayers(p, depth, includeStatic, false);
+#endif
 }

@@ -91,7 +91,10 @@ namespace remix::forward::viewmodel {
            (m_resolved ? m_resolved->bytes : 0);
   }
   SunShadow::~SunShadow() {
-    if (m_framebuffer) vkDestroyFramebuffer(m_device, m_framebuffer, nullptr);
+    for (auto framebuffer : m_framebuffers)
+      if (framebuffer) vkDestroyFramebuffer(m_device, framebuffer, nullptr);
+    for (auto layer : m_layers)
+      if (layer) vkDestroyImageView(m_device, layer, nullptr);
   }
   void SunShadow::initialize(VkPhysicalDevice physical, VkDevice device, VkRenderPass pass,
                               uint32_t resolution) {
@@ -100,23 +103,32 @@ namespace remix::forward::viewmodel {
     m_resolution = resolution;
     m_depth.create(physical, device, {resolution, resolution}, VK_FORMAT_D32_SFLOAT,
         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-        VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, 1, 1, VK_IMAGE_VIEW_TYPE_2D_ARRAY);
-    const VkFramebufferCreateInfo info{.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-        .renderPass = pass, .attachmentCount = 1, .pAttachments = &m_depth.view,
-        .width = resolution, .height = resolution, .layers = 1};
-    check(vkCreateFramebuffer(device, &info, nullptr, &m_framebuffer));
+        VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, 2, 1, VK_IMAGE_VIEW_TYPE_2D_ARRAY);
+    for (uint32_t layer = 0; layer < m_layers.size(); ++layer) {
+      const VkImageViewCreateInfo view{.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+          .image = m_depth.handle, .viewType = VK_IMAGE_VIEW_TYPE_2D,
+          .format = VK_FORMAT_D32_SFLOAT,
+          .subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, layer, 1}};
+      check(vkCreateImageView(device, &view, nullptr, &m_layers[layer]));
+      const VkFramebufferCreateInfo info{.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+          .renderPass = pass, .attachmentCount = 1, .pAttachments = &m_layers[layer],
+          .width = resolution, .height = resolution, .layers = 1};
+      check(vkCreateFramebuffer(device, &info, nullptr, &m_framebuffers[layer]));
+    }
   }
-  void SunShadow::record(VkCommandBuffer command, const std::function<void()> &draw) {
+  void SunShadow::record(VkCommandBuffer command, const std::function<void(uint32_t)> &draw) {
     const VkClearValue clear{.depthStencil = {1, 0}};
-    const VkRenderPassBeginInfo info{.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-        .renderPass = m_pass, .framebuffer = m_framebuffer,
-        .renderArea = {{0, 0}, {m_resolution, m_resolution}}, .clearValueCount = 1, .pClearValues = &clear};
-    vkCmdBeginRenderPass(command, &info, VK_SUBPASS_CONTENTS_INLINE);
-    const VkViewport viewport{0, 0, float(m_resolution), float(m_resolution), 0, 1};
-    const VkRect2D scissor{{0, 0}, {m_resolution, m_resolution}};
-    vkCmdSetViewport(command, 0, 1, &viewport);
-    vkCmdSetScissor(command, 0, 1, &scissor);
-    draw();
-    vkCmdEndRenderPass(command);
+    for (uint32_t layer = 0; layer < m_framebuffers.size(); ++layer) {
+      const VkRenderPassBeginInfo info{.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+          .renderPass = m_pass, .framebuffer = m_framebuffers[layer],
+          .renderArea = {{0, 0}, {m_resolution, m_resolution}}, .clearValueCount = 1, .pClearValues = &clear};
+      vkCmdBeginRenderPass(command, &info, VK_SUBPASS_CONTENTS_INLINE);
+      const VkViewport viewport{0, 0, float(m_resolution), float(m_resolution), 0, 1};
+      const VkRect2D scissor{{0, 0}, {m_resolution, m_resolution}};
+      vkCmdSetViewport(command, 0, 1, &viewport);
+      vkCmdSetScissor(command, 0, 1, &scissor);
+      draw(layer);
+      vkCmdEndRenderPass(command);
+    }
   }
 } // namespace remix::forward::viewmodel

@@ -1,5 +1,6 @@
 #pragma once
 #include "forward/resources.h"
+#include <array>
 #include <functional>
 #include <memory>
 
@@ -30,14 +31,16 @@ namespace remix::forward::viewmodel {
   public:
     ~SunShadow();
     void initialize(VkPhysicalDevice physical, VkDevice device, VkRenderPass pass, uint32_t resolution);
-    void record(VkCommandBuffer command, const std::function<void()> &draw);
+    // Layer 0 is the static fallback; layer 1 contains moving/self shadows.
+    void record(VkCommandBuffer command, const std::function<void(uint32_t)> &draw);
     VkImageView view() const { return m_depth.view; }
     uint64_t bytes() const { return m_depth.bytes; }
 
   private:
     VkDevice m_device = VK_NULL_HANDLE;
     VkRenderPass m_pass = VK_NULL_HANDLE;
-    VkFramebuffer m_framebuffer = VK_NULL_HANDLE;
+    std::array<VkFramebuffer, 2> m_framebuffers{};
+    std::array<VkImageView, 2> m_layers{};
     uint32_t m_resolution = 0;
     Image m_depth;
   };

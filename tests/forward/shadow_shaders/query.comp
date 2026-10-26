@@ -29,6 +29,6 @@ void main() {
   light.responseWeights = vec4(0);
   float visibility = query.control.z == 0u
       ? localShadowVisibility(light, query.position.xyz, query.normal.xyz, fixedVisibility)
-      : sunShadowVisibility(query.position.xyz, query.position.w, fixedVisibility);
+      : sunShadowVisibilityLayers(query.position.xyz, query.position.w, fixedVisibility, query.control.z == 2u);
   answers[index] = vec4(visibility, 0, 0, 1);
 }

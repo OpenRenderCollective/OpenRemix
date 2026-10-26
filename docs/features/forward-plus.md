@@ -2839,10 +2839,10 @@ bytes separately from the payload budget. This optimization does not change ligh
 quality, probe density, cache format or bake sampling presets.
 
 
-### Optional bicubic lightmap reconstruction
+### Bicubic lightmap reconstruction
 
-Enable **Bicubic lightmaps** in Forward+ rendering settings, or set
-`rtx.native.forward.bicubicLightmaps=1`. Bilinear remains the default. The option
+**Bicubic lightmaps** is enabled by default in Forward+ rendering settings. Set
+`rtx.native.forward.bicubicLightmaps=0` for bilinear reconstruction. The option
 changes reconstruction without rebaking. Submitted diagnostics expose
 `rendering.bicubicLightmaps`, so a pending pipeline switch is distinguishable
 from the active option.

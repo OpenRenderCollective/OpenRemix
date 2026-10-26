@@ -32,7 +32,7 @@ namespace remix::forward {
     if (frame.data.target[3]) {
       gpu::GpuScope shadowTime(command, "Forward+ viewmodel sun shadow",
                                 options.shadowResolution, options.shadowResolution);
-      viewModelSun->record(command, [&] {
+      viewModelSun->record(command, [&](uint32_t layer) {
         vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline);
         vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1,
                                 &frame.viewModelScene, 0, nullptr);
@@ -52,9 +52,13 @@ namespace remix::forward {
             ++statistics.drawCalls.viewModelSunShadow;
           }
         };
-        casters(frame.commands, true);
-        casters(frame.viewModelCasters, false);
-        casters(frame.viewModelCommands, false);
+        if (layer == 0) {
+          // Sampled only where matching baked probe visibility is unavailable.
+          casters(frame.viewModelCasters, false);
+        } else {
+          casters(frame.commands, true);
+          casters(frame.viewModelCommands, false);
+        }
       });
     }
     // The depth shader repeats the same alpha/backface coverage as colour.

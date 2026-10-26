@@ -3977,3 +3977,11 @@ noise/seams, denoising cost and frame profiling remain independent priorities.
 - Merge upstream HDR10/gamma fixes, NUMOS sky/weather and GPU particle APIs while preserving Forward+ ownership and baked lighting. Adapt Forward+ compositing to the shared display curve and HDR output settings.
 - Follow-up: integrate NUMOS sky/cloud shadows and explicit GPU particle lighting with Forward+ where appropriate; upstream support alone does not establish Forward+ feature parity. Verify SDR/HDR presentation visually on supported hardware.
 - Follow-up: audit cached bake compatibility and Forward+ texture sampling against upstream gamma-2.2 image decoding before promoting this merge to the playable install.
+
+
+### Receiver lighting follow-up (2026-10-27)
+
+- Make chart-safe bicubic lightmaps the default, retaining explicit bilinear comparison.
+- Viewmodel sun shadows: separate static fallback from moving/self layers so matching baked probe visibility replaces static occlusion. Retire static fallback rendering only with conservative coverage evidence; unknown coverage still needs shadows.
+- Reproduce the Construct crate triangular lighting artifact with shaded, irradiance-only, normal-map-disabled and coverage diagnostics. Compare probe interpolation/visibility against the Source 2 viewer LPV ambient-cube path; do not assume SH representation alone causes triangle seams.
+- Construct outdoors: existing automatic captures include large elevated boxes that miss lower receivers. Improve receiver coverage and fit selection without extending boxes through walls or overriding authored volumes. Check ground, courtyard props, building transitions and distant sky separately.
