@@ -57,7 +57,7 @@ int main(int argc, char **argv) {
   config("denoiser", "off");
   config("debugView", "1");
   for (const char *key :
-       {"taa", "sigma", "sharc", "prism", "gamma22", "sky", "localLights"})
+       {"taa", "sigma", "sharc", "sky", "localLights"})
     config(key, "0");
   config("bounces", "0");
   // A biome-colored cutout over an untinted base, separated by BetaRT's

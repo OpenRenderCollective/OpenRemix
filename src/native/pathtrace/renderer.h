@@ -1,8 +1,11 @@
 #pragma once
 #include "denoise/renderer.h"
 #include "pathtrace/options.h"
+#include "runtime/settings.h"
+#include "runtime/sky_control.h"
 #include "postfx/renderer.h"
 #include "raster/renderer.h"
+#include "scene/display.h"
 #include "scene/trace_frame.h"
 #include <remix/remix_native_ext.h>
 #include "pathtrace/block_costs.h"
@@ -82,13 +85,37 @@ namespace remix {
     std::shared_ptr<postfx::State> exposureState() const;
     VkExtent2D renderExtent() const;
     void setPostProcessing(postfx::Renderer *renderer, bool retainExposure = false);
-    void configureTarget(VkRenderPass pass, VkExtent2D extent, bool encodeOutput, VkFormat depthFormat,
-                         VkImageView depthView, bool hardwareSrgb = false);
+    // The display target is UNORM (SDR) or float (HDR10): the composite writes
+    // gamma 2.2 values.
+    void configureTarget(VkRenderPass pass, VkExtent2D extent, VkFormat depthFormat, VkImageView depthView);
+    // What the display is sent (scene/display.h). Applies from the next record().
+    using DisplayOutput = scene::DisplayOutput;
+    void setDisplayOutput(const DisplayOutput &output);
     VkRenderPass skyPass() const;
     // The view depth of the frame being traced (the denoiser's guide, R32
     // float, GENERAL layout, render resolution): what host passes sample as
     // REMIXAPI_HOST_TARGET_VIEW_DEPTH_EXT. None without a denoiser.
     VkImageView viewDepth() const;
+    // What lit the frame last prepared, for effects drawn over it (particles):
+    // the sun (propagation direction, radiance), the sky (radiance; w above
+    // zero with an environment, which `environment` samples through
+    // domeTransform, scaled by the radiance), the clouds' shadow on the sun
+    // (sky::Renderer::cloudShadow; a null view without one), the up axis in
+    // effect and the scene's TLAS.
+    struct OverlayLighting {
+      float sunDirection[3] = {0, 0, -1};
+      float sunRadiance[3] = {};
+      float skyRadiance[4] = {};
+      VkDescriptorImageInfo environment{};
+      bool environmentSrgb = false; // its texels are sRGB-encoded: decoded with pow 2.2
+      float domeTransform[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+      VkDescriptorImageInfo cloudShadow{};
+      float cloudShadowTransform[3][4] = {};
+      uint32_t cloudShadowSlices = 0;
+      uint32_t upAxis = 2;
+      VkAccelerationStructureKHR scene = VK_NULL_HANDLE;
+    };
+    OverlayLighting overlayLighting() const;
     upscale::Statistics upscalingStatistics() const;
     // What frame generation needs of the frame just prepared: the upscaler's
     // depth and motion and the cameras of this and the previous frame
@@ -156,6 +183,18 @@ namespace remix {
     StaticStatistics staticStatistics() const;
     // Rebuilds the kept static tables from scratch every frame and compares.
     void setStaticValidation(bool enabled);
+    // The NUMOS sky: the profile's sky settings, the game's control over
+    // them (remix_sky_ext.h), and why the device cannot run it (empty when
+    // it can). Applies from the next prepared frame.
+    void setSky(const config::SkySettings &settings, const config::SkyControl &control,
+                const std::string &unavailable);
+    struct SkyStatus {
+      bool supported = false, active = false;
+      std::string reason; // why the sky is not active, or empty
+    };
+    SkyStatus skyStatus() const;
+    // What the sky did in the last recorded frame; any thread.
+    config::SkyState skyState() const;
 
   private:
     struct Gpu;

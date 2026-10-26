@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the pinned shader tools (glslang, SPIRV-Tools; with --metal the SPIRV-Cross fork) once per machine.
+"""Build the pinned shader tools (glslang, SPIRV-Tools; with --metal the SPIRV-Cross fork; with --slang slangc) once per machine.
 
 The renderer's SPIR-V and Metal libraries are generated at build time (generate.py, metal.py), so every
 build needs the same tools: pinned revisions give every machine the same output. They are built for the
@@ -11,10 +11,14 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import platform
 import shutil
 import stat
 import subprocess
+import sys
+import tarfile
 import tempfile
+import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
 LOCK = json.loads(Path(__file__).with_name('toolchain.lock.json').read_text())
@@ -69,6 +73,29 @@ def spirv_cross(work, bin_dir):
     shutil.copy2(executable(work / 'spirv-cross-build', 'spirv-cross'), bin_dir / ('spirv-cross' + EXE))
 
 
+def slang(work, bin_dir):
+    """slangc and the libraries beside it, from the pinned release archive (NUMOS sky shaders)."""
+    machine = {'amd64': 'x86_64', 'x86_64': 'x86_64', 'arm64': 'aarch64', 'aarch64': 'aarch64'}[platform.machine().lower()]
+    system = {'win32': 'windows', 'linux': 'linux', 'darwin': 'macos'}[sys.platform]
+    entry = LOCK['slang'].get(f'{system}-{machine}')
+    if entry is None:
+        raise SystemExit(f'No pinned slangc release for {system}-{machine}')
+    work.mkdir(parents=True)
+    archive = work / 'slang.tar.gz'
+    with urllib.request.urlopen(entry['url']) as response:
+        archive.write_bytes(response.read())
+    if hashlib.sha256(archive.read_bytes()).hexdigest() != entry['sha256']:
+        raise SystemExit('slangc release archive checksum mismatch')
+    with tarfile.open(archive) as tar:
+        tar.extractall(work / 'slang', filter='data')
+    slangc = executable(work / 'slang', 'slangc')
+    # slangc loads its compiler libraries (slang, slang-glslang, ...) from its own directory.
+    libraries = slangc.parent if system == 'windows' else slangc.parent.parent / 'lib'
+    for path in [*slangc.parent.iterdir(), *(libraries.iterdir() if libraries.is_dir() else [])]:
+        if path.is_file():
+            shutil.copy2(path, bin_dir / path.name)
+
+
 def remove_scratch(path, cache, ignore_errors=False):
     """Remove owned scratch trees, including Git's read-only pack files on Windows."""
     resolved, boundary = path.resolve(), cache.resolve()
@@ -118,6 +145,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True, help='JSON record of the tools (generate.py --tools)')
     parser.add_argument('--cache', default='', help='Toolset cache (default: _work/tools/shader-toolchain)')
     parser.add_argument('--metal', action='store_true', help='Also build the SPIRV-Cross fork')
+    parser.add_argument('--slang', action='store_true', help='Also fetch the pinned slangc release (NUMOS sky)')
     args = parser.parse_args()
     cache = Path(args.cache).resolve() if args.cache else ROOT / '_work/tools/shader-toolchain'
     bins = [toolset(cache, 'khronos', ['glslang', 'spirv-tools', 'spirv-headers'], khronos)]
@@ -125,6 +153,8 @@ def main():
     if args.metal:
         record['spirv-cross'] = str(toolset(cache, 'spirv-cross', ['spirv-cross-msl'], spirv_cross) /
                                     ('spirv-cross' + EXE))
+    if args.slang:
+        record['slangc'] = str(toolset(cache, 'slang', ['slang'], slang) / ('slangc' + EXE))
     args.output.write_text(json.dumps(record, indent=2) + '\n')
 
 

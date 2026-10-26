@@ -100,7 +100,7 @@ int main(int argc, char **argv) {
   };
   // Deterministic direct lighting: ray-traced primary visibility and one
   // hard-shadowed sun, without temporal or stochastic passes.
-  for (const char *key : {"prism", "gamma22", "sharc", "sigma", "taa", "bounces", "autoExposure", "bloom",
+  for (const char *key : {"sharc", "sigma", "taa", "bounces", "autoExposure", "bloom",
                           "accumulate", "localLights", "sky"})
     config(key, "0");
   config("primaryVisibility", "ray");

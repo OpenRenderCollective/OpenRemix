@@ -289,7 +289,7 @@ namespace remix::metal {
     // Automatic exposure and bloom; the composite reads their results.
     std::unique_ptr<post::Renderer> post;
     uint32_t width = 0, height = 0;
-    bool encodeOutput = false, hardwareSrgb = false, prism = true, gamma22 = true, rendered = false;
+    bool falseColorView = false, rendered = false;
     uint32_t debugView = 0;
 
     // Mesh views (pathtrace/geometry.cpp).

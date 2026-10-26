@@ -15,7 +15,7 @@ namespace remix {
     dispatch_semaphore_t frames = nullptr;
     uint32_t frameIndex = 0, frameCount = gpuFrameCount;
     uint32_t width = 0, height = 0;
-    MTLPixelFormat format = MTLPixelFormatBGRA8Unorm_sRGB;
+    MTLPixelFormat format = MTLPixelFormatBGRA8Unorm;
     // A failure reported by a completed command buffer.
     std::atomic<bool> commandFailed{false};
     // Presented screenshot: the drawable is copied into a shared buffer by the

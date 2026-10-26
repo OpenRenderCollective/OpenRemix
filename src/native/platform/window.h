@@ -92,6 +92,8 @@ namespace remix {
     void requestClose() { m_closeRequested = true; }
 
     SDL_Window *handle() const { return m_window; }
+    // The window's display has HDR on (Windows HDR; SDL_PROP_WINDOW_HDR_ENABLED_BOOLEAN).
+    bool hdrEnabled() const;
     // True when Startup wrapped a host-owned window (StartupInfo::hwnd).
     bool embedded() const { return m_embedded; }
     // Whether the caller is the thread that started the window: SDL's events,

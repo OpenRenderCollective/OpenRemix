@@ -317,10 +317,13 @@ namespace remix::forward {
                             &post, 0, nullptr);
     const struct {
       uint32_t prism, encode, samples, reflections, background, gamma22, hardwareSrgb, viewModel;
+      uint32_t hdr10;
+      float peakNits, paperWhiteNits;
     } push{uint32_t(g.options.prism), uint32_t(g.encodeOutput), uint32_t(g.samples),
            uint32_t(bool(g.reflections) && !frame.waterComposed && g.options.debugView == 0),
            uint32_t(background), uint32_t(g.options.gamma22), uint32_t(g.hardwareSrgb),
-           uint32_t(!frame.viewModelCommands.empty())};
+           uint32_t(!frame.viewModelCommands.empty()), uint32_t(g.displayOutput.hdr10),
+           g.displayOutput.peakNits, g.displayOutput.paperWhiteNits};
     vkCmdPushConstants(command, g.compositeLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
     vkCmdDraw(command, 3, 1, 0, 0);
   }

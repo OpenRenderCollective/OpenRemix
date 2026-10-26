@@ -136,6 +136,11 @@ namespace remix {
     m_inputEvents.clear();
   }
 
+  bool RemixSdlWindow::hdrEnabled() const {
+    return m_window && SDL_GetBooleanProperty(SDL_GetWindowProperties(m_window), SDL_PROP_WINDOW_HDR_ENABLED_BOOLEAN,
+                                              false);
+  }
+
   remixapi_ErrorCode RemixSdlWindow::getWindowState(remixapi_WindowState &state) const {
     remixapi_ErrorCode threadStatus = checkPresentThread();
     if (threadStatus != REMIXAPI_ERROR_CODE_SUCCESS) {

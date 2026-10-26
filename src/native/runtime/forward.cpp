@@ -205,8 +205,9 @@ namespace remix {
       const auto exposure = m_forwardExposure;
       const auto queueFamily = m_queueFamily;
       const bool srgb =
-          m_swapchainFormat == VK_FORMAT_R8G8B8A8_SRGB || m_swapchainFormat == VK_FORMAT_B8G8R8A8_SRGB;
-      const bool encode = m_srgb && !srgb;
+          !m_hdrOutput.active() &&
+          (m_swapchainFormat == VK_FORMAT_R8G8B8A8_SRGB || m_swapchainFormat == VK_FORMAT_B8G8R8A8_SRGB);
+      const bool encode = !srgb;
       next->job = m_pipelines->prepare("forward-" + std::to_string(++m_preparationGeneration), [=] {
         auto replacement = std::make_unique<forward::Renderer>();
         replacement->initialize(physical, device, output, extent, options, encode, pipelines, hardwareRay,

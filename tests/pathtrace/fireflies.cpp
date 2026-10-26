@@ -115,8 +115,6 @@ int main(int argc, char **argv) {
   config("sigma", "0");
   config("denoiser", "off");
   config("taa", "0");
-  config("prism", "0");
-  config("gamma22", "0");
   config("localGuiding", "0");
   config("adaptiveLocalSampling", "0");
   config("blueNoiseLocalLights", "0");

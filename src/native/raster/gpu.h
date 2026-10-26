@@ -154,12 +154,7 @@ namespace remix::raster::detail {
     VkDeviceSize bytes = 0; // Device allocation size, for VRAM statistics.
     uint32_t width = 0, height = 0;
     VkImageCreateFlags flags = 0;
-    // UNORM view of an sRGB (mutable-format) image: data maps alias it.
-    VkImageView linearView = VK_NULL_HANDLE;
     ~Image() {
-      if (linearView) {
-        vkDestroyImageView(device, linearView, nullptr);
-      }
       if (view) {
         vkDestroyImageView(device, view, nullptr);
       }
@@ -180,7 +175,8 @@ namespace remix::raster::detail {
   };
   static_assert(sizeof(Push) == 128);
 
-  inline float linear(float c) { return c <= .04045f ? c / 12.92f : std::pow((c + .055f) / 1.055f, 2.4f); }
+  // A display-encoded value (gamma 2.2) to linear.
+  inline float linear(float c) { return std::pow(c, 2.2f); }
   template <typename Map, typename Predicate> void prune(Map &map, Predicate predicate) {
     for (auto it = map.begin(); it != map.end();) {
       if (predicate(*it)) {
@@ -206,7 +202,7 @@ namespace remix {
     VkFormat depthFormat = VK_FORMAT_UNDEFINED;
     VkRenderPass pass = VK_NULL_HANDLE, skyPass = VK_NULL_HANDLE;
     VkExtent2D extent = {};
-    bool encodeOutput = false, linearTarget = false;
+    bool encodeOutput = false;
     VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
     VkDescriptorPool pool = VK_NULL_HANDLE;
     VkPipelineLayout layout = VK_NULL_HANDLE;
@@ -244,6 +240,7 @@ namespace remix {
       std::weak_ptr<scene::Texture> owner;
       std::unique_ptr<Image> data; // Null for a linear alias of another entry's image.
       VkImageView view = VK_NULL_HANDLE; // Sampled view: data->view or the alias.
+      bool srgb = false;                 // Encoded sRGB texels (UNORM): the shaders decode them, pow 2.2.
       uint64_t revision = 0;             // scene::TextureUpdates::revision uploaded
       bool updatable = false;            // owner has TextureUpdates: refreshed by prepare()
     };
@@ -447,11 +444,24 @@ namespace remix {
       VkDescriptorSet set = VK_NULL_HANDLE;
       bool failed = false;
       uint32_t soft = 0;     // this frame's commands with SOFT_DEPTH
+      bool requested = false; // particles sample the copy this frame
       bool captured = false; // this frame's depth is in the copy
     } sprite;
     // The layout and shader modules; false when they cannot be created.
     bool prepareSprite();
     void destroySprite();
+    // The NUMOS sky over the target (raster/sky.cpp): fullscreen draws that
+    // multiply it by the sky's transmittance, then add its light.
+    struct SkyComposite {
+      VkPipelineLayout layout = VK_NULL_HANDLE; // one sampled image (setLayout)
+      VkShaderModule vertex = VK_NULL_HANDLE, fragment = VK_NULL_HANDLE;
+      VkPipeline multiply = VK_NULL_HANDLE, add = VK_NULL_HANDLE;
+      // Per frame slot: the transmittance's and the addition's sets.
+      VkDescriptorSet sets[gpuFrameCount][2] = {};
+    } skyComposite;
+    // False while the pipelines compile.
+    bool prepareSkyComposite();
+    void destroySkyComposite();
     bool prepareMask();
     // The coverage passes: every run, or (early) the runs marked early.
     void recordMaskRuns(VkCommandBuffer command, bool early);

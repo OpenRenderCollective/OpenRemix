@@ -60,7 +60,7 @@ int main(int argc, char **argv) {
   auto config = [&](const char *key, const char *value) {
     ok(api.SetConfigVariable((std::string("rtx.native.pathtrace.") + key).c_str(), value));
   };
-  for (const auto *key : {"taa", "sigma", "sharc", "prism", "gamma22", "adaptiveLocalSampling"})
+  for (const auto *key : {"taa", "sigma", "sharc", "adaptiveLocalSampling"})
     config(key, "0");
   if (rrTest) {
     config("dlssQuality", "native-aa");
@@ -218,7 +218,7 @@ int main(int argc, char **argv) {
     for (size_t i = 0; i < image.size(); ++i)
       for (int c = 0; c < 3; ++c) {
         double v = bytes[4 * i + c] / 255.;
-        image[i][c] = v <= .04045 ? v / 12.92 : std::pow((v + .055) / 1.055, 2.4);
+        image[i][c] = std::pow(v, 2.2);
       }
     stbi_image_free(bytes);
     return image;

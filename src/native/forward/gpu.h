@@ -26,6 +26,7 @@ namespace remix::forward {
     VkExtent2D extent{};
     VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
     Options options;
+    scene::DisplayOutput displayOutput;
     std::unique_ptr<FragmentStatistics> fragmentStatistics;
     Statistics statistics;
     bool encodeOutput = false;

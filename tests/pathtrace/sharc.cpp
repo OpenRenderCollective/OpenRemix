@@ -47,9 +47,7 @@ int main(int argc, char **argv) {
     return 77;
   }
   ok(api.SetConfigVariable("rtx.native.backend", "pathtrace"));
-  // These radiometric checks decode the original sRGB output.
-  ok(api.SetConfigVariable("rtx.native.pathtrace.prism", "0"));
-  ok(api.SetConfigVariable("rtx.native.pathtrace.gamma22", "0"));
+  // These radiometric checks decode the gamma 2.2 output.
   ok(api.SetConfigVariable("rtx.native.pathtrace.samples", "16"));
   ok(api.SetConfigVariable("rtx.native.pathtrace.bounces", "1"));
   require(api.SetConfigVariable("rtx.native.pathtrace.sky", "2") == REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS,
@@ -208,7 +206,7 @@ int main(int argc, char **argv) {
       for (int x = width / 2 - 4; x < width / 2 + 4; ++x)
         for (int c = 0; c < 3; ++c) {
           float v = pixels[(y * width + x) * 4 + c] / 255.f;
-          average[c] += (v <= .04045f ? v / 12.92f : std::pow((v + .055f) / 1.055f, 2.4f)) / 64;
+          average[c] += (std::pow(v, 2.2f)) / 64;
         }
     stbi_image_free(pixels);
     if (pbrScene) {

@@ -1,3 +1,10 @@
-# The retained SDK audit hashes these headers byte for byte.
-public/include/remix/remix_c.h text eol=lf
-public/include/remix/remix.h text eol=lf
+# Checksummed sources (tests/abi/audit.py) keep their committed bytes on every checkout.
+public/include/remix/remix.h -text
+public/include/remix/remix_c.h -text
+third_party/dlss/** -text
+third_party/fsr31/** -text
+third_party/image/** -text
+third_party/imgui/** -text
+third_party/nrd/** -text
+third_party/sharc/** -text
+third_party/xz-embedded/** -text

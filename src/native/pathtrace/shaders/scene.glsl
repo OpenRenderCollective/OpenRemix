@@ -98,10 +98,13 @@ layout(set=0,binding=3,std140) uniform Frame {
   uint64_t localProbeRead, localProbeWrite; // local occlusion probes: last frame's (0: none), this frame's
   vec4 localProbeParams; // movingShadowBlur, reserved
   vec4 volumeLightScales; // volumetrics: sun, lights, emissive surfaces, sky
+  vec4 cloudShadow[3]; // rows: world position (w 1) to the sky's cloud shadow box, (u, v, slice) in [0, 1]
+  uvec4 cloudShadowConfig; // its texture + 1 (0: no cloud shadow), slices, reserved
+  uvec4 srgbTextures[32]; // a bit per texture slot: sRGB-encoded texels (stored UNORM), decoded with pow 2.2
   uint64_t sheetMaterials; // Optional measured-sheet optics, keyed by albedo descriptor.
 } frame;
 // Instance mask bit of view models (pathtrace/tlas_policy.h).
-const uint viewModelInstanceMask=8u;
+const uint viewModelInstanceMask=64u;
 // Instance mask bit of reflection-only instances (the player's own body):
 // bounce rays see them, camera, shadow and light-visibility rays do not.
 const uint reflectionOnlyInstanceMask=16u;
@@ -175,9 +178,15 @@ bool cameraCulled(uint flags,bool front,vec3 origin,vec3 direction,float t) {
 // shaded (ray differentials, or dFdx/dFdy when rasterized). Zero selects the
 // finest mip: visibility tests during traversal keep full-resolution coverage.
 vec2 uvGradX=vec2(0),uvGradY=vec2(0);
+// A texel of texture slot `index` as linear colour: the slot's sRGB-encoded
+// texels (frame.srgbTextures) decoded with gamma 2.2, as filtered.
+vec4 slotTexel(uint index,vec4 texel) {
+  if(((frame.srgbTextures[index>>7u][(index>>5u)&3u]>>(index&31u))&1u)!=0u)texel.rgb=pow(texel.rgb,vec3(2.2));
+  return texel;
+}
 // A material texture at mesh UV `uv`, filtered over the footprint.
 vec4 materialTexel(Surface s,uint index,vec2 uv) {
-  return textureGrad(textures[nonuniformEXT(index)],uv*s.uv.xy+s.uv.zw,uvGradX*s.uv.xy,uvGradY*s.uv.xy);
+  return slotTexel(index,textureGrad(textures[nonuniformEXT(index)],uv*s.uv.xy+s.uv.zw,uvGradX*s.uv.xy,uvGradY*s.uv.xy));
 }
 vec2 intersectionUV(Surface s, uint triangle, vec2 bary) {
   uint base = triangle * 3;
@@ -188,7 +197,23 @@ vec3 environmentRadiance(vec3 direction) {
   if(frame.skyRadiance.w<=0)return frame.skyRadiance.rgb;
   vec3 d=normalize(vec3(dot(frame.domeTransform[0].xyz,direction),dot(frame.domeTransform[1].xyz,direction),dot(frame.domeTransform[2].xyz,direction)));
   vec2 uv=vec2(atan(d.z,d.x)/(2*3.14159265359)+.5,acos(clamp(d.y,-1,1))/3.14159265359);
-  return frame.skyRadiance.rgb*textureLod(textures[nonuniformEXT(uint(frame.skyRadiance.w)-1)],uv,0).rgb;
+  uint index=uint(frame.skyRadiance.w)-1;
+  return frame.skyRadiance.rgb*slotTexel(index,textureLod(textures[nonuniformEXT(index)],uv,0)).rgb;
+}
+// The clouds' transmittance toward the sun at p (the NUMOS sky's cloud
+// shadow box, its edge beyond it): horizontal slices side by side, blended
+// between the two around p's height.
+float cloudShadow(vec3 p) {
+  if(frame.cloudShadowConfig.x==0u)return 1;
+  vec3 box=clamp(vec3(dot(frame.cloudShadow[0],vec4(p,1)),dot(frame.cloudShadow[1],vec4(p,1)),dot(frame.cloudShadow[2],vec4(p,1))),0,1);
+  float slices=float(frame.cloudShadowConfig.y),slice=box.z*(slices-1),lower=min(floor(slice),slices-2);
+  // Inside each slice, half a texel from its sides.
+  vec2 size=vec2(textureSize(textures[nonuniformEXT(frame.cloudShadowConfig.x-1u)],0));
+  float u=clamp(box.x,.5*slices/size.x,1-.5*slices/size.x);
+  uint index=frame.cloudShadowConfig.x-1u;
+  float a=textureLod(textures[nonuniformEXT(index)],vec2((u+lower)/slices,box.y),0).r;
+  float b=textureLod(textures[nonuniformEXT(index)],vec2((u+lower+1)/slices,box.y),0).r;
+  return mix(a,b,clamp(slice-lower,0,1));
 }
 // Perceptual roughness and metalness; albedo is the linear material colour.
 // A roughness (map 0) or metallic (1) texel's value (frame_tables.h
@@ -209,7 +234,7 @@ vec2 materialParameters(Surface s,vec2 uv,inout vec3 albedo) {
 }
 // As materialTexel, at UVs scaled by k (the footprint scales with them).
 vec4 materialTexelScaled(Surface s,uint index,vec2 uv,float k) {
-  return textureGrad(textures[nonuniformEXT(index)],uv*s.uv.xy+s.uv.zw,uvGradX*s.uv.xy*k,uvGradY*s.uv.xy*k);
+  return slotTexel(index,textureGrad(textures[nonuniformEXT(index)],uv*s.uv.xy+s.uv.zw,uvGradX*s.uv.xy*k,uvGradY*s.uv.xy*k));
 }
 mat3 materialBasis(vec3 n,vec3 e1,vec3 e2,vec2 u1,vec2 u2) {
   float det=u1.x*u2.y-u1.y*u2.x;
@@ -268,8 +293,9 @@ vec3 materialEmission(Surface s,vec2 uv) {
   return s.emission.rgb*(s.textureState.z==0?vec3(1):
       materialTexel(s,s.textureState.z-1,uv).rgb);
 }
+// A display-encoded colour (gamma 2.2) to linear.
 vec3 linearColor(vec3 c) {
-  return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), greaterThan(c, vec3(0.04045)));
+  return pow(max(c, vec3(0)), vec3(2.2));
 }
 vec4 arg(uint index, vec4 texel, vec4 vertex, vec4 factor) {
   return index == 1 ? texel : index == 2 ? vertex : index == 3 ? factor : vec4(1);

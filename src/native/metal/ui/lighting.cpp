@@ -2,6 +2,7 @@
 // the runtime's ui* queries (metal/ui/status.h). Port upstream changes to ui/lighting.cpp here.
 #include "pathtrace/volume_policy.h"
 #include "metal/runtime.h"
+#include "ui/sky.h"
 #include "ui/widgets.h"
 #include <algorithm>
 #include <iterator>
@@ -83,10 +84,12 @@ namespace remix {
           ImGui::SetTooltip("Above the base height the medium thins to 37%% over this height. 0: uniform.");
         if (options.volumetricHeightFalloff > 0) {
           ui::DragFloat("Base height (m)", &options.volumetricBaseHeight, .25f, -100000, 100000, "%.2f");
-          int axis = int(std::min(options.volumetricUpAxis, 2u));
-          if (ui::Combo("Up axis", &axis, "X\0Y\0Z\0"))
-            options.volumetricUpAxis = uint32_t(axis);
         }
+        int axis = int(std::min(options.volumetricUpAxis, 3u));
+        if (ui::Combo("Up axis", &axis, "X\0Y\0Z\0Auto (from the camera)\0"))
+          options.volumetricUpAxis = uint32_t(axis);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("The world's up axis, for the medium's height falloff and the sky.");
         ui::SliderFloat("March distance (m)", &options.volumetricMaxDistance, 10.f, 2000.f, "%.0f",
                         ImGuiSliderFlags_Logarithmic);
         if (ImGui::IsItemHovered())
@@ -366,5 +369,10 @@ namespace remix {
       if (options.accumulate)
         ImGui::TextWrapped("%s", "Progressive reference rendering bypasses SHARC.");
     }
+  }
+  void RemixNativeRuntime::drawSkyTab(config::Settings &settings) {
+    ui::SkyStatus status;
+    status.reason = "The Metal backend does not render the NUMOS sky yet.";
+    ui::drawSkyTab(settings, status);
   }
 } // namespace remix

@@ -265,7 +265,7 @@ namespace remix::forward {
       info.pSetLayouts = giSets;
       check(pipeline::createPipelineLayout(device, &info, nullptr, &giLayout));
     }
-    const VkPushConstantRange compositePush{VK_SHADER_STAGE_FRAGMENT_BIT, 0, 32};
+    const VkPushConstantRange compositePush{VK_SHADER_STAGE_FRAGMENT_BIT, 0, 44};
     postLayout = postfx::compositeLayout(device);
     const VkDescriptorSetLayout compositeSets[] = {compositeSetLayout, postLayout};
     const VkPipelineLayoutCreateInfo compositeLayoutInfo{.sType =

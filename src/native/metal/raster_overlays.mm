@@ -329,7 +329,7 @@ namespace remix::metal {
     CompositePush push = {};
     std::copy_n(group.halo.color, 3, push.color);
     push.color[3] = float(group.halo.passes);
-    push.flags = uint32_t(group.halo.additive) | (linearTarget ? 2u : 0u);
+    push.flags = uint32_t(group.halo.additive);
     [encoder setFragmentBytes:&push length:sizeof(push) atIndex:library(shaders::Stage::haloComposite).push];
     [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
     [encoder setScissorRect:{0, 0, width, height}];

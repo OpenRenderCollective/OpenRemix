@@ -50,3 +50,6 @@ test('USD light conversion and BC4 BC6H assets', usd_lights_test)
 bake_charts_test = executable('remix-bake-charts-test', 'bake_charts.cpp',
   include_directories : test_includes, link_with : scene_library)
 test('Surface chart capture, content identity and ownership', bake_charts_test)
+particles_test = executable('remix-particles-test', 'particles.cpp',
+  include_directories : test_includes, link_with : scene_library)
+test('Particle emitters: validation, presets, slices and spawns', particles_test)

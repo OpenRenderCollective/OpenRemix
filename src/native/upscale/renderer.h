@@ -1,6 +1,7 @@
 #pragma once
 #include "platform/gpu_frames.h"
 #include "upscale/options.h"
+#include "scene/display.h"
 #include "scene/types.h"
 #include <memory>
 #include <string>
@@ -62,7 +63,8 @@ public:
                   uint32_t quality = 1, uint32_t rrPreset = 0);
   void configureComposite(VkRenderPass pass, VkImageView stableDepth);
   void selectFrame(uint32_t slot);
-  void composite(VkCommandBuffer command, bool encodeOutput, bool prism, bool gamma22, bool hardwareSrgb, VkDescriptorSet post);
+  // display: displayColor's (pathtrace/shaders/display.glsl).
+  void composite(VkCommandBuffer command, const scene::DisplayOutput &display, VkDescriptorSet post);
   Input output() const;
   FrameGenerationInputs frameGenerationInputs() const;
   void record(VkCommandBuffer command, Input color, Input depth, Input motion, Input transmission,

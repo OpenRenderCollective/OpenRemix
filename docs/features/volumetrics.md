@@ -15,7 +15,7 @@ nothing until there is a medium.
 | `volumetricScattering` | 1 | Scale of the scattered light. |
 | `volumetricHeightFalloff` | 0 | Meters over which the density falls to 37% above the base height. 0: uniform. |
 | `volumetricBaseHeight` | 0 | Height (meters) below which the density is whole. |
-| `volumetricUpAxis` | 2 | The height's axis: 0 X, 1 Y, 2 Z. |
+| `volumetricUpAxis` | 3 | The world's up axis, for the height falloff and the NUMOS sky: 0 X, 1 Y, 2 Z, 3 Auto (Y or Z, from the camera: game cameras do not roll). |
 | `volumetricMaxDistance` | 250 | The medium fills at most this many meters of a camera ray, the sky's included. |
 
 The game's fog is what `remixapi_SetFogState` last gave: exponential fog's

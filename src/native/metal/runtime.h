@@ -11,6 +11,7 @@
 #include "platform/gpu_timings.h"
 #include "platform/window.h"
 #include "runtime/profiles.h"
+#include "runtime/sky_control.h"
 #include "scene/free_camera.h"
 #include "ui/menu_shortcut.h"
 #include "ui/profiles.h"
@@ -160,6 +161,10 @@ namespace remix {
     // remixapi_SetConfigDefaultEXT: a host's default (config::Profiles::setDefault).
     remixapi_ErrorCode configureDefault(const char *key, const char *value);
     remixapi_BackendCapabilitiesEXT backendCapabilities() const;
+    // remix_sky_ext.h: the Metal backend has no NUMOS sky; the control is
+    // kept and the state stays inactive.
+    config::SkyControl &skyControl() { return m_skyControl; }
+    config::SkyState skyState() const { return {}; }
     remixapi_TracingStatisticsEXT tracingStatistics() const;
     remixapi_SharcStatisticsEXT sharcStatistics() const;
     remixapi_ErrorCode configureSetting(const char *key, const char *value);
@@ -180,6 +185,7 @@ namespace remix {
     struct Gpu; // metal/runtime_gpu.h
 
   private:
+    config::SkyControl m_skyControl;
     remixapi_ErrorCode fail(const char *reason);
     remixapi_ErrorCode presentFrame();
     void completeScreenshot(bool wait);
@@ -198,6 +204,7 @@ namespace remix {
     // post_processing.cpp, diagnostics.cpp), shared with Vulkan builds.
     void drawRenderingTab(config::Settings &settings);
     void drawLightingTab(config::Settings &settings);
+    void drawSkyTab(config::Settings &settings);
     void drawPostProcessingTab(config::Settings &settings);
     void drawDiagnosticsTab(config::Settings &settings);
     void drawGpuPassTimings(bool enabled);
@@ -236,7 +243,7 @@ namespace remix {
     float m_clearColor[4] = {0.025f, 0.035f, 0.055f, 1.0f};
     remixapi_UIState m_uiState = REMIXAPI_UI_STATE_NONE;
     ImGuiContext *m_gui = nullptr;
-    bool m_initialized = false, m_frameStarted = false, m_vsync = false, m_srgb = true;
+    bool m_initialized = false, m_frameStarted = false, m_vsync = false;
     bool m_traceSupported = false, m_disableProfiles = false, m_disableMods = false;
     std::atomic<bool> m_failed{false};
   };

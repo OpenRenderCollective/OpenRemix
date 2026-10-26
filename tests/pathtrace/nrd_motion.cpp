@@ -48,7 +48,7 @@ int main(int argc, char **argv) {
   };
   config("upscaler", "off");
   config("denoiser", "reblur-sh");
-  for (const auto *key : {"taa", "sigma", "sharc", "prism", "gamma22", "localLights"}) config(key, "0");
+  for (const auto *key : {"taa", "sigma", "sharc", "localLights"}) config(key, "0");
   config("bounces", "1");
   config("validation", "1");
   remixapi_MaterialInfoPbrEXT pbr{};

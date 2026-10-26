@@ -24,6 +24,7 @@
 
 #include "pathtrace/renderer.h"
 #include "forward/renderer.h"
+#include "particles/renderer.h"
 #include "platform/gpu_frames.h"
 #include "platform/gpu_timers.h"
 #include "platform/present_queue.h"
@@ -31,6 +32,7 @@
 #include "platform/window.h"
 #include "raster/renderer.h"
 #include "runtime/frame_generation.h"
+#include "runtime/hdr_output.h"
 #include "runtime/host_passes.h"
 #include "runtime/pipelines.h"
 #include "runtime/profiles.h"
@@ -38,6 +40,7 @@
 #include "ui/menu_shortcut.h"
 #include "ui/profiles.h"
 #include "scene/free_camera.h"
+#include "scene/up_axis.h"
 #include <remix/remix_c.h>
 #include <remix/remix_editor_ext.h>
 #include <atomic>
@@ -48,6 +51,9 @@ struct ImGuiContext;
 
 namespace remix {
 class FrameSnapshot;
+namespace sky {
+  class Renderer;
+}
 class RemixNativeRuntime {
 public:
   RemixNativeRuntime();
@@ -167,6 +173,10 @@ public:
   // remixapi_SetConfigDefaultEXT: a host's default (config::Profiles::setDefault).
   remixapi_ErrorCode configureDefault(const char *key, const char *value);
   remixapi_BackendCapabilitiesEXT backendCapabilities() const;
+  // remix_sky_ext.h: the game's control over the sky (under the API lock),
+  // and what the sky did last frame.
+  config::SkyControl &skyControl() { return m_skyControl; }
+  config::SkyState skyState() const;
   remixapi_TracingStatisticsEXT tracingStatistics() const;
   remixapi_SharcStatisticsEXT sharcStatistics() const;
   // Low latency: asked for by the setting, and in effect (the path tracing
@@ -284,8 +294,13 @@ private:
   void destroySwapchain();
   void destroyVulkan();
   bool supportsDeviceExtension(VkPhysicalDevice device, const char *name) const;
-  VkSurfaceFormatKHR
-  chooseSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &formats) const;
+  // Sets m_hdr10Requested and m_hdrStatus.
+  VkSurfaceFormatKHR chooseSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &formats);
+  // HDR10 output is wanted: the setting is on and Windows has HDR on for the
+  // window's display (not headless; VK_EXT_swapchain_colorspace enabled).
+  bool wantsHdr10() const;
+  // The tone curve's peak and scale for displayColor (1 and 1 without HDR10).
+  PathTracer::DisplayOutput displayOutput() const;
   VkPresentModeKHR
   choosePresentMode(const std::vector<VkPresentModeKHR> &modes) const;
   bool initializeUi();
@@ -295,6 +310,7 @@ private:
   void drawUi(VkCommandBuffer commandBuffer);
   void drawRenderingTab(config::Settings &settings);
   void drawLightingTab(config::Settings &settings);
+  void drawSkyTab(config::Settings &settings);
   void drawPostProcessingTab(config::Settings &settings);
   void drawDiagnosticsTab(config::Settings &settings);
   void drawTexturesTab(config::Settings &settings);
@@ -354,6 +370,15 @@ private:
   void finishDeferredPresent();
   static bool processEvent(const SDL_Event *event, void *userData);
   void updateFreeCamera();
+  // Particle emitters (runtime/particles.cpp). publishParticles: Present
+  // setup (render thread idle): the registry's frame for the render thread
+  // and the last completed frame's statistics for the registry.
+  // simulateParticles: the frame's compute passes, outside a render pass;
+  // true when drawParticles has something to draw inside the target pass,
+  // after the world layer (it captures the scene's depth first if no one has).
+  void publishParticles();
+  bool simulateParticles(VkCommandBuffer buffer);
+  void drawParticles(VkCommandBuffer buffer, VkRenderPassBeginInfo &pass);
 
   RemixSdlWindow m_window;
   RasterRenderer m_raster;
@@ -403,6 +428,16 @@ private:
   forward::Options m_forwardAttempt;
   bool prepareForwardSettings();
   void retireForward(bool preserveBaking = false);
+  // The raster backend's NUMOS sky (raster_sky.cpp): recordRasterSky before
+  // the target pass, false without a sky this frame; compositeRasterSky after
+  // the world's layers, inside the pass, which it leaves and re-enters.
+  bool recordRasterSky(VkCommandBuffer buffer, RasterRenderer &raster);
+  void compositeRasterSky(VkCommandBuffer buffer, RasterRenderer &raster, VkRenderPassBeginInfo &pass);
+  std::shared_ptr<sky::Renderer> m_rasterSky;
+  std::string m_rasterSkyFailure;
+  scene::Matrix m_rasterSkyView{}, m_rasterSkyProjection{};
+  bool m_rasterSkyReady = false, m_rasterSkyActive = false;
+  scene::UpAxisDetector m_rasterUpAxis;
   std::shared_ptr<postfx::State> m_exposureState;
   std::unique_ptr<postfx::Renderer> m_postProcessing;
   struct PreparedPost {
@@ -461,10 +496,18 @@ private:
   remixapi_DenoisingCapabilitiesEXT m_denoiseCapabilities{
       .structSize = sizeof(remixapi_DenoisingCapabilitiesEXT)};
   std::string m_traceUnavailable;
+  // Why the NUMOS sky cannot run on the device, or empty.
+  std::string m_skyUnavailable;
+  config::SkyControl m_skyControl;
   PresentedScreenshot m_screenshot;
   bool m_screenshotSupported = false;
   std::shared_ptr<FrameSnapshot> m_lastFrame;
   HostPasses m_hostPasses; // remixapi_HostPassEXT replay; needs the snapshot's swapchain usage
+  // Particles: render-owned, except the frame Present publishes (render thread idle).
+  std::unique_ptr<particles::Renderer> m_particles;
+  scene::ParticleFrame m_particleFrame;
+  std::chrono::steady_clock::time_point m_particleClock{}, m_particleStart = std::chrono::steady_clock::now();
+  uint32_t m_particleUpAxis = 2; // the up axis the last traced frame resolved
   bool m_snapshotSupported = false, m_snapshotAllocationFailed = false;
   bool m_initialized = false;
   uint64_t m_presentationCount = 0;
@@ -614,7 +657,6 @@ private:
   std::atomic<int> m_deferredResult{VK_SUCCESS};
   std::chrono::steady_clock::time_point m_lastRenderedPresent{};
   double m_renderedInterval = 0; // smoothed milliseconds between rendered frames
-  bool m_srgb = true;
   remixapi_UIState m_uiState = REMIXAPI_UI_STATE_NONE;
   float m_clearColor[4] = {0.025f, 0.035f, 0.055f, 1.0f};
   char m_input[256] = {};
@@ -636,6 +678,12 @@ private:
   bool m_sharedPresented = false;
   VkSwapchainKHR m_swapchain = VK_NULL_HANDLE;
   VkFormat m_swapchainFormat = VK_FORMAT_UNDEFINED;
+  // HDR10 output (runtime/hdr_output.h): active while the swapchain is
+  // ST.2084. m_hdr10Requested: the swapchain was asked for it, which a change
+  // of wantsHdr10() recreates; m_hdrStatus: why it is inactive.
+  HdrOutput m_hdrOutput;
+  bool m_swapchainColorSpace = false, m_hdr10Requested = false, m_swapchainHdr10 = false;
+  std::string m_hdrStatus;
   VkExtent2D m_swapchainExtent = {};
   std::vector<VkImage> m_swapchainImages;
   std::vector<VkImageView> m_imageViews;

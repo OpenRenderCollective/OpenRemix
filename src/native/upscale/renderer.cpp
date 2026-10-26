@@ -671,7 +671,7 @@ void Renderer::configureComposite(VkRenderPass pass, VkImageView stableDepth) {
   for (auto module : modules)
     pipeline::destroyShaderModule(g.device, module, nullptr);
 }
-void Renderer::composite(VkCommandBuffer command, bool encodeOutput, bool prism, bool gamma22, bool hardwareSrgb, VkDescriptorSet post) {
+void Renderer::composite(VkCommandBuffer command, const scene::DisplayOutput &display, VkDescriptorSet post) {
   const auto &g = *m_gpu;
   VkViewport viewport{0, 0, float(g.display.width), float(g.display.height),
                       0, 1};
@@ -683,9 +683,12 @@ void Renderer::composite(VkCommandBuffer command, bool encodeOutput, bool prism,
   vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           g.compositeLayout, 0, 1, &g.compositeSet, 0, nullptr);
   vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, g.compositeLayout, 1, 1, &post, 0, nullptr);
-  const uint32_t settings[] = {uint32_t(encodeOutput), uint32_t(prism), uint32_t(gamma22), uint32_t(hardwareSrgb)};
+  struct {
+    uint32_t display;
+    float peakNits, paperWhiteNits;
+  } settings{uint32_t(display.hdr10), display.peakNits, display.paperWhiteNits};
   vkCmdPushConstants(command, g.compositeLayout, VK_SHADER_STAGE_FRAGMENT_BIT,
-                     0, sizeof(settings), settings);
+                     0, sizeof(settings), &settings);
   vkCmdDraw(command, 3, 1, 0, 0);
 }
 

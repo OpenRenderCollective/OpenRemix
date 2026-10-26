@@ -277,7 +277,7 @@ void volumeUpdate(uint index) {
       vec3 t=normalize(cross(abs(centre.z)<.999?vec3(0,0,1):vec3(0,1,0),centre));
       direction=normalize(centre+frame.sun.x*sqrt(u)*(cos(angle)*t+sin(angle)*cross(centre,t)));
     }
-    light+=.25*frame.lightRadiance.rgb*frame.lightRadiance.w*frame.volumeLightScales.x*shadow(p,direction);
+    light+=.25*frame.lightRadiance.rgb*frame.lightRadiance.w*frame.volumeLightScales.x*cloudShadow(p)*shadow(p,direction);
   }
   // The environment: two uniform directions (their density cancels the phase).
   for(uint i=0;i<2u;++i) {

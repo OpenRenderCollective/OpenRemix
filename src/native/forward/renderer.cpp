@@ -324,6 +324,7 @@ namespace remix::forward {
   }
   const Statistics &Renderer::statistics() const { return m_gpu->statistics; }
   const Options &Renderer::options() const { return m_gpu->options; }
+  void Renderer::setDisplayOutput(const scene::DisplayOutput &output) { m_gpu->displayOutput = output; }
   bool Renderer::owns(const scene::Draw &draw) const {
     return accepts(draw) || acceptsViewModel(draw) || acceptsSurfaceLayer(draw) ||
            (m_gpu && m_gpu->waterPass && water::accepts(draw));

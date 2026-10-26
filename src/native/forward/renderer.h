@@ -1,6 +1,7 @@
 #pragma once
 #include "forward/bake/content.h"
 #include "forward/options.h"
+#include "scene/display.h"
 #include "forward/probes/data.h"
 #include "forward/ray/reflections.h"
 #include "forward/shadows/plan.h"
@@ -110,6 +111,7 @@ namespace remix::forward {
     // deterministic rendering tests independently of exposure adaptation.
     void prepare(VkCommandBuffer command, RasterRenderer &resources, float seconds = -1,
                  double animationSeconds = -1);
+    void setDisplayOutput(const scene::DisplayOutput &output);
     void composite(VkCommandBuffer command);  // inside the output render pass
     void background(VkCommandBuffer command); // before raster sky and the world composite
     const Statistics &statistics() const;

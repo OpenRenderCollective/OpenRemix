@@ -53,7 +53,9 @@ namespace remix::api {
         std::strcmp(key, "rtx.native.frameGenerationBackend") == 0 ||
         std::strcmp(key, "rtx.native.frameGenerationFrames") == 0 ||
         std::strcmp(key, "rtx.native.lowLatency") == 0 ||
-        std::strcmp(key, "rtx.native.gpuPassTimers") == 0)
+        std::strcmp(key, "rtx.native.gpuPassTimers") == 0 || std::strncmp(key, "rtx.native.sky.", 15) == 0 ||
+        std::strncmp(key, "rtx.native.particles.", 21) == 0 ||
+        std::strncmp(key, "rtx.atmosphere.", 15) == 0)
       return g_runtime.configureSetting(key, value);
     // Recognized legacy renderer namespace: accepted but ignored by the unlit renderer.
     return std::strncmp(key, "rtx.", 4) == 0 ? REMIXAPI_ERROR_CODE_SUCCESS

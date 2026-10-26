@@ -7,6 +7,9 @@
 #include <limits>
 #include <set>
 #include <type_traits>
+#if REMIX_HAS_NUMOS
+#include <numos/settings.h>
+#endif
 
 namespace remix::config {
   namespace {
@@ -74,6 +77,52 @@ namespace remix::config {
                 access(s) = std::remove_cvref_t<decltype(access(s))>(found - values.begin());
                 return true;
               }};
+    }
+    // Stores one NUMOS setting in its normalised form; without NUMOS, as given.
+    SetResult setAtmosphere(std::map<std::string, std::string> &atmosphere, std::string_view key,
+                            std::string_view value) {
+#if REMIX_HAS_NUMOS
+      const auto *info = numos::findSetting(key);
+      if (!info)
+        return SetResult::Unknown;
+      numos::Settings scratch;
+      if (!numos::setSetting(scratch, key, value))
+        return SetResult::Invalid;
+      atmosphere[std::string(key)] = numos::formatSetting(scratch, *info);
+#else
+      atmosphere[std::string(key)] = std::string(value);
+#endif
+      return SetResult::Success;
+    }
+    // Moves deprecated NUMOS settings into their replacements, once per load.
+    void migrateAtmosphere(Settings &settings, std::vector<std::string> &notices) {
+#if REMIX_HAS_NUMOS
+      auto &atmosphere = settings.sky.atmosphere;
+      bool deprecated = false;
+      for (const auto &[key, value] : atmosphere)
+        deprecated |= numos::isDeprecated(*numos::findSetting(key));
+      if (!deprecated)
+        return;
+      std::string text;
+      for (const auto &[key, value] : atmosphere)
+        text += key + " = " + value + "\n";
+      numos::Settings before, after;
+      numos::ExplicitSettings explicitlySet;
+      numos::applyConfig(before, text);
+      numos::applyConfig(after, text, &explicitlySet);
+      // NUMOS's legacy scale is Remix's rtx.sceneScale: 100 x it is game units per metre.
+      numos::migrateDeprecated(after, explicitlySet, .01f / settings.trace.sceneScale);
+      for (const auto &info : numos::settingInfos()) {
+        if (numos::isDeprecated(info)) {
+          if (atmosphere.erase(info.key))
+            notices.push_back("Migrated deprecated setting: " + info.key);
+        } else if (numos::formatSetting(after, info) != numos::formatSetting(before, info))
+          atmosphere[info.key] = numos::formatSetting(after, info);
+      }
+#else
+      (void)settings;
+      (void)notices;
+#endif
     }
     std::string_view trim(std::string_view text) {
       const auto start = text.find_first_not_of(" \t\r");
@@ -275,8 +324,6 @@ namespace remix::config {
         TRACE(bloomRadius, 0, 1);
         TRACE(contrast, 0, 1);
         TRACE(contrastAmount, .5, 2);
-        TRACE(prism, 0, 1);
-        TRACE(gamma22, 0, 1);
         TRACE(localLights, 0, 1);
         TRACE(torchLights, 0, 1);
         TRACE(emissiveLights, 0, 1);
@@ -323,7 +370,7 @@ namespace remix::config {
         TRACE(volumetricDistance, .01f, 100000);
         TRACE(volumetricHeightFalloff, 0, 100000);
         TRACE(volumetricBaseHeight, -100000, 100000);
-        TRACE(volumetricUpAxis, 0, 2);
+        TRACE(volumetricUpAxis, 0, 3);
         TRACE(volumetricScattering, 0, 100);
         TRACE(volumetricSunScale, 0, 16);
         TRACE(volumetricLightScale, 0, 16);
@@ -427,12 +474,30 @@ namespace remix::config {
         result.push_back(
             scalar("rtx.native.scene.persistentStaticValidation", FIELD(persistentStaticValidation), 0, 1));
         result.push_back(scalar("rtx.native.asyncPresent", FIELD(asyncPresent), 0, 1));
+        result.push_back(scalar("rtx.native.hdr", FIELD(hdr), 0, 1));
+        result.push_back(scalar("rtx.native.hdrPeakNits", FIELD(hdrPeakNits), 80, 10000));
+        result.push_back(scalar("rtx.native.hdrPaperWhiteNits", FIELD(hdrPaperWhiteNits), 80, 1000));
+        result.push_back(scalar("rtx.native.hdrUiNits", FIELD(hdrUiNits), 80, 1000));
         result.push_back(scalar("rtx.native.frameGeneration", FIELD(frameGeneration), 0, 1));
         result.push_back(choices("rtx.native.frameGenerationBackend", FIELD(frameGenerationBackend),
                                  {"auto", "dlss", "fsr31"}));
         result.push_back(scalar("rtx.native.frameGenerationFrames", FIELD(frameGenerationFrames), 1, 3));
         result.push_back(scalar("rtx.native.lowLatency", FIELD(lowLatency), 0, 1));
         result.push_back(scalar("rtx.native.gpuPassTimers", FIELD(gpuPassTimers), 0, 1));
+        result.push_back(scalar("rtx.native.sky.enabled", FIELD(sky.enabled), 0, 1));
+        result.push_back(choices("rtx.native.sky.gameSky", FIELD(sky.gameSky), {"hide", "under", "over"}));
+        result.push_back(scalar("rtx.native.sky.radianceScale", FIELD(sky.radianceScale), 1e-6, 1e6));
+        result.push_back(scalar("rtx.native.sky.rasterExposure", FIELD(sky.rasterExposure), .01, 100));
+        result.push_back(scalar("rtx.native.sky.ignoreGameControl", FIELD(sky.ignoreGameControl), 0, 1));
+        result.push_back(scalar("rtx.native.particles.enabled", FIELD(particles.enabled), 0, 1));
+        result.push_back(scalar("rtx.native.particles.budget", FIELD(particles.budget), 1024, 262144));
+        result.push_back(scalar("rtx.native.particles.spawnBudget", FIELD(particles.spawnBudget), 64, 65536));
+        result.push_back(scalar("rtx.native.particles.precipitation", FIELD(particles.precipitation), 0, 1));
+        result.push_back(scalar("rtx.native.particles.rain", FIELD(particles.rain), 0, 1));
+        result.push_back(scalar("rtx.native.particles.snow", FIELD(particles.snow), 0, 1));
+        result.push_back(scalar("rtx.native.particles.shelter", FIELD(particles.shelter), 0, 1));
+        result.push_back(scalar("rtx.native.particles.followWeather", FIELD(particles.followWeather), 0, 1));
+        result.push_back(scalar("rtx.native.particles.intensity", FIELD(particles.intensity), 0, 1));
         result.push_back({
             "rtx.hideInstanceTextures",
             [](const Settings &s) {
@@ -484,11 +549,15 @@ namespace remix::config {
     }
   } // namespace
 
+  bool isAtmosphereKey(std::string_view key) { return key.starts_with("rtx.atmosphere."); }
+
   SetResult set(Settings &settings, std::string_view key, std::string_view value) {
     key = canonicalKey(key);
     for (const auto &entry : registry())
       if (entry.key == key)
         return entry.write(settings, value) ? SetResult::Success : SetResult::Invalid;
+    if (isAtmosphereKey(key))
+      return setAtmosphere(settings.sky.atmosphere, key, value);
     return SetResult::Unknown;
   }
 
@@ -497,6 +566,12 @@ namespace remix::config {
     for (const auto &entry : registry()) {
       if (!entry.write(checked, entry.read(settings))) {
         error = "Invalid value for " + entry.key;
+        return false;
+      }
+    }
+    for (const auto &[key, value] : settings.sky.atmosphere) {
+      if (setAtmosphere(checked.sky.atmosphere, key, value) != SetResult::Success) {
+        error = "Invalid value for " + key;
         return false;
       }
     }
@@ -511,6 +586,8 @@ namespace remix::config {
     std::string text = "# OpenRemix configuration profile\nprofile.version = 1\n";
     for (const auto &entry : registry())
       text += entry.key + " = " + entry.read(settings) + "\n";
+    for (const auto &[key, value] : settings.sky.atmosphere)
+      text += key + " = " + value + "\n";
     if (!unknown.empty())
       text += "\n# Unrecognized settings retained for compatibility\n";
     for (const auto &[key, value] : unknown)
@@ -590,6 +667,7 @@ namespace remix::config {
         notices.push_back("Migrated baked preview to default baked lighting with controllable indirect components; use rtx.native.forward.bakedLighting=0 for analytic comparison");
       } else set(next, canonical, value);
     }
+    migrateAtmosphere(next, notices);
     if (!validate(next, error))
       return false;
     settings = next;

@@ -1,4 +1,7 @@
 #include "pathtrace/gpu.h"
+#if REMIX_HAS_NUMOS
+#include "sky/renderer.h"
+#endif
 #include "pathtrace/shader_code.h"
 #include "runtime/pipelines.h"
 #include "upscale/ngx.h"
@@ -94,11 +97,47 @@ namespace remix {
   void PathTracer::selectFrame(uint32_t slot) {
     m_gpu->selectFrame(slot);
     m_gpu->postFallback->selectFrame(slot);
+#if REMIX_HAS_NUMOS
+    if (m_gpu->numosSky)
+      m_gpu->numosSky->selectFrame(slot);
+#endif
+  }
+  void PathTracer::setSky(const config::SkySettings &settings, const config::SkyControl &control,
+                          const std::string &unavailable) {
+    if (!(settings == m_gpu->skySettings)) {
+      m_gpu->skyFailure.clear();
+      m_gpu->skySettings = settings;
+    }
+    m_gpu->skyControl = control;
+    m_gpu->skyUnavailable = unavailable;
+  }
+  config::SkyState PathTracer::skyState() const {
+    std::lock_guard lock(m_gpu->skyStateMutex);
+    return m_gpu->skyState;
+  }
+  PathTracer::SkyStatus PathTracer::skyStatus() const {
+    SkyStatus status;
+#if REMIX_HAS_NUMOS
+    status.supported = m_gpu->skyUnavailable.empty();
+    status.active = m_gpu->skyApplied;
+    status.reason = !status.supported          ? "The device lacks " + m_gpu->skyUnavailable + "."
+                    : !m_gpu->skyFailure.empty() ? "Stopped: " + m_gpu->skyFailure
+                                                 : m_gpu->skyReason;
+#else
+    status.reason = "This build has no NUMOS sky.";
+#endif
+    return status;
   }
   std::shared_ptr<postfx::State> PathTracer::exposureState() const { return m_gpu->postFallback->state(); }
   VkExtent2D PathTracer::renderExtent() const { return m_gpu->extent; }
   VkImageView PathTracer::viewDepth() const {
     return m_gpu->denoiser ? m_gpu->denoiser->image(denoise::Depth).view : VK_NULL_HANDLE;
+  }
+  PathTracer::OverlayLighting PathTracer::overlayLighting() const {
+    auto out = m_gpu->overlay;
+    const auto &accel = m_gpu->tlas[m_gpu->topCombined ? 2 : 0].accel;
+    out.scene = accel ? accel->handle : VK_NULL_HANDLE;
+    return out;
   }
   void PathTracer::setPostProcessing(postfx::Renderer *renderer, bool retainExposure) {
     m_gpu->postProcessing = renderer ? renderer : m_gpu->postFallback.get();
@@ -394,18 +433,17 @@ namespace remix {
     awaitLightingPipelines(requests);
   }
 
-  void PathTracer::configureTarget(VkRenderPass pass, VkExtent2D extent, bool encodeOutput,
-                                   VkFormat depthFormat, VkImageView depthView, bool hardwareSrgb) {
+  void PathTracer::configureTarget(VkRenderPass pass, VkExtent2D extent, VkFormat depthFormat,
+                                   VkImageView depthView) {
     auto &g = *m_gpu;
     g.displayPass = pass;
     g.displayExtent = extent;
     g.displayDepthFormat = depthFormat;
     g.displayDepth = depthView;
-    g.encodeOutput = encodeOutput;
-    g.hardwareSrgb = hardwareSrgb;
     if (!g.preparing)
       g.createTarget();
   }
+  void PathTracer::setDisplayOutput(const DisplayOutput &output) { m_gpu->display = output; }
   void PathTracer::Gpu::createTarget() {
     if (!preparing)
       check(vkDeviceWaitIdle(device));

@@ -1,6 +1,8 @@
 runtime_test = executable('remix-runtime-test', 'lifecycle.cpp',
   include_directories : [test_includes, include_directories('../../samples')], dependencies : [sdl3_dep, dl_dep, threads_dep])
 test('API stubs and failed startup cleanup', runtime_test, args : [remix.full_path()], timeout : 30)
+test('Sky API before startup', executable('remix-sky-api-test', 'sky_api.cpp',
+  include_directories : test_includes, dependencies : [dl_dep]), args : [remix.full_path()], timeout : 30)
 host_pass_test = executable('remix-host-pass-test', 'host_passes.cpp',
   include_directories : test_includes, dependencies : [dl_dep, threads_dep])
 if get_option('gpu_tests')
@@ -30,6 +32,14 @@ profile_test = executable('remix-profiles-test', 'profiles.cpp',
   '../../src/native/ui/profile_actions.cpp', include_directories : [remix_public_include, native_include],
   dependencies : filesystem_dep)
 test('Configuration profiles and unsaved actions', profile_test, args : ['@CONFIG_DIR@'])
+particle_settings_test = executable('remix-particle-settings-test', 'particle_settings.cpp',
+  '../../src/native/runtime/settings.cpp', include_directories : native_include)
+test('Particle settings in profiles', particle_settings_test)
+if numos_enabled
+  sky_settings_test = executable('remix-sky-settings-test', 'sky_settings.cpp', '../../src/native/runtime/settings.cpp',
+    include_directories : native_include, dependencies : numos_dep)
+  test('Sky settings and NUMOS keys in profiles', sky_settings_test)
+endif
 if get_option('gpu_tests')
   if not metal_backend
     emissive_preparation_test = executable('remix-emissive-preparation-test', 'emissive_preparation.cpp',

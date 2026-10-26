@@ -3,6 +3,8 @@
 #include <SDL3/SDL.h>
 #include <filesystem>
 #include <fstream>
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <utility>
 #include <vector>
@@ -16,6 +18,23 @@ namespace remix {
     void check(VkResult result) {
       if (result != VK_SUCCESS)
         throw result;
+    }
+    // An IEEE half's bits to float.
+    float halfFloat(uint16_t h) {
+      const uint32_t sign = uint32_t(h & 0x8000u) << 16, exponent = (h >> 10) & 31u, mantissa = h & 0x3ffu;
+      uint32_t bits;
+      if (exponent == 31)
+        bits = sign | 0x7f800000u | mantissa << 13;
+      else if (exponent)
+        bits = sign | (exponent + 112) << 23 | mantissa << 13;
+      else if (mantissa) {
+        float value = float(mantissa) / 16777216.f; // 2^-24
+        return sign ? -value : value;
+      } else
+        bits = sign;
+      float value;
+      std::memcpy(&value, &bits, sizeof(value));
+      return value;
     }
   } // namespace
 
@@ -32,10 +51,11 @@ namespace remix {
   }
 
   void PresentedScreenshot::record(VkPhysicalDevice physical, VkDevice device, VkCommandBuffer command,
-                                   VkImage image, VkExtent2D extent, VkFormat format) {
+                                   VkImage image, VkExtent2D extent, VkFormat format, VkImageLayout layout) {
     if (m_requested.empty() || !m_captured.empty())
       return;
-    const VkDeviceSize size = VkDeviceSize(extent.width) * extent.height * 4;
+    m_half = format == VK_FORMAT_R16G16B16A16_SFLOAT;
+    const VkDeviceSize size = VkDeviceSize(extent.width) * extent.height * (m_half ? 8 : 4);
     if (!size || size > 512u * 1024u * 1024u) {
       SDL_Log("Screenshot dimensions exceed the readback limit");
       m_requested.clear();
@@ -69,7 +89,7 @@ namespace remix {
     VkImageMemoryBarrier barrier = {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
                                     .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
                                     .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
-                                    .oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                                    .oldLayout = layout,
                                     .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                                     .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
                                     .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -83,7 +103,7 @@ namespace remix {
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
     barrier.dstAccessMask = 0;
     barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-    barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    barrier.newLayout = layout;
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0,
                          nullptr, 0, nullptr, 1, &barrier);
     const VkBufferMemoryBarrier host = {.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
@@ -113,15 +133,24 @@ namespace remix {
     try {
       // Allocate before mapping, so allocation failure cannot leave memory mapped.
       std::vector<unsigned char> pixels(size_t(m_extent.width) * m_extent.height * 4);
+      std::vector<uint16_t> halves(m_half ? pixels.size() : 0);
       void *mapped = nullptr;
       check(vkMapMemory(device, m_memory, 0, VK_WHOLE_SIZE, 0, &mapped));
       const VkMappedMemoryRange range = {
           .sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE, .memory = m_memory, .size = VK_WHOLE_SIZE};
       const auto result = vkInvalidateMappedMemoryRanges(device, 1, &range);
-      if (result == VK_SUCCESS)
-        std::memcpy(pixels.data(), mapped, pixels.size());
+      if (result == VK_SUCCESS) {
+        if (m_half)
+          std::memcpy(halves.data(), mapped, halves.size() * sizeof(uint16_t));
+        else
+          std::memcpy(pixels.data(), mapped, pixels.size());
+      }
       vkUnmapMemory(device, m_memory);
       check(result);
+      for (size_t i = 0; i < halves.size(); ++i) {
+        const float value = halfFloat(halves[i]);
+        pixels[i] = (unsigned char)(std::lround(std::clamp(value == value ? value : 0.f, 0.f, 1.f) * 255));
+      }
       for (size_t i = 0; i < pixels.size(); i += 4) {
         if (m_bgra)
           std::swap(pixels[i], pixels[i + 2]);

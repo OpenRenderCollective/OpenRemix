@@ -26,8 +26,18 @@ layout(push_constant) uniform Draw {
   uvec4 state;
   vec4 factor;
 } draw;
+// Display-encoded colours (gamma 2.2) to linear and back.
 vec3 linearColor(vec3 c) {
-  return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), greaterThan(c, vec3(0.04045)));
+  return pow(max(c, vec3(0)), vec3(2.2));
+}
+vec3 displayColor(vec3 c) {
+  return pow(max(c, vec3(0)), vec3(1.0 / 2.2));
+}
+// The texture at p; sRGB-encoded texels (state.w bit 2) decoded to linear.
+vec4 albedoTexel(vec2 p) {
+  vec4 texel = texture(albedo, p);
+  if ((draw.state.w & 4) != 0) texel.rgb = linearColor(texel.rgb);
+  return texel;
 }
 vec4 arg(uint index, vec4 texel, vec4 vertex) {
   if (index == 1) return texel;
@@ -43,18 +53,14 @@ vec4 combineColor(uint op, vec4 a, vec4 b) {
   return op == 7 ? vec4(mix(a.rgb, min(a.rgb * b.rgb, vec3(1)), a.a), a.a) : combine(op, a, b);
 }
 #ifdef SPRITE
-vec3 displayColor(vec3 c) {
-  c = max(c, vec3(0));
-  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, greaterThan(c, vec3(0.0031308)));
-}
 const vec3 luminance = vec3(0.3, 0.59, 0.11);
 #endif
 void main() {
-  vec4 texel = texture(albedo, uv);
+  vec4 texel = albedoTexel(uv);
 #ifdef SPRITE
   uint sprite = (draw.state.w >> 5) & 0x1ffu;
   if ((sprite & 7u) != 0u) {
-    vec4 second = texture(albedo, frame1.xy);
+    vec4 second = albedoTexel(frame1.xy);
     float w = frame1.z;
     if ((sprite & 4u) != 0u) {
       vec4 k = w < 0.25 ? vec4(0.5 - 2.0 * w, 2.0 * w + 0.5, 0, 0)
@@ -68,7 +74,7 @@ void main() {
     }
   }
   if ((sprite & 0x18u) != 0u) {
-    vec4 s0 = texture(albedo, sequence.xy), s1 = texture(albedo, sequence.zw);
+    vec4 s0 = albedoTexel(sequence.xy), s1 = albedoTexel(sequence.zw);
     vec4 s = (sprite & 0x20u) != 0u
                ? (dot(luminance, s1.rgb * frame1.z) >= dot(luminance, s0.rgb * (1.0 - frame1.z)) ? s1 : s0)
                : mix(s0, s1, weight2);
@@ -97,7 +103,7 @@ void main() {
     vec3 source = clamp(displayColor(texel.rgb) * vertex.rgb * draw.tint.rgb, 0.0, 1.0);
     if ((sprite & 0x100u) != 0u) source = mix(vec3(1.0 / k), source, clamp(texel.a * vertex.a * draw.tint.a, 0.0, 1.0));
     // An encoding target (state.w bit 1) blends display values: the encoding
-    // below returns `source`. Others blend linear values: (k source)^2.2 / k.
+    // below returns `source`. A linear one: (k source)^2.2 / k.
     result.rgb = (draw.state.w & 2) != 0 ? linearColor(source) : pow(k * source, vec3(2.2)) / k;
   }
 #else
@@ -125,12 +131,8 @@ void main() {
   // material's alpha test.
   result = vec4(1);
 #else
-  // UNORM-only swapchains need explicit output encoding. Their fixed-function
-  // blending operates in display space; SRGB targets retain linear blending.
-  if ((draw.state.w & 2) != 0) {
-    vec3 c = max(result.rgb, vec3(0));
-    result.rgb = mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055,
-                     greaterThan(c, vec3(0.0031308)));
-  }
+  // The UNORM target takes display values (gamma 2.2, state.w bit 1); its
+  // fixed-function blending operates on them, as the game's did.
+  if ((draw.state.w & 2) != 0) result.rgb = displayColor(result.rgb);
 #endif
 }

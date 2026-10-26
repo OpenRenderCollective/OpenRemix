@@ -53,11 +53,14 @@ namespace {
     // motion refits, dynamic membership rebuilds, a known generation skips
     // the static comparison.
     require(instanceMask(false, false) == allInstancesMask && instanceMask(false, true) == allInstancesMask &&
-                !(allInstancesMask & viewModelInstanceMask) &&
                 !(allInstancesMask & reflectionOnlyInstanceMask) &&
                 !(viewModelInstanceMask & reflectionOnlyInstanceMask) &&
-                instanceMask(true, false) == staticInstanceMask && instanceMask(true, true) == dynamicInstanceMask &&
-                (staticInstanceMask & dynamicInstanceMask) == 0,
+                !(allInstancesMask & viewModelInstanceMask) && (allInstancesMask & skyOccluderInstanceMask) &&
+                instanceMask(true, false) == (staticInstanceMask | skyOccluderInstanceMask) &&
+                instanceMask(true, true) == (dynamicInstanceMask | skyOccluderInstanceMask) &&
+                (staticInstanceMask & dynamicInstanceMask) == 0 &&
+                !((viewModelInstanceMask | reflectionOnlyInstanceMask | blendedInstanceMask | decalInstanceMask) &
+                  skyOccluderInstanceMask),
             "Instance masks");
     using Combined = CombinedTlasPolicy;
     Combined combined;

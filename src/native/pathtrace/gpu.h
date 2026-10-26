@@ -13,11 +13,13 @@
 #include "scene/light_bvh.h"
 #include "scene/opacity.h"
 #include "scene/static_scene.h"
+#include "scene/up_axis.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstring>
 #include <map>
+#include <mutex>
 #include <tuple>
 #include <unordered_set>
 
@@ -105,7 +107,7 @@ namespace remix::trace::detail {
     float eye[4] = {}, direction[4] = {}, radiance[4] = {}; // radiance w: the sun's volumetric scale
     uint32_t config[4] = {}, target[4] = {};
     float jitter[4] = {};      // primary offset; z water reuse, w blue-noise sun/local bits
-    float skyRadiance[4] = {}; // linear uniform environment; w reserved
+    float skyRadiance[4] = {}; // linear uniform environment; w: its texture + 1, -1 a uniform dome
     uint64_t sharcHash = 0, sharcAccumulation = 0, sharcResolved = 0, sharcCounters = 0;
     uint32_t sharcConfig[4] = {};
     float sharcGrid[4] = {}, sharcPreviousCamera[4] = {};
@@ -196,11 +198,20 @@ namespace remix::trace::detail {
     float localProbeParams[4] = {};
     // Volumetric source shares: sun, lights, emissive surfaces, sky.
     float volumeLightScales[4] = {1, 1, 1, 1};
+    // The NUMOS sky's cloud shadow (sky::Renderer::cloudShadow): rows taking
+    // a world position (w 1) to (u, v, slice) in its box; cloudShadowConfig:
+    // its texture + 1 (0: none), slices.
+    float cloudShadow[3][4] = {};
+    uint32_t cloudShadowConfig[4] = {};
+    // A bit per texture slot (slot / 32, its bit slot % 32): the slot holds
+    // sRGB-encoded texels (stored UNORM), decoded with pow 2.2 (scene.glsl).
+    uint32_t srgbTextures[32][4] = {};
     uint64_t sheetMaterials = 0; // Optional measured-sheet optics; descriptor-indexed.
   };
-  static_assert(sizeof(Frame) == 1232 && offsetof(Frame, sheetMaterials) == 1216 &&
-                offsetof(Frame, volumeLightScales) == 1200 && offsetof(Frame, iesProfiles) == 1080 &&
-                offsetof(Frame, localProbeRead) == 1168 && offsetof(Frame, localProbeParams) == 1184 &&
+  static_assert(offsetof(Frame, sheetMaterials) == 1792 && sizeof(Frame) == 1808 && offsetof(Frame, srgbTextures) == 1280 &&
+                offsetof(Frame, localProbeRead) == 1168 &&
+                offsetof(Frame, localProbeParams) == 1184 && offsetof(Frame, volumeLightScales) == 1200 &&
+                offsetof(Frame, cloudShadow) == 1216 && offsetof(Frame, cloudShadowConfig) == 1264 &&
                 offsetof(Frame, inverseCameraRelative) == 1104 &&
                 offsetof(Frame, skyGuideRead) == 1064 && offsetof(Frame, skyGuideConfig) == 1088 && offsetof(Frame, volumeGrid) == 912 && offsetof(Frame, volumePrevious) == 1024 && offsetof(Frame, sparseList) == 880 && offsetof(Frame, sparseConfig) == 896 && offsetof(Frame, cameraCull) == 864 && offsetof(Frame, cutConfig) == 816 && offsetof(Frame, orcaParams) == 800 && offsetof(Frame, regirConfig) == 752 && offsetof(Frame, restirCurrent) == 656 && offsetof(Frame, visibilityNodes) == 592 && offsetof(Frame, pathConfig) == 528 &&
 
@@ -224,6 +235,9 @@ namespace remix::trace::detail {
   constexpr VkAccessFlags asWrite = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
 } // namespace remix::trace::detail
 
+namespace remix::sky {
+  class Renderer;
+}
 namespace remix {
   struct PathTracer::Gpu {
     remixapi_FramePerformanceEXT performance{.structSize = sizeof(remixapi_FramePerformanceEXT)};
@@ -431,9 +445,10 @@ namespace remix {
       const char *value = std::getenv("REMIX_PROFILE_EVERY_FRAME");
       return value && std::strcmp(value, "1") == 0;
     }();
-    bool timingPending = false, imagesInitialized = false, encodeOutput = false;
+    bool timingPending = false, imagesInitialized = false;
     uint32_t debugView = 0;
-    bool prism = true, gamma22 = true, hardwareSrgb = false;
+    bool falseColorView = false; // the debug view in false colour: shown without the tone curve
+    PathTracer::DisplayOutput display;
     VkExtent2D extent = {}, displayExtent = {};
     VkRenderPass displayPass{};
     VkFormat displayDepthFormat{};
@@ -494,11 +509,26 @@ namespace remix {
     } primaryRecording;
     void destroyPrimaryRecording(PrimaryRecording &recording);
     VkRenderPass skyPass{};
+    // The NUMOS sky (sky/renderer.h), created when first enabled. `skyReady`:
+    // it has outputs from an earlier frame; `skyApplied`: this frame's sky
+    // and sun are NUMOS's; `skyActive`: its work for this frame is recorded.
+    std::shared_ptr<sky::Renderer> numosSky;
+    config::SkySettings skySettings;
+    config::SkyControl skyControl;
+    // The sky's last frame, for the API's thread.
+    mutable std::mutex skyStateMutex;
+    config::SkyState skyState;
+    // skyFailure: the error that stopped the sky (it stays off until the
+    // sky settings change).
+    std::string skyUnavailable, skyReason, skyFailure;
+    bool skyReady = false, skyApplied = false, skyActive = false;
     VkFramebuffer skyFramebuffer{};
     uint32_t queueFamily{};
     std::unique_ptr<denoise::Renderer> denoiser;
     VkPipeline temporalCompute{}, confidenceCompute{};
     VkPipelineLayout temporalLayout{};
+    // The world's up axis for volumetricUpAxis Auto.
+    scene::UpAxisDetector upAxis;
     uint64_t shadowFrames = 0, shadowResets = 0;
     bool sigmaCapable = false, localCapable[2] = {};
     bool postSigma = false, postSigmaRequested = false;
@@ -791,6 +821,8 @@ namespace remix {
     // while the static inputs do not change.
     trace::CombinedTlasPolicy combinedPolicy;
     std::vector<VkAccelerationStructureInstanceKHR> combinedStatic, combinedDynamic;
+    // The frame's sun and sky (PathTracer::overlayLighting).
+    OverlayLighting overlay;
     uint64_t combinedStaticStamp = 0;
     bool combinedStaticValid = false;
     void buildCombinedTop(VkCommandBuffer command, const std::vector<trace::InstanceInput> &staticInputs,
@@ -827,6 +859,7 @@ namespace remix {
     uint64_t tableVersion = 0;
     // The static prefix's texture descriptors, resolved once per prefix.
     std::vector<VkDescriptorImageInfo> prefixTextures;
+    std::vector<uint32_t> prefixSrgbSlots; // prefixTextures' sRGB-encoded slots
     uint64_t prefixTexturesGeneration = 0;
     bool staticValidation = false, staticMismatchLogged = false;
     PathTracer::StaticStatistics staticStatistics;

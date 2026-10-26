@@ -52,9 +52,7 @@ int main(int argc, char **argv) {
     return 77;
   }
   ok(api.SetConfigVariable("rtx.native.backend", "pathtrace"));
-  // These radiometric checks decode the original sRGB output.
-  ok(api.SetConfigVariable("rtx.native.pathtrace.prism", "0"));
-  ok(api.SetConfigVariable("rtx.native.pathtrace.gamma22", "0"));
+  // These radiometric checks decode the gamma 2.2 output.
   ok(api.SetConfigVariable("rtx.native.pathtrace.samples", "1"));
   ok(api.SetConfigVariable("rtx.native.pathtrace.bounces", "0"));
   require(api.SetConfigVariable("rtx.native.pathtrace.sky", "2") ==
@@ -214,7 +212,7 @@ int main(int argc, char **argv) {
       for (int x = width / 2 - 4; x < width / 2 + 4; ++x)
         for (int c = 0; c < 3; ++c) {
           float v = pixels[(y * width + x) * 4 + c] / 255.f;
-          const float linear = v <= .04045f ? v / 12.92f : std::pow((v + .055f) / 1.055f, 2.4f);
+          const float linear = std::pow(v, 2.2f);
           average[c] += linear / 64;
           if (c == 0)
             redError += (linear - .1407) * (linear - .1407) / 64;

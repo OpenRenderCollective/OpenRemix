@@ -62,6 +62,16 @@ namespace remix {
     vkEnumerateInstanceExtensionProperties(nullptr, &available, nullptr);
     std::vector<VkExtensionProperties> availableExtensions(available);
     vkEnumerateInstanceExtensionProperties(nullptr, &available, availableExtensions.data());
+    // HDR10 output's ST.2084 swapchain colour space (runtime/hdr_output.h).
+    m_swapchainColorSpace =
+        !m_headless &&
+        std::any_of(availableExtensions.begin(), availableExtensions.end(), [](const auto &e) {
+          return std::strcmp(e.extensionName, VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME) == 0;
+        });
+    if (m_swapchainColorSpace &&
+        std::none_of(extensions.begin(), extensions.end(),
+                     [](auto p) { return std::strcmp(p, VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME) == 0; }))
+      extensions.push_back(VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME);
     if (std::any_of(availableExtensions.begin(), availableExtensions.end(),
                     [](const auto &e) { return std::strcmp(e.extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME) == 0; }) &&
         std::none_of(extensions.begin(), extensions.end(),
@@ -274,6 +284,16 @@ namespace remix {
     m_denoiseCapabilities = denoise::capabilities(selection.physicalDevice);
     const bool sharcSupported = REMIX_HAS_SHARC && m_traceSupported && vulkan11.storageBuffer16BitAccess &&
                                 vulkan12.shaderFloat16 && vulkan12.shaderBufferInt64Atomics;
+    // The NUMOS sky's shaders use scalar block layout and storage images of
+    // the extended formats, some declared without a format.
+    VkPhysicalDeviceFeatures skyFeatures{};
+    vkGetPhysicalDeviceFeatures(selection.physicalDevice, &skyFeatures);
+    m_skyUnavailable = !m_traceSupported                                ? m_traceUnavailable
+                       : !vulkan12.scalarBlockLayout                     ? "scalar block layout"
+                       : !skyFeatures.shaderStorageImageExtendedFormats  ? "extended storage image formats"
+                       : !skyFeatures.shaderStorageImageReadWithoutFormat ? "storage image reads without format"
+                       : !skyFeatures.shaderStorageImageWriteWithoutFormat ? "storage image writes without format"
+                                                                            : "";
     features.features = {};
     vulkan11 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, .pNext = &vulkan12};
     vulkan12 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, .pNext = &acceleration};
@@ -291,6 +311,12 @@ namespace remix {
       if (sharcSupported) {
         vulkan11.storageBuffer16BitAccess = VK_TRUE;
         vulkan12.shaderFloat16 = vulkan12.shaderBufferInt64Atomics = VK_TRUE;
+      }
+      if (m_skyUnavailable.empty()) {
+        vulkan12.scalarBlockLayout = VK_TRUE;
+        features.features.shaderStorageImageExtendedFormats = VK_TRUE;
+        features.features.shaderStorageImageReadWithoutFormat = VK_TRUE;
+        features.features.shaderStorageImageWriteWithoutFormat = VK_TRUE;
       }
     }
     if (m_denoiseCapabilities.taaSupported) {
@@ -431,6 +457,8 @@ namespace remix {
     m_pipelines = std::make_unique<pipeline::Service>(m_device, m_properties,
                                                       pipelineFeedback, executableFeatures.pipelineExecutableInfo);
     m_hostPasses.initialize(m_physicalDevice, m_device);
+    // Ray queries are enabled with tracing.
+    m_particles = std::make_unique<particles::Renderer>(m_physicalDevice, m_device, m_traceSupported);
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
 

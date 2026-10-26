@@ -229,7 +229,7 @@ int main(int argc, char **argv) {
   ok(api.SetConfigVariable("rtx.native.pathtrace.autoExposure", "0"));
   ok(api.SetConfigVariable("rtx.native.pathtrace.bloom", "0"));
   ok(api.SetConfigVariable("rtx.native.backend", "pathtrace"));
-  for (const char *key : {"prism", "gamma22", "sharc", "sigma", "taa", "bounces", "accumulate"})
+  for (const char *key : {"sharc", "sigma", "taa", "bounces", "accumulate"})
     ok(api.SetConfigVariable((std::string("rtx.native.pathtrace.") + key).c_str(), "0"));
   ok(api.SetConfigVariable("rtx.native.pathtrace.denoiser", "off"));
   ok(api.SetConfigVariable("rtx.native.pathtrace.upscaler", "off"));

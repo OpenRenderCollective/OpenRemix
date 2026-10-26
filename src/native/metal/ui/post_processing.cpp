@@ -77,8 +77,6 @@ namespace remix {
                           "colour = (colour / 0.18)^contrast * 0.18. Counters a flat, grey look.");
       if (options.contrast)
         ui::SliderFloat("Contrast", &options.contrastAmount, .5f, 2.f, "%.2f");
-      ui::Checkbox("Prism tonemapping", &options.prism);
-      ui::Checkbox("Gamma 2.2 output", &options.gamma22);
       for (auto [label, threshold] : {std::pair{"Local direct clamp", &options.localDirectClamp},
                                       std::pair{"Indirect clamp", &options.indirectClamp}}) {
         float value = *threshold;

@@ -19,14 +19,16 @@ namespace remix::metal {
   struct SampledImage {
     id<MTLTexture> texture = nil;
     id<MTLSamplerState> sampler = nil;
+    bool srgb = false; // sRGB-encoded texels (UNORM): decoded with pow 2.2
   };
 
   struct Raster::Gpu {
     id<MTLDevice> device = nil;
-    MTLPixelFormat displayFormat = MTLPixelFormatBGRA8Unorm_sRGB;
+    MTLPixelFormat displayFormat = MTLPixelFormatBGRA8Unorm;
     static constexpr MTLPixelFormat depthFormat = MTLPixelFormatDepth32Float;
     static constexpr MTLPixelFormat skyFormat = MTLPixelFormatRGBA32Float;
-    // UNORM display formats encode sRGB in the shader (raster.frag state.w bit 1).
+    // The UNORM display takes gamma 2.2 values, encoded in the shader
+    // (raster.frag state.w bit 1); its blending operates on them.
     bool encodeOutput = false;
     id<MTLTexture> depth = nil; // display depth, shared with the tracer's sky pass
     uint32_t width = 0, height = 0;
@@ -61,6 +63,7 @@ namespace remix::metal {
       id<MTLTexture> texture = nil;
       uint64_t bytes = 0;
       bool compressed = false;
+      bool srgb = false;     // encoded sRGB texels (UNORM): the shaders decode them, pow 2.2
       uint64_t revision = 0; // scene::TextureUpdates::revision uploaded
     };
     struct MaterialGpu {
@@ -185,8 +188,6 @@ namespace remix::metal {
     // (the view model and HUD layers clear depth first), a depth-tested halo
     // or mask source, or a soft sprite.
     bool testsSceneDepth() const;
-    // The target blends linear values (sRGB or floating-point format).
-    bool linearTarget = true;
     std::unordered_map<const scene::Surface *, MeshGpu> meshes;
     std::unordered_map<const scene::Texture *, TextureGpu> textures;
     std::unordered_map<const scene::Material *, std::unique_ptr<MaterialGpu>> materials;

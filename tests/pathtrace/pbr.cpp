@@ -56,7 +56,7 @@ int main(int argc, char **argv) {
     ok(api.SetConfigVariable(
         (std::string("rtx.native.pathtrace.") + key).c_str(), value));
   };
-  for (const char *key : {"taa", "sharc", "sigma", "prism", "gamma22"})
+  for (const char *key : {"taa", "sharc", "sigma"})
     config(key, "0");
   config("denoiser", "off");
   config("samples", "16");
@@ -166,8 +166,7 @@ int main(int argc, char **argv) {
         ++count;
         for (int channel = 0; channel < 3; ++channel) {
           double v = bytes[(y * w + x) * 4 + channel] / 255.;
-          result[channel] +=
-              v <= .04045 ? v / 12.92 : std::pow((v + .055) / 1.055, 2.4);
+          result[channel] += std::pow(v, 2.2);
         }
       }
     stbi_image_free(bytes);

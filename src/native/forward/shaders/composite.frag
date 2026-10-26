@@ -28,13 +28,31 @@ layout(push_constant) uniform Display {
   uint gamma22;
   uint hardwareSrgb;
   uint hasViewModel;
+  uint hdr10;
+  float peakNits;
+  float paperWhiteNits;
 } display;
 layout(location = 0) out vec4 result;
 #include "../../postfx/shaders/composite.glsl"
 #include "../../pathtrace/shaders/display.glsl"
 vec3 tonemap(vec3 color) {
   color = postColor(color, gl_FragCoord.xy / sky.target.xy);
-  return displayColor(color, display.prism, display.gamma22, display.encodeOutput, display.hardwareSrgb);
+  // Share the path tracer's tone curve and HDR working-space encoding.
+  if (display.hdr10 != 0u)
+    return displayColor(color, displayHdr10, display.peakNits, display.paperWhiteNits);
+  if (display.prism != 0u) color = prismToneMap(color, 1.0);
+  if (display.gamma22 != 0u && (display.encodeOutput != 0u || display.hardwareSrgb != 0u)) {
+    color = gammaEncodeSafe(color, 2.2);
+    // Cancel the attachment's later sRGB encode, keeping UI blending linear.
+    if (display.hardwareSrgb != 0u)
+      color = mix(color / 12.92, pow(max((color + .055) / 1.055, vec3(0)), vec3(2.4)),
+                  greaterThan(color, vec3(.04045)));
+  } else if (display.encodeOutput != 0u) {
+    color = max(color, vec3(0));
+    color = mix(color * 12.92, 1.055 * pow(color, vec3(1.0 / 2.4)) - .055,
+                greaterThan(color, vec3(.0031308)));
+  }
+  return color;
 }
 vec3 mediumColor(vec3 color, float depth) {
 #ifdef WATER_VOLUME

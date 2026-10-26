@@ -30,7 +30,7 @@ for directory in ['bin', 'lib', 'include/remix', 'share/remix/licenses']:
 licenses = output / 'share/remix/licenses'
 for name in ['LICENSE', 'ThirdPartyLicenses.txt', 'README.md']:
     shutil.copy2(root / name, output / 'share/remix' / name)
-for name in ['remix.h', 'remix_c.h', 'remix_native_ext.h', 'remix_reconstruction_ext.h']:
+for name in ['remix.h', 'remix_c.h', 'remix_native_ext.h', 'remix_reconstruction_ext.h', 'remix_sky_ext.h']:
     shutil.copy2(root / 'public/include/remix' / name, output / 'include/remix' / name)
 shutil.copy2(root / 'third_party/imgui/LICENSE.txt', licenses / 'ImGui.txt')
 shutil.copy2(root / 'third_party/image/LICENSES.txt', licenses / 'ImageDecoders.txt')
@@ -42,6 +42,16 @@ for source, name in [('LICENSE.txt','NRD.txt'), ('External/MathLib/LICENSE.txt',
 shutil.copy2(root / 'third_party/nrd/README.remix.md', licenses / 'NRD-provenance.md')
 shutil.copy2(root / 'third_party/sharc/License.md', licenses / 'SHARC.md')
 shutil.copy2(root / 'third_party/sharc/README.md', licenses / 'SHARC-provenance.md')
+numos = root / 'third_party/numos/numos-sky'
+sky = any(o['name'] == 'sky' and o['value'] != 'disabled' for o in options)
+if sky and (numos / 'NOTICE').exists():
+    for source, name in [('LICENSE', 'NUMOS.txt'), ('NOTICE', 'NUMOS-NOTICE.txt'),
+                         ('THIRD_PARTY_NOTICES.md', 'NUMOS-THIRD_PARTY_NOTICES.md')]:
+        shutil.copy2(numos / source, licenses / name)
+    for name in ['LICENSE-MIT-NVIDIA.txt', 'LICENSE-MIT-contributors.txt',
+                 'LICENSE-MIT-Blender-sky.txt', 'LICENSE-DXVK-zlib.txt']:
+        shutil.copy2(numos / 'licenses' / name, licenses / ('NUMOS-' + name))
+    shutil.copy2(root / 'third_party/numos/README.remix.md', licenses / 'NUMOS-provenance.md')
 if not metal:
     shutil.copytree(root / 'include/vulkan/LICENSES', licenses / 'Vulkan-Headers')
     shutil.copy2(root / 'include/vulkan/LICENSE.md', licenses / 'Vulkan-Headers/NOTICE.md')

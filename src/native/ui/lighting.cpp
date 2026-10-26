@@ -1,9 +1,11 @@
 #include "pathtrace/volume_policy.h"
 #include "runtime/runtime.h"
+#include "ui/sky.h"
 #include "ui/widgets.h"
 #include <algorithm>
 #include <cmath>
 #include <imgui.h>
+#include <string_view>
 #include <utility>
 
 namespace remix {
@@ -81,10 +83,12 @@ namespace remix {
           ImGui::SetTooltip("Above the base height the medium thins to 37%% over this height. 0: uniform.");
         if (options.volumetricHeightFalloff > 0) {
           ui::DragFloat("Base height (m)", &options.volumetricBaseHeight, .25f, -100000, 100000, "%.2f");
-          int axis = int(std::min(options.volumetricUpAxis, 2u));
-          if (ui::Combo("Up axis", &axis, "X\0Y\0Z\0"))
-            options.volumetricUpAxis = uint32_t(axis);
         }
+        int axis = int(std::min(options.volumetricUpAxis, 3u));
+        if (ui::Combo("Up axis", &axis, "X\0Y\0Z\0Auto (from the camera)\0"))
+          options.volumetricUpAxis = uint32_t(axis);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("The world's up axis, for the medium's height falloff and the sky.");
         ui::SliderFloat("March distance (m)", &options.volumetricMaxDistance, 10.f, 2000.f, "%.0f",
                         ImGuiSliderFlags_Logarithmic);
         if (ImGui::IsItemHovered())
@@ -364,5 +368,27 @@ namespace remix {
       if (options.accumulate)
         ImGui::TextWrapped("%s", "Progressive reference rendering bypasses SHARC.");
     }
+  }
+  void RemixNativeRuntime::drawSkyTab(config::Settings &settings) {
+    ui::SkyStatus status;
+    if (!m_pathTracer) {
+      // The raster backend's sky (raster_sky.cpp).
+      status.supported = m_skyUnavailable.empty();
+      status.active = m_rasterSkyActive;
+      status.reason = !status.supported             ? "The device lacks " + m_skyUnavailable + "."
+                      : !m_rasterSkyFailure.empty() ? "Stopped: " + m_rasterSkyFailure
+                                                    : std::string();
+    } else {
+      const auto sky = m_pathTracer->skyStatus();
+      status.supported = sky.supported;
+      status.active = sky.active;
+      status.reason = sky.reason;
+    }
+    // With GPU pass timers on: the sky's passes ("NUMOS sky", "NUMOS screen
+    // clouds", "NUMOS composite").
+    for (const auto &pass : m_gpuTimers.latest().passes)
+      if (std::string_view(pass.name).starts_with("NUMOS "))
+        status.gpuMilliseconds += float(pass.milliseconds);
+    ui::drawSkyTab(settings, status);
   }
 } // namespace remix

@@ -3970,3 +3970,10 @@ noise/seams, denoising cost and frame profiling remain independent priorities.
   depth buckets, compatible shared geometry and preserved per-object culling.
   VRF aggregate multi-draw is a reference; native CS2 capture parity is unproven.
   Count API calls and logical indirect draws separately when batching is added.
+
+
+### Upstream integration (2026-10-27)
+
+- Merge upstream HDR10/gamma fixes, NUMOS sky/weather and GPU particle APIs while preserving Forward+ ownership and baked lighting. Adapt Forward+ compositing to the shared display curve and HDR output settings.
+- Follow-up: integrate NUMOS sky/cloud shadows and explicit GPU particle lighting with Forward+ where appropriate; upstream support alone does not establish Forward+ feature parity. Verify SDR/HDR presentation visually on supported hardware.
+- Follow-up: audit cached bake compatibility and Forward+ texture sampling against upstream gamma-2.2 image decoding before promoting this merge to the playable install.

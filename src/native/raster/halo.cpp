@@ -574,7 +574,7 @@ namespace remix {
     CompositePush push = {};
     std::copy_n(group.halo.color, 3, push.color);
     push.color[3] = float(group.halo.passes);
-    push.flags = uint32_t(group.halo.additive) | (g.linearTarget ? 2u : 0u);
+    push.flags = uint32_t(group.halo.additive);
     vkCmdPushConstants(command, h.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
     vkCmdDraw(command, 3, 1, 0, 0);
   }

@@ -1,0 +1,198 @@
+#version 460
+// Particle simulation, one pass per PASS value:
+//   LIGHT     the sky's mean radiance (first group) and a quarter of the light
+//             volume's cells: the sun's visibility, the clouds' shadow and one
+//             shadow ray (TRACED)
+//   SIMULATE  last frame's particles aged, moved and lit; survivors compacted
+//             into the target pool, per emitter slice
+//   SPAWN     the frame's new particles appended to their slices; past a
+//             slice's capacity they are dropped. TRACED: SHELTER's rays
+//   ARGS      each emitter's count clamped to its slice and its indirect draw
+#extension GL_GOOGLE_include_directive : require
+#ifdef TRACED
+#extension GL_EXT_ray_query : require
+#endif
+layout(local_size_x=64) in;
+#include "common.glsl"
+#ifdef TRACED
+layout(set=1,binding=0) uniform accelerationStructureEXT scene;
+layout(set=1,binding=1) uniform sampler2D environment;
+// The clouds' transmittance toward the sun: horizontal slices side by side.
+layout(set=1,binding=2) uniform sampler2D cloudShadows;
+float cloudShadow(vec3 p) {
+  if (frame.cloudShadowConfig.x == 0u) return 1.0;
+  vec3 box = clamp(vec3(dot(frame.cloudShadow[0], vec4(p, 1)), dot(frame.cloudShadow[1], vec4(p, 1)),
+                        dot(frame.cloudShadow[2], vec4(p, 1))), 0.0, 1.0);
+  float slices = float(frame.cloudShadowConfig.y), slice = box.z * (slices - 1.0);
+  float lower = min(floor(slice), slices - 2.0);
+  float width = float(textureSize(cloudShadows, 0).x);
+  float u = clamp(box.x, .5 * slices / width, 1.0 - .5 * slices / width);
+  float a = textureLod(cloudShadows, vec2((u + lower) / slices, box.y), 0.0).r;
+  float b = textureLod(cloudShadows, vec2((u + lower + 1.0) / slices, box.y), 0.0).r;
+  return mix(a, b, clamp(slice - lower, 0.0, 1.0));
+}
+// The opaque world (trace::skyOccluderInstanceMask).
+const uint occluderMask = 8u;
+// The distance to the opaque world along a ray, or NO_HIT; nearest only when asked.
+float traceDistance(vec3 origin, vec3 direction, float tMax, bool nearest) {
+  rayQueryEXT query;
+  uint flags = gl_RayFlagsOpaqueEXT | (nearest ? 0u : gl_RayFlagsTerminateOnFirstHitEXT);
+  rayQueryInitializeEXT(query, scene, flags, occluderMask, origin, 0.0, direction, tMax);
+  while (rayQueryProceedEXT(query)) {
+  }
+  if (rayQueryGetIntersectionTypeEXT(query, true) == gl_RayQueryCommittedIntersectionTriangleEXT)
+    return rayQueryGetIntersectionTEXT(query, true);
+  return NO_HIT;
+}
+#endif
+
+// The emitter whose range of `first` values holds value (binary search over
+// the frame's emitters, in ascending order of the field).
+uint findEmitter(uint value, bool spawn) {
+  uint low = 0u, high = frame.counts.y;
+  while (high - low > 1u) {
+    uint middle = (low + high) / 2u;
+    uint first = spawn ? emitters[middle].groups.y : emitters[middle].groups.x;
+    if (first <= value) low = middle; else high = middle;
+  }
+  return low;
+}
+
+#if defined(PASS_LIGHT)
+shared vec3 sums[64];
+void main() {
+  uint index = gl_LocalInvocationIndex;
+  if (gl_WorkGroupID.x == 0u) {
+    // The sky's mean radiance over the upper hemisphere: 64 directions in a
+    // Fibonacci spiral, uniform in solid angle.
+    vec3 up = frame.worldUp.xyz;
+    vec3 t = abs(up.z) < .999 ? normalize(cross(up, vec3(0, 0, 1))) : vec3(1, 0, 0);
+    vec3 b = cross(up, t);
+    float z = (float(index) + .5) / 64.0, phi = float(index) * 2.39996323;
+    float r = sqrt(max(0.0, 1.0 - z * z));
+    vec3 direction = t * (r * cos(phi)) + b * (r * sin(phi)) + up * z;
+    vec3 d = normalize(vec3(dot(frame.dome[0].xyz, direction), dot(frame.dome[1].xyz, direction),
+                            dot(frame.dome[2].xyz, direction)));
+    vec2 uv = vec2(atan(d.z, d.x) / 6.28318531 + .5, acos(clamp(d.y, -1.0, 1.0)) / 3.14159265);
+    vec3 sky = frame.ambient.w != 0.0 ? textureLod(environment, uv, 0.0).rgb : vec3(0);
+    sums[index] = (frame.display.x & 2u) != 0u ? pow(sky, vec3(2.2)) : sky;
+    barrier();
+    for (uint stride = 32u; stride > 0u; stride /= 2u) {
+      if (index < stride) sums[index] += sums[index + stride];
+      barrier();
+    }
+    if (index == 0u) {
+      vec3 mean = sums[0] / 64.0 * frame.dome[0].w;
+      if (any(isnan(mean)) || any(isinf(mean))) mean = frame.ambient.rgb;
+      light[0] = mean.r;
+      light[1] = mean.g;
+      light[2] = mean.b;
+    }
+    return;
+  }
+  // Every fourth stored cell, starting at this frame's quarter.
+  ivec3 size = ivec3(frame.volumeSize.xyz);
+  uint cells = uint(size.x * size.y * size.z);
+  uint stored = ((gl_WorkGroupID.x - 1u) * 64u + index) * 4u + uint(frame.volumeCell.w);
+  if (stored >= cells) return;
+  ivec3 slot = ivec3(int(stored) % size.x, (int(stored) / size.x) % size.y, int(stored) / (size.x * size.y));
+  // The world cell of the window that this storage holds.
+  ivec3 world = frame.volumeCell.xyz + wrapCell(slot - frame.volumeCell.xyz, size);
+  vec3 centre = (vec3(world) + .5) * frame.volumeOrigin.w;
+  float visible = 1.0;
+#ifdef TRACED
+  if (dot(frame.sunRadiance.rgb, vec3(1)) > 0.0) {
+    visible = cloudShadow(centre);
+    if (visible > 0.0 && traceDistance(centre, frame.sunDirection.xyz, 1e7, false) < NO_HIT) visible = 0.0;
+  }
+#endif
+  light[4 + stored] = visible;
+}
+
+#elif defined(PASS_SIMULATE)
+void main() {
+  if (frame.counts.y == 0u) return;
+  uint e = findEmitter(gl_WorkGroupID.x, false);
+  Emitter emitter = emitters[e];
+  uint local = (gl_WorkGroupID.x - emitter.groups.x) * 64u + gl_LocalInvocationIndex;
+  uint count = emitter.groups.w != 0u ? 0u : min(sourceCounts[emitter.slice.z], emitter.slice.y);
+  if (local >= count) return;
+  Particle p = source[emitter.slice.x + local];
+  float dt = frame.camera.w;
+  p.position.w += dt;
+  if (p.position.w >= p.velocity.w) return;
+  // Turbulence: a slow sway of its own phase per particle.
+  uint seed = uint(p.data.z);
+  vec3 phase = vec3(float(hash(seed)), float(hash(seed + 1u)), float(hash(seed + 2u))) * (6.28318531 / 4294967296.0);
+  vec3 sway = sin(vec3(1.3, 1.7, 1.1) * frame.cameraRight.w + phase);
+  vec3 velocity = p.velocity.xyz * exp(-emitter.acceleration.w * dt);
+  velocity += (emitter.acceleration.xyz + sway * emitter.motion.z) * dt;
+  vec3 step = velocity * dt;
+  p.position.xyz += step;
+  if ((emitter.kind.w & FLAG_CAMERA_SPACE) != 0u) p.position.xyz += frame.cameraDelta.xyz;
+  p.data.y -= length(step);
+  if (p.data.y <= 0.0) return;
+  if (emitter.kind.x == SHAPE_CAMERA_VOLUME && !insideVolume(emitter, p.position.xyz)) return;
+  p.velocity.xyz = velocity;
+  p.light = packLight(particleLight(emitter, p.position.xyz));
+  uint slot = atomicAdd(targetCounts[emitter.slice.z], 1u);
+  if (slot < emitter.slice.y) target[emitter.slice.x + slot] = p;
+}
+
+#elif defined(PASS_SPAWN)
+void main() {
+  uint index = gl_GlobalInvocationID.x;
+  if (frame.counts.y == 0u) return;
+  uint e = findEmitter(index, true);
+  Emitter emitter = emitters[e];
+  if (index < emitter.groups.y || index >= emitter.groups.y + emitter.groups.z) return;
+  uint k = index - emitter.groups.y;
+  uint seed = hash(emitter.slice.w ^ hash(frame.counts.x * 4099u + emitter.slice.z) ^ hash(k * 2654435761u));
+  uint state = seed;
+  vec3 local = vec3(0);
+  if (emitter.kind.x == SHAPE_BOX || emitter.kind.x == SHAPE_CAMERA_VOLUME)
+    local = (vec3(random(state), random(state), random(state)) * 2.0 - 1.0) * emitter.extent.xyz;
+  else if (emitter.kind.x == SHAPE_SPHERE)
+    local = randomDirection(state) * (emitter.extent.x * pow(random(state), 1.0 / 3.0));
+  vec3 position;
+  if (emitter.kind.x == SHAPE_CAMERA_VOLUME)
+    position = volumeCentre(emitter) + emitterDirection(emitter, local);
+  else
+    position = emitterPoint(emitter, local);
+  vec3 velocity = emitter.velocity.xyz;
+  if (emitter.velocity.w > 0.0) velocity += coneDirection(emitter.axis.xyz, emitter.axis.w, state) * emitter.velocity.w;
+  float travel = NO_HIT;
+#ifdef TRACED
+  if ((emitter.kind.w & FLAG_SHELTER) != 0u) {
+    if (traceDistance(position, frame.worldUp.xyz, 1e7, false) < NO_HIT) {
+      atomicAdd(statistics[2], 1u);
+      return;
+    }
+    float speed = length(velocity);
+    if (speed > 0.0) travel = traceDistance(position, velocity / speed, 1e7, true);
+  }
+#endif
+  Particle p;
+  p.position = vec4(position, 0.0);
+  p.velocity = vec4(velocity, mix(emitter.motion.x, emitter.motion.y, random(state)));
+  p.data = vec4(1.0 - emitter.size.z * random(state), travel, float(hash(seed) & 0xffffffu), 0.0);
+  p.light = packLight(particleLight(emitter, position));
+  uint slot = atomicAdd(targetCounts[emitter.slice.z], 1u);
+  if (slot < emitter.slice.y)
+    target[emitter.slice.x + slot] = p;
+  else
+    atomicAdd(statistics[1], 1u);
+}
+
+#elif defined(PASS_ARGS)
+void main() {
+  uint e = gl_GlobalInvocationID.x;
+  if (e >= frame.counts.y) return;
+  Emitter emitter = emitters[e];
+  uint count = min(targetCounts[emitter.slice.z], emitter.slice.y);
+  targetCounts[emitter.slice.z] = count;
+  // VkDrawIndirectCommand: a quad per particle.
+  indirect[e] = uvec4(6u, count, 0u, 0u);
+  atomicAdd(statistics[0], count);
+}
+#endif

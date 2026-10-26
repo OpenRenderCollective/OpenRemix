@@ -1,5 +1,6 @@
 #include "api/state.h"
 #include "scene/light_bvh.h"
+#include "scene/particles.h"
 #if REMIX_HAS_USD
 #include "usd/mods.h"
 #endif
@@ -65,6 +66,7 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_Shutdown() {
 #endif
     remixapi_ErrorCode status = g_runtime.shutdown();
     if (status == REMIXAPI_ERROR_CODE_SUCCESS) {
+      remix::scene::particles().reset();
       g_beginSceneCallback = nullptr;
       g_endSceneCallback = nullptr;
       g_presentCallback = nullptr;

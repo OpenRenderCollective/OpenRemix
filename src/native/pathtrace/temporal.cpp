@@ -314,6 +314,7 @@ namespace remix {
     return upscale::Backend::Native;
   }
   TraceOptions PathTracer::Gpu::effectiveOptions(TraceOptions options) const {
+    options.volumetricUpAxis = upAxis.resolve(options.volumetricUpAxis);
     if (rrActive()) {
       options.denoiser = options.localDenoiser = options.sigma = options.taa = false;
       options.blueNoiseShadows = options.blueNoiseLocalLights = false;

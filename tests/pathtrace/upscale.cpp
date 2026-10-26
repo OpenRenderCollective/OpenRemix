@@ -206,8 +206,7 @@ int main(int argc, char **argv) {
         std::array<float, 3> pixel{};
         for (int c = 0; c < 3; ++c) {
           float v = data[(y * w + x) * 4 + c] / 255.f;
-          pixel[c] =
-              v <= .04045f ? v / 12.92f : std::pow((v + .055f) / 1.055f, 2.4f);
+          pixel[c] = std::pow(v, 2.2f);
         }
         result.push_back(pixel);
       }
@@ -328,8 +327,7 @@ int main(int argc, char **argv) {
     for (unsigned i = 0; i < lights.size(); ++i) {
       sphere.position = {191.4f + float(i % 8) * .18f, 64.4f + float(i / 8) * .18f, 190.8f};
       light.radiance = {1.25f, .625f, .25f}; ok(api.UpdateLightDefinition(lights[i], &light));
-    }
-    config("prism", "0"); config("gamma22", "0"); config("sigma", "1");
+    } config("sigma", "1");
     config("adaptiveLocalSampling", "0"); config("localSamples", "1");
     config("dlssQuality", "quality"); config("denoiser", "reblur-sh"); config("bounces", "1");
     for (const char *primary : {"raster", "ray"}) {

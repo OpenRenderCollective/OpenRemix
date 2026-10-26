@@ -5,6 +5,7 @@
 #include "metal/diagnostics.h"
 #include "pathtrace/sparse_policy.h"
 #include "pathtrace/volume_policy.h"
+#include "scene/display.h"
 #include <array>
 #include <cstdio>
 #include <cstdlib>
@@ -54,8 +55,7 @@ namespace remix::metal {
   PathTracer::Configuration PathTracer::Configuration::of(void *devicePointer, const TraceOptions &options,
                                                          bool frameGeneration, bool local, bool perspective,
                                                          uint32_t displayWidth, uint32_t displayHeight,
-                                                         uint32_t displayFormat, bool encodeOutput,
-                                                         bool hardwareSrgb) {
+                                                         uint32_t displayFormat) {
     // pathtrace/temporal.cpp beginFrame and configureFrame, and
     // pathtrace/sharc.cpp beginSharc.
     id<MTLDevice> device = (__bridge id<MTLDevice>)devicePointer;
@@ -63,8 +63,6 @@ namespace remix::metal {
     c.displayWidth = displayWidth;
     c.displayHeight = displayHeight;
     c.displayFormat = displayFormat;
-    c.encodeOutput = encodeOutput;
-    c.hardwareSrgb = hardwareSrgb;
     const bool temporal = !options.accumulate && !options.sharcDebug;
     // Reconstruction: MetalFX takes the upscaler's place; Ray Reconstruction's
     // setting selects its denoised scaler, which replaces NRD and TAA.
@@ -116,8 +114,6 @@ namespace remix::metal {
     g.configuration = configuration;
     g.width = configuration.width;
     g.height = configuration.height;
-    g.encodeOutput = configuration.encodeOutput;
-    g.hardwareSrgb = configuration.hardwareSrgb;
     g.opacityCache = scene::OpacityCache(8, std::getenv("REMIX_OPACITY_PROFILE") != nullptr);
     g.createPipelines();
     g.createComposite(MTLPixelFormat(configuration.displayFormat));
@@ -557,8 +553,8 @@ namespace remix::metal {
     const bool faceCulling = opacityCache.oneSidedOpaqueEnabled();
     debugView = options.debugView;
     const bool falseColor = debugView != 0 && debugView != 6 && debugView != 7;
-    prism = options.prism && !falseColor;
-    gamma22 = options.gamma22 && !falseColor;
+    // The false colour debug views are shown without the tone curve.
+    falseColorView = falseColor;
     rendered = false;
     const auto &c = configuration;
     const bool rouletteActive = options.russianRoulette && options.rouletteMinBounces < options.bounces;
@@ -615,6 +611,8 @@ namespace remix::metal {
     // Texture descriptors in first-use order (the static prefix's, then the rest).
     std::vector<id<MTLTexture>> textures;
     std::vector<id<MTLSamplerState>> samplers;
+    // The slots of textures holding sRGB-encoded texels (frame.srgbTextures).
+    std::vector<uint32_t> srgbSlots;
     {
       ScopedTicks time{materialTicks};
       auto sampled = [&](const remix::trace::DescriptorRequest &request) {
@@ -623,6 +621,8 @@ namespace remix::metal {
                            : request.kind == remix::trace::DescriptorRequest::Map
                                ? raster.sampledTexture(request.material, *request.texture)
                                : raster.sampledTexture(request.material, request.material->emissionTexture);
+        if (image.srgb)
+          srgbSlots.push_back(uint32_t(textures.size()));
         textures.push_back(image.texture);
         samplers.push_back(image.sampler);
       };
@@ -770,6 +770,8 @@ namespace remix::metal {
       if (dome.texture && textures.size() < PathTracer::textureLimit) {
         frame.skyRadiance[3] = float(textures.size() + 1);
         const auto image = raster.sampledTexture(resources.defaultMaterial(), dome.texture);
+        if (image.srgb)
+          srgbSlots.push_back(uint32_t(textures.size()));
         textures.push_back(image.texture);
         samplers.push_back(image.sampler);
         auto fingerprint = dome.texture->fingerprint();
@@ -838,6 +840,9 @@ namespace remix::metal {
     frame.visibilityProbe[0] = .02f / options.sceneScale;
     frame.visibilityProbe[1] = .05f / options.sceneScale;
     frame.visibilityProbe[2] = c.displayHeight && height < c.displayHeight ? float(height) / float(c.displayHeight) : 1.f;
+    static_assert(PathTracer::textureLimit <= 32 * 128);
+    for (const uint32_t slot : srgbSlots)
+      frame.srgbTextures[slot >> 7][(slot >> 5) & 3] |= 1u << (slot & 31);
     append(&frame, sizeof(frame));
     {
       // Scrolling maps (water): wrapped well before float precision suffers.
@@ -1572,8 +1577,7 @@ namespace remix::metal {
     // upscale/renderer.cpp composite: the reconstructed output at display size.
     const auto backend = reconstruction::Backend(g.configuration.reconstruction);
     if (g.reconstruction && backend != reconstruction::Backend::Native && !g.debugView) {
-      g.reconstruction->composite(encoder, g.primary[4], g.encodeOutput, g.prism, g.gamma22, g.hardwareSrgb,
-                                  g.post->exposure(), g.post->bloom(), metal::sampler(g.device, 1, 3, 3), g.post->settings(),
+      g.reconstruction->composite(encoder, g.primary[4], g.post->exposure(), g.post->bloom(), metal::sampler(g.device, 1, 3, 3), g.post->settings(),
                                   g.frameIndex);
       return;
     }
@@ -1585,16 +1589,21 @@ namespace remix::metal {
     g.compositeSet.use(encoder, MTLRenderStageFragment);
     g.postSet.use(encoder, MTLRenderStageFragment);
     for (uint32_t i = 0; i < 2; ++i) {
-      const uint32_t push[] = {i,
-                               uint32_t(g.encodeOutput),
-                               uint32_t(g.prism),
-                               uint32_t(g.gamma22),
-                               uint32_t(g.hardwareSrgb),
-                               g.configuration.displayWidth,
-                               g.configuration.displayHeight};
+      // pathtrace.frag's constants: SDR.
+      const scene::DisplayOutput display;
+      struct {
+        uint32_t additive, falseColor, width, height, display;
+        float peakNits, paperWhiteNits;
+      } push{i,
+             uint32_t(g.falseColorView),
+             g.configuration.displayWidth,
+             g.configuration.displayHeight,
+             uint32_t(display.hdr10),
+             display.peakNits,
+             display.paperWhiteNits};
       [encoder setRenderPipelineState:g.composite[i]];
       [encoder setDepthStencilState:g.compositeDepth[i]];
-      [encoder setFragmentBytes:push length:sizeof(push) atIndex:composite.push];
+      [encoder setFragmentBytes:&push length:sizeof(push) atIndex:composite.push];
       [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
     }
   }

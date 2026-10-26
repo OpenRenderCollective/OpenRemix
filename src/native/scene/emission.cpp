@@ -14,7 +14,7 @@ namespace remix::scene {
       for (unsigned i = 0; i < 256; ++i) {
         const float value = i / 255.f;
         values[0][i] = value;
-        values[1][i] = value <= .04045f ? value / 12.92f : std::pow((value + .055f) / 1.055f, 2.4f);
+        values[1][i] = std::pow(value, 2.2f); // sRGB-encoded: gamma 2.2
       }
       return values;
     }();
