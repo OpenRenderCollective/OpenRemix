@@ -2837,3 +2837,18 @@ reuse. The payload cap is 16 MiB per field, with a maximum 64-light selection. I
 consumers can retain older fields, and diagnostics report resident and peak allocation
 bytes separately from the payload budget. This optimization does not change lighting
 quality, probe density, cache format or bake sampling presets.
+
+
+### Optional bicubic lightmap reconstruction
+
+Enable **Bicubic lightmaps** in Forward+ rendering settings, or set
+`rtx.native.forward.bicubicLightmaps=1`. Bilinear remains the default. The option
+changes reconstruction without rebaking. Submitted diagnostics expose
+`rendering.bicubicLightmaps`, so a pending pipeline switch is distinguishable
+from the active option.
+
+Cubic B-spline taps stay inside each atlas chart, including one-texel charts.
+Base/styled irradiance, baked visibility and attributed mixed-shadow correction
+fields use the same UV footprint; signed lighting clamps only after filtering.
+This smooths baked texel transitions, at additional sampling cost. It does not
+remove capture noise, repair missing lighting, or change probe interpolation.

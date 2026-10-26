@@ -36,7 +36,7 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
 #endif
   float attributedDiffuse = bakedDiffuse ? directIrradiance[min(directChannel, 3u)] : 0;
   if (indexedSurfaceDirect() && (!aggregateDiffuse || probeCorrection))
-    bakedDiffuse = surfaceDirectionalField(surfaceChart, uint(light.shaping.w), surfaceLightmap, n, attributedDiffuse);
+    bakedDiffuse = surfaceDirectionalField(surfaceChart, uint(light.shaping.w), surfaceLightmap, n, surfaceBounds, attributedDiffuse);
   vec3 l = delta / distance;
   float shape = emitterConeWeight(light.directionCone.xyz, light.directionCone.w,
                                    light.shaping.x, light.shaping.y, -l);
@@ -48,7 +48,7 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
   float visibility;
   uint channel;
   bool baked =
-      bakedLightVisibility(surfaceLightmap, surfaceLights, uint(light.shaping.w), visibility, channel);
+      bakedLightVisibility(surfaceLightmap, surfaceBounds, surfaceLights, uint(light.shaping.w), visibility, channel);
   baked = baked || cachedVisibility == 2u;
   if (!baked)
     baked = overflowLightVisibility(surfaceChart, uint(light.shaping.w), surfaceLightmap, surfaceBounds, visibility);

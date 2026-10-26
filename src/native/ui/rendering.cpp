@@ -59,6 +59,10 @@ namespace remix {
                           "Bake coverage: blue = surface lightmap, green = valid probe, red = uncovered opaque receiver.\n"
                           "Does not rebake.");
       int samples = forward.samples == 4 ? 2 : forward.samples == 2 ? 1 : 0;
+      ui::Checkbox("Bicubic lightmaps", &forward.bicubicLightmaps);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Smooth baked texel transitions with chart-safe cubic B-spline filtering.\n"
+                          "Costs additional lighting samples; does not rebake or remove capture noise.");
       if (ui::Combo("MSAA", &samples, "Off\0 2x\0 4x\0")) forward.samples = 1u << samples;
       ui::Checkbox("Sun shadows", &forward.shadows);
       ui::Checkbox("Local light shadows", &forward.localShadows);

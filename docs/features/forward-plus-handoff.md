@@ -1292,3 +1292,13 @@ noise/seams, denoising cost and frame profiling remain independent priorities.
   ABI/export checks and installed normal-quality cached Construct image parity.
 - [ ] Continue broader map/gameplay profiling and the remaining quality roadmap.
   This deployment changes visibility lookup scheduling, not bake quality presets.
+
+
+### 2026-10-26 - Optional chart-safe bicubic lightmaps
+
+- [x] Add configurable/UI cubic B-spline reconstruction, with per-tap chart
+  bounds and matching base, styled, visibility and mixed-correction footprints.
+- [x] GPU sixteen-tap reference, signed styles, page/one-texel chart boundaries,
+  ABI/exports and live cached toggle/actual-submission checks pass.
+- [ ] Broaden image/motion/seam and frame-cost checks; bilinear remains default.
+  Cubic filtering smooths reconstruction but does not solve bake noise.

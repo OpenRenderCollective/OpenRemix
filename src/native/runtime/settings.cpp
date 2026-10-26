@@ -121,6 +121,7 @@ namespace remix::config {
         result.push_back(scalar("rtx.native.forward.shadows", FIELD(forward.shadows), 0, 1));
         result.push_back(scalar("rtx.native.forward.localShadows", FIELD(forward.localShadows), 0, 1));
         result.push_back(scalar("rtx.native.forward.depthPrepass", FIELD(forward.depthPrepass), 0, 1));
+        result.push_back(scalar("rtx.native.forward.bicubicLightmaps", FIELD(forward.bicubicLightmaps), 0, 1));
         result.push_back(scalar("rtx.native.forward.localShadowLights", FIELD(forward.localShadowLights), 0, 8));
         result.push_back(scalar("rtx.native.forward.localShadowDistance", FIELD(forward.localShadowDistance), .1, 10000));
         result.push_back(scalar("rtx.native.forward.localShadowBias", FIELD(forward.localShadowBias), 0, .1));

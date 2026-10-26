@@ -88,7 +88,3 @@ bool indexedLightVisibility(uint base, uint chart, uint capturedLight, vec4 coor
   visibility = mix(row0, row1, fraction.y);
   return true;
 }
-bool overflowLightVisibility(uint chart, uint capturedLight, vec4 coordinate, vec4 bounds,
-                              out float visibility) {
-  return indexedLightVisibility(frame.occlusion.w, chart, capturedLight, coordinate, bounds, visibility);
-}

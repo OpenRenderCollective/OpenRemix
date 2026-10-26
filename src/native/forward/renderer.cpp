@@ -11,6 +11,7 @@
 namespace remix::forward {
   void Renderer::Gpu::publishStatistics() {
     statistics.debugView = options.debugView;
+    statistics.bicubicLightmaps = options.bicubicLightmaps;
     statistics.baking = baking->statistics();
     const auto &volume = baking->volume();
     statistics.bakeContent = volume ? volume->content : bake::ContentHashes{};

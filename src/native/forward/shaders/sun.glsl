@@ -2,11 +2,11 @@
 #ifndef VIEWMODEL_PASS
 #include "sun-depth.glsl"
 #endif
-BrdfLobes sunLightResponse(vec4 coordinate, float unitIrradiance, vec3 p, float depth, vec3 n, vec3 v,
+BrdfLobes sunLightResponse(vec4 coordinate, vec4 bounds, float unitIrradiance, vec3 p, float depth, vec3 n, vec3 v,
                            vec3 base, float roughness, float metallic) {
   bool baked = frame.sunDirection.w > .5 && coordinate.w > .5;
-  float visibility = baked ? clamp(textureLod(surfaceAtlas,
-      vec3(coordinate.xy, coordinate.z * SurfaceAtlasLayers + (SurfaceAtlasLayers - 1)), 0).r, 0, 1) : 1;
+  float visibility = baked ? clamp(sampleSurfaceAtlas(surfaceFilter(coordinate, bounds),
+      coordinate.z * SurfaceAtlasLayers + (SurfaceAtlasLayers - 1)).r, 0, 1) : 1;
   bool charted = baked;
   if (!FullyMappedReceiver && !baked && frame.sunDirection.w > .5) {
     float probeVisibility;
@@ -29,8 +29,8 @@ BrdfLobes sunLightResponse(vec4 coordinate, float unitIrradiance, vec3 p, float 
   vec3 scale = frame.sunRadiance.rgb * sunShadowVisibility(p, depth, !baked);
   return BrdfLobes(response.diffuse * diffuse * scale, response.specular * visibility * scale);
 }
-vec3 sunLight(vec4 coordinate, float unitIrradiance, vec3 p, float depth, vec3 n, vec3 v,
+vec3 sunLight(vec4 coordinate, vec4 bounds, float unitIrradiance, vec3 p, float depth, vec3 n, vec3 v,
               vec3 base, float roughness, float metallic) {
-  BrdfLobes response = sunLightResponse(coordinate, unitIrradiance, p, depth, n, v, base, roughness, metallic);
+  BrdfLobes response = sunLightResponse(coordinate, bounds, unitIrradiance, p, depth, n, v, base, roughness, metallic);
   return response.diffuse + response.specular;
 }

@@ -24,6 +24,7 @@ namespace remix::forward {
     bool shadows = true;
     bool localShadows = true;
     bool depthPrepass = true; // reject hidden opaque fragments before expensive lighting
+    bool bicubicLightmaps = false; // chart-safe cubic B-spline reconstruction
     uint32_t localShadowLights = 4;
     uint32_t localShadowResolution = 512;
     float localShadowDistance = 100; // metres, independent of light influence

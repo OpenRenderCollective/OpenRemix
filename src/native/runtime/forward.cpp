@@ -35,6 +35,7 @@ namespace remix {
         << ",\n  \"rendering\": {\"lights\": " << state.lights
         << ", \"samples\": " << state.samples
         << ", \"debugView\": " << state.debugView
+        << ", \"bicubicLightmaps\": " << (state.bicubicLightmaps ? "true" : "false")
         << ", \"clusteredLights\": " << state.clusteredLights
         << ", \"clusterBuildLights\": " << state.clusterBuildLights
         << ", \"analyticLights\": " << state.analyticLights

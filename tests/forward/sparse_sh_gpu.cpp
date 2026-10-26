@@ -18,6 +18,7 @@ namespace b = remix::forward::bake;
 namespace s = b::sparse;
 namespace lm = remix::forward::lightmap;
 int main(int argc, char **argv) try {
+  const bool bicubic = argc > 1 && std::strcmp(argv[1], "bicubic") == 0;
   const bool transfer = argc > 1 && std::string_view(argv[1]).starts_with("adaptive-transfer");
   const bool localFactor = argc > 1 && std::strcmp(argv[1], "adaptive-localfactor") == 0;
   const bool stitched = (argc > 1 && std::strcmp(argv[1], "adaptive-stitched") == 0) || (transfer && std::string_view(argv[1]).ends_with("stitched"));
@@ -99,7 +100,7 @@ int main(int argc, char **argv) try {
     base.lookup[11] = 8;
     base.lookup[12] = localFactor ? b::patchReference(20, 2) : 20;
     for (uint32_t node = 0; node < 27; ++node) base.lookup[20 + node] = 9 + node;
-  } else if (argc > 1) {
+  } else if (argc > 1 && !bicubic) {
     base.header.dimensions = {3, 3, 3, 8};
     base.header.settings[2] = 3;
     base.lookup.resize(27);
@@ -203,6 +204,12 @@ int main(int argc, char **argv) try {
   }
   queries.push_back({{.5f,.5f,-1,1}, {0,0,1,0}, {0,0,0,0}});
   queries.push_back({{.5f,.5f,0,0}, {0,0,1,0}, {0,0,0,0}});
+  if (bicubic) {
+    for (uint32_t bounds : {1u, 2u})
+      for (float x : {-.1f, 8.5f / 33, 15.25f / 33, 15.75f / 33, 1.1f})
+        for (Vec3 n : {Vec3{0,0,1}, Vec3{0,0,-1}, normalized(Vec3{1,2,3})})
+          queries.push_back({{x, 8.5f / 33, 0, 1}, {n[0],n[1],n[2],0}, {3,0,bounds,0}});
+  }
   gpu.weights.create(fixture.physical, fixture.device, 32 * sizeof(Vec4), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
   gpu.queries.create(fixture.physical, fixture.device, queries.size() * sizeof(Query), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   gpu.queries.write(queries.data(), queries.size() * sizeof(Query));
@@ -235,9 +242,13 @@ int main(int argc, char **argv) try {
   const VkShaderModuleCreateInfo moduleInfo{.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
       .codeSize = sizeof(style_input::queryShader), .pCode = style_input::queryShader};
   check(vkCreateShaderModule(fixture.device, &moduleInfo, nullptr, &module));
+  const uint32_t cubic = uint32_t(bicubic);
+  const VkSpecializationMapEntry cubicEntry{6, 0, sizeof(cubic)};
+  const VkSpecializationInfo cubicInfo{1, &cubicEntry, sizeof(cubic), &cubic};
   const VkComputePipelineCreateInfo pipeline{.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
       .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                .stage = VK_SHADER_STAGE_COMPUTE_BIT, .module = module, .pName = "main"}, .layout = gpu.layout};
+                .stage = VK_SHADER_STAGE_COMPUTE_BIT, .module = module, .pName = "main",
+                .pSpecializationInfo = &cubicInfo}, .layout = gpu.layout};
   const auto created = vkCreateComputePipelines(fixture.device,VK_NULL_HANDLE,1,&pipeline,nullptr,&gpu.pipeline);
   vkDestroyShaderModule(fixture.device,module,nullptr);
   check(created);
@@ -332,6 +343,29 @@ int main(int argc, char **argv) try {
           found = q.coordinate[3] >= .5f;
           const auto initial = baseSurfaceAt(q.coordinate,normal);
           for (uint32_t c = 0; c < 3; ++c) expected[c] = std::max(0.f,initial[c]+expected[c]);
+          if (bicubic && found) {
+            // Independent sixteen-nearest-tap reference. The GPU groups these
+            // into four hardware bilinear taps; clamp to this chart, not atlas.
+            auto weights = [](float f) {
+              return std::array<float,4>{(1-f)*(1-f)*(1-f)/6,
+                  (4-6*f*f+3*f*f*f)/6, (1+3*f+3*f*f-3*f*f*f)/6, f*f*f/6};
+            };
+            const float x = q.coordinate[0]*33-.5f, y = q.coordinate[1]*33-.5f;
+            const auto wx = weights(x-std::floor(x)), wy = weights(y-std::floor(y));
+            const int low = q.control[2] == 2 ? 15 : 0;
+            const int highX = q.control[2] == 2 ? 15 : q.control[2] == 1 ? 15 : 32;
+            const int highY = q.control[2] == 2 ? 15 : 32;
+            expected = {};
+            for (int iy=0; iy<4; ++iy) for (int ix=0; ix<4; ++ix) {
+              auto tap = q.coordinate;
+              tap[0] = (std::clamp(int(std::floor(x))+ix-1,low,highX)+.5f)/33;
+              tap[1] = (std::clamp(int(std::floor(y))+iy-1,low,highY)+.5f)/33;
+              const auto styled = s::surfaceIrradiance(words,scales,tap,normal);
+              const auto base = baseSurfaceAt(tap,normal);
+              for (uint32_t c=0; c<3; ++c) expected[c] += wx[ix]*wy[iy]*(base[c]+styled[c]);
+            }
+            for (auto &channel : expected) channel = std::max(0.f,channel);
+          }
         }
       } else if (q.control[0] == 1) {
         const auto sh = b::irradianceBasis(normal);
@@ -354,8 +388,9 @@ int main(int argc, char **argv) try {
       for (uint32_t c = 0; c < 3; ++c) {
         const float error = std::abs(values[i][c]-expected[c]);
         maximumError = std::max(maximumError,error);
-        if (error >= 2e-5f) std::fprintf(stderr,"Sparse query %zu mode%u channel%u expected%.9g actual%.9g\n",i,q.control[0],c,expected[c],values[i][c]);
-        require(error < 2e-5f,"Production sparse shader agrees with packed surface/probe reconstruction");
+        const float tolerance = 2e-5f;
+        if (error >= tolerance) std::fprintf(stderr,"Sparse query %zu mode%u channel%u expected%.9g actual%.9g\n",i,q.control[0],c,expected[c],values[i][c]);
+        require(error < tolerance,"Production sparse shader agrees with packed surface/probe reconstruction");
       }
     }
   }

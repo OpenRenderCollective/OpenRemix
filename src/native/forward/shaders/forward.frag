@@ -122,7 +122,7 @@ void main() {
   vec4 surfaceLightmap = UnmappedReceiver ? vec4(0) : surfaceLightmapInput;
   surfaceLightmap.xy = clamp(surfaceLightmap.xy, surfaceBounds.xy, surfaceBounds.zw);
   vec4 surfaceLighting = vec4(0);
-  bool charted = surfaceIrradiance(surfaceLightmap, n, surfaceLighting);
+  bool charted = surfaceIrradiance(surfaceLightmap, n, surfaceBounds, surfaceLighting);
   uint debugView = LightingView;
   if (debugView == 6u) {
     bool covered = charted || localProbeStencil(worldPosition, n);
@@ -165,13 +165,13 @@ void main() {
 #endif
   bool includeBakedDiffuse = debugView == 0u || debugView == 7u;
   vec3 color = includeBakedDiffuse ? surface.rgb * (1 - metallic) * ambient : vec3(0);
-  BrdfLobes sun = sunLightResponse(surfaceLightmap, surfaceLighting.w, worldPosition, depth, n, v,
+  BrdfLobes sun = sunLightResponse(surfaceLightmap, surfaceBounds, surfaceLighting.w, worldPosition, depth, n, v,
                                    surface.rgb, roughness, metallic);
   color += directLightComponent(sun, debugView);
   bool directChannels =
       (m.maps.x & 16u) == 0u && !indexedSurfaceDirect() && metallic < 1 && frame.target.z > 0u &&
       any(notEqual(surfaceDirectLights, uvec4(0xffffffffu)));
-  vec4 directIrradiance = directChannels ? surfaceDirectIrradiance(surfaceLightmap, n) : vec4(-1);
+  vec4 directIrradiance = directChannels ? surfaceDirectIrradiance(surfaceLightmap, n, surfaceBounds) : vec4(-1);
   uint base = clusterIndex(gl_FragCoord.xy, depth) * ClusterStride;
   // Overflow remains correct: this cluster evaluates the full light array.
   // It is slower, but never silently loses illumination.

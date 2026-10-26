@@ -16,18 +16,33 @@ void surfaceBasis(vec3 normal, out float sh[9]) {
                 .5462742153 * (normal.x * normal.x - normal.y * normal.y));
 }
 layout(set = 0, binding = 6) uniform sampler2DArray surfaceAtlas;
-bool surfaceIrradiance(vec4 coordinate, vec3 normal, out vec4 result) {
+#include "lightmap-filter.glsl"
+LightmapFilter surfaceFilter(vec4 coordinate, vec4 bounds) {
+  return lightmapFilter(coordinate.xy, bounds, vec2(textureSize(surfaceAtlas, 0).xy));
+}
+vec4 sampleSurfaceAtlas(LightmapFilter stencil, float layer) {
+  if (!BicubicLightmaps) return textureLod(surfaceAtlas, vec3(stencil.uv.xy, layer), 0);
+  vec4 result = vec4(0);
+  for (uint tap = 0u; tap < 4u; ++tap)
+    result += lightmapWeight(stencil, tap) * textureLod(surfaceAtlas, vec3(lightmapTap(stencil, tap), layer), 0);
+  return result;
+}
+bool surfaceIrradiance(vec4 coordinate, vec3 normal, vec4 bounds, out vec4 result) {
   if (UnmappedReceiver || (!FullyMappedReceiver && coordinate.w < .5))
     return false;
   float sh[9];
   surfaceBasis(normal, sh);
   result = vec4(0);
+  LightmapFilter stencil = surfaceFilter(coordinate, bounds);
   for (uint coefficient = 0; coefficient < 9u; ++coefficient)
-    result += textureLod(surfaceAtlas,
-                         vec3(coordinate.xy, coordinate.z * SurfaceAtlasLayers + float(coefficient)), 0)
+    result += sampleSurfaceAtlas(stencil, coordinate.z * SurfaceAtlasLayers + float(coefficient))
                   * sh[coefficient];
 #ifdef STYLED_BAKE
-  result.rgb += styledSurfaceIrradiance(coordinate, sh);
+  if (BicubicLightmaps) {
+    for (uint tap = 0u; tap < 4u; ++tap)
+      result.rgb += lightmapWeight(stencil, tap) *
+          styledSurfaceIrradiance(vec4(lightmapTap(stencil, tap), coordinate.zw), sh);
+  } else result.rgb += styledSurfaceIrradiance(coordinate, sh);
 #endif
   result = max(result, vec4(0));
   // A valid black chart remains black; it must not fall through to probes.
@@ -43,7 +58,7 @@ uint lightChannel(uvec4 owners, uint capturedLight) {
 }
 // Returning the ownership separately prevents sampling the cached static
 // depth map on top of a baked soft visibility channel, including a fully lit one.
-bool bakedLightVisibility(vec4 coordinate, uvec4 owners, uint capturedLight, out float visibility,
+bool bakedLightVisibility(vec4 coordinate, vec4 bounds, uvec4 owners, uint capturedLight, out float visibility,
                           out uint selected) {
   visibility = 1;
   selected = 0xffffffffu;
@@ -53,23 +68,23 @@ bool bakedLightVisibility(vec4 coordinate, uvec4 owners, uint capturedLight, out
     if (owners[channel] == capturedLight - 1u) {
       selected = channel;
       visibility = clamp(
-          textureLod(surfaceAtlas, vec3(coordinate.xy, coordinate.z * SurfaceAtlasLayers + 9), 0)[channel], 0,
+          sampleSurfaceAtlas(surfaceFilter(coordinate, bounds), coordinate.z * SurfaceAtlasLayers + 9)[channel], 0,
           1);
       return true;
     }
   return false;
 }
 
-vec4 surfaceDirectIrradiance(vec4 coordinate, vec3 normal) {
+vec4 surfaceDirectIrradiance(vec4 coordinate, vec3 normal, vec4 bounds) {
   if (indexedSurfaceDirect() || coordinate.w < .5 || frame.localSettings.w < .5)
     return vec4(-1);
   float sh[9];
   surfaceBasis(normal, sh);
   vec4 result = vec4(0);
+  LightmapFilter stencil = surfaceFilter(coordinate, bounds);
   for (uint coefficient = 0; coefficient < 9u; ++coefficient)
     result +=
-        textureLod(surfaceAtlas,
-                   vec3(coordinate.xy, coordinate.z * SurfaceAtlasLayers + (SurfaceAtlasLayers - 10) + float(coefficient)), 0) *
+        sampleSurfaceAtlas(stencil, coordinate.z * SurfaceAtlasLayers + (SurfaceAtlasLayers - 10) + float(coefficient)) *
         sh[coefficient];
   return max(result, vec4(0));
 }

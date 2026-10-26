@@ -17,3 +17,20 @@ uint staticLightVisibility(uint chart, uint capturedLight) {
 }
 
 #include "overflow-mask.glsl"
+bool overflowLightVisibility(uint chart, uint capturedLight, vec4 coordinate, vec4 bounds,
+                              out float visibility) {
+  if (!BicubicLightmaps)
+    return indexedLightVisibility(frame.occlusion.w, chart, capturedLight, coordinate, bounds, visibility);
+  LightmapFilter stencil = surfaceFilter(coordinate, bounds);
+  visibility = 0;
+  for (uint tap = 0u; tap < 4u; ++tap) {
+    float value;
+    if (!indexedLightVisibility(frame.occlusion.w, chart, capturedLight,
+        vec4(lightmapTap(stencil, tap), coordinate.zw), bounds, value)) {
+      visibility = 1;
+      return false;
+    }
+    visibility += lightmapWeight(stencil, tap) * value;
+  }
+  return true;
+}

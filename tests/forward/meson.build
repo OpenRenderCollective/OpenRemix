@@ -289,6 +289,8 @@ if get_option('gpu_tests')
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)
   test('Sparse styled GPU surface and probe reconstruction', sparse_style_gpu_test, timeout : 120)
+  test('Bicubic lightmaps preserve signed styles and chart boundaries', sparse_style_gpu_test,
+       args : ['bicubic'], timeout : 120)
   foreach mode : ['adaptive-transfer', 'adaptive-transfer-stitched', 'adaptive-transfer-depth']
     test('Coarse transfer production GPU reconstruction ' + mode,
          sparse_style_gpu_test, args : [mode], timeout : 120)
