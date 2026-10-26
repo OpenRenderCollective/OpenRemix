@@ -3660,3 +3660,24 @@ transmission; finite HWRT material-coverage confirmation remains required.
 Directional-depth remains private/off. Keep64k quality candidate, wider map/room,
 styles/motion/color, runtime/bake/memory costs, surface quality and coarse-transfer
 lifecycle/cache gates active. No default/playable change.
+
+
+### 2026-10-26 - HWRT confirms donor blockers; angular resolution control
+
+Added bounded geometry reference input using existing fenced geometry transport:
+max16 unit rays/4KiB, explicit hit/miss/range/backface metadata, no fake SH values.
+No GPU shader/public API/default change. CPU tests and native build pass.
+
+- [x] All16 finite donor connections agree with CPU:8blocked/8clear, first-hit
+  distances within.000053map units after material coverage. Not inside-solid proof.
+- [x]8x8 tap captures show near/far mixing (60.7..1924.7units in one footprint).
+- [x] One bad donor's16x16 footprint reduces reconstructed visibility.1527->.0000153;
+  bounded offline field-decoder reproduction, not complete map acceptance.
+- [x] Short owned harness stops after geometry receipt; four clean validation runs;
+  cached normal render unchanged and protected playable files preserved.
+- [ ] Prototype16x16 field with output-stride/device/readback/cache/lifetime tests.
+- [ ] Qualify all blocked donors, geometry, temporal/color/style coverage and
+  storage/trace/frame cost across rooms/maps before enabling by default.
+
+Existing8x8 remains private/off; rejected per-tap change remains removed. Continue
+64k quality-policy, placement, surface noise/seams, denoising and frame/bake roadmap.

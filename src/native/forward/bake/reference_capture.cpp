@@ -33,28 +33,33 @@ namespace remix::forward::bake {
       result.baseLightingOnly = true;
       input >> token;
     }
+    result.geometry = token == "geometry";
     result.hemisphere = token == "hemisphere";
     result.sphere = token == "sphere";
     result.surface = token == "surface" || token == "surface-offsets";
     const bool offsets = token == "sh-offsets" || token == "surface-offsets";
     if (result.usesRadianceRays() || result.surface || offsets) input >> token;
-    const auto parsed = std::from_chars(token.data(), token.data() + token.size(), result.samples);
-    if (parsed.ec != std::errc{} || parsed.ptr != token.data() + token.size() ||
-        result.samples < 64 || result.samples > 8192)
-      throw std::invalid_argument("Reference capture requires 64..8192 samples");
+    if (result.geometry) result.samples = 1;
+    else {
+      const auto parsed = std::from_chars(token.data(), token.data() + token.size(), result.samples);
+      if (parsed.ec != std::errc{} || parsed.ptr != token.data() + token.size() ||
+          result.samples < 64 || result.samples > 8192)
+        throw std::invalid_argument("Reference capture requires 64..8192 samples");
+    }
     while (input >> std::ws && input.peek() != std::char_traits<char>::eof()) {
       Point point{};
       if (result.points.size() == 16 || !(input >> point.position[0] >> point.position[1] >> point.position[2]))
         throw std::invalid_argument("Reference capture requires at most 16 XYZ positions");
       for (float value : point.position)
         if (!std::isfinite(value)) throw std::invalid_argument("Non-finite reference position");
-      if (result.hemisphere || result.surface) {
+      if (result.hemisphere || result.surface || result.geometry) {
         if (!(input >> point.normal[0] >> point.normal[1] >> point.normal[2]))
-          throw std::invalid_argument("Surface reference requires XYZ unit normals");
+          throw std::invalid_argument(result.geometry ? "Geometry reference requires XYZ unit directions"
+                                                     : "Surface reference requires XYZ unit normals");
         const Vec3 normal{point.normal[0], point.normal[1], point.normal[2]};
         const float lengthSquared = dot(normal, normal);
         if (!std::isfinite(lengthSquared) || std::abs(lengthSquared - 1) > 1e-4f)
-          throw std::invalid_argument("Invalid surface reference unit normal");
+          throw std::invalid_argument("Invalid reference unit direction or normal");
       }
       if (offsets) {
         std::string offset;
@@ -147,12 +152,21 @@ namespace remix::forward::bake {
            << ",\"combinedLighting\":" << (combinedLighting ? "true" : "false")
            << ",\"analyticReceiverDirectPolicy\":" << (analyticReceiverDirectPolicy ? "true" : "false")
            << ",\"baseLightingOnly\":" << (baseLightingOnly ? "true" : "false")
-           << ",\"mode\":\"" << (hemisphere ? "hemisphere" : sphere ? "sphere" : surface ? "surface" : "sh") << "\",\"points\":[";
+           << ",\"mode\":\"" << (geometry ? "geometry" : hemisphere ? "hemisphere" : sphere ? "sphere" : surface ? "surface" : "sh") << "\",\"points\":[";
     for (size_t i = 0; i < points.size(); ++i) {
       if (i) output << ',';
       output << "{\"partitionCluster\":" << (m_partitionClusters.empty() ? -2 : m_partitionClusters.at(i))
              << ",\"position\":[";
       for (uint32_t c = 0; c < 3; ++c) output << (c ? "," : "") << points[i].position[c];
+      if (geometry) {
+        const bool miss = m_results[i].statistics[1] >= .5f;
+        output << "],\"direction\":[" << points[i].normal[0] << ',' << points[i].normal[1] << ',' << points[i].normal[2]
+               << "],\"maximumDistance\":" << maximumGeometryDistance << ",\"firstHitDistance\":";
+        if (miss) output << "null"; else output << m_results[i].irradiance[0][3];
+        output << ",\"miss\":" << (miss ? "true" : "false") << ",\"opaqueBackface\":"
+               << (m_results[i].statistics[0] >= .5f ? "true" : "false") << '}';
+        continue;
+      }
       if (hemisphere) {
         output << "],\"normal\":[";
         for (uint32_t c = 0; c < 3; ++c) output << (c ? "," : "") << points[i].normal[c];

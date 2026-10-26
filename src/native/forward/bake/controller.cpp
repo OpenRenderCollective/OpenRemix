@@ -318,10 +318,11 @@ namespace remix::forward::bake {
     if (reference) {
       reference->sceneHash = source->contentHash;
       reference->classify(*source);
-      reference->bounces = config.bounces;
-      reference->analyticReceiverDirectPolicy = !reference->usesRadianceRays() &&
+      reference->bounces = reference->geometry ? 1 : config.bounces;
+      reference->maximumGeometryDistance = options.distance / source->sceneScale;
+      reference->analyticReceiverDirectPolicy = !reference->geometry && !reference->usesRadianceRays() &&
           (config.aggregateDiffuse || config.fullyBakedLights || config.bakedGeometryLights);
-      reference->combinedLighting = options.lightingComponents && !reference->baseLightingOnly;
+      reference->combinedLighting = !reference->geometry && options.lightingComponents && !reference->baseLightingOnly;
     }
     transport = std::make_unique<Transport>();
     transport->initialize(physical, device, source, options);
@@ -1678,10 +1679,12 @@ namespace remix::forward::bake {
           if (reference.next < reference.tasks()) {
             auto &submission = m_submissions[m_slot];
             if (submission.job) throw std::logic_error("Reference slot reused before its fence");
-            const auto count = std::min(reference.usesRadianceRays() ? 256u : 1u, reference.tasks() - reference.next);
+            const auto count = std::min(reference.geometry ? 16u : reference.usesRadianceRays() ? 256u : 1u, reference.tasks() - reference.next);
             const auto referencePoints = reference.batch(reference.next, count);
             const uint32_t firstSample = reference.sampleOffsets.empty() ? 0 : reference.sampleOffsets.at(reference.next);
-            if (reference.usesRadianceRays() && reference.combinedLighting)
+            if (reference.geometry)
+              job.transport->recordGeometry(command, m_slot, referencePoints);
+            else if (reference.usesRadianceRays() && reference.combinedLighting)
               job.transport->recordRadianceComponent(command, m_slot, referencePoints, Transport::combinedLighting,
                                                      config.bounces);
             else if (reference.usesRadianceRays())
@@ -1698,7 +1701,8 @@ namespace remix::forward::bake {
             submission.count = count;
             reference.next += count;
           }
-          status(REMIXAPI_BAKE_TRACING_EXT, "Tracing offline irradiance reference");
+          status(REMIXAPI_BAKE_TRACING_EXT, job.reference->geometry ? "Tracing offline geometry reference"
+                                                               : "Tracing offline irradiance reference");
           return;
         }
         if (job.received == job.grid.tasks.size()) {

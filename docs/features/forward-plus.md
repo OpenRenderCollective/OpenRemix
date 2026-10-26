@@ -2794,3 +2794,12 @@ Reference grid donor records include retained `traceOrigin`, `nominalSpacing`,
 CPU positions/origins are reported as null; diagnostics never infer exact trace
 locations from probe indices alone. These fields help compare placement policies
 without conflating record count, local spacing, relocation and capture variation.
+
+
+Reference input `geometry` followed by XYZ-origin/unit-direction rays captures
+up to16 HWRT first hits through existing material coverage. Output includes the
+scene-unit traversal limit, explicit miss/null distance and opaque-backface flag;
+it contains no invented irradiance. A first hit can be a refractive interface,
+so geometry mode is not a transmission integral. Compare finite endpoint distance
+only inside the reported traversal range. Normal lighting/cache behavior is
+unchanged when no reference request is supplied.

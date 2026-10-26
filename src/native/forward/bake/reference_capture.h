@@ -10,6 +10,9 @@ namespace remix::forward::bake {
   // XYZ/unit-normal sites (cosine-weighted radiance integration, without SH).
   // "sphere", sample count and XYZ sites projects incoming radiance into SH
   // on the CPU, without analytic receiver lighting or probe interpolation.
+  // "geometry" followed by XYZ/unit-direction rays captures HWRT first hits
+  // with material coverage; no lighting samples or invented SH values. Refractive
+  // interfaces can be first hits too; this mode does not integrate transmission.
   // "surface", sample count and XYZ/unit-normal sites uses the surface bake
   // estimator, including aggregate analytic direct lighting and SH anchoring.
   // Hemisphere rays alone do not include analytic direct light at the receiver.
@@ -42,6 +45,8 @@ namespace remix::forward::bake {
     bool hemisphere = false;
     bool sphere = false;
     bool surface = false;
+    bool geometry = false;
+    float maximumGeometryDistance = 0; // scene units, configured by transport owner
 
   private:
     std::filesystem::path m_output;

@@ -217,6 +217,32 @@ int main(int argc, char **argv) {
   try { ReferenceCapture::load(path); }
   catch (const std::invalid_argument &) { rejected = true; }
   require(rejected, "Invalid receiver normals cannot create hemisphere rays");
+  { std::ofstream geometryInput(path); geometryInput << "geometry\n1 2 3 0 0 1\n4 5 6 -1 0 0\n"; }
+  auto geometry = ReferenceCapture::load(path);
+  geometry.maximumGeometryDistance = 100;
+  require(geometry.geometry && geometry.tasks() == 2 && geometry.samples == 1 && !geometry.usesRadianceRays(),
+          "Geometry requests dispatch exact unit rays instead of lighting quadrature");
+  const auto geometryRays = geometry.batch(0,2);
+  require(geometryRays[0].normal == remix::forward::Vec4{0,0,1,0} &&
+              geometryRays[1].position == remix::forward::Vec4{4,5,6,0},
+          "Geometry batches retain exact origin/direction identities");
+  Result geometryMiss{}; geometryMiss.irradiance[0][3] = 100; geometryMiss.statistics = {0,1,1,0};
+  Result geometryHit{}; geometryHit.irradiance[0][3] = 2; geometryHit.statistics = {1,0,1,0};
+  geometry.consume(1,std::span(&geometryMiss,1));
+  geometry.consume(0,std::span(&geometryHit,1));
+  {
+    std::ifstream json(output);
+    const std::string result((std::istreambuf_iterator<char>(json)),{});
+    require(result.find("\"mode\":\"geometry\"") != std::string::npos &&
+                result.find("\"maximumDistance\":100,\"firstHitDistance\":2,\"miss\":false,\"opaqueBackface\":true") != std::string::npos &&
+                result.find("\"firstHitDistance\":null,\"miss\":true") != std::string::npos &&
+                result.find("\"irradiance\"") == std::string::npos && result.find("distanceMoments") == std::string::npos,
+            "Geometry output distinguishes hit/miss and traversal limit without fabricated lighting");
+  }
+  { std::ofstream bad(path); bad << "geometry\n1 2 3 0 0 0\n"; }
+  rejected = false;
+  try { ReferenceCapture::load(path); } catch (const std::invalid_argument &) { rejected = true; }
+  require(rejected,"Geometry rays reject nonunit directions");
   { std::ofstream sites(path); sites << "surface 8192\n1 2 3 0 0 -1\n"; }
   auto surface = ReferenceCapture::load(path);
   require(surface.surface && !surface.hemisphere && surface.tasks() == 1 && surface.samples == 8192,
