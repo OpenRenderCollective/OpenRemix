@@ -2,6 +2,7 @@
 #include "forward/bake/controller.h"
 #include "forward/bake/adaptive_grid.h"
 #include "forward/bake/budget.h"
+#include "forward/bake/coarse_transfer.h"
 #include "forward/bake/transport.h"
 #include "forward/bake/reference_capture.h"
 #include "forward/bake/style_work.h"
@@ -42,6 +43,14 @@ namespace remix::forward::bake {
     bool sunDepthCacheSubmitted = false, sunDepthCacheReady = false, sunDepthCacheWritten = false;
     double sunDepthGpuMs = 0;
     uint32_t probeDepthNext = 0, probeDepthReceived = 0;
+    std::optional<CoarseTransfer> coarseTransfer;
+    std::shared_ptr<const std::vector<uint32_t>> coarseTransferWords;
+    struct TransferSlot { std::unique_ptr<Buffer> output, readback; };
+    std::array<TransferSlot, gpuFrameCount> coarseTransferSlots;
+    bool coarseTransferPlanned = false, coarseTransferFinished = false;
+    uint32_t coarseTransferNext = 0, coarseTransferReceived = 0;
+    std::chrono::steady_clock::time_point coarseTransferBegan;
+    double coarseTransferPlanningMs = 0, coarseTransferReadbackMs = 0, coarseTransferGpuMs = 0;
     Refinement refinement;
     bool refinementPlanned = false;
     bool finalProbePass = false; // a separate quality pass must not drive adaptive placement
@@ -155,7 +164,7 @@ namespace remix::forward::bake {
     std::stop_source cancellation;
     uint32_t captureNext = 0, captureReceived = 0;
     bool capturePlanned = false, filtering = false;
-    enum class FinishStage { None, ProbeRefinement, Reflections, Denoising, Atlas, Geometry, Styles };
+    enum class FinishStage { None, ProbeRefinement, CoarseTransfer, Reflections, Denoising, Atlas, Geometry, Styles };
     std::atomic<FinishStage> finishStage{FinishStage::None};
     std::atomic<uint32_t> denoisedCharts{0}, denoiseChartCount{0};
     uint32_t next = 0, received = 0;

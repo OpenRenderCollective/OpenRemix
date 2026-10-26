@@ -180,7 +180,7 @@ namespace remix::forward::bake {
     const char *samples = std::getenv("REMIX_DEBUG_BAKE_SURFACE_SAMPLES");
     reference = ReferenceCapture::fromEnvironment();
     const bool depthCapture = std::getenv("REMIX_DEBUG_BAKE_SUN_DEPTH") != nullptr;
-    if (!reference && config.diskCache && (!samples || std::strcmp(samples, "1") != 0)) {
+    if (!coarseTransferPreparationRequested() && !reference && config.diskCache && (!samples || std::strcmp(samples, "1") != 0)) {
       cache::Device deviceIdentity{properties.vendorID, properties.deviceID, properties.driverVersion,
                                      properties.limits.maxImageDimension2D,
                                      properties.limits.maxImageArrayLayers,
@@ -288,7 +288,7 @@ namespace remix::forward::bake {
     surfaces.resize(surfaceLayout.points.size());
     Options options;
     options.directLighting = directLighting;
-    options.depthCapture = bool(sunDepth);
+    options.depthCapture = bool(sunDepth) || coarseTransferPreparationRequested();
     mixedLights = std::make_shared<mixed::Plan>(
         mixed::plan(source, surfaceLayout, lightCutoff, cancellation.get_token(),
                     options.bias / source->sceneScale, directLighting));
@@ -417,6 +417,11 @@ namespace remix::forward::bake {
         const auto readBegin = std::chrono::steady_clock::now();
         if (submission.sunDepth) {
           // Device-only output: the owning slot fence is the completion receipt.
+        } else if (submission.coarseTransfer) {
+          std::vector<float> depths(submission.count);
+          job.coarseTransferSlots[slot].readback->read(depths.data(), depths.size()*sizeof(float));
+          job.coarseTransfer->consume(submission.first, depths);
+          job.coarseTransferReceived += submission.count;
         } else if (submission.probeDepth) {
           job.readback.resize(submission.count);
           job.transport->read(slot, job.readback);
@@ -525,16 +530,17 @@ namespace remix::forward::bake {
         const double readbackMs =
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - readBegin).count();
         job.readbackMs += readbackMs;
+        if (submission.coarseTransfer) job.coarseTransferReadbackMs += readbackMs;
         if (submission.directionalField) job.directionalTiming.readbackMs += readbackMs;
         if (submission.overflowVisibility)
           job.overflowTiming.readbackMs += readbackMs;
         job.readbackBytes += uint64_t(submission.count) *
-                             (submission.sunDepth ? 0 : submission.overflowVisibility || submission.visibility ||
+                             (submission.sunDepth ? 0 : submission.coarseTransfer || submission.overflowVisibility || submission.visibility ||
                               (submission.probeLocal && !job.localProbes->directional()) ? sizeof(float) :
                               submission.direct || submission.directionalField || submission.sun ||
                               submission.probeSun || submission.probeLocal
                                   ? sizeof(VisibilityResult) : sizeof(Result));
-        if (!submission.styled && !submission.reference && !submission.probeDepth) (submission.sunDepth ? job.sunDepthReceived
+        if (!submission.styled && !submission.reference && !submission.probeDepth && !submission.coarseTransfer) (submission.sunDepth ? job.sunDepthReceived
          : submission.localReflection ? job.localCaptureReceived
          : submission.radiance ? job.captureReceived
          : submission.receiverFitCoverage ? job.receiverCoverageReceived
@@ -556,11 +562,13 @@ namespace remix::forward::bake {
                                          : job.received) += submission.count;
         if (const auto elapsed = job.transport->elapsed(slot)) {
           if (submission.sunDepth) job.sunDepthGpuMs += *elapsed;
+          if (submission.coarseTransfer) job.coarseTransferGpuMs += *elapsed;
           if (submission.directionalField) job.directionalTiming.gpuMs += *elapsed;
           if (submission.sunAntialiasing) job.sunAntialiasingGpuMs += *elapsed;
           if (submission.overflowVisibility)
             job.overflowTiming.gpuMs += *elapsed;
-          const auto work = submission.probeDepth                                    ? Work::ProbeDepth
+          const auto work = submission.coarseTransfer                                ? Work::CoarseTransfer
+                            : submission.probeDepth                                  ? Work::ProbeDepth
                             : submission.reflectionGeometry || submission.reflectionReceiver || submission.receiverSiteCheck || submission.receiverFit || submission.receiverFitCoverage || submission.sunDepth ? Work::Geometry
                             : submission.visibility || submission.direct || submission.directionalField ||
                               submission.overflowVisibility || submission.probeLocal     ? Work::Visibility
@@ -1175,6 +1183,7 @@ namespace remix::forward::bake {
     }
     volume->sceneScale = m_source->sceneScale;
     volume->irradianceHeader = grid.header;
+    volume->coarseTransferWords = m_job->coarseTransferWords;
     volume->usableIrradianceProbes = uint32_t(std::count_if(
         grid.probes.begin(), grid.probes.end(), [](const Result &probe) { return probe.statistics[3] >= .5f; }));
     volume->coarseIrradianceProbes = uint32_t(grid.probes.size());
@@ -1433,7 +1442,7 @@ namespace remix::forward::bake {
                    uint32_t(m_job->transport && m_job->transport->hasVisibilityReceivers()),
                    static_cast<unsigned long long>(m_job->transport ? m_job->transport->visibilityReceiverBytes() : 0));
       constexpr const char *names[] = {"grid",  "surface",     "visibility", "sun",
-                                       "sites", "reflections", "geometry", "probe_depth"};
+                                       "sites", "reflections", "geometry", "probe_depth", "coarse_transfer"};
       static_assert(std::size(names) == size_t(Work::Count));
       for (uint32_t i = 0; i < uint32_t(Work::Count); ++i) {
         const auto &timing = m_job->budget.statistics(Work(i));
@@ -1584,6 +1593,7 @@ namespace remix::forward::bake {
             const char *message = nullptr;
             switch (stage) {
             case Job::FinishStage::ProbeRefinement: message = "Refining irradiance probe placement"; break;
+            case Job::FinishStage::CoarseTransfer: message = "Preparing coarse probe connection visibility"; break;
             case Job::FinishStage::Reflections: message = "Filtering reflection cubemaps"; break;
             case Job::FinishStage::Denoising: message = "Denoising surface lightmaps"; break;
             case Job::FinishStage::Atlas: message = "Encoding surface lightmaps"; break;
@@ -1688,6 +1698,7 @@ namespace remix::forward::bake {
             status(REMIXAPI_BAKE_TRACING_EXT, "Improving final irradiance probe quality");
             return;
           }
+          if (recordCoarseTransfer(command, config)) return;
           if (config.directionalProbeDepth && job.probeDepthReceived < job.grid.tasks.size())
             recordProbeDepth(command, config);
           else recordProbeSun(command, config);
@@ -1788,6 +1799,10 @@ namespace remix::forward::bake {
         return;
       addSurfaces(job->surfaceGeometry);
       addDepth(job->sunDepth);
+      for (const auto &slot : job->coarseTransferSlots) {
+        if (slot.output) result.buffers += slot.output->allocationBytes;
+        if (slot.readback) result.buffers += slot.readback->allocationBytes;
+      }
       if (job->ticket->ready() && job->reflectionImage) {
         result.buffers += job->reflectionImage->bufferBytes();
         result.images += job->reflectionImage->imageBytes();

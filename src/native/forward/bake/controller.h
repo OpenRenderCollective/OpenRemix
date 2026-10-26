@@ -34,6 +34,8 @@ namespace remix::forward::bake {
     std::shared_ptr<const probes::ReceiverCoverageEvidence> reflectionEvidence; // Optional completed local-fit diagnostics.
     GridHeader irradianceHeader;
     uint32_t usableIrradianceProbes = 0;
+    // Private preparation experiment; not consumed by renderer sampling yet.
+    std::shared_ptr<const std::vector<uint32_t>> coarseTransferWords;
     // Immutable placement diagnostics, computed once when the volume publishes.
     std::array<uint32_t, 3> irradiancePatchCounts{}; // 2x, 4x, 8x
     uint32_t coarseIrradianceProbes = 0;
@@ -89,7 +91,8 @@ namespace remix::forward::bake {
       bool preparation = false, radiance = false, surface = false, visibility = false, reflectionSite = false,
            sun = false, sunDepth = false, sunDepthCache = false, probeSun = false, probeLocal = false, overflowVisibility = false, reflectionGeometry = false,
            sunAntialiasing = false, direct = false, directionalField = false, reference = false, probeDepth = false,
-           localReflection = false, reflectionReceiver = false, receiverSite = false, receiverSiteCheck = false, receiverFit = false, receiverFitCoverage = false;
+           localReflection = false, reflectionReceiver = false, receiverSite = false, receiverSiteCheck = false, receiverFit = false, receiverFitCoverage = false,
+           coarseTransfer = false;
     };
     VkPhysicalDevice m_physical;
     VkDevice m_device;
@@ -125,6 +128,7 @@ namespace remix::forward::bake {
     void recordSunAntialiasing(VkCommandBuffer command, const Config &config);
     void recordProbeSun(VkCommandBuffer command, const Config &config);
     void recordProbeDepth(VkCommandBuffer command, const Config &config);
+    bool recordCoarseTransfer(VkCommandBuffer command, const Config &config);
     void recordProbeLocal(VkCommandBuffer command, const Config &config);
     void recordReflections(VkCommandBuffer command, const Config &config);
     bool recordLocalReflections(VkCommandBuffer command, const Config &config);

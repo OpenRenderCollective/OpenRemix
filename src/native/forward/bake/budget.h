@@ -6,7 +6,7 @@
 #include <cstdint>
 
 namespace remix::forward::bake {
-  enum class Work : uint32_t { Irradiance, Surface, Visibility, Sun, Site, Reflection, Geometry, ProbeDepth, Count };
+  enum class Work : uint32_t { Irradiance, Surface, Visibility, Sun, Site, Reflection, Geometry, ProbeDepth, CoarseTransfer, Count };
   // GPU timing guides throughput, never sample count or bounce quality. Manual
   // batches remain available, and every choice obeys the hard ray-work ceiling.
   class Budget {

@@ -69,6 +69,12 @@ int main() {
   require(geometry.count(Work::Geometry, 64, 8, 1, 1, 61440) == 61440,
           "Fast geometry queries can fill the bounded candidate set without "
           "inheriting lighting sample cost");
+  require(geometry.count(Work::CoarseTransfer,64,8,1,1,10000) == 64,
+          "Coarse transfer starts with independent timing rather than inheriting other geometry costs");
+  geometry.observe(Work::CoarseTransfer,64,.01,8);
+  require(geometry.count(Work::CoarseTransfer,64,8,1,1,10000) == 128 &&
+              geometry.count(Work::Geometry,64,8,1,1,61440) == 61440,
+          "Transfer timing cannot perturb ordinary geometry batch scheduling");
   b.batch = 1024;
   b.gpuBudgetMs = 0;
   b.diskCache = false;

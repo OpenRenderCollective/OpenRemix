@@ -4,6 +4,13 @@
 #include <optional>
 
 namespace remix::forward::bake {
+  inline bool coarseTransferPreparationRequested() {
+    static const bool requested = [] {
+      const auto value = std::getenv("REMIX_DEBUG_COARSE_TRANSFER_PREPARE");
+      return value && std::strcmp(value, "1") == 0;
+    }();
+    return requested;
+  }
   inline bool modelChartsRequested(bool enabled) {
     static const std::optional<bool> requested = []() -> std::optional<bool> {
       const auto value = std::getenv("REMIX_DEBUG_BAKE_MODEL_CHARTS");

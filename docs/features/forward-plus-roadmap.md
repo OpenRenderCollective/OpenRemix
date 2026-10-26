@@ -3491,3 +3491,26 @@ fragment, cache/default or playable integration yet; fixture is not map acceptan
   coarse ID mismatch/old-cache fallback and real mixed-resolution boundary checks.
 - [ ] Validate styles, moving props/weapons, normal-bias crossings, Construct
   quality and preparation/frame costs before considering default promotion.
+
+
+### 2026-10-26 - Private live coarse-transfer preparation
+
+REMIX_DEBUG_COARSE_TRANSFER_PREPARE=1 now schedules bounded full-scene geometry
+preparation through owning frame slots/fences and retains completed CPU words in
+Volume. Sampling remains inactive. Lighting caches are bypassed only under this
+private flag; no cache-format/default/playable change. Ordinary cached Construct
+control has exact fixed-view parity and clean validation;101protected files intact.
+
+Clean full-scene Construct run:298505rays/15batches,0.82MiBpayload,11.85MiBowned
+CPU scratch plus <=1.5MiBtemporary slot GPU/readback buffers. Planning5.587ms,
+GPU.703ms,readback1.641ms,elapsed332.485ms including scheduling. Repeated fields
+byte-identical. Actual field reproduces saved-stencil ceiling estimate .085/.088/
+.092 versus current .170/.170/.166; this is CPU reconstruction, not rendered proof.
+First run encountered old SDK unknown NV present-metering struct; clean rerun
+disabled that diagnostic feature only. No transfer validation errors in clean run.
+
+- [x] Add private controller planning, fenced batching and completed-field ownership.
+- [ ] Wire matching CPU/fragment sampling and GPU data publication.
+- [ ] Upgrade auxiliary geometry from compatible caches without full lighting rebake.
+- [ ] Validate controller invalidation/replacement mid-preparation, actual unequal
+  resolution/normal-bias crossings, styles, props/weapons and visual/frame costs.
