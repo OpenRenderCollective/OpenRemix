@@ -3819,3 +3819,15 @@ noise/seams, denoising cost and frame profiling remain independent priorities.
   costs before selecting the next runtime optimization.
 - [ ] Device forecasting must represent real chart shapes and active-field graph
   transitions; do not tune device preference thresholds to one map.
+
+
+### 2026-10-26 - Compact lightmap reconstruction control
+
+- [x] Compare compact directional polynomials on identical historical captured
+  coefficients, including arbitrary and geometric normals and per-receiver
+  outliers. A viewer-derived quadratic heuristic is not a safe direct transfer
+  into our cosine-convolved SH representation. No runtime/default change.
+- [ ] Any compact candidate must preserve surface-normal lighting and qualify
+  normal-map perturbations, colored lights, seams and interpolation on current
+  quality captures. Measure actual filtering/storage/runtime cost; theoretical
+  field count alone does not establish a bake or frame improvement.
