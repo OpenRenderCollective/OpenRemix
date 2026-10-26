@@ -3854,3 +3854,17 @@ noise/seams, denoising cost and frame profiling remain independent priorities.
 - [ ] Solve normal variation and signed corrected-constant denoising before any
   runtime candidate. Existing positive-L0 filter normalization is incompatible
   with a direct five-field substitution. Keep production full SH unchanged.
+
+
+### 2026-10-26 - Controlled viewmodel performance repeat
+
+- [x] Separate validation/correctness runs from production timing; validation
+  substantially distorts CPU recording costs on the measured Construct view.
+- [x] Repeat focused cached empty/armed cases with identical camera and policy;
+  all measured cases stay cached and static shadow update counters remain zero.
+- [x] Confirm private weapon prepass executes and reduces its color scope, but
+  whole-frame results do not qualify a default change. Keep it opt-in.
+- [ ] Repeat white-room-facing Construct and Crossfire profiling without
+  validation; retain distinct correctness runs, focus gates and stage evidence.
+- [ ] Continue weapon world-coverage masking/material/probe/reflection work.
+  Isolated shader or nested-scope savings do not establish an FPS improvement.
