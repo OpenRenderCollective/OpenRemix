@@ -882,3 +882,18 @@ regression passes; no installed PT RR or gameplay FPS qualification claimed.
 - [x] Include confirmed clearance reuse in a validated playable package.
 - [ ] Continue Construct probe placement/visibility and seam/noise quality work.
 - [ ] Study tiny-chart denoising costs with quality-preserving comparisons.
+
+
+### 2026-10-26 - Private coarse probe transfer reconstruction
+
+Optional immutable coarse-to-fine visibility fields now support the actual CPU
+probe stencil, with root/fine addressing and physical donor identity checks.
+Unknown/missing connections preserve fallback; malformed fields leave weights
+unchanged. Private CPU diagnostic copies only: production fragment sampling and
+baked components remain unchanged. No new playable deployment.
+
+- [x] CPU reconstruction energy, continuity, unknown-data and donor identity tests.
+- [x] Normal-quality Construct diagnostic agrees with offline ceiling prediction.
+- [ ] Add fragment publication/sampling and verify CPU/GPU parity before enabling.
+- [ ] Qualify biased queries, transitions, styles, moving props/weapons and cache upgrades.
+- [ ] Continue surface noise/seams, tiny-chart denoising and frame-cost work.

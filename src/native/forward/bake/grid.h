@@ -39,6 +39,8 @@ namespace remix::forward::bake {
     std::vector<uint32_t> tasks;
     std::vector<Result> probes;
     ProbeDepth depth;
+    // Private CPU reconstruction candidate; absent from the legacy GPU/cache layout.
+    std::shared_ptr<const std::vector<uint32_t>> coarseTransferWords;
     // Optional virtual lattice node -> compact record + 1; zero has no probe.
     // Adaptive addressing appends four words (magic, default factor, total
     // directory words, coarse record count), then one patch reference per root
@@ -88,6 +90,8 @@ namespace remix::forward::bake {
   // node references the identical physical probe. Bits are -X,+X,-Y,+Y,-Z,+Z.
   std::vector<uint8_t> sharedPatchFaces(const Grid &grid);
   struct ProbeStencil {
+    uint32_t rootCell = ~0u;
+    std::array<uint32_t, 8> fineNodes{}; // local node addresses, before physical-record lookup
     std::array<Vec3, 2> receiverPositions{}; // exact biased coarse/fine query endpoints for diagnostics
     std::array<uint32_t, 16> indices{};
     std::array<float, 16> weights{};

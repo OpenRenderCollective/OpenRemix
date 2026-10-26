@@ -41,4 +41,7 @@ namespace remix::forward::bake {
     float m_epsilon = 0, m_maximumDistance = 0;
     uint32_t m_received = 0;
   };
+  // Nonallocating candidate reconstruction. Malformed/missing fields leave the
+  // stencil unchanged; unmatched donor connections retain unoccluded fallback.
+  void applyCoarseTransfer(std::span<const uint32_t> words, const Grid &grid, ProbeStencil &stencil) noexcept;
 }

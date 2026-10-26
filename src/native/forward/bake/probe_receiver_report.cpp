@@ -230,7 +230,8 @@ namespace remix::forward::bake {
       std::ostringstream out;
       out.imbue(std::locale::classic());
       out.precision(9);
-      out << "{\"version\":1,\"sceneHash\":\"" << source.contentHash << "\",\"sceneScale\":" << source.sceneScale
+      out << "{\"version\":1,\"coarseTransferCpuCandidate\":" << (grid.coarseTransferWords ? "true" : "false")
+          << ",\"sceneHash\":\"" << source.contentHash << "\",\"sceneScale\":" << source.sceneScale
           << ",\"scope\":\"Uncharted rigid opaque triangle-centre geometry and current base probe estimates; no alpha texels, normal maps or independent lighting reference\",\"sites\":[";
       for (size_t i = 0; i < sites.size(); ++i) {
         check(cancelled);
@@ -309,7 +310,8 @@ namespace remix::forward::bake {
       std::ostringstream out;
       out.imbue(std::locale::classic());
       out.precision(9);
-      out << "{\"version\":1,\"sceneHash\":\"" << source.contentHash << "\",\"sceneScale\":" << source.sceneScale
+      out << "{\"version\":1,\"coarseTransferCpuCandidate\":" << (grid.coarseTransferWords ? "true" : "false")
+          << ",\"sceneHash\":\"" << source.contentHash << "\",\"sceneScale\":" << source.sceneScale
           << ",\"normalBiasWorldUnits\":" << grid.header.settings[0]
           << ",\"minimumVarianceWorldUnitsSquared\":" << grid.header.settings[1]
           << ",\"directionalDepth\":" << (grid.depth.empty() ? "false" : "true")
@@ -368,7 +370,9 @@ namespace remix::forward::bake {
         for (uint32_t c = 0; c < stencil.count; ++c)
           if (audit.blockers[c] && total > 0) blockedWeight += stencil.weights[c] / total;
         out << ",\"opaqueBlockedWeight\":" << blockedWeight;
-        out << ",\"stencilCount\":" << stencil.count << ",\"weightSum\":" << total << ",\"probes\":[";
+        out << ",\"stencilCount\":" << stencil.count << ",\"rootCell\":";
+        if (stencil.rootCell == ~0u) out << "null"; else out << stencil.rootCell;
+        out << ",\"weightSum\":" << total << ",\"probes\":[";
         const auto sh = irradianceBasis(hit.normal);
         bool first = true;
         for (uint32_t c = 0; c < stencil.count; ++c) {

@@ -3514,3 +3514,18 @@ disabled that diagnostic feature only. No transfer validation errors in clean ru
 - [ ] Upgrade auxiliary geometry from compatible caches without full lighting rebake.
 - [ ] Validate controller invalidation/replacement mid-preparation, actual unequal
   resolution/normal-bias crossings, styles, props/weapons and visual/frame costs.
+
+
+### 2026-10-26 - Private coarse probe transfer reconstruction
+
+Optional immutable coarse-to-fine visibility fields now support the actual CPU
+probe stencil, with root/fine addressing and physical donor identity checks.
+Unknown/missing connections preserve fallback; malformed fields leave weights
+unchanged. Private CPU diagnostic copies only: production fragment sampling and
+baked components remain unchanged. No new playable deployment.
+
+- [x] CPU reconstruction energy, continuity, unknown-data and donor identity tests.
+- [x] Normal-quality Construct diagnostic agrees with offline ceiling prediction.
+- [ ] Add fragment publication/sampling and verify CPU/GPU parity before enabling.
+- [ ] Qualify biased queries, transitions, styles, moving props/weapons and cache upgrades.
+- [ ] Continue surface noise/seams, tiny-chart denoising and frame-cost work.

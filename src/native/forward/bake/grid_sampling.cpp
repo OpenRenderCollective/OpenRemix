@@ -1,4 +1,5 @@
 #include "forward/bake/grid.h"
+#include "forward/bake/coarse_transfer.h"
 #include <algorithm>
 #include <cmath>
 
@@ -35,6 +36,7 @@ namespace remix::forward::bake {
           delta[axis] = biased[axis] - (h.originSpacing[axis] + (start[axis] + coordinate[axis]) * spacing);
         }
         uint32_t index = (coordinate[2] * dimensions[1] + coordinate[1]) * dimensions[0] + coordinate[0];
+        if (first == 8) result.fineNodes[corner] = index;
         if (indexed(h)) {
           const auto record = grid.lookup.at(directory + index);
           if (!record) continue;
@@ -98,6 +100,7 @@ namespace remix::forward::bake {
       reference = grid.lookup.at(nodes + 4 + index);
     }
     const uint32_t block = patchOffset(reference), faces = patchFaces(reference);
+    result.rootCell = index;
     float edge = 1;
     for (uint32_t axis = 0; axis < 3; ++axis) {
       start[axis] = parent[axis] * factor;
@@ -128,6 +131,7 @@ namespace remix::forward::bake {
       result.weights[8 + corner] *= blend / fineTotal;
     }
     result.count = 16;
+    if (grid.coarseTransferWords) applyCoarseTransfer(*grid.coarseTransferWords, grid, result);
     return result;
   }
 } // namespace remix::forward::bake

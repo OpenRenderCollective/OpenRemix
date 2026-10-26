@@ -65,13 +65,13 @@ forward_denoise_test = executable('remix-forward-lightmap-denoise-test', 'lightm
 test('Offline lightmap denoising preserves directional SH and chart isolation', forward_denoise_test,
   timeout : 120)
 forward_grid_test = executable('remix-forward-grid-test', 'grid.cpp',
-  '../../src/native/forward/bake/grid.cpp', '../../src/native/forward/bake/grid_sampling.cpp', '../../src/native/forward/bake/probe_depth.cpp', '../../src/native/forward/bake/grid_directory.cpp', '../../src/native/forward/bake/sparse_grid.cpp', '../../src/native/forward/bake/relocation.cpp',
+  '../../src/native/forward/bake/grid.cpp', '../../src/native/forward/bake/grid_sampling.cpp', '../../src/native/forward/bake/coarse_transfer_sampling.cpp', '../../src/native/forward/bake/probe_depth.cpp', '../../src/native/forward/bake/grid_directory.cpp', '../../src/native/forward/bake/sparse_grid.cpp', '../../src/native/forward/bake/relocation.cpp',
   '../../src/native/forward/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Irradiance grid placement and visibility reconstruction', forward_grid_test)
 adaptive_grid_test = executable('remix-adaptive-grid-test', 'adaptive_grid.cpp', 'refinement.cpp',
   '../../src/native/forward/bake/coarse_transfer.cpp',
-  '../../src/native/forward/bake/grid.cpp', '../../src/native/forward/bake/grid_sampling.cpp', '../../src/native/forward/bake/probe_depth.cpp',
+  '../../src/native/forward/bake/grid.cpp', '../../src/native/forward/bake/grid_sampling.cpp', '../../src/native/forward/bake/coarse_transfer_sampling.cpp', '../../src/native/forward/bake/probe_depth.cpp',
   '../../src/native/forward/bake/adaptive_grid.cpp', '../../src/native/forward/bake/receiver_support.cpp', '../../src/native/forward/bake/refinement_builder.cpp', '../../src/native/forward/bake/sparse_grid.cpp',
   '../../src/native/forward/bake/relocation.cpp',
   '../../src/native/forward/bake/grid_directory.cpp', '../../src/native/forward/lighting.cpp',
@@ -81,7 +81,7 @@ test('Adaptive irradiance ownership, energy and smooth resolution transitions', 
 forward_probe_visibility_test = executable('remix-forward-probe-visibility-test', 'probe_visibility.cpp',
   '../../src/native/forward/bake/probe_visibility.cpp', '../../src/native/forward/bake/probe_visibility_gpu.cpp', '../../src/native/forward/bake/probe_visibility_plan.cpp',
   '../../src/native/forward/bake/grid_directory.cpp',
-  '../../src/native/forward/bake/grid_sampling.cpp', '../../src/native/forward/bake/probe_depth.cpp',
+  '../../src/native/forward/bake/grid_sampling.cpp', '../../src/native/forward/bake/coarse_transfer_sampling.cpp', '../../src/native/forward/bake/probe_depth.cpp',
   '../../src/native/forward/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Sparse probe local-light visibility preserves unknown coverage and budgets', forward_probe_visibility_test)
@@ -92,7 +92,7 @@ forward_receiver_report_test = executable('remix-forward-receiver-report-test', 
   '../../src/native/forward/bake/probe_connection_audit.cpp',
   '../../src/native/forward/bake/model_receivers.cpp',
   '../../src/native/forward/bake/probe_receiver_geometry.cpp',
-  '../../src/native/forward/bake/receiver_report.cpp', '../../src/native/forward/bake/receiver_projection.cpp', '../../src/native/forward/bake/receiver_tiles.cpp', '../../src/native/forward/bake/sun_depth_layout.cpp', '../../src/native/forward/bake/grid.cpp', '../../src/native/forward/bake/grid_sampling.cpp', '../../src/native/forward/bake/probe_depth.cpp', '../../src/native/forward/bake/grid_directory.cpp',
+  '../../src/native/forward/bake/receiver_report.cpp', '../../src/native/forward/bake/receiver_projection.cpp', '../../src/native/forward/bake/receiver_tiles.cpp', '../../src/native/forward/bake/sun_depth_layout.cpp', '../../src/native/forward/bake/grid.cpp', '../../src/native/forward/bake/grid_sampling.cpp', '../../src/native/forward/bake/coarse_transfer_sampling.cpp', '../../src/native/forward/bake/probe_depth.cpp', '../../src/native/forward/bake/grid_directory.cpp',
   '../../src/native/forward/lightmap/data.cpp', '../../src/native/forward/material.cpp',
   '../../src/native/forward/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)

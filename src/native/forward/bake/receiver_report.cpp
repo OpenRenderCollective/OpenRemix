@@ -177,7 +177,8 @@ namespace remix::forward::bake {
       output.exceptions(std::ios::failbit | std::ios::badbit);
       output.precision(9);
       const double denominator = std::max(covered, 1u);
-      output << "{\"version\":1,\"sceneHash\":\"" << source.contentHash
+      output << "{\"version\":1,\"coarseTransferCpuCandidate\":" << (grid.coarseTransferWords ? "true" : "false")
+             << ",\"sceneHash\":\"" << source.contentHash
              << "\",\"scope\":\"Triangle-centre indirect irradiance at shared positions/vertex normals; published probe bias applies; no normal maps, materials or direct lights; triangle-weighted, not area-weighted\","
              << "\"sampled\":" << receivers.size() << ",\"covered\":" << covered
              << ",\"containmentScope\":\"CPU closed-partition oracle; bounded private grid copy; one coarse-bias cap inherited by fine queries; not a production rule\""

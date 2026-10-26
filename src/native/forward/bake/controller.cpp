@@ -1098,8 +1098,15 @@ namespace remix::forward::bake {
             owner->surfacePixels =
                 lightmap::pixels(owner->surfaceLayout, owner->surfaces, owner->cancellation.get_token(),
                                  owner->visibility, owner->direct, owner->sun);
-            dumpReceiverReport(*owner->source, owner->surfaceLayout, owner->surfacePixels, owner->grid,
-                                owner->cancellation.get_token());
+            if (coarseTransferCpuReportsRequested() && owner->coarseTransferWords) {
+              auto candidate = owner->grid;
+              candidate.coarseTransferWords = owner->coarseTransferWords;
+              dumpReceiverReport(*owner->source, owner->surfaceLayout, owner->surfacePixels, candidate,
+                                  owner->cancellation.get_token());
+            } else {
+              dumpReceiverReport(*owner->source, owner->surfaceLayout, owner->surfacePixels, owner->grid,
+                                  owner->cancellation.get_token());
+            }
             // These transport arrays are no longer needed once encoded. Avoid
             // retaining them beside the much larger atlas and upload allocation.
             releaseStorage(owner->visibility);

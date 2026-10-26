@@ -46,8 +46,10 @@ namespace {
   }
 }
 #include "coarse_transfer_plan.h"
+#include "coarse_transfer_reconstruction.h"
 int main() {
   coarseTransferPlanTests(field());
+  coarseTransferReconstructionTests(field());
   refinementTests();
   auto grid = field();
   const auto published = bake::publicationHeader(grid.header, grid.lookup.size());
