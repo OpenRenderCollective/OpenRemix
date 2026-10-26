@@ -1100,3 +1100,19 @@ No default/playable change. Median quality alone is insufficient acceptance.
 
 No quality preset or playable update from this diagnostic alone. Surface
 noise/seams, denoising cost and frame profiling remain independent priorities.
+
+
+### 2026-10-26 - Reject reference-only sky-MIS prototype
+
+- [x] Prototype textured-environment importance sampling and diffuse continuation
+  MIS; constant-sky energy and HWRT validation pass. Equal-primary-sample
+  Construct test adds shadow rays without a useful noise reduction.
+- [x] Remove entire candidate, including options/flags/bindings/allocations/tests.
+  Original implementation restored; no default or playable update.
+- [x] Same-origin six-axis cosine controls separate SH angular approximation
+  from low-sample noise. Independent low-budget face captures retain outliers.
+- [ ] Compare positive ambient-cube and SH accumulation from identical primary
+  radiance samples, reusing rays across faces; do not infer quality from one face.
+- [ ] Evaluate progressive path dimensions and variance-guided probe allocation.
+- [ ] Preserve spatial support, styles/motion/color/cost gates, surface denoising
+  and runtime profiling priorities. HDR-map sky sampling remains unqualified.
