@@ -1066,3 +1066,19 @@ Existing8x8 remains private/off; rejected per-tap change remains removed. Contin
 
 Existing 8x8 directional field remains private/off; per-tap filtering remains
 rejected. Reference viewer shaders do not reveal the native CS2 baker.
+
+
+### 2026-10-26 - Separate probe sampling from density and visibility
+
+- [x] Test 64k / requested 1m layout at 256, 1024, 2048 and 4096 probe samples.
+  Planned positions/surface data match; six site stencils have identical donor
+  IDs and effectively identical weights. Captured lighting still changes.
+- [x] Low sample count retains a severe local outlier despite a good median;
+  4096-sample control lowers worst-site error, without proving full convergence.
+- [ ] Isolate dominant donor SH/capture convergence; evaluate variance-guided
+  sampling and importance sampling before promoting a blanket quality preset.
+- [ ] Broader spatial/color/style/motion/frame qualification for adaptive density.
+- [ ] Optimize denoising field/chart scheduling while preserving directional
+  data and seam isolation; measured denoising dominates probe trace time here.
+
+No default/playable change. Median quality alone is insufficient acceptance.
