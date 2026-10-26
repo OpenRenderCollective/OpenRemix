@@ -1098,6 +1098,7 @@ namespace remix::forward::bake {
             owner->surfacePixels =
                 lightmap::pixels(owner->surfaceLayout, owner->surfaces, owner->cancellation.get_token(),
                                  owner->visibility, owner->direct, owner->sun);
+            if (owner->reference) owner->reference->reportGrid(owner->grid);
             if (coarseTransferCpuReportsRequested() && owner->coarseTransferWords) {
               auto candidate = owner->grid;
               candidate.coarseTransferWords = owner->coarseTransferWords;

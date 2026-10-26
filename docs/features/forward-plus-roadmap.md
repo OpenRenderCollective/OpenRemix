@@ -3549,3 +3549,26 @@ addressed. Disk cache and ordinary defaults unchanged.
 - [ ] Continue surface seam/noise, density allocation and tiny-chart OIDN work.
 
 No playable deployment or general performance/lighting-quality acceptance yet.
+
+
+### 2026-10-26 - Construct prop reference study
+
+Added published rendering.debugView diagnostic identity to prevent captures of
+pending shader views. Explicit hemisphere/surface reference requests now emit
+CPU base-grid stencils and irradiance beside integration results. Read-only,
+bounded diagnostic work; no normal shading or public ABI changes.
+
+- [x] Confirm actual neutral/coverage/material views after shader publication.
+- [x] Six approximate prop sites compared to8192direction hemisphere reference.
+- [x] Distinguish fine-only prop errors from coarse fallback ceiling leakage.
+- [x] Test density and probe sampling independently; surface quality unchanged.
+- [ ] Separate SH angular truncation from spatial interpolation at query/donor sites.
+- [ ] Validate exact prop normals, motion, other rooms/maps and quality-cost policy.
+
+Baseline32763probes gives median19.7% luminance error at six sites;121279probes
+still19.5%; same placement with2048probe samples14.1%, with40.8% residual side
+underestimate. Errors include overbright faces. No global brightness/density fix
+or default change justified. Reference shares transport and has unquantified
+Monte Carlo error; not full Source2 or physical-reference acceptance. Surface/
+sun/capture hashes match baseline when only probe samples change. Continue
+surface quality, frame cost and bake-time work; playable remains unchanged.

@@ -19,11 +19,13 @@ namespace remix::forward::bake {
   // components when comparing the base surface atlas or base probe grid.
   // SH output includes six distance-moment vec4s (+/-X, +/-Y, +/-Z) and
   // transport statistics so offline placement studies can reconstruct visibility.
+  struct Grid;
   struct ReferenceCapture {
     static std::optional<ReferenceCapture> fromEnvironment();
     static ReferenceCapture load(const std::filesystem::path &path);
     void classify(const scene::BakeScene &source);
     void consume(uint32_t first, std::span<const Result> values);
+    void reportGrid(const Grid &grid) const noexcept;
     uint32_t tasks() const { return uint32_t(points.size()) * (hemisphere ? samples : 1); }
     std::vector<Point> batch(uint32_t first, uint32_t count) const;
     std::vector<Point> points;

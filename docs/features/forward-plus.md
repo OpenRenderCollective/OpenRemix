@@ -2760,3 +2760,12 @@ connections retain fallback. It bypasses lighting caches and remains off by
 default pending prop/viewmodel quality, lifecycle, cache-upgrade and frame-cost
 qualification. `REMIX_DEBUG_COARSE_TRANSFER_CPU_REPORTS=1` separately enables CPU
 diagnostic reconstruction; neither flag changes normal bake quality settings.
+
+
+Diagnostic probe JSON includes `rendering.debugView` from the active published
+frame. Capture tools should wait for the requested view before taking images; a
+configuration request can remain pending during shader compilation. Explicit
+hemisphere/surface reference point captures also emit a `.results.grid.json`
+comparison with the ordinary CPU base-grid stencil, retained normal bias and
+per-donor weights/projections. It excludes separately attributed styles and
+material response; it is not an independent physical-renderer reference.
