@@ -1324,3 +1324,14 @@ noise/seams, denoising cost and frame profiling remain independent priorities.
 - [ ] Batch compatible static depth geometry while retaining culling, alpha
   and backface semantics. Measure recorded calls, CPU time and GPU cost; do not
   equate a single indirect API call with a single logical draw.
+
+
+### 2026-10-27 - Playable draw-call diagnostics
+
+- [x] Deploy native d696c190 with adapter 6495e0cd; updater points to immutable
+  forwardplus-draw-counters-20261027. Installed image parity, validation, owned
+  files, protected assets and DLL identity verify. No rendering policy change.
+- [ ] Prototype depth batching with specialized opaque, alpha-test and custom
+  depth buckets, compatible shared geometry and preserved per-object culling.
+  VRF aggregate multi-draw is a reference; native CS2 capture parity is unproven.
+  Count API calls and logical indirect draws separately when batching is added.
