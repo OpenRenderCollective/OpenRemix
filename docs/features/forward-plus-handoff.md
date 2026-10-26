@@ -1,5 +1,14 @@
 # Forward+ continuation guide
 
+Latest source checkpoint (2026-10-26): selected-light probe visibility batching
+is enabled by default; presence of REMIX_DEBUG_DISABLE_PROBE_BATCH restores sparse
+lookups for diagnostics. The positive opt-in flag is obsolete. Sparse unknown-coverage
+and budget fallbacks, directional moving-shadow corrections and immutable ownership
+remain intact. Deployment verification is recorded separately below. Earlier dated
+opt-in and installation notes are historical. Compact directional lightmaps, bicubic
+filtering and the isolated weapon depth prepass remain experiments.
+
+
 Current branch checkpoint (2026-10-25): runtime profiles enable eligible static
 model lightmaps by default (`c819cf30`); `rtx.native.forward.lightmapModels=0`
 disables them, while dynamic objects keep probe lighting. Base-only surface

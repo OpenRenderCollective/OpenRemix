@@ -188,7 +188,9 @@ namespace remix::forward {
     }
     next->viewModelTarget = std::make_unique<viewmodel::Target>();
     next->viewModelTarget->initialize(physical, device, extent, next->samples);
-    if (std::getenv("REMIX_DEBUG_PROBE_BATCH")) {
+    // Gather immutable selected-light masks once, then reuse vector lookups on
+    // probe-lit receivers. Unsupported/budget-limited fields retain sparse reads.
+    if (!std::getenv("REMIX_DEBUG_DISABLE_PROBE_BATCH")) {
       next->probeVisibility = std::make_unique<probe_batch::Cache>(physical, device);
       next->probeVisibility->prepare();
     }

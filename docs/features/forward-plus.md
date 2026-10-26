@@ -2817,3 +2817,23 @@ it contains no invented irradiance. A first hit can be a refractive interface,
 so geometry mode is not a transmission integral. Compare finite endpoint distance
 only inside the reported traversal range. Normal lighting/cache behavior is
 unchanged when no reference request is supplied.
+
+
+### Selected-light probe visibility batching
+
+Selected baked-light visibility masks are gathered once into immutable probe-major
+vector fields and reused by probe-lit world surfaces and viewmodels. This is enabled
+by default. `REMIX_DEBUG_DISABLE_PROBE_BATCH` disables it for diagnostic comparisons.
+The former positive opt-in flag is no longer required.
+
+Gathered values retain their original precision and unknown-coverage markers. Missing
+coverage, unsupported sources and selections exceeding the bounded field budget use
+the existing sparse lookup. Attributed directional mixed-shadow corrections retain
+their original normal-dependent reconstruction. Lightstyle radiance weights remain
+per-frame; a change of selected light IDs refreshes ownership without rebaking.
+
+Fields stay alive through consumer submissions; only a device completion event permits
+reuse. The payload cap is 16 MiB per field, with a maximum 64-light selection. In-flight
+consumers can retain older fields, and diagnostics report resident and peak allocation
+bytes separately from the payload budget. This optimization does not change lighting
+quality, probe density, cache format or bake sampling presets.

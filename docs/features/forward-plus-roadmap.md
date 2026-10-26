@@ -3905,3 +3905,15 @@ noise/seams, denoising cost and frame profiling remain independent priorities.
 - [x] VRF reference contains conditional cubic B-spline baked-shadow-mask
   filtering. Do not treat this as proof all native Source 2 lightmap fields use
   bicubic reconstruction; evaluate the appropriate fields independently.
+
+
+### 2026-10-26 - Enable selected-probe visibility batching
+
+- [x] Crossfire off/on/on/off repeats, fixed image comparisons, moving props,
+  weapon and live style changes qualify the existing exact visibility gather.
+- [x] GPU producer/reconstruction/unknown-coverage/lifetime/budget tests and
+  live synchronization validation pass. Default-path activation is verified.
+- [x] Enable batching by default, retaining sparse fallback and diagnostic
+  REMIX_DEBUG_DISABLE_PROBE_BATCH. No quality/cache/public-layout change.
+- [ ] Continue broader moving-gameplay/map profiling. Construct is the measured
+  beneficiary; Crossfire repeats do not establish a general speedup.
