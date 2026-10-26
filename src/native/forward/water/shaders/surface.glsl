@@ -109,7 +109,7 @@ void main() {
   if (aggregateReceiver) diffuse = surface.rgb * irradiance / Pi;
   vec3 l = -frame.sunDirection.xyz;
   BrdfLobes sun = brdfLobes(surface.rgb, roughness, 0, n, v, l, specularF0);
-  float visibility = sunShadowVisibility(worldPosition, depth, true);
+  float visibility = sunShadowVisibility(worldPosition, depth, true, normalize(cross(dFdx(worldPosition), dFdy(worldPosition))));
   diffuse += sun.diffuse * max(dot(n, l), 0) * frame.sunRadiance.rgb * visibility;
   vec3 specular = sun.specular * frame.sunRadiance.rgb * visibility;
   uint base = clusterIndex(gl_FragCoord.xy, depth) * ClusterStride;

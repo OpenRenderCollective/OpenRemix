@@ -166,7 +166,7 @@ void main() {
   bool includeBakedDiffuse = debugView == 0u || debugView == 7u;
   vec3 color = includeBakedDiffuse ? surface.rgb * (1 - metallic) * ambient : vec3(0);
   BrdfLobes sun = sunLightResponse(surfaceLightmap, surfaceBounds, surfaceLighting.w, worldPosition, depth, n, v,
-                                   surface.rgb, roughness, metallic);
+                                   surface.rgb, roughness, metallic, normalize(geometric));
   color += directLightComponent(sun, debugView);
   bool directChannels =
       (m.maps.x & 16u) == 0u && !indexedSurfaceDirect() && metallic < 1 && frame.target.z > 0u &&
