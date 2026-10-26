@@ -35,8 +35,20 @@ namespace remix {
       ImGui::TextDisabled("%s", "The headless editor always presents synchronously.");
     if (settings.backend == config::Backend::ForwardPlus) {
       const auto statistics = forwardStatistics();
-      ImGui::Text("Active MSAA: %ux | opaque draws: %u | lights: %u | clusters: %u",
+      ImGui::Text("Active MSAA: %ux | prepared draw records: %u | lights: %u | clusters: %u",
                   statistics.samples, statistics.draws, statistics.lights, statistics.clusters);
+      const auto &calls = statistics.drawCalls;
+      ImGui::TextDisabled("Geometry calls: depth %u | color %u | terrain %u | water %u",
+                          calls.worldDepth, calls.worldColor, calls.terrain, calls.water);
+      ImGui::TextDisabled("Shadow calls: sun %u static + %u moving | local %u static + %u moving",
+                          calls.staticSunShadow, calls.movingSunShadow,
+                          calls.staticLocalShadow, calls.movingLocalShadow);
+      ImGui::TextDisabled("Viewmodel calls: depth %u | color %u | sun %u | local %u",
+                          calls.viewModelDepth, calls.viewModelColor,
+                          calls.viewModelSunShadow, calls.viewModelLocalShadow);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Geometry API calls recorded for the last reported frame.\n"
+                          "Excludes fullscreen/post-processing, raster overlays and UI.");
       ImGui::TextDisabled("Local light lists: %u runtime | %u baked fallback | %u build candidates",
                           statistics.clusteredLights, statistics.fullyBakedLights, statistics.clusterBuildLights);
       ImGui::TextDisabled("Selected baked roles: %u highlights | %u mixed shadows",

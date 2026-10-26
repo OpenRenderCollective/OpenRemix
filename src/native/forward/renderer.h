@@ -29,6 +29,16 @@ namespace remix::forward {
     uint32_t samples = 1, lights = 0, draws = 0, clusters = 0;
     uint32_t debugView = 0; // Active submitted renderer, not a pending settings request.
     bool bicubicLightmaps = false;
+    // Recorded geometry API calls, after visibility checks and receiver-run
+    // splitting. Excludes fullscreen/post-processing, raster overlays and UI.
+    struct DrawCalls {
+      uint32_t worldDepth = 0, worldColor = 0, terrain = 0, water = 0;
+      uint32_t staticSunShadow = 0, movingSunShadow = 0;
+      uint32_t staticLocalShadow = 0, movingLocalShadow = 0;
+      uint32_t viewModelDepth = 0, viewModelColor = 0;
+      uint32_t viewModelSunShadow = 0, viewModelLocalShadow = 0;
+      uint32_t capturedDepth = 0, unconditionalCapturedDepth = 0;
+    } drawCalls;
     uint32_t shadowedLights = 0, shadowOverflow = 0, staticShadowUpdates = 0;
     uint32_t staticSunUpdates = 0, capturedCasters = 0, liveCasters = 0;
     uint32_t staticCasterPreparations = 0, emptyMovingShadowMaps = 0;

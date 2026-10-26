@@ -2852,3 +2852,13 @@ Base/styled irradiance, baked visibility and attributed mixed-shadow correction
 fields use the same UV footprint; signed lighting clamps only after filtering.
 This smooths baked texel transitions, at additional sampling cost. It does not
 remove capture noise, repair missing lighting, or change probe interpolation.
+
+
+### Recorded geometry draw calls
+
+Forward+ F12 statistics distinguish prepared scene records from recorded geometry
+API calls. Diagnostics expose `geometryDrawCalls` with world depth/color, terrain,
+water, static/moving sun/local shadows and viewmodel depth/color/shadow counts.
+These count calls after culling and receiver-run splitting for the last reported
+frame. Fullscreen/post-processing, raster overlays and UI are excluded. Captured
+and unconditional captured depth counts are subsets, not additional draws.

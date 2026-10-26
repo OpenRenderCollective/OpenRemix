@@ -103,10 +103,18 @@ namespace remix::forward {
                      : run.coverage == lightmap::ReceiverCoverage::Unmapped ? unmappedLightmapPipeline
                                                                           : partialLightmapPipeline);
           vkCmdDrawIndexed(command, run.indexCount, 1, run.firstIndex, 0, 0);
+          ++statistics.drawCalls.worldColor;
         }
-      } else
+      } else {
         vkCmdDrawIndexed(command, mapped ? mapped->count : draw.count, 1, mapped ? 0 : draw.source.firstIndex,
                          mapped ? 0 : draw.source.vertexOffset, 0);
+        auto &calls = statistics.drawCalls;
+        ++(depthOnly ? calls.worldDepth : terrain ? calls.terrain : calls.worldColor);
+        if (depthOnly && draw.captured) {
+          ++calls.capturedDepth;
+          calls.unconditionalCapturedDepth += uint32_t(draw.unconditionalCoverage);
+        }
+      }
     };
     // Time consecutive source-draw classes without changing coplanar/decal order.
     // A partially mapped source draw may emit several specialized receiver runs.
@@ -154,6 +162,7 @@ namespace remix::forward {
       vkCmdBindVertexBuffers(command, 0, 1, &draw.geometry->vertices->handle, &offset);
       vkCmdBindIndexBuffer(command, draw.geometry->indices->handle, 0, VK_INDEX_TYPE_UINT32);
       vkCmdDrawIndexed(command, draw.count, 1, draw.source.firstIndex, draw.source.vertexOffset, 0);
+      ++(staticCasters ? statistics.drawCalls.staticSunShadow : statistics.drawCalls.movingSunShadow);
     }
   }
   bool Renderer::Gpu::castsLocalShadow(const Command &draw, uint32_t lightSlot, bool staticCasters) const {
@@ -183,10 +192,12 @@ namespace remix::forward {
       vkCmdBindVertexBuffers(command, 0, 1, &draw.geometry->vertices->handle, &offset);
       vkCmdBindIndexBuffer(command, draw.geometry->indices->handle, 0, VK_INDEX_TYPE_UINT32);
       vkCmdDrawIndexed(command, draw.count, 1, draw.source.firstIndex, draw.source.vertexOffset, 0);
+      ++(staticCasters ? statistics.drawCalls.staticLocalShadow : statistics.drawCalls.movingLocalShadow);
     }
   }
   void Renderer::Gpu::recordWorld(VkCommandBuffer command) {
     auto &frame = frames[slot];
+    statistics.drawCalls = {};
     statistics.localShadowDraws = {};
     for (uint32_t i = 0; i < shadows::maximumLights; ++i) {
       statistics.localShadowDraws[i].active = shadowSelection.active[i];
@@ -285,6 +296,7 @@ namespace remix::forward {
             vkCmdBindVertexBuffers(command, 0, 1, &draw.geometry->vertices->handle, &offset);
             vkCmdBindIndexBuffer(command, draw.geometry->indices->handle, 0, VK_INDEX_TYPE_UINT32);
             vkCmdDrawIndexed(command, draw.count, 1, draw.source.firstIndex, draw.source.vertexOffset, 0);
+            ++statistics.drawCalls.water;
           }
         }, frame.waterRayScene);
     frame.waterComposed = true;

@@ -52,6 +52,19 @@ namespace remix {
         << ", \"liveCasters\": " << state.liveCasters
         << ", \"emptyMovingShadowMaps\": " << state.emptyMovingShadowMaps
         << ", \"staticCasterPreparations\": " << state.staticCasterPreparations << '}'
+        << ",\n  \"geometryDrawCalls\": {\"worldDepth\": " << state.drawCalls.worldDepth
+        << ", \"worldColor\": " << state.drawCalls.worldColor
+        << ", \"terrain\": " << state.drawCalls.terrain << ", \"water\": " << state.drawCalls.water
+        << ", \"staticSunShadow\": " << state.drawCalls.staticSunShadow
+        << ", \"movingSunShadow\": " << state.drawCalls.movingSunShadow
+        << ", \"staticLocalShadow\": " << state.drawCalls.staticLocalShadow
+        << ", \"movingLocalShadow\": " << state.drawCalls.movingLocalShadow
+        << ", \"viewModelDepth\": " << state.drawCalls.viewModelDepth
+        << ", \"viewModelColor\": " << state.drawCalls.viewModelColor
+        << ", \"viewModelSunShadow\": " << state.drawCalls.viewModelSunShadow
+        << ", \"viewModelLocalShadow\": " << state.drawCalls.viewModelLocalShadow
+        << ", \"capturedDepth\": " << state.drawCalls.capturedDepth
+        << ", \"unconditionalCapturedDepth\": " << state.drawCalls.unconditionalCapturedDepth << '}'
         << ",\n  \"probeVisibility\": {\"lights\": " << state.probeVisibility.lights
         << ", \"groups\": " << state.probeVisibility.groups
         << ", \"fieldBytes\": " << state.probeVisibility.fieldBytes

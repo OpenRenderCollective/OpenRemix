@@ -3947,3 +3947,15 @@ noise/seams, denoising cost and frame profiling remain independent priorities.
   gates, with submitted option values confirmed. Bilinear image is unchanged.
 - [x] Preserve all protected settings/replacements/authored bounds; checkbox
   remains optional/off by default, with no rebake required.
+
+
+### 2026-10-27 - Exact per-pass geometry draw accounting
+
+- [x] Record world depth/color, terrain, water, static/moving shadows and
+  viewmodel geometry API calls after culling/run splitting. Clarify prepared
+  record labels and exclude fullscreen/raster/UI work explicitly.
+- [x] Validate against independent visible/run traversals and local-shadow face
+  counts; prepass toggles and weapon/prop removal prove reset behavior.
+- [ ] Batch compatible static depth geometry while retaining culling, alpha
+  and backface semantics. Measure recorded calls, CPU time and GPU cost; do not
+  equate a single indirect API call with a single logical draw.

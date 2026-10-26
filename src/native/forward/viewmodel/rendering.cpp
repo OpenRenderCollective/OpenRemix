@@ -25,6 +25,7 @@ namespace remix::forward {
           vkCmdBindVertexBuffers(command, 0, 1, &draw.geometry->vertices->handle, &offset);
           vkCmdBindIndexBuffer(command, draw.geometry->indices->handle, 0, VK_INDEX_TYPE_UINT32);
           vkCmdDrawIndexed(command, draw.count, 1, draw.source.firstIndex, draw.source.vertexOffset, 0);
+          ++statistics.drawCalls.viewModelLocalShadow;
         }
       });
     }
@@ -48,6 +49,7 @@ namespace remix::forward {
             vkCmdBindVertexBuffers(command, 0, 1, &draw.geometry->vertices->handle, &offset);
             vkCmdBindIndexBuffer(command, draw.geometry->indices->handle, 0, VK_INDEX_TYPE_UINT32);
             vkCmdDrawIndexed(command, draw.count, 1, draw.source.firstIndex, draw.source.vertexOffset, 0);
+            ++statistics.drawCalls.viewModelSunShadow;
           }
         };
         casters(frame.commands, true);
@@ -82,6 +84,7 @@ namespace remix::forward {
           vkCmdBindVertexBuffers(command, 0, 1, &draw.geometry->vertices->handle, &offset);
           vkCmdBindIndexBuffer(command, draw.geometry->indices->handle, 0, VK_INDEX_TYPE_UINT32);
           vkCmdDrawIndexed(command, draw.count, 1, draw.source.firstIndex, draw.source.vertexOffset, 0);
+          ++(depthOnly ? statistics.drawCalls.viewModelDepth : statistics.drawCalls.viewModelColor);
           if (!depthOnly) fragmentStatistics->end(command);
         }
       };
