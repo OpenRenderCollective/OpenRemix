@@ -4147,3 +4147,13 @@ manual-density users can keep it disabled, avoiding the baker's unsupported
 model-chart/manual-density combination. The default profile still enables model
 charts with budget fitting. Interactive F12 clicking and playable deployment
 qualification remain pending.
+### Receiver irradiance transport for cubemap normalization
+
+ShadingResult now carries actual surface/probe irradiance/pi luminance, including
+metal-only receivers that otherwise skip diffuse response. A scalar world guide
+resolves with the exact covered MSAA sample selected for normal, F0 and depth.
+Unknown lighting is -1; known black is zero. This does not yet alter reflections.
+Next: shared normalization against consistently blended capture references before
+SSR composition, world/viewmodel/water integration, numeric/scene checks, target
+bandwidth measurements and format/storage-image capability qualification before
+playable deployment. The current combined resolve writes five storage images.

@@ -52,6 +52,15 @@ local-light evaluation, shared with the specialized water path. These are intern
 contracts, not a stable public shader ABI. Provider selection and runtime material
 program loading remain pending.
 
+Reflection normalization transport now carries receiver irradiance/pi luminance in
+an R16F world guide and resolves it to R32F using the same covered MSAA sample as
+normal/F0/depth. Zero denotes known darkness; -1 denotes unavailable lighting.
+Metal-only shading still evaluates incident irradiance for this purpose. This is
+transport preparation only: reflection brightness is not normalized yet. Target
+memory is accounted in existing statistics. Before deployment, finish the shared
+normalization, measure its cost, and qualify format/storage-image limits (the
+combined guide resolve now writes five storage images).
+
 ## Opt-in material shader overrides
 
 Lighting presets select techniques. Material shader selection is independent:

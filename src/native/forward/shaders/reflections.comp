@@ -18,10 +18,12 @@ frame;
 layout(set = 0, binding = 1) uniform sampler2D sceneDepth;
 layout(set = 0, binding = 2) uniform sampler2D sceneNormals;
 layout(set = 0, binding = 3) uniform sampler2D sceneReflectance;
+layout(set = 0, binding = 18) uniform sampler2D sceneIrradiance;
 #else
 layout(set = 0, binding = 1) uniform sampler2DMS sceneDepth;
 layout(set = 0, binding = 2) uniform sampler2DMS sceneNormals;
 layout(set = 0, binding = 3) uniform sampler2DMS sceneReflectance;
+layout(set = 0, binding = 18) uniform sampler2DMS sceneIrradiance;
 #endif
 layout(set = 0, binding = 4) uniform sampler2D opaqueColor;
 layout(set = 0, binding = 5) uniform sampler2D normals;
@@ -32,6 +34,8 @@ layout(set = 0, binding = 9, rgba16f) writeonly uniform image2D outReflectance;
 layout(set = 0, binding = 10, r32f) writeonly uniform image2D outDepth;
 layout(set = 0, binding = 11, rgba16f) writeonly uniform image2D outRadiance;
 layout(set = 0, binding = 12) uniform sampler2D rawRadiance;
+layout(set = 0, binding = 19, r32f) writeonly uniform image2D outIrradiance;
+layout(set = 0, binding = 20) uniform sampler2D receiverIrradiance;
 
 #include "reflection_math.glsl"
 #include "radiance-filter.glsl"
@@ -75,6 +79,8 @@ void main() {
   imageStore(outNormals, pixel, normal);
   imageStore(outReflectance, pixel, specular);
   imageStore(outDepth, pixel, vec4(closest, closest, 0, 0));
+  float irradiance = closest < 1 ? texelFetch(sceneIrradiance, pixel, selected).r : -1;
+  imageStore(outIrradiance, pixel, vec4(irradiance));
   // The colour source is already MSAA-resolved with premultiplied coverage.
   // Probe/RT-only targets bind a one-pixel dummy instead of a full pyramid.
   if (all(lessThan(pixel, imageSize(outRadiance))))

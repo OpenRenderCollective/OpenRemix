@@ -22,4 +22,5 @@ struct ShadingResult {
   vec4 color;
   vec4 normalRoughness;
   vec4 reflectance;
+  float irradianceLuma; // irradiance / pi luminance; -1 means unavailable
 };

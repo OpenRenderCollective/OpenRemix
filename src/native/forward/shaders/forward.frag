@@ -53,6 +53,7 @@ layout(location = 0) out vec4 result;
 #ifdef REFLECTION_GUIDES
 layout(location = 1) out vec4 outNormalRoughness;
 layout(location = 2) out vec4 outReflectance;
+layout(location = 3) out float outIrradianceLuma;
 #endif
 #include "receiver.glsl"
 #include "direct-light.glsl"
@@ -90,6 +91,9 @@ void main() {
   gl_FragDepth = min(length(worldPosition - lightPosition.xyz) / lightPosition.w, 1);
 #endif
 #ifndef SHADOW_PASS
+#ifdef REFLECTION_GUIDES
+  outIrradianceLuma = -1;
+#endif
   if (LightingView == 4u) {
     result = vec4(surface.rgb, m.pbr.w > .5 ? surface.a : 1);
 #ifdef REFLECTION_GUIDES
@@ -119,6 +123,7 @@ void main() {
 #ifdef REFLECTION_GUIDES
   outNormalRoughness = shaded.normalRoughness;
   outReflectance = shaded.reflectance;
+  outIrradianceLuma = shaded.irradianceLuma;
 #endif
 #endif
 }

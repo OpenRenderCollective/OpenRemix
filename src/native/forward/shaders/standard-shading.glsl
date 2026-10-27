@@ -14,6 +14,7 @@ ShadingResult shadeStandardSurface(Surface surface, ShadingReceiver receiver) {
   ShadingResult shaded;
   shaded.normalRoughness = vec4(n, surface.roughness);
   shaded.reflectance = vec4(0);
+  shaded.irradianceLuma = -1;
   uint debugView = LightingView;
   if (debugView == 6u) {
     bool covered = charted || localProbeStencil(receiver.position, n);
@@ -28,6 +29,18 @@ ShadingResult shadeStandardSurface(Surface surface, ShadingReceiver receiver) {
   }
   ReceiverLighting diffuse = evaluateReceiverLighting(receiver.position, n, receiver.geometric, charted,
       surfaceLighting.rgb, surface.metallic < 1 && any(greaterThan(surface.color.rgb, vec3(0))), ambient);
+  if (diffuse.aggregate)
+    shaded.irradianceLuma = dot(max(diffuse.diffuse, vec3(0)), vec3(.2126, .7152, .0722));
+#ifdef ZERO_DIFFUSE_MATERIAL
+  // A metal can skip diffuse material response, but reflection normalization
+  // still needs the receiver's incident lighting rather than a zero placeholder.
+  if (diffuse.aggregate && !charted) {
+    vec3 incident;
+    shaded.irradianceLuma = bakedIrradiance(receiver.position, n, incident)
+        ? dot(max(incident / Pi, vec3(0)), vec3(.2126, .7152, .0722)) : -1;
+  }
+#endif
+  shaded.irradianceLuma = min(shaded.irradianceLuma, 65000);
   bool includeBakedDiffuse = debugView == 0u || debugView == 7u;
   vec3 color = includeBakedDiffuse ? surface.color.rgb * (1 - surface.metallic) * diffuse.diffuse : vec3(0);
   BrdfLobes sun = sunLightResponse(coordinate, bounds, surfaceLighting.w, receiver.position, receiver.depth, n, v,

@@ -21,7 +21,8 @@ namespace remix::forward {
     auto supported = supportedSamples(physical, colorFormat, colorUsage) &
                      supportedSamples(physical, depthFormat, depthUsage);
     if (options.reflections())
-      supported &= supportedSamples(physical, VK_FORMAT_R8G8B8A8_UNORM, colorUsage);
+      supported &= supportedSamples(physical, VK_FORMAT_R8G8B8A8_UNORM, colorUsage) &
+                   supportedSamples(physical, VK_FORMAT_R16_SFLOAT, colorUsage);
     for (auto count : {VK_SAMPLE_COUNT_4_BIT, VK_SAMPLE_COUNT_2_BIT, VK_SAMPLE_COUNT_1_BIT})
       if (uint32_t(count) <= options.samples && (supported & count)) {
         samples = count;
@@ -43,13 +44,14 @@ namespace remix::forward {
       resolved = image(extent, colorFormat, colorUsage | debugUsage, VK_SAMPLE_COUNT_1_BIT,
                        VK_IMAGE_ASPECT_COLOR_BIT);
     if (options.reflections()) {
+      irradianceGuide = image(extent, VK_FORMAT_R16_SFLOAT, colorUsage, samples, VK_IMAGE_ASPECT_COLOR_BIT);
       normalGuide = image(extent, colorFormat, colorUsage, samples, VK_IMAGE_ASPECT_COLOR_BIT);
       reflectanceGuide =
           image(extent, VK_FORMAT_R8G8B8A8_UNORM, colorUsage, samples, VK_IMAGE_ASPECT_COLOR_BIT);
     }
-    const uint32_t resolveIndex = options.reflections() ? 4 : 2;
+    const uint32_t resolveIndex = options.reflections() ? 5 : 2;
     const uint32_t attachmentCount = resolveIndex + uint32_t(bool(resolved));
-    VkAttachmentDescription attachments[5]{};
+    VkAttachmentDescription attachments[6]{};
     attachments[0] = {.format = colorFormat,
                       .samples = samples,
                       .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
@@ -65,25 +67,28 @@ namespace remix::forward {
       attachments[2] = attachments[0];
       attachments[3] = attachments[0];
       attachments[3].format = VK_FORMAT_R8G8B8A8_UNORM;
+      attachments[4] = attachments[0];
+      attachments[4].format = VK_FORMAT_R16_SFLOAT;
     }
     attachments[resolveIndex] = attachments[0];
     attachments[resolveIndex].samples = VK_SAMPLE_COUNT_1_BIT;
     attachments[resolveIndex].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     const VkAttachmentReference colorReferences[] = {{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
                                                      {2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
-                                                     {3, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}};
+                                                     {3, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
+                                                     {4, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}};
     const VkAttachmentReference depthReference{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
     const VkAttachmentReference resolveReferences[] = {
         {resolveIndex, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
         {VK_ATTACHMENT_UNUSED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
         {VK_ATTACHMENT_UNUSED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}};
     const VkSubpassDescription subpass{.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                       .colorAttachmentCount = options.reflections() ? 3u : 1u,
+                                       .colorAttachmentCount = options.reflections() ? 4u : 1u,
                                        .pColorAttachments = colorReferences,
                                        .pDepthStencilAttachment = &depthReference};
     // Paint is lit in HDR after opaque receivers. Preserve their reflection
     // guides and depth, then resolve colour only after both subpasses finish.
-    const uint32_t preserveGuides[] = {2, 3};
+    const uint32_t preserveGuides[] = {2, 3, 4};
     const VkAttachmentReference readDepth{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
     const VkSubpassDescription terrainSubpass{
         .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -91,7 +96,7 @@ namespace remix::forward {
         .pColorAttachments = colorReferences,
         .pResolveAttachments = resolved ? resolveReferences : nullptr,
         .pDepthStencilAttachment = &readDepth,
-        .preserveAttachmentCount = options.reflections() ? 2u : 0u,
+        .preserveAttachmentCount = options.reflections() ? 3u : 0u,
         .pPreserveAttachments = preserveGuides};
     const VkSubpassDescription subpasses[] = {subpass, terrainSubpass};
     // Targets are shared between slots on one queue. The incoming dependency
@@ -138,10 +143,11 @@ namespace remix::forward {
                                       .dependencyCount = 4,
                                       .pDependencies = dependencies};
     check(pipeline::createRenderPass(device, &info, nullptr, &worldPass));
-    VkImageView views[5] = {color->view, depth->view};
+    VkImageView views[6] = {color->view, depth->view};
     if (options.reflections()) {
       views[2] = normalGuide->view;
       views[3] = reflectanceGuide->view;
+      views[4] = irradianceGuide->view;
     }
     if (resolved)
       views[resolveIndex] = resolved->view;

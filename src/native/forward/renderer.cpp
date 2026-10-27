@@ -175,6 +175,7 @@ namespace remix::forward {
       next->reflections->initialize(physical, device, extent, next->samples, options,
                                     {next->depth->view, next->normalGuide->view, next->reflectanceGuide->view,
                                      next->resolved ? next->resolved->view : next->color->view,
+                                     next->irradianceGuide->view,
                                      next->resolved ? next->resolved->handle : next->color->handle});
       next->statistics.targetBytes += next->reflections->targetBytes();
     }

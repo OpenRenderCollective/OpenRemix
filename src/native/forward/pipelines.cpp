@@ -176,12 +176,12 @@ namespace remix::forward {
           .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
           .alphaBlendOp = VK_BLEND_OP_ADD,
           .colorWriteMask = depthOnly ? 0u : 15u};
-      const VkPipelineColorBlendAttachmentState attachments[] = {attachment, attachment, attachment};
+      const VkPipelineColorBlendAttachmentState attachments[] = {attachment, attachment, attachment, attachment};
       const VkPipelineColorBlendStateCreateInfo blend{
           .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
           .attachmentCount = shadow                                ? 0u
                              : composite || terrain || viewModel || !options.reflections() ? 1u
-                                                                   : 3u,
+                                                                   : 4u,
           .pAttachments = shadow ? nullptr : attachments};
       const VkGraphicsPipelineCreateInfo info{.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
                                               .stageCount = 2,

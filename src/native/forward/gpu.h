@@ -53,7 +53,7 @@ namespace remix::forward {
     std::array<VkFramebuffer, sunShadowLayers> shadowFramebuffers{};
     std::array<VkImageView, sunShadowLayers> shadowViews{};
     std::unique_ptr<Image> color, depth, resolved, shadow;
-    std::unique_ptr<Image> normalGuide, reflectanceGuide;
+    std::unique_ptr<Image> normalGuide, reflectanceGuide, irradianceGuide;
     std::unique_ptr<Reflections> reflections;
     std::unique_ptr<water::Pass> waterPass;
     std::unique_ptr<viewmodel::Target> viewModelTarget;
