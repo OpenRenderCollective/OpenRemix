@@ -142,6 +142,10 @@ if get_option('gpu_tests')
   subdir('water_shaders')
   subdir('shaders')
   forward_gpu_shaders = [probe_batch_test_shaders, sun_depth_test_shaders, cluster_test_shaders, shadow_test_shaders, probe_test_shaders, style_test_shaders, mask_test_shaders, water_test_shaders, forward_test_shaders]
+  depth_batch_test = executable('remix-forward-depth-batch-test', 'depth_batch.cpp',
+    include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+    cpp_args : test_cpp_args)
+  test('Static depth batch preserves geometry, visibility and fenced ownership', depth_batch_test, timeout : 60)
   probe_batch_test = executable('remix-probe-batch-test', forward_gpu_shaders, 'probe_batch.cpp',
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)

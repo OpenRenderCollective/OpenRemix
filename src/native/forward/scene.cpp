@@ -159,6 +159,7 @@ namespace remix::forward {
       }
       const auto &state = draws.back().state;
       out.unconditionalCoverage = state[1] == VK_COMPARE_OP_ALWAYS && (state[3] & 16u) == 0;
+      out.opaqueDepth = state[1] == VK_COMPARE_OP_ALWAYS;
       commands.push_back(std::move(out));
     };
     for (const auto &draw : resources.draws()) {
@@ -370,6 +371,7 @@ namespace remix::forward {
       if (!frame.probeVisibility)
         for (auto &light : lights) light.responseWeights[2] = 0;
     }
+    prepareDepthBatch(publishedBake);
     step(cpu.lighting);
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physical, &properties);
@@ -611,6 +613,7 @@ namespace remix::forward {
     if (reflections)
       statistics.bufferBytes += reflections->bufferBytes();
     for (const auto &submitted : frames) {
+      if (submitted.depthBatch) statistics.bufferBytes += submitted.depthBatch->bytes();
       for (const auto *buffer : {submitted.constants.get(), submitted.lights.get(), submitted.draws.get(),
                                  submitted.clusters.get(), submitted.skyConstants.get(),
                                  submitted.viewModelConstants.get(), submitted.viewModelReflectionConstants.get()})

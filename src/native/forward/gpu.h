@@ -8,6 +8,7 @@
 #include "forward/probes/selection_upload.h"
 #include "forward/probes/local_selection_preparation.h"
 #include "forward/probe_batch/batch.h"
+#include "forward/depth_batch/batch.h"
 #include "forward/renderer.h"
 #include "forward/resources.h"
 #include "forward/shadows/maps.h"
@@ -44,6 +45,7 @@ namespace remix::forward {
                shadowPipeline = VK_NULL_HANDLE, localShadowPipeline = VK_NULL_HANDLE,
                clusterPipeline = VK_NULL_HANDLE, compositePipeline = VK_NULL_HANDLE;
     VkPipeline zeroDiffusePipeline = VK_NULL_HANDLE;
+    VkPipeline depthBatchPipeline = VK_NULL_HANDLE;
     VkSampler sampler = VK_NULL_HANDLE, shadowSampler = VK_NULL_HANDLE, surfaceSampler = VK_NULL_HANDLE,
               skySampler = VK_NULL_HANDLE;
     VkRenderPass worldPass = VK_NULL_HANDLE, shadowPass = VK_NULL_HANDLE;
@@ -108,6 +110,7 @@ namespace remix::forward {
       Bounds worldBounds;
       bool captured = false;
       bool unconditionalCoverage = false;
+      bool opaqueDepth = false, depthBatched = false;
       scene::Draw source; // material, mesh and texture owners live through the fence
       VkDescriptorSet material = VK_NULL_HANDLE;
       uint32_t index = 0, count = 0;
@@ -122,6 +125,7 @@ namespace remix::forward {
       VkDescriptorSet waterRayScene = VK_NULL_HANDLE;
       std::unique_ptr<Buffer> constants, lights, draws, clusters, skyConstants;
       std::shared_ptr<const probe_batch::Field> probeVisibility;
+      std::unique_ptr<depth_batch::Batch> depthBatch;
       std::unique_ptr<Buffer> viewModelConstants, viewModelReflectionConstants;
       Matrix viewModelProjection = scene::identity();
       bool skyEnabled = false;
@@ -162,6 +166,7 @@ namespace remix::forward {
     void recordWater(VkCommandBuffer command);
     void recordViewModels(VkCommandBuffer command);
     void prepareViewModelDescriptors();
+    void prepareDepthBatch(std::shared_ptr<const bake::Volume> source);
     void recordExposure(VkCommandBuffer command, RasterRenderer &resources, float seconds);
     bool castsLocalShadow(const Command &draw, uint32_t slot, bool staticCasters) const;
     void drawLocalCasters(VkCommandBuffer command, uint32_t slot, uint32_t face, bool staticCasters);

@@ -2862,3 +2862,9 @@ water, static/moving sun/local shadows and viewmodel depth/color/shadow counts.
 These count calls after culling and receiver-run splitting for the last reported
 frame. Fullscreen/post-processing, raster overlays and UI are excluded. Captured
 and unconditional captured depth counts are subsets, not additional draws.
+
+### Experimental static depth aggregation
+
+Setting `REMIX_DEBUG_STATIC_DEPTH_BATCH=1` before renderer creation enables a bounded static opaque depth batch per fenced frame slot. Leave the variable absent for the ordinary prepass. The batch preserves local position bits, source transforms, triangle winding and current material-table indices. Cutout, skinned and live draws retain their ordinary paths. Unsupported or over-budget source sets fall back without truncation.
+
+Each slot retains immutable geometry and updates its visible index/material streams only when their contents change. Per-slot GPU payload is bounded to 32 MiB; diagnostics include its allocated buffers. `worldDepth` counts actual API submissions; `worldDepthLogical` and `batchedDepthSources` describe the source draws represented by those submissions. Colour and shadow passes are independent. This experimental switch is not a production default.

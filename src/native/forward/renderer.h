@@ -39,6 +39,7 @@ namespace remix::forward {
       uint32_t viewModelDepth = 0, viewModelColor = 0;
       uint32_t viewModelSunShadow = 0, viewModelLocalShadow = 0;
       uint32_t capturedDepth = 0, unconditionalCapturedDepth = 0;
+      uint32_t worldDepthLogical = 0, batchedDepthSources = 0;
     } drawCalls;
     uint32_t shadowedLights = 0, shadowOverflow = 0, staticShadowUpdates = 0;
     uint32_t staticSunUpdates = 0, capturedCasters = 0, liveCasters = 0;

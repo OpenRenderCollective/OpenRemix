@@ -40,6 +40,8 @@ namespace remix {
       const auto &calls = statistics.drawCalls;
       ImGui::TextDisabled("Geometry calls: depth %u | color %u | terrain %u | water %u",
                           calls.worldDepth, calls.worldColor, calls.terrain, calls.water);
+      ImGui::TextDisabled("Depth sources: %u logical | %u in static batch",
+                          calls.worldDepthLogical, calls.batchedDepthSources);
       ImGui::TextDisabled("Shadow calls: sun %u static + %u moving | local %u static + %u moving",
                           calls.staticSunShadow, calls.movingSunShadow,
                           calls.staticLocalShadow, calls.movingLocalShadow);

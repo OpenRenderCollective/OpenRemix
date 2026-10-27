@@ -4019,3 +4019,8 @@ The testing install now uses native 35e80cf3 and adapter 26dc7770 from a clean p
 
 - Open: the current local refinement path runs after baseline placement. A full 64-layer baseline can prevent useful local additions when every replacement loses unique receiver or volume-guard coverage.
 - Plan baseline and refined captures together under a scalable budget, with authored volumes protected. Preserve coverage evidence; do not bypass geometric error or unique-coverage guards merely to insert new boxes. This is separate from receiver-fit occupancy and site-budget ordering.
+
+### Static depth aggregation qualification
+
+- Implemented an opt-in, fenced-slot static opaque depth batch with exact source positions, current transform/material addressing, visible index selection and bounded fallback. Unchanged streams reuse their uploaded data.
+- Remaining before default: multi-map and live/viewmodel/cutout rendered comparisons, resolve residual image differences, and foreground validation-off CPU/GPU timing including rebuild and memory costs. Lower submission count alone is not FPS acceptance.

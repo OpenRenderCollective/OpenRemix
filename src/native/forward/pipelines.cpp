@@ -103,13 +103,23 @@ namespace remix::forward {
                                                        VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
                                                    .dynamicStateCount = 2,
                                                    .pDynamicStates = states};
-    enum class Pass { Opaque, Shadow, Composite, Terrain, Depth, ViewModel, ViewModelDepth };
+    enum class Pass { Opaque, Shadow, Composite, Terrain, Depth, ViewModel, ViewModelDepth, DepthBatch };
     using Coverage = lightmap::ReceiverCoverage;
     const bool viewModelPrepass = std::getenv("REMIX_DEBUG_VIEWMODEL_DEPTH_PREPASS") != nullptr;
     auto graphics = [&](VkShaderModule vs, VkShaderModule fs, VkRenderPass pass, Pass mode = Pass::Opaque,
                          Coverage coverage = Coverage::Mixed) {
       const bool shadow = mode == Pass::Shadow, composite = mode == Pass::Composite;
-      const bool terrain = mode == Pass::Terrain, depthOnly = mode == Pass::Depth || mode == Pass::ViewModelDepth;
+      const bool terrain = mode == Pass::Terrain;
+      const bool batchedDepth = mode == Pass::DepthBatch;
+      const bool depthOnly = mode == Pass::Depth || mode == Pass::ViewModelDepth || batchedDepth;
+      const VkVertexInputBindingDescription batchBindings[] = {
+          {0, 16, VK_VERTEX_INPUT_RATE_VERTEX}, {1, 4, VK_VERTEX_INPUT_RATE_VERTEX}};
+      const VkVertexInputAttributeDescription batchAttributes[] = {
+          {0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0}, {1, 1, VK_FORMAT_R32_UINT, 0}};
+      const VkPipelineVertexInputStateCreateInfo batchInput{
+          .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+          .vertexBindingDescriptionCount = 2, .pVertexBindingDescriptions = batchBindings,
+          .vertexAttributeDescriptionCount = 2, .pVertexAttributeDescriptions = batchAttributes};
       const bool viewModel = mode == Pass::ViewModel || mode == Pass::ViewModelDepth;
       // Ordinary vertices have no chart coordinates. Lightmap vertex ranges
       // can specialize either coverage without changing their buffer stride.
@@ -176,7 +186,7 @@ namespace remix::forward {
       const VkGraphicsPipelineCreateInfo info{.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
                                               .stageCount = 2,
                                               .pStages = stages,
-                                              .pVertexInputState = composite              ? &fullscreenInput
+                                              .pVertexInputState = batchedDepth ? &batchInput : composite ? &fullscreenInput
                                                                    : vs == lightmapVertex ? &mappedInput
                                                                                           : &vertexInput,
                                               .pInputAssemblyState = &assembly,
@@ -222,6 +232,11 @@ namespace remix::forward {
     unmappedLightmapPipeline = graphics(lightmapVertex, fragment, worldPass, Pass::Opaque, Coverage::Unmapped);
     depthPipeline = graphics(vertex, depthFragment, worldPass, Pass::Depth);
     depthLightmapPipeline = graphics(lightmapVertex, depthFragment, worldPass, Pass::Depth);
+    if (std::getenv("REMIX_DEBUG_STATIC_DEPTH_BATCH")) {
+      const auto batchVertex = modules.add(depthBatchVertShader, sizeof(depthBatchVertShader));
+      const auto batchFragment = modules.add(depthBatchFragShader, sizeof(depthBatchFragShader));
+      depthBatchPipeline = graphics(batchVertex, batchFragment, worldPass, Pass::DepthBatch);
+    }
     terrainPipeline = graphics(vertex, terrainFragment, worldPass, Pass::Terrain);
     terrainLightmapPipeline = graphics(lightmapVertex, terrainFragment, worldPass, Pass::Terrain, Coverage::Mapped);
     terrainPartialLightmapPipeline = graphics(lightmapVertex, terrainFragment, worldPass, Pass::Terrain);

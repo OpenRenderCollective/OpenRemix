@@ -64,6 +64,8 @@ namespace remix {
         << ", \"viewModelSunShadow\": " << state.drawCalls.viewModelSunShadow
         << ", \"viewModelLocalShadow\": " << state.drawCalls.viewModelLocalShadow
         << ", \"capturedDepth\": " << state.drawCalls.capturedDepth
+        << ", \"worldDepthLogical\": " << state.drawCalls.worldDepthLogical
+        << ", \"batchedDepthSources\": " << state.drawCalls.batchedDepthSources
         << ", \"unconditionalCapturedDepth\": " << state.drawCalls.unconditionalCapturedDepth << '}'
         << ",\n  \"probeVisibility\": {\"lights\": " << state.probeVisibility.lights
         << ", \"groups\": " << state.probeVisibility.groups

@@ -18,6 +18,19 @@ namespace remix::forward {
   void Renderer::Gpu::drawGeometry(VkCommandBuffer command, bool terrain, bool depthOnly) {
     const auto &frame = frames[slot];
     const bool gi = !depthOnly && bool(frame.giScene);
+    if (depthOnly && frame.depthBatch && frame.depthBatch->indexCount()) {
+      vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, depthBatchPipeline);
+      vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &frame.scene, 0, nullptr);
+      const VkBuffer buffers[] = {frame.depthBatch->positions().handle, frame.depthBatch->materials().handle};
+      const VkDeviceSize offsets[] = {0, 0};
+      vkCmdBindVertexBuffers(command, 0, 2, buffers, offsets);
+      vkCmdBindIndexBuffer(command, frame.depthBatch->indices().handle, 0, VK_INDEX_TYPE_UINT32);
+      vkCmdDrawIndexed(command, frame.depthBatch->indexCount(), 1, 0, 0, 0);
+      ++statistics.drawCalls.worldDepth;
+      ++statistics.drawCalls.capturedDepth;
+      statistics.drawCalls.worldDepthLogical += frame.depthBatch->visibleSources();
+      statistics.drawCalls.batchedDepthSources = frame.depthBatch->visibleSources();
+    }
     static const bool debugDraws = std::getenv("REMIX_DEBUG_FORWARD_DRAW_COUNTS") != nullptr;
     static thread_local uint64_t reported = 0;
     if (debugDraws && !depthOnly && !terrain && baking->volume() && baking->volume()->hash != reported) {
@@ -56,6 +69,7 @@ namespace remix::forward {
     VkDescriptorSet boundMaterial = VK_NULL_HANDLE;
     VkBuffer boundVertices = VK_NULL_HANDLE, boundIndices = VK_NULL_HANDLE;
     auto drawCommand = [&](const Command &draw) {
+      if (depthOnly && draw.depthBatched) return;
       if (!draw.source.rasterVisible)
         return;
       if (!intersectsClip(draw.worldBounds, frame.data.camera))
@@ -114,6 +128,7 @@ namespace remix::forward {
           ++calls.capturedDepth;
           calls.unconditionalCapturedDepth += uint32_t(draw.unconditionalCoverage);
         }
+        if (depthOnly) ++calls.worldDepthLogical;
       }
     };
     // Time consecutive source-draw classes without changing coplanar/decal order.
