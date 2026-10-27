@@ -63,7 +63,7 @@ ShadingResult shadeStandardSurface(Surface surface, ShadingReceiver receiver) {
   if (debugView == 0u) color += surface.emission;
 #ifdef VIEWMODEL_PASS
   if (debugView == 0u) color += viewModelReflection(receiver.position, n, v, surface.color.rgb,
-      surface.roughness, surface.metallic, receiver.reflectionLayer);
+      surface.roughness, surface.metallic, receiver.reflectionLayer, shaded.irradianceLuma);
 #endif
   shaded.color = vec4(min(max(color, vec3(0)), vec3(65000)), receiver.opacity);
   // The pass adapter stores this guide as RGBA8. Alpha retains ordinary

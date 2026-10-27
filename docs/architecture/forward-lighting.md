@@ -55,11 +55,19 @@ program loading remain pending.
 Reflection normalization transport now carries receiver irradiance/pi luminance in
 an R16F world guide and resolves it to R32F using the same covered MSAA sample as
 normal/F0/depth. Zero denotes known darkness; -1 denotes unavailable lighting.
-Metal-only shading still evaluates incident irradiance for this purpose. This is
-transport preparation only: reflection brightness is not normalized yet. Target
-memory is accounted in existing statistics. Before deployment, finish the shared
-normalization, measure its cost, and qualify format/storage-image limits (the
+Metal-only shading still evaluates incident irradiance for this purpose. Target
+memory is accounted in existing statistics. Before deployment, measure the shared
+normalization's cost and qualify format/storage-image limits (the
 combined guide resolve now writes five storage images).
+
+World, viewmodel and water cubemap fallback now share lighting normalization.
+Capture reference luminance follows the same spatial, priority and feather weights
+as radiance; explicit assignments use their selected layer's reference. Correction
+is applied before SSR composition. Unknown receiver lighting and nonpositive
+capture references remain neutral; known black can suppress reflection energy.
+The initial gain ceiling is one, matching VRF's modern non-VR profile. This does
+not implement every Source 2 lighting profile or its rough nonmetal lightmap-SH
+reflection transition. Severe HDR haze remains an open visual diagnosis.
 
 ## Opt-in material shader overrides
 

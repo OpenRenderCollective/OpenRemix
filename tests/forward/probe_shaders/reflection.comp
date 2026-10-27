@@ -18,5 +18,18 @@ void main() {
   if (!inBounds) return;
   vec3 radiance;
   bool valid = probeRadianceMasked(query.position.xyz, query.direction.xyz, query.position.w, mask, radiance);
-  answers[index] = vec4(radiance, valid ? 1 : 0);
+  uint row = index * 7u;
+  answers[row] = vec4(radiance, valid ? 1 : 0);
+  if ((index & 63u) == 0u) {
+    for (uint mode = 0u; mode < 4u; ++mode) {
+      float target = mode == 0u ? .25 : mode == 1u ? 0 : mode == 2u ? 1000000 : -1;
+      valid = probeRadianceMasked(query.position.xyz, query.direction.xyz, query.position.w, mask,
+                                  vec3(.36, .48, .8), target, radiance);
+      answers[row + 1u + mode] = vec4(radiance, valid ? 1 : 0);
+    }
+    answers[row + 5u] = vec4(normalizedProbeRadiance(vec4(4, 8, 16, 0), .25), 1);
+    valid = boundProbeRadiance(1u, query.position.xyz, query.direction.xyz, query.position.w,
+                               vec3(.36, .48, .8), .25, radiance);
+    answers[row + 6u] = vec4(radiance, valid ? 1 : 0);
+  }
 }

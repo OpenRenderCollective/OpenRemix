@@ -1,5 +1,6 @@
 #include "forward/probes/data.h"
 #include "forward/probes/image_asset.h"
+#include "forward/probes/priority_order.h"
 #include "forward/half.h"
 #include "gpu_fixture.h"
 #include "probe_shaders/embedded.h"
@@ -99,8 +100,30 @@ void samplingCase(uint32_t resolution) {
   if (resolution > 128) fillLargeImage(data, resolution);
   probes::ImageAsset asset(fixture.physical, fixture.device, data);
   auto quantized = data;
+  auto references = data;
+  const auto normalization = probes::captureNormalization(data);
+  const uint32_t stride = data.header.parameters[3];
+  for (uint32_t probe = 0; probe < data.header.parameters[0]; ++probe) {
+    const auto &row = normalization.coefficients[probe];
+    const float value = std::max(0.f, .36f * row[0] + .48f * row[1] + .8f * row[2] + row[3]);
+    for (uint32_t texel = 0; texel < stride; ++texel)
+      references.texels[size_t(probe) * stride + texel] = {value, value, value, 0};
+  }
   for (auto &pixel : quantized.texels)
     for (uint32_t c = 0; c < 3; ++c) pixel[c] = half::decode(half::encode(pixel[c]));
+  const uint32_t boundProbe = probes::priorityOrder(data.header).front();
+  probes::Data boundData;
+  boundData.header = data.header;
+  boundData.header.parameters[0] = 1;
+  boundData.header.probes[0] = data.header.probes[boundProbe];
+  for (uint32_t c = 0; c < 3; ++c) {
+    boundData.header.probes[0].influenceMinimum[c] = -1000000;
+    boundData.header.probes[0].influenceMaximum[c] = 1000000;
+  }
+  boundData.texels.assign(quantized.texels.begin() + size_t(boundProbe) * stride,
+                          quantized.texels.begin() + size_t(boundProbe + 1) * stride);
+  const auto &boundSH = normalization.coefficients[boundProbe];
+  const float boundLuma = std::max(0.f, .36f * boundSH[0] + .48f * boundSH[1] + .8f * boundSH[2] + boundSH[3]);
   struct Query { Vec4 position, direction; };
   std::vector<Query> queries;
   const uint32_t steps = 2 * (data.header.parameters[2] - 1);
@@ -148,7 +171,7 @@ void samplingCase(uint32_t resolution) {
   check(result);
   gpu.input.create(fixture.physical, fixture.device, queries.size()*sizeof(Query), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   gpu.input.write(queries.data(), queries.size()*sizeof(Query));
-  gpu.output.create(fixture.physical, fixture.device, queries.size()*sizeof(Vec4), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+  gpu.output.create(fixture.physical, fixture.device, queries.size()*7*sizeof(Vec4), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   const VkDescriptorPoolSize poolSize[]{{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3},
                                        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1}};
   const VkDescriptorPoolCreateInfo poolInfo{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
@@ -179,21 +202,48 @@ void samplingCase(uint32_t resolution) {
                        0, 1, &read, 0, nullptr, 0, nullptr);
   fixture.finish();
   asset.releaseUpload();
-  std::vector<Vec4> values(count);
+  std::vector<Vec4> values(count * 7);
   gpu.output.read(values.data(), values.size()*sizeof(Vec4));
   for (size_t i = 0; i < queries.size(); ++i) {
     const auto &q = queries[i];
     const auto expected = probes::sample(quantized, {q.position[0], q.position[1], q.position[2]},
         {q.direction[0], q.direction[1], q.direction[2]}, q.position[3]);
-    require(values[i][3] == (expected ? 1.f : 0.f), "GPU oriented influence matches receiver membership");
+    const auto &actual = values[i * 7];
+    require(actual[3] == (expected ? 1.f : 0.f), "GPU oriented influence matches receiver membership");
     for (uint32_t c = 0; c < 3; ++c) {
       const float reference = expected ? (*expected)[c] : 0.f;
-      if (std::abs(values[i][c] - reference) >= 2e-5f) {
+      if (std::abs(actual[c] - reference) >= 2e-5f) {
         std::fprintf(stderr, "Reflection mismatch: size %u query %zu channel %u GPU %.9g CPU %.9g; "
             "position %.9g %.9g %.9g roughness %.9g ray %.9g %.9g %.9g\n", resolution, i, c,
-            values[i][c], reference, q.position[0], q.position[1], q.position[2], q.position[3],
+            actual[c], reference, q.position[0], q.position[1], q.position[2], q.position[3],
             q.direction[0], q.direction[1], q.direction[2]);
         require(false, "GPU oriented parallax, priorities and roughness match CPU reference");
+      }
+    }
+    if ((i & 63u) == 0u) {
+      const auto reference = probes::sample(references, {q.position[0], q.position[1], q.position[2]},
+          {q.direction[0], q.direction[1], q.direction[2]}, q.position[3]);
+      for (uint32_t mode = 0; mode < 4; ++mode) {
+        const float target = mode == 0 ? .25f : mode == 1 ? 0.f : mode == 2 ? 1000000.f : -1.f;
+        const float scale = target >= 0 && reference && (*reference)[0] > 0
+            ? std::min(target / (*reference)[0], 1.f) : 1.f;
+        const auto &normalized = values[i * 7 + 1 + mode];
+        require(normalized[3] == (expected ? 1.f : 0.f), "Normalization preserves influence membership");
+        for (uint32_t c = 0; c < 3; ++c) {
+          const float value = expected ? (*expected)[c] * scale : 0.f;
+          require(std::abs(normalized[c] - value) < std::max(3e-5f, std::abs(value) * 5e-5f),
+                  "GPU normalization follows blended reference lighting, darkness, gain ceiling and unknown fallback");
+        }
+      }
+      require(values[i * 7 + 5] == Vec4{4, 8, 16, 1}, "A dark capture reference remains neutral");
+      const auto bound = probes::sample(boundData, {q.position[0], q.position[1], q.position[2]},
+          {q.direction[0], q.direction[1], q.direction[2]}, q.position[3]);
+      const auto &assigned = values[i * 7 + 6];
+      require(assigned[3] == (bound ? 1.f : 0.f), "Explicit assignments bypass ordinary influence selection");
+      for (uint32_t c = 0; c < 3; ++c) {
+        const float value = bound ? (*bound)[c] * (boundLuma > 0 ? std::min(.25f / boundLuma, 1.f) : 1.f) : 0;
+        require(std::abs(assigned[c] - value) < std::max(3e-5f, std::abs(value) * 5e-5f),
+                "Explicit cubemap assignment uses its own matching lighting reference");
       }
     }
   }

@@ -124,7 +124,8 @@ void main() {
     specular += response.specular;
   }
   vec3 reflected;
-  if (!probeRadiance(worldPosition, boundary.reflected, roughness, reflected))
+  float localLuma = aggregateReceiver ? dot(max(irradiance / Pi, vec3(0)), vec3(.2126, .7152, .0722)) : -1;
+  if (!probeRadiance(worldPosition, boundary.reflected, roughness, n, localLuma, reflected))
     reflected = waterSkyRadiance(boundary.reflected) *
                 bakedSkyVisibility(worldPosition, n, boundary.reflected);
   ScreenReflectionView screen = ScreenReflectionView(frame.camera, waterFrame.inverseCamera, frame.view,

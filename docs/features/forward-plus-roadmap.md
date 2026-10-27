@@ -4157,3 +4157,19 @@ Next: shared normalization against consistently blended capture references befor
 SSR composition, world/viewmodel/water integration, numeric/scene checks, target
 bandwidth measurements and format/storage-image capability qualification before
 playable deployment. The current combined resolve writes five storage images.
+### Shared cubemap lighting normalization
+
+World, viewmodel and water fallback now normalize local cubemaps using receiver
+irradiance/pi and the capture's directional reference. Automatic blending applies
+identical spatial/priority/feather weights to both quantities; explicit layer
+assignments use the matching reference. The correction precedes SSR composition.
+Unknown receiver lighting and nonpositive references stay neutral; known darkness
+can suppress reflection. Initial gain is capped at one, following the modern
+non-VR VRF profile. Legacy unknown-lighting queries retain their prior result.
+
+Numeric GPU coverage includes 8-512 faces, rotated volumes, priorities, feathering,
+roughness, explicit assignments, dark receivers, unknown lighting and the gain cap.
+An isolated Construct replay showed modest reflection changes, not a reproduction
+or resolution of the severe HDR haze. Continue with matched in-game HDR diffuse,
+exposure and reflection isolation, rough nonmetal SH behavior, bandwidth/device
+capability qualification and playable verification before deployment.

@@ -190,8 +190,11 @@ void main() {
   vec3 fallback;
   vec3 reflected = reflectionDirection(-v, normal);
   uint layer = uint(round(clamp(1 - receiverReflectance.a, 0, 1) * 255));
-  if (!boundProbeRadiance(layer, fma(normal, vec3(frame.trace.z), position), reflected, guide.w, fallback) &&
-      !probeRadianceMasked(fma(normal, vec3(frame.trace.z), position), reflected, guide.w, probeMask, fallback))
+  float localLuma = texelFetch(receiverIrradiance, pixel, 0).r;
+  if (!boundProbeRadiance(layer, fma(normal, vec3(frame.trace.z), position), reflected, guide.w,
+                          normal, localLuma, fallback) &&
+      !probeRadianceMasked(fma(normal, vec3(frame.trace.z), position), reflected, guide.w, probeMask,
+                            normal, localLuma, fallback))
     fallback = environmentReflection(position, normal, reflected, guide.w);
   radiance.rgb += fallback * (1 - clamp(radiance.a, 0, 1));
   imageStore(outRadiance, pixel, vec4(min(radiance.rgb * fresnel, vec3(65000)), radiance.a));

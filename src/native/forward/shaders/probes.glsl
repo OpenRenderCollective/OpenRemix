@@ -14,6 +14,7 @@ layout(set = PROBE_SET, binding = PROBE_BINDING, std430) readonly buffer Reflect
   uvec4 probeParameters;
   ReflectionProbe probes[64];
   vec4 priorityMinimum[64], priorityMaximum[64];
+  vec4 normalizationSH[64];
 };
 #ifndef PROBE_IMAGE_BINDING
 #error Reflection consumers must bind the HDR radiance image
@@ -70,8 +71,8 @@ float probePriorityCoverage(uint probe, ReflectionProbe record, vec3 localPositi
   vec3 fade = max(t * t * (3 - 2 * t), vec3(1e-12));
   return fade.x * fade.y * fade.z;
 }
-void compositeProbeGroup(vec3 group, float total, float coverage, float maximumCoverage,
-                         inout vec3 result, inout float remaining) {
+void compositeProbeGroup(vec4 group, float total, float coverage, float maximumCoverage,
+                         inout vec4 result, inout float remaining) {
   float opacity = clamp(coverage / maximumCoverage, 0, 1);
   result += (group / total) * opacity * remaining;
   remaining *= 1 - opacity;
@@ -107,8 +108,9 @@ vec3 probeParallaxDirection(ReflectionProbe record, vec3 position, vec3 reflecte
 }
 // Explicit receiver assignments bypass influence/priority selection, while
 // retaining the selected capture's projection and roughness-filtered mips.
-bool boundProbeRadiance(uint layer, vec3 position, vec3 reflected, float roughness, out vec3 result) {
-  result = vec3(0);
+bool boundProbeSample(uint layer, vec3 position, vec3 reflected, float roughness,
+                      vec3 normal, bool normalizeLighting, out vec4 result) {
+  result = vec4(0);
   if (layer == 0u || layer > probeParameters.x || dot(reflected, reflected) < 1e-10) return false;
   uint probe = layer - 1u;
   ReflectionProbe record = probes[probe];
@@ -121,15 +123,18 @@ bool boundProbeRadiance(uint layer, vec3 position, vec3 reflected, float roughne
   vec3 corrected = probeParallaxDirection(record, position, reflected, localPosition, localRay);
   float lod = clamp(roughness, 0, 1) * float(probeParameters.z - 1u);
   uint low = uint(lod), high = min(low + 1u, probeParameters.z - 1u);
-  result = mix(probeMip(probe, low, corrected), probeMip(probe, high, corrected), lod - float(low));
+  float reference = normalizeLighting ? max(dot(normalizationSH[probe], vec4(normal, 1)), 0) : 0;
+  result = vec4(mix(probeMip(probe, low, corrected), probeMip(probe, high, corrected), lod - float(low)), reference);
   return true;
 }
 #ifdef PROBE_TILE_CANDIDATES
-bool probeRadianceMasked(vec3 position, vec3 reflected, float roughness, uvec2 candidates, out vec3 result) {
+bool probeSampleMasked(vec3 position, vec3 reflected, float roughness, uvec2 candidates,
+                       vec3 normal, bool normalizeLighting, out vec4 result) {
 #else
-bool probeRadiance(vec3 position, vec3 reflected, float roughness, out vec3 result) {
+bool probeSample(vec3 position, vec3 reflected, float roughness,
+                 vec3 normal, bool normalizeLighting, out vec4 result) {
 #endif
-  result = vec3(0);
+  result = vec4(0);
   if (probeParameters.x == 0u || dot(reflected, reflected) < 1e-10)
     return false;
   reflected = normalize(reflected);
@@ -160,7 +165,7 @@ bool probeRadiance(vec3 position, vec3 reflected, float roughness, out vec3 resu
     }
     if (maximumCoverage == 0) return false;
   }
-  vec3 group = vec3(0);
+  vec4 group = vec4(0);
   float priority = 3.402823e38, remaining = 1, groupCoverage = layered ? 0 : 1;
   bool found = false;
   uint low = uint(lod), high = min(low + 1u, probeParameters.z - 1u);
@@ -184,7 +189,7 @@ bool probeRadiance(vec3 position, vec3 reflected, float roughness, out vec3 resu
     if (record.minimum.w != priority && total > 0) {
       compositeProbeGroup(group, total, groupCoverage, maximumCoverage, result, remaining);
       found = true;
-      group = vec3(0);
+      group = vec4(0);
       total = 0;
       groupCoverage = layered ? 0 : 1;
       if (remaining == 0) break;
@@ -210,7 +215,8 @@ bool probeRadiance(vec3 position, vec3 reflected, float roughness, out vec3 resu
     float spatialWeight = confidence / max(dot(offset, offset), coreSquared);
     float weight = spatialWeight * edge;
     vec3 radiance = mix(probeMip(probe, low, corrected), probeMip(probe, high, corrected), lod - float(low));
-    group += radiance * weight;
+    float reference = normalizeLighting ? max(dot(normalizationSH[probe], vec4(normal, 1)), 0) : 0;
+    group += vec4(radiance, reference) * weight;
     total += weight;
     if (layered) groupCoverage = max(groupCoverage, probePriorityCoverage(probe, record, localPosition));
   }
@@ -220,3 +226,45 @@ bool probeRadiance(vec3 position, vec3 reflected, float roughness, out vec3 resu
   }
   return found;
 }
+
+
+// Capture and receiver luminance are both cosine-convolved irradiance / pi.
+// Match the modern non-VR Source 2 viewer profile: correction may darken a
+// capture, but cannot amplify it. Unknown lighting and dark references are neutral.
+vec3 normalizedProbeRadiance(vec4 captureSample, float receiverLuma) {
+  if (receiverLuma < 0 || captureSample.a <= 0) return captureSample.rgb;
+  return captureSample.rgb * min(max(receiverLuma, 0) / captureSample.a, 1);
+}
+bool boundProbeRadiance(uint layer, vec3 position, vec3 reflected, float roughness,
+                        vec3 normal, float receiverLuma, out vec3 result) {
+  vec4 captureSample;
+  bool found = boundProbeSample(layer, position, reflected, roughness, normal, receiverLuma >= 0, captureSample);
+  result = normalizedProbeRadiance(captureSample, receiverLuma);
+  return found;
+}
+bool boundProbeRadiance(uint layer, vec3 position, vec3 reflected, float roughness, out vec3 result) {
+  return boundProbeRadiance(layer, position, reflected, roughness, vec3(0), -1, result);
+}
+#ifdef PROBE_TILE_CANDIDATES
+bool probeRadianceMasked(vec3 position, vec3 reflected, float roughness, uvec2 candidates,
+                         vec3 normal, float receiverLuma, out vec3 result) {
+  vec4 captureSample;
+  bool found = probeSampleMasked(position, reflected, roughness, candidates, normal, receiverLuma >= 0, captureSample);
+  result = normalizedProbeRadiance(captureSample, receiverLuma);
+  return found;
+}
+bool probeRadianceMasked(vec3 position, vec3 reflected, float roughness, uvec2 candidates, out vec3 result) {
+  return probeRadianceMasked(position, reflected, roughness, candidates, vec3(0), -1, result);
+}
+#else
+bool probeRadiance(vec3 position, vec3 reflected, float roughness,
+                   vec3 normal, float receiverLuma, out vec3 result) {
+  vec4 captureSample;
+  bool found = probeSample(position, reflected, roughness, normal, receiverLuma >= 0, captureSample);
+  result = normalizedProbeRadiance(captureSample, receiverLuma);
+  return found;
+}
+bool probeRadiance(vec3 position, vec3 reflected, float roughness, out vec3 result) {
+  return probeRadiance(position, reflected, roughness, vec3(0), -1, result);
+}
+#endif
