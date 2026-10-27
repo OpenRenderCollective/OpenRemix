@@ -148,6 +148,10 @@ namespace remix::forward::bake {
     bool receiverCoveragePlanned = false;
     std::unique_ptr<probes::ReceiverAudit> receiverFitCoverage;
     uint32_t receiverCoverageNext = 0, receiverCoverageReceived = 0;
+    bool receiverGuardsPlanned = false, receiverGuardsFinished = false;
+    std::unique_ptr<probes::ReceiverAudit> receiverGuardCoverage;
+    std::vector<Vec3> receiverGuardPoints;
+    uint32_t receiverGuardNext = 0, receiverGuardReceived = 0;
     std::shared_ptr<const probes::ReceiverCoverageEvidence> reflectionEvidence;
     std::unique_ptr<probes::LocalCaptureWork> localCaptureWork;
     std::shared_ptr<LocalReflections> localReflections;

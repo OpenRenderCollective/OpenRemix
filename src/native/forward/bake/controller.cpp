@@ -469,6 +469,11 @@ namespace remix::forward::bake {
               job.failed = true;
               status(REMIXAPI_BAKE_FAILED_EXT, "Invalid selected reflection radiance readback");
             }
+          } else if (submission.receiverGuardCoverage) {
+            if (!job.receiverGuardCoverage || !job.receiverGuardCoverage->observe(submission.first, results)) {
+              job.failed = true;
+              status(REMIXAPI_BAKE_FAILED_EXT, "Invalid reflection guard readback ownership");
+            }
           } else if (submission.receiverFitCoverage) {
             if (!job.receiverFitCoverage || !job.receiverFitCoverage->observe(submission.first, results)) {
               job.failed = true;
@@ -547,6 +552,7 @@ namespace remix::forward::bake {
         if (!submission.styled && !submission.reference && !submission.probeDepth && !submission.coarseTransfer) (submission.sunDepth ? job.sunDepthReceived
          : submission.localReflection ? job.localCaptureReceived
          : submission.radiance ? job.captureReceived
+         : submission.receiverGuardCoverage ? job.receiverGuardReceived
          : submission.receiverFitCoverage ? job.receiverCoverageReceived
          : submission.receiverFit ? job.receiverFitReceived
          : submission.receiverSiteCheck ? job.receiverCheckReceived
@@ -573,7 +579,7 @@ namespace remix::forward::bake {
             job.overflowTiming.gpuMs += *elapsed;
           const auto work = submission.coarseTransfer                                ? Work::CoarseTransfer
                             : submission.probeDepth                                  ? Work::ProbeDepth
-                            : submission.reflectionGeometry || submission.reflectionReceiver || submission.receiverSiteCheck || submission.receiverFit || submission.receiverFitCoverage || submission.sunDepth ? Work::Geometry
+                            : submission.reflectionGeometry || submission.reflectionReceiver || submission.receiverSiteCheck || submission.receiverFit || submission.receiverFitCoverage || submission.receiverGuardCoverage || submission.sunDepth ? Work::Geometry
                             : submission.visibility || submission.direct || submission.directionalField ||
                               submission.overflowVisibility || submission.probeLocal     ? Work::Visibility
                             : submission.sun || submission.probeSun                  ? Work::Sun

@@ -1,5 +1,6 @@
 #include "forward/probes/coverage_guards.h"
 #include <cmath>
+#include <algorithm>
 #include <stdexcept>
 
 namespace remix::forward::probes {
@@ -47,5 +48,76 @@ namespace remix::forward::probes {
           }
     }
     return points;
+  }
+  std::vector<ReceiverPair> coverageGuardPairs(std::span<const Vec3> guards, const ReceiverFits &fits,
+      float minimumDistance, uint32_t budget, std::stop_token cancelled) {
+    auto check = [&] {
+      if (cancelled.stop_requested()) throw std::runtime_error("Reflection guard queries superseded");
+    };
+    check();
+    if (guards.size() > maxProbes * coverageGuardsPerVolume || fits.attempts.size() > 32 ||
+        !budget || budget > 32768 || !std::isfinite(minimumDistance) || minimumDistance <= 0)
+      throw std::invalid_argument("Invalid reflection guard query budget");
+    std::vector<Vec3> origins;
+    for (const auto &fit : fits.attempts) {
+      if (fit.variants.size() > ReceiverSiteFit::maximumVariants)
+        throw std::invalid_argument("Too many reflection guard variants");
+      Vec3 origin{};
+      for (size_t i = 0; i < fit.variants.size(); ++i) {
+        const auto &variant = fit.variants[i];
+        if (!variant.geometry || !variant.geometry->geometryEvaluated || !variant.influence.valid)
+          throw std::invalid_argument("Guard queries require assessed projection fits");
+        for (uint32_t c = 0; c < 3; ++c)
+          if (!std::isfinite(variant.influence.minimum[c]) || !std::isfinite(variant.influence.maximum[c]) ||
+              variant.influence.minimum[c] >= variant.influence.maximum[c] ||
+              !std::isfinite(variant.geometry->site.position[c]))
+            throw std::invalid_argument("Invalid reflection guard fit");
+        if (i && origin != variant.geometry->site.position)
+          throw std::invalid_argument("Guard variants must share a capture origin");
+        origin = variant.geometry->site.position;
+      }
+      origins.push_back(origin);
+    }
+    auto ray = [&](uint32_t guard, uint32_t capture) -> std::optional<ReceiverRay> {
+      // These are volume points, not surfaces: do not offset the origin past
+      // a nearby thin occluder. Degenerate/short connections stay unknown.
+      ReceiverRay result{};
+      double distanceSquared = 0;
+      std::array<double, 3> delta;
+      for (uint32_t c = 0; c < 3; ++c) {
+        result.point.position[c] = guards[guard][c];
+        delta[c] = double(origins[capture][c]) - guards[guard][c];
+        distanceSquared += delta[c] * delta[c];
+      }
+      const double distance = std::sqrt(distanceSquared);
+      result.distance = float(distance);
+      if (!std::isfinite(result.distance) || distance <= minimumDistance) return {};
+      for (uint32_t c = 0; c < 3; ++c) result.point.normal[c] = float(delta[c] / distance);
+      return result;
+    };
+    std::vector<std::pair<uint32_t, uint32_t>> pool;
+    for (uint32_t g = 0; g < guards.size(); ++g) {
+      check();
+      for (float value : guards[g])
+        if (!std::isfinite(value)) throw std::invalid_argument("Nonfinite reflection query guard");
+      for (uint32_t f = 0; f < fits.attempts.size(); ++f) {
+        const bool inside = std::any_of(fits.attempts[f].variants.begin(), fits.attempts[f].variants.end(),
+            [&](const ReceiverProjection &variant) {
+              for (uint32_t c = 0; c < 3; ++c)
+                if (guards[g][c] < variant.influence.minimum[c] || guards[g][c] > variant.influence.maximum[c]) return false;
+              return true;
+            });
+        if (inside && ray(g, f)) pool.emplace_back(g, f);
+      }
+    }
+    const size_t count = std::min(pool.size(), size_t(budget));
+    std::vector<ReceiverPair> result;
+    result.reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+      check();
+      const auto [guard, capture] = pool[((2 * i + 1) * pool.size()) / (2 * count)];
+      result.push_back({guard, capture, *ray(guard, capture)});
+    }
+    return result;
   }
 }

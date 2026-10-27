@@ -40,4 +40,27 @@ int main() {
   std::stop_source stop; stop.request_stop();
   require(rejects([&] { p::coverageGuardPoints({}, stop.get_token()); }));
   require(p::coverageGuardPoints({}).empty());
+  p::ReceiverFits fits;
+  p::ReceiverProjection variant;
+  variant.influence.valid = true;
+  variant.influence.minimum = {-10, -10, -10};
+  variant.influence.maximum = {10, 10, 10};
+  variant.geometry.emplace();
+  variant.geometry->geometryEvaluated = true;
+  variant.geometry->site.position = {0, 0, 5};
+  fits.attempts.push_back({0, {variant, variant}});
+  std::vector<Vec3> guards{{0, 0, 0}, {0, 0, 5}, {50, 0, 0}, {0, 0, 4.999f}, {1, 0, 0}};
+  const auto pairs = p::coverageGuardPairs(guards, fits, .01f);
+  require(pairs.size() == 2 && pairs[0].receiver == 0 && pairs[1].receiver == 4 && pairs[0].capture == 0);
+  require(std::abs(pairs[0].ray.distance - 5.f) < 1e-5 &&
+          pairs[0].ray.point.position[2] == 0 && pairs[0].ray.point.normal[2] == 1);
+  const auto bounded = p::coverageGuardPairs(guards, fits, .01f, 1);
+  require(bounded.size() == 1 && bounded[0].receiver == 4);
+  require(rejects([&] { p::coverageGuardPairs(guards, fits, .01f, 0); }));
+  require(rejects([&] { p::coverageGuardPairs(guards, fits, .01f, 1, stop.get_token()); }));
+  fits.attempts[0].variants[1].geometry->site.position[0] = 1;
+  require(rejects([&] { p::coverageGuardPairs(guards, fits, .01f); }));
+  fits.attempts[0].variants = {variant};
+  guards[0][0] = std::numeric_limits<float>::quiet_NaN();
+  require(rejects([&] { p::coverageGuardPairs(guards, fits, .01f); }));
 }

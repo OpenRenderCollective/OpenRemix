@@ -118,6 +118,7 @@ namespace remix::forward::bake {
           status(REMIXAPI_BAKE_TRACING_EXT, "Checking optional local reflection receiver coverage");
           return true;
         }
+        if (recordCoverageGuardDiagnostics(command, config)) return true;
         const auto owner = m_job;
         job.ticket = m_pipelines->prepare("forward-receiver-sites-" + std::to_string(++receiverDiagnosticGeneration), [owner] {
           probes::dumpReceiverSites(*owner->source, owner->captures, *owner->receiverSites, owner->receiverSiteChecks.get(), owner->receiverFits.get(), owner->receiverFitCoverage.get(),
