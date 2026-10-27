@@ -100,6 +100,14 @@ memory, less than the decoded copies kept with compression off. Without it, a
 compressed texture is written from its preview level (at most 64 pixels), and
 the capture says how many were.
 
+Normal maps are written the way RTX Remix samples them: unsigned octahedral
+in RG, as `textures/<HASH>_<encoding>_OTH_Normal.dds` with `encoding = 0`. The
+Remix runtime decodes every normal map as octahedral; its Toolkit converts
+tangent-space maps on ingest. Each texel is decoded as the path tracer does
+for the material's normal encoding first: tangent space DX or GL, two-channel
+BC5, octahedral, or Source's $ssbump. The loader maps AperturePBR's `encoding`
+(0 octahedral, 1 tangent OpenGL, 2 tangent DirectX) to the runtime's.
+
 ## Tests
 
 `tests/usd/capture.cpp` runs the whole path without a GPU: it records a frame

@@ -53,6 +53,16 @@ namespace remix::usd {
         throw std::runtime_error("Could not write " + utf8(target));
       }
     }
+    void writeFile(const fs::path &target, const std::vector<uint8_t> &bytes) {
+      const auto temporary = partial(target);
+      {
+        std::ofstream out(temporary, std::ios::binary);
+        out.write(reinterpret_cast<const char *>(bytes.data()), std::streamsize(bytes.size()));
+        if (!out)
+          throw std::runtime_error("Could not write " + utf8(target));
+      }
+      commit(temporary, target);
+    }
     void exportLayer(const SdfLayerHandle &layer, const fs::path &target) {
       const auto temporary = partial(target);
       if (!layer->Export(utf8(temporary)))
@@ -158,10 +168,74 @@ namespace remix::usd {
       exportLayer(stage->GetRootLayer(), file);
     }
 
+    // A normal map as RTX Remix samples it: unsigned octahedral in RG (the
+    // runtime decodes every normal map that way; the Toolkit's ingest converts
+    // to it). Named per source encoding, which decides the decode.
+    std::string normalName(uint64_t texture, uint32_t encoding) {
+      return hex(texture) + "_" + std::to_string(encoding) + "_OTH_Normal.dds";
+    }
+    // Level 0 as RGBA8: decoded BC blocks, else the preview, the 8-bit level
+    // or the HDR level clamped.
+    std::vector<uint8_t> rgba(const scene::Pixels &p, uint32_t &width, uint32_t &height) {
+      width = p.width, height = p.height;
+      if (p.compressed && !p.compressed->upload.empty())
+        return scene::decodeCompressed(p).mips.at(0);
+      if (p.compressed) {
+        width = p.compressed->previewWidth, height = p.compressed->previewHeight;
+        return p.compressed->preview;
+      }
+      if (!p.mips.empty())
+        return p.mips[0];
+      std::vector<uint8_t> out;
+      if (!p.hdrMips.empty())
+        for (float v : p.hdrMips[0])
+          out.push_back(uint8_t(std::lround(std::clamp(v, 0.f, 1.f) * 255)));
+      return out;
+    }
+    // Each texel decoded as the path tracer's materialLocalNormal does for the
+    // encoding (0 auto, 1 octahedral, 2 tangent DX, 3 tangent GL, 4 $ssbump,
+    // 5 water), then encoded as Remix's unsigned octahedral.
+    std::vector<uint8_t> octahedral(const scene::Pixels &p, uint32_t encoding, uint32_t &width, uint32_t &height) {
+      auto texels = rgba(p, width, height);
+      if (texels.size() != size_t(width) * height * 4)
+        return {};
+      const bool twoChannel = p.twoChannel || (p.compressed && p.compressed->block == 5);
+      for (size_t i = 0; i < texels.size(); i += 4) {
+        float v[3] = {texels[i] / 255.f, texels[i + 1] / 255.f, texels[i + 2] / 255.f};
+        if (encoding == 4) {
+          // Source's $ssbump: weights of its three bump basis directions.
+          const float w[3] = {v[0], v[1], v[2]};
+          v[0] = .81649658f * w[0] - .40824829f * w[1] - .40824829f * w[2];
+          v[1] = .70710678f * w[1] - .70710678f * w[2];
+          v[2] = .57735027f * (w[0] + w[1] + w[2]);
+        } else
+          for (float &c : v)
+            c = c * 2 - 1;
+        if (twoChannel)
+          v[2] = std::sqrt(std::max(0.f, 1 - v[0] * v[0] - v[1] * v[1]));
+        if (encoding == 1) {
+          const float x = (v[0] + v[1]) * .5f, y = (v[0] - v[1]) * .5f;
+          v[0] = x, v[1] = y, v[2] = 1 - std::abs(x) - std::abs(y);
+        }
+        if (encoding == 3)
+          v[1] = -v[1];
+        v[2] = std::max(v[2], .001f);
+        if (v[0] * v[0] + v[1] * v[1] + v[2] * v[2] < 1e-8f)
+          v[0] = v[1] = 0, v[2] = 1;
+        const float sum = std::abs(v[0]) + std::abs(v[1]) + v[2];
+        const float x = v[0] / sum, y = v[1] / sum;
+        texels[i] = uint8_t(std::lround(std::clamp((x + y) * .5f + .5f, 0.f, 1.f) * 255));
+        texels[i + 1] = uint8_t(std::lround(std::clamp((x - y) * .5f + .5f, 0.f, 1.f) * 255));
+        texels[i + 2] = 0;
+        texels[i + 3] = 255;
+      }
+      return texels;
+    }
+
     // materials/mat_<hash>.usda: an AperturePBR material as Remix captures
     // author it, with the inputs scene.cpp reads.
     void writeMaterial(uint64_t hash, const CaptureScene::Material &m, const fs::path &file,
-                       const std::set<uint64_t> &textures) {
+                       const std::set<uint64_t> &textures, const std::set<std::string> &normals) {
       auto stage = UsdStage::CreateInMemory(file.filename().string());
       const auto name = "mat_" + hex(hash);
       auto material = UsdShadeMaterial::Define(stage, SdfPath("/" + name));
@@ -194,11 +268,11 @@ namespace remix::usd {
         map("reflectionroughness_texture", m.roughnessMap);
         map("metallic_texture", m.metallicMap);
       }
-      map("normalmap_texture", m.normal);
-      // The loader passes encoding + 1 to the runtime (submission.cpp); the
-      // Source engine encodings (4, 5) have no USD counterpart.
-      if (m.normalEncoding >= 1 && m.normalEncoding <= 3)
-        input("encoding", SdfValueTypeNames->Int, VtValue(int(m.normalEncoding) - 1));
+      if (m.normal && normals.count(normalName(m.normal, m.normalEncoding))) {
+        input("normalmap_texture", SdfValueTypeNames->Asset,
+              VtValue(SdfAssetPath("../textures/" + normalName(m.normal, m.normalEncoding))));
+        input("encoding", SdfValueTypeNames->Int, VtValue(0)); // octahedral
+      }
       const float intensity = std::max({m.emission[0], m.emission[1], m.emission[2]});
       input("enable_emission", SdfValueTypeNames->Bool, VtValue(intensity > 0 || m.emissive != 0));
       if (intensity > 0) {
@@ -406,15 +480,7 @@ namespace remix::usd {
         // The profile's text as given, beside the capture (UsdLuxShapingAPI's file).
         if (!light.ies.empty()) {
           const auto name = "light_" + hex(hash) + ".ies";
-          const auto file = directory / "lights" / name;
-          const auto temporary = partial(file);
-          {
-            std::ofstream out(temporary, std::ios::binary);
-            out.write(light.ies.data(), std::streamsize(light.ies.size()));
-            if (!out)
-              throw std::runtime_error("Could not write " + utf8(file));
-          }
-          commit(temporary, file);
+          writeFile(directory / "lights" / name, std::vector<uint8_t>(light.ies.begin(), light.ies.end()));
           set(prim, "inputs:shaping:ies:file", SdfValueTypeNames->Asset, VtValue(SdfAssetPath("./lights/" + name)));
         }
       }
@@ -470,18 +536,29 @@ namespace remix::usd {
         textures.insert(hash);
         continue;
       }
-      const auto temporary = partial(file);
-      {
-        std::ofstream out(temporary, std::ios::binary);
-        out.write(reinterpret_cast<const char *>(bytes.data()), std::streamsize(bytes.size()));
-        if (!out)
-          throw std::runtime_error("Could not write " + utf8(file));
-      }
-      commit(temporary, file);
+      writeFile(file, bytes);
       textures.insert(hash);
     }
+    std::set<std::string> normals;
+    for (const auto &[hash, material] : scene.materials) {
+      const auto source = scene.textures.find(material.normal);
+      if (source == scene.textures.end())
+        continue;
+      const auto name = normalName(material.normal, material.normalEncoding);
+      if (!normals.insert(name).second)
+        continue;
+      scene::Pixels converted;
+      converted.srgb = false;
+      auto texels = octahedral(source->second, material.normalEncoding, converted.width, converted.height);
+      if (texels.empty()) {
+        normals.erase(name);
+        continue;
+      }
+      converted.mips.push_back(std::move(texels));
+      writeFile(directory / "textures" / name, scene::encodeDds(converted));
+    }
     for (const auto &[hash, material] : scene.materials)
-      writeMaterial(hash, material, directory / "materials" / ("mat_" + hex(hash) + ".usda"), textures);
+      writeMaterial(hash, material, directory / "materials" / ("mat_" + hex(hash) + ".usda"), textures, normals);
     for (const auto &[hash, mesh] : scene.meshes)
       writeMesh(scene, hash, mesh, directory / "meshes" / ("mesh_" + hex(hash) + ".usd"));
 

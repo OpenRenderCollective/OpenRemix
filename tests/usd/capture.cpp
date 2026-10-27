@@ -26,9 +26,11 @@ namespace {
       throw std::runtime_error(message);
   }
 #ifdef _WIN32
-  constexpr remixapi_Path rgbaPath = L"0x00000000000000A1", bcPath = L"0x00000000000000B1";
+  constexpr remixapi_Path rgbaPath = L"0x00000000000000A1", bcPath = L"0x00000000000000B1",
+                          normalPath = L"0x00000000000000C1";
 #else
-  constexpr remixapi_Path rgbaPath = "0x00000000000000A1", bcPath = "0x00000000000000B1";
+  constexpr remixapi_Path rgbaPath = "0x00000000000000A1", bcPath = "0x00000000000000B1",
+                          normalPath = "0x00000000000000C1";
 #endif
   constexpr uint64_t meshHash = 0x0123456789ABCDEFull, rgbaMaterial = 0x1111ull, bcMaterial = 0x2222ull,
                      lightHash = 0x3333ull, spotHash = 0x4444ull;
@@ -81,6 +83,15 @@ int main() {
     info.dataSize = sizeof block;
     step = "BC1 texture";
     resources.createTexture(info, scene::compressTexture(info), texture);
+    // A tangent-space normal map: flat, and leaning fully toward +X.
+    const uint8_t normals[2 * 4] = {128, 128, 255, 255, 255, 128, 128, 255};
+    info.hash = 0xC1;
+    info.width = 2;
+    info.height = 1;
+    info.format = REMIXAPI_FORMAT_R8G8B8A8_UNORM;
+    info.data = normals;
+    info.dataSize = sizeof normals;
+    resources.createTexture(info, texture);
 
     remixapi_MaterialHandle materials[2]{};
     remixapi_MaterialInfoOpaqueEXT opaque{};
@@ -94,11 +105,13 @@ int main() {
     material.pNext = &opaque;
     material.hash = rgbaMaterial;
     material.albedoTexture = rgbaPath;
+    material.normalTexture = normalPath;
     material.wrapModeU = material.wrapModeV = 1;
     step = "material";
     resources.createMaterial(material, materials[0]);
     material.hash = bcMaterial;
     material.albedoTexture = bcPath;
+    material.normalTexture = nullptr;
     material.emissiveIntensity = 2;
     material.emissiveColorConstant = {1, .5f, 0};
     resources.createMaterial(material, materials[1]);
@@ -228,6 +241,13 @@ int main() {
         block1 = pixels.compressed && pixels.compressed->upload.size() == sizeof block &&
                  std::equal(block, block + sizeof block, pixels.compressed->upload.begin());
       } else {
+        // Normal maps are written as Remix samples them: unsigned octahedral.
+        const auto normal = scene::loadTexture(item["normal_texture"].get<std::string>());
+        const auto &n = normal.mips.at(0);
+        require(item["normal_texture"].get<std::string>().ends_with("_OTH_Normal.dds") &&
+                    item["normal_encoding"] == 0 && std::abs(n[0] - 128) <= 1 && std::abs(n[1] - 128) <= 1 &&
+                    n[4] >= 250 && n[5] >= 250,
+                "normal map converted to octahedral");
         require(pixels.width == 2 && pixels.mips.size() == 1 &&
                     std::equal(rgba, rgba + sizeof rgba, pixels.mips[0].begin()),
                 "RGBA texture round trip");

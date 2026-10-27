@@ -305,7 +305,10 @@ namespace remix::usd {
     remixapi_MaterialNormalEncodingEXT normal_encoding{};
     normal_encoding.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_NORMAL_ENCODING_EXT;
     normal_encoding.pNext = info.pNext;
-    normal_encoding.encoding = uint32_t(data.value("normal_encoding", 0)) + 1;
+    // AperturePBR's encodings (0 octahedral, 1 tangent space OpenGL, 2 tangent
+    // space DirectX) as the runtime's (1 octahedral, 3 OpenGL, 2 DirectX).
+    const int encoding = data.value("normal_encoding", 0);
+    normal_encoding.encoding = encoding == 1 ? 3 : encoding == 2 ? 2 : 1;
     info.pNext = &normal_encoding;
     remixapi_MaterialHandle handle{};
     resources_.createMaterial(info, handle);
