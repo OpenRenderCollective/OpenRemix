@@ -139,9 +139,8 @@ renaming the UI alone would leave the ambiguity intact. Live GI also changes thi
 configuration, so it belongs in the same resolution step rather than a second
 independent set of booleans. None of these paths is declared unused by this audit.
 
-The baked-irradiance GPU fixture currently fails its rough-metal cubemap assertion
-with both the original and extracted receiver shader. Track and diagnose that
-failure separately; it prevents claiming full baked-lighting qualification.
-Its current diagnostic reports eight published reflection layers but black rough
-metal output, so investigation must check selection, transport and composition
-rather than assume no captures exist.
+The rough-metal fixture exposed fallback cubemap coverage holes: subdivision
+created more cells than valid capture sites, then discarded empty cells. Fallback
+placement now splits populated site sets, retaining coverage with sparse origins.
+This concerns scenes without a closed spatial partition; fitted BSP coverage and
+Construct's outdoor gaps remain separate quality work.

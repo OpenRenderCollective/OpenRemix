@@ -10,6 +10,60 @@
 
 namespace remix::forward::probes {
   namespace {
+    // Every cell keeps at least one valid capture origin. Subdividing empty
+    // cells and dropping them later leaves holes when the irradiance grid is
+    // sparse relative to the requested reflection budget.
+    std::vector<Bounds> fallbackBoxes(const Bounds &bounds, const bake::Grid &grid, uint32_t count,
+                                      std::stop_token cancelled) {
+      struct Cell { Bounds bounds; std::vector<Vec3> sites; };
+      if (cancelled.stop_requested()) throw std::runtime_error("Reflection placement superseded");
+      std::vector<Cell> cells{{bounds, {}}};
+      for (auto index : grid.tasks) {
+        if ((index & 4095u) == 0 && cancelled.stop_requested())
+          throw std::runtime_error("Reflection placement superseded");
+        if (grid.probes[index].statistics[3] < .5f) continue;
+        const auto &point = grid.points[index].position;
+        bool inside = true;
+        for (uint32_t c = 0; c < 3; ++c)
+          inside &= std::isfinite(point[c]) && point[c] >= bounds.minimum[c] && point[c] <= bounds.maximum[c];
+        if (inside) cells.front().sites.push_back({point[0], point[1], point[2]});
+      }
+      if (cells.front().sites.empty()) return {};
+      while (cells.size() < count) {
+        if (cancelled.stop_requested()) throw std::runtime_error("Reflection placement superseded");
+        size_t selected = 0;
+        uint32_t axis = 0;
+        float longest = 0, middle = 0;
+        for (size_t i = 0; i < cells.size(); ++i) {
+          Vec3 low = cells[i].sites.front(), high = low;
+          for (const auto &site : cells[i].sites)
+            for (uint32_t c = 0; c < 3; ++c) {
+              low[c] = std::min(low[c], site[c]);
+              high[c] = std::max(high[c], site[c]);
+            }
+          for (uint32_t c = 0; c < 3; ++c) {
+            const float cut = std::midpoint(low[c], high[c]);
+            const float length = cells[i].bounds.maximum[c] - cells[i].bounds.minimum[c];
+            if (low[c] < cut && cut < high[c] && length > longest) {
+              selected = i; axis = c; longest = length; middle = cut;
+            }
+          }
+        }
+        if (longest == 0) break;
+        Cell second{cells[selected].bounds, {}};
+        second.bounds.minimum[axis] = middle;
+        cells[selected].bounds.maximum[axis] = middle;
+        auto &sites = cells[selected].sites;
+        const auto split = std::stable_partition(sites.begin(), sites.end(),
+            [&](const Vec3 &site) { return site[axis] < middle; });
+        second.sites.assign(split, sites.end());
+        sites.erase(split, sites.end());
+        cells.push_back(std::move(second));
+      }
+      std::vector<Bounds> result;
+      for (const auto &cell : cells) result.push_back(cell.bounds);
+      return result;
+    }
     Bounds placementBounds(const scene::BakeScene &scene, const bake::Grid &grid) {
       Bounds bounds;
       const auto &h = grid.header;
@@ -81,8 +135,10 @@ namespace remix::forward::probes {
     if (!count)
       return {};
     const auto bounds = placementBounds(scene, grid);
+    const bool fitted = scene.partition && scene.partition->closed;
     std::vector<Bounds> boxes{bounds};
-    while (boxes.size() < count) {
+    if (!fitted) boxes = fallbackBoxes(bounds, grid, count, cancelled);
+    while (fitted && boxes.size() < count) {
       size_t selected = 0;
       uint32_t axis = 0;
       float longest = 0;
@@ -102,7 +158,6 @@ namespace remix::forward::probes {
       boxes.push_back(second);
     }
     std::vector<FittedRegion> regions, alternatives;
-    const bool fitted = scene.partition && scene.partition->closed;
     auto covered = [&](Vec3 position) {
       return std::any_of(regions.begin(), regions.end(), [&](const auto &capture) {
         for (uint32_t c = 0; c < 3; ++c)

@@ -300,7 +300,8 @@ namespace remix::forward::bake::cache {
         finite(texel);
     }
   } // namespace
-  uint64_t key(uint64_t content, const Config &c, float cutoff, const Device &d, const DirectPolicy &policy) {
+  uint64_t key(uint64_t content, const Config &c, float cutoff, const Device &d, const DirectPolicy &policy,
+               bool fallbackReflections) {
     static const uint64_t shaders = [] {
       auto hash = scene::fastHash(atlasShader, sizeof(atlasShader));
       hash = scene::fastHash(transportShader, sizeof(transportShader), hash);
@@ -348,6 +349,10 @@ namespace remix::forward::bake::cache {
       // Diffuse-only bakes keep their existing cache keys.
       const uint32_t reflectionFit[] = {0x5245474eu, 1};
       raw = scene::fastHash(reflectionFit, sizeof(reflectionFit), raw);
+      if (fallbackReflections) {
+        const uint32_t fallbackCoverage[] = {0x46424356u, 1};
+        raw = scene::fastHash(fallbackCoverage, sizeof(fallbackCoverage), raw);
+      }
     }
     if (c.probeSampleCount() != c.samples) {
       const uint32_t probeQuality[] = {0x5052534du, 2, c.probeSampleCount()};

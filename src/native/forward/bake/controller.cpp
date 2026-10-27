@@ -187,7 +187,9 @@ namespace remix::forward::bake {
                                      properties.limits.maxStorageBufferRange,
                                      {}};
       std::copy_n(properties.pipelineCacheUUID, deviceIdentity.uuid.size(), deviceIdentity.uuid.begin());
-      cacheKey = cache::key(source->contentHash, config, lightCutoff, deviceIdentity, directLighting);
+      const bool fallbackReflections = !source->partition || !source->partition->closed;
+      cacheKey = cache::key(source->contentHash, config, lightCutoff, deviceIdentity, directLighting,
+                            fallbackReflections);
       try {
         cacheFile = cache::path(cacheKey);
       } catch (const std::exception &) {
@@ -206,7 +208,8 @@ namespace remix::forward::bake {
         }
         if (!cancellation.stop_requested())
           cache::recordLookup(cacheFile, cacheKey, source->contentHash,
-                               cache::key(0, config, lightCutoff, deviceIdentity, directLighting), bool(cached));
+                               cache::key(0, config, lightCutoff, deviceIdentity, directLighting,
+                                          fallbackReflections), bool(cached));
         if (cached) {
           grid = std::move(cached->grid);
           surfaceLayout = std::move(cached->layout);

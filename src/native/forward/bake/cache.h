@@ -19,8 +19,10 @@ namespace remix::forward::bake::cache {
   // Explicit aggregate membership adds its estimator shaders and policy bytes;
   // an empty policy adds neither ownership bytes nor aggregate shader hashes.
   // CPU planning revisions still invalidate the complete lighting cache key.
+  // Fallback reflection placement is used without a closed spatial partition;
+  // its coverage policy must not invalidate fitted BSP or diffuse-only bakes.
   uint64_t key(uint64_t content, const Config &config, float cutoff, const Device &device,
-               const DirectPolicy &policy = {});
+               const DirectPolicy &policy = {}, bool fallbackReflections = false);
   std::filesystem::path path(uint64_t key);
   // One small receipt per attempted disk lookup. Separates changed captured
   // inputs from shader/settings/device policy changes across installations.

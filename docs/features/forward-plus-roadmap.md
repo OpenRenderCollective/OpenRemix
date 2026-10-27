@@ -4101,3 +4101,12 @@ Continue toward a common standard shade entry point. Prove future override plumb
 with Refract, declaring scene colour/depth and pass/coverage requirements explicitly.
 Evaluate HLSL/Slang and single-file .shader/.vfx-style authoring independently; neither
 is implemented yet. See the material override section of the lighting architecture.
+### Sparse fallback cubemap coverage
+
+Fixed the demonstrated black rough-metal receiver in the baked-lighting GPU fixture.
+Without a closed spatial partition, old placement subdivided beyond valid capture
+sites and dropped empty cells, leaving interior gaps. Fallback cells now split only
+when populated sites can remain on both sides. Fitted BSP region placement is
+unchanged. The fallback cache identity changes only for reflection-enabled scenes
+using that policy; fitted and diffuse-only keys are preserved. Construct outdoor
+coverage and reflection normalization remain open rather than implied fixed here.

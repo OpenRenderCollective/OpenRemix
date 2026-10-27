@@ -49,6 +49,13 @@ int main(int argc, char **argv) {
   config.reflectionResolution = 8;
   bc::Device device{1, 2, 3, 4096, 256, 128u << 20, {}};
   const auto identity = bc::key(source->contentHash, config, .001f, device);
+  require(bc::key(source->contentHash, config, .001f, device, {}, true) != identity,
+          "Fallback reflection placement rejects caches with old coverage holes");
+  auto diffuseOnly = config;
+  diffuseOnly.reflectionProbes = 0;
+  require(bc::key(source->contentHash, diffuseOnly, .001f, device, {}, true) ==
+              bc::key(source->contentHash, diffuseOnly, .001f, device),
+          "Fallback placement changes preserve diffuse-only cache identity");
   auto execution = config;
   execution.batch = 1024;
   execution.gpuBudgetMs = 0;

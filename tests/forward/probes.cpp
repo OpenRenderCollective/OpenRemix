@@ -108,6 +108,18 @@ int main() {
     require(std::abs(probe.position[0]) == .5f && std::abs(probe.position[1]) == .5f &&
                 probe.radiance.size() == 6 * 8 * 8,
             "Reflection captures reuse validated irradiance sites and contain six complete faces");
+  auto sparse = p::place(scene, grid, 64, 8);
+  require(sparse.size() == 8, "A large reflection budget does not subdivide beyond available capture sites");
+  for (auto &probe : sparse)
+    for (auto &texel : probe.radiance) texel = {1, 2, 3, 0};
+  const auto sparseData = p::filter(sparse, 8);
+  for (float x : {-1.f, -.5f, 0.f, .5f, 1.f})
+    for (float y : {-1.f, -.5f, 0.f, .5f, 1.f})
+      for (float z : {-1.f, -.5f, 0.f, .5f, 1.f}) {
+        const auto value = p::sample(sparseData, {x, y, z}, {0, 0, 1}, .8f);
+        require(value && std::abs((*value)[1] - 2) < .001f,
+                "Sparse fallback sites cover the scene interior, shared boundaries and outer corners");
+      }
   for (auto &probe : grid.probes)
     probe.statistics[3] = 0;
   require(p::place(scene, grid, 4, 8).empty(),
