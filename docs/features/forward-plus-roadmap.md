@@ -4091,3 +4091,13 @@ Allow unified providers to replace several services without double-counting ener
 Audit experimental paths and settings with caller/evidence checks before removal.
 Measure draw aggregation and shader changes independently; retain current quality,
 bake-time, cubemap, HDR and probe issues rather than treating refactoring as a fix.
+### Adapter-supplied material shader direction
+
+Keep lighting presets independent from material shader choice. Plan opt-in game
+adapter mappings to material implementations, retaining standard PBR/AutoPBR and
+Remix replacements by default. Source shader names and VMT parsing stay adapter-side.
+The standard decoder now produces a separate Surface value before receiver lighting.
+Continue toward a common standard shade entry point. Prove future override plumbing
+with Refract, declaring scene colour/depth and pass/coverage requirements explicitly.
+Evaluate HLSL/Slang and single-file .shader/.vfx-style authoring independently; neither
+is implemented yet. See the material override section of the lighting architecture.

@@ -19,6 +19,7 @@ layout(early_fragment_tests) in;
 #ifndef SHADOW_PASS
 #include "brdf.glsl"
 #include "emitter.glsl"
+#include "surface.glsl"
 #define STYLED_BAKE
 #include "irradiance.glsl"
 #include "style-lighting.glsl"
@@ -98,23 +99,13 @@ void main() {
 #endif
     return;
   }
-  vec4 emissionTexel = (m.maps.x & 8u) != 0u ? texture(emissionMap, uv) : vec4(1);
-  vec3 emitted;
-  float reflected;
-  emissionLobes(m.emission, m.state, surface, texture(albedoMap, uv), emissionTexel, emitted, reflected);
-  surface.rgb *= reflected;
   vec3 v = normalize(frame.cameraPosition.xyz - worldPosition);
   vec3 geometric = cross(dFdx(worldPosition), dFdy(worldPosition));
-  vec3 n = dot(worldNormal, worldNormal) > 1e-10 ? normalize(worldNormal) : normalize(geometric);
-  if (dot(n, v) < 0)
-    n = -n;
-  if (LightingView != 5u) n = mappedNormal(m, uv, worldPosition, n, v);
-  float roughness =
-      (m.maps.x & 1u) != 0u ? mapValue(texture(roughnessMap, uv), m.remap[0], m.maps.z) : m.pbr.x;
-  float metallic = (m.maps.x & 2u) != 0u ? mapValue(texture(metallicMap, uv), m.remap[1], m.maps.w) : m.pbr.y;
-  // Filter specular at normal-map frequencies MSAA alone cannot sample.
-  roughness =
-      clamp(sqrt(roughness * roughness + min(.25, dot(dFdx(n), dFdx(n)) + dot(dFdy(n), dFdy(n)))), .04, 1);
+  Surface evaluated = evaluateStandardSurface(m, surface, uv, worldPosition, worldNormal,
+                                              geometric, v, LightingView != 5u);
+  surface = evaluated.color;
+  vec3 emitted = evaluated.emission, n = evaluated.normal;
+  float roughness = evaluated.roughness, metallic = evaluated.metallic;
   float depth = abs((frame.view * vec4(worldPosition, 1)).z);
   vec3 ambient = frame.ambientExposure.rgb, irradiance;
   // Explicit subrectangle bounds isolate chart neighbours, including MSAA edge

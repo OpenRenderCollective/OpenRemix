@@ -3535,10 +3535,11 @@ namespace {
     camera(r);
     r.drawInstance(instance(metalMesh));
     pixels = target.render();
+    std::printf("Probe-only rough metal RGB: %u %u %u; reflection layers %u\n", unsigned(pixels[center]),
+                unsigned(pixels[center + 1]), unsigned(pixels[center + 2]),
+                target.forward->statistics().reflectionProbes.parameters[0]);
     require(pixels[center + 1] > 80 && pixels[center + 1] > 3 * pixels[center],
             "A rough metallic surface receives cubemap specular with SSR disabled and zero diffuse fill");
-    std::printf("Probe-only rough metal RGB: %u %u %u\n", unsigned(pixels[center]),
-                unsigned(pixels[center + 1]), unsigned(pixels[center + 2]));
     const auto controller = target.forward->bakeController();
     const auto published = controller->volume();
     options.baking.batch = 512;

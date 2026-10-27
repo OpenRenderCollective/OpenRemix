@@ -39,6 +39,34 @@ Initial extraction: `shaders/receiver-lighting.glsl` owns diffuse receiver looku
 for world and viewmodels. It preserves the existing surface/probe/live-GI behavior
 and aggregate-light bookkeeping. The full surface/shading API is still pending.
 
+`shaders/surface.glsl` now defines evaluated surface values and the standard PBR
+decoder. It separates material sampling, emission, normal mapping and roughness
+filtering from receiver lighting. The packed `Material` record remains an internal
+compatibility input; it is not the shader authoring contract.
+
+## Opt-in material shader overrides
+
+Lighting presets select techniques. Material shader selection is independent:
+the adapter may map a game's shader identity to an optional material implementation.
+Unmapped materials keep standard PBR conversion, AutoPBR and Remix replacements.
+Source shader names and VMT interpretation belong in the GMod adapter, not native
+renderer dispatch. Exact Source material compatibility is optional and must not
+implicitly replace the selected lighting providers.
+
+A future single-file authoring format can declare parameters, textures, stage code,
+supported passes and named resource requirements. Scene colour/depth requirements
+must participate in pass planning; shaders must not rely on internal descriptor
+numbers or access arbitrary renderer resources. Depth, alpha coverage, shadow,
+MSAA and viewmodel behavior need explicit contracts and sensible fallbacks.
+
+Evaluate HLSL/Slang compiler integration separately from the file format. Do not
+migrate all shaders or expose a new public ABI just to resemble `.shader`/`.vfx`
+syntax. Start with the standard Surface and shading interface, then prove the
+override path with a Refract material before broad compatibility work. Envmap masks
+can control reflection response while reflection radiance still comes from the
+chosen provider. Capability validation, resource ownership and cached variant
+identity must be part of the design before accepting adapter-supplied programs.
+
 ## Modules and presets
 
 Resolve configuration into an immutable per-frame lighting plan on the CPU. A
@@ -114,3 +142,6 @@ independent set of booleans. None of these paths is declared unused by this audi
 The baked-irradiance GPU fixture currently fails its rough-metal cubemap assertion
 with both the original and extracted receiver shader. Track and diagnose that
 failure separately; it prevents claiming full baked-lighting qualification.
+Its current diagnostic reports eight published reflection layers but black rough
+metal output, so investigation must check selection, transport and composition
+rather than assume no captures exist.
