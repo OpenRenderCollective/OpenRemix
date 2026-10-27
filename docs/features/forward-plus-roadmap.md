@@ -4029,3 +4029,8 @@ The testing install now uses native 35e80cf3 and adapter 26dc7770 from a clean p
 
 - Static opaque depth batching is now the source default, controlled by `rtx.native.forward.staticDepthBatch` and the F12 "Batch static depth draws" setting. Unsupported or over-budget source sets retain ordinary draws. The former private environment switch is retired.
 - Source-default verification is separate from playable deployment. Rebuild and validate the packaged and installed binaries before treating an existing testing install as updated. Continue expanding map, dynamic object and memory/stutter coverage.
+
+### Playable depth-batching checkpoint
+
+- The testing-install package now includes the static depth batching default and its F12/config disable path. The updater target points to that package. Other experimental cubemap refinement switches remain independent and opt-in.
+- Continue profiling world shading/reflection composition and expanding map coverage; reducing depth submissions does not remove those costs.
