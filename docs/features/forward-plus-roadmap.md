@@ -4009,3 +4009,8 @@ The testing install now uses native 35e80cf3 and adapter 26dc7770 from a clean p
 - Receiver-site planning now prioritizes captures inside the closed partition; outside-partition proposals remain diagnostic fallbacks in spare slots. Disagreement preference remains within fit-capable sites. This prevents diagnostics starving the bounded fitting queue.
 - The local reflection companion-cache policy includes this candidate ordering. Ordinary light bake caches are unchanged.
 - Open: qualify candidate radiance, blended pixels, authored-volume protection and additional outdoor maps before automatic/default integration. Sampled geometry visibility alone is not reflection-quality acceptance.
+
+### Local cubemap default-integration gates
+
+- Candidate fitting, bounded capture transport and fenced selection publication are connected behind the existing opt-in switches; keep authored volume identity and metadata authoritative.
+- Remaining acceptance work: normal-quality sky-lit reflection images, above/below-water medium compatibility, boundary feathering and moving-camera continuity, additional maps and warm companion-cache restore. Keep the optional path out of playable defaults until these checks qualify the rendered result.
