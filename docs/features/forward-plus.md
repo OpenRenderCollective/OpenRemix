@@ -2863,10 +2863,10 @@ These count calls after culling and receiver-run splitting for the last reported
 frame. Fullscreen/post-processing, raster overlays and UI are excluded. Captured
 and unconditional captured depth counts are subsets, not additional draws.
 
-### Experimental static depth aggregation
+### Static depth aggregation
 
-Setting `REMIX_DEBUG_STATIC_DEPTH_BATCH=1` before renderer creation enables a bounded static opaque depth batch per fenced frame slot. Leave the variable absent for the ordinary prepass. The batch preserves local position bits, source transforms, triangle winding and current material-table indices. Cutout, skinned and live draws retain their ordinary paths. Unsupported or over-budget source sets fall back without truncation.
+Static opaque depth batching is enabled by default, with a bounded batch per fenced frame slot. Set `rtx.native.forward.staticDepthBatch=0` or disable "Batch static depth draws" in F12 for the ordinary prepass. The batch preserves local position bits, source transforms, triangle winding and current material-table indices. Cutout, skinned and live draws retain their ordinary paths. Unsupported or over-budget source sets fall back without truncation.
 
-Each slot retains immutable geometry and updates its visible index/material streams only when their contents change. Per-slot GPU payload is bounded to 32 MiB; diagnostics include its allocated buffers. `worldDepth` counts actual API submissions; `worldDepthLogical` and `batchedDepthSources` describe the source draws represented by those submissions. Colour and shadow passes are independent. This experimental switch is not a production default.
+Each slot retains immutable geometry and updates its visible index/material streams only when their contents change. Per-slot GPU payload is bounded to 32 MiB; diagnostics include its allocated buffers. `worldDepth` counts actual API submissions; `worldDepthLogical` and `batchedDepthSources` describe the source draws represented by those submissions. Colour and shadow passes are independent. The setting recreates the matching render targets and pipelines without rebaking lighting.
 
 Depth fragment-query diagnostics include both the aggregate submission and remaining ordinary depth draws; sum category 3 ranges within a frame when comparing total prepass work. Query instrumentation is optional and should be disabled for production timing.

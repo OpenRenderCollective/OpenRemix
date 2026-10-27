@@ -1,4 +1,5 @@
 #include "forward/depth_batch/batch.h"
+#include "forward/options.h"
 #include "gpu_fixture.h"
 #include <array>
 #include <bit>
@@ -25,6 +26,10 @@ namespace {
   };
 }
 int main() try {
+  Options defaults, ordinary;
+  ordinary.staticDepthBatch = false;
+  require(defaults.staticDepthBatch && !defaults.sameTargets(ordinary),
+          "Disabling default batching recreates the matching pipeline targets");
   Fixture fixture(false, true);
   const uint32_t aIndices[]{99, 0, 2, 1, 2, 3, 1, 99}, bIndices[]{2, 1, 0};
   auto a = std::make_shared<Mesh>(fixture, 48, aIndices);

@@ -73,6 +73,10 @@ namespace remix {
                           "Bake coverage: blue = surface lightmap, green = valid probe, red = uncovered opaque receiver.\n"
                           "Does not rebake.");
       int samples = forward.samples == 4 ? 2 : forward.samples == 2 ? 1 : 0;
+      ui::Checkbox("Batch static depth draws", &forward.staticDepthBatch);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Combines static opaque depth draws with a bounded buffer per frame slot.\n"
+                          "Cutout and dynamic draws keep their normal paths; does not rebake lighting.");
       ui::Checkbox("Bicubic lightmaps", &forward.bicubicLightmaps);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Smooth baked texel transitions with chart-safe cubic B-spline filtering.\n"

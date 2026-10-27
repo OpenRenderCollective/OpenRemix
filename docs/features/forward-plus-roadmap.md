@@ -4024,3 +4024,8 @@ The testing install now uses native 35e80cf3 and adapter 26dc7770 from a clean p
 
 - Implemented an opt-in, fenced-slot static opaque depth batch with exact source positions, current transform/material addressing, visible index selection and bounded fallback. Unchanged streams reuse their uploaded data.
 - Remaining before default: multi-map and live/viewmodel/cutout rendered comparisons, resolve residual image differences, and foreground validation-off CPU/GPU timing including rebuild and memory costs. Lower submission count alone is not FPS acceptance.
+
+### Static depth batching default
+
+- Static opaque depth batching is now the source default, controlled by `rtx.native.forward.staticDepthBatch` and the F12 "Batch static depth draws" setting. Unsupported or over-budget source sets retain ordinary draws. The former private environment switch is retired.
+- Source-default verification is separate from playable deployment. Rebuild and validate the packaged and installed binaries before treating an existing testing install as updated. Continue expanding map, dynamic object and memory/stutter coverage.

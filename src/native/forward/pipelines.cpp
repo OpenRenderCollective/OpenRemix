@@ -232,7 +232,7 @@ namespace remix::forward {
     unmappedLightmapPipeline = graphics(lightmapVertex, fragment, worldPass, Pass::Opaque, Coverage::Unmapped);
     depthPipeline = graphics(vertex, depthFragment, worldPass, Pass::Depth);
     depthLightmapPipeline = graphics(lightmapVertex, depthFragment, worldPass, Pass::Depth);
-    if (std::getenv("REMIX_DEBUG_STATIC_DEPTH_BATCH")) {
+    if (options.staticDepthBatch) {
       const auto batchVertex = modules.add(depthBatchVertShader, sizeof(depthBatchVertShader));
       const auto batchFragment = modules.add(depthBatchFragShader, sizeof(depthBatchFragShader));
       depthBatchPipeline = graphics(batchVertex, batchFragment, worldPass, Pass::DepthBatch);
