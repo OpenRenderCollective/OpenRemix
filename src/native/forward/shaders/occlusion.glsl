@@ -19,17 +19,20 @@ uint staticLightVisibility(uint chart, uint capturedLight) {
 #include "overflow-mask.glsl"
 bool overflowLightVisibility(uint chart, uint capturedLight, vec4 coordinate, vec4 bounds,
                               out float visibility) {
-  if (!BicubicLightmaps)
-    return indexedLightVisibility(frame.occlusion.w, chart, capturedLight, coordinate, bounds, visibility);
+  visibility = 1;
+  // All cubic taps share one chart/light record. Resolve ownership and storage
+  // metadata once; only their bilinear sample coordinates differ.
+  VisibilityField field;
+  if (!indexedVisibilityField(frame.occlusion.w, chart, capturedLight, coordinate, field)) return false;
+  if (!BicubicLightmaps) {
+    visibility = sampleVisibilityField(frame.occlusion.w, field, coordinate, bounds);
+    return true;
+  }
   LightmapFilter stencil = surfaceFilter(coordinate, bounds);
   visibility = 0;
   for (uint tap = 0u; tap < 4u; ++tap) {
-    float value;
-    if (!indexedLightVisibility(frame.occlusion.w, chart, capturedLight,
-        vec4(lightmapTap(stencil, tap), coordinate.zw), bounds, value)) {
-      visibility = 1;
-      return false;
-    }
+    float value = sampleVisibilityField(frame.occlusion.w, field,
+        vec4(lightmapTap(stencil, tap), coordinate.zw), bounds);
     visibility += lightmapWeight(stencil, tap) * value;
   }
   return true;

@@ -4038,4 +4038,5 @@ The testing install now uses native 35e80cf3 and adapter 26dc7770 from a clean p
 ### Selected-light visibility work
 
 - Proven-clear chart/light pairs now bypass redundant working-channel visibility lookup; unknown, partial and blocked classifications retain their existing paths. Highlights, directional diffuse and bicubic filtering remain enabled.
+- Indexed visibility now resolves chart/light ownership and storage metadata once for all four bicubic taps. Sampling, packed mask storage and filtering remain unchanged; the obsolete wrapper was removed.
 - Continue reducing selected-light field/shading work without weakening shadow coverage or discarding specular responses.

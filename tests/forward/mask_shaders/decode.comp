@@ -12,8 +12,10 @@ uint occlusionWord(uint index) { return words[index]; }
 void main() {
   uint index = gl_GlobalInvocationID.x;
   if (index >= frame.count) return;
-  float visibility;
-  bool found = indexedLightVisibility(queries[index].identity.z, queries[index].identity.x, queries[index].identity.y,
-      queries[index].coordinate, vec4(0, 0, 1, 1), visibility);
+  VisibilityField field;
+  bool found = indexedVisibilityField(queries[index].identity.z, queries[index].identity.x, queries[index].identity.y,
+      queries[index].coordinate, field);
+  float visibility = found ? sampleVisibilityField(queries[index].identity.z, field,
+      queries[index].coordinate, vec4(0, 0, 1, 1)) : 1;
   results[index] = vec4(visibility, found ? 1 : 0, 0, 0);
 }
