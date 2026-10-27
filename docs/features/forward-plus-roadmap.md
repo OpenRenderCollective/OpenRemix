@@ -4018,6 +4018,7 @@ The testing install now uses native 35e80cf3 and adapter 26dc7770 from a clean p
 ### Saturated automatic cubemap budgets
 
 - Open: the current local refinement path runs after baseline placement. A full 64-layer baseline can prevent useful local additions when every replacement loses unique receiver or volume-guard coverage.
+- Shared CPU preservation-point generation is implemented with stable volume/sample ordering and bounded validation. Next: ray-query evidence for candidate coverage at those points; no new capture is credited without evidence.
 - Plan baseline and refined captures together under a scalable budget, with authored volumes protected. Preserve coverage evidence; do not bypass geometric error or unique-coverage guards merely to insert new boxes. This is separate from receiver-fit occupancy and site-budget ordering.
 
 ### Static depth aggregation qualification

@@ -1,4 +1,5 @@
 #include "forward/probes/receiver_coverage_plan.h"
+#include "forward/probes/coverage_guards.h"
 #include <limits>
 #include <cmath>
 #include <stdexcept>
@@ -62,26 +63,18 @@ namespace remix::forward::probes {
     }
     if (evidence.observations.size() > 32768 || baseline.size() > maxProbes || fits.attempts.size() > 32)
       throw std::invalid_argument("Invalid local coverage planning inputs");
-    constexpr uint32_t axisSamples = 5, guardsPerCapture = 1 + axisSamples * axisSamples * axisSamples;
-    static_assert(8192 + maxProbes * guardsPerCapture <= maximumCoverageSamples);
+    static_assert(8192 + maxProbes * coverageGuardsPerVolume <= maximumCoverageSamples);
+    const auto guards = coverageGuardPoints(baseline, cancelled);
     const auto receivers = sampleReceivers(source, 8192, cancelled);
     ReceiverCoveragePlan result;
     result.context = coveragePlanContext(source, snapshot);
     result.surfaceSamples = uint32_t(receivers.size());
     result.composedBaseline = snapshot.composed;
     std::vector<float> areas;
-    areas.reserve(receivers.size() + baseline.size() * guardsPerCapture);
+    areas.reserve(receivers.size() + guards.size());
     std::vector<CoverageBaseline> current(baseline.size());
     for (size_t i = 0; i < baseline.size(); ++i) {
       const auto &volume = baseline[i];
-      const auto bounds = volume.influenceBounds();
-      const auto position = volume.position();
-      if (!validProjectionSpace(volume.record.worldToLocal) || !bounds.valid)
-        throw std::invalid_argument("Invalid coverage volume frame");
-      for (uint32_t axis = 0; axis < 3; ++axis)
-        if (!std::isfinite(bounds.minimum[axis]) || !std::isfinite(bounds.maximum[axis]) ||
-            !std::isfinite(position[axis]) || bounds.minimum[axis] >= bounds.maximum[axis])
-          throw std::invalid_argument("Invalid coverage volume bounds");
       current[i].protectedCapture = volume.protectedCapture || (snapshot.composed && !volume.source.automatic);
     }
     for (uint32_t r = 0; r < receivers.size(); ++r) {
@@ -96,10 +89,8 @@ namespace remix::forward::probes {
     // These points constrain preservation, but cannot earn surface-area gains.
     // New local captures have no volume-ray evidence for them, so only existing
     // baseline captures may provide their conservative coverage in this plan.
-    auto guard = [&](Vec3 position) {
+    for (const auto &position : guards) {
       check();
-      for (float value : position)
-        if (!std::isfinite(value)) throw std::invalid_argument("Nonfinite reflection volume guard");
       const uint32_t sample = uint32_t(areas.size());
       areas.push_back(0);
       ++result.guardSamples;
@@ -108,28 +99,6 @@ namespace remix::forward::probes {
         if (contains(capture.influenceBounds(),
                      projectionPoint(capture.record.worldToLocal, position))) current[b].receivers.push_back(sample);
       }
-    };
-    for (const auto &capture : baseline) {
-      guard(capture.position());
-      const auto bounds = capture.influenceBounds();
-      for (uint32_t x = 0; x < axisSamples; ++x)
-        for (uint32_t y = 0; y < axisSamples; ++y)
-          for (uint32_t z = 0; z < axisSamples; ++z) {
-            const uint32_t cell[3]{x, y, z};
-            Vec3 local{}, world{};
-            for (uint32_t axis = 0; axis < 3; ++axis)
-              local[axis] = float(double(bounds.minimum[axis]) +
-                  (double(bounds.maximum[axis]) - bounds.minimum[axis]) * (cell[axis] + .5) / axisSamples);
-            // Rigid inverse: transpose(R) * (local - translation).
-            for (uint32_t c = 0; c < 3; ++c) {
-              double coordinate = 0;
-              for (uint32_t axis = 0; axis < 3; ++axis)
-                coordinate += double(capture.record.worldToLocal[axis][c]) *
-                              (double(local[axis]) - capture.record.worldToLocal[axis][3]);
-              world[c] = float(coordinate);
-            }
-            guard(world);
-          }
     }
     std::vector<CoverageCandidate> candidates;
     std::vector<uint32_t> offsets;

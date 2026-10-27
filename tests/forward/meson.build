@@ -347,3 +347,8 @@ test('Reflection coverage replacements preserve sampled baselines', coverage_sel
 probe_fit_study = executable('remix-probe-fit-study', 'probe_fit_study.cpp',
   '../../src/native/forward/probes/regions.cpp', '../../src/native/forward/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+
+coverage_guards_test = executable('remix-coverage-guards-test', 'coverage_guards.cpp',
+  '../../src/native/forward/probes/coverage_guards.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Reflection preservation guards retain ordering and projection space', coverage_guards_test)
