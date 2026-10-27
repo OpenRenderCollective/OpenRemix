@@ -54,15 +54,14 @@ layout(location = 0) out vec4 result;
 layout(location = 1) out vec4 outNormalRoughness;
 layout(location = 2) out vec4 outReflectance;
 #endif
+#include "receiver.glsl"
 #include "direct-light.glsl"
 #include "receiver-lighting.glsl"
 // Specialization removes diagnostic branches from ordinary world shading.
 layout(constant_id = 1) const uint LightingView = 0u;
-vec3 directLightComponent(BrdfLobes light, uint view) {
-  if (view == 2u || view == 7u) return light.diffuse;
-  if (view == 3u) return light.specular;
-  return light.diffuse + light.specular;
-}
+#ifndef WATER_SURFACE
+#include "standard-shading.glsl"
+#endif
 #endif
 #ifdef WATER_SURFACE
 #include "../water/shaders/surface.glsl"
@@ -103,77 +102,23 @@ void main() {
   vec3 geometric = cross(dFdx(worldPosition), dFdy(worldPosition));
   Surface evaluated = evaluateStandardSurface(m, surface, uv, worldPosition, worldNormal,
                                               geometric, v, LightingView != 5u);
-  surface = evaluated.color;
-  vec3 emitted = evaluated.emission, n = evaluated.normal;
-  float roughness = evaluated.roughness, metallic = evaluated.metallic;
-  float depth = abs((frame.view * vec4(worldPosition, 1)).z);
-  vec3 ambient = frame.ambientExposure.rgb, irradiance;
-  // Explicit subrectangle bounds isolate chart neighbours, including MSAA edge
-  // fragments. Outward-rounded grids already contain every required mip-zero
-  // bilinear tap, so no extra atlas border is needed.
-  vec4 surfaceLightmap = UnmappedReceiver ? vec4(0) : surfaceLightmapInput;
-  surfaceLightmap.xy = clamp(surfaceLightmap.xy, surfaceBounds.xy, surfaceBounds.zw);
-  vec4 surfaceLighting = vec4(0);
-  bool charted = surfaceIrradiance(surfaceLightmap, n, surfaceBounds, surfaceLighting);
-  uint debugView = LightingView;
-  if (debugView == 6u) {
-    bool covered = charted || localProbeStencil(worldPosition, n);
-    result = vec4(charted ? vec3(0, 0, 1) : covered ? vec3(0, 1, 0) : vec3(1, 0, 0),
-                  m.pbr.w > .5 ? surface.a : 1);
+  ShadingReceiver receiver;
+  receiver.position = worldPosition;
+  receiver.geometric = geometric;
+  receiver.viewDirection = v;
+  receiver.screenPosition = gl_FragCoord.xy;
+  receiver.depth = abs((frame.view * vec4(worldPosition, 1)).z);
+  vec4 coordinate = UnmappedReceiver ? vec4(0) : surfaceLightmapInput;
+  coordinate.xy = clamp(coordinate.xy, surfaceBounds.xy, surfaceBounds.zw);
+  receiver.baked = BakedReceiver(coordinate, surfaceBounds, surfaceLights, surfaceDirectLights, surfaceChart);
+  receiver.directChannels = (m.maps.x & 16u) == 0u;
+  receiver.reflectionLayer = (m.maps.x >> 8u) & 127u;
+  receiver.opacity = m.pbr.w > .5 ? evaluated.color.a : 1;
+  ShadingResult shaded = shadeStandardSurface(evaluated, receiver);
+  result = shaded.color;
 #ifdef REFLECTION_GUIDES
-    outNormalRoughness = vec4(n, roughness);
-    outReflectance = vec4(0);
-#endif
-    return;
-  }
-  if (debugView == 1u || debugView == 5u) {
-    // Neutral irradiance: exclude albedo, metallic, emission and reflections.
-    vec3 indirect = charted ? surfaceLighting.rgb / Pi
-                           : bakedIrradiance(worldPosition, n, irradiance) ? irradiance / Pi : ambient;
-    result = vec4(min(max(indirect, vec3(0)), vec3(65000)), m.pbr.w > .5 ? surface.a : 1);
-#ifdef REFLECTION_GUIDES
-    outNormalRoughness = vec4(n, roughness);
-    outReflectance = vec4(0);
-#endif
-    return;
-  }
-  ReceiverLighting receiver = evaluateReceiverLighting(worldPosition, n, geometric, charted,
-      surfaceLighting.rgb, metallic < 1 && any(greaterThan(surface.rgb, vec3(0))), ambient);
-  ambient = receiver.diffuse;
-  bool aggregateReceiver = receiver.aggregate;
-  bool includeBakedDiffuse = debugView == 0u || debugView == 7u;
-  vec3 color = includeBakedDiffuse ? surface.rgb * (1 - metallic) * ambient : vec3(0);
-  BrdfLobes sun = sunLightResponse(surfaceLightmap, surfaceBounds, surfaceLighting.w, worldPosition, depth, n, v,
-                                   surface.rgb, roughness, metallic, normalize(geometric));
-  color += directLightComponent(sun, debugView);
-  bool directChannels =
-      (m.maps.x & 16u) == 0u && !indexedSurfaceDirect() && metallic < 1 && frame.target.z > 0u &&
-      any(notEqual(surfaceDirectLights, uvec4(0xffffffffu)));
-  vec4 directIrradiance = directChannels ? surfaceDirectIrradiance(surfaceLightmap, n, surfaceBounds) : vec4(-1);
-  uint base = clusterIndex(gl_FragCoord.xy, depth) * ClusterStride;
-  // Overflow remains correct: this cluster evaluates the full light array.
-  // It is slower, but never silently loses illumination.
-  bool linear;
-  uint lightCount = receiverLightCount(base, aggregateReceiver, linear);
-  for (uint i = 0u; i < lightCount; ++i) {
-    uint index = linear ? i : clusters[base + ClusterHeaderWords + i];
-    BrdfLobes local = localLightResponse(index, worldPosition, n, v, surface.rgb, roughness, metallic,
-                                         directIrradiance, surfaceLightmap, vec3(.04), normalize(geometric),
-                                         aggregateReceiver);
-    color += directLightComponent(local, debugView);
-  }
-  if (debugView == 0u) color += emitted;
-#ifdef VIEWMODEL_PASS
-  if (debugView == 0u) color += viewModelReflection(worldPosition, n, v, surface.rgb, roughness, metallic,
-                                                  (m.maps.x >> 8u) & 127u);
-#endif
-  result = vec4(min(max(color, vec3(0)), vec3(65000)), m.pbr.w > .5 ? surface.a : 1);
-#ifdef REFLECTION_GUIDES
-  outNormalRoughness = vec4(n, roughness);
-  // The guide is RGBA8 UNORM. Reserve its upper 65 alpha codes for ordinary
-  // selection and one-based layer IDs, from this same covered MSAA sample.
-  outReflectance = vec4(mix(vec3(.04), surface.rgb, metallic),
-                        float(255u - ((m.maps.x >> 8u) & 127u)) / 255);
+  outNormalRoughness = shaded.normalRoughness;
+  outReflectance = shaded.reflectance;
 #endif
 #endif
 }

@@ -4110,3 +4110,13 @@ when populated sites can remain on both sides. Fitted BSP region placement is
 unchanged. The fallback cache identity changes only for reflection-enabled scenes
 using that policy; fitted and diffuse-only keys are preserved. Construct outdoor
 coverage and reflection normalization remain open rather than implied fixed here.
+### Standard shading entry point
+
+World and viewmodel materials now pass evaluated Surface values plus an explicit
+ShadingReceiver to shadeStandardSurface, which returns scene-linear colour and
+reflection guides. The pass adapter owns fragment inputs, coverage and attachment
+writes. Local-light evaluation takes explicit BakedReceiver metadata; water uses
+the same provider contract. Removed the unused localLight wrapper after checking
+callers. These are internal interfaces; public material-program loading and preset
+technique selection are still pending. Preserve this separation when wiring the
+Source 2 preset and future adapter-supplied shader programs.

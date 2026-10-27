@@ -8,8 +8,9 @@ bool emitterAbovePlane(Light light, vec3 p, vec3 n) {
              dot(light.corners[2].xyz - p, n)) > 0;
 }
 BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, float roughness, float metallic,
-                vec4 directIrradiance, vec4 surfaceLightmap, vec3 dielectricF0, vec3 receiverNormal,
+                vec4 directIrradiance, BakedReceiver receiver, vec3 dielectricF0, vec3 receiverNormal,
                 bool aggregateReceiver) {
+  vec4 surfaceLightmap = receiver.coordinate;
   Light light = lights[index];
   bool aggregateDiffuse = aggregateReceiver && light.corners[2].w > .5;
   vec3 delta = light.positionRadius.xyz - p;
@@ -22,10 +23,10 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
   // so reject only when its entire shape is below the plane as well.
   if (dot(n, delta) <= 0 && !emitterAbovePlane(light, p, n))
     return BrdfLobes(vec3(0), vec3(0));
-  uint cachedVisibility = staticLightVisibility(surfaceChart, uint(light.shaping.w));
+  uint cachedVisibility = staticLightVisibility(receiver.chart, uint(light.shaping.w));
   if (cachedVisibility == 1u)
     return BrdfLobes(vec3(0), vec3(0));
-  uint directChannel = lightChannel(surfaceDirectLights, uint(light.shaping.w));
+  uint directChannel = lightChannel(receiver.directLights, uint(light.shaping.w));
   bool bakedDiffuse = directChannel < 4u && directIrradiance[min(directChannel, 3u)] >= 0;
   bool movingShadow = movingLocalShadowRequired(light);
 #ifdef ZERO_DIFFUSE_MATERIAL
@@ -36,7 +37,7 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
 #endif
   float attributedDiffuse = bakedDiffuse ? directIrradiance[min(directChannel, 3u)] : 0;
   if (indexedSurfaceDirect() && (!aggregateDiffuse || probeCorrection))
-    bakedDiffuse = surfaceDirectionalField(surfaceChart, uint(light.shaping.w), surfaceLightmap, n, surfaceBounds, attributedDiffuse);
+    bakedDiffuse = surfaceDirectionalField(receiver.chart, uint(light.shaping.w), surfaceLightmap, n, receiver.bounds, attributedDiffuse);
   vec3 l = delta / distance;
   float shape = emitterConeWeight(light.directionCone.xyz, light.directionCone.w,
                                    light.shaping.x, light.shaping.y, -l);
@@ -51,10 +52,10 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
   uint channel;
   bool baked = cachedVisibility == 2u;
   if (!baked)
-    baked = bakedLightVisibility(surfaceLightmap, surfaceBounds, surfaceLights,
+    baked = bakedLightVisibility(surfaceLightmap, receiver.bounds, receiver.lights,
                                 uint(light.shaping.w), visibility, channel);
   if (!baked)
-    baked = overflowLightVisibility(surfaceChart, uint(light.shaping.w), surfaceLightmap, surfaceBounds, visibility);
+    baked = overflowLightVisibility(receiver.chart, uint(light.shaping.w), surfaceLightmap, receiver.bounds, visibility);
   if (!FullyMappedReceiver && !baked && surfaceLightmap.w < .5) {
     float probeVisibility, probeDiffuse;
     // Aggregate corrections use the same normal-dependent probe stencil as
@@ -119,10 +120,4 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
   // influence fade. Its subtraction must use those same radiometric units.
   return BrdfLobes(diffuse * light.radiance.rgb * (aggregateDiffuse ? 1 : fade),
                    specular * light.radiance.rgb * (fade * moving));
-}
-vec3 localLight(uint index, vec3 p, vec3 n, vec3 v, vec3 base, float roughness, float metallic,
-                vec4 directIrradiance, vec4 surfaceLightmap, vec3 receiverNormal) {
-  BrdfLobes response = localLightResponse(index, p, n, v, base, roughness, metallic,
-                                         directIrradiance, surfaceLightmap, vec3(.04), receiverNormal, false);
-  return response.diffuse + response.specular;
 }

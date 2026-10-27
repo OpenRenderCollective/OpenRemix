@@ -118,7 +118,8 @@ void main() {
   for (uint i = 0u; i < lightCount; ++i) {
     uint light = linear ? i : clusters[base + ClusterHeaderWords + i];
     BrdfLobes response = localLightResponse(light, worldPosition, n, v, surface.rgb, roughness, 0,
-                                           vec4(-1), vec4(0), specularF0, normalize(geometric), aggregateReceiver);
+                                           vec4(-1), BakedReceiver(vec4(0), surfaceBounds, surfaceLights, surfaceDirectLights, surfaceChart),
+                                           specularF0, normalize(geometric), aggregateReceiver);
     diffuse += response.diffuse;
     specular += response.specular;
   }

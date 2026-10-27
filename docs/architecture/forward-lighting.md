@@ -37,12 +37,20 @@ matching syntax does not require migrating shader languages or exposing GPU ABI.
 
 Initial extraction: `shaders/receiver-lighting.glsl` owns diffuse receiver lookup
 for world and viewmodels. It preserves the existing surface/probe/live-GI behavior
-and aggregate-light bookkeeping. The full surface/shading API is still pending.
+and aggregate-light bookkeeping.
 
 `shaders/surface.glsl` now defines evaluated surface values and the standard PBR
 decoder. It separates material sampling, emission, normal mapping and roughness
 filtering from receiver lighting. The packed `Material` record remains an internal
 compatibility input; it is not the shader authoring contract.
+
+`shadeStandardSurface(Surface, ShadingReceiver)` is the standard world/viewmodel
+entry point. `ShadingResult` contains scene-linear colour and reflection guides;
+pass adapters retain coverage/depth policy and output attachment writes. Baked
+receiver coordinates, chart bounds and light identities are explicit inputs to
+local-light evaluation, shared with the specialized water path. These are internal
+contracts, not a stable public shader ABI. Provider selection and runtime material
+program loading remain pending.
 
 ## Opt-in material shader overrides
 
