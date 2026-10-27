@@ -4137,3 +4137,13 @@ authored-volume preferences survive applying the preset. Existing component sett
 remain the saved representation. Positive cubemap budgets are preserved; the legacy
 zero-budget disable state is re-enabled with the default budget. Independent provider
 enums, further presets and runtime shader-module selection remain open.
+### Runtime preset transition coverage
+
+GPU transition coverage now switches live GI plus ray reflections to Source 2 at
+1x/2x/4x MSAA, waits for the changed lighting policy to publish, and checks that
+reapplying Source 2 retains the completed volume across frame slots. Preset
+application preserves optional model-chart coverage instead of enabling it blindly:
+manual-density users can keep it disabled, avoiding the baker's unsupported
+model-chart/manual-density combination. The default profile still enables model
+charts with budget fitting. Interactive F12 clicking and playable deployment
+qualification remain pending.

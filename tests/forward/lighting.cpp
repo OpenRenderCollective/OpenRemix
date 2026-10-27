@@ -29,6 +29,8 @@ int main() {
     quality.baking.reflectionResolution = 256;
     quality.baking.lightmapTexels = 123456;
     quality.baking.diskCache = false;
+    quality.baking.modelLightmaps = false;
+    quality.baking.lightmapFitBudget = false;
     quality.exposure = 3;
     quality.authoredReflectionFallback = false;
     require(presets::isSource2(quality), "Quality, display and authored-volume choices do not change technique identity");
@@ -36,7 +38,7 @@ int main() {
     custom.rtGI = custom.rtReflections = true;
     custom.ssr = custom.shadows = custom.localShadows = false;
     custom.bakedLighting = custom.baking.enabled = custom.baking.directDiffuse = false;
-    custom.baking.modelLightmaps = custom.baking.styledIndirect = false;
+    custom.baking.styledIndirect = false;
     require(!presets::isSource2(custom), "Changing techniques derives Custom without separate stored preset state");
     presets::applySource2(custom);
     require(custom == quality, "Selecting Source 2 restores techniques while preserving all quality and user preferences");

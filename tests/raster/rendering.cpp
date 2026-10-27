@@ -1,5 +1,6 @@
 #include "raster/renderer.h"
 #include "forward/renderer.h"
+#include "forward/presets.h"
 #include "forward/bake/controller.h"
 #include "forward/probes/authoring.h"
 #include "forward/bake/sun_depth.h"
@@ -598,6 +599,7 @@ namespace {
     target.outputEncoding(false);
     std::puts("Sprite overlays: frames, green/alpha, sequences, soft depth and modulation passed");
   }
+#include "preset_transition.h"
   void liveGITests() {
     for (bool reflections : {false, true})
       for (uint32_t samples : {1u, 2u, 4u}) {
@@ -801,6 +803,8 @@ namespace {
         target.forward->updateLighting(options);
         image = render(1);
         require(image[at + 1] < 3, "Restoring GI range restores current occlusion");
+        if (reflections)
+          source2Transition(target, options, [&] { return render(); }, at);
         options.rtGI = false;
         target.enableForward(options);
         image = ready();

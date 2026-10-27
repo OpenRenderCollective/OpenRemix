@@ -17,7 +17,6 @@ namespace remix::forward::presets {
     options.localShadows = true;
     options.baking.enabled = true;
     options.baking.directDiffuse = true;
-    options.baking.modelLightmaps = true;
     options.baking.styledIndirect = true;
     if (!options.baking.reflectionProbes)
       options.baking.reflectionProbes = bake::Config{}.reflectionProbes;
@@ -35,6 +34,7 @@ namespace remix::forward::presets {
     Options options;
     applySource2(options);
     options.autoExposure = true;
+    options.baking.modelLightmaps = true;
     options.baking.styleStorageMiB = 256;
     return options;
   }

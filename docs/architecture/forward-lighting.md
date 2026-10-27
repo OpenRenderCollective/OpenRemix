@@ -109,6 +109,11 @@ them. A disabled zero cubemap budget is restored to the default positive budget
 when the preset enables cubemaps. Independent provider enums and shader-module
 selection remain pending.
 
+Preset application preserves model lightmap chart eligibility as a receiver-coverage
+preference. The default profile enables it, but manual-density configurations may
+disable it because model charts require budget fitting. Technique selection must
+not silently change that quality policy or enable an unsupported combination.
+
 Candidate future providers include DDGI, radiance cascades, distance-field or
 volume-based reflections and virtual shadow maps. They are design targets, not
 implemented options or promises of interchangeable quality. Their directional,
