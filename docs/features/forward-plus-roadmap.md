@@ -4032,7 +4032,7 @@ The testing install now uses native 35e80cf3 and adapter 26dc7770 from a clean p
 
 ### Playable depth-batching checkpoint
 
-- The testing-install package now includes the static depth batching default and its F12/config disable path. The updater target points to that package. Other experimental cubemap refinement switches remain independent and opt-in.
+- The testing-install package now includes the static depth batching default, its F12/config disable path, and the proven-clear/once-per-field visibility lookup optimisations. The updater target points to that package. Other experimental cubemap refinement switches remain independent and opt-in.
 - Continue profiling world shading/reflection composition and expanding map coverage; reducing depth submissions does not remove those costs.
 
 ### Selected-light visibility work
