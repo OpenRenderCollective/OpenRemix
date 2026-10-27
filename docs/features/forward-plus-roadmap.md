@@ -4003,3 +4003,9 @@ The testing install now uses native 35e80cf3 and adapter 26dc7770 from a clean p
 - A bounded CPU study using the original Construct BSP and 32 frozen supported receiver/site pairs reaches 20 requesting surfaces versus 19 before, changing one terrain family. This is not global coverage, parallax accuracy, visibility or rendered quality acceptance.
 - CPU occupancy, covered-family identity and optional-cache policy guards pass. The optional local-reflection companion uses fitting policy 2 so old unanchored evidence is not silently reused; ordinary lighting-cache identity/format are unchanged.
 - Next: audit actual geometry/radiance for the newly anchored terrain box, qualify publication/blending and additional outdoor receivers/maps, then connect a qualified policy to ordinary automatic placement. The playable package remains the verified 35e80cf3 checkpoint.
+
+### Fit-capable local reflection site budgeting
+
+- Receiver-site planning now prioritizes captures inside the closed partition; outside-partition proposals remain diagnostic fallbacks in spare slots. Disagreement preference remains within fit-capable sites. This prevents diagnostics starving the bounded fitting queue.
+- The local reflection companion-cache policy includes this candidate ordering. Ordinary light bake caches are unchanged.
+- Open: qualify candidate radiance, blended pixels, authored-volume protection and additional outdoor maps before automatic/default integration. Sampled geometry visibility alone is not reflection-quality acceptance.

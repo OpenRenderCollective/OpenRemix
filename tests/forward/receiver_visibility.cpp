@@ -186,7 +186,10 @@ int main() {
   partition->nodes[0] = {{0, 1, 0, 4}, {-1, -2}};
   partition->leafClusters = {-1, 0};
   const auto priority = p::receiverSites(source, receivers, severalBlocked, 1);
-  require(priority.size() == 1 && priority[0].receiver == 5 && priority[0].partitionDisagreement);
+  require(priority.size() == 1 && priority[0].receiver == 3 && !priority[0].partitionDisagreement);
+  const auto diagnostics = p::receiverSites(source, receivers, severalBlocked, 3);
+  require(diagnostics.size() == 3 && diagnostics[0].receiver == 1 && diagnostics[1].receiver == 3 &&
+              diagnostics[2].receiver == 5 && diagnostics[2].partitionDisagreement);
   rejected = false;
   try { p::receiverSites(source, receivers, severalBlocked, 1, stop.get_token()); }
   catch (const std::runtime_error &) { rejected = true; }

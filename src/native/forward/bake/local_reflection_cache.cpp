@@ -9,8 +9,8 @@
 namespace remix::forward::bake::local_cache {
   namespace {
     namespace io = cache::detail;
-    // Policy 2 qualifies receiver-anchored fitting; ordinary lighting caches are unchanged.
-    constexpr uint32_t policyVersion = 2, maximumAttempts = 32, maximumObservations = 32768;
+    // Policy 3 prioritizes fit-capable sites; ordinary lighting caches are unchanged.
+    constexpr uint32_t policyVersion = 3, maximumAttempts = 32, maximumObservations = 32768;
     constexpr uint64_t maximumBytes = 160ull << 20;
     void require(bool value) {
       if (!value) throw std::invalid_argument("Invalid local reflection cache");

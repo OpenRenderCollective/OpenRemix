@@ -123,14 +123,15 @@ int main(int argc, char **argv) {
   using Header = bake::cache::detail::Header;
   Header legacyHeader{};
   std::memcpy(&legacyHeader, legacy.data(), sizeof(legacyHeader));
-  const uint32_t oldPolicy = 1;
-  std::memcpy(legacy.data() + sizeof(Header), &oldPolicy, sizeof(oldPolicy));
-  legacyHeader.checksum = remix::scene::hashBytes(legacy.data() + sizeof(Header),
-      legacy.size() - sizeof(Header), 1469598103934665603ull);
-  std::memcpy(legacy.data(), &legacyHeader, sizeof(legacyHeader));
   const auto oldFile = directory / "old-fitting-policy.bin";
-  { std::ofstream out(oldFile, std::ios::binary); out.write(legacy.data(), std::streamsize(legacy.size())); }
-  require(!cache::read(oldFile, 42, current, config, {}), "Old unanchored fit evidence is a local-cache miss");
+  for (const uint32_t oldPolicy : {1u, 2u}) {
+    std::memcpy(legacy.data() + sizeof(Header), &oldPolicy, sizeof(oldPolicy));
+    legacyHeader.checksum = remix::scene::hashBytes(legacy.data() + sizeof(Header),
+        legacy.size() - sizeof(Header), 1469598103934665603ull);
+    std::memcpy(legacy.data(), &legacyHeader, sizeof(legacyHeader));
+    { std::ofstream out(oldFile, std::ios::binary); out.write(legacy.data(), std::streamsize(legacy.size())); }
+    require(!cache::read(oldFile, 42, current, config, {}), "Old fitting or site-budget evidence is a local-cache miss");
+  }
   auto corrupt = original; corrupt.back() ^= 1;
   const auto damaged = directory / "damaged.bin";
   { std::ofstream out(damaged, std::ios::binary); out.write(corrupt.data(), std::streamsize(corrupt.size())); }

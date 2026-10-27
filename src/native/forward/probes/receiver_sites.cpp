@@ -23,7 +23,7 @@ namespace remix::forward::probes {
       state.ranks |= 1u << pair.rank;
       state.blocked &= audit.visibility(i) == ReceiverVisibility::Blocked;
     }
-    std::array<std::vector<ReceiverSite>, 2> groups;
+    std::array<std::vector<ReceiverSite>, 3> groups;
     for (uint32_t i = 0; i < states.size(); ++i) {
       check();
       if (states[i].ranks != 255 || !states[i].blocked) continue;
@@ -40,7 +40,12 @@ namespace remix::forward::probes {
       std::copy(position.begin(), position.end(), site.point.position.begin());
       site.partitionDisagreement = source.partition && source.partition->closed &&
           source.partition->cluster(connection->point.position.data()) < 0;
-      groups[site.partitionDisagreement ? 0 : 1].push_back(site);
+      // A capture outside the partition cannot be fitted. Retain those sites
+      // for diagnostics only after fit-capable proposals have their budget;
+      // otherwise solid-side receivers can starve every useful candidate.
+      const bool outside = source.partition && source.partition->closed &&
+          source.partition->cluster(position.data()) < 0;
+      groups[outside ? 2 : site.partitionDisagreement ? 0 : 1].push_back(site);
     }
     std::vector<ReceiverSite> result;
     for (const auto &group : groups) {
