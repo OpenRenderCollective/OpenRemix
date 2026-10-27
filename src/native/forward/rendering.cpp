@@ -25,7 +25,9 @@ namespace remix::forward {
       const VkDeviceSize offsets[] = {0, 0};
       vkCmdBindVertexBuffers(command, 0, 2, buffers, offsets);
       vkCmdBindIndexBuffer(command, frame.depthBatch->indices().handle, 0, VK_INDEX_TYPE_UINT32);
+      fragmentStatistics->begin(command, 3);
       vkCmdDrawIndexed(command, frame.depthBatch->indexCount(), 1, 0, 0, 0);
+      fragmentStatistics->end(command);
       ++statistics.drawCalls.worldDepth;
       ++statistics.drawCalls.capturedDepth;
       statistics.drawCalls.worldDepthLogical += frame.depthBatch->visibleSources();
