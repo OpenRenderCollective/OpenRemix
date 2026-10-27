@@ -1912,7 +1912,7 @@ namespace remix {
     g.prepare(command, resources, options, scene);
     ScopedMilliseconds post{g.breakdown.postMilliseconds};
     const auto hdr = g.upscaler && !g.debugView ? g.upscaler->output() : upscale::Input{g.world->handle, g.world->view};
-    g.postProcessing->record(command, hdr, options, resources.temporalEpoch(), g.rendered,
+    g.postProcessing->record(command, hdr, postfx::settings(options), resources.temporalEpoch(), g.rendered,
       (g.postProcessing == g.postFallback.get() && !g.retainPostExposure) || options.debugView || options.shadowDebug || options.sharcDebug || options.validation, -1, g.stats.sceneGeneration);
   }
 

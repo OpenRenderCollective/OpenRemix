@@ -2,15 +2,7 @@
 
 namespace remix::forward {
   void Renderer::Gpu::recordExposure(VkCommandBuffer command, RasterRenderer &resources, float seconds) {
-    TraceOptions post;
-    post.autoExposure = options.autoExposure;
-    post.exposure = options.exposure;
-    post.autoExposureTarget = options.autoExposureTarget;
-    post.autoExposureSpeed = options.autoExposureSpeed;
-    post.autoExposureCentre = options.autoExposureCentre;
-    post.autoExposureMinEv = options.autoExposureMinEv;
-    post.autoExposureMaxEv = options.autoExposureMaxEv;
-    post.bloom = false;
+    const auto post = postfx::settings(options);
     const auto &frame = frames[slot];
     const auto &hdr = resolved ? resolved : color;
     // Late water has already incorporated screen reflections into HDR. Other

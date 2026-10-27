@@ -1,5 +1,6 @@
 #include "postfx/meter.h"
 #include "postfx/renderer.h"
+#include "pathtrace/options.h"
 #include "runtime/pipelines.h"
 #include <chrono>
 #include <cstdio>
@@ -283,7 +284,7 @@ int main() {
       f.begin();
       r->begin(f.cmd);
       if (reset) ++epoch;
-      r->record(f.cmd, {hdr.image, hdr.view}, options, {1, epoch}, true, false, seconds, 0,
+      r->record(f.cmd, {hdr.image, hdr.view}, postfx::settings(options), {1, epoch}, true, false, seconds, 0,
                  {VK_IMAGE_LAYOUT_GENERAL, {{}, reflected.view, VK_IMAGE_LAYOUT_GENERAL}});
       f.end();
       r->selectFrame(0);
@@ -328,7 +329,7 @@ int main() {
       barrier(f.cmd);
       if (reset)
         ++epoch;
-      r->record(f.cmd, {hdr.image, hdr.view}, o, {1, epoch}, changed, false,
+      r->record(f.cmd, {hdr.image, hdr.view}, postfx::settings(o), {1, epoch}, changed, false,
                 seconds);
       f.end();
       r->selectFrame(0);
@@ -455,7 +456,7 @@ int main() {
                          VK_IMAGE_LAYOUT_GENERAL, &white, 1, &range);
     barrier(f.cmd);
     o.autoExposureTarget = .1;
-    replacement->record(f.cmd, {hdr.image, hdr.view}, o, {1, epoch}, true,
+    replacement->record(f.cmd, {hdr.image, hdr.view}, postfx::settings(o), {1, epoch}, true,
                         false, 0);
     f.end();
     replacement->selectFrame(0);
@@ -465,14 +466,14 @@ int main() {
     fallback->selectFrame(0);
     f.begin();
     fallback->begin(f.cmd);
-    fallback->record(f.cmd, {hdr.image, hdr.view}, o, {1, ++epoch}, false, false, 0);
+    fallback->record(f.cmd, {hdr.image, hdr.view}, postfx::settings(o), {1, ++epoch}, false, false, 0);
     f.end();
     fallback->selectFrame(0);
     require(std::abs(fallback->statistics().exposure - before) < .001f,
             "Resize fallback discarded shared exposure");
     replacement->selectFrame(0);
     f.begin();
-    replacement->record(f.cmd, {hdr.image, hdr.view}, o, {1, epoch}, false, false, 0);
+    replacement->record(f.cmd, {hdr.image, hdr.view}, postfx::settings(o), {1, epoch}, false, false, 0);
     f.end();
     replacement->selectFrame(0);
     require(std::abs(replacement->statistics().exposure - replacement->statistics().target) < .001f,
@@ -502,7 +503,7 @@ int main() {
       vkCmdClearColorImage(f.cmd, r->materialInput().image,
                            VK_IMAGE_LAYOUT_GENERAL, &white, 1, &range);
       barrier(f.cmd);
-      r->record(f.cmd, {hdr.image, hdr.view}, o, {2, 0}, changed, false,
+      r->record(f.cmd, {hdr.image, hdr.view}, postfx::settings(o), {2, 0}, changed, false,
                 1.f / 60);
       f.end();
       r->selectFrame(0);

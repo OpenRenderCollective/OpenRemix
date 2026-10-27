@@ -1,6 +1,6 @@
 // Independent CPU reference for the shared Prism transform, without output
 // encoding (the numeric HDR fixtures render to a linear UNORM attachment).
-std::array<float, 3> prismDisplay(std::array<float, 3> color) {
+std::array<float, 3> prismDisplay(std::array<float, 3> color, float peak = 1) {
   const float inset[3][3] = {{.72634649f, .16665483f, .10699868f},
                              {.13423698f, .70013888f, .16562414f},
                              {.07263955f, .06012051f, .86723994f}};
@@ -17,11 +17,12 @@ std::array<float, 3> prismDisplay(std::array<float, 3> color) {
   for (auto &value : color) value = std::max(value, 0.f);
   color = multiply(inset, color);
   for (auto &value : color) {
-    const float distance = std::max(value - .18f, 0.f);
-    value = value - distance + .82f * distance /
-            (.82f + distance * std::exp2(-.82f / std::max(4 * distance, 1e-20f)));
+    if (value <= .18f) continue;
+    const double range = double(peak) - .18;
+    const double t = (double(value) - .18) / range;
+    value = float(.18 + range * t / (1 + t * std::exp(-.01 / (t * t))));
   }
   color = multiply(outset, color);
-  for (auto &value : color) value = std::clamp(value, 0.f, 1.f);
+  for (auto &value : color) value = std::clamp(value, 0.f, peak);
   return color;
 }

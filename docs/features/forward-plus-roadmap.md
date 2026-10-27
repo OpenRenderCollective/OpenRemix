@@ -4041,3 +4041,10 @@ The testing install now uses native 35e80cf3 and adapter 26dc7770 from a clean p
 - Proven-clear chart/light pairs now bypass redundant working-channel visibility lookup; unknown, partial and blocked classifications retain their existing paths. Highlights, directional diffuse and bicubic filtering remain enabled.
 - Indexed visibility now resolves chart/light ownership and storage metadata once for all four bicubic taps. Sampling, packed mask storage and filtering remain unchanged; the obsolete wrapper was removed.
 - Continue reducing selected-light field/shading work without weakening shadow coverage or discarding specular responses.
+
+### Shared display pipeline and indirect-specular calibration
+
+- Both renderer paths now map their controls into renderer-neutral postfx settings. Exposure/bloom/composite implementation remains shared; metering policy stays explicit. No visual-default compensation was applied.
+- Open priority: investigate reported HDR haze with fixed-exposure diffuse/specular isolation in Construct hall and connector. Zero-black compositor checks alone do not establish full presentation or scene-lighting parity.
+- Use VRF as the working Source 2 reference: capture SH/local irradiance cubemap normalization, rough lightmapped dielectric SH reflection blending, matched world/viewmodel handling. Our existing probe weight normalization is not that lighting normalization.
+- Implement and qualify capture normalization metadata, consistent radiometric units, actual surface/probe receiver irradiance, blend/composition/cache propagation and missing-data fallbacks. Keep HDR tone mapping/output encoding shared; avoid hiding the issue with contrast or exposure tweaks.

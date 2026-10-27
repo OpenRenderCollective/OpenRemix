@@ -513,7 +513,7 @@ void Renderer::freeze() {
   m_gpu->stats.adapting = false;
 }
 void Renderer::record(VkCommandBuffer command, upscale::Input hdr,
-                      const TraceOptions &options, scene::TemporalEpoch epoch,
+                      const Options &options, scene::TemporalEpoch epoch,
                       bool changed, bool bypass, float seconds,
                       uint64_t generation, MeterInputs inputs) {
   auto &g = *m_gpu;

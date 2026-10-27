@@ -1,5 +1,5 @@
 #pragma once
-#include "pathtrace/options.h"
+#include "postfx/options.h"
 #include "scene/temporal.h"
 #include "upscale/renderer.h"
 #include <memory>
@@ -38,7 +38,7 @@ public:
   upscale::Input bloomOutput() const;
   bool needsGuide() const;
   void record(VkCommandBuffer command, upscale::Input hdr,
-              const TraceOptions &options, scene::TemporalEpoch epoch,
+              const Options &options, scene::TemporalEpoch epoch,
               bool changed, bool bypass, float seconds = -1, uint64_t generation = 0,
               MeterInputs inputs = {});
   void freeze();

@@ -1,4 +1,5 @@
 #include "postfx/meter.h"
+#include "postfx/options.h"
 #include "runtime/settings.h"
 #include <cstdio>
 #include <cstdlib>
@@ -12,6 +13,28 @@ void require(bool value, const char *message) {
   }
 }
 int main() {
+  TraceOptions trace;
+  trace.exposure = .73f;
+  trace.bloom = true;
+  trace.contrast = true;
+  const auto tracedPost = postfx::settings(trace);
+  require(tracedPost.exposure == trace.exposure && tracedPost.bloom && tracedPost.contrast &&
+              tracedPost.autoExposureMinEv == trace.autoExposureMinEv &&
+              tracedPost.bloomRadius == trace.bloomRadius && tracedPost.contrastAmount == trace.contrastAmount,
+          "Shared post-processing preserves path-traced exposure and effects");
+  forward::Options forward;
+  forward.exposure = .25f;
+  forward.autoExposureTarget = .31f;
+  forward.autoExposureSpeed = 3;
+  forward.autoExposureCentre = .5f;
+  forward.autoExposureMinEv = -7;
+  forward.autoExposureMaxEv = 2;
+  const auto forwardPost = postfx::settings(forward);
+  require(forwardPost.exposure == forward.exposure && forwardPost.autoExposure == forward.autoExposure &&
+              forwardPost.autoExposureTarget == .31f && forwardPost.autoExposureSpeed == 3 &&
+              forwardPost.autoExposureCentre == .5f && forwardPost.autoExposureMinEv == -7 &&
+              forwardPost.autoExposureMaxEv == 2 && !forwardPost.bloom && !forwardPost.contrast,
+          "Forward post-processing uses its own controls without inheriting path-tracer effects");
   for (float albedo : {.05f, .18f, .9f}) {
     Meter m;
     m.sample({albedo, albedo, albedo}, {albedo, albedo, albedo}, 0, 0, {1, 1},
