@@ -4129,3 +4129,11 @@ existing default combination, named Source 2, without changing its quality value
 Saved keys and low-level manual defaults remain compatible. Full provider selection,
 preset settings/UI and Custom component overrides are still pending. The policy
 matrix covers 32 request/availability combinations and independent quality budgets.
+### F12 technique preset selection
+
+The Rendering panel now selects Source 2 through presets::applySource2 and derives
+Custom from the requested technique combination. Quality, exposure, cache and
+authored-volume preferences survive applying the preset. Existing component settings
+remain the saved representation. Positive cubemap budgets are preserved; the legacy
+zero-budget disable state is re-enabled with the default budget. Independent provider
+enums, further presets and runtime shader-module selection remain open.

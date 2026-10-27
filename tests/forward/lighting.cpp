@@ -20,6 +20,42 @@ int main() {
                 defaults.ssr && !defaults.rtGI && !defaults.rtReflections &&
                 defaults.baking.reflectionProbes > 0 && defaults.lightingPlan(false).bakedReceivers,
             "Runtime Source 2 defaults select baked lighting, probe volumes and cubemap/SSR reflections");
+    auto quality = defaults;
+    quality.samples = 1;
+    quality.ssrScale = 2;
+    quality.shadowResolution = 256;
+    quality.baking.samples = 97;
+    quality.baking.reflectionProbes = 7;
+    quality.baking.reflectionResolution = 256;
+    quality.baking.lightmapTexels = 123456;
+    quality.baking.diskCache = false;
+    quality.exposure = 3;
+    quality.authoredReflectionFallback = false;
+    require(presets::isSource2(quality), "Quality, display and authored-volume choices do not change technique identity");
+    auto custom = quality;
+    custom.rtGI = custom.rtReflections = true;
+    custom.ssr = custom.shadows = custom.localShadows = false;
+    custom.bakedLighting = custom.baking.enabled = custom.baking.directDiffuse = false;
+    custom.baking.modelLightmaps = custom.baking.styledIndirect = false;
+    require(!presets::isSource2(custom), "Changing techniques derives Custom without separate stored preset state");
+    presets::applySource2(custom);
+    require(custom == quality, "Selecting Source 2 restores techniques while preserving all quality and user preferences");
+    custom.baking.reflectionProbes = 0;
+    require(!presets::isSource2(custom), "Disabled cubemaps do not match the Source 2 preset");
+    presets::applySource2(custom);
+    require(custom.baking.reflectionProbes == bake::Config{}.reflectionProbes && presets::isSource2(custom),
+            "Selecting Source 2 enables disabled cubemaps with a valid default budget");
+    for (bool rayGi : {false, true}) {
+      config::Settings profile, restored;
+      profile.forward = quality;
+      profile.forward.rtGI = rayGi;
+      config::UnknownSettings unknown;
+      std::vector<std::string> warnings;
+      std::string error;
+      require(config::parse(config::serialize(profile), restored, unknown, warnings, error) &&
+                  restored.forward == profile.forward && presets::isSource2(restored.forward) == !rayGi,
+              "Saved component settings restore both Source 2 and Custom identity without a preset key");
+    }
     for (uint32_t combination = 0; combination < 32; ++combination) {
       bake::Config requested;
       requested.enabled = (combination & 1) != 0;

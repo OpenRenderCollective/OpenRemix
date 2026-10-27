@@ -59,6 +59,25 @@ namespace remix {
         ImGui::SetTooltip("Counts overlap when a light has both roles. Positive response weights only;\n"
                           "pending fades can also retain clustered entries.");
       auto &forward = settings.forward;
+      const bool source2Preset = remix::forward::presets::isSource2(forward);
+      const char *source2Name = remix::forward::presets::source2Name.data();
+      ui::field("Lighting preset", [&](const char *label) {
+        if (!ImGui::BeginCombo(label, source2Preset ? source2Name : "Custom")) return false;
+        bool changed = false;
+        if (ImGui::Selectable(source2Name, source2Preset)) {
+          remix::forward::presets::applySource2(forward);
+          changed = true;
+        }
+        ImGui::BeginDisabled();
+        ImGui::Selectable("Custom (individual techniques)", !source2Preset);
+        ImGui::EndDisabled();
+        ImGui::EndCombo();
+        return changed;
+      });
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Source 2 selects baked surface/probe lighting, mixed shadows and cubemap + SSR reflections.\n"
+                          "Quality settings stay unchanged. Individual technique changes display Custom.\n"
+                          "If cubemaps were disabled with a zero probe budget, the default budget is restored.");
       int lightingView = int(forward.debugView);
       if (ui::Combo("Lighting view", &lightingView,
                     "Shaded\0Baked irradiance (neutral)\0Analytic direct diffuse\0Direct specular\0"

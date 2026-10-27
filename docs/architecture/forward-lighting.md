@@ -101,7 +101,13 @@ bake settings. Bake publication and authored reflection composition share one
 resolved configuration per recording. `presets::source2()` now constructs the
 runtime default profile under the name Source 2, preserving its previous values.
 Independent provider selection, preset settings/UI and explicit Custom overrides
-remain pending; the constructor alone is not a complete preset switching system.
+are being migrated incrementally. The F12 Rendering panel now offers Source 2
+selection and derives Custom from individual technique changes. Selecting Source 2
+preserves quality, display, cache and authored-volume preferences. Existing component
+keys remain the persisted representation; no separate preset state can contradict
+them. A disabled zero cubemap budget is restored to the default positive budget
+when the preset enables cubemaps. Independent provider enums and shader-module
+selection remain pending.
 
 Candidate future providers include DDGI, radiance cascades, distance-field or
 volume-based reflections and virtual shadow maps. They are design targets, not
