@@ -95,6 +95,14 @@ only required resources, and retain existing fenced publication/lifetime rules.
 Providers should own bake/cache invalidation and their GPU resources. Material
 changes and viewmodel changes must not invalidate unrelated static lighting.
 
+Initial CPU integration: `lighting_plan.h` resolves existing baked/live-GI energy
+ownership and mixed-light selection without mutating requested quality or custom
+bake settings. Bake publication and authored reflection composition share one
+resolved configuration per recording. `presets::source2()` now constructs the
+runtime default profile under the name Source 2, preserving its previous values.
+Independent provider selection, preset settings/UI and explicit Custom overrides
+remain pending; the constructor alone is not a complete preset switching system.
+
 Candidate future providers include DDGI, radiance cascades, distance-field or
 volume-based reflections and virtual shadow maps. They are design targets, not
 implemented options or promises of interchangeable quality. Their directional,

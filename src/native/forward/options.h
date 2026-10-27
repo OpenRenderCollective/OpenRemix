@@ -1,6 +1,7 @@
 #pragma once
 #include "forward/bake/config.h"
 #include "forward/bake/storage_options.h"
+#include "forward/lighting_plan.h"
 #include <cstdint>
 
 namespace remix::forward {
@@ -52,30 +53,19 @@ namespace remix::forward {
     float ssrRoughness = .6f;
     bake::Config baking;
     bool bakedLightingActive(bool liveGiActive) const {
-      return bakedLighting && baking.enabled && baking.directDiffuse && !liveGiActive;
+      return lighting::resolve(baking, {bakedLighting, selectedBakedLights}, liveGiActive).bakedReceivers;
     }
     bool selectBakedLights(bool liveGiActive) const {
-      return !liveGiActive && (selectedBakedLights || bakedLightingActive(liveGiActive));
+      return lighting::resolve(baking, {bakedLighting, selectedBakedLights}, liveGiActive).selectedMixedLights;
     }
-    bake::Config bakeConfiguration(bool liveGiActive) const {
+    lighting::Plan lightingPlan(bool liveGiActive) const {
       auto config = baking;
       config.modelLightmaps = bake::modelChartsRequested(config.modelLightmaps);
       config.directionalProbeDepth = bake::directionalProbeDepthRequested();
-      if (bakedLightingActive(liveGiActive)) {
-        config.aggregateDiffuse = true;
-        config.fullyBakedLights = false;
-        config.bakedGeometryLights = true;
-        config.groupedStyledDirect = true;
-      }
-      // Live GI replaces aggregate irradiance and evaluates primary lights
-      // analytically. Preserve their attributed static visibility in that mode.
-      if (liveGiActive) {
-        config.groupedStyledDirect = false;
-        config.aggregateDiffuse = false;
-        config.fullyBakedLights = false;
-        config.bakedGeometryLights = false;
-      }
-      return config;
+      return lighting::resolve(config, {bakedLighting, selectedBakedLights}, liveGiActive);
+    }
+    bake::Config bakeConfiguration(bool liveGiActive) const {
+      return lightingPlan(liveGiActive).baking;
     }
     bool operator==(const Options &) const = default;
     bool reflections() const { return ssr || rtReflections || baking.reflectionProbes != 0; }

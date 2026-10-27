@@ -4120,3 +4120,12 @@ the same provider contract. Removed the unused localLight wrapper after checking
 callers. These are internal interfaces; public material-program loading and preset
 technique selection are still pending. Preserve this separation when wiring the
 Source 2 preset and future adapter-supplied shader programs.
+### CPU lighting-plan foundation and Source 2 defaults
+
+Existing baked/live-GI ownership and selected mixed-light policy now resolve in
+lighting_plan.h. Bake publication and authored reflection composition reuse one
+resolved configuration per recording. presets::source2() constructs the runtime's
+existing default combination, named Source 2, without changing its quality values.
+Saved keys and low-level manual defaults remain compatible. Full provider selection,
+preset settings/UI and Custom component overrides are still pending. The policy
+matrix covers 32 request/availability combinations and independent quality budgets.

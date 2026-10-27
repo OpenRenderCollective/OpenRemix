@@ -269,11 +269,12 @@ namespace remix::forward {
     };
     m_gpu->postProcessing->begin(command);
     gpu::GpuScope bakeTime(command, "Forward+ bake publication and transport");
-    m_gpu->baking->record(command, resources, m_gpu->options.bakeConfiguration(m_gpu->giSupported),
+    const auto lightingPlan = m_gpu->options.lightingPlan(m_gpu->giSupported);
+    m_gpu->baking->record(command, resources, lightingPlan.baking,
                          m_gpu->options.lightCutoff);
     const auto &baked = m_gpu->baking->volume();
     m_gpu->authoredReflections->record(command, resources,
-        m_gpu->options.bakeConfiguration(m_gpu->giSupported), baked, m_gpu->options.authoredReflectionFallback);
+        lightingPlan.baking, baked, m_gpu->options.authoredReflectionFallback);
     m_gpu->prepareLocalReflections(command, resources);
     bakeTime.close();
     step(cpu.bake);

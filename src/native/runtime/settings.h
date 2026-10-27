@@ -1,6 +1,6 @@
 #pragma once
 #include "pathtrace/options.h"
-#include "forward/options.h"
+#include "forward/presets.h"
 #include "runtime/backend.h"
 #include <array>
 #include <map>
@@ -44,8 +44,7 @@ namespace remix::config {
   };
   struct Settings {
     TraceOptions trace;
-    forward::Options forward{.autoExposure = true, .bakedLighting = true,
-                             .baking = {.modelLightmaps = true, .styledIndirect = true, .styleStorageMiB = 256}};
+    forward::Options forward = forward::presets::source2();
     uint32_t backend = Backend::PathTrace;
     bool vsync = false;
     // HDR10 output (runtime/hdr_output.h): BT.2020 ST.2084 PQ while Windows

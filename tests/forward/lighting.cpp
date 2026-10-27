@@ -15,6 +15,34 @@ using remix::test::require;
 
 int main() {
   {
+    const auto defaults = config::Settings{}.forward;
+    require(defaults == presets::source2() && presets::source2Name == "Source 2" &&
+                defaults.ssr && !defaults.rtGI && !defaults.rtReflections &&
+                defaults.baking.reflectionProbes > 0 && defaults.lightingPlan(false).bakedReceivers,
+            "Runtime Source 2 defaults select baked lighting, probe volumes and cubemap/SSR reflections");
+    for (uint32_t combination = 0; combination < 32; ++combination) {
+      bake::Config requested;
+      requested.enabled = (combination & 1) != 0;
+      requested.directDiffuse = (combination & 2) != 0;
+      requested.samples = 37;
+      requested.reflectionResolution = 256;
+      const auto original = requested;
+      const bool live = (combination & 4) != 0;
+      const lighting::Request request{(combination & 8) != 0, (combination & 16) != 0};
+      const auto plan = lighting::resolve(requested, request, live);
+      require(requested == original && plan.baking.samples == 37 && plan.baking.reflectionResolution == 256,
+              "Resolving techniques preserves requested settings and independent quality budgets");
+      if (live)
+        require(!plan.bakedReceivers && !plan.selectedMixedLights && !plan.baking.aggregateDiffuse &&
+                    !plan.baking.groupedStyledDirect && !plan.baking.bakedGeometryLights,
+                "Live GI replaces aggregate ownership and selected baked responses for every request combination");
+      if (!requested.enabled || !requested.directDiffuse)
+        require(!plan.bakedReceivers, "Unavailable baked transport cannot claim receiver ownership");
+      if (!live && request.selectedMixedLights)
+        require(plan.selectedMixedLights, "Explicit mixed-light selection remains available independently of baked mode");
+    }
+  }
+  {
     for (float scale : {1.f, .25f, 4.f}) {
       auto view = scene::identity();
       view[0] = scale;
