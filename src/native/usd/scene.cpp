@@ -263,6 +263,7 @@ namespace remix::usd {
     Json light_json(const UsdPrim &prim, const GfMatrix4d &world, Json &warnings) {
       const auto path = prim.GetPath().GetString();
       auto color = attribute(prim, "inputs:color", GfVec3f(1));
+      const auto cookie_up = attribute(prim, "inputs:remix:cookie:up", GfVec3f(0, 0, 1));
       if (attribute(prim, "inputs:enableColorTemperature", false))
         color = GfCompMult(
             color, UsdLuxBlackbodyTemperatureAsRgb(attribute(prim, "inputs:colorTemperature", 6500.f)));
@@ -281,7 +282,13 @@ namespace remix::usd {
               {"cone_angle", attribute(prim, "inputs:shaping:cone:angle", 180.f)},
               {"cone_softness", attribute(prim, "inputs:shaping:cone:softness", 0.f)},
               {"focus", attribute(prim, "inputs:shaping:focus", 0.f)},
-              {"texture", texture(prim, "inputs:texture:file", warnings)}};
+              {"texture", texture(prim, "inputs:texture:file", warnings)},
+              // UsdLuxShapingAPI's IES profile, and OpenRemix's light cookie
+              // (usd/capture_writer.cpp; remixapi_LightInfoCookieEXT).
+              {"ies", texture(prim, "inputs:shaping:ies:file", warnings)},
+              {"cookie", texture(prim, "inputs:remix:cookie:texture", warnings)},
+              {"cookie_up", {cookie_up[0], cookie_up[1], cookie_up[2]}},
+              {"cookie_fov", attribute(prim, "inputs:remix:cookie:fov", 0.f)}};
     }
 
   } // namespace

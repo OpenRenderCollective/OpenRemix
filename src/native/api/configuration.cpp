@@ -41,6 +41,7 @@ namespace remix::api {
                             std::strchr("rgba", key[22]);
     if (std::strcmp(key, "rtx.native.vsync") == 0 || clearColor ||
         std::strcmp(key, "rtx.native.textures.keepCompressed") == 0 ||
+        std::strcmp(key, "rtx.native.capture.retainTextureData") == 0 ||
         std::strcmp(key, "rtx.native.vramStatistics") == 0 ||
         std::strcmp(key, "rtx.native.meshes.refreshInPlace") == 0 ||
         std::strcmp(key, "rtx.native.hostPasses") == 0 ||

@@ -122,14 +122,14 @@ int main() {
   draw.material->transmission = true;
   require(!cache.opaque(draw, uv), "Transmission classified opaque");
   draw = original;
-  for (uint8_t wrap : {1, 2, 3, 4}) {
+  for (uint8_t wrap : {1, 2, 0, 3}) {
     draw.material = std::make_shared<Material>(*original.material);
     draw.material->wrapU = wrap;
     draw.material->texture =
         std::make_shared<Texture>(*original.material->texture);
     draw.material->texture->pixels.mips[0][4 * (1 * 8 + 7) + 3] = 0;
     require(
-        cache.opaque(draw, {1, 1, -.2f, 0}) == (wrap == 2 || wrap == 3),
+        cache.opaque(draw, {1, 1, -.2f, 0}) == (wrap == 2 || wrap == 0),
         "Sampler addressing failed to preserve edge or wrapped alpha coverage");
   }
   // A linear footprint can reach a cutout outside the nearest footprint.
@@ -209,15 +209,15 @@ int main() {
   // Check every accepted proof against sampled triangle interiors and the
   // sampler's integer addressing, across negative UVs and mirror/repeat seams.
   auto address = [](int texel, int size, unsigned wrap) {
-    if (wrap == 4 && (texel < 0 || texel >= size))
+    if (wrap == 3 && (texel < 0 || texel >= size))
       return -1;
-    if (wrap == 3 || wrap == 4)
+    if (wrap == 0 || wrap == 3)
       return std::clamp(texel, 0, size - 1);
     const int period = wrap == 2 ? size * 2 : size;
     const int value = (texel % period + period) % period;
     return value < size ? value : period - 1 - value;
   };
-  for (unsigned wrap : {1, 2, 3, 4})
+  for (unsigned wrap : {1, 2, 0, 3})
     for (unsigned filter : {0, 1}) {
       draw = original;
       draw.material = std::make_shared<Material>(*original.material);

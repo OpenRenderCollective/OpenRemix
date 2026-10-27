@@ -90,10 +90,31 @@ namespace remix {
       dome.colorTexture = texture ? texture : source.texture.c_str();
       merged.pNext = &dome;
     }
+    // The original's IES profile and cookie stay with its replacement.
+    remixapi_LightInfoIesProfileEXT ies{};
+    ies.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_IES_PROFILE_EXT;
+    ies.data = source.ies.data();
+    ies.size = source.ies.size();
+    remixapi_LightInfoCookieEXT cookie{};
+    cookie.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_COOKIE_EXT;
+    const auto cookiePath = source.cookiePath.native();
+    cookie.texture = cookiePath.c_str();
+    cookie.up = source.cookieUp;
+    cookie.fovDegrees = source.cookieFov;
+    const void *chain = &merged;
+    if (source.cookie && merged.lightType == REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT) {
+      cookie.pNext = chain;
+      chain = &cookie;
+    }
+    if (!source.ies.empty() && merged.lightType != REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT &&
+        merged.lightType != REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT) {
+      ies.pNext = chain;
+      chain = &ies;
+    }
     remixapi_LightInfo info{};
     info.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
     info.hash = hash;
-    info.pNext = &merged;
+    info.pNext = const_cast<void *>(chain);
     remixapi_LightHandle handle{};
     createLight(info, handle);
     if (!replaceTransform) {
@@ -278,6 +299,7 @@ namespace remix {
           type == REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT)
         throw invalid;
       prototype.ies = iesProfile({ies->data, size_t(ies->size)});
+      source.ies.assign(ies->data, size_t(ies->size));
       // The profile's axis: the shaping's direction, else the light's own.
       if (!shaped) {
         auto d = unit(z);
@@ -299,6 +321,11 @@ namespace remix {
       if (slot == m_cookieTextures.end())
         slot = m_cookieTextures.insert(m_cookieTextures.end(), texture);
       prototype.cookie = uint32_t(slot - m_cookieTextures.begin()) + 1;
+      if (cookie->texture) // null: the white texture
+        source.cookiePath = cookie->texture;
+      source.cookie = texture;
+      source.cookieUp = cookie->up;
+      source.cookieFov = cookie->fovDegrees;
       // Up made perpendicular to the axis.
       auto perpendicular = unit(cross(unit(side), axis));
       std::copy(perpendicular.begin(), perpendicular.end(), prototype.cookieUp);

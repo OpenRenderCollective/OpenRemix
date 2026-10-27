@@ -373,6 +373,13 @@ namespace remix {
                           "Applies to textures created after the change; no restart needed.");
       if (settings.compressedTextures && !m_textureCompression)
         ImGui::TextWrapped("%s", "This GPU cannot sample BC formats: textures are decoded once at upload.");
+#if REMIX_HAS_USD
+      ui::Checkbox("Retain texture data for captures", &settings.captureRetainTextureData);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Keep BC texture blocks in system memory after upload so USD captures (Mods tab)\n"
+                          "can write them. Costs about the textures' VRAM size in system memory.\n"
+                          "Applies to textures uploaded afterwards. Off: captures save BC textures as 64-pixel stand-ins.");
+#endif
       ui::Checkbox("Report VRAM statistics", &settings.vramStatistics);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Answer GetVramStats with OpenRemix's texture, geometry, acceleration-structure\n"

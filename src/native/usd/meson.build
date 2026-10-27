@@ -35,7 +35,7 @@ if not cpp.compiles('#include <pxr/pxr.h>
 int main() {}', args : usd_args)
   error('USD loader requires OpenUSD 25.11 and nlohmann/json headers')
 endif
-usd_library = static_library('remix_usd', 'scene.cpp', 'skinning.cpp', 'capture_categories.cpp', 'loader.cpp', 'submission.cpp', 'mods.cpp',
+usd_library = static_library('remix_usd', 'scene.cpp', 'skinning.cpp', 'capture_categories.cpp', 'loader.cpp', 'submission.cpp', 'mods.cpp', 'capture.cpp', 'capture_writer.cpp',
   dependencies : usd_deps + [filesystem_dep, threads_dep], include_directories : [remix_public_include, native_include],
   cpp_args : usd_args + ['-DREMIX_HAS_USD=1'], gnu_symbol_visibility : 'hidden', pic : true)
 usd_libraries += usd_library

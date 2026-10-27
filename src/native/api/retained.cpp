@@ -5,6 +5,9 @@
 // points.
 
 #include "api/state.h"
+#if REMIX_HAS_USD
+#include "usd/capture.h"
+#endif
 
 using namespace remix::api;
 
@@ -51,6 +54,11 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_RemoveSceneInstancesEXT(const
 }
 
 REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_DrawSceneInstancesEXT(const float *origin) {
-  return resourceCall([&](auto &resources) { resources.drawRetained(origin); });
+  return resourceCall([&](auto &resources) {
+    resources.drawRetained(origin);
+#if REMIX_HAS_USD
+    remix::usd::captureSceneInstances(resources, origin);
+#endif
+  });
 }
 }

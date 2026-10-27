@@ -3,6 +3,7 @@
 #include <imgui.h>
 
 #if REMIX_HAS_USD
+#include "usd/capture.h"
 #include "usd/mods.h"
 #endif
 
@@ -17,11 +18,68 @@ namespace remix::ui {
         ImGui::SetTooltip("%s", tooltip);
       return changed;
     }
+
+    void drawCapture(ProfileUi &ui) {
+      using State = usd::CaptureStatus::State;
+      const auto status = usd::captureStatus();
+      const bool busy = status.state == State::Requested || status.state == State::Recording ||
+                        status.state == State::Writing;
+      static char name[128] = {};
+      if (static bool loaded = false; !loaded) {
+        std::snprintf(name, sizeof name, "%s", status.name.c_str());
+        loaded = true;
+      }
+      if (ImGui::InputTextWithHint("Name", "capture_<date>_<time>", name, sizeof name))
+        usd::setCaptureName(name);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("File name of the next captures (button or shortcut). Empty: the date and time.\n"
+                          "A capture of the same name is kept; the new one gets the time appended.");
+      ImGui::BeginDisabled(busy);
+      if (ImGui::Button("Capture frame"))
+        usd::requestCapture();
+      ImGui::EndDisabled();
+      if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("Write the next frame's meshes, materials, textures, lights and camera as a USD\n"
+                          "capture (RTX Remix layout) for the Remix Toolkit or for authoring mods.");
+      ImGui::SameLine();
+      const std::string label = (ui.capturingSceneCaptureShortcut ? std::string("Press a shortcut...")
+                                 : ui.sceneCaptureShortcut.empty() ? std::string("Set shortcut")
+                                                                   : ui.sceneCaptureShortcut) +
+                                "###Capture shortcut";
+      if (ImGui::SmallButton(label.c_str()))
+        ui.captureSceneCaptureShortcut = true;
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Shortcut that captures a frame, with this panel open or closed.\nClick, then press a "
+                          "key while holding the modifiers to use.\nEscape keeps the current shortcut.");
+      ImGui::TextWrapped("%s", status.directory.c_str());
+      switch (status.state) {
+      case State::Requested:
+      case State::Recording:
+        ImGui::TextUnformatted("Recording...");
+        break;
+      case State::Writing:
+        ImGui::TextUnformatted("Writing...");
+        break;
+      case State::Complete:
+        ImGui::TextWrapped("Saved %s", status.path.c_str());
+        break;
+      case State::Failed:
+        ImGui::TextColored(ImVec4(1, .55f, .4f, 1), "Capture failed");
+        break;
+      default:
+        break;
+      }
+      if (!status.message.empty())
+        ImGui::TextColored(ImVec4(1, .55f, .4f, 1), "%s", status.message.c_str());
+    }
   } // namespace
 #endif
 
-  void drawMods() {
+  void drawMods([[maybe_unused]] ProfileUi &ui) {
 #if REMIX_HAS_USD
+    if (ImGui::CollapsingHeader("Capture", ImGuiTreeNodeFlags_DefaultOpen))
+      drawCapture(ui);
+    ImGui::SeparatorText("Mods");
     const auto status = usd::modStatus();
     if (!status.active) {
       ImGui::TextWrapped("Mod loading is disabled for this session.");

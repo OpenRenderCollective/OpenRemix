@@ -76,6 +76,10 @@ namespace remix {
       std::atomic<uint64_t> emissionRefreshes{0}, emissionRefreshTicks{0};
     };
     inline TextureCounters textureCounters;
+    // "rtx.native.capture.retainTextureData": GPU uploads keep
+    // CompressedPixels::upload instead of releasing it, so USD captures
+    // (usd/capture.cpp) can write the blocks. Applies to later uploads.
+    inline std::atomic<bool> retainCompressedUploads{false};
     // Adds the steady-clock ticks since construction to a counter.
     struct CounterTicks {
       std::atomic<uint64_t> &out;
@@ -157,6 +161,8 @@ namespace remix {
       bool drawAlpha = false, translucent = false, transmission = false;
       // Light through it draws caustics: translucent, with a normal map.
       bool caustics = false;
+      // Wrap modes in RTX Remix's MDL encoding: 0 clamp, 1 repeat, 2 mirrored
+      // repeat, 3 clip.
       uint8_t filter = 0, wrapU = 1, wrapV = 1;
       uint8_t rows = 1, columns = 1, fps = 0;
       // Set once the handle stops resolving to this object (replaced or

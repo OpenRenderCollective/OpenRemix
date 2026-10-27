@@ -38,7 +38,7 @@ namespace {
     const auto &m = *draw.material;
     const auto &p = m.texture->pixels;
     auto wrap = [](int64_t x, int64_t n, uint32_t mode) -> int64_t {
-      if (mode == 3) return std::clamp<int64_t>(x, 0, n - 1);
+      if (mode == 0) return std::clamp<int64_t>(x, 0, n - 1);
       if (mode == 2) {
         const int64_t period = ((x % (2 * n)) + 2 * n) % (2 * n);
         return period < n ? period : 2 * n - 1 - period;
@@ -184,7 +184,7 @@ int main() {
     draw.material->compare = compares[scene % 4];
     draw.material->reference = .1f + .8f * random.unit();
     draw.material->filter = (scene / 4) % 2 != 0;
-    draw.material->wrapU = draw.material->wrapV = scene % 5 == 0 ? 3u : scene % 5 == 1 ? 2u : 1u;
+    draw.material->wrapU = draw.material->wrapV = scene % 5 == 0 ? 0u : scene % 5 == 1 ? 2u : 1u;
     draw.material->tint[3] = scene % 7 == 0 ? .75f : 1.f;
     if (scene % 4 == 3) {
       draw.blend.alphaOpTexture = 3; // Texture x vertex alpha.
@@ -229,7 +229,7 @@ int main() {
   draw.material = std::make_shared<Material>();
   draw.material->compare = 4;
   draw.material->reference = .5f;
-  draw.material->wrapU = draw.material->wrapV = 3;
+  draw.material->wrapU = draw.material->wrapV = 0;
   draw.material->texture = std::make_shared<Texture>();
   std::vector<uint8_t> half(32 * 32 * 4, 255);
   for (uint32_t y = 0; y < 32; ++y)

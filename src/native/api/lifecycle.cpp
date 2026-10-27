@@ -2,6 +2,7 @@
 #include "scene/light_bvh.h"
 #include "scene/particles.h"
 #if REMIX_HAS_USD
+#include "usd/capture.h"
 #include "usd/mods.h"
 #endif
 #include "api/entrypoints.h"
@@ -557,8 +558,10 @@ REMIXAPI remixapi_ErrorCode REMIXAPI_CALL remixapi_Present(const remixapi_Presen
       if (const auto caller = g_runtime.asyncCallerStatistics(); caller.active)
         call.wait = g_runtime.asyncCallerWait(), call.waited = g_runtime.waitedFrame();
 #if REMIX_HAS_USD
-      if (status == REMIXAPI_ERROR_CODE_SUCCESS)
+      if (status == REMIXAPI_ERROR_CODE_SUCCESS) {
+        remix::usd::captureBoundary(g_runtime.raster());
         remix::usd::modBoundary(g_runtime.raster());
+      }
 #endif
       call.mods = ms(presented, Clock::now());
 #if !defined(_WIN32)

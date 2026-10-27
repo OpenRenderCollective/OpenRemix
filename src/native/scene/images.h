@@ -21,4 +21,8 @@ namespace remix::scene {
   // level (D3D9 proxies, on request: remixapi_TextureInfoGenerateMipsEXT;
   // file-loaded textures always) otherwise leave distant surfaces to alias.
   void generateMips(Pixels &pixels);
+  // A DDS file (DX10 header) that loadTexture reads back: BC blocks verbatim
+  // while CompressedPixels::upload is present (else the preview level),
+  // otherwise the RGBA8 or RGBA32F levels. Empty: nothing to encode.
+  std::vector<uint8_t> encodeDds(const Pixels &pixels);
 } // namespace remix::scene

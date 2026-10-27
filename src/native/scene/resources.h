@@ -177,6 +177,8 @@ namespace remix {
       const auto found = m_retainedIndex.find(handle);
       return found == m_retainedIndex.end() ? nullptr : &m_retained[found->second];
     }
+    // Every scene instance, in table order (usd/capture.cpp).
+    const std::vector<scene::RetainedInstance> &retainedInstances() const { return m_retained; }
     // Writes this frame's static set into the draw list exactly where replay
     // without the set would have put it, for consumers other than the tracer
     // (raster rendering), and clears staticDrawn.
@@ -264,7 +266,7 @@ namespace remix {
       if (!m_cookieMaterial) {
         m_cookieMaterial = std::make_shared<scene::Material>(*defaultMaterial());
         m_cookieMaterial->filter = 1;
-        m_cookieMaterial->wrapU = m_cookieMaterial->wrapV = 3;
+        m_cookieMaterial->wrapU = m_cookieMaterial->wrapV = 0;
       }
       return m_cookieMaterial;
     }
@@ -288,7 +290,7 @@ namespace remix {
       if (!m_domeMaterial) {
         m_domeMaterial = std::make_shared<scene::Material>(*defaultMaterial());
         m_domeMaterial->filter = 1;
-        m_domeMaterial->wrapV = 3;
+        m_domeMaterial->wrapV = 0;
       }
       return m_domeMaterial;
     }
@@ -296,6 +298,46 @@ namespace remix {
     const scene::DistantLight &light() const { return m_light; }
     std::vector<scene::SphereLight> sphereLights() const;
     bool hasSphereLights() const { return !m_frameLights.empty(); }
+
+    // A light as created: its USD-style parameters (overrideLight merges
+    // into them; usd/capture.cpp writes them out).
+    struct LightSource {
+      remixapi_StructType type{};
+      remixapi_Transform transform{};
+      remixapi_Float3D color{1, 1, 1};
+      remixapi_Float3D direction{0, 0, -1};
+      float intensity = 1, exposure = 0, temperature = 6500, radius = .5f, width = 1, height = 1, length = 1;
+      float angle = .009250245f, cone = 3.14159265f, softness = 0, focus = 0;
+      remixapi_Bool temperatureEnabled = false;
+      std::filesystem::path texture;
+      // remixapi_LightInfoIesProfileEXT's text (empty: none), and
+      // remixapi_LightInfoCookieEXT's texture (as named, and what it resolved
+      // to; null: none), up and field of view.
+      std::string ies;
+      std::filesystem::path cookiePath;
+      std::shared_ptr<scene::Texture> cookie;
+      remixapi_Float3D cookieUp{0, 0, 1};
+      float cookieFov = 0;
+    };
+    // USD capture (usd/capture.cpp): what a handle's hash resolves to now
+    // (null: none), the host's own view (not the free camera's), and whether
+    // a texture is the white one materials without an albedo map get.
+    std::shared_ptr<const scene::Mesh> findMesh(uint64_t hash) const {
+      const auto found = m_meshes.find(hash);
+      return found == m_meshes.end() ? nullptr : found->second;
+    }
+    std::shared_ptr<const scene::Material> findMaterial(uint64_t hash) const {
+      const auto found = m_materials.find(hash);
+      return found == m_materials.end() ? nullptr : found->second;
+    }
+    const LightSource *lightSource(uint64_t hash) const {
+      const auto found = m_lights.find(hash);
+      return found == m_lights.end() ? nullptr : &found->second.source;
+    }
+    const scene::Matrix &authoredView(uint32_t type = 0) const { return m_authoredViews[type]; }
+    bool isDefaultTexture(const scene::Texture *texture) const {
+      return texture && m_default && texture == m_default->texture.get();
+    }
 
   protected:
     std::shared_ptr<scene::Texture> texturePath(remixapi_Path path);
@@ -324,16 +366,6 @@ namespace remix {
     std::array<scene::Matrix, 3> m_authoredCameras, m_authoredViews;
     std::array<std::array<float, 4>, 3> m_reverseDepth, m_authoredReverseDepth;
     bool m_freeCamActive = false;
-    struct LightSource {
-      remixapi_StructType type{};
-      remixapi_Transform transform{};
-      remixapi_Float3D color{1, 1, 1};
-      remixapi_Float3D direction{0, 0, -1};
-      float intensity = 1, exposure = 0, temperature = 6500, radius = .5f, width = 1, height = 1, length = 1;
-      float angle = .009250245f, cone = 3.14159265f, softness = 0, focus = 0;
-      remixapi_Bool temperatureEnabled = false;
-      std::filesystem::path texture;
-    };
     struct LightDefinition {
       LightSource source;
       scene::DistantLight distant;

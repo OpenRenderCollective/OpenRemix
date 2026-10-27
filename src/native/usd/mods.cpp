@@ -279,6 +279,9 @@ namespace remix::usd {
       return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
     }
   }
+  std::pair<double, uint32_t> modUnits() {
+    return {state.options.meters > 0 ? state.options.meters : .01, state.options.axis ? state.options.axis : 1};
+  }
   void modBoundary(NativeResources &resources) {
     if (!state.enabled)
       return;

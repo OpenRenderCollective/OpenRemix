@@ -302,8 +302,9 @@ namespace remix::usd {
             result.dependencies.insert(it.value());
       }
       for (const auto &light : result.scene["lights"])
-        if (!light.value("texture", std::string()).empty())
-          result.dependencies.insert(light["texture"]);
+        for (const char *key : {"texture", "ies", "cookie"})
+          if (!light.value(key, std::string()).empty())
+            result.dependencies.insert(light[key]);
       // Unbound material replacements are composed after the visible scene.
       // Their asset errors must reject the complete set too.
       for (const auto &material : result.scene["materials"])
@@ -335,7 +336,8 @@ namespace remix::usd {
                                     "emissive_texture"})
               want(material.value(key, std::string()));
         for (const auto &light : result.scene["lights"])
-          want(light.value("texture", std::string()));
+          for (const char *key : {"texture", "cookie"})
+            want(light.value(key, std::string()));
         for (const auto &light : result.scene["replacements"]["lights"])
           want(light["overrides"].value("texture", std::string()));
         auto decoded = decodeTextures(paths);

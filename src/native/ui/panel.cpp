@@ -78,7 +78,7 @@ namespace remix::ui {
                             ImGuiChildFlags_None, ImGuiWindowFlags_AlwaysVerticalScrollbar);
           ImGui::PushItemWidth(std::max(80.f * scale, ImGui::GetContentRegionAvail().x * .46f));
           if (i == kMods)
-            drawMods();
+            drawMods(profileUi);
           else if (i == kProfiles)
             drawProfiles(profiles, profileUi);
           else if (i == kPlugin)

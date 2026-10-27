@@ -148,6 +148,20 @@ namespace remix {
     return true;
   }
 
+  void RemixSdlWindow::setSceneCaptureShortcut(remixapi_Key key, uint32_t modifiers) {
+    m_sceneScancode = key ? toScancode(key) : SDL_SCANCODE_UNKNOWN;
+    m_sceneModifiers = modifiers & (MenuAlt | MenuCtrl | MenuShift | MenuGui);
+  }
+
+  bool RemixSdlWindow::takeCapturedSceneCaptureShortcut(remixapi_Key &key, uint32_t &modifiers) {
+    if (!m_sceneCaptured)
+      return false;
+    m_sceneCaptured = false;
+    key = m_capturedKey;
+    modifiers = m_capturedModifiers;
+    return true;
+  }
+
   bool RemixSdlWindow::takeMenuToggle() {
     const bool toggle = (m_menuToggles & 1) != 0;
     m_menuToggles = 0;
@@ -203,10 +217,14 @@ namespace remix {
       if (scancode != SDL_SCANCODE_ESCAPE && key) {
         m_capturedKey = key;
         m_capturedModifiers = menuModifiers(event.key.mod);
-        m_menuCaptured = true;
+        (m_capturingScene ? m_sceneCaptured : m_menuCaptured) = true;
       }
+      m_capturingScene = false;
     } else if (scancode == m_menuScancode && menuModifiers(event.key.mod) == m_menuModifiers) {
       ++m_menuToggles;
+    } else if (m_sceneScancode != SDL_SCANCODE_UNKNOWN && scancode == m_sceneScancode &&
+               menuModifiers(event.key.mod) == m_sceneModifiers) {
+      ++m_scenePresses;
     } else {
       return false;
     }

@@ -54,6 +54,12 @@ namespace remix::config {
     // Upload BC textures as GPU BC images instead of decoding them on the CPU.
     // Applies to textures created after the change; no restart needed.
     bool compressedTextures = true;
+    // USD captures: keep BC texture blocks on the CPU after upload so a
+    // capture can write them (scene::retainCompressedUploads). Costs about the
+    // textures' GPU size in memory; applies to textures uploaded afterwards.
+    // On by default: textures load with a level, long before a capture is
+    // asked for. Ignored without USD support.
+    bool captureRetainTextureData = true;
     // Fill GetVramStats from OpenRemix's allocations and the driver budget.
     bool vramStatistics = false;
     // Honour remixapi_MeshInfoDeformEXT: a deformed mesh keeps its update

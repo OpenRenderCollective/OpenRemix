@@ -122,7 +122,9 @@ namespace remix {
     if (material->tint[3] < 0 || material->tint[3] > 1) {
       throw invalid;
     }
-    if (info.filterMode > 1 || info.wrapModeU > 4 || info.wrapModeV > 4) {
+    // Wrap modes as RTX Remix's MDL samplers: 0 clamp, 1 repeat, 2 mirrored
+    // repeat, 3 clip (transparent black outside 0..1).
+    if (info.filterMode > 1 || info.wrapModeU > 3 || info.wrapModeV > 3) {
       throw unavailable;
     }
     material->filter = info.filterMode;

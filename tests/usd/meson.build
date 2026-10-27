@@ -16,3 +16,7 @@ if get_option('gpu_tests') and system == 'linux'
   usd_gpu_api_test = executable('remix-usd-gpu-api-test', 'api_gpu.cpp', include_directories : test_includes, dependencies : threads_dep, link_with : remix)
   test('USD frame-boundary reload API', usd_gpu_api_test, args : [meson.current_source_dir() / 'fixtures/capture.usda'], timeout : 30)
 endif
+capture_test = executable('remix-usd-capture-test', 'capture.cpp',
+  include_directories : test_includes, cpp_args : usd_args,
+  dependencies : usd_deps + [threads_dep], link_with : [usd_library, scene_library])
+test('USD scene capture round trip', capture_test, timeout : 120)

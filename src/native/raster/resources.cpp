@@ -378,7 +378,11 @@ namespace remix {
       return textures.emplace(source.get(), TextureGpu{source, nullptr, view}).first->second;
     }
     const VkImageCreateFlags flags = 0;
-    auto release = [&] { std::vector<uint8_t>().swap(c.upload); };
+    // Kept for USD captures while scene::retainCompressedUploads is set.
+    auto release = [&] {
+      if (!scene::retainCompressedUploads.load(std::memory_order_relaxed))
+        std::vector<uint8_t>().swap(c.upload);
+    };
     const VkFormat format = textureCompression ? blockFormat(c.format) : VK_FORMAT_UNDEFINED;
     if (c.upload.empty() || format == VK_FORMAT_UNDEFINED) {
       // Without BC sampling, decode once from the payload. A released payload
@@ -474,12 +478,13 @@ namespace remix {
     value->pool = pool;
     value->owner = source;
     auto address = [](uint8_t mode) {
+      // Material::wrapU/wrapV (Remix's MDL encoding, scene/types.h).
       switch (mode) {
+      case 0:
+        return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
       case 2:
         return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
       case 3:
-        return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-      case 4:
         return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
       default:
         return VK_SAMPLER_ADDRESS_MODE_REPEAT;

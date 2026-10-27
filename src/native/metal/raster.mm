@@ -259,7 +259,11 @@ namespace remix::metal {
       TextureGpu value{source, texture(base).texture};
       return textures.emplace(source.get(), std::move(value)).first->second;
     }
-    auto release = [&] { std::vector<uint8_t>().swap(c.upload); };
+    // Kept for USD captures while scene::retainCompressedUploads is set.
+    auto release = [&] {
+      if (!scene::retainCompressedUploads.load(std::memory_order_relaxed))
+        std::vector<uint8_t>().swap(c.upload);
+    };
     const auto block = device.supportsBCTextureCompression ? blockFormat(c.format) : BlockFormat{};
     if (c.upload.empty() || block.format == MTLPixelFormatInvalid) {
       // Without BC sampling, decode once from the payload (raster/resources.cpp).

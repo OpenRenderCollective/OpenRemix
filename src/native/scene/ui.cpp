@@ -156,8 +156,8 @@ namespace remix {
       } else {
         draw.material->texture = texturePath(nullptr);
       }
-      draw.material->wrapU = (cmd.flags & REMIXAPI_UI_NATIVE_REPEAT_U) ? 1 : 3;
-      draw.material->wrapV = (cmd.flags & REMIXAPI_UI_NATIVE_REPEAT_V) ? 1 : 3;
+      draw.material->wrapU = (cmd.flags & REMIXAPI_UI_NATIVE_REPEAT_U) ? 1 : 0;
+      draw.material->wrapV = (cmd.flags & REMIXAPI_UI_NATIVE_REPEAT_V) ? 1 : 0;
       draw.material->filter = (cmd.flags & REMIXAPI_UI_NATIVE_LINEAR) ? 1 : 0;
       draw.firstIndex = cmd.indexOffset;
       draw.indexCount = cmd.indexCount;
@@ -227,7 +227,7 @@ namespace remix {
     draw.material = std::make_shared<Material>();
     draw.material->texture = std::move(texture);
     draw.material->tint[3] = std::max(0.0f, opacity);
-    draw.material->wrapU = draw.material->wrapV = 3;
+    draw.material->wrapU = draw.material->wrapV = 0;
     draw.surface = std::make_shared<Surface>();
     draw.surface->vertices = {{{0, 0, 0}, {0, 0}, {1, 1, 1, 1}},
                               {{1, 0, 0}, {1, 0}, {1, 1, 1, 1}},
