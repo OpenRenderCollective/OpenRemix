@@ -40,6 +40,34 @@ namespace {
 }
 void testProbeImageData() {
   require(p::prepareImage({}).pixels.empty(), "Empty reflection asset has no image payload");
+  {
+    auto data = fixture(1, 16);
+    for (auto &texel : data.texels) texel = {4, 4, 4, 123};
+    auto reference = p::captureNormalization(data).coefficients[0];
+    require(std::abs(reference[0]) < 1e-6f && std::abs(reference[1]) < 1e-6f &&
+                std::abs(reference[2]) < 1e-6f && std::abs(reference[3] - 4) < 1e-5f,
+            "Uniform capture normalization retains HDR diffuse radiance in every direction");
+    const auto stride = data.header.parameters[3];
+    for (uint32_t face = 0; face < 6; ++face)
+      for (uint32_t y = 0; y < 16; ++y)
+        for (uint32_t x = 0; x < 16; ++x) {
+          const auto n = p::direction(face, (x + .5f) / 8 - 1, (y + .5f) / 8 - 1);
+          const float value = 3 + .5f * n[0] - .75f * n[1] + n[2];
+          data.texels[(face * 16 + y) * 16 + x] = {value, value, value, 999};
+        }
+    reference = p::captureNormalization(data).coefficients[0];
+    require(std::abs(reference[0] - 1.f/3) < 1e-4f && std::abs(reference[1] + .5f) < 1e-4f &&
+                std::abs(reference[2] - 2.f/3) < 1e-4f && std::abs(reference[3] - 3) < 1e-4f,
+            "Directional normalization uses world axes and cosine-convolved L1 coefficients");
+    require(stride > 6 * 16 * 16, "Fixture retains filtered mips ignored by capture normalization");
+    for (auto &texel : data.texels) texel = {0, 0, 0, 999};
+    require(p::captureNormalization(data).coefficients[0] == remix::forward::Vec4{},
+            "Dark captures retain an explicit zero reference for neutral fallback");
+    for (auto &texel : data.texels) texel = {8, 2, 1, 999};
+    reference = p::captureNormalization(data).coefficients[0];
+    require(std::abs(reference[3] - (8 * .2126f + 2 * .7152f + .0722f)) < 1e-5f,
+            "Colored HDR capture normalization measures luminance rather than channel average");
+  }
   for (auto [count, size] : {std::pair{2u, 8u}, {64u, 8u}, {1u, 256u}, {1u, 512u}}) {
     const auto data = fixture(count, size);
     const auto image = p::prepareImage(data);
@@ -72,8 +100,11 @@ void testProbeImageData() {
     const auto original = p::serialize(data);
     const auto image = p::prepareImage(data);
     const uint32_t order[]{1, 2, 0};
+    const auto canonicalNormalization = p::captureNormalization(data);
     require(p::serialize(data) == original, "Priority upload sorting preserves canonical cache and reuse data");
     for (uint32_t layer = 0; layer < 3; ++layer) {
+      require(image.normalization.coefficients[layer] == canonicalNormalization.coefficients[order[layer]],
+              "Normalization sorts with radiance and stable equal-priority projection metadata");
       require(std::memcmp(&image.header.probes[layer], &data.header.probes[order[layer]], sizeof(p::Record)) == 0,
               "Projection metadata sorts with image layers and retains equal-priority order");
       for (uint32_t level = 0; level < image.levels.size(); ++level) {

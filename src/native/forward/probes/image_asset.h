@@ -40,9 +40,10 @@ namespace remix::forward::probes {
     uint64_t imageBytes() const { return m_image->bytes; }
   private:
     void recordCopies(VkCommandBuffer command, const ImageAsset &first, const ImageAsset &second);
-    void initialize(VkPhysicalDevice physical, const Header &header);
+    void initialize(VkPhysicalDevice physical, const Header &header, const Normalization &normalization = {});
     VkDevice m_device;
     Header m_header;
+    Normalization m_normalization;
     VkSampler m_sampler = VK_NULL_HANDLE;
     std::unique_ptr<Buffer> m_metadata, m_staging;
     std::unique_ptr<Image> m_image;

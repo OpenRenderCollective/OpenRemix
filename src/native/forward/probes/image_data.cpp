@@ -20,9 +20,12 @@ namespace remix::forward::probes {
         source.texels.size() != size_t(count) * stride)
       throw std::invalid_argument("Invalid reflection image dimensions or mip payload");
     ImageData result{source.header, {}, {}};
+    const auto normalization = captureNormalization(source, cancelled);
     const auto order = priorityOrder(source.header);
-    for (uint32_t i = 0; i < count; ++i)
+    for (uint32_t i = 0; i < count; ++i) {
       result.header.probes[i] = source.header.probes[order[i]];
+      result.normalization.coefficients[i] = normalization.coefficients[order[i]];
+    }
     result.levels.reserve(levels);
     result.pixels.resize(source.texels.size() * 4);
     size_t destination = 0;

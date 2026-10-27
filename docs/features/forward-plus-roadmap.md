@@ -4048,3 +4048,30 @@ The testing install now uses native 35e80cf3 and adapter 26dc7770 from a clean p
 - Open priority: investigate reported HDR haze with fixed-exposure diffuse/specular isolation in Construct hall and connector. Zero-black compositor checks alone do not establish full presentation or scene-lighting parity.
 - Use VRF as the working Source 2 reference: capture SH/local irradiance cubemap normalization, rough lightmapped dielectric SH reflection blending, matched world/viewmodel handling. Our existing probe weight normalization is not that lighting normalization.
 - Implement and qualify capture normalization metadata, consistent radiometric units, actual surface/probe receiver irradiance, blend/composition/cache propagation and missing-data fallbacks. Keep HDR tone mapping/output encoding shared; avoid hiding the issue with contrast or exposure tweaks.
+
+### Cubemap lighting normalization integration
+
+Capture reference preparation is implemented separately from image packing in
+`probes/normalization.cpp`. It derives world-space L1 cosine-convolved luminance
+(divided by pi) from linear HDR mip zero. The derived GPU metadata follows the
+same priority sort and layer copy recipes as radiance, including authored/automatic
+composition and local selection. Canonical capture/cache records remain unchanged;
+existing HDR caches provide the source data without a rebake.
+
+This preparation does not yet change rendered brightness. Remaining requirements:
+- Feed actual surface irradiance to world reflection composition, preserving the
+  selected covered MSAA sample. Probe-lit props and viewmodels use their evaluated
+  probe irradiance; do not substitute probe lighting for available surface lighting.
+- Blend capture references consistently with reflection selection, priorities and
+  feathering, then apply a shared world/viewmodel correction in matching units.
+- Keep unknown or dark capture references neutral. Correct cubemap fallback before
+  SSR composition; do not normalize screen-space radiance a second time.
+- Check styled-light state, rough nonmetal lightmap reflection behavior, HDR range,
+  doorway transitions, outdoor coverage and cache reloads against the VRF reference.
+- Verify the Construct hall and connector comparison before enabling or deploying
+  the correction. The reported haze is still an unresolved diagnosis.
+
+Reference: ValveResourceFormat Renderer at revision
+`a091a7f9dc6bdba5eae25502a20117b60e7a51bf`, especially
+`Shaders/common/environment.slang` and `Shaders/common/lighting.slang`.
+This is a working Source 2 viewer reference, not proof of native engine internals.

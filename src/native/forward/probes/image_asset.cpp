@@ -27,7 +27,7 @@ namespace remix::forward::probes {
     m_staging = std::make_unique<Buffer>();
     m_staging->create(physical, device, packed.pixels.size()*sizeof(uint16_t), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
     m_staging->write(packed.pixels.data(), packed.pixels.size()*sizeof(uint16_t));
-    initialize(physical, packed.header);
+    initialize(physical, packed.header, packed.normalization);
   }
   ImageAsset::ImageAsset(VkPhysicalDevice physical, VkDevice device, const Composition &composition)
       : m_device(device), m_layerCopies(composition.layers) {
@@ -46,8 +46,9 @@ namespace remix::forward::probes {
     }
     initialize(physical, plan.header);
   }
-  void ImageAsset::initialize(VkPhysicalDevice physical, const Header &header) {
+  void ImageAsset::initialize(VkPhysicalDevice physical, const Header &header, const Normalization &normalization) {
     m_header = header;
+    m_normalization = normalization;
     const uint32_t count = header.parameters[0], size = header.parameters[1];
     if (count > maxProbes || (count && (size < 8 || size > 512 || !std::has_single_bit(size) ||
         header.parameters[2] != std::bit_width(size) ||
@@ -71,7 +72,7 @@ namespace remix::forward::probes {
     m_metadata = std::make_unique<Buffer>();
     m_metadata->create(physical, m_device, sizeof(GpuHeader),
                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-    const GpuHeader metadata{m_header, priorityBands(m_header)};
+    const GpuHeader metadata{m_header, priorityBands(m_header), m_normalization};
     m_metadata->write(&metadata, sizeof(metadata));
     m_image = std::make_unique<Image>();
     m_image->create(physical, m_device, extent, VK_FORMAT_R16G16B16A16_SFLOAT,
@@ -130,6 +131,7 @@ namespace remix::forward::probes {
       if (source.layer >= asset.m_header.parameters[0] ||
           asset.m_header.parameters[1] != m_header.parameters[1] || asset.m_levels != m_levels)
         throw std::invalid_argument("Reflection composition source dimensions or layer mismatch");
+      m_normalization.coefficients[layer] = asset.m_normalization.coefficients[source.layer];
       for (uint32_t level = 0; level < m_levels; ++level) {
         const auto size = std::max(m_header.parameters[1] >> level, 1u);
         copies[source.automatic].push_back({
@@ -137,6 +139,8 @@ namespace remix::forward::probes {
             .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, layer, 1}, .extent = {size, 6*size, 1}});
       }
     }
+    const GpuHeader metadata{m_header, priorityBands(m_header), m_normalization};
+    m_metadata->write(&metadata, sizeof(metadata));
     std::vector<VkImageMemoryBarrier> barriers;
     auto barrier = [](const ImageAsset &asset, VkImageLayout oldLayout, VkImageLayout newLayout,
                       VkAccessFlags source, VkAccessFlags destination) {

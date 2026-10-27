@@ -1,5 +1,6 @@
 #pragma once
 #include "forward/probes/data.h"
+#include "forward/probes/normalization.h"
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -16,9 +17,11 @@ namespace remix::forward::probes {
   struct GpuHeader {
     Header captures;
     PriorityBands priority;
+    Normalization normalization;
   };
-  static_assert(sizeof(GpuHeader) == sizeof(Header) + 2048 &&
-                offsetof(GpuHeader, priority) == sizeof(Header));
+  static_assert(sizeof(GpuHeader) == sizeof(Header) + 3072 &&
+                offsetof(GpuHeader, priority) == sizeof(Header) &&
+                offsetof(GpuHeader, normalization) == sizeof(Header) + sizeof(PriorityBands));
 
   inline PriorityBands priorityBands(const Header &header) {
     const uint32_t count = header.parameters[0];
