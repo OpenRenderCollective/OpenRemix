@@ -255,7 +255,7 @@ namespace remix::forward::probes {
   }
   std::vector<Bounds> fitRegionCandidates(const scene::VisibilityPartition &partition, const Bounds &limit,
                                           Vec3 site, float margin, std::stop_token cancelled,
-                                          RegionTolerance tolerance) {
+                                          RegionTolerance tolerance, std::optional<Vec3> requiredPoint) {
     check(cancelled);
     if (!valid(limit) || !std::isfinite(margin) || margin <= 0 || !std::isfinite(tolerance.detailDepth) ||
         tolerance.detailDepth < 0 || !std::isfinite(tolerance.maxIgnoredFraction) ||
@@ -270,6 +270,13 @@ namespace remix::forward::probes {
         return {};
       initial.minimum[c] = site[c] - 2 * margin;
       initial.maximum[c] = site[c] + 2 * margin;
+      if (requiredPoint) {
+        const float point = (*requiredPoint)[c];
+        if (!std::isfinite(point) || point - 2 * margin < limit.minimum[c] ||
+            point + 2 * margin > limit.maximum[c]) return {};
+        initial.minimum[c] = std::min(initial.minimum[c], point - 2 * margin);
+        initial.maximum[c] = std::max(initial.maximum[c], point + 2 * margin);
+      }
     }
     if (!space.contains(initial))
       return {};
@@ -283,8 +290,8 @@ namespace remix::forward::probes {
     auto centred = [&](float radius) {
       Bounds result = initial;
       for (uint32_t c = 0; c < 3; ++c) {
-        result.minimum[c] = site[c] - radius;
-        result.maximum[c] = site[c] + radius;
+        result.minimum[c] = std::min(initial.minimum[c], site[c] - radius);
+        result.maximum[c] = std::max(initial.maximum[c], site[c] + radius);
       }
       return result;
     };

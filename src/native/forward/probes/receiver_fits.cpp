@@ -135,19 +135,46 @@ namespace remix::forward::probes {
       const uint32_t policies = detailToleranceMetres > 0 ? 2 : 1;
       for (uint32_t policy = 0; policy < policies; ++policy) {
         const RegionTolerance tolerance{policy ? detailToleranceMetres / source.sceneScale : 0};
-        for (const auto &box : fitRegionCandidates(*source.partition, limit, sites[index].position,
-                                                  .001f / source.sceneScale, cancelled, tolerance)) {
-          const auto influence = receiverRegion(*source.partition, box, .002f / source.sceneScale,
-                                                cancelled, tolerance, .5f / source.sceneScale);
+        // Keep the fit tied to the receiver that requested it. A tall empty
+        // box above a courtyard is not a useful replacement for its ground.
+        const auto &normal = receivers[admission.sites()[owner].receiver].normal;
+        const double length = std::hypot(normal[0], normal[1], normal[2]);
+        std::optional<Vec3> anchor;
+        if (std::isfinite(length) && length > 0) {
+          anchor = position;
+          for (uint32_t axis = 0; axis < 3; ++axis)
+            (*anchor)[axis] += float(normal[axis] / length * (.002 / source.sceneScale));
+        }
+        auto influenceFor = [&](const Bounds &box) {
+          return receiverRegion(*source.partition, box, .002f / source.sceneScale,
+              cancelled, tolerance, .5f / source.sceneScale);
+        };
+        auto coversReceiver = [&](const Bounds &influence) {
+          for (uint32_t axis = 0; axis < 3; ++axis)
+            if (position[axis] < influence.minimum[axis] || position[axis] > influence.maximum[axis]) return false;
+          return true;
+        };
+        auto boxes = fitRegionCandidates(*source.partition, limit, sites[index].position,
+            .001f / source.sceneScale, cancelled, tolerance);
+        const bool covered = std::any_of(boxes.begin(), boxes.end(),
+            [&](const Bounds &box) { return coversReceiver(influenceFor(box)); });
+        if (!covered && anchor) {
+          auto anchored = fitRegionCandidates(*source.partition, limit, sites[index].position,
+              .001f / source.sceneScale, cancelled, tolerance, anchor);
+          // An occupancy disagreement cannot authorize growth through a wall.
+          // Keep the old family unless the new one really reaches its receiver.
+          if (std::any_of(anchored.begin(), anchored.end(),
+                [&](const Bounds &box) { return coversReceiver(influenceFor(box)); }))
+            boxes = std::move(anchored);
+        }
+        for (const auto &box : boxes) {
+          const auto influence = influenceFor(box);
           const bool duplicate = std::any_of(fit.variants.begin(), fit.variants.end(), [&](const auto &v) {
             return v.projection.minimum == box.minimum && v.projection.maximum == box.maximum &&
                    v.influence.minimum == influence.minimum && v.influence.maximum == influence.maximum;
           });
           if (duplicate) continue;
-          bool covered = true;
-          for (uint32_t c = 0; c < 3; ++c)
-            covered &= position[c] >= influence.minimum[c] && position[c] <= influence.maximum[c];
-          ReceiverProjection variant{box, influence, covered};
+          ReceiverProjection variant{box, influence, coversReceiver(influence)};
           variant.detailTolerant = policy != 0;
           fit.variants.push_back(std::move(variant));
         }

@@ -111,6 +111,14 @@ int main(int argc, char **argv) {
     coversFloor |= variant.coversReceiver;
   }
   require(coversFloor, "Local influence restores contact with its originating floor receiver");
+  const auto originalLocal = p::fitRegionCandidates(*localSource.partition, room, {-1, 0, -1.25f}, .001f);
+  require(localFits.attempts[0].variants.size() == originalLocal.size(),
+          "Already covered local receivers retain their existing candidate count");
+  for (size_t i = 0; i < originalLocal.size(); ++i)
+    require(localFits.attempts[0].variants[i].projection.minimum == originalLocal[i].minimum &&
+                localFits.attempts[0].variants[i].projection.maximum == originalLocal[i].maximum,
+            "Already covered local receivers retain exact projection bounds");
+
   p::ReceiverSiteChecks blocked(admission, std::span(&localReceiver, 1), 1);
   clear[0].statistics = {0, 0, 1, 0};
   clear[0].irradiance[0][3] = .1f;
@@ -376,6 +384,23 @@ int main(int argc, char **argv) {
     vertical |= candidate.maximum[1] > 2.9f && candidate.maximum[0] < .01f;
   }
   require(horizontal && vertical, "Geometry assessment can choose either arm rather than only a volume winner");
+  const Vec3 receiverAnchor{3, -1, 0};
+  const auto anchoredFits = p::fitRegionCandidates(elbow, room, {-1, -1, 0}, .001f, {}, {}, receiverAnchor);
+  require(!anchoredFits.empty(), "Receiver anchoring retains a valid arm of an L-shaped room");
+  for (const auto &candidate : anchoredFits) {
+    require(p::emptyRegion(elbow, candidate), "Receiver anchoring retains whole-volume wall exclusion");
+    for (uint32_t axis = 0; axis < 3; ++axis)
+      require(receiverAnchor[axis] >= candidate.minimum[axis] && receiverAnchor[axis] <= candidate.maximum[axis],
+              "Every anchored alternative contains its required receiver point");
+  }
+  require(p::fitRegionCandidates(elbow, room, {-1, -1, 0}, .001f, {}, {}, Vec3{3, 1, 0}).empty(),
+          "A receiver inside a solid corner cannot anchor a reflection volume");
+  require(p::fitRegionCandidates(columnRoom, room, {-2, 0, 0}, .001f, {}, tolerance, Vec3{2, 0, 0}).empty(),
+          "Even tolerant growth refuses a connecting seed through a solid column");
+  require(p::fitRegionCandidates(elbow, room, {-1, -1, 0}, .001f, {}, {},
+                                Vec3{std::numeric_limits<float>::quiet_NaN(), 0, 0}).empty(),
+          "Nonfinite receiver anchors fail closed");
+
   require(p::fitRegionCandidates(splitRoom, room, {0, 0, 0}, .001f).size() == 1,
           "Equivalent rectangular-room fits consume only one audit slot");
   scene::BakeScene elbowScene;

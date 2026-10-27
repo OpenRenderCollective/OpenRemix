@@ -338,3 +338,8 @@ coverage_selection_test = executable('remix-reflection-coverage-test', 'coverage
   '../../src/native/forward/probes/coverage_selection.cpp',
   include_directories : test_includes, cpp_args : test_cpp_args)
 test('Reflection coverage replacements preserve sampled baselines', coverage_selection_test)
+
+# Explicit offline fitting study; not part of ordinary rendering or the test run.
+probe_fit_study = executable('remix-probe-fit-study', 'probe_fit_study.cpp',
+  '../../src/native/forward/probes/regions.cpp', '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)

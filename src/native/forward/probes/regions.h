@@ -52,10 +52,13 @@ namespace remix::forward::probes {
   // boxes beyond their face-search uncertainty, avoiding diagonal slivers.
   // Retain distinct growth results for the geometry audit. Largest volume comes
   // first, but a narrower doorway-spanning fit must not hide room-shaped alternatives.
-  // At most three whole-volume-validated boxes, with the same capture origin.
+  // At most three whole-volume-validated boxes, with the same capture origin. A
+  // required point anchors every result to a receiver as well; the initial
+  // connecting box must be empty, so an anchor never permits crossing a wall.
   std::vector<Bounds> fitRegionCandidates(const scene::VisibilityPartition &partition, const Bounds &limit,
                                           Vec3 site, float margin, std::stop_token cancelled = {},
-                                          RegionTolerance tolerance = {});
+                                          RegionTolerance tolerance = {},
+                                          std::optional<Vec3> requiredPoint = {});
   std::optional<Bounds> fitRegion(const scene::VisibilityPartition &partition, const Bounds &limit, Vec3 site,
                                   float margin, std::stop_token cancelled = {},
                                   RegionTolerance tolerance = {});

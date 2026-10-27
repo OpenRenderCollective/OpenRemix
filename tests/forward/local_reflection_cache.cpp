@@ -1,4 +1,6 @@
 #include "forward/bake/local_reflection_cache.h"
+#include "forward/bake/cache_io.h"
+#include <cstring>
 #include "forward/bake/cache_persistence.h"
 #include <algorithm>
 #include <cstdio>
@@ -115,6 +117,20 @@ int main(int argc, char **argv) {
   auto duplicates = std::make_shared<p::ReceiverCoverageEvidence>(*bad.evidence);
   duplicates->observations.push_back(duplicates->observations[0]); bad.evidence = duplicates;
   require(!cache::write(file, 42, bad), "Duplicate observations cannot inflate cached coverage");
+  // Keep the checksum valid so this exercises fitting-policy admission,
+  // independently of the generic corruption check below.
+  auto legacy = original;
+  using Header = bake::cache::detail::Header;
+  Header legacyHeader{};
+  std::memcpy(&legacyHeader, legacy.data(), sizeof(legacyHeader));
+  const uint32_t oldPolicy = 1;
+  std::memcpy(legacy.data() + sizeof(Header), &oldPolicy, sizeof(oldPolicy));
+  legacyHeader.checksum = remix::scene::hashBytes(legacy.data() + sizeof(Header),
+      legacy.size() - sizeof(Header), 1469598103934665603ull);
+  std::memcpy(legacy.data(), &legacyHeader, sizeof(legacyHeader));
+  const auto oldFile = directory / "old-fitting-policy.bin";
+  { std::ofstream out(oldFile, std::ios::binary); out.write(legacy.data(), std::streamsize(legacy.size())); }
+  require(!cache::read(oldFile, 42, current, config, {}), "Old unanchored fit evidence is a local-cache miss");
   auto corrupt = original; corrupt.back() ^= 1;
   const auto damaged = directory / "damaged.bin";
   { std::ofstream out(damaged, std::ios::binary); out.write(corrupt.data(), std::streamsize(corrupt.size())); }

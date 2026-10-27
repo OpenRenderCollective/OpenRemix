@@ -3994,3 +3994,12 @@ noise/seams, denoising cost and frame profiling remain independent priorities.
 ### Playable receiver-lighting checkpoint (2026-10-27)
 
 The testing install now uses native 35e80cf3 and adapter 26dc7770 from a clean package. Bicubic reconstruction defaults on, viewmodel sunlight separates static fallback from moving/self shadows, and sun filter taps use the geometric receiver plane. Existing settings, material replacements and authored cubemap data are preserved. The experimental static depth batch is excluded. Outdoor automatic reflection coverage, the exact reported prop triangle artifact, broader performance work, and conservative pruning of unused viewmodel static fallback draws remain open.
+
+
+### Receiver-anchored reflection fitting (2026-10-27)
+
+- Added an optional receiver anchor to the occupancy-constrained fitter. Its connecting seed must be empty even when detail tolerance is enabled; growth/insetting retain the required point.
+- The opt-in local receiver-fit path preserves existing families that cover their surface. Only misses try anchoring, and an unsuccessful anchored family retains the previous candidates. Capture-origin and maximum variant budgets are unchanged.
+- A bounded CPU study using the original Construct BSP and 32 frozen supported receiver/site pairs reaches 20 requesting surfaces versus 19 before, changing one terrain family. This is not global coverage, parallax accuracy, visibility or rendered quality acceptance.
+- CPU occupancy, covered-family identity and optional-cache policy guards pass. The optional local-reflection companion uses fitting policy 2 so old unanchored evidence is not silently reused; ordinary lighting-cache identity/format are unchanged.
+- Next: audit actual geometry/radiance for the newly anchored terrain box, qualify publication/blending and additional outdoor receivers/maps, then connect a qualified policy to ordinary automatic placement. The playable package remains the verified 35e80cf3 checkpoint.

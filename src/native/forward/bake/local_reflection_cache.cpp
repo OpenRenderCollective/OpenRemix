@@ -9,7 +9,8 @@
 namespace remix::forward::bake::local_cache {
   namespace {
     namespace io = cache::detail;
-    constexpr uint32_t version = 1, maximumAttempts = 32, maximumObservations = 32768;
+    // Policy 2 qualifies receiver-anchored fitting; ordinary lighting caches are unchanged.
+    constexpr uint32_t policyVersion = 2, maximumAttempts = 32, maximumObservations = 32768;
     constexpr uint64_t maximumBytes = 160ull << 20;
     void require(bool value) {
       if (!value) throw std::invalid_argument("Invalid local reflection cache");
@@ -195,7 +196,7 @@ namespace remix::forward::bake::local_cache {
       temporary = file; temporary += ".tmp-" + std::to_string((uint64_t(random()) << 32) ^ random());
       if (std::filesystem::exists(temporary)) throw std::runtime_error("Local reflection cache temporary exists");
       io::Writer out(temporary, key, cancelled); owned = true;
-      out.pod(version); out.pod(std::bit_cast<uint32_t>(s.source->sceneScale)); out.pod(s.source->contentHash);
+      out.pod(policyVersion); out.pod(std::bit_cast<uint32_t>(s.source->sceneScale)); out.pod(s.source->contentHash);
       out.pod(geometryIdentity(*s.source, cancelled)); out.pod(s.detailTolerance);
       const auto &fits = s.evidence->fits;
       out.pod(uint32_t(fits.available)); out.pod(fits.supported); out.pod(fits.partitionRefused); out.pod(fits.duplicates);
@@ -225,7 +226,7 @@ namespace remix::forward::bake::local_cache {
       require(source && source->ready && config.reflectionResolution >= 8 && config.reflectionResolution <= 512 &&
               std::has_single_bit(config.reflectionResolution) && std::filesystem::file_size(file) <= maximumBytes);
       io::Reader in(file, key, cancelled);
-      require(in.pod<uint32_t>() == version && in.pod<uint32_t>() == std::bit_cast<uint32_t>(source->sceneScale) &&
+      require(in.pod<uint32_t>() == policyVersion && in.pod<uint32_t>() == std::bit_cast<uint32_t>(source->sceneScale) &&
               in.pod<uint64_t>() == source->contentHash && in.pod<std::array<uint64_t,2>>() == geometryIdentity(*source, cancelled));
       auto result = std::make_unique<Snapshot>(); result->source = source;
       result->detailTolerance = in.pod<float>();
