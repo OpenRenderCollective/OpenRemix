@@ -45,11 +45,14 @@ BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, floa
   // boundary even when its centre response vanishes.
   if (shape <= 0 && !bakedDiffuse && !(probeCorrection && surfaceLightmap.w < .5))
     return BrdfLobes(vec3(0), vec3(0));
-  float visibility;
+  // Clear is recorded only when every receiver sample is exactly one. Its
+  // working channel has already been released, so no filtered lookup is needed.
+  float visibility = 1;
   uint channel;
-  bool baked =
-      bakedLightVisibility(surfaceLightmap, surfaceBounds, surfaceLights, uint(light.shaping.w), visibility, channel);
-  baked = baked || cachedVisibility == 2u;
+  bool baked = cachedVisibility == 2u;
+  if (!baked)
+    baked = bakedLightVisibility(surfaceLightmap, surfaceBounds, surfaceLights,
+                                uint(light.shaping.w), visibility, channel);
   if (!baked)
     baked = overflowLightVisibility(surfaceChart, uint(light.shaping.w), surfaceLightmap, surfaceBounds, visibility);
   if (!FullyMappedReceiver && !baked && surfaceLightmap.w < .5) {

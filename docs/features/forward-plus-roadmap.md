@@ -4034,3 +4034,8 @@ The testing install now uses native 35e80cf3 and adapter 26dc7770 from a clean p
 
 - The testing-install package now includes the static depth batching default and its F12/config disable path. The updater target points to that package. Other experimental cubemap refinement switches remain independent and opt-in.
 - Continue profiling world shading/reflection composition and expanding map coverage; reducing depth submissions does not remove those costs.
+
+### Selected-light visibility work
+
+- Proven-clear chart/light pairs now bypass redundant working-channel visibility lookup; unknown, partial and blocked classifications retain their existing paths. Highlights, directional diffuse and bicubic filtering remain enabled.
+- Continue reducing selected-light field/shading work without weakening shadow coverage or discarding specular responses.
