@@ -4075,3 +4075,19 @@ Reference: ValveResourceFormat Renderer at revision
 `a091a7f9dc6bdba5eae25502a20117b60e7a51bf`, especially
 `Shaders/common/environment.slang` and `Shaders/common/lighting.slang`.
 This is a working Source 2 viewer reference, not proof of native engine internals.
+### Modular material API and lighting presets
+
+See [Forward material and lighting architecture](../architecture/forward-lighting.md)
+for the refactor plan and contracts. The default Forward+ preset is to be named
+Source 2: surface lightmapped direct/diffuse lighting, volume probes for moving
+receivers and parallax cubemaps, with mixed dynamic shadows and full-resolution SSR.
+Preset/UI configuration is pending; this is not a newly deployed setting.
+
+The first extraction shares diffuse receiver evaluation between world/viewmodels
+in `receiver-lighting.glsl`, retaining existing baked and live-GI behavior. Next:
+material/receiver/result types, one standard shade entry point, provider boundaries,
+a resolved CPU lighting plan, component overrides and explicit settings migration.
+Allow unified providers to replace several services without double-counting energy.
+Audit experimental paths and settings with caller/evidence checks before removal.
+Measure draw aggregation and shader changes independently; retain current quality,
+bake-time, cubemap, HDR and probe issues rather than treating refactoring as a fix.

@@ -54,6 +54,7 @@ layout(location = 1) out vec4 outNormalRoughness;
 layout(location = 2) out vec4 outReflectance;
 #endif
 #include "direct-light.glsl"
+#include "receiver-lighting.glsl"
 // Specialization removes diagnostic branches from ordinary world shading.
 layout(constant_id = 1) const uint LightingView = 0u;
 vec3 directLightComponent(BrdfLobes light, uint view) {
@@ -145,24 +146,10 @@ void main() {
 #endif
     return;
   }
-  bool aggregateReceiver = false;
-#ifdef LIVE_GI
-  ambient = metallic < 1 && any(greaterThan(surface.rgb, vec3(0))) ? liveDiffuse(worldPosition, n, geometric)
-                                                                   : vec3(0);
-#else
-  if (charted) {
-    ambient = surfaceLighting.rgb / Pi;
-    aggregateReceiver = true;
-#ifdef ZERO_DIFFUSE_MATERIAL
-  } else if (localProbeStencil(worldPosition, n)) {
-    ambient = vec3(0);
-#else
-  } else if (bakedIrradiance(worldPosition, n, irradiance)) {
-    ambient = irradiance / Pi;
-#endif
-    aggregateReceiver = true;
-  }
-#endif
+  ReceiverLighting receiver = evaluateReceiverLighting(worldPosition, n, geometric, charted,
+      surfaceLighting.rgb, metallic < 1 && any(greaterThan(surface.rgb, vec3(0))), ambient);
+  ambient = receiver.diffuse;
+  bool aggregateReceiver = receiver.aggregate;
   bool includeBakedDiffuse = debugView == 0u || debugView == 7u;
   vec3 color = includeBakedDiffuse ? surface.rgb * (1 - metallic) * ambient : vec3(0);
   BrdfLobes sun = sunLightResponse(surfaceLightmap, surfaceBounds, surfaceLighting.w, worldPosition, depth, n, v,
