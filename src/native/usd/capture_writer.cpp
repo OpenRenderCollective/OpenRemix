@@ -249,8 +249,11 @@ namespace remix::usd {
         shader.CreateInput(TfToken(name), type).Set(value);
       };
       auto map = [&](const char *name, uint64_t texture) {
-        if (texture && textures.count(texture))
-          input(name, SdfValueTypeNames->Asset, VtValue(SdfAssetPath("../textures/" + hex(texture) + ".dds")));
+        if (!texture || !textures.count(texture))
+          return;
+        auto attribute = shader.CreateInput(TfToken(name), SdfValueTypeNames->Asset).GetAttr();
+        attribute.Set(SdfAssetPath("../textures/" + hex(texture) + ".dds"));
+        attribute.SetColorSpace(TfToken("auto"));
       };
       const GfVec3f tint(m.tint[0], m.tint[1], m.tint[2]);
       if (m.translucent) {
@@ -285,9 +288,21 @@ namespace remix::usd {
       input("alpha_test_type", SdfValueTypeNames->Int, VtValue(int(m.compare)));
       input("alpha_test_reference_value", SdfValueTypeNames->Int,
             VtValue(int(std::lround(std::clamp(m.reference, 0.f, 1.f) * 255))));
-      input("filter_mode", SdfValueTypeNames->UInt, VtValue(unsigned(m.filter)));
-      input("wrap_mode_u", SdfValueTypeNames->UInt, VtValue(unsigned(m.wrapU)));
-      input("wrap_mode_v", SdfValueTypeNames->UInt, VtValue(unsigned(m.wrapV)));
+      // Sampler state, twice: as shader inputs (what the Toolkit shows and
+      // mods override), and as the uniform un-prefixed attributes RTX Remix's
+      // own capture exporter writes (game_exporter.cpp), which its capture
+      // rendering reads; without them captured textures render clamped.
+      const std::pair<const char *, unsigned> sampler[] = {
+          {"filter_mode", m.filter}, {"wrap_mode_u", m.wrapU}, {"wrap_mode_v", m.wrapV}};
+      for (const auto &[name, value] : sampler) {
+        input(name, SdfValueTypeNames->UInt, VtValue(value));
+        shader.GetPrim()
+            .CreateAttribute(TfToken(name), SdfValueTypeNames->UInt, false, SdfVariabilityUniform)
+            .Set(value);
+      }
+      shader.GetPrim()
+          .CreateAttribute(TfToken("enable_opacity"), SdfValueTypeNames->Bool, false, SdfVariabilityUniform)
+          .Set(m.tint[3] < 1 || m.compare != 7 || m.drawAlpha);
       exportLayer(stage->GetRootLayer(), file);
     }
 

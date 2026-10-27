@@ -68,6 +68,12 @@ lights/light_<HASH>.ies         IES profiles, as the host gave them
   coordinates are moved by whole repeats toward 0. The surface samples the
   same texels, but coordinates far from 0 (hosts that bake tiling and offsets
   into them) lose precision in tools.
+- **Sampler state.** `filter_mode`, `wrap_mode_u` and `wrap_mode_v` are written
+  twice on each shader: as `inputs:` (what the Toolkit shows and mods
+  override), and as the uniform un-prefixed `uint` attributes, with
+  `enable_opacity`, that RTX Remix's own capture exporter writes. Remix's
+  capture rendering reads those; without them, captured textures render
+  clamped.
 - **Wrap modes.** `MaterialInfo::wrapModeU/V` use RTX Remix's MDL encoding
   (0 clamp, 1 repeat, 2 mirrored repeat, 3 clip), so they are written and read
   as they are.
