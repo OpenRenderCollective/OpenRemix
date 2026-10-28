@@ -166,11 +166,18 @@ namespace remix {
     };
     std::vector<const char *> extensions(std::begin(kRequiredDeviceExtensions),
                                          std::end(kRequiredDeviceExtensions));
-#if defined(__linux__)
+#if defined(__linux__) || defined(_WIN32)
     if (m_headless) {
       extensions.clear();
-      for (const char *extension :
-           {VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME, VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME}) {
+#if defined(_WIN32)
+      // Spelled out: the *_WIN32_EXTENSION_NAME macros need VK_USE_PLATFORM_WIN32_KHR.
+      constexpr const char *kSharedFrameExtensions[] = {"VK_KHR_external_memory_win32",
+                                                        "VK_KHR_external_semaphore_win32"};
+#else
+      constexpr const char *kSharedFrameExtensions[] = {VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
+                                                        VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME};
+#endif
+      for (const char *extension : kSharedFrameExtensions) {
         if (!supportsDeviceExtension(selection.physicalDevice, extension))
           return REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE;
         extensions.push_back(extension);

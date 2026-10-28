@@ -72,7 +72,7 @@ namespace remix {
       m_disableProfiles = editor.disableProfiles;
       m_disableMods = editor.disableMods;
     }
-#if !defined(__linux__)
+#if !defined(__linux__) && !defined(_WIN32)
     if (m_headless)
       return REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE;
 #endif

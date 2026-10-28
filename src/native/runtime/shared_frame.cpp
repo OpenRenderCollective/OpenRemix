@@ -1,3 +1,10 @@
+#if defined(_WIN32)
+#define VK_USE_PLATFORM_WIN32_KHR
+#define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#endif
 #include "api/state.h"
 #include "runtime/runtime.h"
 #include <cstring>
@@ -6,12 +13,42 @@
 #endif
 
 namespace remix {
+#if defined(__linux__) || defined(_WIN32)
+  namespace {
+    // The editor shares the frame as opaque descriptors: file descriptors on
+    // Linux, NT handles on Windows (the caller owns and closes them).
+#if defined(_WIN32)
+    constexpr auto kMemoryHandleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+    constexpr auto kSemaphoreHandleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+    void *&memoryHandle(remixapi_EditorSharedFrame &frame) { return frame.memory_handle; }
+    void *&readyHandle(remixapi_EditorSharedFrame &frame) { return frame.ready_handle; }
+    void *&releasedHandle(remixapi_EditorSharedFrame &frame) { return frame.released_handle; }
+    constexpr void *kNoHandle = nullptr;
+    void closeHandle(void *handle) {
+      if (handle)
+        CloseHandle(handle);
+    }
+#else
+    constexpr auto kMemoryHandleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+    constexpr auto kSemaphoreHandleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
+    int &memoryHandle(remixapi_EditorSharedFrame &frame) { return frame.memory_fd; }
+    int &readyHandle(remixapi_EditorSharedFrame &frame) { return frame.ready_fd; }
+    int &releasedHandle(remixapi_EditorSharedFrame &frame) { return frame.released_fd; }
+    constexpr int kNoHandle = -1;
+    void closeHandle(int fd) {
+      if (fd >= 0)
+        close(fd);
+    }
+#endif
+  } // namespace
+#endif
+
   int RemixNativeRuntime::configureSharedFrame(remixapi_EditorSharedFrame &frame) {
-#if defined(__linux__)
+#if defined(__linux__) || defined(_WIN32)
     if (!m_initialized || !m_headless || m_sharedImage || frame.version != 1 || frame.width < 16 ||
         frame.height < 16 || frame.width > 8192 || frame.height > 8192)
       return -1;
-    frame.memory_fd = frame.ready_fd = frame.released_fd = -1;
+    memoryHandle(frame) = readyHandle(frame) = releasedHandle(frame) = kNoHandle;
     auto check = [](VkResult result) {
       if (result != VK_SUCCESS)
         throw result;
@@ -22,7 +59,7 @@ namespace remix {
                          VK_IMAGE_USAGE_TRANSFER_DST_BIT;
       VkPhysicalDeviceExternalImageFormatInfo externalFormat{
           VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO};
-      externalFormat.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+      externalFormat.handleType = kMemoryHandleType;
       VkPhysicalDeviceImageFormatInfo2 format{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2};
       format.pNext = &externalFormat;
       format.format = VK_FORMAT_R8G8B8A8_UNORM;
@@ -37,7 +74,7 @@ namespace remix {
             VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT))
         throw VK_ERROR_FORMAT_NOT_SUPPORTED;
       VkExternalMemoryImageCreateInfo external{VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO};
-      external.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+      external.handleTypes = kMemoryHandleType;
       VkImageCreateInfo image{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
       image.pNext = &external;
       image.imageType = VK_IMAGE_TYPE_2D;
@@ -60,7 +97,7 @@ namespace remix {
       if (type == memory.memoryTypeCount)
         throw VK_ERROR_FEATURE_NOT_PRESENT;
       VkExportMemoryAllocateInfo exportMemory{VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO};
-      exportMemory.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+      exportMemory.handleTypes = kMemoryHandleType;
       VkMemoryDedicatedAllocateInfo dedicated{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO};
       dedicated.image = m_sharedImage;
       dedicated.pNext = &exportMemory;
@@ -71,7 +108,7 @@ namespace remix {
       check(vkAllocateMemory(m_device, &allocate, nullptr, &m_sharedMemory));
       check(vkBindImageMemory(m_device, m_sharedImage, m_sharedMemory, 0));
       VkExportSemaphoreCreateInfo exportSemaphore{VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO};
-      exportSemaphore.handleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
+      exportSemaphore.handleTypes = kSemaphoreHandleType;
       VkSemaphoreCreateInfo semaphore{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
       semaphore.pNext = &exportSemaphore;
       check(vkCreateSemaphore(m_device, &semaphore, nullptr, &m_sharedReady));
@@ -88,6 +125,24 @@ namespace remix {
           (imageProperties.optimalTilingFeatures & blit) == blit;
       if (createAttachments() != REMIXAPI_ERROR_CODE_SUCCESS)
         throw VK_ERROR_INITIALIZATION_FAILED;
+#if defined(_WIN32)
+      auto memoryExport = reinterpret_cast<PFN_vkGetMemoryWin32HandleKHR>(
+          vkGetDeviceProcAddr(m_device, "vkGetMemoryWin32HandleKHR"));
+      auto semaphoreExport = reinterpret_cast<PFN_vkGetSemaphoreWin32HandleKHR>(
+          vkGetDeviceProcAddr(m_device, "vkGetSemaphoreWin32HandleKHR"));
+      if (!memoryExport || !semaphoreExport)
+        throw VK_ERROR_EXTENSION_NOT_PRESENT;
+      VkMemoryGetWin32HandleInfoKHR getMemory{VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR};
+      getMemory.memory = m_sharedMemory;
+      getMemory.handleType = kMemoryHandleType;
+      check(memoryExport(m_device, &getMemory, &frame.memory_handle));
+      VkSemaphoreGetWin32HandleInfoKHR getSemaphore{VK_STRUCTURE_TYPE_SEMAPHORE_GET_WIN32_HANDLE_INFO_KHR};
+      getSemaphore.handleType = kSemaphoreHandleType;
+      getSemaphore.semaphore = m_sharedReady;
+      check(semaphoreExport(m_device, &getSemaphore, &frame.ready_handle));
+      getSemaphore.semaphore = m_sharedReleased;
+      check(semaphoreExport(m_device, &getSemaphore, &frame.released_handle));
+#else
       auto memoryFd =
           reinterpret_cast<PFN_vkGetMemoryFdKHR>(vkGetDeviceProcAddr(m_device, "vkGetMemoryFdKHR"));
       auto semaphoreFd =
@@ -96,14 +151,15 @@ namespace remix {
         throw VK_ERROR_EXTENSION_NOT_PRESENT;
       VkMemoryGetFdInfoKHR getMemory{VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR};
       getMemory.memory = m_sharedMemory;
-      getMemory.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+      getMemory.handleType = kMemoryHandleType;
       check(memoryFd(m_device, &getMemory, &frame.memory_fd));
       VkSemaphoreGetFdInfoKHR getSemaphore{VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR};
-      getSemaphore.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
+      getSemaphore.handleType = kSemaphoreHandleType;
       getSemaphore.semaphore = m_sharedReady;
       check(semaphoreFd(m_device, &getSemaphore, &frame.ready_fd));
       getSemaphore.semaphore = m_sharedReleased;
       check(semaphoreFd(m_device, &getSemaphore, &frame.released_fd));
+#endif
       VkPhysicalDeviceIDProperties identity{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES};
       VkPhysicalDeviceProperties2 device{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
       device.pNext = &identity;
@@ -113,10 +169,10 @@ namespace remix {
       frame.allocation_size = requirements.size;
       return 0;
     } catch (...) {
-      for (int fd : {frame.memory_fd, frame.ready_fd, frame.released_fd})
-        if (fd >= 0)
-          close(fd);
-      frame.memory_fd = frame.ready_fd = frame.released_fd = -1;
+      closeHandle(memoryHandle(frame));
+      closeHandle(readyHandle(frame));
+      closeHandle(releasedHandle(frame));
+      memoryHandle(frame) = readyHandle(frame) = releasedHandle(frame) = kNoHandle;
       destroySwapchain();
       destroySharedFrame();
       return -2;
