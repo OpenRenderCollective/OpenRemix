@@ -78,7 +78,7 @@ float filmFlow(vec3 p,float t) {
 // nm and structural colour. local: the point in object space; alpha: the
 // albedo's (the thickness when the film reads it).
 vec4 surfaceFilm(Surface s,vec2 uv,vec3 local,float alpha) {
-  if(s.film.x<=0)return vec4(0);
+  if(!filmed(s))return vec4(0);
   uint map=s.filmMaps.w&0x7fffffffu;
   float thickness=(s.filmMaps.w&0x80000000u)!=0?alpha*1500:s.film.z;
   if(map!=0) {

@@ -7,8 +7,9 @@ film's thickness, its refractive index and the viewing angle. The path tracer
 evaluates the film spectrally (Belcour and Barla 2017: the Airy sum of the
 film's interreflections, integrated against the CIE colour matching functions
 in closed form), so colours sweep smoothly across a surface and thick films
-fade to pastel instead of aliasing into stripes. The raster and Metal
-backends ignore the film.
+fade to pastel instead of aliasing into stripes. The raster backend ignores
+the film. **Iridescence** in the path tracer's settings
+(`rtx.native.pathtrace.iridescence`, default on) turns every film off.
 
 RTX Remix's thin film is one Airy layer at three fixed wavelengths with the
 film's index fixed at 1.5. OpenRemix reads the same inputs, so a Remix mod's

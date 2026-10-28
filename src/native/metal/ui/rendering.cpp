@@ -122,6 +122,10 @@ namespace remix {
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Shares diffuse lighting across small flat water patches with TAA or FSR.\nEdges, "
                           "overlapping layers and raw reference rendering retain full sampling.");
+      ui::Checkbox("Iridescence", &options.iridescence);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Thin-film interference colours on materials that have a film (soap bubbles,\n"
+                          "oil slicks, beetle shells). Off: those materials reflect without it.");
       ui::Checkbox("Caustics", &options.caustics);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Light through water and bumpy glass is focused by their normal maps' waves\n"

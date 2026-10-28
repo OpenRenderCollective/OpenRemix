@@ -65,7 +65,7 @@ layout(set=0,binding=3,std140) uniform Frame {
   uvec4 reuseConfig;
   uint64_t indirectResults, blueNoise;
   vec4 firefly; // outgoing local direct / indirect luminance limits; reserved
-  uvec4 pathConfig; // adaptive termination, minimum completed bounces, sheet flags (1 traced indirect, 2 local lights; bits 8-12 sky rays at a first surface), secondary ray mask (bits 0-7; bit 8: a view model is traced)
+  uvec4 pathConfig; // adaptive termination, minimum completed bounces, sheet flags (1 traced indirect, 2 local lights; bits 8-12 sky rays at a first surface), secondary ray mask (bits 0-7; bit 8: a view model is traced; bit 9: thin films off)
   vec4 domeTransform[3];
   uint64_t visibilityNodes, visibilityLeaves, visibilityTable, movedLights;
   uvec4 visibilityConfig; // table row words, moved light count, reserved
@@ -396,3 +396,6 @@ bool alphaPass(Surface s, float a) {
 bool visibleAlpha(Surface s,float a) {
   return alphaPass(s,a)&&(!coverageBlended(s)||a>0);
 }
+// Whether a surface shows its thin film: it has one, and films are on
+// (frame.pathConfig.w bit 9 clear; iridescence.glsl).
+bool filmed(Surface s) { return s.film.x>0&&(frame.pathConfig.w&0x200u)==0u; }
