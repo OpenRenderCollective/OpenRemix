@@ -39,6 +39,9 @@ namespace remix::usd {
       bool enabled = false, watch = true;
       // Developer panel toggles, applied at the next frame boundary.
       bool modsEnabled = true, reindex = false, reload = false;
+      // The host configured the up axis; otherwise it follows rtx.zUp
+      // (scene::sceneUpAxis), the mods loading again when it changes.
+      bool hostAxis = false;
       std::map<std::string, ModParts> modParts; // by mod name; absent: defaults
       Options options;
       std::string directory, diagnostic;
@@ -179,6 +182,8 @@ namespace remix::usd {
       state.stamps = std::move(current);
     }
     void launch() {
+      if (!state.hostAxis)
+        state.options.axis = scene::sceneUpAxis.load();
       state.pending = std::async(std::launch::async, [directory = state.directory, options = state.options] {
         try {
           return parse(directory, options);
@@ -249,7 +254,8 @@ namespace remix::usd {
     state.directory = directory ? directory : (std::filesystem::current_path() / "rtx-remix/mods").string();
     // Host units must be supplied for mods. Defaults match capture conventions.
     state.options.meters = .01;
-    state.options.axis = 1;
+    state.options.axis = scene::sceneUpAxis.load();
+    state.hostAxis = false;
     state.stamps = stamps();
     launch();
   }
@@ -269,6 +275,7 @@ namespace remix::usd {
     state.directory = directory;
     state.options.meters = meters;
     state.options.axis = axis;
+    state.hostAxis = true;
     state.watch = watch;
     state.enabled = true;
     try {
@@ -280,7 +287,9 @@ namespace remix::usd {
     }
   }
   std::pair<double, uint32_t> modUnits() {
-    return {state.options.meters > 0 ? state.options.meters : .01, state.options.axis ? state.options.axis : 1};
+    // Captures take the host's axis, else rtx.zUp's, mods loaded or not.
+    return {state.options.meters > 0 ? state.options.meters : .01,
+            state.hostAxis ? state.options.axis : scene::sceneUpAxis.load()};
   }
   void modBoundary(NativeResources &resources) {
     if (!state.enabled)
@@ -330,6 +339,8 @@ namespace remix::usd {
       index(state.active);
       offerMaterials(resources);
     }
+    if (!state.hostAxis && state.options.axis != scene::sceneUpAxis.load())
+      state.reload = true;
     if (state.reload && !state.pending.valid()) {
       state.reload = false;
       state.stamps = stamps();

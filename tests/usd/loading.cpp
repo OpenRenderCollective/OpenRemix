@@ -49,8 +49,13 @@ int main(int argc, char **argv) {
     auto write = [&](const std::string &text) { std::ofstream(dir / "a/mod.usda") << text; };
     write("#usda 1.0\ndef Xform \"RootNode\" { def Scope \"meshes\" { def Xform \"mesh_0123456789ABCDEF\" "
           "{\n custom int preserveOriginalDrawCall = 0\n }\n }\n }\n");
+    // rtx.zUp: mods and captures follow the scene's axis until the host sets one.
+    scene::sceneUpAxis = 2;
     usd::startMods(true);
+    require(usd::modUnits().second == 2, "unconfigured mods follow rtx.zUp");
     require(usd::configureMods(dir.string().c_str(), 1, 1, true) == REMIXAPI_ERROR_CODE_SUCCESS, "configure mods");
+    require(usd::modUnits().second == 1, "a host's axis overrides rtx.zUp");
+    scene::sceneUpAxis = 1;
     for (int i = 0; i < 30; ++i) {
       usd::modBoundary(resources);
       std::this_thread::sleep_for(std::chrono::milliseconds(20));

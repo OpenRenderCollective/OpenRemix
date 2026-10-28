@@ -60,6 +60,7 @@ namespace remix {
     // Texture creation needs no frame boundary: later CreateTexture calls see it.
     m_raster.setKeepCompressedTextures(m_profiles.current().compressedTextures);
     scene::retainCompressedUploads = kCaptures && m_profiles.current().captureRetainTextureData;
+    scene::sceneUpAxis = m_profiles.current().zUp ? 2 : 1;
     m_raster.setRefreshGeometry(m_profiles.current().refreshGeometry);
     // The host's next submission already sees it (else from the next frame).
     m_hostPasses.setEnabled(m_profiles.current().hostPasses);
@@ -91,6 +92,7 @@ namespace remix {
     }
     m_raster.setKeepCompressedTextures(m_profiles.current().compressedTextures);
     scene::retainCompressedUploads = kCaptures && m_profiles.current().captureRetainTextureData;
+    scene::sceneUpAxis = m_profiles.current().zUp ? 2 : 1;
     m_raster.setRefreshGeometry(m_profiles.current().refreshGeometry);
     m_hostPasses.setEnabled(m_profiles.current().hostPasses);
     return REMIXAPI_ERROR_CODE_SUCCESS;
@@ -161,6 +163,7 @@ namespace remix {
     m_requestedBackend = settings.backend;
     m_raster.setKeepCompressedTextures(settings.compressedTextures);
     scene::retainCompressedUploads = kCaptures && settings.captureRetainTextureData;
+    scene::sceneUpAxis = settings.zUp ? 2 : 1;
     m_raster.setRefreshGeometry(settings.refreshGeometry);
     m_raster.syncHiddenTextures(settings.hideTextures);
     // Read by the frame's recording (the render thread with asynchronous presentation).

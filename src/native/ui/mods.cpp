@@ -1,4 +1,5 @@
 #include "ui/profiles.h"
+#include "ui/widgets.h"
 #include <cstdio>
 #include <imgui.h>
 
@@ -75,10 +76,16 @@ namespace remix::ui {
   } // namespace
 #endif
 
-  void drawMods([[maybe_unused]] ProfileUi &ui) {
+  void drawMods([[maybe_unused]] ProfileUi &ui, [[maybe_unused]] config::Settings &settings) {
 #if REMIX_HAS_USD
-    if (ImGui::CollapsingHeader("Capture", ImGuiTreeNodeFlags_DefaultOpen))
+    if (ImGui::CollapsingHeader("Capture", ImGuiTreeNodeFlags_DefaultOpen)) {
       drawCapture(ui);
+      ui::Checkbox("Scene Z-up", &settings.zUp);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("The game's world is Z-up (Quake and Source engines, Xash3D), as RTX Remix's rtx.zUp.\n"
+                          "Captures declare it and mods are rotated to it. A host that sets its own axis\n"
+                          "(remixapi_ConfigureUSDModsEXT) keeps it.");
+    }
     ImGui::SeparatorText("Mods");
     const auto status = usd::modStatus();
     if (!status.active) {
