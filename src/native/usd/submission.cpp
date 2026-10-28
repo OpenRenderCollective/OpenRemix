@@ -318,8 +318,8 @@ namespace remix::usd {
     // clamped to the extension's ranges.
     remixapi_MaterialIridescenceEXT film{};
     NativePath film_texture;
-    if (const auto found = data.find("iridescence"); found != data.end() && info.pNext != nullptr &&
-                                                      data.value("kind", std::string("opaque")) != "translucent") {
+    // Opaque and translucent materials alike (glass and water with a film).
+    if (const auto found = data.find("iridescence"); found != data.end() && info.pNext != nullptr) {
       const auto &f = *found;
       auto value = [&](const char *key, float fallback, float low, float high) {
         const float v = f.value(key, fallback);

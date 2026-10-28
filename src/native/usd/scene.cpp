@@ -197,8 +197,9 @@ namespace remix::usd {
               {"metallic_texture", texture(shader, "inputs:metallic_texture", warnings)},
               {"emissive_texture", texture(shader, "inputs:emissive_mask_texture", warnings)}};
       // AperturePBR's thin film, with OpenRemix's iridescence attributes
-      // (openremix:iridescence:*, outside the MDL inputs).
-      if (!translucent && attribute(shader, "inputs:enable_thin_film", false))
+      // (openremix:iridescence:*, outside the MDL inputs). OpenRemix also
+      // reads the film on AperturePBR_Translucent, which has none of its own.
+      if (attribute(shader, "inputs:enable_thin_film", false))
         result["iridescence"] = {
             {"thickness", attribute(shader, "inputs:thin_film_thickness_constant", 200.0f)},
             {"from_alpha", attribute(shader, "inputs:thin_film_thickness_from_albedo_alpha", false)},

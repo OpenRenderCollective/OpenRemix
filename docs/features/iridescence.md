@@ -1,6 +1,6 @@
 # Iridescence
 
-A thin-film coating colours an opaque material's reflection the way a soap
+A thin-film coating colours a material's reflection the way a soap
 bubble, an oil slick or a beetle's shell is coloured: light reflected off the
 film's top and bottom interferes, and which wavelengths survive depends on the
 film's thickness, its refractive index and the viewing angle. The path tracer
@@ -53,6 +53,26 @@ inspector.
 - The raster G-buffer does not hold the film: a filmed pixel's primary ray is
   traced again for its material (as a decal's is).
 
+## Glass and water
+
+A translucent material (`remixapi_MaterialInfoTranslucentEXT`, USD
+`AperturePBR_Translucent`) takes the film too; RTX Remix's translucent
+material has none, so in USD the same `inputs:enable_thin_film` and
+`inputs:thin_film_thickness_constant` are read there by OpenRemix alone.
+Thickness from albedo alpha and structural colour do not apply.
+
+- The surface becomes a smooth dielectric (roughness 0.04) under the film.
+- Its reflection counts whole, whatever the sheet's coverage, and what passes
+  through is less what the film reflects: the light behind takes the
+  complementary colour, as through a soap bubble. Against an evenly lit
+  background the two add back to white, so a film shows best where the
+  surface reflects something brighter or darker than what lies behind it.
+- A body (water, no thin wall) uses the film's reflectance in place of its
+  Fresnel term, at the body's refractive index; a thin wall at index 1.5.
+- The denoised front sheet keeps the split: coverage weighs only its diffuse
+  light. Deeper sheets that reuse the front one's light reflect as unfilmed
+  sheets do.
+
 ## Recipes
 
 | Look | Thickness | Film index | Strength | Flow | Structural | Surface |
@@ -62,3 +82,5 @@ inspector.
 | Beetle shell | 550 | 1.8 | 1 | none | 0.8 | dark green, metallic 0.3, roughness 0.25 |
 | Alien chrome | 700 (or a map, 200–1200) | 2.4 | 1 | 600 nm, scale 1, speed 0.3 | 0.5 | metallic 1, roughness 0.05 |
 | Opal | map, 150–900 | 1.45 | 0.7 | 150 nm, scale 0.2, speed 0.02 | 1 | white, roughness 0.4 |
+| Soap-film glass | 350 | 1.33 | 1 | 300 nm, scale 0.4, speed 0.2 | — | translucent, thin-walled, transmittance near white |
+| Petrol on water | 500 | 1.5 | 0.8 | 500 nm, scale 3, speed 0.05 | — | translucent body (water) |

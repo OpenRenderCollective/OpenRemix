@@ -254,7 +254,7 @@ void queryScene(accelerationStructureEXT scene, vec3 origin, vec3 direction, ino
     hit.n=materialNormal(s,uv,materialBasis(normal,model*vec4(b-a,0),model*vec4(c-a,0),ub-ua,uc-ua),hit.wo);
     // A thin film, its structural colour in the albedo (iridescence.glsl).
     hit.film=surfaceFilm(s,uv,a+bary.x*(b-a)+bary.y*(c-a),hit.color.a);
-    if(hit.film.x>0)hit.color.rgb*=filmTint(hit.film,mix(vec3(.04),hit.color.rgb,hit.rm.y),dot(hit.n,hit.wo));
+    if(hit.film.x>0&&(s.state.w&32)==0)hit.color.rgb*=filmTint(hit.film,mix(vec3(.04),hit.color.rgb,hit.rm.y),dot(hit.n,hit.wo));
   }
   hit.decal=enableDecals&&decalSurface(s);hit.decalMode=(s.state.w>>7)&3u;hit.blendedDraw=(s.state.w&2)!=0;hit.blended=blendedAtAlpha(s,hit.color.a);hit.cacheable=(s.state.w&16)!=0;
   hit.tinted=(s.state.w&32)!=0;
@@ -1437,6 +1437,16 @@ void replaceMirror(ivec2 pixel) {
 #endif
 #include "volume.glsl"
 #ifdef TRANSPARENCY_PASS
+// The reflectance seen along the view of a translucent sheet with a thin film
+// (remixapi_MaterialIridescenceEXT on glass or water): the film over a
+// dielectric of index ior, blended with the bare surface by its strength.
+// What it reflects does not pass: the light through it takes the
+// complementary colour, as through a soap bubble.
+vec3 sheetFilm(Hit hit,float ior) {
+  float cosine=clamp(abs(dot(hit.n,hit.wo)),1e-3,1);
+  float f0=(ior-1)/(ior+1);f0*=f0;
+  return mix(vec3(filmSchlick(f0,cosine)),filmFresnel(cosine,hit.film.y,hit.film.z,vec3(f0)),hit.film.x);
+}
 // A translucent body's share of a pixel (remixapi_MaterialInfoTranslucentEXT
 // without a thin wall, as water): it reflects by Fresnel (Schlick, from its
 // refractive index), and of what enters, the colour to the power of the
@@ -1447,15 +1457,16 @@ void replaceMirror(ivec2 pixel) {
 // front, see main), the surface reflects all past the critical angle and
 // passes the rest unabsorbed. alpha: the share of the sheet's surface light;
 // through: what passes to the layers behind; direction: bent for them.
+// A thin film (sheetFilm) takes the place of the body's Fresnel.
 bool thickSheet(Hit hit,inout vec3 direction,inout float alpha,inout vec3 through) {
   vec2 body=sheetBody(hit,direction);
   if(body.x<1||body.y<=0)return false;
   bool inside=frame.cameraMedium.w>0;
   float f0=(body.x-1)/(body.x+1);f0*=f0;
-  float fresnel=f0+(1-f0)*pow(1-clamp(abs(dot(hit.n,hit.wo)),0,1),5);
+  vec3 fresnel=hit.film.x>0?sheetFilm(hit,body.x):vec3(f0+(1-f0)*pow(1-clamp(abs(dot(hit.n,hit.wo)),0,1),5));
   vec3 n=dot(hit.n,direction)<0?hit.n:-hit.n;
   vec3 bent=refract(direction,n,inside?body.x:1/body.x);
-  if(dot(bent,bent)==0){fresnel=1;bent=direction;}
+  if(dot(bent,bent)==0){fresnel=vec3(1);bent=direction;}
   else bent=normalize(bent);
   vec3 passed=vec3(1);
   if(!inside) {
@@ -1463,7 +1474,7 @@ bool thickSheet(Hit hit,inout vec3 direction,inout float alpha,inout vec3 throug
     passed=behind.t<1e30?pow(clamp(hit.color.rgb,vec3(1e-4),vec3(1)),vec3(behind.t/body.y)):vec3(0);
   }
   through=(1-fresnel)*passed;
-  alpha=1-(1-fresnel)*dot(passed,vec3(.2126,.7152,.0722));
+  alpha=1-dot(through,vec3(.2126,.7152,.0722));
   direction=bent;
   return true;
 }
@@ -2018,8 +2029,9 @@ void main() {
   // immediately, keeping only the current sheet live across continuation rays.
   for(uint layer=0;layer<sheetCount;++layer) {
     Hit hit=primary;hit.wo=-direction;
+    vec3 surfaceSpecular=vec3(0);
 #ifdef SINGLE_SHEET_PASS
-      vec3 surfaceSpecular=vec3(0);float surfaceDistance=0;vec3 surfaceLight;
+      float surfaceDistance=0;vec3 surfaceLight;
       if(layer==0) {
         // Lit by the sheet lighting pass (SHEET_LIGHTING_PASS): its direct
         // light and paths or reused GI, as one radiance, specular and hit distance.
@@ -2050,12 +2062,12 @@ void main() {
       for(uint i=0;i<(reuse&&samples==0?0u:max(samples,1u));++i) {
         vec3 d,s,pd,ps;float t,pdist;
         vec3 r=continuation(hit,-1,1.,d,t,s,!reuse&&i==0,samples==0?0u:frame.config.y,pd,ps,pdist);
-        if(!reuse&&i==0)directLight=pd;
-        if(samples!=0)surfaceLight+=materialFactor(hit)*r/float(samples);
+        if(!reuse&&i==0){directLight=pd;surfaceSpecular=ps;}
+        if(samples!=0){surfaceLight+=materialFactor(hit)*r/float(samples);surfaceSpecular+=materialFactor(hit)*s/float(samples);}
       }
       skipSheetLocal=false;
       vec3 factor=materialFactor(hit);
-      if(reuseAll)directLight=reusedLight*factor;
+      if(reuseAll){directLight=reusedLight*factor;surfaceSpecular=vec3(0);}
       else if(reuse)directLight=reusedDirect*factor;
       else if(!hit.pbr&&all(greaterThan(factor,vec3(1e-3))))reusedDirect=directLight/factor;
       surfaceLight+=directLight;
@@ -2064,6 +2076,12 @@ void main() {
       surfaceLight+=hit.emission;
 #endif
       vec3 through=transmissionColor(hit.color.rgb,hit.tinted)*(1-hit.color.a);
+      // A translucent sheet with a thin film reflects by the film whatever
+      // its coverage: its specular light counts whole, and alpha weighs the
+      // rest of its light.
+      bool filmSheet=hit.tinted&&hit.film.x>0;
+      vec3 sheetSpecular=filmSheet?min(surfaceSpecular,max(surfaceLight-hit.emission,vec3(0))):vec3(0);
+      if(filmSheet&&hit.thick.x<1)through*=1-sheetFilm(hit,1.5);
       if(hit.tinted&&thickSheet(hit,layerDirection,hit.color.a,through)) {
 #if defined(TEMPORAL) && defined(SINGLE_SHEET_PASS)
         // The denoised front layer is composed with this share as well.
@@ -2071,16 +2089,25 @@ void main() {
         if(temporal.translucency.x!=0&&sheetCount==1&&front.a>0)imageStore(frontAlbedo,pixel,vec4(front.rgb,hit.color.a));
 #endif
       }
+#if defined(TEMPORAL) && defined(SINGLE_SHEET_PASS)
+      // The denoised front sheet is composed as coverage times its diffuse
+      // and specular light (frontRadiance): with a film, the reflection
+      // counts whole and coverage weighs only the diffuse light.
+      if(filmSheet&&temporal.translucency.x!=0&&sheetCount==1) {
+        vec4 front=imageLoad(frontAlbedo,pixel);
+        imageStore(frontAlbedo,pixel,vec4(front.rgb*hit.color.a,1));
+      }
+#endif
 #ifdef TEMPORAL
       if(temporal.hitDistance.w!=0) {
         // Deterministic material guides follow the same transparent composition
         // as radiance. Geometry guides remain consistently on the background.
         transparentDiffuse+=tint*hit.color.a*(hit.color.rgb+hit.self)*(hit.pbr?1-hit.rm.y:1);
-        if(hit.pbr)transparentSpecular+=tint*hit.color.a*rrSpecularAlbedo(filmF0(hit,mix(vec3(.04),hit.color.rgb,hit.rm.y)),hit.rm.x,dot(hit.n,hit.wo));
+        if(hit.pbr)transparentSpecular+=tint*(filmSheet?1.:hit.color.a)*rrSpecularAlbedo(filmF0(hit,mix(vec3(.04),hit.color.rgb,hit.rm.y)),hit.rm.x,dot(hit.n,hit.wo));
       }
 #endif
       if(frame.firefly.z!=0)transparentMaterial+=tint*hit.color.a*(hit.color.rgb+hit.self);
-      transparent+=tint*hit.color.a*surfaceLight;
+      transparent+=tint*(sheetSpecular+hit.color.a*(surfaceLight-sheetSpecular));
       tint*=through;opacityProduct*=1-hit.color.a;
     if(layer+1<sheetCount)primary=cameraHit(offsetRay(primary.p,-primary.ng),layerDirection);
   }

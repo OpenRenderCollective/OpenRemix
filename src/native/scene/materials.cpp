@@ -162,16 +162,10 @@ namespace remix {
         extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_PBR_EXT));
     if (pbr && (!opaque || pbr->enabled > 1))
       throw invalid;
-    material->pbr =
-        material->transmittanceDistance > 0 ||
-        (opaque && (pbr ? pbr->enabled != 0
-                       : material->roughness > 0 || material->metallic > 0 || material->roughnessTexture ||
-                             material->metallicTexture || material->normalTexture)) ||
-        material->iridescence.strength > 0; // a film is a reflection
     if (const auto *film = static_cast<const remixapi_MaterialIridescenceEXT *>(
             extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_IRIDESCENCE_EXT))) {
       finite(&film->strength, 9);
-      if (!opaque || film->strength < 0 || film->strength > 1 || film->filmRefractiveIndex < 1 ||
+      if (portal || film->strength < 0 || film->strength > 1 || film->filmRefractiveIndex < 1 ||
           film->filmRefractiveIndex > 3 || film->thickness < 0 || film->thickness > 2000 || film->thicknessMin < 0 ||
           film->thicknessMax > 2000 || film->thicknessMin > film->thicknessMax || film->flowAmplitude < 0 ||
           film->flowAmplitude > 2000 || !(film->flowScale > 0) || film->structural < 0 || film->structural > 1)
@@ -187,7 +181,19 @@ namespace remix {
       out.flowSpeed = film->flowSpeed;
       out.structural = film->structural;
       out.thicknessTexture = dataTexturePath(film->thicknessTexture);
+      // On glass or water, a smooth dielectric whose film colours the
+      // reflection and, by what it reflects, the light passing through.
+      if (translucent && out.strength > 0) {
+        material->roughness = .04f;
+        material->metallic = 0;
+      }
     }
+    material->pbr =
+        material->transmittanceDistance > 0 ||
+        (opaque && (pbr ? pbr->enabled != 0
+                       : material->roughness > 0 || material->metallic > 0 || material->roughnessTexture ||
+                             material->metallicTexture || material->normalTexture)) ||
+        material->iridescence.strength > 0; // a film is a reflection
     finite(&info.emissiveColorConstant.x, 3);
     finite(&info.emissiveIntensity, 1);
     if (info.emissiveIntensity < 0 || info.emissiveColorConstant.x < 0 || info.emissiveColorConstant.y < 0 ||
