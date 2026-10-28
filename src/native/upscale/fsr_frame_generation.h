@@ -1,16 +1,19 @@
 #pragma once
 #include "upscale/renderer.h"
 #include <memory>
+#include <string>
 
 namespace remix::upscale {
-// FSR 3.1 frame generation: AMD's optical flow and frame interpolation
-// effects, one generated frame halfway between the previous and the current
-// backbuffer. The counterpart of NgxFrameGeneration, on any GPU.
+// FSR frame generation: one generated frame halfway between the previous and
+// the current backbuffer. The counterpart of NgxFrameGeneration, on any GPU.
+// Linux and macOS link FSR 3.1.4's optical flow and frame interpolation
+// effects (fsr_frame_generation.cpp); Windows loads AMD's signed ffx-api DLLs
+// (fsr_frame_generation_ffx.cpp), FSR 4's ML frame generation on RDNA 4.
 //
-// It takes depth and motion vectors directly (the interpolation's own prepare
-// stage dilates them), not the FSR upscaler's shared resources, so it runs
-// behind either upscaler. AMD's frame-pacing swapchain is not used: the
-// runtime presents the frames.
+// It takes depth and motion vectors directly (the prepare stage dilates
+// them), not the FSR upscaler's shared resources, so it runs behind either
+// upscaler. AMD's frame-pacing swapchain is not used: the runtime presents
+// the frames. The implementation follows the upscaler's (fsr.h, fsr.cpp).
 class FsrFrameGeneration {
 public:
   FsrFrameGeneration();
@@ -35,9 +38,13 @@ public:
   // jitter. `frameMilliseconds`: between the previous rendered frame and this one.
   void record(VkCommandBuffer command, Input backbuffer, Input depth, Input motion, Input hudless, Input output,
               const FrameGenerationCamera &camera, float frameMilliseconds);
+  // The provider generating, e.g. "FSR 4.0.2"; empty before initialize().
+  const std::string &provider() const;
+
+  // One implementation (fsr_backends.h).
+  struct Impl;
 
 private:
-  struct Impl;
   std::unique_ptr<Impl> m;
 };
 } // namespace remix::upscale

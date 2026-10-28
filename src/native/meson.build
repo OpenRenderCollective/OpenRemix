@@ -63,7 +63,7 @@ if metal_backend
     install : true)
   subdir_done()
 endif
-shell_deps = [sdl3_dep, vulkan_dep, threads_dep, imgui_dep, nrd_dep, fsr31_dep, dlss_dep, numos_dep]
+shell_deps = [sdl3_dep, vulkan_dep, threads_dep, imgui_dep, nrd_dep, fsr_dep, dlss_dep, numos_dep]
 shell_args = ['-DREMIX_LIBRARY_EXPORTS=1'] + cpp.get_supported_arguments('-Wno-missing-field-initializers', '-Wno-unused-parameter')
 subdir('platform')
 subdir('api')

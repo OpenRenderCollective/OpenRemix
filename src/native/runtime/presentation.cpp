@@ -191,7 +191,8 @@ void RemixNativeRuntime::presented() {
       }
       if (m_pathTracer) {
         const auto upscaling = m_pathTracer->upscalingStatistics();
-        detail += std::string(" | upscaler ") + upscale::name(upscaling.backend) + " " +
+        detail += std::string(" | upscaler ") +
+                  (upscaling.provider.empty() ? upscale::name(upscaling.backend) : upscaling.provider) + " " +
                   std::to_string(upscaling.render.width) + "x" + std::to_string(upscaling.render.height) + " -> " +
                   std::to_string(upscaling.display.width) + "x" + std::to_string(upscaling.display.height);
       } else {
@@ -1116,7 +1117,7 @@ void RemixNativeRuntime::presented() {
           m_frameGenerationPreparation = std::move(next);
         }
         if (!m_frameGenerationPreparation->job->ready()) {
-          m_frameGenerationStatus = "starting (FSR 3.1)";
+          m_frameGenerationStatus = "starting (FSR)";
           return;
         }
         const auto prepared = std::move(m_frameGenerationPreparation);
@@ -1139,7 +1140,7 @@ void RemixNativeRuntime::presented() {
                                                           : FrameGeneration::maxGeneratedBy(backend));
       m_frameGenerationStatus = !m_frameGenerationReady
                                     ? "starting"
-                                    : std::string("active (") + (backend == Backend::Fsr31 ? "FSR 3.1" : "DLSS") +
+                                    : std::string("active (") + m_frameGeneration->name() +
                                           ", " + std::to_string(m_generateCount + 1) + "x)";
     } catch (const std::exception &e) {
       m_frameGenerationFailed = true;

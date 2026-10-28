@@ -9,8 +9,9 @@ A performance-focused, multi-platform alternative to [dxvk-remix](https://github
 - Mesh instancing, skinning, and animated textures.
 - NRD/SIGMA denoising.
 - SHARC radiance caching and progressive accumulation.
-- Native TAA, FSR 3.1, DLSS Super Resolution and Ray Reconstruction.
+- Native TAA, FSR, DLSS Super Resolution and Ray Reconstruction.
 - FSR FG and DLSS FG
+- FSR on Windows uses AMD's FSR SDK 2.4.0 libraries: FSR 4 upscaling and frame generation on RDNA 4, FSR 3.1 elsewhere. Linux and macOS use FSR 3.1.4.
 - Autoexposure, threshold-free bloom, and Prism tonemapping.
 - OpenUSD support for loading existing Remix replacement mods.
 - Remix compatible render API

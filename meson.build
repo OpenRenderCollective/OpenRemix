@@ -61,7 +61,21 @@ endif
 subdir('third_party/imgui')
 subdir('third_party/nrd')
 if not metal_backend
-  subdir('third_party/fsr31')
+  # FSR: Windows loads AMD's signed ffx-api DLLs (FidelityFX SDK 2.4.0); the
+  # other platforms link FSR 3.1.4, which Windows builds add with
+  # -Dfsr_linked=true for testing (REMIX_FSR_LINKED=1; upscale/fsr.h).
+  fsr_ffx = system == 'windows'
+  fsr_linked = not fsr_ffx or get_option('fsr_linked')
+  fsr_deps = []
+  if fsr_ffx
+    subdir('third_party/fidelityfx')
+    fsr_deps += declare_dependency(dependencies : fidelityfx_dep, compile_args : '-DREMIX_FSR_FFX=1')
+  endif
+  if fsr_linked
+    subdir('third_party/fsr31')
+    fsr_deps += declare_dependency(dependencies : fsr31_dep, compile_args : '-DREMIX_FSR_LINKED=1')
+  endif
+  fsr_dep = declare_dependency(dependencies : fsr_deps)
   subdir('third_party/dlss')
 endif
 subdir('third_party/xz-embedded')

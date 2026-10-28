@@ -45,6 +45,8 @@ struct Statistics {
   uint64_t frames{}, resets{};
   float milliseconds{};
   std::string failure;
+  // FSR: the provider evaluating, e.g. "FSR 4.1.2" (FsrUpscaler::provider).
+  std::string provider;
   // Ray Reconstruction: the CNN model's library is packaged / loaded, the
   // NGX preset created (1-6, A-F) and why the requested model is not loaded.
   bool rrCnnPackaged{}, rrCnn{};
