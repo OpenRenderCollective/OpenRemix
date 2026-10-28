@@ -215,7 +215,8 @@ namespace remix::usd {
               continue;
             const auto &[index, entry] = it->second;
             try {
-              resources.addModMaterial(hash, state.submissions[index]->materialHandle(entry["path"]));
+              resources.addModMaterial(hash, state.submissions[index]->materialHandle(entry["path"]),
+                                       entry.value("authored", scene::ModParts::all));
             } catch (const std::exception &e) {
               state.diagnostic = e.what();
             } catch (...) {

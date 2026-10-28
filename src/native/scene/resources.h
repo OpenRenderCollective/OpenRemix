@@ -43,6 +43,7 @@ namespace remix {
     }
     void clearModMaterials() {
       m_modMaterials.clear();
+      m_modParts.clear();
       m_modMerged.clear();
       m_modCandidates.clear();
       m_modRequested.clear();
@@ -56,12 +57,15 @@ namespace remix {
       clearModMaterials();
       m_modCandidates = std::move(candidates);
     }
-    void addModMaterial(uint64_t hash, remixapi_MaterialHandle handle) {
+    // parts: what the mod authors of it (scene::ModParts); the rest keeps the
+    // replaced material's values.
+    void addModMaterial(uint64_t hash, remixapi_MaterialHandle handle, uint32_t parts = scene::ModParts::all) {
       if (!handle)
         return;
       auto it = m_materials.find(uint64_t(reinterpret_cast<uintptr_t>(handle)));
       if (it != m_materials.end()) {
         m_modMaterials[hash] = it->second;
+        m_modParts[hash] = parts;
         m_modMerged.clear();
         ++m_modGeneration;
       }
@@ -77,6 +81,7 @@ namespace remix {
         }
       }
       m_modMaterials = std::move(next);
+      m_modParts.clear();
       m_modMerged.clear();
       ++m_modGeneration;
     }
@@ -349,8 +354,11 @@ namespace remix {
     std::shared_ptr<scene::Material> m_default, m_domeMaterial, m_cookieMaterial;
     std::shared_ptr<const scene::VisibilityPartition> m_visibilityPartition;
     std::unordered_map<uint64_t, std::shared_ptr<scene::Material>> m_materials, m_modMaterials;
-    // A mod material given the albedo of the material it replaces
-    // (instances.cpp), by that material's hash; remade when either changes.
+    // Of a partial mod material, the parts it authors (scene::ModParts).
+    std::unordered_map<uint64_t, uint32_t> m_modParts;
+    // A mod material given the albedo of the material it replaces, or the
+    // parts a partial override leaves to it (instances.cpp), by that
+    // material's hash; remade when either changes.
     struct ModMerged {
       std::weak_ptr<scene::Material> mod, original;
       std::shared_ptr<scene::Material> merged;

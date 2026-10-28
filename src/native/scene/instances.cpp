@@ -358,6 +358,78 @@ namespace remix {
           continue;
         if (auto replacement = m_modMaterials.find(modKey); replacement != m_modMaterials.end()) {
           const auto &mod = replacement->second;
+          // A partial override (an `over` of a captured material) changes
+          // only what it authors: the game's own values (PBR constants,
+          // glass, alpha state) stay for the rest.
+          if (auto parts = m_modParts.find(modKey); parts != m_modParts.end() && parts->second != ModParts::all) {
+            auto &entry = m_modMerged[ownKey ? ownKey : modKey];
+            if (!entry.merged || entry.mod.lock() != mod || entry.original.lock() != original) {
+              const uint32_t p = parts->second;
+              auto merged = std::make_shared<scene::Material>(*original);
+              const bool textured = mod->texture != m_default->texture;
+              if (p & (ModParts::color | ModParts::transmission)) {
+                if (textured)
+                  merged->texture = mod->texture;
+                std::copy(std::begin(mod->tint), std::end(mod->tint), merged->tint);
+              }
+              if (p & ModParts::transmission) {
+                merged->translucent = mod->translucent;
+                merged->transmission = mod->transmission;
+                merged->refractiveIndex = mod->refractiveIndex;
+                merged->transmittanceDistance = mod->transmittanceDistance;
+              }
+              if (p & ModParts::roughness) {
+                merged->roughness = mod->roughness;
+                merged->roughnessTexture = mod->roughnessTexture;
+                merged->remap[0] = mod->remap[0];
+              }
+              if (p & ModParts::metallic) {
+                merged->metallic = mod->metallic;
+                merged->metallicTexture = mod->metallicTexture;
+                merged->remap[1] = mod->remap[1];
+              }
+              if (p & ModParts::normal) {
+                merged->normalTexture = mod->normalTexture;
+                merged->normalEncoding = mod->normalEncoding;
+                merged->scrollLayers = mod->scrollLayers;
+                std::copy(std::begin(mod->scroll), std::end(mod->scroll), merged->scroll);
+              }
+              if (p & ModParts::emission) {
+                std::copy(std::begin(mod->emission), std::end(mod->emission), merged->emission);
+                merged->emissionTexture = mod->emissionTexture;
+                merged->suppressEmissionLight = mod->suppressEmissionLight;
+                merged->selfIllumination = mod->selfIllumination;
+                merged->selfIlluminationScale = mod->selfIlluminationScale;
+              }
+              if (p & ModParts::film)
+                merged->iridescence = mod->iridescence;
+              if (p & ModParts::alpha) {
+                merged->compare = mod->compare;
+                merged->reference = mod->reference;
+                merged->drawAlpha = mod->drawAlpha;
+              }
+              if (p & ModParts::sampling) {
+                merged->filter = mod->filter;
+                merged->wrapU = mod->wrapU;
+                merged->wrapV = mod->wrapV;
+              }
+              // As materials.cpp: PBR where either the game or the mod's
+              // authored parts ask for it, a film on glass over a smooth
+              // dielectric, caustics through translucent bumps.
+              merged->pbr = original->pbr || merged->transmittanceDistance > 0 ||
+                            (mod->pbr && (p & (ModParts::roughness | ModParts::metallic | ModParts::normal |
+                                               ModParts::film | ModParts::transmission)));
+              if (merged->transmission && merged->iridescence.strength > 0 && (p & ModParts::film)) {
+                merged->roughness = .04f;
+                merged->metallic = 0;
+              }
+              merged->caustics = merged->translucent && merged->normalTexture;
+              merged->emissionCache.clear();
+              merged->retired = false;
+              entry = {mod, original, std::move(merged)};
+            }
+            return entry.merged;
+          }
           // A replacement without an albedo texture (generated PBR mods
           // give normals and roughness only) keeps the albedo of the
           // material it replaces, with that texture's alpha state and

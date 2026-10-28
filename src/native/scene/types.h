@@ -118,6 +118,13 @@ namespace remix {
       float color[4];
       float normal[3] = {}; // Zero selects the geometric-normal fallback.
     };
+    // The parts of a material a mod's partial override (an `over` of a
+    // captured material, usd/loader.cpp) authors; the others keep the values
+    // of the material it replaces (instances.cpp), as the game made it.
+    namespace ModParts {
+      constexpr uint32_t color = 1, roughness = 2, metallic = 4, normal = 8, emission = 16, transmission = 32,
+                         film = 64, alpha = 128, sampling = 256, all = ~0u;
+    }
     struct Material {
       uint64_t sourceHash = 0;
       std::shared_ptr<Texture> texture;

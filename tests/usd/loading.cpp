@@ -72,6 +72,24 @@ int main(int argc, char **argv) {
       filmResources.finishFrame();
       std::filesystem::remove(filmed);
     }
+    {
+      // A mod's `over` of a captured material records the parts it authors
+      // (scene::ModParts); a definition replaces the whole material.
+      const auto path = std::filesystem::temp_directory_path() /
+                        ("openremix-usd-parts-" + std::to_string(getpid()) + ".usda");
+      auto parts = [&](const char *specifier) {
+        std::ofstream(path) << "#usda 1.0\n" << specifier << " Xform \"RootNode\" { " << specifier
+                            << " Scope \"Looks\" { " << specifier
+                            << " Material \"mat_0123456789ABCDEF\" { " << specifier
+                            << " Shader \"Shader\" {\nbool inputs:enable_thin_film = 1\n"
+                               "float openremix:iridescence:filmIor = 2\n}\n}\n}\n}\n";
+        auto loaded = usd::load({path.string()});
+        std::filesystem::remove(path);
+        return loaded.scene["replacements"]["materials"].at(0);
+      };
+      require(parts("over").value("authored", 0u) == scene::ModParts::film, "an override authors its film only");
+      require(!parts("def").contains("authored"), "a defined material replaces the whole material");
+    }
     auto converted = usd::load({(fixture / "capture.usda").string(), 1, 2});
     require(converted.scene["meters_per_unit"] == 1 && converted.scene["up_axis"] == "Z",
             "explicit host coordinates");

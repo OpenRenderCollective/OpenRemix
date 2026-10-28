@@ -1,5 +1,6 @@
 #include "usd/loader.h"
 #include "scene/images.h"
+#include "scene/types.h"
 #include "platform/utf8_path.h"
 #include <charconv>
 #include <algorithm>
@@ -37,6 +38,50 @@ namespace remix::usd {
     }
     return 0;
   }
+  namespace {
+    // The parts of a material (scene::ModParts) its shader authors in this
+    // stage: of a mod's `over` of a captured material, what the mod changes.
+    uint32_t authoredParts(const UsdPrim &material) {
+      // Found as scene.cpp's material_json finds it: an override's shader
+      // is an untyped `over` too.
+      UsdPrim shader;
+      if (auto connected = UsdShadeMaterial(material).ComputeSurfaceSource(TfToken("mdl")))
+        shader = connected.GetPrim();
+      if (!shader)
+        shader = material.GetChild(TfToken("Shader"));
+      for (auto child : material.GetAllChildren())
+        if (!shader && child.IsA<UsdShadeShader>())
+          shader = child;
+      if (!shader)
+        shader = material;
+      using namespace scene::ModParts;
+      static const std::vector<std::pair<uint32_t, std::vector<const char *>>> parts{
+          {color, {"inputs:diffuse_color_constant", "inputs:diffuse_texture", "inputs:opacity_constant"}},
+          {roughness, {"inputs:reflection_roughness_constant", "inputs:reflectionroughness_texture"}},
+          {metallic, {"inputs:metallic_constant", "inputs:metallic_texture"}},
+          {normal, {"inputs:normalmap_texture", "inputs:encoding"}},
+          {emission, {"inputs:enable_emission", "inputs:emissive_intensity", "inputs:emissive_color_constant",
+                      "inputs:emissive_mask_texture"}},
+          {transmission, {"info:mdl:sourceAsset", "inputs:ior_constant", "inputs:transmittance_color",
+                          "inputs:transmittance_texture", "inputs:transmittance_measurement_distance",
+                          "inputs:thin_walled", "inputs:thin_wall_thickness", "inputs:use_diffuse_layer"}},
+          {film, {"inputs:enable_thin_film", "inputs:thin_film_thickness_constant",
+                  "inputs:thin_film_thickness_from_albedo_alpha"}},
+          {alpha, {"inputs:use_legacy_alpha_state", "inputs:blend_enabled", "inputs:blend_type",
+                   "inputs:inverted_blend", "inputs:alpha_test_type", "inputs:alpha_test_reference_value"}},
+          {sampling, {"inputs:filter_mode", "inputs:wrap_mode_u", "inputs:wrap_mode_v"}}};
+      uint32_t result = 0;
+      for (const auto &[bit, names] : parts)
+        for (const char *name : names)
+          if (auto attr = shader.GetAttribute(TfToken(name)); attr && attr.HasAuthoredValue())
+            result |= bit;
+      // OpenRemix's own film attributes (openremix:iridescence:*).
+      for (const auto &attr : shader.GetAttributes())
+        if (attr.GetName().GetString().rfind("openremix:iridescence:", 0) == 0 && attr.HasAuthoredValue())
+          result |= film;
+      return result;
+    }
+  } // namespace
   std::vector<std::shared_ptr<scene::Texture>> decodeTextures(const std::vector<std::string> &paths) {
     // Half the cores leave room for the host still rendering meanwhile.
     std::vector<std::shared_ptr<scene::Texture>> decoded(paths.size());
@@ -242,6 +287,10 @@ namespace remix::usd {
           if (group == "materials" && prim.IsActive()) {
             auto material = compose_material(prim);
             material["hash"] = hash;
+            // An `over` of a captured material (no definition of its own)
+            // changes only the parts it authors (scene::ModParts).
+            if (prim.GetSpecifier() == SdfSpecifierOver)
+              result.scene["replacements"][group].back()["authored"] = authoredParts(prim);
             bool found = false;
             for (const auto &existing : result.scene["materials"])
               found |= existing["id"] == material["id"];
