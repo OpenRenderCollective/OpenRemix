@@ -68,8 +68,8 @@ subdir('third_party/xz-embedded')
 subdir('third_party/numos')
 subdir('src/native')
 subdir('samples/remix-native')
-# The benchmark uses narrow SDK paths and a desktop window.
-if host_machine.system() in ['linux', 'darwin']
+# The desktop samples open a window of their own.
+if system != 'android'
   subdir('samples/remix-bench')
   subdir('samples/remix-cornell')
   subdir('samples/remix-sponza')
