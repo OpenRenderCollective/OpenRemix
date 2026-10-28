@@ -6,6 +6,17 @@ mat3 shadingBasis(vec3 n) {
 // Retain an albedo-independent dielectric reflection, including black plastics.
 vec3 materialFactor(Hit hit) { return hit.pbr?max(hit.color.rgb,vec3(.04)):hit.color.rgb; }
 vec3 fresnel(vec3 f0,float cosine) { return f0+(1-f0)*pow(clamp(1-cosine,0,1),5); }
+// The specular reflectance at cosine to the microfacet normal: through a thin
+// film where the surface has one (iridescence.glsl), blended by its strength.
+vec3 surfaceFresnel(Hit hit,vec3 f0,float cosine) {
+  vec3 f=fresnel(f0,cosine);
+  return hit.film.x>0?mix(f,filmFresnel(max(cosine,1e-3),hit.film.y,hit.film.z,f0),hit.film.x):f;
+}
+// The reflectance seen along the view, in place of f0 where a film colours it
+// (the denoiser's specular albedo guide).
+vec3 filmF0(Hit hit,vec3 f0) {
+  return hit.film.x>0?mix(f0,filmFresnel(max(dot(hit.n,hit.wo),1e-3),hit.film.y,hit.film.z,f0),hit.film.x):f0;
+}
 float ggxD(float nh,float alpha) {
   float a2=alpha*alpha,den=(1-nh*nh)+a2*nh*nh;
   return a2/(eonPi*den*den);
@@ -20,7 +31,7 @@ void materialLobes(Hit hit,vec3 wi,out vec3 diffuse,out vec3 specular) {
   if(!hit.pbr){diffuse=hit.color.rgb/eonPi;return;}
   diffuse=eonBrdfCosines(hit.color.rgb,hit.rm.x,ni,no,dot(wi,hit.wo));
   vec3 h=normalize(wi+hit.wo);
-  vec3 f=fresnel(mix(vec3(.04),hit.color.rgb,hit.rm.y),max(0,dot(hit.wo,h)));
+  vec3 f=surfaceFresnel(hit,mix(vec3(.04),hit.color.rgb,hit.rm.y),max(0,dot(hit.wo,h)));
   float alpha=max(.001,hit.rm.x*hit.rm.x);
   specular=f*(ggxD(max(0,dot(hit.n,h)),alpha)*ggxG1(ni,alpha)*ggxG1(no,alpha)/(4*ni*no));
   diffuse*=(1-hit.rm.y)*(1-f);
@@ -50,7 +61,7 @@ vec3 materialResponse(Hit hit,vec3 wi,out vec3 specular) {
 float diffuseShare(Hit hit) {
   if(!hit.pbr)return 1;
   vec3 f0=mix(vec3(.04),hit.color.rgb,hit.rm.y);
-  float specular=dot(fresnel(f0,max(0,dot(hit.n,hit.wo))),vec3(.2126,.7152,.0722));
+  float specular=dot(surfaceFresnel(hit,f0,max(0,dot(hit.n,hit.wo))),vec3(.2126,.7152,.0722));
   float diffuse=dot(hit.color.rgb,vec3(.2126,.7152,.0722))*(1-hit.rm.y)*(1-specular);
   float share=diffuse/max(diffuse+specular,1e-6);
   return share<.005?0:share>.995?1:share;

@@ -270,6 +270,31 @@ namespace remix::usd {
         input("metallic_constant", SdfValueTypeNames->Float, VtValue(m.metallic));
         map("reflectionroughness_texture", m.roughnessMap);
         map("metallic_texture", m.metallicMap);
+        // The film: AperturePBR's inputs, and OpenRemix's beyond them as
+        // attributes outside the MDL inputs (usd/scene.cpp material_json).
+        if (m.film.strength > 0) {
+          input("enable_thin_film", SdfValueTypeNames->Bool, VtValue(true));
+          input("thin_film_thickness_constant", SdfValueTypeNames->Float, VtValue(m.film.thickness));
+          input("thin_film_thickness_from_albedo_alpha", SdfValueTypeNames->Bool, VtValue(m.film.fromAlpha));
+          auto extra = [&](const char *name, float value) {
+            shader.GetPrim()
+                .CreateAttribute(TfToken(std::string("openremix:iridescence:") + name), SdfValueTypeNames->Float,
+                                 true)
+                .Set(value);
+          };
+          extra("strength", m.film.strength);
+          extra("filmIor", m.film.ior);
+          extra("thicknessMin", m.film.min);
+          extra("thicknessMax", m.film.max);
+          extra("flowAmplitude", m.film.flowAmplitude);
+          extra("flowScale", m.film.flowScale);
+          extra("flowSpeed", m.film.flowSpeed);
+          extra("structural", m.film.structural);
+          if (m.filmMap && textures.count(m.filmMap))
+            shader.GetPrim()
+                .CreateAttribute(TfToken("openremix:iridescence:thicknessTexture"), SdfValueTypeNames->Asset, true)
+                .Set(SdfAssetPath("../textures/" + hex(m.filmMap) + ".dds"));
+        }
       }
       if (m.normal && normals.count(normalName(m.normal, m.normalEncoding))) {
         input("normalmap_texture", SdfValueTypeNames->Asset,

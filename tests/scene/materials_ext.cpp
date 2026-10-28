@@ -372,12 +372,89 @@ namespace {
     r.createMaterial(plainInfo, handle);
     require(!drawn(r, quad(r, 0x6e, handle))->caustics, "Caustics on an opaque material");
   }
+
+  // A thin film: the opaque info's legacy thickness fields, then
+  // remixapi_MaterialIridescenceEXT, validated and part of the material's identity.
+  void iridescence() {
+    remix::NativeResources r;
+    remixapi_MaterialInfoOpaqueEXT opaque{};
+    opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+    opaque.albedoConstant = {1, 1, 1};
+    opaque.opacityConstant = 1;
+    opaque.alphaTestType = 7;
+    remixapi_MaterialInfo info{};
+    info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+    info.pNext = &opaque;
+    info.hash = 0x70;
+    remixapi_MaterialHandle handle;
+    r.createMaterial(info, handle);
+    require(drawn(r, quad(r, 0x71, handle))->iridescence.strength == 0, "No film by default");
+    opaque.thinFilmThickness_hasvalue = 1;
+    opaque.thinFilmThickness_value = 350;
+    r.createMaterial(info, handle);
+    auto legacy = drawn(r, quad(r, 0x72, handle));
+    require(legacy->iridescence.strength == 1 && legacy->iridescence.thickness == 350 &&
+                legacy->iridescence.ior == 1.5f && legacy->pbr,
+            "Legacy thin film");
+    opaque.alphaIsThinFilmThickness = 1;
+    opaque.opacityConstant = .5f;
+    r.createMaterial(info, handle);
+    auto alpha = drawn(r, quad(r, 0x73, handle));
+    require(alpha->iridescence.fromAlpha && alpha->tint[3] == 1 && !alpha->translucent && alpha->compare == 7,
+            "Thickness from albedo alpha makes the material opaque");
+    opaque.alphaIsThinFilmThickness = 0;
+    opaque.opacityConstant = 1;
+
+    remixapi_MaterialIridescenceEXT film{};
+    film.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_IRIDESCENCE_EXT;
+    film.pNext = &opaque;
+    film.strength = .75f;
+    film.filmRefractiveIndex = 2.4f;
+    film.thickness = 600;
+    film.thicknessMin = 200;
+    film.thicknessMax = 1200;
+    film.flowAmplitude = 300;
+    film.flowScale = 2;
+    film.flowSpeed = -.5f;
+    film.structural = .5f;
+    info.pNext = &film;
+    r.createMaterial(info, handle);
+    const auto made = drawn(r, quad(r, 0x74, handle));
+    const auto &f = made->iridescence;
+    require(f.strength == .75f && f.ior == 2.4f && f.thickness == 600 && f.min == 200 && f.max == 1200 &&
+                f.flowAmplitude == 300 && f.flowScale == 2 && f.flowSpeed == -.5f && f.structural == .5f &&
+                !f.thicknessTexture,
+            "Iridescence fields");
+    film.structural = .25f;
+    r.createMaterial(info, handle);
+    require(drawn(r, quad(r, 0x75, handle))->iridescence.structural == .25f, "A changed film replaces the material");
+    auto reject = [&](float &field, float bad) {
+      const float good = field;
+      field = bad;
+      rejected([&] { r.createMaterial(info, handle); });
+      field = good;
+    };
+    reject(film.strength, 1.5f);
+    reject(film.filmRefractiveIndex, .9f);
+    reject(film.thickness, 2500);
+    reject(film.thicknessMin, 1300); // above the maximum
+    reject(film.flowScale, 0);
+    reject(film.structural, -1);
+    reject(film.flowSpeed, std::numeric_limits<float>::quiet_NaN());
+    // Opaque materials only.
+    remixapi_MaterialInfoTranslucentEXT glass{};
+    glass.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_TRANSLUCENT_EXT;
+    glass.refractiveIndex = 1.5f;
+    film.pNext = &glass;
+    rejected([&] { r.createMaterial(info, handle); });
+  }
 } // namespace
 
 int main() {
   materialOverride();
   dynamicTexture();
   pbrRemap();
+  iridescence();
   std::puts("Instance material and dynamic textures passed");
   return 0;
 }

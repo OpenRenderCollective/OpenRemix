@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cmath>
 #include <fstream>
+#include <iterator>
 #include <iostream>
 #include <thread>
 #ifdef _WIN32
@@ -39,6 +40,38 @@ int main(int argc, char **argv) {
     for (auto &mesh : skeleton.scene["meshes"])
       skinned |= mesh["skinned"].get<bool>();
     require(skinned, "captured skeletal pose");
+    {
+      // AperturePBR's thin film with OpenRemix's iridescence attributes, read
+      // into the material JSON and submitted as remixapi_MaterialIridescenceEXT.
+      std::ifstream in(fixture / "capture.usda");
+      std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+      const std::string shader = "int inputs:alpha_test_type = 7";
+      const auto at = text.find(shader);
+      require(at != std::string::npos, "capture fixture shader");
+      text.insert(at + shader.size(), "\nbool inputs:enable_thin_film = true"
+                                      "\nfloat inputs:thin_film_thickness_constant = 450"
+                                      "\nfloat openremix:iridescence:filmIor = 2.4"
+                                      "\nfloat openremix:iridescence:flowAmplitude = 5000"
+                                      "\nfloat openremix:iridescence:structural = 0.5");
+      const auto filmed = std::filesystem::temp_directory_path() /
+                          ("openremix-usd-film-" + std::to_string(getpid()) + ".usda");
+      std::ofstream(filmed) << text;
+      auto loaded = usd::load({filmed.string()});
+      const auto &film = loaded.scene["materials"].at(0).at("iridescence");
+      require(film["thickness"] == 450 && std::abs(film["ior"].get<float>() - 2.4f) < 1e-6f &&
+                  film["strength"] == 1 && film["structural"] == .5,
+              "thin film in the material JSON");
+      NativeResources filmResources;
+      usd::Submission submitted(filmResources, loaded, 1);
+      submitted.draw(false, 1);
+      require(!filmResources.draws().empty(), "filmed submission");
+      const auto &drawnFilm = filmResources.draws()[0].material->iridescence;
+      require(drawnFilm.strength == 1 && drawnFilm.thickness == 450 && std::abs(drawnFilm.ior - 2.4f) < 1e-6f &&
+                  drawnFilm.flowAmplitude == 2000 && drawnFilm.structural == .5f,
+              "thin film submitted, out-of-range values clamped");
+      filmResources.finishFrame();
+      std::filesystem::remove(filmed);
+    }
     auto converted = usd::load({(fixture / "capture.usda").string(), 1, 2});
     require(converted.scene["meters_per_unit"] == 1 && converted.scene["up_axis"] == "Z",
             "explicit host coordinates");

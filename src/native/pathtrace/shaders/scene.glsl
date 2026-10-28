@@ -26,6 +26,12 @@ struct Surface {
   uvec4 pbrTextures;
   // scene::MaterialDecode: x flags (self-illumination); the rest unused.
   uvec4 material;
+  // A thin film (frame_tables.h filmFields): strength (0: none), film index,
+  // thickness in nm, structural colour; then half2(min, max) of the thickness
+  // map's range, half2(flow amplitude, scale), flow speed, and the map + 1
+  // with albedo alpha as thickness in bit 31 (iridescence.glsl).
+  vec4 film;
+  uvec4 filmMaps;
 };
 // Shading reads the AS index order directly. Only debug identity needs the
 // original triangle mapping; motion still addresses the original vertex array.

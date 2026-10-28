@@ -253,11 +253,15 @@ namespace remix::usd {
   }
   std::vector<std::string> Submission::materialTextures(const std::string &id) const {
     std::vector<std::string> paths;
-    if (auto def = material_defs_.find(id); def != material_defs_.end())
+    if (auto def = material_defs_.find(id); def != material_defs_.end()) {
       for (const char *key : {"albedo_texture", "normal_texture", "roughness_texture", "metallic_texture",
                               "emissive_texture"})
         if (auto path = def->second.value(key, std::string()); !path.empty())
           paths.push_back(path);
+      if (const auto film = def->second.find("iridescence"); film != def->second.end())
+        if (auto path = film->value("texture", std::string()); !path.empty())
+          paths.push_back(path);
+    }
     return paths;
   }
   void Submission::material(const Json &data) {
@@ -310,6 +314,33 @@ namespace remix::usd {
     const int encoding = data.value("normal_encoding", 0);
     normal_encoding.encoding = encoding == 1 ? 3 : encoding == 2 ? 2 : 1;
     info.pNext = &normal_encoding;
+    // AperturePBR's thin film (scene.cpp material_json), authored values
+    // clamped to the extension's ranges.
+    remixapi_MaterialIridescenceEXT film{};
+    NativePath film_texture;
+    if (const auto found = data.find("iridescence"); found != data.end() && info.pNext != nullptr &&
+                                                      data.value("kind", std::string("opaque")) != "translucent") {
+      const auto &f = *found;
+      auto value = [&](const char *key, float fallback, float low, float high) {
+        const float v = f.value(key, fallback);
+        return std::isfinite(v) ? std::clamp(v, low, high) : fallback;
+      };
+      film.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_IRIDESCENCE_EXT;
+      film.strength = value("strength", 1, 0, 1);
+      film.filmRefractiveIndex = value("ior", 1.5f, 1, 3);
+      film.thickness = value("thickness", 200, 0, 2000);
+      film.thicknessMin = value("min", 100, 0, 2000);
+      film.thicknessMax = std::max(film.thicknessMin, value("max", 800, 0, 2000));
+      film.flowAmplitude = value("flow_amplitude", 0, 0, 2000);
+      film.flowScale = value("flow_scale", 1, 1e-3f, 1e6f);
+      film.flowSpeed = value("flow_speed", .1f, -100, 100);
+      film.structural = value("structural", 0, 0, 1);
+      film_texture = native_path(f.value("texture", std::string()));
+      film.thicknessTexture = film_texture.c_str();
+      opaque.alphaIsThinFilmThickness = f.value("from_alpha", false);
+      film.pNext = info.pNext;
+      info.pNext = &film;
+    }
     remixapi_MaterialHandle handle{};
     resources_.createMaterial(info, handle);
     if (applyMods_)

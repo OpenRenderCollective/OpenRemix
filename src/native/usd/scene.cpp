@@ -167,7 +167,7 @@ namespace remix::usd {
       auto transmission = attribute(shader, "inputs:transmittance_color", GfVec3f(1.0f));
       auto source = attribute(shader, "info:mdl:sourceAsset", SdfAssetPath()).GetAssetPath();
       const bool translucent = source.find("Translucent") != std::string::npos;
-      return {{"id", prim.GetPath().GetString()},
+      Json result = {{"id", prim.GetPath().GetString()},
               {"kind", translucent ? "translucent" : "opaque"},
               {"albedo", {color[0], color[1], color[2]}},
               {"roughness", attribute(shader, "inputs:reflection_roughness_constant", 0.5f)},
@@ -196,6 +196,22 @@ namespace remix::usd {
               {"roughness_texture", texture(shader, "inputs:reflectionroughness_texture", warnings)},
               {"metallic_texture", texture(shader, "inputs:metallic_texture", warnings)},
               {"emissive_texture", texture(shader, "inputs:emissive_mask_texture", warnings)}};
+      // AperturePBR's thin film, with OpenRemix's iridescence attributes
+      // (openremix:iridescence:*, outside the MDL inputs).
+      if (!translucent && attribute(shader, "inputs:enable_thin_film", false))
+        result["iridescence"] = {
+            {"thickness", attribute(shader, "inputs:thin_film_thickness_constant", 200.0f)},
+            {"from_alpha", attribute(shader, "inputs:thin_film_thickness_from_albedo_alpha", false)},
+            {"strength", attribute(shader, "openremix:iridescence:strength", 1.0f)},
+            {"ior", attribute(shader, "openremix:iridescence:filmIor", 1.5f)},
+            {"texture", texture(shader, "openremix:iridescence:thicknessTexture", warnings)},
+            {"min", attribute(shader, "openremix:iridescence:thicknessMin", 100.0f)},
+            {"max", attribute(shader, "openremix:iridescence:thicknessMax", 800.0f)},
+            {"flow_amplitude", attribute(shader, "openremix:iridescence:flowAmplitude", 0.0f)},
+            {"flow_scale", attribute(shader, "openremix:iridescence:flowScale", 1.0f)},
+            {"flow_speed", attribute(shader, "openremix:iridescence:flowSpeed", 0.1f)},
+            {"structural", attribute(shader, "openremix:iridescence:structural", 0.0f)}};
+      return result;
     }
     int element_index(const TfToken &interpolation, int face, int corner, int vertex) {
       if (interpolation == UsdGeomTokens->constant)

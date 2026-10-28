@@ -24,14 +24,20 @@ _Static_assert(sizeof(remixapi_LocalLightSetStatisticsEXT) == 184, "Local light 
 _Static_assert(offsetof(remixapi_LocalLightSetStatisticsEXT, builds) == 32, "Local light set statistics alignment");
 _Static_assert(offsetof(remixapi_LocalLightGuidingStatisticsEXT, renderedFrames) == 32, "Local guiding alignment");
 _Static_assert(offsetof(remixapi_LocalLightStatisticsEXT, generation) == 40, "Local light statistics alignment");
-_Static_assert(sizeof(remixapi_EditorSharedFrame) == 56, "Shared frame version 1 ABI");
 _Static_assert(offsetof(remixapi_EditorSharedFrame, device_uuid) == 24, "Device UUID offset");
+#if defined(_WIN32)
+_Static_assert(sizeof(remixapi_EditorSharedFrame) == 64, "Shared frame version 1 ABI");
+_Static_assert(offsetof(remixapi_EditorSharedFrame, memory_handle) == 40, "Shared memory handle offset");
+#else
+_Static_assert(sizeof(remixapi_EditorSharedFrame) == 56, "Shared frame version 1 ABI");
 _Static_assert(offsetof(remixapi_EditorSharedFrame, memory_fd) == 40, "Shared memory FD offset");
+#endif
 _Static_assert(sizeof(remixapi_EditorStartupEXT) == 32, "Editor startup extension ABI");
 _Static_assert(sizeof(remixapi_MaterialNormalEncodingEXT) == 24, "Normal encoding ABI");
 _Static_assert(sizeof(remixapi_MaterialPbrChannelEXT) == 24, "PBR channel ABI");
 _Static_assert(sizeof(remixapi_MaterialPbrRemapEXT) == 64, "PBR remap ABI");
 _Static_assert(sizeof(remixapi_MaterialNormalScrollEXT) == 48, "Normal scroll ABI");
+_Static_assert(sizeof(remixapi_MaterialIridescenceEXT) == 64, "Iridescence ABI");
 _Static_assert(sizeof(remixapi_CameraMediumEXT) == 40, "Camera medium ABI");
 _Static_assert(sizeof(remixapi_USDLoadOptionsEXT) == 32, "USD load version 1 ABI");
 _Static_assert(sizeof(remixapi_USDDrawOptionsEXT) == 16, "USD draw version 1 ABI");

@@ -22,6 +22,9 @@ namespace remix::usd {
       uint8_t filter = 1, wrapU = 1, wrapV = 1;
       // Texture hashes in `textures` (0: none).
       uint64_t albedo = 0, normal = 0, roughnessMap = 0, metallicMap = 0, emissive = 0;
+      // A thin film (strength 0: none) and its thickness map's hash.
+      scene::Material::Iridescence film;
+      uint64_t filmMap = 0;
     };
     struct Mesh {
       std::vector<scene::Surface> surfaces;

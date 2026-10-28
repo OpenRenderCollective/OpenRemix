@@ -95,6 +95,21 @@ namespace remix {
       material->reference = float(opaque->alphaReferenceValue) / 255;
       material->drawAlpha = opaque->useDrawCallAlphaState != 0;
       material->translucent = opaque->opacityConstant < 1;
+      // RTX Remix's thin film: a film of index 1.5 at a constant thickness, or
+      // at albedo alpha times 1500 nm, the material then fully opaque.
+      auto &film = material->iridescence;
+      if (opaque->thinFilmThickness_hasvalue) {
+        finite(&opaque->thinFilmThickness_value, 1);
+        film.strength = 1;
+        film.thickness = std::clamp(opaque->thinFilmThickness_value, 0.f, 2000.f);
+      }
+      if (opaque->alphaIsThinFilmThickness) {
+        film.strength = 1;
+        film.fromAlpha = true;
+        material->tint[3] = 1;
+        material->compare = 7;
+        material->drawAlpha = material->translucent = false;
+      }
     } else if (translucent) {
       material->tint[0] = translucent->transmittanceColor.x;
       material->tint[1] = translucent->transmittanceColor.y;
@@ -151,7 +166,28 @@ namespace remix {
         material->transmittanceDistance > 0 ||
         (opaque && (pbr ? pbr->enabled != 0
                        : material->roughness > 0 || material->metallic > 0 || material->roughnessTexture ||
-                             material->metallicTexture || material->normalTexture));
+                             material->metallicTexture || material->normalTexture)) ||
+        material->iridescence.strength > 0; // a film is a reflection
+    if (const auto *film = static_cast<const remixapi_MaterialIridescenceEXT *>(
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_IRIDESCENCE_EXT))) {
+      finite(&film->strength, 9);
+      if (!opaque || film->strength < 0 || film->strength > 1 || film->filmRefractiveIndex < 1 ||
+          film->filmRefractiveIndex > 3 || film->thickness < 0 || film->thickness > 2000 || film->thicknessMin < 0 ||
+          film->thicknessMax > 2000 || film->thicknessMin > film->thicknessMax || film->flowAmplitude < 0 ||
+          film->flowAmplitude > 2000 || !(film->flowScale > 0) || film->structural < 0 || film->structural > 1)
+        throw invalid;
+      auto &out = material->iridescence;
+      out.strength = film->strength;
+      out.ior = film->filmRefractiveIndex;
+      out.thickness = film->thickness;
+      out.min = film->thicknessMin;
+      out.max = film->thicknessMax;
+      out.flowAmplitude = film->flowAmplitude;
+      out.flowScale = film->flowScale;
+      out.flowSpeed = film->flowSpeed;
+      out.structural = film->structural;
+      out.thicknessTexture = dataTexturePath(film->thicknessTexture);
+    }
     finite(&info.emissiveColorConstant.x, 3);
     finite(&info.emissiveIntensity, 1);
     if (info.emissiveIntensity < 0 || info.emissiveColorConstant.x < 0 || info.emissiveColorConstant.y < 0 ||
@@ -206,6 +242,7 @@ namespace remix {
              a.remap[0] == b.remap[0] && a.remap[1] == b.remap[1] && a.scrollLayers == b.scrollLayers &&
              std::equal(a.scroll, a.scroll + 6, b.scroll) && a.refractiveIndex == b.refractiveIndex &&
              a.transmittanceDistance == b.transmittanceDistance &&
+             a.iridescence == b.iridescence &&
              a.pbr == b.pbr && std::equal(a.emission, a.emission + 3, b.emission) &&
              std::equal(a.tint, a.tint + 4, b.tint) && a.compare == b.compare && a.reference == b.reference &&
              a.drawAlpha == b.drawAlpha && a.translucent == b.translucent &&

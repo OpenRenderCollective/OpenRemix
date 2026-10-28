@@ -1259,6 +1259,32 @@ typedef struct remixapi_MaterialPbrRemapEXT {
   remixapi_MaterialPbrChannelEXT roughness, metallic;
 } remixapi_MaterialPbrRemapEXT;
 
+// Optional pNext on opaque MaterialInfo: a thin-film coating whose
+// interference colours the reflection (iridescence), evaluated spectrally.
+// It takes the place of MaterialInfoOpaqueEXT's thinFilmThickness and
+// alphaIsThinFilmThickness, which alone give a film of strength 1 and
+// refractive index 1.5.
+// strength: 0 (no film) to 1, how much of the reflection is the film's.
+// filmRefractiveIndex: 1 to 3; higher indices give more saturated colours.
+// thickness: the film's thickness in nanometres, 0 to 2000. With
+// thicknessTexture, the map's red channel lerps thicknessMin to thicknessMax
+// instead; with alphaIsThinFilmThickness, albedo alpha times 1500.
+// flowAmplitude: nanometres of animated noise added to the thickness (0: a
+// still film), swirls flowScale scene units across in object space, drifting
+// flowSpeed per second.
+// structural: 0 to 1, how much the film's colour tints diffuse reflection too
+// (structural colour on rough surfaces).
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_IRIDESCENCE_EXT ((remixapi_StructType)0x7fff1020)
+typedef struct remixapi_MaterialIridescenceEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  remixapi_Path thicknessTexture;
+  float strength, filmRefractiveIndex, thickness;
+  float thicknessMin, thicknessMax;
+  float flowAmplitude, flowScale, flowSpeed;
+  float structural;
+} remixapi_MaterialIridescenceEXT;
+
 // Optional pNext on LightInfo (sphere, rect, disk and cylinder lights): an IES
 // photometric profile, the contents of an IESNA LM-63 file (not
 // null-terminated). The light's radiance in a direction is scaled by the

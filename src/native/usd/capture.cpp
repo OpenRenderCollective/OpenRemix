@@ -177,6 +177,9 @@ namespace remix::usd {
         out.roughnessMap = texture(m.roughnessTexture);
         out.metallicMap = texture(m.metallicTexture);
         out.emissive = texture(m.emissionTexture);
+        out.film = m.iridescence;
+        out.film.thicknessTexture.reset();
+        out.filmMap = m.iridescence.strength > 0 ? texture(m.iridescence.thicknessTexture) : 0;
         scene_.materials.emplace(hash, out);
         return hash;
       }
