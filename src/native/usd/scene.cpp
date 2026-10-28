@@ -185,6 +185,12 @@ namespace remix::usd {
                                          : 0.0f},
               {"ior", attribute(shader, "inputs:ior_constant", 1.3f)},
               {"transmittance", {transmission[0], transmission[1], transmission[2]}},
+              // AperturePBR_Translucent's body: a thin wall, or the distance over
+              // which the transmittance colour is reached (Beer-Lambert).
+              {"transmittance_distance", attribute(shader, "inputs:transmittance_measurement_distance", 1.0f)},
+              {"thin_walled", attribute(shader, "inputs:thin_walled", false)},
+              {"thin_wall_thickness", attribute(shader, "inputs:thin_wall_thickness", 1.0f)},
+              {"use_diffuse_layer", attribute(shader, "inputs:use_diffuse_layer", false)},
               {"filter_mode", sampler_mode(shader, "inputs:filter_mode", 1)},
               {"wrap_mode_u", sampler_mode(shader, "inputs:wrap_mode_u", 3)},
               {"wrap_mode_v", sampler_mode(shader, "inputs:wrap_mode_v", 3)},
