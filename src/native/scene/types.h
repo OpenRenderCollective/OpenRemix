@@ -126,7 +126,7 @@ namespace remix {
     // of the material it replaces (instances.cpp), as the game made it.
     namespace ModParts {
       constexpr uint32_t color = 1, roughness = 2, metallic = 4, normal = 8, emission = 16, transmission = 32,
-                         film = 64, alpha = 128, sampling = 256, all = ~0u;
+                         film = 64, alpha = 128, sampling = 256, subsurface = 512, all = ~0u;
     }
     struct Material {
       uint64_t sourceHash = 0;
@@ -160,6 +160,12 @@ namespace remix {
         std::shared_ptr<Texture> thicknessTexture;
         bool operator==(const Iridescence &) const = default;
       } iridescence;
+      // Subsurface scattering (remixapi_MaterialSubsurfaceEXT): weight 0 means
+      // none. Radius per channel times scale, in metres.
+      struct Subsurface {
+        float weight = 0, radius[3] = {1, .2f, .1f}, scale = .05f, anisotropy = 0;
+        bool operator==(const Subsurface &) const = default;
+      } subsurface;
       float emission[3] = {};
       bool suppressEmissionLight = false;
       // remixapi_MaterialInfoSelfIlluminationEXT: 0 off, else the mask + 1

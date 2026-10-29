@@ -260,6 +260,8 @@ namespace remix {
     float causticsDepth = .5f;
     // Thin-film iridescence of materials that have it (remixapi_MaterialIridescenceEXT).
     bool iridescence = true;
+    // Subsurface scattering of materials that have it (remixapi_MaterialSubsurfaceEXT).
+    bool subsurface = true;
     bool translucencyDenoiser = true, translucencyReuse = true;
     bool pbrLocalReuse = true; // Experimental previous-frame secondary local lighting.
     bool sky = true;

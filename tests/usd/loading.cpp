@@ -128,6 +128,41 @@ int main(int argc, char **argv) {
       };
       require(parts("over").value("authored", 0u) == scene::ModParts::film, "an override authors its film only");
       require(!parts("def").contains("authored"), "a defined material replaces the whole material");
+      std::ofstream(path) << "#usda 1.0\nover Xform \"RootNode\" { over Scope \"Looks\" { over Material "
+                             "\"mat_0123456789ABCDEF\" { over Shader \"Shader\" {\nfloat openremix:subsurface:weight = 1\n}\n}\n}\n}\n";
+      auto sssOver = usd::load({path.string()});
+      std::filesystem::remove(path);
+      require(sssOver.scene["replacements"]["materials"].at(0).value("authored", 0u) == scene::ModParts::subsurface,
+              "an override authors its subsurface only");
+    }
+    {
+      // OpenRemix's subsurface attributes, read into the material JSON and
+      // submitted as remixapi_MaterialSubsurfaceEXT.
+      std::ifstream in(fixture / "capture.usda");
+      std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+      const std::string shader = "int inputs:alpha_test_type = 7";
+      const auto at = text.find(shader);
+      require(at != std::string::npos, "capture fixture shader");
+      text.insert(at + shader.size(), "\nfloat openremix:subsurface:weight = 0.75"
+                                      "\nfloat3 openremix:subsurface:radius = (1, 0.5, 0.25)"
+                                      "\nfloat openremix:subsurface:scale = 0.02");
+      const auto path = std::filesystem::temp_directory_path() /
+                        ("openremix-usd-sss-" + std::to_string(getpid()) + ".usda");
+      std::ofstream(path) << text;
+      auto loaded = usd::load({path.string()});
+      std::filesystem::remove(path);
+      const auto &sss = loaded.scene["materials"].at(0).at("subsurface");
+      require(sss["weight"] == .75 && sss["radius"][1] == .5 && std::abs(sss["scale"].get<float>() - .02f) < 1e-7f &&
+                  sss["anisotropy"] == 0,
+              "subsurface in the material JSON");
+      NativeResources sssResources;
+      usd::Submission submitted(sssResources, loaded, 1);
+      submitted.draw(false, 1);
+      require(!sssResources.draws().empty(), "subsurface submission");
+      const auto &drawn = sssResources.draws()[0].material->subsurface;
+      require(drawn.weight == .75f && drawn.radius[2] == .25f && std::abs(drawn.scale - .02f) < 1e-7f,
+              "subsurface submitted");
+      sssResources.finishFrame();
     }
     auto converted = usd::load({(fixture / "capture.usda").string(), 1, 2});
     require(converted.scene["meters_per_unit"] == 1 && converted.scene["up_axis"] == "Z",

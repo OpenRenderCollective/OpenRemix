@@ -403,6 +403,8 @@ namespace remix {
               }
               if (p & ModParts::film)
                 merged->iridescence = mod->iridescence;
+              if (p & ModParts::subsurface)
+                merged->subsurface = mod->subsurface;
               if (p & ModParts::alpha) {
                 merged->compare = mod->compare;
                 merged->reference = mod->reference;
@@ -418,7 +420,7 @@ namespace remix {
               // dielectric, caustics through translucent bumps.
               merged->pbr = original->pbr || merged->transmittanceDistance > 0 ||
                             (mod->pbr && (p & (ModParts::roughness | ModParts::metallic | ModParts::normal |
-                                               ModParts::film | ModParts::transmission)));
+                                               ModParts::film | ModParts::transmission | ModParts::subsurface)));
               if (merged->transmission && merged->iridescence.strength > 0 && (p & ModParts::film)) {
                 merged->roughness = .04f;
                 merged->metallic = 0;

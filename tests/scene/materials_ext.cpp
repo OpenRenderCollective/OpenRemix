@@ -529,6 +529,64 @@ namespace {
                 water->tint[2] == 1 && water->iridescence.strength == 1 && water->roughness == .04f,
             "A partial override keeps the game's glass");
   }
+  // Subsurface scattering (remixapi_MaterialSubsurfaceEXT), and RTX Remix's
+  // diffusion profile read into it.
+  void subsurface() {
+    remix::NativeResources r;
+    remixapi_MaterialInfoOpaqueEXT opaque{};
+    opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+    opaque.albedoConstant = {1, 1, 1};
+    opaque.opacityConstant = 1;
+    opaque.alphaTestType = 7;
+    remixapi_MaterialSubsurfaceEXT sss{};
+    sss.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_SUBSURFACE_EXT;
+    sss.pNext = &opaque;
+    sss.weight = .8f;
+    sss.radius = {1, .2f, .1f};
+    sss.scale = .05f;
+    sss.anisotropy = .5f;
+    remixapi_MaterialInfo info{};
+    info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+    info.pNext = &sss;
+    info.hash = 0xa0;
+    remixapi_MaterialHandle handle;
+    r.createMaterial(info, handle);
+    auto made = drawn(r, quad(r, 0xa1, handle));
+    require(made->subsurface.weight == .8f && made->subsurface.radius[1] == .2f && made->subsurface.scale == .05f &&
+                made->subsurface.anisotropy == .5f && made->pbr,
+            "Subsurface fields, PBR shading");
+    sss.weight = .4f;
+    r.createMaterial(info, handle);
+    require(drawn(r, quad(r, 0xa2, handle))->subsurface.weight == .4f, "A changed subsurface replaces the material");
+    auto reject = [&](float &field, float bad) {
+      const float good = field;
+      field = bad;
+      rejected([&] { r.createMaterial(info, handle); });
+      field = good;
+    };
+    reject(sss.weight, 1.5f);
+    reject(sss.radius.x, -1);
+    reject(sss.scale, 0);
+    reject(sss.anisotropy, .95f);
+    reject(sss.weight, std::numeric_limits<float>::quiet_NaN());
+    // RTX Remix's diffusion profile: weight 1, its scale in millimetres.
+    remixapi_MaterialInfoOpaqueSubsurfaceEXT remix{};
+    remix.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_SUBSURFACE_EXT;
+    remix.pNext = &opaque;
+    remix.subsurfaceDiffusionProfile = 1;
+    remix.subsurfaceRadius = {.5f, .25f, .125f};
+    remix.subsurfaceRadiusScale = 20;
+    info.pNext = &remix;
+    info.hash = 0xa3;
+    r.createMaterial(info, handle);
+    made = drawn(r, quad(r, 0xa4, handle));
+    require(made->subsurface.weight == 1 && made->subsurface.radius[0] == .5f &&
+                std::abs(made->subsurface.scale - .02f) < 1e-7f,
+            "RTX Remix's diffusion profile");
+    remix.subsurfaceDiffusionProfile = 0;
+    r.createMaterial(info, handle);
+    require(drawn(r, quad(r, 0xa5, handle))->subsurface.weight == 0, "No diffusion profile, no subsurface");
+  }
 } // namespace
 
 int main() {
@@ -537,6 +595,7 @@ int main() {
   pbrRemap();
   iridescence();
   partialMod();
+  subsurface();
   std::puts("Instance material and dynamic textures passed");
   return 0;
 }

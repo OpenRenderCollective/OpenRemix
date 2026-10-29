@@ -91,7 +91,7 @@ void main() {
   t=normalize(t);
   vec3 b=cross(smoothNormal,t);
   if(dot(b,bitangent)<0)b=-b;
-  outNormal=vec4(materialNormal(s,uv,mat3(t,b,smoothNormal),normalize(-direction)),(decalSurface(s)?4:blendedAtAlpha(s,albedo.a)?((s.state.w&32)!=0?3:2):1)+((draw.stableDepth&2u)!=0u?8:0)+(filmed(s)?16:0));
+  outNormal=vec4(materialNormal(s,uv,mat3(t,b,smoothNormal),normalize(-direction)),(decalSurface(s)?4:blendedAtAlpha(s,albedo.a)?((s.state.w&32)!=0?3:2):1)+((draw.stableDepth&2u)!=0u?8:0)+(filmed(s)||subsurfaced(s)?16:0));
   vec2 rm=materialParameters(s,uv,albedo.rgb);
   outPbr=vec4(s.pbr.z!=0?rm.x:-1,rm.y,encodeGeometricNormal(n));
   outAlbedo=vec4(albedo.rgb+self,albedo.a);

@@ -122,6 +122,10 @@ namespace remix {
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Shares diffuse lighting across small flat water patches with TAA or FSR.\nEdges, "
                           "overlapping layers and raw reference rendering retain full sampling.");
+      ui::Checkbox("Subsurface scattering", &options.subsurface);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Light that enters skin, wax or leaves and leaves them nearby, on materials that\n"
+                          "have it. Off: those materials are lit as plain diffuse surfaces.");
       ui::Checkbox("Iridescence", &options.iridescence);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Thin-film interference colours on materials that have a film (soap bubbles,\n"

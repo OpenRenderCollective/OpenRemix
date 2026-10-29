@@ -299,6 +299,17 @@ namespace remix::usd {
                 .CreateAttribute(TfToken("openremix:iridescence:thicknessTexture"), SdfValueTypeNames->Asset, true)
                 .Set(SdfAssetPath("../textures/" + hex(m.filmMap) + ".dds"));
         }
+        // OpenRemix's subsurface scattering (usd/scene.cpp material_json).
+        if (m.subsurface.weight > 0) {
+          auto attribute = [&](const char *name, const SdfValueTypeName &type, const VtValue &value) {
+            shader.GetPrim().CreateAttribute(TfToken(std::string("openremix:subsurface:") + name), type, true).Set(value);
+          };
+          attribute("weight", SdfValueTypeNames->Float, VtValue(m.subsurface.weight));
+          attribute("radius", SdfValueTypeNames->Float3,
+                    VtValue(GfVec3f(m.subsurface.radius[0], m.subsurface.radius[1], m.subsurface.radius[2])));
+          attribute("scale", SdfValueTypeNames->Float, VtValue(m.subsurface.scale));
+          attribute("anisotropy", SdfValueTypeNames->Float, VtValue(m.subsurface.anisotropy));
+        }
       }
       if (m.normal && normals.count(normalName(m.normal, m.normalEncoding))) {
         input("normalmap_texture", SdfValueTypeNames->Asset,
