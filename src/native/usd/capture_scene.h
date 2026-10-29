@@ -25,6 +25,7 @@ namespace remix::usd {
       // A thin film (strength 0: none) and its thickness map's hash.
       scene::Material::Iridescence film;
       uint64_t filmMap = 0;
+      scene::Material::Subsurface subsurface; // weight 0: none
     };
     struct Mesh {
       std::vector<scene::Surface> surfaces;

@@ -53,8 +53,9 @@ namespace remix::trace::detail {
     uint32_t material[4] = {};    // scene::MaterialDecode: flags; the rest unused
     float film[4] = {};           // iridescence (filmFields): strength (0: none), film index, thickness nm, structural
     uint32_t filmMaps[4] = {};    // half2(min, max nm), half2(flow amplitude, scale), flow speed, map + 1 | alpha << 31
+    float subsurface[4] = {};     // subsurfaceFields: mean free path per channel in metres, weight (0: none)
   };
-  static_assert(sizeof(TraceSurface) == 288);
+  static_assert(sizeof(TraceSurface) == 304);
   // IEEE binary16 bits of v, rounded to nearest (subnormals kept).
   inline uint32_t halfBits(float v) {
     uint32_t bits;
@@ -127,6 +128,18 @@ namespace remix::trace::detail {
     std::memcpy(&maps[2], &f.flowSpeed, 4);
     maps[3] = f.fromAlpha ? 1u << 31 : 0;
   }
+  // A material's subsurface scattering (scene::Material::subsurface): each
+  // channel's mean free path in metres, anisotropy folded in (forward
+  // scattering carries light further: the reduced scattering coefficient is
+  // the scattering coefficient times 1 - g), and the weight.
+  inline void subsurfaceFields(const scene::Material &material, float out[4]) {
+    const auto &s = material.subsurface;
+    if (s.weight <= 0)
+      return;
+    for (unsigned c = 0; c < 3; ++c)
+      out[c] = s.radius[c] * s.scale / (1 - s.anisotropy);
+    out[3] = s.weight;
+  }
   // A display-encoded value (gamma 2.2) to linear.
   inline float linear(float c) { return std::pow(c, 2.2f); }
   // Decal paint mode (TraceSurface state bits 7-8): 0 alpha-over, 1 multiply
@@ -159,6 +172,7 @@ namespace remix::trace {
     uint32_t decode[4] = {}, maps[4] = {};
     float film[4] = {};
     uint32_t filmMaps[4] = {};
+    float subsurface[4] = {};
   };
   // One entry of the frame's texture descriptor array, in first-use order:
   // Albedo (sampledMaterial), Map (sampledTexture of *texture) or Emission.
@@ -603,6 +617,7 @@ namespace remix::trace {
       MaterialSlots entry;
       detail::materialFields(material, entry.pbr, entry.decode, entry.maps[3]);
       detail::filmFields(material, entry.film, entry.filmMaps);
+      detail::subsurfaceFields(material, entry.subsurface);
       const auto decode = scene::materialDecode(material);
       std::copy_n(material.emission, 3, entry.emission);
       entry.emission[3] = decode.selfIlluminationScale;
@@ -633,6 +648,7 @@ namespace remix::trace {
       append(sampler, sizeof(sampler));
       detail::materialFields(material, value.pbr, value.material, value.pbrTextures[3]);
       detail::filmFields(material, value.film, value.filmMaps);
+      detail::subsurfaceFields(material, value.subsurface);
       const auto decode = scene::materialDecode(material);
       // The roughness, metallic and normal maps, then the film's thickness map.
       const std::shared_ptr<scene::Texture> *textures[] = {&material.roughnessTexture, &material.metallicTexture,
@@ -681,6 +697,7 @@ namespace remix::trace {
       std::copy_n(value.emission, 4, entry.emission);
       std::copy_n(value.film, 4, entry.film);
       std::copy_n(value.filmMaps, 4, entry.filmMaps);
+      std::copy_n(value.subsurface, 4, entry.subsurface);
       return entry;
     }
 
@@ -784,6 +801,7 @@ namespace remix::trace {
         std::copy_n(entry.emission, 4, value.emission);
         std::copy_n(entry.film, 4, value.film);
         std::copy_n(entry.filmMaps, 4, value.filmMaps);
+        std::copy_n(entry.subsurface, 4, value.subsurface);
         value.vertices = view.vertices.at(surface.surfaceIndex)->address;
         const uint64_t debugKey[] = {surface.instanceId, surface.instanceIndex, surface.surfaceIndex};
         value.debugIdentity = scene::hashBytes(debugKey, sizeof(debugKey));
@@ -1116,6 +1134,7 @@ namespace remix::trace {
             std::copy_n(entry.emission, 4, value.emission);
             std::copy_n(entry.film, 4, value.film);
             std::copy_n(entry.filmMaps, 4, value.filmMaps);
+            std::copy_n(entry.subsurface, 4, value.subsurface);
             out[s] = value;
           }
           for (size_t d = 0; d < unit.primary.size(); ++d) {

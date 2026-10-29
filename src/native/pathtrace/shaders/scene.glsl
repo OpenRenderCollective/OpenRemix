@@ -32,6 +32,9 @@ struct Surface {
   // with albedo alpha as thickness in bit 31 (iridescence.glsl).
   vec4 film;
   uvec4 filmMaps;
+  // Subsurface scattering (frame_tables.h subsurfaceFields): each channel's
+  // mean free path in metres, the weight (0: none).
+  vec4 subsurface;
 };
 // Shading reads the AS index order directly. Only debug identity needs the
 // original triangle mapping; motion still addresses the original vertex array.
@@ -64,7 +67,7 @@ layout(set=0,binding=3,std140) uniform Frame {
   uint64_t reuseRead, reuseWrite;
   uvec4 reuseConfig;
   uint64_t indirectResults, blueNoise;
-  vec4 firefly; // outgoing local direct / indirect luminance limits; reserved
+  vec4 firefly; // outgoing local direct / indirect luminance limits; material guides; scene units per metre
   uvec4 pathConfig; // adaptive termination, minimum completed bounces, sheet flags (1 traced indirect, 2 local lights; bits 8-12 sky rays at a first surface), secondary ray mask (bits 0-7; bit 8: a view model is traced; bit 9: thin films off)
   vec4 domeTransform[3];
   uint64_t visibilityNodes, visibilityLeaves, visibilityTable, movedLights;
@@ -399,3 +402,5 @@ bool visibleAlpha(Surface s,float a) {
 // Whether a surface shows its thin film: it has one, and films are on
 // (frame.pathConfig.w bit 9 clear; iridescence.glsl).
 bool filmed(Surface s) { return s.film.x>0&&(frame.pathConfig.w&0x200u)==0u; }
+// Subsurface scattering, unless the renderer turned it off (pathConfig.w 0x400).
+bool subsurfaced(Surface s) { return s.subsurface.w>0&&(frame.pathConfig.w&0x400u)==0u; }

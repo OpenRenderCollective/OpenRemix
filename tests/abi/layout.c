@@ -38,6 +38,8 @@ _Static_assert(sizeof(remixapi_MaterialPbrChannelEXT) == 24, "PBR channel ABI");
 _Static_assert(sizeof(remixapi_MaterialPbrRemapEXT) == 64, "PBR remap ABI");
 _Static_assert(sizeof(remixapi_MaterialNormalScrollEXT) == 48, "Normal scroll ABI");
 _Static_assert(sizeof(remixapi_MaterialIridescenceEXT) == 64, "Iridescence ABI");
+_Static_assert(sizeof(remixapi_MaterialSubsurfaceEXT) == 40, "Subsurface ABI");
+_Static_assert(offsetof(remixapi_MaterialSubsurfaceEXT, weight) == 16, "Subsurface weight");
 _Static_assert(sizeof(remixapi_CameraMediumEXT) == 40, "Camera medium ABI");
 _Static_assert(sizeof(remixapi_USDLoadOptionsEXT) == 32, "USD load version 1 ABI");
 _Static_assert(sizeof(remixapi_USDDrawOptionsEXT) == 16, "USD draw version 1 ABI");

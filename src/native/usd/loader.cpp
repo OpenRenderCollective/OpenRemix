@@ -75,10 +75,16 @@ namespace remix::usd {
         for (const char *name : names)
           if (auto attr = shader.GetAttribute(TfToken(name)); attr && attr.HasAuthoredValue())
             result |= bit;
-      // OpenRemix's own film attributes (openremix:iridescence:*).
-      for (const auto &attr : shader.GetAttributes())
-        if (attr.GetName().GetString().rfind("openremix:iridescence:", 0) == 0 && attr.HasAuthoredValue())
+      // OpenRemix's own film and subsurface attributes (openremix:*).
+      for (const auto &attr : shader.GetAttributes()) {
+        const auto name = attr.GetName().GetString();
+        if (!attr.HasAuthoredValue())
+          continue;
+        if (name.rfind("openremix:iridescence:", 0) == 0)
           result |= film;
+        else if (name.rfind("openremix:subsurface:", 0) == 0)
+          result |= subsurface;
+      }
       return result;
     }
   } // namespace

@@ -344,6 +344,28 @@ namespace remix::usd {
       film.pNext = info.pNext;
       info.pNext = &film;
     }
+    // Subsurface scattering (opaque materials), clamped to the extension's ranges.
+    remixapi_MaterialSubsurfaceEXT subsurface{};
+    if (const auto found = data.find("subsurface");
+        found != data.end() && info.pNext != nullptr && data.value("kind", std::string("opaque")) != "translucent") {
+      const auto &f = *found;
+      auto value = [](const Json &v, float fallback, float low, float high) {
+        const float x = v.is_number() ? v.get<float>() : fallback;
+        return std::isfinite(x) ? std::clamp(x, low, high) : fallback;
+      };
+      const auto radius = f.value("radius", Json::array({1, .2f, .1f}));
+      subsurface.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_SUBSURFACE_EXT;
+      subsurface.weight = value(f.value("weight", Json(0)), 0, 0, 1);
+      subsurface.radius = {value(radius.size() == 3 ? radius[0] : Json(), 1, 0, 1e6f),
+                           value(radius.size() == 3 ? radius[1] : Json(), .2f, 0, 1e6f),
+                           value(radius.size() == 3 ? radius[2] : Json(), .1f, 0, 1e6f)};
+      subsurface.scale = value(f.value("scale", Json(.05f)), .05f, 1e-6f, 1e3f);
+      subsurface.anisotropy = value(f.value("anisotropy", Json(0)), 0, -.9f, .9f);
+      if (subsurface.weight > 0) {
+        subsurface.pNext = info.pNext;
+        info.pNext = &subsurface;
+      }
+    }
     remixapi_MaterialHandle handle{};
     resources_.createMaterial(info, handle);
     if (applyMods_)

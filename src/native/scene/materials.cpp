@@ -188,12 +188,45 @@ namespace remix {
         material->metallic = 0;
       }
     }
+    if (const auto *sss = static_cast<const remixapi_MaterialSubsurfaceEXT *>(
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_SUBSURFACE_EXT))) {
+      finite(&sss->weight, 6);
+      if (!opaque || sss->weight < 0 || sss->weight > 1 || sss->radius.x < 0 || sss->radius.y < 0 ||
+          sss->radius.z < 0 || !(sss->scale > 0) || sss->anisotropy < -.9f || sss->anisotropy > .9f)
+        throw invalid;
+      auto &out = material->subsurface;
+      out.weight = sss->weight;
+      out.radius[0] = sss->radius.x;
+      out.radius[1] = sss->radius.y;
+      out.radius[2] = sss->radius.z;
+      out.scale = sss->scale;
+      out.anisotropy = sss->anisotropy;
+    } else if (const auto *remix = static_cast<const remixapi_MaterialInfoOpaqueSubsurfaceEXT *>(
+                   extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_SUBSURFACE_EXT));
+               remix && opaque && remix->subsurfaceDiffusionProfile) {
+      // RTX Remix's diffusion profile: its radius scale in millimetres.
+      const float values[] = {remix->subsurfaceRadius.x, remix->subsurfaceRadius.y, remix->subsurfaceRadius.z,
+                              remix->subsurfaceRadiusScale, remix->subsurfaceVolumetricAnisotropy};
+      if (std::all_of(std::begin(values), std::end(values), [](float v) { return std::isfinite(v); }) &&
+          remix->subsurfaceRadiusScale > 0) {
+        auto &out = material->subsurface;
+        out.weight = 1;
+        for (unsigned c = 0; c < 3; ++c)
+          out.radius[c] = std::max(values[c], 0.f);
+        out.scale = remix->subsurfaceRadiusScale * 1e-3f;
+        out.anisotropy = std::clamp(remix->subsurfaceVolumetricAnisotropy, -.9f, .9f);
+      }
+    }
+    if (material->subsurface.weight > 0 &&
+        !(material->subsurface.radius[0] > 0 || material->subsurface.radius[1] > 0 || material->subsurface.radius[2] > 0))
+      material->subsurface.weight = 0; // nothing scatters
     material->pbr =
         material->transmittanceDistance > 0 ||
         (opaque && (pbr ? pbr->enabled != 0
                        : material->roughness > 0 || material->metallic > 0 || material->roughnessTexture ||
                              material->metallicTexture || material->normalTexture)) ||
-        material->iridescence.strength > 0; // a film is a reflection
+        material->iridescence.strength > 0 || // a film is a reflection
+        material->subsurface.weight > 0;
     finite(&info.emissiveColorConstant.x, 3);
     finite(&info.emissiveIntensity, 1);
     if (info.emissiveIntensity < 0 || info.emissiveColorConstant.x < 0 || info.emissiveColorConstant.y < 0 ||
@@ -248,7 +281,7 @@ namespace remix {
              a.remap[0] == b.remap[0] && a.remap[1] == b.remap[1] && a.scrollLayers == b.scrollLayers &&
              std::equal(a.scroll, a.scroll + 6, b.scroll) && a.refractiveIndex == b.refractiveIndex &&
              a.transmittanceDistance == b.transmittanceDistance &&
-             a.iridescence == b.iridescence &&
+             a.iridescence == b.iridescence && a.subsurface == b.subsurface &&
              a.pbr == b.pbr && std::equal(a.emission, a.emission + 3, b.emission) &&
              std::equal(a.tint, a.tint + 4, b.tint) && a.compare == b.compare && a.reference == b.reference &&
              a.drawAlpha == b.drawAlpha && a.translucent == b.translucent &&

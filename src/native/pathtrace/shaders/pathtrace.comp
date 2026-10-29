@@ -125,7 +125,7 @@ bool acceptCandidate(Surface s,uint triangle,vec2 bary) {
 }
 // color: what the surface reflects. self: the part of its colour that emits
 // instead (remixapi_MaterialInfoSelfIlluminationEXT), set with the emission.
-struct Hit { float t; vec3 p; vec3 n; vec4 color; bool blended; bool blendedDraw; bool decal; uint decalMode; bool tinted; bool cacheable; vec3 previousPosition; vec3 previousNormal; bool historyValid; vec3 emission; float identity; vec3 ng; vec3 wo; vec2 rm; bool pbr; vec3 self; vec2 thick; vec4 film; };
+struct Hit { float t; vec3 p; vec3 n; vec4 color; bool blended; bool blendedDraw; bool decal; uint decalMode; bool tinted; bool cacheable; vec3 previousPosition; vec3 previousNormal; bool historyValid; vec3 emission; float identity; vec3 ng; vec3 wo; vec2 rm; bool pbr; vec3 self; vec2 thick; vec4 film; vec4 sss; int surface; };
 // Every query rejects back faces of one-sided surfaces ((state.w&4)==0 below).
 // With hardware face culling (target.z bit 2) one-sided instances enable
 // facing culling in the TLAS and this flag culls exactly those back faces in
@@ -222,7 +222,8 @@ void queryScene(accelerationStructureEXT scene, vec3 origin, vec3 direction, ino
   if (rayQueryGetIntersectionTypeEXT(query,true)==gl_RayQueryCommittedIntersectionNoneEXT) return;
   profileRay(5);
   hit.t=rayQueryGetIntersectionTEXT(query,true);
-  Surface s=surfaces[rayQueryGetIntersectionInstanceCustomIndexEXT(query,true)+rayQueryGetIntersectionGeometryIndexEXT(query,true)];
+  hit.surface=rayQueryGetIntersectionInstanceCustomIndexEXT(query,true)+rayQueryGetIntersectionGeometryIndexEXT(query,true);
+  Surface s=surfaces[hit.surface];
   s.indices=s.traceIndices;
   uint tri=rayQueryGetIntersectionPrimitiveIndexEXT(query,true)*3;
   vec3 a=s.vertices.v[s.indices.i[tri]].position.xyz;
@@ -254,6 +255,8 @@ void queryScene(accelerationStructureEXT scene, vec3 origin, vec3 direction, ino
     hit.n=materialNormal(s,uv,materialBasis(normal,model*vec4(b-a,0),model*vec4(c-a,0),ub-ua,uc-ua),hit.wo);
     // A thin film, its structural colour in the albedo (iridescence.glsl).
     hit.film=surfaceFilm(s,uv,a+bary.x*(b-a)+bary.y*(c-a),hit.color.a);
+    // Subsurface scattering: each channel's mean free path in scene units.
+    hit.sss=subsurfaced(s)?vec4(s.subsurface.xyz*frame.firefly.w,s.subsurface.w):vec4(0);
     if(hit.film.x>0&&(s.state.w&32)==0)hit.color.rgb*=filmTint(hit.film,mix(vec3(.04),hit.color.rgb,hit.rm.y),dot(hit.n,hit.wo));
   }
   hit.decal=enableDecals&&decalSurface(s);hit.decalMode=(s.state.w>>7)&3u;hit.blendedDraw=(s.state.w&2)!=0;hit.blended=blendedAtAlpha(s,hit.color.a);hit.cacheable=(s.state.w&16)!=0;
@@ -276,7 +279,7 @@ void queryScene(accelerationStructureEXT scene, vec3 origin, vec3 direction, ino
 }
 Hit closestGeometry(vec3 origin,vec3 direction,float maximum,bool motion,float minimum) {
   Hit hit; hit.t=maximum; hit.p=vec3(0);hit.n=vec3(0);hit.color=vec4(0);hit.blended=false;hit.blendedDraw=false;hit.decal=false;hit.decalMode=0u;hit.cacheable=false;hit.previousPosition=vec3(0);hit.previousNormal=vec3(0);hit.historyValid=false;
-  hit.emission=vec3(0);hit.self=vec3(0);hit.tinted=false;hit.thick=vec2(0);hit.film=vec4(0);
+  hit.emission=vec3(0);hit.self=vec3(0);hit.tinted=false;hit.thick=vec2(0);hit.film=vec4(0);hit.sss=vec4(0);hit.surface=-1;
   hit.identity=0;hit.ng=vec3(0);hit.wo=-direction;hit.rm=vec2(1,0);hit.pbr=false;
   if ((frame.target.z&1)!=0) queryScene(staticScene,origin,direction,hit,motion,minimum);
   if ((frame.target.z&2)!=0) queryScene(dynamicScene,origin,direction,hit,motion,minimum);
@@ -399,10 +402,10 @@ Hit secondaryHit(vec3 origin,vec3 direction) {
 // A painted pixel's ray is traced again (rasterPrimary, primarySurface).
 Hit rasterSurface(ivec2 pixel, vec3 origin) {
   vec4 position=imageLoad(primaryPosition,pixel), normal=imageLoad(primaryNormal,pixel);
-  // The kind plus 8: a view model, plus 16: a thin film, whose material
-  // the G-buffer does not hold: film.x -1 has its ray traced again
-  // (gbuffer.frag).
-  Hit hit;hit.film=vec4(0);
+  // The kind plus 8: a view model, plus 16: a thin film or subsurface
+  // scattering, whose material the G-buffer does not hold: film.x -1 has its
+  // ray traced again (gbuffer.frag).
+  Hit hit;hit.film=vec4(0);hit.sss=vec4(0);hit.surface=-1;
   if(normal.w>=16){normal.w-=16;hit.film.x=-1;}
   if(normal.w>=8){normal.w-=8;viewModelPath=true;}
   vec4 previous=imageLoad(primaryPrevious,pixel);
@@ -433,8 +436,14 @@ Hit rasterPrimary(ivec2 pixel, vec3 origin) {
   // Re-query painted pixels to obtain the ray traversal's exact intersection
   // distance. Raster-interpolated positions can round to the other side of a
   // very close receiver; the common resolver advances tMin without an offset.
-  // A filmed pixel's ray is traced for its film.
-  if(hit.decal||hit.film.x<0)return cameraHit(origin,normalize(hit.p-origin));
+  // A filmed or subsurface pixel's ray is traced for its material record. A
+  // re-query that finds nothing (the traced scene not holding what the raster
+  // drew) keeps the raster surface, without that record.
+  if(hit.decal||hit.film.x<0) {
+    Hit traced=cameraHit(origin,normalize(hit.p-origin));
+    if(hit.decal||traced.t<1e30)return traced;
+    hit.film.x=0;
+  }
   return hit;
 }
 // Geometry diagnostics show the first visible sheet. Lighting and temporal
@@ -485,12 +494,12 @@ vec3 bodyDirection(Hit hit,vec3 direction,float ior) {
 // front: the first surface's geometry diagnostic (with `diagnose`).
 Hit primarySurface(ivec2 pixel,inout vec3 origin,inout vec3 direction,bool sheets,out uint layers,bool diagnose,out vec3 front) {
   front=vec3(0);layers=0;
-  bool raster=frame.target.w!=0,bent=false,body=false,trace=!raster,first=true;
+  bool raster=frame.target.w!=0,bent=false,body=false,trace=!raster,first=true,record=false;
   vec3 traceOrigin=origin,traceDirection=direction;
   Hit hit;
   if(raster) {
     hit=rasterSurface(pixel,origin);
-    if(hit.decal||hit.film.x<0){trace=true;traceDirection=normalize(hit.p-origin);}
+    if(hit.decal||hit.film.x<0){trace=true;record=!hit.decal;traceDirection=normalize(hit.p-origin);}
   }
   // At most: the primary (and its re-query), then per layer a body query and the layer's ray.
   for(uint step=0;step<66u;++step) {
@@ -503,7 +512,10 @@ Hit primarySurface(ivec2 pixel,inout vec3 origin,inout vec3 direction,bool sheet
         origin=offsetRay(hit.p,-hit.ng);traceOrigin=origin;traceDirection=direction;trace=true;++layers;
         continue;
       }
-      hit=traced;
+      // A material re-query that finds nothing keeps the raster surface (rasterPrimary).
+      if(record&&traced.t==1e30)hit.film.x=0;
+      else hit=traced;
+      record=false;
     }
     if(first){first=false;if(diagnose&&frame.splitLocal.w!=0)front=debugGeometry(hit,pixel);}
     if(!sheets||layers>=32u||!hit.blended)break;
@@ -627,6 +639,7 @@ vec3 sunVisibility(Hit receiver,ivec2 pixel,out float blockerDistance) {
 #endif
 #include "pbr_reuse.glsl"
 bool skipSheetLocal=false; // set around direct() for PBR sheets (see sheetLocalLights)
+#include "subsurface.glsl"
 vec3 direct(Hit hit,bool primary,out vec3 specular,out float distance) {
   vec3 toLight=-frame.lightDirection.xyz;
   float cosine=max(0,dot(hit.n,toLight));
@@ -1219,15 +1232,25 @@ void clearIndirect(ivec2 pixel,float specularHit) {
 IndirectResult traceIndirect(Hit primary,ivec2 pixel,vec3 diffuseFactor,vec3 specularFactor) {
   IndirectResult result=IndirectResult(vec3(0),rng,0);
   if(primary.t<1e30&&!primary.blended) {
+    // Subsurface scattering (subsurface.glsl): the sky and the light bounced
+    // from the scene enter where the profile carries them from too, as the
+    // primary's direct light does. One probe for the pixel's samples.
+    Hit lit=primary;vec3 sssTint=vec3(1);bool sssThrough=false,sssMoved=false;
+    if(primary.sss.w>0&&random()<primary.sss.w)sssMoved=subsurfaceMove(lit,sssTint,sssThrough);
     for(uint i=0;i<frame.config.x;++i) {
       vec3 firstDir,sampleSpecular;float pathDistance;
 #ifdef TEMPORAL
       float probability;
       int lobe=primaryLobe(primary,pixel,frame.config.z,i,probability);
-      vec3 sampleLight=continuation(primary,lobe,probability,firstDir,pathDistance,sampleSpecular);
+      vec3 sampleLight=continuation(lit,lobe,probability,firstDir,pathDistance,sampleSpecular);
 #else
-      vec3 sampleLight=continuation(primary,firstDir,pathDistance,sampleSpecular);
+      vec3 sampleLight=continuation(lit,firstDir,pathDistance,sampleSpecular);
 #endif
+      if(sssMoved) {
+        vec3 diffuse=sssTint*max(sampleLight-sampleSpecular,vec3(0));
+        if(sssThrough)sampleSpecular=vec3(0);
+        sampleLight=sampleSpecular+diffuse;
+      }
       result.radiance+=sampleLight/float(frame.config.x);
 #ifdef TEMPORAL
       // The selection is a function of the pixel and frame: not carried
@@ -1574,7 +1597,7 @@ void main() {
   bool front=abs(signedCount)==1||(abs(signedCount)>1&&multiSheetFallback);
   vec3 origin,direction;
   ray((vec2(pixel)+.5+frame.jitter.xy)/vec2(frame.target.xy)*2-1,frame.inverseCameraRelative,frame.eye.xyz,origin,direction);
-  Hit hit;hit.t=1e30;hit.p=vec3(0);hit.n=vec3(0);hit.blended=false;hit.pbr=false;hit.thick=vec2(0);hit.film=vec4(0);
+  Hit hit;hit.t=1e30;hit.p=vec3(0);hit.n=vec3(0);hit.blended=false;hit.pbr=false;hit.thick=vec2(0);hit.film=vec4(0);hit.sss=vec4(0);hit.surface=-1;
   uint passed;
   if(front)hit=primarySurface(pixel,origin,direction,false,passed);
   hit.wo=-direction;
@@ -1656,18 +1679,31 @@ void main() {
     ray((vec2(pixel)+.5+frame.jitter.xy)/vec2(frame.target.xy)*2-1,frame.inverseCameraRelative,frame.eye.xyz,origin,direction);
     uint passed;Hit hit=primarySurface(pixel,origin,direction,true,passed);
     uint state=hash(uint(pixel.x)+uint(pixel.y)*frame.target.x+hash(frame.config.z));
+    // Subsurface scattering: the local lights are gathered where the profile
+    // carries them from, as direct() gathers the sun and the sky; reuse and
+    // confidences stay with the visible point.
+    Hit lit=hit;vec3 sssTint=vec3(1);bool sssThrough=false,sssMoved=false;
+    if(hit.sss.w>0) {
+      rng=hash(state^0x73737321u);
+      if(random()<hit.sss.w)sssMoved=subsurfaceMove(lit,sssTint,sssThrough);
+    }
     // The runtime check also keeps the unspecialized fallback correct if the
     // dedicated combined pipeline cannot be created.
 #ifdef RESTIR_SPATIAL
-    torch=restirShade(hit,pixel,hash(state^0x53504154u),imageLoad(guideDepth,pixel).x,torchDistance,torchSpecular);
+    torch=restirShade(lit,pixel,hash(state^0x53504154u),imageLoad(guideDepth,pixel).x,torchDistance,torchSpecular);
 #else
     localProbing=frame.localProbeWrite!=0;
     if(!enableSplitLighting||frame.splitLocal.x==3)
-      torch=localLighting(hit,state,frame.localConfig.y,torchDistance,true,torchSpecular);
+      torch=localLighting(lit,state,frame.localConfig.y,torchDistance,true,torchSpecular);
     else
-      splitLocalLighting(hit,state,frame.localConfig.y,torch,emissive,torchDistance,emissiveDistance,torchSpecular,emissiveSpecular);
+      splitLocalLighting(lit,state,frame.localConfig.y,torch,emissive,torchDistance,emissiveDistance,torchSpecular,emissiveSpecular);
     localProbing=false;
 #endif
+    if(sssMoved) {
+      vec3 torchDiffuse=sssTint*max(torch-torchSpecular,vec3(0)),emissiveDiffuse=sssTint*max(emissive-emissiveSpecular,vec3(0));
+      if(sssThrough){torchSpecular=emissiveSpecular=vec3(0);}
+      torch=torchSpecular+torchDiffuse;emissive=emissiveSpecular+emissiveDiffuse;
+    }
     storeReuse(pixel,hit,materialFactor(hit)*(torch+emissive));
     historyConfidence=localHistoryConfidence(hit,torch);
 #ifdef RESTIR_SPATIAL
@@ -1819,21 +1855,37 @@ void main() {
 #endif
   vec3 sunTransmittance=vec3(1),unshadowedDirect=vec3(0);float blockerDistance=65504;
   if(primary.t<1e30&&!primary.blended&&sparseLaunch!=2u) {
+    // Subsurface scattering (subsurface.glsl): for the share its weight gives,
+    // the sun and the local lights are gathered where the diffusion profile
+    // carries them from, their diffuse part tinted by the profile and their
+    // reflection kept, unless the light came through to a thin object's far
+    // side (which also takes its own sun shadow).
+    Hit lit=primary;vec3 sssTint=vec3(1);bool sssThrough=false,sssMoved=false;
+    if(primary.sss.w>0&&random()<primary.sss.w)sssMoved=subsurfaceMove(lit,sssTint,sssThrough);
     sunTransmittance=sunVisibility(primary,pixel,blockerDistance);
-    unshadowedDirect=materialBrdf(primary,-frame.lightDirection.xyz)*max(0,dot(primary.n,-frame.lightDirection.xyz))*frame.lightRadiance.rgb;
+    if(sssThrough)sunTransmittance=shadow(offsetRay(lit.p,lit.ng),-frame.lightDirection.xyz);
+    {
+      vec3 diffuse,specular;materialLobes(lit,-frame.lightDirection.xyz,diffuse,specular);
+      unshadowedDirect=(sssTint*diffuse+(sssThrough?vec3(0):specular))*max(0,dot(lit.n,-frame.lightDirection.xyz))*frame.lightRadiance.rgb;
+    }
     primaryDirect=unshadowedDirect*sunTransmittance;
 #ifdef SPLIT_LOCAL_PASS
     // Split direct lighting runs separately to keep its reservoirs out of the
     // opaque/indirect kernel's register footprint.
     if(!(enableSplitLighting&&frame.splitLocal.x!=0))
-      local=localLighting(primary,rng,frame.localConfig.y,localDistance,true,localSpecular);
+      local=localLighting(lit,rng,frame.localConfig.y,localDistance,true,localSpecular);
 #else
     if(enableSplitLighting&&frame.splitLocal.x!=0&&frame.splitLocal.x!=3)
-      splitLocalLighting(primary,rng,frame.localConfig.y,local,emissive,localDistance,emissiveDistance,localSpecular,emissiveSpecular);
+      splitLocalLighting(lit,rng,frame.localConfig.y,local,emissive,localDistance,emissiveDistance,localSpecular,emissiveSpecular);
     else
-      local=localLighting(primary,rng,frame.localConfig.y,localDistance,true,localSpecular);
+      local=localLighting(lit,rng,frame.localConfig.y,localDistance,true,localSpecular);
     local+=emissive;localSpecular+=emissiveSpecular;
 #endif
+    if(sssMoved) {
+      vec3 diffuse=sssTint*max(local-localSpecular,vec3(0));
+      if(sssThrough)localSpecular=vec3(0);
+      local=localSpecular+diffuse;
+    }
     if(separateIndirect) {
       IndirectTransport result=IndirectResults(frame.indirectResults).pixels[uint(pixel.x)+uint(pixel.y)*frame.target.x];
       vec2 rg=unpackHalf2x16(result.rg),bd=unpackHalf2x16(result.bd);
@@ -2002,7 +2054,7 @@ void main() {
 #ifndef SINGLE_SHEET_PASS
   if(sheetCount<=1)return;
 #endif
-  Hit primary;primary.p=vec3(0);primary.n=vec3(0);primary.blended=false;primary.pbr=false;primary.thick=vec2(0);primary.film=vec4(0);
+  Hit primary;primary.p=vec3(0);primary.n=vec3(0);primary.blended=false;primary.pbr=false;primary.thick=vec2(0);primary.film=vec4(0);primary.sss=vec4(0);primary.surface=-1;
   if(sheetCount!=0
 #ifdef SINGLE_SHEET_PASS
       &&(sheetCount==1||multiSheetFallback)
