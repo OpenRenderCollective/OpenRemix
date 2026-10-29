@@ -78,7 +78,7 @@ namespace remix::ui {
                             ImGuiChildFlags_None, ImGuiWindowFlags_AlwaysVerticalScrollbar);
           ImGui::PushItemWidth(std::max(80.f * scale, ImGui::GetContentRegionAvail().x * .46f));
           if (i == kMods)
-            drawMods(profileUi);
+            drawMods(profileUi, draft);
           else if (i == kProfiles)
             drawProfiles(profiles, profileUi);
           else if (i == kPlugin)
@@ -93,7 +93,7 @@ namespace remix::ui {
       ImGui::EndTabBar();
       profileUi.restoreTab = false;
     }
-    if (panel.tab < kMods && draft != profiles.current())
+    if (panel.tab <= kMods && draft != profiles.current())
       profiles.edit(draft);
     ImGui::BeginChild("Profile footer", ImVec2(0, std::max(1.f, ImGui::GetContentRegionAvail().y)),
                       ImGuiChildFlags_None,

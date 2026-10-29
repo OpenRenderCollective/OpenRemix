@@ -9,7 +9,7 @@
 namespace remix {
 // Frame generation ("rtx.native.frameGeneration"): generated frames between
 // each pair of rendered frames, by DLSS Frame Generation (one to three) or by
-// FSR 3.1 frame generation (one; "rtx.native.frameGenerationBackend").
+// FSR frame generation (one; "rtx.native.frameGenerationBackend").
 //
 // The frame is rendered into its swapchain image as without it. Afterwards the
 // finished image (scene, HUD and developer UI) is copied into an image the
@@ -42,6 +42,8 @@ public:
   FrameGeneration(const FrameGeneration &) = delete;
   FrameGeneration &operator=(const FrameGeneration &) = delete;
   Backend backend() const { return m_backendKind; }
+  // For status lines: "DLSS", or the FSR provider (e.g. "FSR 4.0.2").
+  std::string name() const { return m_fsr ? m_fsr->provider() : "DLSS"; }
   bool matches(Backend backend, VkExtent2D display, VkFormat swapchainFormat, VkExtent2D render,
                bool depthInverted) const;
   // Submits the feature's creation commands once and reports whether they

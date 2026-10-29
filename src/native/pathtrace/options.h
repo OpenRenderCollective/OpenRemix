@@ -258,6 +258,8 @@ namespace remix {
     // surface: shallow water and thin glass have none, as light has not yet
     // been focused. 0: at once.
     float causticsDepth = .5f;
+    // Thin-film iridescence of materials that have it (remixapi_MaterialIridescenceEXT).
+    bool iridescence = true;
     bool translucencyDenoiser = true, translucencyReuse = true;
     bool pbrLocalReuse = true; // Experimental previous-frame secondary local lighting.
     bool sky = true;

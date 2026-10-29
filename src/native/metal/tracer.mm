@@ -823,6 +823,8 @@ namespace remix::metal {
                           ~uint32_t(remix::trace::reflectionOnlyInstanceMask);
     if (prepared.viewModel)
       frame.pathConfig[3] |= 0x100u;
+    if (!options.iridescence)
+      frame.pathConfig[3] |= 0x200u; // thin films off (scene.glsl filmed)
     std::copy_n(resources.cameraMedium().data(), 4, frame.cameraMedium);
     frame.upAxis = float(std::min(options.volumetricUpAxis, 2u));
     // pathtrace/rendering.cpp: light through translucent surfaces with a normal

@@ -20,12 +20,15 @@ for manifest, base in [(root / 'tests/abi/headers.sha256', root),
         assert hashlib.sha256((base / filename).read_bytes()).hexdigest() == checksum, filename
 # A submodule has no checksum manifest: its gitlink and checkout must match the pin.
 numos = json.loads((root / 'third_party/numos/upstream.json').read_text())
-if (root / '.git').exists():
-    gitlink = subprocess.check_output(['git', '-C', root, 'ls-files', '-s', numos['path']], text=True).split()
-    assert gitlink[:2] == ['160000', numos['revision']], 'NUMOS gitlink differs from upstream.json'
-    if (root / numos['path'] / '.git').exists():
-        head = subprocess.check_output(['git', '-C', root / numos['path'], 'rev-parse', 'HEAD'], text=True).strip()
-        assert head == numos['revision'], 'NUMOS checkout differs from upstream.json; run git submodule update'
+fidelityfx = json.loads((root / 'third_party/fidelityfx/upstream.json').read_text())
+for name, pin in [('NUMOS', numos), ('FidelityFX SDK', fidelityfx)]:
+    if not (root / '.git').exists():
+        break
+    gitlink = subprocess.check_output(['git', '-C', root, 'ls-files', '-s', pin['path']], text=True).split()
+    assert gitlink[:2] == ['160000', pin['revision']], name + ' gitlink differs from upstream.json'
+    if (root / pin['path'] / '.git').exists():
+        head = subprocess.check_output(['git', '-C', root / pin['path'], 'rev-parse', 'HEAD'], text=True).strip()
+        assert head == pin['revision'], name + ' checkout differs from upstream.json; run git submodule update'
 # Apache-2.0 4(d): ThirdPartyLicenses.txt reproduces the NUMOS NOTICE.
 notice = root / numos['path'] / 'NOTICE'
 if notice.exists():

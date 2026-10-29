@@ -14,9 +14,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <string>
 #include <vector>
+#if !defined(_WIN32)
 #include <dlfcn.h>
+#endif
 
 namespace {
   using Clock = std::chrono::steady_clock;
@@ -184,14 +187,18 @@ int main(int argc, char **argv) {
 
   remixapi_Interface api = {};
   remixapi_HMODULE library = nullptr;
-  auto status = remixapi_lib_loadRemixDllAndInitialize(argv[1], &api, &library);
+  // The SDK takes the library path in the platform's encoding (wide on Windows).
+  const std::filesystem::path libraryPath = argv[1];
+  auto status = remixapi_lib_loadRemixDllAndInitialize(libraryPath.c_str(), &api, &library);
   if (status != REMIXAPI_ERROR_CODE_SUCCESS) {
     std::fprintf(stderr, "Remix load failed: 0x%x\n", unsigned(status));
     return 1;
   }
   remixapi_StartupInfo startup = {};
   startup.sType = REMIXAPI_STRUCT_TYPE_STARTUP_INFO;
+#if !defined(_WIN32) // On Windows the runtime creates its own window (hwnd stays null).
   startup.windowTitle = "Remix Bench";
+#endif
   status = api.Startup(&startup);
   auto check = [&](remixapi_ErrorCode result, const char *what) {
     if (result != REMIXAPI_ERROR_CODE_SUCCESS && status == REMIXAPI_ERROR_CODE_SUCCESS) {
@@ -204,12 +211,17 @@ int main(int argc, char **argv) {
   check(api.SetConfigVariable("rtx.native.backend", argv[3]), "backend");
   check(api.SetConfigVariable("rtx.native.asyncPresent", options.async ? "1" : "0"), "async");
   const bool tracing = std::strcmp(argv[3], "pathtrace") == 0;
+#if defined(_WIN32)
+  auto symbol = [&](const char *name) { return GetProcAddress(library, name); };
+#else
+  auto symbol = [&](const char *name) { return dlsym(library, name); };
+#endif
   using Tracing = remixapi_ErrorCode(REMIXAPI_CALL *)(remixapi_TracingStatisticsEXT *);
   using Performance = remixapi_ErrorCode(REMIXAPI_CALL *)(remixapi_FramePerformanceEXT *);
-  const auto tracingStatistics = reinterpret_cast<Tracing>(dlsym(library, "remixapi_GetTracingStatisticsEXT"));
-  const auto framePerformance = reinterpret_cast<Performance>(dlsym(library, "remixapi_GetFramePerformanceEXT"));
+  const auto tracingStatistics = reinterpret_cast<Tracing>(symbol("remixapi_GetTracingStatisticsEXT"));
+  const auto framePerformance = reinterpret_cast<Performance>(symbol("remixapi_GetFramePerformanceEXT"));
   using PassTimings = remixapi_ErrorCode(REMIXAPI_CALL *)(remixapi_GpuPassTimingsEXT *);
-  const auto passTimings = reinterpret_cast<PassTimings>(dlsym(library, "remixapi_GetGpuPassTimingsEXT"));
+  const auto passTimings = reinterpret_cast<PassTimings>(symbol("remixapi_GetGpuPassTimingsEXT"));
   if (passTimings)
     check(api.SetConfigVariable("rtx.native.gpuPassTimers", "1"), "gpuPassTimers");
   if (!tracingStatistics || !framePerformance)
@@ -246,8 +258,10 @@ int main(int argc, char **argv) {
   const Mesh shapes[2] = {cube(), cards()};
   for (unsigned t = 0; status == REMIXAPI_ERROR_CODE_SUCCESS && t <= options.textures; ++t) {
     const bool alpha = t == options.textures;
-    char path[32];
-    std::snprintf(path, sizeof(path), "0x%llx", static_cast<unsigned long long>(0x1000 + t));
+    char hash[32];
+    std::snprintf(hash, sizeof(hash), "0x%llx", static_cast<unsigned long long>(0x1000 + t));
+    // A texture's hash as its path, in the platform's encoding (wide on Windows).
+    const std::filesystem::path path = hash;
     remixapi_MaterialInfoOpaqueEXT opaque = {};
     opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
     opaque.albedoConstant = {1, 1, 1};
@@ -259,7 +273,7 @@ int main(int argc, char **argv) {
     material.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
     material.pNext = &opaque;
     material.hash = 0x2000 + t;
-    material.albedoTexture = path;
+    material.albedoTexture = path.c_str();
     material.wrapModeU = material.wrapModeV = 1;
     materials.emplace_back();
     if (!check(api.CreateMaterial(&material, &materials.back()), "CreateMaterial"))

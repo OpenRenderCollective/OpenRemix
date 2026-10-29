@@ -80,6 +80,9 @@ namespace remix {
     // CompressedPixels::upload instead of releasing it, so USD captures
     // (usd/capture.cpp) can write the blocks. Applies to later uploads.
     inline std::atomic<bool> retainCompressedUploads{false};
+    // The world's up axis (rtx.zUp: 2 Z, else 1 Y) where the host does not
+    // say: USD mods are converted to it and captures declare it.
+    inline std::atomic<uint32_t> sceneUpAxis{1};
     // Adds the steady-clock ticks since construction to a counter.
     struct CounterTicks {
       std::atomic<uint64_t> &out;
@@ -141,6 +144,15 @@ namespace remix {
       // A translucent body (remixapi_MaterialInfoTranslucentEXT without a thin
       // wall): its refractive index and measurement distance (0: a thin sheet).
       float refractiveIndex = 1.5f, transmittanceDistance = 0;
+      // A thin-film coating (remixapi_MaterialIridescenceEXT, or the opaque
+      // info's thinFilmThickness): strength 0 means none. Thicknesses in nm.
+      struct Iridescence {
+        float strength = 0, ior = 1.5f, thickness = 200, min = 100, max = 800;
+        float flowAmplitude = 0, flowScale = 1, flowSpeed = .1f, structural = 0;
+        bool fromAlpha = false; // albedo alpha times 1500 nm
+        std::shared_ptr<Texture> thicknessTexture;
+        bool operator==(const Iridescence &) const = default;
+      } iridescence;
       float emission[3] = {};
       bool suppressEmissionLight = false;
       // remixapi_MaterialInfoSelfIlluminationEXT: 0 off, else the mask + 1

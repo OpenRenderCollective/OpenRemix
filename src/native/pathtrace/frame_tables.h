@@ -51,8 +51,10 @@ namespace remix::trace::detail {
     float pbr[4] = {};            // perceptual roughness, metalness, enabled, reserved
     uint32_t pbrTextures[4] = {}; // roughness, metalness, normal; index + 1
     uint32_t material[4] = {};    // scene::MaterialDecode: flags; the rest unused
+    float film[4] = {};           // iridescence (filmFields): strength (0: none), film index, thickness nm, structural
+    uint32_t filmMaps[4] = {};    // half2(min, max nm), half2(flow amplitude, scale), flow speed, map + 1 | alpha << 31
   };
-  static_assert(sizeof(TraceSurface) == 256);
+  static_assert(sizeof(TraceSurface) == 288);
   // IEEE binary16 bits of v, rounded to nearest (subnormals kept).
   inline uint32_t halfBits(float v) {
     uint32_t bits;
@@ -110,6 +112,21 @@ namespace remix::trace::detail {
                                             : (material.normalEncoding == 3 ? 4 : 0) |
                                                   uint32_t(material.normalTexture && material.normalTexture->pixels.twoChannel);
   }
+  // A material's thin film (scene::Material::iridescence), but for its
+  // thickness map's descriptor (filmMaps[3] bits 0-30, set by assign).
+  inline void filmFields(const scene::Material &material, float film[4], uint32_t maps[4]) {
+    const auto &f = material.iridescence;
+    if (f.strength <= 0)
+      return;
+    film[0] = f.strength;
+    film[1] = f.ior;
+    film[2] = f.thickness;
+    film[3] = f.structural;
+    maps[0] = halfBits(f.min) | halfBits(f.max) << 16;
+    maps[1] = halfBits(f.flowAmplitude) | halfBits(f.flowScale) << 16;
+    std::memcpy(&maps[2], &f.flowSpeed, 4);
+    maps[3] = f.fromAlpha ? 1u << 31 : 0;
+  }
   // A display-encoded value (gamma 2.2) to linear.
   inline float linear(float c) { return std::pow(c, 2.2f); }
   // Decal paint mode (TraceSurface state bits 7-8): 0 alpha-over, 1 multiply
@@ -140,6 +157,8 @@ namespace remix::trace {
     uint32_t albedo = 0, emissive = 0;
     float pbr[4] = {}, emission[4] = {};
     uint32_t decode[4] = {}, maps[4] = {};
+    float film[4] = {};
+    uint32_t filmMaps[4] = {};
   };
   // One entry of the frame's texture descriptor array, in first-use order:
   // Albedo (sampledMaterial), Map (sampledTexture of *texture) or Emission.
@@ -583,6 +602,7 @@ namespace remix::trace {
     static MaterialSlots values(const scene::Material &material) {
       MaterialSlots entry;
       detail::materialFields(material, entry.pbr, entry.decode, entry.maps[3]);
+      detail::filmFields(material, entry.film, entry.filmMaps);
       const auto decode = scene::materialDecode(material);
       std::copy_n(material.emission, 3, entry.emission);
       entry.emission[3] = decode.selfIlluminationScale;
@@ -612,17 +632,22 @@ namespace remix::trace {
       const uint8_t sampler[] = {material.filter, material.wrapU, material.wrapV};
       append(sampler, sizeof(sampler));
       detail::materialFields(material, value.pbr, value.material, value.pbrTextures[3]);
+      detail::filmFields(material, value.film, value.filmMaps);
       const auto decode = scene::materialDecode(material);
+      // The roughness, metallic and normal maps, then the film's thickness map.
       const std::shared_ptr<scene::Texture> *textures[] = {&material.roughnessTexture, &material.metallicTexture,
-                                                           &material.normalTexture};
-      for (unsigned i = 0; i < 3; ++i) {
+                                                           &material.normalTexture,
+                                                           &material.iridescence.thicknessTexture};
+      uint32_t filmMap = 0;
+      uint32_t *slotsOut[] = {&value.pbrTextures[0], &value.pbrTextures[1], &value.pbrTextures[2], &filmMap};
+      for (unsigned i = 0; i < 4; ++i) {
         const auto &map = *textures[i];
-        if (!map)
+        if (!map || (i == 3 && value.film[0] <= 0))
           continue;
         const MapKey key{map.get(), material.filter, material.wrapU, material.wrapV};
         if (prefixMaps)
           if (const auto found = prefixMaps->find(key); found != prefixMaps->end()) {
-            value.pbrTextures[i] = found->second + 1;
+            *slotsOut[i] = found->second + 1;
             continue;
           }
         auto [index, added] = maps.emplace(key, uint32_t(count()));
@@ -633,8 +658,9 @@ namespace remix::trace {
           const auto mapFingerprint = map->fingerprint();
           append(&mapFingerprint, sizeof(mapFingerprint));
         }
-        value.pbrTextures[i] = index->second + 1;
+        *slotsOut[i] = index->second + 1;
       }
+      value.filmMaps[3] |= filmMap;
       std::copy_n(material.emission, 3, value.emission);
       value.emission[3] = decode.selfIlluminationScale;
       if (material.emissionTexture &&
@@ -653,6 +679,8 @@ namespace remix::trace {
       std::copy_n(value.material, 4, entry.decode);
       std::copy_n(value.pbrTextures, 4, entry.maps);
       std::copy_n(value.emission, 4, entry.emission);
+      std::copy_n(value.film, 4, entry.film);
+      std::copy_n(value.filmMaps, 4, entry.filmMaps);
       return entry;
     }
 
@@ -754,6 +782,8 @@ namespace remix::trace {
         std::copy_n(entry.decode, 4, value.material);
         std::copy_n(entry.maps, 4, value.pbrTextures);
         std::copy_n(entry.emission, 4, value.emission);
+        std::copy_n(entry.film, 4, value.film);
+        std::copy_n(entry.filmMaps, 4, value.filmMaps);
         value.vertices = view.vertices.at(surface.surfaceIndex)->address;
         const uint64_t debugKey[] = {surface.instanceId, surface.instanceIndex, surface.surfaceIndex};
         value.debugIdentity = scene::hashBytes(debugKey, sizeof(debugKey));
@@ -1084,6 +1114,8 @@ namespace remix::trace {
             std::copy_n(entry.decode, 4, value.material);
             std::copy_n(entry.maps, 4, value.pbrTextures);
             std::copy_n(entry.emission, 4, value.emission);
+            std::copy_n(entry.film, 4, value.film);
+            std::copy_n(entry.filmMaps, 4, value.filmMaps);
             out[s] = value;
           }
           for (size_t d = 0; d < unit.primary.size(); ++d) {

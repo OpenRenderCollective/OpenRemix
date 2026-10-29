@@ -283,6 +283,7 @@ namespace remix::config {
         TRACE(causticsStrength, 0, 1);
         TRACE(causticsContrast, 0, 7.96875);
         TRACE(causticsDepth, 0, 100);
+        TRACE(iridescence, 0, 1);
         TRACE(translucencyDenoiser, 0, 1);
         TRACE(translucencyReuse, 0, 1);
         TRACE(pbrLocalReuse, 0, 1);
@@ -360,6 +361,7 @@ namespace remix::config {
         result.push_back(scalar("rtx.native.textures.keepCompressed", FIELD(compressedTextures), 0, 1));
         result.push_back(
             scalar("rtx.native.capture.retainTextureData", FIELD(captureRetainTextureData), 0, 1));
+        result.push_back(scalar("rtx.zUp", FIELD(zUp), 0, 1));
         result.push_back(scalar("rtx.native.vramStatistics", FIELD(vramStatistics), 0, 1));
         result.push_back(scalar("rtx.native.meshes.refreshInPlace", FIELD(refreshGeometry), 0, 1));
         result.push_back(scalar("rtx.native.hostPasses", FIELD(hostPasses), 0, 1));

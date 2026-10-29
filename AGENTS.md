@@ -16,7 +16,11 @@ Keep `public/include/remix` layouts, calling conventions and exports compatible.
 Keep vendor sources/pins in `third_party` and the `include/vulkan` submodule unchanged unless
 updating that dependency explicitly. NUMOS (sky) is the git submodule `third_party/numos/numos-sky`,
 pinned in `third_party/numos/upstream.json`; check it out without `--recursive`
-(`git submodule update --init third_party/numos/numos-sky`). `-Dsky=auto` builds without it. Use two-space indentation and attached braces;
+(`git submodule update --init third_party/numos/numos-sky`). `-Dsky=auto` builds without it.
+FSR on Windows loads AMD's signed ffx-api DLLs from the FidelityFX SDK 2.4.0 submodule
+`third_party/fidelityfx/FidelityFX-SDK`, pinned in `third_party/fidelityfx/upstream.json` and
+required by Windows builds (`git submodule update --init third_party/fidelityfx/FidelityFX-SDK`);
+Linux and macOS link FSR 3.1.4 from `third_party/fsr31` (`upscale/fsr.h`). Use two-space indentation and attached braces;
 `.clang-format` covers maintained first-party C/C++ only.
 
 Build: `CC=clang CXX=clang++ meson setup _work/build/native && meson compile -C _work/build/native`.

@@ -331,10 +331,13 @@ namespace remix::usd {
             paths.push_back(path);
         };
         for (const auto &material : result.scene["materials"])
-          if (used.contains(material.value("id", std::string())))
+          if (used.contains(material.value("id", std::string()))) {
             for (const char *key : {"albedo_texture", "normal_texture", "roughness_texture", "metallic_texture",
                                     "emissive_texture"})
               want(material.value(key, std::string()));
+            if (const auto film = material.find("iridescence"); film != material.end())
+              want(film->value("texture", std::string()));
+          }
         for (const auto &light : result.scene["lights"])
           for (const char *key : {"texture", "cookie"})
             want(light.value(key, std::string()));

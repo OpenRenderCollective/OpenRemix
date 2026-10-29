@@ -28,6 +28,7 @@ layout(local_size_x=16, local_size_y=16) in;
 layout(local_size_x=8, local_size_y=8) in;
 #endif
 #include "scene.glsl"
+#include "iridescence.glsl"
 #include "debug.glsl"
 #if defined(SHARC_QUERY) || defined(SHARC_UPDATE_PASS)
 #include "sharc.glsl"
@@ -124,7 +125,7 @@ bool acceptCandidate(Surface s,uint triangle,vec2 bary) {
 }
 // color: what the surface reflects. self: the part of its colour that emits
 // instead (remixapi_MaterialInfoSelfIlluminationEXT), set with the emission.
-struct Hit { float t; vec3 p; vec3 n; vec4 color; bool blended; bool blendedDraw; bool decal; uint decalMode; bool tinted; bool cacheable; vec3 previousPosition; vec3 previousNormal; bool historyValid; vec3 emission; float identity; vec3 ng; vec3 wo; vec2 rm; bool pbr; vec3 self; vec2 thick; };
+struct Hit { float t; vec3 p; vec3 n; vec4 color; bool blended; bool blendedDraw; bool decal; uint decalMode; bool tinted; bool cacheable; vec3 previousPosition; vec3 previousNormal; bool historyValid; vec3 emission; float identity; vec3 ng; vec3 wo; vec2 rm; bool pbr; vec3 self; vec2 thick; vec4 film; };
 // Every query rejects back faces of one-sided surfaces ((state.w&4)==0 below).
 // With hardware face culling (target.z bit 2) one-sided instances enable
 // facing culling in the TLAS and this flag culls exactly those back faces in
@@ -251,6 +252,9 @@ void queryScene(accelerationStructureEXT scene, vec3 origin, vec3 direction, ino
       vertexNormal(s.vertices.v[s.indices.i[tri+1]])*w.y+vertexNormal(s.vertices.v[s.indices.i[tri+2]])*w.z;
     normal=shadingNormal(transpose(mat3(rayQueryGetIntersectionWorldToObjectEXT(query,true)))*normal,hit.ng,hit.wo);
     hit.n=materialNormal(s,uv,materialBasis(normal,model*vec4(b-a,0),model*vec4(c-a,0),ub-ua,uc-ua),hit.wo);
+    // A thin film, its structural colour in the albedo (iridescence.glsl).
+    hit.film=surfaceFilm(s,uv,a+bary.x*(b-a)+bary.y*(c-a),hit.color.a);
+    if(hit.film.x>0)hit.color.rgb*=filmTint(hit.film,mix(vec3(.04),hit.color.rgb,hit.rm.y),dot(hit.n,hit.wo));
   }
   hit.decal=enableDecals&&decalSurface(s);hit.decalMode=(s.state.w>>7)&3u;hit.blendedDraw=(s.state.w&2)!=0;hit.blended=blendedAtAlpha(s,hit.color.a);hit.cacheable=(s.state.w&16)!=0;
   hit.tinted=(s.state.w&32)!=0;
@@ -272,7 +276,7 @@ void queryScene(accelerationStructureEXT scene, vec3 origin, vec3 direction, ino
 }
 Hit closestGeometry(vec3 origin,vec3 direction,float maximum,bool motion,float minimum) {
   Hit hit; hit.t=maximum; hit.p=vec3(0);hit.n=vec3(0);hit.color=vec4(0);hit.blended=false;hit.blendedDraw=false;hit.decal=false;hit.decalMode=0u;hit.cacheable=false;hit.previousPosition=vec3(0);hit.previousNormal=vec3(0);hit.historyValid=false;
-  hit.emission=vec3(0);hit.self=vec3(0);hit.tinted=false;hit.thick=vec2(0);
+  hit.emission=vec3(0);hit.self=vec3(0);hit.tinted=false;hit.thick=vec2(0);hit.film=vec4(0);
   hit.identity=0;hit.ng=vec3(0);hit.wo=-direction;hit.rm=vec2(1,0);hit.pbr=false;
   if ((frame.target.z&1)!=0) queryScene(staticScene,origin,direction,hit,motion,minimum);
   if ((frame.target.z&2)!=0) queryScene(dynamicScene,origin,direction,hit,motion,minimum);
@@ -395,10 +399,13 @@ Hit secondaryHit(vec3 origin,vec3 direction) {
 // A painted pixel's ray is traced again (rasterPrimary, primarySurface).
 Hit rasterSurface(ivec2 pixel, vec3 origin) {
   vec4 position=imageLoad(primaryPosition,pixel), normal=imageLoad(primaryNormal,pixel);
-  // The kind plus 8: a view model (gbuffer.frag).
+  // The kind plus 8: a view model, plus 16: a thin film, whose material
+  // the G-buffer does not hold: film.x -1 has its ray traced again
+  // (gbuffer.frag).
+  Hit hit;hit.film=vec4(0);
+  if(normal.w>=16){normal.w-=16;hit.film.x=-1;}
   if(normal.w>=8){normal.w-=8;viewModelPath=true;}
   vec4 previous=imageLoad(primaryPrevious,pixel);
-  Hit hit;
   hit.t=normal.w==0?1e30:length(position.xyz-origin);
   hit.p=position.xyz;hit.n=normal.w==0?vec3(0):normalize(normal.xyz);
   hit.color=imageLoad(primaryAlbedo,pixel);hit.blended=normal.w>=2;hit.blendedDraw=hit.blended;hit.decal=normal.w==4;hit.decalMode=0u;hit.tinted=normal.w==3;hit.cacheable=false;hit.thick=vec2(0);
@@ -426,7 +433,8 @@ Hit rasterPrimary(ivec2 pixel, vec3 origin) {
   // Re-query painted pixels to obtain the ray traversal's exact intersection
   // distance. Raster-interpolated positions can round to the other side of a
   // very close receiver; the common resolver advances tMin without an offset.
-  if(hit.decal)return cameraHit(origin,normalize(hit.p-origin));
+  // A filmed pixel's ray is traced for its film.
+  if(hit.decal||hit.film.x<0)return cameraHit(origin,normalize(hit.p-origin));
   return hit;
 }
 // Geometry diagnostics show the first visible sheet. Lighting and temporal
@@ -482,7 +490,7 @@ Hit primarySurface(ivec2 pixel,inout vec3 origin,inout vec3 direction,bool sheet
   Hit hit;
   if(raster) {
     hit=rasterSurface(pixel,origin);
-    if(hit.decal){trace=true;traceDirection=normalize(hit.p-origin);}
+    if(hit.decal||hit.film.x<0){trace=true;traceDirection=normalize(hit.p-origin);}
   }
   // At most: the primary (and its re-query), then per layer a body query and the layer's ray.
   for(uint step=0;step<66u;++step) {
@@ -1413,7 +1421,7 @@ void replaceMirror(ivec2 pixel) {
       traceMask=cameraMask;
       if(hit.t<1e30&&!hit.blended&&!deltaSurface(hit)) {
         // A delta lobe reflects exactly the Fresnel term (GGX shadowing -> 1).
-        vec3 reflectance=fresnel(mix(vec3(.04),mirror.color.rgb,mirror.rm.y),max(0,dot(mirror.n,mirror.wo)));
+        vec3 reflectance=surfaceFresnel(mirror,mix(vec3(.04),mirror.color.rgb,mirror.rm.y),max(0,dot(mirror.n,mirror.wo)));
         packed=packMirror(mirror.n,mirror.p,reflectance);
         imageStore(primaryPosition,pixel,vec4(hit.p,imageLoad(primaryPosition,pixel).w));
         imageStore(primaryNormal,pixel,vec4(hit.n,1));
@@ -1555,7 +1563,7 @@ void main() {
   bool front=abs(signedCount)==1||(abs(signedCount)>1&&multiSheetFallback);
   vec3 origin,direction;
   ray((vec2(pixel)+.5+frame.jitter.xy)/vec2(frame.target.xy)*2-1,frame.inverseCameraRelative,frame.eye.xyz,origin,direction);
-  Hit hit;hit.t=1e30;hit.p=vec3(0);hit.n=vec3(0);hit.blended=false;hit.pbr=false;hit.thick=vec2(0);
+  Hit hit;hit.t=1e30;hit.p=vec3(0);hit.n=vec3(0);hit.blended=false;hit.pbr=false;hit.thick=vec2(0);hit.film=vec4(0);
   uint passed;
   if(front)hit=primarySurface(pixel,origin,direction,false,passed);
   hit.wo=-direction;
@@ -1894,7 +1902,7 @@ void main() {
   }
   if(temporal.hitDistance.w!=0) {
     vec3 diffuse=opaque?(primary.color.rgb+primary.self)*(primary.pbr?1-primary.rm.y:1):vec3(.5);
-    vec3 specular=opaque&&primary.pbr?rrSpecularAlbedo(mix(vec3(.04),primary.color.rgb,primary.rm.y),primary.rm.x,dot(primary.n,primary.wo)):vec3(0);
+    vec3 specular=opaque&&primary.pbr?rrSpecularAlbedo(filmF0(primary,mix(vec3(.04),primary.color.rgb,primary.rm.y)),primary.rm.x,dot(primary.n,primary.wo)):vec3(0);
     if(mirror.replaced){diffuse*=mirror.reflectance;specular*=mirror.reflectance;}
     imageStore(rrDiffuse,pixel,vec4(diffuse,0));
     imageStore(rrSpecular,pixel,vec4(specular,0));
@@ -1983,7 +1991,7 @@ void main() {
 #ifndef SINGLE_SHEET_PASS
   if(sheetCount<=1)return;
 #endif
-  Hit primary;primary.p=vec3(0);primary.n=vec3(0);primary.blended=false;primary.pbr=false;primary.thick=vec2(0);
+  Hit primary;primary.p=vec3(0);primary.n=vec3(0);primary.blended=false;primary.pbr=false;primary.thick=vec2(0);primary.film=vec4(0);
   if(sheetCount!=0
 #ifdef SINGLE_SHEET_PASS
       &&(sheetCount==1||multiSheetFallback)
@@ -2068,7 +2076,7 @@ void main() {
         // Deterministic material guides follow the same transparent composition
         // as radiance. Geometry guides remain consistently on the background.
         transparentDiffuse+=tint*hit.color.a*(hit.color.rgb+hit.self)*(hit.pbr?1-hit.rm.y:1);
-        if(hit.pbr)transparentSpecular+=tint*hit.color.a*rrSpecularAlbedo(mix(vec3(.04),hit.color.rgb,hit.rm.y),hit.rm.x,dot(hit.n,hit.wo));
+        if(hit.pbr)transparentSpecular+=tint*hit.color.a*rrSpecularAlbedo(filmF0(hit,mix(vec3(.04),hit.color.rgb,hit.rm.y)),hit.rm.x,dot(hit.n,hit.wo));
       }
 #endif
       if(frame.firefly.z!=0)transparentMaterial+=tint*hit.color.a*(hit.color.rgb+hit.self);
@@ -2112,6 +2120,7 @@ void main() {
   float far=1e30;
   if(frame.volumeConfig.x!=0u||frame.cameraMedium.w>0) {
     float kind=frame.target.w!=0?imageLoad(primaryNormal,pixel).w:-1;
+    if(kind>=16)kind-=16; // a thin film
     if(kind>=8)kind-=8; // a view model
     if(kind>0&&kind<2)far=length(imageLoad(primaryPosition,pixel).xyz-origin);
     else if(kind!=0&&depth<1) {

@@ -52,7 +52,8 @@ for clang-cl, `scripts/linux/openusd-25.11-clang-cl.patch`) into `_work/deps/xwi
 later runs reuse them. It collects the runtime in `--output` (default
 `_work/dist/windows/openremix`) as a game loads it: `remix.dll` and its PDB, SDL3,
 TBB and the `usd_*.dll` side by side, OpenUSD's plugins in `usd/`, DLSS in
-`dlss/310.9.1/` and Ray Reconstruction's CNN model in `dlss/310.2.1/`. Files already in the folder that the build does not make (profiles,
+`dlss/310.9.1/`, Ray Reconstruction's CNN model in `dlss/310.2.1/` and AMD's FSR libraries in
+`fidelityfx/`. Files already in the folder that the build does not make (profiles,
 caches, logs) are kept. `--tests` runs the CPU tests in an isolated Wine prefix.
 Use `--cmake /path/to/cmake` if CMake is outside PATH. Windows or Proton supplies the
 Vulkan loader, the GPU driver and the Visual C++ runtime (`vcruntime140.dll`,
@@ -63,6 +64,8 @@ Vulkan loader, the GPU driver and the Visual C++ runtime (`vcruntime140.dll`,
 Install the Vulkan SDK and Clang, and run in a Visual Studio x64 developer PowerShell.
 The compiler is clang-cl with the Visual Studio headers, import libraries and CRT.
 Install `meson`, `ninja` and `cmake` through Python or your tool installer.
+Windows builds need the FidelityFX SDK submodule for FSR:
+`git submodule update --init third_party/fidelityfx/FidelityFX-SDK`.
 
 ```powershell
 ./scripts/windows/build-remix.ps1
@@ -70,7 +73,11 @@ python scripts/common/package-remix.py --build _work/build/windows --deps _work/
 ./_work/packages/windows/bin/remix-native-sample.exe
 ```
 
-The package contains `remix.dll`, `SDL3.dll` and the sample together in `bin`.
+The package contains `remix.dll`, `SDL3.dll` and the sample together in `bin`, and AMD's FSR
+libraries (loader, upscaler, frame generation) in `bin/fidelityfx`. The loader picks FSR 4 on
+RDNA 4 GPUs and FSR 3.1 elsewhere. For testing, `REMIX_FSR_VERSION=3` asks the libraries for
+their FSR 3.1 provider, and builds configured with `-Dfsr_linked=true` also contain the linked
+FSR 3.1.4 that Linux and macOS use, which `REMIX_FSR_LINKED=1` selects.
 The Vulkan loader/driver and Visual C++ runtime are platform prerequisites. Null HWND
 startup creates a 1280×720 window. Existing HWNDs retain native ownership after Shutdown.
 GPU tests (`meson configure _work/build/windows -Dgpu_tests=true`) include owned/borrowed HWNDs

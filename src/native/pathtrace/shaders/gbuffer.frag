@@ -83,14 +83,15 @@ void main() {
   if(dot(n,direction)>0)n=-n;
   outPosition=vec4(position,1-worldDepth());
   // Zero is background, one opaque/cutout, two coverage, three a tinted sheet,
-  // four a decal; plus 8 on a view model (stableDepth bit 1).
+  // four a decal; plus 8 on a view model (stableDepth bit 1), plus 16 with a
+  // thin film (its ray is traced again: pathtrace.comp rasterSurface).
   vec3 smoothNormal=shadingNormal(authoredNormal,n,normalize(-direction));
   vec3 t=tangent-smoothNormal*dot(smoothNormal,tangent);
   if(dot(t,t)<1e-12)t=cross(abs(smoothNormal.z)<.999?vec3(0,0,1):vec3(0,1,0),smoothNormal);
   t=normalize(t);
   vec3 b=cross(smoothNormal,t);
   if(dot(b,bitangent)<0)b=-b;
-  outNormal=vec4(materialNormal(s,uv,mat3(t,b,smoothNormal),normalize(-direction)),(decalSurface(s)?4:blendedAtAlpha(s,albedo.a)?((s.state.w&32)!=0?3:2):1)+((draw.stableDepth&2u)!=0u?8:0));
+  outNormal=vec4(materialNormal(s,uv,mat3(t,b,smoothNormal),normalize(-direction)),(decalSurface(s)?4:blendedAtAlpha(s,albedo.a)?((s.state.w&32)!=0?3:2):1)+((draw.stableDepth&2u)!=0u?8:0)+(filmed(s)?16:0));
   vec2 rm=materialParameters(s,uv,albedo.rgb);
   outPbr=vec4(s.pbr.z!=0?rm.x:-1,rm.y,encodeGeometricNormal(n));
   outAlbedo=vec4(albedo.rgb+self,albedo.a);
