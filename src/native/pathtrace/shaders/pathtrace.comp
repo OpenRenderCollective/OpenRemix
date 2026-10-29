@@ -436,8 +436,14 @@ Hit rasterPrimary(ivec2 pixel, vec3 origin) {
   // Re-query painted pixels to obtain the ray traversal's exact intersection
   // distance. Raster-interpolated positions can round to the other side of a
   // very close receiver; the common resolver advances tMin without an offset.
-  // A filmed pixel's ray is traced for its film.
-  if(hit.decal||hit.film.x<0)return cameraHit(origin,normalize(hit.p-origin));
+  // A filmed or subsurface pixel's ray is traced for its material record. A
+  // re-query that finds nothing (the traced scene not holding what the raster
+  // drew) keeps the raster surface, without that record.
+  if(hit.decal||hit.film.x<0) {
+    Hit traced=cameraHit(origin,normalize(hit.p-origin));
+    if(hit.decal||traced.t<1e30)return traced;
+    hit.film.x=0;
+  }
   return hit;
 }
 // Geometry diagnostics show the first visible sheet. Lighting and temporal
@@ -488,12 +494,12 @@ vec3 bodyDirection(Hit hit,vec3 direction,float ior) {
 // front: the first surface's geometry diagnostic (with `diagnose`).
 Hit primarySurface(ivec2 pixel,inout vec3 origin,inout vec3 direction,bool sheets,out uint layers,bool diagnose,out vec3 front) {
   front=vec3(0);layers=0;
-  bool raster=frame.target.w!=0,bent=false,body=false,trace=!raster,first=true;
+  bool raster=frame.target.w!=0,bent=false,body=false,trace=!raster,first=true,record=false;
   vec3 traceOrigin=origin,traceDirection=direction;
   Hit hit;
   if(raster) {
     hit=rasterSurface(pixel,origin);
-    if(hit.decal||hit.film.x<0){trace=true;traceDirection=normalize(hit.p-origin);}
+    if(hit.decal||hit.film.x<0){trace=true;record=!hit.decal;traceDirection=normalize(hit.p-origin);}
   }
   // At most: the primary (and its re-query), then per layer a body query and the layer's ray.
   for(uint step=0;step<66u;++step) {
@@ -506,7 +512,10 @@ Hit primarySurface(ivec2 pixel,inout vec3 origin,inout vec3 direction,bool sheet
         origin=offsetRay(hit.p,-hit.ng);traceOrigin=origin;traceDirection=direction;trace=true;++layers;
         continue;
       }
-      hit=traced;
+      // A material re-query that finds nothing keeps the raster surface (rasterPrimary).
+      if(record&&traced.t==1e30)hit.film.x=0;
+      else hit=traced;
+      record=false;
     }
     if(first){first=false;if(diagnose&&frame.splitLocal.w!=0)front=debugGeometry(hit,pixel);}
     if(!sheets||layers>=32u||!hit.blended)break;
@@ -1223,15 +1232,25 @@ void clearIndirect(ivec2 pixel,float specularHit) {
 IndirectResult traceIndirect(Hit primary,ivec2 pixel,vec3 diffuseFactor,vec3 specularFactor) {
   IndirectResult result=IndirectResult(vec3(0),rng,0);
   if(primary.t<1e30&&!primary.blended) {
+    // Subsurface scattering (subsurface.glsl): the sky and the light bounced
+    // from the scene enter where the profile carries them from too, as the
+    // primary's direct light does. One probe for the pixel's samples.
+    Hit lit=primary;vec3 sssTint=vec3(1);bool sssThrough=false,sssMoved=false;
+    if(primary.sss.w>0&&random()<primary.sss.w)sssMoved=subsurfaceMove(lit,sssTint,sssThrough);
     for(uint i=0;i<frame.config.x;++i) {
       vec3 firstDir,sampleSpecular;float pathDistance;
 #ifdef TEMPORAL
       float probability;
       int lobe=primaryLobe(primary,pixel,frame.config.z,i,probability);
-      vec3 sampleLight=continuation(primary,lobe,probability,firstDir,pathDistance,sampleSpecular);
+      vec3 sampleLight=continuation(lit,lobe,probability,firstDir,pathDistance,sampleSpecular);
 #else
-      vec3 sampleLight=continuation(primary,firstDir,pathDistance,sampleSpecular);
+      vec3 sampleLight=continuation(lit,firstDir,pathDistance,sampleSpecular);
 #endif
+      if(sssMoved) {
+        vec3 diffuse=sssTint*max(sampleLight-sampleSpecular,vec3(0));
+        if(sssThrough)sampleSpecular=vec3(0);
+        sampleLight=sampleSpecular+diffuse;
+      }
       result.radiance+=sampleLight/float(frame.config.x);
 #ifdef TEMPORAL
       // The selection is a function of the pixel and frame: not carried
