@@ -260,8 +260,12 @@ namespace remix::usd {
         input("transmittance_color", SdfValueTypeNames->Color3f, VtValue(tint));
         map("transmittance_texture", m.albedo);
         input("ior_constant", SdfValueTypeNames->Float, VtValue(m.refractiveIndex));
+        // A body keeps its measurement distance; without one the material is
+        // the tinted sheet of a thin wall (scene/materials.cpp).
         if (m.transmittanceDistance > 0)
           input("transmittance_measurement_distance", SdfValueTypeNames->Float, VtValue(m.transmittanceDistance));
+        else
+          input("thin_walled", SdfValueTypeNames->Bool, VtValue(true));
       } else {
         input("diffuse_color_constant", SdfValueTypeNames->Color3f, VtValue(tint));
         input("opacity_constant", SdfValueTypeNames->Float, VtValue(m.tint[3]));

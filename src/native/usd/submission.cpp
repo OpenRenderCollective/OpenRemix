@@ -303,7 +303,10 @@ namespace remix::usd {
     glass.refractiveIndex = data.value("ior", 1.5f);
     glass.transmittanceTexture = albedo.c_str();
     glass.transmittanceColor = vector3(data.value("transmittance", Json::array({1, 1, 1})));
-    glass.transmittanceMeasurementDistance = 1.f;
+    glass.transmittanceMeasurementDistance = data.value("transmittance_distance", 1.f);
+    glass.thinWallThickness_hasvalue = data.value("thin_walled", false);
+    glass.thinWallThickness_value = data.value("thin_wall_thickness", 1.f);
+    glass.useDiffuseLayer = data.value("use_diffuse_layer", false);
     info.pNext = data.value("kind", std::string("opaque")) == "translucent" ? static_cast<void *>(&glass)
                                                                             : static_cast<void *>(&opaque);
     remixapi_MaterialNormalEncodingEXT normal_encoding{};

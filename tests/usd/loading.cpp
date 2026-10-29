@@ -3,8 +3,8 @@
 #include <chrono>
 #include <cmath>
 #include <fstream>
-#include <iterator>
 #include <iostream>
+#include <iterator>
 #include <thread>
 #ifdef _WIN32
 #include <process.h>
@@ -71,6 +71,45 @@ int main(int argc, char **argv) {
               "thin film submitted, out-of-range values clamped");
       filmResources.finishFrame();
       std::filesystem::remove(filmed);
+    }
+    {
+      // AperturePBR_Translucent's thin wall and body, read into the material
+      // JSON and submitted: a thin wall is the tinted sheet, a body refracts
+      // and absorbs over its measurement distance.
+      std::ifstream in(fixture / "capture.usda");
+      const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+      const std::string shader = "int inputs:alpha_test_type = 7";
+      const auto at = text.find(shader);
+      require(at != std::string::npos, "capture fixture shader");
+      auto translucent = [&](bool thin) {
+        auto glass = text;
+        glass.insert(at + shader.size(), std::string("\nuniform asset info:mdl:sourceAsset = @AperturePBR_Translucent.mdl@"
+                                                     "\nfloat inputs:ior_constant = 1.33"
+                                                     "\nfloat inputs:transmittance_measurement_distance = 4") +
+                                             (thin ? "\nbool inputs:thin_walled = true" : ""));
+        const auto path = std::filesystem::temp_directory_path() /
+                          ("openremix-usd-glass-" + std::to_string(getpid()) + ".usda");
+        std::ofstream(path) << glass;
+        auto loaded = usd::load({path.string()});
+        std::filesystem::remove(path);
+        return loaded;
+      };
+      auto body = translucent(false);
+      const auto &json = body.scene["materials"].at(0);
+      require(json["kind"] == "translucent" && json["transmittance_distance"] == 4 && !json["thin_walled"],
+              "translucent body in the material JSON");
+      for (bool thin : {false, true}) {
+        auto loaded = thin ? translucent(true) : body;
+        NativeResources glassResources;
+        usd::Submission submitted(glassResources, loaded, 1);
+        submitted.draw(false, 1);
+        require(!glassResources.draws().empty(), "translucent submission");
+        const auto &material = *glassResources.draws()[0].material;
+        require(material.transmission && material.transmittanceDistance == (thin ? 0 : 4) &&
+                    (thin || std::abs(material.refractiveIndex - 1.33f) < 1e-6f),
+                thin ? "thin wall submitted as a sheet" : "body submitted with its measurement distance");
+        glassResources.finishFrame();
+      }
     }
     {
       // A mod's `over` of a captured material records the parts it authors
