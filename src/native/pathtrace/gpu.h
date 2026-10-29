@@ -221,8 +221,11 @@ namespace remix::trace::detail {
     // extents, forward.
     float screenCameras[8][4][4] = {};
     // remixapi_InstanceInfoWoundCutEXT: the frame's wound vertices
-    // (vertex-wound.comp; 0: none), and a reserved word.
-    uint64_t woundVertices = 0, reserved = 0;
+    // (vertex-wound.comp; 0: none), scene units per metre (subsurface radii),
+    // and a reserved word.
+    uint64_t woundVertices = 0;
+    float unitsPerMetre = 0;
+    uint32_t reserved = 0;
   };
   static_assert(sizeof(Frame) == 2336 && offsetof(Frame, woundVertices) == 2320 && offsetof(Frame, screenCameras) == 1808 && offsetof(Frame, srgbTextures) == 1280 && offsetof(Frame, pathDebug) == 1792 &&
                 offsetof(Frame, localProbeRead) == 1168 &&

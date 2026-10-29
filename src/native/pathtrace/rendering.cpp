@@ -839,6 +839,7 @@ namespace remix {
                       options.bounces > 0;
     frame.firefly[0] = options.localDirectClamp;
     frame.firefly[1] = options.indirectClamp;
+    frame.unitsPerMetre = 1 / options.sceneScale;
     frame.pathConfig[0] = rouletteActive;
     frame.pathConfig[1] = options.rouletteMinBounces;
     frame.pathConfig[2] = (options.translucentIndirect ? 1u : 0u) | (options.sheetLocalLights ? 2u : 0u) |
@@ -855,6 +856,8 @@ namespace remix {
       frame.pathConfig[3] |= 0x100u;
     if (!options.iridescence)
       frame.pathConfig[3] |= 0x200u;
+    if (!options.subsurface)
+      frame.pathConfig[3] |= 0x400u; // subsurface scattering off (scene.glsl subsurfaced)
     append(&frame, sizeof(frame));
     append(&options.localFireflyFilter, sizeof(options.localFireflyFilter));
     append(&options.translucencyDenoiser, sizeof(options.translucencyDenoiser));

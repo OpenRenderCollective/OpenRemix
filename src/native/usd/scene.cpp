@@ -218,6 +218,15 @@ namespace remix::usd {
             {"flow_scale", attribute(shader, "openremix:iridescence:flowScale", 1.0f)},
             {"flow_speed", attribute(shader, "openremix:iridescence:flowSpeed", 0.1f)},
             {"structural", attribute(shader, "openremix:iridescence:structural", 0.0f)}};
+      // OpenRemix's subsurface scattering (openremix:subsurface:*; no MDL
+      // input has it). Radius times scale in metres, as Blender's Principled.
+      if (!translucent && attribute(shader, "openremix:subsurface:weight", 0.0f) > 0) {
+        const auto radius = attribute(shader, "openremix:subsurface:radius", GfVec3f(1, .2f, .1f));
+        result["subsurface"] = {{"weight", attribute(shader, "openremix:subsurface:weight", 0.0f)},
+                                {"radius", {radius[0], radius[1], radius[2]}},
+                                {"scale", attribute(shader, "openremix:subsurface:scale", 0.05f)},
+                                {"anisotropy", attribute(shader, "openremix:subsurface:anisotropy", 0.0f)}};
+      }
       return result;
     }
     int element_index(const TfToken &interpolation, int face, int corner, int vertex) {
