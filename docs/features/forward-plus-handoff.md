@@ -15,7 +15,7 @@ context, not proof that an old experiment is still enabled or a defect is fixed.
 | Native source checkpoint | `5ebf5f37` (handoff documentation follows this commit) |
 | Native official remote | `https://github.com/OpenRenderCollective/OpenRemix.git` |
 | Adapter checkout | `garrys-mod-rtx-remixed-2/`, `forward-plus-renderer` |
-| Adapter checkpoint | `8e16623e55cb67f97acd94b7f48c210c5c477226` (portable setup documentation; code unchanged from `26dc7770`) |
+| Adapter checkpoint | `1c04eb07de33efdc070e933af1d16db538ca7699` (portable build helper; rendering code unchanged from `26dc7770`) |
 | Adapter official remote | `https://github.com/sambow23/garrys-mod-rtx-remixed-2.git` |
 | Previous playable install | Owner-local installation; not distributed in Git |
 | Installed package | `forwardplus-visibility-20261027` |
@@ -32,6 +32,28 @@ Native upstream main has three unmerged commits at this checkpoint:
 The adapter already includes its upstream main. Fetch and recheck before merging;
 do not mix upstream integration into visual/performance attribution silently.
 Local main branches were not moved during this handoff.
+
+## First session for the next developer
+
+1. Follow [setup](forward-plus-setup.md), record both Git revisions and establish
+   a build/test baseline before changing renderer behavior. The guide includes
+   tracked compilation helpers and packaging commands; private tooling is unnecessary.
+2. Read the [architecture](../architecture/forward-lighting.md), especially the
+   internal material/receiver boundary and unfinished provider selection. Source 2
+   is a technique preset, not a claim of exact Source 2 behavior or a public ABI.
+3. Pick a bounded task from the [current roadmap queue](forward-plus-roadmap.md).
+   HDR haze and receiver/probe artifacts need a reproducible game comparison;
+   packed-guide qualification and provider migration need their own focused checks.
+   Do not combine visual fixes, provider migration and upstream merges in one change.
+4. For performance work, establish CPU/GPU pass timings with bake completion,
+   foreground status, resolution, settings and map/camera held constant. A low-quality
+   smoke run or an unfocused game is not a performance baseline.
+5. Keep behavior changes separate from documentation. Record what was tested and
+   what remains unverified. Update the current queue when a task is confirmed fixed;
+   historical entries alone should not be treated as the current state.
+
+The clean handoff does not depend on a preserved build directory, old package or
+private report. The most recent source is not the owner's older playable binary.
 
 ## What is implemented
 

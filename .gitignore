@@ -23,3 +23,7 @@
 /src/native/*/shaders/embedded_data.cpp
 /src/native/forward/**/embedded.h
 /tests/forward/**/embedded.h
+
+# Python interpreter caches are generated locally.
+__pycache__/
+*.py[cod]
