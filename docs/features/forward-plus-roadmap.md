@@ -1,5 +1,101 @@
 # Forward+ delivery roadmap
 
+## Current queue - handoff checkpoint 2026-10-29
+
+Start with the [handoff](forward-plus-handoff.md) and
+[lighting architecture](../architecture/forward-lighting.md). This queue supersedes
+old experimental/default/deployment labels in the dated notes below. Historical
+requirements and investigations are retained; they are not all completed features.
+
+The modular shader foundation, Source 2 / Custom selector, centralized baked/live
+ownership and shared cubemap normalization exist on the source branch. Provider
+selection is still backed by legacy controls; there is no generic lighting-provider
+registry, HLSL/single-file material compiler or adapter shader loader. Packed guides
+retain irradiance in the original RGBA16F target, avoiding separate irradiance
+images and the fifth storage-image write. None of these newer changes is deployed:
+the playable package remains forwardplus-visibility-20261027 (native 93c2ae0a,
+adapter 26dc7770). Do not equate pushed source with installed code.
+
+### Immediate stabilization and handoff
+
+- [ ] Scene/precision/performance qualification of packed guides and normalization;
+  interactive F12 preset switching; protected-settings-preserving package refresh.
+- [ ] Matched actual-game HDR comparison with PT. Severe grey haze remains open;
+  normalization alone did not reproduce or resolve it. Isolate diffuse, reflections,
+  exposure/metering and final HDR transfer using the same sky/materials/view.
+- [ ] Merge native upstream DLSS 5, USD captures and Godot toolkit commits separately
+  and qualify dependencies/packaging/backend transitions. Adapter upstream is current
+  at this checkpoint. Recheck remotes before work.
+
+### Modular rendering and shader authoring
+
+- [ ] Finish distinct static-direct, diffuse-irradiance, reflection and dynamic
+  visibility provider choices. A unified provider can replace several services
+  atomically; no duplicate baked/analytic diffuse or reflection energy.
+- [ ] Keep Source 2 as the default technique preset and quality independent.
+  Preserve custom overrides and migrate legacy settings/diagnostics with caller
+  evidence; do not delete working fallbacks because they say experimental.
+- [ ] HLSL/Slang evaluation and single-file authoring; opt-in game adapter material
+  mapping; Refract proof; optional Source envmap-mask/material compatibility.
+  Standard PBR/AutoPBR and Remix replacements remain the normal path.
+- [ ] Hook projected textures and volumetric/fog behavior into Forward+ as appropriate;
+  retain shared material/display/post-processing code where semantics match.
+- [ ] Evaluate optional DDGI/unified surface-dense probes, radiance cascades,
+  distance-field/volume reflections, screen-space shadows and virtual shadow maps
+  after the default providers are stable. These are future techniques, not shipped.
+
+### Quality and correctness
+
+- [ ] Construct lightmaps: room behind spawn with two ceiling lights, connector bend,
+  secret room, hall with slanted roof openings, seams/packing/noise and soft sunlight.
+- [ ] Surface lightmaps: resolution versus memory/bake budget, useful chart packing,
+  continuity/filtering, direct-light AA/soft shadows, denoising, displacement coverage,
+  backface/wasted-space audit and possible reduced 3D-skybox density. User requested
+  considering 2K/4K pages; do not silently raise budgets without measuring cost.
+- [ ] Props/viewmodels: adaptive probe density, leakage-resistant interpolation,
+  static/dynamic lighting match, mixed and self shadows, viewmodel SSR/overlay quality.
+  Preserve the dynamic-only caster policy for baked lights. Moving func_brush uses probes.
+- [ ] Source-style toggles/groups remain adapter-translated, engine-agnostic lighting
+  in native code; styled direct/indirect and mixed-shadow fades must survive updates.
+- [ ] Recheck accidental rebakes after weapon/entity/material changes and warm-cache
+  reuse across launches; audit intersecting lights and sceneScale/radius differences
+  against PT if relevant. Keep engine frustum culling off until shadows are independent.
+- [ ] Cubemaps: outdoor Construct coverage; authored plus automatic uncovered fill;
+  overlapping rotated bounds/priorities/feathers; bevel/prop tolerance; sharper rough
+  reflections; rough nonmetal lightmap-SH reflection transition; water/PT compatibility.
+- [ ] Saturated cubemap budgets: finish measured guard-evidence selection/cache work
+  without losing existing/authored coverage or treating unknown visibility as clear.
+- [ ] Decal receiver lighting and unusual material behavior; retain F12 input/cursor,
+  skybox orientation and backend-switch regressions. Existing unit checks are not
+  universal game/map visual acceptance.
+
+### Performance, tooling and references
+
+- [ ] Profile CPU submission, fragment/overdraw, clusters/light candidates, probes,
+  reflections, shadows and viewmodels under valid foreground conditions. Preserve
+  default static depth aggregation; investigate material-aware colour aggregation,
+  indirect draws and further tiled/clustered work only from measured bottlenecks.
+- [ ] Reduce bake work/time with bounded GPU/HWRT scheduling, light influence culling,
+  attributed visibility/masks, useful atlas/probe allocation and cache stability.
+  A radius cap is an experiment to validate, not a blanket correctness change.
+- [ ] Test gm_construct, Crossfire, c1a0/c1a0d, d2_lostcoast, dm_steamlab, gm_fork,
+  d1_trainstation_02, bm_c1a1b and large combined Half-Life maps. Keep reduced-budget
+  smoke captures separate from normal-quality and actual-game references.
+- [ ] Study user-authored combined probe/cubemap volumes and material assets, and
+  bm_c1a1b authored bounds/relay support. Preserve the two authored Construct volumes.
+- [ ] Later: C# native Hammer-like cubemap authoring tool, textured worklight viewport,
+  WASD fly camera, face/transform gizmos, rotation, independent capture origin,
+  priority/overlap editing, persistence and live reload. Use authored volumes as
+  automatic-fitting reference data. Broader Hammer-like Remix editing is later work.
+- [ ] Audit obsolete paths/options and disk artifacts with explicit scope and size
+  evidence. Preserve user data and required provenance; avoid speculative deletion.
+
+## Historical implementation notes
+
+The remainder records earlier work and investigations. Follow the queue above and
+current source/handoff when old entries describe a different default or deployment.
+
+
 ## Current lighting-quality focus
 
 Quality qualification must distinguish reduced-budget smoke tests, normal-budget
