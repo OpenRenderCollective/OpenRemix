@@ -54,6 +54,10 @@ if sky and (numos / 'NOTICE').exists():
 if not metal:
     shutil.copytree(root / 'include/vulkan/LICENSES', licenses / 'Vulkan-Headers')
     shutil.copy2(root / 'include/vulkan/LICENSE.md', licenses / 'Vulkan-Headers/NOTICE.md')
+    # Windows ships FidelityFX SDK 2.4.0's DLLs and license (below); the other
+    # platforms link FSR 3.1.4.
+    if system != 'Windows':
+        shutil.copy2(root / 'third_party/fsr31/LICENSE.txt', licenses / 'FidelityFX.txt')
 else:
     shutil.copy2(root / 'third_party/xz-embedded/COPYING', licenses / 'XZEmbedded.txt')
 shutil.copy2(deps / 'sources/sdl3/LICENSE.txt', licenses / 'SDL3.txt')
@@ -64,6 +68,15 @@ if system == 'Windows':
         shutil.copy2(path, output / 'bin' / path.name)
     for path in (deps / 'prefix/bin').glob('lib*.dll'):
         shutil.copy2(path, output / 'bin' / path.name)
+    # FSR: AMD's signed ffx-api DLLs, loaded from fidelityfx/ beside remix.dll
+    # (src/native/upscale/ffx_library.cpp), with the license they require.
+    fidelityfx = root / 'third_party/fidelityfx/FidelityFX-SDK/Kits/FidelityFX'
+    (output / 'bin/fidelityfx').mkdir()
+    for name in ['amd_fidelityfx_loader_vk.dll', 'amd_fidelityfx_upscaler_vk.dll',
+                 'amd_fidelityfx_framegeneration_vk.dll']:
+        shutil.copy2(fidelityfx / 'signedbin' / name, output / 'bin/fidelityfx' / name)
+    shutil.copy2(fidelityfx / 'docs/license.md', output / 'bin/fidelityfx/LICENSE.md')
+    shutil.copy2(fidelityfx / 'docs/license.md', licenses / 'FidelityFX-SDK.md')
 elif system == 'Linux':
     staging = tempfile.TemporaryDirectory(prefix='remix-package-')
     subprocess.run(['meson', 'install', '-C', str(build), '--no-rebuild', '--destdir', staging.name],

@@ -3,13 +3,10 @@
 #include "runtime/pipelines.h"
 #include "postfx/renderer.h"
 #include "upscale/camera.h"
+#include "upscale/fsr.h"
 #include "upscale/ngx.h"
-#include "upscale/sdk_backend.h"
 #include "upscale/shaders/embedded.h"
-#include <FidelityFX/host/backends/vk/ffx_vk.h>
-#include <FidelityFX/host/ffx_fsr3upscaler.h>
 #include <algorithm>
-#include <bit>
 #include <cmath>
 #include <stdexcept>
 #include <vector>
@@ -19,10 +16,6 @@ namespace {
 void check(VkResult r) {
   if (r != VK_SUCCESS)
     throw r;
-}
-void checkFfx(FfxErrorCode r) {
-  if (r != FFX_OK)
-    throw std::runtime_error("FSR 3.1 error " + std::to_string(r));
 }
 struct Image {
   VkDevice device{};
@@ -49,21 +42,8 @@ void barrier(VkCommandBuffer cmd) {
                        VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 1, &b, 0, nullptr,
                        0, nullptr);
 }
-FfxResource resource(VkImage image, VkFormat format, VkExtent2D extent,
-                     const wchar_t *name) {
-  FfxResourceDescription desc{};
-  desc.type = FFX_RESOURCE_TYPE_TEXTURE2D;
-  desc.format = ffxGetSurfaceFormatVK(format);
-  desc.width = extent.width;
-  desc.height = extent.height;
-  desc.depth = 1;
-  desc.mipCount = 1;
-  desc.usage = FFX_RESOURCE_USAGE_UAV;
-  return ffxGetResourceVK(reinterpret_cast<void *>(image), desc, name,
-                          FFX_RESOURCE_STATE_UNORDERED_ACCESS);
-}
-FfxResource resource(const Image &image, const wchar_t *name) {
-  return resource(image.image, image.format, image.extent, name);
+Input input(const std::unique_ptr<Image> &image) {
+  return image ? Input{image->image, image->view} : Input{};
 }
 } // namespace
 struct Renderer::Gpu {
@@ -71,15 +51,10 @@ struct Renderer::Gpu {
   VkPhysicalDevice physical{};
   VkPhysicalDeviceMemoryProperties memory{};
   VkExtent2D render{}, display{};
-  struct alignas(32) ScratchBlock {
-    uint64_t words[4]{};
-  };
-  std::vector<ScratchBlock> scratch;
-  FfxFsr3UpscalerContext context{};
-  VkDeviceContext fsrDevice{};
+  std::unique_ptr<FsrUpscaler> fsr;
   std::unique_ptr<NgxFeature> ngx;
   std::unique_ptr<Image> motion, exposure;
-  bool created{}, initialized{};
+  bool initialized{};
   std::unique_ptr<Image> depth, reactive, composition, output, dilatedDepth,
       dilatedMotion, previousDepth;
   VkDescriptorSetLayout setLayout{};
@@ -101,8 +76,7 @@ struct Renderer::Gpu {
   VkPipeline tonemapCompositePipeline = VK_NULL_HANDLE;
   ~Gpu() {
     ngx.reset();
-    if (created)
-      ffxFsr3UpscalerContextDestroy(&context);
+    fsr.reset();
     if (tonemapCompositePipeline)
       pipeline::destroyPipeline(device, tonemapCompositePipeline, nullptr);
     if (compositePipeline)
@@ -172,7 +146,7 @@ struct Renderer::Gpu {
 };
 const char *name(Backend backend) {
   switch (backend) {
-  case Backend::Fsr31: return "FSR 3.1";
+  case Backend::Fsr31: return "FSR";
   case Backend::DlssSr: return "DLSS Super Resolution";
   case Backend::DlssRr: return "DLSS + Ray Reconstruction";
   default: return "Native";
@@ -187,21 +161,6 @@ bool supportsCamera(const scene::Matrix &projection) {
   const auto [nearPlane, farPlane] = depthRange(projection);
   return std::isfinite(nearPlane) && std::isfinite(farPlane) && nearPlane > 0 && farPlane > nearPlane;
 }
-VkExtent2D renderSize(VkExtent2D display, uint32_t quality) {
-  VkExtent2D out{};
-  checkFfx(ffxFsr3UpscalerGetRenderResolutionFromQualityMode(
-      &out.width, &out.height, display.width, display.height,
-      FfxFsr3UpscalerQualityMode(std::min(quality, 4u))));
-  out.width = std::max(out.width, 1u);
-  out.height = std::max(out.height, 1u);
-  return out;
-}
-void jitter(float *xy, uint64_t frame, VkExtent2D render, VkExtent2D display) {
-  int32_t phase =
-      ffxFsr3UpscalerGetJitterPhaseCount(render.width, display.width);
-  checkFfx(ffxFsr3UpscalerGetJitterOffset(xy, xy + 1, int32_t(frame % phase),
-                                          phase));
-}
 void Renderer::initialize(VkPhysicalDevice physical, VkDevice device,
                           uint32_t queueFamily, VkExtent2D render,
                           VkExtent2D display, Backend backend, std::shared_ptr<Ngx> ngx, uint32_t quality,
@@ -213,19 +172,6 @@ void Renderer::initialize(VkPhysicalDevice physical, VkDevice device,
   g.render = render;
   g.display = display;
   vkGetPhysicalDeviceMemoryProperties(physical, &g.memory);
-  VkPhysicalDeviceFeatures features{};
-  vkGetPhysicalDeviceFeatures(physical, &features);
-  VkPhysicalDeviceSubgroupProperties subgroup{
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES};
-  VkPhysicalDeviceProperties2 properties{
-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-      .pNext = &subgroup};
-  vkGetPhysicalDeviceProperties2(physical, &properties);
-  if (backend == Backend::Fsr31 && (!features.shaderStorageImageWriteWithoutFormat ||
-      !(subgroup.supportedStages & VK_SHADER_STAGE_COMPUTE_BIT) ||
-      !(subgroup.supportedOperations & VK_SUBGROUP_FEATURE_QUAD_BIT)))
-    throw std::runtime_error(
-        "FSR requires compute subgroup quads and unformatted image writes");
   for (auto format :
        {VK_FORMAT_R16G16_SFLOAT, VK_FORMAT_R8G8_UNORM, VK_FORMAT_R32_UINT}) {
     VkFormatProperties props{};
@@ -236,24 +182,9 @@ void Renderer::initialize(VkPhysicalDevice physical, VkDevice device,
       throw std::runtime_error("FSR sampled/storage image formats unavailable");
   }
   if (backend == Backend::Fsr31) {
-    // The pinned SDK's ffxGetDeviceVK returns a process-global mutable context.
-    // Own the same adapter representation per renderer while the active context
-    // evaluates and its replacement initializes on the compiler worker.
-    g.fsrDevice = {device, physical, sdkDeviceProc};
-    FfxFsr3UpscalerContextDescription desc{};
-    desc.flags = FFX_FSR3UPSCALER_ENABLE_HIGH_DYNAMIC_RANGE |
-                 FFX_FSR3UPSCALER_ENABLE_DEPTH_INVERTED;
-    desc.maxRenderSize = {render.width, render.height};
-    desc.maxUpscaleSize = {display.width, display.height};
-    g.scratch.resize((ffxGetScratchMemorySizeVK(physical, 1) + 31) / 32);
-    checkFfx(ffxGetInterfaceVK(&desc.backendInterface,
-                               reinterpret_cast<FfxDevice>(&g.fsrDevice),
-                               g.scratch.data(), g.scratch.size() * 32, 1));
-    usePortableShaders(desc.backendInterface);
-    ContextAllocations allocations;
-    checkFfx(ffxFsr3UpscalerContextCreate(&g.context, &desc));
-    g.created = true;
-    allocations.commit();
+    g.fsr = std::make_unique<FsrUpscaler>();
+    g.fsr->create(physical, device, render, display);
+    g.stats.provider = g.fsr->provider();
   } else {
     g.ngx = std::make_unique<NgxFeature>();
     g.ngx->initialize(std::move(ngx), queueFamily, render, display, quality, backend == Backend::DlssRr, rrPreset);
@@ -267,9 +198,12 @@ void Renderer::initialize(VkPhysicalDevice physical, VkDevice device,
   g.reactive = g.image(VK_FORMAT_R8_UNORM, render);
   g.composition = g.image(VK_FORMAT_R8_UNORM, render);
   g.output = g.image(VK_FORMAT_R16G16B16A16_SFLOAT, display);
-  g.dilatedDepth = g.image(VK_FORMAT_R32_SFLOAT, render);
-  g.dilatedMotion = g.image(VK_FORMAT_R16G16_SFLOAT, render);
-  g.previousDepth = g.image(VK_FORMAT_R32_UINT, render);
+  // The linked SDK's intermediates, which the caller owns.
+  if (g.fsr && g.fsr->sharedImages()) {
+    g.dilatedDepth = g.image(VK_FORMAT_R32_SFLOAT, render);
+    g.dilatedMotion = g.image(VK_FORMAT_R16G16_SFLOAT, render);
+    g.previousDepth = g.image(VK_FORMAT_R32_UINT, render);
+  }
   VkDescriptorSetLayoutBinding bindings[9]{};
   for (unsigned i = 0; i < 9; ++i)
     bindings[i] = {i, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1,
@@ -336,12 +270,7 @@ void Renderer::initialize(VkPhysicalDevice physical, VkDevice device,
       check(vkCreateQueryPool(device, &qi, nullptr, &query));
     g.timestamps = g.frameTimestamps[0];
   }
-  if (g.ngx) g.stats.memoryBytes += g.ngx->memoryBytes();
-  else {
-    FfxEffectMemoryUsage usage{};
-    if (ffxFsr3UpscalerContextGetGpuMemoryUsage(&g.context, &usage) == FFX_OK)
-      g.stats.memoryBytes += usage.totalUsageInBytes;
-  }
+  g.stats.memoryBytes += g.ngx ? g.ngx->memoryBytes() : g.fsr->memoryBytes();
   g.stats.active = true;
   g.stats.render = render;
   g.stats.display = display;
@@ -382,6 +311,8 @@ void Renderer::record(VkCommandBuffer command, Input color, Input depth,
     for (auto image :
          {g.depth.get(), g.reactive.get(), g.composition.get(), g.output.get(),
           g.dilatedDepth.get(), g.dilatedMotion.get(), g.previousDepth.get(), g.motion.get(), g.exposure.get()}) {
+      if (!image)
+        continue;
       VkImageMemoryBarrier b{
           .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
           .dstAccessMask =
@@ -436,7 +367,7 @@ void Renderer::record(VkCommandBuffer command, Input color, Input depth,
   gpu::GpuScope upscaleTime(command,
                             g.stats.backend == Backend::DlssRr   ? "DLSS Ray Reconstruction"
                             : g.stats.backend == Backend::DlssSr ? "DLSS Super Resolution"
-                                                                 : "FSR 3.1 upscaling",
+                                                                 : "FSR upscaling",
                             g.display);
   const bool resetHistory = reset || !g.initialized;
   try {
@@ -489,39 +420,31 @@ void Renderer::record(VkCommandBuffer command, Input color, Input depth,
       }
       transition(false);
     } else {
-      FfxFsr3UpscalerDispatchDescription desc{};
-      desc.commandList = ffxGetCommandListVK(command);
-      desc.color = resource(color.image, VK_FORMAT_R16G16B16A16_SFLOAT,
-                            g.render, L"Denoised HDR");
-      desc.depth = resource(*g.depth, L"Device depth");
-      desc.motionVectors = resource(motion.image, VK_FORMAT_R32G32B32A32_SFLOAT,
-                                    g.render, L"Unjittered pixel motion");
-      desc.reactive = resource(*g.reactive, L"Reactive");
-      desc.transparencyAndComposition =
-          resource(*g.composition, L"Composition");
-      desc.dilatedDepth = resource(*g.dilatedDepth, L"Dilated depth");
-      desc.dilatedMotionVectors = resource(*g.dilatedMotion, L"Dilated motion");
-      desc.reconstructedPrevNearestDepth =
-          resource(*g.previousDepth, L"Previous depth");
-      desc.output = resource(*g.output, L"Upscaled HDR");
+      FsrDispatch frame;
+      frame.color = color;
+      frame.depth = input(g.depth);
+      frame.motion = motion;
+      frame.reactive = input(g.reactive);
+      frame.composition = input(g.composition);
+      frame.dilatedDepth = input(g.dilatedDepth);
+      frame.dilatedMotion = input(g.dilatedMotion);
+      frame.previousDepth = input(g.previousDepth);
+      frame.output = input(g.output);
+      frame.render = g.render;
+      frame.display = g.display;
       // Rays sample pixel + jitter; FSR subtracts its projected-geometry jitter
       // when locating that sample in the unjittered image.
-      desc.jitterOffset = {-jitter[0], -jitter[1]};
-      desc.motionVectorScale = {1, 1};
-      desc.renderSize = {g.render.width, g.render.height};
-      desc.upscaleSize = {g.display.width, g.display.height};
-      desc.enableSharpening = sharpness > 0;
-      desc.sharpness = sharpness;
-      desc.frameTimeDelta = milliseconds;
-      desc.preExposure = 1;
-      desc.reset = reset || !g.initialized;
+      frame.jitter[0] = -jitter[0];
+      frame.jitter[1] = -jitter[1];
+      frame.sharpness = sharpness;
+      frame.milliseconds = milliseconds;
+      frame.reset = resetHistory;
       const auto range = depthRange(projection);
       // FSR names these endpoints after depth 0/1; inverted depth swaps them.
-      desc.cameraNear = range.farPlane;
-      desc.cameraFar = range.nearPlane;
-      desc.cameraFovAngleVertical = 2 * std::atan(1 / std::abs(projection[5]));
-      desc.viewSpaceToMetersFactor = 1;
-      checkFfx(ffxFsr3UpscalerContextDispatch(&g.context, &desc));
+      frame.cameraNear = range.farPlane;
+      frame.cameraFar = range.nearPlane;
+      frame.fieldOfView = 2 * std::atan(1 / std::abs(projection[5]));
+      g.fsr->dispatch(command, frame);
     }
   } catch (const std::exception &e) {
     if (!g.stats.failed)

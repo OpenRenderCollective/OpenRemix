@@ -153,7 +153,7 @@ namespace remix {
     }
     if (ImGui::CollapsingHeader("Reconstruction", ImGuiTreeNodeFlags_DefaultOpen)) {
       int upscaler = int(options.upscaler);
-      if (ui::Combo("Requested upscaler", &upscaler, "Off\0Auto\0FSR 3.1\0DLSS\0"))
+      if (ui::Combo("Requested upscaler", &upscaler, "Off\0Auto\0FSR\0DLSS\0"))
         options.upscaler = upscale::Mode(upscaler);
       const auto fsr = m_pathTracer ? m_pathTracer->upscalingStatistics() : upscale::Statistics{};
       if (options.upscaler != upscale::Mode::Off) {
@@ -233,7 +233,10 @@ namespace remix {
             ImGui::TextWrapped("Sparse rendering: off (%s)", sparse.reason);
         }
       }
-      ImGui::TextWrapped("Active: %s", upscale::name(fsr.backend));
+      if (fsr.backend == upscale::Backend::Fsr31 && !fsr.provider.empty())
+        ImGui::TextWrapped("Active: %s", fsr.provider.c_str());
+      else
+        ImGui::TextWrapped("Active: %s", upscale::name(fsr.backend));
       if (fsr.backend == upscale::Backend::DlssRr)
         ImGui::TextWrapped("Ray Reconstruction: %s, preset %c", fsr.rrCnn ? "CNN (DLSS 310.2.1)" : "transformer",
                            fsr.rrPreset >= 1 && fsr.rrPreset <= 6 ? char('A' + fsr.rrPreset - 1) : '-');
@@ -261,15 +264,15 @@ namespace remix {
       ui::Checkbox("Frame generation", &settings.frameGeneration);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Shows generated frames between each pair of rendered frames: DLSS Frame Generation\n"
-                          "(2x to 4x, a supported RTX GPU) or FSR 3.1 frame generation (2x, any GPU).\n"
+                          "(2x to 4x, a supported RTX GPU) or FSR frame generation (2x, any GPU).\n"
                           "Needs the path tracer and an upscaler (DLSS or FSR; their native-resolution preset\n"
                           "counts). Adds latency: the rendered frame is shown after its generated ones.");
       if (settings.frameGeneration) {
         int backend = int(settings.frameGenerationBackend);
-        if (ui::Combo("Frame generation backend", &backend, "Auto\0DLSS\0FSR 3.1\0"))
+        if (ui::Combo("Frame generation backend", &backend, "Auto\0DLSS\0FSR\0"))
           settings.frameGenerationBackend = upscale::FrameGenerationMode(backend);
         if (ImGui::IsItemHovered())
-          ImGui::SetTooltip("Auto: DLSS Frame Generation where the GPU supports it, FSR 3.1 otherwise.");
+          ImGui::SetTooltip("Auto: DLSS Frame Generation where the GPU supports it, FSR otherwise.");
         // FSR generates one frame whatever is asked.
         ImGui::BeginDisabled(settings.frameGenerationBackend == upscale::FrameGenerationMode::Fsr31);
         int frames = int(settings.frameGenerationFrames) - 1;

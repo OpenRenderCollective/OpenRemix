@@ -60,6 +60,10 @@ namespace remix::config {
     // On by default: textures load with a level, long before a capture is
     // asked for. Ignored without USD support.
     bool captureRetainTextureData = true;
+    // RTX Remix's rtx.zUp: the game's world is Z-up. USD captures declare it
+    // and mods are converted to it, unless the host configures its own axis
+    // (remixapi_ConfigureUSDModsEXT).
+    bool zUp = false;
     // Fill GetVramStats from OpenRemix's allocations and the driver budget.
     bool vramStatistics = false;
     // Honour remixapi_MeshInfoDeformEXT: a deformed mesh keeps its update

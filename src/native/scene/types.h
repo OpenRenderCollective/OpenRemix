@@ -80,6 +80,9 @@ namespace remix {
     // CompressedPixels::upload instead of releasing it, so USD captures
     // (usd/capture.cpp) can write the blocks. Applies to later uploads.
     inline std::atomic<bool> retainCompressedUploads{false};
+    // The world's up axis (rtx.zUp: 2 Z, else 1 Y) where the host does not
+    // say: USD mods are converted to it and captures declare it.
+    inline std::atomic<uint32_t> sceneUpAxis{1};
     // Adds the steady-clock ticks since construction to a counter.
     struct CounterTicks {
       std::atomic<uint64_t> &out;

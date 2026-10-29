@@ -12,6 +12,8 @@ option('shader_tools', type : 'string', value : '',
 option('vulkan_probes', type : 'boolean', value : false, description : 'Build standalone ray-query/pipeline probes (requires glslangValidator).')
 option('dlss', type : 'boolean', value : true, description : 'Build pinned NGX DLSS SR and Ray Reconstruction on Linux/Windows x64.')
 option('dlss5', type : 'boolean', value : false, description : 'Enable DLSS 5 (DLSS-NR neural uplift) support. Off by default; requires -Ddlss=true.')
+option('fsr_linked', type : 'boolean', value : false,
+  description : 'Windows: also build the linked FSR 3.1.4 that Linux and macOS use, for testing (REMIX_FSR_LINKED=1).')
 
 option('usd', type : 'boolean', value : false, description : 'Enable CPU-only OpenUSD 25.11 capture and mod loading.')
 option('usd_root', type : 'string', value : '', description : 'OpenUSD 25.11 installation prefix.')

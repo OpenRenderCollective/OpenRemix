@@ -1,0 +1,6 @@
+{
+  "repository": "https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK",
+  "tag": "v2.4.0",
+  "revision": "7539ae8b6568ad29ed78a753404351daf3b5cca7",
+  "path": "third_party/fidelityfx/FidelityFX-SDK"
+}
