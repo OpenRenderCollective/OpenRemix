@@ -53,12 +53,12 @@ void main() {
   ivec2 surface = min(pixel * int(frame.config.x) + int(frame.config.x) / 2, ivec2(frame.target.xy) - 1);
   vec4 guide = texelFetch(normals, surface, 0);
   float z = texelFetch(depth, surface, 0).r;
-  if (z >= 1 || dot(guide.xyz, guide.xyz) < .1 || guide.w >= frame.trace.z)
+  if (z >= 1 || !reflectionGuideValid(guide) || guide.z >= frame.trace.z)
     return;
   vec2 uv = (vec2(surface) + .5) / vec2(frame.target.xy);
   vec4 world = reflectionTransform(frame.inverseCamera, vec4(uv * 2 - 1, z, 1));
   precise vec3 position = world.xyz / world.w;
-  vec3 incident = reflectionUnit(position - frame.eye.xyz), normal = reflectionUnit(guide.xyz);
+  vec3 incident = reflectionUnit(position - frame.eye.xyz), normal = reflectionGuideNormal(guide);
   if (reflectionDot(normal, -incident) <= 0)
     return;
   points[index] = Point(vec4(fma(normal, vec3(frame.trace.y), position), 1),

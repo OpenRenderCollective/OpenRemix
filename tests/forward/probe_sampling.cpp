@@ -171,7 +171,7 @@ void samplingCase(uint32_t resolution) {
   check(result);
   gpu.input.create(fixture.physical, fixture.device, queries.size()*sizeof(Query), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   gpu.input.write(queries.data(), queries.size()*sizeof(Query));
-  gpu.output.create(fixture.physical, fixture.device, queries.size()*7*sizeof(Vec4), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+  gpu.output.create(fixture.physical, fixture.device, queries.size()*9*sizeof(Vec4), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   const VkDescriptorPoolSize poolSize[]{{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3},
                                        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1}};
   const VkDescriptorPoolCreateInfo poolInfo{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
@@ -202,13 +202,13 @@ void samplingCase(uint32_t resolution) {
                        0, 1, &read, 0, nullptr, 0, nullptr);
   fixture.finish();
   asset.releaseUpload();
-  std::vector<Vec4> values(count * 7);
+  std::vector<Vec4> values(count * 9);
   gpu.output.read(values.data(), values.size()*sizeof(Vec4));
   for (size_t i = 0; i < queries.size(); ++i) {
     const auto &q = queries[i];
     const auto expected = probes::sample(quantized, {q.position[0], q.position[1], q.position[2]},
         {q.direction[0], q.direction[1], q.direction[2]}, q.position[3]);
-    const auto &actual = values[i * 7];
+    const auto &actual = values[i * 9];
     require(actual[3] == (expected ? 1.f : 0.f), "GPU oriented influence matches receiver membership");
     for (uint32_t c = 0; c < 3; ++c) {
       const float reference = expected ? (*expected)[c] : 0.f;
@@ -227,7 +227,7 @@ void samplingCase(uint32_t resolution) {
         const float target = mode == 0 ? .25f : mode == 1 ? 0.f : mode == 2 ? 1000000.f : -1.f;
         const float scale = target >= 0 && reference && (*reference)[0] > 0
             ? std::min(target / (*reference)[0], 1.f) : 1.f;
-        const auto &normalized = values[i * 7 + 1 + mode];
+        const auto &normalized = values[i * 9 + 1 + mode];
         require(normalized[3] == (expected ? 1.f : 0.f), "Normalization preserves influence membership");
         for (uint32_t c = 0; c < 3; ++c) {
           const float value = expected ? (*expected)[c] * scale : 0.f;
@@ -235,16 +235,31 @@ void samplingCase(uint32_t resolution) {
                   "GPU normalization follows blended reference lighting, darkness, gain ceiling and unknown fallback");
         }
       }
-      require(values[i * 7 + 5] == Vec4{4, 8, 16, 1}, "A dark capture reference remains neutral");
+      require(values[i * 9 + 5] == Vec4{4, 8, 16, 1}, "A dark capture reference remains neutral");
       const auto bound = probes::sample(boundData, {q.position[0], q.position[1], q.position[2]},
           {q.direction[0], q.direction[1], q.direction[2]}, q.position[3]);
-      const auto &assigned = values[i * 7 + 6];
+      const auto &assigned = values[i * 9 + 6];
       require(assigned[3] == (bound ? 1.f : 0.f), "Explicit assignments bypass ordinary influence selection");
       for (uint32_t c = 0; c < 3; ++c) {
         const float value = bound ? (*bound)[c] * (boundLuma > 0 ? std::min(.25f / boundLuma, 1.f) : 1.f) : 0;
         require(std::abs(assigned[c] - value) < std::max(3e-5f, std::abs(value) * 5e-5f),
                 "Explicit cubemap assignment uses its own matching lighting reference");
       }
+      const uint32_t seed = uint32_t(i) * 1664525u + 1013904223u;
+      Vec3 normal{float(int(seed & 1023u) - 511), float(int((seed >> 10u) & 1023u) - 511),
+                  float(int((seed >> 20u) & 1023u) - 511)};
+      const float length = std::sqrt(normal[0]*normal[0] + normal[1]*normal[1] + normal[2]*normal[2]);
+      if (length == 0) normal = {0, 0, 1};
+      else for (auto &value : normal) value /= length;
+      float squaredError = 0;
+      for (uint32_t c = 0; c < 3; ++c) {
+        const float delta = normal[c] - values[i * 9 + 7][c];
+        squaredError += delta * delta;
+      }
+      require(squaredError < 6.8e-6f && std::abs(values[i * 9 + 7][3] - .37f) < .001f,
+              "Half-precision reflection guides preserve normals within .15 degrees and retain roughness");
+      require(values[i * 9 + 8] == Vec4{.25f, 0, -1, 0},
+              "Packed guides distinguish incident light, unknown light, known black and invalid geometry");
     }
   }
   require(validationErrors == 0, "Oriented reflection sampling is Vulkan validation clean");

@@ -266,14 +266,13 @@ namespace remix::forward {
     gpu::GpuScope worldTime(command, "Forward+ opaque world shading", extent);
     const VkClearValue clear[] = {{.color = {{0, 0, 0, 0}}},
                                   {.depthStencil = {1, 0}},
-                                  {.color = {{0, 0, 0, 0}}},
-                                  {.color = {{0, 0, 0, 0}}},
-                                  {.color = {{-1, 0, 0, 0}}}};
+                                  {.color = {{0, 0, -1, -1}}},
+                                  {.color = {{0, 0, 0, 0}}}};
     const VkRenderPassBeginInfo pass{.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
                                      .renderPass = worldPass,
                                      .framebuffer = worldFramebuffer,
                                      .renderArea = {{0, 0}, extent},
-                                     .clearValueCount = options.reflections() ? 5u : 2u,
+                                     .clearValueCount = options.reflections() ? 4u : 2u,
                                      .pClearValues = clear};
     vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
     viewport(command, extent);

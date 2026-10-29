@@ -20,6 +20,7 @@ layout(early_fragment_tests) in;
 #include "brdf.glsl"
 #include "emitter.glsl"
 #include "surface.glsl"
+#include "reflection-guide.glsl"
 #define STYLED_BAKE
 #include "irradiance.glsl"
 #include "style-lighting.glsl"
@@ -53,7 +54,6 @@ layout(location = 0) out vec4 result;
 #ifdef REFLECTION_GUIDES
 layout(location = 1) out vec4 outNormalRoughness;
 layout(location = 2) out vec4 outReflectance;
-layout(location = 3) out float outIrradianceLuma;
 #endif
 #include "receiver.glsl"
 #include "direct-light.glsl"
@@ -91,13 +91,10 @@ void main() {
   gl_FragDepth = min(length(worldPosition - lightPosition.xyz) / lightPosition.w, 1);
 #endif
 #ifndef SHADOW_PASS
-#ifdef REFLECTION_GUIDES
-  outIrradianceLuma = -1;
-#endif
   if (LightingView == 4u) {
     result = vec4(surface.rgb, m.pbr.w > .5 ? surface.a : 1);
 #ifdef REFLECTION_GUIDES
-    outNormalRoughness = vec4(0, 0, 1, 1);
+    outNormalRoughness = packReflectionGuide(vec3(0, 0, 1), 1, -1);
     outReflectance = vec4(0);
 #endif
     return;
@@ -121,9 +118,9 @@ void main() {
   ShadingResult shaded = shadeStandardSurface(evaluated, receiver);
   result = shaded.color;
 #ifdef REFLECTION_GUIDES
-  outNormalRoughness = shaded.normalRoughness;
+  outNormalRoughness = packReflectionGuide(shaded.normalRoughness.xyz, shaded.normalRoughness.w,
+                                          shaded.irradianceLuma);
   outReflectance = shaded.reflectance;
-  outIrradianceLuma = shaded.irradianceLuma;
 #endif
 #endif
 }

@@ -1,5 +1,6 @@
 #ifndef FORWARD_REFLECTION_MATH_GLSL
 #define FORWARD_REFLECTION_MATH_GLSL
+#include "reflection-guide.glsl"
 // Ray hit tests and probe membership amplify small floating-point changes.
 // Use explicit fused operations for cancellation-sensitive calculations, with
 // precise results preventing the compiler from splitting or reassociating them.

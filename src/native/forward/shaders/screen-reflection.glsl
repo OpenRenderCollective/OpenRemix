@@ -88,7 +88,7 @@ vec4 traceScreenReflection(ScreenReflectionView screen, vec3 p, vec3 normal,
     precise float hitT = q.z >= surface ? t : t + (surface - q.z) / max(delta.z, 1e-10);
     vec3 hit = fma(delta, vec3(hitT), origin);
     float behind = reflectionViewDepth(screen, hit.xy, hit.z) - reflectionViewDepth(screen, hit.xy, surface);
-    vec3 hitNormal = texelFetch(normals, cell, 0).xyz;
+    vec3 hitNormal = reflectionGuideNormal(texelFetch(normals, cell, 0));
     if (hitT <= exit + epsilon && behind >= -screen.trace.z && behind <= screen.trace.y &&
         reflectionDot(hitNormal, direction) < -.001) {
       float colorMip = reflectionColorMip(roughness, uv, hit.xy, vec2(screen.extent), nv);

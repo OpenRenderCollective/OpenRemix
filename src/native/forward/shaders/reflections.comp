@@ -18,12 +18,10 @@ frame;
 layout(set = 0, binding = 1) uniform sampler2D sceneDepth;
 layout(set = 0, binding = 2) uniform sampler2D sceneNormals;
 layout(set = 0, binding = 3) uniform sampler2D sceneReflectance;
-layout(set = 0, binding = 18) uniform sampler2D sceneIrradiance;
 #else
 layout(set = 0, binding = 1) uniform sampler2DMS sceneDepth;
 layout(set = 0, binding = 2) uniform sampler2DMS sceneNormals;
 layout(set = 0, binding = 3) uniform sampler2DMS sceneReflectance;
-layout(set = 0, binding = 18) uniform sampler2DMS sceneIrradiance;
 #endif
 layout(set = 0, binding = 4) uniform sampler2D opaqueColor;
 layout(set = 0, binding = 5) uniform sampler2D normals;
@@ -34,8 +32,6 @@ layout(set = 0, binding = 9, rgba16f) writeonly uniform image2D outReflectance;
 layout(set = 0, binding = 10, r32f) writeonly uniform image2D outDepth;
 layout(set = 0, binding = 11, rgba16f) writeonly uniform image2D outRadiance;
 layout(set = 0, binding = 12) uniform sampler2D rawRadiance;
-layout(set = 0, binding = 19, r32f) writeonly uniform image2D outIrradiance;
-layout(set = 0, binding = 20) uniform sampler2D receiverIrradiance;
 
 #include "reflection_math.glsl"
 #include "radiance-filter.glsl"
@@ -69,7 +65,7 @@ void main() {
     }
   }
 #endif
-  vec4 normal = vec4(0), specular = vec4(0);
+  vec4 normal = invalidReflectionGuide(), specular = vec4(0);
   if (closest < 1) {
     normal = texelFetch(sceneNormals, pixel, selected);
     specular = texelFetch(sceneReflectance, pixel, selected);
@@ -79,8 +75,6 @@ void main() {
   imageStore(outNormals, pixel, normal);
   imageStore(outReflectance, pixel, specular);
   imageStore(outDepth, pixel, vec4(closest, closest, 0, 0));
-  float irradiance = closest < 1 ? texelFetch(sceneIrradiance, pixel, selected).r : -1;
-  imageStore(outIrradiance, pixel, vec4(irradiance));
   // The colour source is already MSAA-resolved with premultiplied coverage.
   // Probe/RT-only targets bind a one-pixel dummy instead of a full pyramid.
   if (all(lessThan(pixel, imageSize(outRadiance))))
@@ -117,17 +111,17 @@ void main() {
 #include "screen-reflection.glsl"
 vec4 traceReflection(ivec2 pixel) {
   vec4 guide = texelFetch(normals, pixel, 0);
-  if (dot(guide.xyz, guide.xyz) < .1 || guide.w >= frame.trace.w) return vec4(0);
+  if (!reflectionGuideValid(guide) || guide.z >= frame.trace.w) return vec4(0);
   vec2 uv = (vec2(pixel) + .5) / vec2(frame.target.xy);
   float depth = texelFetch(depthPyramid, pixel, 0).r;
   if (depth >= 1) return vec4(0);
   vec3 p = worldPosition(uv, depth);
   precise vec3 incident = reflectionUnit(p - frame.cameraPosition.xyz);
-  precise vec3 normal = reflectionUnit(guide.xyz);
+  precise vec3 normal = reflectionGuideNormal(guide);
   precise vec3 direction = reflectionDirection(incident, normal);
   ScreenReflectionView screen = ScreenReflectionView(frame.camera, frame.inverseCamera, frame.view,
       frame.trace, frame.config, frame.target.xy);
-  return traceScreenReflection(screen, p, normal, direction, incident, guide.w, uv);
+  return traceScreenReflection(screen, p, normal, direction, incident, guide.z, uv);
 }
 void main() {
   ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
@@ -145,10 +139,10 @@ void main() {
   bool inBounds = all(lessThan(pixel, ivec2(frame.target.xy)));
   vec4 guide = inBounds ? texelFetch(normals, pixel, 0) : vec4(0);
   float depth = inBounds ? texelFetch(depthPyramid, pixel, 0).r : 1;
-  bool valid = inBounds && depth < 1 && dot(guide.xyz, guide.xyz) >= .1;
+  bool valid = inBounds && depth < 1 && reflectionGuideValid(guide);
   vec2 uv = (vec2(pixel) + .5) / vec2(frame.target.xy);
   vec3 position = valid ? worldPosition(uv, depth) : vec3(0);
-  vec3 normal = valid ? reflectionUnit(guide.xyz) : vec3(0);
+  vec3 normal = valid ? reflectionGuideNormal(guide) : vec3(0);
   uvec2 probeMask = probeTileCandidates(fma(normal, vec3(frame.trace.z), position), valid);
   if (!inBounds) return;
   if (!valid) {
@@ -170,14 +164,14 @@ void main() {
       ivec2 surface = surfacePixel(samplePixel);
       vec4 sampleGuide = texelFetch(normals, surface, 0);
       float sampleDepth = texelFetch(depthPyramid, surface, 0).r;
-      if (sampleDepth >= 1 || dot(sampleGuide.xyz, sampleGuide.xyz) < .1)
+      if (sampleDepth >= 1 || !reflectionGuideValid(sampleGuide))
         continue;
       float distance = viewDepth((vec2(surface) + .5) / vec2(frame.target.xy), sampleDepth);
       vec2 bilinear = mix(1 - fractional, fractional, vec2(x, y));
       float weight = bilinear.x * bilinear.y;
       weight *= exp(-abs(distance - centerDepth) / max(centerDepth, 1e-4) * 70);
-      weight *= pow(max(reflectionDot(reflectionUnit(guide.xyz), reflectionUnit(sampleGuide.xyz)), 0), 6);
-      weight *= exp(-abs(guide.w - sampleGuide.w) * 4);
+      weight *= pow(max(reflectionDot(reflectionGuideNormal(guide), reflectionGuideNormal(sampleGuide)), 0), 6);
+      weight *= exp(-abs(guide.z - sampleGuide.z) * 4);
       radiance += texelFetch(rawRadiance, samplePixel, 0) * weight;
       total += weight;
     }
@@ -185,17 +179,17 @@ void main() {
   vec3 v = reflectionUnit(frame.cameraPosition.xyz - position);
   vec4 receiverReflectance = texelFetch(reflectance, pixel, 0);
   vec3 f0 = receiverReflectance.rgb;
-  float nv = max(reflectionDot(reflectionUnit(guide.xyz), v), 0);
-  vec3 fresnel = f0 + (max(vec3(1 - guide.w), f0) - f0) * pow(1 - nv, 5);
+  float nv = max(reflectionDot(reflectionGuideNormal(guide), v), 0);
+  vec3 fresnel = f0 + (max(vec3(1 - guide.z), f0) - f0) * pow(1 - nv, 5);
   vec3 fallback;
   vec3 reflected = reflectionDirection(-v, normal);
   uint layer = uint(round(clamp(1 - receiverReflectance.a, 0, 1) * 255));
-  float localLuma = texelFetch(receiverIrradiance, pixel, 0).r;
-  if (!boundProbeRadiance(layer, fma(normal, vec3(frame.trace.z), position), reflected, guide.w,
+  float localLuma = guide.w;
+  if (!boundProbeRadiance(layer, fma(normal, vec3(frame.trace.z), position), reflected, guide.z,
                           normal, localLuma, fallback) &&
-      !probeRadianceMasked(fma(normal, vec3(frame.trace.z), position), reflected, guide.w, probeMask,
+      !probeRadianceMasked(fma(normal, vec3(frame.trace.z), position), reflected, guide.z, probeMask,
                             normal, localLuma, fallback))
-    fallback = environmentReflection(position, normal, reflected, guide.w);
+    fallback = environmentReflection(position, normal, reflected, guide.z);
   radiance.rgb += fallback * (1 - clamp(radiance.a, 0, 1));
   imageStore(outRadiance, pixel, vec4(min(radiance.rgb * fresnel, vec3(65000)), radiance.a));
 }

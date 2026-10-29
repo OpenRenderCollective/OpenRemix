@@ -16,7 +16,7 @@ namespace remix::forward {
   class Reflections {
   public:
     struct Inputs {
-      VkImageView depth, normals, reflectance, hdr, irradiance;
+      VkImageView depth, normals, reflectance, hdr;
       VkImage hdrImage;
     };
     struct Environment {

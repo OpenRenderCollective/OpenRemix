@@ -4,6 +4,7 @@
 #define PROBE_IMAGE_BINDING 3
 #define PROBE_TILE_CANDIDATES
 #include "../../../src/native/forward/shaders/probes.glsl"
+#include "../../../src/native/forward/shaders/reflection-guide.glsl"
 #include "../../../src/native/forward/shaders/probe-tiles.glsl"
 struct Query { vec4 position, direction; };
 layout(set = 0, binding = 1, std430) readonly buffer Queries { Query queries[]; };
@@ -18,7 +19,7 @@ void main() {
   if (!inBounds) return;
   vec3 radiance;
   bool valid = probeRadianceMasked(query.position.xyz, query.direction.xyz, query.position.w, mask, radiance);
-  uint row = index * 7u;
+  uint row = index * 9u;
   answers[row] = vec4(radiance, valid ? 1 : 0);
   if ((index & 63u) == 0u) {
     for (uint mode = 0u; mode < 4u; ++mode) {
@@ -31,5 +32,16 @@ void main() {
     valid = boundProbeRadiance(1u, query.position.xyz, query.direction.xyz, query.position.w,
                                vec3(.36, .48, .8), .25, radiance);
     answers[row + 6u] = vec4(radiance, valid ? 1 : 0);
+    uint seed = index * 1664525u + 1013904223u;
+    vec3 basis = vec3(int(seed & 1023u) - 511, int((seed >> 10u) & 1023u) - 511,
+                      int((seed >> 20u) & 1023u) - 511);
+    vec3 normal = dot(basis, basis) > 0 ? normalize(basis) : vec3(0, 0, 1);
+    vec4 packed = packReflectionGuide(normal, .37, .25);
+    packed = vec4(unpackHalf2x16(packHalf2x16(packed.xy)), unpackHalf2x16(packHalf2x16(packed.zw)));
+    answers[row + 7u] = vec4(reflectionGuideNormal(packed), packed.z);
+    bool invalid = reflectionGuideValid(invalidReflectionGuide()) ||
+                   reflectionGuideValid(packReflectionGuide(vec3(0), .37, .25));
+    answers[row + 8u] = vec4(packed.w, invalid ? 1 : 0,
+        packReflectionGuide(normal, .37, -1).w, packReflectionGuide(normal, .37, 0).w);
   }
 }

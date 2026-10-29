@@ -3,7 +3,7 @@
 ## Direction
 
 Forward+ is the rendering framework, not a lighting technique. Its default preset
-will be named **Source 2**: baked static direct lighting and diffuse irradiance on
+is named **Source 2**: baked static direct lighting and diffuse irradiance on
 surface lightmaps, volume probes for moving receivers, and parallax-corrected
 cubemap reflections. Dynamic casters modify baked lighting through mixed shadows.
 Full-resolution SSR remains the screen-space reflection layer. MSAA remains the
@@ -52,13 +52,15 @@ local-light evaluation, shared with the specialized water path. These are intern
 contracts, not a stable public shader ABI. Provider selection and runtime material
 program loading remain pending.
 
-Reflection normalization transport now carries receiver irradiance/pi luminance in
-an R16F world guide and resolves it to R32F using the same covered MSAA sample as
-normal/F0/depth. Zero denotes known darkness; -1 denotes unavailable lighting.
-Metal-only shading still evaluates incident irradiance for this purpose. Target
-memory is accounted in existing statistics. Before deployment, measure the shared
-normalization's cost and qualify format/storage-image limits (the
-combined guide resolve now writes five storage images).
+Reflection normalization uses the existing RGBA16F guide: octahedral world normal
+in XY, roughness in Z, receiver irradiance/pi luminance in W. Negative roughness
+marks invalid geometry; negative luminance marks unavailable lighting; zero
+luminance is known darkness. All consumers use `reflection-guide.glsl` to decode
+the normal. The same covered MSAA sample supplies normal, roughness, irradiance,
+F0 and depth. Metal-only shading still evaluates incident irradiance for this
+purpose. The earlier separate R16F/R32F irradiance targets and fifth storage-image
+write have been removed. Scene quality and performance qualification still precede
+playable deployment; compact storage alone does not establish a frame-time gain.
 
 World, viewmodel and water cubemap fallback now share lighting normalization.
 Capture reference luminance follows the same spatial, priority and feather weights
@@ -174,14 +176,14 @@ Architecture work does not mark those fixed. Detailed tasks remain in the
 
 ## Initial settings audit
 
-`Options::bakeConfiguration` already translates several overlapping switches:
+`lighting_plan.h` now resolves the ownership policy behind several legacy switches:
 `bakedLighting`, `selectedBakedLights`, `aggregateDiffuse`, `fullyBakedLights`,
 `bakedGeometryLights` and `groupedStyledDirect`. Some still carry experimental
 labels even though runtime baked mode selects related paths automatically. These
-need a behavior/caller inventory and migration into the resolved lighting plan;
-renaming the UI alone would leave the ambiguity intact. Live GI also changes this
-configuration, so it belongs in the same resolution step rather than a second
-independent set of booleans. None of these paths is declared unused by this audit.
+still need a behavior/caller inventory and migration to independently selected
+providers. Live GI ownership is resolved centrally; callers must not create a
+second policy through independent booleans. None of these legacy paths is declared
+unused merely because it has an experimental label.
 
 The rough-metal fixture exposed fallback cubemap coverage holes: subdivision
 created more cells than valid capture sites, then discarded empty cells. Fallback

@@ -27,7 +27,7 @@ namespace remix::forward {
         return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
       if (binding == 13 || binding == 16)
         return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-      if ((binding >= 8 && binding <= 11) || binding == 19)
+      if (binding >= 8 && binding <= 11)
         return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
       return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     }
@@ -59,7 +59,7 @@ namespace remix::forward {
                filter = VK_NULL_HANDLE;
     VkDescriptorPool pool = VK_NULL_HANDLE;
     VkSampler sampler = VK_NULL_HANDLE, colorSampler = VK_NULL_HANDLE;
-    std::unique_ptr<Image> normals, reflectance, irradiance, depth, color, raw, filtered;
+    std::unique_ptr<Image> normals, reflectance, depth, color, raw, filtered;
     std::vector<VkImageView> depthViews, colorViews;
     VkImage hdr = VK_NULL_HANDLE;
     std::unique_ptr<ImageDump> dump;
@@ -129,7 +129,6 @@ namespace remix::forward {
     };
     normals = image(extent, VK_FORMAT_R16G16B16A16_SFLOAT);
     reflectance = image(extent, VK_FORMAT_R16G16B16A16_SFLOAT);
-    irradiance = image(extent, VK_FORMAT_R32_SFLOAT);
     // Traversal needs only the nearest depth per cell. R32F keeps the hierarchy
     // compact and requires no extended storage-image-format feature.
     depth = image(extent, VK_FORMAT_R32_SFLOAT, levels);
@@ -159,13 +158,13 @@ namespace remix::forward {
     }
   }
   void Reflections::Gpu::createLayouts() {
-    VkDescriptorSetLayoutBinding bindings[21];
-    for (uint32_t i = 0; i < 21; ++i) {
+    VkDescriptorSetLayoutBinding bindings[18];
+    for (uint32_t i = 0; i < 18; ++i) {
       bindings[i] = {i, descriptorType(i), 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
     }
     const VkDescriptorSetLayoutCreateInfo setInfo{.sType =
                                                       VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-                                                  .bindingCount = 21,
+                                                  .bindingCount = 18,
                                                   .pBindings = bindings};
     check(pipeline::createDescriptorSetLayout(device, &setInfo, nullptr, &setLayout));
     const VkPushConstantRange push{VK_SHADER_STAGE_COMPUTE_BIT, 0, 4};
@@ -217,8 +216,8 @@ namespace remix::forward {
   void Reflections::Gpu::createDescriptors(VkPhysicalDevice physical, Inputs inputs) {
     const uint32_t setCount = gpuFrameCount * (colorLevels + 2);
     const VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, setCount * 2},
-                                          {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, setCount * 12},
-                                          {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, setCount * 5},
+                                          {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, setCount * 10},
+                                          {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, setCount * 4},
                                           {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, setCount * 2}};
     const VkDescriptorPoolCreateInfo poolInfo{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
                                               .maxSets = setCount,
@@ -268,16 +267,6 @@ namespace remix::forward {
                        .descriptorType = descriptorType(i),
                        .pImageInfo = &images[i - 1]};
         vkUpdateDescriptorSets(device, 13, writes, 0, nullptr);
-        const VkDescriptorImageInfo lightingImages[] = {
-            {sampler, inputs.irradiance, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-            {VK_NULL_HANDLE, irradiance->view, VK_IMAGE_LAYOUT_GENERAL},
-            {sampler, irradiance->view, VK_IMAGE_LAYOUT_GENERAL}};
-        VkWriteDescriptorSet lightingWrites[3]{};
-        for (uint32_t i = 0; i < 3; ++i)
-          lightingWrites[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-              .dstSet = set, .dstBinding = 18 + i, .descriptorCount = 1,
-              .descriptorType = descriptorType(18 + i), .pImageInfo = &lightingImages[i]};
-        vkUpdateDescriptorSets(device, 3, lightingWrites, 0, nullptr);
         return set;
       };
       frame.resolve = descriptor(depth->view, depthViews[0], colorViews[0], inputs.hdr,
@@ -355,7 +344,7 @@ namespace remix::forward {
       if (profileReflections && gpu::timing()) passTime.emplace(command, name, extent);
     };
     stage("Forward+ reflection guides", g.extent);
-    for (auto *image : {g.normals.get(), g.reflectance.get(), g.irradiance.get(), g.raw.get(), g.filtered.get()})
+    for (auto *image : {g.normals.get(), g.reflectance.get(), g.raw.get(), g.filtered.get()})
       imageBarrier(command, image->handle, 1, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                    VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
@@ -379,15 +368,12 @@ namespace remix::forward {
     dispatch(g.resolve, frame.resolve, g.extent);
     readable(*g.normals);
     readable(*g.reflectance);
-    readable(*g.irradiance);
     readable(*g.depth, g.levels);
     readable(*g.color, g.colorLevels);
     if (g.dump) {
       g.dump->record(command, slot, "normals", g.normals->handle, VK_FORMAT_R16G16B16A16_SFLOAT, g.extent,
                      VK_IMAGE_LAYOUT_GENERAL);
       g.dump->record(command, slot, "reflectance", g.reflectance->handle, VK_FORMAT_R16G16B16A16_SFLOAT,
-                     g.extent, VK_IMAGE_LAYOUT_GENERAL);
-      g.dump->record(command, slot, "irradiance", g.irradiance->handle, VK_FORMAT_R32_SFLOAT,
                      g.extent, VK_IMAGE_LAYOUT_GENERAL);
       g.dump->record(command, slot, "depth", g.depth->handle, VK_FORMAT_R32_SFLOAT, g.extent,
                      VK_IMAGE_LAYOUT_GENERAL);
