@@ -29,6 +29,8 @@ namespace remix {
     float contrastAmount = 1.15f;
     uint32_t fsrQuality = 3;
     float fsrSharpness = 0.f;
+    // XeSS's seven presets (upscale::xessRenderSize); 5: performance.
+    uint32_t xessQuality = 5;
     bool sigma = true;
     bool blueNoiseShadows = true;
     bool blueNoiseLocalLights = true;

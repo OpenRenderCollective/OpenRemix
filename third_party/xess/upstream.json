@@ -1,0 +1,6 @@
+{
+  "repository": "https://github.com/intel/xess",
+  "tag": "v3.0.2",
+  "revision": "8fe81bdbbaf00b3c1b733fd0d830c333dc84e6f0",
+  "path": "third_party/xess/xess"
+}

@@ -153,19 +153,31 @@ namespace remix {
     }
     if (ImGui::CollapsingHeader("Reconstruction", ImGuiTreeNodeFlags_DefaultOpen)) {
       int upscaler = int(options.upscaler);
-      if (ui::Combo("Requested upscaler", &upscaler, "Off\0Auto\0FSR\0DLSS\0"))
+      // XeSS: Windows only (upscale/xess.h).
+#if REMIX_HAS_XESS
+      constexpr const char *upscalers = "Off\0Auto\0FSR\0DLSS\0XeSS\0";
+#else
+      constexpr const char *upscalers = "Off\0Auto\0FSR\0DLSS\0";
+#endif
+      if (ui::Combo("Requested upscaler", &upscaler, upscalers))
         options.upscaler = upscale::Mode(upscaler);
       const auto fsr = m_pathTracer ? m_pathTracer->upscalingStatistics() : upscale::Statistics{};
       if (options.upscaler != upscale::Mode::Off) {
         const bool amd = options.upscaler == upscale::Mode::Fsr31;
-        auto &savedQuality = amd ? options.fsrQuality : options.dlssQuality;
+        const bool intel = options.upscaler == upscale::Mode::Xess;
+        auto &savedQuality = amd ? options.fsrQuality : intel ? options.xessQuality : options.dlssQuality;
         int quality = int(savedQuality);
+        // Each upscaler's own names; XeSS has seven presets (the XeSS-SR
+        // developer guide's).
         if (ui::Combo("Quality preset", &quality,
-                      "Native AA / DLAA\0Quality\0Balanced\0Performance\0Ultra Performance\0"))
+                      intel ? "Native Anti-Aliasing\0Ultra Quality Plus\0Ultra Quality\0Quality\0Balanced\0"
+                              "Performance\0Ultra Performance\0"
+                      : amd ? "Native AA\0Quality\0Balanced\0Performance\0Ultra Performance\0"
+                            : "DLAA\0Quality\0Balanced\0Performance\0Ultra Performance\0"))
           savedQuality = uint32_t(quality);
         if (amd)
           ui::SliderFloat("FSR sharpening", &options.fsrSharpness, 0.f, 1.f, "%.2f");
-        else {
+        else if (!intel) {
           ui::Checkbox("DLSS Ray Reconstruction", &options.dlssRayReconstruction);
           if (options.dlssRayReconstruction) {
             int model = int(options.dlssRayReconstructionModel);
@@ -233,7 +245,7 @@ namespace remix {
             ImGui::TextWrapped("Sparse rendering: off (%s)", sparse.reason);
         }
       }
-      if (fsr.backend == upscale::Backend::Fsr31 && !fsr.provider.empty())
+      if ((fsr.backend == upscale::Backend::Fsr31 || fsr.backend == upscale::Backend::Xess) && !fsr.provider.empty())
         ImGui::TextWrapped("Active: %s", fsr.provider.c_str());
       else
         ImGui::TextWrapped("Active: %s", upscale::name(fsr.backend));

@@ -49,6 +49,13 @@ third_party/fidelityfx/FidelityFX-SDK/Kits/FidelityFX/docs/license.md (git submo
 third_party/fidelityfx/upstream.json). Packages carry the libraries and that license in
 fidelityfx/ beside remix.dll, and the license as FidelityFX-SDK.md.
 
+Intel XeSS SDK 3.0.2 signed library (XeSS Super Resolution; Windows builds)
+Copyright (C) Intel Corporation
+libxess.dll, redistributed in binary form without modification under the Intel Simplified
+Software License: third_party/xess/xess/LICENSE.txt (git submodule; revision:
+third_party/xess/upstream.json). Packages carry the library, that license and
+third-party-programs.txt in xess/ beside remix.dll, and the license as XeSS.txt.
+
 EON rough diffuse BRDF evaluator and CLTC sampling
 Copyright (c) 2024 Jamie Portsmouth
 MIT license; full notice: src/native/pathtrace/shaders/LICENSE-eon.txt.

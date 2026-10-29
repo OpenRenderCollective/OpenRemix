@@ -7,10 +7,12 @@ endif
 if fsr_linked
   fsr_sources += ['fsr_linked.cpp', 'fsr_frame_generation.cpp', 'sdk_backend.cpp']
 endif
+# XeSS (xess.h): Intel's libxess.dll, Windows only.
+xess_sources = has_xess ? ['xess.cpp'] : []
 upscale_library = static_library('remix_upscale', 'renderer.cpp', 'ngx.cpp', 'neural_uplift.cpp',
-  fsr_sources, upscale_shaders,
+  fsr_sources, xess_sources, upscale_shaders,
   link_with : [pipeline_library, postfx_library],
-  dependencies : [vulkan_dep, fsr_dep, dlss_dep, sdl3_dep, filesystem_dep], include_directories : [native_include, remix_public_include],
+  dependencies : [vulkan_dep, fsr_dep, dlss_dep, xess_dep, sdl3_dep, filesystem_dep], include_directories : [native_include, remix_public_include],
   cpp_args : cpp.get_supported_arguments('-Wno-missing-field-initializers'),
   gnu_symbol_visibility : 'hidden', pic : true)
 
@@ -27,5 +29,11 @@ configure_file(input : 'dlss-runtime.json.in', output : 'dlss-runtime.json',
 if fsr_ffx
   foreach binary : fidelityfx_binaries
     configure_file(input : fidelityfx_runtime_dir / binary, output : binary, copy : true)
+  endforeach
+endif
+# Likewise libxess.dll, where xess.cpp looks.
+if has_xess
+  foreach binary : xess_binaries
+    configure_file(input : xess_runtime_dir / binary, output : binary, copy : true)
   endforeach
 endif

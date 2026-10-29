@@ -118,6 +118,7 @@ namespace remix {
     out.upscaler = in.upscaler;
     out.dlssQuality = in.dlssQuality;
     out.fsrQuality = in.fsrQuality;
+    out.xessQuality = in.xessQuality;
     out.dlssRayReconstruction = in.dlssRayReconstruction;
     out.sharc = in.sharc;
     out.sharcDebug = in.sharcDebug;
@@ -191,6 +192,7 @@ namespace remix {
     const auto ngxCapabilities = m_ngx->capabilities();
     const bool needsNgx = settings.trace.upscaler != upscale::Mode::Off &&
                           settings.trace.upscaler != upscale::Mode::Fsr31 &&
+                          settings.trace.upscaler != upscale::Mode::Xess &&
                           ngxCapabilities.sdk &&
                           (!ngxCapabilities.initializationComplete ||
                            ngxCapabilities.sr || ngxCapabilities.rr);

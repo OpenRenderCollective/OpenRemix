@@ -1077,11 +1077,11 @@ void RemixNativeRuntime::presented() {
       }
       const auto upscaling = m_pathTracer->upscalingStatistics();
       if (upscaling.backend == upscale::Backend::Native || !upscaling.render.width || !upscaling.render.height) {
-        m_frameGenerationStatus = "needs an upscaler (DLSS or FSR; their native-resolution preset counts)";
+        m_frameGenerationStatus = "needs an upscaler (DLSS, FSR or XeSS; their native-resolution preset counts)";
         return;
       }
       // The depth the upscaler prepares: reversed by FSR's, the device's by
-      // DLSS's (upscale::FrameGenerationInputs::depthInverted). FSR frame
+      // DLSS's and XeSS's (upscale::FrameGenerationInputs::depthInverted). FSR frame
       // generation's shaders are chosen for one of them.
       const bool depthInverted = upscaling.backend == upscale::Backend::Fsr31;
       if (m_frameGeneration && !m_frameGeneration->matches(backend, m_swapchainExtent, m_swapchainFormat,

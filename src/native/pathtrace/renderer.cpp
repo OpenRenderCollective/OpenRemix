@@ -684,7 +684,7 @@ namespace remix {
     extent = displayExtent;
     for (auto backend = selectBackend(); backend != upscale::Backend::Native; backend = selectBackend()) {
       try {
-        const bool dlss = backend != upscale::Backend::Fsr31;
+        const bool dlss = backend == upscale::Backend::DlssSr || backend == upscale::Backend::DlssRr;
         uint32_t rrPreset = 0;
         if (backend == upscale::Backend::DlssRr) {
           // The model's library first (NGX restarts for it while no DLSS
@@ -701,8 +701,9 @@ namespace remix {
           else
             rrPreset = cnn ? (rrCnnRequested ? 3u : 4u) : 5u;
         }
-        extent = dlss ? ngx->renderSize(displayExtent, fsrQuality, backend == upscale::Backend::DlssRr)
-                      : upscale::renderSize(displayExtent, fsrQuality);
+        extent = dlss                                ? ngx->renderSize(displayExtent, fsrQuality, backend == upscale::Backend::DlssRr)
+                 : backend == upscale::Backend::Xess ? upscale::xessRenderSize(displayExtent, fsrQuality)
+                                                     : upscale::renderSize(displayExtent, fsrQuality);
         auto next = std::make_unique<upscale::Renderer>();
         next->initialize(physical, device, queueFamily, extent, displayExtent, backend, ngx, fsrQuality, rrPreset);
         rrPresetCreated = rrPreset;

@@ -5,6 +5,7 @@
 #include "upscale/camera.h"
 #include "upscale/fsr.h"
 #include "upscale/ngx.h"
+#include "upscale/xess.h"
 #include "upscale/shaders/embedded.h"
 #include <algorithm>
 #include <cmath>
@@ -53,6 +54,9 @@ struct Renderer::Gpu {
   VkExtent2D render{}, display{};
   std::unique_ptr<FsrUpscaler> fsr;
   std::unique_ptr<NgxFeature> ngx;
+#if REMIX_HAS_XESS
+  std::unique_ptr<XessUpscaler> xess;
+#endif
   std::unique_ptr<Image> motion, exposure;
   bool initialized{};
   std::unique_ptr<Image> depth, reactive, composition, output, dilatedDepth,
@@ -77,6 +81,9 @@ struct Renderer::Gpu {
   ~Gpu() {
     ngx.reset();
     fsr.reset();
+#if REMIX_HAS_XESS
+    xess.reset();
+#endif
     if (tonemapCompositePipeline)
       pipeline::destroyPipeline(device, tonemapCompositePipeline, nullptr);
     if (compositePipeline)
@@ -149,8 +156,18 @@ const char *name(Backend backend) {
   case Backend::Fsr31: return "FSR";
   case Backend::DlssSr: return "DLSS Super Resolution";
   case Backend::DlssRr: return "DLSS + Ray Reconstruction";
+  case Backend::Xess: return "XeSS";
   default: return "Native";
   }
+}
+VkExtent2D xessRenderSize(VkExtent2D display, uint32_t quality) {
+  constexpr float ratios[] = {1.f, 1.3f, 1.5f, 1.7f, 2.f, 2.3f, 3.f};
+  const float ratio = ratios[std::min(quality, 6u)];
+  // Rounded up: XeSS's smallest accepted input is the ratio's, rounded up.
+  auto size = [&](uint32_t extent) {
+    return std::clamp(uint32_t(std::ceil(float(extent) / ratio)), 1u, std::max(extent, 1u));
+  };
+  return {size(display.width), size(display.height)};
 }
 Renderer::Renderer() : m_gpu(std::make_unique<Gpu>()) {}
 Renderer::~Renderer() = default;
@@ -185,6 +202,14 @@ void Renderer::initialize(VkPhysicalDevice physical, VkDevice device,
     g.fsr = std::make_unique<FsrUpscaler>();
     g.fsr->create(physical, device, render, display);
     g.stats.provider = g.fsr->provider();
+  } else if (backend == Backend::Xess) {
+#if REMIX_HAS_XESS
+    g.xess = std::make_unique<XessUpscaler>();
+    g.xess->create(ngx ? ngx->instanceHandle() : VK_NULL_HANDLE, physical, device, render, display, quality);
+    g.stats.provider = g.xess->provider();
+#else
+    throw std::runtime_error("XeSS is Windows only");
+#endif
   } else {
     g.ngx = std::make_unique<NgxFeature>();
     g.ngx->initialize(std::move(ngx), queueFamily, render, display, quality, backend == Backend::DlssRr, rrPreset);
@@ -270,7 +295,11 @@ void Renderer::initialize(VkPhysicalDevice physical, VkDevice device,
       check(vkCreateQueryPool(device, &qi, nullptr, &query));
     g.timestamps = g.frameTimestamps[0];
   }
-  g.stats.memoryBytes += g.ngx ? g.ngx->memoryBytes() : g.fsr->memoryBytes();
+  g.stats.memoryBytes += g.ngx ? g.ngx->memoryBytes() : g.fsr ? g.fsr->memoryBytes() : 0;
+#if REMIX_HAS_XESS
+  if (g.xess)
+    g.stats.memoryBytes += g.xess->memoryBytes();
+#endif
   g.stats.active = true;
   g.stats.render = render;
   g.stats.display = display;
@@ -282,6 +311,11 @@ void Renderer::selectFrame(uint32_t slot) {
   m_gpu->timestamps = m_gpu->frameTimestamps[slot];
 }
 bool Renderer::finishInitialization(VkQueue queue) {
+#if REMIX_HAS_XESS
+  // libxess submits to the device's queue itself.
+  if (m_gpu->xess)
+    m_gpu->xess->finishInitialization();
+#endif
   return !m_gpu->ngx || m_gpu->ngx->finishInitialization(queue);
 }
 Statistics Renderer::statistics() const { return m_gpu->stats; }
@@ -352,10 +386,11 @@ void Renderer::record(VkCommandBuffer command, Input color, Input depth,
   vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, g.prepare);
   vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, g.layout, 0,
                           1, &g.set, 0, nullptr);
-  const auto depthProjection = g.ngx ? projection : reversedDepth(projection);
+  // FSR takes reversed depth; NGX and XeSS the device's.
+  const auto depthProjection = g.fsr ? reversedDepth(projection) : projection;
   vkCmdPushConstants(command, g.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
                      sizeof(depthProjection), &depthProjection);
-  const uint32_t prepareMode = g.ngx ? 0 : 2;
+  const uint32_t prepareMode = g.fsr ? 2 : 0;
   vkCmdPushConstants(command, g.layout, VK_SHADER_STAGE_COMPUTE_BIT, sizeof(projection), 4, &prepareMode);
   {
     gpu::GpuScope scope(command, "Upscaler input preparation", g.render);
@@ -367,6 +402,7 @@ void Renderer::record(VkCommandBuffer command, Input color, Input depth,
   gpu::GpuScope upscaleTime(command,
                             g.stats.backend == Backend::DlssRr   ? "DLSS Ray Reconstruction"
                             : g.stats.backend == Backend::DlssSr ? "DLSS Super Resolution"
+                            : g.stats.backend == Backend::Xess   ? "XeSS Super Resolution"
                                                                  : "FSR upscaling",
                             g.display);
   const bool resetHistory = reset || !g.initialized;
@@ -375,13 +411,14 @@ void Renderer::record(VkCommandBuffer command, Input color, Input depth,
     // runtime activates a prepared replacement. Never retry SDK evaluation.
     if (g.stats.failed)
       throw std::runtime_error(g.stats.failure);
-    if (g.ngx) {
-      // NGX samples read-only inputs in SHADER_READ_ONLY_OPTIMAL, and leaves
-      // output in GENERAL. Restore our shared inputs before any later work.
+    if (!g.fsr) {
+      // NGX and XeSS sample read-only inputs in SHADER_READ_ONLY_OPTIMAL, and
+      // leave output in GENERAL. Restore our shared inputs before any later work.
       std::vector<Input> inputs = {color,
                                    {g.depth->image, g.depth->view},
-                                   {g.motion->image, g.motion->view},
-                                   {g.exposure->image, g.exposure->view}};
+                                   {g.motion->image, g.motion->view}};
+      if (g.ngx)
+        inputs.push_back({g.exposure->image, g.exposure->view});
       if (g.stats.backend == Backend::DlssRr)
         inputs.insert(inputs.end(),
                       {guides.diffuse, guides.specular, guides.normalRoughness,
@@ -409,11 +446,27 @@ void Renderer::record(VkCommandBuffer command, Input color, Input depth,
       };
       transition(true);
       try {
-        g.ngx->record(command, color, {g.depth->image, g.depth->view},
-                      {g.motion->image, g.motion->view},
-                      {g.output->image, g.output->view},
-                      {g.exposure->image, g.exposure->view}, guides, view,
-                      projection, jitter, milliseconds, resetHistory);
+        if (g.ngx)
+          g.ngx->record(command, color, {g.depth->image, g.depth->view},
+                        {g.motion->image, g.motion->view},
+                        {g.output->image, g.output->view},
+                        {g.exposure->image, g.exposure->view}, guides, view,
+                        projection, jitter, milliseconds, resetHistory);
+#if REMIX_HAS_XESS
+        else if (g.xess) {
+          XessDispatch frame;
+          frame.color = color;
+          frame.depth = input(g.depth);
+          frame.motion = input(g.motion);
+          frame.output = input(g.output);
+          frame.render = g.render;
+          // XeSS's jitter shears the projection: the sample moves against it.
+          frame.jitter[0] = -jitter[0];
+          frame.jitter[1] = -jitter[1];
+          frame.reset = resetHistory;
+          g.xess->dispatch(command, frame);
+        }
+#endif
       } catch (...) {
         transition(false);
         throw;
@@ -627,8 +680,8 @@ FrameGenerationInputs Renderer::frameGenerationInputs() const {
   const auto &g = *m_gpu;
   if (!g.depth || !g.motion)
     return {};
-  // record() writes the device depth for NGX and the reversed one for FSR.
-  return {{g.depth->image, g.depth->view}, {g.motion->image, g.motion->view}, g.render, !g.ngx, true};
+  // record() writes the device depth for NGX and XeSS, the reversed one for FSR.
+  return {{g.depth->image, g.depth->view}, {g.motion->image, g.motion->view}, g.render, bool(g.fsr), true};
 }
 Input Renderer::preparedDepth() const {
   return m_gpu->depth ? Input{m_gpu->depth->image, m_gpu->depth->view} : Input{};

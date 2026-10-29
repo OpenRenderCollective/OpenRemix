@@ -7,7 +7,7 @@
 #include <string>
 #include <vulkan/vulkan.h>
 namespace remix::upscale {
-enum class Backend : uint32_t { Native, Fsr31, DlssSr, DlssRr };
+enum class Backend : uint32_t { Native, Fsr31, DlssSr, DlssRr, Xess };
 const char *name(Backend backend);
 class Ngx;
 struct Input {
@@ -45,7 +45,7 @@ struct Statistics {
   uint64_t frames{}, resets{};
   float milliseconds{};
   std::string failure;
-  // FSR: the provider evaluating, e.g. "FSR 4.1.2" (FsrUpscaler::provider).
+  // FSR and XeSS: the provider evaluating, e.g. "FSR 4.1.2" (FsrUpscaler::provider).
   std::string provider;
   // Ray Reconstruction: the CNN model's library is packaged / loaded, the
   // NGX preset created (1-6, A-F) and why the requested model is not loaded.
@@ -55,6 +55,10 @@ struct Statistics {
 };
 bool supportsCamera(const scene::Matrix &projection);
 VkExtent2D renderSize(VkExtent2D display, uint32_t quality);
+// XeSS's presets (native AA, ultra quality plus, ultra quality, quality,
+// balanced, performance, ultra performance): the XeSS-SR developer guide's
+// ratios 1, 1.3, 1.5, 1.7, 2, 2.3 and 3, rounded up.
+VkExtent2D xessRenderSize(VkExtent2D display, uint32_t quality);
 void jitter(float *xy, uint64_t frame, VkExtent2D render, VkExtent2D display);
 class Renderer {
 public:

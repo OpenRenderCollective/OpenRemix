@@ -4,3 +4,6 @@
 [submodule "third_party/fidelityfx/FidelityFX-SDK"]
 	path = third_party/fidelityfx/FidelityFX-SDK
 	url = https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK.git
+[submodule "third_party/xess/xess"]
+	path = third_party/xess/xess
+	url = https://github.com/intel/xess.git

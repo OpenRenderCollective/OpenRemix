@@ -149,7 +149,7 @@ namespace remix::config {
                             return true;
                           }});
         result.push_back(choices("rtx.native.pathtrace.upscaler", FIELD(trace.upscaler),
-                                 {"off", "auto", "fsr31", "dlss"}));
+                                 {"off", "auto", "fsr31", "dlss", "xess"}));
         result.push_back(choices("rtx.native.pathtrace.dlssRayReconstruction",
                                  FIELD(trace.dlssRayReconstruction), {"0", "1"}));
         result.push_back(choices("rtx.native.pathtrace.dlssRayReconstructionModel",
@@ -166,6 +166,9 @@ namespace remix::config {
                                  {"native-aa", "quality", "balanced", "performance", "ultra-performance"}));
         result.push_back(choices("rtx.native.pathtrace.dlssQuality", FIELD(trace.dlssQuality),
                                  {"native-aa", "quality", "balanced", "performance", "ultra-performance"}));
+        result.push_back(choices("rtx.native.pathtrace.xessQuality", FIELD(trace.xessQuality),
+                                 {"native-aa", "ultra-quality-plus", "ultra-quality", "quality", "balanced",
+                                  "performance", "ultra-performance"}));
         TRACE(samples, 1, 16);
         TRACE(bounces, 0, 16);
         TRACE(russianRoulette, 0, 1);

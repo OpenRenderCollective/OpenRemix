@@ -22,6 +22,7 @@
 
 #include "platform/memory_release.h"
 #include "runtime/runtime.h"
+#include "upscale/xess.h"
 
 #include <algorithm>
 #include <array>
@@ -270,6 +271,7 @@ namespace remix {
       m_lowLatencySupported = m_lowLatencyActive = false;
       m_gpuTimers.shutdown();
       MemoryRelease::drain();
+      upscale::xess::unregisterDevice(m_device);
       vkDestroyDevice(m_device, nullptr);
     }
     if (m_surface) {

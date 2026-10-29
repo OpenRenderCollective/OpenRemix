@@ -76,6 +76,14 @@ if not metal_backend
     fsr_deps += declare_dependency(dependencies : fsr31_dep, compile_args : '-DREMIX_FSR_LINKED=1')
   endif
   fsr_dep = declare_dependency(dependencies : fsr_deps)
+  # XeSS Super Resolution: Windows only, from Intel's signed libxess.dll
+  # (XeSS SDK 3.0.2; upscale/xess.h), like FSR's ffx-api DLLs.
+  has_xess = system == 'windows'
+  xess_dep = declare_dependency(compile_args : '-DREMIX_HAS_XESS=0')
+  if has_xess
+    subdir('third_party/xess')
+    xess_dep = declare_dependency(dependencies : xess_sdk_dep, compile_args : '-DREMIX_HAS_XESS=1')
+  endif
   subdir('third_party/dlss')
 endif
 subdir('third_party/xz-embedded')

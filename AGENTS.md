@@ -20,7 +20,11 @@ pinned in `third_party/numos/upstream.json`; check it out without `--recursive`
 FSR on Windows loads AMD's signed ffx-api DLLs from the FidelityFX SDK 2.4.0 submodule
 `third_party/fidelityfx/FidelityFX-SDK`, pinned in `third_party/fidelityfx/upstream.json` and
 required by Windows builds (`git submodule update --init third_party/fidelityfx/FidelityFX-SDK`);
-Linux and macOS link FSR 3.1.4 from `third_party/fsr31` (`upscale/fsr.h`). Use two-space indentation and attached braces;
+Linux and macOS link FSR 3.1.4 from `third_party/fsr31` (`upscale/fsr.h`).
+XeSS Super Resolution is Windows only, like FSR 4: it loads Intel's signed `libxess.dll` from the
+XeSS SDK 3.0.2 submodule `third_party/xess/xess`, pinned in `third_party/xess/upstream.json` and
+required by Windows builds (`git submodule update --init third_party/xess/xess`; `upscale/xess.h`).
+Use two-space indentation and attached braces;
 `.clang-format` covers maintained first-party C/C++ only.
 
 Build: `CC=clang CXX=clang++ meson setup _work/build/native && meson compile -C _work/build/native`.

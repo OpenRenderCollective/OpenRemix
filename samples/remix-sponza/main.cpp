@@ -12,6 +12,7 @@
 //   nave (temporal reprojection under motion).
 #include <remix/remix_c.h>
 #include <remix/remix_native_ext.h>
+#include <remix/remix_reconstruction_ext.h>
 #if !defined(_WIN32)
 #include <dlfcn.h>
 #endif
@@ -300,6 +301,13 @@ int main(int argc, char **argv) {
 #else
       dlsym(library, "remixapi_GetTracingStatisticsEXT"));
 #endif
+  using Reconstruction = remixapi_ErrorCode(REMIXAPI_CALL *)(remixapi_ReconstructionDiagnosticsEXT *);
+  const auto reconstructionOf = reinterpret_cast<Reconstruction>(
+#if defined(_WIN32)
+      GetProcAddress(library, "remixapi_GetReconstructionDiagnosticsEXT"));
+#else
+      dlsym(library, "remixapi_GetReconstructionDiagnosticsEXT"));
+#endif
   const bool move = std::getenv("MOVE") && std::strcmp(std::getenv("MOVE"), "0") != 0;
   const auto start = Clock::now();
   auto windowStart = Clock::now();
@@ -365,6 +373,13 @@ int main(int argc, char **argv) {
       std::fprintf(stderr, "%ux%u: %.1f fps, frame %.2f ms, GPU trace %.2f ms\n", state.drawableWidth,
                    state.drawableHeight, windowFrames / elapsed, elapsed * 1000 / windowFrames,
                    gpuSum / windowFrames);
+      // The upscaler in use (remix_reconstruction_ext.h's backend numbers).
+      remixapi_ReconstructionDiagnosticsEXT reconstruction = {.structSize = sizeof(reconstruction)};
+      if (reconstructionOf && !reconstructionOf(&reconstruction))
+        std::fprintf(stderr, "  reconstruction: backend %u, %ux%u -> %ux%u, %.2f ms%s%s\n",
+                     reconstruction.activeBackend, reconstruction.renderWidth, reconstruction.renderHeight,
+                     reconstruction.displayWidth, reconstruction.displayHeight, reconstruction.gpuMilliseconds,
+                     *reconstruction.fallbackReason ? "; " : "", reconstruction.fallbackReason);
       windowStart = Clock::now();
       windowFrames = 0;
       gpuSum = 0;

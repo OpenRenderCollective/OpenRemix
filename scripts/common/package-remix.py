@@ -77,6 +77,14 @@ if system == 'Windows':
         shutil.copy2(fidelityfx / 'signedbin' / name, output / 'bin/fidelityfx' / name)
     shutil.copy2(fidelityfx / 'docs/license.md', output / 'bin/fidelityfx/LICENSE.md')
     shutil.copy2(fidelityfx / 'docs/license.md', licenses / 'FidelityFX-SDK.md')
+    # XeSS: Intel's signed libxess.dll, loaded from xess/ beside remix.dll
+    # (src/native/upscale/xess.cpp), with the notices its license requires.
+    xess = root / 'third_party/xess/xess'
+    (output / 'bin/xess').mkdir()
+    shutil.copy2(xess / 'bin/libxess.dll', output / 'bin/xess/libxess.dll')
+    for name in ['LICENSE.txt', 'third-party-programs.txt']:
+        shutil.copy2(xess / name, output / 'bin/xess' / name)
+    shutil.copy2(xess / 'LICENSE.txt', licenses / 'XeSS.txt')
 elif system == 'Linux':
     staging = tempfile.TemporaryDirectory(prefix='remix-package-')
     subprocess.run(['meson', 'install', '-C', str(build), '--no-rebuild', '--destdir', staging.name],

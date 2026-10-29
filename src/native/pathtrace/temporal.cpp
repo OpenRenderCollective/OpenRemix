@@ -303,7 +303,7 @@ namespace remix {
   void PathTracer::setNgx(std::shared_ptr<upscale::Ngx> ngx) { m_gpu->ngx = std::move(ngx); }
   upscale::Backend PathTracer::Gpu::selectBackend() const {
     auto allowed = [&](upscale::Backend b) { return !(failedBackends & (1u << uint32_t(b))); };
-    if (requestedBackend == upscale::Backend::Fsr31)
+    if (requestedBackend == upscale::Backend::Fsr31 || requestedBackend == upscale::Backend::Xess)
       return allowed(requestedBackend) ? requestedBackend : upscale::Backend::Native;
     if (requestedBackend == upscale::Backend::Native || !ngx) return upscale::Backend::Native;
     const auto caps = ngx->capabilities();
@@ -332,9 +332,9 @@ namespace remix {
     g.preparedPerspective = perspective;
     g.preparedLocal = local;
     g.requestedUpscaler = options.upscaler;
-    g.fsrQuality = options.upscaler == upscale::Mode::Fsr31
-                       ? options.fsrQuality
-                       : options.dlssQuality;
+    g.fsrQuality = options.upscaler == upscale::Mode::Fsr31  ? options.fsrQuality
+                   : options.upscaler == upscale::Mode::Xess ? options.xessQuality
+                                                             : options.dlssQuality;
     g.rrRequested = options.dlssRayReconstruction;
     g.rrCnnRequested = options.dlssRayReconstructionModel == 1;
     g.rrPresetRequested = options.dlssRayReconstructionPresetOverride ? options.dlssRayReconstructionPreset : 0;
@@ -371,8 +371,11 @@ namespace remix {
     auto &g = *this;
     const bool eligible = !options.accumulate && !options.sharcDebug && g.postCapabilities.taaSupported && perspective;
     const auto backend = !eligible || options.upscaler == upscale::Mode::Off ? upscale::Backend::Native :
-        options.upscaler == upscale::Mode::Fsr31 ? upscale::Backend::Fsr31 : upscale::Backend::DlssSr;
-    const auto quality = options.upscaler == upscale::Mode::Fsr31 ? options.fsrQuality : options.dlssQuality;
+        options.upscaler == upscale::Mode::Fsr31 ? upscale::Backend::Fsr31 :
+        options.upscaler == upscale::Mode::Xess ? upscale::Backend::Xess : upscale::Backend::DlssSr;
+    const auto quality = options.upscaler == upscale::Mode::Fsr31  ? options.fsrQuality
+                         : options.upscaler == upscale::Mode::Xess ? options.xessQuality
+                                                                   : options.dlssQuality;
     const bool rrCnn = options.dlssRayReconstructionModel == 1;
     const uint32_t rrPreset = options.dlssRayReconstructionPresetOverride ? options.dlssRayReconstructionPreset : 0;
     bool changed = options.upscaler != g.requestedUpscaler || quality != g.fsrQuality || options.dlssRayReconstruction != g.rrRequested;

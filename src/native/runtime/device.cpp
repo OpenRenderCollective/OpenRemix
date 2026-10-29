@@ -22,6 +22,7 @@
 
 #include "runtime/runtime.h"
 #include "upscale/ngx.h"
+#include "upscale/xess.h"
 
 #include <algorithm>
 #include <array>
@@ -81,7 +82,9 @@ namespace remix {
     if (auto enumerate = reinterpret_cast<PFN_vkEnumerateInstanceVersion>(
             vkGetInstanceProcAddr(nullptr, "vkEnumerateInstanceVersion")))
       enumerate(&loaderVersion);
-    m_instanceApiVersion = std::min(loaderVersion, uint32_t(VK_API_VERSION_1_2));
+    // XeSS (Windows) asks for a newer instance where its library is packaged.
+    m_instanceApiVersion =
+        std::min(loaderVersion, std::max(uint32_t(VK_API_VERSION_1_2), upscale::xess::instanceApiVersion()));
     const VkApplicationInfo applicationInfo = {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pApplicationName = "Remix Shell",
@@ -386,9 +389,14 @@ namespace remix {
         features.pNext = &metering;
       }
     }
+    // Last: libxess sets fields of the finished chain and links its own
+    // structures (upscale/xess.h).
+    void *featureChain = &features;
+    const auto xessUnavailable = upscale::xess::enableDevice(m_instance, selection.physicalDevice,
+                                                             m_instanceApiVersion, extensions, featureChain);
     const VkDeviceCreateInfo createInfo = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .pNext = &features,
+        .pNext = featureChain,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queueInfo,
         .enabledExtensionCount = uint32_t(extensions.size()),
@@ -399,6 +407,7 @@ namespace remix {
     }
 
     m_ngx->setDevice(m_instance, selection.physicalDevice, m_device);
+    upscale::xess::registerDevice(m_device, xessUnavailable);
     m_physicalDevice = selection.physicalDevice;
     vkGetPhysicalDeviceProperties(m_physicalDevice, &m_properties);
     m_queueFamily = selection.family;

@@ -237,6 +237,12 @@ pkg_config_libdir = '{prefix}/lib/pkgconfig'
         shutil.copy2(native / 'upscale' / name, fidelityfx / name)
     shutil.copy2(root / 'third_party/fidelityfx/FidelityFX-SDK/Kits/FidelityFX/docs/license.md',
                  fidelityfx / 'LICENSE.md')
+    # XeSS: Intel's signed libxess.dll in xess/ (upscale/xess.cpp).
+    xess = output / 'xess'
+    xess.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(native / 'upscale/libxess.dll', xess / 'libxess.dll')
+    for name in ['LICENSE.txt', 'third-party-programs.txt']:
+        shutil.copy2(root / 'third_party/xess/xess' / name, xess / name)
     print('Windows runtime:', output)
 
 
