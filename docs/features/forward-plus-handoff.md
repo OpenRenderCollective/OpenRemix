@@ -2,6 +2,7 @@
 
 Current checkpoint: 2026-10-29. This page supersedes older handoff narratives;
 Git history retains them. Start with AGENTS.md, this page and the
+[fresh-clone setup](forward-plus-setup.md) and
 [lighting architecture](../architecture/forward-lighting.md), then the
 [current roadmap queue](forward-plus-roadmap.md). Historical roadmap entries are
 context, not proof that an old experiment is still enabled or a defect is fixed.
@@ -10,13 +11,13 @@ context, not proof that an old experiment is still enabled or a defect is fixed.
 
 | Item | Current state |
 | --- | --- |
-| Native checkout | `D:/OpenRemix`, `forward-plus-renderer` |
+| Native checkout | `OpenRemix/`, `forward-plus-renderer` |
 | Native source checkpoint | `5ebf5f37` (handoff documentation follows this commit) |
 | Native official remote | `https://github.com/OpenRenderCollective/OpenRemix.git` |
-| Adapter checkout | `D:/garrys-mod-rtx-remixed-2`, `forward-plus-renderer` |
-| Adapter checkpoint | `b7947eef9095097631145503ace99aca0f2dc4b6` (handoff links only; code unchanged from `26dc7770`) |
+| Adapter checkout | `garrys-mod-rtx-remixed-2/`, `forward-plus-renderer` |
+| Adapter checkpoint | `8e16623e55cb67f97acd94b7f48c210c5c477226` (portable setup documentation; code unchanged from `26dc7770`) |
 | Adapter official remote | `https://github.com/sambow23/garrys-mod-rtx-remixed-2.git` |
-| Playable install | `E:/SteamLibrary/steamapps/common/GarrysModWithRTX2` |
+| Previous playable install | Owner-local installation; not distributed in Git |
 | Installed package | `forwardplus-visibility-20261027` |
 | Installed native / adapter | `93c2ae0a` / `26dc7770` |
 
@@ -104,14 +105,17 @@ to validate the contracts. Those alternatives and virtual shadow maps are propos
 
 ## How to continue safely
 
-Read repository build instructions. This machine also has the ignored convenience
-wrapper `_work/build-forward.ps1`; a fresh checkout must set up its own toolchain.
-Useful local commands from D:/OpenRemix:
+Use the [fresh-clone setup](forward-plus-setup.md). All required build entry
+points are tracked. No private build wrapper, pre-existing `_work` directory,
+owner-local SDK prefix or installed game is required for the native baseline.
+After enabling GPU tests, list available cases with:
 
-```powershell
-./_work/build-forward.ps1 compile -C _work/build/forwardplus -j4 remix remix-raster-test remix-forward-policy-test remix-forward-probe-sampling-test
-./_work/build-forward.ps1 test -C _work/build/forwardplus --no-rebuild --num-processes 1 'GPU oriented cubemap projection, priorities and roughness' 'Forward+ SSR transport and MSAA guide readback'
+```sh
+meson test -C _work/build/windows --list
 ```
+
+Run the oriented cubemap projection and Forward+ SSR transport/MSAA cases after
+reflection changes. Use your own build directory on other platforms.
 
 Additional relevant cases cover hardware reflection transport, viewmodel SSR,
 water reflections, baked publication, live-GI/Source 2 transitions and styled mixed
@@ -136,17 +140,21 @@ The current PBR/AutoPBR/replacement path remains default for ordinary materials.
 
 ## References and user assets
 
-- VRF Renderer is the working Source 2 lighting reference, not native CS2 source.
-  The reviewed revision is `a091a7f9dc6bdba5eae25502a20117b60e7a51bf`.
-- s&box shader APIs are an authoring reference. Public source is at `E:/sbox-public`.
-- User's hand-authored volume study:
-  `E:/S&box Addons/S&box Projects (entity)/hls2_maps/maps/campiagn/hls2_c1p0/hls2_c1p0.vmap`.
-  Cubemap/combined probe volumes are the useful entities, not every probe type.
-- User PBR study materials: sibling `hls2_content/materials` folder.
-- Preserve the two authored Construct cubemaps in the playable install's
-  `garrysmod/data/openremix/cubemaps/gm_construct.cubemaps.bin`.
-- Wider map cases include gm_fork, d1_trainstation_02, bm_c1a1b and combined
-  Half-Life addon maps, alongside the existing Construct/Crossfire/HL fixtures.
+- [ValveResourceFormat Renderer](https://github.com/ValveResourceFormat/ValveResourceFormat/tree/master/Renderer)
+  is the working Source 2 lighting reference, not native CS2 source. The reviewed
+  revision is `a091a7f9dc6bdba5eae25502a20117b60e7a51bf`.
+- [s&box public source](https://github.com/Facepunch/sbox-public) is an optional
+  shader API reference. Neither reference checkout is required to compile.
+- The adapter includes `tools/probe_editor/references/gm_construct.json`, containing
+  the two authored Construct reference volumes. Using it requires the matching BSP
+  fingerprint; do not bypass that check to apply it to another map revision.
+- The owner's `hls2_c1p0.vmap` volume study, `hls2_content/materials`, extracted CS2
+  lightmaps, RenderDoc captures and frozen live sky captures are **not in Git**.
+  Request them separately if needed, or reproduce with your own game assets.
+  Cubemap/combined probe volumes are the useful entities in that volume study.
+- Game installations, Workshop maps, runtime settings, baked caches and previous
+  playable packages are not supplied by either repository. Wider map cases include
+  gm_fork, d1_trainstation_02, bm_c1a1b and combined Half-Life addon maps.
 
 The broad roadmap goal remains paused. This checkpoint prepares a reviewable
 handoff; it does not declare the renderer or roadmap complete.

@@ -8,13 +8,13 @@ the original RTX renderer and Direct3D injection runtime have been removed.
 
 Use Clang, Meson and Ninja; on Windows use clang-cl in a Visual Studio developer environment.
 First-party code is grouped under `src/native/{api,runtime,scene,raster,forward,pathtrace,platform,ui}`.
-Tests mirror feature folders under `tests`. See [architecture](docs/architecture.md) for ownership.
+Tests mirror feature folders under `tests`. See [Forward+ architecture](docs/architecture/forward-lighting.md) for ownership.
 CPU-only `scene` code must not depend on Vulkan, SDL, or either GPU backend. Backend GPU state
 is private to each feature. Preserve existing API locking, resource lifetimes, callback re-entry,
 and GPU synchronization when splitting or modifying methods.
 
 Keep `public/include/remix` layouts, calling conventions and exports compatible.
-Keep vendor sources/pins in `third_party` and the `include/vulkan` submodule unchanged unless
+Keep vendor sources/pins in `third_party` and the vendored `include/vulkan` tree unchanged unless
 updating that dependency explicitly. NUMOS (sky) is the git submodule `third_party/numos/numos-sky`,
 pinned in `third_party/numos/upstream.json`; check it out without `--recursive`
 (`git submodule update --init third_party/numos/numos-sky`). `-Dsky=auto` builds without it. Use two-space indentation and attached braces;

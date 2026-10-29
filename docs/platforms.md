@@ -1,6 +1,8 @@
 # Platform builds and packages
 
-All builds use Meson/Ninja and Clang. Initialize the `include/vulkan` submodule.
+All builds use Meson/Ninja and Clang. Vulkan headers are committed under `include/vulkan`; they are not a submodule.
+For the optional NUMOS sky backend, run
+`git submodule update --init third_party/numos/numos-sky` without `--recursive`.
 SDL3 remains pinned to 3.4.14; `scripts/common/build-dependencies.py` verifies the
 archive checksum and builds only SDL3. Dear ImGui v1.92.9b is vendored with checksums.
 PNG/DDS decoders are included in the source tree. The build generates the renderer's

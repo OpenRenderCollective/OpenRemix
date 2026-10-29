@@ -1,3 +1,7 @@
+# Fresh-clone entry point
+
+See [setup](forward-plus-setup.md) for tracked build tools and external prerequisites.
+
 # Forward+ delivery roadmap
 
 ## Current queue - handoff checkpoint 2026-10-29
