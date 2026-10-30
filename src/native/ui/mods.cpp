@@ -159,6 +159,24 @@ namespace remix::ui {
         changed |= part("Materials", &parts.materials, mod.materials, "Material (texture) replacements");
         changed |= part("Keep original draws", &parts.keepOriginal, size_t(-1),
                         "Draw the game's mesh beside its replacement instead of hiding it");
+        float scale = mod.lightScale;
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10);
+        if (ImGui::SliderFloat("Light scale", &scale, 0.001f, 1000.f, "%.3g", ImGuiSliderFlags_Logarithmic))
+          usd::setModLightScale(mod.name, scale);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Multiplies the intensity of the lights this mod authors. Lights made for RTX Remix\n"
+                            "can read brighter here. Saved in the mod's mod.usda (customLayerData\n"
+                            "openremix:lightScale).");
+        ImGui::SameLine();
+        static std::string saveError;
+        ImGui::BeginDisabled(mod.lightScale == mod.authoredLightScale);
+        if (ImGui::SmallButton("Save"))
+          saveError = usd::saveModLightScale(mod.name);
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+          ImGui::SetTooltip("Write this light scale into the mod's mod.usda");
+        if (!saveError.empty())
+          ImGui::TextColored(ImVec4(1, .55f, .4f, 1), "%s", saveError.c_str());
         ImGui::EndDisabled();
         ImGui::TreePop();
       }

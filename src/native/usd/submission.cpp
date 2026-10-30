@@ -101,16 +101,21 @@ namespace remix::usd {
         snapshot_({{"cameras", Json::array()}}) {
     onDemand_ = true;
     deferred_ = snapshot.deferred;
-    // The replacement a prim belongs to: /RootNode/meshes/mesh_<hash>.
+    // The replacement a prim belongs to: /RootNode/meshes/mesh_<hash> or
+    // /RootNode/lights/light_<hash>.
     auto rootOf = [](const std::string &id) {
-      static const std::string meshes = "/RootNode/meshes/";
-      return id.starts_with(meshes) ? id.substr(0, id.find('/', meshes.size())) : std::string();
+      for (const std::string scope : {"/RootNode/meshes/", "/RootNode/lights/"})
+        if (id.starts_with(scope))
+          return id.substr(0, id.find('/', scope.size()));
+      return std::string();
     };
     material({{"id", "default"}, {"albedo", {.7, .7, .7}}});
     for (const auto &m : snapshot.scene["materials"])
       material_defs_.emplace(m.at("id").get<std::string>(), m);
     for (const auto &entry : snapshot.scene["replacements"]["meshes"])
       groups_[entry.at("path").get<std::string>()].material = entry.value("material", std::string());
+    for (const auto &entry : snapshot.scene["replacements"]["lights"])
+      groups_[entry.at("path").get<std::string>()];
     for (auto &m : snapshot.scene["meshes"])
       if (auto group = groups_.find(rootOf(m.value("id", std::string()))); group != groups_.end()) {
         group->second.meshes.push_back(pending_meshes_.size());
@@ -698,7 +703,7 @@ namespace remix::usd {
         {"DistantLight", REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT}};
     const auto type = data.at("type").get<std::string>();
     auto color = vector3(data.at("color"));
-    float intensity = data.value("intensity", 1.f), radius = data.value("radius", 0.5f),
+    float intensity = data.value("intensity", 1.f) * lightScale_, radius = data.value("radius", 0.5f),
           width = data.value("width", 1.f);
     float height = data.value("height", 1.f), length = data.value("length", 1.f);
     float angle = data.value("angle", 0.53f) * float(3.141592653589793 / 180.0);

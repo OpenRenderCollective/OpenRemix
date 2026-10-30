@@ -11,10 +11,10 @@ namespace remix::usd {
   public:
     explicit Submission(NativeResources &resources, const Snapshot &snapshot, uint64_t namespaceId,
                         bool applyMods = true);
-    // A mod's replacements (/RootNode/meshes/mesh_<hash>), each created when
-    // first drawn (ready): its textures decode off the Present thread while
-    // the game's own mesh draws. Takes the snapshot's meshes; textures are
-    // not preloaded.
+    // A mod's replacements (/RootNode/meshes/mesh_<hash>, and the lights under
+    // /RootNode/lights/light_<hash>), each created when first drawn (ready):
+    // its textures decode off the Present thread while the game's own mesh
+    // draws. Takes the snapshot's meshes; textures are not preloaded.
     struct OnDemand {};
     Submission(NativeResources &resources, Snapshot &snapshot, uint64_t namespaceId, OnDemand);
     ~Submission();
@@ -34,6 +34,9 @@ namespace remix::usd {
     // Texture files a material reads (empty entries omitted).
     std::vector<std::string> materialTextures(const std::string &id) const;
     const std::vector<remixapi_InstanceInfo> &instances() const { return instances_; }
+    // Multiplies the intensity of the lights it creates from now on (a mod's
+    // light scale; attached lights are created each frame).
+    void setLightScale(float scale) { lightScale_ = scale; }
 
   private:
     void clear();
@@ -58,6 +61,7 @@ namespace remix::usd {
     std::vector<std::string> groupTextures(const Group &) const;
     void realize(Group &);
     bool onDemand_ = false;
+    float lightScale_ = 1;
     std::shared_ptr<DeferredStage> deferred_;
     std::vector<Json> pending_meshes_;
     std::map<std::string, Group> groups_;

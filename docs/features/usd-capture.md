@@ -104,6 +104,21 @@ The game's mesh draws until then. Memory follows what the game has drawn, not
 the size of the mod. Composing every replacement of HL2 RTX's demo mod at once
 holds about 50 million vertices, more than 10 GB.
 
+A game light's replacement (`light_<HASH>`) overrides the game light with what
+it authors. The lights defined under it are created the same way, the first
+time the game light is drawn. As in RTX Remix, they sit in the game light's
+frame: at its position, with their -Z along its direction (spot and distant
+lights). They are placed as authored when the replacement has a transform of
+its own.
+
+A mod's light scale multiplies the intensity of the lights it authors: lights
+under its replacements, and the intensities its light overrides set. Lights
+made for RTX Remix read brighter here, mostly from exposure: the light math is
+the same (color × intensity × 2^exposure). The scale is the root layer's
+`customLayerData` value `openremix:lightScale` (a double, default 1). **Mods →
+(mod) → Light scale** changes it for the session, and **Save** writes it into
+the mod's `mod.usda`, which USD reformats.
+
 As in RTX Remix, a texture that is missing or does not decode is left out of
 its material, with a warning. The mod still loads, and the Mods tab counts the
 textures it is missing. Loading a capture or a USD scene

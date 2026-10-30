@@ -211,6 +211,64 @@ int main(int argc, char **argv) {
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
     require(!usd::modInstance(resources, original), "removal restores original");
+    // A game light's replacement lights (light_<hash> children) sit in the
+    // game light's frame: 2 units along -Z of a spot light at (10, 0, 0)
+    // aimed along +X is (12, 0, 0). Its light scale (customLayerData
+    // openremix:lightScale) scales them.
+    write("#usda 1.0\n(\ncustomLayerData = {\ndouble \"openremix:lightScale\" = 0.5\n}\nmetersPerUnit = 1\n"
+          "upAxis = \"Y\"\n)\ndef Xform \"RootNode\" { def Scope \"lights\" { "
+          "over \"light_0000000000000456\" {\n def SphereLight \"child\" {\n float inputs:radius = 1\n"
+          " double3 xformOp:translate = (0, 0, -2)\n uniform token[] xformOpOrder = [\"xformOp:translate\"]\n"
+          " }\n }\n }\n }\n");
+    remixapi_LightInfoSphereEXT spot{};
+    spot.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT;
+    spot.position = {10, 0, 0};
+    spot.radius = 1;
+    spot.volumetricRadianceScale = 1;
+    spot.shaping_hasvalue = 1;
+    spot.shaping_value.direction = {1, 0, 0};
+    spot.shaping_value.coneAngleDegrees = 30;
+    remixapi_LightInfo gameLight{};
+    gameLight.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+    gameLight.pNext = &spot;
+    gameLight.hash = 0x456;
+    gameLight.radiance = {1, 1, 1};
+    remixapi_LightHandle game{};
+    resources.createLight(gameLight, game);
+    float childRadiance = 0;
+    auto childPlaced = [&] {
+      for (const auto &light : resources.sphereLights())
+        if (std::fabs(light.position[0] - 12) < 1e-3f && std::fabs(light.position[1]) < 1e-3f &&
+            std::fabs(light.position[2]) < 1e-3f) {
+          childRadiance = light.radiance[0];
+          return true;
+        }
+      return false;
+    };
+    bool placed = false;
+    for (int i = 0; i < 60 && !placed; ++i) {
+      usd::modBoundary(resources);
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      usd::modLight(resources, game);
+      placed = childPlaced();
+      resources.finishFrame();
+    }
+    require(placed, "replacement lights sit in the game light's frame");
+    const auto status = usd::modStatus();
+    require(status.mods.size() == 1 && status.mods[0].authoredLightScale == 0.5f, "authored light scale");
+    const float authored = childRadiance;
+    usd::setModLightScale(status.mods[0].name, 4);
+    usd::modBoundary(resources);
+    usd::modLight(resources, game);
+    require(childPlaced() && authored > 0 && std::fabs(childRadiance / authored - 8) < 1e-3f,
+            "light scale multiplies mod lights");
+    resources.finishFrame();
+    require(usd::saveModLightScale(status.mods[0].name).empty(), "light scale saved");
+    {
+      std::ifstream saved(dir / "a/mod.usda");
+      const std::string text{std::istreambuf_iterator<char>(saved), std::istreambuf_iterator<char>()};
+      require(text.find("\"openremix:lightScale\" = 4") != std::string::npos, "light scale written to mod.usda");
+    }
     usd::stopMods(resources);
     std::filesystem::remove_all(dir);
     std::cout << "USD tests passed\n";

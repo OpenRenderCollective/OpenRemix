@@ -1,6 +1,8 @@
 #include "usd/mods.h"
 #include "usd/submission.h"
+#include <pxr/usd/sdf/layer.h>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <future>
@@ -43,6 +45,7 @@ namespace remix::usd {
       // (scene::sceneUpAxis), the mods loading again when it changes.
       bool hostAxis = false;
       std::map<std::string, ModParts> modParts; // by mod name; absent: defaults
+      std::map<std::string, float> lightScales; // the Mods tab's, by mod name; absent: authored
       Options options;
       std::string directory, diagnostic;
       std::future<Set> pending;
@@ -155,8 +158,9 @@ namespace remix::usd {
           const auto &text = warning.get_ref<const std::string &>();
           missing += text.starts_with("Unresolved texture ") || text.starts_with("Undecodable texture ");
         }
-        result.mods.push_back(
-            {modName(directory, path), count("meshes"), attached, count("lights"), count("materials"), missing});
+        const float scale = snapshot.scene.value("light_scale", 1.0);
+        result.mods.push_back({modName(directory, path), count("meshes"), attached, count("lights"),
+                               count("materials"), missing, path, scale, scale});
         result.dependencies.insert(snapshot.dependencies.begin(), snapshot.dependencies.end());
         result.snapshots.push_back(std::move(snapshot));
       }
@@ -256,6 +260,54 @@ namespace remix::usd {
         return batch;
       });
     }
+    // What the lights mod `index` authors are scaled by.
+    float lightScale(size_t index) {
+      if (index >= state.active.mods.size())
+        return 1;
+      const auto &mod = state.active.mods[index];
+      auto it = state.lightScales.find(mod.name);
+      return it == state.lightScales.end() ? mod.authoredLightScale : it->second;
+    }
+    // The frame a game light's replacement lights are authored in (dxvk-remix
+    // LightUtils::getLightTransform): at its position, its -Z along its
+    // direction (spot and distant lights).
+    remixapi_Transform gameLightTransform(const NativeResources::LightSource &source) {
+      remixapi_Transform result{};
+      for (int i = 0; i < 3; ++i)
+        result.matrix[i][i] = 1;
+      const bool distant = source.type == REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT;
+      const bool spot = !distant && source.cone < 3.1415f;
+      if (!distant)
+        for (int r = 0; r < 3; ++r)
+          result.matrix[r][3] = source.transform.matrix[r][3];
+      if (!distant && !spot)
+        return result;
+      // The rotation taking (0, 0, -1) to the direction (Rodrigues).
+      float to[3] = {source.direction.x, source.direction.y, source.direction.z};
+      const float length = std::sqrt(to[0] * to[0] + to[1] * to[1] + to[2] * to[2]);
+      if (length < 1e-6f)
+        return result;
+      for (float &v : to)
+        v /= length;
+      const float from[3] = {0, 0, -1};
+      const float axis[3] = {from[1] * to[2] - from[2] * to[1], from[2] * to[0] - from[0] * to[2],
+                             from[0] * to[1] - from[1] * to[0]};
+      const float c = from[0] * to[0] + from[1] * to[1] + from[2] * to[2];
+      if (c < -0.9999f) {
+        // Opposite: half a turn about X.
+        result.matrix[1][1] = result.matrix[2][2] = -1;
+        return result;
+      }
+      const float k[3][3] = {{0, -axis[2], axis[1]}, {axis[2], 0, -axis[0]}, {-axis[1], axis[0], 0}};
+      for (int r = 0; r < 3; ++r)
+        for (int col = 0; col < 3; ++col) {
+          float k2 = 0;
+          for (int i = 0; i < 3; ++i)
+            k2 += k[r][i] * k[i][col];
+          result.matrix[r][col] = (r == col ? 1.f : 0.f) + k[r][col] + k2 / (1 + c);
+        }
+      return result;
+    }
   } // namespace
   void startMods(bool disabled) {
     state.enabled = !disabled;
@@ -305,9 +357,10 @@ namespace remix::usd {
   void modBoundary(NativeResources &resources) {
     if (!state.enabled)
       return;
-    for (auto &submission : state.submissions) {
-      submission->retireAttachments();
-      submission->service();
+    for (size_t i = 0; i < state.submissions.size(); ++i) {
+      state.submissions[i]->retireAttachments();
+      state.submissions[i]->service();
+      state.submissions[i]->setLightScale(lightScale(i));
     }
     if (state.pending.valid() &&
         state.pending.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
@@ -423,6 +476,24 @@ namespace remix::usd {
     auto &[index, entry] = it->second;
     if (entry.value("hidden", false))
       return true;
+    // Lights authored under the replacement (dxvk-remix processLight): in
+    // the game light's frame, or as authored when the replacement places
+    // itself (its transform authored).
+    if (const auto *source = resources.lightSource(original);
+        source && state.submissions[index]->ready(entry["path"])) {
+      remixapi_InstanceInfo parent{};
+      parent.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO;
+      if (entry["overrides"].contains("transform"))
+        for (int i = 0; i < 3; ++i)
+          parent.transform.matrix[i][i] = 1;
+      else
+        parent.transform = gameLightTransform(*source);
+      remixapi_InstanceIdentityEXT identity{};
+      identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+      identity.instanceId = original ? original : 1;
+      parent.pNext = &identity;
+      state.submissions[index]->draw(false, 1, &parent, entry["path"], false, true);
+    }
     const auto &o = entry["overrides"];
     const std::map<std::string, remixapi_StructType> types{
         {"SphereLight", REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT},
@@ -443,6 +514,8 @@ namespace remix::usd {
       return &value;
     };
     usd.pIntensity = number("intensity");
+    if (usd.pIntensity)
+      values["intensity"] *= lightScale(index);
     usd.pExposure = number("exposure");
     usd.pRadius = number("radius");
     usd.pWidth = number("width");
@@ -485,11 +558,38 @@ namespace remix::usd {
     status.diagnostic = state.diagnostic;
     status.mods = state.active.mods;
     // Pending toggles show at once.
-    for (auto &mod : status.mods) {
+    for (size_t i = 0; i < status.mods.size(); ++i) {
+      auto &mod = status.mods[i];
       auto it = state.modParts.find(mod.name);
       mod.parts = it == state.modParts.end() ? ModParts{} : it->second;
+      mod.lightScale = lightScale(i);
     }
     return status;
+  }
+  void setModLightScale(const std::string &name, float scale) {
+    if (std::isfinite(scale) && scale >= 0)
+      state.lightScales[name] = scale;
+  }
+  std::string saveModLightScale(const std::string &name) {
+    for (size_t i = 0; i < state.active.mods.size(); ++i) {
+      const auto &mod = state.active.mods[i];
+      if (mod.name != name)
+        continue;
+      const float scale = lightScale(i);
+      auto layer = pxr::SdfLayer::FindOrOpen(mod.path);
+      if (!layer)
+        return "Could not open " + mod.path;
+      auto custom = layer->GetCustomLayerData();
+      custom[lightScaleKey] = pxr::VtValue(double(scale));
+      layer->SetCustomLayerData(custom);
+      if (!layer->Save())
+        return "Could not save " + mod.path;
+      // The watch reloads the mod with it authored.
+      state.active.mods[i].authoredLightScale = scale;
+      state.lightScales.erase(name);
+      return {};
+    }
+    return "No mod " + name;
   }
   void setModsEnabled(bool enabled) {
     if (state.modsEnabled == enabled)

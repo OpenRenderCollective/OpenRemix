@@ -252,6 +252,14 @@ namespace remix::usd {
       if (!stage)
         throw std::runtime_error("Could not compose USD stage: " + options.path);
       result.scene = compose_scene(stage, 1, {"", options.deferReplacementMeshes ? replacementMeshes : ""});
+      // A mod's light scale (mods.h ModInfo::authoredLightScale).
+      const auto custom = stage->GetRootLayer()->GetCustomLayerData();
+      if (const auto found = custom.find(lightScaleKey); found != custom.end()) {
+        if (found->second.IsHolding<double>())
+          result.scene["light_scale"] = found->second.UncheckedGet<double>();
+        else if (found->second.IsHolding<float>())
+          result.scene["light_scale"] = double(found->second.UncheckedGet<float>());
+      }
       for (const auto &layer : stage->GetUsedLayers())
         if (!layer->GetRealPath().empty())
           result.dependencies.insert(layer->GetRealPath());

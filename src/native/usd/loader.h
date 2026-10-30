@@ -26,6 +26,8 @@ namespace remix::usd {
     bool deferReplacementMeshes = false;
   };
   struct DeferredStage;
+  // The root layer's customLayerData key of a mod's light scale (a double).
+  inline constexpr const char *lightScaleKey = "openremix:lightScale";
   struct Snapshot {
     Json scene;
     std::set<std::string> dependencies;
