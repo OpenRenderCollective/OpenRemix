@@ -6,7 +6,7 @@ test_includes = [remix_public_include, native_include, test_include, image_inclu
 # as in the runtime libraries (werror builds).
 test_cpp_args = cpp.get_supported_arguments('-Wno-missing-field-initializers')
 if metal_backend
-  # gpu_backend=metal: the backend-independent tests, and the Metal backend's.
+  # macOS (Metal): the backend-independent tests, and the Metal backend's.
   subdir('abi')
   subdir('api')
   subdir('scene')

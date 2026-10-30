@@ -96,10 +96,6 @@ namespace {
       app.pApplicationName = "Remix native ray tracing probe";
       app.apiVersion = VK_API_VERSION_1_2;
       VkInstanceCreateInfo info = {VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
-      #ifdef __APPLE__
-      extensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
-      info.flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
-#endif
       info.pApplicationInfo = &app;
       info.enabledExtensionCount = extensions.size();
       info.ppEnabledExtensionNames = extensions.data();
@@ -136,11 +132,6 @@ namespace {
       };
       if (rayPipeline) {
         required.push_back(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
-      }
-      for (const auto& extension : available) {
-        if (std::strcmp(extension.extensionName, "VK_KHR_portability_subset") == 0) {
-          required.push_back("VK_KHR_portability_subset");
-        }
       }
       for (const char* name : required) {
         bool found = false;

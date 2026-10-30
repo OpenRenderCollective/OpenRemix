@@ -1,4 +1,4 @@
-# The native Metal backend (gpu_backend=metal): the same libremix and exported
+# The native Metal backend (macOS builds): the same libremix and exported
 # API as the Vulkan build, with the Metal runtime and renderers. Shared code is
 # limited to the API, scene, platform, settings/profiles and UI panel sources,
 # none of which depends on a GPU API.

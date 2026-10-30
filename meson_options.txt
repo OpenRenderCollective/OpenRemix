@@ -1,5 +1,3 @@
-option('gpu_backend', type : 'combo', choices : ['vulkan', 'metal'], value : 'vulkan',
-  description : 'GPU backend compiled into the runtime. metal (macOS only) builds the native Metal renderer without Vulkan.')
 option('deps_root', type : 'string', value : '', description : 'SDL3 dependency prefix (include and lib).')
 option('use_system_sdl', type : 'boolean', value : true, description : 'Use installed SDL3; false builds the pinned fallback.')
 option('enable_tests', type : 'boolean', value : true)
@@ -13,7 +11,7 @@ option('vulkan_probes', type : 'boolean', value : false, description : 'Build st
 option('dlss', type : 'boolean', value : true, description : 'Build pinned NGX DLSS SR and Ray Reconstruction on Linux/Windows x64.')
 option('dlss5', type : 'boolean', value : false, description : 'Enable DLSS 5 (DLSS-NR neural uplift) support. Off by default; requires -Ddlss=true.')
 option('fsr_linked', type : 'boolean', value : false,
-  description : 'Windows: also build the linked FSR 3.1.4 that Linux and macOS use, for testing (REMIX_FSR_LINKED=1).')
+  description : 'Windows: also build the linked FSR 3.1.4 that Linux uses, for testing (REMIX_FSR_LINKED=1).')
 
 option('usd', type : 'boolean', value : false, description : 'Enable CPU-only OpenUSD 25.11 capture and mod loading.')
 option('usd_root', type : 'string', value : '', description : 'OpenUSD 25.11 installation prefix.')

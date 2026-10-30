@@ -77,7 +77,7 @@ The package contains `remix.dll`, `SDL3.dll` and the sample together in `bin`, a
 libraries (loader, upscaler, frame generation) in `bin/fidelityfx`. The loader picks FSR 4 on
 RDNA 4 GPUs and FSR 3.1 elsewhere. For testing, `REMIX_FSR_VERSION=3` asks the libraries for
 their FSR 3.1 provider, and builds configured with `-Dfsr_linked=true` also contain the linked
-FSR 3.1.4 that Linux and macOS use, which `REMIX_FSR_LINKED=1` selects. Intel's XeSS SDK 3.0.2
+FSR 3.1.4 that Linux uses, which `REMIX_FSR_LINKED=1` selects. Intel's XeSS SDK 3.0.2
 library is in `bin/xess` (XeSS Super Resolution, Windows only; any GPU with Vulkan 1.3).
 The Vulkan loader/driver and Visual C++ runtime are platform prerequisites. Null HWND
 startup creates a 1280×720 window. Existing HWNDs retain native ownership after Shutdown.
@@ -87,47 +87,24 @@ checks; interactive Vulkan/borrowed-window checks require a suitable Windows mac
 
 ## macOS arm64
 
-Use Apple Clang, Meson, Ninja, CMake and the standard Vulkan SDK. Pass its macOS directory
-(the one containing `bin`, `lib`, `share`) as `--vulkan-sdk`.
-
-```sh
-python3 scripts/common/build-dependencies.py --output _work/deps/macos
-python3 scripts/macos/build-remix.py --vulkan-sdk "$VULKAN_SDK"
-python3 scripts/common/package-remix.py --build _work/build/macos --deps _work/deps/macos \
-  --vulkan-sdk "$VULKAN_SDK" --output _work/packages/macos
-_work/packages/macos/bin/run-sample 300
-```
-
-Packaging uses SDK `libMoltenVK.dylib` and `libvulkan.1.dylib`, rewrites local library
-references, signs copied libraries ad hoc, and installs a relative ICD manifest. The
-runtime names remain `libremix.0.dylib` and `libremix.dylib`. Startup runs on the main
-thread. The deployment target for authored code is macOS 13; the selected SDK's binary
-minimum OS requirement also applies.
-
-### Native Metal backend
-
-`-Dgpu_backend=metal` builds a separate runtime that renders with Metal directly and links
-neither Vulkan nor MoltenVK; the backend is chosen at compile time and one build contains one
-backend. It needs Xcode's Command Line Tools and no Vulkan SDK. Path tracing requires a Metal
+macOS builds render with Metal directly and link no Vulkan. Use Apple Clang, Meson, Ninja,
+CMake and Xcode's Command Line Tools; no Vulkan SDK is needed. Path tracing requires a Metal
 ray tracing device (Apple7 GPU family or newer). MetalFX replaces FSR and DLSS: upscaling, and on
 macOS 26 denoising and frame generation. See [the Metal backend](features/metal-backend.md).
 
 ```sh
 python3 scripts/common/build-dependencies.py --output _work/deps/macos
-python3 scripts/macos/build-remix.py --metal
-python3 scripts/common/package-remix.py --build _work/build/macos-metal --deps _work/deps/macos \
-  --output _work/packages/macos-metal
-_work/packages/macos-metal/bin/run-sample 300 pathtrace
+python3 scripts/macos/build-remix.py
+python3 scripts/common/package-remix.py --build _work/build/macos --deps _work/deps/macos \
+  --output _work/packages/macos
+_work/packages/macos/bin/run-sample 300 pathtrace
 ```
 
-The Metal package contains `libremix`, SDL3 and the sample only. GPU tests
-(`-Dgpu_tests=true`) add rendering tests of raster, path traced, NRD and MetalFX frames, and of
-halos, masks, cut coverage and soft sprites.
-
-The separately pinned experimental driver, SPIRV-Cross revisions and patches remain
-in `tools/moltenvk/dependencies.lock.json`, `build-moltenvk.py` and `patches/`.
-`tools/vulkan-probes/macos-run-probe.py` requires explicit experimental GPU opt-in because of the historical
-renderer/driver findings; normal shell build and run paths use SDK MoltenVK.
+The package contains `libremix`, SDL3 and the sample only; packaging rewrites local library
+references and signs copied libraries ad hoc. The runtime names remain `libremix.0.dylib` and
+`libremix.dylib`. Startup runs on the main thread. The deployment target for authored code is
+macOS 13. GPU tests (`-Dgpu_tests=true`) add rendering tests of raster, path traced, NRD and
+MetalFX frames, and of halos, masks, cut coverage and soft sprites.
 
 ## Android arm64
 

@@ -6,7 +6,7 @@
 namespace remix::upscale {
 // FSR frame generation: one generated frame halfway between the previous and
 // the current backbuffer. The counterpart of NgxFrameGeneration, on any GPU.
-// Linux and macOS link FSR 3.1.4's optical flow and frame interpolation
+// Linux links FSR 3.1.4's optical flow and frame interpolation
 // effects (fsr_frame_generation.cpp); Windows loads AMD's signed ffx-api DLLs
 // (fsr_frame_generation_ffx.cpp), FSR 4's ML frame generation on RDNA 4.
 //

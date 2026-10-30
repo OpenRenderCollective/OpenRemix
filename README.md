@@ -11,7 +11,7 @@ A performance-focused, multi-platform alternative to [dxvk-remix](https://github
 - SHARC radiance caching and progressive accumulation.
 - Native TAA, FSR, DLSS Super Resolution and Ray Reconstruction, and XeSS Super Resolution (Windows).
 - FSR FG and DLSS FG
-  -  FSR on Windows uses AMD's FSR SDK 2.4.0 libraries: FSR 4 upscaling and frame generation on RDNA 4, FSR 3.1 elsewhere. Linux and macOS use FSR 3.1.4.
+  -  FSR on Windows uses AMD's FSR SDK 2.4.0 libraries: FSR 4 upscaling and frame generation on RDNA 4, FSR 3.1 elsewhere. Linux uses FSR 3.1.4.
 - Autoexposure, threshold-free bloom, and Prism tonemapping.
 - OpenUSD support for loading existing Remix replacement mods.
 - Remix compatible render API
@@ -29,7 +29,7 @@ See [platforms.md](https://github.com/OpenRenderCollective/OpenRemix/blob/main/d
 ## Credits
 
 - NVIDIA: NRD, SIGMA, SHARC and DLSS. AMD: FidelityFX FSR. Intel: XeSS. Pixar and OpenUSD contributors.
-- SDL, Vulkan/MoltenVK, Dear ImGui, stb and bcdec contributors.
+- SDL, Vulkan, Dear ImGui, stb and bcdec contributors.
 - Jane, TheGreatHmmmmm, and surething on the `RTX Remix Showcase` server for guiding me in the right direction.
 - TheGreatHmmmmm for the Prism tonemapper, Bloom, Gamma 2.2, and HDR implementations.
 - [sparkles✨](https://github.com/Kim2091) for their Numos implementation, please [donate to them when you get the chance](https://ko-fi.com/kim20913944)

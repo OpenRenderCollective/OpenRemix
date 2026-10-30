@@ -59,19 +59,11 @@ namespace {
     Target() {
       const bool validation = std::getenv("REMIX_VULKAN_VALIDATION");
       const char *layer = "VK_LAYER_KHRONOS_validation";
-      const char *extensions[] = {
-          VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
-#if defined(__APPLE__)
-          VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME,
-#endif
-      };
+      const char *extensions[] = {VK_EXT_DEBUG_UTILS_EXTENSION_NAME};
       const VkApplicationInfo app = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
                                      .pApplicationName = "Remix raster readback",
                                      .apiVersion = VK_API_VERSION_1_1};
       const VkInstanceCreateInfo create = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-#if defined(__APPLE__)
-                                           .flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR,
-#endif
                                            .pApplicationInfo = &app,
                                            .enabledLayerCount = validation ? 1u : 0u,
                                            .ppEnabledLayerNames = &layer,
@@ -105,17 +97,10 @@ namespace {
                                          .queueFamilyIndex = family,
                                          .queueCount = 1,
                                          .pQueuePriorities = &priority};
-#if defined(__APPLE__)
-      const char *portability = "VK_KHR_portability_subset";
-#endif
       const VkDeviceCreateInfo d = {
           .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
           .queueCreateInfoCount = 1,
           .pQueueCreateInfos = &q,
-#if defined(__APPLE__)
-          .enabledExtensionCount = 1,
-          .ppEnabledExtensionNames = &portability,
-#endif
       };
       vk(vkCreateDevice(physical, &d, nullptr, &device));
       vkGetDeviceQueue(device, family, 0, &queue);

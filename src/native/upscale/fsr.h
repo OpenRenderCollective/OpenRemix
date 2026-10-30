@@ -4,7 +4,7 @@
 #include <string>
 
 namespace remix::upscale {
-// The FSR upscaler behind Renderer. Linux and macOS link FSR 3.1.4 from
+// The FSR upscaler behind Renderer. Linux links FSR 3.1.4 from
 // third_party/fsr31 (fsr_linked.cpp). Windows loads AMD's signed ffx-api DLLs
 // from FidelityFX SDK 2.4.0 (fsr_ffx.cpp), whose loader picks the newest
 // provider the GPU and driver support (FSR 4 on RDNA 4, else FSR 3.1).

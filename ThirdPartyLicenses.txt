@@ -20,7 +20,6 @@ Vulkan-Headers
 Copyright The Khronos Group Inc.
 Apache-2.0 OR MIT; full notices: include/vulkan/LICENSE.md and LICENSES/.
 Vulkan loader, driver and platform libraries are supplied by the platform SDK/system.
-macOS packages include the SDK Vulkan loader/MoltenVK and SDK license notices.
 
 Historical notices for removed renderer dependencies are preserved in
  docs/history/renderer-third-party-licenses.txt. Those libraries are no longer built or packaged.
@@ -41,7 +40,7 @@ BSD 2-Clause license: third_party/jxrlib/LICENSE; distributed as jxrlib.txt.
 Source and provenance: third_party/jxrlib/README.remix.md.
 
 AMD FidelityFX Super Resolution 3.1.4 (upscaler and frame generation, FidelityFX SDK v1.1.4;
-Linux and macOS builds)
+Linux builds)
 Copyright (C) 2024 Advanced Micro Devices, Inc.
 MIT license: third_party/fsr31/LICENSE.txt; distributed as FidelityFX.txt.
 Source revision and local portability patches: third_party/fsr31/upstream.json.

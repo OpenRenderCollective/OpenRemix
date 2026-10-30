@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package the shell, SDL3 and (on macOS Vulkan builds) standard SDK Vulkan/MoltenVK libraries."""
+"""Package the shell and SDL3 (macOS packages contain the native Metal backend)."""
 import argparse
 import json
 import os
@@ -14,17 +14,15 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--build', type=Path, required=True)
 parser.add_argument('--deps', type=Path, required=True, help='SDL build-dependencies output directory')
 parser.add_argument('--output', type=Path, required=True)
-parser.add_argument('--vulkan-sdk', type=Path)
 parser.add_argument('--max-glibc', default='2.28', help='Linux package glibc ceiling')
 parser.add_argument('--target', choices=['linux', 'windows', 'macos'], help='Override the host platform for cross-built packages')
 args = parser.parse_args()
 build, deps, output = args.build.resolve(), args.deps.resolve(), args.output.resolve()
 if output.exists(): parser.error('Use a fresh output directory.')
 system = {'linux': 'Linux', 'windows': 'Windows', 'macos': 'Darwin'}.get(args.target, platform.system())
-# gpu_backend=metal builds (macOS) link neither Vulkan nor MoltenVK.
+# macOS builds the Metal backend and links no Vulkan.
 options = json.loads((build / 'meson-info/intro-buildoptions.json').read_text())
-metal = any(o['name'] == 'gpu_backend' and o['value'] == 'metal' for o in options)
-if system == 'Darwin' and not metal and not args.vulkan_sdk: parser.error('macOS Vulkan builds require --vulkan-sdk.')
+metal = system == 'Darwin'
 for directory in ['bin', 'lib', 'include/remix', 'share/remix/licenses']:
     (output / directory).mkdir(parents=True, exist_ok=True)
 licenses = output / 'share/remix/licenses'
@@ -118,10 +116,6 @@ elif system == 'Darwin':
         'libremix.0.dylib': build / 'src/native/libremix.0.dylib',
         'libSDL3.0.dylib': deps / 'prefix/lib/libSDL3.0.dylib',
     }
-    if not metal:
-        sdk = args.vulkan_sdk.resolve()
-        libraries['libvulkan.1.dylib'] = sdk / 'lib/libvulkan.1.dylib'
-        libraries['libMoltenVK.dylib'] = sdk / 'lib/libMoltenVK.dylib'
     for name, source in libraries.items():
         target = output / 'lib' / name
         architectures = subprocess.check_output(['lipo', '-archs', source], text=True).split()
@@ -140,34 +134,12 @@ elif system == 'Darwin':
     shutil.copy2(build / 'samples/remix-native/remix-native-sample', output / 'bin/remix-native-sample')
     (output / 'lib/libremix.dylib').symlink_to('libremix.0.dylib')
     launcher = output / 'bin/run-sample'
-    if metal:
-        launcher.write_text('''#!/usr/bin/env python3
-import os
-from pathlib import Path
-import sys
-root = Path(__file__).resolve().parent.parent
-env = dict(os.environ, DYLD_LIBRARY_PATH=str(root / 'lib'))
-os.execve(root / 'bin/remix-native-sample', ['remix-native-sample', str(root / 'lib/libremix.0.dylib'), *sys.argv[1:]], env)
-''')
-        launcher.chmod(0o755)
-if system == 'Darwin' and not metal:
-    manifests = list((sdk / 'share/vulkan/icd.d').glob('*MoltenVK*.json')) + list((sdk / 'etc/vulkan/icd.d').glob('*MoltenVK*.json'))
-    if not manifests: raise RuntimeError('SDK MoltenVK ICD manifest missing')
-    icd = json.loads(manifests[0].read_text())
-    icd['ICD']['library_path'] = '../../../lib/libMoltenVK.dylib'
-    target = output / 'etc/vulkan/icd.d/MoltenVK_icd.json'
-    target.parent.mkdir(parents=True)
-    target.write_text(json.dumps(icd, indent=2) + '\n')
-    sdk_licenses = next((p for p in [sdk.parent / 'Licenses', sdk / 'share/vulkan/licensing', sdk / 'Licenses'] if p.is_dir()), None)
-    if sdk_licenses is None: raise RuntimeError('Vulkan SDK license directory missing')
-    shutil.copytree(sdk_licenses, licenses / 'VulkanSDK')
     launcher.write_text('''#!/usr/bin/env python3
 import os
 from pathlib import Path
 import sys
 root = Path(__file__).resolve().parent.parent
-env = dict(os.environ, VK_DRIVER_FILES=str(root / 'etc/vulkan/icd.d/MoltenVK_icd.json'),
-           DYLD_LIBRARY_PATH=str(root / 'lib'))
+env = dict(os.environ, DYLD_LIBRARY_PATH=str(root / 'lib'))
 os.execve(root / 'bin/remix-native-sample', ['remix-native-sample', str(root / 'lib/libremix.0.dylib'), *sys.argv[1:]], env)
 ''')
     launcher.chmod(0o755)

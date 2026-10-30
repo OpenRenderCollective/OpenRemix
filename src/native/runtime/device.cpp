@@ -35,9 +35,6 @@ namespace remix {
   namespace {
     constexpr const char *kRequiredDeviceExtensions[] = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-#if defined(__APPLE__)
-        "VK_KHR_portability_subset",
-#endif
     };
 
     bool succeeded(VkResult result) { return result == VK_SUCCESS; }
@@ -49,9 +46,6 @@ namespace remix {
     if (!m_headless && extensions.empty()) {
       return REMIXAPI_ERROR_CODE_HRESULT_DXVK_INSTANCE_EXTENSION_FAIL;
     }
-#if defined(__APPLE__)
-    extensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
-#endif
 
     m_ngx = std::make_shared<upscale::Ngx>();
     const auto ngxExtensions = m_ngx->instanceExtensions();
@@ -97,9 +91,6 @@ namespace remix {
     const bool validation = std::getenv("REMIX_VULKAN_VALIDATION") != nullptr;
     const VkInstanceCreateInfo createInfo = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-#if defined(__APPLE__)
-        .flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR,
-#endif
         .pApplicationInfo = &applicationInfo,
         .enabledLayerCount = validation ? 1u : 0u,
         .ppEnabledLayerNames = validation ? &validationLayer : nullptr,

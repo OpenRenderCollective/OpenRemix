@@ -6,7 +6,7 @@
 namespace remix::upscale {
 namespace {
 // Test switch (Windows builds made with -Dfsr_linked=true): REMIX_FSR_LINKED=1
-// runs the linked FSR 3.1.4 that Linux and macOS run instead of the DLLs.
+// runs the linked FSR 3.1.4 that Linux runs instead of the DLLs.
 [[maybe_unused]] bool linkedRequested() {
   static const bool requested = [] {
     const char *value = std::getenv("REMIX_FSR_LINKED");

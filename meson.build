@@ -17,12 +17,8 @@ if system == 'windows'
     add_project_arguments('-include', meson.project_source_root() / 'src/native/platform/mingw_compat.h', language : 'cpp')
   endif
 endif
-# One GPU backend per build: the Metal backend replaces the Vulkan renderer and
-# links neither Vulkan nor MoltenVK.
-metal_backend = get_option('gpu_backend') == 'metal'
-if metal_backend and system != 'darwin'
-  error('The Metal backend (gpu_backend=metal) is macOS only.')
-endif
+# macOS builds the native Metal renderer; the other platforms build the Vulkan one.
+metal_backend = system == 'darwin'
 if metal_backend
   add_languages('objcpp', native : false)
   add_project_arguments('-DREMIX_METAL=1', language : ['c', 'cpp', 'objcpp'])
@@ -102,7 +98,7 @@ if get_option('enable_tests')
 endif
 if get_option('vulkan_probes')
   if metal_backend
-    error('Vulkan probes need gpu_backend=vulkan.')
+    error('Vulkan probes are not built on macOS.')
   endif
   subdir('tools/vulkan-probes')
 endif

@@ -1,5 +1,5 @@
 #pragma once
-// The Metal runtime: the API's runtime in gpu_backend=metal builds
+// The Metal runtime: the API's runtime in macOS builds
 // (runtime/runtime.h in Vulkan builds). The public interface is the one the
 // API layer uses; Metal state is private to metal/*.mm.
 #include "metal/diagnostics.h"
