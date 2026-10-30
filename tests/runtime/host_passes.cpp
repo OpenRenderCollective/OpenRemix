@@ -159,6 +159,11 @@ int main(int argc, char **argv) {
   startup.windowHeight = 480;
 #endif
   ok(api.Startup(&startup));
+  // The capture shows the passes' colours in SDR (an HDR display would turn on HDR10 output).
+  const auto setDefault = reinterpret_cast<remixapi_ErrorCode(REMIXAPI_CALL *)(const char *, const char *)>(
+      extension(library, "remixapi_SetConfigDefaultEXT"));
+  require(setDefault, "SetConfigDefaultEXT is not exported");
+  ok(setDefault("rtx.native.hdr", "0"));
   if (const auto status = api.SetConfigVariable("rtx.native.backend", "raster");
       status != REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE)
     ok(status);

@@ -1,5 +1,6 @@
 // The developer UI on Metal: Dear ImGui's SDL3 platform backend with a Metal
 // renderer, and the shared settings panel with the Metal backend's tabs.
+#include <string_view>
 #include "api/imgui_compat.h"
 #include "metal/runtime_gpu.h"
 #include "ui/context.h"
@@ -129,7 +130,9 @@ fragment half4 uiFragment(VertexOut in [[stage_in]], texture2d<half, access::sam
     color.destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
     descriptor.depthAttachmentPixelFormat = metal::Raster::Gpu::depthFormat;
     g.ui.pipeline = [g.device newRenderPipelineStateWithDescriptor:descriptor error:&error];
-    if (!g.ui.pipeline) {
+    color.pixelFormat = MTLPixelFormatRGBA16Float;
+    g.ui.hdrPipeline = g.ui.pipeline ? [g.device newRenderPipelineStateWithDescriptor:descriptor error:&error] : nil;
+    if (!g.ui.pipeline || !g.ui.hdrPipeline) {
       SDL_Log("Remix Metal UI pipeline: %s", error.localizedDescription.UTF8String);
       return false;
     }
@@ -281,7 +284,7 @@ fragment half4 uiFragment(VertexOut in [[stage_in]], texture2d<half, access::sam
     const float projection[16] = {2 / (r - l), 0, 0, 0, 0, 2 / (t - b), 0, 0, 0, 0, 1, 0,
                                   (r + l) / (l - r), (t + b) / (b - t), 0, 1};
     [encoder setViewport:{0, 0, double(width), double(height), 0, 1}];
-    [encoder setRenderPipelineState:ui.pipeline];
+    [encoder setRenderPipelineState:g.format == MTLPixelFormatRGBA16Float ? ui.hdrPipeline : ui.pipeline];
     [encoder setDepthStencilState:ui.depth];
     [encoder setCullMode:MTLCullModeNone];
     [encoder setVertexBytes:projection length:sizeof(projection) atIndex:1];
@@ -321,7 +324,7 @@ fragment half4 uiFragment(VertexOut in [[stage_in]], texture2d<half, access::sam
     [encoder setScissorRect:{0, 0, NSUInteger(width), NSUInteger(height)}];
   }
 
-  // The developer UI's view of the Metal runtime (metal/ui/status.h); the
+  // The developer UI's view of the Metal runtime (ui/status.h); the
   // tabs themselves are ui/rendering.cpp, lighting.cpp, post_processing.cpp
   // and diagnostics.cpp, as in Vulkan builds.
   ui::DeviceStatus RemixNativeRuntime::uiDevice() const {
@@ -394,6 +397,7 @@ fragment half4 uiFragment(VertexOut in [[stage_in]], texture2d<half, access::sam
     result.upscalers = "Off\0MetalFX\0";
     result.vendorModes = false;
     result.denoiser = "MetalFX denoising";
+    result.denoiserModels = false; // DLSS Ray Reconstruction's model and preset choices
     result.sharpening = false;
     result.frameGenerationBackends = nullptr;
     result.multiFrameGeneration = false;
@@ -402,8 +406,85 @@ fragment half4 uiFragment(VertexOut in [[stage_in]], texture2d<half, access::sam
     return result;
   }
 
+  bool RemixNativeRuntime::reconstructionDenoises() const {
+    return m_pathTracer && metal::denoises(m_pathTracer->upscalingStatistics().backend);
+  }
+
+  ui::ReconstructionStatus RemixNativeRuntime::uiReconstruction() const {
+    const auto s = m_pathTracer ? m_pathTracer->upscalingStatistics() : metal::ReconstructionStatistics{};
+    ui::ReconstructionStatus result;
+    result.name = metal::name(s.backend);
+    result.active = s.active;
+    result.denoises = metal::denoises(s.backend);
+    result.renderWidth = s.render.width;
+    result.renderHeight = s.render.height;
+    result.displayWidth = s.display.width;
+    result.displayHeight = s.display.height;
+    result.milliseconds = s.milliseconds;
+    result.failure = s.failure;
+    return result;
+  }
+
+  // runtime/ui_status.cpp uiSky: the path tracer's or the raster backend's
+  // NUMOS sky, and its passes' GPU time.
+  ui::SkyStatus RemixNativeRuntime::uiSky() const {
+    ui::SkyStatus status;
+    if (!m_pathTracer || !m_backend) {
+      // The raster backend's sky (metal/raster_sky.mm).
+      const auto &sky = m_gpu->rasterSky;
+      status.supported = m_traceSupported;
+      status.active = sky.active;
+      status.reason = !status.supported      ? m_traceUnavailable
+                      : !sky.failure.empty() ? "Stopped: " + sky.failure
+                                             : std::string();
+    } else {
+      const auto sky = m_pathTracer->skyStatus();
+      status.supported = sky.supported;
+      status.active = sky.active;
+      status.reason = sky.reason;
+    }
+    for (const auto &pass : m_gpuTimings.passes)
+      if (std::string_view(pass.name).starts_with("NUMOS "))
+        status.gpuMilliseconds += float(pass.milliseconds);
+    return status;
+  }
+
+  config::SkyState RemixNativeRuntime::skyState() const {
+    return m_pathTracer && m_backend ? m_pathTracer->skyState() : config::SkyState{};
+  }
+
+
+  ui::HdrStatus RemixNativeRuntime::uiHdr() const {
+    ui::HdrStatus result;
+    result.available = m_window.hdrEnabled();
+    result.active = m_gpu && m_gpu->hdr.active;
+    result.inactive = m_gpu ? m_gpu->hdr.status : std::string();
+    return result;
+  }
+
+  ui::ScreenshotStatus RemixNativeRuntime::uiScreenshots() const { return {true, m_screenshot.status()}; }
+
+  // Taken by menuShortcut.
+  void RemixNativeRuntime::uiTakeScreenshot() { m_screenshotButton = true; }
+
+  ui::PathInspectionStatus RemixNativeRuntime::uiPathInspection() const {
+    ui::PathInspectionStatus result;
+    if (!m_pathTracer || !m_backend)
+      return result;
+    result.available = true;
+    result.renderWidth = m_pathTracer->configuration().width;
+    result.renderHeight = m_pathTracer->configuration().height;
+    result.inspection = m_pathTracer->pathInspection();
+    return result;
+  }
+
+  void RemixNativeRuntime::uiInspectPixel(int x, int y) {
+    if (m_pathTracer)
+      m_pathTracer->inspectPixel(x, y);
+  }
+
   const void *RemixNativeRuntime::uiTextureView(const scene::Texture *texture) const {
-    const auto &textures = const_cast<metal::Raster &>(m_raster).gpu().textures;
+    const auto &textures = const_cast<metal::Raster &>(renderer()).gpu().textures;
     const auto found = textures.find(texture);
     return found != textures.end() ? (__bridge const void *)found->second.texture : nullptr;
   }

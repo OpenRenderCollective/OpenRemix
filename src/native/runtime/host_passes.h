@@ -6,7 +6,9 @@
 // copied back when a pass wrote it. Pipelines, layouts, samplers and shader
 // modules go through the pipeline service (interned, compiled off the
 // caller's thread). Render thread, except register/destroy/submit, which the
-// API serializes with it through its lock.
+// API serializes with it through its lock. Metal builds share the API side
+// (validation, submission, uploads) and replay the passes in
+// metal/host_passes.mm.
 #include "platform/gpu_frames.h"
 #include <remix/remix_native_ext.h>
 #include <cstdint>
@@ -16,12 +18,18 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#if !defined(REMIX_METAL)
 #include <vulkan/vulkan.h>
+#endif
 
 namespace remix {
 class HostPasses {
 public:
+#if defined(REMIX_METAL)
+  void initialize(void *device); // an id<MTLDevice>
+#else
   void initialize(VkPhysicalDevice physical, VkDevice device);
+#endif
   void destroy(); // after the device is idle
   remixapi_ErrorCode registerShader(const remixapi_HostShaderInfoEXT &info, remixapi_HostShaderHandleEXT &out);
   remixapi_ErrorCode destroyShader(remixapi_HostShaderHandleEXT shader);
@@ -44,18 +52,57 @@ public:
   // swapchain `image` is in `layout` before and after. `viewDepth`: the
   // frame's REMIXAPI_HOST_TARGET_VIEW_DEPTH_EXT image (GENERAL layout), or
   // none (passes sampling it are skipped).
+#if defined(REMIX_METAL)
+  // Metal: `command` an id<MTLCommandBuffer>, `frame` the frame's texture
+  // (an id<MTLTexture>, read and written), `viewDepth` an id<MTLTexture> or null.
+  void record(void *command, uint32_t slot, void *frame, void *viewDepth);
+#else
   void record(VkCommandBuffer command, uint32_t slot, VkImage image, VkFormat format, VkExtent2D extent,
               VkImageLayout imageLayout, VkImageView viewDepth);
+#endif
   remixapi_HostPassStatisticsEXT statistics() const;
 
 private:
+  // The target formats a host uploads (VkFormat values, as the API takes them).
+  static constexpr uint32_t formatRgba8 = 37, formatBgra8 = 44; // VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_B8G8R8A8_UNORM
   struct Shader {
-    VkShaderModule module = VK_NULL_HANDLE;
-    VkShaderStageFlagBits stage{};
+    bool vertex = false; // else a fragment shader
     std::vector<remixapi_HostShaderBindingEXT> bindings;
     uint32_t pushBytes = 0;
     std::vector<uint32_t> code; // kept: the module is interned by its code
+#if defined(REMIX_METAL)
+    // metal/host_passes.mm: the translated function (a retained id<MTLFunction>) and the Metal
+    // slot of each binding (buffers from bufferBase, textures and samplers from 0).
+    std::shared_ptr<void> function;
+    std::map<uint32_t, uint32_t> slots;
+#else
+    VkShaderModule module = VK_NULL_HANDLE;
+    VkShaderStageFlagBits stage{};
+#endif
   };
+  // The shader's GPU form (module or translation); false when it cannot have one.
+  bool createModule(Shader &shader);
+  // A submitted pass with its data copied.
+  struct Pass {
+    remixapi_HostPassEXT info{};
+    std::vector<remixapi_HostPassBufferEXT> buffers;
+    std::vector<remixapi_HostPassSamplerEXT> samplers;
+    std::vector<remixapi_HostPassVertexBindingEXT> vertexBindings;
+    std::vector<remixapi_HostPassAttributeEXT> attributes;
+    std::vector<uint8_t> data; // buffers', push constants' and vertices' bytes, in that order
+    std::vector<uint32_t> indices;
+  };
+  // A target's contents from the host, uploaded before the frame's passes.
+  struct Upload {
+    remixapi_HostTargetHandleEXT target;
+    uint32_t format; // formatRgba8 or formatBgra8
+    uint32_t width, height, depth;
+    std::vector<uint8_t> pixels;
+  };
+#if defined(REMIX_METAL)
+  struct Metal; // metal/host_passes.mm
+  std::shared_ptr<Metal> m_metal;
+#else
   struct Target {
     VkImage image = VK_NULL_HANDLE;
     VkDeviceMemory memory = VK_NULL_HANDLE;
@@ -78,24 +125,6 @@ private:
     VkPipelineLayout pipeline = VK_NULL_HANDLE;
     std::vector<remixapi_HostShaderBindingEXT> bindings;
     uint32_t pushBytes = 0;
-  };
-  // A submitted pass with its data copied.
-  struct Pass {
-    remixapi_HostPassEXT info{};
-    std::vector<remixapi_HostPassBufferEXT> buffers;
-    std::vector<remixapi_HostPassSamplerEXT> samplers;
-    std::vector<remixapi_HostPassVertexBindingEXT> vertexBindings;
-    std::vector<remixapi_HostPassAttributeEXT> attributes;
-    std::vector<uint8_t> data; // buffers', push constants' and vertices' bytes, in that order
-    std::vector<uint32_t> indices;
-  };
-  // A target's contents from the host, uploaded before the frame's passes.
-  struct Upload {
-    remixapi_HostTargetHandleEXT target;
-    VkFormat format;
-    VkExtent2D extent;
-    uint32_t depth;
-    std::vector<uint8_t> pixels;
   };
   struct Slot {
     VkBuffer buffer = VK_NULL_HANDLE; // host-visible: uniform, vertex and index data of the frame's passes
@@ -125,12 +154,14 @@ private:
   VkPhysicalDevice m_physical = VK_NULL_HANDLE;
   VkDevice m_device = VK_NULL_HANDLE;
   VkPhysicalDeviceMemoryProperties m_memory{};
-  uint64_t m_nextShader = 1;
-  std::map<remixapi_HostShaderHandleEXT, std::shared_ptr<Shader>> m_shaders; // a shader outlives its handle while a frame uses it
   std::map<remixapi_HostTargetHandleEXT, Target> m_targets; // 0: the frame's copy
   std::map<std::pair<remixapi_HostShaderHandleEXT, remixapi_HostShaderHandleEXT>, Layout> m_layouts;
   std::map<std::string, VkPipeline> m_pipelines;
   Slot m_slots[gpuFrameCount];
+#endif
+  bool ready() const; // initialized, until destroy()
+  uint64_t m_nextShader = 1;
+  std::map<remixapi_HostShaderHandleEXT, std::shared_ptr<Shader>> m_shaders; // a shader outlives its handle while a frame uses it
   std::vector<Pass> m_pending;
   std::vector<Upload> m_uploads;
   uint64_t m_frame = 0;

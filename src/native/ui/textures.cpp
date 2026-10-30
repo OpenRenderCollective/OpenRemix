@@ -1,4 +1,4 @@
-#include "runtime/runtime.h"
+#include "ui/tabs.h"
 #include "ui/context.h"
 #include "ui/widgets.h"
 
@@ -13,11 +13,11 @@
 #include <vector>
 
 #include <imgui.h>
-#include <imgui_impl_vulkan.h>
 #include <imgui_internal.h>
 
 namespace {
-  std::unordered_map<VkImageView, VkDescriptorSet> s_descriptorCache;
+  // Renderer images shown as ImGui textures (ui::addTexture), by view.
+  std::unordered_map<const void *, ImTextureID> s_descriptorCache;
   std::unordered_map<uint64_t, ImTextureData *> s_thumbnailCache;
   char s_searchFilter[64] = {};
   int s_filterMode = 0; // 0: All, 1: Visible, 2: Hidden
@@ -155,7 +155,7 @@ namespace {
     texData->Create(ImTextureFormat_RGBA32, int(thumb.width), int(thumb.height));
     std::memcpy(texData->Pixels, thumb.pixels.data(), size_t(thumb.width) * thumb.height * 4);
     ImGui::RegisterUserTexture(texData);
-    ImGui_ImplVulkan_UpdateTexture(texData);
+    remix::ui::updateTexture(texData);
 
     if (texData->Status == ImTextureStatus_OK && texData->TexID != ImTextureID_Invalid) {
       s_thumbnailCache[hash] = texData;
@@ -175,17 +175,14 @@ namespace remix::ui {
       if (texData) {
         texData->UnusedFrames = 100;
         texData->SetStatus(ImTextureStatus_WantDestroy);
-        ImGui_ImplVulkan_UpdateTexture(texData);
+        remix::ui::updateTexture(texData);
         ImGui::UnregisterUserTexture(texData);
         delete texData;
       }
     }
     s_thumbnailCache.clear();
-    for (auto &[view, descSet] : s_descriptorCache) {
-      if (descSet != VK_NULL_HANDLE) {
-        ImGui_ImplVulkan_RemoveTexture(descSet);
-      }
-    }
+    for (auto &[view, texture] : s_descriptorCache)
+      removeTexture(texture);
     s_descriptorCache.clear();
   }
 } // namespace remix::ui
@@ -272,17 +269,13 @@ namespace remix {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.14f, 0.18f, 0.9f));
         ImGui::BeginChild("SelectedTexturePanel", ImVec2(0, 116.0f), ImGuiChildFlags_Borders);
 
-        const VkImageView view = textureView(it->texture.get());
+        const void *view = uiTextureView(it->texture.get());
         ImTextureRef selRef;
-        if (view != VK_NULL_HANDLE) {
+        if (view) {
           auto dIt = s_descriptorCache.find(view);
-          if (dIt == s_descriptorCache.end()) {
-            VkDescriptorSet desc = ImGui_ImplVulkan_AddTexture(view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-            s_descriptorCache[view] = desc;
-            selRef = ImTextureRef((ImTextureID)desc);
-          } else {
-            selRef = ImTextureRef((ImTextureID)dIt->second);
-          }
+          if (dIt == s_descriptorCache.end())
+            dIt = s_descriptorCache.emplace(view, ui::addTexture(view)).first;
+          selRef = ImTextureRef(dIt->second);
         } else {
           ImTextureData *thumb = getOrCreateThumbnail(it->hash, *it->texture);
           if (thumb && thumb->TexID != ImTextureID_Invalid) {
@@ -378,19 +371,14 @@ namespace remix {
 
     for (size_t i = 0; i < displayItems.size(); ++i) {
       const auto &item = *displayItems[i];
-      const VkImageView view = textureView(item.texture.get());
+      const void *view = uiTextureView(item.texture.get());
 
       ImTextureRef texRef;
-      if (view != VK_NULL_HANDLE) {
+      if (view) {
         auto it = s_descriptorCache.find(view);
-        VkDescriptorSet descSet = VK_NULL_HANDLE;
-        if (it == s_descriptorCache.end()) {
-          descSet = ImGui_ImplVulkan_AddTexture(view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-          s_descriptorCache[view] = descSet;
-        } else {
-          descSet = it->second;
-        }
-        texRef = ImTextureRef((ImTextureID)descSet);
+        if (it == s_descriptorCache.end())
+          it = s_descriptorCache.emplace(view, ui::addTexture(view)).first;
+        texRef = ImTextureRef(it->second);
       } else {
         ImTextureData *thumb = getOrCreateThumbnail(item.hash, *item.texture);
         if (thumb && thumb->TexID != ImTextureID_Invalid) {

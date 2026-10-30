@@ -4,6 +4,7 @@
 // its temporal denoised scaler DLSS Ray Reconstruction's: the tracer's inputs,
 // the input preparation and the display composite are the Vulkan renderer's.
 #include "metal/gpu.h"
+#include "scene/display.h"
 #include "scene/types.h"
 #include <string>
 
@@ -46,8 +47,10 @@ namespace remix::metal::reconstruction {
                 const float *jitter, bool reset, const Guides &guides = {});
     // The display composite (upscale.frag): post-processing, display encoding
     // and the stable depth for raster overlays.
+    // display: HDR10 output's encoding (displayColor), or SDR.
     void composite(id<MTLRenderCommandEncoder> encoder, id<MTLTexture> stableDepth, id<MTLBuffer> exposure,
-                   id<MTLTexture> bloom, id<MTLSamplerState> bloomSampler, id<MTLBuffer> postSettings, uint32_t slot);
+                   id<MTLTexture> bloom, id<MTLSamplerState> bloomSampler, id<MTLBuffer> postSettings, uint32_t slot,
+                   const scene::DisplayOutput &display);
     id<MTLTexture> output() const;
     // Render-resolution inputs frame interpolation shares.
     id<MTLTexture> deviceDepth() const;

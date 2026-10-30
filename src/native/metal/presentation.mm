@@ -11,9 +11,7 @@
 #include <thread>
 #include <fstream>
 #include <imgui.h>
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#define STBI_WRITE_NO_STDIO
-#include <image/stb_image_write.h>
+#include <ctime>
 
 namespace remix {
   namespace {
@@ -169,54 +167,50 @@ namespace remix {
     }
   } // namespace
 
-  // runtime/screenshot.cpp PresentedScreenshot::request: one capture at a time.
   remixapi_ErrorCode RemixNativeRuntime::requestScreenshot(const char *path) {
     if (!m_initialized)
       return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
-    const auto destination = utf8Path(path);
-    if (!destination.is_absolute())
-      return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
-    if (destination.extension() != ".png")
-      return REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE;
-    if (!m_screenshotPath.empty() || m_gpu->screenshot.command)
-      return REMIXAPI_ERROR_CODE_ALREADY_EXISTS;
-    m_screenshotPath = path;
-    return REMIXAPI_ERROR_CODE_SUCCESS;
+    // The render thread records and completes readbacks: a request is taken
+    // between its frames (rare; waits for the frame in flight).
+    waitRenderThread();
+    return m_screenshot.request(path, true);
+  }
+
+  // runtime/presentation.cpp requestScreenshotSet.
+  remixapi_ErrorCode RemixNativeRuntime::requestScreenshotSet() {
+    if (!m_initialized)
+      return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
+    waitRenderThread();
+    const auto folder = config::Profiles::defaultDirectory() / "screenshots";
+    const std::time_t now = std::time(nullptr);
+    std::tm local{};
+    localtime_r(&now, &local);
+    char stamp[64];
+    std::strftime(stamp, sizeof(stamp), "OpenRemix %Y-%m-%d %H-%M-%S", &local);
+    std::filesystem::path base = folder / stamp;
+    std::error_code ec;
+    for (int i = 2; std::filesystem::exists(base.string() + ".png", ec) && i < 1000; ++i)
+      base = folder / (std::string(stamp) + " (" + std::to_string(i) + ")");
+    const auto &settings = m_profiles.current();
+    const ScreenshotFormats formats{settings.screenshotHdrPng, settings.screenshotJxr, settings.screenshotExr};
+    const auto result = m_screenshot.requestSet(std::filesystem::absolute(base, ec), formats, true);
+    if (result != REMIXAPI_ERROR_CODE_SUCCESS)
+      SDL_Log("Screenshot request failed (%d)", int(result));
+    return result;
   }
 
   // Writes a capture once its frame completed: without waiting from
   // PumpEvents, waiting before the next presentation records.
-  void RemixNativeRuntime::completeScreenshot() { completeScreenshot(false); }
+  // A busy render thread completes the readback itself before recording the
+  // next capture; PumpEvents never waits for it.
+  void RemixNativeRuntime::completeScreenshot() {
+    if (!busyState())
+      completeScreenshot(false);
+  }
 
   void RemixNativeRuntime::completeScreenshot(bool wait) {
-    if (!m_gpu)
-      return;
-    auto &s = m_gpu->screenshot;
-    if (!s.command)
-      return;
-    if (wait)
-      [s.command waitUntilCompleted];
-    else if (s.command.status < MTLCommandBufferStatusCompleted)
-      return;
-    s.command = nil;
-    std::vector<uint8_t> pixels(size_t(s.width) * s.height * 4);
-    std::memcpy(pixels.data(), s.readback.contents, pixels.size());
-    for (size_t i = 0; i < pixels.size(); i += 4) {
-      if (s.bgra)
-        std::swap(pixels[i], pixels[i + 2]);
-      pixels[i + 3] = 255;
-    }
-    std::ofstream output(utf8Path(s.path.c_str()), std::ios::binary);
-    const auto writer = [](void *context, void *data, int size) {
-      static_cast<std::ofstream *>(context)->write(static_cast<const char *>(data), size);
-    };
-    const int written =
-        output && stbi_write_png_to_func(writer, &output, int(s.width), int(s.height), 4, pixels.data(), int(s.width * 4));
-    output.flush();
-    if (!written || !output)
-      SDL_Log("Screenshot write failed: %s", s.path.c_str());
-    s.readback = nil;
-    s.path.clear();
+    if (m_gpu)
+      m_screenshot.complete(wait);
   }
 
   remixapi_ErrorCode RemixNativeRuntime::present(const remixapi_PresentInfo *info) {
@@ -224,16 +218,50 @@ namespace remix {
       return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
     if (!isInitialized())
       return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
+    // At most one frame in flight on the CPU side: the render thread finishes
+    // the previous one before this Present touches anything it owns.
+    const auto start = Clock::now();
+    const double waited = waitRenderThread();
     if (m_failed)
       return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
-    // The frame's draws are released whatever happens (raster.finishFrame).
+    // "rtx.native.asyncPresent" (runtime/presentation.cpp presentUnpaced).
+    const bool async = m_profiles.current().asyncPresent;
+    if (async != m_asyncActive)
+      switchPresentation(async);
+    if (m_asyncActive) {
+      m_previousAsyncCaller = m_asyncCaller;
+      m_asyncCaller = {.active = true, .waitMilliseconds = waited, .handedOff = m_asyncCaller.handedOff};
+    }
+    // A frame that is not rendered ends here, as a synchronous Present ends
+    // it: the API's draw lists, and the published copy if any.
     struct EndFrame {
-      metal::Raster &raster;
-      ~EndFrame() { raster.finishFrame(); }
-    } endFrame{m_raster};
+      metal::Raster &api;
+      std::unique_ptr<metal::Raster> &frame;
+      bool rendered = false;
+      ~EndFrame() {
+        if (rendered)
+          return;
+        api.finishFrame();
+        if (frame)
+          frame->finishFrame();
+      }
+    } endFrame{m_raster, m_frameScene};
     @autoreleasepool {
       try {
-        return presentFrame();
+        bool render = false;
+        const auto status = presentSetup(render);
+        if (!render)
+          return status;
+        endFrame.rendered = true;
+        if (!m_asyncActive) {
+          renderFrame();
+          return m_failed ? REMIXAPI_ERROR_CODE_GENERAL_FAILURE : REMIXAPI_ERROR_CODE_SUCCESS;
+        }
+        m_asyncCaller.callMilliseconds = since(start);
+        m_handoffMilliseconds = m_asyncCaller.setupMilliseconds + m_asyncCaller.captureMilliseconds;
+        m_renderThread.submit([this] { renderFrame(); });
+        ++m_asyncCaller.handedOff;
+        return REMIXAPI_ERROR_CODE_SUCCESS;
       } catch (const std::exception &error) {
         return fail(error.what());
       } catch (...) {
@@ -242,28 +270,45 @@ namespace remix {
     }
   }
 
-  remixapi_ErrorCode RemixNativeRuntime::presentFrame() {
+  double RemixNativeRuntime::waitRenderThread() {
+    if (!m_renderThread.started())
+      return 0;
+    const double waited = m_renderThread.wait();
+    // renderFrame handles its own failures; anything escaping is a failure too.
+    if (m_renderThread.takeError())
+      fail("the render thread failed");
+    return waited;
+  }
+
+  // runtime/presentation.cpp switchPresentation: the render thread is idle.
+  // The GPU state follows the frame being rendered; the static set starts a
+  // new epoch, so the tracer's copy is rebuilt from whichever table it syncs from.
+  void RemixNativeRuntime::switchPresentation(bool async) {
+    if (async) {
+      if (!m_frameScene)
+        m_frameScene = std::make_unique<metal::Raster>();
+      m_frameScene->reset();
+      m_frameScene->adoptGpu(m_raster);
+    } else {
+      m_raster.adoptGpu(*m_frameScene);
+      m_frameScene->reset(); // Releases the last published frame and the replica.
+    }
+    m_raster.restartStatic();
+    m_raster.setConcurrentConsumer(async);
+    m_asyncActive = async;
+    m_asyncCaller.active = async;
+    SDL_Log("OpenRemix presentation: %s", async ? "asynchronous (render thread)" : "synchronous");
+  }
+
+  // The caller's part of a Present (both presentation modes): settings,
+  // the frame capture, particles, the developer UI and, asynchronous, the
+  // published statistics. `render`: the frame is to be rendered.
+  remixapi_ErrorCode RemixNativeRuntime::presentSetup(bool &render) {
     auto &g = *m_gpu;
-    auto &p = m_framePerformance;
+    const auto setupStart = Clock::now();
+    // The last completed frame's: Diagnostics shows them while this one builds.
     m_previousPerformance = m_framePerformance;
     m_previousBreakdown = m_frameBreakdown;
-    p = {.structSize = sizeof(p), .attempts = p.attempts + 1, .presentations = m_presentationCount};
-    m_frameBreakdown = {.structSize = sizeof(m_frameBreakdown)};
-    const auto start = Clock::now();
-    // As runtime/presentation.cpp CompletePerformance: presented is whether
-    // this call presented.
-    struct PresentTime {
-      remixapi_FramePerformanceEXT &performance;
-      const uint64_t &presentations;
-      Clock::time_point start;
-      ~PresentTime() {
-        performance.presentMilliseconds = since(start);
-        performance.presented = presentations != performance.presentations;
-        performance.presentations = presentations;
-      }
-    } presentTime{p, m_presentationCount, start};
-    if (m_pathTracer)
-      m_pathTracer->resetPerformance();
     remixapi_WindowState state = {};
     auto status = m_window.getWindowState(state);
     if (status != REMIXAPI_ERROR_CODE_SUCCESS)
@@ -279,26 +324,100 @@ namespace remix {
       g.layer.drawableSize = CGSizeMake(g.width, g.height);
     }
     g.layer.displaySyncEnabled = m_vsync;
-    m_raster.gpu().configureTarget(g.format, g.width, g.height, true);
+    // HDR10 output decides the format the frame's passes draw into.
+    configureHdr();
+    renderer().gpu().configureTarget(g.format, g.width, g.height, true);
     updateFreeCamera();
     m_raster.applyFreeCamera(m_freeCamera);
+    if (m_asyncActive) {
+      // The frame snapshot: from here on API calls change the next frame.
+      const auto captureStart = Clock::now();
+      m_raster.publishFrame(*m_frameScene);
+      m_asyncCaller.captureMilliseconds = since(captureStart);
+    }
+    publishParticles();
     prepareSettings(g.width, g.height);
-    const auto &settings = m_profiles.current();
+    {
+      const auto &settings = m_profiles.current();
+      const bool tracing = m_pathTracer && m_backend;
+      if (!tracing)
+        renderer().expandStatic();
+      // From the next replay on; the tracer reads the setting this frame.
+      m_raster.setPersistentStatic(settings.persistentStatic && tracing);
+      if (m_asyncActive)
+        m_raster.publishStaticSetting(*m_frameScene);
+    }
+    // The developer UI reads and edits settings and statistics, and SDL input
+    // capture belongs to this thread: its frame is built here; the render
+    // thread only draws the finished draw data.
+    const auto uiStart = Clock::now();
+    buildUi();
+    m_asyncCaller.uiMilliseconds = since(uiStart);
+    if (m_asyncActive) {
+      m_frameSettings = m_profiles.current();
+      m_frameSkyControl = m_skyControl;
+      publishState();
+    }
+    m_asyncCaller.setupMilliseconds = since(setupStart) - m_asyncCaller.captureMilliseconds;
+    render = true;
+    return REMIXAPI_ERROR_CODE_SUCCESS;
+  }
+
+  // What follows the setup: the frame recorded, committed and presented, on
+  // the render thread with asynchronous presentation (which records its own
+  // failures for the next Present: this frame's Present has returned).
+  void RemixNativeRuntime::renderFrame() {
+    @autoreleasepool {
+      try {
+        renderFrameUnguarded();
+      } catch (const std::exception &error) {
+        fail(error.what());
+      } catch (...) {
+        fail("unknown error");
+      }
+    }
+  }
+
+  void RemixNativeRuntime::renderFrameUnguarded() {
+    auto &g = *m_gpu;
+    auto &frame = renderer();
+    // The frame's draw lists end with it.
+    struct EndFrame {
+      metal::Raster &raster;
+      ~EndFrame() { raster.finishFrame(); }
+    } endFrame{frame};
+    auto &p = m_framePerformance;
+    p = {.structSize = sizeof(p), .attempts = p.attempts + 1, .presentations = m_presentationCount};
+    m_frameBreakdown = {.structSize = sizeof(m_frameBreakdown)};
+    const auto start = Clock::now();
+    // As runtime/presentation.cpp CompletePerformance: presented is whether
+    // this frame presented; asynchronous, the caller's setup and capture count.
+    struct PresentTime {
+      remixapi_FramePerformanceEXT &performance;
+      const uint64_t &presentations;
+      Clock::time_point start;
+      double handoff;
+      ~PresentTime() {
+        performance.presentMilliseconds = since(start) + handoff;
+        performance.presented = presentations != performance.presentations;
+        performance.presentations = presentations;
+      }
+    } presentTime{p, m_presentationCount, start, m_asyncActive ? m_handoffMilliseconds : 0.};
+    if (m_pathTracer)
+      m_pathTracer->resetPerformance();
+    const auto &settings = frameSettings();
     const bool tracing = m_pathTracer && m_backend;
-    if (!tracing)
-      m_raster.expandStatic();
-    m_raster.setPersistentStatic(settings.persistentStatic && tracing);
     // CPU scene preparation overlaps the frames still on the GPU.
     std::optional<scene::TraceFrame> traceScene;
     if (tracing) {
       const auto sceneStart = Clock::now();
-      traceScene = m_pathTracer->prepareScene(m_raster, m_traceOptions);
+      traceScene = m_pathTracer->prepareScene(frame, m_traceOptions);
       p.sceneMilliseconds = since(sceneStart);
     }
     {
       const auto fenceStart = Clock::now();
       if (dispatch_semaphore_wait(g.frames, dispatch_time(DISPATCH_TIME_NOW, int64_t(1e9))))
-        return REMIXAPI_ERROR_CODE_SUCCESS; // A stalled GPU skips the frame.
+        return; // A stalled GPU skips the frame.
       p.fenceMilliseconds = since(fenceStart);
     }
     // From here the slot is ours: release it on every path.
@@ -311,7 +430,9 @@ namespace remix {
       }
     } slot{g.frames};
     g.frameIndex = (g.frameIndex + 1) % g.frameCount;
-    m_raster.selectFrame(g.frameIndex);
+    frame.selectFrame(g.frameIndex);
+    if (g.particles)
+      g.particles->selectFrame(g.frameIndex);
     // GPU pass timers: this slot's previous frame completed, its timings are
     // final; then this frame's encoders are timed when the setting is on.
     // REMIX_GPU_PASS_LOG=N: every N timed frames, the passes' mean GPU times
@@ -320,7 +441,7 @@ namespace remix {
       const char *value = std::getenv("REMIX_GPU_PASS_LOG");
       return value ? uint32_t(std::strtoul(value, nullptr, 10)) : 0u;
     }();
-    g.timers.beginFrame(g.frameIndex, m_profiles.current().gpuPassTimers || passLog, m_presentationCount);
+    g.timers.beginFrame(g.frameIndex, settings.gpuPassTimers || passLog, m_presentationCount);
     if (passLog && g.timers.latest().available && g.timers.latest().frame != m_gpuTimings.frame)
       logPassTimings(g.timers.latest(), passLog);
     m_gpuTimings = g.timers.latest();
@@ -339,16 +460,18 @@ namespace remix {
     const auto recordStart = Clock::now();
     id<MTLCommandBuffer> command = [g.queue commandBuffer];
     command.label = @"OpenRemix frame";
-    m_raster.prepare(tracing);
-    auto &raster = m_raster.gpu();
+    frame.prepare(tracing);
+    auto &raster = frame.gpu();
     if (tracing) {
       // Role CUT (remixapi_InstanceInfoMaskEXT): the coverage that hides
       // traced instances from the camera, ahead of primary visibility.
       if (raster.mask.cut.count)
         raster.recordMasks(command, true);
-      m_pathTracer->prepare((__bridge void *)command, m_raster, m_traceOptions, *traceScene);
+      // The NUMOS sky (runtime/presentation.cpp): the profile's settings and the game's control.
+      m_pathTracer->setSky(settings.sky, frameSkyControl(), "");
+      m_pathTracer->setDisplayOutput(displayOutput());
+      m_pathTracer->prepare((__bridge void *)command, frame, m_traceOptions, *traceScene);
     }
-    buildUi();
     const bool interpolating = tracing && prepareInterpolation(g, *m_pathTracer);
     // Frame generation acquires its drawables on the present queue.
     const auto acquireStart = Clock::now();
@@ -356,13 +479,22 @@ namespace remix {
     p.acquireMilliseconds = since(acquireStart);
     if (!interpolating && !drawable) {
       [command commit];
-      return REMIXAPI_ERROR_CODE_SUCCESS;
+      return;
     }
     m_frameStarted = true;
     // With frame generation the scene renders offscreen for the interpolator
     // and the UI is drawn over each presented frame afterwards.
     auto &frameSlot = g.interpolation.slots[g.frameIndex];
-    id<MTLTexture> scene = interpolating ? frameSlot.color : drawable.texture;
+    // HDR10: the frame's passes take the float back buffer of this frame's
+    // slot, encoded into the drawable after the developer UI.
+    const bool hdr = g.hdr.active && !interpolating;
+    id<MTLTexture> scene = interpolating ? frameSlot.color : hdr ? g.hdr.backBuffers[g.frameIndex] : drawable.texture;
+    // The raster backend's NUMOS sky records its frame outside the pass (also
+    // while the path tracer prepares: the raster frame is drawn meanwhile).
+    const bool rasterSky = !tracing && recordRasterSky((__bridge void *)command);
+    const bool rasterSkyHides = rasterSky && settings.sky.gameSky == config::SkySettings::GameSky::Hide;
+    // Particle emitters: their compute passes, after the tracer's TLAS.
+    const bool particles = simulateParticles((__bridge void *)command);
     auto *pass = [MTLRenderPassDescriptor renderPassDescriptor];
     pass.colorAttachments[0].texture = scene;
     pass.colorAttachments[0].loadAction = MTLLoadActionClear;
@@ -373,7 +505,8 @@ namespace remix {
     pass.depthAttachment.loadAction = MTLLoadActionClear;
     // Passes that resume the frame (overlay coverage, halos, soft sprites)
     // keep testing its depth.
-    pass.depthAttachment.storeAction = raster.splitsFrame() ? MTLStoreActionStore : MTLStoreActionDontCare;
+    pass.depthAttachment.storeAction =
+        raster.splitsFrame() || rasterSky || particles ? MTLStoreActionStore : MTLStoreActionDontCare;
     pass.depthAttachment.clearDepth = 1;
     id<MTLRenderCommandEncoder> encoder =
         metal::renderEncoder(command, pass, tracing ? @"Composite, tonemap and raster overlay" : @"Raster scene",
@@ -400,8 +533,14 @@ namespace remix {
     // would warp them by the motion of the scene behind them. Both are drawn
     // over the generated and the rendered frame afterwards.
     const bool hudless = interpolating;
-    const bool split = halos || masks || hudless;
-    const int sceneLayers = split ? 1 : 3;
+    // Particles draw between the world and the view model.
+    const bool split = halos || masks || hudless || rasterSky || particles;
+    // The host's screen-space passes (remixapi_HostPassEXT) take the frame,
+    // view model included, before its HUD layer; HDR10 draws the HUD layer
+    // apart too, at the UI brightness.
+    const bool hostPasses = !m_loading && !hudless && m_hostPasses.pending();
+    const bool hudApart = hdr || hostPasses;
+    const int sceneLayers = split ? 1 : hudApart ? 2 : 3;
     if (tracing) {
       m_pathTracer->record((__bridge void *)encoder);
       // Soft sprite overlays (remixapi_InstanceInfoSpriteEXT) sample the
@@ -413,13 +552,23 @@ namespace remix {
         resume(@"Raster overlay (HUD, effects)");
       }
     }
-    raster.record(encoder, metal::Target::Display, tracing, nullptr, g.width, g.height, 0, sceneLayers,
-                  masks ? 1 : 0);
+    raster.record(encoder, metal::Target::Display, tracing || rasterSkyHides, nullptr, g.width, g.height, 0,
+                  sceneLayers, masks ? 1 : 0);
+    if (rasterSky) {
+      // The scene's depth goes to the screen clouds; the sky blends over the world.
+      [encoder endEncoding];
+      const bool composed = composeRasterSky((__bridge void *)command);
+      resume(@"NUMOS composite");
+      if (composed) {
+        const auto &sky = *g.rasterSky.renderer;
+        raster.recordSkyComposite(encoder, sky.rasterTransmittance().texture, sky.rasterAddition().texture);
+      }
+    }
     if (masks) {
       [encoder endEncoding];
       raster.recordMasks(command, false);
       resume(@"Raster overlay (masked effects)");
-      raster.record(encoder, metal::Target::Display, tracing, nullptr, g.width, g.height, 0, 1, 2);
+      raster.record(encoder, metal::Target::Display, tracing || rasterSkyHides, nullptr, g.width, g.height, 0, 1, 2);
     }
     for (uint32_t group = 0; group < halos; ++group) {
       [encoder endEncoding];
@@ -427,13 +576,37 @@ namespace remix {
       resume(@"Halo composite");
       raster.recordHaloComposite(encoder, group);
     }
+    if (particles) {
+      // Soft edges sample the scene's depth (with frame generation too, as the
+      // UI pass after it clears depth: the particles are interpolated).
+      if (!raster.sprite.captured && raster.wantsSceneDepth()) {
+        [encoder endEncoding];
+        raster.captureSceneDepth(command);
+        resume(@"Particles");
+      }
+      drawParticles((__bridge void *)encoder);
+    }
     if (split && !hudless)
-      raster.record(encoder, metal::Target::Display, true, nullptr, g.width, g.height, 2, 3);
+      raster.record(encoder, metal::Target::Display, true, nullptr, g.width, g.height, 2, hudApart ? 2 : 3);
+    if (hostPasses) {
+      [encoder endEncoding];
+      m_hostPasses.record((__bridge void *)command, g.frameIndex, (__bridge void *)scene,
+                          tracing ? m_pathTracer->viewDepth() : nullptr);
+      resume(@"Raster overlay (HUD)");
+    }
+    if (hudApart) {
+      scaleHdrUi((__bridge void *)encoder, true);
+      raster.record(encoder, metal::Target::Display, true, nullptr, g.width, g.height, 3, 3);
+    }
     if (!interpolating)
       renderUi((__bridge void *)encoder);
+    if (hdr)
+      scaleHdrUi((__bridge void *)encoder, false);
     [encoder endEncoding];
+    if (hdr)
+      encodeHdr((__bridge void *)command, (__bridge void *)drawable.texture);
     // The rendered frame (UI included) and, with frame generation, the
-    // generated one shown before it.
+    // generated one shown before it. HDR10 screenshots take the back buffer.
     id<MTLTexture> rendered = interpolating ? frameSlot.real : drawable.texture, generated = nil;
     if (interpolating) {
       if (interpolate(g, *m_pathTracer, command))
@@ -449,7 +622,7 @@ namespace remix {
         ui.colorAttachments[0].texture = target;
         ui.colorAttachments[0].loadAction = MTLLoadActionLoad;
         ui.colorAttachments[0].storeAction = MTLStoreActionStore;
-        ui.depthAttachment.texture = m_raster.gpu().depth;
+        ui.depthAttachment.texture = frame.gpu().depth;
         ui.depthAttachment.loadAction = MTLLoadActionClear;
         ui.depthAttachment.storeAction = MTLStoreActionDontCare;
         ui.depthAttachment.clearDepth = 1;
@@ -465,27 +638,8 @@ namespace remix {
       }
       overlay(frameSlot.color, rendered);
     }
-    if (!m_screenshotPath.empty()) {
-      auto &s = g.screenshot;
-      s.path = std::move(m_screenshotPath);
-      m_screenshotPath.clear();
-      s.width = uint32_t(rendered.width);
-      s.height = uint32_t(rendered.height);
-      s.bgra = true;
-      s.readback = metal::buffer(g.device, nullptr, size_t(s.width) * s.height * 4);
-      id<MTLBlitCommandEncoder> blit = [command blitCommandEncoder];
-      [blit copyFromTexture:rendered
-                       sourceSlice:0
-                       sourceLevel:0
-                      sourceOrigin:MTLOriginMake(0, 0, 0)
-                        sourceSize:MTLSizeMake(s.width, s.height, 1)
-                          toBuffer:s.readback
-                 destinationOffset:0
-            destinationBytesPerRow:s.width * 4
-          destinationBytesPerImage:size_t(s.width) * s.height * 4];
-      [blit endEncoding];
-      s.command = command;
-    }
+    m_screenshot.record((__bridge void *)command, (__bridge void *)(hdr ? g.hdr.backBuffers[g.frameIndex] : rendered),
+                        HdrNits{settings.hdrPeakNits, settings.hdrPaperWhiteNits, settings.hdrUiNits});
     p.recordMilliseconds = since(recordStart);
     if (drawable)
       [command presentDrawable:drawable];
@@ -560,7 +714,6 @@ namespace remix {
                                           std::chrono::duration<double, std::milli>(now - m_lastPresentation).count());
     m_lastPresentation = now;
     ++m_presentationCount;
-    return REMIXAPI_ERROR_CODE_SUCCESS;
   }
 
   // ui/debug_ui.cpp updateFreeCamera.

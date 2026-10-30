@@ -96,6 +96,8 @@ namespace remix::metal {
 
   void Raster::shutdownGpu() { m_gpu.reset(); }
 
+  void Raster::adoptGpu(Raster &other) { m_gpu = std::move(other.m_gpu); }
+
   void Raster::selectFrame(uint32_t slot) {
     auto &g = *m_gpu;
     g.frameIndex = slot % gpuFrameCount;
@@ -193,14 +195,17 @@ namespace remix::metal {
     const uint32_t x0 = updates.dirty[0], y0 = updates.dirty[1], x1 = updates.dirty[2], y1 = updates.dirty[3];
     std::fill_n(updates.dirty, 4, 0u);
     const auto &p = source.pixels;
-    // Region updates cover plain RGBA8 images at full size. One with mips
-    // (generated again by every update, raster/resources.cpp refreshLevels)
-    // is uploaded whole, every level.
-    if (x1 <= x0 || y1 <= y0 || !value.texture || p.compressed || !p.hdrMips.empty() || p.mips.empty() ||
+    // Region updates cover plain RGBA8 or RGBA32F (hdrMips, one level) images
+    // at full size. One with mips (generated again by every update,
+    // raster/resources.cpp refreshLevels) is uploaded whole, every level.
+    const bool hdr = p.hdrMips.size() == 1;
+    if (x1 <= x0 || y1 <= y0 || !value.texture || p.compressed || p.hdrMips.size() > 1 || p.mips.empty() ||
         value.texture.width != p.width || value.texture.height != p.height || x1 > p.width || y1 > p.height)
       return;
+    const size_t texel = hdr ? 16 : 4;
+    const auto *texels = hdr ? reinterpret_cast<const uint8_t *>(p.hdrMips[0].data()) : p.mips[0].data();
     dynamicTextureUploads += source.dynamic;
-    if (p.mips.size() > 1) {
+    if (p.mips.size() > 1 && !hdr) {
       const uint32_t levels = std::min<uint32_t>(uint32_t(p.mips.size()), uint32_t(value.texture.mipmapLevelCount));
       for (uint32_t level = 0; level < levels; ++level) {
         const uint32_t w = std::max(1u, p.width >> level), h = std::max(1u, p.height >> level);
@@ -217,8 +222,8 @@ namespace remix::metal {
     // new texels of this region.
     [value.texture replaceRegion:MTLRegionMake2D(x0, y0, x1 - x0, y1 - y0)
                      mipmapLevel:0
-                       withBytes:p.mips[0].data() + (size_t(y0) * p.width + x0) * 4
-                     bytesPerRow:size_t(p.width) * 4];
+                       withBytes:texels + (size_t(y0) * p.width + x0) * texel
+                     bytesPerRow:size_t(p.width) * texel];
   }
 
   uint64_t Raster::dynamicTextureGeneration() const { return m_gpu ? m_gpu->dynamicTextureUploads : 0; }
@@ -555,6 +560,7 @@ namespace remix::metal {
     std::vector<Vertex> skinned;
     const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - g.epoch).count();
     g.sprite.soft = 0;
+    g.sprite.requested = false;
     g.sprite.captured = false;
     // A halo or mask source: drawn as a silhouette into a coverage target
     // instead of the frame.

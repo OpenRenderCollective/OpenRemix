@@ -1,4 +1,4 @@
-#include "runtime/runtime.h"
+#include "ui/tabs.h"
 #include "ui/widgets.h"
 #include "pathtrace/block_costs.h"
 #include "pathtrace/sparse_policy.h"
@@ -12,8 +12,7 @@
 namespace remix {
   void RemixNativeRuntime::drawRenderingTab(config::Settings &settings) {
     auto &options = settings.trace;
-    const bool rrActive =
-        m_pathTracer && m_pathTracer->upscalingStatistics().backend == upscale::Backend::DlssRr;
+    const bool rrActive = reconstructionDenoises();
     int backend = int(settings.backend);
     if (ui::Combo("Requested backend", &backend, "Raster\0Path trace\0"))
       settings.backend = uint32_t(backend);
@@ -28,7 +27,7 @@ namespace remix {
                         "in flight: the next Present waits only for that handoff. Statistics describe the last\n"
                         "completed frame. Off: the whole frame runs inside Present, as before.\n"
                         "Applies at the next Present (the render thread is drained first).");
-    if (settings.asyncPresent && m_headless)
+    if (settings.asyncPresent && isHeadless())
       ImGui::TextDisabled("%s", "The headless editor always presents synchronously.");
     // World units of the host: converts the tracer's meter-based defaults.
     ui::DragFloat("Scene scale (m per unit)", &options.sceneScale, .0005f, .0001f, 1000, "%.4f",
@@ -193,19 +192,15 @@ namespace remix {
                           "and temporal noise; disabled by default.");
     }
     if (ImGui::CollapsingHeader("Reconstruction", ImGuiTreeNodeFlags_DefaultOpen)) {
-      int upscaler = int(options.upscaler);
-      // XeSS: Windows only (upscale/xess.h).
-#if REMIX_HAS_XESS
-      constexpr const char *upscalers = "Off\0Auto\0FSR\0DLSS\0XeSS\0";
-#else
-      constexpr const char *upscalers = "Off\0Auto\0FSR\0DLSS\0";
-#endif
-      if (ui::Combo("Requested upscaler", &upscaler, upscalers))
+      const auto choices = uiReconstructionChoices();
+      // Without vendor modes every upscaler mode is the backend's one upscaler.
+      int upscaler = choices.vendorModes ? int(options.upscaler) : std::min(int(options.upscaler), 1);
+      if (ui::Combo("Requested upscaler", &upscaler, choices.upscalers))
         options.upscaler = upscale::Mode(upscaler);
-      const auto fsr = m_pathTracer ? m_pathTracer->upscalingStatistics() : upscale::Statistics{};
+      const auto reconstruction = uiReconstruction();
       if (options.upscaler != upscale::Mode::Off) {
-        const bool amd = options.upscaler == upscale::Mode::Fsr31;
-        const bool intel = options.upscaler == upscale::Mode::Xess;
+        const bool amd = choices.vendorModes && options.upscaler == upscale::Mode::Fsr31;
+        const bool intel = choices.vendorModes && options.upscaler == upscale::Mode::Xess;
         auto &savedQuality = amd ? options.fsrQuality : intel ? options.xessQuality : options.dlssQuality;
         int quality = int(savedQuality);
         // Each upscaler's own names; XeSS has seven presets (the XeSS-SR
@@ -213,14 +208,15 @@ namespace remix {
         if (ui::Combo("Quality preset", &quality,
                       intel ? "Native Anti-Aliasing\0Ultra Quality Plus\0Ultra Quality\0Quality\0Balanced\0"
                               "Performance\0Ultra Performance\0"
-                      : amd ? "Native AA\0Quality\0Balanced\0Performance\0Ultra Performance\0"
-                            : "DLAA\0Quality\0Balanced\0Performance\0Ultra Performance\0"))
+                      : amd || !choices.vendorModes ? "Native AA\0Quality\0Balanced\0Performance\0Ultra Performance\0"
+                                                    : "DLAA\0Quality\0Balanced\0Performance\0Ultra Performance\0"))
           savedQuality = uint32_t(quality);
-        if (amd)
-          ui::SliderFloat("FSR sharpening", &options.fsrSharpness, 0.f, 1.f, "%.2f");
-        else if (!intel) {
-          ui::Checkbox("DLSS Ray Reconstruction", &options.dlssRayReconstruction);
-          if (options.dlssRayReconstruction) {
+        if (amd) {
+          if (choices.sharpening)
+            ui::SliderFloat("FSR sharpening", &options.fsrSharpness, 0.f, 1.f, "%.2f");
+        } else if (!intel) {
+          ui::Checkbox(choices.denoiser, &options.dlssRayReconstruction);
+          if (options.dlssRayReconstruction && choices.denoiserModels) {
             int model = int(options.dlssRayReconstructionModel);
             if (ui::Combo("Ray Reconstruction model", &model, "Transformer\0CNN\0"))
               options.dlssRayReconstructionModel = uint32_t(model);
@@ -252,9 +248,10 @@ namespace remix {
       if (rrActive) {
         ui::Checkbox("Sparse rendering", &options.sparseRendering);
         if (ImGui::IsItemHovered())
-          ImGui::SetTooltip("Lights only a blue-noise selection of the pixels each frame and lets Ray Reconstruction\n"
+          ImGui::SetTooltip("Lights only a blue-noise selection of the pixels each frame and lets %s\n"
                             "rebuild the rest. Faster at high render resolutions; turns itself off where the\n"
-                            "render resolution is too low for it to pay.");
+                            "render resolution is too low for it to pay.",
+                            choices.denoiser);
         if (options.sparseRendering) {
           ui::Checkbox("Sparse rate follows render resolution", &options.sparseAdaptiveRate);
           if (options.sparseAdaptiveRate) {
@@ -286,46 +283,54 @@ namespace remix {
             ImGui::TextWrapped("Sparse rendering: off (%s)", sparse.reason);
         }
       }
-      if ((fsr.backend == upscale::Backend::Fsr31 || fsr.backend == upscale::Backend::Xess) && !fsr.provider.empty())
-        ImGui::TextWrapped("Active: %s", fsr.provider.c_str());
-      else
-        ImGui::TextWrapped("Active: %s", upscale::name(fsr.backend));
-      if (fsr.backend == upscale::Backend::DlssRr)
-        ImGui::TextWrapped("Ray Reconstruction: %s, preset %c", fsr.rrCnn ? "CNN (DLSS 310.2.1)" : "transformer",
-                           fsr.rrPreset >= 1 && fsr.rrPreset <= 6 ? char('A' + fsr.rrPreset - 1) : '-');
-      if (!fsr.rrNote.empty())
-        ImGui::TextWrapped("%s", fsr.rrNote.c_str());
-      ImGui::TextWrapped("%ux%u -> %ux%u | reconstruction %.2f ms", fsr.render.width, fsr.render.height,
-                         fsr.display.width, fsr.display.height, fsr.milliseconds);
-      if (!fsr.failure.empty())
-        ImGui::TextWrapped("%s", fsr.failure.c_str());
+      // Reconstruction is temporal: progressive accumulation and the SHARC
+      // debug view render without it (pathtrace/temporal.cpp, metal/tracer.mm).
+      if (options.upscaler != upscale::Mode::Off && (options.accumulate || options.sharcDebug))
+        ImGui::TextWrapped("%s", options.accumulate
+                                     ? "Progressive accumulation is on: reconstruction resumes when it is off "
+                                       "(Diagnostics tab)."
+                                     : "The SHARC debug view renders without reconstruction.");
+      ImGui::TextWrapped("Active: %s", reconstruction.name.c_str());
+      if (reconstruction.models)
+        ImGui::TextWrapped("Ray Reconstruction: %s, preset %c",
+                           reconstruction.cnn ? "CNN (DLSS 310.2.1)" : "transformer",
+                           reconstruction.preset >= 1 && reconstruction.preset <= 6 ? char('A' + reconstruction.preset - 1)
+                                                                                    : '-');
+      if (!reconstruction.note.empty())
+        ImGui::TextWrapped("%s", reconstruction.note.c_str());
+      ImGui::TextWrapped("%ux%u -> %ux%u | reconstruction %.2f ms", reconstruction.renderWidth,
+                         reconstruction.renderHeight, reconstruction.displayWidth, reconstruction.displayHeight,
+                         reconstruction.milliseconds);
+      if (!reconstruction.failure.empty())
+        ImGui::TextWrapped("%s", reconstruction.failure.c_str());
       if (rrActive)
-        ImGui::TextWrapped("Ray Reconstruction manages denoising and independent sampling. Saved settings "
-                           "resume when it is disabled.");
-      ImGui::BeginDisabled(!m_lowLatencySupported || settings.frameGeneration);
-      bool lowLatency = m_lowLatencySupported && (settings.lowLatency || settings.frameGeneration);
+        ImGui::TextWrapped("%s manages denoising and independent sampling. Saved settings resume when it is "
+                           "disabled.",
+                           choices.denoiser);
+      const auto generation = uiFrameGeneration();
+      ImGui::BeginDisabled(!generation.lowLatencySupported || settings.frameGeneration);
+      bool lowLatency = generation.lowLatencySupported && (settings.lowLatency || settings.frameGeneration);
       if (ui::Checkbox("NVIDIA Reflex low latency", &lowLatency))
         settings.lowLatency = lowLatency;
       ImGui::EndDisabled();
       if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-        ImGui::SetTooltip("%s", !m_lowLatencySupported
-                                    ? "Needs an NVIDIA GPU and driver with VK_NV_low_latency2, and the path tracer."
+        ImGui::SetTooltip("%s", !generation.lowLatencySupported
+                                    ? generation.lowLatencyUnavailable
                                     : settings.frameGeneration
                                           ? "Always on with frame generation."
                                           : "The driver holds the game back so that frames are not queued ahead of\n"
                                             "the GPU: input reaches the screen sooner when the GPU is the limit.");
       ui::Checkbox("Frame generation", &settings.frameGeneration);
       if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Shows generated frames between each pair of rendered frames: DLSS Frame Generation\n"
-                          "(2x to 4x, a supported RTX GPU) or FSR frame generation (2x, any GPU).\n"
-                          "Needs the path tracer and an upscaler (DLSS or FSR; their native-resolution preset\n"
-                          "counts). Adds latency: the rendered frame is shown after its generated ones.");
-      if (settings.frameGeneration) {
+        ImGui::SetTooltip("%s", choices.frameGenerationTooltip);
+      if (settings.frameGeneration && choices.frameGenerationBackends) {
         int backend = int(settings.frameGenerationBackend);
-        if (ui::Combo("Frame generation backend", &backend, "Auto\0DLSS\0FSR\0"))
+        if (ui::Combo("Frame generation backend", &backend, choices.frameGenerationBackends))
           settings.frameGenerationBackend = upscale::FrameGenerationMode(backend);
         if (ImGui::IsItemHovered())
           ImGui::SetTooltip("Auto: DLSS Frame Generation where the GPU supports it, FSR otherwise.");
+      }
+      if (settings.frameGeneration && choices.multiFrameGeneration) {
         // FSR generates one frame whatever is asked.
         ImGui::BeginDisabled(settings.frameGenerationBackend == upscale::FrameGenerationMode::Fsr31);
         int frames = int(settings.frameGenerationFrames) - 1;
@@ -337,19 +342,13 @@ namespace remix {
         ImGui::TextWrapped("Frame generation: %s | generated %llu, shown twice instead %llu, rendered frames short of "
                            "generated ones (no free swapchain image) %llu | rendered frame interval %.1f ms (%.0f fps "
                            "rendered) | swapchain: %zu images, %s",
-                           m_frameGenerationStatus.empty() ? "applies at the next frame" : m_frameGenerationStatus.c_str(),
-                           (unsigned long long)m_generatedFrames, (unsigned long long)m_duplicatedFrames,
-                           (unsigned long long)m_ungeneratedFrames, m_renderedInterval,
-                           m_renderedInterval > 0 ? 1000.0 / m_renderedInterval : 0.0, m_swapchainImages.size(),
-                           m_presentMode == VK_PRESENT_MODE_IMMEDIATE_KHR  ? "immediate"
-                           : m_presentMode == VK_PRESENT_MODE_MAILBOX_KHR ? "mailbox"
-                           : m_presentMode == VK_PRESENT_MODE_FIFO_KHR    ? "FIFO (vsync)"
-                                                                          : "other present mode");
-      else if (m_ngx) {
-        const auto ngx = m_ngx->capabilities();
-        if (ngx.initializationComplete && !ngx.fg)
-          ImGui::TextWrapped("DLSS Frame Generation unavailable: %s", ngx.fgReason.c_str());
-      }
+                           generation.status.empty() ? "applies at the next frame" : generation.status.c_str(),
+                           (unsigned long long)generation.generated, (unsigned long long)generation.duplicated,
+                           (unsigned long long)generation.ungenerated, generation.renderedInterval,
+                           generation.renderedInterval > 0 ? 1000.0 / generation.renderedInterval : 0.0,
+                           generation.presentImages, generation.presentMode);
+      else if (!generation.unavailable.empty())
+        ImGui::TextWrapped("%s", generation.unavailable.c_str());
 #if REMIX_HAS_DLSS5
       ImGui::Separator();
       ui::Checkbox("Enable Neural Uplift (DLSS-NR)", &options.neuralUplift);
@@ -431,7 +430,7 @@ namespace remix {
         ImGui::SetTooltip("Upload BC1-BC7 textures as GPU BC images instead of decoding them to RGBA on the CPU.\n"
                           "Uses 4-8x less VRAM and system memory and removes the decode from CreateTexture.\n"
                           "Applies to textures created after the change; no restart needed.");
-      if (settings.compressedTextures && !m_textureCompression)
+      if (settings.compressedTextures && !textureCompressionSupported())
         ImGui::TextWrapped("%s", "This GPU cannot sample BC formats: textures are decoded once at upload.");
 #if REMIX_HAS_USD
       ui::Checkbox("Retain texture data for captures", &settings.captureRetainTextureData);
@@ -444,19 +443,24 @@ namespace remix {
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Answer GetVramStats with OpenRemix's texture, geometry, acceleration-structure\n"
                           "and denoiser allocations, plus the driver's device-local usage and budget.");
-      const auto memory = renderer().memoryStatistics();
+      const auto memory = rasterMemoryStatistics();
       ImGui::TextDisabled("Textures: %llu, %.1f MiB (%.1f MiB BC) | geometry %.1f MiB",
                           (unsigned long long)memory.textureCount, memory.textureBytes / 1048576.0,
                           memory.compressedTextureBytes / 1048576.0, memory.geometryBytes / 1048576.0);
     }
     // Shown to a host that uses host passes (remixapi_GetHostPassesEnabledEXT).
     if (m_hostPasses.asked() && ImGui::CollapsingHeader("Game", ImGuiTreeNodeFlags_DefaultOpen)) {
+      const bool replayed = hostPassesSupported();
+      ImGui::BeginDisabled(!replayed);
       ui::Checkbox("Pass-through game shaders (experimental)", &settings.hostPasses);
+      ImGui::EndDisabled();
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Replays the game's screen-space passes (post-processing effects, addon shaders)\n"
                           "on the path-traced frame with the game's own shaders, before the HUD. Off: the\n"
                           "game's shader passes are not replayed and the frame is composed without them.\n"
                           "Applies from the next frame.");
+      if (!replayed)
+        ImGui::TextWrapped("Not available with this backend yet: the game's shader passes are not replayed.");
     }
     if (ImGui::CollapsingHeader("Geometry")) {
       ui::Checkbox("Refresh mesh geometry in place", &settings.refreshGeometry);

@@ -1,5 +1,6 @@
 #include "runtime/runtime.h"
 #include "ui/context.h"
+#include "ui/status.h"
 
 #include <algorithm>
 #include <imgui.h>
@@ -93,3 +94,18 @@ namespace remix {
     return ImGui_ImplSDL3_ProcessEvent(event);
   }
 } // namespace remix
+
+// ui/status.h: the Vulkan ImGui renderer's textures.
+namespace remix::ui {
+  void updateTexture(ImTextureData *texture) { ImGui_ImplVulkan_UpdateTexture(texture); }
+
+  ImTextureID addTexture(const void *view) {
+    return ImTextureID(ImGui_ImplVulkan_AddTexture(VkImageView(const_cast<void *>(view)),
+                                                   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL));
+  }
+
+  void removeTexture(ImTextureID texture) {
+    if (texture != ImTextureID_Invalid)
+      ImGui_ImplVulkan_RemoveTexture(VkDescriptorSet(texture));
+  }
+} // namespace remix::ui

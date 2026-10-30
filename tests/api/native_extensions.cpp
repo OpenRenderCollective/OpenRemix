@@ -88,6 +88,9 @@ int main(int argc, char **argv) {
   startup.windowHeight = 240;
 #endif
   ok(api.Startup(&startup));
+  // The frame accounting and screenshots below are checked right after each
+  // Present: asynchronously, the getters describe the last completed frame.
+  ok(api.SetConfigVariable("rtx.native.asyncPresent", "0"));
   static_assert(sizeof(remixapi_ReconstructionDiagnosticsEXT) == 336);
   static_assert(offsetof(remixapi_ReconstructionDiagnosticsEXT, memoryBytes) == 64);
   remixapi_ReconstructionDiagnosticsEXT reconstruction{};
@@ -99,7 +102,8 @@ int main(int argc, char **argv) {
   require(prefix.version == 1 && prefix.size == sizeof(reconstruction) && prefix.sentinel == 0x12345678abcdefull, "Diagnostics prefix write exceeded capacity");
   reconstruction.structSize = sizeof(reconstruction);
   ok(remixapi_GetReconstructionDiagnosticsEXT(&reconstruction));
-  require(reconstruction.requestedMode == 1 && !reconstruction.activeBackend, "Default reconstruction request changed");
+  // The default profile asks for DLSS (3; MetalFX on Metal), nothing active before a frame.
+  require(reconstruction.requestedMode == 3 && !reconstruction.activeBackend, "Default reconstruction request changed");
   ok(remixapi_GetFramePerformanceEXT(&framePerformance));
   require(!framePerformance.attempts && !framePerformance.presentations,
           "Frame performance not reset on startup");
@@ -200,8 +204,10 @@ int main(int argc, char **argv) {
   ok(remixapi_GetWindowMetrics(&metrics));
   require(pixels && width == int(metrics.drawableWidth) && height == int(metrics.drawableHeight),
           "Screenshot missing or wrong dimensions");
-  require(pixels[0] > 30 && pixels[0] < 60 && pixels[1] > 40 && pixels[1] < 65 && pixels[2] > 55 &&
-              pixels[2] < 80 && pixels[3] == 255,
+  // The clear color (0.025, 0.035, 0.055) as stored: the swapchain is UNORM and
+  // the clear is not gamma-encoded (runtime/swapchain.cpp chooseSurfaceFormat).
+  require(pixels[0] > 3 && pixels[0] < 10 && pixels[1] > 6 && pixels[1] < 13 && pixels[2] > 10 &&
+              pixels[2] < 18 && pixels[3] == 255,
           "Screenshot color/BGRA conversion");
   stbi_image_free(pixels);
   {

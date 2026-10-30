@@ -36,10 +36,10 @@ namespace remix::metal {
     // separate indirect 9, shadow early out 12), and the sparse launch mode
     // (13, an integer) from bit 16. The other switches, light sampling's
     // structure among them, are the per-dispatch `features` push constant.
-    constexpr uint32_t constantGuidingCapable = 1u << 1, constantProfile = 1u << 7,
+    constexpr uint32_t constantGuidingCapable = 1u << 1, constantSplit = 1u << 4, constantProfile = 1u << 7,
                        constantSeparateIndirect = 1u << 9, constantEarlyOut = 1u << 12, constantSparseShift = 16;
     // pathtrace/gpu.h Feature.
-    constexpr uint32_t featureDecals = 1, featureRoulette = 2, featureAngularEmitters = 8, featureFirstOpaqueHit = 16,
+    constexpr uint32_t featureDecals = 1, featureRoulette = 2, featurePbrReuse = 4, featureAngularEmitters = 8, featureFirstOpaqueHit = 16,
                        featureMultiSheetFallback = 32, featureLocalLights = 64, featureLocalGuiding = 128,
                        featureSmallSet = 256, featureResampling = 512,
                        defaultFeatures = featureDecals | featureLocalLights | featureLocalGuiding;
@@ -87,6 +87,9 @@ namespace remix::metal {
     c.sigma = options.sigma && temporal && !denoised;
     c.local = local && (c.reblur || c.taa || c.sigma || backend != Backend::Native) && !denoised;
     c.localDenoise = c.local && options.localDenoiser && c.reblur;
+    c.split = c.local && options.separateLocalLighting != 0;
+    c.splitMode = c.split ? options.separateLocalLighting : 0;
+    c.restir = c.split && options.restir;
     c.validation = options.validation;
     c.width = displayWidth;
     c.height = displayHeight;
@@ -128,8 +131,8 @@ namespace remix::metal {
     if (c.temporal()) {
       g.denoiser = std::make_unique<denoise::Renderer>();
       const bool denoised = backend == reconstruction::Backend::MetalFXDenoising;
-      g.denoiser->initialize(g.device, c.width, c.height, c.reblur, c.sigma, c.local, c.localDenoise, c.validation,
-                             false, c.reblur || denoised, denoised);
+      g.denoiser->initialize(g.device, c.width, c.height, c.reblur, c.sigma, c.local, c.localDenoise, c.split,
+                             c.validation, c.splitMode == 1, c.reblur || denoised, denoised);
     }
     // Frame interpolation reuses the input preparation without MetalFX scaling.
     if (backend != reconstruction::Backend::Native || c.frameGeneration) {
@@ -158,6 +161,8 @@ namespace remix::metal {
     case Stage::sigmaTemporal: return Stage::sharcSigmaTemporal;
     case Stage::localTemporal: return Stage::sharcLocalTemporal;
     case Stage::localSigmaTemporal: return Stage::sharcLocalSigmaTemporal;
+    case Stage::splitLocalTemporal: return Stage::sharcSplitLocalTemporal;
+    case Stage::splitLocalSigmaTemporal: return Stage::sharcSplitLocalSigmaTemporal;
     case Stage::indirectTemporal: return Stage::sharcIndirectTemporal;
     case Stage::indirect: return Stage::sharcIndirect;
     case Stage::sheetLighting: return Stage::sharcSheetLighting;
@@ -187,11 +192,19 @@ namespace remix::metal {
       requests.push_back({&pass, stage, flags});
     };
     if (temporal) {
-      add(opaque, lightingStage(c.local && c.sigma ? Stage::localSigmaTemporal
+      add(opaque, lightingStage(c.split && c.sigma ? Stage::splitLocalSigmaTemporal
+                                : c.split          ? Stage::splitLocalTemporal
+                                : c.local && c.sigma ? Stage::localSigmaTemporal
                                 : c.local          ? Stage::localTemporal
                                 : c.sigma          ? Stage::sigmaTemporal
                                                    : Stage::temporal),
           {true, true, true, c.separateIndirect});
+      if (c.split)
+        add(splitDirect, Stage::splitLocalDirect, {true, true, true, false});
+      if (c.restir) {
+        add(restirInitial, Stage::splitRestirInitial, {false, true, false});
+        add(restirSpatial, Stage::splitRestirSpatial, {false, true, false});
+      }
       add(transparency, lightingStage(Stage::temporalTransparency), {false, true, true, false, true});
       add(singleTransparency, lightingStage(Stage::singleTemporalTransparency), {false});
       add(sheet, lightingStage(Stage::sheetLightingTemporal), {false});
@@ -299,7 +312,8 @@ namespace remix::metal {
       pass.set1 = ArgumentSet(device, stage, 1);
   }
 
-  PathTracer::Gpu::Selected PathTracer::Gpu::select(const Lighting &pass, bool separateIndirect, uint32_t sparse) {
+  PathTracer::Gpu::Selected PathTracer::Gpu::select(const Lighting &pass, bool separateIndirect, uint32_t sparse,
+                                                     bool combinedDirect) {
     const auto base = [&] { return computePipelineAsync(device, pass.stage, pass.base); };
     if (!pass.variants)
       return {base(), defaultFeatures};
@@ -313,8 +327,11 @@ namespace remix::metal {
                    (s.firstHit && guiding ? featureFirstOpaqueHit : 0u) | (s.local ? featureLocalLights : 0u) |
                    (s.guided && guiding ? featureLocalGuiding : 0u) |
                    (s.local && s.smallSet && guiding ? featureSmallSet : 0u) |
-                   (s.resampling && guiding ? featureResampling : 0u);
-    const uint32_t constants = (guiding ? constantGuidingCapable : 0u) | (s.profile ? constantProfile : 0u) |
+                   (s.resampling && guiding ? featureResampling : 0u) | (s.pbrReuse ? featurePbrReuse : 0u);
+    // Split lighting's opaque passes (combined mode's direct pass runs unsplit).
+    const bool split = s.split && guiding && !combinedDirect;
+    const uint32_t constants = (guiding ? constantGuidingCapable : 0u) | (split ? constantSplit : 0u) |
+                               (s.profile ? constantProfile : 0u) |
                                (separateIndirect ? constantSeparateIndirect : 0u) |
                                (s.earlyOut ? constantEarlyOut : 0u) | sparse << constantSparseShift;
     if (constants == pass.base) {
@@ -374,6 +391,38 @@ namespace remix::metal {
     stats.accumulationCount = 0;
   }
 
+  // pathtrace/renderer.cpp setSky, skyState and skyStatus.
+  void PathTracer::setSky(const config::SkySettings &settings, const config::SkyControl &control,
+                          const std::string &unavailable) {
+    auto &g = *m_gpu;
+    if (!(settings == g.skySettings)) {
+      g.skyFailure.clear();
+      g.skySettings = settings;
+    }
+    g.skyControl = control;
+    g.skyUnavailable = unavailable;
+  }
+
+  config::SkyState PathTracer::skyState() const {
+    std::lock_guard lock(m_gpu->skyStateMutex);
+    return m_gpu->skyState;
+  }
+
+  PathTracer::SkyStatus PathTracer::skyStatus() const {
+    SkyStatus status;
+#if REMIX_HAS_NUMOS
+    const auto &g = *m_gpu;
+    status.supported = g.skyUnavailable.empty();
+    status.active = g.skyApplied;
+    status.reason = !status.supported      ? "The device lacks " + g.skyUnavailable + "."
+                    : !g.skyFailure.empty() ? "Stopped: " + g.skyFailure
+                                            : g.skyReason;
+#else
+    status.reason = "This build has no NUMOS sky.";
+#endif
+    return status;
+  }
+
   void PathTracer::selectFrame(uint32_t slot) {
     auto &g = *m_gpu;
     g.frameIndex = slot % gpuFrameCount;
@@ -388,8 +437,14 @@ namespace remix::metal {
     g.readSharc();
     g.readLightGuiding();
     g.readRayProfile();
+    g.readPathInspector();
+    g.readPbrReuse();
     if (g.post)
       g.post->selectFrame(g.frameIndex);
+#if REMIX_HAS_NUMOS
+    if (g.numosSky)
+      g.numosSky->selectFrame(g.frameIndex);
+#endif
   }
 
   // pathtrace/rendering.cpp PathTracer::prepareScene (without the opacity profile).
@@ -425,9 +480,24 @@ namespace remix::metal {
     }
     staged.history.end();
     staged.hasEmissive = lights.size() > sphereCount;
+    // Per-family trees also for torch-only scenes: a split denoiser needs them.
+    if (options.separateLocalLighting && options.separateLocalLighting != 3) {
+      staged.torch = std::move(g.torchBvh);
+      staged.emissive = std::move(g.emissiveBvh);
+      staged.families = true;
+      staged.emissive.setClusterSize(options.emissiveClusterSize);
+      staged.torch.setPowerExponent(options.lightPowerExponent);
+      staged.emissive.setPowerExponent(options.lightPowerExponent);
+      staged.torch.update({lights.begin(), lights.begin() + sphereCount});
+      staged.emissive.update({lights.begin() + sphereCount, lights.end()});
+    }
     staged.combined.setClusterSize(options.emissiveClusterSize);
     staged.combined.setPowerExponent(options.lightPowerExponent);
     staged.combined.update(std::move(lights));
+    // The potentially visible light table (pathtrace/rendering.cpp).
+    staged.visibility = std::move(g.lightVisibility);
+    staged.visibility.update(resources.visibilityPartition(), staged.combined,
+                             options.lightVisibilityCulling && options.localLights, .1f / options.sceneScale);
     return frame;
   }
 
@@ -470,19 +540,22 @@ namespace remix::metal {
           // and flip facing (VK_GEOMETRY_INSTANCE_TRIANGLE_FRONT_COUNTERCLOCKWISE)
           // as the counter-clockwise front face; both default to clockwise
           // fronts. pathtrace/shaders/gbuffer.frag's facing test, which matches
-          // the Vulkan ray facing, agrees with these options.
+          // the Vulkan ray facing, agrees with these options. A wound cut's
+          // FORCE_NO_OPAQUE is Metal's non-opaque option.
           static_assert(remix::trace::instanceFacingCullDisable == MTLAccelerationStructureInstanceOptionDisableTriangleCulling &&
                         remix::trace::instanceFrontCounterClockwise ==
-                            MTLAccelerationStructureInstanceOptionTriangleFrontFacingWindingCounterClockwise);
+                            MTLAccelerationStructureInstanceOptionTriangleFrontFacingWindingCounterClockwise &&
+                        remix::trace::instanceForceNoOpaque == MTLAccelerationStructureInstanceOptionNonOpaque);
           instance.options = MTLAccelerationStructureInstanceOptions(remix::trace::instanceFlags(input, faceCulling));
           // pathtrace/tlas.cpp: view models only under their own mask (camera
-          // rays), reflection-only instances under theirs (bounce rays), blended
-          // layers under theirs (secondary rays may skip them), decals under
-          // theirs (shadow rays pass them).
+          // rays), decals under theirs (shadow rays pass them; reflection-only
+          // paint too: closest() lays it only on reflection-only receivers),
+          // reflection-only instances under theirs (bounce rays), blended
+          // layers under theirs (secondary rays may skip them).
           instance.mask = input.viewModel        ? remix::trace::viewModelInstanceMask
+                          : input.decal          ? remix::trace::decalInstanceMask
                           : input.reflectionOnly ? remix::trace::reflectionOnlyInstanceMask
                           : input.blended        ? remix::trace::blendedInstanceMask
-                          : input.decal          ? remix::trace::decalInstanceMask
                                                  : remix::trace::allInstancesMask;
           instance.intersectionFunctionTableOffset = 0;
           instance.accelerationStructureIndex = entry->second;
@@ -519,6 +592,7 @@ namespace remix::metal {
     // pathtrace/temporal.cpp effectiveOptions: the MetalFX denoiser (Ray
     // Reconstruction's place) replaces NRD, SIGMA, TAA and their inputs.
     auto options = requestedOptions;
+    options.volumetricUpAxis = upAxis.resolve(options.volumetricUpAxis);
     const bool denoised = reconstruction::Backend(configuration.reconstruction) ==
                           reconstruction::Backend::MetalFXDenoising;
     if (denoised) {
@@ -687,6 +761,34 @@ namespace remix::metal {
     auto &lighting = prepared.lighting;
     emissionHistory = std::move(lighting.history);
     lightBvh = std::move(lighting.combined);
+    lightVisibility = std::move(lighting.visibility);
+    // The potentially visible light table and the partition it indexes,
+    // replaced only when they change (pathtrace/rendering.cpp).
+    if (!lightVisibility.table()) {
+      for (auto *out : {&visibilityTable, &visibilityNodes, &visibilityLeaves})
+        if (*out)
+          f.retiredBuffers.push_back(std::move(*out));
+      visibilityTableVersion = visibilityPartitionVersion = 0;
+    } else {
+      const auto &partition = *lightVisibility.partition();
+      const auto place = [&](std::shared_ptr<Buffer> &out, const void *data, size_t size) {
+        if (out)
+          f.retiredBuffers.push_back(std::move(out));
+        out = buffer(data, size);
+      };
+      if (visibilityPartitionVersion != partition.version || !visibilityNodes) {
+        visibilityPartitionVersion = partition.version;
+        place(visibilityNodes, partition.nodes.data(), partition.nodes.size() * sizeof(partition.nodes[0]));
+        place(visibilityLeaves, partition.leafClusters.data(),
+              std::max<size_t>(1, partition.leafClusters.size()) * sizeof(int32_t));
+      }
+      if (visibilityTableVersion != lightVisibility.version() || !visibilityTable) {
+        visibilityTableVersion = lightVisibility.version();
+        const auto &table = *lightVisibility.table();
+        place(visibilityTable, table.data(), std::max<size_t>(1, table.size()) * sizeof(uint32_t));
+        ++visibilityTableUploads;
+      }
+    }
     if ((!lightNodes || lightBufferGeneration != lightBvh.generation) && !lightBvh.nodes().empty()) {
       lightBufferGeneration = lightBvh.generation;
       if (lightNodes)
@@ -696,9 +798,43 @@ namespace remix::metal {
       lightNodes = buffer(lightBvh.nodes().data(), lightBvh.nodes().size() * sizeof(scene::LightNode));
       lightEmitters = buffer(lightBvh.emitters().data(), lightBvh.emitters().size() * sizeof(scene::LightEmitter));
     }
+    // The family trees come back whether or not this frame uses them: they
+    // are the state the next update starts from (pathtrace/rendering.cpp).
+    if (lighting.families) {
+      torchBvh = std::move(lighting.torch);
+      emissiveBvh = std::move(lighting.emissive);
+    }
+    // A denoiser built for split local lighting filters only the split pass's
+    // signal: run that pass whenever it is, even with API (torch) lights only.
+    splitLightingActive = options.separateLocalLighting != 0 &&
+                          (c.split || ((lighting.hasEmissive || options.restir) && (!denoiser || denoised)));
+    const bool splitFamilies = splitLightingActive && options.separateLocalLighting != 3;
+    if (splitFamilies)
+      for (auto [bvh, generation, nodes, emitters] :
+           {std::tuple{&torchBvh, &torchGeneration, &torchNodes, &torchEmitters},
+            std::tuple{&emissiveBvh, &emissiveGeneration, &emissiveNodes, &emissiveEmitters}})
+        if ((!*nodes || *generation != bvh->generation) && !bvh->nodes().empty()) {
+          *generation = bvh->generation;
+          for (auto *out : {nodes, emitters})
+            if (*out)
+              f.retiredBuffers.push_back(std::move(*out));
+          *nodes = buffer(bvh->nodes().data(), bvh->nodes().size() * sizeof(scene::LightNode));
+          *emitters = buffer(bvh->emitters().data(), bvh->emitters().size() * sizeof(scene::LightEmitter));
+        }
     Frame frame = {};
+    frame.woundVertices = prepareWounds();
     frame.localConfig[0] = options.localLights && options.localIntensity > 0 ? lightBvh.active : 0;
+    const bool localIllumination = frame.localConfig[0] != 0;
+    frame.splitLocal[0] = splitLightingActive ? options.separateLocalLighting : 0;
+    frame.splitLocal[1] = localIllumination && splitFamilies ? torchBvh.active : 0;
+    frame.splitLocal[2] = localIllumination && splitFamilies ? emissiveBvh.active : 0;
     frame.splitLocal[3] = debugView;
+    if (splitFamilies) {
+      frame.torchNodes = torchNodes ? torchNodes->address : 0;
+      frame.torchEmitters = torchEmitters ? torchEmitters->address : 0;
+      frame.emissiveNodes = emissiveNodes ? emissiveNodes->address : 0;
+      frame.emissiveEmitters = emissiveEmitters ? emissiveEmitters->address : 0;
+    }
     frame.localConfig[1] = options.localSamples;
     frame.localConfig[2] = uint32_t(lightBvh.lightingGeneration);
     frame.localConfig[3] =
@@ -706,8 +842,15 @@ namespace remix::metal {
         (lighting.hasEmissive ? 0u : 0x40000000u); // sphere-only set: guide sphere lights too
     frame.localScale[0] = options.localIntensity;
     frame.localScale[1] = options.localRange;
+    // rtx.native.pathtrace.emissiveCandidateBudget spreads a per-pixel
+    // candidate count over the requested samples (pathtrace/rendering.cpp).
+    const uint32_t emissiveCandidates =
+        options.emissiveCandidateBudget
+            ? std::clamp(options.emissiveCandidateBudget / std::max(options.localSamples, 1u), 1u,
+                         options.emissiveCandidates)
+            : options.emissiveCandidates;
     frame.localScale[2] = lightBvh.emitters().size() <= 4 ? 1.f
-                          : lighting.hasEmissive        ? float(options.emissiveCandidates)
+                          : lighting.hasEmissive        ? float(emissiveCandidates)
                                                         : float(options.sphereCandidates);
     frame.localScale[3] = options.localRange > 0 ? 1.f / (options.localRange * options.localRange) : 0;
     frame.camera = resources.camera();
@@ -715,6 +858,7 @@ namespace remix::metal {
     frame.inverseCamera = scene::inverse(frame.camera);
     const auto eye = scene::inverse(resources.view());
     std::copy_n(eye.data() + 12, 3, frame.eye);
+    upAxis.observe(eye);
     // Camera rays (pathtrace/rendering.cpp): the view and the projection
     // inverted separately, without the eye's translation, which single
     // precision loses far from the origin (near geometry would jitter).
@@ -729,6 +873,39 @@ namespace remix::metal {
       frame.inverseCameraRelative = scene::multiply(toEye, frame.inverseCamera);
     }
     auto light = resources.light();
+    // pathtrace/rendering.cpp: the NUMOS sky's sun and sky come from its
+    // previous frame; its work for this one is recorded once the camera's
+    // jitter is known.
+    skyApplied = false;
+#if REMIX_HAS_NUMOS
+    // A sky failure must not take the frame with it: the sky stays off until
+    // its settings change.
+    const auto guardSky = [&](auto &&work) {
+      std::string error;
+      try {
+        work();
+        return;
+      } catch (const std::exception &exception) {
+        error = exception.what();
+      }
+      skyFailure = error;
+      skyActive = skyReady = false;
+      std::fprintf(stderr, "NUMOS sky stopped: %s\n", error.c_str());
+    };
+    const bool numosActive =
+        numosSky && skyReady && skySettings.enabled && skyUnavailable.empty() && skyFailure.empty();
+    if (numosActive && numosSky->sun().active) {
+      const auto &sun = numosSky->sun();
+      for (int i = 0; i < 3; ++i) {
+        light.direction[i] = sun.direction[i];
+        light.radiance[i] = sun.radiance[i] * skySettings.radianceScale;
+      }
+      light.angularDiameterDegrees = sun.angularDiameterDegrees;
+    } else if (numosActive) {
+      // No NUMOS light is above the horizon.
+      std::fill_n(light.radiance, 3, 0.f);
+    }
+#endif
     if (options.overrideLight) {
       const float norm =
           std::hypot(options.lightDirection[0], options.lightDirection[1], options.lightDirection[2]);
@@ -781,6 +958,71 @@ namespace remix::metal {
         append(&fingerprint, sizeof(fingerprint));
       }
     }
+    // Light cookies: each slot's texture in this frame's texture table (+ 1).
+    {
+      const auto &cookies = resources.cookieTextures();
+      std::vector<uint32_t> table(cookies.size());
+      for (size_t i = 0; i < cookies.size(); ++i) {
+        if (!cookies[i])
+          continue;
+        if (textures.size() >= PathTracer::textureLimit)
+          throw Error("too many textures for the frame's table");
+        table[i] = uint32_t(textures.size() + 1);
+        const auto image = raster.sampledTexture(resources.cookieMaterial(), cookies[i]);
+        if (image.srgb)
+          srgbSlots.push_back(uint32_t(textures.size()));
+        textures.push_back(image.texture);
+        samplers.push_back(image.sampler);
+        auto fingerprint = cookies[i]->fingerprint();
+        append(&fingerprint, sizeof(fingerprint));
+      }
+      f.lightCookies = table.empty() ? nullptr : buffer(table.data(), table.size() * sizeof(uint32_t));
+      frame.lightCookies = f.lightCookies ? f.lightCookies->address : 0;
+    }
+#if REMIX_HAS_NUMOS
+    if (options.sky && numosActive) {
+      if (const auto environment = numosSky->environment();
+          environment.texture && textures.size() < PathTracer::textureLimit) {
+        const float scale = numosSky->environmentScale() * skySettings.radianceScale;
+        std::fill_n(frame.skyRadiance, 3, scale);
+        frame.skyRadiance[3] = float(textures.size() + 1);
+        for (unsigned row = 0; row < 3; ++row)
+          for (unsigned col = 0; col < 4; ++col)
+            frame.domeTransform[row][col] = col < 3 ? numosSky->domeTransform()[row][col] : 0.f;
+        textures.push_back(environment.texture);
+        samplers.push_back(environment.sampler);
+        skyApplied = true;
+      }
+      if (const auto shadow = numosSky->cloudShadow();
+          shadow.texture && numosSky->sun().cloudShadowed && textures.size() < PathTracer::textureLimit) {
+        std::copy_n(&numosSky->cloudShadowTransform()[0][0], 12, &frame.cloudShadow[0][0]);
+        frame.cloudShadowConfig[0] = uint32_t(textures.size() + 1);
+        frame.cloudShadowConfig[1] = sky::Renderer::cloudShadowSlices;
+        textures.push_back(shadow.texture);
+        samplers.push_back(shadow.sampler);
+      }
+    }
+#endif
+    // The sun and sky effects drawn over the frame are lit by.
+    std::copy_n(frame.direction, 3, overlay.sunDirection);
+    std::copy_n(frame.radiance, 3, overlay.sunRadiance);
+    std::copy_n(frame.skyRadiance, 4, overlay.skyRadiance);
+    const auto image = [&](uint32_t index, __strong id<MTLTexture> &texture, __strong id<MTLSamplerState> &sampler) {
+      texture = index && index <= textures.size() ? textures[index - 1] : nil;
+      sampler = texture ? samplers[index - 1] : nil;
+    };
+    image(frame.skyRadiance[3] > 0 ? uint32_t(frame.skyRadiance[3]) : 0, overlayImages.environment,
+          overlayImages.environmentSampler);
+    overlay.environmentSrgb = frame.skyRadiance[3] > 0 &&
+                              std::find(srgbSlots.begin(), srgbSlots.end(), uint32_t(frame.skyRadiance[3]) - 1) !=
+                                  srgbSlots.end();
+    for (unsigned row = 0; row < 3; ++row)
+      for (unsigned col = 0; col < 3; ++col)
+        overlay.domeTransform[row][col] = frame.domeTransform[row][col];
+    image(frame.cloudShadowConfig[0], overlayImages.cloudShadow, overlayImages.cloudShadowSampler);
+    std::copy_n(&frame.cloudShadow[0][0], 12, &overlay.cloudShadowTransform[0][0]);
+    overlay.cloudShadowSlices = frame.cloudShadowConfig[1];
+    overlay.upAxis = std::min(options.volumetricUpAxis, 2u);
     // Role CUT (remixapi_InstanceInfoMaskEXT): the coverage of the groups
     // whose instances the camera does not see, drawn by the raster renderer
     // ahead of this frame's passes. Its sources are in no table: their
@@ -795,6 +1037,12 @@ namespace remix::metal {
       }
       append(&cut.digest, sizeof(cut.digest));
     }
+    // remixapi_InstanceInfoCameraCullingEXT: what the camera sees of the scene
+    // is part of its signature (the flags applied, the visible set).
+    configureCameraCulling(frame, options, resources);
+    append(frame.cameraCull, sizeof(frame.cameraCull));
+    if (frame.cameraLeaves)
+      append(cameraCulling.leavesClusters, sizeof(cameraCulling.leavesClusters));
     frame.config[0] = options.samples;
     frame.config[1] = options.bounces;
     frame.target[0] = width;
@@ -828,7 +1076,30 @@ namespace remix::metal {
       frame.pathConfig[3] |= 0x100u;
     if (!options.iridescence)
       frame.pathConfig[3] |= 0x200u; // thin films off (scene.glsl filmed)
+    if (!options.subsurface)
+      frame.pathConfig[3] |= 0x400u; // subsurface scattering off (scene.glsl subsurfaced)
+    if (!options.subsurfaceDiffusionProfile)
+      frame.pathConfig[3] |= 0x800u;
+    if (!options.subsurfaceThinOpaque)
+      frame.pathConfig[3] |= 0x1000u;
+    if (!options.subsurfaceTextureMaps)
+      frame.pathConfig[3] |= 0x2000u; // subsurface maps off (pathtrace.comp surfaceSubsurface)
+    if (!options.subsurfaceTransmission)
+      frame.pathConfig[3] |= 0x4000u; // a profile's far side off (subsurface.glsl)
+    frame.subsurfaceUnits = options.subsurfaceProfileScale / options.sceneScale;
+    frame.subsurfaceThickness = options.subsurfaceThicknessScale;
     std::copy_n(resources.cameraMedium().data(), 4, frame.cameraMedium);
+    {
+      // pathtrace/rendering.cpp: the screen cameras, flagged when they moved.
+      const auto &screens = resources.screenCameras();
+      for (size_t slot = 0; slot < screens.size(); ++slot) {
+        std::copy_n(screens[slot].data(), 16, &frame.screenCameras[slot][0][0]);
+        if (screens[slot][3] != 0 && screens[slot] != lastScreenCameras[slot])
+          frame.screenCameras[slot][0][3] += 2;
+      }
+      lastScreenCameras = screens;
+      append(frame.screenCameras, sizeof(frame.screenCameras));
+    }
     frame.upAxis = float(std::min(options.volumetricUpAxis, 2u));
     // pathtrace/rendering.cpp: light through translucent surfaces with a normal
     // map draws caustics (visibility.glsl causticTint).
@@ -916,8 +1187,23 @@ namespace remix::metal {
     temporalFrame.local[0] = denoiser && c.localDenoise;
     temporalFrame.local[1] = frame.localConfig[0];
     temporalFrame.local[2] = localResponsiveFrames;
-    temporalFrame.families[0] = frame.localConfig[0];
-    temporalFrame.families[2] = localResponsiveFrames;
+    temporalFrame.local[3] = frame.splitLocal[0];
+    for (unsigned i = 0; i < 2; ++i) {
+      const auto &family = i ? emissiveBvh : torchBvh;
+      if (previousFamilyGeneration[i] != family.builds || localSettingsChanged || history.reset())
+        familyResponsive[i] = 8;
+      else if (familyResponsive[i])
+        --familyResponsive[i];
+      previousFamilyGeneration[i] = family.builds;
+      temporalFrame.families[i] = frame.splitLocal[i + 1];
+      temporalFrame.families[i + 2] = familyResponsive[i];
+    }
+    if (!splitFamilies) {
+      temporalFrame.families[0] = frame.localConfig[0];
+      temporalFrame.families[1] = 0;
+      temporalFrame.families[2] = localResponsiveFrames;
+      temporalFrame.families[3] = 0;
+    }
     // NRD's hit-distance scale A is in meters (3 m); B and C are unitless.
     temporalFrame.hitDistance[0] = 3.f / options.sceneScale;
     // Primary surface replacement (pathtrace/rendering.cpp): mirrors seen
@@ -1001,10 +1287,35 @@ namespace remix::metal {
     temporalFrame.shadow[1] = uint32_t(frame.sun[2]);
     frame.lightNodes = lightNodes ? lightNodes->address : 0;
     frame.lightEmitters = lightEmitters ? lightEmitters->address : 0;
+    const bool visibilityActive = frame.localConfig[0] != 0 && visibilityTable && visibilityNodes && visibilityLeaves;
+    frame.visibilityNodes = visibilityActive ? visibilityNodes->address : 0;
+    frame.visibilityLeaves = visibilityActive ? visibilityLeaves->address : 0;
+    frame.visibilityTable = visibilityActive ? visibilityTable->address : 0;
+    frame.visibilityConfig[0] = lightVisibility.rowWords();
+    frame.visibilityConfig[2] = lightVisibility.tableNodes();
     frame.config[2] = uint32_t(sequence++);
     if (const auto *seed = std::getenv("REMIX_PATH_SAMPLE_SEED"))
       frame.config[2] += uint32_t(std::strtoul(seed, nullptr, 10));
     frame.config[3] = uint32_t(stats.accumulationCount);
+    // PBR local reuse (pathtrace/rendering.cpp): its history is valid while
+    // the scene and the settings that shape local lighting hold still.
+    {
+      uint64_t reuseSignature = tables.reuseSignature();
+      if (options.pbrLocalReuse) {
+        const bool localBlueNoise = (uint32_t(frame.jitter[3]) & 2u) != 0;
+        const uint32_t settings[] = {options.localSamples,
+                                     options.emissiveCandidates,
+                                     options.sphereCandidates,
+                                     uint32_t(options.adaptiveLocalSampling),
+                                     uint32_t(options.localGuiding),
+                                     options.separateLocalLighting,
+                                     uint32_t(options.emissiveSolidAngleSampling),
+                                     uint32_t(localBlueNoise)};
+        reuseSignature = scene::hashBytes(settings, sizeof(settings), reuseSignature);
+      }
+      configurePbrReuse(command, frame, options, reuseSignature,
+                        tables.dynamicInputs().empty() && temporalFrame.local[2] == 0 && !history.reset());
+    }
     configureIndirect(frame, options);
     {
       // The sheet lighting pass's transport.
@@ -1021,6 +1332,8 @@ namespace remix::metal {
     configureRegir(frame, options, frame.localConfig[0] != 0);
     configureLightGuiding(frame, options, frame.localScale[2] > 1);
     configureSkyGuiding(frame, options);
+    configureRestir(frame, options);
+    configureLocalProbes(frame, options);
     // Lights that changed since the previous frame (pathtrace/rendering.cpp):
     // the local denoiser drops history where they changed the light.
     {
@@ -1034,7 +1347,7 @@ namespace remix::metal {
       f.uniform = buffer(nullptr, sizeof(frame));
     // Middle-grey radiance at the current exposure (pathtrace/rendering.cpp):
     // after the scene signature, since exposure drifts while the meter adapts.
-    const float exposure = options.exposure * (options.autoExposure && g.post ? g.post->statistics().exposure : 1.f);
+    const float exposure = options.exposure * (options.autoExposure && post ? post->statistics().exposure : 1.f);
     frame.firefly[3] = .18f / std::max(exposure, 1e-12f);
     if (options.relativeClamps) {
       frame.firefly[0] *= frame.firefly[3];
@@ -1046,6 +1359,8 @@ namespace remix::metal {
       frame.reuseConfig[2] = uint32_t(rayProfile.counters->address);
       frame.reuseConfig[3] = uint32_t(rayProfile.counters->address >> 32);
     }
+    // The path inspector's pixel and records, in the constants uploaded here.
+    beginPathInspector(command, frame);
     std::memcpy(f.uniform->handle.contents, &frame, sizeof(frame));
     stats.samplesPerPixel = options.samples;
     stats.indirectBounces = options.bounces;
@@ -1061,6 +1376,47 @@ namespace remix::metal {
     textures.resize(PathTracer::textureLimit, textures.front());
     samplers.resize(PathTracer::textureLimit, samplers.front());
     collectResident();
+    recordWounds(command);
+#if REMIX_HAS_NUMOS
+    skyActive = false;
+    if (skySettings.enabled && skyUnavailable.empty() && skyFailure.empty())
+      guardSky([&] {
+        if (!numosSky) {
+          numosSky = std::make_shared<sky::Renderer>(nullptr, device);
+          numosSky->selectFrame(frameIndex);
+        }
+        numosSky->setSettings(skySettings, skyControl);
+        // The static TLAS: the world (Metal has no combined TLAS).
+        skyScene = {.tlas = tlas[0].handle, .referenced = resident};
+        const sky::FrameDescription description{
+            .view = resources.view(),
+            .projection = resources.projection(),
+            .previousView = temporalFrame.previousView,
+            .previousProjection = history.reset() ? resources.projection() : previousProjection,
+            .jitter = {temporalFrame.jitter[0], temporalFrame.jitter[1]},
+            .renderWidth = width,
+            .renderHeight = height,
+            .outputWidth = configuration.displayWidth,
+            .outputHeight = configuration.displayHeight,
+            .metersPerUnit = options.sceneScale,
+            .upAxis = options.volumetricUpAxis,
+            .cameraCut = history.reset() || !skyReady,
+            .scene = skyScene.tlas ? &skyScene : nullptr};
+        skyActive = numosSky->record(command, description);
+        skyReady |= skyActive;
+        skyReason = numosSky->status();
+        std::lock_guard lock(skyStateMutex);
+        skyState = numosSky->state();
+        skyState.active = skyActive;
+      });
+    else {
+      // A sky enabled again starts from its own next frame, not a stale one.
+      skyReady = false;
+      skyReason = skySettings.enabled ? "" : "Off.";
+      std::lock_guard lock(skyStateMutex);
+      skyState = {};
+    }
+#endif
     for (auto *pass : lightingPasses)
       if (*pass)
         bindTracing(*pass, textures, samplers);
@@ -1111,6 +1467,8 @@ namespace remix::metal {
       s.decals = flags.decal;
       s.earlyOut = options.shadowEarlyOut;
       s.profile = rayProfile.path != nullptr;
+      s.pbrReuse = pbrReuse.active;
+      s.split = splitLightingActive;
     }
     const bool querySharc = sharc.stats.active && (sharc.hasReceivers || options.sharcDebug);
     beginRayProfile(command, frame);
@@ -1185,6 +1543,16 @@ namespace remix::metal {
                : querySharc        ? "Trace opaque: direct, sun, local, emissive, indirect+SHARC"
                                    : "Trace opaque: direct, sun, local, emissive, indirect",
                width, height);
+    // Split local lighting: the families' direct light in a pass of its own,
+    // or ReSTIR DI's resampling and shading in its place (pathtrace/restir.cpp).
+    if (restir.active) {
+      dispatch(command, restirInitial, {select(restirInitial).pipeline, opaqueSelected.features},
+               "ReSTIR DI: initial and temporal resampling", width, height);
+      dispatch(command, restirSpatial, {select(restirSpatial).pipeline, opaqueSelected.features},
+               "ReSTIR DI: spatial resampling and shading", width, height);
+    } else if (splitLightingActive && denoiser && c.split && splitDirect)
+      dispatch(command, splitDirect, select(splitDirect, false, 0, c.splitMode == 3),
+               "Trace split local/emissive direct", width, height);
     if (denoiser && c.reblur)
       dispatch(command, confidence, select(confidence), "Trace indirect confidence (1/5 res)", (width + 4) / 5,
                (height + 4) / 5);
@@ -1203,8 +1571,25 @@ namespace remix::metal {
     dispatch(command, singleTransparency, single, "Trace transparency (single sheet)", width, height);
     dispatch(command, transparency, multiSheet, "Trace transparency (multi-sheet)", width, height);
     finishRayProfile(command);
+    finishPathInspector(command);
+    finishPbrReuse(command);
+#if REMIX_HAS_NUMOS
+    if (skyActive)
+      guardSky([&] {
+        id<MTLTexture> depth = denoiser ? denoiser->image(denoise::Depth) : nil;
+        numosSky->recordPostDepth(command, depth, depth);
+      });
+#endif
     if (denoiser)
       denoiser->record(command);
+#if REMIX_HAS_NUMOS
+    if (skyActive && denoiser)
+      guardSky([&] {
+        id<MTLTexture> color = denoiser->image(denoise::Composed), depth = denoiser->image(denoise::Depth);
+        numosSky->recordComposite(command, color, color, depth, depth,
+                                  numosSky->environmentScale() * skySettings.radianceScale, skySettings.gameSky);
+      });
+#endif
     finishLightGuiding(command);
     // pathtrace/rendering.cpp: the upscaler takes the composed radiance with
     // the denoiser's guides (and the RR guides for the MetalFX denoiser).
@@ -1335,6 +1720,10 @@ namespace remix::metal {
     if (skyGuiding.active) {
       skyGuiding.writeIndex ^= 1;
       skyGuiding.valid = true;
+    }
+    if (pbrReuse.active) {
+      pbrReuse.writeIndex ^= 1;
+      pbrReuse.valid = true;
     }
     statics.committed(prepareSerial, frame().retiredStates);
     if (sharc.stats.active && sharc.hasReceivers) {
@@ -1592,7 +1981,7 @@ namespace remix::metal {
     const auto backend = reconstruction::Backend(g.configuration.reconstruction);
     if (g.reconstruction && backend != reconstruction::Backend::Native && !g.debugView) {
       g.reconstruction->composite(encoder, g.primary[4], g.post->exposure(), g.post->bloom(), metal::sampler(g.device, 1, 3, 3), g.post->settings(),
-                                  g.frameIndex);
+                                  g.frameIndex, g.display);
       return;
     }
     const auto &composite = library(Stage::compositeFrag);
@@ -1603,8 +1992,8 @@ namespace remix::metal {
     g.compositeSet.use(encoder, MTLRenderStageFragment);
     g.postSet.use(encoder, MTLRenderStageFragment);
     for (uint32_t i = 0; i < 2; ++i) {
-      // pathtrace.frag's constants: SDR.
-      const scene::DisplayOutput display;
+      // pathtrace.frag's constants.
+      const auto &display = g.display;
       struct {
         uint32_t additive, falseColor, width, height, display;
         float peakNits, paperWhiteNits;
@@ -1942,6 +2331,118 @@ namespace remix::metal {
     g.active = true;
   }
 
+  // pathtrace/restir.cpp configureRestir: reservoir buffers (this frame's
+  // initial and temporal result; the kept history ping-pong), the previous-
+  // to-current emitter index remap when the light set changed, and the frame
+  // constants.
+  void PathTracer::Gpu::configureRestir(Frame &frame, const TraceOptions &options) {
+    auto &r = restir;
+    const auto &c = configuration;
+    const bool active = options.restir && restirInitial && restirSpatial && splitLightingActive && denoiser &&
+                        c.split && frame.localConfig[0] != 0;
+    frame.restirCurrent = frame.restirHistoryRead = frame.restirHistoryWrite = frame.restirRemap = 0;
+    if (!active) {
+      r.active = r.historyValid = false;
+      r.keys.clear();
+      return;
+    }
+    // Must match struct Reservoir in restir.glsl.
+    constexpr size_t kReservoirBytes = 48;
+    if (!r.current || r.width != c.width || r.height != c.height) {
+      for (auto *b : {&r.current, &r.history[0], &r.history[1]}) {
+        if (*b)
+          this->frame().retiredBuffers.push_back(std::move(*b));
+        *b = buffer(nullptr, size_t(c.width) * c.height * kReservoirBytes);
+      }
+      r.width = c.width;
+      r.height = c.height;
+      r.historyValid = false;
+    }
+    if (history.reset())
+      r.historyValid = false;
+    // Emitter indices follow the sorted light list; when it changes, map the
+    // history's indices to this frame's (none: the light is gone).
+    const auto &lights = lightBvh.lights();
+    bool same = r.keys.size() == lights.size();
+    for (size_t i = 0; same && i < lights.size(); ++i)
+      same = r.keys[i] == std::pair{lights[i].id, lights[i].triangle};
+    if (!same) {
+      if (r.historyValid && !r.keys.empty()) {
+        std::map<std::pair<uint64_t, uint32_t>, uint32_t> current;
+        for (size_t i = 0; i < lights.size(); ++i)
+          current.emplace(std::pair{lights[i].id, lights[i].triangle}, uint32_t(i));
+        std::vector<uint32_t> remap(r.keys.size(), 0xffffffffu);
+        for (size_t i = 0; i < r.keys.size(); ++i)
+          if (auto it = current.find(r.keys[i]); it != current.end())
+            remap[i] = it->second;
+        if (r.remap)
+          this->frame().retiredBuffers.push_back(std::move(r.remap));
+        r.remap = buffer(remap.data(), remap.size() * sizeof(uint32_t));
+        frame.restirRemap = r.remap->address;
+      }
+      r.keys.clear();
+      r.keys.reserve(lights.size());
+      for (const auto &light : lights)
+        r.keys.emplace_back(light.id, light.triangle);
+    }
+    r.writeIndex ^= 1;
+    frame.restirCurrent = r.current->address;
+    frame.restirHistoryWrite = r.history[r.writeIndex]->address;
+    frame.restirHistoryRead = r.historyValid ? r.history[r.writeIndex ^ 1]->address : 0;
+    frame.restirConfig[0] = options.restirCandidates;
+    frame.restirConfig[1] =
+        std::min(options.restirSpatialSamples, 8u) | std::min(options.restirDisocclusionSamples, 8u) << 8;
+    frame.restirConfig[2] = options.restirTemporalHistory;
+    // Bit 2: re-test history samples for occluders that moved.
+    frame.restirConfig[3] = (options.restirInitialVisibility ? 1u : 0u) | (options.restirPermutation ? 2u : 0u) |
+                            (options.localHistoryConfidence ? 4u : 0u);
+    frame.restirParams[0] = options.restirSpatialRadius;
+    frame.restirParams[1] = float(lights.size());
+    frame.restirParams[2] = options.restirBoilingFilter;
+    r.active = true;
+    r.historyValid = true; // this frame writes it
+  }
+
+  // pathtrace/restir.cpp configureLocalProbes: the split local pass's
+  // occlusion probes; ReSTIR re-tests its own history samples instead.
+  void PathTracer::Gpu::configureLocalProbes(Frame &frame, const TraceOptions &options) {
+    auto &p = localProbes;
+    const bool active = options.localHistoryConfidence && splitLightingActive && denoiser && configuration.split &&
+                        frame.localConfig[0] != 0 && !restir.active;
+    frame.localProbeRead = frame.localProbeWrite = 0;
+    // Not probe settings; free slots.
+    frame.localProbeParams[1] = options.shadowTerminatorSoften ? 1.f : 0.f;
+    // The terminator lift's limits in world units (0 length: off).
+    const float scale = std::max(options.sceneScale, 1e-6f), maxArea = options.shadowTerminatorMaxArea / (scale * scale);
+    frame.localProbeParams[3] = options.shadowTerminatorLift ? options.shadowTerminatorMaxLength / scale : 0.f;
+    std::memcpy(&frame.visibilityConfig[3], &maxArea, 4);
+    frame.restirParams[3] = options.contactGap / scale; // secondary rays' least distance, world units
+    frame.localProbeParams[2] = options.bounces > 0 ? std::min(options.emissiveSpecularRoughness, .45f) : 0.f;
+    if (!active) {
+      p.valid = false;
+      return;
+    }
+    // Must match struct LocalProbe in pathtrace.comp.
+    constexpr size_t kProbeBytes = 32;
+    if (!p.buffers[0] || p.width != width || p.height != height) {
+      for (auto &b : p.buffers) {
+        if (b)
+          this->frame().retiredBuffers.push_back(std::move(b));
+        b = buffer(nullptr, size_t(width) * height * kProbeBytes);
+      }
+      p.width = width;
+      p.height = height;
+      p.valid = false;
+    }
+    if (history.reset())
+      p.valid = false;
+    p.writeIndex ^= 1;
+    frame.localProbeWrite = p.buffers[p.writeIndex]->address;
+    frame.localProbeRead = p.valid ? p.buffers[p.writeIndex ^ 1]->address : 0;
+    frame.localProbeParams[0] = options.movingShadowBlur;
+    p.valid = true; // this frame writes it
+  }
+
   // As beginLightGuiding: the read bank stays immutable for the frame; clear
   // the bank this frame trains before any pass's atomics.
   void PathTracer::Gpu::beginSkyGuiding(id<MTLCommandBuffer> command) {
@@ -2003,6 +2504,305 @@ namespace remix::metal {
     f.rayPending = true;
   }
 
+  // pathtrace/camera_culling.cpp: the flags this frame's camera rays apply,
+  // and for VISIBILITY the leaves the camera sees (cameraUnseen in scene.glsl).
+  void PathTracer::Gpu::configureCameraCulling(Frame &frame, const TraceOptions &options, const Raster &resources) {
+    auto &c = cameraCulling;
+    auto &s = c.statistics;
+    const auto &partition = resources.visibilityPartition();
+    // (The shader walks the nodes without bounds checks: closed partitions only.)
+    const bool usable = partition && partition->closed && !partition->nodes.empty() && partition->clusterCount;
+    const int32_t cluster = usable ? partition->cluster(frame.eye) : -1;
+    // The previous traced frame's cluster, in the same partition.
+    const int32_t previous = usable && c.lastVersion == partition->version ? c.lastCluster : cluster;
+    c.lastVersion = usable ? partition->version : 0;
+    c.lastCluster = cluster;
+    const uint32_t requested = resources.cameraCull() & 3u;
+    uint32_t active = options.cameraBackFaceCulling ? requested & 1u : 0u;
+    const uint64_t updates = s.updates;
+    s = {.structSize = sizeof(s)};
+    s.updates = updates;
+    s.requested = requested;
+    s.partition = usable;
+    s.outside = usable && (cluster < 0 || previous < 0);
+    s.cameraCluster = cluster;
+    s.previousCluster = previous;
+    s.clusterCount = usable ? partition->clusterCount : 0;
+    s.leafCount = usable ? uint32_t(partition->leafClusters.size()) : 0;
+    s.visibleClusters = s.clusterCount;
+    s.visibleLeaves = s.leafCount;
+    // Buffers are replaced, not rewritten: frames in flight keep theirs.
+    const auto retire = [&](std::shared_ptr<Buffer> &out) {
+      if (out)
+        this->frame().retiredBuffers.push_back(std::move(out));
+      out = nullptr;
+    };
+    if (!(requested & 2u) || !options.cameraVisibilityCulling || !usable) {
+      // Not asked for (any more): give the buffers back.
+      if (!(requested & 2u) || !usable) {
+        retire(c.nodes);
+        retire(c.leaves);
+        c.nodesVersion = c.leavesVersion = 0;
+      }
+    } else if (cluster >= 0 && previous >= 0) {
+      if (c.nodesVersion != partition->version || !c.nodes) {
+        retire(c.nodes);
+        c.nodes = buffer(partition->nodes.data(), partition->nodes.size() * sizeof(partition->nodes[0]));
+        c.nodesVersion = partition->version;
+        c.leavesVersion = 0;
+      }
+      static_assert(sizeof(partition->nodes[0]) == 32);
+      if (c.leavesVersion != partition->version || !c.leaves || c.leavesClusters[0] != cluster ||
+          c.leavesClusters[1] != previous) {
+        std::vector<uint32_t> bits;
+        const auto count = partition->visibleLeaves(cluster, previous, bits);
+        retire(c.leaves);
+        c.leaves = buffer(bits.data(), bits.size() * sizeof(uint32_t));
+        c.leavesVersion = partition->version;
+        c.leavesClusters[0] = cluster;
+        c.leavesClusters[1] = previous;
+        c.visibleClusters = count.clusters;
+        c.visibleLeaves = count.leaves;
+        ++s.updates;
+      }
+      s.visibleClusters = c.visibleClusters;
+      s.visibleLeaves = c.visibleLeaves;
+      frame.cameraNodes = c.nodes->address;
+      frame.cameraLeaves = c.leaves->address;
+      active |= 2u;
+    }
+    s.active = active;
+    frame.cameraCull[0] = active;
+    // A camera ray is located 5 cm before the surface it meets.
+    const float probe = .05f / options.sceneScale;
+    std::memcpy(&frame.cameraCull[1], &probe, sizeof(probe));
+  }
+
+  // pathtrace/temporal.cpp localLightSetStatistics.
+  remixapi_LocalLightSetStatisticsEXT PathTracer::localLightSetStatistics() const {
+    const auto &g = *m_gpu;
+    const auto &tree = g.lightBvh;
+    const auto &table = g.lightVisibility;
+    remixapi_LocalLightSetStatisticsEXT result{.structSize = sizeof(result)};
+    result.lastBuildReason = tree.lastBuildReason;
+    result.staticLights = tree.staticLights;
+    result.dynamicLights = tree.dynamicLights;
+    result.retiredSlots = tree.retiredSlots;
+    result.dynamicInstanceLights = tree.instanceLights;
+    result.builds = tree.builds;
+    result.refits = tree.refits;
+    result.dynamicBuilds = tree.dynamicBuilds;
+    static_assert(REMIXAPI_LOCAL_LIGHT_BUILD_REASONS_EXT == scene::LightBvh::ReasonCount);
+    std::copy_n(tree.buildReasons, scene::LightBvh::ReasonCount, result.buildsByReason);
+    if (table.table()) {
+      result.tableBytes = table.table()->size() * sizeof(uint32_t);
+      result.tableNodes = table.tableNodes();
+    }
+    result.tableBuilds = table.tableBuilds;
+    result.tableUploads = g.visibilityTableUploads;
+    result.tableMilliseconds = table.tableMilliseconds;
+    result.tableTotalMilliseconds = table.tableTotalMilliseconds;
+    result.buildMilliseconds = tree.buildMilliseconds;
+    result.buildTotalMilliseconds = tree.buildTotalMilliseconds;
+    return result;
+  }
+
+  remixapi_CameraCullingStatisticsEXT PathTracer::cameraCullingStatistics() const {
+    return m_gpu->cameraCulling.statistics;
+  }
+
+  // pathtrace/pbr_reuse.cpp: the opaque pass's local lighting of the previous
+  // frame, reused where the surface held still.
+  void PathTracer::Gpu::configurePbrReuse(id<MTLCommandBuffer> command, Frame &frame, const TraceOptions &options,
+                                          uint64_t signature, bool stable) {
+    const auto &c = configuration;
+    pbrReuse.active = options.pbrLocalReuse && options.localDirectClamp == 0 && options.indirectClamp == 0 &&
+                      denoiser && c.reblur && !options.accumulate && options.samples == 1 && options.bounces &&
+                      frame.localConfig[0];
+    if (!pbrReuse.active) {
+      pbrReuse.valid = false;
+      for (auto &history : pbrReuse.history)
+        if (history)
+          this->frame().retiredBuffers.push_back(std::move(history));
+      return;
+    }
+    const size_t bytes = 16 + size_t(c.width) * c.height * 64;
+    bool allocated = false;
+    for (auto &history : pbrReuse.history)
+      if (!history || history->handle.length < bytes) {
+        if (history)
+          this->frame().retiredBuffers.push_back(std::move(history));
+        history = buffer(nullptr, bytes);
+        allocated = true;
+      }
+    if (allocated)
+      pbrReuse.valid = false;
+    frame.reuseWrite = pbrReuse.history[pbrReuse.writeIndex]->address;
+    frame.reuseRead = pbrReuse.history[pbrReuse.writeIndex ^ 1]->address;
+    frame.reuseConfig[0] = pbrReuse.valid && stable && pbrReuse.signature == signature && !temporalFrame.flags[0];
+    frame.reuseConfig[1] = pbrReuse.diagnostics != nullptr;
+    pbrReuse.signature = signature;
+    id<MTLBlitCommandEncoder> blit = blitEncoder(command, @"PBR reuse counters");
+    [blit fillBuffer:pbrReuse.history[pbrReuse.writeIndex]->handle range:NSMakeRange(0, 16) value:0];
+    [blit endEncoding];
+  }
+
+  void PathTracer::Gpu::finishPbrReuse(id<MTLCommandBuffer> command) {
+    if (!pbrReuse.active || !pbrReuse.diagnostics)
+      return;
+    auto &f = frame();
+    if (!f.reuseCounts)
+      f.reuseCounts = metal::buffer(device, nullptr, 16);
+    id<MTLBlitCommandEncoder> blit = blitEncoder(command, @"PBR reuse diagnostics");
+    [blit copyFromBuffer:pbrReuse.history[pbrReuse.writeIndex]->handle sourceOffset:0 toBuffer:f.reuseCounts
+       destinationOffset:0 size:16];
+    [blit endEncoding];
+    f.reusePending = true;
+  }
+
+  // pathtrace/pbr_reuse.cpp completePbrReuse: REMIX_PBR_REUSE_DIAGNOSTICS's CSV.
+  void PathTracer::Gpu::readPbrReuse() {
+    auto &f = frame();
+    if (!f.reusePending)
+      return;
+    f.reusePending = false;
+    uint32_t counts[4] = {};
+    std::memcpy(counts, f.reuseCounts.contents, sizeof(counts));
+    if (auto *file = std::fopen(pbrReuse.diagnostics, "a")) {
+      if (std::ftell(file) == 0)
+        std::fprintf(file, "attempts,hits,geometry_rejects,view_rejects\n");
+      std::fprintf(file, "%u,%u,%u,%u\n", counts[0], counts[1], counts[2], counts[3]);
+      std::fclose(file);
+    }
+  }
+
+  // pathtrace/geometry.cpp evaluateWounds (remixapi_InstanceInfoWoundCutEXT):
+  // each wounded surface's vertices evaluated at their bind pose into this
+  // frame slot's buffer, from its wound record in the surface table. The
+  // address is the frame's; recordWounds dispatches once the scene is resident.
+  uint64_t PathTracer::Gpu::prepareWounds() {
+    auto &f = frame();
+    const auto [first, count] = tables.woundRecords();
+    const size_t vertices = tables.woundVertices();
+    if (!count || !vertices)
+      return 0;
+    const size_t bytes = vertices * 32;
+    if (!f.woundVertices || f.woundVertices->handle.length < bytes) {
+      if (f.woundVertices)
+        f.retiredBuffers.push_back(std::move(f.woundVertices));
+      f.woundVertices = buffer(nullptr, bytes + bytes / 2);
+    }
+    return f.woundVertices->address;
+  }
+
+  void PathTracer::Gpu::recordWounds(id<MTLCommandBuffer> command) {
+    auto &f = frame();
+    const auto [first, count] = tables.woundRecords();
+    if (!count || !tables.woundVertices() || !f.woundVertices)
+      return;
+    id<MTLComputePipelineState> pipeline = computePipelineAsync(device, Stage::vertexWound, 0);
+    if (!pipeline) {
+      // Until the pipeline is ready: h 2 and both halves missing (the fill's
+      // low bits) at every vertex, nothing cut. The slot's buffer is shared
+      // memory its last frame has finished with.
+      auto *words = static_cast<uint32_t *>(f.woundVertices->handle.contents);
+      std::fill_n(words, tables.woundVertices() * 8, 0x40000003u);
+      return;
+    }
+    struct WoundJob {
+      uint64_t record = 0, target = 0;
+      uint32_t count = 0, unused = 0;
+    };
+    static_assert(sizeof(WoundJob) == 24);
+    id<MTLComputeCommandEncoder> encoder = computeEncoder(command, @"Wound vertices");
+    [encoder setComputePipelineState:pipeline];
+    if (!resident.empty())
+      [encoder useResources:resident.data() count:resident.size() usage:MTLResourceUsageRead | MTLResourceUsageWrite];
+    const auto &source = library(Stage::vertexWound);
+    for (size_t i = first; i < first + count; ++i) {
+      const WoundJob job{.record = f.table->address + uint64_t(i) * sizeof(TraceSurface),
+                         .target = f.woundVertices->address,
+                         .count = tables.surface(i).textureState[2]};
+      if (!job.count)
+        continue;
+      [encoder setBytes:&job length:sizeof(job) atIndex:source.push];
+      [encoder dispatchThreadgroups:MTLSizeMake((job.count + 63) / 64, 1, 1)
+              threadsPerThreadgroup:MTLSizeMake(source.threads[0], source.threads[1], source.threads[2])];
+    }
+    [encoder endEncoding];
+  }
+
+  // pathtrace/ray_profile.cpp beginPathInspector.
+  void PathTracer::Gpu::beginPathInspector(id<MTLCommandBuffer> command, Frame &frame) {
+    auto &p = pathInspector;
+    const auto &c = configuration;
+    if (p.x < 0 || p.y < 0 || uint32_t(p.x) >= c.width || uint32_t(p.y) >= c.height)
+      return;
+    if (!p.records)
+      p.records = buffer(nullptr, 16 + size_t(PathInspector::capacity) * 64);
+    frame.pathDebug[0] = uint32_t(p.records->address);
+    frame.pathDebug[1] = uint32_t(p.records->address >> 32);
+    frame.pathDebug[2] = uint32_t(p.x) | uint32_t(p.y) << 16;
+    frame.pathDebug[3] = PathInspector::capacity;
+    auto &f = this->frame();
+    f.pathFrame = {};
+    std::memcpy(f.pathFrame.camera.data(), &frame.camera, sizeof(frame.camera));
+    f.pathFrame.width = c.width;
+    f.pathFrame.height = c.height;
+    f.pathFrame.x = uint32_t(p.x);
+    f.pathFrame.y = uint32_t(p.y);
+    id<MTLBlitCommandEncoder> blit = blitEncoder(command, @"Path inspector clear");
+    [blit fillBuffer:p.records->handle range:NSMakeRange(0, 16) value:0];
+    [blit endEncoding];
+  }
+
+  void PathTracer::Gpu::finishPathInspector(id<MTLCommandBuffer> command) {
+    auto &p = pathInspector;
+    auto &f = frame();
+    if (p.x < 0 || !p.records || !f.pathFrame.width)
+      return;
+    if (!f.pathRecords)
+      f.pathRecords = metal::buffer(device, nullptr, p.records->handle.length);
+    id<MTLBlitCommandEncoder> blit = blitEncoder(command, @"Path inspector records");
+    [blit copyFromBuffer:p.records->handle sourceOffset:0 toBuffer:f.pathRecords destinationOffset:0
+                    size:f.pathRecords.length];
+    [blit endEncoding];
+    f.pathPending = true;
+  }
+
+  // pathtrace/ray_profile.cpp completePathInspector.
+  void PathTracer::Gpu::readPathInspector() {
+    auto &f = frame();
+    if (!f.pathPending)
+      return;
+    f.pathPending = false;
+    auto inspection = std::move(f.pathFrame);
+    f.pathFrame = {};
+    uint32_t count = 0;
+    std::memcpy(&count, f.pathRecords.contents, 4);
+    inspection.records.resize(std::min(count, PathInspector::capacity));
+    std::memcpy(inspection.records.data(), static_cast<const char *>(f.pathRecords.contents) + 16,
+                inspection.records.size() * sizeof(inspection.records[0]));
+    std::lock_guard lock(pathInspector.mutex);
+    inspection.frame = pathInspector.last.frame + 1;
+    pathInspector.last = std::move(inspection);
+  }
+
+  void PathTracer::inspectPixel(int x, int y) {
+    auto &p = m_gpu->pathInspector;
+    p.x = x;
+    p.y = y;
+    if (x < 0) {
+      std::lock_guard lock(p.mutex);
+      p.last = {};
+    }
+  }
+
+  PathInspection PathTracer::pathInspection() const {
+    std::lock_guard lock(m_gpu->pathInspector.mutex);
+    return m_gpu->pathInspector.last;
+  }
+
   // pathtrace/ray_profile.cpp completeRayProfile: the same CSV columns.
   void PathTracer::Gpu::readRayProfile() {
     auto &f = frame();
@@ -2040,6 +2840,22 @@ namespace remix::metal {
     std::fclose(file);
   }
 
+  void PathTracer::setDisplayOutput(const scene::DisplayOutput &output) { m_gpu->display = output; }
+
+  PathTracer::OverlayLighting PathTracer::overlayLighting() const {
+    const auto &g = *m_gpu;
+    auto out = g.overlay;
+    out.environment = (__bridge void *)g.overlayImages.environment;
+    out.environmentSampler = (__bridge void *)g.overlayImages.environmentSampler;
+    out.cloudShadow = (__bridge void *)g.overlayImages.cloudShadow;
+    out.cloudShadowSampler = (__bridge void *)g.overlayImages.cloudShadowSampler;
+    // The static TLAS: the world (Metal has no combined TLAS).
+    out.scene = (__bridge void *)g.tlas[0].handle;
+    for (id<MTLResource> resource : g.resident)
+      out.referenced.push_back((__bridge void *)resource);
+    return out;
+  }
+
   PathTracer::PostStatistics PathTracer::postStatistics() const {
     if (!m_gpu->post)
       return {};
@@ -2073,6 +2889,9 @@ namespace remix::metal {
       result.memoryBytes = s.memoryBytes;
     }
     return result;
+  }
+  void *PathTracer::viewDepth() const {
+    return m_gpu->denoiser ? (__bridge void *)m_gpu->denoiser->image(denoise::Depth) : nullptr;
   }
   void *PathTracer::interpolationDepth() const {
     return m_gpu->reconstruction ? (__bridge void *)m_gpu->reconstruction->deviceDepth() : nullptr;

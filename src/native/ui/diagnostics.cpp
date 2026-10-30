@@ -1,4 +1,4 @@
-#include "runtime/runtime.h"
+#include "ui/tabs.h"
 #include "ui/widgets.h"
 #include <algorithm>
 #include <cmath>
@@ -12,7 +12,7 @@ namespace remix {
   void RemixNativeRuntime::drawGpuPassTimings(bool enabled) {
     if (!enabled)
       return;
-    if (!m_gpuTimers.supported()) {
+    if (!gpuTimersSupported()) {
       ImGui::TextWrapped("Unavailable: the queue family has no timestamp support.");
       return;
     }
@@ -123,23 +123,25 @@ namespace remix {
   // samples green where visible and red where blocked, emission collected
   // by a path yellow).
   void RemixNativeRuntime::drawPathInspector() {
-    if (!m_pathTracer)
+    const auto status = uiPathInspection();
+    if (!status.available)
       return;
     const auto &io = ImGui::GetIO();
-    const auto inspection = m_pathTracer->pathInspection();
+    const auto &inspection = status.inspection;
     if (m_inspecting && ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
         !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) && io.DisplaySize.x > 0 && io.DisplaySize.y > 0) {
-      const auto extent = inspection.width ? VkExtent2D{inspection.width, inspection.height} : m_pathTracer->renderExtent();
-      m_inspectX = int(io.MousePos.x / io.DisplaySize.x * float(extent.width));
-      m_inspectY = int(io.MousePos.y / io.DisplaySize.y * float(extent.height));
-      m_pathTracer->inspectPixel(m_inspectX, m_inspectY);
+      const uint32_t width = inspection.width ? inspection.width : status.renderWidth;
+      const uint32_t height = inspection.width ? inspection.height : status.renderHeight;
+      m_inspectX = int(io.MousePos.x / io.DisplaySize.x * float(width));
+      m_inspectY = int(io.MousePos.y / io.DisplaySize.y * float(height));
+      uiInspectPixel(m_inspectX, m_inspectY);
     }
     if (!ImGui::CollapsingHeader("Path inspector")) {
       if (m_inspecting)
         ImGui::TextDisabled("Path inspector: pixel %d, %d", m_inspectX, m_inspectY);
     } else {
       if (ui::Checkbox("Inspect a pixel (click the scene)", &m_inspecting) && !m_inspecting)
-        m_pathTracer->inspectPixel(-1, -1);
+        uiInspectPixel(-1, -1);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Records the paths of one pixel each frame: its primary surface, every path vertex,\n"
                           "every local-light sample (estimate, selection PDF, visibility) and the emission\n"
@@ -230,8 +232,7 @@ namespace remix {
   }
 
   void RemixNativeRuntime::drawDiagnosticsTab(config::Settings &settings) {
-    if (m_pipelines) {
-      const auto s = m_pipelines->statistics();
+    if (const auto s = uiPreparation(); s.available) {
       ImGui::Text("Pipeline preparation: %llu / %llu completed",
                   (unsigned long long)s.completed,
                   (unsigned long long)s.requested);
@@ -245,31 +246,27 @@ namespace remix {
                   s.feedback ? "supported" : "unavailable",
                   (unsigned long long)s.cacheHits);
       if (s.feedback)
-        ImGui::Text("Driver creation time: %.1f ms",
-                    double(s.driverNanoseconds) / 1e6);
+        ImGui::Text("Driver creation time: %.1f ms", s.driverMilliseconds);
       if (s.cacheWriteFailed)
         ImGui::TextUnformatted(
             "Pipeline cache could not be saved; rendering remains available.");
-      if (m_preparation) {
+      if (s.pending) {
         ImGui::Text("Pending configuration #%llu (profile %s)",
-                    (unsigned long long)m_preparation->generation,
+                    (unsigned long long)s.generation,
                     m_profiles.active().c_str());
         ImGui::Text(
             "Elapsed %.1f s; totals include jobs discovered during preparation",
-            std::chrono::duration<double>(std::chrono::steady_clock::now() -
-                                          m_preparation->started)
-                .count());
+            s.elapsedSeconds);
       }
-      if (!m_preparationFailure.empty())
-        ImGui::TextWrapped("%s", m_preparationFailure.c_str());
+      if (!s.failure.empty())
+        ImGui::TextWrapped("%s", s.failure.c_str());
       ImGui::Separator();
       ImGui::Text(
           "Longest presentation gap: %.1f ms (includes application idle time)",
           m_longestPresentationGap);
     }
     auto &options = settings.trace;
-    const bool rrActive =
-        m_pathTracer && m_pathTracer->upscalingStatistics().backend == upscale::Backend::DlssRr;
+    const bool rrActive = reconstructionDenoises();
     if (ImGui::CollapsingHeader("Debug views", ImGuiTreeNodeFlags_DefaultOpen)) {
       int view = int(options.debugView);
       if (ui::Combo(
@@ -362,14 +359,13 @@ namespace remix {
       }
     }
     if (ImGui::CollapsingHeader("Performance statistics", ImGuiTreeNodeFlags_DefaultOpen)) {
-      ImGui::TextWrapped("%s", m_properties.deviceName);
-      ImGui::TextWrapped("Vulkan %u.%u.%u", VK_VERSION_MAJOR(m_properties.apiVersion),
-                         VK_VERSION_MINOR(m_properties.apiVersion),
-                         VK_VERSION_PATCH(m_properties.apiVersion));
+      const auto device = uiDevice();
+      ImGui::TextWrapped("%s", device.name.c_str());
+      ImGui::TextWrapped("%s", device.api.c_str());
       const auto &io = ImGui::GetIO();
       ImGui::TextWrapped("Presentation: %.2f ms / %.1f FPS", io.Framerate > 0 ? 1000.0f / io.Framerate : 0.0f,
                          io.Framerate);
-      ImGui::TextWrapped("Scene: %zu surface draws", renderer().pendingDrawCount());
+      ImGui::TextWrapped("Scene: %zu surface draws", pendingDrawCount());
       auto s = tracingStatistics();
       ImGui::TextWrapped("Accumulated frames: %llu", (unsigned long long)s.accumulationCount);
       ImGui::TextWrapped("BLAS builds / refits / compactions: %llu / %llu / %llu",
@@ -399,30 +395,31 @@ namespace remix {
     }
     if (ImGui::CollapsingHeader("Present CPU breakdown")) {
       // Previous Present; this panel is drawn while the current one records.
-      const auto &p = m_previousPerformance;
-      const auto &b = m_previousBreakdown;
+      const auto present = uiPresent();
+      const auto &p = present.performance;
+      const auto &b = present.breakdown;
       ImGui::TextWrapped("Present %.2f ms: scene %.2f, fence %.2f, acquire %.2f, record %.2f, submit %.2f, "
                          "queue present %.2f",
                          p.presentMilliseconds, p.sceneMilliseconds, p.fenceMilliseconds, p.acquireMilliseconds,
                          p.recordMilliseconds, p.submitMilliseconds, p.queuePresentMilliseconds);
-      if (m_asyncActive) {
+      if (present.async) {
         // Asynchronous presentation: the frame above ran on the render thread;
         // its Present on the caller's thread is split out here. Present, setup
         // and the rows below include the caller's setup and capture, not its
         // wait for the handoff.
-        const auto &c = m_previousAsyncCaller;
+        const auto &c = present.caller;
         ImGui::TextWrapped("Caller Present %.2f ms: handoff wait %.2f, setup %.2f (developer UI %.2f), capture "
                            "%.2f | render thread %.2f ms",
                            c.callMilliseconds, c.waitMilliseconds, c.setupMilliseconds, c.uiMilliseconds,
-                           c.captureMilliseconds, m_asyncRender.renderMilliseconds);
+                           c.captureMilliseconds, present.render.renderMilliseconds);
         if (ImGui::IsItemHovered())
           ImGui::SetTooltip("Handoff wait: time Present waited for the render thread to finish the previous\n"
                             "frame (the render thread is the bottleneck when it is large). Capture: publishing\n"
                             "the frame's draw lists, lights and static-set changes to the render thread.\n"
                             "Render thread: scene preparation through queue present, excluding the caller.");
         ImGui::TextWrapped("This Present waited %.2f ms for that frame; handed off %llu, presented %llu",
-                           m_asyncCaller.waitMilliseconds, (unsigned long long)m_asyncCaller.handedOff,
-                           (unsigned long long)m_asyncRender.rendered);
+                           present.current.waitMilliseconds, (unsigned long long)present.current.handedOff,
+                           (unsigned long long)present.render.rendered);
       }
       struct Row {
         const char *name;
@@ -447,7 +444,7 @@ namespace remix {
                           {"Passes", b.passesMilliseconds},
                           {"Post-processing", b.postMilliseconds},
                           {"Composite", b.compositeMilliseconds},
-                          {m_asyncActive ? "Developer UI draw" : "Developer UI", b.uiMilliseconds},
+                          {present.async ? "Developer UI draw" : "Developer UI", b.uiMilliseconds},
                           {"Snapshot", b.snapshotMilliseconds},
                           {"Other", b.otherMilliseconds},
                           {"Present: setup", b.presentSetupMilliseconds},
@@ -456,7 +453,7 @@ namespace remix {
         ImGui::Text("%-18s %7.3f ms", row.name, row.value);
       // The persistent static set: its sync is part of scene, its tables part
       // of trace surfaces.
-      const auto &st = m_previousStatic;
+      const auto &st = present.statics;
       ImGui::Text("%-18s %7.3f ms", "Static sync", st.syncMilliseconds);
       ImGui::Text("%-18s %7.3f ms", "Static tables", st.tableMilliseconds);
       if (st.active)
@@ -470,7 +467,7 @@ namespace remix {
         ImGui::TextWrapped("Static set: not in use (dynamic surfaces %llu)", (unsigned long long)st.dynamicSurfaces);
       if (st.validations)
         ImGui::TextWrapped("Static validation: %llu mismatches%s%s", (unsigned long long)st.mismatches,
-                           st.mismatches ? ": " : "", st.mismatches ? st.mismatch : "");
+                           st.mismatches ? ": " : "", st.mismatches ? st.mismatch.c_str() : "");
       ImGui::TextWrapped("Instances %llu, surfaces %llu, primary draws %llu, raster draws %llu, textures %llu",
                          (unsigned long long)b.traceInstances, (unsigned long long)b.traceSurfaces,
                          (unsigned long long)b.primaryDraws, (unsigned long long)b.rasterDraws,

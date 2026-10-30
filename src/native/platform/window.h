@@ -171,7 +171,11 @@ namespace remix {
     EventHandler m_eventHandler = nullptr;
     void *m_eventUserData = nullptr;
     SDL_Scancode m_menuScancode = SDL_SCANCODE_X;
+#if defined(__APPLE__)
+    uint32_t m_menuModifiers = MenuGui;
+#else
     uint32_t m_menuModifiers = MenuAlt;
+#endif
     // The shortcut's key while it is held, and whether its press may type next.
     SDL_Scancode m_swallowedKey = SDL_SCANCODE_UNKNOWN;
     bool m_swallowText = false;
@@ -184,7 +188,11 @@ namespace remix {
     // The next key pressed becomes the scene capture shortcut instead.
     bool m_capturingScene = false, m_sceneCaptured = false;
     SDL_Scancode m_screenshotScancode = SDL_SCANCODE_F12;
+#if defined(__APPLE__)
+    uint32_t m_screenshotModifiers = MenuGui;
+#else
     uint32_t m_screenshotModifiers = MenuAlt;
+#endif
     bool m_capturingScreenshot = false, m_screenshotCaptured = false;
     uint32_t m_screenshotPresses = 0;
     mutable std::string m_lastError;

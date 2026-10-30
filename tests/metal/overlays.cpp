@@ -9,12 +9,14 @@
 #include <dlfcn.h>
 
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <functional>
 #include <string>
+#include <thread>
 #include <vector>
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_PNG
@@ -139,8 +141,11 @@ namespace {
       frame();
     ok(api.RequestPresentedScreenshot(path.c_str()));
     frame();
-    // The capture is written when the next presentation begins.
     frame();
+    // The capture is read back when the next presentation begins and written
+    // by a worker (runtime/screenshot.cpp; renamed into place when complete).
+    for (int i = 0; i < 500 && !std::filesystem::exists(path); ++i)
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
     int channels = 0;
     Image image;
     unsigned char *data = stbi_load(path.c_str(), &image.width, &image.height, &channels, 4);
@@ -164,6 +169,11 @@ int main(int argc, char **argv) {
   startup.windowHeight = 128;
   ok(api.Startup(&startup));
   ok(api.SetConfigVariable("rtx.native.vsync", "0"));
+  // The captures are measured as SDR (an EDR display would turn on HDR10 output).
+  const auto setDefault = reinterpret_cast<remixapi_ErrorCode(REMIXAPI_CALL *)(const char *, const char *)>(
+      dlsym(library, "remixapi_SetConfigDefaultEXT"));
+  require(setDefault, "SetConfigDefaultEXT is not exported");
+  ok(setDefault("rtx.native.hdr", "0"));
   // The default profile may path trace (runtime/settings.cpp): the raster
   // checks come first.
   ok(api.SetConfigVariable("rtx.native.backend", "raster"));

@@ -1,18 +1,16 @@
 #include "pathtrace/volume_policy.h"
-#include "runtime/runtime.h"
+#include "ui/tabs.h"
 #include "ui/sky.h"
 #include "ui/widgets.h"
 #include <algorithm>
 #include <cmath>
 #include <imgui.h>
-#include <string_view>
 #include <utility>
 
 namespace remix {
   void RemixNativeRuntime::drawLightingTab(config::Settings &settings) {
     auto &options = settings.trace;
-    const bool rrActive =
-        m_pathTracer && m_pathTracer->upscalingStatistics().backend == upscale::Backend::DlssRr;
+    const bool rrActive = reconstructionDenoises();
     if (ImGui::CollapsingHeader("Sun and sky", ImGuiTreeNodeFlags_DefaultOpen)) {
       ui::Checkbox("Override daylight", &options.overrideLight);
       if (options.overrideLight) {
@@ -386,26 +384,5 @@ namespace remix {
         ImGui::TextWrapped("%s", "Progressive reference rendering bypasses SHARC.");
     }
   }
-  void RemixNativeRuntime::drawSkyTab(config::Settings &settings) {
-    ui::SkyStatus status;
-    if (!m_pathTracer) {
-      // The raster backend's sky (raster_sky.cpp).
-      status.supported = m_skyUnavailable.empty();
-      status.active = m_rasterSkyActive;
-      status.reason = !status.supported             ? "The device lacks " + m_skyUnavailable + "."
-                      : !m_rasterSkyFailure.empty() ? "Stopped: " + m_rasterSkyFailure
-                                                    : std::string();
-    } else {
-      const auto sky = m_pathTracer->skyStatus();
-      status.supported = sky.supported;
-      status.active = sky.active;
-      status.reason = sky.reason;
-    }
-    // With GPU pass timers on: the sky's passes ("NUMOS sky", "NUMOS screen
-    // clouds", "NUMOS composite").
-    for (const auto &pass : m_gpuTimers.latest().passes)
-      if (std::string_view(pass.name).starts_with("NUMOS "))
-        status.gpuMilliseconds += float(pass.milliseconds);
-    ui::drawSkyTab(settings, status);
-  }
+  void RemixNativeRuntime::drawSkyTab(config::Settings &settings) { ui::drawSkyTab(settings, uiSky()); }
 } // namespace remix

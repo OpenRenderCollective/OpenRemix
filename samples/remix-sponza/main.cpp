@@ -292,7 +292,11 @@ int main(int argc, char **argv) {
       check(api.CreateMeshBatched(&info, &mesh), "CreateMesh");
   }
   if (!status)
+#if defined(__APPLE__)
+    std::fprintf(stderr, "Cmd+X: settings panel (free camera: Rendering tab; the shortcut is set in the panel's header)\n");
+#else
     std::fprintf(stderr, "Alt+X: settings panel (free camera: Rendering tab; the shortcut is set in the panel's header)\n");
+#endif
 
   using Tracing = remixapi_ErrorCode(REMIXAPI_CALL *)(remixapi_TracingStatisticsEXT *);
   const auto tracingOf = reinterpret_cast<Tracing>(

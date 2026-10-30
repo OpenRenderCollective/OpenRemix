@@ -45,7 +45,8 @@ namespace remix::metal::trace {
     uint64_t regirRead = 0, regirWrite = 0, regirSlots = 0;
     uint64_t caustics = 0; // pathtrace/gpu.h: strength, contrast, half float focus depth; 0 off
     uint32_t regirConfig[4] = {}; // cell capacity, slots per cell, cells per world unit (float bits), active
-    uint64_t orcaTable = 0, orcaReserved = 0;
+    // lightCookies: each light cookie slot's texture in this frame's table + 1.
+    uint64_t orcaTable = 0, lightCookies = 0;
     uint32_t orcaConfig[4] = {}; // entry capacity, sparse tile size, voxel levels, active
     float orcaParams[4] = {};    // smallest voxel (world units), level growth, minimum samples, maximum relative error
     // remixapi_InstanceInfoMaskEXT CUT. cutConfig: first coverage texture + 1
@@ -109,8 +110,18 @@ namespace remix::metal::trace {
     // address (low, high words), the pixel (x | y << 16; ~0 none) and the
     // record capacity.
     uint32_t pathDebug[4] = {0, 0, ~0u, 0};
+    // remixapi_CameraScreensEXT by slot (scene::ScreenCameras): position and
+    // flags (w: 1 set, plus 2 when it moved since the last frame: the screen's
+    // history restarts), right and up scaled to the image plane's half
+    // extents, forward.
+    float screenCameras[8][4][4] = {};
+    // remixapi_InstanceInfoWoundCutEXT: the frame's wound vertices
+    // (vertex-wound.comp; 0: none); scene units per metre of a subsurface
+    // radius (rtx.subsurface.diffusionProfileScale in them) and the thickness scale.
+    uint64_t woundVertices = 0;
+    float subsurfaceUnits = 0, subsurfaceThickness = 1;
   };
-  static_assert(sizeof(Frame) == 1808 && offsetof(Frame, srgbTextures) == 1280 && offsetof(Frame, pathDebug) == 1792 &&
+  static_assert(sizeof(Frame) == 2336 && offsetof(Frame, woundVertices) == 2320 && offsetof(Frame, screenCameras) == 1808 && offsetof(Frame, srgbTextures) == 1280 && offsetof(Frame, pathDebug) == 1792 &&
                 offsetof(Frame, localProbeRead) == 1168 &&
                 offsetof(Frame, localProbeParams) == 1184 && offsetof(Frame, volumeLightScales) == 1200 &&
                 offsetof(Frame, cloudShadow) == 1216 && offsetof(Frame, cloudShadowConfig) == 1264 &&
@@ -175,10 +186,12 @@ namespace remix::metal::denoise {
     PbrSpecularSh1, PbrDiffuseOutputSh1, PbrSpecularOutputSh1,
     // Gradient tiles of surfaces that move on their own (see inputs.glsl).
     MovingA, MovingB,
+    // Motion vectors of the local-light passes (see denoise/renderer.h).
+    LocalMotion,
     ImageCount
   };
   static_assert(BaseImageCount == 22 && PbrSpecularInput == 29 && FrontNormal == 37 && PbrSpecularSh1 == 49 &&
-                    MovingA == 52 && ImageCount == 54,
+                    MovingA == 52 && LocalMotion == 54 && ImageCount == 55,
                 "Update the matching inputs.glsl bindings when changing image slots");
   // Shared std140 constants. Matrices are nonjittered, in Vulkan framebuffer coordinates.
   struct Frame {

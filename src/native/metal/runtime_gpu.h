@@ -1,8 +1,13 @@
 #pragma once
 // Objective-C++ only: the Metal runtime's device, presentation and UI state.
+#include "metal/particles.h"
 #include "metal/raster_gpu.h"
 #include "metal/runtime.h"
 #include "metal/tracer.h"
+#include "scene/up_axis.h"
+#if REMIX_HAS_NUMOS
+#include "sky/renderer.h"
+#endif
 #include <chrono>
 #include <dispatch/dispatch.h>
 
@@ -18,15 +23,6 @@ namespace remix {
     MTLPixelFormat format = MTLPixelFormatBGRA8Unorm;
     // A failure reported by a completed command buffer.
     std::atomic<bool> commandFailed{false};
-    // Presented screenshot: the drawable is copied into a shared buffer by the
-    // frame's command buffer and written out once it completes.
-    struct Screenshot {
-      std::string path;
-      id<MTLBuffer> readback = nil;
-      uint32_t width = 0, height = 0;
-      bool bgra = true;
-      id<MTLCommandBuffer> command = nil;
-    } screenshot;
     // GPU pass timings (rtx.native.gpuPassTimers).
     metal::PassTimers timers;
     // MetalFX frame interpolation (macOS 26), as RTGL-D2-Metal: the scene
@@ -54,7 +50,7 @@ namespace remix {
     } interpolation;
     // Dear ImGui's draw data: the font atlas and per-slot vertex/index buffers.
     struct Ui {
-      id<MTLRenderPipelineState> pipeline = nil;
+      id<MTLRenderPipelineState> pipeline = nil, hdrPipeline = nil; // BGRA8, and HDR10's float back buffer
       id<MTLDepthStencilState> depth = nil;
       id<MTLSamplerState> sampler = nil;
       std::unordered_map<uint64_t, id<MTLTexture>> textures;
@@ -62,5 +58,29 @@ namespace remix {
       id<MTLBuffer> vertices[gpuFrameCount] = {}, indices[gpuFrameCount] = {};
       MTLPixelFormat format = MTLPixelFormatInvalid;
     } ui;
+    // The raster backend's NUMOS sky (runtime/raster_sky.cpp; metal/raster_sky.mm),
+    // created when first enabled. ready: it has outputs from an earlier frame;
+    // active: this frame's sky is recorded; failure: why it stopped.
+    struct RasterSky {
+#if REMIX_HAS_NUMOS
+      std::shared_ptr<sky::Renderer> renderer;
+#endif
+      scene::UpAxisDetector upAxis;
+      scene::Matrix view{}, projection{};
+      bool ready = false, active = false;
+      std::string failure;
+    } rasterSky;
+    // HDR10 output (metal/hdr_output.mm): format is the back buffers' while active.
+    struct Hdr {
+      bool active = false;
+      std::string status; // why it is inactive
+      id<MTLTexture> backBuffers[gpuFrameCount] = {};
+      id<MTLRenderPipelineState> encode = nil, scale = nil;
+      metal::ArgumentSet set; // hdr10 set 0: the back buffer
+      id<MTLDepthStencilState> noDepth = nil;
+      id<MTLSamplerState> sampler = nil;
+    } hdr;
+    // Particle emitters (metal/particles.h).
+    std::unique_ptr<metal::Particles> particles;
   };
 } // namespace remix

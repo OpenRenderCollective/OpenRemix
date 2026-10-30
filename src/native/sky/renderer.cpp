@@ -1,5 +1,9 @@
 #include "sky/renderer.h"
+#if defined(REMIX_METAL)
+#include "metal/sky_bridge.h"
+#else
 #include "sky/bridge.h"
+#endif
 #include "upscale/camera.h"
 #include <numos/renderer.h>
 #include <numos/settings.h>
@@ -86,15 +90,15 @@ namespace remix::sky {
     // The raster renderer's linear depth and composite images.
     numos::GpuHandle rasterDepth = 0, rasterAddition = 0, rasterTransmittance = 0;
     uint32_t rasterWidth = 0, rasterHeight = 0;
-    VkImageView depthView = VK_NULL_HANDLE;
-    VkAccelerationStructureKHR scene = VK_NULL_HANDLE;
+    ImageView depthView{};
+    AccelerationStructure scene{};
     uint32_t renderWidth = 0, renderHeight = 0, missWidth = 0, missHeight = 0;
     uint32_t frameIndex = 0, lastCut = 0;
     numos::Camera camera{};
     bool zUp = true, clouds = false, rayQuery = true;
     std::chrono::steady_clock::time_point last{};
     bool begun = false;
-    State(VkPhysicalDevice physical, VkDevice device) : bridge(physical, device, hostPasses()) {}
+    State(PhysicalDevice physical, Device device) : bridge(physical, device, hostPasses()) {}
 
     // Dispatches an adapter, binding NUMOS outputs and the host's resources by
     // the shader variables' names.
@@ -138,7 +142,7 @@ namespace remix::sky {
     }
   };
 
-  Renderer::Renderer(VkPhysicalDevice physical, VkDevice device, bool rayQuery)
+  Renderer::Renderer(PhysicalDevice physical, Device device, bool rayQuery)
       : m(std::make_unique<State>(physical, device)) {
     m->rayQuery = rayQuery;
     // NUMOS copies the night sky and streams it to the GPU over the next frames.
@@ -190,7 +194,7 @@ namespace remix::sky {
     m->configured = true;
   }
 
-  bool Renderer::record(VkCommandBuffer command, const FrameDescription &frame) {
+  bool Renderer::record(CommandBuffer command, const FrameDescription &frame) {
     m->begun = false;
     if (frame.upAxis > 2 || frame.upAxis == 0) {
       m_status = "The sky needs a Y-up or Z-up world (Lighting: volumetric up axis).";
@@ -443,7 +447,7 @@ namespace remix::sky {
     return true;
   }
 
-  void Renderer::recordPostDepth(VkCommandBuffer command, VkImage depthImage, VkImageView depthView) {
+  void Renderer::recordPostDepth(CommandBuffer command, Image depthImage, ImageView depthView) {
     if (!m->begun)
       return;
     m->begun = false;
@@ -480,8 +484,8 @@ namespace remix::sky {
     m->clouds = true;
   }
 
-  void Renderer::recordComposite(VkCommandBuffer command, VkImage colorImage, VkImageView colorView,
-                                 VkImage depthImage, VkImageView depthView, float scale,
+  void Renderer::recordComposite(CommandBuffer command, Image colorImage, ImageView colorView,
+                                 Image depthImage, ImageView depthView, float scale,
                                  config::SkySettings::GameSky gameSky) {
     if (!m->clouds || !colorView || !depthView)
       return;
@@ -529,7 +533,7 @@ namespace remix::sky {
 
   const config::SkyState &Renderer::state() const { return m->state; }
 
-  void Renderer::recordRasterPostDepth(VkCommandBuffer command, VkImage depthImage, VkImageView depthView,
+  void Renderer::recordRasterPostDepth(CommandBuffer command, Image depthImage, ImageView depthView,
                                        const scene::Matrix &projection, float clearDepth) {
     if (!m->begun)
       return;
@@ -570,7 +574,7 @@ namespace remix::sky {
     m->clouds = true;
   }
 
-  bool Renderer::recordRasterComposite(VkCommandBuffer command, float exposure,
+  bool Renderer::recordRasterComposite(CommandBuffer command, float exposure,
                                        config::SkySettings::GameSky gameSky) {
     if (!m->clouds || !m->rasterDepth)
       return false;
@@ -607,31 +611,31 @@ namespace remix::sky {
     return true;
   }
 
-  VkDescriptorImageInfo Renderer::rasterAddition() const {
+  SampledImage Renderer::rasterAddition() const {
     if (!m->rasterAddition)
       return {};
-    return {m->bridge.sampler(m->numos.outputs().linearClampSampler), m->bridge.sampledView(m->rasterAddition),
-            VK_IMAGE_LAYOUT_GENERAL};
+    return sampledImage(m->bridge.sampler(m->numos.outputs().linearClampSampler),
+                        m->bridge.sampledView(m->rasterAddition));
   }
 
-  VkDescriptorImageInfo Renderer::rasterTransmittance() const {
+  SampledImage Renderer::rasterTransmittance() const {
     if (!m->rasterTransmittance)
       return {};
-    return {m->bridge.sampler(m->numos.outputs().linearClampSampler), m->bridge.sampledView(m->rasterTransmittance),
-            VK_IMAGE_LAYOUT_GENERAL};
+    return sampledImage(m->bridge.sampler(m->numos.outputs().linearClampSampler),
+                        m->bridge.sampledView(m->rasterTransmittance));
   }
 
-  VkDescriptorImageInfo Renderer::cloudShadow() const {
+  SampledImage Renderer::cloudShadow() const {
     if (!m->cloudShadow)
       return {};
-    return {m->bridge.sampler(m->numos.outputs().linearClampSampler), m->bridge.sampledView(m->cloudShadow),
-            VK_IMAGE_LAYOUT_GENERAL};
+    return sampledImage(m->bridge.sampler(m->numos.outputs().linearClampSampler),
+                        m->bridge.sampledView(m->cloudShadow));
   }
 
-  VkDescriptorImageInfo Renderer::environment() const {
+  SampledImage Renderer::environment() const {
     if (!m->environment)
       return {};
-    return {m->bridge.sampler(m->numos.outputs().linearClampSampler), m->bridge.sampledView(m->environment),
-            VK_IMAGE_LAYOUT_GENERAL};
+    return sampledImage(m->bridge.sampler(m->numos.outputs().linearClampSampler),
+                        m->bridge.sampledView(m->environment));
   }
 } // namespace remix::sky

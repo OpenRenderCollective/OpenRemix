@@ -22,13 +22,21 @@ namespace remix::ui {
     bool restoreTab = true;
     // The panel's shortcut (ui/menu_shortcut.cpp): its name, whether the next key
     // pressed becomes it, and the header button's request for that.
+#if defined(__APPLE__)
+    std::string menuShortcut = "Cmd+X";
+#else
     std::string menuShortcut = "Alt+X";
+#endif
     bool capturingMenuShortcut = false, captureMenuShortcut = false;
     // The USD scene capture shortcut, likewise ("" while none is set).
     std::string sceneCaptureShortcut;
     bool capturingSceneCaptureShortcut = false, captureSceneCaptureShortcut = false;
     // The screenshot shortcut, the same way (ui::screenshotShortcut).
+#if defined(__APPLE__)
+    std::string screenshotShortcut = "Cmd+F12";
+#else
     std::string screenshotShortcut = "Alt+F12";
+#endif
     bool capturingScreenshotShortcut = false, captureScreenshotShortcut = false;
   };
   void drawProfiles(config::Profiles &profiles, ProfileUi &ui);

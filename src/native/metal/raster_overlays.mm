@@ -1,6 +1,7 @@
 #include "metal/raster_gpu.h"
 #include <algorithm>
 #include <cmath>
+#include <tuple>
 
 // The raster renderer's overlay passes on Metal: halo outlines
 // (raster/halo.cpp), masked overlays and role CUT (raster/mask.cpp) and the
@@ -183,6 +184,50 @@ namespace remix::metal {
     }
   }
 
+  void Raster::Gpu::recordSkyComposite(id<MTLRenderCommandEncoder> encoder, id<MTLTexture> transmittance,
+                                       id<MTLTexture> addition) {
+    auto &s = skyComposite;
+    if (!s.multiply) {
+      const auto pipeline = [&](bool add) {
+        auto *descriptor = [MTLRenderPipelineDescriptor new];
+        descriptor.label = add ? @"NUMOS sky addition" : @"NUMOS sky transmittance";
+        descriptor.vertexFunction = function(device, shaders::Stage::haloVert);
+        descriptor.fragmentFunction = function(device, shaders::Stage::skyComposite);
+        auto *color = descriptor.colorAttachments[0];
+        color.pixelFormat = displayFormat;
+        color.blendingEnabled = YES;
+        color.sourceRGBBlendFactor = add ? MTLBlendFactorOne : MTLBlendFactorZero;
+        color.destinationRGBBlendFactor = add ? MTLBlendFactorOne : MTLBlendFactorSourceColor;
+        color.sourceAlphaBlendFactor = MTLBlendFactorZero;
+        color.destinationAlphaBlendFactor = MTLBlendFactorOne;
+        descriptor.depthAttachmentPixelFormat = depthFormat;
+        return create(device, descriptor, "sky composite pipeline");
+      };
+      s.multiply = pipeline(false);
+      s.add = pipeline(true);
+      s.transmittance = ArgumentSet(device, shaders::Stage::skyComposite, 0);
+      s.addition = ArgumentSet(device, shaders::Stage::skyComposite, 0);
+    }
+    if (!noDepth) {
+      auto *descriptor = [MTLDepthStencilDescriptor new];
+      noDepth = [device newDepthStencilStateWithDescriptor:descriptor];
+      check(noDepth, "depth state");
+    }
+    [encoder setViewport:{0, 0, double(width), double(height), 0, 1}];
+    [encoder setDepthStencilState:noDepth];
+    [encoder setCullMode:MTLCullModeNone];
+    id<MTLSamplerState> nearest = sampler(device, 0, 0, 0);
+    for (const auto &[set, image, pipeline] :
+         {std::tuple{&s.transmittance, transmittance, s.multiply}, std::tuple{&s.addition, addition, s.add}}) {
+      set->begin(frameIndex);
+      set->texture(0, image, nearest);
+      [encoder setRenderPipelineState:pipeline];
+      [encoder setFragmentBuffer:set->current() offset:set->offset() atIndex:0];
+      [encoder useResource:image usage:MTLResourceUsageRead stages:MTLRenderStageFragment];
+      [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+    }
+  }
+
   bool Raster::Gpu::coverageArea(Halo::Group &group, const float *margin) const {
     if (!group.count || !group.bounded || !width || !height)
       return false;
@@ -349,7 +394,7 @@ namespace remix::metal {
   }
 
   void Raster::Gpu::captureSceneDepth(id<MTLCommandBuffer> command) {
-    if (!sprite.soft || !depth)
+    if (!wantsSceneDepth() || !depth)
       return;
     if (!sprite.depth) {
       // Sampled as a texture: its red is the depth.
