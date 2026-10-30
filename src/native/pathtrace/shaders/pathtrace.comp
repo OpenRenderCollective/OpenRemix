@@ -562,15 +562,22 @@ vec3 debugGeometry(Hit hit,ivec2 pixel) {
 }
 // Scale-aware integer ULP offset with a near-origin fallback (RT Gems, ch. 6):
 // rtx.native.pathtrace.rayOffset units in the last place along the normal
-// (frame.visibilityProbe.w; 256 without it).
+// (frame.visibilityProbe.w; 256 without it). Each component moves at least
+// that many units in the last place of the largest coordinate: intersections
+// are only as precise as the largest one, and a floor at z = 0 far from the
+// origin otherwise started its shadow rays 1/65536 above itself and hit it
+// (gm_area51_rc1: triangle-shaped dark patches across its sand).
 vec3 offsetRay(vec3 p,vec3 n);
 // Where a surface's shadow and light-visibility rays start: lifted off a
 // smooth-shaded triangle (terminatorLift; Hit.lift 0 without it).
 vec3 shadowOrigin(Hit hit) { return offsetRay(hit.p+hit.ng*hit.lift,hit.ng); }
 vec3 offsetRay(vec3 p,vec3 n) {
-  ivec3 step=ivec3((frame.visibilityProbe.w>0?frame.visibilityProbe.w:256.0)*n);
+  float units=frame.visibilityProbe.w>0?frame.visibilityProbe.w:256.0;
+  ivec3 step=ivec3(units*n);
   vec3 shifted=intBitsToFloat(floatBitsToInt(p)+mix(step,-step,lessThan(p,vec3(0))));
-  return mix(shifted,p+n*(1.0/65536.0),lessThan(abs(p),vec3(1.0/32.0)));
+  shifted=mix(shifted,p+n*(1.0/65536.0),lessThan(abs(p),vec3(1.0/32.0)));
+  vec3 least=p+n*(units*max(max(abs(p.x),abs(p.y)),abs(p.z))*(1.0/8388608.0));
+  return mix(shifted,least,greaterThan(abs(least-p),abs(shifted-p)));
 }
 // A translucent body's refractive index and measurement distance at a sheet
 // (zero: none). A sheet from the raster G-buffer carries no material record:
