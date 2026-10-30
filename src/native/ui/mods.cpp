@@ -143,6 +143,12 @@ namespace remix::ui {
         ImGui::SameLine();
         ImGui::TextDisabled("(partial)");
       }
+      if (mod.missingTextures) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1, .55f, .4f, 1), "%zu textures missing", mod.missingTextures);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Not found or not decodable: the materials using them draw without them");
+      }
       if (open) {
         ImGui::BeginDisabled(!parts.enabled);
         changed |= part("Meshes", &parts.meshes, mod.meshes,

@@ -370,7 +370,7 @@ namespace remix::usd {
     }
     return result;
   }
-  Json compose_scene(const UsdStageRefPtr &stage, uint64_t revision) {
+  Json compose_scene(const UsdStageRefPtr &stage, uint64_t revision, const ComposeScope &scope) {
     Json result{{"revision", revision},
                 {"meshes", Json::array()},
                 {"materials", Json::array()},
@@ -385,11 +385,19 @@ namespace remix::usd {
     CaptureCategories categories(stage, result["warnings"]);
     result["category_sources"] = categories.sources();
     std::set<std::string> materials;
-    for (auto prim : UsdPrimRange::Stage(stage, traversal())) {
+    UsdPrimRange range = UsdPrimRange::Stage(stage, traversal());
+    if (!scope.root.empty()) {
+      const auto root = stage->GetPrimAtPath(SdfPath(scope.root));
+      range = root ? UsdPrimRange(root, traversal()) : UsdPrimRange();
+    }
+    for (auto prim : range) {
       auto imageable = UsdGeomImageable(prim);
       if (imageable && imageable.ComputeVisibility() == UsdGeomTokens->invisible)
         continue;
       const auto path = prim.GetPath().GetString();
+      if (!scope.deferMeshesUnder.empty() && prim.IsA<UsdGeomMesh>() &&
+          path.starts_with(scope.deferMeshesUnder))
+        continue;
       const auto world = transforms.GetLocalToWorldTransform(prim);
       if (auto mesh = UsdGeomMesh(prim)) {
         try {

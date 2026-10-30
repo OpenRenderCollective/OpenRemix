@@ -120,6 +120,56 @@ namespace remix::usd {
     return decoded;
   }
 
+  struct DeferredStage {
+    UsdStageRefPtr stage;
+    std::map<std::string, SdfLayerRefPtr> layers; // the private layers it composes
+    GfMatrix4d conversion;
+    std::mutex mutex;
+  };
+  namespace {
+    const std::string replacementMeshes = "/RootNode/meshes/";
+    // Composed meshes, lights and cameras in host coordinates, with their
+    // capture hashes.
+    void toHost(Json &scene, const GfMatrix4d &conversion) {
+      for (const char *group : {"meshes", "lights", "cameras"})
+        for (auto &item : scene[group]) {
+          GfMatrix4d matrix(1);
+          for (int row = 0; row < 4; ++row)
+            for (int col = 0; col < 4; ++col)
+              matrix[row][col] = item["transform"][row * 4 + col].get<double>();
+          matrix *= conversion;
+          for (int row = 0; row < 4; ++row)
+            for (int col = 0; col < 4; ++col)
+              item["transform"][row * 4 + col] = matrix[row][col];
+          item["hash"] = capturedHash(item.value("source_path", item["id"].get<std::string>()));
+        }
+    }
+  } // namespace
+  std::vector<std::string> materialTextureFiles(const Json &material) {
+    std::vector<std::string> paths;
+    for (const char *key : {"albedo_texture", "normal_texture", "roughness_texture", "metallic_texture",
+                            "emissive_texture"})
+      if (auto path = material.value(key, std::string()); !path.empty())
+        paths.push_back(path);
+    if (const auto film = material.find("iridescence"); film != material.end())
+      if (auto path = film->value("texture", std::string()); !path.empty())
+        paths.push_back(path);
+    if (const auto sss = material.find("subsurface"); sss != material.end())
+      for (const char *key : subsurfaceTextureKeys)
+        if (auto path = sss->value(key, std::string()); !path.empty())
+          paths.push_back(path);
+    return paths;
+  }
+  Json composeReplacement(DeferredStage &deferred, const std::string &root) {
+    std::lock_guard lock(deferred.mutex);
+    auto scene = compose_scene(deferred.stage, 1, {root, ""});
+    toHost(scene, deferred.conversion);
+    for (auto &material : scene["materials"])
+      material["hash"] = capturedHash(material["id"]);
+    return {{"meshes", std::move(scene["meshes"])},
+            {"materials", std::move(scene["materials"])},
+            {"warnings", std::move(scene["warnings"])}};
+  }
   Snapshot load(const Options &options) {
     static std::mutex parserMutex;
     std::lock_guard lock(parserMutex);
@@ -201,7 +251,7 @@ namespace remix::usd {
       auto stage = UsdStage::Open(openLayer(options.path));
       if (!stage)
         throw std::runtime_error("Could not compose USD stage: " + options.path);
-      result.scene = compose_scene(stage, 1);
+      result.scene = compose_scene(stage, 1, {"", options.deferReplacementMeshes ? replacementMeshes : ""});
       for (const auto &layer : stage->GetUsedLayers())
         if (!layer->GetRealPath().empty())
           result.dependencies.insert(layer->GetRealPath());
@@ -212,10 +262,11 @@ namespace remix::usd {
         errors.Clear();
         throw std::runtime_error(message);
       }
-      for (const auto &warning : result.scene["warnings"]) {
-        if (warning.get<std::string>().starts_with("Unresolved texture "))
-          throw std::runtime_error(warning.get<std::string>());
-      }
+      if (options.strictAssets)
+        for (const auto &warning : result.scene["warnings"]) {
+          if (warning.get<std::string>().starts_with("Unresolved texture "))
+            throw std::runtime_error(warning.get<std::string>());
+        }
       result.scene["replacements"] = {
           {"meshes", Json::array()}, {"lights", Json::array()}, {"materials", Json::array()}};
       for (const auto &[group, path] :
@@ -324,18 +375,7 @@ namespace remix::usd {
       GfMatrix4d scale(1);
       scale.SetScale(sourceMeters / (options.meters > 0 ? options.meters : sourceMeters));
       conversion *= scale;
-      for (const char *group : {"meshes", "lights", "cameras"})
-        for (auto &item : result.scene[group]) {
-          GfMatrix4d matrix(1);
-          for (int row = 0; row < 4; ++row)
-            for (int col = 0; col < 4; ++col)
-              matrix[row][col] = item["transform"][row * 4 + col].get<double>();
-          matrix *= conversion;
-          for (int row = 0; row < 4; ++row)
-            for (int col = 0; col < 4; ++col)
-              item["transform"][row * 4 + col] = matrix[row][col];
-          item["hash"] = capturedHash(item.value("source_path", item["id"].get<std::string>()));
-        }
+      toHost(result.scene, conversion);
       for (auto &entry : result.scene["replacements"]["lights"]) {
         auto &overrides = entry["overrides"];
         if (overrides.contains("transform")) {
@@ -371,9 +411,10 @@ namespace remix::usd {
       for (const auto &material : result.scene["materials"])
         for (const auto &warning : material.value("warnings", Json::array()))
           result.scene["warnings"].push_back(warning);
-      for (const auto &warning : result.scene["warnings"])
-        if (warning.get<std::string>().starts_with("Unresolved texture "))
-          throw std::runtime_error(warning.get<std::string>());
+      if (options.strictAssets)
+        for (const auto &warning : result.scene["warnings"])
+          if (warning.get<std::string>().starts_with("Unresolved texture "))
+            throw std::runtime_error(warning.get<std::string>());
       if (options.preloadTextures) {
         // Textures the snapshot's geometry and lights draw with. Materials
         // referenced only as replacements load when first drawn (mods.cpp):
@@ -409,13 +450,41 @@ namespace remix::usd {
           want(light["overrides"].value("texture", std::string()));
         auto decoded = decodeTextures(paths);
         for (size_t i = 0; i < paths.size(); ++i) {
-          if (!decoded[i])
+          if (decoded[i]) {
+            result.textures.emplace(paths[i], std::move(decoded[i]));
+            continue;
+          }
+          if (options.strictAssets)
             throw std::runtime_error("Could not decode texture: " + paths[i]);
-          result.textures.emplace(paths[i], std::move(decoded[i]));
+          // Left out wherever it is used.
+          result.scene["warnings"].push_back("Undecodable texture " + paths[i]);
+          auto drop = [&](Json &object, const char *key) {
+            if (object.is_object() && object.value(key, std::string()) == paths[i])
+              object[key] = "";
+          };
+          for (auto &material : result.scene["materials"]) {
+            for (auto it = material.begin(); it != material.end(); ++it)
+              if (it.key().ends_with("_texture") && it.value().is_string() && it.value() == paths[i])
+                it.value() = "";
+            if (material.contains("iridescence"))
+              drop(material["iridescence"], "texture");
+          }
+          for (auto &light : result.scene["lights"]) {
+            drop(light, "texture");
+            drop(light, "cookie");
+          }
+          for (auto &light : result.scene["replacements"]["lights"])
+            drop(light["overrides"], "texture");
         }
       }
       result.scene["meters_per_unit"] = options.meters > 0 ? options.meters : sourceMeters;
       result.scene["up_axis"] = axis.GetString();
+      if (options.deferReplacementMeshes) {
+        result.deferred = std::make_shared<DeferredStage>();
+        result.deferred->stage = stage;
+        result.deferred->layers = std::move(layers);
+        result.deferred->conversion = conversion;
+      }
       return result;
     } catch (const std::exception &e) {
       throw LoadError(e.what(), std::move(result.dependencies));

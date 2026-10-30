@@ -94,6 +94,21 @@ lights/light_<HASH>.ies         IES profiles, as the host gave them
 - **Loading lights.** Loading a capture (or a mod) reads both back. A mod's
   light override keeps the overridden light's profile and cookie.
 
+## Loading mods
+
+A mod in `rtx-remix/mods` is composed once, without the geometry of its mesh
+replacements. Each replacement (`mesh_<HASH>` and what it references) is
+composed, its textures decoded, and its meshes created the first time the game
+draws the mesh it replaces, off the Present thread (`Submission::OnDemand`).
+The game's mesh draws until then. Memory follows what the game has drawn, not
+the size of the mod. Composing every replacement of HL2 RTX's demo mod at once
+holds about 50 million vertices, more than 10 GB.
+
+As in RTX Remix, a texture that is missing or does not decode is left out of
+its material, with a warning. The mod still loads, and the Mods tab counts the
+textures it is missing. Loading a capture or a USD scene
+(`remixapi_LoadUSDSceneEXT`) still fails on a missing texture.
+
 ## Textures
 
 Textures are named by hash, so a file that already exists is not written again.

@@ -128,7 +128,12 @@ namespace remix::usd {
     }
     Set parse(std::string directory, Options options) {
       Set result;
-      options.preloadTextures = true;
+      // Replacements load their textures when first drawn (Submission::OnDemand).
+      options.preloadTextures = false;
+      // One missing texture in a large mod must not cost every replacement.
+      options.strictAssets = false;
+      // Replacement geometry is composed when first drawn too.
+      options.deferReplacementMeshes = true;
       for (const auto &path : paths(directory)) {
         options.path = path;
         Snapshot snapshot;
@@ -145,8 +150,13 @@ namespace remix::usd {
         size_t attached = 0;
         for (const auto &light : snapshot.scene["lights"])
           attached += light.value("id", std::string()).starts_with("/RootNode/meshes/");
+        size_t missing = 0;
+        for (const auto &warning : snapshot.scene["warnings"]) {
+          const auto &text = warning.get_ref<const std::string &>();
+          missing += text.starts_with("Unresolved texture ") || text.starts_with("Undecodable texture ");
+        }
         result.mods.push_back(
-            {modName(directory, path), count("meshes"), attached, count("lights"), count("materials")});
+            {modName(directory, path), count("meshes"), attached, count("lights"), count("materials"), missing});
         result.dependencies.insert(snapshot.dependencies.begin(), snapshot.dependencies.end());
         result.snapshots.push_back(std::move(snapshot));
       }
@@ -295,8 +305,10 @@ namespace remix::usd {
   void modBoundary(NativeResources &resources) {
     if (!state.enabled)
       return;
-    for (auto &submission : state.submissions)
+    for (auto &submission : state.submissions) {
       submission->retireAttachments();
+      submission->service();
+    }
     if (state.pending.valid() &&
         state.pending.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
       try {
@@ -310,8 +322,9 @@ namespace remix::usd {
         resources.invalidateTexturePaths();
         const auto generation = state.generation + 1;
         for (size_t i = 0; i < next.snapshots.size(); ++i)
-          submissions.push_back(std::make_unique<Submission>(
-              resources, next.snapshots[i], 0x4d4f440000000000ull + (generation << 20) + i, false));
+          submissions.push_back(std::make_unique<Submission>(resources, next.snapshots[i],
+                                                             0x4d4f440000000000ull + (generation << 20) + i,
+                                                             Submission::OnDemand{}));
         index(next);
         for (auto light : state.overriddenLights)
           resources.destroyLight(light);
@@ -387,6 +400,9 @@ namespace remix::usd {
     if (it == state.active.meshes.end())
       return false;
     auto &[index, entry] = it->second;
+    // The game's mesh draws until its replacement has loaded.
+    if (!state.submissions[index]->ready(entry["path"]))
+      return false;
     const auto &parts = state.active.mods[index].parts;
     if (parts.meshes || parts.lights)
       state.submissions[index]->draw(false, 1, &info, entry["path"], parts.meshes, parts.lights);

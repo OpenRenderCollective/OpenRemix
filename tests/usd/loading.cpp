@@ -191,6 +191,12 @@ int main(int argc, char **argv) {
     }
     remixapi_InstanceInfo original{};
     original.mesh = reinterpret_cast<remixapi_MeshHandle>(0x0123456789abcdefull);
+    // A replacement loads when first drawn; the original draws meanwhile.
+    require(!usd::modInstance(resources, original), "a replacement loads before it applies");
+    for (int i = 0; i < 30 && !usd::modInstance(resources, original); ++i) {
+      usd::modBoundary(resources);
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
     require(usd::modInstance(resources, original), "empty replacement hides original");
     write("broken USD");
     for (int i = 0; i < 40; ++i) {

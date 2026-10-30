@@ -33,6 +33,7 @@ namespace remix::usd {
   struct ModInfo {
     std::string name; // mod directory relative to the mods directory
     size_t meshes = 0, lights = 0, lightOverrides = 0, materials = 0;
+    size_t missingTextures = 0; // left out of their materials (not found or not decodable)
     ModParts parts;
   };
   struct ModStatus {

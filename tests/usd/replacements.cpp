@@ -119,9 +119,17 @@ custom int preserveOriginalDrawCall = 0
       ~Stop() { usd::stopMods(r); }
     } stop{resources};
     usd::Submission scene(resources, captured, 1);
+    // A (re)loaded mod's replacements load when first drawn: one frame asks
+    // for them, the next frames create them.
+    auto load = [&] {
+      settle(resources);
+      scene.draw(false, 1);
+      resources.finishFrame();
+      settle(resources);
+    };
     usd::startMods(true);
     require(!usd::configureMods(dir.string().c_str(), 1, 1, true), "configure mods");
-    settle(resources);
+    load();
     require(!*usd::modDiagnostic(), usd::modDiagnostic());
     scene.draw(false, 1);
     require(resources.draws().size() == 4, "first sorted replacement preserves originals");
@@ -194,38 +202,41 @@ custom int preserveOriginalDrawCall = 0
             "partial light override retains original transform");
     resources.finishFrame();
     texture(dir / "a/maps/color.dds", 50);
-    settle(resources);
+    load();
     scene.draw(false, 1);
     require(resources.draws().back().material->texture->pixels.mips[0][0] == 50,
             "changed texture contents reload");
     resources.finishFrame();
     write(dir / "a/maps/color.dds", "malformed texture");
-    settle(resources);
+    load();
     require(*usd::modDiagnostic(), "texture failure reports diagnostic");
+    // Left out of its material (as RTX Remix leaves it): the mod still applies.
     scene.draw(false, 1);
-    require(resources.draws().back().material->texture->pixels.mips[0][0] == 50,
-            "failed texture reload preserves working set");
+    require(resources.draws().size() == 4, "a texture that does not decode leaves the mod applied");
     resources.finishFrame();
     auto missing = mod;
     auto texturePath = missing.find("color.dds");
     missing.replace(texturePath, 9, "new.dds");
     write(dir / "a/mod.usda", missing);
-    settle(resources);
-    require(*usd::modDiagnostic(), "missing new dependency reports failure");
+    load();
+    // A missing texture is left out (and watched): the mod still applies.
+    scene.draw(false, 1);
+    require(resources.draws().size() == 4, "a missing texture leaves the mod applied");
+    resources.finishFrame();
     texture(dir / "a/maps/new.dds", 90);
-    settle(resources);
+    load();
     require(!*usd::modDiagnostic(), "creating a missing dependency retries reload");
     scene.draw(false, 1);
     require(resources.draws().back().material->texture->pixels.mips[0][0] == 90,
             "new dependency publishes after recovery");
     resources.finishFrame();
     std::filesystem::remove(dir / "a/mod.usda");
-    settle(resources);
+    load();
     scene.draw(false, 1);
     require(resources.draws().empty(), "next sorted replacement becomes active after removal");
     resources.finishFrame();
     std::filesystem::remove(dir / "b/mod.usda");
-    settle(resources);
+    load();
     scene.draw(false, 1);
     require(resources.draws().size() == 2, "removing mods restores original meshes");
     require(resources.draws()[0].material->texture->pixels.mips[0][0] == 255,

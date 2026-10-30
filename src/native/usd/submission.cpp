@@ -4,6 +4,7 @@
 #include "usd/render_categories.h"
 #include "platform/utf8_path.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <fstream>
 #include <iterator>
@@ -95,7 +96,180 @@ namespace remix::usd {
       throw;
     }
   }
-  Submission::~Submission() { clear(); }
+  Submission::Submission(NativeResources &resources, Snapshot &snapshot, uint64_t namespaceId, OnDemand)
+      : resources_(resources), namespace_(namespaceId), applyMods_(false),
+        snapshot_({{"cameras", Json::array()}}) {
+    onDemand_ = true;
+    deferred_ = snapshot.deferred;
+    // The replacement a prim belongs to: /RootNode/meshes/mesh_<hash>.
+    auto rootOf = [](const std::string &id) {
+      static const std::string meshes = "/RootNode/meshes/";
+      return id.starts_with(meshes) ? id.substr(0, id.find('/', meshes.size())) : std::string();
+    };
+    material({{"id", "default"}, {"albedo", {.7, .7, .7}}});
+    for (const auto &m : snapshot.scene["materials"])
+      material_defs_.emplace(m.at("id").get<std::string>(), m);
+    for (const auto &entry : snapshot.scene["replacements"]["meshes"])
+      groups_[entry.at("path").get<std::string>()].material = entry.value("material", std::string());
+    for (auto &m : snapshot.scene["meshes"])
+      if (auto group = groups_.find(rootOf(m.value("id", std::string()))); group != groups_.end()) {
+        group->second.meshes.push_back(pending_meshes_.size());
+        pending_meshes_.push_back(std::move(m));
+      }
+    snapshot.scene["meshes"] = Json::array();
+    for (const auto &l : snapshot.scene["lights"])
+      if (auto group = groups_.find(rootOf(l.value("id", std::string()))); group != groups_.end()) {
+        group->second.lights.push_back(light_origins_.size());
+        light_origins_.push_back(l);
+      }
+  }
+  Submission::~Submission() {
+    if (batch_.valid())
+      batch_.wait();
+    clear();
+  }
+  bool Submission::ready(const std::string &root) {
+    if (!onDemand_)
+      return true;
+    auto it = groups_.find(root);
+    if (it == groups_.end())
+      return false;
+    auto &group = it->second;
+    if (group.state == Group::State::Idle) {
+      group.state = Group::State::Requested;
+      requests_.push_back(root);
+    }
+    return group.state == Group::State::Ready;
+  }
+  std::vector<std::string> Submission::groupTextures(const Group &group) const {
+    std::set<std::string> ids;
+    for (auto index : group.meshes)
+      for (const auto &surface : pending_meshes_[index].value("surfaces", Json::array()))
+        ids.insert(surface.value("material", std::string("default")));
+    if (!group.material.empty())
+      ids.insert(group.material);
+    std::vector<std::string> paths;
+    for (const auto &id : ids)
+      if (!materials_.contains(id))
+        for (auto &path : materialTextures(id))
+          paths.push_back(std::move(path));
+    for (auto index : group.lights)
+      for (const char *key : {"texture", "cookie"})
+        if (auto path = light_origins_[index].value(key, std::string()); !path.empty())
+          paths.push_back(std::move(path));
+    return paths;
+  }
+  void Submission::realize(Group &group) {
+    instance_sink_ = &group.instances;
+    try {
+      for (auto index : group.meshes)
+        mesh(pending_meshes_[index]);
+      if (!group.material.empty())
+        materialHandle(group.material);
+    } catch (...) {
+      instance_sink_ = nullptr;
+      throw;
+    }
+    instance_sink_ = nullptr;
+    // The geometry is on the GPU now.
+    for (auto index : group.meshes)
+      pending_meshes_[index] = Json();
+  }
+  void Submission::service() {
+    if (!onDemand_)
+      return;
+    if (batch_.valid()) {
+      if (batch_.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+        return;
+      // The batch keeps its textures alive until the materials using them
+      // exist (the path cache holds them weakly).
+      auto batch = batch_.get();
+      // Composed replacements: their meshes and the materials they use.
+      for (size_t i = 0; i < batch.composed.size(); ++i) {
+        auto &group = groups_.at(batch.roots[i]);
+        for (auto &m : batch.composed[i]["materials"])
+          material_defs_.try_emplace(m.at("id").get<std::string>(), m);
+        for (auto &m : batch.composed[i]["meshes"]) {
+          group.meshes.push_back(pending_meshes_.size());
+          pending_meshes_.push_back(std::move(m));
+        }
+      }
+      std::set<std::string> failed;
+      for (size_t i = 0; i < batch.paths.size(); ++i)
+        if (batch.textures[i])
+          resources_.cacheTexturePath(batch.paths[i], batch.textures[i]);
+        else
+          failed.insert(batch.paths[i]);
+      // A texture that does not decode is left out where it is used, as RTX
+      // Remix leaves it (loader.cpp strictAssets).
+      if (!failed.empty()) {
+        auto drop = [&](Json &object, const std::string &key) {
+          if (object.is_object() && object.contains(key) && object[key].is_string() &&
+              failed.contains(object[key].get<std::string>()))
+            object[key] = "";
+        };
+        for (auto &[id, def] : material_defs_) {
+          std::vector<std::string> keys;
+          for (auto it = def.begin(); it != def.end(); ++it)
+            if (it.key().ends_with("_texture"))
+              keys.push_back(it.key());
+          for (const auto &key : keys)
+            drop(def, key);
+          if (def.contains("iridescence"))
+            drop(def["iridescence"], "texture");
+        }
+        for (auto &light : light_origins_) {
+          drop(light, "texture");
+          drop(light, "cookie");
+        }
+      }
+      for (const auto &root : batch.roots) {
+        auto &group = groups_.at(root);
+        try {
+          realize(group);
+          group.state = Group::State::Ready;
+        } catch (...) {
+          // The game's mesh keeps drawing.
+          group.state = Group::State::Failed;
+        }
+      }
+    }
+    if (requests_.empty())
+      return;
+    Batch batch;
+    batch.roots = std::exchange(requests_, {});
+    std::set<std::string> seen;
+    for (const auto &root : batch.roots) {
+      auto &group = groups_.at(root);
+      group.state = Group::State::Loading;
+      for (auto &path : groupTextures(group))
+        if (seen.insert(path).second)
+          batch.paths.push_back(std::move(path));
+    }
+    for (const auto &[id, handle] : materials_)
+      batch.known.insert(id);
+    batch_ = std::async(std::launch::async, [batch = std::move(batch), deferred = deferred_]() mutable {
+      if (deferred) {
+        std::set<std::string> seen(batch.paths.begin(), batch.paths.end());
+        for (const auto &root : batch.roots) {
+          Json composed = Json::object();
+          try {
+            composed = composeReplacement(*deferred, root);
+          } catch (...) {
+            // Left as it is: the game's mesh keeps drawing.
+          }
+          for (const auto &m : composed.value("materials", Json::array()))
+            if (!batch.known.contains(m.value("id", std::string())))
+              for (auto &path : materialTextureFiles(m))
+                if (seen.insert(path).second)
+                  batch.paths.push_back(std::move(path));
+          batch.composed.push_back(std::move(composed));
+        }
+      }
+      batch.textures = decodeTextures(batch.paths);
+      return batch;
+    });
+  }
   void Submission::clear() {
     for (auto mesh : meshes_)
       resources_.destroyMesh(mesh);
@@ -199,8 +373,18 @@ namespace remix::usd {
         culling.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_CAMERA_CULLING_EXT;
         culling.flags = REMIXAPI_INSTANCE_CAMERA_CULL_VISIBILITY_EXT;
       }
-    for (size_t i = 0; meshes && i < instances_.size(); ++i) {
-      if (!root.empty() && instance_origins_[i].first != root &&
+    // On demand, the replacement's own instances and lights (once created).
+    const Group *group = nullptr;
+    if (onDemand_) {
+      auto it = groups_.find(root);
+      if (it == groups_.end() || it->second.state != Group::State::Ready)
+        return;
+      group = &it->second;
+    }
+    const size_t instanceCount = group ? group->instances.size() : instances_.size();
+    for (size_t n = 0; meshes && n < instanceCount; ++n) {
+      const size_t i = group ? group->instances[n] : n;
+      if (!group && !root.empty() && instance_origins_[i].first != root &&
           !instance_origins_[i].first.starts_with(root + "/"))
         continue;
       auto instance = instances_[i];
@@ -226,9 +410,14 @@ namespace remix::usd {
       if (!applyMods_ || !modInstance(resources_, instance, instance_hashes_[i]))
         resources_.drawInstance(instance);
     }
-    for (size_t i = 0; lights && i < lights_.size(); ++i) {
+    const size_t lightCount = group ? group->lights.size() : lights_.size();
+    for (size_t n = 0; lights && n < lightCount; ++n) {
+      const size_t i = group ? group->lights[n] : n;
       const auto id = light_origins_[i]["id"].get<std::string>();
-      if (!root.empty() && id != root && !id.starts_with(root + "/"))
+      if (!group && !root.empty() && id != root && !id.starts_with(root + "/"))
+        continue;
+      // On demand, lights draw attached to a host instance only.
+      if (group && !parent)
         continue;
       if (parent) {
         auto data = light_origins_[i];
@@ -252,21 +441,8 @@ namespace remix::usd {
     return materials_.at(id);
   }
   std::vector<std::string> Submission::materialTextures(const std::string &id) const {
-    std::vector<std::string> paths;
-    if (auto def = material_defs_.find(id); def != material_defs_.end()) {
-      for (const char *key : {"albedo_texture", "normal_texture", "roughness_texture", "metallic_texture",
-                              "emissive_texture"})
-        if (auto path = def->second.value(key, std::string()); !path.empty())
-          paths.push_back(path);
-      if (const auto film = def->second.find("iridescence"); film != def->second.end())
-        if (auto path = film->value("texture", std::string()); !path.empty())
-          paths.push_back(path);
-      if (const auto sss = def->second.find("subsurface"); sss != def->second.end())
-        for (const char *key : subsurfaceTextureKeys)
-          if (auto path = sss->value(key, std::string()); !path.empty())
-            paths.push_back(path);
-    }
-    return paths;
+    auto def = material_defs_.find(id);
+    return def == material_defs_.end() ? std::vector<std::string>() : materialTextureFiles(def->second);
   }
   void Submission::material(const Json &data) {
     remixapi_MaterialInfo info{};
@@ -491,6 +667,8 @@ namespace remix::usd {
     instance.transform = transform(data.at("transform"));
     instance.doubleSided = data.value("double_sided", false);
     instance.categoryFlags = flags;
+    if (instance_sink_)
+      instance_sink_->push_back(instances_.size());
     instances_.push_back(instance);
     instance_hashes_.push_back(data.value("hash", uint64_t(0)));
     blend_states_.push_back(blend_state(data.value("alpha_state", Json::object())));
