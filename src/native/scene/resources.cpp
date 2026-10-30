@@ -49,6 +49,7 @@ namespace remix {
     m_temporalEpoch = {};
     m_skyRadiance = {};
     m_cameraMedium = {};
+    m_screenCameras = {};
     m_lights.clear();
     m_iesProfiles.reset();
     m_iesIndex.clear();

@@ -95,6 +95,12 @@ namespace remix {
       material->reference = float(opaque->alphaReferenceValue) / 255;
       material->drawAlpha = opaque->useDrawCallAlphaState != 0;
       material->translucent = opaque->opacityConstant < 1;
+      if (const auto *screen = static_cast<const remixapi_MaterialInfoScreenCameraEXT *>(
+              extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_SCREEN_CAMERA_EXT))) {
+        if (screen->slot >= REMIXAPI_SCREEN_CAMERA_SLOTS_EXT)
+          throw invalid;
+        material->screenCamera = uint8_t(screen->slot + 1);
+      }
       // RTX Remix's thin film: a film of index 1.5 at a constant thickness, or
       // at albedo alpha times 1500 nm, the material then fully opaque.
       auto &film = material->iridescence;
@@ -252,7 +258,8 @@ namespace remix {
              a.pbr == b.pbr && std::equal(a.emission, a.emission + 3, b.emission) &&
              std::equal(a.tint, a.tint + 4, b.tint) && a.compare == b.compare && a.reference == b.reference &&
              a.drawAlpha == b.drawAlpha && a.translucent == b.translucent &&
-             a.transmission == b.transmission && a.caustics == b.caustics && a.filter == b.filter && a.wrapU == b.wrapU &&
+             a.transmission == b.transmission && a.caustics == b.caustics &&
+             a.screenCamera == b.screenCamera && a.filter == b.filter && a.wrapU == b.wrapU &&
              a.wrapV == b.wrapV && a.rows == b.rows && a.columns == b.columns && a.fps == b.fps;
     };
     if (previous == m_materials.end() || !equal(*previous->second, *material)) {

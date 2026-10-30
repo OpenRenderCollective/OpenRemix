@@ -107,6 +107,7 @@ layout(set=0,binding=3,std140) uniform Frame {
   uvec4 cloudShadowConfig; // its texture + 1 (0: no cloud shadow), slices, reserved
   uvec4 srgbTextures[32]; // a bit per texture slot: sRGB-encoded texels (stored UNORM), decoded with pow 2.2
   uvec4 pathDebug; // path inspector: record buffer address (x low, y high), pixel (x | y << 16; ~0 none), capacity
+  vec4 screenCameras[32]; // remixapi_CameraScreensEXT, 4 per slot: position (w: 1 set, +2 moved), right and up (half extents), forward
 } frame;
 // Instance mask bit of view models (pathtrace/tlas_policy.h).
 const uint viewModelInstanceMask=64u;

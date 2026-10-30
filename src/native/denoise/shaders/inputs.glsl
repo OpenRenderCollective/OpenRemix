@@ -115,7 +115,7 @@ Mirror loadMirror(ivec2 p) {
   Mirror m=Mirror(vec3(0,0,1),0,vec3(1),false);
   if(temporal.translucency.z==0)return m;
   uvec4 v=imageLoad(psrMirror,p);
-  if(v.w==0u)return m;
+  if(v.w==0u||(v.w>>16)==0xffffu)return m; // none, or a screen (pathtrace.comp loadScreen)
   m.n=decodeNormal(unpackSnorm2x16(v.x));m.d=uintBitsToFloat(v.y);
   m.reflectance=vec3(unpackHalf2x16(v.z),unpackHalf2x16(v.w).x);m.replaced=true;
   return m;

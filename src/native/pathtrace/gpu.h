@@ -215,8 +215,13 @@ namespace remix::trace::detail {
     // address (low, high words), the pixel (x | y << 16; ~0 none) and the
     // record capacity.
     uint32_t pathDebug[4] = {0, 0, ~0u, 0};
+    // remixapi_CameraScreensEXT by slot (scene::ScreenCameras): position and
+    // flags (w: 1 set, plus 2 when it moved since the last frame: the screen's
+    // history restarts), right and up scaled to the image plane's half
+    // extents, forward.
+    float screenCameras[8][4][4] = {};
   };
-  static_assert(sizeof(Frame) == 1808 && offsetof(Frame, srgbTextures) == 1280 && offsetof(Frame, pathDebug) == 1792 &&
+  static_assert(sizeof(Frame) == 2320 && offsetof(Frame, screenCameras) == 1808 && offsetof(Frame, srgbTextures) == 1280 && offsetof(Frame, pathDebug) == 1792 &&
                 offsetof(Frame, localProbeRead) == 1168 &&
                 offsetof(Frame, localProbeParams) == 1184 && offsetof(Frame, volumeLightScales) == 1200 &&
                 offsetof(Frame, cloudShadow) == 1216 && offsetof(Frame, cloudShadowConfig) == 1264 &&
@@ -614,6 +619,7 @@ namespace remix {
       uint32_t visibleClusters = 0, visibleLeaves = 0; // of `leaves`
       remixapi_CameraCullingStatisticsEXT statistics{.structSize = sizeof(remixapi_CameraCullingStatisticsEXT)};
     } cameraCulling;
+    ScreenCameras lastScreenCameras = {}; // the previous traced frame's (Frame::screenCameras flag 2)
     // Sets the frame's camera culling constants; uploads what they refer to.
     void configureCameraCulling(VkCommandBuffer command, Frame &frame, const TraceOptions &options,
                                 const RasterRenderer &resources);

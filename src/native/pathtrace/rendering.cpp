@@ -787,6 +787,16 @@ namespace remix {
       append(cameraCulling.leavesClusters, sizeof(cameraCulling.leavesClusters));
     frame.config[0] = options.samples;
     std::copy_n(resources.cameraMedium().data(), 4, frame.cameraMedium);
+    {
+      const auto &screens = resources.screenCameras();
+      for (size_t slot = 0; slot < screens.size(); ++slot) {
+        std::copy_n(screens[slot].data(), 16, &frame.screenCameras[slot][0][0]);
+        if (screens[slot][3] != 0 && screens[slot] != lastScreenCameras[slot])
+          frame.screenCameras[slot][0][3] += 2;
+      }
+      lastScreenCameras = screens;
+      append(frame.screenCameras, sizeof(frame.screenCameras));
+    }
     frame.upAxis = float(std::min(options.volumetricUpAxis, 2u));
     {
       // Scrolling maps (water): wrapped well before float precision suffers.

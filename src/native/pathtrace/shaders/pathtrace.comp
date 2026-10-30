@@ -409,6 +409,13 @@ Hit closest(vec3 origin,vec3 direction,float maximum,bool motion) {
     Intersection x=nearest(origin,direction,end,minimum);
     originPaint=0;
     if(x.surface==~0u)break;
+    // Reflection-only paint (what only a screen camera sees: an eye's iris)
+    // coats only a reflection-only receiver: no other ray shows it.
+    if((surfaces[x.surface].state.w&32768u)!=0u&&
+       (receiver.surface==~0u||(surfaces[receiver.surface].state.w&32768u)==0u)) {
+      minimum=uintBitsToFloat(floatBitsToUint(x.t)+1u);
+      continue;
+    }
     hit=missedHit(direction,end);surfaceHit(x,direction,hit,motion);
     // Keep the ray origin fixed. The normal-offset used for lighting rays can
     // jump through a decal's close receiver at large world coordinates.
@@ -493,14 +500,33 @@ Hit cameraHit(vec3 origin,vec3 direction) {
 Hit secondaryHit(vec3 origin,vec3 direction) {
   traceMask=bounceMask();Hit hit=closest(origin,direction,1e30,false);traceMask=cameraMask;return hit;
 }
+#ifdef TEMPORAL
+// A pixel on a screen (remixapi_MaterialInfoScreenCameraEXT) whose camera the
+// PSR pass traced: its primary surface is what the camera sees, viewed from
+// it. The record shares psrMirror with mirrors (w's high half 0xffff, a NaN
+// no mirror packs): x the slot, y the camera ray's distance to the screen.
+// Written only with a raster primary (the pass runs then).
+struct Screen { bool shown; uint slot; float distance; };
+Screen loadScreen(ivec2 p) {
+  Screen s=Screen(false,0u,0);
+  if(frame.target.w==0)return s;
+  uvec4 v=imageLoad(psrMirror,p);
+  if((v.w>>16)!=0xffffu)return s;
+  s.shown=true;s.slot=v.x;s.distance=uintBitsToFloat(v.y);
+  return s;
+}
+uvec4 packScreen(uint slot,float distance) { return uvec4(slot,floatBitsToUint(distance),0u,0xffff0000u); }
+#endif
 // First visibility comes from rasterization; secondary rays still query the full scene.
 // A painted pixel's ray is traced again (rasterPrimary, primarySurface).
 Hit rasterSurface(ivec2 pixel, vec3 origin) {
   vec4 position=imageLoad(primaryPosition,pixel), normal=imageLoad(primaryNormal,pixel);
   // The kind plus 8: a view model, plus 16: a thin film, whose material
   // the G-buffer does not hold: film.x -1 has its ray traced again
-  // (gbuffer.frag).
+  // (gbuffer.frag); plus 32: a screen camera's surface (the PSR pass
+  // replaces it; replaceMirror).
   Hit hit;hit.film=vec4(0);
+  if(normal.w>=32)normal.w-=32;
   if(normal.w>=16){normal.w-=16;hit.film.x=-1;}
   if(normal.w>=8){normal.w-=8;viewModelPath=true;}
   vec4 previous=imageLoad(primaryPrevious,pixel);
@@ -522,6 +548,12 @@ Hit rasterSurface(ivec2 pixel, vec3 origin) {
   Mirror mirror=loadMirror(pixel);
   if(mirror.replaced&&hit.t<1e30) {
     vec3 eye=mirrorPoint(mirror,origin);
+    hit.t=length(eye-hit.p);hit.wo=normalize(eye-hit.p);
+  }
+  // A surface on a screen is viewed from the screen's camera.
+  Screen screen=loadScreen(pixel);
+  if(screen.shown&&hit.t<1e30) {
+    vec3 eye=frame.screenCameras[screen.slot*4u].xyz;
     hit.t=length(eye-hit.p);hit.wo=normalize(eye-hit.p);
   }
 #endif
@@ -1596,9 +1628,48 @@ void storePrimary(ivec2 pixel,Hit hit,float kind) {
 // receiver with its paint, closest()) and written over the G-buffer, so the
 // passes after it read the surface instead of each peeling the paint again
 // (a wall under dozens of translucent layers took 15 ms a pass).
+// A screen (remixapi_MaterialInfoScreenCameraEXT; G-buffer kind plus 32):
+// what its camera sees through the point of its image that the pixel's
+// texture coordinate names replaces it, as a mirror's reflection does. Glass
+// in front of that is passed. Without its camera this frame the screen keeps
+// its own material (the G-buffer as drawn). Returns the pixel's record.
+uvec4 replaceScreen(ivec2 pixel,vec3 origin,vec3 direction,float kind) {
+  // A view model's screen (a tool's display): view models first, as cameraHit.
+  kind-=32;if(kind>=16)kind-=16;
+  traceMask=kind>=8?viewModelInstanceMask:cameraMask;
+  Intersection x=nearest(origin,direction,1e30,0);
+  traceMask=cameraMask;
+  if(x.surface==~0u)return uvec4(0);
+  Surface s=surfaces[x.surface];
+  s.indices=s.traceIndices;
+  uint code=(s.state.w>>12)&7u;
+  if(code==0u||frame.screenCameras[(code-1u)*4u].w==0)return uvec4(0);
+  uint slot=code-1u,tri=x.primitive*3;
+  vec3 w=vec3(1-x.bary.x-x.bary.y,x.bary);
+  vec2 uv=s.vertices.v[s.indices.i[tri]].uv.xy*w.x+s.vertices.v[s.indices.i[tri+1]].uv.xy*w.y+
+    s.vertices.v[s.indices.i[tri+2]].uv.xy*w.z;
+  // The image repeats, as a texture does (an HL2 func_monitor's brush
+  // coordinates tile it across the screen's faces).
+  uv=fract(uv);
+  vec2 ndc=vec2(2*uv.x-1,1-2*uv.y);
+  vec3 seen=normalize(frame.screenCameras[slot*4u+3u].xyz+ndc.x*frame.screenCameras[slot*4u+1u].xyz+
+    ndc.y*frame.screenCameras[slot*4u+2u].xyz);
+  // The camera sees reflection-only instances too: what only it sees is
+  // hidden from the main camera that way (remixapi_CameraScreensEXT).
+  traceMask=cameraMask|reflectionOnlyInstanceMask;
+  Hit hit=closest(frame.screenCameras[slot*4u].xyz,seen);
+  for(uint layer=0u;layer<8u&&hit.t<1e30&&hit.blended;++layer)hit=closest(offsetRay(hit.p,-hit.ng),seen);
+  traceMask=cameraMask;
+  hit.color.a=1;storePrimary(pixel,hit,hit.t==1e30?0:hit.blended?2:1);
+  return packScreen(slot,x.t);
+}
 void replaceMirror(ivec2 pixel) {
   vec3 origin,direction;
   ray((vec2(pixel)+.5+frame.jitter.xy)/vec2(frame.target.xy)*2-1,frame.inverseCameraRelative,frame.eye.xyz,origin,direction);
+  if(imageLoad(primaryNormal,pixel).w>=32) {
+    imageStore(psrMirror,pixel,replaceScreen(pixel,origin,direction,imageLoad(primaryNormal,pixel).w));
+    return;
+  }
   const bool painted=imageLoad(primaryNormal,pixel).w==4;
   Hit mirror=rasterPrimary(pixel,origin);
   uvec4 packed=uvec4(0);
@@ -2097,10 +2168,20 @@ void main() {
     guidePosition=mirrorPoint(mirror,primary.p);guidePrevious=mirrorPoint(mirror,primary.previousPosition);
     N=mirrorVector(mirror,N);z=abs((temporal.view*vec4(guidePosition,1)).z);
   }
+  // A surface on a screen: its guides are the screen's point (the image moves
+  // with the screen), its normal the surface's. When the screen's camera moved
+  // the image changed under it: no motion, its history restarts.
+  Screen screen=loadScreen(pixel);
+  bool screenMoved=false;
+  if(screen.shown) {
+    guidePosition=guidePrevious=origin+direction*screen.distance;
+    z=abs((temporal.view*vec4(guidePosition,1)).z);
+    screenMoved=frame.screenCameras[screen.slot*4u].w>=2;
+  }
   // Surface motion of its own (a door, a character), in pixels this frame:
   // stored as motion w = 1 + pixels (w > 0 stays the validity test).
   float objectPixels=0;
-  if(opaque&&temporal.flags.x==0) {
+  if(opaque&&temporal.flags.x==0&&!screenMoved) {
     vec4 clip=frame.camera*vec4(guidePosition,1),prev=temporal.previousCamera*vec4(guidePrevious,1);
     vec4 moved=frame.camera*vec4(guidePrevious,1);
     if(moved.w>0&&clip.w>0)objectPixels=length((moved.xy/moved.w-clip.xy/clip.w)*.5*vec2(frame.target.xy));
@@ -2361,6 +2442,7 @@ void main() {
   float far=1e30;
   if(frame.volumeConfig.x!=0u||frame.cameraMedium.w>0) {
     float kind=frame.target.w!=0?imageLoad(primaryNormal,pixel).w:-1;
+    if(kind>=32)kind-=32; // a screen camera's surface
     if(kind>=16)kind-=16; // a thin film
     if(kind>=8)kind-=8; // a view model
     if(kind>0&&kind<2)far=length(imageLoad(primaryPosition,pixel).xyz-origin);

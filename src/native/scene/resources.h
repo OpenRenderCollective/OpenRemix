@@ -24,6 +24,10 @@
 
 namespace remix {
 
+  // remixapi_CameraScreensEXT per slot: position (w 1: set), right and up
+  // scaled to the image plane's half extents, forward (scene/instances.cpp).
+  using ScreenCameras = std::array<std::array<float, 16>, REMIXAPI_SCREEN_CAMERA_SLOTS_EXT>;
+
   // CPU state is serialized by the API mutex. Only the presenting thread (the
   // startup thread, or OpenRemix's render thread with asynchronous
   // presentation, which reads only a published frame) touches GPU state.
@@ -260,6 +264,8 @@ namespace remix {
     const std::array<float, 3> &skyRadiance() const { return m_skyRadiance; }
     // remixapi_CameraMediumEXT: transmittance colour, measurement distance (0: in air).
     const std::array<float, 4> &cameraMedium() const { return m_cameraMedium; }
+    // remixapi_CameraScreensEXT, by slot (scene/instances.cpp).
+    const ScreenCameras &screenCameras() const { return m_screenCameras; }
     void createLight(const remixapi_LightInfo &info, remixapi_LightHandle &handle);
     // IES profiles (remixapi_LightInfoIesProfileEXT), scene::kIesBins floats
     // each. Adding one makes a new vector, so a published frame keeps its own.
@@ -397,6 +403,7 @@ namespace remix {
     scene::TemporalEpoch m_temporalEpoch;
     std::array<float, 3> m_skyRadiance = {};
     std::array<float, 4> m_cameraMedium = {};
+    ScreenCameras m_screenCameras = {};
     std::vector<scene::Draw> m_draws, m_uiDraws, m_overlay;
     std::vector<scene::HaloGroup> m_halos;
     size_t m_haloDraws = 0;

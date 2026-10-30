@@ -113,8 +113,43 @@ namespace remix {
       if (!inside->inside || medium[3] <= 0)
         medium = {};
     }
+    // remixapi_CameraScreensEXT: per slot, the position (w 1: set), then
+    // right and up scaled to the image plane's half extents and forward.
+    ScreenCameras screens = {};
+    if (const auto *list = static_cast<const remixapi_CameraScreensEXT *>(
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_CAMERA_SCREENS_EXT))) {
+      if (list->count && !list->cameras)
+        throw invalid;
+      for (uint32_t i = 0; i < list->count; ++i) {
+        const auto &c = list->cameras[i];
+        const float values[] = {c.position.x, c.position.y, c.position.z, c.forward.x, c.forward.y,
+                                c.forward.z,  c.up.x,       c.up.y,       c.up.z,      c.right.x,
+                                c.right.y,    c.right.z,    c.fovYDegrees, c.aspect};
+        finite(values, std::size(values));
+        if (c.slot >= REMIXAPI_SCREEN_CAMERA_SLOTS_EXT || c.fovYDegrees <= 0 || c.fovYDegrees >= 180 ||
+            c.aspect <= 0)
+          throw invalid;
+        auto unit = [](const remixapi_Float3D &v, float out[3]) {
+          const float length = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+          if (!(length > 0))
+            throw invalid;
+          out[0] = v.x / length, out[1] = v.y / length, out[2] = v.z / length;
+        };
+        float forward[3], up[3], right[3];
+        unit(c.forward, forward);
+        unit(c.up, up);
+        unit(c.right, right);
+        const float tanY = std::tan(c.fovYDegrees * 3.14159265f / 360), tanX = tanY * c.aspect;
+        auto &out = screens[c.slot];
+        out = {c.position.x, c.position.y, c.position.z, 1,
+               right[0] * tanX, right[1] * tanX, right[2] * tanX, 0,
+               up[0] * tanY, up[1] * tanY, up[2] * tanY, 0,
+               forward[0], forward[1], forward[2], 0};
+      }
+    }
     if (info.type == REMIXAPI_CAMERA_TYPE_WORLD) {
       m_cameraMedium = medium;
+      m_screenCameras = screens;
       const auto *metadata = static_cast<const remixapi_CameraTemporalEXT *>(
           extension(info.pNext, REMIXAPI_STRUCT_TYPE_CAMERA_TEMPORAL_EXT));
       m_temporalEpoch =

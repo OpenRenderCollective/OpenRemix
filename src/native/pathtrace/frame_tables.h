@@ -819,6 +819,11 @@ namespace remix::trace {
                          (surface.decal ? detail::decalMode(b) : 0u) << 7 |
                          // Bit 11: light through it draws caustics.
                          uint32_t(material.caustics) << 11 |
+                         // Bits 12-14: the screen camera slot + 1 it shows (0: none).
+                         uint32_t(material.screenCamera) << 12 |
+                         // Bit 15: reflection-only (Draw::reflectionOnly): its paint
+                         // coats only reflection-only receivers.
+                         uint32_t(draw.reflectionOnly) << 15 |
                          // remixapi_InstanceInfoMaskEXT CUT: the group (bits 16-21) whose
                          // coverage hides the surface from camera rays.
                          uint32_t(surface.cutGroup) << 16 |

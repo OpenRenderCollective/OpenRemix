@@ -755,6 +755,46 @@ typedef struct remixapi_CameraMediumEXT {
   float transmittanceMeasurementDistance;
 } remixapi_CameraMediumEXT;
 
+// Optional pNext on a world CameraInfo: this frame's screen cameras, the
+// cameras that surfaces with remixapi_MaterialInfoScreenCameraEXT show (a
+// security monitor, a game's render-to-texture view). A surface of camera
+// `slot` shows, at texture coordinate (u, v), what the camera sees through the
+// point (2u - 1, 1 - 2v) of its image plane: u to the right, v down, the image
+// covering [0, 1] in both and repeating outside it. The primary surface
+// replacement pass traces it as the pixel's surface (lit, shadowed and
+// denoised as a surface in view), so it needs a raster primary
+// (rtx.native.pathtrace.primaryVisibility) and a denoiser; elsewhere, and for
+// a slot not given this frame, the screen shows its material. A screen camera
+// also sees reflection-only instances (the third-person player categories), so
+// what only it should see is submitted that way; reflection-only paint coats
+// only reflection-only surfaces. Slots are 0 to
+// REMIXAPI_SCREEN_CAMERA_SLOTS_EXT - 1; directions need not be unit length but
+// must not be parallel; fovY in degrees (0, 180), aspect width / height.
+#define REMIXAPI_STRUCT_TYPE_CAMERA_SCREENS_EXT ((remixapi_StructType)0x7fff1021)
+#define REMIXAPI_SCREEN_CAMERA_SLOTS_EXT 7u
+typedef struct remixapi_ScreenCameraEXT {
+  uint32_t slot;
+  remixapi_Float3D position, forward, up, right;
+  float fovYDegrees, aspect;
+} remixapi_ScreenCameraEXT;
+typedef struct remixapi_CameraScreensEXT {
+  remixapi_StructType sType;
+  const void* pNext;
+  uint32_t count;
+  const remixapi_ScreenCameraEXT* cameras;
+} remixapi_CameraScreensEXT;
+
+// Optional pNext on an opaque MaterialInfo: the surface is a screen showing
+// screen camera `slot` (remixapi_CameraScreensEXT), mapped by its texture
+// coordinates. The material's own albedo and textures show where the camera
+// is not traced (rays reaching the screen after a bounce, a slot not set).
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_SCREEN_CAMERA_EXT ((remixapi_StructType)0x7fff1022)
+typedef struct remixapi_MaterialInfoScreenCameraEXT {
+  remixapi_StructType sType;
+  const void* pNext;
+  uint32_t slot;
+} remixapi_MaterialInfoScreenCameraEXT;
+
 typedef struct remixapi_DenoisingCapabilitiesEXT {
   uint32_t structSize, reblurShSupported, taaSupported, reserved;
   char unavailableReason[256];

@@ -180,6 +180,9 @@ namespace remix {
       bool drawAlpha = false, translucent = false, transmission = false;
       // Light through it draws caustics: translucent, with a normal map.
       bool caustics = false;
+      // remixapi_MaterialInfoScreenCameraEXT: the screen camera slot + 1 it
+      // shows (0: none).
+      uint8_t screenCamera = 0;
       // Wrap modes in RTX Remix's MDL encoding: 0 clamp, 1 repeat, 2 mirrored
       // repeat, 3 clip.
       uint8_t filter = 0, wrapU = 1, wrapV = 1;
