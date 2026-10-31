@@ -195,3 +195,24 @@ created more cells than valid capture sites, then discarded empty cells. Fallbac
 placement now splits populated site sets, retaining coverage with sparse origins.
 This concerns scenes without a closed spatial partition; fitted BSP coverage and
 Construct's outdoor gaps remain separate quality work.
+
+## Irradiance encoding as a provider boundary
+
+The current surface path stores full nine-coefficient SH and performs up to four
+filtered atlas fetches per coefficient with bicubic reconstruction. Exactly-zero
+basis terms skip their fetches; no SH bands or weak nonzero terms are discarded.
+
+A useful next alternative is the compact lightmap representation in the audited
+VRF `Renderer/Shaders/common/lighting.slang`: DC plus luminance or per-channel
+linear directional bands, with a reconstructed zonal band. Its explicit bicubic
+helper covers shadow masks; do not assume all reference irradiance paths use our
+nine-coefficient bicubic reconstruction. This describes that reference profile,
+not every Source 2 game or material.
+
+Compare encoding error, normal-map response, styled contributions and rough-surface
+reflection behavior before selecting a compact provider by default. Keep material
+shading dependent on irradiance units and receiver metadata, not coefficient count.
+An encoding change must version GPU/cache layouts and retain chart isolation;
+rough-lightmap reflections must replace the appropriate fallback before SSR rather
+than adding another specular contribution. Runtime provider lifecycles remain a
+separate migration from this typed technique selection layer.

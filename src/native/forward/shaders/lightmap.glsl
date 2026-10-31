@@ -34,9 +34,14 @@ bool surfaceIrradiance(vec4 coordinate, vec3 normal, vec4 bounds, out vec4 resul
   surfaceBasis(normal, sh);
   result = vec4(0);
   LightmapFilter stencil = surfaceFilter(coordinate, bounds);
-  for (uint coefficient = 0; coefficient < 9u; ++coefficient)
+  for (uint coefficient = 0; coefficient < 9u; ++coefficient) {
+    // Axis-aligned receivers have several exactly-zero SH weights. Their
+    // finite atlas values cannot contribute; avoid four filtered fetches.
+    // This is exact, not a threshold that discards weak lighting.
+    if (sh[coefficient] == 0.0) continue;
     result += sampleSurfaceAtlas(stencil, coordinate.z * SurfaceAtlasLayers + float(coefficient))
                   * sh[coefficient];
+  }
 #ifdef STYLED_BAKE
   if (BicubicLightmaps) {
     for (uint tap = 0u; tap < 4u; ++tap)

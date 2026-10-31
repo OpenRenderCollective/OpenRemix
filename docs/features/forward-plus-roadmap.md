@@ -2,10 +2,11 @@
 
 - Integrate native main `51217999` and adapter main `c9334fe`, preserving Forward+ contracts and game-agnostic boundaries.
 - Windows setup now needs FidelityFX and XeSS submodules; flat runtime packaging must carry their libraries and licenses.
-- Keep Surface/Receiver and shared world/viewmodel shading; finish independent provider selection rather than calling the existing selector a completed plugin framework.
+- Typed direct/diffuse/reflection selections now drive Source 2 and component UI through existing keys. Surface/Receiver and shared world/viewmodel shading remain in place. Independent GPU provider lifecycles and material-program loading are still unfinished.
 - Investigate the 300 FPS target using a 3.33 ms frame budget, fixed camera/resolution, foreground evidence, completed baking and separate CPU/GPU timings. Compare installed and development DLL hashes explicitly.
 - Isolate opaque shading, clustered baked fallback, bicubic filtering, SSR, probe/cubemap lookups, draw submission and viewmodel costs. Do not silently lower default quality to meet a headline FPS.
 - Reuse bounded/shared bake caches for comparisons. Do not duplicate multi-gigabyte `.bake` files into every report directory.
+- Audit compact irradiance encoding and rough lightmap reflections against VRF: full SH9 bicubic lookup cost is not equivalent to its DC/directional/zonal profile. Preserve the requested quality while comparing alternatives.
 - Existing visual defects and the detailed roadmap below remain open unless explicitly confirmed fixed.
 
 # Fresh-clone entry point
