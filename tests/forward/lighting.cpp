@@ -16,6 +16,27 @@ using remix::test::require;
 int main() {
   {
     const auto defaults = config::Settings{}.forward;
+    for (auto direct : {techniques::Direct::Analytic, techniques::Direct::AttributedBake,
+                        techniques::Direct::AggregateBake})
+      for (auto diffuse : {techniques::Diffuse::SurfaceAndProbes, techniques::Diffuse::RayQueries,
+                           techniques::Diffuse::Disabled})
+        for (auto reflection : {techniques::Reflections::Disabled, techniques::Reflections::Cubemaps,
+                                techniques::Reflections::RayQueries, techniques::Reflections::RayQueriesAndCubemaps}) {
+          auto options = defaults;
+          options.samples = 8;
+          options.baking.samples = 512;
+          options.baking.reflectionResolution = 256;
+          const techniques::Selection requested{direct, diffuse, reflection, false, false, true};
+          techniques::apply(options, requested);
+          require(techniques::requested(options) == requested,
+                  "Technique selections round-trip through existing saved options");
+          require(options.samples == 8 && options.baking.samples == 512 &&
+                      options.baking.reflectionResolution == 256,
+                  "Technique selection preserves quality settings");
+          const auto live = options.lightingPlan(diffuse == techniques::Diffuse::RayQueries);
+          require(diffuse != techniques::Diffuse::RayQueries || !live.bakedReceivers,
+                  "Live diffuse ownership cannot also consume aggregate baked direct");
+        }
     require(defaults == presets::source2() && presets::source2Name == "Source 2" &&
                 defaults.ssr && !defaults.rtGI && !defaults.rtReflections &&
                 defaults.baking.reflectionProbes > 0 && defaults.lightingPlan(false).bakedReceivers,

@@ -12,7 +12,7 @@ context, not proof that an old experiment is still enabled or a defect is fixed.
 | Item | Current state |
 | --- | --- |
 | Native checkout | `OpenRemix/`, `forward-plus-renderer` |
-| Native source checkpoint | `5ebf5f37` (handoff documentation follows this commit) |
+| Native material API checkpoint | `5ebf5f37` (subsequent integration and technique selectors follow it) |
 | Native official remote | `https://github.com/OpenRenderCollective/OpenRemix.git` |
 | Adapter checkout | `garrys-mod-rtx-remixed-2/`, `forward-plus-renderer` |
 | Adapter checkpoint | `ba1d9b41d7e601638b40857be0872c0f9516533d` (upstream main integrated) |
@@ -66,7 +66,7 @@ private report. The most recent source is not the owner's older playable binary.
 | Standard shade entry | `forward/shaders/standard-shading.glsl`: `shadeStandardSurface(surface, receiver)` for world and viewmodels |
 | Diffuse receiver lookup | `forward/shaders/receiver-lighting.glsl`: existing surface/probe/live-GI behavior |
 | CPU ownership policy | `forward/lighting_plan.h`: resolve baked/live-GI ownership and mixed-light selection |
-| Preset | `forward/presets.h`, F12 Rendering panel: Source 2 / derived Custom |
+| Techniques / preset | `forward/techniques.h`, `forward/presets.h`, Rendering panel: component selectors and Source 2 / derived Custom |
 | Reflection lighting | `forward/probes/normalization.*`, `forward/shaders/probes.glsl`: shared capture-reference normalization before SSR |
 | Packed transport | `forward/shaders/reflection-guide.glsl`: normal/roughness/irradiance in the existing guide |
 
@@ -82,8 +82,8 @@ model-chart preferences. A zero cubemap budget is re-enabled with the default
 positive budget. Model charts stay enabled in default profiles, but preset
 application preserves manual-density users' disabled model-chart preference.
 Existing component keys persist settings; the displayed preset is derived from
-them. The implementation still uses legacy controls underneath, not independent
-provider enums with a general capability/resource graph.
+them. Typed component selections now drive presets and UI through those existing keys.
+A general capability/resource graph and independent provider lifecycle are not implemented.
 
 Normalization blends capture reference luminance with the same spatial, priority
 and feather weights as radiance. Explicit assignments use their own layer's
@@ -104,7 +104,7 @@ That fix does not establish fitted Construct outdoor coverage.
 
 ## What remains unfinished
 
-1. Finish independent technique/provider selection behind these contracts. Support
+1. Finish independent provider resource ownership behind the typed technique selections. Support
    providers owning several services together without double-counting lighting.
    Migrate overlapping controls deliberately; preserve existing saved settings.
 2. Evaluate HLSL/Slang and single-file shader authoring. Build opt-in adapter shader
@@ -115,7 +115,7 @@ That fix does not establish fitted Construct outdoor coverage.
    fix. Forward+ and PT still use different exposure metering policies; do not
    assume shared display code guarantees matching illumination/exposure.
 4. Qualify packed guides and normalization across scenes, profile bandwidth/ALU
-   costs, exercise F12 interactively, and prepare a protected-settings-preserving
+   costs, exercise the configured panel shortcut interactively, and prepare a protected-settings-preserving
    package. No new default performance gain or visual parity is claimed.
 5. Continue lightmap/probe quality, Construct room/seam defects, outdoor cubemap
    coverage, saturated probe-budget selection, bake times and runtime profiling.

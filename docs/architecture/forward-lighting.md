@@ -49,8 +49,8 @@ entry point. `ShadingResult` contains scene-linear colour and reflection guides;
 pass adapters retain coverage/depth policy and output attachment writes. Baked
 receiver coordinates, chart bounds and light identities are explicit inputs to
 local-light evaluation, shared with the specialized water path. These are internal
-contracts, not a stable public shader ABI. Provider selection and runtime material
-program loading remain pending.
+contracts, not a stable public shader ABI. Independent provider lifecycles and runtime
+material program loading remain pending.
 
 Reflection normalization uses the existing RGBA16F guide: octahedral world normal
 in XY, roughness in Z, receiver irradiance/pi luminance in W. Negative roughness
@@ -119,14 +119,19 @@ ownership and mixed-light selection without mutating requested quality or custom
 bake settings. Bake publication and authored reflection composition share one
 resolved configuration per recording. `presets::source2()` now constructs the
 runtime default profile under the name Source 2, preserving its previous values.
-Independent provider selection, preset settings/UI and explicit Custom overrides
-are being migrated incrementally. The F12 Rendering panel now offers Source 2
+Typed technique selection now lives in `techniques.h`: static direct lighting,
+diffuse transport, reflection fallback, SSR and dynamic shadow requests are separate
+fields. The default preset and UI use this shared selection layer. The F12 Rendering panel now offers Source 2
 selection and derives Custom from individual technique changes. Selecting Source 2
 preserves quality, display, cache and authored-volume preferences. Existing component
 keys remain the persisted representation; no separate preset state can contradict
 them. A disabled zero cubemap budget is restored to the default positive budget
-when the preset enables cubemaps. Independent provider enums and shader-module
-selection remain pending.
+when the preset enables cubemaps. Existing supported technique combinations can
+be selected without exposing storage details to materials. This is not a generic
+provider registry: bake captures, surface fields and probe fields still share a
+controller and resource lifecycle. Fully independent resource ownership and
+shader-module composition remain pending. Disabled baking also stops cubemap
+capture updates; the UI explains that coupling rather than implying independence.
 
 Preset application preserves model lightmap chart eligibility as a receiver-coverage
 preference. The default profile enables it, but manual-density configurations may

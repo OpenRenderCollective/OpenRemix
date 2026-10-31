@@ -1,5 +1,5 @@
 #pragma once
-#include "forward/options.h"
+#include "forward/techniques.h"
 #include <string_view>
 
 namespace remix::forward::presets {
@@ -9,17 +9,8 @@ namespace remix::forward::presets {
   // survive preset application. The legacy zero capture budget also disables
   // cubemaps, so enabling them needs a default budget when no positive one exists.
   inline void applySource2(Options &options) {
-    options.bakedLighting = true;
-    options.rtGI = false;
-    options.rtReflections = false;
-    options.ssr = true;
-    options.shadows = true;
-    options.localShadows = true;
-    options.baking.enabled = true;
-    options.baking.directDiffuse = true;
+    techniques::apply(options, techniques::Selection{});
     options.baking.styledIndirect = true;
-    if (!options.baking.reflectionProbes)
-      options.baking.reflectionProbes = bake::Config{}.reflectionProbes;
   }
 
   inline bool isSource2(const Options &options) {

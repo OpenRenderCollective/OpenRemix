@@ -132,7 +132,15 @@ namespace remix {
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Uses the material's tint, absorption and refractive index.\n"
                           "Disabling restores compatibility water rendering.");
-      ui::Checkbox("Hardware ray-traced GI", &forward.rtGI);
+      auto selectedTechniques = remix::forward::techniques::requested(forward);
+      int diffuseTechnique = int(selectedTechniques.diffuse);
+      if (ui::Combo("Diffuse lighting", &diffuseTechnique,
+                    "Surface lightmaps + volume probes\0Live ray-query GI\0Disabled\0"))
+        remix::forward::techniques::selectDiffuse(forward,
+            remix::forward::techniques::Diffuse(diffuseTechnique));
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Selects diffuse transport independently of material shading.\n"
+                          "Baking currently also supplies cubemap captures; disabling it disables those updates.");
       if (forward.rtGI) {
         if (!statistics.rayGI.available)
           ImGui::TextWrapped("Fragment ray queries unavailable; using baked indirect lighting.");
@@ -142,10 +150,14 @@ namespace remix {
         if (ui::SliderInt("GI secondary bounces", &bounces, 1, 8)) forward.rtGIBounces = uint32_t(bounces);
         ui::DragFloat("GI ray distance (m)", &forward.rtGIDistance, 1, .1f, 10000);
       }
-      ui::Checkbox("Hardware ray-traced reflections", &forward.rtReflections);
+      int reflectionTechnique = int(remix::forward::techniques::requested(forward).reflections);
+      if (ui::Combo("Reflection fallback", &reflectionTechnique,
+                    "Disabled\0Parallax cubemaps\0Ray queries\0Ray queries + cubemaps\0"))
+        remix::forward::techniques::selectReflections(forward,
+            remix::forward::techniques::Reflections(reflectionTechnique));
       if (forward.rtReflections) {
         if (!statistics.rayReflections.available)
-          ImGui::TextWrapped("Hardware ray queries unavailable; using SSR and reflection probes.");
+          ImGui::TextWrapped("Hardware ray queries unavailable; using enabled fallback techniques.");
         else if (statistics.rayReflections.status[0]) {
           ImGui::TextWrapped("%s", statistics.rayReflections.status);
           ImGui::Text("Reflection ray slots: %u | scene builds: %u", statistics.rayReflections.rays,
@@ -156,13 +168,15 @@ namespace remix {
         if (ui::SliderInt("Hardware reflection bounces", &bounces, 1, 8))
           forward.rtReflectionBounces = uint32_t(bounces);
       }
-      ui::Checkbox("Bake static lighting on map load", &forward.baking.enabled);
       ui::Checkbox("Cache baked lighting on disk", &forward.baking.diskCache);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Reuses finished lighting when map inputs, materials, quality and GPU match.\n"
                           "Cache changes affect subsequent map loads; disabling keeps the active lighting.");
-      ui::Checkbox("Bake per-light direct diffuse", &forward.baking.directDiffuse);
-      ui::Checkbox("Use baked lighting", &forward.bakedLighting);
+      int directTechnique = int(remix::forward::techniques::requested(forward).direct);
+      if (ui::Combo("Static direct lighting", &directTechnique,
+                    "Analytic\0Attributed bake\0Baked diffuse + mixed shadows\0"))
+        remix::forward::techniques::selectDirect(forward,
+            remix::forward::techniques::Direct(directTechnique));
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Uses baked diffuse for fixed lights and reduces their per-frame work.\n"
                           "Lightmaps and probes provide diffuse; selected highlights and moving shadows stay live.\n"
@@ -171,7 +185,7 @@ namespace remix {
         ImGui::TextWrapped("Fixed-light diffuse comes from lightmaps and probes. "
                            "Other reflections still use the enabled reflection effects.");
         if (!forward.baking.enabled)
-          ImGui::TextWrapped("Enable map baking to use baked lighting.");
+          ImGui::TextWrapped("Select surface lightmaps + volume probes to use baked lighting.");
         else if (!forward.baking.directDiffuse)
           ImGui::TextWrapped("Enable baked direct diffuse to use baked lighting.");
         else if (forward.rtGI && statistics.rayGI.available)
