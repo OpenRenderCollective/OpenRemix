@@ -24,6 +24,7 @@
 #include "scene/types.h"
 #include <remix/remix_native_ext.h>
 #if REMIX_HAS_USD
+#include "usd/capture.h"
 #include "usd/mods.h"
 #endif
 #include "api/entrypoints.h"
@@ -81,6 +82,8 @@ namespace remix::api {
     }
     return resourceCall([&](auto &raster) {
 #if REMIX_HAS_USD
+      // Recorded before mods replace it: captures keep the game's own hashes.
+      remix::usd::captureInstance(*info);
       const auto *replacement = static_cast<const remixapi_InstanceInfoReplacementHashEXT *>(
           remix::scene::extension(info->pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_REPLACEMENT_HASH_EXT));
       // A halo source outlines the submitted mesh: a mod's replacement (and its
@@ -121,6 +124,7 @@ namespace remix::api {
       return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
     return resourceCall([&](auto &resources) {
 #if REMIX_HAS_USD
+      remix::usd::captureLight(handle);
       if (remix::usd::modLight(resources, handle))
         return;
 #endif

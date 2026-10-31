@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <unordered_map>
 #include <cstdio>
 #include <limits>
 #include <numeric>
@@ -188,6 +189,15 @@ namespace remix::scene {
       return;
     m_clusterSize = size;
     m_nodes.clear(); // the next update builds (Initial)
+    m_due = 0;
+  }
+
+  void LightBvh::setPowerExponent(float exponent) {
+    exponent = std::clamp(exponent, .25f, 1.f);
+    if (exponent == m_powerExponent)
+      return;
+    m_powerExponent = exponent;
+    m_nodes.clear();
     m_due = 0;
   }
 
@@ -657,6 +667,14 @@ namespace remix::scene {
   void LightBvh::build(std::vector<SphereLight> statics, std::vector<uint64_t> staticStamps,
                        std::vector<uint64_t> staticSeen, std::vector<SphereLight> dynamics,
                        std::vector<uint64_t> dynamicStamps, std::vector<uint64_t> dynamicSeen, Reason reason) {
+    // A light's identity across builds (leafRemap).
+    const auto lightKey = [](const SphereLight &light) {
+      return light.id * 4 + light.triangle;
+    };
+    std::vector<uint64_t> oldLeaves(m_nodes.size(), 0);
+    for (size_t i = 0; i < m_nodes.size(); ++i)
+      if (m_nodes[i].links[3] == 1 && m_nodes[i].links[2] < m_lights.size())
+        oldLeaves[i] = lightKey(m_lights[m_nodes[i].links[2]]);
     m_split |= !dynamics.empty();
     m_staticReal = uint32_t(statics.size());
     m_dynamicReal = uint32_t(dynamics.size());
@@ -718,6 +736,24 @@ namespace remix::scene {
     }
     m_builtAt = m_update;
     m_structure = m_changing;
+    m_leafRemap.clear();
+    if (!oldLeaves.empty()) {
+      std::unordered_map<uint64_t, uint32_t> leafOf;
+      leafOf.reserve(m_lights.size());
+      for (uint32_t i = 0; i < m_nodes.size(); ++i)
+        if (m_nodes[i].links[3] == 1)
+          for (uint32_t e = m_nodes[i].links[2], end = e + std::max(m_nodes[i].links[1], 1u);
+               e < end && e < m_lights.size(); ++e)
+            if (m_lights[e].id)
+              leafOf.emplace(lightKey(m_lights[e]), i);
+      m_leafRemap.assign(oldLeaves.size(), 0);
+      for (size_t i = 0; i < oldLeaves.size(); ++i)
+        if (oldLeaves[i]) {
+          const auto found = leafOf.find(oldLeaves[i]);
+          if (found != leafOf.end())
+            m_leafRemap[i] = found->second + 1;
+        }
+    }
     ++builds;
     ++buildReasons[lastBuildReason = reason];
   }
@@ -896,7 +932,11 @@ namespace remix::scene {
       // A leaf's emitters: bounds of the lit ones (all when none is, as for
       // internal nodes below), summed power, and each one's share of it.
       const uint32_t first = node.links[2], count = std::max(node.links[1], 1u);
-      const auto power = lightPower;
+      const double exponent = m_powerExponent;
+      const auto power = [exponent](const SphereLight &light) {
+        const double p = lightPower(light);
+        return exponent == 1 ? p : std::pow(p, exponent);
+      };
       double total = 0;
       for (uint32_t e = first; e < first + count; ++e)
         total += power(m_lights[e]);

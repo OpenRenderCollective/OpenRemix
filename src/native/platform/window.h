@@ -23,9 +23,11 @@
 #pragma once
 
 #include <string>
+#include <utility>
 #include <thread>
 #include <vector>
 #include <deque>
+#include <utility>
 
 #include <SDL3/SDL.h>
 #if !REMIX_METAL
@@ -82,12 +84,27 @@ namespace remix {
     void setMenuShortcut(remixapi_Key key, uint32_t modifiers);
     // The next key pressed, with the modifiers held, becomes the shortcut
     // (takeCapturedMenuShortcut); Escape keeps the current one.
-    void captureMenuShortcut() { m_capturingMenu = true; }
+    void captureMenuShortcut() { m_capturingMenu = true, m_capturingScene = m_capturingScreenshot = false; }
     void cancelMenuShortcutCapture() { m_capturingMenu = false; }
-    bool capturingMenuShortcut() const { return m_capturingMenu; }
+    bool capturingMenuShortcut() const { return m_capturingMenu && !m_capturingScene; }
     bool takeCapturedMenuShortcut(remixapi_Key &key, uint32_t &modifiers);
     // Whether the shortcut was pressed an odd number of times since the last call.
     bool takeMenuToggle();
+    // The USD scene capture shortcut (usd/capture.h), kept like the panel's:
+    // set (no key: none), taken from the next key pressed, and its presses.
+    void setSceneCaptureShortcut(remixapi_Key key, uint32_t modifiers);
+    void captureSceneCaptureShortcut() { m_capturingMenu = m_capturingScene = true, m_capturingScreenshot = false; }
+    bool capturingSceneCaptureShortcut() const { return m_capturingMenu && m_capturingScene; }
+    bool takeCapturedSceneCaptureShortcut(remixapi_Key &key, uint32_t &modifiers);
+    bool takeSceneCapturePress() { return std::exchange(m_scenePresses, 0) != 0; }
+    // The screenshot shortcut, kept from ImGui and the host the same way; its
+    // presses are counted (takeScreenshotPresses).
+    void setScreenshotShortcut(remixapi_Key key, uint32_t modifiers);
+    void captureScreenshotShortcut() { m_capturingScreenshot = true, m_capturingMenu = m_capturingScene = false; }
+    void cancelScreenshotShortcutCapture() { m_capturingScreenshot = false; }
+    bool capturingScreenshotShortcut() const { return m_capturingScreenshot; }
+    bool takeCapturedScreenshotShortcut(remixapi_Key &key, uint32_t &modifiers);
+    uint32_t takeScreenshotPresses() { return std::exchange(m_screenshotPresses, 0u); }
     static std::string shortcutName(remixapi_Key key, uint32_t modifiers);
     void requestClose() { m_closeRequested = true; }
 
@@ -122,10 +139,13 @@ namespace remix {
     void queueInput(const remixapi_InputEvent &event);
     void processInput(const SDL_Event &event);
 
+    static bool SDLCALL eventFilter(void *userdata, SDL_Event *event);
+
     SDL_Window *m_window = nullptr;
     std::thread::id m_ownerThread;
     bool m_ownsVideoSubsystem = false;
     bool m_embedded = false;
+    bool m_adoptedWindow = false;
     bool m_appInBackground = false;
     mutable void *m_surfaceWindow = nullptr;
 #if REMIX_METAL
@@ -155,6 +175,14 @@ namespace remix {
     remixapi_Key m_capturedKey{};
     uint32_t m_capturedModifiers = 0;
     uint32_t m_menuToggles = 0;
+    SDL_Scancode m_sceneScancode = SDL_SCANCODE_UNKNOWN;
+    uint32_t m_sceneModifiers = 0, m_scenePresses = 0;
+    // The next key pressed becomes the scene capture shortcut instead.
+    bool m_capturingScene = false, m_sceneCaptured = false;
+    SDL_Scancode m_screenshotScancode = SDL_SCANCODE_F12;
+    uint32_t m_screenshotModifiers = MenuAlt;
+    bool m_capturingScreenshot = false, m_screenshotCaptured = false;
+    uint32_t m_screenshotPresses = 0;
     mutable std::string m_lastError;
   };
 

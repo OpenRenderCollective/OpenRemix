@@ -229,6 +229,20 @@ pkg_config_libdir = '{prefix}/lib/pkgconfig'
     cnn.mkdir(parents=True, exist_ok=True)
     shutil.copy2(native / 'upscale/cnn/nvngx_dlssd.dll', cnn / 'nvngx_dlssd.dll')
     shutil.copy2(root / 'third_party/dlss/LICENSE-310.2.1.txt', cnn / 'LICENSE.txt')
+    # FSR: AMD's signed ffx-api DLLs in fidelityfx/ (upscale/ffx_library.cpp).
+    fidelityfx = output / 'fidelityfx'
+    fidelityfx.mkdir(parents=True, exist_ok=True)
+    for name in ['amd_fidelityfx_loader_vk.dll', 'amd_fidelityfx_upscaler_vk.dll',
+                 'amd_fidelityfx_framegeneration_vk.dll']:
+        shutil.copy2(native / 'upscale' / name, fidelityfx / name)
+    shutil.copy2(root / 'third_party/fidelityfx/FidelityFX-SDK/Kits/FidelityFX/docs/license.md',
+                 fidelityfx / 'LICENSE.md')
+    # XeSS: Intel's signed libxess.dll in xess/ (upscale/xess.cpp).
+    xess = output / 'xess'
+    xess.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(native / 'upscale/libxess.dll', xess / 'libxess.dll')
+    for name in ['LICENSE.txt', 'third-party-programs.txt']:
+        shutil.copy2(root / 'third_party/xess/xess' / name, xess / name)
     print('Windows runtime:', output)
 
 

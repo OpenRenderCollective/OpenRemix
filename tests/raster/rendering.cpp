@@ -78,19 +78,11 @@ namespace {
     Target(uint32_t width = 64, uint32_t height = 64, bool ray = false) : extent{width,height}, hardwareRay(ray) {
       const bool validation = std::getenv("REMIX_VULKAN_VALIDATION");
       const char *layer = "VK_LAYER_KHRONOS_validation";
-      const char *extensions[] = {
-          VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
-#if defined(__APPLE__)
-          VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME,
-#endif
-      };
+      const char *extensions[] = {VK_EXT_DEBUG_UTILS_EXTENSION_NAME};
       const VkApplicationInfo app = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
                                      .pApplicationName = "Remix raster readback",
                                      .apiVersion = ray ? VK_API_VERSION_1_2 : VK_API_VERSION_1_1};
       const VkInstanceCreateInfo create = {.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-#if defined(__APPLE__)
-                                           .flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR,
-#endif
                                            .pApplicationInfo = &app,
                                            .enabledLayerCount = validation ? 1u : 0u,
                                            .ppEnabledLayerNames = &layer,
@@ -129,9 +121,6 @@ namespace {
                                          .queueFamilyIndex = family,
                                          .queueCount = 1,
                                          .pQueuePriorities = &priority};
-#if defined(__APPLE__)
-      const char *portability = "VK_KHR_portability_subset";
-#endif
       VkPhysicalDeviceRayQueryFeaturesKHR query{
           .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR, .rayQuery = VK_TRUE};
       VkPhysicalDeviceAccelerationStructureFeaturesKHR acceleration{
@@ -147,10 +136,6 @@ namespace {
           .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
           .queueCreateInfoCount = 1,
           .pQueueCreateInfos = &q,
-#if defined(__APPLE__)
-          .enabledExtensionCount = 1,
-          .ppEnabledExtensionNames = &portability,
-#endif
       };
       if (ray) {
         d.pNext = &features;

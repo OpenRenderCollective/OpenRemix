@@ -147,6 +147,13 @@ namespace remix::usd {
     }
   } // namespace
 
+  const char *categoryAttribute(uint32_t bit) {
+    for (const auto &category : categories)
+      if (category.bit == bit)
+        return category.attribute;
+    return nullptr;
+  }
+
   CaptureCategories::CaptureCategories(const UsdStageRefPtr &stage, Json &warnings) {
     Options options;
     auto apply = [&](const Options &layer) {

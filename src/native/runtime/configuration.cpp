@@ -34,6 +34,12 @@
 #include <cmath>
 
 namespace remix {
+#if REMIX_HAS_USD
+  // Retained BC blocks are read only by USD captures.
+  constexpr bool kCaptures = true;
+#else
+  constexpr bool kCaptures = false;
+#endif
   remixapi_ErrorCode RemixNativeRuntime::selectBackend(const char *value) {
     auto next = m_profiles.current();
     if (config::set(next, "rtx.native.backend", value) != config::SetResult::Success)
@@ -55,6 +61,8 @@ namespace remix {
       return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
     // Texture creation needs no frame boundary: later CreateTexture calls see it.
     m_raster.setKeepCompressedTextures(m_profiles.current().compressedTextures);
+    scene::retainCompressedUploads = kCaptures && m_profiles.current().captureRetainTextureData;
+    scene::sceneUpAxis = m_profiles.current().zUp ? 2 : 1;
     m_raster.setRefreshGeometry(m_profiles.current().refreshGeometry);
     // The host's next submission already sees it (else from the next frame).
     m_hostPasses.setEnabled(m_profiles.current().hostPasses);
@@ -85,6 +93,8 @@ namespace remix {
       m_profiles.edit(next);
     }
     m_raster.setKeepCompressedTextures(m_profiles.current().compressedTextures);
+    scene::retainCompressedUploads = kCaptures && m_profiles.current().captureRetainTextureData;
+    scene::sceneUpAxis = m_profiles.current().zUp ? 2 : 1;
     m_raster.setRefreshGeometry(m_profiles.current().refreshGeometry);
     m_hostPasses.setEnabled(m_profiles.current().hostPasses);
     return REMIXAPI_ERROR_CODE_SUCCESS;
@@ -110,6 +120,7 @@ namespace remix {
     out.upscaler = in.upscaler;
     out.dlssQuality = in.dlssQuality;
     out.fsrQuality = in.fsrQuality;
+    out.xessQuality = in.xessQuality;
     out.dlssRayReconstruction = in.dlssRayReconstruction;
     out.sharc = in.sharc;
     out.sharcDebug = in.sharcDebug;
@@ -156,6 +167,8 @@ namespace remix {
     const auto &settings = m_profiles.current();
     m_requestedBackend = settings.backend;
     m_raster.setKeepCompressedTextures(settings.compressedTextures);
+    scene::retainCompressedUploads = kCaptures && settings.captureRetainTextureData;
+    scene::sceneUpAxis = settings.zUp ? 2 : 1;
     m_raster.setRefreshGeometry(settings.refreshGeometry);
     m_raster.syncHiddenTextures(settings.hideTextures);
     // Read by the frame's recording (the render thread with asynchronous presentation).
@@ -183,6 +196,7 @@ namespace remix {
     const auto ngxCapabilities = m_ngx->capabilities();
     const bool needsNgx = settings.trace.upscaler != upscale::Mode::Off &&
                           settings.trace.upscaler != upscale::Mode::Fsr31 &&
+                          settings.trace.upscaler != upscale::Mode::Xess &&
                           ngxCapabilities.sdk &&
                           (!ngxCapabilities.initializationComplete ||
                            ngxCapabilities.sr || ngxCapabilities.rr);

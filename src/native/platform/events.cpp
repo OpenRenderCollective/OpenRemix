@@ -35,6 +35,10 @@ namespace remix {
       return threadStatus;
     }
 
+    if (m_adoptedWindow) {
+      return REMIXAPI_ERROR_CODE_SUCCESS;
+    }
+
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
       if (menuShortcut(event))
@@ -68,7 +72,46 @@ namespace remix {
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
 
+  bool SDLCALL RemixSdlWindow::eventFilter(void *userdata, SDL_Event *event) {
+    auto *self = static_cast<RemixSdlWindow *>(userdata);
+    if (!self || !event) {
+      return true;
+    }
+    if (self->menuShortcut(*event)) {
+      return false;
+    }
+
+    if (event->type == SDL_EVENT_QUIT || (event->type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
+                                          event->window.windowID == SDL_GetWindowID(self->m_window))) {
+      self->m_closeRequested = true;
+    } else if (event->type == SDL_EVENT_MOUSE_MOTION && event->motion.windowID == SDL_GetWindowID(self->m_window)) {
+      self->m_relativeX += event->motion.xrel;
+      self->m_relativeY += event->motion.yrel;
+    } else if (event->type == SDL_EVENT_MOUSE_WHEEL && event->wheel.windowID == SDL_GetWindowID(self->m_window)) {
+      self->m_wheelX += event->wheel.x;
+      self->m_wheelY += event->wheel.y;
+    }
+
+    bool handled = false;
+    if (self->m_eventHandler != nullptr) {
+      handled = self->m_eventHandler(event, self->m_eventUserData);
+    }
+    self->processInput(*event);
+
+    if (self->m_adoptedWindow && handled && (self->m_guiWantsMouse || self->m_guiWantsKeyboard)) {
+      return false;
+    }
+    return true;
+  }
+
   void RemixSdlWindow::setEventHandler(EventHandler handler, void *userData) {
+    if (m_adoptedWindow) {
+      if (m_eventHandler == nullptr && handler != nullptr) {
+        SDL_AddEventWatch(eventFilter, this);
+      } else if (m_eventHandler != nullptr && handler == nullptr) {
+        SDL_RemoveEventWatch(eventFilter, this);
+      }
+    }
     m_eventHandler = handler;
     m_eventUserData = userData;
   }
@@ -100,6 +143,37 @@ namespace remix {
     if (!m_menuCaptured)
       return false;
     m_menuCaptured = false;
+    key = m_capturedKey;
+    modifiers = m_capturedModifiers;
+    return true;
+  }
+
+  void RemixSdlWindow::setSceneCaptureShortcut(remixapi_Key key, uint32_t modifiers) {
+    m_sceneScancode = key ? toScancode(key) : SDL_SCANCODE_UNKNOWN;
+    m_sceneModifiers = modifiers & (MenuAlt | MenuCtrl | MenuShift | MenuGui);
+  }
+
+  bool RemixSdlWindow::takeCapturedSceneCaptureShortcut(remixapi_Key &key, uint32_t &modifiers) {
+    if (!m_sceneCaptured)
+      return false;
+    m_sceneCaptured = false;
+    key = m_capturedKey;
+    modifiers = m_capturedModifiers;
+    return true;
+  }
+
+  void RemixSdlWindow::setScreenshotShortcut(remixapi_Key key, uint32_t modifiers) {
+    const auto scancode = toScancode(key);
+    if (scancode == SDL_SCANCODE_UNKNOWN)
+      return;
+    m_screenshotScancode = scancode;
+    m_screenshotModifiers = modifiers & (MenuAlt | MenuCtrl | MenuShift | MenuGui);
+  }
+
+  bool RemixSdlWindow::takeCapturedScreenshotShortcut(remixapi_Key &key, uint32_t &modifiers) {
+    if (!m_screenshotCaptured)
+      return false;
+    m_screenshotCaptured = false;
     key = m_capturedKey;
     modifiers = m_capturedModifiers;
     return true;
@@ -154,16 +228,21 @@ namespace remix {
       return scancode == m_swallowedKey;
     m_swallowText = false; // A key's text follows its press.
     const bool modifier = scancode >= SDL_SCANCODE_LCTRL && scancode <= SDL_SCANCODE_RGUI;
-    if (m_capturingMenu && !modifier) {
-      m_capturingMenu = false;
+    if ((m_capturingMenu || m_capturingScreenshot) && !modifier) {
       const auto key = fromScancode(scancode);
       if (scancode != SDL_SCANCODE_ESCAPE && key) {
         m_capturedKey = key;
         m_capturedModifiers = menuModifiers(event.key.mod);
-        m_menuCaptured = true;
+        (m_capturingScreenshot ? m_screenshotCaptured : m_capturingScene ? m_sceneCaptured : m_menuCaptured) = true;
       }
+      m_capturingMenu = m_capturingScene = m_capturingScreenshot = false;
     } else if (scancode == m_menuScancode && menuModifiers(event.key.mod) == m_menuModifiers) {
       ++m_menuToggles;
+    } else if (m_sceneScancode != SDL_SCANCODE_UNKNOWN && scancode == m_sceneScancode &&
+               menuModifiers(event.key.mod) == m_sceneModifiers) {
+      ++m_scenePresses;
+    } else if (scancode == m_screenshotScancode && menuModifiers(event.key.mod) == m_screenshotModifiers) {
+      ++m_screenshotPresses;
     } else {
       return false;
     }

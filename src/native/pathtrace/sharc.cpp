@@ -2,6 +2,7 @@
 #include "pathtrace/shader_code.h"
 #include "pathtrace/sharc_policy.h"
 #include "runtime/pipelines.h"
+#include <array>
 #include <future>
 #include <thread>
 #include <utility>
@@ -60,17 +61,21 @@ namespace remix {
         requests.push_back(request);
     if (requests.empty())
       return;
-    // Compile ordinary local lighting first, with the shadow early-out
-    // setting so the source is the pipeline in use; guidance and the scene's
-    // other variants follow (prewarmLightingVariants).
-    // A consumer of the separate indirect pass is specialized so from the
-    // start (its inline variant is the fallback).
-    const VkBool32 baseConstants[2][3] = {{VK_FALSE, VkBool32(lightingOptions.shadowEarlyOut), VK_FALSE},
-                                          {VK_FALSE, VkBool32(lightingOptions.shadowEarlyOut), VK_TRUE}};
+    // Compile the source first, with the shadow early-out setting so it is
+    // the pipeline in use (light sampling is pushed per dispatch); the split
+    // roles follow (prewarmLightingVariants). A stage that can guide is
+    // specialized so (guidingCapable). A consumer of the separate indirect
+    // pass is specialized so from the start (its inline variant is the
+    // fallback).
     const VkSpecializationMapEntry baseEntries[] = {{1, 0, sizeof(VkBool32)}, {12, sizeof(VkBool32), sizeof(VkBool32)},
                                                     {9, 2 * sizeof(VkBool32), sizeof(VkBool32)}};
-    const VkSpecializationInfo baseSpecializations[2] = {{3, baseEntries, sizeof(baseConstants[0]), baseConstants[0]},
-                                                         {3, baseEntries, sizeof(baseConstants[1]), baseConstants[1]}};
+    std::vector<std::array<VkBool32, 3>> baseConstants;
+    for (const auto &request : requests)
+      baseConstants.push_back({VkBool32(request.supportsGuiding), VkBool32(lightingOptions.shadowEarlyOut),
+                               VkBool32(request.separateIndirect)});
+    std::vector<VkSpecializationInfo> baseSpecializations;
+    for (const auto &constants : baseConstants)
+      baseSpecializations.push_back({3, baseEntries, sizeof(constants), constants.data()});
     // Embedded stages decompress on first use; decode the batch concurrently.
     std::vector<std::future<trace::ShaderCode>> decoding;
     for (const auto &request : requests)
@@ -97,7 +102,7 @@ namespace remix {
       infos[i] = {.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
                   .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
                             .stage = VK_SHADER_STAGE_COMPUTE_BIT, .module = modules[i], .pName = "main",
-                            .pSpecializationInfo = &baseSpecializations[requests[i].separateIndirect]},
+                            .pSpecializationInfo = &baseSpecializations[i]},
                   .layout = requests[i].layout};
     }
     auto describe = [&](size_t i) {
@@ -110,6 +115,17 @@ namespace remix {
       entry.variants = requests[i].variants;
       return entry;
     };
+    if (prewarmingLighting) {
+      // Another configuration's pipelines (prewarmTemporalConfigurations):
+      // compiled on idle workers, kept by the pipeline service, never awaited.
+      pipeline::prefetchComputePipelines(device, uint32_t(infos.size()), infos.data(), true);
+      for (size_t i = 0; i < requests.size(); ++i)
+        if (requests[i].variants) {
+          auto source = describe(i);
+          prewarmLightingVariants(source, true);
+        }
+      return;
+    }
     if (deferLighting) {
       // A background request (the multi-sheet pass) compiles on idle workers
       // and is not awaited: the frame asks for it again when it needs it.

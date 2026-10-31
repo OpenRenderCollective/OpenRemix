@@ -179,6 +179,42 @@ struct Graphics {
 } // namespace
 struct Service::Impl {
   VkDevice device;
+  // REMIX_PIPELINE_STATISTICS (VK_KHR_pipeline_executable_properties):
+  // compute compiles capture the driver's statistics for the report.
+  bool statistics = false;
+  PFN_vkGetPipelineExecutablePropertiesKHR executableProperties{};
+  PFN_vkGetPipelineExecutableStatisticsKHR executableStatistics{};
+  // "name value" pairs of each executable's statistics, executables separated by " | ".
+  std::string describe(VkPipeline handle) const {
+    std::string text;
+    VkPipelineInfoKHR info{.sType = VK_STRUCTURE_TYPE_PIPELINE_INFO_KHR, .pipeline = handle};
+    uint32_t count = 0;
+    if (!executableProperties || executableProperties(device, &info, &count, nullptr) != VK_SUCCESS)
+      return text;
+    for (uint32_t n = 0; n < count; ++n) {
+      VkPipelineExecutableInfoKHR executable{.sType = VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_INFO_KHR,
+                                             .pipeline = handle, .executableIndex = n};
+      uint32_t entries = 0;
+      if (executableStatistics(device, &executable, &entries, nullptr) != VK_SUCCESS)
+        continue;
+      std::vector<VkPipelineExecutableStatisticKHR> values(
+          entries, {.sType = VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_STATISTIC_KHR});
+      if (executableStatistics(device, &executable, &entries, values.data()) != VK_SUCCESS)
+        continue;
+      if (!text.empty())
+        text += " |";
+      for (const auto &v : values) {
+        text += std::string(" ") + v.name + "=";
+        switch (v.format) {
+        case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_BOOL32_KHR: text += v.value.b32 ? "1" : "0"; break;
+        case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_INT64_KHR: text += std::to_string(v.value.i64); break;
+        case VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR: text += std::to_string(v.value.u64); break;
+        default: text += std::to_string(v.value.f64); break;
+        }
+      }
+    }
+    return text;
+  }
   VkPipelineCache cache{};
   CacheIdentity identity;
   std::filesystem::path path;
@@ -209,8 +245,7 @@ struct Service::Impl {
   struct Record {
     double queued = 0, started = 0, finished = 0;
     bool hit = false, failed = false;
-    std::string name;
-    std::string executables;
+    std::string name, statistics, executables;
   };
   std::vector<Record> records;
   std::vector<std::pair<double, std::string>> events;
@@ -240,6 +275,7 @@ struct Service::Impl {
   std::mutex saveMutex;
   std::atomic<uint64_t> saveRequests{0};
   uint64_t savedRequest = 0; // guarded by saveMutex
+  bool staleRemoved = false; // guarded by saveMutex
   PreparationQueue queue;
   explicit Impl(VkDevice value) : device(value), queue(compilerThreads()) {}
   // Independent pipelines compile concurrently; drivers compile each one on
@@ -330,6 +366,7 @@ struct Service::Impl {
             std::lock_guard lock(mutex);
             records[record].started = since();
           }
+          bool hit = false;
           VkPipelineCreationFeedback feedback{};
           VkPipelineCreationFeedbackCreateInfo info{
               .sType = VK_STRUCTURE_TYPE_PIPELINE_CREATION_FEEDBACK_CREATE_INFO,
@@ -337,7 +374,7 @@ struct Service::Impl {
           const auto status =
               compile(&result->handle, stats.feedback ? &info : nullptr);
           auto executables = status == VK_SUCCESS && captureExecutables
-              ? executableStatistics(device, result->handle) : std::string{};
+              ? remix::pipeline::executableStatistics(device, result->handle) : std::string{};
           {
             std::lock_guard lock(mutex);
             ++stats.completed;
@@ -354,11 +391,14 @@ struct Service::Impl {
             entry.executables = std::move(executables);
             entry.finished = since();
             entry.failed = status != VK_SUCCESS;
+            if (status == VK_SUCCESS && statistics)
+              entry.statistics = describe(result->handle);
             if (feedback.flags & VK_PIPELINE_CREATION_FEEDBACK_VALID_BIT) {
               stats.driverNanoseconds += feedback.duration;
               entry.hit = feedback.flags &
                           VK_PIPELINE_CREATION_FEEDBACK_APPLICATION_PIPELINE_CACHE_HIT_BIT;
               stats.cacheHits += entry.hit;
+              hit = entry.hit;
             }
           }
           if (status != VK_SUCCESS) {
@@ -367,7 +407,9 @@ struct Service::Impl {
             result->handle = {};
             throw status;
           }
-          save();
+          // A cache hit added nothing to save.
+          if (!hit)
+            scheduleSave();
         }, kind);
         pipelines.emplace(std::move(key), result);
       }
@@ -394,10 +436,21 @@ struct Service::Impl {
     *out = result->handle;
     return VK_SUCCESS;
   }
-  void save() noexcept {
+  // Its own job, so a pipeline's waiter never waits for the file; one save
+  // covers every compile finished before a worker takes it.
+  void scheduleSave() {
     if (!cache)
       return;
     const uint64_t request = ++saveRequests;
+    queue.request("pipeline cache save " + std::to_string(request),
+                  [this, request] { save(request); },
+                  PreparationQueue::Kind::Parallel);
+  }
+  void save() noexcept {
+    if (cache)
+      save(++saveRequests);
+  }
+  void save(uint64_t request) noexcept {
     std::lock_guard saving(saveMutex);
     if (savedRequest >= request)
       return; // A later save already included this compile.
@@ -405,15 +458,34 @@ struct Service::Impl {
     const double started = since();
     try {
       size_t size = 0;
-      if (vkGetPipelineCacheData(device, cache, &size, nullptr) != VK_SUCCESS ||
-          size > 256ull * 1024 * 1024)
+      if (vkGetPipelineCacheData(device, cache, &size, nullptr) != VK_SUCCESS)
         return;
+      if (size > maxCacheBytes) {
+        // Saving stops here for good, since the cache never shrinks; without
+        // the file the next run starts a cache of only what it compiles.
+        std::error_code ignored;
+        const bool removed = std::filesystem::remove(path, ignored);
+        std::lock_guard lock(mutex);
+        if (removed) {
+          char line[160];
+          std::snprintf(line, sizeof(line),
+                        "cache of %.1f MiB is over the limit; removed it so "
+                        "the next run starts a new one",
+                        size / 1048576.0);
+          events.emplace_back(started, line);
+        }
+        return;
+      }
       std::vector<uint8_t> bytes(size);
       if (vkGetPipelineCacheData(device, cache, &size, bytes.data()) !=
           VK_SUCCESS)
         return;
       bytes.resize(size);
       const bool ok = writeCache(path, identity, bytes);
+      if (ok && !staleRemoved) {
+        staleRemoved = true;
+        removeStaleCaches(path);
+      }
       std::lock_guard lock(mutex);
       stats.cacheWriteFailed = !ok;
       char line[160];
@@ -428,11 +500,18 @@ struct Service::Impl {
   }
 };
 Service::Service(VkDevice device, const VkPhysicalDeviceProperties &p,
-                 bool feedback, bool executableStatistics)
+                 bool feedback, bool statistics)
     : impl(std::make_unique<Impl>(device)) {
   auto &g = *impl;
   g.stats.feedback = feedback;
-  g.captureExecutables = executableStatistics;
+  if (statistics) {
+    g.executableProperties = reinterpret_cast<PFN_vkGetPipelineExecutablePropertiesKHR>(
+        vkGetDeviceProcAddr(device, "vkGetPipelineExecutablePropertiesKHR"));
+    g.executableStatistics = reinterpret_cast<PFN_vkGetPipelineExecutableStatisticsKHR>(
+        vkGetDeviceProcAddr(device, "vkGetPipelineExecutableStatisticsKHR"));
+    g.statistics = g.executableProperties && g.executableStatistics;
+  }
+  g.captureExecutables = g.statistics;
   g.identity = {p.vendorID, p.deviceID, p.driverVersion};
   std::copy_n(p.pipelineCacheUUID, 16, g.identity.uuid.begin());
   std::error_code directoryError;
@@ -786,7 +865,8 @@ enqueueCompute(Service::Impl &g, const VkComputePipelineCreateInfo &info,
                    VkPipelineCreationFeedbackCreateInfo *feedback) {
         recipe->info.stage = recipe->stage.bind();
         recipe->info.pNext = feedback;
-        if (g.captureExecutables) recipe->info.flags |= VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
+        if (g.statistics)
+          recipe->info.flags |= VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
         return vkCreateComputePipelines(g.device, g.cache, 1, &recipe->info,
                                         nullptr, p);
       },

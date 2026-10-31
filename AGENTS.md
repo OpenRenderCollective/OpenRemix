@@ -17,7 +17,15 @@ Keep `public/include/remix` layouts, calling conventions and exports compatible.
 Keep vendor sources/pins in `third_party` and the vendored `include/vulkan` tree unchanged unless
 updating that dependency explicitly. NUMOS (sky) is the git submodule `third_party/numos/numos-sky`,
 pinned in `third_party/numos/upstream.json`; check it out without `--recursive`
-(`git submodule update --init third_party/numos/numos-sky`). `-Dsky=auto` builds without it. Use two-space indentation and attached braces;
+(`git submodule update --init third_party/numos/numos-sky`). `-Dsky=auto` builds without it.
+FSR on Windows loads AMD's signed ffx-api DLLs from the FidelityFX SDK 2.4.0 submodule
+`third_party/fidelityfx/FidelityFX-SDK`, pinned in `third_party/fidelityfx/upstream.json` and
+required by Windows builds (`git submodule update --init third_party/fidelityfx/FidelityFX-SDK`);
+Linux links FSR 3.1.4 from `third_party/fsr31` (`upscale/fsr.h`).
+XeSS Super Resolution is Windows only, like FSR 4: it loads Intel's signed `libxess.dll` from the
+XeSS SDK 3.0.2 submodule `third_party/xess/xess`, pinned in `third_party/xess/upstream.json` and
+required by Windows builds (`git submodule update --init third_party/xess/xess`; `upscale/xess.h`).
+Use two-space indentation and attached braces;
 `.clang-format` covers maintained first-party C/C++ only.
 
 Build: `CC=clang CXX=clang++ meson setup _work/build/native && meson compile -C _work/build/native`.
@@ -44,9 +52,8 @@ fast on NVIDIA) and stored as XZ streams in `pathtrace/shaders/embedded.bin`; `e
 indexes them, `embedded_data.cpp` embeds the blob and `trace::shader()` decompresses a stage on
 first use (vendored XZ Embedded).
 Standalone driver probes in `tools/vulkan-probes` require `-Dvulkan_probes=true` and shader tools.
-Experimental MoltenVK tooling in `tools/moltenvk` remains separate from SDK-based platform builds.
-`-Dgpu_backend=metal` builds the native Metal backend in `src/native/metal` instead of the Vulkan
-runtime (macOS; see `docs/features/metal-backend.md`). The build generates its libraries from the
+macOS builds the native Metal backend in `src/native/metal` instead of the Vulkan runtime
+(see `docs/features/metal-backend.md`). The build generates its libraries from the
 same shaders (`scripts/shaders/generate.py metal`).
 
 Preserve `ref/`, Git history, linked worktrees, and archived evidence. Do not discard ignored

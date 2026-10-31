@@ -22,6 +22,7 @@
 
 #include "runtime/runtime.h"
 #include "upscale/ngx.h"
+#include "upscale/xess.h"
 
 #include <algorithm>
 #include <array>
@@ -34,9 +35,6 @@ namespace remix {
   namespace {
     constexpr const char *kRequiredDeviceExtensions[] = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-#if defined(__APPLE__)
-        "VK_KHR_portability_subset",
-#endif
     };
 
     bool succeeded(VkResult result) { return result == VK_SUCCESS; }
@@ -48,9 +46,6 @@ namespace remix {
     if (!m_headless && extensions.empty()) {
       return REMIXAPI_ERROR_CODE_HRESULT_DXVK_INSTANCE_EXTENSION_FAIL;
     }
-#if defined(__APPLE__)
-    extensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
-#endif
 
     m_ngx = std::make_shared<upscale::Ngx>();
     const auto ngxExtensions = m_ngx->instanceExtensions();
@@ -81,7 +76,9 @@ namespace remix {
     if (auto enumerate = reinterpret_cast<PFN_vkEnumerateInstanceVersion>(
             vkGetInstanceProcAddr(nullptr, "vkEnumerateInstanceVersion")))
       enumerate(&loaderVersion);
-    m_instanceApiVersion = std::min(loaderVersion, uint32_t(VK_API_VERSION_1_2));
+    // XeSS (Windows) asks for a newer instance where its library is packaged.
+    m_instanceApiVersion =
+        std::min(loaderVersion, std::max(uint32_t(VK_API_VERSION_1_2), upscale::xess::instanceApiVersion()));
     const VkApplicationInfo applicationInfo = {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pApplicationName = "Remix Shell",
@@ -94,9 +91,6 @@ namespace remix {
     const bool validation = std::getenv("REMIX_VULKAN_VALIDATION") != nullptr;
     const VkInstanceCreateInfo createInfo = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-#if defined(__APPLE__)
-        .flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR,
-#endif
         .pApplicationInfo = &applicationInfo,
         .enabledLayerCount = validation ? 1u : 0u,
         .ppEnabledLayerNames = validation ? &validationLayer : nullptr,
@@ -166,11 +160,18 @@ namespace remix {
     };
     std::vector<const char *> extensions(std::begin(kRequiredDeviceExtensions),
                                          std::end(kRequiredDeviceExtensions));
-#if defined(__linux__)
+#if defined(__linux__) || defined(_WIN32)
     if (m_headless) {
       extensions.clear();
-      for (const char *extension :
-           {VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME, VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME}) {
+#if defined(_WIN32)
+      // Spelled out: the *_WIN32_EXTENSION_NAME macros need VK_USE_PLATFORM_WIN32_KHR.
+      constexpr const char *kSharedFrameExtensions[] = {"VK_KHR_external_memory_win32",
+                                                        "VK_KHR_external_semaphore_win32"};
+#else
+      constexpr const char *kSharedFrameExtensions[] = {VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
+                                                        VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME};
+#endif
+      for (const char *extension : kSharedFrameExtensions) {
         if (!supportsDeviceExtension(selection.physicalDevice, extension))
           return REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE;
         extensions.push_back(extension);
@@ -374,21 +375,21 @@ namespace remix {
         VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME);
     if (pipelineFeedback)
       extensions.push_back(VK_EXT_PIPELINE_CREATION_FEEDBACK_EXTENSION_NAME);
-    VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR executableFeatures{
+    // Dev aid (REMIX_PIPELINE_STATISTICS=1): compiled pipelines' register
+    // counts and spills in the compile report (pipelines.request). The flag
+    // changes the pipelines' driver cache keys, so it stays off otherwise.
+    VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR executables{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR};
-    const char *executableOption = std::getenv("REMIX_PIPELINE_EXECUTABLES");
-    const bool executableRequested = executableOption && std::strcmp(executableOption, "1") == 0;
-    if (executableRequested && m_instanceApiVersion >= VK_API_VERSION_1_1 &&
-        supportsDeviceExtension(selection.physicalDevice,
-        VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME)) {
-      VkPhysicalDeviceFeatures2 available{.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
-                                          .pNext = &executableFeatures};
-      vkGetPhysicalDeviceFeatures2(selection.physicalDevice, &available);
-      if (executableFeatures.pipelineExecutableInfo) {
-        extensions.push_back(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
-        executableFeatures.pNext = features.pNext;
-        features.pNext = &executableFeatures;
-      }
+    const char *statisticsSwitch = std::getenv("REMIX_PIPELINE_STATISTICS");
+    if (!statisticsSwitch) statisticsSwitch = std::getenv("REMIX_PIPELINE_EXECUTABLES");
+    const bool pipelineStatistics =
+        statisticsSwitch && *statisticsSwitch && *statisticsSwitch != '0' &&
+        supportsDeviceExtension(selection.physicalDevice, VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
+    if (pipelineStatistics) {
+      extensions.push_back(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
+      executables.pipelineExecutableInfo = VK_TRUE;
+      executables.pNext = features.pNext;
+      features.pNext = &executables;
     }
     // NVIDIA Reflex. Its sleep is signalled on a timeline semaphore (core in
     // Vulkan 1.2, enabled through the 1.2 features the tracer's chain holds).
@@ -428,9 +429,14 @@ namespace remix {
         features.pNext = &metering;
       }
     }
+    // Last: libxess sets fields of the finished chain and links its own
+    // structures (upscale/xess.h).
+    void *featureChain = &features;
+    const auto xessUnavailable = upscale::xess::enableDevice(m_instance, selection.physicalDevice,
+                                                             m_instanceApiVersion, extensions, featureChain);
     const VkDeviceCreateInfo createInfo = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .pNext = &features,
+        .pNext = featureChain,
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queueInfo,
         .enabledExtensionCount = uint32_t(extensions.size()),
@@ -441,6 +447,7 @@ namespace remix {
     }
 
     m_ngx->setDevice(m_instance, selection.physicalDevice, m_device);
+    upscale::xess::registerDevice(m_device, xessUnavailable);
     m_physicalDevice = selection.physicalDevice;
     vkGetPhysicalDeviceProperties(m_physicalDevice, &m_properties);
     m_queueFamily = selection.family;
@@ -461,7 +468,7 @@ namespace remix {
     }
     m_gpuTimers.initialize(m_physicalDevice, m_device, m_queueFamily);
     m_pipelines = std::make_unique<pipeline::Service>(m_device, m_properties,
-                                                      pipelineFeedback, executableFeatures.pipelineExecutableInfo);
+                                                      pipelineFeedback, pipelineStatistics);
     m_hostPasses.initialize(m_physicalDevice, m_device);
     // Ray queries are enabled with tracing.
     m_particles = std::make_unique<particles::Renderer>(m_physicalDevice, m_device, m_traceSupported);

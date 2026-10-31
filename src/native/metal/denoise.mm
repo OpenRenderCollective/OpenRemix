@@ -76,7 +76,7 @@ namespace remix::metal::denoise {
     uint32_t frameIndex = 0;
     // denoise.comp, one variant per pass mode (scripts/shaders/metal.py):
     // a mode's variant reads the images it does not write as plain textures.
-    static constexpr uint32_t modeCount = 6;
+    static constexpr uint32_t modeCount = 7;
     id<MTLComputePipelineState> post[modeCount] = {};
     Stage postStage[modeCount] = {};
     ArgumentSet postSet[modeCount];
@@ -600,8 +600,13 @@ namespace remix::metal::denoise {
     if (g.frame.hitDistance[3] == 0) {
       g.pass(encoder, 2, 1);
       g.pass(encoder, 3);
-    } else if (g.frame.translucency[0])
-      g.pass(encoder, 5);
+    } else {
+      if (g.frame.translucency[0])
+        g.pass(encoder, 5);
+      // The specular hit distance of pixels without a specular sample.
+      g.pass(encoder, 6, 0);
+      g.pass(encoder, 6, 1);
+    }
     g.pass(encoder, 4);
     [encoder endEncoding];
     g.submittedFrame = true;

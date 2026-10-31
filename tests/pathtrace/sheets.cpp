@@ -83,7 +83,7 @@ int main(int argc, char **argv) {
     if (error) std::fprintf(stderr, "Configuration %s=%s\n", name, value);
     ok(error);
   };
-  for (const char *name : {"autoExposure", "bloom", "taa", "sigma", "sharc", "prism", "gamma22",
+  for (const char *name : {"autoExposure", "bloom", "taa", "sigma", "sharc",
                            "skipBlendedSecondaryRays", "waterIndirectReuse", "translucencyReuse"}) config(name, "0");
   config("denoiser", "off");
   config("upscaler", "off");
@@ -178,6 +178,9 @@ int main(int argc, char **argv) {
     return mean(path);
   };
   if (indirectTest) {
+    // This fixture deliberately uses a grazing sun with an analytic Lambertian
+    // reference. Disable the optional artistic horizon fade for this integral.
+    config("shadowTerminatorSoften", "0");
     // A broad lit wall behind the camera has direct outgoing radiance .4.
     // A grazing sun lights that wall while passing outside the two other
     // planes; the camera's receiver faces away from it. This gives the same

@@ -631,6 +631,163 @@ namespace {
     require(!drawn(r, quad(r, 0x6e, handle))->caustics, "Caustics on an opaque material");
 
   }
+
+  // A thin film: the opaque info's legacy thickness fields, then
+  // remixapi_MaterialIridescenceEXT, validated and part of the material's identity.
+  void iridescence() {
+    remix::NativeResources r;
+    remixapi_MaterialInfoOpaqueEXT opaque{};
+    opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+    opaque.albedoConstant = {1, 1, 1};
+    opaque.opacityConstant = 1;
+    opaque.alphaTestType = 7;
+    remixapi_MaterialInfo info{};
+    info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+    info.pNext = &opaque;
+    info.hash = 0x70;
+    remixapi_MaterialHandle handle;
+    r.createMaterial(info, handle);
+    require(drawn(r, quad(r, 0x71, handle))->iridescence.strength == 0, "No film by default");
+    opaque.thinFilmThickness_hasvalue = 1;
+    opaque.thinFilmThickness_value = 350;
+    r.createMaterial(info, handle);
+    auto legacy = drawn(r, quad(r, 0x72, handle));
+    require(legacy->iridescence.strength == 1 && legacy->iridescence.thickness == 350 &&
+                legacy->iridescence.ior == 1.5f && legacy->pbr,
+            "Legacy thin film");
+    opaque.alphaIsThinFilmThickness = 1;
+    opaque.opacityConstant = .5f;
+    r.createMaterial(info, handle);
+    auto alpha = drawn(r, quad(r, 0x73, handle));
+    require(alpha->iridescence.fromAlpha && alpha->tint[3] == 1 && !alpha->translucent && alpha->compare == 7,
+            "Thickness from albedo alpha makes the material opaque");
+    opaque.alphaIsThinFilmThickness = 0;
+    opaque.opacityConstant = 1;
+
+    remixapi_MaterialIridescenceEXT film{};
+    film.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_IRIDESCENCE_EXT;
+    film.pNext = &opaque;
+    film.strength = .75f;
+    film.filmRefractiveIndex = 2.4f;
+    film.thickness = 600;
+    film.thicknessMin = 200;
+    film.thicknessMax = 1200;
+    film.flowAmplitude = 300;
+    film.flowScale = 2;
+    film.flowSpeed = -.5f;
+    film.structural = .5f;
+    info.pNext = &film;
+    r.createMaterial(info, handle);
+    const auto made = drawn(r, quad(r, 0x74, handle));
+    const auto &f = made->iridescence;
+    require(f.strength == .75f && f.ior == 2.4f && f.thickness == 600 && f.min == 200 && f.max == 1200 &&
+                f.flowAmplitude == 300 && f.flowScale == 2 && f.flowSpeed == -.5f && f.structural == .5f &&
+                !f.thicknessTexture,
+            "Iridescence fields");
+    film.structural = .25f;
+    r.createMaterial(info, handle);
+    require(drawn(r, quad(r, 0x75, handle))->iridescence.structural == .25f, "A changed film replaces the material");
+    auto reject = [&](float &field, float bad) {
+      const float good = field;
+      field = bad;
+      rejected([&] { r.createMaterial(info, handle); });
+      field = good;
+    };
+    reject(film.strength, 1.5f);
+    reject(film.filmRefractiveIndex, .9f);
+    reject(film.thickness, 2500);
+    reject(film.thicknessMin, 1300); // above the maximum
+    reject(film.flowScale, 0);
+    reject(film.structural, -1);
+    reject(film.flowSpeed, std::numeric_limits<float>::quiet_NaN());
+    // The film alone makes a plain material PBR: a film is a reflection.
+    const float roughness = opaque.roughnessConstant, metallic = opaque.metallicConstant;
+    opaque.roughnessConstant = opaque.metallicConstant = 0;
+    r.createMaterial(info, handle);
+    require(drawn(r, quad(r, 0x76, handle))->pbr, "A film alone selects PBR shading");
+    opaque.roughnessConstant = roughness;
+    opaque.metallicConstant = metallic;
+    // Glass and water take a film too: a smooth dielectric under it.
+    remixapi_MaterialInfoTranslucentEXT glass{};
+    glass.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_TRANSLUCENT_EXT;
+    glass.refractiveIndex = 1.5f;
+    glass.transmittanceColor = {1, 1, 1};
+    glass.thinWallThickness_hasvalue = 1;
+    film.pNext = &glass;
+    r.createMaterial(info, handle);
+    const auto filmedGlass = drawn(r, quad(r, 0x77, handle));
+    require(filmedGlass->transmission && filmedGlass->pbr && filmedGlass->iridescence.strength == .75f &&
+                filmedGlass->roughness == .04f && filmedGlass->metallic == 0,
+            "A film on a translucent material");
+    // Portals take none.
+    remixapi_MaterialInfoPortalEXT portal{};
+    portal.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_PORTAL_EXT;
+    film.pNext = &portal;
+    rejected([&] { r.createMaterial(info, handle); });
+  }
+  // A mod's partial override (an `over` of a captured material: XashRT's PBR
+  // materials given a film in Remix Studio) changes only the parts it
+  // authors; the game's values stay for the rest.
+  void partialMod() {
+    remix::NativeResources r;
+    remixapi_MaterialInfoOpaqueEXT opaque{};
+    opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+    opaque.albedoConstant = {1, 1, 1};
+    opaque.opacityConstant = 1;
+    opaque.alphaTestType = 7;
+    opaque.roughnessConstant = 0;
+    opaque.metallicConstant = 1;
+    remixapi_MaterialInfo info{};
+    info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+    info.pNext = &opaque;
+    info.hash = 0x90;
+    remixapi_MaterialHandle game, glass, mod;
+    r.createMaterial(info, game);
+    // The mod's material: its film, and defaults for what it does not author.
+    remixapi_MaterialInfoOpaqueEXT plain = opaque;
+    plain.roughnessConstant = .5f;
+    plain.metallicConstant = 0;
+    remixapi_MaterialIridescenceEXT film{};
+    film.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_IRIDESCENCE_EXT;
+    film.pNext = &plain;
+    film.strength = 1;
+    film.filmRefractiveIndex = 2.4f;
+    film.thickness = 450;
+    film.thicknessMin = 100;
+    film.thicknessMax = 800;
+    film.flowScale = 1;
+    remixapi_MaterialInfo modInfo = info;
+    modInfo.pNext = &film;
+    modInfo.hash = 0x91;
+    r.createMaterial(modInfo, mod);
+    r.addModMaterial(0x90, mod, scene::ModParts::film);
+    auto merged = drawn(r, quad(r, 0x92, game));
+    require(merged->roughness == 0 && merged->metallic == 1 && merged->pbr && merged->iridescence.strength == 1 &&
+                merged->iridescence.thickness == 450,
+            "A partial override keeps the game's PBR values");
+    // A full replacement takes the mod's own.
+    r.addModMaterial(0x90, mod);
+    r.finishFrame();
+    auto replaced = drawn(r, quad(r, 0x93, game));
+    require(replaced->roughness == .5f && replaced->metallic == 0 && replaced->iridescence.strength == 1,
+            "A full replacement takes the mod's values");
+    // The game's glass stays glass under a film-only override.
+    remixapi_MaterialInfoTranslucentEXT body{};
+    body.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_TRANSLUCENT_EXT;
+    body.refractiveIndex = 1.33f;
+    body.transmittanceColor = {.8f, .9f, 1};
+    body.transmittanceMeasurementDistance = 2;
+    remixapi_MaterialInfo glassInfo = info;
+    glassInfo.pNext = &body;
+    glassInfo.hash = 0x94;
+    r.createMaterial(glassInfo, glass);
+    r.addModMaterial(0x94, mod, scene::ModParts::film);
+    r.finishFrame();
+    auto water = drawn(r, quad(r, 0x95, glass));
+    require(water->transmission && water->transmittanceDistance == 2 && water->refractiveIndex == 1.33f &&
+                water->tint[2] == 1 && water->iridescence.strength == 1 && water->roughness == .04f,
+            "A partial override keeps the game's glass");
+  }
 } // namespace
 
 int main() {
@@ -639,6 +796,8 @@ int main() {
   materialOverride();
   dynamicTexture();
   pbrRemap();
+  iridescence();
+  partialMod();
   std::puts("Instance material and dynamic textures passed");
   return 0;
 }

@@ -112,6 +112,17 @@ def package(build, sdl, output):
     for source, name in notices.items():
         bundle.copy(root / source, "licenses/" + name)
     bundle_numos(bundle, root, build)
+    # Windows loads these SDKs from subdirectories beside remix.dll. Keep the
+    # flat wrapper package equivalent to the general Windows package.
+    fidelityfx = root / "third_party/fidelityfx/FidelityFX-SDK/Kits/FidelityFX"
+    for name in ("amd_fidelityfx_loader_vk.dll", "amd_fidelityfx_upscaler_vk.dll",
+                 "amd_fidelityfx_framegeneration_vk.dll"):
+        bundle.copy(fidelityfx / "signedbin" / name, Path("fidelityfx") / name)
+    bundle.copy(fidelityfx / "docs/license.md", "fidelityfx/LICENSE.md")
+    xess = root / "third_party/xess/xess"
+    bundle.copy(xess / "bin/libxess.dll", "xess/libxess.dll")
+    for name in ("LICENSE.txt", "third-party-programs.txt"):
+        bundle.copy(xess / name, Path("xess") / name)
     bundle.tree(root / "include/vulkan/LICENSES", "licenses/Vulkan-Headers")
     bundle.copy(root / "include/vulkan/LICENSE.md", "licenses/Vulkan-Headers/NOTICE.md")
     # The pinned SDL fallback may use SDL3_shared.dll instead of SDL3.dll.

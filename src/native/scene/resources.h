@@ -29,6 +29,10 @@
 
 namespace remix {
 
+  // remixapi_CameraScreensEXT per slot: position (w 1: set), right and up
+  // scaled to the image plane's half extents, forward (scene/instances.cpp).
+  using ScreenCameras = std::array<std::array<float, 16>, REMIXAPI_SCREEN_CAMERA_SLOTS_EXT>;
+
   // CPU state is serialized by the API mutex. Only the presenting thread (the
   // startup thread, or OpenRemix's render thread with asynchronous
   // presentation, which reads only a published frame) touches GPU state.
@@ -48,6 +52,7 @@ namespace remix {
     }
     void clearModMaterials() {
       m_modMaterials.clear();
+      m_modParts.clear();
       m_modMerged.clear();
       m_modCandidates.clear();
       m_modRequested.clear();
@@ -61,12 +66,15 @@ namespace remix {
       clearModMaterials();
       m_modCandidates = std::move(candidates);
     }
-    void addModMaterial(uint64_t hash, remixapi_MaterialHandle handle) {
+    // parts: what the mod authors of it (scene::ModParts); the rest keeps the
+    // replaced material's values.
+    void addModMaterial(uint64_t hash, remixapi_MaterialHandle handle, uint32_t parts = scene::ModParts::all) {
       if (!handle)
         return;
       auto it = m_materials.find(uint64_t(reinterpret_cast<uintptr_t>(handle)));
       if (it != m_materials.end()) {
         m_modMaterials[hash] = it->second;
+        m_modParts[hash] = parts;
         // Merged entries validate both source pointers on lookup. Loading an
         // unrelated replacement must not change existing receiver identities.
         ++m_modGeneration;
@@ -83,6 +91,7 @@ namespace remix {
         }
       }
       m_modMaterials = std::move(next);
+      m_modParts.clear();
       m_modMerged.clear();
       ++m_modGeneration;
     }
@@ -200,6 +209,8 @@ namespace remix {
       const auto found = m_retainedIndex.find(handle);
       return found == m_retainedIndex.end() ? nullptr : &m_retained[found->second];
     }
+    // Every scene instance, in table order (usd/capture.cpp).
+    const std::vector<scene::RetainedInstance> &retainedInstances() const { return m_retained; }
     // Writes this frame's static set into the draw list exactly where replay
     // without the set would have put it, for consumers other than the tracer
     // (raster rendering), and clears staticDrawn.
@@ -276,6 +287,8 @@ namespace remix {
     const std::array<float, 3> &skyRadiance() const { return m_skyRadiance; }
     // remixapi_CameraMediumEXT: transmittance colour, measurement distance (0: in air).
     const std::array<float, 4> &cameraMedium() const { return m_cameraMedium; }
+    // remixapi_CameraScreensEXT, by slot (scene/instances.cpp).
+    const ScreenCameras &screenCameras() const { return m_screenCameras; }
     void createLight(const remixapi_LightInfo &info, remixapi_LightHandle &handle);
     // IES profiles (remixapi_LightInfoIesProfileEXT), scene::kIesBins floats
     // each. Adding one makes a new vector, so a published frame keeps its own.
@@ -287,7 +300,7 @@ namespace remix {
       if (!m_cookieMaterial) {
         m_cookieMaterial = std::make_shared<scene::Material>(*defaultMaterial());
         m_cookieMaterial->filter = 1;
-        m_cookieMaterial->wrapU = m_cookieMaterial->wrapV = 3;
+        m_cookieMaterial->wrapU = m_cookieMaterial->wrapV = 0;
       }
       return m_cookieMaterial;
     }
@@ -311,7 +324,7 @@ namespace remix {
       if (!m_domeMaterial) {
         m_domeMaterial = std::make_shared<scene::Material>(*defaultMaterial());
         m_domeMaterial->filter = 1;
-        m_domeMaterial->wrapV = 3;
+        m_domeMaterial->wrapV = 0;
       }
       return m_domeMaterial;
     }
@@ -319,6 +332,46 @@ namespace remix {
     const scene::DistantLight &light() const { return m_light; }
     std::vector<scene::SphereLight> sphereLights() const;
     bool hasSphereLights() const { return !m_frameLights.empty(); }
+
+    // A light as created: its USD-style parameters (overrideLight merges
+    // into them; usd/capture.cpp writes them out).
+    struct LightSource {
+      remixapi_StructType type{};
+      remixapi_Transform transform{};
+      remixapi_Float3D color{1, 1, 1};
+      remixapi_Float3D direction{0, 0, -1};
+      float intensity = 1, exposure = 0, temperature = 6500, radius = .5f, width = 1, height = 1, length = 1;
+      float angle = .009250245f, cone = 3.14159265f, softness = 0, focus = 0;
+      remixapi_Bool temperatureEnabled = false;
+      std::filesystem::path texture;
+      // remixapi_LightInfoIesProfileEXT's text (empty: none), and
+      // remixapi_LightInfoCookieEXT's texture (as named, and what it resolved
+      // to; null: none), up and field of view.
+      std::string ies;
+      std::filesystem::path cookiePath;
+      std::shared_ptr<scene::Texture> cookie;
+      remixapi_Float3D cookieUp{0, 0, 1};
+      float cookieFov = 0;
+    };
+    // USD capture (usd/capture.cpp): what a handle's hash resolves to now
+    // (null: none), the host's own view (not the free camera's), and whether
+    // a texture is the white one materials without an albedo map get.
+    std::shared_ptr<const scene::Mesh> findMesh(uint64_t hash) const {
+      const auto found = m_meshes.find(hash);
+      return found == m_meshes.end() ? nullptr : found->second;
+    }
+    std::shared_ptr<const scene::Material> findMaterial(uint64_t hash) const {
+      const auto found = m_materials.find(hash);
+      return found == m_materials.end() ? nullptr : found->second;
+    }
+    const LightSource *lightSource(uint64_t hash) const {
+      const auto found = m_lights.find(hash);
+      return found == m_lights.end() ? nullptr : &found->second.source;
+    }
+    const scene::Matrix &authoredView(uint32_t type = 0) const { return m_authoredViews[type]; }
+    bool isDefaultTexture(const scene::Texture *texture) const {
+      return texture && m_default && texture == m_default->texture.get();
+    }
 
   protected:
     std::shared_ptr<scene::Texture> texturePath(remixapi_Path path);
@@ -333,8 +386,11 @@ namespace remix {
     using MaterialReflections = std::unordered_map<uint64_t, scene::ReflectionBinding>;
     std::shared_ptr<const MaterialReflections> m_materialReflections;
     void setMaterialReflection(uint64_t material, scene::ReflectionBinding binding);
-    // A mod material given the albedo of the material it replaces
-    // (instances.cpp), by that material's hash; remade when either changes.
+    // Of a partial mod material, the parts it authors (scene::ModParts).
+    std::unordered_map<uint64_t, uint32_t> m_modParts;
+    // A mod material given the albedo of the material it replaces, or the
+    // parts a partial override leaves to it (instances.cpp), by that
+    // material's hash; remade when either changes.
     struct ModMerged {
       std::weak_ptr<scene::Material> mod, original;
       std::shared_ptr<scene::Material> merged;
@@ -350,16 +406,6 @@ namespace remix {
     std::array<scene::Matrix, 3> m_authoredCameras, m_authoredViews;
     std::array<std::array<float, 4>, 3> m_reverseDepth, m_authoredReverseDepth;
     bool m_freeCamActive = false;
-    struct LightSource {
-      remixapi_StructType type{};
-      remixapi_Transform transform{};
-      remixapi_Float3D color{1, 1, 1};
-      remixapi_Float3D direction{0, 0, -1};
-      float intensity = 1, exposure = 0, temperature = 6500, radius = .5f, width = 1, height = 1, length = 1;
-      float angle = .009250245f, cone = 3.14159265f, softness = 0, focus = 0;
-      remixapi_Bool temperatureEnabled = false;
-      std::filesystem::path texture;
-    };
     struct LightDefinition {
       uint64_t revision = 0;
       bool dynamic = false;
@@ -397,6 +443,7 @@ namespace remix {
     scene::TemporalEpoch m_temporalEpoch;
     std::array<float, 3> m_skyRadiance = {};
     std::array<float, 4> m_cameraMedium = {};
+    ScreenCameras m_screenCameras = {};
     std::vector<scene::Draw> m_draws, m_uiDraws, m_overlay;
     std::vector<scene::HaloGroup> m_halos;
     size_t m_haloDraws = 0;

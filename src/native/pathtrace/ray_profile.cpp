@@ -82,4 +82,82 @@ void PathTracer::Gpu::completeRayProfile() {
   }
   rayProfile.pending = false;
 }
+void PathTracer::Gpu::beginPathInspector(VkCommandBuffer command, Frame &frame) {
+  auto &p = pathInspector;
+  if (p.x < 0 || p.y < 0 || uint32_t(p.x) >= extent.width || uint32_t(p.y) >= extent.height)
+    return;
+  const VkDeviceSize size = 16 + VkDeviceSize(PathInspector::capacity) * 64;
+  if (!p.records)
+    p.records = buffer(size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                                 VK_BUFFER_USAGE_TRANSFER_DST_BIT, false);
+  if (!p.readback)
+    p.readback = buffer(size, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
+  frame.pathDebug[0] = uint32_t(p.records->address);
+  frame.pathDebug[1] = uint32_t(p.records->address >> 32);
+  frame.pathDebug[2] = uint32_t(p.x) | uint32_t(p.y) << 16;
+  frame.pathDebug[3] = PathInspector::capacity;
+  p.camera = frame.camera;
+  p.width = extent.width;
+  p.height = extent.height;
+  barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+          VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+          VK_ACCESS_TRANSFER_WRITE_BIT);
+  vkCmdFillBuffer(command, p.records->handle, 0, 16, 0);
+  barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+          VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+}
+void PathTracer::Gpu::finishPathInspector(VkCommandBuffer command) {
+  auto &p = pathInspector;
+  if (p.x < 0 || !p.records || p.pending)
+    return;
+  barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+          VK_ACCESS_TRANSFER_READ_BIT);
+  const VkBufferCopy copy{.size = p.records->size};
+  vkCmdCopyBuffer(command, p.records->handle, p.readback->handle, 1, &copy);
+  barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+          VK_ACCESS_HOST_READ_BIT);
+  p.pending = true;
+}
+void PathTracer::Gpu::completePathInspector() {
+  auto &p = pathInspector;
+  if (!p.pending)
+    return;
+  p.pending = false;
+  void *mapped{};
+  check(vkMapMemory(device, p.readback->memory, 0, VK_WHOLE_SIZE, 0, &mapped));
+  const VkMappedMemoryRange range{.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+                                  .memory = p.readback->memory, .size = VK_WHOLE_SIZE};
+  const auto result = vkInvalidateMappedMemoryRanges(device, 1, &range);
+  PathInspection inspection;
+  if (result == VK_SUCCESS) {
+    uint32_t count = 0;
+    std::memcpy(&count, mapped, 4);
+    inspection.records.resize(std::min(count, PathInspector::capacity));
+    std::memcpy(inspection.records.data(), static_cast<const char *>(mapped) + 16,
+                inspection.records.size() * sizeof(inspection.records[0]));
+  }
+  vkUnmapMemory(device, p.readback->memory);
+  check(result);
+  inspection.camera = p.camera;
+  inspection.width = p.width;
+  inspection.height = p.height;
+  inspection.x = uint32_t(p.x);
+  inspection.y = uint32_t(p.y);
+  std::lock_guard lock(p.mutex);
+  inspection.frame = p.last.frame + 1;
+  p.last = std::move(inspection);
+}
+void PathTracer::inspectPixel(int x, int y) {
+  auto &p = m_gpu->pathInspector;
+  p.x = x;
+  p.y = y;
+  if (x < 0) {
+    std::lock_guard lock(p.mutex);
+    p.last = {};
+  }
+}
+PathInspection PathTracer::pathInspection() const {
+  std::lock_guard lock(m_gpu->pathInspector.mutex);
+  return m_gpu->pathInspector.last;
+}
 } // namespace remix

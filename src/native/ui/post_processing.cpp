@@ -97,9 +97,16 @@ namespace remix {
         if (ui::InputFloat(label, &value, 0.f, 0.f, "%.6g") && std::isfinite(value))
           *threshold = std::clamp(value, 0.f, 1000000.f);
         if (ImGui::IsItemHovered())
-          ImGui::SetTooltip("Linear scene luminance, 0 disables (maximum 1,000,000).\nLower values suppress "
-                            "more brightness, including legitimate highlights.");
+          ImGui::SetTooltip(options.relativeClamps
+                                ? "Multiples of middle grey at the current exposure, 0 disables.\nLower values "
+                                  "suppress more brightness, including legitimate highlights."
+                                : "Linear scene luminance, 0 disables (maximum 1,000,000).\nLower values suppress "
+                                  "more brightness, including legitimate highlights.");
       }
+      ui::Checkbox("Clamps relative to exposure", &options.relativeClamps);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("The clamps count in multiples of middle grey (0.18 on screen) at the current\n"
+                          "exposure instead of linear scene luminance, so one value suits any scene.");
       auto denoising = denoisingStatistics();
       const bool fireflyFilterActive =
           denoising.activeDenoiser && !rrActive && (options.localDenoiser || options.bounces > 0) &&
@@ -137,6 +144,28 @@ namespace remix {
       } else {
         ImGui::TextWrapped("HDR10 output inactive: %s", m_hdrStatus.c_str());
       }
+    }
+    if (!m_headless && ImGui::CollapsingHeader("Screenshots")) {
+      if (ImGui::Button("Take screenshot"))
+        m_screenshotButton = true;
+      ImGui::SameLine();
+      // The shortcut: click, then press it (ui/menu_shortcut.cpp).
+      const std::string label = (m_profileUi.capturingScreenshotShortcut ? std::string("Press a shortcut...")
+                                                                          : m_profileUi.screenshotShortcut) +
+                                "###Screenshot shortcut";
+      if (ImGui::SmallButton(label.c_str()))
+        m_profileUi.captureScreenshotShortcut = true;
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Shortcut that takes a screenshot.\nClick, then press a key while holding the "
+                          "modifiers to use (Alt, Ctrl, Shift).\nEscape keeps the current shortcut.");
+      ImGui::TextWrapped("%s", "Always an SDR PNG. While HDR10 output is active, also:");
+      ui::Checkbox("HDR PNG (BT.2020 PQ, 16-bit)", &settings.screenshotHdrPng);
+      ui::Checkbox("JPEG XR (scRGB, as Windows' HDR captures)", &settings.screenshotJxr);
+      ui::Checkbox("OpenEXR (linear scRGB)", &settings.screenshotExr);
+      const auto folder = config::Profiles::defaultDirectory() / "screenshots";
+      ImGui::TextWrapped("Folder: %s", folder.string().c_str());
+      if (const auto status = m_screenshot.status(); !status.empty())
+        ImGui::TextWrapped("%s", status.c_str());
     }
   }
 } // namespace remix

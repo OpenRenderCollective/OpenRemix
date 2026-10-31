@@ -165,15 +165,27 @@ namespace remix::config {
             m_panel.width = std::clamp(width, 240.f, 1600.f);
         } else if (key == "panel.tab" && value.size() == 1 && value[0] >= '0' && value[0] <= '5')
           m_panel.tab = value[0] - '0';
-        else if (key == "panel.menuKey" || key == "panel.menuModifiers") {
+        else if (key == "panel.menuKey" || key == "panel.menuModifiers" || key == "panel.sceneCaptureKey" ||
+                 key == "panel.sceneCaptureModifiers" || key == "panel.screenshotKey" ||
+                 key == "panel.screenshotModifiers") {
           uint32_t number = 0;
           const auto end = value.data() + value.size();
           if (std::from_chars(value.data(), end, number).ptr != end)
             continue;
-          if (key == "panel.menuKey" && number >= REMIXAPI_KEY_A && number <= REMIXAPI_KEY_PAGE_DOWN)
+          const bool validKey = number >= REMIXAPI_KEY_A && number <= REMIXAPI_KEY_PAGE_DOWN;
+          if (key == "panel.menuKey" && validKey)
             m_panel.menuKey = number;
           else if (key == "panel.menuModifiers" && number <= 15)
             m_panel.menuModifiers = number;
+          else if (key == "panel.sceneCaptureKey" && number <= REMIXAPI_KEY_PAGE_DOWN &&
+                   (!number || number >= REMIXAPI_KEY_A))
+            m_panel.sceneCaptureKey = number;
+          else if (key == "panel.sceneCaptureModifiers" && number <= 15)
+            m_panel.sceneCaptureModifiers = number;
+          else if (key == "panel.screenshotKey" && validKey)
+            m_panel.screenshotKey = number;
+          else if (key == "panel.screenshotModifiers" && number <= 15)
+            m_panel.screenshotModifiers = number;
         }
       }
     }
@@ -389,7 +401,11 @@ namespace remix::config {
                       "\npanel.width = " + std::to_string(m_panel.width) +
                       "\npanel.tab = " + std::to_string(m_panel.tab) +
                       "\npanel.menuKey = " + std::to_string(m_panel.menuKey) +
-                      "\npanel.menuModifiers = " + std::to_string(m_panel.menuModifiers) + "\n";
+                      "\npanel.menuModifiers = " + std::to_string(m_panel.menuModifiers) +
+                      "\npanel.sceneCaptureKey = " + std::to_string(m_panel.sceneCaptureKey) +
+                      "\npanel.sceneCaptureModifiers = " + std::to_string(m_panel.sceneCaptureModifiers) +
+                      "\npanel.screenshotKey = " + std::to_string(m_panel.screenshotKey) +
+                      "\npanel.screenshotModifiers = " + std::to_string(m_panel.screenshotModifiers) + "\n";
     if (!atomicWrite(m_directory / "state.conf", text, true, error)) {
       if (!m_message.empty())
         m_message += '\n';

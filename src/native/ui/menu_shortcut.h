@@ -7,4 +7,7 @@ namespace remix::ui {
   // the window captured, starts or stops a capture the panel asked for, and
   // returns whether the panel is to toggle.
   bool menuShortcut(RemixSdlWindow &window, config::Profiles &profiles, ProfileUi &ui, bool panelOpen);
+  // The screenshot shortcut, captured and named the same way: whether it was
+  // pressed since the last call.
+  bool screenshotShortcut(RemixSdlWindow &window, config::Profiles &profiles, ProfileUi &ui, bool panelOpen);
 } // namespace remix::ui

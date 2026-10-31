@@ -13,8 +13,10 @@ struct Statistics {
 // Owned by the runtime, outlives every renderer and all submitted work.
 class Service {
 public:
+  // statistics: VK_KHR_pipeline_executable_properties is enabled; compute
+  // compiles then list the driver's statistics (registers, spills) in report().
   Service(VkDevice device, const VkPhysicalDeviceProperties &properties,
-          bool feedback, bool executableStatistics = false);
+          bool feedback, bool statistics = false);
   ~Service();
   Service(const Service &) = delete;
   Service &operator=(const Service &) = delete;

@@ -9,6 +9,7 @@ namespace remix {
     completeLightGuiding();
     completePbrReuse();
     completeRayProfile();
+    completePathInspector();
     uploads.clear();
     staging.used = 0;
     launchSpares();

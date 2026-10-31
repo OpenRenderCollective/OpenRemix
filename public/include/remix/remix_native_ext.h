@@ -794,6 +794,46 @@ typedef struct remixapi_CameraMediumEXT {
   float transmittanceMeasurementDistance;
 } remixapi_CameraMediumEXT;
 
+// Optional pNext on a world CameraInfo: this frame's screen cameras, the
+// cameras that surfaces with remixapi_MaterialInfoScreenCameraEXT show (a
+// security monitor, a game's render-to-texture view). A surface of camera
+// `slot` shows, at texture coordinate (u, v), what the camera sees through the
+// point (2u - 1, 1 - 2v) of its image plane: u to the right, v down, the image
+// covering [0, 1] in both and repeating outside it. The primary surface
+// replacement pass traces it as the pixel's surface (lit, shadowed and
+// denoised as a surface in view), so it needs a raster primary
+// (rtx.native.pathtrace.primaryVisibility) and a denoiser; elsewhere, and for
+// a slot not given this frame, the screen shows its material. A screen camera
+// also sees reflection-only instances (the third-person player categories), so
+// what only it should see is submitted that way; reflection-only paint coats
+// only reflection-only surfaces. Slots are 0 to
+// REMIXAPI_SCREEN_CAMERA_SLOTS_EXT - 1; directions need not be unit length but
+// must not be parallel; fovY in degrees (0, 180), aspect width / height.
+#define REMIXAPI_STRUCT_TYPE_CAMERA_SCREENS_EXT ((remixapi_StructType)0x7fff1021)
+#define REMIXAPI_SCREEN_CAMERA_SLOTS_EXT 7u
+typedef struct remixapi_ScreenCameraEXT {
+  uint32_t slot;
+  remixapi_Float3D position, forward, up, right;
+  float fovYDegrees, aspect;
+} remixapi_ScreenCameraEXT;
+typedef struct remixapi_CameraScreensEXT {
+  remixapi_StructType sType;
+  const void* pNext;
+  uint32_t count;
+  const remixapi_ScreenCameraEXT* cameras;
+} remixapi_CameraScreensEXT;
+
+// Optional pNext on an opaque MaterialInfo: the surface is a screen showing
+// screen camera `slot` (remixapi_CameraScreensEXT), mapped by its texture
+// coordinates. The material's own albedo and textures show where the camera
+// is not traced (rays reaching the screen after a bounce, a slot not set).
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_SCREEN_CAMERA_EXT ((remixapi_StructType)0x7fff1022)
+typedef struct remixapi_MaterialInfoScreenCameraEXT {
+  remixapi_StructType sType;
+  const void* pNext;
+  uint32_t slot;
+} remixapi_MaterialInfoScreenCameraEXT;
+
 typedef struct remixapi_DenoisingCapabilitiesEXT {
   uint32_t structSize, reblurShSupported, taaSupported, reserved;
   char unavailableReason[256];
@@ -1332,6 +1372,36 @@ typedef struct remixapi_MaterialPbrRemapEXT {
   const void *pNext;
   remixapi_MaterialPbrChannelEXT roughness, metallic;
 } remixapi_MaterialPbrRemapEXT;
+
+// Optional pNext on opaque or translucent MaterialInfo: a thin-film coating
+// whose interference colours the reflection (iridescence), evaluated
+// spectrally. On a translucent material (glass, water) the surface becomes a
+// smooth dielectric under the film: its reflection takes the film's colour
+// whatever its coverage, and the light through it the complementary colour;
+// structural does not apply. A portal material is invalid.
+// It takes the place of MaterialInfoOpaqueEXT's thinFilmThickness and
+// alphaIsThinFilmThickness, which alone give a film of strength 1 and
+// refractive index 1.5.
+// strength: 0 (no film) to 1, how much of the reflection is the film's.
+// filmRefractiveIndex: 1 to 3; higher indices give more saturated colours.
+// thickness: the film's thickness in nanometres, 0 to 2000. With
+// thicknessTexture, the map's red channel lerps thicknessMin to thicknessMax
+// instead; with alphaIsThinFilmThickness, albedo alpha times 1500.
+// flowAmplitude: nanometres of animated noise added to the thickness (0: a
+// still film), swirls flowScale scene units across in object space, drifting
+// flowSpeed per second.
+// structural: 0 to 1, how much the film's colour tints diffuse reflection too
+// (structural colour on rough surfaces).
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_IRIDESCENCE_EXT ((remixapi_StructType)0x7fff1020)
+typedef struct remixapi_MaterialIridescenceEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  remixapi_Path thicknessTexture;
+  float strength, filmRefractiveIndex, thickness;
+  float thicknessMin, thicknessMax;
+  float flowAmplitude, flowScale, flowSpeed;
+  float structural;
+} remixapi_MaterialIridescenceEXT;
 
 // Optional pNext on LightInfo (sphere, rect, disk and cylinder lights): an IES
 // photometric profile, the contents of an IESNA LM-63 file (not

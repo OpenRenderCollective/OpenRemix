@@ -1,8 +1,8 @@
 # Metal backend
 
-`-Dgpu_backend=metal` (macOS arm64) builds `libremix` with a native Metal runtime instead of
-the Vulkan one. The exported API and ABI are unchanged; the backend is chosen at compile time
-and a build contains exactly one backend. Metal builds link neither Vulkan nor MoltenVK.
+macOS arm64 builds `libremix` with a native Metal runtime instead of the Vulkan one. The
+exported API and ABI are unchanged; the backend follows the target platform and a build
+contains exactly one backend. macOS builds link no Vulkan.
 
 ## Layout
 

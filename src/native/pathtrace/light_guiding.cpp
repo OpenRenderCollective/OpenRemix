@@ -25,8 +25,9 @@ void PathTracer::Gpu::configureLightGuiding(Frame &frame, const TraceOptions &op
     try {
       const auto usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                          VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-      auto first = buffer((LightGuiding::capacity + 1) * 16, usage);
-      auto second = buffer((LightGuiding::capacity + 1) * 16, usage);
+      const VkDeviceSize bank = (LightGuiding::capacity + 1) * 16 + LightGuiding::remapCapacity * 4;
+      auto first = buffer(bank, usage);
+      auto second = buffer(bank, usage);
       auto readback = buffer(16, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
       g.history[0] = std::move(first);
       g.history[1] = std::move(second);
@@ -49,11 +50,17 @@ void PathTracer::Gpu::configureLightGuiding(Frame &frame, const TraceOptions &op
   // The guide stores light-tree leaf indices and learned visibility. Neither
   // depends on light intensity: flickering or animated lights keep it (it is
   // only a proposal; every sample is still shadow-tested and fully weighted).
-  // Only a rebuilt tree (new leaf order) invalidates it.
-  if (history.reset() || g.generation != tree.builds || g.range != options.localRange || g.cellSize != cellUnits || g.resampled != resampled || g.split != split) {
+  // A rebuilt tree (new leaf order) carries it over through its leaf remap
+  // (the read bank's leaves translated this frame, light_guiding.glsl
+  // guideLeaf); anything else invalidates it.
+  g.pendingRemap.clear();
+  const std::vector<uint32_t> *remap = g.generation != tree.builds ? tree.leafRemap(g.generation) : nullptr;
+  if (history.reset() || (g.generation != tree.builds && (!remap || remap->size() > LightGuiding::remapCapacity)) ||
+      g.range != options.localRange || g.cellSize != cellUnits || g.resampled != resampled || g.split != split) {
     g.valid = false;
     ++g.stats.historyResets;
-  }
+  } else if (remap && g.valid)
+    g.pendingRemap = *remap;
   g.generation = tree.builds;
   g.split = split;
   g.range = options.localRange;
@@ -63,6 +70,7 @@ void PathTracer::Gpu::configureLightGuiding(Frame &frame, const TraceOptions &op
   frame.lightGuideWrite = g.history[g.writeIndex]->address;
   frame.lightGuideConfig[0] = LightGuiding::capacity;
   frame.lightGuideConfig[1] = uint32_t(tree.nodes().size());
+  frame.lightGuideConfig[3] = uint32_t(g.pendingRemap.size());
   const float scale = 1.f / cellUnits;
   std::memcpy(&frame.lightGuideConfig[2], &scale, 4);
   g.stats.active = 1;
@@ -79,6 +87,15 @@ void PathTracer::Gpu::beginLightGuiding(VkCommandBuffer command) {
           VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_TRANSFER_READ_BIT,
           VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
   vkCmdFillBuffer(command, lightGuiding.history[lightGuiding.writeIndex]->handle, 0, VK_WHOLE_SIZE, 0);
+  auto &remap = lightGuiding.pendingRemap;
+  if (!remap.empty()) {
+    const VkDeviceSize bytes = remap.size() * sizeof(uint32_t);
+    const VkBufferCopy copy{.srcOffset = stage(remap.data(), bytes),
+                            .dstOffset = (LightGuiding::capacity + 1) * 16,
+                            .size = bytes};
+    vkCmdCopyBuffer(command, staging.buffer->handle, lightGuiding.history[lightGuiding.writeIndex ^ 1]->handle, 1,
+                    &copy);
+  }
   barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
           VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
 }

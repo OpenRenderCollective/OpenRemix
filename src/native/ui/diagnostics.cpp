@@ -118,6 +118,117 @@ namespace remix {
     ImGui::EndTable();
   }
 
+  // One pixel's paths, as the path tracer recorded them last frame: picked by
+  // a click on the scene, listed, and drawn over it (vertices white, light
+  // samples green where visible and red where blocked, emission collected
+  // by a path yellow).
+  void RemixNativeRuntime::drawPathInspector() {
+    if (!m_pathTracer)
+      return;
+    const auto &io = ImGui::GetIO();
+    const auto inspection = m_pathTracer->pathInspection();
+    if (m_inspecting && ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+        !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) && io.DisplaySize.x > 0 && io.DisplaySize.y > 0) {
+      const auto extent = inspection.width ? VkExtent2D{inspection.width, inspection.height} : m_pathTracer->renderExtent();
+      m_inspectX = int(io.MousePos.x / io.DisplaySize.x * float(extent.width));
+      m_inspectY = int(io.MousePos.y / io.DisplaySize.y * float(extent.height));
+      m_pathTracer->inspectPixel(m_inspectX, m_inspectY);
+    }
+    if (!ImGui::CollapsingHeader("Path inspector")) {
+      if (m_inspecting)
+        ImGui::TextDisabled("Path inspector: pixel %d, %d", m_inspectX, m_inspectY);
+    } else {
+      if (ui::Checkbox("Inspect a pixel (click the scene)", &m_inspecting) && !m_inspecting)
+        m_pathTracer->inspectPixel(-1, -1);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Records the paths of one pixel each frame: its primary surface, every path vertex,\n"
+                          "every local-light sample (estimate, selection PDF, visibility) and the emission\n"
+                          "paths collected. Drawn over the scene; click elsewhere to pick another pixel.");
+      if (m_inspecting) {
+        ImGui::Text("Pixel %d, %d: %zu records", m_inspectX, m_inspectY, inspection.records.size());
+        if (ImGui::BeginTable("Path records", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit,
+                              ImVec2(0, 260))) {
+          for (const char *name : {"Kind", "Position", "", "", ""})
+            ImGui::TableSetupColumn(name);
+          ImGui::TableHeadersRow();
+          for (const auto &r : inspection.records) {
+            const int kind = int(r[15]);
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            static const char *kinds[] = {"primary", "vertex", "light", "emission", "light (path)"};
+            ImGui::TextUnformatted(kind >= 0 && kind < 5 ? kinds[kind] : "?");
+            ImGui::TableNextColumn();
+            ImGui::Text("%.1f %.1f %.1f", r[0], r[1], r[2]);
+            ImGui::TableNextColumn();
+            if (kind == 0)
+              ImGui::Text("t %.1f rough %.2f", r[3], r[7]);
+            else if (kind == 1)
+              ImGui::Text("bounce %d rough %.2f", int(r[3]), r[7]);
+            else if (kind == 2 || kind == 4)
+              ImGui::Text("emitter %d pdf %.3g", int(r[3]), r[7]);
+            ImGui::TableNextColumn();
+            if (kind == 0)
+              ImGui::Text("albedo %.2f %.2f %.2f", r[8], r[9], r[10]);
+            else if (kind == 1)
+              ImGui::Text("throughput %.3g %.3g %.3g", r[8], r[9], r[10]);
+            else if (kind == 2 || kind == 4)
+              ImGui::Text("estimate %.3g %.3g %.3g", r[4], r[5], r[6]);
+            else if (kind == 3)
+              ImGui::Text("weight %.3g %.3g %.3g", r[4], r[5], r[6]);
+            ImGui::TableNextColumn();
+            if (kind == 0)
+              ImGui::Text("pixel %.3g %.3g %.3g", r[12], r[13], r[14]);
+            else if (kind == 1)
+              ImGui::Text("emission %.3g %.3g %.3g", r[12], r[13], r[14]);
+            else if (kind == 2 || kind == 4)
+              ImGui::Text("visible %.2f at %.1f", r[8], r[11]);
+            else if (kind == 3)
+              ImGui::Text("emission %.3g %.3g %.3g", r[8], r[9], r[10]);
+          }
+          ImGui::EndTable();
+        }
+      }
+    }
+    if (!m_inspecting || inspection.records.empty() || !inspection.width)
+      return;
+    // World to the display: the recorded camera (column-major, Vulkan
+    // framebuffer coordinates) to the window's points.
+    const auto &m = inspection.camera;
+    const auto project = [&](const float *p, ImVec2 &out) {
+      const float x = m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], y = m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13],
+                  w = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
+      if (w <= 1e-6f)
+        return false;
+      out = ImVec2((x / w * .5f + .5f) * io.DisplaySize.x, (y / w * .5f + .5f) * io.DisplaySize.y);
+      return true;
+    };
+    auto *draw = ImGui::GetBackgroundDrawList();
+    const ImVec2 pixel((float(m_inspectX) + .5f) / float(inspection.width) * io.DisplaySize.x,
+                       (float(m_inspectY) + .5f) / float(inspection.height) * io.DisplaySize.y);
+    draw->AddCircle(pixel, 6, IM_COL32(255, 255, 255, 255), 12, 2);
+    // Vertices follow their path in record order (bounce 1 starts a path at
+    // the primary); a path vertex's light samples follow it.
+    const float *primary = nullptr, *last = nullptr;
+    for (const auto &r : inspection.records)
+      if (int(r[15]) == 0)
+        primary = r.data();
+    for (const auto &r : inspection.records) {
+      const int kind = int(r[15]);
+      ImVec2 a, b;
+      if (kind == 1) {
+        const float *from = int(r[3]) == 1 ? primary : last;
+        if (from && project(from, a) && project(r.data(), b))
+          draw->AddLine(a, b, IM_COL32(255, 255, 255, 220), 1.5f);
+        last = r.data();
+      } else if (kind == 2 || kind == 4) {
+        const float *from = kind == 4 && last ? last : primary;
+        if (from && project(from, a) && project(r.data(), b))
+          draw->AddLine(a, b, r[8] > 0 ? IM_COL32(60, 230, 90, 200) : IM_COL32(240, 60, 60, 200), 1);
+      } else if (kind == 3 && project(r.data(), b))
+        draw->AddCircleFilled(b, 4, IM_COL32(255, 220, 40, 255));
+    }
+  }
+
   void RemixNativeRuntime::drawDiagnosticsTab(config::Settings &settings) {
     if (m_pipelines) {
       const auto s = m_pipelines->statistics();
@@ -166,7 +277,7 @@ namespace remix {
               "Final lighting\0Albedo\0Shading normals\0Triangle IDs\0Depth bands\0World position grid\0"
               "Raw local lighting\0Raw indirect lighting\0Motion vectors\0Motion validity\0"
               "Indirect lighting confidence\0TAA current-frame weight\0Roughness and metalness\0Local history confidence\0"
-              "Translucent layer count\0"))
+              "Translucent layer count\0Shadow terminator offset\0"))
         options.debugView = uint32_t(view);
       static const char *help[] = {
           "Start with Triangle IDs and Shading normals at the problem angle, then compare Raw local "
@@ -198,7 +309,11 @@ namespace remix {
           "Local-light denoiser history confidence: white = history kept, black = dropped (moved lights, "
           "moved occluders, moving surfaces). Indexed as NRD reads it.",
           "Translucent layers each camera ray passes: black none, blue 1, green 2, yellow 3, red 4, white 5 "
-          "or more. Pixels with two or more are lit layer by layer in the multi-sheet pass."};
+          "or more. Pixels with two or more are lit layer by layer in the multi-sheet pass.",
+          "Shadow-ray lift off smooth-shaded triangles: red = lifted (full red at the longest offset allowed), "
+          "grey = the sun's shading cosine, blue = sun-lit by the shading normal but past the lighting horizon "
+          "(the triangle's, or with the offset the smooth surface's), where sun light is cut off. No red with "
+          "the offset off."};
       ImGui::TextWrapped("%s", help[options.debugView]);
       if (options.debugView) {
         ImGui::TextWrapped(
@@ -219,6 +334,7 @@ namespace remix {
       ImGui::TextWrapped("%s", "Raw reference: requested denoiser and TAA resume afterward.");
     ui::Checkbox("Force dynamic TLAS rebuild", &options.forceRebuild);
     ui::Checkbox("Freeze emissive radiance", &options.freezeEmissiveRadiance);
+    drawPathInspector();
     if (ImGui::CollapsingHeader("Free Camera", ImGuiTreeNodeFlags_DefaultOpen)) {
       ui::Checkbox("Enable Free Camera", &m_freeCamera.enabled);
       if (m_freeCamera.enabled) {

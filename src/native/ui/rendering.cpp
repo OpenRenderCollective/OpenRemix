@@ -302,6 +302,26 @@ namespace remix {
         ImGui::TextWrapped("%s", "Adaptive termination inactive: minimum reaches the maximum bounce limit.");
       if (options.russianRoulette && m_pathTracer && !m_pathTracer->adaptiveTerminationAvailable())
         ImGui::TextWrapped("%s", "Adaptive termination unavailable: using fixed-limit tracing.");
+      ui::Checkbox("Soften shadow terminator", &options.shadowTerminatorSoften);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Sampled light on the diffuse lobe fades out within a few degrees of a triangle's\n"
+                          "horizon (as dxvk-remix): a gradient instead of an abrupt cut.");
+      ui::Checkbox("Shadow terminator offset", &options.shadowTerminatorLift);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Shadow rays leave smooth-shaded triangles from where their vertex normals put the\n"
+                          "smooth surface (Hanika 2021, as dxvk-remix): no triangle-shaped shadows on\n"
+                          "low-poly characters and props, and sampled light ends at the smooth surface's\n"
+                          "horizon instead of the triangle's. Large triangles are left alone (light leaks).");
+      if (options.shadowTerminatorLift) {
+        ui::SliderFloat("Offset: largest triangle (sq. m)", &options.shadowTerminatorMaxArea, .005f, 1.f, "%.3f",
+                        ImGuiSliderFlags_Logarithmic);
+        ui::SliderFloat("Offset: longest offset (m)", &options.shadowTerminatorMaxLength, .002f, .2f, "%.3f",
+                        ImGuiSliderFlags_Logarithmic);
+      }
+      ui::SliderFloat("Ray offset (float steps)", &options.rayOffset, 4.f, 1024.f, "%.0f", ImGuiSliderFlags_Logarithmic);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("How far shadow and bounce rays start off a surface, in units in the last place\n"
+                          "of its coordinates. Smaller: tighter contact shadows; too small: shadow acne.");
       ui::Checkbox("Denoise translucent surfaces", &options.translucencyDenoiser);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Filters single-layer surface lighting with its own motion and depth.\n"
@@ -363,6 +383,10 @@ namespace remix {
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Shares diffuse lighting across small flat water patches with TAA or FSR.\nEdges, "
                           "overlapping layers and raw reference rendering retain full sampling.");
+      ui::Checkbox("Iridescence", &options.iridescence);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Thin-film interference colours on materials that have a film (soap bubbles,\n"
+                          "oil slicks, beetle shells). Off: those materials reflect without it.");
       ui::Checkbox("Caustics", &options.caustics);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Light through water and bumpy glass is focused by their normal maps' waves\n"
@@ -389,19 +413,31 @@ namespace remix {
     }
     if (ImGui::CollapsingHeader("Reconstruction", ImGuiTreeNodeFlags_DefaultOpen)) {
       int upscaler = int(options.upscaler);
-      if (ui::Combo("Requested upscaler", &upscaler, "Off\0Auto\0FSR 3.1\0DLSS\0"))
+      // XeSS: Windows only (upscale/xess.h).
+#if REMIX_HAS_XESS
+      constexpr const char *upscalers = "Off\0Auto\0FSR\0DLSS\0XeSS\0";
+#else
+      constexpr const char *upscalers = "Off\0Auto\0FSR\0DLSS\0";
+#endif
+      if (ui::Combo("Requested upscaler", &upscaler, upscalers))
         options.upscaler = upscale::Mode(upscaler);
       const auto fsr = m_pathTracer ? m_pathTracer->upscalingStatistics() : upscale::Statistics{};
       if (options.upscaler != upscale::Mode::Off) {
         const bool amd = options.upscaler == upscale::Mode::Fsr31;
-        auto &savedQuality = amd ? options.fsrQuality : options.dlssQuality;
+        const bool intel = options.upscaler == upscale::Mode::Xess;
+        auto &savedQuality = amd ? options.fsrQuality : intel ? options.xessQuality : options.dlssQuality;
         int quality = int(savedQuality);
+        // Each upscaler's own names; XeSS has seven presets (the XeSS-SR
+        // developer guide's).
         if (ui::Combo("Quality preset", &quality,
-                      "Native AA / DLAA\0Quality\0Balanced\0Performance\0Ultra Performance\0"))
+                      intel ? "Native Anti-Aliasing\0Ultra Quality Plus\0Ultra Quality\0Quality\0Balanced\0"
+                              "Performance\0Ultra Performance\0"
+                      : amd ? "Native AA\0Quality\0Balanced\0Performance\0Ultra Performance\0"
+                            : "DLAA\0Quality\0Balanced\0Performance\0Ultra Performance\0"))
           savedQuality = uint32_t(quality);
         if (amd)
           ui::SliderFloat("FSR sharpening", &options.fsrSharpness, 0.f, 1.f, "%.2f");
-        else {
+        else if (!intel) {
           ui::Checkbox("DLSS Ray Reconstruction", &options.dlssRayReconstruction);
           if (options.dlssRayReconstruction) {
             int model = int(options.dlssRayReconstructionModel);
@@ -469,7 +505,10 @@ namespace remix {
             ImGui::TextWrapped("Sparse rendering: off (%s)", sparse.reason);
         }
       }
-      ImGui::TextWrapped("Active: %s", upscale::name(fsr.backend));
+      if ((fsr.backend == upscale::Backend::Fsr31 || fsr.backend == upscale::Backend::Xess) && !fsr.provider.empty())
+        ImGui::TextWrapped("Active: %s", fsr.provider.c_str());
+      else
+        ImGui::TextWrapped("Active: %s", upscale::name(fsr.backend));
       if (fsr.backend == upscale::Backend::DlssRr)
         ImGui::TextWrapped("Ray Reconstruction: %s, preset %c", fsr.rrCnn ? "CNN (DLSS 310.2.1)" : "transformer",
                            fsr.rrPreset >= 1 && fsr.rrPreset <= 6 ? char('A' + fsr.rrPreset - 1) : '-');
@@ -497,15 +536,15 @@ namespace remix {
       ui::Checkbox("Frame generation", &settings.frameGeneration);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Shows generated frames between each pair of rendered frames: DLSS Frame Generation\n"
-                          "(2x to 4x, a supported RTX GPU) or FSR 3.1 frame generation (2x, any GPU).\n"
+                          "(2x to 4x, a supported RTX GPU) or FSR frame generation (2x, any GPU).\n"
                           "Needs the path tracer and an upscaler (DLSS or FSR; their native-resolution preset\n"
                           "counts). Adds latency: the rendered frame is shown after its generated ones.");
       if (settings.frameGeneration) {
         int backend = int(settings.frameGenerationBackend);
-        if (ui::Combo("Frame generation backend", &backend, "Auto\0DLSS\0FSR 3.1\0"))
+        if (ui::Combo("Frame generation backend", &backend, "Auto\0DLSS\0FSR\0"))
           settings.frameGenerationBackend = upscale::FrameGenerationMode(backend);
         if (ImGui::IsItemHovered())
-          ImGui::SetTooltip("Auto: DLSS Frame Generation where the GPU supports it, FSR 3.1 otherwise.");
+          ImGui::SetTooltip("Auto: DLSS Frame Generation where the GPU supports it, FSR otherwise.");
         // FSR generates one frame whatever is asked.
         ImGui::BeginDisabled(settings.frameGenerationBackend == upscale::FrameGenerationMode::Fsr31);
         int frames = int(settings.frameGenerationFrames) - 1;
@@ -530,6 +569,80 @@ namespace remix {
         if (ngx.initializationComplete && !ngx.fg)
           ImGui::TextWrapped("DLSS Frame Generation unavailable: %s", ngx.fgReason.c_str());
       }
+#if REMIX_HAS_DLSS5
+      ImGui::Separator();
+      ui::Checkbox("Enable Neural Uplift (DLSS-NR)", &options.neuralUplift);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("DLSS 5 Neural Uplift (Feature 18) runs as a post-process on the tonemapped,\n"
+                          "display-encoded LDR frame, enhancing structure, details and tone.");
+      const auto nuStats = m_pathTracer ? m_pathTracer->neuralUpliftStatistics() : upscale::NeuralUpliftStatistics{};
+      if (!nuStats.supported) {
+        ImGui::TextDisabled("Neural Uplift: unavailable - %s",
+                            nuStats.notLoadedReason.empty() ? "nvngx_dlssnr.dll not found" : nuStats.notLoadedReason.c_str());
+      } else {
+        ImGui::Text("Neural Uplift: %s (feature id %u, preset %u, inits %u)",
+                    nuStats.statusReason.empty() ? "idle" : nuStats.statusReason.c_str(),
+                    options.neuralUpliftFeatureId, options.neuralUpliftPreset, nuStats.initCount);
+        if (options.neuralUplift && !(nuStats.lastHadDepth && nuStats.lastHadMotionVectors)) {
+          ImGui::TextWrapped("Inputs: %s, %s - running spatially only. Presets that rely on temporal "
+                             "reprojection cannot be judged in this state.",
+                             nuStats.lastHadDepth ? "depth" : "NO depth",
+                             nuStats.lastHadMotionVectors ? "motion vectors" : "NO motion vectors");
+        }
+      }
+      if (options.neuralUplift) {
+        ImGui::Indent();
+        int passes = int(options.neuralUpliftPasses);
+        if (ui::SliderInt("Passes", &passes, 1, 7))
+          options.neuralUpliftPasses = uint32_t(passes);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Number of sequential DLSS 5 passes executed over the image (1 to 7).\n"
+                            "Higher passes apply iterative neural enhancement.");
+        int style = int(options.neuralUpliftStyle);
+        if (ui::SliderInt("Style", &style, 0, 2))
+          options.neuralUpliftStyle = uint32_t(style);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("0 is neutral; 1 and 2 apply different baked structure/tone biases.\n"
+                            "The snippet only ships these three - higher values are clamped to 2.");
+        ui::SliderFloat("Style Strength", &options.neuralUpliftStyleStrength, 0.0f, 1.0f, "%.2f");
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("How far the selected style is blended in from neutral. 0 makes it a no-op.\n"
+                            "This is the parameter NVIDIA named DLSSNR.LocalToneStrength, which is a style\n"
+                            "blend weight rather than the tone control its name suggests.");
+        ui::SliderFloat("Intensity", &options.neuralUpliftIntensity, 0.0f, 1.0f, "%.2f");
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Blend of the enhanced image against the original. Below 1 the snippet keeps\n"
+                            "an extra copy of the input to blend against, so it also costs slightly more.");
+        ui::Checkbox("Auto Mask", &options.neuralUpliftAutoMask);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Lets the snippet decide per pixel where to apply the effect. The two structure\n"
+                            "strengths below are applied through this mask, so turning it off disables them.");
+        ImGui::BeginDisabled(!options.neuralUpliftAutoMask);
+        ui::SliderFloat("Local Structure Strength", &options.neuralUpliftLocalStructureStrength, 0.0f, 2.0f, "%.2f");
+        ui::SliderFloat("Skin Structure Strength", &options.neuralUpliftSkinStructureStrength, -1.0f, 2.0f, "%.2f");
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("-1 means: use Local Structure Strength for skin too. That is the default, and is\n"
+                            "not the same as 0, which explicitly disables structure enhancement on skin.");
+        ImGui::EndDisabled();
+
+        if (ImGui::TreeNode("Inputs / Bring-up")) {
+          int preset = int(options.neuralUpliftPreset);
+          if (ui::SliderInt("Model Preset", &preset, 0, 7))
+            options.neuralUpliftPreset = uint32_t(preset);
+          if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Selects weights hint for the model. Changing it recreates the feature and\n"
+                              "resets temporal history.");
+          ui::Checkbox("Depth Inverted", &options.neuralUpliftDepthInverted);
+          ui::SliderFloat("Motion Vector Scale", &options.neuralUpliftMotionVectorScale, 0.01f, 10.0f, "%.2f");
+          int featId = int(options.neuralUpliftFeatureId);
+          if (ui::DragInt("NGX Feature ID", &featId, 1.0f, 0, 63))
+            options.neuralUpliftFeatureId = uint32_t(featId);
+          ui::Checkbox("Bypass Snippet Caller Check", &options.neuralUpliftBypassCallerCheck);
+          ImGui::TreePop();
+        }
+        ImGui::Unindent();
+      }
+#endif // REMIX_HAS_DLSS5
     }
     if (ImGui::CollapsingHeader("Memory")) {
       ui::Checkbox("Keep BC textures compressed", &settings.compressedTextures);
@@ -539,6 +652,13 @@ namespace remix {
                           "Applies to textures created after the change; no restart needed.");
       if (settings.compressedTextures && !m_textureCompression)
         ImGui::TextWrapped("%s", "This GPU cannot sample BC formats: textures are decoded once at upload.");
+#if REMIX_HAS_USD
+      ui::Checkbox("Retain texture data for captures", &settings.captureRetainTextureData);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Keep BC texture blocks in system memory after upload so USD captures (Mods tab)\n"
+                          "can write them. Costs about the textures' VRAM size in system memory.\n"
+                          "Applies to textures uploaded afterwards. Off: captures save BC textures as 64-pixel stand-ins.");
+#endif
       ui::Checkbox("Report VRAM statistics", &settings.vramStatistics);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Answer GetVramStats with OpenRemix's texture, geometry, acceleration-structure\n"

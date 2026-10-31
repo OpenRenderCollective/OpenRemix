@@ -83,9 +83,16 @@ namespace remix {
         if (ui::InputFloat(label, &value, 0.f, 0.f, "%.6g") && std::isfinite(value))
           *threshold = std::clamp(value, 0.f, 1000000.f);
         if (ImGui::IsItemHovered())
-          ImGui::SetTooltip("Linear scene luminance, 0 disables (maximum 1,000,000).\nLower values suppress "
-                            "more brightness, including legitimate highlights.");
+          ImGui::SetTooltip(options.relativeClamps
+                                ? "Multiples of middle grey at the current exposure, 0 disables.\nLower values "
+                                  "suppress more brightness, including legitimate highlights."
+                                : "Linear scene luminance, 0 disables (maximum 1,000,000).\nLower values suppress "
+                                  "more brightness, including legitimate highlights.");
       }
+      ui::Checkbox("Clamps relative to exposure", &options.relativeClamps);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("The clamps count in multiples of middle grey (0.18 on screen) at the current\n"
+                          "exposure instead of linear scene luminance, so one value suits any scene.");
       auto denoising = denoisingStatistics();
       const bool fireflyFilterActive =
           denoising.activeDenoiser && !rrActive && (options.localDenoiser || options.bounces > 0) &&

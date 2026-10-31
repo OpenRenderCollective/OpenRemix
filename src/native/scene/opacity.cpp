@@ -81,9 +81,9 @@ namespace remix::scene {
       auto &out = intervals[axis];
       if (first >= 0 && last < size)
         out[0] = {uint32_t(first), uint32_t(last)};
-      else if (wrap == 4)
+      else if (wrap == 3)
         return P::TextureBoundary;
-      else if (wrap == 3) {
+      else if (wrap == 0) {
         out[0] = {uint32_t(std::clamp(first, 0.f, float(size - 1))),
                   uint32_t(std::clamp(last, 0.f, float(size - 1)))};
       } else if (last - first >= size - 1 || std::max(std::abs(first), std::abs(last)) > 16777216.f) {

@@ -287,7 +287,7 @@ namespace remix::config {
                             return true;
                           }});
         result.push_back(choices("rtx.native.pathtrace.upscaler", FIELD(trace.upscaler),
-                                 {"off", "auto", "fsr31", "dlss"}));
+                                 {"off", "auto", "fsr31", "dlss", "xess"}));
         result.push_back(choices("rtx.native.pathtrace.dlssRayReconstruction",
                                  FIELD(trace.dlssRayReconstruction), {"0", "1"}));
         result.push_back(choices("rtx.native.pathtrace.dlssRayReconstructionModel",
@@ -304,6 +304,9 @@ namespace remix::config {
                                  {"native-aa", "quality", "balanced", "performance", "ultra-performance"}));
         result.push_back(choices("rtx.native.pathtrace.dlssQuality", FIELD(trace.dlssQuality),
                                  {"native-aa", "quality", "balanced", "performance", "ultra-performance"}));
+        result.push_back(choices("rtx.native.pathtrace.xessQuality", FIELD(trace.xessQuality),
+                                 {"native-aa", "ultra-quality-plus", "ultra-quality", "quality", "balanced",
+                                  "performance", "ultra-performance"}));
         TRACE(samples, 1, 16);
         TRACE(bounces, 0, 16);
         TRACE(russianRoulette, 0, 1);
@@ -329,6 +332,13 @@ namespace remix::config {
         TRACE(torchLights, 0, 1);
         TRACE(emissiveLights, 0, 1);
         TRACE(emissiveClusterSize, 1, 64);
+        TRACE(lightPowerExponent, .25, 1);
+        TRACE(rayOffset, 4, 1024);
+        TRACE(shadowTerminatorSoften, 0, 1);
+        TRACE(shadowTerminatorLift, 0, 1);
+        TRACE(shadowTerminatorMaxArea, 0, 10);
+        TRACE(shadowTerminatorMaxLength, 0, 1);
+        TRACE(emissiveSpecularRoughness, 0, .45);
         TRACE(adaptiveLocalSampling, 0, 1);
         TRACE(stabilizeEmissiveLighting, 0, 1);
         TRACE(emissiveSolidAngleSampling, 0, 1);
@@ -347,6 +357,7 @@ namespace remix::config {
         TRACE(movingShadowBlur, .01, 1);
         TRACE(translucentIndirect, 0, 1);
         TRACE(skipBlendedSecondaryRays, 0, 1);
+        TRACE(precompileConfigurations, 0, 1);
         TRACE(viewModel, 0, 1);
         TRACE(viewModelScale, .05f, 1);
         TRACE(primarySurfaceReplacement, 0, 1);
@@ -408,19 +419,22 @@ namespace remix::config {
         TRACE(movingLocalHistory, 0, 1);
         TRACE(restirCandidates, 1, 32);
         TRACE(restirSpatialSamples, 0, 8);
+        TRACE(restirDisocclusionSamples, 0, 8);
+        TRACE(restirBoilingFilter, 0, 1);
         TRACE(restirSpatialRadius, 1, 100);
         TRACE(restirTemporalHistory, 0, 64);
         TRACE(restirInitialVisibility, 0, 1);
         TRACE(restirPermutation, 0, 1);
         TRACE(localSamples, 1, 16);
         TRACE(shadowDebug, 0, 2);
-        TRACE(debugView, 0, 14);
+        TRACE(debugView, 0, 15);
         TRACE(taa, 0, 1);
         TRACE(waterIndirectReuse, 0, 1);
         TRACE(caustics, 0, 1);
         TRACE(causticsStrength, 0, 1);
         TRACE(causticsContrast, 0, 7.96875);
         TRACE(causticsDepth, 0, 100);
+        TRACE(iridescence, 0, 1);
         TRACE(translucencyDenoiser, 0, 1);
         TRACE(translucencyReuse, 0, 1);
         TRACE(pbrLocalReuse, 0, 1);
@@ -443,6 +457,7 @@ namespace remix::config {
         TRACE(fsrSharpness, 0, 1);
         TRACE(localDirectClamp, 0, 1000000);
         TRACE(indirectClamp, 0, 1000000);
+        TRACE(relativeClamps, 0, 1);
         TRACE(localIntensity, 0, 100);
         result.push_back(scalar("rtx.native.pathtrace.localRange", FIELD(trace.localRange), 0, 1024, .01));
         result.push_back(scalar("rtx.native.pathtrace.sunAngularDiameter", FIELD(trace.sunAngularDiameter), 0,
@@ -452,6 +467,34 @@ namespace remix::config {
         TRACE(hardwareFaceCulling, 0, 1);
         TRACE(combinedTlas, 0, 1);
         TRACE(shadowEarlyOut, 0, 1);
+        TRACE(neuralUplift, 0, 1);
+        TRACE(neuralUpliftPasses, 1, 7);
+        TRACE(neuralUpliftPreset, 0, 7);
+        TRACE(neuralUpliftStyle, 0, 2);
+        TRACE(neuralUpliftIntensity, 0, 1);
+        TRACE(neuralUpliftStyleStrength, 0, 1);
+        TRACE(neuralUpliftLocalStructureStrength, 0, 2);
+        result.push_back(scalar("rtx.native.pathtrace.neuralUpliftSkinStructureStrength",
+                                FIELD(trace.neuralUpliftSkinStructureStrength), 0, 2, 0, true));
+        TRACE(neuralUpliftAutoMask, 0, 1);
+        TRACE(neuralUpliftDepthInverted, 0, 1);
+        TRACE(neuralUpliftMotionVectorScale, 0.01, 10);
+        TRACE(neuralUpliftFeatureId, 0, 63);
+        TRACE(neuralUpliftBypassCallerCheck, 0, 1);
+        // Compatibility aliases for rtx.neuralUplift.*
+        result.push_back(scalar("rtx.neuralUplift.enable", FIELD(trace.neuralUplift), 0, 1));
+        result.push_back(scalar("rtx.neuralUplift.passes", FIELD(trace.neuralUpliftPasses), 1, 7));
+        result.push_back(scalar("rtx.neuralUplift.preset", FIELD(trace.neuralUpliftPreset), 0, 7));
+        result.push_back(scalar("rtx.neuralUplift.style", FIELD(trace.neuralUpliftStyle), 0, 2));
+        result.push_back(scalar("rtx.neuralUplift.intensity", FIELD(trace.neuralUpliftIntensity), 0, 1));
+        result.push_back(scalar("rtx.neuralUplift.styleStrength", FIELD(trace.neuralUpliftStyleStrength), 0, 1));
+        result.push_back(scalar("rtx.neuralUplift.localStructureStrength", FIELD(trace.neuralUpliftLocalStructureStrength), 0, 2));
+        result.push_back(scalar("rtx.neuralUplift.skinStructureStrength", FIELD(trace.neuralUpliftSkinStructureStrength), 0, 2, 0, true));
+        result.push_back(scalar("rtx.neuralUplift.autoMask", FIELD(trace.neuralUpliftAutoMask), 0, 1));
+        result.push_back(scalar("rtx.neuralUplift.depthInverted", FIELD(trace.neuralUpliftDepthInverted), 0, 1));
+        result.push_back(scalar("rtx.neuralUplift.motionVectorScale", FIELD(trace.neuralUpliftMotionVectorScale), 0.01, 10));
+        result.push_back(scalar("rtx.neuralUplift.featureId", FIELD(trace.neuralUpliftFeatureId), 0, 63));
+        result.push_back(scalar("rtx.neuralUplift.bypassCallerCheck", FIELD(trace.neuralUpliftBypassCallerCheck), 0, 1));
         for (size_t i = 0; i < 3; ++i) {
           result.push_back(scalar(
               "rtx.native.pathtrace.lightDirection." + std::string(1, "xyz"[i]),
@@ -468,6 +511,9 @@ namespace remix::config {
               "rtx.native.clearColor." + std::string(1, "rgba"[i]),
               [i](auto &s) -> auto & { return s.clearColor[i]; }, 0, 1));
         result.push_back(scalar("rtx.native.textures.keepCompressed", FIELD(compressedTextures), 0, 1));
+        result.push_back(
+            scalar("rtx.native.capture.retainTextureData", FIELD(captureRetainTextureData), 0, 1));
+        result.push_back(scalar("rtx.zUp", FIELD(zUp), 0, 1));
         result.push_back(scalar("rtx.native.vramStatistics", FIELD(vramStatistics), 0, 1));
         result.push_back(scalar("rtx.native.meshes.refreshInPlace", FIELD(refreshGeometry), 0, 1));
         result.push_back(scalar("rtx.native.hostPasses", FIELD(hostPasses), 0, 1));
@@ -479,6 +525,9 @@ namespace remix::config {
         result.push_back(scalar("rtx.native.hdrPeakNits", FIELD(hdrPeakNits), 80, 10000));
         result.push_back(scalar("rtx.native.hdrPaperWhiteNits", FIELD(hdrPaperWhiteNits), 80, 1000));
         result.push_back(scalar("rtx.native.hdrUiNits", FIELD(hdrUiNits), 80, 1000));
+        result.push_back(scalar("rtx.native.screenshot.hdrPng", FIELD(screenshotHdrPng), 0, 1));
+        result.push_back(scalar("rtx.native.screenshot.jxr", FIELD(screenshotJxr), 0, 1));
+        result.push_back(scalar("rtx.native.screenshot.exr", FIELD(screenshotExr), 0, 1));
         result.push_back(scalar("rtx.native.frameGeneration", FIELD(frameGeneration), 0, 1));
         result.push_back(choices("rtx.native.frameGenerationBackend", FIELD(frameGenerationBackend),
                                  {"auto", "dlss", "fsr31"}));

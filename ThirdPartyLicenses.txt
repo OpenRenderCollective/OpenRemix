@@ -26,7 +26,6 @@ Vulkan-Headers
 Copyright The Khronos Group Inc.
 Apache-2.0 OR MIT; full notices: include/vulkan/LICENSE.md and LICENSES/.
 Vulkan loader, driver and platform libraries are supplied by the platform SDK/system.
-macOS packages include the SDK Vulkan loader/MoltenVK and SDK license notices.
 
 Historical notices for removed renderer dependencies are preserved in
  docs/history/renderer-third-party-licenses.txt. Those libraries are no longer built or packaged.
@@ -41,10 +40,31 @@ NRD 4.18.0, MathLib v11, ShaderMake headers, and sse2neon v1.8.0
 NVIDIA SHARC 1.8.3.0 (optional): third_party/sharc/License.md.
 This software contains source code provided by NVIDIA Corporation.
 
-AMD FidelityFX Super Resolution 3.1.4 (upscaler, FidelityFX SDK v1.1.4)
+jxrlib 1.1 (JPEG XR encoder for HDR screenshots), commit f7521879862b9085318e814c6157490dd9dbbdb4
+Copyright (c) Microsoft Corp.
+BSD 2-Clause license: third_party/jxrlib/LICENSE; distributed as jxrlib.txt.
+Source and provenance: third_party/jxrlib/README.remix.md.
+
+AMD FidelityFX Super Resolution 3.1.4 (upscaler and frame generation, FidelityFX SDK v1.1.4;
+Linux builds)
 Copyright (C) 2024 Advanced Micro Devices, Inc.
 MIT license: third_party/fsr31/LICENSE.txt; distributed as FidelityFX.txt.
 Source revision and local portability patches: third_party/fsr31/upstream.json.
+
+AMD FSR SDK 2.4.0 signed Vulkan libraries (FSR upscaling and frame generation; Windows builds)
+Copyright (C) Advanced Micro Devices, Inc.
+amd_fidelityfx_loader_vk.dll, amd_fidelityfx_upscaler_vk.dll and
+amd_fidelityfx_framegeneration_vk.dll, redistributed in binary form under AMD's license:
+third_party/fidelityfx/FidelityFX-SDK/Kits/FidelityFX/docs/license.md (git submodule; revision:
+third_party/fidelityfx/upstream.json). Packages carry the libraries and that license in
+fidelityfx/ beside remix.dll, and the license as FidelityFX-SDK.md.
+
+Intel XeSS SDK 3.0.2 signed library (XeSS Super Resolution; Windows builds)
+Copyright (C) Intel Corporation
+libxess.dll, redistributed in binary form without modification under the Intel Simplified
+Software License: third_party/xess/xess/LICENSE.txt (git submodule; revision:
+third_party/xess/upstream.json). Packages carry the library, that license and
+third-party-programs.txt in xess/ beside remix.dll, and the license as XeSS.txt.
 
 EON rough diffuse BRDF evaluator and CLTC sampling
 Copyright (c) 2024 Jamie Portsmouth

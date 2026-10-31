@@ -14,6 +14,8 @@ runtime_sources = files(
   'presentation.cpp',
   'raster_sky.cpp',
   'runtime.cpp',
+  'jxr_writer.cpp',
   'screenshot.cpp',
   'swapchain.cpp',
 )
+shell_deps += [jxrlib_dep]

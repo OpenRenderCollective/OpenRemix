@@ -10,6 +10,13 @@
 #define SHARC_ENABLE_SH_ENCODING 1
 #define SHARC_ENABLE_CACHE_RESAMPLING 1
 #define SHARC_SAMPLE_NUM_THRESHOLD 3
+// Update paths store up to three vertices and resample the cache from the
+// second on (SDK defaults 2 and 1; RTXPT's settings): a training path carries
+// a bounce more of its own before it leans on the cache, less self-feedback
+// lag after the cache is cleared for a lighting change. Only the update stage
+// keeps SharcState.
+#define SHARC_PROPAGATION_DEPTH 3
+#define SHARC_RESAMPLING_DEPTH_MIN 2
 // The resolve keeps the SDK's reads of other entries, as dxvk-remix does: a
 // cell new at its level starts from the adjacent level's radiance while the
 // camera moves (SHARC_BLEND_ADJACENT_LEVELS), and a key inserted again at an

@@ -32,6 +32,8 @@ public:
   // current transformer models. NGX restarts for it, so only while no feature
   // exists. False (with `reason`) leaves the loaded model.
   bool useRayReconstructionModel(bool cnn, std::string &reason);
+  VkInstance instanceHandle() const { return instance; }
+  VkDevice deviceHandle() const { return device; }
 
 private:
   friend class NgxFeature;

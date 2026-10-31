@@ -10,10 +10,11 @@ another developer. Read each repository's AGENTS.md where present.
 ```sh
 git clone --branch forward-plus-renderer https://github.com/OpenRenderCollective/OpenRemix.git OpenRemix
 git clone --branch forward-plus-renderer https://github.com/sambow23/garrys-mod-rtx-remixed-2.git garrys-mod-rtx-remixed-2
-git -C OpenRemix submodule update --init third_party/numos/numos-sky
+git -C OpenRemix submodule update --init third_party/numos/numos-sky third_party/fidelityfx/FidelityFX-SDK third_party/xess/xess
 ```
 
-The last command initializes the optional pinned sky dependency without recursion.
+The last command initializes pinned sky, FidelityFX and XeSS dependencies without recursion.
+FidelityFX and XeSS are required by the current Windows build; sky is optional.
 `-Dsky=auto` can build without it. Vulkan headers are already committed; there is
 no Vulkan submodule to initialize. Public ABI headers are in `public/include`.
 

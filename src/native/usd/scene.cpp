@@ -167,7 +167,7 @@ namespace remix::usd {
       auto transmission = attribute(shader, "inputs:transmittance_color", GfVec3f(1.0f));
       auto source = attribute(shader, "info:mdl:sourceAsset", SdfAssetPath()).GetAssetPath();
       const bool translucent = source.find("Translucent") != std::string::npos;
-      return {{"id", prim.GetPath().GetString()},
+      Json result = {{"id", prim.GetPath().GetString()},
               {"kind", translucent ? "translucent" : "opaque"},
               {"albedo", {color[0], color[1], color[2]}},
               {"roughness", attribute(shader, "inputs:reflection_roughness_constant", 0.5f)},
@@ -185,9 +185,12 @@ namespace remix::usd {
                                          : 0.0f},
               {"ior", attribute(shader, "inputs:ior_constant", 1.3f)},
               {"transmittance", {transmission[0], transmission[1], transmission[2]}},
-              {"transmittance_distance", attribute(shader, "inputs:transmittance_measurement_distance", 1.f)},
+              // AperturePBR_Translucent's body: a thin wall, or the distance over
+              // which the transmittance colour is reached (Beer-Lambert).
+              {"transmittance_distance", attribute(shader, "inputs:transmittance_measurement_distance", 1.0f)},
               {"thin_walled", attribute(shader, "inputs:thin_walled", false)},
-              {"thin_wall_thickness", attribute(shader, "inputs:thin_wall_thickness", .001f)},
+              {"thin_wall_thickness", attribute(shader, "inputs:thin_wall_thickness", 1.0f)},
+              {"use_diffuse_layer", attribute(shader, "inputs:use_diffuse_layer", false)},
               {"filter_mode", sampler_mode(shader, "inputs:filter_mode", 1)},
               {"wrap_mode_u", sampler_mode(shader, "inputs:wrap_mode_u", 3)},
               {"wrap_mode_v", sampler_mode(shader, "inputs:wrap_mode_v", 3)},
@@ -199,6 +202,23 @@ namespace remix::usd {
               {"roughness_texture", texture(shader, "inputs:reflectionroughness_texture", warnings)},
               {"metallic_texture", texture(shader, "inputs:metallic_texture", warnings)},
               {"emissive_texture", texture(shader, "inputs:emissive_mask_texture", warnings)}};
+      // AperturePBR's thin film, with OpenRemix's iridescence attributes
+      // (openremix:iridescence:*, outside the MDL inputs). OpenRemix also
+      // reads the film on AperturePBR_Translucent, which has none of its own.
+      if (attribute(shader, "inputs:enable_thin_film", false))
+        result["iridescence"] = {
+            {"thickness", attribute(shader, "inputs:thin_film_thickness_constant", 200.0f)},
+            {"from_alpha", attribute(shader, "inputs:thin_film_thickness_from_albedo_alpha", false)},
+            {"strength", attribute(shader, "openremix:iridescence:strength", 1.0f)},
+            {"ior", attribute(shader, "openremix:iridescence:filmIor", 1.5f)},
+            {"texture", texture(shader, "openremix:iridescence:thicknessTexture", warnings)},
+            {"min", attribute(shader, "openremix:iridescence:thicknessMin", 100.0f)},
+            {"max", attribute(shader, "openremix:iridescence:thicknessMax", 800.0f)},
+            {"flow_amplitude", attribute(shader, "openremix:iridescence:flowAmplitude", 0.0f)},
+            {"flow_scale", attribute(shader, "openremix:iridescence:flowScale", 1.0f)},
+            {"flow_speed", attribute(shader, "openremix:iridescence:flowSpeed", 0.1f)},
+            {"structural", attribute(shader, "openremix:iridescence:structural", 0.0f)}};
+      return result;
     }
     int element_index(const TfToken &interpolation, int face, int corner, int vertex) {
       if (interpolation == UsdGeomTokens->constant)
@@ -266,6 +286,7 @@ namespace remix::usd {
     Json light_json(const UsdPrim &prim, const GfMatrix4d &world, Json &warnings) {
       const auto path = prim.GetPath().GetString();
       auto color = attribute(prim, "inputs:color", GfVec3f(1));
+      const auto cookie_up = attribute(prim, "inputs:remix:cookie:up", GfVec3f(0, 0, 1));
       if (attribute(prim, "inputs:enableColorTemperature", false))
         color = GfCompMult(
             color, UsdLuxBlackbodyTemperatureAsRgb(attribute(prim, "inputs:colorTemperature", 6500.f)));
@@ -284,7 +305,13 @@ namespace remix::usd {
               {"cone_angle", attribute(prim, "inputs:shaping:cone:angle", 180.f)},
               {"cone_softness", attribute(prim, "inputs:shaping:cone:softness", 0.f)},
               {"focus", attribute(prim, "inputs:shaping:focus", 0.f)},
-              {"texture", texture(prim, "inputs:texture:file", warnings)}};
+              {"texture", texture(prim, "inputs:texture:file", warnings)},
+              // UsdLuxShapingAPI's IES profile, and OpenRemix's light cookie
+              // (usd/capture_writer.cpp; remixapi_LightInfoCookieEXT).
+              {"ies", texture(prim, "inputs:shaping:ies:file", warnings)},
+              {"cookie", texture(prim, "inputs:remix:cookie:texture", warnings)},
+              {"cookie_up", {cookie_up[0], cookie_up[1], cookie_up[2]}},
+              {"cookie_fov", attribute(prim, "inputs:remix:cookie:fov", 0.f)}};
     }
 
   } // namespace

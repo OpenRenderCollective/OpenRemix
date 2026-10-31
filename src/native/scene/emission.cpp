@@ -338,7 +338,7 @@ namespace remix::scene {
     // constant; no vertex colours or texture stages here) and the mask.
     const Map albedo = m.selfIllumination ? open(m.texture.get()) : Map{};
     auto coord = [](float value, uint32_t size, uint8_t wrap) {
-      if (wrap <= 1)
+      if (wrap == 1)
         value -= std::floor(value);
       else if (wrap == 2) {
         value = std::fmod(std::abs(value), 2.f);
@@ -355,7 +355,7 @@ namespace remix::scene {
         u += uv[i][0] * w[i];
         v += uv[i][1] * w[i];
       }
-      if ((m.wrapU == 4 && (u < 0 || u > 1)) || (m.wrapV == 4 && (v < 0 || v > 1)))
+      if ((m.wrapU == 3 && (u < 0 || u > 1)) || (m.wrapV == 3 && (v < 0 || v > 1)))
         continue;
       auto texel = [&](const Map &map) {
         return map.at(4 * (size_t(coord(v, map.height, m.wrapV)) * map.width + coord(u, map.width, m.wrapU)));

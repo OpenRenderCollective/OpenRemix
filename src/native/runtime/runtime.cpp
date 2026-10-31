@@ -23,6 +23,7 @@
 #include "platform/memory_release.h"
 #include "runtime/runtime.h"
 #include "forward/bake/cache_persistence.h"
+#include "upscale/xess.h"
 
 #include <algorithm>
 #include <array>
@@ -79,7 +80,7 @@ namespace remix {
       m_disableProfiles = editor.disableProfiles;
       m_disableMods = editor.disableMods;
     }
-#if !defined(__linux__)
+#if !defined(__linux__) && !defined(_WIN32)
     if (m_headless)
       return REMIXAPI_ERROR_CODE_FEATURE_UNAVAILABLE;
 #endif
@@ -288,6 +289,7 @@ namespace remix {
       m_lowLatencySupported = m_lowLatencyActive = false;
       m_gpuTimers.shutdown();
       MemoryRelease::drain();
+      upscale::xess::unregisterDevice(m_device);
       vkDestroyDevice(m_device, nullptr);
     }
     if (m_surface) {

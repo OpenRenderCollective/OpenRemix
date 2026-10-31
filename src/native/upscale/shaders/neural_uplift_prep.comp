@@ -1,0 +1,24 @@
+#version 450
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(binding = 0, r32f) readonly uniform image2D viewDepth;
+layout(binding = 1, rgba32f) readonly uniform image2D guideMotion;
+layout(binding = 2, r32f) writeonly uniform image2D deviceDepth;
+layout(binding = 3, rg32f) writeonly uniform image2D motion;
+
+layout(push_constant) uniform Frame {
+  mat4 projection;
+  uint depthInverted;
+} frame;
+
+void main() {
+  ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+  if (any(greaterThanEqual(p, imageSize(viewDepth)))) return;
+
+  vec4 mv = imageLoad(guideMotion, p);
+  imageStore(motion, p, vec4(mv.w > 0 ? mv.xy : vec2(0), 0, 0));
+
+  float z = imageLoad(viewDepth, p).r;
+  vec4 clip = frame.projection * vec4(0, 0, z * (frame.projection[2][3] >= 0 ? 1 : -1), 1);
+  float depth = (z > 0 && z < 1e7) ? clamp(clip.z / clip.w, 0, 1) : (frame.depthInverted != 0 ? 0.0 : 1.0);
+  imageStore(deviceDepth, p, vec4(depth));
+}

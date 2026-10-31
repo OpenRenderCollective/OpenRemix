@@ -15,10 +15,12 @@ namespace remix {
         for (int c = 0; c < 4; ++c)
           instance.transform.matrix[r][c] = input.model[c * 4 + r];
       instance.instanceCustomIndex = input.customIndex;
+      // Paint stays paint when reflection-only: the paint queries find it, and
+      // closest() lays it only on a reflection-only receiver (state bit 15).
       instance.mask = input.viewModel        ? trace::viewModelInstanceMask
+                      : input.decal          ? trace::decalInstanceMask
                       : input.reflectionOnly ? trace::reflectionOnlyInstanceMask
                       : input.blended        ? trace::blendedInstanceMask
-                      : input.decal          ? trace::decalInstanceMask
                                              : mask;
       instance.flags = trace::instanceFlags(input, faceCulling);
       instance.accelerationStructureReference = input.geometry;

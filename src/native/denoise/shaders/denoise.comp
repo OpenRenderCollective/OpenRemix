@@ -115,6 +115,29 @@ void main() {
     return;
   }
   if(any(greaterThanEqual(p,size)))return;
+  if(pass.mode==6) {
+    // DLSS-RR's specular hit distance where a PBR pixel had no specular sample
+    // (0): the mean of its neighbours at its depth that had one, over 5x5
+    // pixels, then over 5x5 pixels two apart (RTXPT's DenoiseSpecHitT fill,
+    // without its smoothing of measured values). Step 0 writes every pixel to
+    // the confidence image, which REBLUR alone uses (done by now); step 1
+    // fills the holes left from it. Pixels without any stay without (65504).
+    bool second=pass.step!=0;
+    float center=second?imageLoad(confidence,p).x:imageLoad(rrHitDistance,p).x;
+    if(second&&imageLoad(rrHitDistance,p).x>0)return;
+    if(center<=0) {
+      float z=depthAt(p),sum=0,count=0;
+      for(int y=-2;y<=2;++y)for(int x=-2;x<=2;++x) {
+        ivec2 q=p+ivec2(x,y)*(second?2:1);
+        if(any(lessThan(q,ivec2(0)))||any(greaterThanEqual(q,size)))continue;
+        float v=second?imageLoad(confidence,q).x:imageLoad(rrHitDistance,q).x,d=depthAt(q);
+        if(v>0&&v<65504&&abs(d-z)<=.025*(d+z)){sum+=v;++count;}
+      }
+      center=count>0?sum/count:second?65504:0;
+    }
+    if(second)imageStore(rrHitDistance,p,vec4(center));else imageStore(confidence,p,vec4(center));
+    return;
+  }
   if(pass.mode==5) {
     vec4 factor=imageLoad(frontAlbedo,p);
     if(factor.a>0) {

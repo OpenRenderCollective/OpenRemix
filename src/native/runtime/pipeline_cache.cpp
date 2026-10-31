@@ -11,7 +11,7 @@
 
 namespace remix::pipeline {
 namespace {
-constexpr uint64_t maxBytes = 256ull * 1024 * 1024;
+constexpr uint64_t maxBytes = maxCacheBytes;
 uint64_t checksum(std::span<const uint8_t> data) {
   uint64_t h = 14695981039346656037ull;
   for (auto b : data)
@@ -112,6 +112,26 @@ bool writeCache(const std::filesystem::path &file, const CacheIdentity &id,
     if (!temporary.empty())
       std::filesystem::remove(temporary, ignored);
     return false;
+  }
+}
+void removeStaleCaches(const std::filesystem::path &file) noexcept {
+  try {
+    const auto name = file.stem().string();
+    const auto device = name.substr(0, name.rfind('-') + 1);
+    if (device.empty())
+      return;
+    std::error_code error;
+    for (const auto &entry :
+         std::filesystem::directory_iterator(file.parent_path(), error)) {
+      const auto path = entry.path();
+      const auto stem = path.stem().string();
+      if (path.extension() == ".bin" && path != file &&
+          stem.starts_with(device) &&
+          stem.find_first_not_of("0123456789", device.size()) ==
+              std::string::npos)
+        std::filesystem::remove(path, error);
+    }
+  } catch (...) {
   }
 }
 } // namespace remix::pipeline

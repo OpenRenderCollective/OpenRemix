@@ -32,16 +32,17 @@ namespace remix::metal {
                        bindingTextures = 6, bindingSky = 7, bindingPrimary = 8, bindingGuide = 15;
     // The lighting kernels' specialization constants by constant_id
     // (pathtrace.comp; pathtrace/local_lights.cpp requestLightingVariant):
-    // bools at their id (local lights 0, guiding 1, small set 2, resampling 3,
-    // split lighting 4, ray profile 7, separate indirect 9, shadow early out
-    // 12), and the sparse launch mode (13, an integer) from bit 16. The other
-    // switches are the per-dispatch `features` push constant.
-    constexpr uint32_t constantLocal = 1u << 0, constantGuided = 1u << 1, constantSmallSet = 1u << 2,
-                       constantResampling = 1u << 3, constantProfile = 1u << 7, constantSeparateIndirect = 1u << 9,
-                       constantEarlyOut = 1u << 12, constantSparseShift = 16;
+    // bools at their id (guiding capable 1, split lighting 4, ray profile 7,
+    // separate indirect 9, shadow early out 12), and the sparse launch mode
+    // (13, an integer) from bit 16. The other switches, light sampling's
+    // structure among them, are the per-dispatch `features` push constant.
+    constexpr uint32_t constantGuidingCapable = 1u << 1, constantProfile = 1u << 7,
+                       constantSeparateIndirect = 1u << 9, constantEarlyOut = 1u << 12, constantSparseShift = 16;
     // pathtrace/gpu.h Feature.
     constexpr uint32_t featureDecals = 1, featureRoulette = 2, featureAngularEmitters = 8, featureFirstOpaqueHit = 16,
-                       featureMultiSheetFallback = 32, defaultFeatures = featureDecals;
+                       featureMultiSheetFallback = 32, featureLocalLights = 64, featureLocalGuiding = 128,
+                       featureSmallSet = 256, featureResampling = 512,
+                       defaultFeatures = featureDecals | featureLocalLights | featureLocalGuiding;
     // The push constant block holding `features` (offset 28).
     struct FeaturesPush {
       uint32_t padding[7] = {};
@@ -280,15 +281,16 @@ namespace remix::metal {
   }
 
   // pathtrace/sharc.cpp createLightingPipelines: the base pipeline takes
-  // local lights without guidance, the shadow early-out setting and its
-  // separate indirect role; the scene's other variants follow on first use.
+  // the shadow early-out setting, its separate indirect role and whether it
+  // can guide; the other variants follow on first use.
   void PathTracer::Gpu::createLighting(Lighting &pass, Stage stage, LightingFlags flags) {
     pass.stage = stage;
     pass.supportsGuiding = flags.supportsGuiding;
     pass.supportsRoulette = flags.supportsRoulette;
     pass.variants = flags.variants;
     pass.baseSeparateIndirect = flags.separateIndirect;
-    pass.base = constantLocal | (configuration.earlyOut ? constantEarlyOut : 0u) |
+    pass.base = (flags.supportsGuiding ? constantGuidingCapable : 0u) |
+                (configuration.earlyOut ? constantEarlyOut : 0u) |
                 (flags.separateIndirect ? constantSeparateIndirect : 0u);
     if (flags.background)
       computePipelineAsync(device, stage, pass.base);
@@ -308,11 +310,11 @@ namespace remix::metal {
     Selected out;
     out.features = (s.decals ? featureDecals : 0u) | (s.roulette && pass.supportsRoulette ? featureRoulette : 0u) |
                    (s.local && s.angular && guiding ? featureAngularEmitters : 0u) |
-                   (s.firstHit && guiding ? featureFirstOpaqueHit : 0u);
-    const uint32_t constants = (s.local ? constantLocal : 0u) | (s.guided && guiding ? constantGuided : 0u) |
-                               (s.local && s.smallSet && guiding ? constantSmallSet : 0u) |
-                               (s.resampling && guiding ? constantResampling : 0u) |
-                               (s.profile ? constantProfile : 0u) |
+                   (s.firstHit && guiding ? featureFirstOpaqueHit : 0u) | (s.local ? featureLocalLights : 0u) |
+                   (s.guided && guiding ? featureLocalGuiding : 0u) |
+                   (s.local && s.smallSet && guiding ? featureSmallSet : 0u) |
+                   (s.resampling && guiding ? featureResampling : 0u);
+    const uint32_t constants = (guiding ? constantGuidingCapable : 0u) | (s.profile ? constantProfile : 0u) |
                                (separateIndirect ? constantSeparateIndirect : 0u) |
                                (s.earlyOut ? constantEarlyOut : 0u) | sparse << constantSparseShift;
     if (constants == pass.base) {
@@ -424,6 +426,7 @@ namespace remix::metal {
     staged.history.end();
     staged.hasEmissive = lights.size() > sphereCount;
     staged.combined.setClusterSize(options.emissiveClusterSize);
+    staged.combined.setPowerExponent(options.lightPowerExponent);
     staged.combined.update(std::move(lights));
     return frame;
   }
@@ -823,6 +826,8 @@ namespace remix::metal {
                           ~uint32_t(remix::trace::reflectionOnlyInstanceMask);
     if (prepared.viewModel)
       frame.pathConfig[3] |= 0x100u;
+    if (!options.iridescence)
+      frame.pathConfig[3] |= 0x200u; // thin films off (scene.glsl filmed)
     std::copy_n(resources.cameraMedium().data(), 4, frame.cameraMedium);
     frame.upAxis = float(std::min(options.volumetricUpAxis, 2u));
     // pathtrace/rendering.cpp: light through translucent surfaces with a normal
@@ -839,6 +844,7 @@ namespace remix::metal {
     // pixels (render/output size with reconstruction).
     frame.visibilityProbe[0] = .02f / options.sceneScale;
     frame.visibilityProbe[1] = .05f / options.sceneScale;
+    frame.visibilityProbe[3] = options.rayOffset;
     frame.visibilityProbe[2] = c.displayHeight && height < c.displayHeight ? float(height) / float(c.displayHeight) : 1.f;
     static_assert(PathTracer::textureLimit <= 32 * 128);
     for (const uint32_t slot : srgbSlots)
@@ -1026,6 +1032,14 @@ namespace remix::metal {
     }
     if (!f.uniform)
       f.uniform = buffer(nullptr, sizeof(frame));
+    // Middle-grey radiance at the current exposure (pathtrace/rendering.cpp):
+    // after the scene signature, since exposure drifts while the meter adapts.
+    const float exposure = options.exposure * (options.autoExposure && g.post ? g.post->statistics().exposure : 1.f);
+    frame.firefly[3] = .18f / std::max(exposure, 1e-12f);
+    if (options.relativeClamps) {
+      frame.firefly[0] *= frame.firefly[3];
+      frame.firefly[1] *= frame.firefly[3];
+    }
     if (rayProfile.path) {
       if (!rayProfile.counters)
         rayProfile.counters = buffer(nullptr, 768);

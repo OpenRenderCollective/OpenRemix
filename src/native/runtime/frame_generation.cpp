@@ -178,7 +178,7 @@ void FrameGeneration::record(VkCommandBuffer command, VkImage real, const VkImag
     duplicate(command, real, generated, count);
     return;
   }
-  gpu::GpuScope scope(command, m_fsr ? "FSR 3.1 frame generation" : "DLSS Frame Generation", m_display);
+  gpu::GpuScope scope(command, m_fsr ? "FSR frame generation" : "DLSS Frame Generation", m_display);
   // Diagnostic (REMIX_FG_NO_HUDLESS=1): the features are not given the frame
   // without HUD.
   static const bool withoutHudless = [] {

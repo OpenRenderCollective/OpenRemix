@@ -24,10 +24,16 @@ namespace remix::ui {
     // pressed becomes it, and the header button's request for that.
     std::string menuShortcut = "Alt+X";
     bool capturingMenuShortcut = false, captureMenuShortcut = false;
+    // The USD scene capture shortcut, likewise ("" while none is set).
+    std::string sceneCaptureShortcut;
+    bool capturingSceneCaptureShortcut = false, captureSceneCaptureShortcut = false;
+    // The screenshot shortcut, the same way (ui::screenshotShortcut).
+    std::string screenshotShortcut = "Alt+F12";
+    bool capturingScreenshotShortcut = false, captureScreenshotShortcut = false;
   };
   void drawProfiles(config::Profiles &profiles, ProfileUi &ui);
   void drawProfileFooter(config::Profiles &profiles, ProfileUi &ui);
-  void drawMods();
+  void drawMods(ProfileUi &ui, config::Settings &settings);
   void drawProfileDialogs(config::Profiles &profiles, ProfileUi &ui);
   using DrawSettingsTab = void (*)(void *, int, config::Settings &);
   bool drawPanel(config::Profiles &profiles, ProfileUi &ui, void *user, DrawSettingsTab drawTab);

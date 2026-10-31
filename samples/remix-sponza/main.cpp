@@ -12,7 +12,10 @@
 //   nave (temporal reprojection under motion).
 #include <remix/remix_c.h>
 #include <remix/remix_native_ext.h>
+#include <remix/remix_reconstruction_ext.h>
+#if !defined(_WIN32)
 #include <dlfcn.h>
+#endif
 
 #include <algorithm>
 #include <array>
@@ -44,7 +47,8 @@ namespace {
   }
 
   struct Material {
-    std::string name, albedo; // albedo: an absolute texture path or empty
+    std::string name;
+    std::filesystem::path albedo; // an absolute texture path or empty
     float color[3] = {1, 1, 1};
     bool masked = false;      // map_d: the mask is in the albedo's alpha
   };
@@ -55,9 +59,9 @@ namespace {
   };
 
   // MTL texture paths are relative to the MTL with Windows separators.
-  std::string texturePath(const std::filesystem::path &directory, std::string relative) {
+  std::filesystem::path texturePath(const std::filesystem::path &directory, std::string relative) {
     std::replace(relative.begin(), relative.end(), '\\', '/');
-    return (directory / relative).lexically_normal().string();
+    return (directory / relative).lexically_normal();
   }
 
   std::vector<Material> loadMaterials(const std::filesystem::path &path) {
@@ -163,10 +167,8 @@ namespace {
 
 int main(int argc, char **argv) {
 #if defined(_WIN32)
-  std::fprintf(stderr, "remix-sponza-sample uses UTF-8 texture paths (not Windows)\n");
-  return 1;
-#else
-#if defined(__APPLE__)
+  const std::filesystem::path libraryPath = argc > 1 ? argv[1] : "remix.dll";
+#elif defined(__APPLE__)
   const char *libraryPath = argc > 1 ? argv[1] : "libremix.0.dylib";
 #else
   const char *libraryPath = argc > 1 ? argv[1] : "libremix.so.0";
@@ -191,16 +193,23 @@ int main(int argc, char **argv) {
                std::chrono::duration<double, std::milli>(Clock::now() - loadStart).count());
 
   remixapi_HMODULE library = nullptr;
+#if defined(_WIN32)
+  if (remixapi_lib_loadRemixDllAndInitialize(libraryPath.c_str(), &api, &library)) {
+    std::fprintf(stderr, "Remix load failed: %s\n", libraryPath.string().c_str());
+#else
   if (remixapi_lib_loadRemixDllAndInitialize(libraryPath, &api, &library)) {
     std::fprintf(stderr, "Remix load failed: %s\n", libraryPath);
+#endif
     return 1;
   }
   remixapi_StartupInfo startup = {};
   startup.sType = REMIXAPI_STRUCT_TYPE_STARTUP_INFO;
+#if !defined(_WIN32) // On Windows the runtime creates its own window (hwnd stays null).
   startup.windowTitle = "Remix Sponza";
   // WINDOW=WxH: the window size in points (a Retina drawable is twice that).
   if (const char *window = std::getenv("WINDOW"))
     std::sscanf(window, "%ux%u", &startup.windowWidth, &startup.windowHeight);
+#endif
   check(api.Startup(&startup), "Startup");
   if (!status) {
     const auto selected = api.SetConfigVariable("rtx.native.backend", backend);
@@ -286,7 +295,19 @@ int main(int argc, char **argv) {
     std::fprintf(stderr, "Alt+X: settings panel (free camera: Rendering tab; the shortcut is set in the panel's header)\n");
 
   using Tracing = remixapi_ErrorCode(REMIXAPI_CALL *)(remixapi_TracingStatisticsEXT *);
-  const auto tracingOf = reinterpret_cast<Tracing>(dlsym(library, "remixapi_GetTracingStatisticsEXT"));
+  const auto tracingOf = reinterpret_cast<Tracing>(
+#if defined(_WIN32)
+      GetProcAddress(library, "remixapi_GetTracingStatisticsEXT"));
+#else
+      dlsym(library, "remixapi_GetTracingStatisticsEXT"));
+#endif
+  using Reconstruction = remixapi_ErrorCode(REMIXAPI_CALL *)(remixapi_ReconstructionDiagnosticsEXT *);
+  const auto reconstructionOf = reinterpret_cast<Reconstruction>(
+#if defined(_WIN32)
+      GetProcAddress(library, "remixapi_GetReconstructionDiagnosticsEXT"));
+#else
+      dlsym(library, "remixapi_GetReconstructionDiagnosticsEXT"));
+#endif
   const bool move = std::getenv("MOVE") && std::strcmp(std::getenv("MOVE"), "0") != 0;
   const auto start = Clock::now();
   auto windowStart = Clock::now();
@@ -352,6 +373,13 @@ int main(int argc, char **argv) {
       std::fprintf(stderr, "%ux%u: %.1f fps, frame %.2f ms, GPU trace %.2f ms\n", state.drawableWidth,
                    state.drawableHeight, windowFrames / elapsed, elapsed * 1000 / windowFrames,
                    gpuSum / windowFrames);
+      // The upscaler in use (remix_reconstruction_ext.h's backend numbers).
+      remixapi_ReconstructionDiagnosticsEXT reconstruction = {.structSize = sizeof(reconstruction)};
+      if (reconstructionOf && !reconstructionOf(&reconstruction))
+        std::fprintf(stderr, "  reconstruction: backend %u, %ux%u -> %ux%u, %.2f ms%s%s\n",
+                     reconstruction.activeBackend, reconstruction.renderWidth, reconstruction.renderHeight,
+                     reconstruction.displayWidth, reconstruction.displayHeight, reconstruction.gpuMilliseconds,
+                     *reconstruction.fallbackReason ? "; " : "", reconstruction.fallbackReason);
       windowStart = Clock::now();
       windowFrames = 0;
       gpuSum = 0;
@@ -370,5 +398,4 @@ int main(int argc, char **argv) {
     return 1;
   }
   return 0;
-#endif
 }

@@ -5,6 +5,8 @@
 #include "platform/utf8_path.h"
 #include <algorithm>
 #include <cmath>
+#include <fstream>
+#include <iterator>
 namespace remix::usd {
   namespace {
     uint64_t hash64(const std::string &value) {
@@ -251,11 +253,15 @@ namespace remix::usd {
   }
   std::vector<std::string> Submission::materialTextures(const std::string &id) const {
     std::vector<std::string> paths;
-    if (auto def = material_defs_.find(id); def != material_defs_.end())
+    if (auto def = material_defs_.find(id); def != material_defs_.end()) {
       for (const char *key : {"albedo_texture", "normal_texture", "roughness_texture", "metallic_texture",
                               "emissive_texture"})
         if (auto path = def->second.value(key, std::string()); !path.empty())
           paths.push_back(path);
+      if (const auto film = def->second.find("iridescence"); film != def->second.end())
+        if (auto path = film->value("texture", std::string()); !path.empty())
+          paths.push_back(path);
+    }
     return paths;
   }
   void Submission::material(const Json &data) {
@@ -298,15 +304,46 @@ namespace remix::usd {
     glass.transmittanceTexture = albedo.c_str();
     glass.transmittanceColor = vector3(data.value("transmittance", Json::array({1, 1, 1})));
     glass.transmittanceMeasurementDistance = data.value("transmittance_distance", 1.f);
-    glass.thinWallThickness_value = data.value("thin_wall_thickness", .001f);
-    glass.thinWallThickness_hasvalue = data.value("thin_walled", false) && glass.thinWallThickness_value > 0;
+    glass.thinWallThickness_hasvalue = data.value("thin_walled", false) && data.value("thin_wall_thickness", 1.f) > 0;
+    glass.thinWallThickness_value = data.value("thin_wall_thickness", 1.f);
+    glass.useDiffuseLayer = data.value("use_diffuse_layer", false);
     info.pNext = data.value("kind", std::string("opaque")) == "translucent" ? static_cast<void *>(&glass)
                                                                             : static_cast<void *>(&opaque);
     remixapi_MaterialNormalEncodingEXT normal_encoding{};
     normal_encoding.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_NORMAL_ENCODING_EXT;
     normal_encoding.pNext = info.pNext;
-    normal_encoding.encoding = uint32_t(data.value("normal_encoding", 0)) + 1;
+    // AperturePBR's encodings (0 octahedral, 1 tangent space OpenGL, 2 tangent
+    // space DirectX) as the runtime's (1 octahedral, 3 OpenGL, 2 DirectX).
+    const int encoding = data.value("normal_encoding", 0);
+    normal_encoding.encoding = encoding == 1 ? 3 : encoding == 2 ? 2 : 1;
     info.pNext = &normal_encoding;
+    // AperturePBR's thin film (scene.cpp material_json), authored values
+    // clamped to the extension's ranges.
+    remixapi_MaterialIridescenceEXT film{};
+    NativePath film_texture;
+    // Opaque and translucent materials alike (glass and water with a film).
+    if (const auto found = data.find("iridescence"); found != data.end() && info.pNext != nullptr) {
+      const auto &f = *found;
+      auto value = [&](const char *key, float fallback, float low, float high) {
+        const float v = f.value(key, fallback);
+        return std::isfinite(v) ? std::clamp(v, low, high) : fallback;
+      };
+      film.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_IRIDESCENCE_EXT;
+      film.strength = value("strength", 1, 0, 1);
+      film.filmRefractiveIndex = value("ior", 1.5f, 1, 3);
+      film.thickness = value("thickness", 200, 0, 2000);
+      film.thicknessMin = value("min", 100, 0, 2000);
+      film.thicknessMax = std::max(film.thicknessMin, value("max", 800, 0, 2000));
+      film.flowAmplitude = value("flow_amplitude", 0, 0, 2000);
+      film.flowScale = value("flow_scale", 1, 1e-3f, 1e6f);
+      film.flowSpeed = value("flow_speed", .1f, -100, 100);
+      film.structural = value("structural", 0, 0, 1);
+      film_texture = native_path(f.value("texture", std::string()));
+      film.thicknessTexture = film_texture.c_str();
+      opaque.alphaIsThinFilmThickness = f.value("from_alpha", false);
+      film.pNext = info.pNext;
+      info.pNext = &film;
+    }
     remixapi_MaterialHandle handle{};
     resources_.createMaterial(info, handle);
     if (applyMods_)
@@ -467,6 +504,32 @@ namespace remix::usd {
       info.pNext = &usd;
       usd.pConeSoftness = &softness;
       usd.pFocus = &focus;
+    }
+    // An IES profile (UsdLuxShapingAPI's file) and a light cookie, chained in
+    // front of the light's own description.
+    std::string profile;
+    remixapi_LightInfoIesProfileEXT ies{};
+    ies.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_IES_PROFILE_EXT;
+    if (const auto file = data.value("ies", std::string());
+        !file.empty() && type != "DomeLight" && type != "DistantLight") {
+      std::ifstream input(utf8Path(file), std::ios::binary);
+      profile.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+      if (!input && !input.eof())
+        throw std::runtime_error("Could not read IES profile " + file);
+      ies.data = profile.data();
+      ies.size = profile.size();
+      ies.pNext = info.pNext;
+      info.pNext = &ies;
+    }
+    auto cookieTexture = native_path(data.value("cookie", std::string()));
+    remixapi_LightInfoCookieEXT cookie{};
+    cookie.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_COOKIE_EXT;
+    if (!cookieTexture.empty() && type == "SphereLight" && data.value("cookie_fov", 0.f) > 0) {
+      cookie.texture = cookieTexture.c_str();
+      cookie.up = vector3(data.value("cookie_up", Json::array({0, 0, 1})));
+      cookie.fovDegrees = data.value("cookie_fov", 0.f);
+      cookie.pNext = info.pNext;
+      info.pNext = &cookie;
     }
     remixapi_LightHandle light{};
     resources_.createLight(info, light);

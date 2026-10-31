@@ -271,16 +271,13 @@ namespace remix::denoise {
       bindings.push_back({i, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr});
     bindings.push_back(
         {BaseImageCount + 3, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr});
-    if (sigma)
-      for (uint32_t i = 26; i < 29; ++i)
-        bindings.push_back({i, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr});
-    if (local)
-      for (uint32_t i = 29; i < 31; ++i)
-        bindings.push_back({i, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr});
-    if (g.split)
-      for (uint32_t i = 31; i < 33; ++i)
-        bindings.push_back({i, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr});
-    for (uint32_t i = 33; i < ImageCount + 4; ++i)
+    // Every binding, whichever of SIGMA, the local denoiser and the split
+    // signals exist: the path tracer's temporal pipelines are laid out with
+    // this set, so a layout that followed them made every such toggle (or
+    // the first local light) recompile all of those pipelines unchanged.
+    // Bindings of absent images are left unwritten; only passes for them
+    // use them.
+    for (uint32_t i = BaseImageCount + 4; i < ImageCount + 4; ++i)
       bindings.push_back({i, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr});
     VkDescriptorSetLayoutCreateInfo ci{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
     check(pipeline::createDescriptorSetLayout(device, &ci, nullptr,
@@ -290,8 +287,7 @@ namespace remix::denoise {
     check(pipeline::createDescriptorSetLayout(device, &ci, nullptr,
                                               &g.inputLayout));
     VkDescriptorPoolSize sizes[] = {
-        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-         BaseImageCount + 29 + (sigma ? 3u : 0u) + (local ? 2u : 0u) + (g.split ? 2u : 0u)},
+        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, ImageCount + 3},
         {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1}};
     for (auto &size : sizes)
       size.descriptorCount *= gpuFrameCount;
@@ -622,9 +618,14 @@ namespace remix::denoise {
     if (g.frame.hitDistance[3] == 0) {
       gpu::GpuScope scope(command, "Denoised lighting compose", g.extent);
       g.pass(command, 2, 1);
-    } else if (g.frame.translucency[0]) {
-      gpu::GpuScope scope(command, "DLSS-RR foreground compose", g.extent);
-      g.pass(command, 5);
+    } else {
+      if (g.frame.translucency[0]) {
+        gpu::GpuScope scope(command, "DLSS-RR foreground compose", g.extent);
+        g.pass(command, 5);
+      }
+      gpu::GpuScope scope(command, "DLSS-RR specular hit distance fill", g.extent);
+      g.pass(command, 6, 0);
+      g.pass(command, 6, 1);
     }
     if (g.timestamps)
       vkCmdWriteTimestamp(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, g.timestamps, 3);

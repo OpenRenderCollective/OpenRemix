@@ -33,9 +33,15 @@ namespace remix::trace::detail {
     featureAngularEmitters = 8,
     featureFirstOpaqueHit = 16,
     featureMultiSheetFallback = 32, // the composition pass composes layered pixels itself
+    // Light sampling (the stage's guidingCapable specialization gates the last three).
+    featureLocalLights = 64,
+    featureLocalGuiding = 128,
+    featureSmallSet = 256,
+    featureResampling = 512,
   };
-  // What a stage outside the lighting selection sees: decals on, the rest off.
-  inline constexpr uint32_t defaultFeatures = featureDecals;
+  // What a stage outside the lighting selection sees: decals, local lights
+  // and guiding on (as their constants' defaults were), the rest off.
+  inline constexpr uint32_t defaultFeatures = featureDecals | featureLocalLights | featureLocalGuiding;
   inline constexpr uint32_t featuresOffset = 28; // after the composite's fragment constants
   inline constexpr VkPushConstantRange pushRanges[] = {{VK_SHADER_STAGE_FRAGMENT_BIT, 0, featuresOffset},
                                                        {VK_SHADER_STAGE_COMPUTE_BIT, featuresOffset, 4}};
@@ -116,22 +122,22 @@ namespace remix::trace::detail {
     uint32_t localConfig[4] = {};
     float localScale[4] = {};
     uint64_t lightGuideRead = 0, lightGuideWrite = 0;
-    uint32_t lightGuideConfig[4] = {}; // capacity, node count, inverse cell size (float bits), reserved
+    uint32_t lightGuideConfig[4] = {}; // capacity, node count, inverse cell size (float bits), leaf remap entries
     uint64_t torchNodes = 0, torchEmitters = 0, emissiveNodes = 0, emissiveEmitters = 0;
     uint32_t splitLocal[4] = {}; // mode, torch count, emissive count, debug view
     uint64_t reuseRead = 0, reuseWrite = 0;
     uint32_t reuseConfig[4] = {}; // previous frame valid, diagnostics, ray counter address low/high
     uint64_t indirectResults = 0, blueNoise = 0;
-    float firefly[4] = {};       // outgoing local direct / indirect luminance limits; reserved
+    float firefly[4] = {};       // outgoing local direct / indirect luminance limits; meter guide; middle-grey radiance
     uint32_t pathConfig[4] = {}; // adaptive termination, minimum completed bounces, sheet flags (1 traced indirect, 2 local lights), secondary ray mask
     float domeTransform[3][4] = {};
     uint64_t visibilityNodes = 0, visibilityLeaves = 0, visibilityTable = 0;
     uint64_t movedLights = 0; // scene::MovedLight pairs, count in visibilityConfig[1]
-    uint32_t visibilityConfig[4] = {}; // table row words, moved light count, light-tree nodes in the table, reserved
-    float visibilityProbe[4] = {};     // world units: probe offset above the surface, decal attachment distance; texture footprint scale (render/output size)
+    uint32_t visibilityConfig[4] = {}; // table row words, moved light count, light-tree nodes in the table, terminator lift max doubled area (units², float bits)
+    float visibilityProbe[4] = {};     // world units: probe offset above the surface, decal attachment distance; texture footprint scale (render/output size); ray offset (ULPs)
     uint64_t restirCurrent = 0, restirHistoryRead = 0, restirHistoryWrite = 0, restirRemap = 0;
     uint32_t restirConfig[4] = {}; // candidates, spatial samples, temporal M cap, flags (1 initial visibility)
-    float restirParams[4] = {};    // spatial radius (pixels), emitter count, reserved
+    float restirParams[4] = {};    // spatial radius (pixels), emitter count, boiling filter strength, reserved
     uint64_t regirRead = 0, regirWrite = 0, regirSlots = 0;
     // Caustics (visibility.glsl causticTint): strength (8 bits) and contrast
     // (8 bits, in 32nds), then the half float focus depth in world units
@@ -193,7 +199,7 @@ namespace remix::trace::detail {
     Matrix inverseCameraRelative{};
     // Local occlusion probes (pathtrace.comp, localOcclusionConfidence): per
     // pixel, the arrived share of its local light, last frame's (0: none)
-    // and this frame's. localProbeParams: movingShadowBlur, reserved.
+    // and this frame's. localProbeParams: movingShadowBlur, shadowTerminatorSoften, emissiveSpecularRoughness, terminator lift length.
     uint64_t localProbeRead = 0, localProbeWrite = 0;
     float localProbeParams[4] = {};
     // Volumetric source shares: sun, lights, emissive surfaces, sky.
@@ -206,9 +212,18 @@ namespace remix::trace::detail {
     // A bit per texture slot (slot / 32, its bit slot % 32): the slot holds
     // sRGB-encoded texels (stored UNORM), decoded with pow 2.2 (scene.glsl).
     uint32_t srgbTextures[32][4] = {};
-    uint64_t sheetMaterials = 0; // Optional measured-sheet optics; descriptor-indexed.
+    // Path inspector (pathtrace.comp pathDebugRecord): its record buffer's
+    // address (low, high words), the pixel (x | y << 16; ~0 none) and the
+    // record capacity.
+    uint32_t pathDebug[4] = {0, 0, ~0u, 0};
+    // remixapi_CameraScreensEXT by slot (scene::ScreenCameras): position and
+    // flags (w: 1 set, plus 2 when it moved since the last frame: the screen's
+    // history restarts), right and up scaled to the image plane's half
+    // extents, forward.
+    float screenCameras[8][4][4] = {};
+    uint64_t sheetMaterials = 0; // Descriptor-indexed measured-sheet optics.
   };
-  static_assert(offsetof(Frame, sheetMaterials) == 1792 && sizeof(Frame) == 1808 && offsetof(Frame, srgbTextures) == 1280 &&
+  static_assert(offsetof(Frame, sheetMaterials) == 2320 && sizeof(Frame) == 2336 && offsetof(Frame, screenCameras) == 1808 && offsetof(Frame, srgbTextures) == 1280 && offsetof(Frame, pathDebug) == 1792 &&
                 offsetof(Frame, localProbeRead) == 1168 &&
                 offsetof(Frame, localProbeParams) == 1184 && offsetof(Frame, volumeLightScales) == 1200 &&
                 offsetof(Frame, cloudShadow) == 1216 && offsetof(Frame, cloudShadowConfig) == 1264 &&
@@ -346,12 +361,8 @@ namespace remix {
     // Variant key bits (selectedLightingKey). Sparse launch mode occupies the
     // two bits from variantSparseShift.
     enum VariantBit : uint32_t {
-      variantGuided = 1,
-      variantSmallSet = 2,
-      variantResampling = 4,
       variantSplit = 8,
       variantCombinedDirect = 16,
-      variantLocal = 64,
       variantProfile = 256,
       variantSeparateIndirect = 1024,
       variantEarlyOut = 8192,
@@ -374,12 +385,27 @@ namespace remix {
     // current settings, so gameplay never waits for a compile: with and
     // without local lights, the small set, resampling, guiding and split
     // lighting.
-    void prewarmLightingVariants(LightingPipeline &source);
+    void prewarmLightingVariants(LightingPipeline &source, bool everyRole = false);
     struct RayProfile {
       std::unique_ptr<Buffer> counters, readback;
       bool pending = false;
       const char *path = std::getenv("REMIX_RAY_PROFILE");
     } rayProfile;
+    // Path inspector (PathTracer::inspectPixel): the pixel's records, read
+    // back like the ray profile.
+    struct PathInspector {
+      static constexpr uint32_t capacity = 256;
+      std::unique_ptr<Buffer> records, readback;
+      bool pending = false;
+      int x = -1, y = -1;
+      scene::Matrix camera{};
+      uint32_t width = 0, height = 0;
+      mutable std::mutex mutex;
+      PathInspection last; // guarded by mutex
+    } pathInspector;
+    void beginPathInspector(VkCommandBuffer command, Frame &frame);
+    void finishPathInspector(VkCommandBuffer command);
+    void completePathInspector();
     void beginRayProfile(VkCommandBuffer command, Frame &frame);
     void finishRayProfile(VkCommandBuffer command);
     void completeRayProfile();
@@ -471,6 +497,22 @@ namespace remix {
     upscale::Backend selectBackend() const;
     uint32_t fsrQuality = 1;
     std::unique_ptr<upscale::Renderer> upscaler;
+    std::unique_ptr<upscale::NeuralUplift> neuralUplift;
+    std::unique_ptr<Image> tonemapTarget, tonemapDepth;
+    VkRenderPass tonemapPass = VK_NULL_HANDLE;
+    VkFramebuffer tonemapFramebuffer = VK_NULL_HANDLE;
+    VkPipeline tonemapComposite[2] = {};
+    VkDescriptorSetLayout blitSetLayout = VK_NULL_HANDLE;
+    VkDescriptorPool blitPool = VK_NULL_HANDLE;
+    VkDescriptorSet blitSet = VK_NULL_HANDLE;
+    VkPipelineLayout blitLayout = VK_NULL_HANDLE;
+    VkPipeline blitPipeline = VK_NULL_HANDLE;
+    VkShaderModule blitFragModule = VK_NULL_HANDLE;
+    bool neuralUpliftRan = false, neuralUpliftValid = false;
+    std::unique_ptr<Image> depthImage(VkFormat format, VkExtent2D size = {});
+    void createTonemapAndBlit(VkRenderPass pass, VkFormat depthFormat);
+    void destroyTonemapAndBlit();
+    TraceOptions currentTraceOptions{};
     std::string fsrFailure;
     void createTarget();
     std::unique_ptr<Image> world, transmission, sky;
@@ -579,6 +621,7 @@ namespace remix {
       uint32_t visibleClusters = 0, visibleLeaves = 0; // of `leaves`
       remixapi_CameraCullingStatisticsEXT statistics{.structSize = sizeof(remixapi_CameraCullingStatisticsEXT)};
     } cameraCulling;
+    ScreenCameras lastScreenCameras = {}; // the previous traced frame's (Frame::screenCameras flag 2)
     // Sets the frame's camera culling constants; uploads what they refer to.
     void configureCameraCulling(VkCommandBuffer command, Frame &frame, const TraceOptions &options,
                                 const RasterRenderer &resources);
@@ -610,6 +653,10 @@ namespace remix {
     std::vector<uint8_t> lightUploadPacking;
     struct LightGuiding {
       static constexpr uint32_t capacity = 65536;
+      // Behind each bank's slots and counters: a rebuilt tree's leaf remap
+      // (LightBvh::leafRemap), written into the read bank for one frame.
+      static constexpr uint32_t remapCapacity = 1u << 18;
+      std::vector<uint32_t> pendingRemap;
       std::unique_ptr<Buffer> history[2], readback;
       uint32_t writeIndex = 0;
       bool valid = false, pending = false, attempted = false, pipelineFailed = false;
@@ -993,11 +1040,22 @@ namespace remix {
     void awaitLightingPipelines(const std::vector<LightingRequest> &requests);
     void finishLightingPipelines();
     bool deferLighting = false;
+    // A configuration's temporal lighting pipelines, by role.
+    struct TemporalTargets {
+      VkPipeline *indirect, *opaque, *transparency, *frontGuides, *psr, *single, *sheet, *splitDirect,
+          *restirInitial, *restirSpatial, *confidence;
+    };
+    std::vector<LightingRequest> temporalRequests(bool split, bool sigma, bool local, bool restirPasses, bool reblur,
+                                                  bool separateIndirect, const TemporalTargets &targets) const;
+    // Queues the other configurations' temporal pipelines for idle compiler
+    // workers (rtx.native.pathtrace.precompileConfigurations).
+    void prewarmTemporalConfigurations(bool separateIndirect);
+    bool prewarmingLighting = false; // createLightingPipelines only queues, in the background
     std::vector<LightingRequest> deferredLighting;
     trace::SceneSignature lastScene;
     uint64_t sequence = 0;
     float previousDirectClamp = 0, previousIndirectClamp = 0;
-    bool previousFireflyFilter = false;
+    bool previousFireflyFilter = false, previousRelativeClamps = false;
     std::chrono::steady_clock::time_point epoch = std::chrono::steady_clock::now();
 
     bool preparing = false, preparedRasterPrimary = true;

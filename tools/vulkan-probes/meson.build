@@ -23,7 +23,7 @@ probe = executable('remix-vulkan-probe', 'remix_vulkan_probe.cpp',
   dependencies : vulkan_dep, cpp_args : ['-Wno-missing-field-initializers'])
 if get_option('gpu_tests')
 foreach mode : ['query', 'pipeline', 'bindless', 'semaphore']
-  test('MoltenVK ' + mode, probe,
+  test('Vulkan probe ' + mode, probe,
     args : [meson.current_build_dir(), mode],
     depends : shader_outputs,
     timeout : 120)

@@ -27,3 +27,6 @@
 # Python interpreter caches are generated locally.
 __pycache__/
 *.py[cod]
+
+# Runtime profiles and pipeline cache written when the renderer runs from the repo root.
+/openremix/

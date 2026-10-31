@@ -117,7 +117,8 @@ namespace {
 
 int main(int argc, char **argv) {
 #if defined(_WIN32)
-  const wchar_t *libraryPath = L"remix.dll";
+  const std::filesystem::path libraryPathName = argc > 1 ? argv[1] : "remix.dll";
+  const wchar_t *libraryPath = libraryPathName.c_str();
 #elif defined(__APPLE__)
   const char *libraryPath = argc > 1 ? argv[1] : "libremix.0.dylib";
 #else

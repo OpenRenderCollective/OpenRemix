@@ -9,9 +9,11 @@
 // Samples are points on lights in area measure, stored as the emitter index
 // and two coordinates (sphere: octahedral surface direction; triangle:
 // barycentrics), so reuse at another pixel or frame evaluates the same point.
-// Spatial reuse normalizes by the M of the reservoirs that could have produced
-// the chosen sample (RTXDI's basic 1/Z bias correction, geometric test, no
-// rays); temporal reuse merges without correction.
+// Spatial and temporal reuse normalize by the M of the reservoirs that could
+// have produced the chosen sample (RTXDI's basic 1/Z bias correction,
+// geometric test, no rays). Spatial reuse takes one neighbor, eight where the
+// temporal history is short (RTXDI's disocclusion boost), and the temporal
+// result passes RTXDI's boiling filter.
 // pad: in the current buffer, this frame's occlusion change of the history
 // sample (restirOcclusionChange); in history, 1 marks a sample that was
 // occluded when shaded (kept only to detect it becoming visible).
@@ -55,7 +57,9 @@ vec3 restirContribution(Hit hit,LightEmitter light,vec2 uv,out vec3 specular,out
   if(cosS<=0||cosX<=0)return vec3(0);
   float attenuation=localFalloff(dot(light.positionRadius.xyz-hit.p,light.positionRadius.xyz-hit.p));
   vec3 scale=emitterRadiance(light,-w)*(cosS*cosX*attenuation/(3.14159265359*d2))*frame.localScale.x;
-  vec3 physical=materialResponse(hit,w,specular)*scale;
+  vec3 physical=materialResponse(hit,w,specular);
+  if(light.radiance.w!=0&&pathEmissiveSpecular(hit)){physical-=specular;specular=vec3(0);} // a triangle: paths find it
+  physical*=scale;
   specular*=scale;
   // Sphere lights are not geometry; triangle emitters are, so stop short of them.
   endpoint=light.radiance.w==0?p.x:offsetRay(p.x,dot(p.n,-w)>0?p.n:-p.n);
@@ -187,7 +191,7 @@ Reservoir restirInitial(Hit hit,uint state,float depth,ivec2 pixel) {
   if(r.light!=restirNone&&(frame.restirConfig.w&1u)!=0) {
     vec3 specular,endpoint;float distance;
     restirContribution(hit,emitters.data[r.light],vec2(r.u,r.v),specular,endpoint,distance);
-    if(localLuminance(localVisibility(offsetRay(hit.p,hit.ng),endpoint))<=0){r.W=0;r.light=restirNone;}
+    if(localLuminance(localVisibility(shadowOrigin(hit),endpoint))<=0){r.W=0;r.light=restirNone;}
   }
   r.target=selected;
   float occlusionChange=0;
@@ -199,14 +203,20 @@ Reservoir restirInitial(Hit hit,uint state,float depth,ivec2 pixel) {
   vec4 motion=imageLoad(guideMotion,pixel);
   if(frame.restirHistoryRead!=0&&motion.w!=0) {
     {
-      ivec2 at=ivec2(floor(vec2(pixel)+.5+frame.jitter.xy+motion.xy-temporal.jitter.zw));
+      ivec2 base=ivec2(floor(vec2(pixel)+.5+frame.jitter.xy+motion.xy-temporal.jitter.zw)),at=base;
       // Permutation sampling: a bijective per-frame shuffle within 2x2 blocks.
       if((frame.restirConfig.w&2u)!=0)at^=ivec2(frame.config.z&1u,(frame.config.z>>1)&1u);
-      if(all(greaterThanEqual(at,ivec2(0)))&&all(lessThan(at,ivec2(frame.target.xy)))) {
-        Reservoir p=Reservoirs(frame.restirHistoryRead).data[uint(at.x)+uint(at.y)*frame.target.x];
-        float previousDepth=depth+motion.z;
-        bool similar=p.M>0&&abs(p.depth-previousDepth)<=.1*previousDepth&&
-                     dot(restirUnpackNormal(p.normal),hit.n)>.8;
+      // The reprojected pixel, else up to four random ones within 4 pixels of
+      // it (RTXDI): thin props and disocclusion edges keep a history.
+      float previousDepth=depth+motion.z;
+      Reservoir p=restirEmpty();bool similar=false;
+      for(uint attempt=0u;attempt<5u&&!similar;++attempt) {
+        if(attempt!=0u)at=base+ivec2(round((vec2(lightRandom(state),lightRandom(state))*2-1)*4));
+        if(any(lessThan(at,ivec2(0)))||any(greaterThanEqual(at,ivec2(frame.target.xy))))continue;
+        p=Reservoirs(frame.restirHistoryRead).data[uint(at.x)+uint(at.y)*frame.target.x];
+        similar=p.M>0&&abs(p.depth-previousDepth)<=.1*previousDepth&&dot(restirUnpackNormal(p.normal),hit.n)>.8;
+      }
+      {
         if(similar&&p.light!=restirNone&&frame.restirRemap!=0)p.light=LightRemap(frame.restirRemap).data[p.light];
         if(p.light!=restirNone&&p.light>=uint(frame.restirParams.y))p.light=restirNone; // light gone
         // Re-test the history sample's segment from the same surface point.
@@ -229,12 +239,29 @@ Reservoir restirInitial(Hit hit,uint state,float depth,ivec2 pixel) {
           Reservoir merged=restirEmpty();float mergedSum=0,mergedTarget=0;
           restirStream(merged,mergedSum,mergedTarget,r,r.target,state);
           restirStream(merged,mergedSum,mergedTarget,p,p.light!=restirNone?restirTarget(hit,emitters.data[p.light],vec2(p.u,p.v)):0,state);
+          // 1/Z: the history counts only if its surface could have produced
+          // the chosen sample (this pixel's could: its target is nonzero).
+          float total=merged.M;
+          if(merged.light!=restirNone&&mergedTarget>0)
+            merged.M=r.M+(restirReaches(vec3(p.x,p.y,p.z),restirUnpackNormal(p.normal),emitters.data[merged.light],
+                                        vec2(merged.u,merged.v))?p.M:0);
           restirFinish(merged,mergedSum,mergedTarget);
+          merged.M=total;
           r=merged;
         }
       }
     }
   }
+  // Boiling filter (RTXDI): against the average nonzero weight of the wave's
+  // reservoirs (RTXDI averages its thread group).
+#ifdef RESTIR_INITIAL
+  if(frame.restirParams.z>0) {
+    float weight=r.light!=restirNone?r.W:0;
+    uint nonzero=subgroupBallotBitCount(subgroupBallot(weight>0));
+    float average=nonzero>0u?subgroupAdd(weight)/float(nonzero):0;
+    if(weight>average*(10/clamp(frame.restirParams.z,1e-6,1.)-9)){r.light=restirNone;r.W=0;}
+  }
+#endif
   r.pad=occlusionChange;
   r.depth=depth;r.normal=restirPackNormal(hit.n);r.x=hit.p.x;r.y=hit.p.y;r.z=hit.p.z;
   return r;
@@ -261,7 +288,10 @@ vec3 restirShade(Hit hit,ivec2 pixel,uint state,float depth,out float lightDista
   restirStream(r,wsum,selected,own,own.target,state);
   const uint maxNeighbors=8u;
   uint neighbors[maxNeighbors];uint used=0;
-  for(uint i=0;i<min(frame.restirConfig.y,maxNeighbors);++i) {
+  // One neighbor, the boosted count where the history is short.
+  uint spatial=frame.restirConfig.y&255u;
+  if(own.M<.25*float(frame.restirConfig.z))spatial=max(spatial,(frame.restirConfig.y>>8)&255u);
+  for(uint i=0;i<min(spatial,maxNeighbors);++i) {
     float angle=6.28318530718*lightRandom(state),radius=frame.restirParams.x*sqrt(lightRandom(state));
     ivec2 at=pixel+ivec2(round(vec2(cos(angle),sin(angle))*radius));
     if(at==pixel||any(lessThan(at,ivec2(0)))||any(greaterThanEqual(at,ivec2(frame.target.xy))))continue;
@@ -289,7 +319,7 @@ vec3 restirShade(Hit hit,ivec2 pixel,uint state,float depth,out float lightDista
   if(r.light!=restirNone) {
     vec3 endpoint;
     vec3 physical=restirContribution(hit,emitters.data[r.light],vec2(r.u,r.v),specular,endpoint,lightDistance);
-    vec3 visibility=localVisibility(offsetRay(hit.p,hit.ng),endpoint);
+    vec3 visibility=localVisibility(shadowOrigin(hit),endpoint);
     radiance=physical*r.W*visibility;specular*=r.W*visibility;
     localDirection(endpoint-hit.p,radiance);
     // Occluded samples are never reused (RTXDI discardInvisibleSamples); the

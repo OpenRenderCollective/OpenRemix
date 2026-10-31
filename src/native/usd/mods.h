@@ -1,6 +1,7 @@
 #pragma once
 #include <remix/remix_c.h>
 #include <string>
+#include <utility>
 #include <vector>
 namespace remix {
   class NativeResources;
@@ -13,6 +14,9 @@ namespace remix::usd {
   bool modLight(NativeResources &, remixapi_LightHandle, uint64_t originalHash = 0);
   remixapi_ErrorCode configureMods(const char *directory, double meters, uint32_t axis, bool watch);
   const char *modDiagnostic();
+  // Host units mods are converted to (configureMods): meters per unit and up
+  // axis (1 Y, 2 Z). USD captures are written in them.
+  std::pair<double, uint32_t> modUnits();
 
   // Developer panel view of the loaded mods. Toggles keep every mod loaded:
   // they change which replacements apply from the next frame on.

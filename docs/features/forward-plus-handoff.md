@@ -1,6 +1,6 @@
 # Forward+ handoff
 
-Current checkpoint: 2026-10-29. This page supersedes older handoff narratives;
+Current checkpoint: 2026-11-01. This page supersedes older handoff narratives;
 Git history retains them. Start with AGENTS.md, this page and the
 [fresh-clone setup](forward-plus-setup.md) and
 [lighting architecture](../architecture/forward-lighting.md), then the
@@ -15,7 +15,7 @@ context, not proof that an old experiment is still enabled or a defect is fixed.
 | Native source checkpoint | `5ebf5f37` (handoff documentation follows this commit) |
 | Native official remote | `https://github.com/OpenRenderCollective/OpenRemix.git` |
 | Adapter checkout | `garrys-mod-rtx-remixed-2/`, `forward-plus-renderer` |
-| Adapter checkpoint | `1c04eb07de33efdc070e933af1d16db538ca7699` (portable build helper; rendering code unchanged from `26dc7770`) |
+| Adapter checkpoint | `ba1d9b41d7e601638b40857be0872c0f9516533d` (upstream main integrated) |
 | Adapter official remote | `https://github.com/sambow23/garrys-mod-rtx-remixed-2.git` |
 | Previous playable install | Owner-local installation; not distributed in Git |
 | Installed package | `forwardplus-visibility-20261027` |
@@ -27,11 +27,13 @@ Installed native bytes match the package above. Preserve user settings, mods,
 launchers and authored cubemaps when qualifying a future package. Path tracing
 remains the configured backend default; Source 2 is the preset within Forward+.
 
-Native upstream main has three unmerged commits at this checkpoint:
-`5331b2e0` (DLSS 5), `675f0c58` (USD captures), `3d4a594d` (Godot toolkit fix).
-The adapter already includes its upstream main. Fetch and recheck before merging;
-do not mix upstream integration into visual/performance attribution silently.
-Local main branches were not moved during this handoff.
+Both branches integrate upstream main as fetched on 2026-11-01: native
+`51217999` and adapter `c9334fe`. The integration retains baked receiver metadata,
+measured-sheet optics, authored reflection bindings and hover-state input handling.
+The adapter follows the runtime-configured panel shortcut; it no longer owns F12.
+Native Windows builds now require the pinned FidelityFX and XeSS submodules, and
+the flat runtime packager includes their DLLs and notices. Fetch and recheck main
+before further integration. The source/playable distinction still applies.
 
 ## First session for the next developer
 
@@ -118,8 +120,8 @@ That fix does not establish fitted Construct outdoor coverage.
 5. Continue lightmap/probe quality, Construct room/seam defects, outdoor cubemap
    coverage, saturated probe-budget selection, bake times and runtime profiling.
    The complete queue and map list are in the roadmap.
-6. Integrate the three native upstream commits separately, with packaging and
-   backend-transition regression checks, including existing DLSS RR concerns.
+6. Qualify the integrated upstream features in game, including camera screens,
+   fog, material extensions, screenshots and upscaler/backend transitions.
 
 Do not immediately start implementing DDGI/radiance cascades/SDF reflections to
 prove modularity. First stabilize the current providers and use one real alternative
@@ -178,5 +180,5 @@ The current PBR/AutoPBR/replacement path remains default for ordinary materials.
   playable packages are not supplied by either repository. Wider map cases include
   gm_fork, d1_trainstation_02, bm_c1a1b and combined Half-Life addon maps.
 
-The broad roadmap goal remains paused. This checkpoint prepares a reviewable
-handoff; it does not declare the renderer or roadmap complete.
+Work resumed on 2026-11-01 for upstream integration, modular provider migration
+and controlled performance diagnosis. This does not declare the renderer or roadmap complete.

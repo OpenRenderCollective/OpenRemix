@@ -29,6 +29,8 @@ namespace remix {
     float contrastAmount = 1.15f;
     uint32_t fsrQuality = 3;
     float fsrSharpness = 0.f;
+    // XeSS's seven presets (upscale::xessRenderSize); 5: performance.
+    uint32_t xessQuality = 5;
     bool sigma = true;
     bool blueNoiseShadows = true;
     bool blueNoiseLocalLights = true;
@@ -43,6 +45,28 @@ namespace remix {
     // power: each keeps its own shape and color, and the tree to build and
     // descend is that many times smaller.
     uint32_t emissiveClusterSize = 16;
+    // The light tree selects lights by power to this exponent (1: by power).
+    // Below 1 dim lights draw more samples, bright ones fewer (RTXPT uses
+    // 0.8); radiance and PDFs are unchanged, only where samples go.
+    float lightPowerExponent = 1;
+    // Secondary rays start this many units in the last place of each
+    // coordinate off the surface (RT Gems ch. 6): about 0.5 units at 16384
+    // from the origin. Smaller tightens contact shadows, too small shows acne.
+    float rayOffset = 256;
+    // The shadow terminator, as dxvk-remix (rtx.shadowTerminator.*): light
+    // sampling's diffuse lobe softened within a few degrees of the triangle's
+    // horizon (brdf.glsl terminatorSoften), and shadow rays leaving
+    // smooth-shaded triangles from where their vertex normals put the smooth
+    // surface (Hanika 2021; scene.glsl terminatorLift), where sampled light
+    // also ends at the smooth surface's horizon instead of the triangle's: at
+    // most shadowTerminatorMaxLength meters, faded out on triangles whose
+    // doubled area grows to shadowTerminatorMaxArea square meters (see sceneScale).
+    bool shadowTerminatorSoften = true, shadowTerminatorLift = true;
+    float shadowTerminatorMaxArea = .05f, shadowTerminatorMaxLength = .02f;
+    // Smooth PBR surfaces (roughness below this; 0 off, at most 0.45, under
+    // the radiance cache's 0.5) reflect emissive surfaces through their
+    // sampled paths instead of light sampling (brdf.glsl pathEmissiveSpecular).
+    float emissiveSpecularRoughness = .3f;
     uint32_t emissiveCandidates = 1;
     // RIS candidates in sets of more than four sphere lights without emissive
     // surfaces (1: plain BVH sampling). Candidates compare unshadowed
@@ -55,6 +79,10 @@ namespace remix {
     uint32_t localSamples = 1;
     float localIntensity = 1, localRange = 16;
     float localDirectClamp = 0, indirectClamp = 0;
+    // The two clamps in multiples of middle grey at the current exposure
+    // (the radiance that displays as 0.18): one setting works across games'
+    // light units and scene brightness. Off: linear scene luminance.
+    bool relativeClamps = false;
     bool localFireflyFilter = true;
     bool localGuiding = true;
     // Visibility-guiding cell size in meters (see sceneScale).
@@ -80,6 +108,11 @@ namespace remix {
     // sprites): no transmission through them and no candidate alpha tests.
     // Camera and transparency rays still see them.
     bool skipBlendedSecondaryRays = true;
+    // Once a configuration's pipelines are requested, the other
+    // configurations' temporal lighting pipelines (ray reconstruction or not,
+    // SIGMA, split local lighting, ReSTIR) compile on idle compiler workers,
+    // so switching those settings finds them ready (Gpu::prewarmTemporalConfigurations).
+    bool precompileConfigurations = true;
     // View models (REMIXAPI_CAMERA_TYPE_VIEW_MODEL instances): path-traced in
     // the world camera's view instead of rasterized with their own camera
     // (NativeResources::applyViewModel). The camera sees them in front of
@@ -226,12 +259,19 @@ namespace remix {
     bool skyGuiding = true;
     float skyGuideCellSize = 2, skyGuideShare = .5f;
     uint32_t restirCandidates = 32;     // initial light-tree candidates per pixel
-    uint32_t restirSpatialSamples = 8; // neighbor reservoirs per pixel
+    // Neighbor reservoirs per pixel, and where the temporal history is short
+    // (a disocclusion: M under a quarter of the cap) the boosted count
+    // (RTXDI: 1 and 8). Fewer neighbors correlate the signal less.
+    uint32_t restirSpatialSamples = 1, restirDisocclusionSamples = 8;
     float restirSpatialRadius = 30;    // pixels
     // Temporal M cap in multiples of the current M. Longer histories correlate
-    // the signal over time, which NRD cannot filter (frozen noise); dxvk-remix
-    // uses 4.
-    uint32_t restirTemporalHistory = 64;
+    // the signal over time, which NRD cannot filter (frozen noise); RTXDI
+    // uses 20, dxvk-remix 4.
+    uint32_t restirTemporalHistory = 20;
+    // RTXDI's boiling filter: a reservoir whose weight exceeds the average of
+    // its wave's nonzero ones by 10/strength - 9 times is dropped (a rare light
+    // flaring through reuse); 0 off. Darkens slightly by design.
+    float restirBoilingFilter = .2f;
     // RTXDI permutation sampling: the temporal lookup takes a per-frame
     // shuffled neighbor (2x2 block), decorrelating reused samples.
     bool restirPermutation = true;
@@ -258,6 +298,8 @@ namespace remix {
     // surface: shallow water and thin glass have none, as light has not yet
     // been focused. 0: at once.
     float causticsDepth = .5f;
+    // Thin-film iridescence of materials that have it (remixapi_MaterialIridescenceEXT).
+    bool iridescence = true;
     bool translucencyDenoiser = true, translucencyReuse = true;
     bool pbrLocalReuse = true; // Experimental previous-frame secondary local lighting.
     bool sky = true;
@@ -296,6 +338,20 @@ namespace remix {
     bool combinedTlas = true;
     // Boolean shadow and local-light rays stop at their first blocker.
     bool shadowEarlyOut = true;
+    // DLSS 5 Neural Uplift (DLSS-NR)
+    bool neuralUplift = false;
+    uint32_t neuralUpliftPasses = 1;
+    uint32_t neuralUpliftPreset = 0;
+    uint32_t neuralUpliftStyle = 0;
+    float neuralUpliftIntensity = 1.0f;
+    float neuralUpliftStyleStrength = 1.0f;
+    float neuralUpliftLocalStructureStrength = 1.0f;
+    float neuralUpliftSkinStructureStrength = -1.0f;
+    bool neuralUpliftAutoMask = true;
+    bool neuralUpliftDepthInverted = false;
+    float neuralUpliftMotionVectorScale = 1.0f;
+    uint32_t neuralUpliftFeatureId = 18;
+    bool neuralUpliftBypassCallerCheck = true;
     bool operator==(const TraceOptions &) const = default;
   };
   // Options as the tracer applies them: ReSTIR DI runs in the combined

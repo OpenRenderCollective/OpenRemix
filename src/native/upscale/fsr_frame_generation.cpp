@@ -1,4 +1,4 @@
-#include "upscale/fsr_frame_generation.h"
+#include "upscale/fsr_backends.h"
 #include "upscale/sdk_backend.h"
 #include <bit>
 #include <cstdlib>
@@ -114,9 +114,7 @@ FfxResource resource(Input input, VkFormat format, VkExtent2D extent, const wcha
   return ffxGetResourceVK(reinterpret_cast<void *>(input.image), description, name,
                           written ? FFX_RESOURCE_STATE_UNORDERED_ACCESS : FFX_RESOURCE_STATE_COMPUTE_READ);
 }
-} // namespace
-
-struct FsrFrameGeneration::Impl {
+struct LinkedFrameGeneration : FsrFrameGeneration::Impl {
   VkDevice device{};
   VkExtent2D display{}, render{};
   VkFormat format{};
@@ -144,20 +142,26 @@ struct FsrFrameGeneration::Impl {
   // go of. Last: freed after ~Impl has destroyed the contexts and before the
   // shared images.
   std::unique_ptr<DeferredViews> views;
-  ~Impl() {
+  LinkedFrameGeneration() { provider = "FSR 3.1.4"; }
+  ~LinkedFrameGeneration() override {
     if (created) {
       ffxFrameInterpolationContextDestroy(&interpolation);
       ffxOpticalflowContextDestroy(&opticalFlow);
     }
   }
+  void initialize(VkPhysicalDevice physical, VkDevice device, VkExtent2D display, VkFormat format, VkExtent2D render,
+                  bool depthInverted) override;
+  void discontinuity() override { reset = true; }
+  void record(VkCommandBuffer command, Input backbuffer, Input depth, Input motion, Input hudless, Input output,
+              const FrameGenerationCamera &camera, float frameMilliseconds) override;
 };
+} // namespace
 
-FsrFrameGeneration::FsrFrameGeneration() : m(std::make_unique<Impl>()) {}
-FsrFrameGeneration::~FsrFrameGeneration() = default;
+std::unique_ptr<FsrFrameGeneration::Impl> linkedFrameGeneration() { return std::make_unique<LinkedFrameGeneration>(); }
 
-void FsrFrameGeneration::initialize(VkPhysicalDevice physical, VkDevice device, VkExtent2D display, VkFormat format,
-                                    VkExtent2D render, bool depthInverted) {
-  auto &g = *m;
+void LinkedFrameGeneration::initialize(VkPhysicalDevice physical, VkDevice device, VkExtent2D display,
+                                       VkFormat format, VkExtent2D render, bool depthInverted) {
+  auto &g = *this;
   g.device = device;
   g.display = display;
   g.render = render;
@@ -245,13 +249,9 @@ void FsrFrameGeneration::initialize(VkPhysicalDevice physical, VkDevice device, 
   g.created = true;
 }
 
-bool FsrFrameGeneration::finishInitialization(VkQueue) { return true; }
-
-void FsrFrameGeneration::discontinuity() { m->reset = true; }
-
-void FsrFrameGeneration::record(VkCommandBuffer command, Input backbuffer, Input depth, Input motion, Input hudless,
-                                Input output, const FrameGenerationCamera &camera, float frameMilliseconds) {
-  auto &g = *m;
+void LinkedFrameGeneration::record(VkCommandBuffer command, Input backbuffer, Input depth, Input motion, Input hudless,
+                                   Input output, const FrameGenerationCamera &camera, float frameMilliseconds) {
+  auto &g = *this;
   // The recording frame's slot is free: so is every view retired
   // gpuFrameCount frames ago.
   g.views->advance();

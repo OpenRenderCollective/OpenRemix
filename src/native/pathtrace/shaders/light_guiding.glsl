@@ -54,6 +54,14 @@ bool lightInSubtree(LightNodes nodes,uint leaf,uint root) {
   uint rank=lightRank(nodes,leaf),first=lightRank(nodes,root);
   return rank>=first&&rank-first<nodes.data[root].links.w;
 }
+// A stored leaf (node index + 1; 0 none) of the read bank in this frame's
+// tree: after a rebuild, through its leaf remap behind the bank's slots.
+uint guideLeaf(uint stored) {
+  uint count=frame.lightGuideConfig.w;
+  if(count==0u||stored==0u)return stored;
+  uint old=stored-1u;
+  return old<count?LightGuideCache(frame.lightGuideRead).data[frame.lightGuideConfig.x+1u+old/4u][old%4u]:0u;
+}
 float lightGuideProposal(LightNodes nodes,Hit hit,uint state,out uint preferred,bool resampled) {
   preferred=0;
   if(frame.lightGuideRead==0)return 0;
@@ -66,7 +74,7 @@ float lightGuideProposal(LightNodes nodes,Hit hit,uint state,out uint preferred,
   // visible scenes, where whole-tree stratification already has low variance.
   float mixWeight=.75*(resampled?smoothstep(.02,.2,blocked):blocked);
   if(mixWeight<.05)return 0;
-  preferred=(previous.y&0xfffffu)-1u;
+  preferred=guideLeaf(previous.y&0xfffffu)-1u;
   if(preferred>=frame.lightGuideConfig.y||nodes.data[preferred].links.w!=1||
      nodeWeight(nodes,preferred,hit.p,hit.n)<=0)return 0;
   return mixWeight;
@@ -107,8 +115,8 @@ void trainLightGuide(uint key,uint leaf,bool guided,vec3 visibility,vec3 physica
       atomicAdd(next.data[slot].w,previous.z>0?uint(round(float(previous.w)*float(retained)/float(previous.z))):0u);
       // Decay the old contribution score, so a newly visible emitter can
       // replace it; cached visibility never substitutes for a shadow ray.
-      uint score=previous.y>>20;
-      if(score>1)atomicMax(next.data[slot].y,((score-1u)<<20)|(previous.y&0xfffffu));
+      uint score=previous.y>>20,leaf=guideLeaf(previous.y&0xfffffu);
+      if(score>1&&leaf!=0u)atomicMax(next.data[slot].y,((score-1u)<<20)|leaf);
     }
   }
   // Ordinary guiding estimates the blocked fraction only from base draws.

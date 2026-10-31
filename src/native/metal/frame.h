@@ -93,7 +93,7 @@ namespace remix::metal::trace {
     Matrix inverseCameraRelative{};
     // Local occlusion probes (pathtrace.comp, localOcclusionConfidence): per
     // pixel, the arrived share of its local light, last frame's (0: none)
-    // and this frame's. localProbeParams: movingShadowBlur, reserved.
+    // and this frame's. localProbeParams: movingShadowBlur, shadowTerminatorSoften, emissiveSpecularRoughness, terminator lift length.
     uint64_t localProbeRead = 0, localProbeWrite = 0;
     float localProbeParams[4] = {};
     // Volumetrics: each source's share of the scattered light (sun, lights,
@@ -105,8 +105,12 @@ namespace remix::metal::trace {
     // A bit per texture slot (slot / 32, its bit slot % 32): the slot holds
     // sRGB-encoded texels (stored UNORM), decoded with pow 2.2 (scene.glsl).
     uint32_t srgbTextures[32][4] = {};
+    // Path inspector (pathtrace.comp pathDebugRecord): its record buffer's
+    // address (low, high words), the pixel (x | y << 16; ~0 none) and the
+    // record capacity.
+    uint32_t pathDebug[4] = {0, 0, ~0u, 0};
   };
-  static_assert(sizeof(Frame) == 1792 && offsetof(Frame, srgbTextures) == 1280 &&
+  static_assert(sizeof(Frame) == 1808 && offsetof(Frame, srgbTextures) == 1280 && offsetof(Frame, pathDebug) == 1792 &&
                 offsetof(Frame, localProbeRead) == 1168 &&
                 offsetof(Frame, localProbeParams) == 1184 && offsetof(Frame, volumeLightScales) == 1200 &&
                 offsetof(Frame, cloudShadow) == 1216 && offsetof(Frame, cloudShadowConfig) == 1264 &&

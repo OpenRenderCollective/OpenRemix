@@ -5,6 +5,10 @@
 #extension GL_EXT_nonuniform_qualifier : require
 #extension GL_GOOGLE_include_directive : require
 #extension GL_EXT_control_flow_attributes : require // [[dont_unroll]] (visibility.glsl causticTint)
+#ifdef RESTIR_INITIAL
+#extension GL_KHR_shader_subgroup_arithmetic : require // restir.glsl boiling filter
+#extension GL_KHR_shader_subgroup_ballot : require
+#endif
 #ifdef ORCA_SPARSE_PASS
 #extension GL_EXT_shader_atomic_int64 : require
 #endif
@@ -28,6 +32,7 @@ layout(local_size_x=16, local_size_y=16) in;
 layout(local_size_x=8, local_size_y=8) in;
 #endif
 #include "scene.glsl"
+#include "iridescence.glsl"
 #include "debug.glsl"
 #if defined(SHARC_QUERY) || defined(SHARC_UPDATE_PASS)
 #include "sharc.glsl"
@@ -72,10 +77,17 @@ layout(push_constant) uniform Features { layout(offset=28) uint bits; } features
 // first blocker (visibility.glsl). A setting, so it stays a variant: both
 // implementations in one binary push the stage to 255 registers.
 layout(constant_id=12) const bool shadowEarlyOut=false;
-layout(constant_id=0) const bool enableLocalLights=true;
-layout(constant_id=1) const bool enableLocalGuiding=true;
-layout(constant_id=2) const bool enableSmallLights=false;
-layout(constant_id=3) const bool enableLightResampling=false;
+// Light sampling's structure (local lights, guiding, the small set,
+// resampling) is pushed too (Gpu::selectLightingPipeline): as variants an
+// opaque stage compiled up to eight times, each no leaner in registers or
+// spills than the all-on build. Guiding, the small set and resampling exist
+// only in stages that can guide (guidingCapable, specialized per stage: the
+// transparency stages compile without them).
+layout(constant_id=1) const bool guidingCapable=true;
+#define enableLocalLights ((features.bits&64u)!=0u)
+#define enableLocalGuiding (guidingCapable&&(features.bits&128u)!=0u)
+#define enableSmallLights (guidingCapable&&(features.bits&256u)!=0u)
+#define enableLightResampling (guidingCapable&&(features.bits&512u)!=0u)
 layout(constant_id=9) const bool separateIndirect=false;
 layout(constant_id=7) const bool enableRayProfile=false;
 #ifdef SPLIT_LOCAL_PASS
@@ -93,6 +105,25 @@ uint rng;
 // The pixel this invocation shades; the invocation's own coordinate except
 // in a launch over the selected-pixel list.
 ivec2 shadingPixel;
+// Path inspector (PathTracer::inspectPixel, frame.pathDebug): the inspected
+// pixel's records, four vec4 each, the kind in the fourth's w:
+// 0 primary: position, t | normal, roughness (-1 legacy) | colour, emission luminance | pixel colour
+// 1 path vertex: position, bounce | normal, roughness | throughput, t | emission
+// 2 light sample: endpoint, emitter | estimate, selection PDF | visibility, distance | unshadowed
+//   (4: the same at a path vertex, pathDebugVertex)
+// 3 emission a path collected: hit position | its weight | the emission
+layout(buffer_reference,std430,buffer_reference_align=16) buffer PathDebugRecords { uvec4 header; vec4 data[]; };
+bool pathDebugVertex=false;
+bool pathDebugged() {
+  return frame.pathDebug.z!=0xffffffffu&&uvec2(shadingPixel)==uvec2(frame.pathDebug.z&0xffffu,frame.pathDebug.z>>16);
+}
+void pathDebugRecord(float kind,vec3 a,float aw,vec4 b,vec4 c,vec4 d) {
+  if(!pathDebugged())return;
+  PathDebugRecords records=PathDebugRecords(uint64_t(frame.pathDebug.x)|(uint64_t(frame.pathDebug.y)<<32));
+  uint i=atomicAdd(records.header.x,1u);
+  if(i>=frame.pathDebug.w)return;
+  records.data[i*4]=vec4(a,aw);records.data[i*4+1]=b;records.data[i*4+2]=c;records.data[i*4+3]=vec4(d.xyz,kind);
+}
 uint hash(uint x) { x ^= x >> 16; x *= 0x7feb352du; x ^= x >> 15; x *= 0x846ca68bu; return x ^ (x >> 16); }
 float random() { rng = hash(rng + 0x9e3779b9u); return float(rng >> 8) * (1.0 / 16777216.0); }
 #include "ray_profile.glsl"
@@ -124,7 +155,7 @@ bool acceptCandidate(Surface s,uint triangle,vec2 bary) {
 }
 // color: what the surface reflects. self: the part of its colour that emits
 // instead (remixapi_MaterialInfoSelfIlluminationEXT), set with the emission.
-struct Hit { float t; vec3 p; vec3 n; vec4 color; bool blended; bool blendedDraw; bool decal; uint decalMode; bool tinted; bool cacheable; vec3 previousPosition; vec3 previousNormal; bool historyValid; vec3 emission; float identity; vec3 ng; vec3 wo; vec2 rm; bool pbr; vec3 self; vec2 thick; uint sheetIndex; vec3 sheetDepth; };
+struct Hit { float t; vec3 p; vec3 n; vec4 color; bool blended; bool blendedDraw; bool decal; uint decalMode; bool tinted; bool cacheable; vec3 previousPosition; vec3 previousNormal; bool historyValid; vec3 emission; float identity; vec3 ng; vec3 wo; vec2 rm; bool pbr; vec3 self; vec2 thick; uint sheetIndex; vec3 sheetDepth; vec4 film; float lift; vec3 horizon; };
 #include "sheet.glsl"
 // Every query rejects back faces of one-sided surfaces ((state.w&4)==0 below).
 // With hardware face culling (target.z bit 2) one-sided instances enable
@@ -168,10 +199,22 @@ float cameraPixelAngle() {
 // 1/cos along the view direction, whose axes map to UV through the
 // triangle's barycentric basis (e1, e2 world edges; du1, du2 their UV edges).
 // Anisotropic sampling then filters it like rasterized texture derivatives.
+// Bounce hits fetch their emission while a path looks for it (pathEmissiveSpecular).
+bool pathEmission=false;
+// Path rays carry their cone (coneSpread >= 0): its width where the ray
+// starts and its spread angle, which every scattering widens by the solid
+// angle of its sample's PDF (Akenine-Moller et al. 2021, "Improved Shader
+// and Texture Level of Detail Using Ray Cones"; RTXPT's growth factor 0.3).
+// A bounce off a diffuse surface then samples coarse mips, as its filtered
+// result would.
+float coneWidth=0,coneSpread=-1;
+float coneExpansion(float pdf) {
+  return .3*2*acos(max(-1.,1-1/max(pdf*2*3.14159265,1e-20)));
+}
 void hitFootprint(vec3 direction,float t,vec3 e1,vec3 e2,vec2 du1,vec2 du2) {
   uvGradX=uvGradY=vec2(0);
   vec3 n=cross(e1,e2);
-  float nn=dot(n,n),r=cameraPixelAngle()*t;
+  float nn=dot(n,n),r=coneSpread<0?cameraPixelAngle()*t:coneWidth+coneSpread*t;
   if(nn<1e-30||!(r>0))return;
   vec3 nh=n*inversesqrt(nn),axis=direction-nh*dot(direction,nh);
   if(dot(axis,axis)<1e-12)axis=cross(abs(nh.z)<.999?vec3(0,0,1):vec3(1,0,0),nh);
@@ -194,11 +237,22 @@ vec3 carriedNormal(vec3 n,vec3 e1,vec3 e2,vec3 f1,vec3 f2) {
 // double-sided, so a ray leaving a painted surface meets every layer above
 // it; one query passes them all.
 float originPaint=0;
-void queryScene(accelerationStructureEXT scene, vec3 origin, vec3 direction, inout Hit hit,bool motion,float minimum) {
+// The geometric normal of the surface a path's bounce ray leaves (zero for
+// any other ray): the paint over that surface lies within the attachment
+// distance across it, so closest()'s paint queries start past it and
+// traversal skips those layers instead of passing each to originPaint (a
+// bounce off a wall under ~75 layers of blood visited every one of them).
+vec3 leavingNormal=vec3(0);
+// The nearest intersection a query committed (surface ~0u: none), all a Hit
+// is built from. The Hit is built once, after both scenes (and in closest(),
+// after the paint in front of it): carried across further queries whole it
+// took the big stages from 168 to 255 registers.
+struct Intersection { float t; uint surface; uint primitive; vec2 bary; mat4x3 model; };
+void queryScene(accelerationStructureEXT scene, vec3 origin, vec3 direction, inout Intersection x,float minimum) {
   rayQueryEXT query;
   profileRay(0);
   uvGradX=uvGradY=vec2(0); // candidates test coverage at the finest mip
-  rayQueryInitializeEXT(query, scene, traceFlags()|(cameraCut!=0u||cameraRay?gl_RayFlagsNoOpaqueEXT:gl_RayFlagsNoneEXT), traceMask, origin, minimum, direction, hit.t);
+  rayQueryInitializeEXT(query, scene, traceFlags()|(cameraCut!=0u||cameraRay?gl_RayFlagsNoOpaqueEXT:gl_RayFlagsNoneEXT), traceMask, origin, minimum, direction, x.t);
   while (rayQueryProceedEXT(query)) {
     if (rayQueryGetIntersectionTypeEXT(query,false)!=gl_RayQueryCandidateIntersectionTriangleEXT) continue;
     profileRay(1);
@@ -220,16 +274,23 @@ void queryScene(accelerationStructureEXT scene, vec3 origin, vec3 direction, ino
     else profileRay(3);
   }
   if (rayQueryGetIntersectionTypeEXT(query,true)==gl_RayQueryCommittedIntersectionNoneEXT) return;
+  x.t=rayQueryGetIntersectionTEXT(query,true);
+  x.surface=rayQueryGetIntersectionInstanceCustomIndexEXT(query,true)+rayQueryGetIntersectionGeometryIndexEXT(query,true);
+  x.primitive=rayQueryGetIntersectionPrimitiveIndexEXT(query,true);
+  x.bary=rayQueryGetIntersectionBarycentricsEXT(query,true);
+  x.model=rayQueryGetIntersectionObjectToWorldEXT(query,true);
+}
+void surfaceHit(Intersection x,vec3 direction,inout Hit hit,bool motion) {
   profileRay(5);
-  hit.t=rayQueryGetIntersectionTEXT(query,true);
-  Surface s=surfaces[rayQueryGetIntersectionInstanceCustomIndexEXT(query,true)+rayQueryGetIntersectionGeometryIndexEXT(query,true)];
+  hit.t=x.t;
+  Surface s=surfaces[x.surface];
   s.indices=s.traceIndices;
-  uint tri=rayQueryGetIntersectionPrimitiveIndexEXT(query,true)*3;
+  uint tri=x.primitive*3;
   vec3 a=s.vertices.v[s.indices.i[tri]].position.xyz;
   vec3 b=s.vertices.v[s.indices.i[tri+1]].position.xyz;
   vec3 c=s.vertices.v[s.indices.i[tri+2]].position.xyz;
-  vec2 bary=rayQueryGetIntersectionBarycentricsEXT(query,true);
-  mat4x3 model=rayQueryGetIntersectionObjectToWorldEXT(query,true);
+  vec2 bary=x.bary;
+  mat4x3 model=x.model;
   // Reconstruct on the triangle, then transform; see Ray Tracing Gems chapter 6.
   hit.p=model*vec4(a + bary.x*(b-a) + bary.y*(c-a),1);
   hit.n=normalize(cross(model*vec4(b-a,0),model*vec4(c-a,0)));
@@ -239,19 +300,29 @@ void queryScene(accelerationStructureEXT scene, vec3 origin, vec3 direction, ino
     hitFootprint(direction,hit.t,model*vec4(b-a,0),model*vec4(c-a,0),
                  s.vertices.v[s.indices.i[tri+1]].uv.xy-ua,s.vertices.v[s.indices.i[tri+2]].uv.xy-ua);
   }
-  hit.color=albedo(s,tri/3,bary,motion,hit.emission,hit.self);
+  hit.color=albedo(s,tri/3,bary,motion||pathEmission,hit.emission,hit.self);
+  hit.lift=0;
   hit.identity=motion&&frame.splitLocal.w==3?debugTriangle(s.debugIdentity,originalTriangle(s,tri/3)):0;
   {
     vec3 w=vec3(1-bary.x-bary.y,bary);
     vec2 uv=s.vertices.v[s.indices.i[tri]].uv.xy*w.x+s.vertices.v[s.indices.i[tri+1]].uv.xy*w.y+s.vertices.v[s.indices.i[tri+2]].uv.xy*w.z;
-    hit.ng=hit.n;hit.wo=-direction;hit.rm=materialParameters(s,uv,hit.color.rgb);hit.pbr=s.pbr.z!=0;
+    hit.ng=hit.n;hit.horizon=hit.ng;hit.wo=-direction;hit.rm=materialParameters(s,uv,hit.color.rgb);hit.pbr=s.pbr.z!=0;
     vec2 ua=s.vertices.v[s.indices.i[tri]].uv.xy;
     vec2 ub=s.vertices.v[s.indices.i[tri+1]].uv.xy;
     vec2 uc=s.vertices.v[s.indices.i[tri+2]].uv.xy;
     vec3 normal=vertexNormal(s.vertices.v[s.indices.i[tri]])*w.x+
       vertexNormal(s.vertices.v[s.indices.i[tri+1]])*w.y+vertexNormal(s.vertices.v[s.indices.i[tri+2]])*w.z;
-    normal=shadingNormal(transpose(mat3(rayQueryGetIntersectionWorldToObjectEXT(query,true)))*normal,hit.ng,hit.wo);
+    mat3 toWorld=transpose(inverse(mat3(model)));
+    if(frame.localProbeParams.w!=0)
+      hit.lift=terminatorLift(model*vec4(a,1),model*vec4(b,1),model*vec4(c,1),
+        normalize(toWorld*vertexNormal(s.vertices.v[s.indices.i[tri]])),normalize(toWorld*vertexNormal(s.vertices.v[s.indices.i[tri+1]])),
+        normalize(toWorld*vertexNormal(s.vertices.v[s.indices.i[tri+2]])),w,hit.ng,
+        frame.localProbeParams.w,uintBitsToFloat(frame.visibilityConfig.w),hit.horizon);
+    normal=shadingNormal(toWorld*normal,hit.ng,hit.wo);
     hit.n=materialNormal(s,uv,materialBasis(normal,model*vec4(b-a,0),model*vec4(c-a,0),ub-ua,uc-ua),hit.wo);
+    // A thin film, its structural colour in the albedo (iridescence.glsl).
+    hit.film=surfaceFilm(s,uv,a+bary.x*(b-a)+bary.y*(c-a),hit.color.a);
+    if(hit.film.x>0&&(s.state.w&32)==0)hit.color.rgb*=filmTint(hit.film,mix(vec3(.04),hit.color.rgb,hit.rm.y),dot(hit.n,hit.wo));
   }
   hit.decal=enableDecals&&decalSurface(s);hit.decalMode=(s.state.w>>7)&3u;hit.blendedDraw=(s.state.w&2)!=0;hit.blended=blendedAtAlpha(s,hit.color.a);hit.cacheable=(s.state.w&16)!=0;
   hit.tinted=(s.state.w&32)!=0;
@@ -272,13 +343,23 @@ void queryScene(accelerationStructureEXT scene, vec3 origin, vec3 direction, ino
   }
 #endif
 }
-Hit closestGeometry(vec3 origin,vec3 direction,float maximum,bool motion,float minimum) {
+Intersection nearest(vec3 origin,vec3 direction,float maximum,float minimum) {
+  Intersection x;x.t=maximum;x.surface=~0u;x.primitive=0u;x.bary=vec2(0);x.model=mat4x3(1);
+  if ((frame.target.z&1)!=0) queryScene(staticScene,origin,direction,x,minimum);
+  if ((frame.target.z&2)!=0) queryScene(dynamicScene,origin,direction,x,minimum);
+  return x;
+}
+Hit missedHit(vec3 direction,float maximum) {
   Hit hit; hit.t=maximum; hit.p=vec3(0);hit.n=vec3(0);hit.color=vec4(0);hit.blended=false;hit.blendedDraw=false;hit.decal=false;hit.decalMode=0u;hit.cacheable=false;hit.previousPosition=vec3(0);hit.previousNormal=vec3(0);hit.historyValid=false;
-  hit.emission=vec3(0);hit.self=vec3(0);hit.tinted=false;hit.thick=vec2(0);
   hit.sheetIndex=0u;hit.sheetDepth=vec3(0);
-  hit.identity=0;hit.ng=vec3(0);hit.wo=-direction;hit.rm=vec2(1,0);hit.pbr=false;
-  if ((frame.target.z&1)!=0) queryScene(staticScene,origin,direction,hit,motion,minimum);
-  if ((frame.target.z&2)!=0) queryScene(dynamicScene,origin,direction,hit,motion,minimum);
+  hit.emission=vec3(0);hit.self=vec3(0);hit.tinted=false;hit.thick=vec2(0);hit.film=vec4(0);
+  hit.identity=0;hit.ng=vec3(0);hit.wo=-direction;hit.rm=vec2(1,0);hit.pbr=false;hit.lift=0;hit.horizon=vec3(0);
+  return hit;
+}
+Hit closestGeometry(vec3 origin,vec3 direction,float maximum,bool motion,float minimum) {
+  Hit hit=missedHit(direction,maximum);
+  Intersection x=nearest(origin,direction,maximum,minimum);
+  if(x.surface!=~0u)surfaceHit(x,direction,hit,motion);
   if(hit.t==maximum)hit.t=1e30;
   return hit;
 }
@@ -294,11 +375,15 @@ Hit closestGeometry(vec3 origin,vec3 direction,float maximum,bool motion) {
 // paint texel (alpha-tested) past the last; paint the ray starts at (bounce,
 // sky and light rays from under it) belongs to the surface the ray leaves and
 // is passed (originPaint). The receiver query visits no quad of a stack of
-// paint, and covering paint ends the peel at once.
-// Every query is one call site: every closestGeometry (two inlined scene
-// queries) is inlined wherever closest() is.
+// paint, and covering paint ends the peel at once. The receiver's Hit is
+// built after the peel (Intersection); where the first layer shows as an
+// ordinary surface it is queried again, as only its distance is kept.
+// The peel is one query call site and the receiver and first layer one each:
+// every query (two inlined scene queries) is inlined wherever closest() is.
 Hit closest(vec3 origin,vec3 direction,float maximum,bool motion) {
-  Hit first,hit,receiver;
+  Hit hit;
+  Intersection receiver;
+  vec3 firstNg=vec3(0);float firstT=0;
   vec3 color=vec3(0),normal=vec3(0),emission=vec3(0),self=vec3(0);
   vec2 parameters=vec2(0);
   // `through` carries color into the layers below: alpha paint covers them,
@@ -313,20 +398,32 @@ Hit closest(vec3 origin,vec3 direction,float maximum,bool motion) {
   // Step 0 finds the receiver; the steps after it, up to 32 layers of paint.
   for(uint step=0;step<33;++step) {
     traceMask=step==0u?(paint?mask&~decalInstanceMask:mask):decalInstanceMask;
-    originPaint=step==0u?0.:attach;
-    hit=closestGeometry(origin,direction,end,motion,minimum);
-    originPaint=0;
     if(step==0u) {
-      receiver=hit;
+      receiver=nearest(origin,direction,maximum,0);
       if(!paint)break;
-      end=receiver.t<1e30?receiver.t:maximum;
+      end=receiver.t;
+      // Floored like the attachment test below (at most 20 x attach).
+      if(!motion&&dot(leavingNormal,leavingNormal)>0)
+        minimum=attach/max(abs(dot(direction,leavingNormal)),.05);
+      if(minimum>=end)break;
       continue;
     }
-    if(hit.t>=1e30)break;
+    originPaint=attach;
+    Intersection x=nearest(origin,direction,end,minimum);
+    originPaint=0;
+    if(x.surface==~0u)break;
+    // Reflection-only paint (what only a screen camera sees: an eye's iris)
+    // coats only a reflection-only receiver: no other ray shows it.
+    if((surfaces[x.surface].state.w&32768u)!=0u&&
+       (receiver.surface==~0u||(surfaces[receiver.surface].state.w&32768u)==0u)) {
+      minimum=uintBitsToFloat(floatBitsToUint(x.t)+1u);
+      continue;
+    }
+    hit=missedHit(direction,end);surfaceHit(x,direction,hit,motion);
     // Keep the ray origin fixed. The normal-offset used for lighting rays can
     // jump through a decal's close receiver at large world coordinates.
     minimum=uintBitsToFloat(floatBitsToUint(hit.t)+1u);
-    if(layers==0u)first=hit;
+    if(layers==0u){firstT=x.t;firstNg=hit.ng;}
     if(hit.decalMode!=0u) {
       // mod2x is authored gamma-encoded (128 is neutral): scale so (128/255)^2.2 maps to one.
       through*=hit.color.rgb*(hit.decalMode==2u?4.5554:1.);
@@ -338,30 +435,42 @@ Hit closest(vec3 origin,vec3 direction,float maximum,bool motion) {
       remaining*=1-hit.color.a;through*=1-hit.color.a;
     }
     lastDecal=hit.t;
-    // Nothing shows past paint that covers all.
-    if(++layers>=32u||all(lessThan(through,vec3(1./1024))))break;
+    // Little shows past paint that covers nearly all: the peel ends once
+    // under 1/32 of the layers below would show (a wall under dozens of
+    // translucent blood layers: ~2.5 ms less than 1/1024).
+    if(++layers>=32u||all(lessThan(through,vec3(1./32))))break;
   }
   traceMask=mask;
-  hit=receiver;
-  if(layers==0u)return receiver;
+  hit=missedHit(direction,maximum);
+  if(receiver.surface!=~0u)surfaceHit(receiver,direction,hit,motion);
+  if(hit.t==maximum)hit.t=1e30;
+  if(layers==0u)return hit;
   // Paint coats the surface right behind it. The gap is measured across the
   // paint, not along the ray: a grazing ray travels 1/cos further between the
   // paint and its receiver, and paint lifted an inch stopped being attached
   // from 60 degrees off the normal (mod2x paint then stood as an opaque grey
   // quad). The facing term is floored so a ray skimming past the paint's edge
   // cannot attach it to a surface far behind (at most 20 x attach along the ray).
-  const float facing=max(abs(dot(direction,first.ng)),.05);
+  const float facing=max(abs(dot(direction,firstNg)),.05);
   const bool attached=hit.t<1e30&&!hit.decal&&(hit.t-lastDecal)*facing<=attach;
-  // Multiplicative paint over glass tints what is seen through it (a sheet
-  // without coverage of its own) instead of standing as an opaque quad.
-  if(attached&&hit.blended&&remaining==1) {
-    first.decal=false;first.blended=true;first.blendedDraw=true;first.tinted=true;
-    first.color=vec4(through,0);first.emission=vec3(0);first.self=vec3(0);
-    return first;
-  }
   // Unattached decals and layers above translucent receivers retain ordinary
   // source-over transport. Do not project paint onto the sky or change glass.
-  if(!attached||hit.blended) {first.decal=false;return first;}
+  if(!attached||hit.blended) {
+    const bool tint=attached&&remaining==1;
+    traceMask=decalInstanceMask;originPaint=attach;
+    Intersection first=nearest(origin,direction,uintBitsToFloat(floatBitsToUint(firstT)+1u),0);
+    traceMask=mask;originPaint=0;
+    hit=missedHit(direction,maximum);
+    if(first.surface!=~0u)surfaceHit(first,direction,hit,motion);
+    hit.decal=false;
+    // Multiplicative paint over glass tints what is seen through it (a sheet
+    // without coverage of its own) instead of standing as an opaque quad.
+    if(tint) {
+      hit.blended=true;hit.blendedDraw=true;hit.tinted=true;
+      hit.color=vec4(through,0);hit.emission=vec3(0);hit.self=vec3(0);
+    }
+    return hit;
+  }
   hit.color.rgb=min(color+through*hit.color.rgb,vec3(1));
   hit.emission=emission+through*hit.emission;
   hit.self=min(self+through*hit.self,vec3(1)-hit.color.rgb);
@@ -394,15 +503,37 @@ Hit cameraHit(vec3 origin,vec3 direction) {
 Hit secondaryHit(vec3 origin,vec3 direction) {
   traceMask=bounceMask();Hit hit=closest(origin,direction,1e30,false);traceMask=cameraMask;return hit;
 }
+#ifdef TEMPORAL
+// A pixel on a screen (remixapi_MaterialInfoScreenCameraEXT) whose camera the
+// PSR pass traced: its primary surface is what the camera sees, viewed from
+// it. The record shares psrMirror with mirrors (w's high half 0xffff, a NaN
+// no mirror packs): x the slot, y the camera ray's distance to the screen.
+// Written only with a raster primary (the pass runs then).
+struct Screen { bool shown; uint slot; float distance; };
+Screen loadScreen(ivec2 p) {
+  Screen s=Screen(false,0u,0);
+  if(frame.target.w==0)return s;
+  uvec4 v=imageLoad(psrMirror,p);
+  if((v.w>>16)!=0xffffu)return s;
+  s.shown=true;s.slot=v.x;s.distance=uintBitsToFloat(v.y);
+  return s;
+}
+uvec4 packScreen(uint slot,float distance) { return uvec4(slot,floatBitsToUint(distance),0u,0xffff0000u); }
+#endif
 // First visibility comes from rasterization; secondary rays still query the full scene.
 // A painted pixel's ray is traced again (rasterPrimary, primarySurface).
 Hit rasterSurface(ivec2 pixel, vec3 origin) {
   vec4 position=imageLoad(primaryPosition,pixel), normal=imageLoad(primaryNormal,pixel);
-  // The kind plus 8: a view model (gbuffer.frag).
+  // The kind plus 8: a view model, plus 16: a thin film, whose material
+  // the G-buffer does not hold: film.x -1 has its ray traced again
+  // (gbuffer.frag); plus 32: a screen camera's surface (the PSR pass
+  // replaces it; replaceMirror).
+  Hit hit;hit.film=vec4(0);
+  if(normal.w>=32)normal.w-=32;
+  if(normal.w>=16){normal.w-=16;hit.film.x=-1;}
   if(normal.w>=8){normal.w-=8;viewModelPath=true;}
   if(normal.w==5) return cameraHit(origin,normalize(position.xyz-origin));
   vec4 previous=imageLoad(primaryPrevious,pixel);
-  Hit hit;
   hit.t=normal.w==0?1e30:length(position.xyz-origin);
   hit.p=position.xyz;hit.n=normal.w==0?vec3(0):normalize(normal.xyz);
   hit.color=imageLoad(primaryAlbedo,pixel);hit.blended=normal.w>=2;hit.blendedDraw=hit.blended;hit.decal=normal.w==4;hit.decalMode=0u;hit.tinted=normal.w==3;hit.cacheable=false;hit.thick=vec2(0);
@@ -415,12 +546,19 @@ Hit rasterSurface(ivec2 pixel, vec3 origin) {
   hit.self=hit.color.rgb*clamp(-identity,0,1);hit.color.rgb-=hit.self;
   vec4 pbr=imageLoad(primaryPbr,pixel);
   hit.ng=decodeGeometricNormal(pbr.zw);hit.rm=vec2(max(0,pbr.x),pbr.y);hit.pbr=pbr.x>=0;
+  unpackPreviousW(previous.w,hit.ng,hit.historyValid,hit.lift,hit.horizon);
   hit.wo=hit.t<1e30?normalize(origin-hit.p):vec3(0,0,1);
 #if defined(TEMPORAL) && !defined(PSR_PASS)
   // A surface seen through a mirror (PSR) is viewed from the mirrored eye.
   Mirror mirror=loadMirror(pixel);
   if(mirror.replaced&&hit.t<1e30) {
     vec3 eye=mirrorPoint(mirror,origin);
+    hit.t=length(eye-hit.p);hit.wo=normalize(eye-hit.p);
+  }
+  // A surface on a screen is viewed from the screen's camera.
+  Screen screen=loadScreen(pixel);
+  if(screen.shown&&hit.t<1e30) {
+    vec3 eye=frame.screenCameras[screen.slot*4u].xyz;
     hit.t=length(eye-hit.p);hit.wo=normalize(eye-hit.p);
   }
 #endif
@@ -431,15 +569,26 @@ Hit rasterPrimary(ivec2 pixel, vec3 origin) {
   // Re-query painted pixels to obtain the ray traversal's exact intersection
   // distance. Raster-interpolated positions can round to the other side of a
   // very close receiver; the common resolver advances tMin without an offset.
-  if(hit.decal)return cameraHit(origin,normalize(hit.p-origin));
+  // A filmed pixel's ray is traced for its film.
+  if(hit.decal||hit.film.x<0)return cameraHit(origin,normalize(hit.p-origin));
   return hit;
 }
 // Geometry diagnostics show the first visible sheet. Lighting and temporal
 // guides belong to the opaque receiver behind transparent sheets.
 vec3 debugGeometry(Hit hit,ivec2 pixel) {
   uint view=frame.splitLocal.w;
-  if(view>=8&&view!=12&&view!=14)return debugUnavailable(pixel); // filled by temporal composition when available
+  if(view>=8&&view!=12&&view!=14&&view!=15)return debugUnavailable(pixel); // filled by temporal composition when available
   if(hit.t==1e30)return vec3(0);
+  // Shadow terminator offset: red, the lift over its longest allowed
+  // length; blue, the sun lit by the smooth normal on a triangle facing away
+  // (only softening reaches it); grey, the sun's cosine.
+  if(view==15) {
+    vec3 toLight=-frame.lightDirection.xyz;
+    float maxLength=frame.localProbeParams.w,cosine=max(dot(hit.n,toLight),0.);
+    vec3 base=vec3(.15+.35*cosine);
+    if(cosine>0&&dot(hit.horizon,toLight)<=0)base=vec3(.05,.15,.8);
+    return maxLength>0&&hit.lift>0?mix(base,vec3(1,0,0),clamp(sqrt(hit.lift/maxLength),0.,1.)):base;
+  }
   if(view==12)return hit.pbr?vec3(hit.rm.x,hit.rm.y,0):vec3(0,0,1);
   if(view==1)return hit.color.rgb;
   if(view==2)return hit.n*.5+.5;
@@ -448,11 +597,24 @@ vec3 debugGeometry(Hit hit,ivec2 pixel) {
   if(view==5)return .15+.7*fract(hit.p); // one world unit per cell
   return vec3(0);
 }
-// Scale-aware integer ULP offset with a near-origin fallback (RT Gems, ch. 6).
+// Scale-aware integer ULP offset with a near-origin fallback (RT Gems, ch. 6):
+// rtx.native.pathtrace.rayOffset units in the last place along the normal
+// (frame.visibilityProbe.w; 256 without it). Each component moves at least
+// that many units in the last place of the largest coordinate: intersections
+// are only as precise as the largest one, and a floor at z = 0 far from the
+// origin otherwise started its shadow rays 1/65536 above itself and hit it
+// (gm_area51_rc1: triangle-shaped dark patches across its sand).
+vec3 offsetRay(vec3 p,vec3 n);
+// Where a surface's shadow and light-visibility rays start: lifted off a
+// smooth-shaded triangle (terminatorLift; Hit.lift 0 without it).
+vec3 shadowOrigin(Hit hit) { return offsetRay(hit.p+hit.ng*hit.lift,hit.ng); }
 vec3 offsetRay(vec3 p,vec3 n) {
-  ivec3 step=ivec3(256.0*n);
+  float units=frame.visibilityProbe.w>0?frame.visibilityProbe.w:256.0;
+  ivec3 step=ivec3(units*n);
   vec3 shifted=intBitsToFloat(floatBitsToInt(p)+mix(step,-step,lessThan(p,vec3(0))));
-  return mix(shifted,p+n*(1.0/65536.0),lessThan(abs(p),vec3(1.0/32.0)));
+  shifted=mix(shifted,p+n*(1.0/65536.0),lessThan(abs(p),vec3(1.0/32.0)));
+  vec3 least=p+n*(units*max(max(abs(p.x),abs(p.y)),abs(p.z))*(1.0/8388608.0));
+  return mix(shifted,least,greaterThan(abs(least-p),abs(shifted-p)));
 }
 // A translucent body's refractive index and measurement distance at a sheet
 // (zero: none). A sheet from the raster G-buffer carries no material record:
@@ -488,7 +650,7 @@ Hit primarySurface(ivec2 pixel,inout vec3 origin,inout vec3 direction,bool sheet
   Hit hit;
   if(raster) {
     hit=rasterSurface(pixel,origin);
-    if(hit.decal){trace=true;traceDirection=normalize(hit.p-origin);}
+    if(hit.decal||hit.film.x<0){trace=true;traceDirection=normalize(hit.p-origin);}
   }
   // At most: the primary (and its re-query), then per layer a body query and the layer's ray.
   for(uint step=0;step<66u;++step) {
@@ -598,7 +760,7 @@ vec3 sunVisibility(Hit receiver,ivec2 pixel,out float blockerDistance) {
     direction=normalize(center+frame.sun.x*sqrt(u)*(cos(angle)*t+sin(angle)*cross(center,t)));
   }
   if(dot(receiver.n,direction)<=0)return vec3(0);
-  vec3 transmission=vec3(cloudShadow(receiver.p)),origin=offsetRay(receiver.p,receiver.ng);
+  vec3 transmission=vec3(cloudShadow(receiver.p)),origin=shadowOrigin(receiver);
   float distance=0;blockerDistance=65504;
 #ifndef SIGMA_PASS
   // Only SIGMA reads the blocker distance. Without it this is the same
@@ -647,12 +809,13 @@ vec3 direct(Hit hit,bool primary,out vec3 specular,out float distance) {
     if(source==0) {
       if(cosine<=0||!any(greaterThan(frame.lightRadiance.rgb,vec3(0))))continue;
       vec3 diffuse;materialLobes(hit,toLight,diffuse,lobeSpecular);
-      weight=(diffuse+lobeSpecular)*cosine*frame.lightRadiance.rgb;lobeSpecular*=cosine*frame.lightRadiance.rgb;
+      vec3 sun=cosine*frame.lightRadiance.rgb;
+      weight=(diffuse*terminatorSoften(hit,toLight)+lobeSpecular)*sun;lobeSpecular*=sun;
     } else {
       if(frame.skyRadiance.w==0||(primary&&hit.sheetIndex!=0u))continue;
       weight=materialSample(hit,direction,lobeSpecular);
     }
-    vec3 visibility=shadow(offsetRay(hit.p,hit.ng),direction);
+    vec3 visibility=shadow(shadowOrigin(hit),direction);
     if(source==0)visibility*=cloudShadow(hit.p);
     if(source==1)visibility*=environmentRadiance(direction);
     local+=weight*visibility;specular+=lobeSpecular*visibility;
@@ -714,11 +877,14 @@ SharcHitData cacheHit(Hit hit) {
   SharcHitData data;
   data.positionWorld=cachePosition(hit);data.normalWorld=cacheNormal(hit);
   data.radianceDirectionWorld=hit.wo;data.radianceDirectionWeight=0;
-  data.materialDemodulation=max(hit.color.rgb,vec3(.001));
+  // Floors as RTXPT's: a near-black texel's sample is amplified at most 20
+  // times into its cell (1000 before), where any mismatch between these
+  // factors and the sampled BRDF weight is a blotch.
+  data.materialDemodulation=max(hit.color.rgb,vec3(.05));
   if(hit.pbr) {
     vec3 diffuseFactor,specularFactor;
     NRD_MaterialFactors(hit.n,hit.wo,materialDiffuseAlbedo(hit),materialF0(hit),cacheRoughness(hit),diffuseFactor,specularFactor);
-    data.materialDemodulation=max(diffuseFactor+specularFactor,vec3(.001));
+    data.materialDemodulation=max(diffuseFactor,vec3(.05))+max(specularFactor,vec3(.02));
   }
   return data;
 }
@@ -809,6 +975,9 @@ Hit orcaFirst;vec3 orcaDirection,orcaThroughput,orcaBefore;bool orcaRecorded=fal
 // rays; rtx.native.pathtrace.blueNoiseSky), one stream per ray and per path
 // of the pixel. Offset from the local lights' use of the same table.
 uint firstSurfacePaths=0u;
+// The specular lobe's share of the last continuation's first-direction weight
+// (luminance; 1 for a selected specular lobe, 0 for diffuse and legacy).
+float firstSpecularShare=0;
 vec2 firstSurfaceNoise(uint ray) {
   if((uint(frame.jitter.w)&4u)==0u)return vec2(-1);
   vec2 blue=blueNoiseSample(shadingPixel+ivec2(17,71),frame.config.z,16392u,31u);
@@ -830,10 +999,20 @@ vec3 continuation(Hit primary,int lobe,float probability,out vec3 firstDirection
     weight=lobeSample(primary,lobe==0,firstDirection)/probability;
     if(lobe==1)specularWeight=weight;
   }
+  coneWidth=cameraPixelAngle()*(primary.t<1e30?primary.t:0);
+  coneSpread=min(cameraPixelAngle()+coneExpansion(samplePdf),2*3.14159265);
   directionSample=vec2(-1);
   pathDistance=0;specular=vec3(0);
+  firstSpecularShare=dot(specularWeight,vec3(.2126,.7152,.0722))/max(dot(weight,vec3(.2126,.7152,.0722)),1e-20);
+  // The emission the next hit shows through the specular lobe, where the
+  // primary's light sampling leaves it to this path (pathEmissiveSpecular:
+  // the primary is lit with emissiveSpecularFromPaths whenever bounces follow).
+  emissiveSpecularFromPaths=maxBounces>0;
+  vec3 emissiveWeight=pathEmissiveSpecular(primary)?specularWeight/max(materialFactor(primary),vec3(1e-6)):vec3(0);
+  emissiveSpecularFromPaths=false;
   bool dead=primary.pbr&&!any(greaterThan(weight,vec3(0)));
   vec3 direction=firstDirection,origin=offsetRay(primary.p,primary.ng);
+  leavingNormal=primary.ng;
   vec3 throughput=primary.pbr?weight/max(materialFactor(primary),vec3(1e-6)):vec3(1),result=vec3(0);
   // Explicit environment visibility also evaluates dome lighting at zero
   // diffuse bounces. Continuation misses then contribute only non-dome skies.
@@ -894,6 +1073,7 @@ vec3 continuation(Hit primary,int lobe,float probability,out vec3 firstDirection
     }
   }
   if(dead&&!lightPrimary) {
+    coneWidth=0;coneSpread=-1;leavingNormal=vec3(0);
     profilePath(6u);specular=extraSkySpecular;
     clampLighting(primary,extraSky,specular,frame.firefly.y/probability);
     return extraSky;
@@ -920,7 +1100,10 @@ vec3 continuation(Hit primary,int lobe,float probability,out vec3 firstDirection
     Hit hit=primary;
     if(!atPrimary) {
     if(layers==0)profilePath(1u+min(bounce,3u)); // Four depth counters: the last takes every deeper segment.
+    pathEmission=any(greaterThan(emissiveWeight,vec3(0)));
     hit=secondaryHit(origin,direction);
+    pathEmission=false;
+    if(hit.t<1e30)coneWidth+=coneSpread*hit.t;
     // Also through blended layers, and to the sky (a reflection distance).
     pathDistance+=hit.t*(1-smoothstep(0.,.2,diffuseMotion));
     if(hit.t==1e30) { if(frame.skyRadiance.w==0)result+=throughput*environmentRadiance(direction);profilePath(5u);break; }
@@ -940,11 +1123,18 @@ vec3 continuation(Hit primary,int lobe,float probability,out vec3 firstDirection
     } else if(hit.blended&&random()>=hit.color.a) {
       if(++layers>=32){profilePath(9u);break;}
       // A translucent body: its depth absorption over the segment, per pass taken.
+      vec3 passed;
       if(hit.thick.y>0){float f0=(hit.thick.x-1)/(hit.thick.x+1);
-        throughput*=(1-f0*f0)*pow(clamp(hit.color.rgb,vec3(1e-4),vec3(1)),vec3(hit.t/hit.thick.y))/max(1-hit.color.a,1e-3);}
-      else throughput*=transmissionColor(hit.color.rgb,hit.tinted);
-      origin=offsetRay(hit.p,-hit.ng);continue;
+        passed=(1-f0*f0)*pow(clamp(hit.color.rgb,vec3(1e-4),vec3(1)),vec3(hit.t/hit.thick.y))/max(1-hit.color.a,1e-3);}
+      else passed=transmissionColor(hit.color.rgb,hit.tinted);
+      throughput*=passed;emissiveWeight*=passed;
+      origin=offsetRay(hit.p,-hit.ng);leavingNormal=vec3(0);continue;
     }
+    if(any(greaterThan(emissiveWeight,vec3(0)))) {
+      pathDebugRecord(3,hit.p,0,vec4(emissiveWeight,0),vec4(hit.emission,0),vec4(0));
+      result+=emissiveWeight*hit.emission;emissiveWeight=vec3(0);
+    }
+    pathDebugRecord(1,hit.p,float(bounce+1),vec4(hit.n,hit.pbr?hit.rm.x:-1),vec4(throughput,hit.t),vec4(hit.emission,0));
 #if defined(TEMPORAL) && defined(SHEET_LIGHTING_PASS)
     vec3 opaqueRadiance;
     if(translucentRadiance(hit,opaqueRadiance)) {
@@ -975,9 +1165,15 @@ vec3 continuation(Hit primary,int lobe,float probability,out vec3 firstDirection
     }
 #endif
     }
-    // The one direct() call: the primary's own light, or a vertex's.
+    // The one direct() call: the primary's own light, or a vertex's. Its
+    // specular emission is left to the path wherever one follows.
     vec3 vertexSpecular;float vertexDistance;
+    const bool savedFromPaths=emissiveSpecularFromPaths;
+    emissiveSpecularFromPaths=atPrimary?maxBounces>0:bounce+1<maxBounces&&!shortPath;
+    pathDebugVertex=!atPrimary;
     vec3 vertexLight=direct(hit,atPrimary,vertexSpecular,vertexDistance);
+    pathDebugVertex=false;
+    emissiveSpecularFromPaths=savedFromPaths;
     if(atPrimary) {
       primaryLight=vertexLight;primarySpecular=vertexSpecular;primaryDistance=vertexDistance;
       atPrimary=false;
@@ -998,9 +1194,13 @@ vec3 continuation(Hit primary,int lobe,float probability,out vec3 firstDirection
     if(++bounce>=maxBounces||shortPath){profilePath(8u);break;}
     vec3 hitSpecular;
     vec3 hitWeight=materialSample(hit,direction,hitSpecular);
+    coneSpread=min(coneSpread+coneExpansion(samplePdf),2*3.14159265);
+    emissiveSpecularFromPaths=true; // as direct() was lit above (a path follows)
+    emissiveWeight=pathEmissiveSpecular(hit)?throughput*hitSpecular:vec3(0);
+    emissiveSpecularFromPaths=savedFromPaths;
     // A diffusely sampled continuation ends the distance as well.
     diffuseMotion+=1-dot(hitSpecular,luma)/max(dot(hitWeight,luma),1e-20);
-    throughput*=hitWeight;previousVertex=hit.p;origin=offsetRay(hit.p,hit.ng);layers=0;
+    throughput*=hitWeight;previousVertex=hit.p;origin=offsetRay(hit.p,hit.ng);leavingNormal=hit.ng;layers=0;
 #ifdef SHARC_QUERY
     footprintScale=cacheSpread(footprintScale,cacheFootprint(hit));
 #endif
@@ -1017,11 +1217,12 @@ vec3 continuation(Hit primary,int lobe,float probability,out vec3 firstDirection
         rouletteState=hash(rouletteState+0x9e3779b9u);
         float choice=float(rouletteState>>8)*(1.0/16777216.0);
         if(choice>=p){profilePath(12u);break;}
-        throughput/=p;
+        throughput/=p;emissiveWeight/=p;
       }
       profilePath(11u);
     }
   }
+  coneWidth=0;coneSpread=-1;leavingNormal=vec3(0);
   specular=result*specularWeight/max(weight,vec3(1e-20))+extraSkySpecular;
 #ifdef ORCA_SPARSE_PASS
   // Radiance leaving the first vertex toward the primary surface.
@@ -1133,7 +1334,11 @@ void updateCache(ivec2 pixel) {
   float footprintScale=0; // The camera ray scatters nothing; the first hit is never judged.
   uint bounce=0,layers=0;
   atomicAdd(CacheCounters(frame.sharcCounters).data[0],1u);
-  for(uint step=0;step<560&&bounce<=frame.config.y;++step) {
+  // Training paths take at most 8 bounces: a warm cache ends them sooner by
+  // resampling, and a cold one (after a clear) no longer runs every path to
+  // the full count.
+  uint maxBounces=min(frame.config.y,8u);
+  for(uint step=0;step<560&&bounce<=maxBounces;++step) {
     Hit hit=secondaryHit(origin,direction);
     if(hit.t==1e30) { SharcUpdateMiss(parameters,state,cacheLimitPrevious(parameters,state,frame.skyRadiance.w!=0?vec3(0):environmentRadiance(direction)));break; }
     // Transparent sheets never hold cache entries, and their lighting no longer
@@ -1153,7 +1358,7 @@ void updateCache(ivec2 pixel) {
     } else if(hit.blended&&((frame.pathConfig.z&1u)==0||random()>=hit.color.a)) {
       if(++layers>=32)break;
       if(bounce!=0)SharcSetThroughput(state,transmissionColor(hit.color.rgb,hit.tinted)*((frame.pathConfig.z&1u)==0?1-hit.color.a:1.));
-      origin=offsetRay(hit.p,-hit.ng);continue;
+      origin=offsetRay(hit.p,-hit.ng);leavingNormal=vec3(0);continue;
     }
     bool store=cacheSurface(hit);
     // A glossy surface's entry is lit, and scatters the path on, as the rough
@@ -1175,13 +1380,13 @@ void updateCache(ivec2 pixel) {
       // sharp ones unless enabled) still light the path's cached vertices.
       SharcUpdateMiss(parameters,state,cacheLimitPrevious(parameters,state,lighting));
     }
-    if(++bounce>frame.config.y)break;
+    if(++bounce>maxBounces)break;
     vec3 specularWeight;
     vec3 weight=materialSample(hit,direction,specularWeight);
     if(store)SharcSetRadianceDirectionWeight(state,cacheDirectionWeight(hit,weight,specularWeight));
     SharcSetThroughput(state,weight);
     previousVertex=hit.p;footprintScale=cacheSpread(footprintScale,cacheFootprint(hit));
-    origin=offsetRay(hit.p,hit.ng);layers=0;
+    origin=offsetRay(hit.p,hit.ng);leavingNormal=hit.ng;layers=0;
     if(!any(greaterThan(weight,vec3(0))))break;
   }
 }
@@ -1204,7 +1409,8 @@ vec3 rrSpecularAlbedo(vec3 f0,float roughness,float NoV) {
   float bias=dot(M1*X.xy,Y.xy)/dot(M2*X.xyw,Y.xyw);
   float scale=dot(M3*X.xy,Y.xy)/dot(M4*X.xzw,Y.xyw);
   bias*=clamp(f0.g*50,0,1);
-  return clamp(f0*max(0,scale)+max(0,bias),0,1);
+  // With the BRDF's multiple-scattering compensation (brdf.glsl).
+  return clamp((f0*max(0,scale)+max(0,bias))*ggxMultiScatter(f0,roughness,NoV),0,1);
 }
 struct IndirectResult {
   vec3 radiance; uint state;
@@ -1264,12 +1470,20 @@ IndirectResult traceIndirect(Hit primary,ivec2 pixel,vec3 diffuseFactor,vec3 spe
 #else
       vec3 sampleLight=continuation(primary,firstDir,pathDistance,sampleSpecular);
 #endif
+      // A NaN passes the firefly limit (its comparison is false) and would
+      // stay in the denoiser's history.
+      if(any(isnan(sampleLight))||any(isinf(sampleLight))||any(isnan(sampleSpecular))||any(isinf(sampleSpecular)))
+        sampleLight=sampleSpecular=vec3(0);
       result.radiance+=sampleLight/float(frame.config.x);
 #ifdef TEMPORAL
       // The selection is a function of the pixel and frame: not carried
       // through the path either.
       lobe=primaryLobe(primary,pixel,frame.config.z,i,probability);
-      if(primary.pbr&&lobe!=0)result.distance=nearestDistance(result.distance,pathDistance);
+      // DLSS-RR's specular hit distance: a mixture sample counts only where
+      // the specular lobe carries most of its weight (mostly a diffuse ray's
+      // distance otherwise). Pixels without one are filled from neighbours
+      // (denoise.comp, mode 6).
+      if(primary.pbr&&(lobe==1||(lobe<0&&firstSpecularShare>=.5)))result.distance=nearestDistance(result.distance,pathDistance);
       if(temporal.hitDistance.w!=0)continue;
       // A surface seen in a mirror is denoised in its virtual space, like its guides.
       Mirror mirror=loadMirror(pixel);
@@ -1437,18 +1651,73 @@ vec3 sheetIndirect(ivec2 pixel,Hit hit,vec3 direction) {
 bool deltaSurface(Hit hit) {
   return hit.pbr&&hit.rm.x<.041&&(hit.rm.y>.941||dot(hit.color.rgb,vec3(.2126,.7152,.0722))<.005);
 }
+// A surface written over this pixel's raster G-buffer entry. kind: as
+// gbuffer.frag writes it (0 sky, 1 opaque, 2 blended, 3 tinted; plus 8 for a
+// view model, plus 16 for a thin film, traced again where it is read).
+void storePrimary(ivec2 pixel,Hit hit,float kind) {
+  imageStore(primaryPosition,pixel,vec4(hit.p,imageLoad(primaryPosition,pixel).w));
+  imageStore(primaryNormal,pixel,vec4(hit.n,kind));
+  imageStore(primaryAlbedo,pixel,vec4(hit.color.rgb+hit.self,hit.color.a));
+  imageStore(primaryPrevious,pixel,vec4(hit.previousPosition,packPreviousW(hit.historyValid,hit.lift,hit.horizon,hit.ng)));
+  imageStore(primaryEmission,pixel,vec4(hit.emission,hit.identity>0?hit.identity:-selfShare(hit.color.rgb,hit.self)));
+  imageStore(primaryPbr,pixel,vec4(hit.pbr?hit.rm.x:-1,hit.rm.y,encodeGeometricNormal(hit.ng)));
+}
 // Primary surface replacement (dxvk-remix PSR, NRD sample's delta event):
 // a mirror's reflection is deterministic, so the surface it shows replaces
 // the mirror as this pixel's primary surface. Lighting, ReSTIR and the
 // diffuse denoisers then treat it like a directly visible surface, at the
 // mirrored (virtual) position, instead of a one-sample secondary hit. The
 // mirror's reflectance multiplies the composed result.
+// The same pass resolves painted pixels: their ray is traced once here (the
+// receiver with its paint, closest()) and written over the G-buffer, so the
+// passes after it read the surface instead of each peeling the paint again
+// (a wall under dozens of translucent layers took 15 ms a pass).
+// A screen (remixapi_MaterialInfoScreenCameraEXT; G-buffer kind plus 32):
+// what its camera sees through the point of its image that the pixel's
+// texture coordinate names replaces it, as a mirror's reflection does. Glass
+// in front of that is passed. Without its camera this frame the screen keeps
+// its own material (the G-buffer as drawn). Returns the pixel's record.
+uvec4 replaceScreen(ivec2 pixel,vec3 origin,vec3 direction,float kind) {
+  // A view model's screen (a tool's display): view models first, as cameraHit.
+  kind-=32;if(kind>=16)kind-=16;
+  traceMask=kind>=8?viewModelInstanceMask:cameraMask;
+  Intersection x=nearest(origin,direction,1e30,0);
+  traceMask=cameraMask;
+  if(x.surface==~0u)return uvec4(0);
+  Surface s=surfaces[x.surface];
+  s.indices=s.traceIndices;
+  uint code=(s.state.w>>12)&7u;
+  if(code==0u||frame.screenCameras[(code-1u)*4u].w==0)return uvec4(0);
+  uint slot=code-1u,tri=x.primitive*3;
+  vec3 w=vec3(1-x.bary.x-x.bary.y,x.bary);
+  vec2 uv=s.vertices.v[s.indices.i[tri]].uv.xy*w.x+s.vertices.v[s.indices.i[tri+1]].uv.xy*w.y+
+    s.vertices.v[s.indices.i[tri+2]].uv.xy*w.z;
+  // The image repeats, as a texture does (an HL2 func_monitor's brush
+  // coordinates tile it across the screen's faces).
+  uv=fract(uv);
+  vec2 ndc=vec2(2*uv.x-1,1-2*uv.y);
+  vec3 seen=normalize(frame.screenCameras[slot*4u+3u].xyz+ndc.x*frame.screenCameras[slot*4u+1u].xyz+
+    ndc.y*frame.screenCameras[slot*4u+2u].xyz);
+  // The camera sees reflection-only instances too: what only it sees is
+  // hidden from the main camera that way (remixapi_CameraScreensEXT).
+  traceMask=cameraMask|reflectionOnlyInstanceMask;
+  Hit hit=closest(frame.screenCameras[slot*4u].xyz,seen);
+  for(uint layer=0u;layer<8u&&hit.t<1e30&&hit.blended;++layer)hit=closest(offsetRay(hit.p,-hit.ng),seen);
+  traceMask=cameraMask;
+  hit.color.a=1;storePrimary(pixel,hit,hit.t==1e30?0:hit.blended?2:1);
+  return packScreen(slot,x.t);
+}
 void replaceMirror(ivec2 pixel) {
   vec3 origin,direction;
   ray((vec2(pixel)+.5+frame.jitter.xy)/vec2(frame.target.xy)*2-1,frame.inverseCameraRelative,frame.eye.xyz,origin,direction);
+  if(imageLoad(primaryNormal,pixel).w>=32) {
+    imageStore(psrMirror,pixel,replaceScreen(pixel,origin,direction,imageLoad(primaryNormal,pixel).w));
+    return;
+  }
+  const bool painted=imageLoad(primaryNormal,pixel).w==4;
   Hit mirror=rasterPrimary(pixel,origin);
   uvec4 packed=uvec4(0);
-  if(mirror.t<1e30&&!mirror.blended&&!mirror.decal&&deltaSurface(mirror)) {
+  if(temporal.translucency.z!=0&&mirror.t<1e30&&!mirror.blended&&!mirror.decal&&deltaSurface(mirror)) {
     vec3 reflected=reflect(-mirror.wo,mirror.n);
     if(dot(reflected,mirror.ng)>0) {
       // The mirror's reflection is a bounce: it shows reflection-only instances
@@ -1457,22 +1726,29 @@ void replaceMirror(ivec2 pixel) {
       traceMask=cameraMask;
       if(hit.t<1e30&&!hit.blended&&!deltaSurface(hit)) {
         // A delta lobe reflects exactly the Fresnel term (GGX shadowing -> 1).
-        vec3 reflectance=fresnel(materialF0(mirror),max(0,dot(mirror.n,mirror.wo)));
+        vec3 reflectance=surfaceFresnel(mirror,materialF0(mirror),max(0,dot(mirror.n,mirror.wo)));
         packed=packMirror(mirror.n,mirror.p,reflectance);
-        imageStore(primaryPosition,pixel,vec4(hit.p,imageLoad(primaryPosition,pixel).w));
-        imageStore(primaryNormal,pixel,vec4(hit.n,1));
-        imageStore(primaryAlbedo,pixel,vec4(hit.color.rgb+hit.self,1));
-        imageStore(primaryPrevious,pixel,vec4(hit.previousPosition,hit.historyValid?1:0));
-        imageStore(primaryEmission,pixel,vec4(hit.emission,hit.identity>0?hit.identity:-selfShare(hit.color.rgb,hit.self)));
-        imageStore(primaryPbr,pixel,vec4(hit.pbr?hit.rm.x:-1,hit.rm.y,encodeGeometricNormal(hit.ng)));
+        hit.color.a=1;storePrimary(pixel,hit,1);
       }
     }
   }
+  if(painted&&packed.w==0u)
+    storePrimary(pixel,mirror,(mirror.t==1e30?0:mirror.tinted?3:mirror.blended?2:1)+(viewModelPath?8:0)+(mirror.film.x>0?16:0));
   imageStore(psrMirror,pixel,packed);
 }
 #endif
 #include "volume.glsl"
 #ifdef TRANSPARENCY_PASS
+// The reflectance seen along the view of a translucent sheet with a thin film
+// (remixapi_MaterialIridescenceEXT on glass or water): the film over a
+// dielectric of index ior, blended with the bare surface by its strength.
+// What it reflects does not pass: the light through it takes the
+// complementary colour, as through a soap bubble.
+vec3 sheetFilm(Hit hit,float ior) {
+  float cosine=clamp(abs(dot(hit.n,hit.wo)),1e-3,1);
+  float f0=(ior-1)/(ior+1);f0*=f0;
+  return mix(vec3(filmSchlick(f0,cosine)),filmFresnel(cosine,hit.film.y,hit.film.z,vec3(f0)),hit.film.x);
+}
 // A translucent body's share of a pixel (remixapi_MaterialInfoTranslucentEXT
 // without a thin wall, as water): it reflects by Fresnel (Schlick, from its
 // refractive index), and of what enters, the colour to the power of the
@@ -1483,15 +1759,16 @@ void replaceMirror(ivec2 pixel) {
 // front, see main), the surface reflects all past the critical angle and
 // passes the rest unabsorbed. alpha: the share of the sheet's surface light;
 // through: what passes to the layers behind; direction: bent for them.
+// A thin film (sheetFilm) takes the place of the body's Fresnel.
 bool thickSheet(Hit hit,inout vec3 direction,inout float alpha,inout vec3 through) {
   vec2 body=sheetBody(hit,direction);
   if(body.x<1||body.y<=0)return false;
   bool inside=frame.cameraMedium.w>0;
   float f0=(body.x-1)/(body.x+1);f0*=f0;
-  float fresnel=f0+(1-f0)*pow(1-clamp(abs(dot(hit.n,hit.wo)),0,1),5);
+  vec3 fresnel=hit.film.x>0?sheetFilm(hit,body.x):vec3(f0+(1-f0)*pow(1-clamp(abs(dot(hit.n,hit.wo)),0,1),5));
   vec3 n=dot(hit.n,direction)<0?hit.n:-hit.n;
   vec3 bent=refract(direction,n,inside?body.x:1/body.x);
-  if(dot(bent,bent)==0){fresnel=1;bent=direction;}
+  if(dot(bent,bent)==0){fresnel=vec3(1);bent=direction;}
   else bent=normalize(bent);
   vec3 passed=vec3(1);
   if(!inside) {
@@ -1499,7 +1776,7 @@ bool thickSheet(Hit hit,inout vec3 direction,inout float alpha,inout vec3 throug
     passed=behind.t<1e30?pow(clamp(hit.color.rgb,vec3(1e-4),vec3(1)),vec3(behind.t/body.y)):vec3(0);
   }
   through=(1-fresnel)*passed;
-  alpha=1-(1-fresnel)*dot(passed,vec3(.2126,.7152,.0722));
+  alpha=1-dot(through,vec3(.2126,.7152,.0722));
   direction=bent;
   return true;
 }
@@ -1599,7 +1876,7 @@ void main() {
   bool front=abs(signedCount)==1||(abs(signedCount)>1&&multiSheetFallback);
   vec3 origin,direction;
   ray((vec2(pixel)+.5+frame.jitter.xy)/vec2(frame.target.xy)*2-1,frame.inverseCameraRelative,frame.eye.xyz,origin,direction);
-  Hit hit;hit.t=1e30;hit.p=vec3(0);hit.n=vec3(0);hit.blended=false;hit.pbr=false;hit.thick=vec2(0);hit.sheetIndex=0u;hit.sheetDepth=vec3(0);
+  Hit hit;hit.t=1e30;hit.p=vec3(0);hit.n=vec3(0);hit.blended=false;hit.pbr=false;hit.thick=vec2(0);hit.sheetIndex=0u;hit.sheetDepth=vec3(0);hit.film=vec4(0);hit.lift=0;hit.horizon=vec3(0);
   uint passed;
   if(front)hit=primarySurface(pixel,origin,direction,false,passed);
   hit.wo=-direction;
@@ -1654,6 +1931,9 @@ void main() {
   return;
 #elif defined(SPLIT_LIGHTING_PASS)
   if(any(greaterThanEqual(pixel,ivec2(frame.target.xy))))return;
+  // Primary light sampling alone: the opaque pass traces its paths whenever
+  // bounces are on (pathEmissiveSpecular).
+  emissiveSpecularFromPaths=frame.config.y>0u;
   // The opaque pass preserves the exact hit position and normal in scratch
   // images. Avoid another geometry query or depth reconstruction at edges.
   vec4 normal=imageLoad(emissiveInput,pixel);
@@ -1845,8 +2125,14 @@ void main() {
   vec3 sunTransmittance=vec3(1),unshadowedDirect=vec3(0);float blockerDistance=65504;
   if(primary.t<1e30&&!primary.blended&&sparseLaunch!=2u) {
     sunTransmittance=sunVisibility(primary,pixel,blockerDistance);
-    unshadowedDirect=materialBrdf(primary,-frame.lightDirection.xyz)*max(0,dot(primary.n,-frame.lightDirection.xyz))*frame.lightRadiance.rgb;
+    {
+      vec3 diffuse,specular;materialLobes(primary,-frame.lightDirection.xyz,diffuse,specular);
+      unshadowedDirect=(diffuse*terminatorSoften(primary,-frame.lightDirection.xyz)+specular)*
+                       max(0,dot(primary.n,-frame.lightDirection.xyz))*frame.lightRadiance.rgb;
+    }
     primaryDirect=unshadowedDirect*sunTransmittance;
+    // The primary's paths (traceIndirect) follow whenever bounces are on.
+    emissiveSpecularFromPaths=frame.config.y>0u;
 #ifdef SPLIT_LOCAL_PASS
     // Split direct lighting runs separately to keep its reservoirs out of the
     // opaque/indirect kernel's register footprint.
@@ -1859,6 +2145,7 @@ void main() {
       local=localLighting(primary,rng,frame.localConfig.y,localDistance,true,localSpecular);
     local+=emissive;localSpecular+=emissiveSpecular;
 #endif
+    emissiveSpecularFromPaths=false;
     if(separateIndirect) {
       IndirectTransport result=IndirectResults(frame.indirectResults).pixels[uint(pixel.x)+uint(pixel.y)*frame.target.x];
       vec2 rg=unpackHalf2x16(result.rg),bd=unpackHalf2x16(result.bd);
@@ -1886,6 +2173,8 @@ void main() {
   // once per pixel it represents. Emission and sky are exact at every pixel.
   float sparseScale=sparseLaunch==1u?256.0/float(frame.sparseConfig.y):1.0;
   vec3 color=opaque?emission+sparseScale*(primaryDirect+materialFactor(primary)*(indirect+local)):imageLoad(rawSky,pixel).rgb;
+  pathDebugRecord(0,primary.p,primary.t,vec4(primary.n,primary.pbr?primary.rm.x:-1),
+                  vec4(primary.color.rgb,dot(emission,vec3(.2126,.7152,.0722))),vec4(color,0));
   // A dome shows where the sky layer drew nothing (alpha -1, see the sky raster clear).
   if(!opaque&&frame.skyRadiance.w!=0&&imageLoad(rawSky,pixel).a<-.5)color=environmentRadiance(direction);
   if(primary.blended)color=vec3(0);
@@ -1923,10 +2212,20 @@ void main() {
     guidePosition=mirrorPoint(mirror,primary.p);guidePrevious=mirrorPoint(mirror,primary.previousPosition);
     N=mirrorVector(mirror,N);z=abs((temporal.view*vec4(guidePosition,1)).z);
   }
+  // A surface on a screen: its guides are the screen's point (the image moves
+  // with the screen), its normal the surface's. When the screen's camera moved
+  // the image changed under it: no motion, its history restarts.
+  Screen screen=loadScreen(pixel);
+  bool screenMoved=false;
+  if(screen.shown) {
+    guidePosition=guidePrevious=origin+direction*screen.distance;
+    z=abs((temporal.view*vec4(guidePosition,1)).z);
+    screenMoved=frame.screenCameras[screen.slot*4u].w>=2;
+  }
   // Surface motion of its own (a door, a character), in pixels this frame:
   // stored as motion w = 1 + pixels (w > 0 stays the validity test).
   float objectPixels=0;
-  if(opaque&&temporal.flags.x==0) {
+  if(opaque&&temporal.flags.x==0&&!screenMoved) {
     vec4 clip=frame.camera*vec4(guidePosition,1),prev=temporal.previousCamera*vec4(guidePrevious,1);
     vec4 moved=frame.camera*vec4(guidePrevious,1);
     if(moved.w>0&&clip.w>0)objectPixels=length((moved.xy/moved.w-clip.xy/clip.w)*.5*vec2(frame.target.xy));
@@ -1938,13 +2237,26 @@ void main() {
   }
   if(temporal.hitDistance.w!=0) {
     vec3 diffuse=opaque?(primary.color.rgb+primary.self)*(primary.pbr?1-primary.rm.y:1):vec3(.5);
-    vec3 specular=opaque&&primary.pbr?rrSpecularAlbedo(materialF0(primary),primary.rm.x,dot(primary.n,primary.wo)):vec3(0);
+    // Emission guides RR as albedo would (RTXPT's stable-radiance mix): a
+    // screen or sign on a dark texture otherwise reads as noisy lighting there
+    // and loses its detail. Its displayed level, tonemapped, blends in by how
+    // much it outshines the albedo.
+    if(opaque&&any(greaterThan(primary.emission,vec3(0)))) {
+      vec3 shown=primary.emission*(.18/max(frame.firefly.w,1e-12));
+      vec3 stable=sqrt(shown/(1+max(shown.r,max(shown.g,shown.b))));
+      float level=dot(stable,vec3(1.0/3.0));
+      diffuse=mix(diffuse,mix(stable,vec3(.5),.2),level/(dot(diffuse,vec3(1.0/3.0))+sqrt(level)+1e-7));
+    }
+    vec3 specular=opaque&&primary.pbr?rrSpecularAlbedo(filmF0(primary,materialF0(primary)),primary.rm.x,dot(primary.n,primary.wo)):vec3(0);
     if(mirror.replaced){diffuse*=mirror.reflectance;specular*=mirror.reflectance;}
     imageStore(rrDiffuse,pixel,vec4(diffuse,0));
     imageStore(rrSpecular,pixel,vec4(specular,0));
-    imageStore(rrNormal,pixel,opaque?vec4(N,primary.pbr?primary.rm.x:1):vec4(0));
+    // The sky faces the camera: a zero normal is no direction to RR.
+    imageStore(rrNormal,pixel,opaque?vec4(N,primary.pbr?primary.rm.x:1):vec4(-direction,1));
     // Unnormalized transport distance, never a local-light blocker distance.
-    imageStore(rrHitDistance,pixel,vec4(opaque&&primary.pbr&&specularDistance>0?min(specularDistance,65504):65504));
+    // 0: a PBR surface without a specular sample, filled from its neighbours
+    // (denoise.comp, mode 6).
+    imageStore(rrHitDistance,pixel,vec4(opaque&&primary.pbr?min(specularDistance,65504):65504));
   }
   imageStore(guideMotion,pixel,mv);imageStore(guideDepth,pixel,vec4(z));
   // NRD material IDs (NRD sample: default 0, metal 1): diffuse never mixes
@@ -1991,7 +2303,9 @@ void main() {
   // Denoised lighting takes the mirror's reflectance in composition.
   if(mirror.replaced){emission*=mirror.reflectance;color*=mirror.reflectance;}
   #endif
-  imageStore(primaryPrevious,pixel,vec4(emission,0));
+  // Its w keeps the terminator lift and horizon for the split local pass
+  // (packPreviousW; no history there, as before).
+  imageStore(primaryPrevious,pixel,vec4(emission,packPreviousW(false,primary.lift,primary.horizon,primary.ng)));
   #ifdef TEMPORAL
   if(temporal.hitDistance.w!=0)imageStore(composed,pixel,vec4(safeRadiance(color),1));
   #endif
@@ -2027,7 +2341,7 @@ void main() {
 #ifndef SINGLE_SHEET_PASS
   if(sheetCount<=1)return;
 #endif
-  Hit primary;primary.p=vec3(0);primary.n=vec3(0);primary.blended=false;primary.pbr=false;primary.thick=vec2(0);primary.sheetIndex=0u;primary.sheetDepth=vec3(0);
+  Hit primary;primary.p=vec3(0);primary.n=vec3(0);primary.blended=false;primary.pbr=false;primary.thick=vec2(0);primary.sheetIndex=0u;primary.sheetDepth=vec3(0);primary.film=vec4(0);primary.lift=0;primary.horizon=vec3(0);
   if(sheetCount!=0
 #ifdef SINGLE_SHEET_PASS
       &&(sheetCount==1||multiSheetFallback)
@@ -2054,8 +2368,9 @@ void main() {
   // immediately, keeping only the current sheet live across continuation rays.
   for(uint layer=0;layer<sheetCount;++layer) {
     Hit hit=primary;hit.wo=-direction;
+    vec3 surfaceSpecular=vec3(0);
 #ifdef SINGLE_SHEET_PASS
-      vec3 surfaceSpecular=vec3(0);float surfaceDistance=0;vec3 surfaceLight;
+      float surfaceDistance=0;vec3 surfaceLight;
       if(layer==0) {
         // Lit by the sheet lighting pass (SHEET_LIGHTING_PASS): its direct
         // light and paths or reused GI, as one radiance, specular and hit distance.
@@ -2087,12 +2402,12 @@ void main() {
       for(uint i=0;i<(reuse&&samples==0?0u:max(samples,1u));++i) {
         vec3 d,s,pd,ps;float t,pdist;
         vec3 r=continuation(hit,-1,1.,d,t,s,!reuse&&i==0,samples==0?0u:frame.config.y,pd,ps,pdist);
-        if(!reuse&&i==0)directLight=pd;
-        if(samples!=0)surfaceLight+=materialFactor(hit)*r/float(samples);
+        if(!reuse&&i==0){directLight=pd;surfaceSpecular=ps;}
+        if(samples!=0){surfaceLight+=materialFactor(hit)*r/float(samples);surfaceSpecular+=materialFactor(hit)*s/float(samples);}
       }
       skipSheetLocal=false;
       vec3 factor=materialFactor(hit);
-      if(reuseAll)directLight=reusedLight*factor;
+      if(reuseAll){directLight=reusedLight*factor;surfaceSpecular=vec3(0);}
       else if(reuse)directLight=reusedDirect*factor;
       else if(!hit.pbr&&all(greaterThan(factor,vec3(1e-3))))reusedDirect=directLight/factor;
       surfaceLight+=directLight;
@@ -2101,6 +2416,12 @@ void main() {
       surfaceLight+=hit.emission;
 #endif
       vec3 through=transmissionColor(hit.color.rgb,hit.tinted)*(1-hit.color.a);
+      // A translucent sheet with a thin film reflects by the film whatever
+      // its coverage: its specular light counts whole, and alpha weighs the
+      // rest of its light.
+      bool filmSheet=hit.tinted&&hit.film.x>0;
+      vec3 sheetSpecular=filmSheet?min(surfaceSpecular,max(surfaceLight-hit.emission,vec3(0))):vec3(0);
+      if(filmSheet&&hit.thick.x<1)through*=1-sheetFilm(hit,1.5);
       if(hit.sheetIndex!=0u)through=sheetOptics(hit,abs(dot(hit.n,layerDirection))).transmission;
       else if(hit.tinted&&thickSheet(hit,layerDirection,hit.color.a,through)) {
 #if defined(TEMPORAL) && defined(SINGLE_SHEET_PASS)
@@ -2109,16 +2430,25 @@ void main() {
         if(temporal.translucency.x!=0&&sheetCount==1&&front.a>0)imageStore(frontAlbedo,pixel,vec4(front.rgb,hit.color.a));
 #endif
       }
+#if defined(TEMPORAL) && defined(SINGLE_SHEET_PASS)
+      // The denoised front sheet is composed as coverage times its diffuse
+      // and specular light (frontRadiance): with a film, the reflection
+      // counts whole and coverage weighs only the diffuse light.
+      if(filmSheet&&temporal.translucency.x!=0&&sheetCount==1) {
+        vec4 front=imageLoad(frontAlbedo,pixel);
+        imageStore(frontAlbedo,pixel,vec4(front.rgb*hit.color.a,1));
+      }
+#endif
 #ifdef TEMPORAL
       if(temporal.hitDistance.w!=0) {
         // Deterministic material guides follow the same transparent composition
         // as radiance. Geometry guides remain consistently on the background.
         if(hit.sheetIndex==0u)transparentDiffuse+=tint*hit.color.a*(hit.color.rgb+hit.self)*(hit.pbr?1-hit.rm.y:1);
-        if(hit.pbr)transparentSpecular+=tint*hit.color.a*rrSpecularAlbedo(materialF0(hit),hit.rm.x,dot(hit.n,hit.wo));
+        if(hit.pbr)transparentSpecular+=tint*(filmSheet?1.:hit.color.a)*rrSpecularAlbedo(filmF0(hit,materialF0(hit)),hit.rm.x,dot(hit.n,hit.wo));
       }
 #endif
       if(frame.firefly.z!=0)transparentMaterial+=tint*hit.color.a*(hit.color.rgb+hit.self);
-      transparent+=tint*hit.color.a*surfaceLight;
+      transparent+=tint*(sheetSpecular+hit.color.a*(surfaceLight-sheetSpecular));
       tint*=through;opacityProduct*=hit.sheetIndex!=0u?dot(through,vec3(.2126,.7152,.0722)):1-hit.color.a;
     if(layer+1<sheetCount)primary=cameraHit(sheetOrigin(primary,layerDirection),layerDirection);
   }
@@ -2158,6 +2488,8 @@ void main() {
   float far=1e30;
   if(frame.volumeConfig.x!=0u||frame.cameraMedium.w>0) {
     float kind=frame.target.w!=0?imageLoad(primaryNormal,pixel).w:-1;
+    if(kind>=32)kind-=32; // a screen camera's surface
+    if(kind>=16)kind-=16; // a thin film
     if(kind>=8)kind-=8; // a view model
     if(kind>0&&kind<2)far=length(imageLoad(primaryPosition,pixel).xyz-origin);
     else if(kind!=0&&depth<1) {

@@ -39,6 +39,7 @@
 #include <charconv>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <limits>
 #include <optional>
 
@@ -198,7 +199,8 @@ void RemixNativeRuntime::presented() {
       }
       if (m_pathTracer) {
         const auto upscaling = m_pathTracer->upscalingStatistics();
-        detail += std::string(" | upscaler ") + upscale::name(upscaling.backend) + " " +
+        detail += std::string(" | upscaler ") +
+                  (upscaling.provider.empty() ? upscale::name(upscaling.backend) : upscaling.provider) + " " +
                   std::to_string(upscaling.render.width) + "x" + std::to_string(upscaling.render.height) + " -> " +
                   std::to_string(upscaling.display.width) + "x" + std::to_string(upscaling.display.height);
       } else {
@@ -1091,11 +1093,11 @@ void RemixNativeRuntime::presented() {
       }
       const auto upscaling = m_pathTracer->upscalingStatistics();
       if (upscaling.backend == upscale::Backend::Native || !upscaling.render.width || !upscaling.render.height) {
-        m_frameGenerationStatus = "needs an upscaler (DLSS or FSR; their native-resolution preset counts)";
+        m_frameGenerationStatus = "needs an upscaler (DLSS, FSR or XeSS; their native-resolution preset counts)";
         return;
       }
       // The depth the upscaler prepares: reversed by FSR's, the device's by
-      // DLSS's (upscale::FrameGenerationInputs::depthInverted). FSR frame
+      // DLSS's and XeSS's (upscale::FrameGenerationInputs::depthInverted). FSR frame
       // generation's shaders are chosen for one of them.
       const bool depthInverted = upscaling.backend == upscale::Backend::Fsr31;
       if (m_frameGeneration && !m_frameGeneration->matches(backend, m_swapchainExtent, m_swapchainFormat,
@@ -1131,7 +1133,7 @@ void RemixNativeRuntime::presented() {
           m_frameGenerationPreparation = std::move(next);
         }
         if (!m_frameGenerationPreparation->job->ready()) {
-          m_frameGenerationStatus = "starting (FSR 3.1)";
+          m_frameGenerationStatus = "starting (FSR)";
           return;
         }
         const auto prepared = std::move(m_frameGenerationPreparation);
@@ -1154,7 +1156,7 @@ void RemixNativeRuntime::presented() {
                                                           : FrameGeneration::maxGeneratedBy(backend));
       m_frameGenerationStatus = !m_frameGenerationReady
                                     ? "starting"
-                                    : std::string("active (") + (backend == Backend::Fsr31 ? "FSR 3.1" : "DLSS") +
+                                    : std::string("active (") + m_frameGeneration->name() +
                                           ", " + std::to_string(m_generateCount + 1) + "x)";
     } catch (const std::exception &e) {
       m_frameGenerationFailed = true;
@@ -1723,10 +1725,11 @@ void RemixNativeRuntime::presented() {
       const bool takeGenerated = generatedShots == 1 || (generatedShots == 2 && (captures & 1));
       const uint32_t shown = takeGenerated && generated.count ? generated.index[0] : imageIndex;
       gpu::GpuScope scope(buffer, "Screenshot readback", m_swapchainExtent);
-      // HDR10: the back buffer, gamma 2.2 with 1.0 at UI white, clipped to SDR.
+      // HDR10: the back buffer, gamma 2.2 with 1.0 at paper white (HDR files,
+      // and SDR tone mapped from it).
       if (hdr)
         m_screenshot.record(m_physicalDevice, m_device, buffer, target, m_swapchainExtent, targetFormat,
-                            VK_IMAGE_LAYOUT_GENERAL);
+                            VK_IMAGE_LAYOUT_GENERAL, nits);
       else
         m_screenshot.record(m_physicalDevice, m_device, buffer, m_swapchainImages[shown], m_swapchainExtent,
                             m_swapchainFormat, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
@@ -1748,6 +1751,35 @@ void RemixNativeRuntime::presented() {
     if (m_failed)
       return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
     return m_screenshot.request(path, m_screenshotSupported);
+  }
+
+  remixapi_ErrorCode RemixNativeRuntime::requestScreenshotSet() {
+    if (!m_initialized)
+      return REMIXAPI_ERROR_CODE_NOT_INITIALIZED;
+    if (m_asyncActive)
+      waitRenderThread();
+    if (m_failed)
+      return REMIXAPI_ERROR_CODE_GENERAL_FAILURE;
+    const auto folder = config::Profiles::defaultDirectory() / "screenshots";
+    const std::time_t now = std::time(nullptr);
+    std::tm local{};
+#if defined(_WIN32)
+    localtime_s(&local, &now);
+#else
+    localtime_r(&now, &local);
+#endif
+    char stamp[64];
+    std::strftime(stamp, sizeof(stamp), "OpenRemix %Y-%m-%d %H-%M-%S", &local);
+    std::filesystem::path base = folder / stamp;
+    std::error_code ec;
+    for (int i = 2; std::filesystem::exists(base.string() + ".png", ec) && i < 1000; ++i)
+      base = folder / (std::string(stamp) + " (" + std::to_string(i) + ")");
+    const auto &settings = m_profiles.current();
+    const ScreenshotFormats formats{settings.screenshotHdrPng, settings.screenshotJxr, settings.screenshotExr};
+    const auto result = m_screenshot.requestSet(std::filesystem::absolute(base, ec), formats, m_screenshotSupported);
+    if (result != REMIXAPI_ERROR_CODE_SUCCESS)
+      SDL_Log("Screenshot request failed (%d)", int(result));
+    return result;
   }
 
   void RemixNativeRuntime::completeScreenshot() {

@@ -89,7 +89,11 @@ public:
   remixapi_ErrorCode present(const remixapi_PresentInfo *info);
   bool lowLatencySupported() const { return m_lowLatencySupported; }
   remixapi_ErrorCode requestScreenshot(const char *path);
+  // A screenshot set (PresentedScreenshot::requestSet) in the profiles
+  // directory's screenshots folder, named by the local time.
+  remixapi_ErrorCode requestScreenshotSet();
   void completeScreenshot();
+  const PresentedScreenshot &screenshot() const { return m_screenshot; }
   int configureSharedFrame(remixapi_EditorSharedFrame &frame);
   bool modsDisabled() const { return m_disableMods; }
   bool isHeadless() const { return m_headless; }
@@ -220,6 +224,11 @@ public:
   void menuShortcut() {
     if (ui::menuShortcut(m_window, m_profiles, m_profileUi, m_uiState != REMIXAPI_UI_STATE_NONE))
       setUiState(m_uiState == REMIXAPI_UI_STATE_NONE ? REMIXAPI_UI_STATE_ADVANCED : REMIXAPI_UI_STATE_NONE);
+    // The screenshot shortcut, or the panel's button (taken here: a request
+    // may wait for the render thread, which draws the panel).
+    if (ui::screenshotShortcut(m_window, m_profiles, m_profileUi, m_uiState != REMIXAPI_UI_STATE_NONE) ||
+        std::exchange(m_screenshotButton, false))
+      requestScreenshotSet();
   }
   scene::FreeCameraState &freeCamera() { return m_freeCamera; }
   const scene::FreeCameraState &freeCamera() const { return m_freeCamera; }
@@ -500,6 +509,11 @@ private:
   std::string m_skyUnavailable;
   config::SkyControl m_skyControl;
   PresentedScreenshot m_screenshot;
+  bool m_screenshotButton = false; // the post-processing tab's button, for menuShortcut
+  // The diagnostics tab's path inspector (PathTracer::inspectPixel).
+  bool m_inspecting = false;
+  int m_inspectX = -1, m_inspectY = -1;
+  void drawPathInspector();
   bool m_screenshotSupported = false;
   std::shared_ptr<FrameSnapshot> m_lastFrame;
   HostPasses m_hostPasses; // remixapi_HostPassEXT replay; needs the snapshot's swapchain usage

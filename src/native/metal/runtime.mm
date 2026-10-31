@@ -11,6 +11,12 @@
 #include <thread>
 
 namespace remix {
+#if REMIX_HAS_USD
+  // Retained BC blocks are read only by USD captures.
+  constexpr bool kCaptures = true;
+#else
+  constexpr bool kCaptures = false;
+#endif
   RemixNativeRuntime::RemixNativeRuntime() = default;
 
   namespace metal {
@@ -240,6 +246,7 @@ namespace remix {
     if (config::set(next, key, value) != config::SetResult::Success || !m_profiles.edit(next))
       return REMIXAPI_ERROR_CODE_INVALID_ARGUMENTS;
     m_raster.setKeepCompressedTextures(m_profiles.current().compressedTextures);
+    scene::retainCompressedUploads = kCaptures && m_profiles.current().captureRetainTextureData;
     m_raster.setRefreshGeometry(m_profiles.current().refreshGeometry);
     return REMIXAPI_ERROR_CODE_SUCCESS;
   }
@@ -256,6 +263,7 @@ namespace remix {
       m_profiles.edit(next);
     }
     m_raster.setKeepCompressedTextures(m_profiles.current().compressedTextures);
+    scene::retainCompressedUploads = kCaptures && m_profiles.current().captureRetainTextureData;
     m_raster.setRefreshGeometry(m_profiles.current().refreshGeometry);
     m_hostPasses.setEnabled(m_profiles.current().hostPasses);
     return REMIXAPI_ERROR_CODE_SUCCESS;
@@ -279,6 +287,7 @@ namespace remix {
   void RemixNativeRuntime::applySettings() {
     const auto &settings = m_profiles.current();
     m_raster.setKeepCompressedTextures(settings.compressedTextures);
+    scene::retainCompressedUploads = kCaptures && settings.captureRetainTextureData;
     m_raster.setRefreshGeometry(settings.refreshGeometry);
     m_vsync = settings.vsync;
   }

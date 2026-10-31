@@ -89,7 +89,9 @@ struct Ngx::Impl {
   Impl() {
     caps.sdk = true;
     try {
-      libraries = moduleDirectory() / "dlss" / "310.9.1";
+      libraries = moduleDirectory() / "openremix" / "dlss";
+      if (!std::filesystem::is_directory(libraries))
+        libraries = moduleDirectory() / "dlss" / "310.9.1";
       // Meson's development artifacts also live in an isolated adjacent directory.
       if (!std::filesystem::is_directory(libraries))
         libraries = moduleDirectory() / "upscale";

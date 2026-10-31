@@ -73,7 +73,7 @@ STAGES = {
 # read_write textures through a slower, coherent path. Each mode also has a
 # variant of its own (pass.mode fixed, dead code removed by spirv-opt), in
 # which the images it only reads are plain textures.
-DENOISE_MODES = 6
+DENOISE_MODES = 7
 for _name, _stage in (('denoise', 'comp'), ('denoiseSigma', 'sigma'), ('denoiseLocal', 'local'),
                       ('denoiseLocalSigma', 'localSigma')):
     for _mode in range(DENOISE_MODES):

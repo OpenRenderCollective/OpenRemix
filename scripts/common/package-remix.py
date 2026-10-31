@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package the shell, SDL3 and (on macOS Vulkan builds) standard SDK Vulkan/MoltenVK libraries."""
+"""Package the shell and SDL3 (macOS packages contain the native Metal backend)."""
 import argparse
 import json
 import os
@@ -14,17 +14,15 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--build', type=Path, required=True)
 parser.add_argument('--deps', type=Path, required=True, help='SDL build-dependencies output directory')
 parser.add_argument('--output', type=Path, required=True)
-parser.add_argument('--vulkan-sdk', type=Path)
 parser.add_argument('--max-glibc', default='2.28', help='Linux package glibc ceiling')
 parser.add_argument('--target', choices=['linux', 'windows', 'macos'], help='Override the host platform for cross-built packages')
 args = parser.parse_args()
 build, deps, output = args.build.resolve(), args.deps.resolve(), args.output.resolve()
 if output.exists(): parser.error('Use a fresh output directory.')
 system = {'linux': 'Linux', 'windows': 'Windows', 'macos': 'Darwin'}.get(args.target, platform.system())
-# gpu_backend=metal builds (macOS) link neither Vulkan nor MoltenVK.
+# macOS builds the Metal backend and links no Vulkan.
 options = json.loads((build / 'meson-info/intro-buildoptions.json').read_text())
-metal = any(o['name'] == 'gpu_backend' and o['value'] == 'metal' for o in options)
-if system == 'Darwin' and not metal and not args.vulkan_sdk: parser.error('macOS Vulkan builds require --vulkan-sdk.')
+metal = system == 'Darwin'
 for directory in ['bin', 'lib', 'include/remix', 'share/remix/licenses']:
     (output / directory).mkdir(parents=True, exist_ok=True)
 licenses = output / 'share/remix/licenses'
@@ -55,6 +53,10 @@ if sky and (numos / 'NOTICE').exists():
 if not metal:
     shutil.copytree(root / 'include/vulkan/LICENSES', licenses / 'Vulkan-Headers')
     shutil.copy2(root / 'include/vulkan/LICENSE.md', licenses / 'Vulkan-Headers/NOTICE.md')
+    # Windows ships FidelityFX SDK 2.4.0's DLLs and license (below); the other
+    # platforms link FSR 3.1.4.
+    if system != 'Windows':
+        shutil.copy2(root / 'third_party/fsr31/LICENSE.txt', licenses / 'FidelityFX.txt')
 else:
     shutil.copy2(root / 'third_party/xz-embedded/COPYING', licenses / 'XZEmbedded.txt')
 shutil.copy2(deps / 'sources/sdl3/LICENSE.txt', licenses / 'SDL3.txt')
@@ -65,6 +67,23 @@ if system == 'Windows':
         shutil.copy2(path, output / 'bin' / path.name)
     for path in (deps / 'prefix/bin').glob('lib*.dll'):
         shutil.copy2(path, output / 'bin' / path.name)
+    # FSR: AMD's signed ffx-api DLLs, loaded from fidelityfx/ beside remix.dll
+    # (src/native/upscale/ffx_library.cpp), with the license they require.
+    fidelityfx = root / 'third_party/fidelityfx/FidelityFX-SDK/Kits/FidelityFX'
+    (output / 'bin/fidelityfx').mkdir()
+    for name in ['amd_fidelityfx_loader_vk.dll', 'amd_fidelityfx_upscaler_vk.dll',
+                 'amd_fidelityfx_framegeneration_vk.dll']:
+        shutil.copy2(fidelityfx / 'signedbin' / name, output / 'bin/fidelityfx' / name)
+    shutil.copy2(fidelityfx / 'docs/license.md', output / 'bin/fidelityfx/LICENSE.md')
+    shutil.copy2(fidelityfx / 'docs/license.md', licenses / 'FidelityFX-SDK.md')
+    # XeSS: Intel's signed libxess.dll, loaded from xess/ beside remix.dll
+    # (src/native/upscale/xess.cpp), with the notices its license requires.
+    xess = root / 'third_party/xess/xess'
+    (output / 'bin/xess').mkdir()
+    shutil.copy2(xess / 'bin/libxess.dll', output / 'bin/xess/libxess.dll')
+    for name in ['LICENSE.txt', 'third-party-programs.txt']:
+        shutil.copy2(xess / name, output / 'bin/xess' / name)
+    shutil.copy2(xess / 'LICENSE.txt', licenses / 'XeSS.txt')
 elif system == 'Linux':
     staging = tempfile.TemporaryDirectory(prefix='remix-package-')
     subprocess.run(['meson', 'install', '-C', str(build), '--no-rebuild', '--destdir', staging.name],
@@ -98,10 +117,6 @@ elif system == 'Darwin':
         'libremix.0.dylib': build / 'src/native/libremix.0.dylib',
         'libSDL3.0.dylib': deps / 'prefix/lib/libSDL3.0.dylib',
     }
-    if not metal:
-        sdk = args.vulkan_sdk.resolve()
-        libraries['libvulkan.1.dylib'] = sdk / 'lib/libvulkan.1.dylib'
-        libraries['libMoltenVK.dylib'] = sdk / 'lib/libMoltenVK.dylib'
     for name, source in libraries.items():
         target = output / 'lib' / name
         architectures = subprocess.check_output(['lipo', '-archs', source], text=True).split()
@@ -120,34 +135,12 @@ elif system == 'Darwin':
     shutil.copy2(build / 'samples/remix-native/remix-native-sample', output / 'bin/remix-native-sample')
     (output / 'lib/libremix.dylib').symlink_to('libremix.0.dylib')
     launcher = output / 'bin/run-sample'
-    if metal:
-        launcher.write_text('''#!/usr/bin/env python3
-import os
-from pathlib import Path
-import sys
-root = Path(__file__).resolve().parent.parent
-env = dict(os.environ, DYLD_LIBRARY_PATH=str(root / 'lib'))
-os.execve(root / 'bin/remix-native-sample', ['remix-native-sample', str(root / 'lib/libremix.0.dylib'), *sys.argv[1:]], env)
-''')
-        launcher.chmod(0o755)
-if system == 'Darwin' and not metal:
-    manifests = list((sdk / 'share/vulkan/icd.d').glob('*MoltenVK*.json')) + list((sdk / 'etc/vulkan/icd.d').glob('*MoltenVK*.json'))
-    if not manifests: raise RuntimeError('SDK MoltenVK ICD manifest missing')
-    icd = json.loads(manifests[0].read_text())
-    icd['ICD']['library_path'] = '../../../lib/libMoltenVK.dylib'
-    target = output / 'etc/vulkan/icd.d/MoltenVK_icd.json'
-    target.parent.mkdir(parents=True)
-    target.write_text(json.dumps(icd, indent=2) + '\n')
-    sdk_licenses = next((p for p in [sdk.parent / 'Licenses', sdk / 'share/vulkan/licensing', sdk / 'Licenses'] if p.is_dir()), None)
-    if sdk_licenses is None: raise RuntimeError('Vulkan SDK license directory missing')
-    shutil.copytree(sdk_licenses, licenses / 'VulkanSDK')
     launcher.write_text('''#!/usr/bin/env python3
 import os
 from pathlib import Path
 import sys
 root = Path(__file__).resolve().parent.parent
-env = dict(os.environ, VK_DRIVER_FILES=str(root / 'etc/vulkan/icd.d/MoltenVK_icd.json'),
-           DYLD_LIBRARY_PATH=str(root / 'lib'))
+env = dict(os.environ, DYLD_LIBRARY_PATH=str(root / 'lib'))
 os.execve(root / 'bin/remix-native-sample', ['remix-native-sample', str(root / 'lib/libremix.0.dylib'), *sys.argv[1:]], env)
 ''')
     launcher.chmod(0o755)

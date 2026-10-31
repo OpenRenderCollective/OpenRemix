@@ -76,6 +76,13 @@ namespace remix {
       std::atomic<uint64_t> emissionRefreshes{0}, emissionRefreshTicks{0};
     };
     inline TextureCounters textureCounters;
+    // "rtx.native.capture.retainTextureData": GPU uploads keep
+    // CompressedPixels::upload instead of releasing it, so USD captures
+    // (usd/capture.cpp) can write the blocks. Applies to later uploads.
+    inline std::atomic<bool> retainCompressedUploads{false};
+    // The world's up axis (rtx.zUp: 2 Z, else 1 Y) where the host does not
+    // say: USD mods are converted to it and captures declare it.
+    inline std::atomic<uint32_t> sceneUpAxis{1};
     // Adds the steady-clock ticks since construction to a counter.
     struct CounterTicks {
       std::atomic<uint64_t> &out;
@@ -114,6 +121,13 @@ namespace remix {
       float color[4];
       float normal[3] = {}; // Zero selects the geometric-normal fallback.
     };
+    // The parts of a material a mod's partial override (an `over` of a
+    // captured material, usd/loader.cpp) authors; the others keep the values
+    // of the material it replaces (instances.cpp), as the game made it.
+    namespace ModParts {
+      constexpr uint32_t color = 1, roughness = 2, metallic = 4, normal = 8, emission = 16, transmission = 32,
+                         film = 64, alpha = 128, sampling = 256, all = ~0u;
+    }
     struct Material {
       uint64_t sourceHash = 0;
       std::vector<uint64_t> replacementKeys;
@@ -142,6 +156,15 @@ namespace remix {
       float transmittanceScroll[2] = {}; // actual tint UV rates; bake-averaged axes ignore the clock
       uint32_t bakeTintAxes = 0; // explicitly averaged transmission-tint UV axes; live shading ignores this
       bool bakeSmoothBoundary = false; // explicit mean interface; live ripple normals are excluded
+      // A thin-film coating (remixapi_MaterialIridescenceEXT, or the opaque
+      // info's thinFilmThickness): strength 0 means none. Thicknesses in nm.
+      struct Iridescence {
+        float strength = 0, ior = 1.5f, thickness = 200, min = 100, max = 800;
+        float flowAmplitude = 0, flowScale = 1, flowSpeed = .1f, structural = 0;
+        bool fromAlpha = false; // albedo alpha times 1500 nm
+        std::shared_ptr<Texture> thicknessTexture;
+        bool operator==(const Iridescence &) const = default;
+      } iridescence;
       float emission[3] = {};
       bool suppressEmissionLight = false;
       // remixapi_MaterialInfoSelfIlluminationEXT: 0 off, else the mask + 1
@@ -162,6 +185,11 @@ namespace remix {
       bool drawAlpha = false, translucent = false, transmission = false;
       // Light through it draws caustics: translucent, with a normal map.
       bool caustics = false;
+      // remixapi_MaterialInfoScreenCameraEXT: the screen camera slot + 1 it
+      // shows (0: none).
+      uint8_t screenCamera = 0;
+      // Wrap modes in RTX Remix's MDL encoding: 0 clamp, 1 repeat, 2 mirrored
+      // repeat, 3 clip.
       uint8_t filter = 0, wrapU = 1, wrapV = 1;
       uint8_t rows = 1, columns = 1, fps = 0;
       // Set once the handle stops resolving to this object (replaced or

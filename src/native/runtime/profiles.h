@@ -14,6 +14,10 @@ namespace remix::config {
     // The panel's shortcut (RemixSdlWindow::setMenuShortcut): a key and exactly
     // the modifiers held with it (1 Alt, 2 Ctrl, 4 Shift, 8 Cmd/Win). Alt+X.
     uint32_t menuKey = REMIXAPI_KEY_X, menuModifiers = 1;
+    // The USD scene capture shortcut, kept the same way (key 0: none).
+    uint32_t sceneCaptureKey = 0, sceneCaptureModifiers = 0;
+    // The screenshot shortcut, the same way. Alt+F12.
+    uint32_t screenshotKey = REMIXAPI_KEY_F12, screenshotModifiers = 1;
     bool operator==(const PanelState &) const = default;
   };
 

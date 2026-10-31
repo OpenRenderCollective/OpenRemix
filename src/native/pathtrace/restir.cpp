@@ -72,7 +72,7 @@ void PathTracer::Gpu::configureRestir(Frame &frame, const TraceOptions &options,
   frame.restirHistoryWrite = r.history[r.writeIndex]->address;
   frame.restirHistoryRead = r.historyValid ? r.history[r.writeIndex ^ 1]->address : 0;
   frame.restirConfig[0] = options.restirCandidates;
-  frame.restirConfig[1] = options.restirSpatialSamples;
+  frame.restirConfig[1] = std::min(options.restirSpatialSamples, 8u) | std::min(options.restirDisocclusionSamples, 8u) << 8;
   frame.restirConfig[2] = options.restirTemporalHistory;
   // Bit 2: re-test history samples for occluders that moved (local history
   // confidence, with the moved-light test of localHistoryConfidence).
@@ -80,6 +80,7 @@ void PathTracer::Gpu::configureRestir(Frame &frame, const TraceOptions &options,
                           (options.localHistoryConfidence ? 4u : 0u);
   frame.restirParams[0] = options.restirSpatialRadius;
   frame.restirParams[1] = float(lights.size());
+  frame.restirParams[2] = options.restirBoilingFilter;
   r.active = true;
   r.historyValid = true; // this frame writes it
 }
@@ -93,6 +94,13 @@ void PathTracer::Gpu::configureLocalProbes(Frame &frame, const TraceOptions &opt
   const bool active = options.localHistoryConfidence && splitLightingActive && denoiser && postSplit &&
                       localIlluminationActive && !restir.active;
   frame.localProbeRead = frame.localProbeWrite = 0;
+  // Not probe settings; free slots.
+  frame.localProbeParams[1] = options.shadowTerminatorSoften ? 1.f : 0.f;
+  // The terminator lift's limits in world units (0 length: off).
+  const float scale = std::max(options.sceneScale, 1e-6f), maxArea = options.shadowTerminatorMaxArea / (scale * scale);
+  frame.localProbeParams[3] = options.shadowTerminatorLift ? options.shadowTerminatorMaxLength / scale : 0.f;
+  std::memcpy(&frame.visibilityConfig[3], &maxArea, 4);
+  frame.localProbeParams[2] = options.bounces > 0 ? std::min(options.emissiveSpecularRoughness, .45f) : 0.f;
   if (!active) {
     p.valid = false;
     return;

@@ -7,6 +7,10 @@
 #include <unordered_map>
 
 namespace remix::usd {
+  // The remix_category:<name> attribute of one instance category bit
+  // (null: none). Captures author these; CaptureCategories reads them.
+  const char *categoryAttribute(uint32_t bit);
+
   // Snapshot-only state: configuration never becomes an opinion in a saved mod.
   class CaptureCategories {
   public:

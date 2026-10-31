@@ -21,6 +21,13 @@ layout(location=5) flat out float triangleIdentity;
 layout(location=6) flat out vec3 tangent;
 layout(location=7) flat out vec3 bitangent;
 layout(location=8) out vec3 authoredNormal;
+// The triangle's world vertices and vertex normals (terminatorLift).
+layout(location=9) flat out vec3 corner0;
+layout(location=10) flat out vec3 corner1;
+layout(location=11) flat out vec3 corner2;
+layout(location=12) flat out vec3 cornerNormal0;
+layout(location=13) flat out vec3 cornerNormal1;
+layout(location=14) flat out vec3 cornerNormal2;
 void main() {
   Surface s=surfaces[draw.surfaceIndex];
   uint index=s.indices.i[gl_VertexIndex];
@@ -33,7 +40,12 @@ void main() {
   vec3 c=s.vertices.v[s.indices.i[triangle+2]].position.xyz;
   // Match ray-hit geometric normals, including mirrored and skinned triangles.
   normal=cross(mat3(draw.model)*(b-a),mat3(draw.model)*(c-a));
-  authoredNormal=transpose(inverse(mat3(draw.model)))*vertexNormal(v);
+  mat3 normalMatrix=transpose(inverse(mat3(draw.model)));
+  authoredNormal=normalMatrix*vertexNormal(v);
+  corner0=(draw.model*vec4(a,1)).xyz;corner1=(draw.model*vec4(b,1)).xyz;corner2=(draw.model*vec4(c,1)).xyz;
+  cornerNormal0=normalize(normalMatrix*vertexNormal(s.vertices.v[s.indices.i[triangle]]));
+  cornerNormal1=normalize(normalMatrix*vertexNormal(s.vertices.v[s.indices.i[triangle+1]]));
+  cornerNormal2=normalize(normalMatrix*vertexNormal(s.vertices.v[s.indices.i[triangle+2]]));
   vec2 ua=s.vertices.v[s.indices.i[triangle]].uv.xy;
   vec2 ub=s.vertices.v[s.indices.i[triangle+1]].uv.xy;
   vec2 uc=s.vertices.v[s.indices.i[triangle+2]].uv.xy;

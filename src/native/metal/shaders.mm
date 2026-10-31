@@ -253,9 +253,9 @@ namespace remix::metal {
       switch (mode) {
       case 2:
         return MTLSamplerAddressModeMirrorRepeat;
-      case 3:
+      case 0:
         return MTLSamplerAddressModeClampToEdge;
-      case 4:
+      case 3:
         return MTLSamplerAddressModeClampToBorderColor;
       default:
         return MTLSamplerAddressModeRepeat;

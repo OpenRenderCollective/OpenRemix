@@ -57,7 +57,8 @@ namespace remix::trace {
   // include this bit; no other instance carries it.
   constexpr uint8_t viewModelInstanceMask = 64;
   // Reflection-only instances (Draw::reflectionOnly): only bounce rays include
-  // this bit; no other instance carries it.
+  // this bit; no other instance carries it. Reflection-only paint carries
+  // decalInstanceMask instead (pathtrace.comp closest() gates it).
   constexpr uint8_t reflectionOnlyInstanceMask = 16;
   // The opaque world, which NUMOS's sky traces for the haze's shadows and its
   // ground probes: NUMOS's shaders hard-code this bit (OBJECT_MASK_OPAQUE).

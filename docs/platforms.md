@@ -47,14 +47,15 @@ python3 scripts/linux/build-windows-remix.py --accept-msvc-license   # the first
 python3 scripts/linux/build-windows-remix.py --output /path/to/game/bin/win64/openremix
 ```
 
-The build has OpenUSD and DLSS (both need the MSVC ABI) and FSR. On its first run
+The build has OpenUSD and DLSS (both need the MSVC ABI), FSR and XeSS. On its first run
 the script splats the CRT and SDK (accepting Microsoft's license is up to you, hence
 the flag), then builds the pinned SDL3, oneTBB 2021.13.0 and OpenUSD 25.11 (patched
 for clang-cl, `scripts/linux/openusd-25.11-clang-cl.patch`) into `_work/deps/xwin`;
 later runs reuse them. It collects the runtime in `--output` (default
 `_work/dist/windows/openremix`) as a game loads it: `remix.dll` and its PDB, SDL3,
 TBB and the `usd_*.dll` side by side, OpenUSD's plugins in `usd/`, DLSS in
-`dlss/310.9.1/` and Ray Reconstruction's CNN model in `dlss/310.2.1/`. Files already in the folder that the build does not make (profiles,
+`dlss/310.9.1/`, Ray Reconstruction's CNN model in `dlss/310.2.1/`, AMD's FSR libraries in
+`fidelityfx/` and Intel's XeSS library in `xess/`. Files already in the folder that the build does not make (profiles,
 caches, logs) are kept. `--tests` runs the CPU tests in an isolated Wine prefix.
 Use `--cmake /path/to/cmake` if CMake is outside PATH. Windows or Proton supplies the
 Vulkan loader, the GPU driver and the Visual C++ runtime (`vcruntime140.dll`,
@@ -65,6 +66,8 @@ Vulkan loader, the GPU driver and the Visual C++ runtime (`vcruntime140.dll`,
 Install the Vulkan SDK and Clang, and run in a Visual Studio x64 developer PowerShell.
 The compiler is clang-cl with the Visual Studio headers, import libraries and CRT.
 Install `meson`, `ninja` and `cmake` through Python or your tool installer.
+Windows builds need the FidelityFX SDK submodule for FSR and the XeSS SDK submodule for XeSS:
+`git submodule update --init third_party/fidelityfx/FidelityFX-SDK third_party/xess/xess`.
 
 ```powershell
 ./scripts/windows/build-remix.ps1
@@ -72,7 +75,12 @@ python scripts/common/package-remix.py --build _work/build/windows --deps _work/
 ./_work/packages/windows/bin/remix-native-sample.exe
 ```
 
-The package contains `remix.dll`, `SDL3.dll` and the sample together in `bin`.
+The package contains `remix.dll`, `SDL3.dll` and the sample together in `bin`, and AMD's FSR
+libraries (loader, upscaler, frame generation) in `bin/fidelityfx`. The loader picks FSR 4 on
+RDNA 4 GPUs and FSR 3.1 elsewhere. For testing, `REMIX_FSR_VERSION=3` asks the libraries for
+their FSR 3.1 provider, and builds configured with `-Dfsr_linked=true` also contain the linked
+FSR 3.1.4 that Linux uses, which `REMIX_FSR_LINKED=1` selects. Intel's XeSS SDK 3.0.2
+library is in `bin/xess` (XeSS Super Resolution, Windows only; any GPU with Vulkan 1.3).
 For a wrapper that loads a flat `openremix` runtime directory, the Windows-only
 bundler also reads the build's USD and OIDN options and includes their runtime
 libraries, plugin resources and notices:
@@ -97,47 +105,24 @@ checks; interactive Vulkan/borrowed-window checks require a suitable Windows mac
 
 ## macOS arm64
 
-Use Apple Clang, Meson, Ninja, CMake and the standard Vulkan SDK. Pass its macOS directory
-(the one containing `bin`, `lib`, `share`) as `--vulkan-sdk`.
-
-```sh
-python3 scripts/common/build-dependencies.py --output _work/deps/macos
-python3 scripts/macos/build-remix.py --vulkan-sdk "$VULKAN_SDK"
-python3 scripts/common/package-remix.py --build _work/build/macos --deps _work/deps/macos \
-  --vulkan-sdk "$VULKAN_SDK" --output _work/packages/macos
-_work/packages/macos/bin/run-sample 300
-```
-
-Packaging uses SDK `libMoltenVK.dylib` and `libvulkan.1.dylib`, rewrites local library
-references, signs copied libraries ad hoc, and installs a relative ICD manifest. The
-runtime names remain `libremix.0.dylib` and `libremix.dylib`. Startup runs on the main
-thread. The deployment target for authored code is macOS 13; the selected SDK's binary
-minimum OS requirement also applies.
-
-### Native Metal backend
-
-`-Dgpu_backend=metal` builds a separate runtime that renders with Metal directly and links
-neither Vulkan nor MoltenVK; the backend is chosen at compile time and one build contains one
-backend. It needs Xcode's Command Line Tools and no Vulkan SDK. Path tracing requires a Metal
+macOS builds render with Metal directly and link no Vulkan. Use Apple Clang, Meson, Ninja,
+CMake and Xcode's Command Line Tools; no Vulkan SDK is needed. Path tracing requires a Metal
 ray tracing device (Apple7 GPU family or newer). MetalFX replaces FSR and DLSS: upscaling, and on
 macOS 26 denoising and frame generation. See [the Metal backend](features/metal-backend.md).
 
 ```sh
 python3 scripts/common/build-dependencies.py --output _work/deps/macos
-python3 scripts/macos/build-remix.py --metal
-python3 scripts/common/package-remix.py --build _work/build/macos-metal --deps _work/deps/macos \
-  --output _work/packages/macos-metal
-_work/packages/macos-metal/bin/run-sample 300 pathtrace
+python3 scripts/macos/build-remix.py
+python3 scripts/common/package-remix.py --build _work/build/macos --deps _work/deps/macos \
+  --output _work/packages/macos
+_work/packages/macos/bin/run-sample 300 pathtrace
 ```
 
-The Metal package contains `libremix`, SDL3 and the sample only. GPU tests
-(`-Dgpu_tests=true`) add rendering tests of raster, path traced, NRD and MetalFX frames, and of
-halos, masks, cut coverage and soft sprites.
-
-The separately pinned experimental driver, SPIRV-Cross revisions and patches remain
-in `tools/moltenvk/dependencies.lock.json`, `build-moltenvk.py` and `patches/`.
-`tools/vulkan-probes/macos-run-probe.py` requires explicit experimental GPU opt-in because of the historical
-renderer/driver findings; normal shell build and run paths use SDK MoltenVK.
+The package contains `libremix`, SDL3 and the sample only; packaging rewrites local library
+references and signs copied libraries ad hoc. The runtime names remain `libremix.0.dylib` and
+`libremix.dylib`. Startup runs on the main thread. The deployment target for authored code is
+macOS 13. GPU tests (`-Dgpu_tests=true`) add rendering tests of raster, path traced, NRD and
+MetalFX frames, and of halos, masks, cut coverage and soft sprites.
 
 ## Android arm64
 

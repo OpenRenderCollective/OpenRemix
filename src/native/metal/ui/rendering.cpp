@@ -61,6 +61,26 @@ namespace remix {
         ImGui::TextWrapped("%s", "Adaptive termination inactive: minimum reaches the maximum bounce limit.");
       if (options.russianRoulette && m_pathTracer && !m_pathTracer->adaptiveTerminationAvailable())
         ImGui::TextWrapped("%s", "Adaptive termination unavailable: using fixed-limit tracing.");
+      ui::Checkbox("Soften shadow terminator", &options.shadowTerminatorSoften);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Sampled light on the diffuse lobe fades out within a few degrees of a triangle's\n"
+                          "horizon (as dxvk-remix): a gradient instead of an abrupt cut.");
+      ui::Checkbox("Shadow terminator offset", &options.shadowTerminatorLift);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Shadow rays leave smooth-shaded triangles from where their vertex normals put the\n"
+                          "smooth surface (Hanika 2021, as dxvk-remix): no triangle-shaped shadows on\n"
+                          "low-poly characters and props, and sampled light ends at the smooth surface's\n"
+                          "horizon instead of the triangle's. Large triangles are left alone (light leaks).");
+      if (options.shadowTerminatorLift) {
+        ui::SliderFloat("Offset: largest triangle (sq. m)", &options.shadowTerminatorMaxArea, .005f, 1.f, "%.3f",
+                        ImGuiSliderFlags_Logarithmic);
+        ui::SliderFloat("Offset: longest offset (m)", &options.shadowTerminatorMaxLength, .002f, .2f, "%.3f",
+                        ImGuiSliderFlags_Logarithmic);
+      }
+      ui::SliderFloat("Ray offset (float steps)", &options.rayOffset, 4.f, 1024.f, "%.0f", ImGuiSliderFlags_Logarithmic);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("How far shadow and bounce rays start off a surface, in units in the last place\n"
+                          "of its coordinates. Smaller: tighter contact shadows; too small: shadow acne.");
       ui::Checkbox("Denoise translucent surfaces", &options.translucencyDenoiser);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Filters single-layer surface lighting with its own motion and depth.\n"
@@ -122,6 +142,10 @@ namespace remix {
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Shares diffuse lighting across small flat water patches with TAA or FSR.\nEdges, "
                           "overlapping layers and raw reference rendering retain full sampling.");
+      ui::Checkbox("Iridescence", &options.iridescence);
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Thin-film interference colours on materials that have a film (soap bubbles,\n"
+                          "oil slicks, beetle shells). Off: those materials reflect without it.");
       ui::Checkbox("Caustics", &options.caustics);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Light through water and bumpy glass is focused by their normal maps' waves\n"
