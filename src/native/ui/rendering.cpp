@@ -82,6 +82,11 @@ namespace remix {
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("How far shadow and bounce rays start off a surface, in units in the last place\n"
                           "of its coordinates. Smaller: tighter contact shadows; too small: shadow acne.");
+      ui::SliderFloat("Contact gap (m)", &options.contactGap, 0.f, .02f, "%.4f");
+      if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Shadow and bounce rays pass surfaces within this distance of where they start.\n"
+                          "Hides the contact shadow of model parts pressed a hair apart (collars, folds)\n"
+                          "that raster lighting never shadowed. 0: off.");
       ui::Checkbox("Denoise translucent surfaces", &options.translucencyDenoiser);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Filters single-layer surface lighting with its own motion and depth.\n"

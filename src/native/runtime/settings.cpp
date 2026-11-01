@@ -196,6 +196,7 @@ namespace remix::config {
         TRACE(emissiveClusterSize, 1, 64);
         TRACE(lightPowerExponent, .25, 1);
         TRACE(rayOffset, 4, 1024);
+        TRACE(contactGap, 0, .05);
         TRACE(shadowTerminatorSoften, 0, 1);
         TRACE(shadowTerminatorLift, 0, 1);
         TRACE(shadowTerminatorMaxArea, 0, 10);

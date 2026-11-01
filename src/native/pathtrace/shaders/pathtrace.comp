@@ -251,7 +251,7 @@ void queryScene(accelerationStructureEXT scene, vec3 origin, vec3 direction, ino
   rayQueryEXT query;
   profileRay(0);
   uvGradX=uvGradY=vec2(0); // candidates test coverage at the finest mip
-  rayQueryInitializeEXT(query, scene, traceFlags()|(cameraCut!=0u||cameraRay?gl_RayFlagsNoOpaqueEXT:gl_RayFlagsNoneEXT), traceMask, origin, minimum, direction, x.t);
+  rayQueryInitializeEXT(query, scene, traceFlags()|(cameraCut!=0u||cameraRay?gl_RayFlagsNoOpaqueEXT:gl_RayFlagsNoneEXT), traceMask, origin, cameraRay?minimum:max(minimum,contactGap(x.t)), direction, x.t);
   while (rayQueryProceedEXT(query)) {
     if (rayQueryGetIntersectionTypeEXT(query,false)!=gl_RayQueryCandidateIntersectionTriangleEXT) continue;
     profileRay(1);
@@ -594,7 +594,7 @@ vec3 debugGeometry(Hit hit,ivec2 pixel) {
 }
 // Scale-aware integer ULP offset with a near-origin fallback (RT Gems, ch. 6):
 // rtx.native.pathtrace.rayOffset units in the last place along the normal
-// (frame.visibilityProbe.w; 256 without it). Each component moves at least
+// (frame.visibilityProbe.w; 4 without it). Each component moves at least
 // that many units in the last place of the largest coordinate: intersections
 // are only as precise as the largest one, and a floor at z = 0 far from the
 // origin otherwise started its shadow rays 1/65536 above itself and hit it
@@ -604,7 +604,7 @@ vec3 offsetRay(vec3 p,vec3 n);
 // smooth-shaded triangle (terminatorLift; Hit.lift 0 without it).
 vec3 shadowOrigin(Hit hit) { return offsetRay(hit.p+hit.ng*hit.lift,hit.ng); }
 vec3 offsetRay(vec3 p,vec3 n) {
-  float units=frame.visibilityProbe.w>0?frame.visibilityProbe.w:256.0;
+  float units=frame.visibilityProbe.w>0?frame.visibilityProbe.w:4.0;
   ivec3 step=ivec3(units*n);
   vec3 shifted=intBitsToFloat(floatBitsToInt(p)+mix(step,-step,lessThan(p,vec3(0))));
   shifted=mix(shifted,p+n*(1.0/65536.0),lessThan(abs(p),vec3(1.0/32.0)));

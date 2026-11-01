@@ -137,7 +137,7 @@ namespace remix::trace::detail {
     float visibilityProbe[4] = {};     // world units: probe offset above the surface, decal attachment distance; texture footprint scale (render/output size); ray offset (ULPs)
     uint64_t restirCurrent = 0, restirHistoryRead = 0, restirHistoryWrite = 0, restirRemap = 0;
     uint32_t restirConfig[4] = {}; // candidates, spatial samples, temporal M cap, flags (1 initial visibility)
-    float restirParams[4] = {};    // spatial radius (pixels), emitter count, boiling filter strength, reserved
+    float restirParams[4] = {};    // spatial radius (pixels), emitter count, boiling filter strength, contact gap (world units)
     uint64_t regirRead = 0, regirWrite = 0, regirSlots = 0;
     // Caustics (visibility.glsl causticTint): strength (8 bits) and contrast
     // (8 bits, in 32nds), then the half float focus depth in world units

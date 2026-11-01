@@ -72,7 +72,7 @@ layout(set=0,binding=3,std140) uniform Frame {
   vec4 visibilityProbe; // world units: x probe offset above the surface, y decal attachment distance; z texture footprint scale (render/output size); w ray offset (ULPs)
   uint64_t restirCurrent, restirHistoryRead, restirHistoryWrite, restirRemap;
   uvec4 restirConfig; // candidates, spatial samples (bits 8-15: after a disocclusion), temporal M cap, flags (1 initial visibility)
-  vec4 restirParams; // spatial radius (pixels), emitter count, boiling filter strength, reserved
+  vec4 restirParams; // spatial radius (pixels), emitter count, boiling filter strength, contact gap (world units)
   uint64_t regirRead, regirWrite, regirSlots;
   uint64_t caustics; // caustics: strength, contrast (visibility.glsl causticTint)
   uvec4 regirConfig; // cell capacity, slots per cell, cells per world unit (float bits), active
@@ -179,6 +179,10 @@ float terminatorLift(vec3 p0,vec3 p1,vec3 p2,vec3 n0,vec3 n1,vec3 n2,vec3 b,vec3
   horizon=dot(smoothNormal,smoothNormal)>1e-12?normalize(mix(ng,normalize(smoothNormal),scale)):ng;
   return scale*max(dot(lifted,ng),0.);
 }
+// Where a secondary ray (shadow, bounce, light visibility) starts looking:
+// past rtx.native.pathtrace.contactGap (frame.restirParams.w), within half
+// its length. Camera rays see everything.
+float contactGap(float maximum) { return min(frame.restirParams.w,.5*maximum); }
 // remixapi_InstanceInfoCameraCullingEXT (state.w bits 9-10: back faces,
 // visibility): what rays along the camera's lines of sight skip of a surface
 // that every other ray meets whole.

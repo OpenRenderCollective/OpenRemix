@@ -168,10 +168,18 @@ vec3 sampleGgx(vec3 wo,float alpha,vec2 u) {
 // The PDF of the last direction materialSample or lobeSample drew (0: none),
 // which widens a path's ray cone.
 float samplePdf=0;
+// A direction drawn about the shading normal (a normal map, smooth normals on
+// a low-poly mesh) that points below the triangle, mirrored across its plane:
+// dropping it left creases black in indirect light (a character's nostrils,
+// collar and eye sockets), up to half the samples where the normals bend.
+vec3 aboveSurface(vec3 direction,vec3 ng) {
+  float below=dot(direction,ng);
+  return below<0?direction-2*below*ng:direction;
+}
 vec3 materialSample(Hit hit,out vec3 direction,out vec3 specularWeight) {
   specularWeight=vec3(0);samplePdf=0;
   if(!hit.pbr) {
-    direction=diffuseDirection(hit.n);
+    direction=aboveSurface(diffuseDirection(hit.n),hit.ng);
     samplePdf=max(dot(direction,hit.n),0.)/eonPi;
     return dot(direction,hit.ng)>0?hit.color.rgb:vec3(0);
   }
@@ -182,7 +190,7 @@ vec3 materialSample(Hit hit,out vec3 direction,out vec3 specularWeight) {
   vec2 u=directionRandom();
   float alpha=max(.001,hit.rm.x*hit.rm.x);
   vec3 wi=choice<p?sampleGgx(wo,alpha,u):eonSample(wo,hit.rm.x,u.x,u.y).xyz;
-  direction=basis*wi;
+  direction=aboveSurface(basis*wi,hit.ng);
   if(wi.z<=0||dot(direction,hit.ng)<=0)return vec3(0);
   vec3 h=normalize(wi+wo);
   float specPdf=ggxD(max(0,h.z),alpha)*ggxG1(wo.z,alpha)/(4*wo.z);
@@ -209,7 +217,7 @@ vec3 lobeSample(Hit hit,bool diffuseLobe,out vec3 direction) {
   vec2 u=directionRandom();
   float alpha=max(.001,hit.rm.x*hit.rm.x);
   vec3 wi=diffuseLobe?eonSample(wo,hit.rm.x,u.x,u.y).xyz:sampleGgx(wo,alpha,u);
-  direction=basis*wi;
+  direction=aboveSurface(basis*wi,hit.ng);
   if(wi.z<=0||dot(direction,hit.ng)<=0)return vec3(0);
   vec3 diffuse,specular;materialLobes(hit,direction,diffuse,specular);
   if(diffuseLobe){samplePdf=eonPdf(wo,wi,hit.rm.x);return diffuse*(wi.z/max(samplePdf,1e-20));}
