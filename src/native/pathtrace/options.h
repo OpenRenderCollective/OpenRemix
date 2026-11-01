@@ -50,10 +50,11 @@ namespace remix {
     // 0.8); radiance and PDFs are unchanged, only where samples go.
     float lightPowerExponent = 1;
     // Secondary rays start this many units in the last place of each
-    // coordinate off the surface (RT Gems ch. 6): about 0.008 units at 16384
+    // coordinate off the surface (RT Gems ch. 6): about 0.03 units at 16384
     // from the origin. Larger starts rays inside thin layered geometry (a
-    // collar pressed on a neck) and blackens them; too small shows acne.
-    float rayOffset = 4;
+    // collar pressed on a neck at 256) and blackens them; too small shows
+    // acne (at 4, map geometry flickered in GMod).
+    float rayOffset = 16;
     // Secondary rays pass what lies within this many meters of where they
     // start (0: off). Models authored for raster lighting press surfaces a
     // hair apart (a collar's inside on a neck, folds in a face) that it never
