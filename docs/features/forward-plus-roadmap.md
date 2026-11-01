@@ -1,3 +1,10 @@
+# Camera culling audit - 2026-11-01
+
+- Confirmed gap: retained BSP camera-PVS metadata is consumed by path tracing, not Forward+. Forward+ currently has camera frustum checks, camera backface rejection and depth prepass, but no equivalent camera-PVS draw rejection for the retained map.
+- Engine PVS remains in engine traversal, but the relay submits its retained world independently. Do not describe this as full BSP culling in Forward+.
+- Add shared CPU scene visibility policy and camera-visible draw lists. Keep complete retained geometry and independent per-light caster lists so offscreen shadows, bakes and reflections survive camera culling. Preserve skybox exemptions and fail open without valid PVS.
+- Profile draw/submission/vertex savings on corridor maps and open maps. Keep opaque shader optimization separate; PVS need not reduce already depth-rejected fragment work.
+
 # Current integration and performance focus - 2026-11-01
 
 - Integrate native main `51217999` and adapter main `c9334fe`, preserving Forward+ contracts and game-agnostic boundaries.

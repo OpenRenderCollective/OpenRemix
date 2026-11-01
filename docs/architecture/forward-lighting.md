@@ -216,3 +216,25 @@ An encoding change must version GPU/cache layouts and retain chart isolation;
 rough-lightmap reflections must replace the appropriate fallback before SSR rather
 than adding another specular contribution. Runtime provider lifecycles remain a
 separate migration from this typed technique selection layer.
+
+## Camera visibility versus scene retention
+
+The current Forward+ path rejects draw bounds outside the camera frustum and
+uses a depth prepass. It consumes the camera backface flag but does not yet apply
+the relay's camera PVS flag. The adapter submits the retained BSP independently
+of the engine's world draw list; engine PVS therefore does not provide equivalent
+visibility rejection for that retained world. The path tracer already consumes
+camera visibility metadata; Forward+ must not be assumed to share that behavior.
+
+Keep the complete scene resident for baking, reflections and shadow queries.
+Derive camera-visible draw lists using shared scene visibility/PVS data and
+frustum checks, while deriving caster lists from each light's influence. Camera
+invisibility must not remove offscreen mixed-shadow casters or retire geometry.
+Place reusable CPU visibility policy in scene code, not the path tracer or a
+Source-specific native parser. Missing visibility data and uncertain bounds must
+fail open. Per-view state must also respect skybox and viewmodel exemptions.
+
+Measure visibility rejection on corridor and open maps separately. Early depth
+already removes much hidden fragment work; PVS can reduce submission and vertex
+work without necessarily reducing the visible material shading bottleneck.
+Occlusion/Hi-Z is a further candidate, not an implemented equivalent of PVS.
