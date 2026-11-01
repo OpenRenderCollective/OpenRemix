@@ -9,6 +9,14 @@ namespace remix {
   using namespace trace::detail;
 
   namespace {
+    // REMIX_GPU_SKINNING=0 skins every frame on the CPU (comparison and diagnosis).
+    bool gpuSkinning() {
+      static const bool enabled = [] {
+        const char *value = std::getenv("REMIX_GPU_SKINNING");
+        return !value || std::strcmp(value, "0") != 0;
+      }();
+      return enabled;
+    }
     // These fingerprints only invalidate history inside this renderer run.
     // Bulk hashing avoids a serial byte-at-a-time multiply over every changed
     // vertex (std::hash<string_view> is byte-wise FNV-1a in MSVC's library).
@@ -77,6 +85,11 @@ namespace remix {
     if (view.owner.lock() == draw.mesh && (!skinned || view.bones == *draw.bones))
       return view;
     ++performance.geometryConversions;
+    // The same skinned mesh with other bones, its bind pose on the GPU: skinned
+    // there (commitSkin), with no CPU geometry.
+    conversion.gpuSkin = skinned && !streaming && skin && view.geometry && view.owner.lock() == draw.mesh &&
+                         view.skinMesh.lock() == draw.mesh &&
+                         view.skinSource.size() == draw.mesh->surfaces.size() && view.skinInputBytes;
     // A replaced CPU mesh may reuse an address. Keep its geometry alive through
     // the canonical lookup, but never mistake its view for the new mesh.
     const bool transfer = streaming && view.updateStream == draw.mesh->updateStream;
@@ -121,6 +134,8 @@ namespace remix {
   }
 
   void PathTracer::Gpu::convertMesh(MeshConversion &conversion) {
+    if (conversion.gpuSkin)
+      return;
     const auto &draw = *conversion.draw;
     const auto *partitions = conversion.partitions;
     const auto &opaque = conversion.opaque;
@@ -293,20 +308,167 @@ namespace remix {
   }
 
   void PathTracer::Gpu::recordAssemble(VkCommandBuffer command) {
-    if (assembleJobs.empty())
+    if (assembleJobs.empty() && skinJobs.empty())
       return;
-    // Positions were copied into the new BLAS inputs this frame.
+    // Positions (and the inputs skinning writes over) were copied this frame.
     barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
-    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, assemble);
-    for (const auto &job : assembleJobs) {
-      vkCmdPushConstants(command, assembleLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(job), &job);
-      vkCmdDispatch(command, (job.count + 63) / 64, 1, 1);
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+    if (!assembleJobs.empty()) {
+      vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, assemble);
+      for (const auto &job : assembleJobs) {
+        vkCmdPushConstants(command, assembleLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(job), &job);
+        vkCmdDispatch(command, (job.count + 63) / 64, 1, 1);
+      }
+    }
+    if (!skinJobs.empty()) {
+      vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, skin);
+      for (const auto &job : skinJobs) {
+        vkCmdPushConstants(command, skinLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(job), &job);
+        vkCmdDispatch(command, (job.count + 63) / 64, 1, 1);
+      }
     }
     assembleJobs.clear();
+    skinJobs.clear();
+  }
+
+  void PathTracer::Gpu::createSkinPipeline() {
+    if (!skinLayout) {
+      const VkPushConstantRange range = {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(SkinJob)};
+      const VkPipelineLayoutCreateInfo info = {.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                               .pushConstantRangeCount = 1,
+                                               .pPushConstantRanges = &range};
+      if (pipeline::createPipelineLayout(device, &info, nullptr, &skinLayout) != VK_SUCCESS) {
+        skinFailed = true;
+        return;
+      }
+    }
+    const auto code = trace::shader(trace::Stage::vertexSkin);
+    const VkShaderModuleCreateInfo moduleInfo = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = code.bytes, .pCode = code.code};
+    VkShaderModule module{};
+    if (pipeline::createShaderModule(device, &moduleInfo, nullptr, &module) != VK_SUCCESS) {
+      skinFailed = true;
+      return;
+    }
+    const VkComputePipelineCreateInfo info = {
+        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+        .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                  .stage = VK_SHADER_STAGE_COMPUTE_BIT, .module = module, .pName = "main"},
+        .layout = skinLayout};
+    const auto result = pipeline::createComputePipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &skin);
+    pipeline::destroyShaderModule(device, module, nullptr);
+    // Off the compiler worker a new pipeline is not ready yet: CPU skinning until it is.
+    if (result != VK_SUCCESS) {
+      skin = VK_NULL_HANDLE;
+      skinFailed = result != VK_NOT_READY;
+    }
+  }
+
+  void PathTracer::Gpu::uploadSkinSource(VkCommandBuffer command, MeshConversion &conversion) {
+    if (!gpuSkinning() || skinFailed)
+      return;
+    if (!skin)
+      createSkinPipeline();
+    auto &view = *conversion.view;
+    const auto &draw = *conversion.draw;
+    const auto &data = conversion.data;
+    view.skinOffsets = data.vertexOffsets;
+    view.skinCounts = data.vertexCounts;
+    view.skinInputBytes = data.content.size();
+    if (view.skinMesh.lock() == draw.mesh && view.skinSource.size() == draw.mesh->surfaces.size())
+      return;
+    view.skinSource.clear();
+    view.skinWeights.clear();
+    view.skinIndices.clear();
+    view.skinBonesPerVertex.clear();
+    std::vector<TraceVertex> bind;
+    for (const auto &surface : draw.mesh->surfaces) {
+      // The bind pose as convertMesh lays out an unskinned vertex.
+      bind.resize(surface->vertices.size());
+      for (size_t i = 0; i < bind.size(); ++i) {
+        const auto &vertex = surface->vertices[i];
+        auto &out = bind[i];
+        std::copy_n(vertex.position, 3, out.position);
+        out.position[3] = vertex.normal[0];
+        std::copy_n(vertex.uv, 2, out.uv);
+        out.uv[2] = vertex.normal[1];
+        out.uv[3] = vertex.normal[2];
+        std::copy_n(vertex.color, 4, out.color);
+      }
+      view.skinSource.push_back(
+          upload(command, bind.data(), bind.size() * sizeof(TraceVertex), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT));
+      if (surface->bonesPerVertex) {
+        view.skinWeights.push_back(upload(command, surface->weights.data(), surface->weights.size() * sizeof(float),
+                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT));
+        view.skinIndices.push_back(upload(command, surface->bones.data(), surface->bones.size() * sizeof(uint32_t),
+                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT));
+      } else {
+        view.skinWeights.emplace_back();
+        view.skinIndices.emplace_back();
+      }
+      view.skinBonesPerVertex.push_back(surface->bonesPerVertex);
+    }
+    view.skinMesh = draw.mesh;
+  }
+
+  void PathTracer::Gpu::commitSkin(VkCommandBuffer command, MeshConversion &conversion) {
+    ScopedTicks time{geometryTicks};
+    auto &view = *conversion.view;
+    auto &g = *view.geometry;
+    const auto &bones = *conversion.draw->bones;
+    const size_t boneBytes = bones.size() * sizeof(scene::Matrix);
+    // Read in place from the staging buffer (a few kilobytes per instance).
+    const VkDeviceSize boneOffset = stage(bones.data(), boneBytes);
+    const VkDeviceAddress bonesAt = staging.buffer->address + boneOffset;
+    const uint64_t bonesHash = scene::fastHash(bones.data(), boneBytes);
+    // A new BLAS input (the previous one may still be read in flight): every
+    // byte copied, the positions then written over by the skinning pass.
+    constexpr VkBufferUsageFlags meshInput =
+        inputUsage | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    std::shared_ptr<Buffer> previousInput = std::move(g.input);
+    g.input = buffer(view.skinInputBytes, meshInput | VK_BUFFER_USAGE_TRANSFER_DST_BIT, false, true);
+    const VkBufferCopy all = {.size = view.skinInputBytes};
+    vkCmdCopyBuffer(command, previousInput->handle, g.input->handle, 1, &all);
+    retiredBuffers.push_back(std::move(previousInput));
+    for (size_t j = 0; j < g.geometries.size() && j < g.groups.size(); ++j) {
+      auto &triangles = g.geometries[j].geometry.triangles;
+      triangles.vertexData.deviceAddress = g.input->address + view.skinOffsets[g.groups[j].surface];
+      triangles.indexData.deviceAddress = g.input->address + g.groups[j].indices;
+    }
+    // Skins keep refitting (their bones move the whole bound), as on the CPU path.
+    g.update = true;
+    ++g.refits;
+    g.pending = true;
+    ++g.revision;
+    g.fingerprint = chainFingerprint(bonesHash, g.topologyHash);
+    // New shading buffers: the previous ones feed motion vectors.
+    for (auto &vertices : view.vertices)
+      retiredBuffers.push_back(std::move(vertices));
+    view.vertices.clear();
+    view.fingerprint = g.fingerprint;
+    for (size_t i = 0; i < view.skinSource.size(); ++i) {
+      const uint32_t count = view.skinCounts[i];
+      std::shared_ptr<Buffer> target =
+          buffer(VkDeviceSize(count) * sizeof(TraceVertex), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false, true);
+      if (count)
+        skinJobs.push_back({.source = view.skinSource[i]->address,
+                            .weights = view.skinWeights[i] ? view.skinWeights[i]->address : 0,
+                            .indices = view.skinIndices[i] ? view.skinIndices[i]->address : 0,
+                            .bones = bonesAt,
+                            .positions = g.input->address + view.skinOffsets[i],
+                            .target = target->address,
+                            .count = count,
+                            .bonesPerVertex = view.skinBonesPerVertex[i]});
+      view.fingerprint = chainFingerprint(chainFingerprint(bonesHash, i), view.fingerprint);
+      view.vertices.push_back(std::move(target));
+    }
   }
 
   void PathTracer::Gpu::commitMesh(VkCommandBuffer command, MeshConversion &conversion) {
+    if (conversion.gpuSkin) {
+      commitSkin(command, conversion);
+      return;
+    }
     ScopedTicks time{geometryTicks};
     auto &view = *conversion.view;
     const auto &data = conversion.data;
@@ -486,6 +648,9 @@ namespace remix {
     view.normalHashes = data.normalHashes;
     if (conversion.previousGeometry)
       retiredGeometry.push_back(std::move(conversion.previousGeometry));
+    // Its bind pose, so the next frames skin on the GPU.
+    if (skinned)
+      uploadSkinSource(command, conversion);
     // Bound the scratch a single large conversion leaves behind.
     if (conversion.data.bytes() > 64 * 1024 * 1024)
       conversion.data = {};

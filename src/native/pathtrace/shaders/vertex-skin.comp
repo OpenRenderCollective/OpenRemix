@@ -1,0 +1,48 @@
+#version 460
+// GPU skinning (PathTracer::Gpu::commitSkin): a skinned view whose mesh is
+// unchanged and whose bones moved. Its bind pose (the shading vertices
+// convertMesh makes before skinning), blend weights and indices were uploaded
+// once; each frame the bones move them, as convertMesh does on the CPU:
+// positions into the new BLAS input, shading vertices (the Vertex layout of
+// scene.glsl, the normal in the padding) into a new buffer.
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+layout(local_size_x=64) in;
+struct Vertex { vec4 position; vec4 uv; vec4 color; };
+layout(buffer_reference, std430, buffer_reference_align=16) readonly buffer Source { Vertex v[]; };
+layout(buffer_reference, std430, buffer_reference_align=16) writeonly buffer Target { Vertex v[]; };
+layout(buffer_reference, std430, buffer_reference_align=4) readonly buffer Floats { float f[]; };
+layout(buffer_reference, std430, buffer_reference_align=4) readonly buffer Uints { uint u[]; };
+layout(buffer_reference, std430, buffer_reference_align=4) writeonly buffer Positions { float f[]; };
+layout(push_constant) uniform Job {
+  // bones: column-major 4x4 matrices (scene::Matrix), bind pose to world.
+  uint64_t source, weights, indices, bones, positions, target;
+  uint count, bonesPerVertex;
+} job;
+void main() {
+  const uint i = gl_GlobalInvocationID.x;
+  if (i >= job.count) return;
+  const Vertex v = Source(job.source).v[i];
+  vec3 position = v.position.xyz, normal = vec3(v.position.w, v.uv.zw);
+  if (job.bonesPerVertex != 0) {
+    Floats weights = Floats(job.weights), bones = Floats(job.bones);
+    Uints indices = Uints(job.indices);
+    vec3 p = vec3(0), n = vec3(0);
+    for (uint k = 0; k < job.bonesPerVertex; ++k) {
+      const uint at = i * job.bonesPerVertex + k, b = indices.u[at] * 16u;
+      const mat4 m = mat4(bones.f[b], bones.f[b+1], bones.f[b+2], bones.f[b+3],
+                          bones.f[b+4], bones.f[b+5], bones.f[b+6], bones.f[b+7],
+                          bones.f[b+8], bones.f[b+9], bones.f[b+10], bones.f[b+11],
+                          bones.f[b+12], bones.f[b+13], bones.f[b+14], bones.f[b+15]);
+      const float w = weights.f[at];
+      p += w * (m * vec4(position, 1)).xyz;
+      n += w * (mat3(m) * normal);
+    }
+    const float length = sqrt(dot(n, n));
+    position = p;
+    normal = length > 1e-12 ? n / length : vec3(0);
+  }
+  Positions out_ = Positions(job.positions);
+  out_.f[3*i] = position.x; out_.f[3*i+1] = position.y; out_.f[3*i+2] = position.z;
+  Target(job.target).v[i] = Vertex(vec4(position, normal.x), vec4(v.uv.xy, normal.yz), v.color);
+}

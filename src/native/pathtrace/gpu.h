@@ -789,6 +789,14 @@ namespace remix {
       std::vector<uint64_t> normalHashes;    // GeometryScratch::normalHashes of vertices
       uint64_t fingerprint = 0, lastUse = 0;
       uint64_t contentDigest = 0; // REMIX_FRAME_DIGEST only: hash of the uploaded data.
+      // GPU skinning (commitSkin), per surface: the bind pose as shading
+      // vertices, blend weights and indices, uploaded at a CPU conversion of
+      // skinMesh; where its positions sit in the BLAS input, and its size.
+      std::weak_ptr<scene::Mesh> skinMesh;
+      std::vector<std::shared_ptr<Buffer>> skinSource, skinWeights, skinIndices;
+      std::vector<VkDeviceSize> skinOffsets;
+      std::vector<uint32_t> skinCounts, skinBonesPerVertex;
+      VkDeviceSize skinInputBytes = 0;
     };
     // CPU half of a mesh view conversion: skinning, BLAS input assembly and
     // content hashes. Independent per view, so conversions run on workers.
@@ -831,6 +839,9 @@ namespace remix {
       const scene::OpacityPartition *const *partitions = nullptr;
       std::string opaque;
       bool skinned = false, streaming = false, deform = false;
+      // Only the bones moved and the bind pose is uploaded: skinned on the
+      // GPU (commitSkin), with no CPU geometry.
+      bool gpuSkin = false;
       std::shared_ptr<Geometry> previousGeometry;
       GeometryScratch data;
     };
@@ -1014,6 +1025,22 @@ namespace remix {
     std::vector<AssembleJob> assembleJobs;
     void createAssemblePipeline();
     void recordAssemble(VkCommandBuffer command);
+    // GPU skinning (vertex-skin.comp): a skinned view's new BLAS positions and
+    // shading vertices from its uploaded bind pose and this frame's bones.
+    struct SkinJob {
+      VkDeviceAddress source = 0, weights = 0, indices = 0, bones = 0, positions = 0, target = 0;
+      uint32_t count = 0, bonesPerVertex = 0;
+    };
+    static_assert(sizeof(SkinJob) == 56);
+    VkPipelineLayout skinLayout = VK_NULL_HANDLE;
+    VkPipeline skin = VK_NULL_HANDLE;
+    bool skinFailed = false; // Creation failed: skinned views convert on the CPU.
+    std::vector<SkinJob> skinJobs;
+    void createSkinPipeline();
+    // A skinned view's frame on the GPU (MeshConversion::gpuSkin).
+    void commitSkin(VkCommandBuffer command, MeshConversion &conversion);
+    // After a CPU conversion of a skinned view: its bind pose for commitSkin.
+    void uploadSkinSource(VkCommandBuffer command, MeshConversion &conversion);
     // A lighting pipeline compiled with guidance off (its variants are lazy).
     struct LightingRequest {
       trace::Stage stage;
