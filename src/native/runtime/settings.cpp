@@ -207,6 +207,7 @@ namespace remix::config {
         TRACE(emissiveSolidAngleSampling, 0, 1);
         TRACE(freezeEmissiveRadiance, 0, 1);
         TRACE(emissiveCandidates, 1, 8);
+        TRACE(emissiveCandidateBudget, 0, 128);
         TRACE(sphereCandidates, 1, 8);
         TRACE(separateLocalLighting, 0, 3);
         TRACE(localFireflyFilter, 0, 1);

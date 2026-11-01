@@ -596,8 +596,15 @@ namespace remix {
     frame.localScale[1] = options.localRange;
     // Private, previously unused shader word: bounded candidate count. Keep
     // the established one-/many-sphere and <=4-emitter estimators unchanged.
+    // rtx.native.pathtrace.emissiveCandidateBudget spreads a per-pixel
+    // candidate count over the requested samples.
+    const uint32_t emissiveCandidates =
+        options.emissiveCandidateBudget
+            ? std::clamp(options.emissiveCandidateBudget / std::max(options.localSamples, 1u), 1u,
+                         options.emissiveCandidates)
+            : options.emissiveCandidates;
     frame.localScale[2] = lightBvh.emitters().size() <= 4 ? 1.f
-                          : hasEmissiveLights           ? float(options.emissiveCandidates)
+                          : hasEmissiveLights           ? float(emissiveCandidates)
                                                         : float(options.sphereCandidates);
     localResamplingActive = localIlluminationActive && frame.localScale[2] > 1;
     frame.localScale[3] = options.localRange > 0 ? 1.f / (options.localRange * options.localRange) : 0;

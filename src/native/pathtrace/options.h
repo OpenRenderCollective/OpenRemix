@@ -74,6 +74,11 @@ namespace remix {
     // sampled paths instead of light sampling (brdf.glsl pathEmissiveSpecular).
     float emissiveSpecularRoughness = .3f;
     uint32_t emissiveCandidates = 1;
+    // At most this many emissive candidates per pixel across its local light
+    // samples (0: no limit): with many samples (16), each sample gets
+    // budget / samples of emissiveCandidates, at least one. Each candidate is
+    // a light-tree walk, the main cost of local light at high sample counts.
+    uint32_t emissiveCandidateBudget = 16;
     // RIS candidates in sets of more than four sphere lights without emissive
     // surfaces (1: plain BVH sampling). Candidates compare unshadowed
     // contributions, cone shaping included, before the one shadow ray.

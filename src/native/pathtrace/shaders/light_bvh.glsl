@@ -399,6 +399,33 @@ vec3 smallLocalLighting(LightNodes nodes,LightEmitters emitters,Hit hit,uint sta
 // draws from the same bright cluster. Visibility is always evaluated afresh;
 // zero candidates remain in M. History changes only the proposal distribution;
 // no radiance/shadow reuse or extra visibility rays.
+void lightWalkPairFrom(LightNodes nodes,vec3 p,vec3 n,float ua,float ub,
+                       inout uint indexA,inout float pdfA,inout uint indexB,inout float pdfB);
+void lightStep(float a,float b,uvec2 children,inout uint index,inout float pdf,inout float u,inout bool walking);
+// The tree's top three levels at one shading point: every candidate walk
+// there weighs the same fourteen nodes, so they are weighed once (nodeWeight,
+// exactly the walk's values). Slot s (heap order, root 0) has children 2s+1
+// and 2s+2; weights[s-1] is slot s's, bottom[k] the node at slot 7+k.
+// False when a leaf lies within those levels: the walks then start at the root.
+struct LightTop { float weights[14]; uint bottom[8]; };
+bool lightTopLevels(LightNodes nodes,vec3 p,vec3 n,out LightTop top) {
+  uint slots[15];slots[0]=0;
+  for(uint s=0;s<7;++s) {
+    uvec4 links=nodes.data[slots[s]].links;
+    if(links.w<=1)return false;
+    slots[2*s+1]=links.x;slots[2*s+2]=links.y;
+    top.weights[2*s]=nodeWeight(nodes,links.x,p,n);top.weights[2*s+1]=nodeWeight(nodes,links.y,p,n);
+  }
+  for(uint k=0;k<8;++k)top.bottom[k]=slots[7+k];
+  return true;
+}
+// A walk's first three levels from LightTop: the node it continues from.
+void lightTopWalk(LightTop top,inout uint index,inout float pdf,inout float u) {
+  uint slot=0;bool walking=true;
+  for(uint level=0;level<3;++level)
+    lightStep(top.weights[2*slot],top.weights[2*slot+1],uvec2(2*slot+1,2*slot+2),slot,pdf,u,walking);
+  index=walking?top.bottom[slot-7]:index;
+}
 vec3 resampledLocalLighting(LightNodes nodes,LightEmitters emitters,Hit hit,uint state,
                            uint samples,uint count,out float lightDistance,bool useGuide,vec2 blue,uint noiseBase,out vec3 specular,float threshold) {
   specular=vec3(0);vec3 result=vec3(0);float distanceWeight=0;lightDistance=0;
@@ -425,34 +452,41 @@ vec3 resampledLocalLighting(LightNodes nodes,LightEmitters emitters,Hit hit,uint
       if(rootPdf<=0)guideMix=0;
     }
   }
+  LightTop top;
+  bool cachedTop=lightTopLevels(nodes,hit.p,hit.n,top);
   for(uint sampleIndex=0;sampleIndex<samples;++sampleIndex) {
     LocalCandidate selected;
     selected.physical=selected.specular=vec3(0);selected.endpoint=hit.p;selected.distance=0;
     float total=0;uint selectedIndex=0;bool selectedGuided=false;vec3 selectedPhysical=vec3(0);
-    for(uint candidateIndex=0;candidateIndex<count;++candidateIndex) {
-      bool guided=guideMix>0&&lightRandom(state)<guideMix;
-      uint index=guided?guideRoot:0;float pdf=guided?rootPdf:1;
-      float u=(float(candidateIndex)+lightRandom(state))/float(count);
-      while(nodes.data[index].links.w>1) {
-        uvec4 links=nodes.data[index].links;
-        float a=nodeWeight(nodes,links.x,hit.p,hit.n),b=nodeWeight(nodes,links.y,hit.p,hit.n);
-        if(a==0&&b==0) {pdf=0;break;}
-        float probability=lightSplit(a,b);
-        if(u<probability) {index=links.x;pdf*=probability;u/=probability;}
-        else {index=links.y;pdf*=1-probability;u=(u-probability)/(1-probability);}
-        u=min(u,.99999994);
-      }
-      bool inCluster=lightInSubtree(nodes,index,guideRoot);
-      pdf*=1-guideMix+(guideMix>0&&inCluster?guideMix/rootPdf:0);
-      if(pdf<=0)continue;
-      float share;uint emitter=leafEmitter(emitters,nodes.data[index].links,state,share);
-      pdf*=share;
-      LocalCandidate candidate=localCandidate(emitters.data[emitter],hit,state,true,blue,noiseBase+sampleIndex*8u+candidateIndex);
-      vec3 physical=candidate.physical;
-      candidate.physical/=pdf;candidate.specular/=pdf;
-      float weight=localLuminance(candidate.physical);total+=weight;
-      if(weight>0&&lightRandom(state)*total<weight) {
-        selected=candidate;selectedIndex=index;selectedGuided=guided;selectedPhysical=physical;
+    // Candidates descend the tree in pairs (lightWalkPairFrom): one walk's
+    // dependent loads and weights leave the GPU idle, two overlap.
+    for(uint pairIndex=0;pairIndex<count;pairIndex+=2) {
+      bool both=pairIndex+1<count;
+      bool guidedA=guideMix>0&&lightRandom(state)<guideMix;
+      float uA=(float(pairIndex)+lightRandom(state))/float(count);
+      bool guidedB=both&&guideMix>0&&lightRandom(state)<guideMix;
+      float uB=both?(float(pairIndex+1)+lightRandom(state))/float(count):-1;
+      uint indexA=guidedA?guideRoot:0,indexB=guidedB?guideRoot:0;
+      float pdfA=guidedA?rootPdf:1,pdfB=both?(guidedB?rootPdf:1):-1;
+      // A dead top (pdf 0) leaves its walk at the root, weighed and discarded.
+      if(cachedTop&&!guidedA)lightTopWalk(top,indexA,pdfA,uA);
+      if(cachedTop&&!guidedB&&both)lightTopWalk(top,indexB,pdfB,uB);
+      lightWalkPairFrom(nodes,hit.p,hit.n,uA,uB,indexA,pdfA,indexB,pdfB);
+      for(uint candidateIndex=pairIndex;candidateIndex<pairIndex+(both?2u:1u);++candidateIndex) {
+        bool second=candidateIndex!=pairIndex,guided=second?guidedB:guidedA;
+        uint index=second?indexB:indexA;float pdf=second?pdfB:pdfA;
+        bool inCluster=lightInSubtree(nodes,index,guideRoot);
+        pdf*=1-guideMix+(guideMix>0&&inCluster?guideMix/rootPdf:0);
+        if(pdf<=0)continue;
+        float share;uint emitter=leafEmitter(emitters,nodes.data[index].links,state,share);
+        pdf*=share;
+        LocalCandidate candidate=localCandidate(emitters.data[emitter],hit,state,true,blue,noiseBase+sampleIndex*8u+candidateIndex);
+        vec3 physical=candidate.physical;
+        candidate.physical/=pdf;candidate.specular/=pdf;
+        float weight=localLuminance(candidate.physical);total+=weight;
+        if(weight>0&&lightRandom(state)*total<weight) {
+          selected=candidate;selectedIndex=index;selectedGuided=guided;selectedPhysical=physical;
+        }
       }
     }
     if(total<=0)continue;
@@ -556,9 +590,9 @@ void lightStep(float a,float b,uvec2 children,inout uint index,inout float pdf,i
 // and weight math that a single walk cannot overlap (the pass stalled on
 // instruction dependencies, not memory); the second chain fills that latency.
 // Each walk is exactly the one-sample walk. ub < 0: walk only the first.
-void lightWalkPair(LightNodes nodes,vec3 p,vec3 n,float ua,float ub,
-                   out uint indexA,out float pdfA,out uint indexB,out float pdfB) {
-  indexA=indexB=0;pdfA=1;pdfB=ub<0?-1:1;
+// From: each walk continues from its index and pdf (a guided subtree's root).
+void lightWalkPairFrom(LightNodes nodes,vec3 p,vec3 n,float ua,float ub,
+                       inout uint indexA,inout float pdfA,inout uint indexB,inout float pdfB) {
   bool activeA=true,activeB=ub>=0,table=visibilityTableApplies(nodes,p,n);
   uvec2 rootChildren=nodes.data[0].links.xy;
   for(;;) {
@@ -574,6 +608,11 @@ void lightWalkPair(LightNodes nodes,vec3 p,vec3 n,float ua,float ub,
     lightStep(a0,a1,childrenA,indexA,pdfA,ua,activeA);
     lightStep(b0,b1,childrenB,indexB,pdfB,ub,activeB);
   }
+}
+void lightWalkPair(LightNodes nodes,vec3 p,vec3 n,float ua,float ub,
+                   out uint indexA,out float pdfA,out uint indexB,out float pdfB) {
+  indexA=indexB=0;pdfA=1;pdfB=ub<0?-1:1;
+  lightWalkPairFrom(nodes,p,n,ua,ub,indexA,pdfA,indexB,pdfB);
 }
 bool regirLookup=true; // localLighting may use ReGIR pools (false at directly seen surfaces)
 // Returns material-demodulated total radiance and its specular component.
