@@ -842,6 +842,8 @@ namespace remix {
       // Only the bones moved and the bind pose is uploaded: skinned on the
       // GPU (commitSkin), with no CPU geometry.
       bool gpuSkin = false;
+      // The view's mesh, unchanged since its last conversion, with other bones.
+      bool bonesOnly = false;
       std::shared_ptr<Geometry> previousGeometry;
       GeometryScratch data;
     };

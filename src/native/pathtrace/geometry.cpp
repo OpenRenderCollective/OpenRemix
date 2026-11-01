@@ -85,10 +85,11 @@ namespace remix {
     if (view.owner.lock() == draw.mesh && (!skinned || view.bones == *draw.bones))
       return view;
     ++performance.geometryConversions;
-    // The same skinned mesh with other bones, its bind pose on the GPU: skinned
-    // there (commitSkin), with no CPU geometry.
-    conversion.gpuSkin = skinned && !streaming && skin && view.geometry && view.owner.lock() == draw.mesh &&
-                         view.skinMesh.lock() == draw.mesh &&
+    // The same skinned mesh with other bones: its bind pose on the GPU, skinned
+    // there (commitSkin), with no CPU geometry; otherwise converted on the CPU,
+    // which uploads the bind pose for the next frames.
+    conversion.bonesOnly = skinned && !streaming && view.geometry && view.owner.lock() == draw.mesh;
+    conversion.gpuSkin = conversion.bonesOnly && skin && view.skinMesh.lock() == draw.mesh &&
                          view.skinSource.size() == draw.mesh->surfaces.size() && view.skinInputBytes;
     // A replaced CPU mesh may reuse an address. Keep its geometry alive through
     // the canonical lookup, but never mistake its view for the new mesh.
@@ -648,8 +649,11 @@ namespace remix {
     view.normalHashes = data.normalHashes;
     if (conversion.previousGeometry)
       retiredGeometry.push_back(std::move(conversion.previousGeometry));
-    // Its bind pose, so the next frames skin on the GPU.
-    if (skinned)
+    // Its bind pose, so the next frames skin on the GPU. Only once the same
+    // mesh came back with other bones: a mesh replaced every frame (spawning
+    // NPCs, CPU-skinned parts) never skins there, and uploading it each frame
+    // cost more than its conversion.
+    if (conversion.bonesOnly)
       uploadSkinSource(command, conversion);
     // Bound the scratch a single large conversion leaves behind.
     if (conversion.data.bytes() > 64 * 1024 * 1024)
