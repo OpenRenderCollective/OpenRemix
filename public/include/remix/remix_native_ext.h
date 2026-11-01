@@ -1299,6 +1299,18 @@ typedef struct remixapi_MaterialPbrRemapEXT {
   remixapi_MaterialPbrChannelEXT roughness, metallic;
 } remixapi_MaterialPbrRemapEXT;
 
+// Optional pNext on opaque MaterialInfo: the colour of its metal (linear, 0
+// to 1). Where the material is metallic its albedo blends toward this colour
+// by the metallic value, so the metal reflects it instead of the albedo: a
+// game's dark base texture under a strong reflection (Source's envmapped
+// metal, its $envmaptint) is chrome, not dark metal.
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_METAL_COLOR_EXT ((remixapi_StructType)0x7fff1023)
+typedef struct remixapi_MaterialMetalColorEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  remixapi_Float3D color;
+} remixapi_MaterialMetalColorEXT;
+
 // Optional pNext on opaque or translucent MaterialInfo: a thin-film coating
 // whose interference colours the reflection (iridescence), evaluated
 // spectrally. On a translucent material (glass, water) the surface becomes a

@@ -262,6 +262,9 @@ float materialMapValue(Surface s,uint map,vec4 texel) {
 }
 vec2 materialParameters(Surface s,vec2 uv,inout vec3 albedo) {
   float metallic=s.pbrTextures.y==0?s.pbr.y:materialMapValue(s,1,materialTexel(s,s.pbrTextures.y-1,uv));
+  // A metal colour (remixapi_MaterialMetalColorEXT, unorm8 RGB in pbr.w): the
+  // albedo turns to it as far as the surface is metal.
+  if((s.material.x&256u)!=0)albedo=mix(albedo,unpackUnorm4x8(floatBitsToUint(s.pbr.w)).rgb,clamp(metallic,0,1));
   if(s.pbrTextures.x==0)return clamp(vec2(s.pbr.x,metallic),0,1);
   return clamp(vec2(materialMapValue(s,0,materialTexel(s,s.pbrTextures.x-1,uv)),metallic),0,1);
 }

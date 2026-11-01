@@ -144,6 +144,9 @@ namespace remix {
         bool identity() const { return !channel && !curve && !invert && exponent == 1 && bias == 0 && scale == 1; }
         bool operator==(const Remap &) const = default;
       } remap[2];
+      // remixapi_MaterialMetalColorEXT: the metal's colour (metalColored).
+      bool metalColored = false;
+      float metalColor[3] = {1, 1, 1};
       // remixapi_MaterialNormalScrollEXT (normal encoding 5): layers, then the
       // base, layer 1 and layer 2 rates.
       uint32_t scrollLayers = 1;
@@ -196,7 +199,10 @@ namespace remix {
       // Self-illumination: enabled, and its mask (0 none, 1 albedo alpha,
       // 2 emissive alpha) in the two bits above.
       static constexpr uint32_t selfIllumination = 32, selfIlluminationMaskShift = 6;
-      uint32_t flags = 0;
+      // A metal colour (remixapi_MaterialMetalColorEXT), as unorm8 RGB in
+      // metalColorBits.
+      static constexpr uint32_t metalColor = 256;
+      uint32_t flags = 0, metalColorBits = 0;
       float selfIlluminationScale = 0;
     };
     MaterialDecode materialDecode(const Material &material);

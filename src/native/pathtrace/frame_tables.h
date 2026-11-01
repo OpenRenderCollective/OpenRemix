@@ -48,7 +48,7 @@ namespace remix::trace::detail {
     uint64_t previousVertices = 0, debugIdentity = 0;
     scene::Matrix previousModel{};
     float emission[4] = {};
-    float pbr[4] = {};            // perceptual roughness, metalness, enabled, reserved
+    float pbr[4] = {};            // perceptual roughness, metalness, enabled; translucent body or metal colour
     uint32_t pbrTextures[4] = {}; // roughness, metalness, normal; index + 1
     uint32_t material[4] = {};    // scene::MaterialDecode: flags; the rest unused
     float film[4] = {};           // iridescence (filmFields): strength (0: none), film index, thickness nm, structural
@@ -79,13 +79,18 @@ namespace remix::trace::detail {
     pbr[1] = material.metallic;
     pbr[2] = material.pbr ? 1.f : 0.f;
     const auto decode = scene::materialDecode(material);
-    decodeOut[0] = decode.flags;
+    decodeOut[0] = decode.flags & ~(material.transmission && material.transmittanceDistance > 0
+                                        ? scene::MaterialDecode::metalColor
+                                        : 0u);
     // A translucent body: its refractive index and measurement distance, half
     // floats in pbr[3] (scene.glsl thickSheet); zero for everything else.
     if (material.transmission && material.transmittanceDistance > 0) {
       const uint32_t packed = detail::halfBits(material.refractiveIndex) |
                               detail::halfBits(std::min(material.transmittanceDistance, 65504.f)) << 16;
       std::memcpy(&pbr[3], &packed, 4);
+    } else if (decode.flags & scene::MaterialDecode::metalColor) {
+      // An opaque metal's colour, unorm8 RGB (scene.glsl materialParameters).
+      std::memcpy(&pbr[3], &decode.metalColorBits, 4);
     }
     const std::shared_ptr<scene::Texture> *textures[] = {&material.roughnessTexture, &material.metallicTexture};
     for (unsigned i = 0; i < 2; ++i) {

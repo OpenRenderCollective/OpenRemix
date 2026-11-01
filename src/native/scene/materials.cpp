@@ -17,6 +17,11 @@ namespace remix::scene {
                  uint32_t(m.selfIllumination - 1) << MaterialDecode::selfIlluminationMaskShift;
       d.selfIlluminationScale = m.selfIlluminationScale;
     }
+    if (m.metalColored) {
+      d.flags |= MaterialDecode::metalColor;
+      for (unsigned i = 0; i < 3; ++i)
+        d.metalColorBits |= uint32_t(std::lround(std::clamp(m.metalColor[i], 0.f, 1.f) * 255)) << (8 * i);
+    }
     return d;
   }
 } // namespace remix::scene
@@ -83,6 +88,17 @@ namespace remix {
           out.bias = in.bias;
           out.scale = in.scale;
         }
+      }
+      if (const auto *metal = static_cast<const remixapi_MaterialMetalColorEXT *>(
+              extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_METAL_COLOR_EXT))) {
+        finite(&metal->color.x, 3);
+        const float color[3] = {metal->color.x, metal->color.y, metal->color.z};
+        for (unsigned i = 0; i < 3; ++i) {
+          if (color[i] < 0 || color[i] > 1)
+            throw invalid;
+          material->metalColor[i] = color[i];
+        }
+        material->metalColored = true;
       }
       material->tint[0] = opaque->albedoConstant.x;
       material->tint[1] = opaque->albedoConstant.y;
@@ -254,7 +270,8 @@ namespace remix {
              a.remap[0] == b.remap[0] && a.remap[1] == b.remap[1] && a.scrollLayers == b.scrollLayers &&
              std::equal(a.scroll, a.scroll + 6, b.scroll) && a.refractiveIndex == b.refractiveIndex &&
              a.transmittanceDistance == b.transmittanceDistance &&
-             a.iridescence == b.iridescence &&
+             a.iridescence == b.iridescence && a.metalColored == b.metalColored &&
+             std::equal(a.metalColor, a.metalColor + 3, b.metalColor) &&
              a.pbr == b.pbr && std::equal(a.emission, a.emission + 3, b.emission) &&
              std::equal(a.tint, a.tint + 4, b.tint) && a.compare == b.compare && a.reference == b.reference &&
              a.drawAlpha == b.drawAlpha && a.translucent == b.translucent &&
