@@ -450,6 +450,12 @@ Hit closest(vec3 origin,vec3 direction,float maximum,bool motion) {
   // cannot attach it to a surface far behind (at most 20 x attach along the ray).
   const float facing=max(abs(dot(direction,firstNg)),.05);
   const bool attached=hit.t<1e30&&!hit.decal&&(hit.t-lastDecal)*facing<=attach;
+  // Multiplicative paint alone (remaining 1: no alpha paint) with nothing
+  // under it has nothing to tint: the ray passes it. Engine-skinned model
+  // decals stand off a curved or flexed surface (a bullet hole past a
+  // barrel's silhouette, blood a face's rest pose ahead of the flexed face;
+  // GMod issue #104), and stood there as grey or skin-coloured surfaces.
+  if(!attached&&remaining==1)return hit;
   // Unattached decals and layers above translucent receivers retain ordinary
   // source-over transport. Do not project paint onto the sky or change glass.
   if(!attached||hit.blended) {
