@@ -366,3 +366,22 @@ and runtime replacement policy together; it is not silently optimized here.
 Automatic capture cache/publication is still coupled to the bake, and direct
 versus indirect diffuse storage/pipeline composition is not yet a fully generic
 provider API. These remain required work before claiming the split complete.
+
+
+### Reflection persistence codec
+
+`probes/cache_codec.h` owns the raw-capture and filtered-image payload codec.
+It consumes bounded cache streams and reflection/device limits, with no diffuse
+layout, grid, light ownership policy or GPU resource state. Validation retains
+capture/projection correspondence, finite HDR values, dimensions, device limits
+and the existing padded 32-record disk blocks. Preflight validation still runs
+before creating the bake cache's temporary file.
+
+`forward/cache_io.h` provides the existing bounded/checksummed stream machinery;
+`bake/cache_io.h` forwards its old internal names for the other cache consumers.
+The combined bake cache delegates its reflection section to this codec without
+changing its key, schema, payload order or number of scans/copies/writes.
+This is not yet independent cache lookup: diffuse/reflection keys and atomic
+publication still share the existing container. The next step must preserve
+legacy warm reads while separating identities and retaining spatial seed data
+needed for reflection-only recovery, without duplicating cubemap payloads.

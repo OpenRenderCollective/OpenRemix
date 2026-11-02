@@ -1,3 +1,9 @@
+# Reflection cache codec - 2026-11-02
+
+- Reflection payload validation/read/write moved to a reusable codec with reflection-only limits; shared bounded cache streams no longer belong exclusively to the diffuse bake. Existing keys/schema/bytes remain unchanged.
+- Independent cache lookup is still unfinished. The current container has one checksum and discards spatial seed points; separate identities/recovery must preserve legacy warm reads and avoid duplicated cubemap payloads.
+- Next: layered identity/publication with recoverable placement inputs, direct/indirect composition, complete provider pipeline integration and broader performance verification.
+
 # Shared provider dependency plan - 2026-11-02
 
 - A CPU-only resource plan now resolves device support and requested diffuse/ray/reflection dependencies once outside draw loops; targets, pipelines, provider allocation and frame ownership consume it.
