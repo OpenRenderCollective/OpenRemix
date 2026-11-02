@@ -1,151 +1,55 @@
-## 2026-11-03 — local-light context hidden from material loops
+## Current modular renderer status — 2026-11-03
 
-Local-light sample values are resource-free. Material loops now use source count,
-sampling and standard-response functions instead of reading clustered-list or
-baked-channel fields. A different local context compiles through actual standard
-world/viewmodel/live-world/water shaders. Build, resource-free/custom-source
-compilation and mixed local-shadow/water GPU tests pass. All 20 default variants
-retain identical optimized sizes and opcode/intrinsic counts (two byte-identical).
-Runtime custom-program resources and overall performance acceptance remain open.
+The technique split is in progress; performance acceptance is not complete.
+The playable install remains separate from the branch build. Architecture and
+interfaces: [shading API](../architecture/shading-api.md).
 
-## 2026-11-03 — receiver-level sunlight source API
+Implemented and checked:
 
-Custom material models now sample sunlight through a receiver query and compose
-it with their own response, alongside local-light samples. SunLightSample is
-resource-free, and two unused legacy combined wrappers were removed. Default
-world/viewmodel shading uses the same query adapter; water keeps its explicit
-unbaked-sun policy pending separate qualification. Resource-free/custom-model
-compile checks and three sun/mixed/viewmodel GPU regressions pass. All 20 default
-variants retain identical optimized sizes and opcode/intrinsic counts (six are
-byte-identical; the others reorder material RGB extraction across the sun query).
-No-overhead acceptance still requires broader runtime evidence.
+- The Source 2 preset selects techniques while retaining quality/display/cache
+  preferences. Legacy setting names remain compatibility aliases.
+- Evaluated material, diffuse/reflection, sun and local-light sample values have
+  resource-free headers. Receiver contexts and light-list/channel storage are
+  hidden behind source queries. Alternate shading, diffuse, environment and local
+  sources compile through actual world/viewmodel/water passes.
+- Resolved provider dependencies drive live diffuse/ray scene and screen/ray
+  reflection resources. Water and viewmodels share the selected diffuse source;
+  live water can share prepared scene descriptors with its own query limits.
+- Immutable prepared scenes have demand-scoped leases and independent mutable
+  consumers. Compatible automatic captures hand inputs to authored captures
+  before retirement. Ordinary radiance can explicitly inherit baked light policy;
+  diffuse compatibility remains strict. Shared GPU memory is counted once.
+- Automatic reflections own placement/readback, radiance cache, filtering, worker
+  tickets and publication. Retained, transferred and image-only finishing preserve
+  array ownership without copies. Empty completion allocates no fallback image.
+  Preset admission and finishing order still share one transport budget.
+- Targeted lifecycle, cancellation, cold/warm cache, material/source compilation,
+  MSAA/shadow/reflection and live-GI checks pass. Recent shader API splits preserve
+  optimized instruction/intrinsic counts; some variants differ in instruction
+  ordering and are not byte-identical. These checks are not a blanket FPS claim.
 
-## 2026-11-03 — provider-owned reflection finishing policies
+Still required for the complete modularity/performance objective:
 
-Reflection finishing now exposes retained, transferred and image-only publication
-paths. The default preset retains immutable provenance; standalone persistence
-moves existing arrays without copies; warm restores and captures with disk cache
-disabled release CPU arrays without allocating a persistence payload. Early
-publication and preset finishing order remain unchanged, with no additional jobs.
-Build and publication/cancellation, authored reuse and transport GPU tests pass.
-Storage-address checks verify no capture/filter copies, and upload succeeds after
-the transferred CPU payload is released. No shaders/draw loops or playable files
-changed. Broader provider integration and performance acceptance remain open.
+- Finish provider dependency/finishing orchestration beyond the current Source 2
+  adapters. Keep source module resources, publication, cancellation and retirement
+  explicit when adding/selecting implementations; preserve shared work admission.
+- Define general contribution ownership and compatible reflection normalization
+  for unified GI replacements. Current attribution is Source 2/per-light specific.
+  Water's baked/mixed sunlight policy still needs separate qualification.
+- Complete no-overhead acceptance with controlled CPU/GPU comparisons. Earlier
+  host-FPS rankings reversed between runs despite matching lighting/draws. The
+  completed A/B/B/A 1080p Crossfire study shows overlapping CPU/GPU ranges and
+  substantial baseline session drift, with no repeatable material split overhead
+  in that profile. This is not universal equivalence or the 300 FPS target.
+  Broaden map/provider coverage, and investigate cold post-ready stalls separately.
+- Continue checking unused experiment paths before removal. Referenced low-level
+  diagnostic modes and legacy aliases are not automatically dead code.
 
-## 2026-11-03 — resolved reflection resource selection
+Deferred extension: opt-in host shader programs and HLSL/.shader authoring build
+on these contracts; no public custom-program loader is implemented yet.
 
-Screen hierarchy allocation/recording and live-scene reflection batch capacity
-now follow the resolved ResourcePlan rather than rereading saved source requests.
-Quality/range settings remain separate. Viewmodel SSR follows prepared screen
-resources. Configuration/capability policy, SSR, viewmodel SSR, hardware reflection
-and live-GI GPU checks pass. No shaders, pass counts or default techniques changed.
-Full independent provider dependency/finishing orchestration and the broader
-performance acceptance gate remain open.
-
-## 2026-11-03 — reflection provider owns worker preparation
-
-AutomaticCapture now owns placement/filter worker tickets instead of borrowing
-the diffuse ticket. Default and standalone schedulers guard both preparation
-owners for inspection, cancellation and retirement; standalone supersession also
-cancels queued callbacks. Queue order, callback count, shared transport/budget and
-early publication remain unchanged. Build and publication/cancellation, authored
-capture reuse and live-GI GPU tests pass. Explicit coverage rejects overlapping
-preparation and verifies queued cancellation releases inputs without execution.
-Provider dependency/finishing orchestration and overall performance acceptance
-remain open; no shaders or steady-state draw loops changed.
-
-## 2026-11-03 — diffuse context representation hidden from materials
-
-Standard shading no longer reads the baked context's chart flag; water no longer
-constructs a baked context. Provider functions own surface/volume preparation and
-reflection-reference requirements. An alternate context with no chart/probe
-fields compiles through actual standard world/metal/viewmodel and water passes,
-including live variants with default environment reflections. All 20 affected
-default variants retain identical optimized SPIR-V. Native build and baked
-viewmodel/water/live-GI correctness tests pass. Full provider dependency/lifecycle
-selection and overall performance acceptance remain open.
-
-## 2026-11-03 — environment reflection source module
-
-Reflection query values are now independent of pass resources; the Source 2
-parallax-probe/sky implementation lives in its own shader module. Alternative
-environment sources compile through actual standard viewmodel, live viewmodel,
-water/ray-water and world resolve passes without changing material calls.
-All nine affected default variants have identical optimized SPIR-V. Native build,
-resource-free/custom-source compile checks and SSR/viewmodel/water GPU regressions
-pass. No CPU selection path or per-pixel provider branch was added. Public shader
-program registration and full provider pipeline/dependency selection remain open.
-
-## 2026-11-03 — fresh CPU telemetry gives mixed host-FPS results
-
-A further warm 1080p comparison using adapter a024a72 for both runtimes reversed
-the previous host-FPS ranking: current ~275 unarmed/~242 weapon versus baseline
-~257–261/~230. Fresh successful CPU snapshots show comparable or slightly lower
-current recording cost; queue/acquisition phases are similar. Matching lighting
-hashes/settings/draw counts remain verified. Neither a stable host regression nor
-no-overhead acceptance is established by these mixed pairs. Continue controlled,
-counterbalanced measurements and isolate observer/host/frame-pacing variation.
-Adapter 952a8bf adds opt-in previous-sample profiler cost; a short current smoke
-verified ~0.014 ms median/~0.034 ms p95, with no clocks when profiling is disabled.
-Both test DLLs/config restored; no playable promotion.
-
-## 2026-11-03 — foreground performance acceptance remains open
-
-Production-quality 1080p Crossfire measurements with matching lighting hashes,
-settings and draw counts show a remaining small unarmed host-frame gap to the
-pre-split baseline, despite slightly lower GPU time. Warm-cache reverse-order
-repeat: current ~273 FPS unarmed versus ~279–281; weapon ~243–244 versus ~243–244.
-No-overhead is not accepted yet. Next: use the latest adapter's CPU phase/freshness
-telemetry to isolate the host cost, then repeat with counterbalanced runs.
-Separately investigate severe host stalls immediately after a cold bake reports
-ready; warm-cache repeats avoid those stalls. Background persistence/retirement
-are candidates, not confirmed causes. Owned tests exited and playable DLL/config
-were restored; no deployment occurred.
-
-## 2026-11-03 — radiance policy inheritance from baked scenes
-
-Ordinary unstyled reflection capture can now explicitly inherit the donor's
-actual aggregate/component storage policy, avoiding a duplicate transport scene.
-General diffuse compatibility remains strict. Serial/parallel GPU comparisons
-verify identical radiance with local lighting and a bright excluded styled light.
-Authored jobs preserve requested versus actual policy for subsequent edit reuse.
-Generated receiver charts now preserve the original frozen transport identity;
-a cold baked-to-authored integration with model charts verifies scene reuse for
-new rays after donor retirement. Remaining: broader provider lifecycle/dependency
-selection and matched foreground performance acceptance. No shaders changed.
-
-## 2026-11-03 — demand-scoped runtime scene handoff
-
-Pending authored reflection requests now register transport demand before the
-automatic producers advance. Compatible inputs transfer through a scene-only
-lease before donor retirement, with unchanged sequential work admission. A cold
-standalone-to-authored GPU regression verifies reuse for new capture rays after
-the automatic job finishes. Requests without authored work retain no extra scene;
-prior consumers still serve compatible edits. Warm caches without a donor and
-incompatible fully baked light policy retain independent preparation. Remaining:
-resolve that policy boundary, complete provider scheduling/dependency selection,
-and verify matched foreground CPU/GPU performance. Shaders remain unchanged.
-
-## 2026-11-03 — scene-only transport leases
-
-Prepared scenes now have an explicit demand-scoped lease independent of donor
-pipelines, slots and bake-job ownership. New consumers can be prepared after the
-donor retires, with snapshot/policy checks and shared memory deduplication.
-The GPU regression covers donor destruction, lease release, private settings and
-unchanged radiance. Runtime demand registration/handoff is still pending; no
-controller retains extra scenes automatically. Drawing and shaders are unchanged.
-
-## 2026-11-03 — scene sharing and private transport policy
-
-Prepared GPU scene compatibility is now distinct from exact mutable-consumer
-reuse. Independent consumers can share immutable inputs while choosing their
-own sampling, distance/bias, batch memory/capacity and optional depth pipeline.
-Texture preparation, light ownership/components and queue ownership must match.
-Snapshot identity and completed preparation remain mandatory; explicit packed
-input overrides require explicit donor inheritance. No shaders or per-draw
-work changed. Default/authored provider lease integration and foreground
-performance acceptance remain outstanding. See the shading API guide for the
-remaining lifecycle contract.
+The dated notes below retain prior implementation history and the wider rendering
+roadmap. Git history and local test reports retain the consolidated recent detail.
 
 ## 2026-11-03: diffuse publication without a reflection asset
 
