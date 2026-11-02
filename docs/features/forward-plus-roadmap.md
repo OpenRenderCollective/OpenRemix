@@ -1,3 +1,11 @@
+## Focused performance qualification - 2026-11-02
+
+- Crossfire at 1920x1080, 4x MSAA, full-resolution SSR: two foreground baseline/modular comparisons confirmed identical lighting hashes, workload counts and checked world-image regions.
+- Raw modular shaders showed a small GPU regression (roughly 0.03-0.12 ms); overall FPS varied across runs. The no-overhead gate is still open.
+- Offline inlining candidate passed ten GPU regression tests and reduced measured GPU frame time to 2.96-3.00 ms unarmed and 3.66-3.67 ms with a weapon, versus baseline 3.08-3.15 and 3.75-3.79 ms. Overall FPS did not consistently improve; candidate is not enabled by default or deployed.
+- Next: isolate host recording/pacing costs, qualify selective shader optimization, then repeat matched multi-map measurements. Opaque world shading and viewmodel target/composition work remain significant. Weapon 300 FPS target is not achieved.
+- Independent provider scheduling/storage and interchangeable reflection dependencies remain unfinished; shader interfaces alone are not the complete swappable backend framework.
+
 ## Shared light composition - 2026-11-02
 
 - Material BRDF lobes and scene-linear LightContribution now have distinct types. Generic diffuse/local/sun composition handles existing mixed-shadow/range/highlight semantics for standard and custom models.
