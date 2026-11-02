@@ -2,13 +2,14 @@
 #include "forward/probes/data.h"
 #include "forward/probes/image_asset.h"
 #include "forward/probes/reflection_snapshot.h"
+#include "forward/probes/capture_source.h"
+#include "forward/probes/capture_config.h"
 #include "scene/reflection_volumes.h"
 #include "forward/resources.h"
 #include "runtime/pipelines.h"
 #include "platform/gpu_frames.h"
 #include <memory>
 namespace remix { class RasterRenderer; }
-namespace remix::forward::bake { struct Volume; }
 namespace remix::forward::probes {
   // Reflection-only publication. Neither source ownership nor diffuse bake
   // buffers are modified; frame slots retain every sampled and submitted job.
@@ -25,9 +26,9 @@ namespace remix::forward::probes {
              hardware == m_hardware && queueFamily == m_queueFamily;
     }
     void selectFrame(uint32_t slot);
-    void record(VkCommandBuffer command, RasterRenderer &resources, const bake::Config &config,
-                const std::shared_ptr<const bake::Volume> &automatic, bool fallback);
-    ReflectionSnapshot snapshot(const std::shared_ptr<const bake::Volume> &automatic) const;
+    void record(VkCommandBuffer command, RasterRenderer &resources, const CaptureConfig &config,
+                const CaptureSource &automatic, bool fallback);
+    ReflectionSnapshot snapshot(const CaptureSource &automatic) const;
     Descriptors descriptor(Descriptors automatic) const;
     const Header *header() const;
     const LayerIdentities *identities() const;
@@ -50,13 +51,13 @@ namespace remix::forward::probes {
     uint32_t m_queueFamily, m_slot = 0;
     std::shared_ptr<const scene::BakeScene> m_source;
     std::shared_ptr<const scene::ReflectionVolumes> m_request;
-    std::weak_ptr<const bake::Volume> m_automatic;
+    std::weak_ptr<const ImageAsset> m_automatic;
     uint64_t m_revision = 0;
     bool m_fallback = false;
     std::shared_ptr<Job> m_job, m_active;
     std::vector<std::shared_ptr<Job>> m_retired;
     std::array<Frame, gpuFrameCount> m_frames;
-    bake::Config m_config;
+    CaptureConfig m_config;
     std::string m_status;
     void retire();
   };

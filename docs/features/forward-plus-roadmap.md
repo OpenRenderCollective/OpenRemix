@@ -1,3 +1,9 @@
+# Reflection capture separation - 2026-11-02
+
+- Authored captures now accept ready scene identity, optional automatic image and reflection-only configuration rather than a diffuse bake volume.
+- Authored captures can publish with diffuse baking disabled; diffuse-only probe/direct settings no longer invalidate them. Source 2 retains capture-after-bake ordering.
+- Still required: extract automatic placement/capture/cache lifecycle from the bake controller, independently resolve direct/diffuse/reflection resource dependencies, and verify complete default-profile CPU/GPU performance.
+
 # Technique separation - 2026-11-02
 
 - Shared direct-light shader module extracted without changing light accumulation order.

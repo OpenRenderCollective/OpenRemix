@@ -3,7 +3,6 @@
 #include "platform/workers.h"
 #include "forward/bake/transport.h"
 #include "forward/bake/budget.h"
-#include "forward/bake/controller.h"
 #include "raster/renderer.h"
 #include <algorithm>
 #include <atomic>
@@ -25,7 +24,7 @@ namespace remix::forward::probes {
     std::shared_ptr<bake::Transport> transport;
     std::unique_ptr<ImageAsset> image;
     std::unique_ptr<ImageAsset> authoredImage;
-    std::shared_ptr<const bake::Volume> automatic;
+    std::shared_ptr<const ImageAsset> automatic;
     uint64_t revision = 0;
     uint32_t automaticCount = 0, covered = 0, omitted = 0;
     Data filtered;
@@ -36,7 +35,7 @@ namespace remix::forward::probes {
     uint32_t next = 0, received = 0, rayCount = 0;
     bool prepared = false, filtering = false, sceneReused = false, fallbackAllowed = false;
     void prepare(const std::shared_ptr<Job> &prior, const std::shared_ptr<const scene::BakeScene> &source,
-                  VkPhysicalDevice physical, VkDevice device, uint32_t family, const bake::Config &config) {
+                  VkPhysicalDevice physical, VkDevice device, uint32_t family, const CaptureConfig &config) {
       VkPhysicalDeviceProperties limits;
       vkGetPhysicalDeviceProperties(physical, &limits);
       if (request->volumes.size() > imageCapacity(config.reflectionResolution,
@@ -146,8 +145,8 @@ namespace remix::forward::probes {
       for (const auto &volume : request->volumes) ids.push_back(volume.id);
       identities = imageIdentities(filtered.header, ids);
       image = std::make_unique<ImageAsset>(physical, device, filtered, cancellation.get_token());
-      if (automatic && !captures.empty() && automatic->specular) {
-        const auto plan = compose(image->header(), automatic->specular->header());
+      if (automatic && !captures.empty()) {
+        const auto plan = compose(image->header(), automatic->header());
         automaticCount = plan.automatic;
         covered = plan.covered;
         omitted = plan.omitted;
@@ -204,8 +203,8 @@ namespace remix::forward::probes {
     frame = {};
     std::erase_if(m_retired, [](const auto &job) { return job->ticket->ready(); });
   }
-  void Authoring::record(VkCommandBuffer command, RasterRenderer &resources, const bake::Config &config,
-                          const std::shared_ptr<const bake::Volume> &automatic, bool fallback) {
+  void Authoring::record(VkCommandBuffer command, RasterRenderer &resources, const CaptureConfig &config,
+                          const CaptureSource &automatic, bool fallback) {
     const auto source = resources.bakeScene();
     const auto request = resources.reflectionVolumes();
     if (source != m_source || !config.sameLighting(m_config)) {
@@ -216,29 +215,35 @@ namespace remix::forward::probes {
       m_config = config;
     }
     const bool useFallback = fallback && request && !request->volumes.empty();
-    const auto fallbackVolume = useFallback ? automatic : nullptr;
-    if (request != m_request || useFallback != m_fallback || fallbackVolume != m_automatic.lock()) {
+    const auto fallbackImage = useFallback ? automatic.image : nullptr;
+    if (request != m_request || useFallback != m_fallback || fallbackImage != m_automatic.lock()) {
       retire();
       m_request = request;
       m_fallback = useFallback;
-      m_automatic = fallbackVolume;
+      m_automatic = fallbackImage;
       ++m_revision;
       m_status.clear();
       if (!request) m_active.reset();
     }
     // Keep the published override while an edit is preparing, but never sample
-    // another map's override or trace before its world lighting has completed.
+    // another map's override or trace before the scheduler marks inputs ready.
     m_frames[m_slot].sampled = m_active;
-    if (!request || !source || !source->ready || !automatic ||
-        source->contentHash != automatic->hash || !config.enabled) return;
-    if (useFallback && (!automatic->specular || (automatic->reflectionHeader.parameters[0] &&
-        automatic->reflectionHeader.parameters[1] != config.reflectionResolution))) return;
+    if (!config.enabled) {
+      retire();
+      m_active.reset();
+      m_frames[m_slot].sampled.reset();
+      return;
+    }
+    if (!request || !source || !source->ready || !automatic.sceneHash ||
+        source->contentHash != automatic.sceneHash) return;
+    if (useFallback && automatic.image && automatic.image->header().parameters[0] &&
+        automatic.image->header().parameters[1] != config.reflectionResolution) return;
     if (!m_job && (!m_active || m_active->revision != m_revision) && m_status.empty()) {
       if (!m_hardware || !m_pipelines) { m_status = "Authored reflections require hardware ray queries"; return; }
       auto job = std::make_shared<Job>();
       job->request = request;
       job->revision = m_revision;
-      job->automatic = fallbackVolume;
+      job->automatic = fallbackImage;
       job->fallbackAllowed = useFallback;
       const auto previous = m_active;
       job->previous = previous;
@@ -259,7 +264,7 @@ namespace remix::forward::probes {
       if (job.filtering) {
         if (job.authoredImage) {
           job.authoredImage->recordUpload(command);
-          job.image->recordCompose(command, *job.authoredImage, *job.automatic->specular);
+          job.image->recordCompose(command, *job.authoredImage, *job.automatic);
         } else {
           job.image->recordUpload(command);
         }
@@ -302,7 +307,7 @@ namespace remix::forward::probes {
     }
     m_frames[m_slot].sampled = m_active;
   }
-  ReflectionSnapshot Authoring::snapshot(const std::shared_ptr<const bake::Volume> &automatic) const {
+  ReflectionSnapshot Authoring::snapshot(const CaptureSource &automatic) const {
     ReflectionSnapshot result;
     if (m_active) {
       result.image = std::shared_ptr<const ImageAsset>(m_active, m_active->image.get());
@@ -313,8 +318,8 @@ namespace remix::forward::probes {
         composition.layers.push_back({result.identities[i] == 0, i});
       result.baseline = composedCoverageBaseline(composition, m_active->request->sceneId,
                                                  m_active->request->revision, m_active->fallbackAllowed);
-    } else if (automatic && automatic->specular) {
-      result.image = std::shared_ptr<const ImageAsset>(automatic, automatic->specular.get());
+    } else if (automatic.image) {
+      result.image = automatic.image;
       result.baseline = automaticCoverageBaseline(result.image->header());
     }
     return result;

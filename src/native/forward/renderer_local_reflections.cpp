@@ -31,7 +31,7 @@ namespace remix::forward {
         (!localSelectionPreparation || !localSelectionPreparation->pending())) return;
     const auto source = resources.bakeScene();
     const auto &volume = baking->volume();
-    const auto snapshot = authoredReflections->snapshot(volume);
+    const auto snapshot = authoredReflections->snapshot(baking->reflectionSource());
     const auto local = volume ? volume->localReflections : nullptr;
     // Disabled/author-only sets cannot accept automatic replacements. Retire
     // existing selections without scheduling a worker that can only return empty.

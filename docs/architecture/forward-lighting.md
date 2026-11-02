@@ -279,3 +279,25 @@ provider must not set it merely because it supplies diffuse GI. Baked chart
 visibility and incident irradiance used for reflection normalization still need
 separation from the standard material orchestration. Automatic cubemap capture
 also still depends on the bake controller; the full provider split is unfinished.
+
+
+### Reflection capture input boundary
+
+Authored capture consumes `probes::CaptureSource` (matching ready scene hash and
+optional automatic image) and `probes::CaptureConfig` (reflection transport and
+execution settings). It no longer includes or reads `bake::Volume` or compares
+diffuse layout settings. `Options::captureConfiguration()` maps the existing
+saved keys; no second persisted configuration is introduced. The configuration
+header stays CPU-only and does not include Vulkan resource types.
+
+The renderer supplies baked publication readiness for the Source 2 profile,
+preserving capture-after-bake ordering. With diffuse baking disabled it can supply
+ready retained-scene identity directly, allowing authored capture without any
+diffuse volume. Automatic fallback is optional: its absence does not block an
+otherwise ready authored set. The bake-controller adapter currently aliases the
+published image owner without copying images or allocating a new GPU resource.
+Submitted capture/composition frames retain that owner through their fences.
+
+Automatic placement, capture transport and cache publication are still inside the
+bake controller. Moving that lifecycle to a standalone reflection provider remains
+required; the input boundary alone does not complete interchangeable providers.

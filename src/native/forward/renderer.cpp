@@ -250,9 +250,15 @@ namespace remix::forward {
     const auto lightingPlan = m_gpu->options.lightingPlan(m_gpu->rayLighting.diffuseActive());
     m_gpu->baking->record(command, resources, lightingPlan.baking,
                          m_gpu->options.lightCutoff);
-    const auto &baked = m_gpu->baking->volume();
+    auto captures = m_gpu->baking->reflectionSource();
+    // Source 2 captures wait for published baked lighting. A replacement diffuse
+    // provider can supply readiness independently of a diffuse bake volume.
+    if (!lightingPlan.baking.enabled) {
+      const auto source = resources.bakeScene();
+      captures.sceneHash = source && source->ready ? source->contentHash : 0;
+    }
     m_gpu->authoredReflections->record(command, resources,
-        lightingPlan.baking, baked, m_gpu->options.authoredReflectionFallback);
+        m_gpu->options.captureConfiguration(), captures, m_gpu->options.authoredReflectionFallback);
     m_gpu->prepareLocalReflections(command, resources);
     bakeTime.close();
     step(cpu.bake);

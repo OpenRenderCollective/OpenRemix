@@ -2,6 +2,7 @@
 #include "forward/bake/config.h"
 #include "forward/bake/storage_options.h"
 #include "forward/lighting_plan.h"
+#include "forward/probes/capture_config.h"
 #include <cstdint>
 
 namespace remix::forward {
@@ -66,6 +67,13 @@ namespace remix::forward {
     }
     bake::Config bakeConfiguration(bool liveGiActive) const {
       return lightingPlan(liveGiActive).baking;
+    }
+    probes::CaptureConfig captureConfiguration() const {
+      return {.enabled = baking.reflectionProbes != 0,
+              .reflectionResolution = baking.reflectionResolution,
+              .textureResolution = baking.textureResolution,
+              .samples = baking.samples, .bounces = baking.bounces,
+              .batch = baking.batch, .gpuBudgetMs = baking.gpuBudgetMs};
     }
     bool operator==(const Options &) const = default;
     bool reflections() const { return ssr || rtReflections || baking.reflectionProbes != 0; }

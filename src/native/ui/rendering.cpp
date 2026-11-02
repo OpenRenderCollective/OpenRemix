@@ -140,7 +140,7 @@ namespace remix {
             remix::forward::techniques::Diffuse(diffuseTechnique));
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Selects diffuse transport independently of material shading.\n"
-                          "Baking currently also supplies cubemap captures; disabling it disables those updates.");
+                          "Automatic cubemap captures still depend on baking; authored captures work independently.");
       if (forward.rtGI) {
         if (!statistics.rayGI.available)
           ImGui::TextWrapped("Fragment ray queries unavailable; using baked indirect lighting.");

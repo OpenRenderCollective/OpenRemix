@@ -2312,7 +2312,7 @@ namespace {
                           target.forward->statistics().authoredReflections.publishedSceneId == snapshot->sceneId &&
                           target.forward->statistics().authoredReflections.publishedRevision == request.revision,
                       "Published authored identities follow priority-sorted GPU layers and their own request");
-              const auto publishedSnapshot = target.forward->reflectionAuthoring()->snapshot(target.forward->bakeController()->volume());
+              const auto publishedSnapshot = target.forward->reflectionAuthoring()->snapshot(target.forward->bakeController()->reflectionSource());
               require(publishedSnapshot.image && publishedSnapshot.baseline.composed &&
                           publishedSnapshot.baseline.authoredSceneId == snapshot->sceneId &&
                           publishedSnapshot.baseline.authoredRevision == request.revision &&
@@ -2407,7 +2407,7 @@ namespace {
                           "Pending capture transport retains its work list until readbacks retire");
                   require(pending.requested && pending.active && !pending.failed,
                           "Pending reflection edits expose the retained active set and request readiness separately");
-                  const auto retained = target.forward->reflectionAuthoring()->snapshot(target.forward->bakeController()->volume());
+                  const auto retained = target.forward->reflectionAuthoring()->snapshot(target.forward->bakeController()->reflectionSource());
                   require(retained.baseline.authoredRevision == pending.publishedRevision &&
                               retained.baseline.authoredRevision < request.revision,
                           "Snapshot uses the sampled authored revision while a newer edit is pending");
@@ -2606,6 +2606,27 @@ namespace {
               require(cached.baking.active && std::strstr(cached.baking.status, "Cached lighting active") &&
                           cached.bakeContent.captureInputs == baseline.bakeContent.captureInputs,
                       "Warm automatic cubemap cache preserves exact capture provenance after scratch release");
+              // Authored capture is an independent reflection provider. Start
+              // with a fresh controller so no old diffuse publication can help.
+              options.baking.enabled = false;
+              options.authoredReflectionFallback = true;
+              request.volumeCount = 2;
+              request.volumes = authored; ++request.revision;
+              r.setReflectionVolumes(&request);
+              target.enableForward(options);
+              const auto independent = waitForEdit();
+              require(!target.forward->bakeController()->volume() &&
+                          target.forward->statistics().authoredReflections.active &&
+                          target.forward->statistics().authoredReflections.rays > 0 && independent[centre] > 5,
+                      "Authored cubemaps capture and shade without a diffuse bake publication");
+              const auto independentHeader = target.forward->reflectionAuthoring()->header();
+              ++options.baking.maxProbes;
+              options.baking.directDiffuse = !options.baking.directDiffuse;
+              target.forward->updateLighting(options);
+              render(false, false, true, false);
+              require(target.forward->reflectionAuthoring()->header() == independentHeader &&
+                          !target.forward->statistics().authoredReflections.pending,
+                      "Diffuse probe and direct-bake settings do not restart authored reflection transport");
             }
             std::printf("Viewmodel probes %ux: overlay %u, world %u, analytic lights %u\n",
                         samples, probeWeapon[centre], probeWorld[centre], target.forward->statistics().lights);

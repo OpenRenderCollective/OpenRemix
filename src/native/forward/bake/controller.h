@@ -5,6 +5,7 @@
 #include "forward/mixed/data.h"
 #include "forward/mixed/map.h"
 #include "forward/probes/data.h"
+#include "forward/probes/capture_source.h"
 #include "forward/probes/image_asset.h"
 #include "forward/resources.h"
 #include "platform/gpu_frames.h"
@@ -75,6 +76,10 @@ namespace remix::forward::bake {
     VkDescriptorBufferInfo sunDepthTable() const;
     VkDescriptorBufferInfo sunDepthValues() const;
     probes::Descriptors reflectionDescriptor() const;
+    probes::CaptureSource reflectionSource() const {
+      if (!m_volume) return {};
+      return {m_volume->hash, std::shared_ptr<const probes::ImageAsset>(m_volume, m_volume->specular.get())};
+    }
     VkDescriptorImageInfo surfaceDescriptor() const;
     VkDescriptorImageInfo occlusionDescriptor() const;
     VkDescriptorImageInfo visibilityDescriptor() const;
