@@ -1,3 +1,14 @@
+## 2026-11-03 — diffuse context representation hidden from materials
+
+Standard shading no longer reads the baked context's chart flag; water no longer
+constructs a baked context. Provider functions own surface/volume preparation and
+reflection-reference requirements. An alternate context with no chart/probe
+fields compiles through actual standard world/metal/viewmodel and water passes,
+including live variants with default environment reflections. All 20 affected
+default variants retain identical optimized SPIR-V. Native build and baked
+viewmodel/water/live-GI correctness tests pass. Full provider dependency/lifecycle
+selection and overall performance acceptance remain open.
+
 ## 2026-11-03 — environment reflection source module
 
 Reflection query values are now independent of pass resources; the Source 2

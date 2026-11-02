@@ -64,4 +64,23 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
                         *["-D" + define for define in defines], str(stage),
                         "-o", str(binary)], env=env, check=True)
         subprocess.run([validator, "--target-env", "vulkan1.1", str(binary)], env=env, check=True)
-print("Custom shading and environment sources compose in real world, viewmodel and water passes")
+    shutil.copyfile(root / "src/native/forward/shaders/reflection-environment.glsl",
+                    tree / "shaders/reflection-environment.glsl")
+    # Replace the entire diffuse source/context, with no chart-shaped fields.
+    # Real standard materials must consume the interface, not its representation.
+    shutil.copyfile(root / "tests/forward/shaders/custom-diffuse-source.glsl",
+                    tree / "shaders/receiver-lighting.glsl")
+    for name, defines in {
+        "diffuse-source-world": [],
+        "diffuse-source-metal": ["ZERO_DIFFUSE_MATERIAL", "REFLECTION_GUIDES"],
+        "diffuse-source-viewmodel": ["VIEWMODEL_PASS"],
+        "diffuse-source-live-viewmodel": ["VIEWMODEL_PASS", "LIVE_GI"],
+        "diffuse-source-water": ["WATER_SURFACE"],
+        "diffuse-source-live-water": ["WATER_SURFACE", "LIVE_GI"],
+    }.items():
+        binary = tree / (name + ".spv")
+        subprocess.run([compiler, "-V", "--target-env", "vulkan1.1",
+                        *["-D" + define for define in defines], str(source),
+                        "-o", str(binary)], env=env, check=True)
+        subprocess.run([validator, "--target-env", "vulkan1.1", str(binary)], env=env, check=True)
+print("Custom models, environment and diffuse contexts compose through actual material passes")

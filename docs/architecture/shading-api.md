@@ -445,6 +445,22 @@ rays on/off and different configured diffuse/reflection ranges. Hardware transpo
 fixtures check query conversion across three host-unit scales and no allocation
 on query validation. Baked/mixed-sun ownership for water remains a separate task.
 
+## Provider-owned diffuse context
+
+Material models no longer access `ReceiverLightContext` fields. They obtain a
+context through `prepareReceiverLighting` and ask `receiverNeedsDiffuseReference`
+when a metal needs a compatible reflection reference. Volume-only receivers use
+`prepareVolumeReceiverLighting`; water does not construct a chart-shaped context.
+The default source retains the same chart/probe queries and diagnostic semantics.
+
+A source owns its context representation and the sampling/reference/diagnostic
+functions in `receiver-lighting.glsl`. The alternate-source compilation fixture
+uses a context with no chart or probe fields through the actual standard world,
+metal, viewmodel, live viewmodel, water and live-water shaders, alongside the
+default environment source. This prevents material code from silently depending
+on the baked source's field layout. It is an internal shader module boundary;
+public custom program registration and provider resource selection are separate.
+
 ## Remaining API work
 
 1. Extend ownership metadata beyond the existing per-light attribution contract for

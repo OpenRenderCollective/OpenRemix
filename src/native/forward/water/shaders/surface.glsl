@@ -111,7 +111,7 @@ void main() {
         behind.distance, behind.valid, waterFrame.settings.y > .5, surfaceWeight);
   ShadingReceiver receiver = ShadingReceiver(worldPosition, geometric, v, gl_FragCoord.xy, depth,
       BakedReceiver(vec4(0), surfaceBounds, surfaceLights, surfaceDirectLights, surfaceChart), false, 0u, 1);
-  ReceiverLighting lighting = sampleDiffuseLighting(receiver, n, ReceiverLightContext(false, vec4(0)), true);
+  ReceiverLighting lighting = sampleDiffuseLighting(receiver, n, prepareVolumeReceiverLighting(receiver, n), true);
   bool aggregateReceiver = lighting.usesDirectAttribution;
   vec3 diffuse = composeDiffuseLight(lighting, surface.rgb);
   vec3 l = -frame.sunDirection.xyz;

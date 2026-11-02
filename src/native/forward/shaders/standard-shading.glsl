@@ -4,7 +4,6 @@ ShadingResult shadeStandardSurface(Surface surface, ShadingReceiver receiver) {
   vec3 n = surface.normal;
   vec3 ambient = frame.ambientExposure.rgb;
   ReceiverLightContext lightingContext = prepareReceiverLighting(receiver, n);
-  bool charted = lightingContext.charted;
   ShadingResult shaded;
   shaded.normalRoughness = vec4(n, surface.roughness);
   shaded.reflectance = vec4(0);
@@ -24,7 +23,7 @@ ShadingResult shadeStandardSurface(Surface surface, ShadingReceiver receiver) {
   if (diffuse.reflectionReference)
     shaded.irradianceLuma = dot(max(diffuse.diffuse, vec3(0)), vec3(.2126, .7152, .0722));
 #ifdef ZERO_DIFFUSE_MATERIAL
-  bool needsReference = needsDiffuseReferenceQuery(charted);
+  bool needsReference = receiverNeedsDiffuseReference(lightingContext);
   if (diffuse.reflectionReference && needsReference)
     shaded.irradianceLuma = diffuseReferenceLuma(receiver.position, n);
 #endif
