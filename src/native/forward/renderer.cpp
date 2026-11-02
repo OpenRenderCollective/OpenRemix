@@ -26,7 +26,8 @@ namespace remix::forward {
       irradiance.coarseRecords = volume->coarseIrradianceProbes;
       irradiance.patchCounts = volume->irradiancePatchCounts;
     }
-    statistics.reflectionSceneScale = volume ? volume->sceneScale : 1;
+    statistics.reflectionSceneScale = volume ? volume->sceneScale
+        : standaloneReflectionsUsed && !options.baking.enabled ? standaloneReflections->sceneScale() : 1;
     statistics.authoredReflections = authoredReflections->statistics();
     const auto header = reflectionHeader();
     statistics.reflectionProbes = header ? *header : probes::Header{};
@@ -34,12 +35,14 @@ namespace remix::forward {
     statistics.reflectionIdentities = identities ? *identities : probes::LayerIdentities{};
     const auto memory = baking->memory();
     const auto authoredMemory = authoredReflections->memory();
+    const auto standaloneMemory = standaloneReflectionsUsed ? standaloneReflections->memory()
+                                                          : probes::StandaloneCapture::Memory{};
     auto selectedMemory = localSelections.memory();
     if (localSelectionPreparation) {
       const auto prepared = localSelectionPreparation->memory();
       selectedMemory[0] += prepared[0]; selectedMemory[1] += prepared[1];
     }
-    statistics.bufferBytes += memory.buffers + authoredMemory.buffers + selectedMemory[0];
+    statistics.bufferBytes += memory.buffers + authoredMemory.buffers + standaloneMemory.buffers + selectedMemory[0];
     auto &visibility = statistics.probeVisibility;
     visibility = {};
     if (probeVisibility) {
@@ -61,12 +64,12 @@ namespace remix::forward {
         }
       }
     }
-    statistics.targetBytes = baseTargetBytes + memory.images + authoredMemory.images + selectedMemory[1] +
+    statistics.targetBytes = baseTargetBytes + memory.images + authoredMemory.images + standaloneMemory.images + selectedMemory[1] +
                              (waterPass ? waterPass->targetBytes() : 0) +
                              viewModelTarget->bytes() +
                              (viewModelSun ? viewModelSun->bytes() : 0) +
                              (viewModelLocalMaps ? viewModelLocalMaps->memoryBytes() : 0);
-    statistics.accelerationBytes = memory.acceleration + authoredMemory.acceleration;
+    statistics.accelerationBytes = memory.acceleration + authoredMemory.acceleration + standaloneMemory.acceleration;
     statistics.rayGI = rayLighting.diffuseStatistics();
     statistics.rayReflections = rayLighting.reflectionStatistics();
     const auto rayMemory = rayLighting.memory();
@@ -133,11 +136,14 @@ namespace remix::forward {
                             pipeline::Service *pipelines, bool hardwareRay,
                             std::shared_ptr<bake::Controller> baking, uint32_t queueFamily,
                             std::shared_ptr<postfx::State> exposure, bool hardwareSrgb,
-                            std::shared_ptr<probes::Authoring> authoredReflections) {
+                            std::shared_ptr<probes::Authoring> authoredReflections,
+                            std::shared_ptr<probes::StandaloneCapture> standaloneReflections) {
     if (baking && !baking->compatible(physical, device, pipelines, hardwareRay, queueFamily))
       throw std::invalid_argument("Shared map bake belongs to another device or pipeline service");
     if (authoredReflections && !authoredReflections->compatible(physical, device, pipelines, hardwareRay, queueFamily))
       throw std::invalid_argument("Shared reflection captures belong to another device or pipeline service");
+    if (standaloneReflections && !standaloneReflections->compatible(physical, device, pipelines, hardwareRay, queueFamily))
+      throw std::invalid_argument("Shared standalone captures belong to another device or pipeline service");
     auto next = std::make_unique<Gpu>();
     next->physical = physical;
     next->device = device;
@@ -189,6 +195,9 @@ namespace remix::forward {
     next->baking =
         baking ? std::move(baking)
                : std::make_shared<bake::Controller>(physical, device, pipelines, hardwareRay, queueFamily);
+    next->standaloneReflectionsUsed = standaloneReflections && standaloneReflections->wasUsed();
+    next->standaloneReflections = standaloneReflections ? std::move(standaloneReflections)
+        : std::make_shared<probes::StandaloneCapture>(physical, device, pipelines, hardwareRay, queueFamily);
     next->authoredReflections = authoredReflections ? std::move(authoredReflections)
         : std::make_shared<probes::Authoring>(physical, device, pipelines, hardwareRay, queueFamily);
     next->baseTargetBytes = next->statistics.targetBytes;
@@ -203,7 +212,14 @@ namespace remix::forward {
   std::shared_ptr<probes::Authoring> Renderer::reflectionAuthoring() const {
     return m_gpu ? m_gpu->authoredReflections : nullptr;
   }
+  std::shared_ptr<probes::StandaloneCapture> Renderer::standaloneCaptures() const {
+    return m_gpu ? m_gpu->standaloneReflections : nullptr;
+  }
   void Renderer::activate(uint32_t slot) {
+    // The old renderer may first use the shared controller after the replacement
+    // worker's snapshot. Recheck only after queue-idle activation, before fences
+    // and retained jobs are advanced by the new renderer.
+    m_gpu->standaloneReflectionsUsed |= m_gpu->standaloneReflections->wasUsed();
     selectFrame(slot);
     // Queue retirement precedes activation. Preparation workers must not
     // inspect a controller still used by the old renderer.
@@ -216,6 +232,7 @@ namespace remix::forward {
     g.postProcessing->selectFrame(slot);
     g.baking->selectFrame(slot);
     g.authoredReflections->selectFrame(slot);
+    if (g.standaloneReflectionsUsed) g.standaloneReflections->selectFrame(slot);
     g.localSelections.selectFrame(slot);
     if (g.reflections)
       g.reflections->selectFrame(slot);
@@ -252,7 +269,17 @@ namespace remix::forward {
     const auto lightingPlan = m_gpu->options.lightingPlan(m_gpu->techniquePlan.rayDiffuse());
     m_gpu->baking->record(command, resources, lightingPlan.baking,
                          m_gpu->options.lightCutoff);
-    auto captures = m_gpu->baking->reflectionSource();
+    if (!lightingPlan.baking.enabled || m_gpu->standaloneReflectionsUsed) {
+      if (!m_gpu->standaloneReflectionsUsed) {
+        m_gpu->standaloneReflectionsUsed = true;
+        m_gpu->standaloneReflections->selectFrame(m_gpu->slot);
+      }
+      auto captureConfig = m_gpu->options.captureConfiguration();
+      captureConfig.enabled = captureConfig.enabled && !lightingPlan.baking.enabled;
+      m_gpu->standaloneReflections->record(command, resources, captureConfig,
+          m_gpu->options.baking.reflectionProbes, m_gpu->options.baking.reflectionDetailTolerance);
+    }
+    auto captures = m_gpu->reflectionSource();
     // Source 2 captures wait for published baked lighting. A replacement diffuse
     // provider can supply readiness independently of a diffuse bake volume.
     if (!lightingPlan.baking.enabled) {

@@ -8,6 +8,10 @@ namespace remix::forward {
   const probes::Header *Renderer::Gpu::reflectionHeader() const {
     if (const auto selected = localSelections.active()) return &selected->image->header();
     if (const auto authored = authoredReflections->header()) return authored;
+    if (standaloneReflectionsUsed && !options.baking.enabled) {
+      const auto &standalone = standaloneReflections->source();
+      if (standalone.image) return &standalone.image->header();
+    }
     return baking->reflectionHeader();
   }
   const probes::LayerIdentities *Renderer::Gpu::reflectionIdentities() const {
@@ -30,7 +34,7 @@ namespace remix::forward {
         (!localSelectionPreparation || !localSelectionPreparation->pending())) return;
     const auto source = resources.bakeScene();
     const auto &volume = baking->volume();
-    const auto snapshot = authoredReflections->snapshot(baking->reflectionSource());
+    const auto snapshot = authoredReflections->snapshot(reflectionSource());
     const auto local = volume ? volume->localReflections : nullptr;
     // Disabled/author-only sets cannot accept automatic replacements. Retire
     // existing selections without scheduling a worker that can only return empty.

@@ -1,5 +1,6 @@
 #include "raster/renderer.h"
 #include "forward/renderer.h"
+#include "forward/probes/standalone_capture.h"
 #include "forward/presets.h"
 #include "forward/bake/controller.h"
 #include "forward/probes/authoring.h"
@@ -295,10 +296,11 @@ namespace {
       vk(vkDeviceWaitIdle(device));
       const auto baking = preserveBaking && forward ? forward->bakeController() : nullptr;
       const auto reflections = preserveBaking && forward ? forward->reflectionAuthoring() : nullptr;
+      const auto standalone = preserveBaking && forward ? forward->standaloneCaptures() : nullptr;
       const auto exposure = preserveBaking && forward ? forward->exposureState() : nullptr;
       auto next = std::make_unique<remix::forward::Renderer>();
       auto job = pipelines->prepare("forward-test-" + std::to_string(++forwardGeneration), [&] {
-          next->initialize(physical,device,pass,extent,options,encodeOutput,pipelines.get(),hardwareRay,baking,queueFamily,exposure,false,reflections);
+          next->initialize(physical,device,pass,extent,options,encodeOutput,pipelines.get(),hardwareRay,baking,queueFamily,exposure,false,reflections,standalone);
       });
       while (!job->ready()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
       job->check();
@@ -2659,6 +2661,25 @@ namespace {
                       "Retaining diffuse publication does not retain the retired reflection image");
               // Start fresh so no old diffuse publication can help capture.
 
+              r.setReflectionVolumes(nullptr);
+              target.enableForward(options);
+              const auto standaloneDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+              std::vector<uint8_t> standalonePixels;
+              do {
+                standalonePixels = render(false, false, true, false);
+                if (target.forward->standaloneCaptures()->source().image) break;
+                require(target.forward->standaloneCaptures()->status().empty(), "Standalone reflection capture failed");
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+              } while (std::chrono::steady_clock::now() < standaloneDeadline);
+              const auto standaloneImage = target.forward->standaloneCaptures()->source().image;
+              require(standaloneImage && !target.forward->bakeController()->volume() &&
+                          target.forward->statistics().reflectionProbes.parameters[0] > 0 && standalonePixels[centre] > 5,
+                      "Automatic cubemaps capture and shade without diffuse or authored publication");
+              target.enableForward(options, true);
+              target.forward->activate(0);
+              render(false, false, true, false);
+              require(target.forward->standaloneCaptures()->source().image == standaloneImage,
+                      "Compatible target replacement restarted standalone cubemap capture");
               options.authoredReflectionFallback = true;
               request.volumeCount = 2;
               request.volumes = authored; ++request.revision;

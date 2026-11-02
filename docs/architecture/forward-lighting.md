@@ -530,3 +530,29 @@ This is an independent provider entry point, not a newly enabled runtime mode.
 Representative map coverage, top-level independent scheduling/publication and
 cache persistence still need qualification and integration. A synthetic open
 scene or room is not evidence of adequate coverage on every map.
+
+### Standalone automatic reflection controller
+
+When diffuse baking is disabled and the cubemap budget is nonzero, the renderer
+runs `probes::StandaloneCapture`. It uses only the retained static source,
+`CaptureConfig`, capture count and projection tolerance. It owns independent
+worker tickets, geometry admission/fitting, radiance capture, filtering and image
+publication; it never asks for a diffuse volume or lightmap readiness.
+Per-slot receipts retain query owners and upload/sampling images until their
+fences complete. Source replacement cancels pending work and clears the old map's
+publication. Execution-only budget edits preserve lighting. Invalid or wholly
+unusable placement stops with a provider status instead of retrying each frame.
+
+Compatible target replacements retain this controller. Preparation reads only
+constructor identity and an atomic used marker; queue-idle activation rechecks
+the marker because the old renderer may first use the provider after worker
+preparation. Only the active render thread advances its mutable state.
+Published images retain no transport scene once all query receipts retire.
+
+The normal Source 2 bake path is unchanged and does not schedule this controller's
+capture work. This alternate path currently builds one transport for its frozen
+source and releases it after publication; it does not yet borrow a scene from a
+concurrent compatible provider. It has no disk persistence, receiver-guided repair
+or dedicated UI progress/status wiring. Shared prepared scene adoption in the
+default scheduler, standalone persistence, real-map coverage and full CPU/frame
+performance qualification remain necessary before the backend split is complete.

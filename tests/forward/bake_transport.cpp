@@ -1,5 +1,6 @@
 #include "forward/bake/transport.h"
 #include "forward/probes/automatic_capture.h"
+#include "forward/probes/standalone_capture.h"
 #include "forward/bake/budget.h"
 #include "forward/bake/sun_depth_layout.h"
 #include "forward/bake/sun_depth.h"
@@ -493,6 +494,45 @@ namespace {
       sharedSceneChecked = true;
     }
     return results[0];
+  }
+  void standalonePublication(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
+    remixapi_BakeSceneBoundsInfoEXT request{};
+    request.scene.structSize = sizeof(request);
+    request.scene.version = REMIXAPI_BAKE_SCENE_BOUNDS_VERSION_EXT;
+    request.scene.sceneId = 700; request.scene.revision = 1; request.scene.sceneScale = 1;
+    request.scene.state = REMIXAPI_BAKE_SCENE_READY_EXT;
+    for (uint32_t axis = 0; axis < 3; ++axis) { request.minimum[axis] = -4; request.maximum[axis] = 4; }
+    world.resources.setBakeScene(&request.scene);
+    probes::StandaloneCapture provider(fixture.physical, fixture.device, &pipelines, true, fixture.family);
+    probes::CaptureConfig config;
+    config.reflectionResolution = 8; config.textureResolution = 16;
+    config.samples = 1; config.bounces = 1; config.batch = 512; config.gpuBudgetMs = 0;
+    uint32_t frame = 0;
+    auto tick = [&] {
+      provider.selectFrame(frame++ % gpuFrameCount);
+      fixture.begin(); provider.record(fixture.command, world.resources, config, 4, .5f); fixture.finish();
+    };
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(90);
+    while (!provider.source().image && provider.status().empty() && std::chrono::steady_clock::now() < deadline) {
+      tick(); std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    if (!provider.status().empty()) std::fprintf(stderr, "%s\n", provider.status().c_str());
+    const auto published = provider.source();
+    require(published.image && published.sceneHash == world.resources.bakeScene()->contentHash &&
+                published.image->header().parameters[0] == 4, "Standalone reflection publication failed");
+    config.batch = 64; config.gpuBudgetMs = 1;
+    tick();
+    require(provider.source().image == published.image, "Execution-only edit discarded standalone reflections");
+    ++request.scene.sceneId; ++request.scene.revision; request.maximum[0] = 8;
+    world.resources.setBakeScene(&request.scene);
+    tick();
+    require(!provider.source().image, "New source retained another scene's reflections");
+    config.enabled = false;
+    tick();
+    for (uint32_t slot = 0; slot < gpuFrameCount; ++slot) provider.selectFrame(slot);
+    require(!provider.source().image && published.image->header().parameters[0] == 4,
+            "Disabled provider invalidated independently retained publication");
+    std::puts("Standalone reflections: no diffuse grid; fenced publication, budget edit, source replacement and disable passed");
   }
   void lightSelectionVariance(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
     const auto wall = world.wall(world.material({.diffuse = 1}), 1, 2);
@@ -2301,6 +2341,7 @@ int main(int argc, char **argv) try {
       bakeVisibility(fixture, pipelines, world);
       return 0;
     }
+    standalonePublication(fixture, pipelines, world);
     auto environment = world.scene({});
     environment->dome.enabled = true;
     environment->dome.radiance = {.2f, .4f, .8f};

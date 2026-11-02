@@ -14,7 +14,7 @@ namespace remix::pipeline {
 }
 
 namespace remix::forward {
-  namespace probes { class Authoring; }
+  namespace probes { class Authoring; class StandaloneCapture; }
   namespace bake {
     class Controller;
   }
@@ -97,7 +97,8 @@ namespace remix::forward {
                     bool hardwareRay = false, std::shared_ptr<bake::Controller> baking = {},
                     uint32_t queueFamily = VK_QUEUE_FAMILY_IGNORED,
                     std::shared_ptr<postfx::State> exposure = {}, bool hardwareSrgb = false,
-                    std::shared_ptr<probes::Authoring> authoredReflections = {});
+                    std::shared_ptr<probes::Authoring> authoredReflections = {},
+                    std::shared_ptr<probes::StandaloneCapture> standaloneReflections = {});
     // Target replacements may share the map bake. Only the active renderer
     // advances it, on the render thread after the owning frame-slot fence.
     std::shared_ptr<bake::Controller> bakeController() const;
@@ -105,6 +106,7 @@ namespace remix::forward {
     // Shared across compatible target replacements. Preparation only retains
     // ownership; the active render thread advances captures after slot fences.
     std::shared_ptr<probes::Authoring> reflectionAuthoring() const;
+    std::shared_ptr<probes::StandaloneCapture> standaloneCaptures() const;
     // Queue-idle activation retains published bake metadata before the first frame.
     void activate(uint32_t slot);
     void selectFrame(uint32_t slot); // caller has waited for this slot's fence

@@ -172,6 +172,7 @@ namespace remix {
     if (!preserveBaking) {
       m_forwardBaking.reset();
       m_forwardReflections.reset();
+      m_forwardStandaloneReflections.reset();
       m_forwardExposure.reset();
     }
   }
@@ -204,6 +205,7 @@ namespace remix {
       const bool hardwareRay = m_forwardRaySupported;
       const auto baking = m_forwardBaking;
       const auto reflections = m_forwardReflections;
+      const auto standaloneReflections = m_forwardStandaloneReflections;
       const auto exposure = m_forwardExposure;
       const auto queueFamily = m_queueFamily;
       const bool srgb =
@@ -213,7 +215,7 @@ namespace remix {
       next->job = m_pipelines->prepare("forward-" + std::to_string(++m_preparationGeneration), [=] {
         auto replacement = std::make_unique<forward::Renderer>();
         replacement->initialize(physical, device, output, extent, options, encode, pipelines, hardwareRay,
-                                baking, queueFamily, exposure, srgb, reflections);
+                                baking, queueFamily, exposure, srgb, reflections, standaloneReflections);
         next->renderer = std::move(replacement);
       });
       m_forwardPreparation = std::move(next);
@@ -227,6 +229,7 @@ namespace remix {
         m_forward = std::move(m_forwardPreparation->renderer);
         m_forwardBaking = m_forward->bakeController();
         m_forwardReflections = m_forward->reflectionAuthoring();
+        m_forwardStandaloneReflections = m_forward->standaloneCaptures();
         m_forwardExposure = m_forward->exposureState();
         // Activation waited for the whole queue. Adopt the actual frame slot
         // before the new targets advance a retained bake or touch descriptors.

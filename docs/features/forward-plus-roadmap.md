@@ -1,3 +1,9 @@
+## Standalone automatic reflections in the renderer - 2026-11-02
+
+- With diffuse baking disabled and cubemaps requested, automatic reflections now have their own controller, worker tickets, frame-fenced query/image ownership and publication. No diffuse volume is needed. Compatible target replacements retain the controller/image.
+- Execution-budget edits preserve captures; source replacement/disable cancels pending work and retires publication safely. The existing Source 2 bake path does not schedule this alternate controller's work.
+- Remaining: standalone disk persistence and UI status/progress, real-map coverage, shared-scene adoption when compatible providers coexist, migration of the default scheduler away from combined diffuse/reflection ownership, and matched CPU/frame performance acceptance. No playable deployment yet.
+
 ## Diffuse-independent reflection planning - 2026-11-02
 
 - AutomaticCapture has a geometry-only planning entry point with bounded aspect-aware candidates, hardware site admission and existing BSP projection assessment; it needs no diffuse grid/results.

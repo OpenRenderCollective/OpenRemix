@@ -7,6 +7,7 @@
 #include "forward/ray/provider.h"
 #include "forward/provider_plan.h"
 #include "forward/probes/authoring.h"
+#include "forward/probes/standalone_capture.h"
 #include "forward/probes/selection_upload.h"
 #include "forward/probes/local_selection_preparation.h"
 #include "forward/probe_batch/batch.h"
@@ -78,6 +79,12 @@ namespace remix::forward {
     std::shared_ptr<bake::Controller> baking;
     std::unique_ptr<probe_batch::Cache> probeVisibility;
     std::shared_ptr<probes::Authoring> authoredReflections;
+    std::shared_ptr<probes::StandaloneCapture> standaloneReflections;
+    bool standaloneReflectionsUsed = false;
+    probes::CaptureSource reflectionSource() const {
+      if (standaloneReflectionsUsed && !options.baking.enabled) return standaloneReflections->source();
+      return baking->reflectionSource();
+    }
     probes::SelectionFrames localSelections;
     std::unique_ptr<probes::LocalSelectionPreparation> localSelectionPreparation;
     std::optional<probes::CoveragePlanContext> localSelectionAttempt;
@@ -88,7 +95,13 @@ namespace remix::forward {
     uint32_t reflectionLayer(uint64_t sceneId, uint64_t volumeId) const;
     probes::Descriptors reflectionDescriptor() const {
       const auto selected = localSelections.active();
-      return selected ? selected->image->descriptors() : authoredReflections->descriptor(baking->reflectionDescriptor());
+      if (selected) return selected->image->descriptors();
+      auto automatic = baking->reflectionDescriptor();
+      if (standaloneReflectionsUsed && !options.baking.enabled) {
+        const auto &standalone = standaloneReflections->source();
+        if (standalone.image) automatic = standalone.image->descriptors();
+      }
+      return authoredReflections->descriptor(automatic);
     }
     std::unique_ptr<shadows::Maps> localMaps;
     shadows::Planner shadowPlanner;
