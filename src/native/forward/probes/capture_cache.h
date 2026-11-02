@@ -18,6 +18,19 @@ constexpr uint64_t maximumBytes = 256ull << 20;
 uint64_t standaloneKey(uint64_t content, uint64_t shaders,
                        const CaptureConfig &config, uint32_t count,
                        float tolerance, const Device &device);
+// Provenance for already-selected captures. Ownership bytes describe transport
+// light policy; this module does not interpret a diffuse provider's policy enum.
+struct Planned {
+  std::filesystem::path directory;
+  uint64_t content = 0, shaders = 0;
+  Device device;
+  bool lightingComponents = false;
+  std::span<const std::byte> directOwnership;
+};
+uint64_t plannedKey(uint64_t content, uint64_t shaders, uint64_t plan,
+                    std::span<const Capture> captures, const CaptureConfig &config,
+                    const Device &device, bool lightingComponents,
+                    std::span<const std::byte> directOwnership = {});
 std::filesystem::path standalonePath(uint64_t key);
 std::optional<Snapshot> read(const std::filesystem::path &file, uint64_t key,
                              cache_codec::Limits limits,

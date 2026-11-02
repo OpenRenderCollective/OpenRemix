@@ -328,21 +328,13 @@ namespace remix::forward::bake::cache {
       hash = scene::fastHash(transportShader, sizeof(transportShader), hash);
       return scene::fastHash(parallelShader, sizeof(parallelShader), hash);
     }();
-    // First word versions CPU filtering/projection and transport option defaults.
-    const uint32_t fields[] = {2, config.samples, config.bounces, config.textureResolution,
-        uint32_t(lightingComponents), device.vendor, device.model, device.driver,
-        device.imageSize, device.imageLayers, device.storageRange};
-    auto hash = scene::fastHash(fields, sizeof(fields), content ^ shaders);
-    hash = scene::fastHash(device.uuid.data(), device.uuid.size(), hash);
-    hash = scene::fastHash(&plan, sizeof(plan), hash);
-    hash = scene::fastHash(policy.lights.data(), policy.lights.size() * sizeof(DirectMode), hash);
-    // Preserve fitted proxy, overlap and ordering as well as the deduplicated rays.
-    for (const auto &capture : captures) {
-      const auto record = probes::projectionInputRecord(capture);
-      hash = scene::fastHash(&record, sizeof(record), hash);
-    }
-    return hash | 1;
+    return probes::capture_cache::plannedKey(content, shaders, plan, captures, config,
+        {device.vendor, device.model, device.driver,
+         {uint32_t(captures.size()), config.reflectionResolution, device.imageSize,
+          device.imageLayers, device.storageRange}, device.uuid},
+        lightingComponents, std::as_bytes(std::span(policy.lights)));
   }
+
   std::filesystem::path path(uint64_t identity) {
     std::ostringstream name;
     name << std::hex << identity << ".bake";

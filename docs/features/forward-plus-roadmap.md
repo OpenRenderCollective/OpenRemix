@@ -1,3 +1,9 @@
+## Provider planned-capture cache policy - 2026-11-02
+
+- Planned reflection identity now belongs to capture_cache, with explicit transport shader/device/component/ownership provenance. Default runtime uses provider-owned lookup, restore validation and miss-only ray preparation; standalone cold preparation uses the same entry point. Legacy bake-key adapter preserves existing identity bytes.
+- Native build and four cache/GPU regressions pass. Verified legacy/provider shader fingerprints produce identical keys, warm hits allocate no capture rays, changed shader provenance misses, and existing publication/cancellation/capture reuse survives. No steady-state rendering path changed.
+- Remaining: host-owned admitted seed creation, diagnostics/ticket/transport scheduling, shared-scene adoption and full CPU/frame/map performance acceptance. Playable unchanged.
+
 ## Provider CPU placement transitions - 2026-11-02
 
 - Both default and standalone controllers advance site planning, fitting and selection through AutomaticCapture::prepareNext. Provider rejects preparation while GPU admission/projection is pending, and rejects late admitted seeds. Requested placement count and device image capacity remain distinct.

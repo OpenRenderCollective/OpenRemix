@@ -30,6 +30,25 @@ uint64_t standaloneKey(uint64_t content, uint64_t shaders,
   auto hash = scene::fastHash(fields, sizeof(fields), content ^ shaders);
   return scene::fastHash(device.uuid.data(), device.uuid.size(), hash) | 1;
 }
+uint64_t plannedKey(uint64_t content, uint64_t shaders, uint64_t plan,
+                    std::span<const Capture> captures, const CaptureConfig &config,
+                    const Device &device, bool lightingComponents,
+                    std::span<const std::byte> directOwnership) {
+  if (!plan || captures.empty()) return 0;
+  // Preserve the existing planned-capture wire identity exactly.
+  const uint32_t fields[] = {2, config.samples, config.bounces, config.textureResolution,
+      uint32_t(lightingComponents), device.vendor, device.model, device.driver,
+      device.limits.imageSize, device.limits.imageLayers, device.limits.storageRange};
+  auto hash = scene::fastHash(fields, sizeof(fields), content ^ shaders);
+  hash = scene::fastHash(device.uuid.data(), device.uuid.size(), hash);
+  hash = scene::fastHash(&plan, sizeof(plan), hash);
+  hash = scene::fastHash(directOwnership.data(), directOwnership.size_bytes(), hash);
+  for (const auto &capture : captures) {
+    const auto record = projectionInputRecord(capture);
+    hash = scene::fastHash(&record, sizeof(record), hash);
+  }
+  return hash | 1;
+}
 std::filesystem::path standalonePath(uint64_t identity) {
   std::ostringstream name;
   name << std::hex << identity << ".reflection";

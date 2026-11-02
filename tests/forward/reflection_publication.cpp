@@ -1,5 +1,8 @@
 #include "forward/bake/controller.h"
 #include "forward/probes/automatic_capture.h"
+#include "forward/probes/cache_index.h"
+#include "forward/bake/cache.h"
+#include "forward/bake/transport.h"
 #include "forward/lightmap/denoise.h"
 #include "gpu_fixture.h"
 #include "raster/renderer.h"
@@ -68,6 +71,49 @@ int main() try {
       require(upload == capture.image && !capture.recordImageUpload(fixture.command),
               "Provider did not upload its image exactly once");
       fixture.finish();
+    }
+    {
+      namespace storage = probes::capture_cache;
+      probes::Capture source;
+      source.bounds.include({-1,-1,-1}); source.bounds.include({1,1,1});
+      source.influence = source.bounds; source.resolution = 8;
+      source.radiance.resize(384, {1,2,3,4});
+      const auto directory = std::filesystem::temp_directory_path() /
+          ("remix-provider-cache-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+      probes::CaptureConfig config; config.reflectionResolution = 8;
+      storage::Planned request{directory, 123, 456, {1,2,3,{1,8,4096,256,128u << 20}}, false, {}};
+      const auto plan = probes::CaptureWork::planHash(std::span(&source, 1));
+      const bake::cache::Device legacyDevice{1,2,3,4096,256,128u << 20,{}};
+      require(bake::cache::reflectionKey(123, plan, std::span(&source, 1), config, legacyDevice, false) ==
+                  storage::plannedKey(123, bake::Transport::shaderFingerprint(), plan,
+                                      std::span(&source, 1), config, request.device, false),
+              "Provider transport fingerprint changed legacy planned cache identity");
+      probes::AutomaticCapture first;
+      first.sitesPlanned = first.candidatesPlanned = first.capturePlanned = true; first.captures.push_back(source);
+      const auto miss = first.prepareRadiance(config, request, {});
+      require(miss && !first.cachedRadiance && first.work.rays().size() == 384,
+              "Cache miss did not prepare the selected capture rays");
+      bool repeated = false;
+      try { first.prepareRadiance(config, request, {}); }
+      catch (const std::logic_error &) { repeated = true; }
+      require(repeated, "Active capture rays were prepared twice");
+      const auto data = probes::filter(std::span(&source, 1), 8);
+      const auto blob = storage::storeShared(directory, std::span(&source, 1), data);
+      require(blob && probes::cache_index::writeShared(directory, miss, blob), "Provider cache fixture failed");
+      probes::AutomaticCapture warm;
+      warm.sitesPlanned = warm.candidatesPlanned = warm.capturePlanned = true; warm.captures.push_back(source);
+      require(warm.prepareRadiance(config, request, {}) == miss && warm.cachedRadiance &&
+                  warm.work.rays().empty() && warm.filteredView().texels == data.texels,
+              "Warm provider lookup retraced rays or lost filtered content");
+      probes::AutomaticCapture changed;
+      changed.sitesPlanned = changed.candidatesPlanned = changed.capturePlanned = true; changed.captures.push_back(source);
+      ++request.shaders;
+      require(changed.prepareRadiance(config, request, {}) != miss && !changed.cachedRadiance &&
+                  changed.work.rays().size() == 384, "Changed transport shader reused stale captures");
+      std::filesystem::remove(probes::cache_index::path(directory, miss));
+      std::filesystem::remove(storage::sharedPath(directory, blob));
+      std::filesystem::remove(directory / "reflections" / "shared");
+      std::filesystem::remove(directory / "reflections"); std::filesystem::remove(directory);
     }
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(fixture.physical, &properties);

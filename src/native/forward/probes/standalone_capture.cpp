@@ -229,7 +229,7 @@ void StandaloneCapture::record(VkCommandBuffer command,
           [owner, count, config, detailTolerance] {
             owner->capture.prepareNext(*owner->source,
                 {count, count, config.reflectionResolution, detailTolerance}, owner->cancellation.get_token());
-            owner->capture.prepareRays(owner->cancellation.get_token());
+            owner->capture.prepareRadiance(config, {}, owner->cancellation.get_token());
           });
     } else if (step == AutomaticCapture::Step::Complete) {
       if (job.capture.captures.empty()) {

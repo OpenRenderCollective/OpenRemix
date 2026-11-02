@@ -11,6 +11,8 @@
 
 namespace remix::forward::bake { class Transport; class Budget; }
 
+namespace remix::forward::probes::capture_cache { struct Planned; }
+
 namespace remix::forward::probes {
   // Automatic reflection work, independent of diffuse atlases and probe values.
   // Workers advance placement/filtering; the scheduler advances submission and
@@ -61,6 +63,10 @@ namespace remix::forward::probes {
     void restoreProjection(const scene::BakeScene &source, float detailTolerance,
                             std::stop_token cancelled);
     void prepareRays(std::stop_token cancelled);
+    // Worker-only selected-capture cache lookup, then ray generation on a miss.
+    // Returns the independent cache identity, or zero when persistence is absent.
+    uint64_t prepareRadiance(const CaptureConfig &config, const capture_cache::Planned &cache,
+                              std::stop_token cancelled);
     void restoreCapture(std::vector<Capture> cached, Data data, std::stop_token cancelled = {});
     const std::vector<Capture> &captureView() const { return m_payload ? m_payload->captures : captures; }
     const Data &filteredView() const { return m_payload ? m_payload->data : filtered; }

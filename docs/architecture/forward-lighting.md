@@ -705,3 +705,25 @@ admission. Selection preserves the existing candidate reporter. No diffuse grid,
 atlas, worker queue, or transport is owned by this CPU preparation API. The default
 host still constructs borrowed seeds, schedules diagnostics/cache lookups and owns
 the combined preparation ticket/transport budget; those remain migration work.
+
+### Planned reflection cache policy
+
+`capture_cache::plannedKey` owns identity for selected captures. Transport shader
+fingerprint, device limits, lighting-component mode and direct-ownership bytes
+are explicit inputs; no diffuse grid or lightmap setting enters the key. The
+historical bake-cache function delegates to this identity implementation, retaining
+its shader-byte fingerprint and existing key format for compatibility.
+
+`AutomaticCapture::prepareRadiance` looks up selected captures, validates restored
+projection/radiance using the existing restore contract, and generates rays only
+on a miss. Its `Planned` request is borrowed synchronously on the worker; ownership
+bytes are not retained. An empty directory skips lookup and identity hashing.
+Default host provenance construction also skips shader hashing/style scans when
+no cache is available. Standalone cold captures use the same preparation method
+without a planned-cache request; standalone warm lookup remains before placement
+and transport creation.
+
+The default host still supplies transport provenance, admitted placement seeds,
+diagnostic scheduling, preparation tickets and the shared transport budget. This
+moves cache/reuse policy, not the entire scheduler. Full frame-time acceptance
+and independent default technique scheduling remain open.
