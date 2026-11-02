@@ -170,6 +170,9 @@ exec wine "${args[@]}"
 ''')
     wrapper.chmod(0o755)
     cross = deps / 'cross.ini'
+    # Without Wine (CI), Meson takes the build as one it cannot run and skips
+    # running its compiler checks' programs; --tests requires Wine above.
+    exe_wrapper = f"exe_wrapper = '{wrapper}'\n" if shutil.which('wine') else ''
     cross.write_text(f'''[binaries]
 c = '{compiler}'
 cpp = '{compiler}'
@@ -179,8 +182,7 @@ ar = 'llvm-lib'
 strip = 'llvm-strip'
 windres = 'llvm-rc'
 pkg-config = 'pkg-config'
-exe_wrapper = '{wrapper}'
-
+{exe_wrapper}
 [host_machine]
 system = 'windows'
 cpu_family = 'x86_64'
