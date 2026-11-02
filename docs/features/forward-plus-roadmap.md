@@ -1,3 +1,14 @@
+## 2026-11-03 — environment reflection source module
+
+Reflection query values are now independent of pass resources; the Source 2
+parallax-probe/sky implementation lives in its own shader module. Alternative
+environment sources compile through actual standard viewmodel, live viewmodel,
+water/ray-water and world resolve passes without changing material calls.
+All nine affected default variants have identical optimized SPIR-V. Native build,
+resource-free/custom-source compile checks and SSR/viewmodel/water GPU regressions
+pass. No CPU selection path or per-pixel provider branch was added. Public shader
+program registration and full provider pipeline/dependency selection remain open.
+
 ## 2026-11-03 — fresh CPU telemetry gives mixed host-FPS results
 
 A further warm 1080p comparison using adapter a024a72 for both runtimes reversed

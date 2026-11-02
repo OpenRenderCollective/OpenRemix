@@ -379,6 +379,20 @@ adds no shader branch or duplicate geometry/light data.
 
 ## Reflection source values
 
+`reflection-values.glsl` now owns the resource-free `ReflectionReceiver` query
+and includes the confidence-weighted sample values. The default include wiring
+in `reflection-lighting.glsl` selects `reflection-environment.glsl`, which owns
+Source 2 parallax-probe selection and the sky fallback. A replacement environment
+module implements `sampleEnvironmentReflection(ReflectionReceiver)` and returns
+scene-linear incident radiance. Fresnel, SSR/ray confidence composition, water
+optics and output guides remain with their existing shading/pass adapters.
+
+The custom-source fixture substitutes a resource-free horizon source through the
+actual standard viewmodel, live viewmodel, water, ray-water and world resolve
+shaders without changing their material calls. This is a compile-time module
+boundary, not a public runtime shader-program loader or a new selectable preset.
+Default pass descriptor layouts and candidate preparation remain unchanged.
+
 `reflection-sample.glsl` is resource-free, like evaluated material values.
 `ReflectionSample` contains scene-linear incident `radiance`, already multiplied
 by source `confidence`, and that confidence in [0, 1]. A valid black sample has

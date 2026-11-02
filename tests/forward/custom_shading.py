@@ -45,4 +45,23 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
                         *["-D" + define for define in defines], str(source),
                         "-o", str(binary)], env=env, check=True)
         subprocess.run([validator, "--target-env", "vulkan1.1", str(binary)], env=env, check=True)
-print("Custom diffuse model compiles without the standard model in world, viewmodel and live-diffuse passes")
+    # Restore the actual standard material, then swap only its environment
+    # source. World resolve, viewmodels and water keep their real composition.
+    source.write_text((root / "src/native/forward/shaders/forward.frag").read_text(), encoding="utf-8")
+    shutil.copyfile(root / "tests/forward/shaders/custom-environment.glsl",
+                    tree / "shaders/reflection-environment.glsl")
+    variants = {
+        "environment-viewmodel": (source, ["VIEWMODEL_PASS", "REFLECTION_GUIDES"]),
+        "environment-live-viewmodel": (source, ["LIVE_GI", "VIEWMODEL_PASS"]),
+        "environment-water": (source, ["WATER_SURFACE"]),
+        "environment-water-ray": (source, ["WATER_SURFACE", "WATER_RAY"]),
+        "environment-world-resolve": (tree / "shaders/reflections.comp", ["SSR_FILTER"]),
+    }
+    shutil.copyfile(root / "src/native/forward/shaders/reflections.comp", tree / "shaders/reflections.comp")
+    for name, (stage, defines) in variants.items():
+        binary = tree / (name + ".spv")
+        subprocess.run([compiler, "-V", "--target-env", "vulkan1.1",
+                        *["-D" + define for define in defines], str(stage),
+                        "-o", str(binary)], env=env, check=True)
+        subprocess.run([validator, "--target-env", "vulkan1.1", str(binary)], env=env, check=True)
+print("Custom shading and environment sources compose in real world, viewmodel and water passes")

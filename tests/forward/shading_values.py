@@ -19,8 +19,8 @@ common = """#version 450
 #extension GL_GOOGLE_include_directive : require
 #include "surface-values.glsl"
 #include "surface-values.glsl"
-#include "reflection-sample.glsl"
-#include "reflection-sample.glsl"
+#include "reflection-values.glsl"
+#include "reflection-values.glsl"
 #include "diffuse-values.glsl"
 #include "diffuse-values.glsl"
 """
@@ -37,7 +37,9 @@ stages = {
       Surface material = initSurface(vec3(0,1,0));
       material.color = vec4(.8,.3,.1,1);
       material.roughness = .6;
-      ReflectionSample reflected = ReflectionSample(vec3(0), 1);
+      ReflectionReceiver query = ReflectionReceiver(vec3(0), vec3(0), material.normal,
+          vec3(0,0,1), material.roughness, -1, 0u, uvec2(0));
+      ReflectionSample reflected = ReflectionSample(query.direction * 0, 1);
       ReceiverLighting diffuse = ReceiverLighting(vec3(.2), true, false);
       result = vec4(resolveReflection(reflected, material.color.rgb) + material.emission +
                     composeDiffuseLight(diffuse, material.color.rgb), material.color.a);
