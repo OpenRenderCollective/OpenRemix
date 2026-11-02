@@ -54,8 +54,10 @@ Still required for the complete modularity/performance objective:
   in that profile. This is not universal equivalence or the 300 FPS target.
   A follow-up through ownership commit 4c66bddf improves uncapped host FPS but
   shows higher GPU intervals. At a common 200 FPS cap, total GPU ranges overlap;
-  some current opaque/weapon intervals remain higher. Isolate against the previous
-  comparison build before accepting no overhead. Broaden map/provider coverage,
+  some current opaque/weapon intervals remain higher. A paced A/B/B/A isolation
+  against recent db692f43 shows overlapping total GPU and CPU-recording ranges;
+  baseline opaque weapon phases drift between sessions. No repeatable recent
+  split overhead is established in that profile. Broaden map/provider coverage,
   and investigate cold post-ready stalls separately.
 - Continue checking unused experiment paths before removal. Referenced low-level
   diagnostic modes and legacy aliases are not automatically dead code.
