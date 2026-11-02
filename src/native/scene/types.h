@@ -1,10 +1,13 @@
 #pragma once
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <string>
+#include <type_traits>
 #include <remix/remix_c.h>
 #include <unordered_map>
 #include <vector>
@@ -124,6 +127,36 @@ namespace remix {
     // The parts of a material a mod's partial override (an `over` of a
     // captured material, usd/loader.cpp) authors; the others keep the values
     // of the material it replaces (instances.cpp), as the game made it.
+    struct Material;
+    // remixapi_MaterialGradientMapEXT, validated: Left 4 Dead 2's Infected
+    // composite of the material's albedo texture (read as stored). The
+    // sampler materials only name how their texture is sampled (the gradient
+    // bilinear and clamped, the detail with the material's filter, repeating):
+    // backends sample a texture through a material's sampler.
+    struct GradientMap {
+      std::shared_ptr<Texture> gradient, detail; // detail: null skips its step
+      std::shared_ptr<Material> gradientSampler, detailSampler;
+      float skinRow = 0, clothRow = 0, spriteOffset[2] = {}, detailU[2] = {}, detailV[2] = {};
+      float bloodColor[3] = {1, 1, 1}, bloodRange[2] = {0, 1};
+      bool operator==(const GradientMap &o) const {
+        return gradient == o.gradient && detail == o.detail && skinRow == o.skinRow && clothRow == o.clothRow &&
+               std::equal(spriteOffset, spriteOffset + 2, o.spriteOffset) &&
+               std::equal(detailU, detailU + 2, o.detailU) && std::equal(detailV, detailV + 2, o.detailV) &&
+               std::equal(bloodColor, bloodColor + 3, o.bloodColor) &&
+               std::equal(bloodRange, bloodRange + 2, o.bloodRange);
+      }
+    };
+    // remixapi_InstanceInfoWoundCutEXT, validated. A description keeps the
+    // texture's name (path); the draws built from it hold the texture and
+    // its sampler material (bilinear, clipped: black outside 0..1).
+    struct WoundCut {
+      std::basic_string<std::remove_cv_t<std::remove_pointer_t<remixapi_Path>>> path;
+      std::shared_ptr<Texture> texture;
+      std::shared_ptr<Material> sampler;
+      float ellipsoids[2][4][3] = {}; // per ellipsoid: center, axisX, axisY, axisZ
+      float mappingScale = 1, secondBlend = 0, threshold = 0;
+      float projectionScale[4] = {}, projectionBias[4] = {}, cutScaleBias[2][4] = {};
+    };
     namespace ModParts {
       constexpr uint32_t color = 1, roughness = 2, metallic = 4, normal = 8, emission = 16, transmission = 32,
                          film = 64, alpha = 128, sampling = 256, all = ~0u;
@@ -149,6 +182,9 @@ namespace remix {
       float metalColor[3] = {1, 1, 1};
       // remixapi_MaterialPbrBlurEXT: the roughness map's least mip.
       float pbrBlur = 0;
+      // remixapi_MaterialGradientMapEXT (null: none); texture is then a data
+      // texture (as stored).
+      std::shared_ptr<const GradientMap> gradient;
       // remixapi_MaterialNormalScrollEXT (normal encoding 5): layers, then the
       // base, layer 1 and layer 2 rates.
       uint32_t scrollLayers = 1;
@@ -205,6 +241,9 @@ namespace remix {
       // pbrWord's low three bytes; a blur (remixapi_MaterialPbrBlurEXT) of
       // the roughness map, in 1/16 mips in its high byte.
       static constexpr uint32_t metalColor = 256, pbrBlur = 512;
+      // remixapi_MaterialGradientMapEXT (frame_tables.h materialFields: its
+      // parameters take the thin film's fields, which such a material lacks).
+      static constexpr uint32_t gradientMap = 1024;
       uint32_t flags = 0, pbrWord = 0;
       float selfIlluminationScale = 0;
     };
@@ -341,6 +380,9 @@ namespace remix {
       // remixapi_InstanceInfoCameraCullingEXT flags: what camera rays skip of
       // a traced instance (1 back faces, 2 clusters the camera cannot see).
       uint8_t cameraCull = 0;
+      // remixapi_InstanceInfoWoundCutEXT (null: none): cut away for every ray
+      // and raster pass, evaluated at the mesh's own (bind pose) positions.
+      std::shared_ptr<const WoundCut> wound;
       // remixapi_InstanceInfoRasterOrderEXT: the host's place for a blended
       // raster-only draw among its layer's (0: sorted by depth).
       uint32_t rasterOrder = 0;

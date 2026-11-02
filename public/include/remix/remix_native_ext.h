@@ -1327,6 +1327,91 @@ typedef struct remixapi_MaterialPbrBlurEXT {
   float roughnessMinimumLod;
 } remixapi_MaterialPbrBlurEXT;
 
+// Optional pNext on opaque MaterialInfo: gradient-mapped albedo, as Source's
+// Infected shader (Left 4 Dead 2's common infected) composites one texture
+// set into many looks. The material's albedo texture B is then read as stored
+// (no sRGB decode): B.a is luminance, B.b masks skin (above 1/2) from cloth
+// (below), and the quarter-size sprite S = B(uv / 2 + spriteOffset) holds a
+// grime mask in S.r and a blood mask in S.g. With G the gradient texture
+// (sRGB-decoded, clamped, bilinear) and D the detail texture (as stored):
+//   L = B.a * B.a
+//   c = mix(L, G(B.a, skinRow).rgb, saturate(2 B.b - 1))
+//   c = mix(c, G(B.a, clothRow).rgb, saturate(1 - 2 B.b))
+//   c = mix(c, 2 L D(d).rgb, saturate(2 S.r - 1))      (without a detail
+//       texture this step is skipped), d = (dot(detailU, uv), dot(detailV, uv))
+//   s = smoothstep(bloodRange[0], bloodRange[1], saturate(2 S.g - 1) + W)
+//   albedo = min(c * mix(1, bloodColor, s), 1)
+// W is the wound term of remixapi_InstanceInfoWoundCutEXT (0 without one). The
+// textures are named as material textures are (a CreateTexture hash "0x..." or
+// a file path; an empty detail texture skips its step); a row selects the
+// gradient's v coordinate (row + 0.5) / rows, rows its height in texels. The
+// composite takes the albedo texel's place in the material's colour (the
+// vertex colour and albedoConstant still modulate it). B.a holds luminance,
+// not coverage: such a material is opaque (no alpha test, blending or thin
+// film; opacityConstant 1). bloodColor: 0 to 1; bloodRange[0] below
+// bloodRange[1]; the rows, spriteOffset, detailU, detailV and bloodRange are
+// kept as half floats (magnitudes up to 65504).
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_GRADIENT_MAP_EXT ((remixapi_StructType)0x7fff1027)
+typedef struct remixapi_MaterialGradientMapEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  remixapi_Path gradientTexture;
+  remixapi_Path detailTexture;
+  float skinRow;
+  float clothRow;
+  float spriteOffset[2];
+  float detailU[2];
+  float detailV[2];
+  remixapi_Float3D bloodColor;
+  float bloodRange[2];
+} remixapi_MaterialGradientMapEXT;
+
+// One wound ellipsoid of remixapi_InstanceInfoWoundCutEXT: a point p maps to
+// e = (dot(axisX, p - center), dot(axisY, p - center), dot(axisZ, p - center)),
+// the unit ellipsoid in e being the wound. The axes carry the ellipsoid's
+// inverse scale.
+typedef struct remixapi_WoundEllipsoidEXT {
+  remixapi_Float3D center;
+  remixapi_Float3D axisX;
+  remixapi_Float3D axisY;
+  remixapi_Float3D axisZ;
+} remixapi_WoundEllipsoidEXT;
+
+// Optional pNext on InstanceInfo: wounds cut out of the instance's surfaces,
+// as Source's Infected shader does. Each vertex is evaluated at its position
+// as submitted in the mesh (the bind pose: before the instance's bone
+// transforms), with e1, e2 of ellipsoids[0], [1] and k = secondBlend:
+//   el = mix(e1, e2, k)
+//   q(e) = (e.x, e.y) / (sqrt(1 - e.z^2) * mappingScale)  (|e.z| >= 1: none)
+//   w = (q(e1), q(el)) * projectionScale + projectionBias   (4 components)
+//   h = length(e2) + k
+// At a surface point w and h are interpolated across the triangle like
+// texture coordinates. With T the cut texture's red channel (as stored, the
+// border black), each half of w whose q exists at all three vertices gives
+//   W = max(T(saturate(w.xy) * cutScaleBias[0].xy + cutScaleBias[0].zw),
+//           T(saturate(w.zw) * cutScaleBias[1].xy + cutScaleBias[1].zw))
+// (a half without q gives 0). The point is cut away, for every ray, where
+// W > threshold or h < 1. W also deepens remixapi_MaterialGradientMapEXT's
+// blood. An instance without a skinned or plain mesh position ignores this.
+// The cut texture is named as material textures are and read bilinearly at
+// its finest mip, black outside 0..1; mappingScale above 0, every value
+// finite. A wounded instance is traced as a dynamic one (never part of the
+// persistent static set); halo, mask source and overlay, and wireframe
+// instances ignore this.
+#define REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_WOUND_CUT_EXT ((remixapi_StructType)0x7fff1026)
+typedef struct remixapi_InstanceInfoWoundCutEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  remixapi_Path cutTexture;
+  remixapi_WoundEllipsoidEXT ellipsoids[2];
+  float mappingScale;
+  float secondBlend;
+  float projectionScale[4];
+  float projectionBias[4];
+  float cutScaleBias[2][4];
+  float threshold;
+} remixapi_InstanceInfoWoundCutEXT;
+
 // Optional pNext on opaque or translucent MaterialInfo: a thin-film coating
 // whose interference colours the reflection (iridescence), evaluated
 // spectrally. On a translucent material (glass, water) the surface becomes a

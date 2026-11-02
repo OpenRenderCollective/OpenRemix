@@ -23,11 +23,14 @@ namespace remix::trace {
     // Every surface is a decal (paint): decalInstanceMask only, which
     // shadow and light-visibility rays exclude (they pass paint anyway).
     bool decal = false;
+    // A wound cut (remixapi_InstanceInfoWoundCutEXT): every candidate is
+    // tested (FORCE_NO_OPAQUE), whatever its geometry's opacity.
+    bool noOpaque = false;
     bool operator==(const InstanceInput &) const = default;
   };
   // VkGeometryInstanceFlagBitsKHR values (static_assert-ed in tlas.cpp):
-  // TRIANGLE_FACING_CULL_DISABLE and TRIANGLE_FRONT_COUNTERCLOCKWISE.
-  constexpr uint32_t instanceFacingCullDisable = 1, instanceFrontCounterClockwise = 2;
+  // TRIANGLE_FACING_CULL_DISABLE, TRIANGLE_FRONT_COUNTERCLOCKWISE and FORCE_NO_OPAQUE.
+  constexpr uint32_t instanceFacingCullDisable = 1, instanceFrontCounterClockwise = 2, instanceForceNoOpaque = 8;
   // An instance's flags: the model's handedness selects the front face (the
   // face rayQueryGetIntersectionFrontFaceEXT reports). Without hardware face
   // culling every instance disables facing culling and the shaders reject
@@ -39,7 +42,7 @@ namespace remix::trace {
     const float det = m[0] * (m[5] * m[10] - m[9] * m[6]) - m[4] * (m[1] * m[10] - m[9] * m[2]) +
                       m[8] * (m[1] * m[6] - m[5] * m[2]);
     return (hardwareFaceCulling && input.oneSided ? 0u : instanceFacingCullDisable) |
-           (det > 0 ? instanceFrontCounterClockwise : 0u);
+           (det > 0 ? instanceFrontCounterClockwise : 0u) | (input.noOpaque ? instanceForceNoOpaque : 0u);
   }
   struct TlasPolicy {
     std::vector<InstanceInput> previous, built;

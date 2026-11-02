@@ -37,6 +37,10 @@ if get_option('gpu_tests')
       env : reconstruction == 'off' ? [] : ['REMIX_TEST_SOFT_RECONSTRUCTION=' + reconstruction],
       timeout : 300, is_parallel : false)
   endforeach
+  wound_cut_test = executable('remix-wound-cut-test', 'wound_cut.cpp',
+    include_directories : test_includes, dependencies : [filesystem_dep] + [runtime_test_dep])
+  test('Wound cuts and gradient maps traced', wound_cut_test,
+    args : [meson.current_build_dir() / 'wound-cut'], timeout : 600, is_parallel : false)
   alpha_coverage_test = executable('remix-alpha-coverage-test', 'alpha_coverage.cpp',
     include_directories : test_includes, dependencies : [filesystem_dep] + [runtime_test_dep])
   foreach reconstruction : ['off', 'fsr31', 'dlss']

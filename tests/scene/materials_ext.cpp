@@ -529,6 +529,205 @@ namespace {
                 water->tint[2] == 1 && water->iridescence.strength == 1 && water->roughness == .04f,
             "A partial override keeps the game's glass");
   }
+
+  remixapi_Path name(const char *text) {
+#ifdef _WIN32
+    static std::wstring names[8];
+    static int next = 0;
+    auto &out = names[next++ % 8];
+    out.assign(text, text + std::strlen(text));
+    return out.c_str();
+#else
+    return text;
+#endif
+  }
+  void rgbaTexture(remix::NativeResources &r, uint64_t hash, remixapi_Format format) {
+    const uint8_t texels[16] = {200, 100, 50, 255, 10, 20, 30, 40, 1, 2, 3, 4, 5, 6, 7, 8};
+    remixapi_TextureInfo info{};
+    info.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_INFO;
+    info.hash = hash;
+    info.format = format;
+    info.width = info.height = 2;
+    info.depth = info.mipLevels = 1;
+    info.data = texels;
+    info.dataSize = sizeof(texels);
+    remixapi_TextureHandle handle{};
+    r.createTexture(info, handle);
+  }
+  // remixapi_MaterialGradientMapEXT: validated, the albedo read as stored,
+  // the material opaque.
+  void gradientMap() {
+    remix::NativeResources r;
+    rgbaTexture(r, 0x91, REMIXAPI_FORMAT_R8G8B8A8_SRGB);
+    rgbaTexture(r, 0x92, REMIXAPI_FORMAT_R8G8B8A8_SRGB);
+    rgbaTexture(r, 0x93, REMIXAPI_FORMAT_R8G8B8A8_SRGB);
+    remixapi_MaterialGradientMapEXT g{};
+    g.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_GRADIENT_MAP_EXT;
+    g.gradientTexture = name("0x92");
+    g.detailTexture = name("0x93");
+    g.skinRow = 3;
+    g.clothRow = 17;
+    g.spriteOffset[0] = .5f;
+    g.detailU[0] = 4;
+    g.detailV[1] = 4;
+    g.bloodColor = {.15f, 0, 0};
+    g.bloodRange[0] = .1f;
+    g.bloodRange[1] = .9f;
+    remixapi_MaterialInfoOpaqueEXT o{};
+    o.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+    o.pNext = &g;
+    o.albedoConstant = {1, 1, 1};
+    o.opacityConstant = 1;
+    o.alphaTestType = 4;
+    o.alphaReferenceValue = 128;
+    remixapi_MaterialInfo m{};
+    m.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+    m.pNext = &o;
+    m.hash = 0x94;
+    m.albedoTexture = name("0x91");
+    remixapi_MaterialHandle handle{};
+    r.createMaterial(m, handle);
+    const auto material = drawn(r, quad(r, 0x95, handle));
+    require(material->gradient && material->gradient->gradient && material->gradient->detail,
+            "Gradient map: parsed");
+    const auto &map = *material->gradient;
+    require(!material->texture->pixels.srgb && material->texture->hash == 0x91,
+            "Gradient map: the albedo is not read as stored");
+    require(map.gradient->pixels.srgb && !map.detail->pixels.srgb, "Gradient map: texture encodings");
+    require(material->compare == 7 && !material->translucent && !material->drawAlpha,
+            "Gradient map: the material is not opaque");
+    require(map.gradientSampler->texture == map.gradient && map.gradientSampler->filter == 1 &&
+                map.gradientSampler->wrapU == 0 && map.gradientSampler->wrapV == 0,
+            "Gradient map: gradient sampler");
+    require(map.detailSampler->texture == map.detail && map.detailSampler->wrapU == 1,
+            "Gradient map: detail sampler");
+    require(map.skinRow == 3 && map.clothRow == 17 && map.spriteOffset[0] == .5f && map.detailU[0] == 4 &&
+                map.detailV[1] == 4 && map.bloodColor[0] == .15f && map.bloodRange[1] == .9f,
+            "Gradient map: parameters");
+    require((scene::materialDecode(*material).flags & scene::MaterialDecode::gradientMap) != 0,
+            "Gradient map: decode flag");
+    // The same description keeps the material; a new parameter replaces it.
+    r.createMaterial(m, handle);
+    require(drawn(r, quad(r, 0x95, handle)) == material, "Gradient map: an equal material was replaced");
+    g.bloodRange[0] = .2f;
+    r.createMaterial(m, handle);
+    require(drawn(r, quad(r, 0x95, handle)) != material, "Gradient map: a change kept the material");
+    // Without a detail texture: none.
+    g.detailTexture = nullptr;
+    r.createMaterial(m, handle);
+    require(!drawn(r, quad(r, 0x95, handle))->gradient->detail, "Gradient map: empty detail");
+    // Invalid descriptions.
+    auto invalid = [&](auto &&change) {
+      auto saved = g;
+      auto savedOpaque = o;
+      change();
+      rejected([&] { r.createMaterial(m, handle); });
+      g = saved;
+      o = savedOpaque;
+      o.pNext = &g;
+    };
+    invalid([&] { g.gradientTexture = nullptr; });
+    invalid([&] { g.gradientTexture = name("0x99"); });
+    invalid([&] { g.bloodRange[0] = g.bloodRange[1]; });
+    invalid([&] { g.bloodColor.y = 1.5f; });
+    invalid([&] { g.skinRow = std::numeric_limits<float>::quiet_NaN(); });
+    invalid([&] { g.detailU[1] = 1e6f; });
+    invalid([&] { o.opacityConstant = .5f; });
+    invalid([&] { o.thinFilmThickness_hasvalue = 1; });
+    remixapi_MaterialInfoTranslucentEXT t{};
+    t.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_TRANSLUCENT_EXT;
+    t.pNext = &g;
+    m.pNext = &t;
+    rejected([&] { r.createMaterial(m, handle); });
+    m.pNext = &o;
+    r.createMaterial(m, handle);
+  }
+  // remixapi_InstanceInfoWoundCutEXT: validated, carried by every draw of
+  // the instance with its resolved texture, and never static.
+  void woundCut() {
+    remix::NativeResources r;
+    rgbaTexture(r, 0xa1, REMIXAPI_FORMAT_R8G8B8A8_SRGB);
+    auto mesh = quad(r, 0xa2, material(r, 0xa3, 1, 1, 1));
+    remixapi_InstanceInfoWoundCutEXT w{};
+    w.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_WOUND_CUT_EXT;
+    w.cutTexture = name("0xa1");
+    for (auto &e : w.ellipsoids) {
+      e.center = {1e6f, 1e6f, 1e6f};
+      e.axisX = {.1f, 0, 0};
+      e.axisY = {0, .1f, 0};
+      e.axisZ = {0, 0, .1f};
+    }
+    w.ellipsoids[1].center = {0, 0, 1};
+    w.mappingScale = 7;
+    w.secondBlend = .5f;
+    for (int i = 0; i < 4; ++i) {
+      w.projectionScale[i] = .5f;
+      w.projectionBias[i] = .5f;
+      w.cutScaleBias[0][i] = w.cutScaleBias[1][i] = i < 2 ? .5f : 0.f;
+    }
+    w.cutScaleBias[1][2] = .5f;
+    w.threshold = .95f;
+    remixapi_InstanceIdentityEXT identity{};
+    identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+    identity.pNext = &w;
+    identity.instanceId = 7;
+    identity.classification = REMIXAPI_INSTANCE_STATIC_EXT;
+    identity.rasterVisible = 1;
+    auto info = instance(mesh);
+    info.pNext = &identity;
+    r.drawInstance(info);
+    require(r.draws().size() == 1 && r.draws()[0].wound, "Wound cut: not carried by the draw");
+    const auto &draw = r.draws()[0];
+    const auto &wound = *draw.wound;
+    require(draw.classification == REMIXAPI_INSTANCE_DYNAMIC_EXT, "Wound cut: a wounded instance stayed static");
+    require(wound.texture && wound.texture->hash == 0xa1 && !wound.texture->pixels.srgb,
+            "Wound cut: the cut texture is not read as stored");
+    require(wound.sampler && wound.sampler->texture == wound.texture && wound.sampler->filter == 1 &&
+                wound.sampler->wrapU == 3 && wound.sampler->wrapV == 3,
+            "Wound cut: sampler");
+    require(wound.ellipsoids[1][0][2] == 1 && wound.ellipsoids[0][1][0] == .1f && wound.mappingScale == 7 &&
+                wound.secondBlend == .5f && wound.threshold == .95f && wound.cutScaleBias[1][2] == .5f &&
+                wound.projectionBias[3] == .5f,
+            "Wound cut: parameters");
+    // Every frame finds the same sampler material (backends keep descriptors by it).
+    const auto sampler = wound.sampler;
+    r.finishFrame();
+    r.drawInstance(info);
+    require(r.draws()[0].wound->sampler == sampler, "Wound cut: a new sampler material every frame");
+    // Retained: the same, and it does not settle into the static set.
+    const uint64_t retained = r.createRetained(info);
+    r.finishFrame();
+    r.drawRetained(nullptr);
+    require(r.draws().size() == 1 && r.draws()[0].wound && r.draws()[0].wound->sampler == sampler &&
+                r.draws()[0].classification == REMIXAPI_INSTANCE_DYNAMIC_EXT,
+            "Wound cut: retained instance");
+    r.destroyRetained(&retained, 1);
+    // Invalid descriptions.
+    auto invalid = [&](auto &&change) {
+      auto saved = w;
+      change();
+      r.finishFrame();
+      rejected([&] { r.drawInstance(info); });
+      w = saved;
+    };
+    invalid([&] { w.mappingScale = 0; });
+    invalid([&] { w.mappingScale = -1; });
+    invalid([&] { w.cutTexture = nullptr; });
+    invalid([&] { w.cutTexture = name(""); });
+    invalid([&] { w.cutTexture = name("0xa9"); });
+    invalid([&] { w.threshold = std::numeric_limits<float>::infinity(); });
+    invalid([&] { w.ellipsoids[1].axisY.z = std::numeric_limits<float>::quiet_NaN(); });
+    invalid([&] { w.cutScaleBias[1][3] = std::numeric_limits<float>::quiet_NaN(); });
+    // Not a scene instance: a wireframe overlay ignores it.
+    remixapi_InstanceInfoWireframeEXT wire{};
+    wire.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_WIREFRAME_EXT;
+    wire.pNext = &w;
+    info.pNext = &wire;
+    r.finishFrame();
+    r.drawInstance(info);
+    require(r.draws().size() == 1 && !r.draws()[0].wound, "Wound cut: a wireframe overlay was cut");
+  }
+
 } // namespace
 
   // A dynamic texture with generated mips: an update makes each level again
@@ -654,6 +853,8 @@ int main() {
   pbrRemap();
   iridescence();
   partialMod();
+  gradientMap();
+  woundCut();
   std::puts("Instance material and dynamic textures passed");
   return 0;
 }

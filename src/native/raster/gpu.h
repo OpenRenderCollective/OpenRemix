@@ -279,6 +279,13 @@ namespace remix {
       VkBuffer spriteBuffer = VK_NULL_HANDLE;
       VkDeviceSize spriteOffset = 0;
       float spriteParameters[4] = {};
+      // A gradient map or wound cut (raster/infected.cpp): its block of the
+      // frame's parameters (-1: none) and, once finishInfected ran, set 1 of
+      // infected.layout; the bind pose (the mesh's own vertices) as binding 1.
+      int32_t infected = -1;
+      VkDescriptorSet infectedSet = VK_NULL_HANDLE;
+      VkBuffer bindBuffer = VK_NULL_HANDLE;
+      VkDeviceSize bindOffset = 0;
     };
     // Diagnostics of the frame's staging uploads (RasterRenderer::Profile).
     RasterRenderer::TextureCosts textureCosts;
@@ -450,6 +457,29 @@ namespace remix {
     // The layout and shader modules; false when they cannot be created.
     bool prepareSprite();
     void destroySprite();
+    // remixapi_MaterialGradientMapEXT and remixapi_InstanceInfoWoundCutEXT
+    // (raster/infected.cpp): the raster stages with INFECTED, whose set 1
+    // holds the gradient, detail and cut textures and the draw's parameters.
+    struct Infected {
+      VkDescriptorSetLayout setLayout = VK_NULL_HANDLE;
+      VkPipelineLayout layout = VK_NULL_HANDLE; // the raster layout and, set 1, the above
+      VkShaderModule vertex = VK_NULL_HANDLE, fragment = VK_NULL_HANDLE;
+      bool failed = false;
+      // This frame's parameter blocks and the textures of each, in command order.
+      static constexpr size_t blockSize = 256;
+      std::vector<uint8_t> parameters;
+      std::vector<std::array<VkDescriptorImageInfo, 3>> images;
+      // Per frame slot: the pool its sets come from (reset when it comes round).
+      VkDescriptorPool pools[gpuFrameCount] = {};
+      uint32_t capacity[gpuFrameCount] = {};
+    } infected;
+    bool prepareInfected();
+    void destroyInfected();
+    // A command's parameter block (Command::infected) for a draw with a
+    // gradient-mapped material or a wound cut.
+    void infectedParameters(const scene::Draw &draw, Command &out, VkCommandBuffer command);
+    // After the frame's commands: their parameters' buffer and sets.
+    void finishInfected();
     // The NUMOS sky over the target (raster/sky.cpp): fullscreen draws that
     // multiply it by the sky's transmittance, then add its light.
     struct SkyComposite {
@@ -509,6 +539,7 @@ namespace remix {
     VkDescriptorSet material(const std::shared_ptr<scene::Material> &source, VkCommandBuffer command);
     // masked: the variant tested against a group's coverage (mask.layout).
     // sprite: the sprite overlay variant (sprite.layout), not for masked draws.
-    VkPipeline pipeline(const scene::Draw &draw, bool masked = false, bool sprite = false);
+    // infected: the INFECTED variant (infected.layout), not for masked or sprite draws.
+    VkPipeline pipeline(const scene::Draw &draw, bool masked = false, bool sprite = false, bool infected = false);
   };
 } // namespace remix

@@ -99,6 +99,26 @@ namespace remix {
     return linear;
   }
 
+  std::shared_ptr<Material> NativeResources::samplerMaterial(const std::shared_ptr<Texture> &texture, uint8_t filter,
+                                                             uint8_t wrap) {
+    // Kept (not only while drawn): a draw list rebuilt every frame finds the
+    // same material, whose sampler and descriptors backends keep by it.
+    auto &entry = m_samplerMaterials[{texture.get(), uint32_t(filter) | uint32_t(wrap) << 8}];
+    if (entry && entry->texture == texture)
+      return entry;
+    entry = std::make_shared<Material>();
+    entry->texture = texture;
+    entry->sourceHash = texture->getHash();
+    entry->filter = filter;
+    entry->wrapU = entry->wrapV = wrap;
+    auto material = entry;
+    // Ones nothing else holds go once there are many.
+    if (m_samplerMaterials.size() > 64)
+      for (auto it = m_samplerMaterials.begin(); it != m_samplerMaterials.end();)
+        it = it->second.use_count() == 1 ? m_samplerMaterials.erase(it) : std::next(it);
+    return material;
+  }
+
   namespace {
     // remixapi_TextureInfoDynamicEXT, validated. withMips: generated mips were
     // asked for (remixapi_TextureInfoGenerateMipsEXT), made again from every

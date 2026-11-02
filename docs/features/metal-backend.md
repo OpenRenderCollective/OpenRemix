@@ -165,6 +165,7 @@ rendered frame.
 
 Not yet ported: host passes (reported off: `GetHostPassesEnabledEXT` answers false), split local
 lighting (and ReSTIR, which needs it), PBR lighting reuse, camera and light-visibility culling,
-low latency and asynchronous presentation. Settings for them are accepted and reported as
-unavailable. ORCA cannot be translated: its 64-bit `atomicAdd` has no MSL equivalent. USD capture
+low latency and asynchronous presentation, gradient-mapped albedo
+(`remixapi_MaterialGradientMapEXT`) and wound cuts (`remixapi_InstanceInfoWoundCutEXT`). Settings
+for them are accepted and reported as unavailable. ORCA cannot be translated: its 64-bit `atomicAdd` has no MSL equivalent. USD capture
 and mods (`-Dusd=true`) are untested on macOS.

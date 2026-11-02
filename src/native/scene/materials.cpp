@@ -26,6 +26,8 @@ namespace remix::scene {
       d.flags |= MaterialDecode::pbrBlur;
       d.pbrWord |= uint32_t(std::lround(std::clamp(m.pbrBlur, 0.f, 15.9375f) * 16)) << 24;
     }
+    if (m.gradient)
+      d.flags |= MaterialDecode::gradientMap;
     return d;
   }
 } // namespace remix::scene
@@ -181,7 +183,50 @@ namespace remix {
     material->rows = std::max(uint8_t(1), info.spriteSheetRow);
     material->columns = std::max(uint8_t(1), info.spriteSheetCol);
     material->fps = info.spriteSheetFps;
-    material->texture = texturePath(texture);
+    const auto *gradient = static_cast<const remixapi_MaterialGradientMapEXT *>(
+        extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_GRADIENT_MAP_EXT));
+    // A gradient map reads the albedo texture as stored: its alpha is luminance.
+    material->texture = gradient && texture && *texture ? dataTexturePath(texture) : texturePath(texture);
+    if (gradient) {
+      // B.a is luminance, not coverage: an opaque material without a film
+      // (the film's fields hold the gradient's parameters).
+      if (!opaque || opaque->opacityConstant != 1 || opaque->thinFilmThickness_hasvalue ||
+          opaque->alphaIsThinFilmThickness || extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_IRIDESCENCE_EXT) ||
+          !gradient->gradientTexture || !*gradient->gradientTexture)
+        throw invalid;
+      const float values[] = {gradient->skinRow,        gradient->clothRow,       gradient->spriteOffset[0],
+                              gradient->spriteOffset[1], gradient->detailU[0],     gradient->detailU[1],
+                              gradient->detailV[0],      gradient->detailV[1],     gradient->bloodRange[0],
+                              gradient->bloodRange[1],   gradient->bloodColor.x,   gradient->bloodColor.y,
+                              gradient->bloodColor.z};
+      finite(values, 13);
+      // Packed as half floats (frame_tables.h materialFields), the colour as unorm8.
+      for (unsigned i = 0; i < 10; ++i)
+        if (std::fabs(values[i]) > 65504)
+          throw invalid;
+      for (unsigned i = 10; i < 13; ++i)
+        if (values[i] < 0 || values[i] > 1)
+          throw invalid;
+      if (!(gradient->bloodRange[0] < gradient->bloodRange[1]))
+        throw invalid;
+      auto out = std::make_shared<GradientMap>();
+      out->gradient = texturePath(gradient->gradientTexture);
+      out->gradientSampler = samplerMaterial(out->gradient, 1, 0);
+      if (gradient->detailTexture && *gradient->detailTexture) {
+        out->detail = dataTexturePath(gradient->detailTexture);
+        out->detailSampler = samplerMaterial(out->detail, material->filter, 1);
+      }
+      out->skinRow = gradient->skinRow;
+      out->clothRow = gradient->clothRow;
+      std::copy_n(gradient->spriteOffset, 2, out->spriteOffset);
+      std::copy_n(gradient->detailU, 2, out->detailU);
+      std::copy_n(gradient->detailV, 2, out->detailV);
+      std::copy_n(values + 10, 3, out->bloodColor);
+      std::copy_n(gradient->bloodRange, 2, out->bloodRange);
+      material->gradient = std::move(out);
+      material->compare = 7;
+      material->drawAlpha = material->translucent = false;
+    }
     if (material->texture && !material->sourceHash) {
       material->sourceHash = material->texture->getHash();
     }
@@ -283,6 +328,7 @@ namespace remix {
              a.transmittanceDistance == b.transmittanceDistance &&
              a.iridescence == b.iridescence && a.metalColored == b.metalColored &&
              std::equal(a.metalColor, a.metalColor + 3, b.metalColor) && a.pbrBlur == b.pbrBlur &&
+             (a.gradient == b.gradient || (a.gradient && b.gradient && *a.gradient == *b.gradient)) &&
              a.pbr == b.pbr && std::equal(a.emission, a.emission + 3, b.emission) &&
              std::equal(a.tint, a.tint + 4, b.tint) && a.compare == b.compare && a.reference == b.reference &&
              a.drawAlpha == b.drawAlpha && a.translucent == b.translucent &&

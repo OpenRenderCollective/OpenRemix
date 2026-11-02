@@ -3,6 +3,7 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 #extension GL_EXT_nonuniform_qualifier : require
 #extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_control_flow_attributes : require
 #include "scene.glsl"
 layout(push_constant) uniform Draw {
   mat4 model;
@@ -26,6 +27,8 @@ layout(location=11) flat in vec3 corner2;
 layout(location=12) flat in vec3 cornerNormal0;
 layout(location=13) flat in vec3 cornerNormal1;
 layout(location=14) flat in vec3 cornerNormal2;
+layout(location=15) in vec4 woundW;
+layout(location=16) in vec3 woundH;
 #ifdef STABLE_DEPTH
 layout(location=0) out float outDepth;
 #else
@@ -61,6 +64,14 @@ void main() {
   vec4 nearPoint=frame.inverseCamera*vec4(projected.xy/projected.w,0,1);
   vec3 direction=position-nearPoint.xyz/nearPoint.w;
   if((s.state.w&4)==0&&dot(normal,direction)<=0)discard;
+  // A wound cut (remixapi_InstanceInfoWoundCutEXT): a half missing at any
+  // vertex interpolates above zero there.
+  woundTerm=0;
+  if(s.textureState.y!=0u) {
+    Surface r=surfaces[s.textureState.y];
+    woundTerm=woundValue(r,woundW,uint(woundH.y>0)|uint(woundH.z>0)<<1);
+    if(woundCut(r,woundTerm,woundH.x))discard;
+  }
   // What the camera does not see of the instance (back faces, parts in
   // clusters outside its visible set), as cameraHit rejects them.
   if(frame.cameraCull.x!=0u) {

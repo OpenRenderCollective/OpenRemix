@@ -220,8 +220,11 @@ namespace remix::trace::detail {
     // history restarts), right and up scaled to the image plane's half
     // extents, forward.
     float screenCameras[8][4][4] = {};
+    // remixapi_InstanceInfoWoundCutEXT: the frame's wound vertices
+    // (vertex-wound.comp; 0: none), and a reserved word.
+    uint64_t woundVertices = 0, reserved = 0;
   };
-  static_assert(sizeof(Frame) == 2320 && offsetof(Frame, screenCameras) == 1808 && offsetof(Frame, srgbTextures) == 1280 && offsetof(Frame, pathDebug) == 1792 &&
+  static_assert(sizeof(Frame) == 2336 && offsetof(Frame, woundVertices) == 2320 && offsetof(Frame, screenCameras) == 1808 && offsetof(Frame, srgbTextures) == 1280 && offsetof(Frame, pathDebug) == 1792 &&
                 offsetof(Frame, localProbeRead) == 1168 &&
                 offsetof(Frame, localProbeParams) == 1184 && offsetof(Frame, volumeLightScales) == 1200 &&
                 offsetof(Frame, cloudShadow) == 1216 && offsetof(Frame, cloudShadowConfig) == 1264 &&
@@ -982,7 +985,7 @@ namespace remix {
       uint32_t compactionCapacity = 0;
       bool timingPending = false, sharcPending = false, guidingPending = false, reusePending = false,
            rayPending = false;
-      std::unique_ptr<Buffer> table, uniform, scratch, topScratch, instances[3];
+      std::unique_ptr<Buffer> table, uniform, scratch, topScratch, instances[3], woundVertices;
       uint64_t combinedPrefix = 0; // Tlas::prefix of the combined TLAS's instances
       std::unique_ptr<Buffer> tableUpload;
       std::vector<uint8_t> tableShadow;
@@ -1043,6 +1046,22 @@ namespace remix {
     void commitSkin(VkCommandBuffer command, MeshConversion &conversion);
     // After a CPU conversion of a skinned view: its bind pose for commitSkin.
     void uploadSkinSource(VkCommandBuffer command, MeshConversion &conversion);
+    // remixapi_InstanceInfoWoundCutEXT (vertex-wound.comp): each wounded
+    // surface's vertices evaluated at their bind pose into this frame slot's
+    // woundVertices, from its wound record in the surface table.
+    struct WoundJob {
+      VkDeviceAddress record = 0, target = 0;
+      uint32_t count = 0, unused = 0;
+    };
+    static_assert(sizeof(WoundJob) == 24);
+    VkPipelineLayout woundLayout = VK_NULL_HANDLE;
+    VkPipeline wound = VK_NULL_HANDLE;
+    bool woundFailed = false;
+    std::unique_ptr<Buffer> woundVertices;
+    void createWoundPipeline();
+    // After the surface table's upload: the frame's wound vertices (their
+    // address, 0 without wound records); a barrier makes them readable.
+    VkDeviceAddress evaluateWounds(VkCommandBuffer command);
     // A lighting pipeline compiled with guidance off (its variants are lazy).
     struct LightingRequest {
       trace::Stage stage;

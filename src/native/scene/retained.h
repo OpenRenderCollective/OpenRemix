@@ -52,6 +52,9 @@ namespace remix::scene {
     // remixapi_InstanceInfoSpriteEXT (0: none).
     uint32_t spriteFlags = 0;
     float spriteSoft[3] = {};
+    // remixapi_InstanceInfoWoundCutEXT (null: none): its parameters and the
+    // cut texture's name, which buildDraws resolves.
+    std::shared_ptr<const WoundCut> wound;
   };
   // Throws the codes DrawInstance returns. Mesh-independent checks only.
   void describeInstance(const remixapi_InstanceInfo &info, InstanceDescription &out);

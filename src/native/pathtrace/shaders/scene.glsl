@@ -108,6 +108,7 @@ layout(set=0,binding=3,std140) uniform Frame {
   uvec4 srgbTextures[32]; // a bit per texture slot: sRGB-encoded texels (stored UNORM), decoded with pow 2.2
   uvec4 pathDebug; // path inspector: record buffer address (x low, y high), pixel (x | y << 16; ~0 none), capacity
   vec4 screenCameras[32]; // remixapi_CameraScreensEXT, 4 per slot: position (w: 1 set, +2 moved), right and up (half extents), forward
+  uint64_t woundVertices, frameReserved; // remixapi_InstanceInfoWoundCutEXT: WoundVertex per wounded vertex (vertex-wound.comp)
 } frame;
 // Instance mask bit of view models (pathtrace/tlas_policy.h).
 const uint viewModelInstanceMask=64u;
@@ -283,6 +284,71 @@ vec2 materialParameters(Surface s,vec2 uv,inout vec3 albedo) {
 vec4 materialTexelScaled(Surface s,uint index,vec2 uv,float k) {
   return slotTexel(index,textureGrad(textures[nonuniformEXT(index)],uv*s.uv.xy+s.uv.zw,uvGradX*s.uv.xy*k,uvGradY*s.uv.xy*k));
 }
+// remixapi_InstanceInfoWoundCutEXT: a surface with a wound has its record's
+// table index in textureState.y (frame_tables.h woundFields). Each of its
+// vertices was evaluated at its bind pose this frame (vertex-wound.comp): w,
+// h and the halves whose q is missing there (bit 0: e1's, bit 1: el's).
+// woundValue: W at an interpolated w, the halves missing at any vertex left
+// out (each a fetch of the cut texture's red at the finest mip).
+struct WoundVertex { vec4 w; float h; uint missing; vec2 unused; };
+layout(buffer_reference, std430, buffer_reference_align=16) readonly buffer WoundVertices { WoundVertex v[]; };
+float woundValue(Surface r,vec4 w,uint missing) {
+  uint t=r.textureState.x;float value=0;
+  if((missing&1u)==0u)value=textureLod(textures[nonuniformEXT(t)],clamp(w.xy,0,1)*r.previousModel[2].xy+r.previousModel[2].zw,0).r;
+  if((missing&2u)==0u)value=max(value,textureLod(textures[nonuniformEXT(t)],clamp(w.zw,0,1)*r.previousModel[3].xy+r.previousModel[3].zw,0).r);
+  return value;
+}
+bool woundCut(Surface r,float value,float h) { return value>uintBitsToFloat(r.state.z)||h<1; }
+// At barycentrics bary of triangle `triangle` (s.indices): whether the point
+// is cut away, and W.
+bool woundAt(Surface s,uint triangle,vec2 bary,out float value) {
+  Surface r=surfaces[s.textureState.y];
+  WoundVertices vertices=WoundVertices(frame.woundVertices);
+  uint base=triangle*3,first=r.textureState.w;
+  vec3 b=vec3(1-bary.x-bary.y,bary);
+  vec4 w=vec4(0);float h=0;uint missing=0u;
+  for(uint i=0u;i<3u;++i) {
+    WoundVertex v=vertices.v[first+s.indices.i[base+i]];
+    w+=b[i]*v.w;h+=b[i]*v.h;missing|=v.missing;
+  }
+  value=woundValue(r,w,missing);
+  return woundCut(r,value,h);
+}
+// The wound term W of the point being shaded (woundAt, or the G-buffer's
+// interpolated w), which deepens a gradient map's blood (gradientAlbedo).
+float woundTerm=0;
+// remixapi_MaterialGradientMapEXT (material.x bit 1024; frame_tables.h
+// gradientFields): the albedo texel composited from the albedo texture B (a
+// data texture: as stored), its quarter-size sprite, the gradient's skin and
+// cloth rows and the detail texture. Opaque: alpha 1. The header's steps,
+// with the fetches their weights leave out skipped.
+vec4 gradientAlbedo(Surface s,vec2 uv) {
+  vec4 b=materialTexel(s,s.textureState.x,uv);
+  vec4 sprite=materialTexelScaled(s,s.textureState.x,uv*.5+unpackHalf2x16(s.filmMaps.y),.5);
+  uint gradient=s.filmMaps.x&0xffffu,detail=s.filmMaps.x>>16;
+  float l=b.a*b.a;
+  // Skin (above 1/2) and cloth (below) never both: one row's texel, by
+  // |2 B.b - 1|; at 1/2 neither.
+  vec2 rows=unpackHalf2x16(floatBitsToUint(s.film.y));
+  float row=b.b>.5?rows.x:rows.y;
+  vec3 c=mix(vec3(l),slotTexel(gradient,textureLod(textures[nonuniformEXT(gradient)],
+    vec2(b.a,(row+.5)/float(textureSize(textures[nonuniformEXT(gradient)],0).y)),0)).rgb,clamp(abs(2*b.b-1),0,1));
+  [[dont_flatten]] if(detail!=0u&&sprite.r>.5) {
+    vec2 du=unpackHalf2x16(s.filmMaps.z),dv=unpackHalf2x16(s.filmMaps.w);
+    uint d=detail-1u;
+    vec3 texel=slotTexel(d,textureGrad(textures[nonuniformEXT(d)],vec2(dot(du,uv),dot(dv,uv)),
+      vec2(dot(du,uvGradX),dot(dv,uvGradX)),vec2(dot(du,uvGradY),dot(dv,uvGradY)))).rgb;
+    c=mix(c,2*l*texel,clamp(2*sprite.r-1,0,1));
+  }
+  vec2 range=unpackHalf2x16(floatBitsToUint(s.film.z));
+  float blood=smoothstep(range.x,range.y,clamp(2*sprite.g-1,0,1)+woundTerm);
+  return vec4(min(c*mix(vec3(1),unpackUnorm4x8(floatBitsToUint(s.film.w)).rgb,blood),vec3(1)),1);
+}
+// The albedo texel at uv: the albedo texture's, or a gradient map's composite.
+vec4 albedoTexel(Surface s,vec2 uv) {
+  [[dont_flatten]] if((s.material.x&1024u)!=0u)return gradientAlbedo(s,uv);
+  return materialTexel(s,s.textureState.x,uv);
+}
 mat3 materialBasis(vec3 n,vec3 e1,vec3 e2,vec2 u1,vec2 u2) {
   float det=u1.x*u2.y-u1.y*u2.x;
   vec3 t=abs(det)>1e-10?(e1*u2.y-e2*u1.y)/det:vec3(0);
@@ -424,14 +490,14 @@ vec4 materialColor(Surface s, vec4 texel, vec4 vertex) {
   return clamp(result,0,1);
 }
 vec4 materialColor(Surface s, vec2 uv, vec4 vertex) {
-  return materialColor(s, materialTexel(s, s.textureState.x, uv), vertex);
+  return materialColor(s, albedoTexel(s, uv), vertex);
 }
 // The colour a surface reflects, what it emits (when `emissive`) and `self`,
 // the part of its colour that emits instead of reflecting
 // (remixapi_MaterialInfoSelfIlluminationEXT: material.x bit 5, the mask in
 // bits 6-7, its scale in emission.w): colour = reflecting + self.
 vec4 materialSurface(Surface s, vec2 uv, vec4 vertex, bool emissive, out vec3 emission, out vec3 self) {
-  vec4 texel = materialTexel(s, s.textureState.x, uv);
+  vec4 texel = albedoTexel(s, uv);
   vec4 color = materialColor(s, texel, vertex);
   self = vec3(0);
   if ((s.material.x&32u)==0) { emission = emissive ? materialEmission(s, uv) : vec3(0); return color; }

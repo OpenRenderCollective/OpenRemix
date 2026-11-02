@@ -1,0 +1,54 @@
+#version 460
+// remixapi_InstanceInfoWoundCutEXT (PathTracer::Gpu::evaluateWounds): each
+// vertex of a wounded surface evaluated at its bind pose, once a frame, into
+// the frame's wound vertices (scene.glsl WoundVertex), which the candidate
+// tests and the G-buffer interpolate. The surface's wound record
+// (frame_tables.h woundFields) is read from the surface table. With
+// e1, e2 of the two ellipsoids, k the second blend, el = mix(e1, e2, k):
+// w = (q(e1), q(el)) x projection scale + bias, h = |e2| + k, where
+// q(e) = e.xy / (sqrt(1 - e.z^2) x mapping scale), missing at |e.z| >= 1.
+// A record without a bind pose (not uploaded yet) cuts nothing.
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+layout(local_size_x=64) in;
+struct Vertex { vec4 position; vec4 uv; vec4 color; };
+layout(buffer_reference, std430, buffer_reference_align=16) readonly buffer Source { Vertex v[]; };
+// TraceSurface's layout (scene.glsl Surface) as woundFields fills it: the
+// first ellipsoid's rows in tint, uv, factor; the second's in emission, pbr,
+// film (rest[0], rest[1], rest[4]); the projection in previousModel's first
+// two columns; the scalars in state.
+layout(buffer_reference, std430, buffer_reference_align=16) readonly buffer Record {
+  uint64_t vertices, indices;
+  vec4 first[3];
+  uvec4 state, textureState;
+  uint64_t triangleMap, traceIndices, bindPose;
+  uvec2 debugIdentity;
+  vec4 projection[4];
+  vec4 rest[6];
+};
+struct WoundVertex { vec4 w; float h; uint missing; vec2 unused; };
+layout(buffer_reference, std430, buffer_reference_align=16) writeonly buffer Target { WoundVertex v[]; };
+layout(push_constant) uniform Job {
+  uint64_t record, target;
+  uint count;
+} job;
+void main() {
+  const uint i = gl_GlobalInvocationID.x;
+  if (i >= job.count) return;
+  Record r = Record(job.record);
+  WoundVertex out_ = WoundVertex(vec4(0), 2, 3u, vec2(0));
+  if (r.bindPose != 0) {
+    const vec4 p = vec4(Source(r.bindPose).v[i].position.xyz, 1);
+    const vec3 e1 = vec3(dot(r.first[0], p), dot(r.first[1], p), dot(r.first[2], p));
+    const vec3 e2 = vec3(dot(r.rest[0], p), dot(r.rest[1], p), dot(r.rest[4], p));
+    const float m = uintBitsToFloat(r.state.x), k = uintBitsToFloat(r.state.y);
+    const vec3 el = mix(e1, e2, k);
+    vec4 q = vec4(0);
+    out_.missing = 0u;
+    if (abs(e1.z) < 1) q.xy = e1.xy / (sqrt(1 - e1.z * e1.z) * m); else out_.missing |= 1u;
+    if (abs(el.z) < 1) q.zw = el.xy / (sqrt(1 - el.z * el.z) * m); else out_.missing |= 2u;
+    out_.w = q * r.projection[0] + r.projection[1];
+    out_.h = length(e2) + k;
+  }
+  Target(job.target).v[r.textureState.w + i] = out_;
+}

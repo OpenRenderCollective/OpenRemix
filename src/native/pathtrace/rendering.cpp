@@ -578,8 +578,12 @@ namespace remix {
               VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
                   VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
               VK_ACCESS_SHADER_READ_BIT);
+    // remixapi_InstanceInfoWoundCutEXT: the wounded surfaces' vertices, from
+    // their records in the table just written.
+    const VkDeviceAddress woundAddress = evaluateWounds(command);
     tableTime.close();
     Frame frame = {};
+    frame.woundVertices = woundAddress;
     frame.localConfig[0] = options.localLights && options.localIntensity > 0 ? lightBvh.active : 0;
     localIlluminationActive = frame.localConfig[0] != 0;
     localFirstHitActive = localIlluminationActive && !hasBlendedGeometry;

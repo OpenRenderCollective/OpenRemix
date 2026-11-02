@@ -353,6 +353,12 @@ namespace remix {
   protected:
     std::shared_ptr<scene::Texture> texturePath(remixapi_Path path);
     std::shared_ptr<scene::Texture> dataTexturePath(remixapi_Path path);
+    // A material that only names how its texture is sampled (filter and
+    // wrap, Material's encodings): one per combination
+    // (remixapi_MaterialGradientMapEXT, remixapi_InstanceInfoWoundCutEXT).
+    std::shared_ptr<scene::Material> samplerMaterial(const std::shared_ptr<scene::Texture> &texture, uint8_t filter,
+                                                     uint8_t wrap);
+    std::map<std::pair<const scene::Texture *, uint32_t>, std::shared_ptr<scene::Material>> m_samplerMaterials;
     void storeTexture(uint64_t hash, scene::Pixels &&pixels, remixapi_TextureHandle &handle);
     std::atomic<bool> m_keepCompressed{false};
     bool m_refreshGeometry = false;

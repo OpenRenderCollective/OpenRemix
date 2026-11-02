@@ -17,6 +17,13 @@ namespace remix {
       }();
       return enabled;
     }
+    // A wound cut (remixapi_InstanceInfoWoundCutEXT) on a skinned view reads
+    // its bind pose (uploadSkinSource): converted again until it has one.
+    template <class View> bool needsBindPose(const Draw &draw, bool skinned, const View &view) {
+      return skinned && draw.wound &&
+             (view.skinSource.size() != draw.mesh->surfaces.size() || view.skinMesh.owner_before(draw.mesh) ||
+              draw.mesh.owner_before(view.skinMesh) || view.skinMesh.expired());
+    }
     // These fingerprints only invalidate history inside this renderer run.
     // Bulk hashing avoids a serial byte-at-a-time multiply over every changed
     // vertex (std::hash<string_view> is byte-wise FNV-1a in MSVC's library).
@@ -82,7 +89,8 @@ namespace remix {
       updateViews[lineage] = key;
     }
     view.lastUse = sequence;
-    if (view.owner.lock() == draw.mesh && (!skinned || view.bones == *draw.bones))
+    if (view.owner.lock() == draw.mesh && (!skinned || view.bones == *draw.bones) &&
+        !needsBindPose(draw, skinned, view))
       return view;
     ++performance.geometryConversions;
     // The same skinned mesh with other bones: its bind pose on the GPU, skinned
@@ -128,7 +136,7 @@ namespace remix {
     auto &view = found->second;
     // view.owner.lock() == draw.mesh without the reference-count traffic.
     if (view.owner.owner_before(draw.mesh) || draw.mesh.owner_before(view.owner) || view.owner.expired() ||
-        (skinned && view.bones != *draw.bones))
+        (skinned && view.bones != *draw.bones) || needsBindPose(draw, skinned, view))
       return nullptr;
     std::atomic_ref<uint64_t>(view.lastUse).store(sequence, std::memory_order_relaxed);
     return &view;
@@ -365,10 +373,86 @@ namespace remix {
     }
   }
 
-  void PathTracer::Gpu::uploadSkinSource(VkCommandBuffer command, MeshConversion &conversion) {
-    if (!gpuSkinning() || skinFailed)
+  void PathTracer::Gpu::createWoundPipeline() {
+    if (!woundLayout) {
+      const VkPushConstantRange range = {VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(WoundJob)};
+      const VkPipelineLayoutCreateInfo info = {.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                                               .pushConstantRangeCount = 1,
+                                               .pPushConstantRanges = &range};
+      if (pipeline::createPipelineLayout(device, &info, nullptr, &woundLayout) != VK_SUCCESS) {
+        woundFailed = true;
+        return;
+      }
+    }
+    const auto code = trace::shader(trace::Stage::vertexWound);
+    const VkShaderModuleCreateInfo moduleInfo = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = code.bytes, .pCode = code.code};
+    VkShaderModule module{};
+    if (pipeline::createShaderModule(device, &moduleInfo, nullptr, &module) != VK_SUCCESS) {
+      woundFailed = true;
       return;
-    if (!skin)
+    }
+    const VkComputePipelineCreateInfo info = {
+        .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+        .stage = {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                  .stage = VK_SHADER_STAGE_COMPUTE_BIT, .module = module, .pName = "main"},
+        .layout = woundLayout};
+    const auto result = pipeline::createComputePipelines(device, VK_NULL_HANDLE, 1, &info, nullptr, &wound);
+    pipeline::destroyShaderModule(device, module, nullptr);
+    // Off the compiler worker a new pipeline is not ready yet: uncut until it is.
+    if (result != VK_SUCCESS) {
+      wound = VK_NULL_HANDLE;
+      woundFailed = result != VK_NOT_READY;
+    }
+  }
+
+  VkDeviceAddress PathTracer::Gpu::evaluateWounds(VkCommandBuffer command) {
+    const auto [first, count] = tables.woundRecords();
+    const size_t vertices = tables.woundVertices();
+    if (!count || !vertices)
+      return 0;
+    const VkDeviceSize bytes = VkDeviceSize(vertices) * 32;
+    if (!woundVertices || woundVertices->size < bytes) {
+      if (woundVertices)
+        retiredBuffers.push_back(std::move(woundVertices));
+      woundVertices = buffer(bytes + bytes / 2, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                             false, true);
+    }
+    if (!wound && !woundFailed)
+      createWoundPipeline();
+    if (!wound) {
+      // Until the pipeline is ready (or if it cannot be made): h 2 and both
+      // halves missing (the fill's low bits) at every vertex, nothing cut.
+      vkCmdFillBuffer(command, woundVertices->handle, 0, bytes, 0x40000003u);
+      barrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+              VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+                  VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+              VK_ACCESS_SHADER_READ_BIT);
+      return woundVertices->address;
+    }
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, wound);
+    for (size_t i = first; i < first + count; ++i) {
+      const WoundJob job = {.record = table->address + VkDeviceAddress(i) * sizeof(TraceSurface),
+                            .target = woundVertices->address,
+                            .count = tables.surface(i).textureState[2]};
+      if (!job.count)
+        continue;
+      vkCmdPushConstants(command, woundLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(job), &job);
+      vkCmdDispatch(command, (job.count + 63) / 64, 1, 1);
+    }
+    barrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            VK_ACCESS_SHADER_READ_BIT);
+    return woundVertices->address;
+  }
+
+  void PathTracer::Gpu::uploadSkinSource(VkCommandBuffer command, MeshConversion &conversion) {
+    // A wound cut needs the bind pose whether the GPU skins or not.
+    const bool skinning = gpuSkinning() && !skinFailed;
+    if (!skinning && !conversion.draw->wound)
+      return;
+    if (skinning && !skin)
       createSkinPipeline();
     auto &view = *conversion.view;
     const auto &draw = *conversion.draw;
@@ -653,7 +737,7 @@ namespace remix {
     // mesh came back with other bones: a mesh replaced every frame (spawning
     // NPCs, CPU-skinned parts) never skins there, and uploading it each frame
     // cost more than its conversion.
-    if (conversion.bonesOnly)
+    if (conversion.bonesOnly || (conversion.skinned && conversion.draw->wound))
       uploadSkinSource(command, conversion);
     // Bound the scratch a single large conversion leaves behind.
     if (conversion.data.bytes() > 64 * 1024 * 1024)

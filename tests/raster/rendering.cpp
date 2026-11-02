@@ -97,10 +97,17 @@ namespace {
                                          .queueFamilyIndex = family,
                                          .queueCount = 1,
                                          .pQueuePriorities = &priority};
+      // As the runtime does (RasterRenderer::initializeGpu assumes it):
+      // anisotropy and line fill wherever supported.
+      VkPhysicalDeviceFeatures supported{}, enabled{};
+      vkGetPhysicalDeviceFeatures(physical, &supported);
+      enabled.samplerAnisotropy = supported.samplerAnisotropy;
+      enabled.fillModeNonSolid = supported.fillModeNonSolid;
       const VkDeviceCreateInfo d = {
           .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
           .queueCreateInfoCount = 1,
           .pQueueCreateInfos = &q,
+          .pEnabledFeatures = &enabled,
       };
       vk(vkCreateDevice(physical, &d, nullptr, &device));
       vkGetDeviceQueue(device, family, 0, &queue);
@@ -521,6 +528,122 @@ namespace {
     target.outputEncoding(false);
     std::puts("Sprite overlays: frames, green/alpha, sequences, soft depth and modulation passed");
   }
+#if defined(_WIN32)
+#define WOUND_PATH(text) L##text
+#else
+#define WOUND_PATH(text) text
+#endif
+  // remixapi_InstanceInfoWoundCutEXT and remixapi_MaterialGradientMapEXT in
+  // the raster stages (raster/infected.cpp): the cut follows the per-vertex
+  // rule (a half missing at any vertex of a triangle gives W 0), and the
+  // gradient map composites the skin row with the sprite's blood.
+  void infectedTests(Target &target) {
+    auto &r = target.raster;
+    camera(r);
+    auto texture = [&](uint64_t hash, std::initializer_list<uint8_t> texel, remixapi_Format format) {
+      const std::vector<uint8_t> data(texel);
+      remixapi_TextureInfo tex = {};
+      tex.hash = hash;
+      tex.width = tex.height = tex.depth = tex.mipLevels = 1;
+      tex.format = format;
+      tex.data = data.data();
+      tex.dataSize = data.size();
+      remixapi_TextureHandle handle;
+      r.createTexture(tex, handle);
+    };
+    texture(0x81, {255, 255, 255, 255}, REMIXAPI_FORMAT_R8G8B8A8_UNORM); // cut: white
+    texture(0x82, {0, 0, 255, 128}, REMIXAPI_FORMAT_R8G8B8A8_UNORM);     // B: skin, luminance 1/2, no masks
+    texture(0x83, {0, 255, 0, 255}, REMIXAPI_FORMAT_R8G8B8A8_SRGB);      // the gradient: green
+    texture(0x84, {0, 255, 255, 128}, REMIXAPI_FORMAT_R8G8B8A8_UNORM);   // B: the same, all blood
+    const auto mesh = quad(r, 0x85, material(r, 0x86, 1, 0, 0));
+    remixapi_InstanceInfoWoundCutEXT w = {};
+    w.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_WOUND_CUT_EXT;
+    w.cutTexture = WOUND_PATH("0x81");
+    // The first ellipsoid: q at every vertex (e.z 0); the second far away (h large).
+    w.ellipsoids[0].axisX = {.1f, 0, 0};
+    w.ellipsoids[0].axisY = {0, .1f, 0};
+    w.ellipsoids[1].center = {1e6f, 1e6f, 1e6f};
+    w.ellipsoids[1].axisX = {1, 0, 0};
+    w.ellipsoids[1].axisY = {0, 1, 0};
+    w.ellipsoids[1].axisZ = {0, 0, 1};
+    w.mappingScale = 7;
+    for (int i = 0; i < 4; ++i) {
+      w.projectionScale[i] = .5f;
+      w.projectionBias[i] = .5f;
+    }
+    // Both halves sample the cut texture's centre: W 1.
+    w.cutScaleBias[0][2] = w.cutScaleBias[0][3] = w.cutScaleBias[1][2] = w.cutScaleBias[1][3] = .5f;
+    w.threshold = .95f;
+    auto draw = [&](void *next) {
+      auto info = instance(mesh);
+      info.pNext = next;
+      r.drawInstance(info);
+      return target.render();
+    };
+    pixel(draw(nullptr), 32, 32, 255, 0, 0, "Wound cut: the uncut quad");
+    pixel(draw(&w), 32, 32, 0, 0, 0, "Wound cut: W above the threshold");
+    w.threshold = 1;
+    pixel(draw(&w), 32, 32, 255, 0, 0, "Wound cut: W at the threshold");
+    w.threshold = .95f;
+    // e.z reaches 1 at the right-hand vertices, which every triangle has:
+    // both halves are missing there, W is 0.
+    w.ellipsoids[0].center = {-.2f, 0, 0};
+    w.ellipsoids[0].axisZ = {1, 0, 0};
+    pixel(draw(&w), 32, 32, 255, 0, 0, "Wound cut: a half missing at a vertex cut");
+    // h below 1 at every vertex: cut whatever W is (here 0: the second half
+    // samples outside the cut texture, black).
+    w.cutScaleBias[1][2] = w.cutScaleBias[1][3] = 2;
+    w.ellipsoids[1].center = {0, 0, .5f};
+    w.ellipsoids[1].axisX = w.ellipsoids[1].axisY = w.ellipsoids[1].axisZ = {};
+    w.secondBlend = .5f;
+    pixel(draw(&w), 32, 32, 0, 0, 0, "Wound cut: h below 1");
+    w.secondBlend = 1;
+    pixel(draw(&w), 32, 32, 255, 0, 0, "Wound cut: h at 1");
+    // Gradient map: B.b 1 selects the skin row; the sprite (the same texel)
+    // has no grime and, from 0x84, full blood.
+    remixapi_MaterialGradientMapEXT g = {};
+    g.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_GRADIENT_MAP_EXT;
+    g.gradientTexture = WOUND_PATH("0x83");
+    g.bloodColor = {.5f, .5f, .5f};
+    g.bloodRange[0] = .1f;
+    g.bloodRange[1] = .9f;
+    remixapi_MaterialInfoOpaqueEXT opaque = {};
+    opaque.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+    opaque.pNext = &g;
+    opaque.albedoConstant = {1, 1, 1};
+    opaque.opacityConstant = 1;
+    opaque.alphaTestType = 7;
+    remixapi_MaterialInfo m = {};
+    m.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+    m.pNext = &opaque;
+    m.hash = 0x87;
+    m.albedoTexture = WOUND_PATH("0x82");
+    remixapi_MaterialHandle infected;
+    r.createMaterial(m, infected);
+    const auto body = quad(r, 0x88, infected);
+    r.drawInstance(instance(body));
+    pixel(target.render(), 32, 32, 0, 255, 0, "Gradient map: the skin row");
+    m.albedoTexture = WOUND_PATH("0x84");
+    r.createMaterial(m, infected);
+    r.drawInstance(instance(body));
+    pixel(target.render(), 32, 32, 0, 128, 0, "Gradient map: blood");
+    // A wound's W deepens the blood: none in the sprite, W 1 over the range.
+    m.albedoTexture = WOUND_PATH("0x82");
+    r.createMaterial(m, infected);
+    w.ellipsoids[0].center = {};
+    w.ellipsoids[0].axisZ = {};
+    w.ellipsoids[1].center = {1e6f, 1e6f, 1e6f};
+    w.ellipsoids[1].axisX = {1, 0, 0};
+    w.ellipsoids[1].axisY = {0, 1, 0};
+    w.ellipsoids[1].axisZ = {0, 0, 1};
+    w.secondBlend = 0;
+    w.threshold = 1;
+    w.cutScaleBias[1][2] = w.cutScaleBias[1][3] = .5f;
+    auto info = instance(body);
+    info.pNext = &w;
+    r.drawInstance(info);
+    pixel(target.render(), 32, 32, 0, 128, 0, "Gradient map: the wound's blood");
+  }
   void gpuTests(const std::filesystem::path &directory) {
     Target target;
     auto &r = target.raster;
@@ -730,6 +853,7 @@ namespace {
     pixel(target.render(), 32, 32, 128, 128, 128, "UNORM-only output encoding");
     target.outputEncoding(false);
     spriteTests(target);
+    infectedTests(target);
     camera(r);
     // Persistent scene + UI reference artifact.
     r.drawInstance(instance(farMesh));

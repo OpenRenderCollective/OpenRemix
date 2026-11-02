@@ -127,6 +127,8 @@ void pathDebugRecord(float kind,vec3 a,float aw,vec4 b,vec4 c,vec4 d) {
 uint hash(uint x) { x ^= x >> 16; x *= 0x7feb352du; x ^= x >> 15; x *= 0x846ca68bu; return x ^ (x >> 16); }
 float random() { rng = hash(rng + 0x9e3779b9u); return float(rng >> 8) * (1.0 / 16777216.0); }
 #include "ray_profile.glsl"
+// A wounded gradient map's blood follows the wound's W (woundTerm): surfaceHit
+// sets it from the intersection (W as its candidate test found it).
 vec4 albedo(Surface s, uint triangle, vec2 bary, bool emissive, out vec3 emission, out vec3 self) {
   uint base = triangle * 3;
   Vertex a = s.vertices.v[s.indices.i[base]], b = s.vertices.v[s.indices.i[base+1]], c = s.vertices.v[s.indices.i[base+2]];
@@ -134,12 +136,17 @@ vec4 albedo(Surface s, uint triangle, vec2 bary, bool emissive, out vec3 emissio
   return materialSurface(s, a.uv.xy*w.x + b.uv.xy*w.y + c.uv.xy*w.z, a.color*w.x + b.color*w.y + c.color*w.z, emissive, emission, self);
 }
 vec4 albedo(Surface s, uint triangle, vec2 bary) {
+  woundTerm = 0;
   uint base = triangle * 3;
   Vertex a = s.vertices.v[s.indices.i[base]], b = s.vertices.v[s.indices.i[base+1]], c = s.vertices.v[s.indices.i[base+2]];
   vec3 w = vec3(1-bary.x-bary.y, bary);
   return materialColor(s, a.uv.xy*w.x + b.uv.xy*w.y + c.uv.xy*w.z, a.color*w.x + b.color*w.y + c.color*w.z);
 }
+// W of the last wounded candidate tested (queryScene keeps it for its hit).
+float candidateWound=0;
 bool acceptCandidate(Surface s,uint triangle,vec2 bary) {
+  // A wound cut (remixapi_InstanceInfoWoundCutEXT) holes the surface for every ray.
+  if(s.textureState.y!=0u&&woundAt(s,triangle,bary,candidateWound))return false;
   if(s.state.y==7&&!coverageBlended(s))return true;
   if(s.state.y==0)return false;
   if((s.state.w&1)!=0)return visibleAlpha(s,1);
@@ -250,11 +257,13 @@ vec3 leavingNormal=vec3(0);
 // is built from. The Hit is built once, after both scenes (and in closest(),
 // after the paint in front of it): carried across further queries whole it
 // took the big stages from 168 to 255 registers.
-struct Intersection { float t; uint surface; uint primitive; vec2 bary; mat4x3 model; };
+// wound: W at it (a wound cut's, as its candidate test found it; else 0).
+struct Intersection { float t; uint surface; uint primitive; vec2 bary; mat4x3 model; float wound; };
 void queryScene(accelerationStructureEXT scene, vec3 origin, vec3 direction, inout Intersection x,float minimum) {
   rayQueryEXT query;
   profileRay(0);
   uvGradX=uvGradY=vec2(0); // candidates test coverage at the finest mip
+  float wound=0,woundT=-1;
   rayQueryInitializeEXT(query, scene, traceFlags()|(cameraCut!=0u||cameraRay?gl_RayFlagsNoOpaqueEXT:gl_RayFlagsNoneEXT), traceMask, origin, cameraRay?minimum:max(minimum,contactGap(x.t)), direction, x.t);
   while (rayQueryProceedEXT(query)) {
     if (rayQueryGetIntersectionTypeEXT(query,false)!=gl_RayQueryCandidateIntersectionTriangleEXT) continue;
@@ -273,11 +282,16 @@ void queryScene(accelerationStructureEXT scene, vec3 origin, vec3 direction, ino
       if(abs(dot(direction,n))*t<=originPaint*length(n))continue;
     }
     profileAlpha(s,0);
-    if (acceptCandidate(s,rayQueryGetIntersectionPrimitiveIndexEXT(query,false),rayQueryGetIntersectionBarycentricsEXT(query,false))) rayQueryConfirmIntersectionEXT(query);
+    if (acceptCandidate(s,rayQueryGetIntersectionPrimitiveIndexEXT(query,false),rayQueryGetIntersectionBarycentricsEXT(query,false))) {
+      rayQueryConfirmIntersectionEXT(query);
+      if(s.textureState.y!=0u){woundT=rayQueryGetIntersectionTEXT(query,false);wound=candidateWound;}
+    }
     else profileRay(3);
   }
   if (rayQueryGetIntersectionTypeEXT(query,true)==gl_RayQueryCommittedIntersectionNoneEXT) return;
   x.t=rayQueryGetIntersectionTEXT(query,true);
+  // A later hardware-opaque commit is no wounded surface (those are never opaque).
+  x.wound=x.t==woundT?wound:0;
   x.surface=rayQueryGetIntersectionInstanceCustomIndexEXT(query,true)+rayQueryGetIntersectionGeometryIndexEXT(query,true);
   x.primitive=rayQueryGetIntersectionPrimitiveIndexEXT(query,true);
   x.bary=rayQueryGetIntersectionBarycentricsEXT(query,true);
@@ -303,6 +317,7 @@ void surfaceHit(Intersection x,vec3 direction,inout Hit hit,bool motion) {
     hitFootprint(direction,hit.t,model*vec4(b-a,0),model*vec4(c-a,0),
                  s.vertices.v[s.indices.i[tri+1]].uv.xy-ua,s.vertices.v[s.indices.i[tri+2]].uv.xy-ua);
   }
+  woundTerm=x.wound;
   hit.color=albedo(s,tri/3,bary,motion||pathEmission,hit.emission,hit.self);
   hit.lift=0;
   hit.identity=motion&&frame.splitLocal.w==3?debugTriangle(s.debugIdentity,originalTriangle(s,tri/3)):0;
@@ -346,7 +361,7 @@ void surfaceHit(Intersection x,vec3 direction,inout Hit hit,bool motion) {
 #endif
 }
 Intersection nearest(vec3 origin,vec3 direction,float maximum,float minimum) {
-  Intersection x;x.t=maximum;x.surface=~0u;x.primitive=0u;x.bary=vec2(0);x.model=mat4x3(1);
+  Intersection x;x.t=maximum;x.surface=~0u;x.primitive=0u;x.bary=vec2(0);x.model=mat4x3(1);x.wound=0;
   if ((frame.target.z&1)!=0) queryScene(staticScene,origin,direction,x,minimum);
   if ((frame.target.z&2)!=0) queryScene(dynamicScene,origin,direction,x,minimum);
   return x;
