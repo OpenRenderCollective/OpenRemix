@@ -54,6 +54,11 @@ Still required for the complete modularity/performance objective:
 - Finish provider dependency/finishing orchestration beyond the current Source 2
   adapters. Keep source module resources, publication, cancellation and retirement
   explicit when adding/selecting implementations; preserve shared work admission.
+- Separate reflection-only invalidation from diffuse publication/cache identity.
+  Combined Config::sameLighting and cache::key still include count/resolution/
+  bounds tolerance; missing-blob recovery requires the old combined key. Preserve
+  diffuse assets during reflection edits, including without disk cache, and keep
+  seed admission, frame lifetimes and legacy cache validation explicit.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Water's baked/mixed sunlight policy still needs separate qualification.

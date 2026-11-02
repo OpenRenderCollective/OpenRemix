@@ -326,6 +326,37 @@ placement vectors, audit ray arrays or received counters to format status.
 Queries follow the same preparation/readback handoff as stage selection and do
 not allocate, scan rays or introduce another progress state.
 
+### Remaining captured-asset dependency
+
+The captured provider owner separates scheduling and publication selection, but
+reflection-only edits are not yet independent of diffuse asset invalidation.
+`bake::Config::sameLighting` compares reflection count, resolution and detail
+tolerance; `Controller::record` invalidates the combined job/volume when that
+comparison changes. `cache::key` includes the same reflection fields and fit
+policy revisions. An independent radiance blob therefore does not by itself
+allow reuse of the diffuse publication under a changed reflection request.
+
+The existing missing-reflection recovery path preserves decoded diffuse data
+and recaptures reflections when a referenced blob disappears. It first requires
+a hit on the combined key, so it does not solve reflection-only settings edits.
+Removing fields from `sameLighting` or the cache key alone would be incorrect:
+that could leave the requested reflection change unapplied or accept captures
+with the wrong resolution/placement policy.
+
+The next separation must give diffuse assets their own validated identity and
+reflection placement/radiance their requested identity, while preserving the
+Source 2 adapter's admitted seeds and shared GPU budget. Published diffuse assets
+should remain usable while reflection replacement is pending, including with
+disk persistence disabled. Old frame slots must retain the exact image/metadata
+pair they sampled. Legacy combined caches need a verified migration/fallback
+rather than a blanket invalidation or an unbounded cache-directory scan.
+
+Acceptance must cover count, resolution, tolerance and enable edits independently
+of diffuse quality edits; cold/warm and persistence-disabled operation; cancellation
+and target replacement; unchanged diffuse content and retained publication; and
+no extra settled-frame scans/allocations or transport work for the default preset.
+This remains required for full captured-technique independence.
+
 The preset still determines admission and the order around diffuse finishing.
 The same callbacks, queue order, transport budget and early publication boundary
 are retained; this split creates no additional jobs, scene allocations or waits.
