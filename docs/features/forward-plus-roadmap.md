@@ -1,3 +1,8 @@
+## Diffuse shader interface - 2026-11-02
+
+- Shared receiver context prepares chart data; diffuse query selects baked/probe or live-GI provider without material response. Reflection normalization extraction deferred after compiler evidence showed extra metal-variant control flow.
+- Remaining: reflection radiance contract, high-level local channel context, optical water integration, provider lifecycle/cache and performance qualification.
+
 ## Shader source interfaces - 2026-11-02
 
 - Added receiver-local enumeration hiding cluster headers/overflow and a sunlight sample separate from the standard BRDF.

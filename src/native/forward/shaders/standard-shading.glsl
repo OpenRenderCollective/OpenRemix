@@ -3,9 +3,8 @@
 ShadingResult shadeStandardSurface(Surface surface, ShadingReceiver receiver) {
   vec3 n = surface.normal;
   vec3 ambient = frame.ambientExposure.rgb, irradiance;
-  vec4 coordinate = receiver.baked.coordinate, bounds = receiver.baked.bounds;
-  vec4 surfaceLighting = vec4(0);
-  bool charted = surfaceIrradiance(coordinate, n, bounds, surfaceLighting);
+  ReceiverLightContext lightingContext = prepareReceiverLighting(receiver, n);
+  bool charted = lightingContext.charted;
   ShadingResult shaded;
   shaded.normalRoughness = vec4(n, surface.roughness);
   shaded.reflectance = vec4(0);
@@ -17,13 +16,13 @@ ShadingResult shadeStandardSurface(Surface surface, ShadingReceiver receiver) {
     return shaded;
   }
   if (debugView == 1u || debugView == 5u) {
-    vec3 indirect = charted ? surfaceLighting.rgb / Pi
+    vec3 indirect = charted ? lightingContext.chart.rgb / Pi
         : bakedIrradiance(receiver.position, n, irradiance) ? irradiance / Pi : ambient;
     shaded.color = vec4(min(max(indirect, vec3(0)), vec3(65000)), receiver.opacity);
     return shaded;
   }
-  ReceiverLighting diffuse = evaluateReceiverLighting(receiver.position, n, receiver.geometric, charted,
-      surfaceLighting.rgb, surface.metallic < 1 && any(greaterThan(surface.color.rgb, vec3(0))), ambient);
+  ReceiverLighting diffuse = sampleDiffuseLighting(receiver, n, lightingContext,
+      surface.metallic < 1 && any(greaterThan(surface.color.rgb, vec3(0))));
   if (diffuse.aggregate)
     shaded.irradianceLuma = dot(max(diffuse.diffuse, vec3(0)), vec3(.2126, .7152, .0722));
 #ifdef ZERO_DIFFUSE_MATERIAL
@@ -38,7 +37,7 @@ ShadingResult shadeStandardSurface(Surface surface, ShadingReceiver receiver) {
   shaded.irradianceLuma = min(shaded.irradianceLuma, 65000);
   bool includeBakedDiffuse = debugView == 0u || debugView == 7u;
   vec3 color = includeBakedDiffuse ? surface.color.rgb * (1 - surface.metallic) * diffuse.diffuse : vec3(0);
-  accumulateDirectLighting(color, surface, receiver, surfaceLighting.w, diffuse.aggregate, debugView);
+  accumulateDirectLighting(color, surface, receiver, lightingContext.chart.w, diffuse.aggregate, debugView);
   if (debugView == 0u) color += surface.emission;
 #ifdef VIEWMODEL_PASS
   if (debugView == 0u) color += viewModelReflection(receiver.position, n, receiver.viewDirection, surface.color.rgb,

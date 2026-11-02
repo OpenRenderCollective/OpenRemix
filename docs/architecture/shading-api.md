@@ -29,7 +29,7 @@ on OpenRemix's scalable indexed fields.
 | --- | --- | --- |
 | Material | Evaluate color, roughness, metalness, emission and normals | `Surface`, `evaluateStandardSurface` |
 | Receiver | Supply world/screen geometry and baked bindings | `ShadingReceiver`, separate from material values |
-| Lighting sources | Fetch source lighting and visibility independently of BRDF | local/sun samples and receiver-local enumeration; diffuse and reflection APIs need further work |
+| Lighting sources | Fetch source lighting and visibility independently of BRDF | local/sun samples, receiver-local enumeration and diffuse query; reflection API pending |
 | Shading model | Apply material response and compose contributions | `shadeStandardSurface`, `shadeStandardLocalLight` |
 | Renderer | Select providers, allocate/update resources and choose pipelines | typed selections and CPU `ResourcePlan`; lifecycle migration ongoing |
 
@@ -73,15 +73,31 @@ count; no temporary light array is allocated.
 and static visibility without material parameters. Its radiance includes the
 moving-caster shadow factor. `shadeStandardSunLight` applies the standard BRDF.
 The existing `sunLightResponse` entry is a compatibility wrapper over both, so
-world, water and viewmodel callers share transport without changing their passes.
+world and viewmodel callers share transport without changing their passes. Water
+still has its optical BRDF and separate sun composition; that path needs integration.
+
+## Diffuse receiver query
+
+`prepareReceiverLighting(receiver, normal)` prepares chart irradiance and sun
+irradiance once. `sampleDiffuseLighting(receiver, normal, context, required)`
+selects the compiled diffuse provider. Both standard and custom models can use
+this entry without accessing the surface atlas or probe storage. The returned
+`ReceiverLighting.diffuse` is linear HDR irradiance / pi, before material color
+and metalness. `aggregate` identifies baked direct energy already included in
+that value; it must be passed to the direct-light mixed-shadow correction.
+
+Reflection-normalization luminance remains in standard composition. Extracting
+that calculation into a helper increased control flow for metal-only variants;
+it needs a better shared contract before moving. Diagnostic baked-source views
+still query baked data explicitly, including when live GI is selected.
 
 ## Remaining API work
 
 1. Build a high-level receiver sampling context over the existing enumeration
    and local/sun queries, hiding baked-channel preparation and aggregate ownership
    from custom material authors. Keep light indexing scalable.
-2. Give diffuse irradiance and reflection radiance similarly explicit
-   source contracts. Standard and custom shading must use the same providers.
+2. Give reflection radiance an explicit source contract shared by standard and
+   custom shading, and integrate the optical water path with shared queries.
 3. Separate direct ownership and indirect transport in the composition contract.
    The current aggregate-bake flag and normalization bookkeeping still couple
    these concerns. Define units and provenance before exposing LightingTerms.
