@@ -54,7 +54,15 @@ namespace remix::forward::probes {
       WorkerPool workers;
       filtered = probes::filter(captures, 128, cancelled, &workers);
     }
-    image = std::make_shared<ImageAsset>(physical, device, filtered, cancelled);
+    prepareImage(physical, device, cancelled);
+  }
+  void AutomaticCapture::prepareImage(VkPhysicalDevice physical, VkDevice device, std::stop_token cancelled) {
+    requirePreparing();
+    image = std::make_shared<ImageAsset>(physical, device, filteredView(), cancelled);
+  }
+  void AutomaticCapture::prepareContent(std::stop_token cancelled) {
+    requirePreparing();
+    content = captureContent(captureView(), filteredView(), inputHash, cancelled);
   }
   void AutomaticCapture::sealImage() {
     if (!image || m_imageReady.load(std::memory_order_relaxed))

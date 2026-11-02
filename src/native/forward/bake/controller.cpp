@@ -381,6 +381,7 @@ namespace remix::forward::bake {
     m_reflections.reset();
     m_localReflections.reset();
     m_reflectionSceneHash = 0;
+    m_reflectionContent = {};
     m_statistics.probes = m_statistics.completed = 0;
   }
   void Controller::selectFrame(uint32_t slot) {
@@ -1028,6 +1029,7 @@ namespace remix::forward::bake {
             }
             owner->finishStage.store(Job::FinishStage::Reflections, std::memory_order_relaxed);
             owner->reflections.filter(physical, device, owner->cancellation.get_token());
+            owner->reflections.prepareContent(owner->cancellation.get_token());
             owner->reflections.retainPayload();
             owner->reflections.sealImage();
             if (!owner->reflectionRecovery)
@@ -1049,6 +1051,7 @@ namespace remix::forward::bake {
     if (!image) return;
     m_reflections = image;
     m_reflectionSceneHash = m_job->source->contentHash;
+    m_reflectionContent = m_job->reflections.content;
     m_submissions[m_slot].reflectionUpload = image;
   }
   void Controller::activate(VkCommandBuffer command) {
@@ -1065,17 +1068,11 @@ namespace remix::forward::bake {
     }
     m_localReflections = m_job->localReflections;
     probes::dumpCaptures(m_hash, m_job->reflections.captureView());
-    if (!m_job->reflections.captureView().empty()) {
-      volume->content.captureInputs = m_job->reflections.inputHash;
-      uint64_t captured = 1469598103934665603ull;
-      for (const auto &capture : m_job->reflections.captureView())
-        for (const auto &color : capture.radiance)
-          captured = scene::hashBytes(color.data(), 3 * sizeof(float), captured);
-      volume->content.captureRadiance = captured | 1;
+    m_reflectionContent = m_job->reflections.content;
+    if (const char *prefix = std::getenv("REMIX_DEBUG_BAKE_CAPTURE_PREFIX"); prefix && *prefix) {
+      const auto specular = probes::serialize(m_job->reflections.filteredView());
+      probes::dumpPublishedData(".probes-published.bin", specular.data(), specular.size());
     }
-    const auto specular = probes::serialize(m_job->reflections.filteredView());
-    probes::dumpPublishedData(".probes-published.bin", specular.data(), specular.size());
-    volume->content.reflections = scene::fastHash(specular.data(), specular.size()) | 1;
     // The transfer and its visibility barrier precede this frame's surface
     // draws. Other frame slots keep their own previous volume alive.
     m_reflectionSceneHash = volume->hash;
@@ -1260,8 +1257,8 @@ namespace remix::forward::bake {
           auto prepare = [job, physical, device, config, lightCutoff, queueFamily] {
             job->prepareResources(physical, device, config, lightCutoff, queueFamily);
             if (job->cacheHit && !job->reflectionRecovery) {
-              job->reflections.image = std::make_shared<probes::ImageAsset>(
-                  physical, device, job->reflections.filteredView(), job->cancellation.get_token());
+              job->reflections.prepareImage(physical, device, job->cancellation.get_token());
+              job->reflections.prepareContent(job->cancellation.get_token());
               job->restoreLocalReflections(physical, device, config);
               job->prepareLocalReflectionUpgrade(physical, device, config, queueFamily);
               job->reflections.retainPayload();

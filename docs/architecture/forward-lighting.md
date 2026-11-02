@@ -766,9 +766,9 @@ then performs the existing status/persistence/job-retirement transition. The spl
 adds no volume/image allocation or GPU pass; the existing construction runs once.
 
 During reflection recovery the prepared diffuse volume publishes once before
-capture work starts. Final activation reuses its buffers/images and updates reflection
-diagnostics on the render thread; it does not recreate or upload diffuse
-resources. Optional reflection attachments publish separately. Published diffuse GPU data is unchanged. Workers must
+capture work starts. Final activation reuses its buffers/images; it does not recreate or upload
+diffuse resources or change diffuse content metadata. Reflection diagnostics
+and optional attachments publish separately. Published diffuse GPU data is unchanged. Workers must
 not read the render-thread `publishedDiffuse` owner; preparation inputs remain
 in their private job.
 
@@ -795,3 +795,22 @@ inputs; submitted uploads retain their image until the matching fence. Memory
 reporting deduplicates published/job/frame owners. Controller scheduling still
 coordinates their preparation; the new source is not a separately scheduled
 producer by itself.
+
+### Independent content diagnostics
+
+Diffuse `Volume::content` contains only `DiffuseContent` fingerprints. Reflection
+`CaptureContent` belongs to the capture provider and publishes through the image
+release/acquire handoff. The controller combines those fixed-size values for the
+existing statistics/JSON schema, including reflection readiness before diffuse
+publication. It never writes reflection fields into a published diffuse volume.
+
+The default preparation worker computes capture RGB/input fingerprints and the
+filtered-image fingerprint once. Streaming `HashStream` covers the exact header
+and texel bytes used by the legacy serializer, preserving hash values without a
+joined image allocation. Cancellation is checked between bounded chunks. Normal
+activation performs no capture scan or serialized-image hash. Explicit capture
+dumps still serialize the image when their debug prefix is requested. Standalone
+image preparation does not request these diagnostics, preserving its previous work.
+
+This removes one render-thread preparation cost; it does not establish the full
+no-overhead frame gate or complete independent default scheduling.

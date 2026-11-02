@@ -8,6 +8,7 @@
 #include "forward/probes/capture_source.h"
 #include "forward/probes/capture_step.h"
 #include "forward/probes/local_capture_source.h"
+#include "forward/probes/capture_content.h"
 #include "forward/probes/image_asset.h"
 #include "forward/resources.h"
 #include "platform/gpu_frames.h"
@@ -22,7 +23,7 @@ namespace remix::forward::bake {
   class SunDepth;
   struct Volume {
     uint64_t hash = 0;
-    ContentHashes content;
+    DiffuseContent content;
     bool directDiffuse = false, styledLighting = false;
     std::vector<uint32_t> groupedStyles; // complete direct groups, separate from permanent aggregate policy
     std::shared_ptr<SunDepth> sunDepth;
@@ -65,6 +66,12 @@ namespace remix::forward::bake {
     void record(VkCommandBuffer command, RasterRenderer &resources, const Config &config,
                 float lightCutoff = .001f);
     const std::shared_ptr<Volume> &volume() const { return m_volume; }
+    ContentHashes content() const {
+      const auto diffuse = m_volume ? m_volume->content : DiffuseContent{};
+      return {diffuse.grid, m_reflectionContent.filtered, diffuse.surfaces,
+              diffuse.staticOcclusion, m_reflectionContent.radiance,
+              m_reflectionContent.inputs, diffuse.styledIndirect};
+    }
     VkDescriptorBufferInfo descriptor() const;
     VkDescriptorBufferInfo sunDepthTable() const;
     VkDescriptorBufferInfo sunDepthValues() const;
@@ -113,6 +120,7 @@ namespace remix::forward::bake {
     std::shared_ptr<probes::ImageAsset> m_reflections;
     std::shared_ptr<const probes::LocalCaptureSource> m_localReflections;
     uint64_t m_reflectionSceneHash = 0;
+    probes::CaptureContent m_reflectionContent;
     std::array<Submission, gpuFrameCount> m_submissions;
     std::unique_ptr<Buffer> m_empty, m_emptySunDepth;
     std::unique_ptr<probes::ImageAsset> m_emptyReflections;

@@ -13,7 +13,7 @@ namespace remix::forward {
     statistics.bicubicLightmaps = options.bicubicLightmaps;
     statistics.baking = baking->statistics();
     const auto &volume = baking->volume();
-    statistics.bakeContent = volume ? volume->content : bake::ContentHashes{};
+    statistics.bakeContent = baking->content();
     auto &irradiance = statistics.irradianceGrid;
     irradiance = {};
     if (volume) {

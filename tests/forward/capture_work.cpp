@@ -268,6 +268,26 @@ void testCaptureWork() {
               captures[2].radiance == captures[4].radiance,
           "Completed aliases did not receive the owning capture's texels");
   const auto filtered = p::filter(captures, 32);
+  const auto diagnostic = p::captureContent(captures, filtered, 123);
+  const auto joined = p::serialize(filtered);
+  uint64_t legacyRadiance = 1469598103934665603ull;
+  for (const auto &capture : captures)
+    for (const auto &color : capture.radiance)
+      legacyRadiance = remix::scene::hashBytes(color.data(), 3 * sizeof(float), legacyRadiance);
+  require(diagnostic.filtered == (remix::scene::fastHash(joined.data(), joined.size()) | 1) &&
+              diagnostic.radiance == (legacyRadiance | 1) && diagnostic.inputs == 123,
+          "Worker reflection diagnostics changed legacy image/RGB hash values");
+  auto large = filtered;
+  large.texels.resize((1u << 20) / sizeof(remix::forward::Vec4) + 3, {1,2,3,4});
+  const auto largeBytes = p::serialize(large);
+  require(p::captureContent({}, large, 0).filtered ==
+              (remix::scene::fastHash(largeBytes.data(), largeBytes.size()) | 1),
+          "Reflection image fingerprint changed across streaming chunk boundary");
+  std::stop_source stoppedContent; stoppedContent.request_stop();
+  bool contentCancelled = false;
+  try { (void)p::captureContent(captures, filtered, 123, stoppedContent.get_token()); }
+  catch (const std::runtime_error &) { contentCancelled = true; }
+  require(contentCancelled, "Reflection content hashing ignored cancellation");
   const auto stride = filtered.header.parameters[3];
   for (size_t i = 0; i < captures.size(); ++i) {
     const auto independent = p::filter(std::span(captures).subspan(i, 1), 32);

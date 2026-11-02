@@ -1,3 +1,9 @@
+## Reflection content diagnostics separated - 2026-11-02
+
+- Diffuse volumes now retain only diffuse fingerprints. Reflection hashes publish with provider image readiness; controller statistics combine fixed-size values without mutating a published diffuse volume.
+- Default worker computes legacy-compatible capture/image hashes using streaming header/texel input. Normal activation no longer scans capture arrays or serializes a full filtered image for hashing. Standalone preparation does not request additional diagnostics.
+- Native build and three CPU/GPU regressions pass, including hash equivalence/chunk boundaries/cancellation and unchanged early diffuse metadata after recovered reflection completion. Independent scheduling and full CPU/frame/map performance acceptance remain open. Playable unchanged.
+
 ## Local reflection publication separated from diffuse volume - 2026-11-02
 
 - Prepared local image layers/coverage/evidence now publish as probes::LocalCaptureSource. Removed local reflection resources/evidence from diffuse Volume; optional selection reads the reflection source directly. Upload fence ownership and memory deduplication are preserved.

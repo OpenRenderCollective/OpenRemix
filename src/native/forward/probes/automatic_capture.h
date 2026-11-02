@@ -2,6 +2,7 @@
 #include "forward/probes/capture_work.h"
 #include "forward/probes/capture_config.h"
 #include "forward/probes/capture_step.h"
+#include "forward/probes/capture_content.h"
 #include "forward/probes/capture_payload.h"
 #include "forward/probes/placement_seeds.h"
 #include "forward/probes/evaluation.h"
@@ -85,6 +86,9 @@ namespace remix::forward::probes {
     bool cachedRadiance = false;
     void complete(std::stop_token cancelled); // retain provenance once, then release ray scratch
     void filter(VkPhysicalDevice physical, VkDevice device, std::stop_token cancelled);
+    void prepareImage(VkPhysicalDevice physical, VkDevice device, std::stop_token cancelled);
+    void prepareContent(std::stop_token cancelled); // optional worker diagnostics
+    CaptureContent content; // published by the same release/acquire image handoff
     PlacementSeeds seeds;
     std::vector<bake::Point> reflectionSites;
     std::vector<uint8_t> usableReflectionSites;

@@ -264,6 +264,7 @@ int main() try {
         bake::Controller controller(fixture.physical, fixture.device, &pipelines, true, fixture.family);
         uint32_t frame = 0;
         std::shared_ptr<bake::Volume> earlyDiffuse, cancelledDiffuse;
+        bake::DiffuseContent earlyContent;
         bool cancelledRecovery = false;
         const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(30);
         while (controller.statistics().state != REMIXAPI_BAKE_READY_EXT && std::chrono::steady_clock::now() < until) {
@@ -271,6 +272,7 @@ int main() try {
           fixture.begin(); controller.record(fixture.command, resources, config); fixture.finish();
           if (pass == 1 && controller.volume() && !controller.reflectionSource().image) {
             earlyDiffuse = controller.volume();
+            earlyContent = earlyDiffuse->content;
             if (!cancelledRecovery) {
               cancelledDiffuse = earlyDiffuse;
               auto disabled = config; disabled.enabled = false;
@@ -287,12 +289,13 @@ int main() try {
         }
         if (pass == 1)
           require(cancelledRecovery && earlyDiffuse && controller.volume() == earlyDiffuse &&
+                      earlyDiffuse->content == earlyContent &&
                       cancelledDiffuse->data->handle,
                   "Diffuse recovery did not survive cancellation or rebuilt its volume for reflections");
         require(controller.volume() && controller.reflectionSource().image &&
                     controller.statistics().state == REMIXAPI_BAKE_READY_EXT,
                 "Cold/recovery/warm cache sequence failed to finish lighting");
-        const auto content = controller.volume()->content;
+        const auto content = controller.content();
         if (pass == 0) { original = content; coldDenoises = denoiseCalls.load(); }
         else require(content.grid == original.grid && content.surfaces == original.surfaces &&
                          content.staticOcclusion == original.staticOcclusion &&
