@@ -233,7 +233,7 @@ namespace remix::forward::probes {
       return nullptr;
     }
     const bool sameLighting = source == m_source && config.sameLighting(m_config);
-    if (sameLighting && (m_job || (request == m_request && (m_active || !m_status.empty())))) {
+    if (sameLighting && request == m_request && (m_job || m_active || !m_status.empty())) {
       m_sceneRequest.reset();
       return nullptr;
     }
@@ -246,6 +246,11 @@ namespace remix::forward::probes {
     }
     if (!m_sceneRequest || !m_sceneRequest->matches(*source, options))
       m_sceneRequest = std::make_unique<bake::SceneRequest>(source, options, bake::SceneRequest::Use::Radiance);
+    // A superseded first edit may own the last compatible prepared scene after
+    // the automatic donor retired. Borrow only immutable inputs, after its
+    // worker/preparation handoff; old submitted slots keep their own job owner.
+    if (sameLighting && m_job && m_job->ticket->ready() && m_job->transport)
+      m_sceneRequest->offer(*m_job->transport);
     return m_sceneRequest.get();
   }
   void Authoring::record(VkCommandBuffer command, RasterRenderer &resources, const CaptureConfig &config,

@@ -2791,11 +2791,27 @@ namespace {
               // Identical editor saves intentionally preserve the last revision.
               r.setReflectionVolumes(&request);
               target.enableForward(options);
+              bool superseded = false;
+              const auto supersedeDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+              do {
+                render(false, false, true, false);
+                const auto state = target.forward->statistics().authoredReflections;
+                if (!state.active && state.rays && state.completed < state.rays) {
+                  require(state.sceneReused, "Initial pending edit did not inherit its automatic scene");
+                  ++authored[0].priority;
+                  ++request.revision;
+                  r.setReflectionVolumes(&request);
+                  superseded = true;
+                  break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+              } while (std::chrono::steady_clock::now() < supersedeDeadline);
+              require(superseded, "Authored supersession fixture missed the pending first capture");
               const auto bakedShared = waitForEdit();
               require(target.forward->bakeController()->volume() &&
                           target.forward->statistics().authoredReflections.sceneReused &&
                           target.forward->statistics().authoredReflections.rays > 0 && bakedShared[centre] > 5,
-                      "Generated receiver charts preserve radiance sharing from the fully baked donor");
+                      "Superseding an unpublished edit retains shared geometry after automatic donor retirement");
 
             }
             std::printf("Viewmodel probes %ux: overlay %u, world %u, analytic lights %u\n",

@@ -18,7 +18,9 @@ Implemented and checked:
 - Immutable prepared scenes have demand-scoped leases and independent mutable
   consumers. Compatible automatic captures hand inputs to authored captures
   before retirement. Ordinary radiance can explicitly inherit baked light policy;
-  diffuse compatibility remains strict. Shared GPU memory is counted once.
+  diffuse compatibility remains strict. Superseded unpublished authored edits
+  also retain compatible prepared inputs without reusing partial captures. Shared
+  GPU memory is counted once.
 - Automatic reflections own placement/readback, radiance cache, filtering, worker
   tickets and publication. Retained, transferred and image-only finishing preserve
   array ownership without copies. Empty completion allocates no fallback image.

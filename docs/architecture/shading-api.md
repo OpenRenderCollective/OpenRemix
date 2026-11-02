@@ -354,6 +354,10 @@ The next lifecycle split must preserve these boundaries:
   or the request lease cannot invalidate the admitted consumer. Lease memory
   snapshots contain only the shared allocation domain and deduplicate with
   consumer snapshots in `TransportMemory`.
+- Superseding an unpublished authored capture can borrow its prepared immutable
+  scene after the worker handoff, even if the automatic donor already retired.
+  The replacement receives independent dispatch state; partial captures are not
+  reused, and submitted slots retain their original job until their frame fences.
 - A requesting provider must obtain a compatible, retained scene lease before
   the default job retires. Do not retain an acceleration structure indefinitely
   merely to make a later request cheaper. Define demand and retirement explicitly.
