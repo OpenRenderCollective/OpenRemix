@@ -76,6 +76,21 @@ The existing `sunLightResponse` entry is a compatibility wrapper over both, so
 world and viewmodel callers share transport without changing their passes. Water
 still has its optical BRDF and separate sun composition; that path needs integration.
 
+## Local receiver context
+
+`prepareLocalLighting(receiver, normal, diffuseRequired, aggregate)` prepares the
+local-light list and baked direct channels once. `diffuseRequired` describes the
+shading model's work, not a material type or engine shader name. The aggregate
+ownership comes from the selected diffuse query.
+
+Iterate `context.lights.count`, then call
+`sampleReceiverLocalLight(ordinal, receiver, normal, context, frontFacingOnly, sample)`.
+This entry resolves the index, geometric receiver normal and channel data;
+custom models do not need atlas, cluster or four-channel sentinel knowledge.
+It returns the same `LocalLightSample` as the lower-level source-index query.
+Its ordinal must be within the prepared list, and output is valid only on success.
+The standard model retains its specialized miss exits through `localLightResponse`.
+
 ## Diffuse receiver query
 
 `prepareReceiverLighting(receiver, normal)` prepares chart irradiance and sun
@@ -113,9 +128,9 @@ alone does not make every reflection technique interchangeable.
 
 ## Remaining API work
 
-1. Build a high-level receiver sampling context over the existing enumeration
-   and local/sun queries, hiding baked-channel preparation and aggregate ownership
-   from custom material authors. Keep light indexing scalable.
+1. Complete the composition contract over receiver-local queries, including
+   explicit ownership of aggregate baked energy and mixed-shadow corrections.
+   Keep source-index and receiver-ordinal query semantics distinct.
 2. Connect the reflection radiance interface to interchangeable screen/ray and
    environment providers, and integrate optical water with shared queries.
 3. Separate direct ownership and indirect transport in the composition contract.

@@ -1,3 +1,8 @@
+## Local receiver shader context - 2026-11-02
+
+- Shared local context prepares baked channels and light enumeration once; ordinal query hides source-index, channel sentinel and geometric-normal preparation from custom shading.
+- Remaining: aggregate composition contract, water integration, independent provider publication/cache and full performance acceptance.
+
 ## Reflection shader interface - 2026-11-02
 
 - World resolve and viewmodels share material-independent environment radiance selection (authored/automatic probes then sky). Viewmodel SSR composition exposes radiance before Fresnel.
