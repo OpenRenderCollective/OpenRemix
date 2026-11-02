@@ -1,3 +1,10 @@
+## 2026-11-03: live diffuse viewmodel integration
+
+- Viewmodels now consume the selected live diffuse provider using the world transport scene/descriptor, while retaining overlay, self shadows and reflection behavior.
+- Live diffuse skips the unused baked probe-visibility gather pipeline. Source 2 retains its existing shaders and draws.
+- Perspective viewmodel lighting is covered at 1x/2x/4x MSAA with ray reflections on/off; existing baked-probe, overlay, SSR and environment suites pass.
+- Gameplay performance acceptance, direct/indirect ownership separation and provider lifecycle work remain open.
+
 ## 2026-11-03: resolved diffuse provider dependencies
 
 - Supported live ray-query diffuse now disables unused diffuse bake work while preserving saved Source 2 fallback settings.

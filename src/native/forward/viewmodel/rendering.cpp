@@ -66,23 +66,29 @@ namespace remix::forward {
     gpu::GpuScope targetTime(command, "Forward+ viewmodel target", extent);
     viewModelTarget->record(command, [&] {
       auto drawModels = [&](bool depthOnly) {
+        const bool gi = !depthOnly && bool(frame.giScene);
+        const auto drawLayout = gi ? giLayout : layout;
+        const auto colorPipeline = gi ? giViewModelPipeline : viewModelPipeline;
+        const auto earlyPipeline = gi ? giViewModelEarlyPipeline : viewModelEarlyPipeline;
         VkPipeline activePipeline = VK_NULL_HANDLE;
-        vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1,
+        vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 0, 1,
                                 &frame.viewModelScene, 0, nullptr);
+        if (gi)
+          vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 2, 1, &frame.giScene, 0, nullptr);
         for (const auto &draw : frame.viewModelCommands) {
           if (!draw.source.rasterVisible || !intersectsClip(draw.worldBounds, frame.data.camera)) continue;
           const auto pipeline = depthOnly ? viewModelDepthPipeline
-              : viewModelEarlyPipeline && draw.unconditionalCoverage ? viewModelEarlyPipeline : viewModelPipeline;
+              : earlyPipeline && draw.unconditionalCoverage ? earlyPipeline : colorPipeline;
           if (!depthOnly)
-            fragmentStatistics->begin(command, pipeline == viewModelEarlyPipeline
+            fragmentStatistics->begin(command, pipeline == earlyPipeline
                 ? FragmentStatistics::viewModelEarly : FragmentStatistics::viewModel);
           if (pipeline != activePipeline) {
             vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
             activePipeline = pipeline;
           }
-          vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 1, 1, &draw.material, 0, nullptr);
+          vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 1, 1, &draw.material, 0, nullptr);
           const uint32_t push[] = {draw.index, 0};
-          vkCmdPushConstants(command, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+          vkCmdPushConstants(command, drawLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                              0, sizeof(push), push);
           const VkDeviceSize offset = 0;
           vkCmdBindVertexBuffers(command, 0, 1, &draw.geometry->vertices->handle, &offset);

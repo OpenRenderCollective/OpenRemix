@@ -247,6 +247,15 @@ selection and reported scale follow the resolved diffuse provider rather than th
 saved bake-enable flag. Unsupported live GI still resolves to the configured baked
 fallback, and selecting Source 2 schedules the baked provider again. This avoids
 baking surface/probe fields merely to obtain cubemaps under a live diffuse provider.
+Viewmodels select the same live diffuse source when its frame descriptor is
+available, through dedicated viewmodel shader variants that share the world
+transport scene/set. Their overlay target, prepass, self shadows and reflection
+composition stay pass-owned. The existing material shader remains the fallback
+until the live descriptor is available; the Source 2 path creates no live-viewmodel
+pipelines. Live diffuse also omits the baked receiver-mask gather cache, which it
+never consumes. Non-live modes retain that capability because bake-enable edits
+do not require target recreation.
+
 It does not yet separate baked direct ownership from an independently selected
 indirect-only GI field.
 

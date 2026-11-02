@@ -108,7 +108,7 @@ namespace remix::forward {
                         depthPipeline, depthLightmapPipeline, depthBatchPipeline, zeroDiffusePipeline,
                         shadowPipeline, localShadowPipeline,
                         clusterPipeline, compositePipeline, viewModelPipeline, viewModelEarlyPipeline, viewModelDepthPipeline,
-                        giOpaquePipeline, giLightmapPipeline,
+                        giViewModelPipeline, giViewModelEarlyPipeline, giOpaquePipeline, giLightmapPipeline,
                         terrainPipeline, terrainLightmapPipeline, terrainPartialLightmapPipeline,
                         giTerrainPipeline, giTerrainLightmapPipeline})
       if (handle)
@@ -181,9 +181,10 @@ namespace remix::forward {
     }
     next->viewModelTarget = std::make_unique<viewmodel::Target>();
     next->viewModelTarget->initialize(physical, device, extent, next->samples);
-    // Gather immutable selected-light masks once, then reuse vector lookups on
-    // probe-lit receivers. Unsupported/budget-limited fields retain sparse reads.
-    if (!std::getenv("REMIX_DEBUG_DISABLE_PROBE_BATCH")) {
+    // Live diffuse never consumes baked receiver masks. Non-live modes retain
+    // this capability even when baking is off, since bake-enable can change
+    // without target recreation. Unsupported fields retain sparse reads.
+    if (!next->techniquePlan.rayDiffuse() && !std::getenv("REMIX_DEBUG_DISABLE_PROBE_BATCH")) {
       next->probeVisibility = std::make_unique<probe_batch::Cache>(physical, device);
       next->probeVisibility->prepare();
     }

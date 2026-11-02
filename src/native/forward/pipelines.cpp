@@ -43,6 +43,11 @@ namespace remix::forward {
     const auto terrainFragment = modules.add(fragShader, sizeof(fragShader));
     const auto depthFragment = modules.add(opaqueDepthFragShader, sizeof(opaqueDepthFragShader));
     VkShaderModule giTerrainFragment = VK_NULL_HANDLE;
+    VkShaderModule giViewModelFragment = VK_NULL_HANDLE, giViewModelEarlyFragment = VK_NULL_HANDLE;
+    if (techniquePlan.rayDiffuse()) {
+      giViewModelFragment = modules.add(ray::gi::viewModelShader, sizeof(ray::gi::viewModelShader));
+      giViewModelEarlyFragment = modules.add(ray::gi::viewModelEarlyShader, sizeof(ray::gi::viewModelEarlyShader));
+    }
     if (techniquePlan.rayDiffuse())
       giFragment = techniquePlan.reflectionResolve ? modules.add(ray::gi::guidesShader, sizeof(ray::gi::guidesShader))
                                          : modules.add(ray::gi::fragShader, sizeof(ray::gi::fragShader));
@@ -197,7 +202,8 @@ namespace remix::forward {
                                               .pColorBlendState = &blend,
                                               .pDynamicState = &dynamic,
                                               .layout = composite          ? compositeLayout
-                                                        : fs == giFragment || fs == giTerrainFragment ? giLayout
+                                                        : fs == giFragment || fs == giTerrainFragment ||
+                                                          fs == giViewModelFragment || fs == giViewModelEarlyFragment ? giLayout
                                                                            : layout,
                                               .renderPass = pass,
                                               .subpass = terrain ? 1u : 0u};
@@ -223,9 +229,13 @@ namespace remix::forward {
       viewModelDepthPipeline = graphics(vertex, depthFragment, viewModelTarget->pass(), Pass::ViewModelDepth);
     const auto viewModelFragment = modules.add(viewModelFragShader, sizeof(viewModelFragShader));
     viewModelPipeline = graphics(vertex, viewModelFragment, viewModelTarget->pass(), Pass::ViewModel);
+    if (giViewModelFragment)
+      giViewModelPipeline = graphics(vertex, giViewModelFragment, viewModelTarget->pass(), Pass::ViewModel);
     if (!std::getenv("REMIX_DEBUG_DISABLE_VIEWMODEL_EARLY_DEPTH")) {
       const auto early = modules.add(viewModelEarlyFragShader, sizeof(viewModelEarlyFragShader));
       viewModelEarlyPipeline = graphics(vertex, early, viewModelTarget->pass(), Pass::ViewModel);
+      if (giViewModelEarlyFragment)
+        giViewModelEarlyPipeline = graphics(vertex, giViewModelEarlyFragment, viewModelTarget->pass(), Pass::ViewModel);
     }
     lightmapPipeline = graphics(lightmapVertex, fragment, worldPass, Pass::Opaque, Coverage::Mapped);
     partialLightmapPipeline = graphics(lightmapVertex, fragment, worldPass);

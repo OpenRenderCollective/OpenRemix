@@ -705,8 +705,30 @@ namespace {
         identity.classification = REMIXAPI_INSTANCE_DYNAMIC_EXT;
         identity.rasterVisible = 0;
         panel.pNext = &identity;
-        auto render = [&](int source = 0, bool direct = false) {
+        auto render = [&](int source = 0, bool direct = false, bool viewModel = false) {
           camera(r);
+          if (viewModel) {
+            // Viewmodel conversion intentionally requires perspective cameras.
+            remixapi_CameraInfoParameterizedEXT parameters{};
+            parameters.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO_PARAMETERIZED_EXT;
+            parameters.aspect = 1;
+            parameters.fovYInDegrees = 90;
+            parameters.nearPlane = .05f;
+            parameters.farPlane = 100;
+            parameters.right = {1, 0, 0};
+            parameters.up = {0, 1, 0};
+            parameters.forward = {0, 0, 1};
+            remixapi_CameraInfo viewCamera{};
+            viewCamera.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO;
+            viewCamera.pNext = &parameters;
+            for (auto type : {REMIXAPI_CAMERA_TYPE_WORLD, REMIXAPI_CAMERA_TYPE_VIEW_MODEL}) {
+              viewCamera.type = type;
+              r.setupCamera(viewCamera);
+            }
+            auto weapon = instance(receiverMesh);
+            weapon.categoryFlags = REMIXAPI_INSTANCE_CATEGORY_BIT_VIEW_MODEL;
+            r.drawInstance(weapon);
+          }
           r.drawRetained(nullptr);
           if (reflections) {
             // Hidden by the receiver, but prepares the water fragment context.
@@ -776,6 +798,11 @@ namespace {
           options.baking.reflectionResolution = oldResolution;
           target.enableForward(options, true);
         }
+        image = render(0, false, true);
+        std::printf("Live viewmodel RGB %u %u %u draws %u\n", unsigned(image[at]), unsigned(image[at + 1]), unsigned(image[at + 2]), unsigned(target.forward->statistics().drawCalls.viewModelColor));
+        require(target.forward->statistics().drawCalls.viewModelColor > 0 &&
+                    image[at] < 3 && image[at + 1] > 150 && image[at + 2] < 3,
+                "Viewmodels consume the selected live diffuse provider instead of ambient or old baked fields");
         options.prism = true;
         target.forward->updateLighting(options);
         image = render();

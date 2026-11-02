@@ -37,6 +37,7 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
         "world-guides": ["REFLECTION_GUIDES"],
         "viewmodel": ["VIEWMODEL_PASS", "REFLECTION_GUIDES"],
         "live-diffuse": ["LIVE_GI", "REFLECTION_GUIDES"],
+        "live-viewmodel": ["LIVE_GI", "VIEWMODEL_PASS"],
     }
     for name, defines in variants.items():
         binary = tree / (name + ".spv")
