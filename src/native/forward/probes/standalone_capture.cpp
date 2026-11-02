@@ -60,15 +60,10 @@ void StandaloneCapture::selectFrame(uint32_t slot) {
         job.readback.resize(frame.count);
       const auto results = std::span(job.readback).first(frame.count);
       job.transport->read(slot, results);
-      if (!job.capture.observe(frame.step, frame.first, results))
+      if (!job.capture.observe({frame.step, frame.first, frame.count}, results))
         job.failed = true;
       if (const auto elapsed = job.transport->elapsed(slot)) {
-        const auto step = frame.step;
-        const auto work = step == AutomaticCapture::Step::ValidateSites
-                              ? bake::Work::Site
-                          : step == AutomaticCapture::Step::CheckGeometry
-                              ? bake::Work::Geometry
-                              : bake::Work::Reflection;
+        const auto work = AutomaticCapture::workType(frame.step);
         job.budget.observe(work, frame.count, *elapsed, m_config.gpuBudgetMs);
       }
     }

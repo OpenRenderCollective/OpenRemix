@@ -1,3 +1,9 @@
+## Typed reflection frame submissions - 2026-11-02
+
+- Default reflection submissions use one CaptureStep instead of three booleans, sharing the existing first/count range. Both schedulers retire typed dispatches with result-count validation and use provider-owned GPU timing categories. Standalone header no longer imports the full capture implementation.
+- Native build and three CPU/GPU regressions pass, covering truncated batch rejection, timing categories, cache/publication/cancellation and authored/standalone reuse. No second submission array, query buffer or task added.
+- Remaining: default worker-ticket/transport scheduling ownership, shared-scene adoption and full CPU/frame/map performance acceptance. Playable unchanged.
+
 ## Provider planned-capture cache policy - 2026-11-02
 
 - Planned reflection identity now belongs to capture_cache, with explicit transport shader/device/component/ownership provenance. Default runtime uses provider-owned lookup, restore validation and miss-only ray preparation; standalone cold preparation uses the same entry point. Legacy bake-key adapter preserves existing identity bytes.

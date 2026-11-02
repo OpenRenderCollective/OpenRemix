@@ -488,11 +488,8 @@ namespace remix::forward::bake {
               job.failed = true;
               status(REMIXAPI_BAKE_FAILED_EXT, "Invalid reflection receiver readback ownership");
             }
-          } else if (submission.reflectionGeometry || submission.reflectionSite || submission.radiance) {
-            using Step = probes::AutomaticCapture::Step;
-            const auto step = submission.reflectionGeometry ? Step::CheckGeometry
-                            : submission.reflectionSite ? Step::ValidateSites : Step::Capture;
-            if (!job.reflections.observe(step, submission.first, results)) {
+          } else if (submission.reflection != probes::CaptureStep::None) {
+            if (!job.reflections.observe({submission.reflection, submission.first, submission.count}, results)) {
               job.failed = true;
               status(REMIXAPI_BAKE_FAILED_EXT, "Invalid automatic reflection readback");
             }
@@ -530,7 +527,7 @@ namespace remix::forward::bake {
                               submission.probeSun || submission.probeLocal
                                   ? sizeof(VisibilityResult) : sizeof(Result));
         if (!submission.styled && !submission.reference && !submission.probeDepth && !submission.coarseTransfer &&
-            !submission.radiance && !submission.reflectionGeometry && !submission.reflectionSite) (submission.sunDepth ? job.sunDepthReceived
+            submission.reflection == probes::CaptureStep::None) (submission.sunDepth ? job.sunDepthReceived
          : submission.localReflection ? job.localCaptureReceived
          : submission.receiverGuardCoverage ? job.receiverGuardReceived
          : submission.receiverFitCoverage ? job.receiverCoverageReceived
@@ -555,14 +552,16 @@ namespace remix::forward::bake {
           if (submission.sunAntialiasing) job.sunAntialiasingGpuMs += *elapsed;
           if (submission.overflowVisibility)
             job.overflowTiming.gpuMs += *elapsed;
-          const auto work = submission.coarseTransfer                                ? Work::CoarseTransfer
+          const auto work = submission.reflection != probes::CaptureStep::None
+                            ? probes::AutomaticCapture::workType(submission.reflection)
+                            : submission.coarseTransfer                                ? Work::CoarseTransfer
                             : submission.probeDepth                                  ? Work::ProbeDepth
-                            : submission.reflectionGeometry || submission.reflectionReceiver || submission.receiverSiteCheck || submission.receiverFit || submission.receiverFitCoverage || submission.receiverGuardCoverage || submission.sunDepth ? Work::Geometry
+                            : submission.reflectionReceiver || submission.receiverSiteCheck || submission.receiverFit || submission.receiverFitCoverage || submission.receiverGuardCoverage || submission.sunDepth ? Work::Geometry
                             : submission.visibility || submission.direct || submission.directionalField ||
                               submission.overflowVisibility || submission.probeLocal     ? Work::Visibility
                             : submission.sun || submission.probeSun                  ? Work::Sun
-                            : submission.reflectionSite || submission.receiverSite  ? Work::Site
-                            : submission.radiance || submission.localReflection      ? Work::Reflection
+                            : submission.receiverSite  ? Work::Site
+                            : submission.localReflection      ? Work::Reflection
                             : submission.surface                                     ? Work::Surface
                                                                                      : Work::Irradiance;
           if (!submission.reference)
@@ -927,9 +926,7 @@ namespace remix::forward::bake {
       submission.job = m_job;
       submission.first = batch.first;
       submission.count = batch.count;
-      submission.reflectionSite = batch.step == CaptureStep::ValidateSites;
-      submission.reflectionGeometry = batch.step == CaptureStep::CheckGeometry;
-      submission.radiance = batch.step == CaptureStep::Capture;
+      submission.reflection = batch.step;
     };
     if (step == CaptureStep::PlanSites) {
       const auto owner = m_job;

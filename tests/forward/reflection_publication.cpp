@@ -3,6 +3,7 @@
 #include "forward/probes/cache_index.h"
 #include "forward/bake/cache.h"
 #include "forward/bake/transport.h"
+#include "forward/bake/budget.h"
 #include "forward/lightmap/denoise.h"
 #include "gpu_fixture.h"
 #include "raster/renderer.h"
@@ -55,6 +56,15 @@ DenoiseStatistics denoise(const Layout &, std::span<bake::Result>,
 int main() try {
   {
     test::Fixture fixture;
+    using CaptureStep = probes::AutomaticCapture::Step;
+    require(probes::AutomaticCapture::workType(CaptureStep::ValidateSites) == bake::Work::Site &&
+                probes::AutomaticCapture::workType(CaptureStep::CheckGeometry) == bake::Work::Geometry &&
+                probes::AutomaticCapture::workType(CaptureStep::Capture) == bake::Work::Reflection,
+            "Provider query stages changed adaptive timing categories");
+    bool invalidTiming = false;
+    try { (void)probes::AutomaticCapture::workType(CaptureStep::Fit); }
+    catch (const std::logic_error &) { invalidTiming = true; }
+    require(invalidTiming, "CPU preparation stage was accepted as GPU timing work");
     {
       probes::AutomaticCapture capture;
       require(!capture.recordImageUpload(VK_NULL_HANDLE), "Unready image was published");

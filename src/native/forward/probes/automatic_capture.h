@@ -1,6 +1,7 @@
 #pragma once
 #include "forward/probes/capture_work.h"
 #include "forward/probes/capture_config.h"
+#include "forward/probes/capture_step.h"
 #include "forward/probes/capture_payload.h"
 #include "forward/probes/placement_seeds.h"
 #include "forward/probes/evaluation.h"
@@ -9,7 +10,7 @@
 #include <atomic>
 #include <optional>
 
-namespace remix::forward::bake { class Transport; class Budget; }
+namespace remix::forward::bake { class Transport; class Budget; enum class Work : uint32_t; }
 
 namespace remix::forward::probes::capture_cache { struct Planned; }
 
@@ -18,7 +19,7 @@ namespace remix::forward::probes {
   // Workers advance placement/filtering; the scheduler advances submission and
   // readback counters only after the owning frame fence. No copied ray arrays.
   struct AutomaticCapture {
-    enum class Step { PlanSites, ValidateSites, Fit, CheckGeometry, Select, Capture, Complete };
+    using Step = CaptureStep;
     // Inspect only after the owning preparation ticket or submission fence.
     Step nextStep() const {
       if (!sitesPlanned) return Step::PlanSites;
@@ -28,6 +29,7 @@ namespace remix::forward::probes {
       if (!capturePlanned) return Step::Select;
       return captureReceived < work.rays().size() ? Step::Capture : Step::Complete;
     }
+    static bake::Work workType(Step step);
     struct Dispatch {
       Step step;
       uint32_t first = 0, count = 0;
@@ -40,6 +42,10 @@ namespace remix::forward::probes {
     // finish out of order. Completion state belongs to the
     // provider, so another scheduler need not understand capture storage.
     bool observe(Step step, uint32_t first, std::span<const bake::Result> results);
+    bool observe(Dispatch dispatch, std::span<const bake::Result> results) {
+      return dispatch.count && results.size() == dispatch.count &&
+             observe(dispatch.step, dispatch.first, results);
+    }
     struct Placement {
       uint32_t requested = 0, capacity = 0, resolution = 128;
       float detailTolerance = .5f;

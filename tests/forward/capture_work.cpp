@@ -126,6 +126,8 @@ void testCaptureWork() {
     std::vector<remix::forward::bake::Result> results(owner.reflectionSites.size());
     for (auto &result : results) result.statistics = {1,0,float(p::AutomaticCapture::siteSamples),0};
     owner.siteNext = uint32_t(results.size());
+    require(!owner.observe({p::AutomaticCapture::Step::ValidateSites, 0, uint32_t(results.size() + 1)}, results) &&
+                owner.siteReceived == 0, "Truncated fenced batch advanced capture ownership");
     require(owner.observe(p::AutomaticCapture::Step::ValidateSites, 0, results), "Standalone admission readback refused");
     require(owner.prepareNext(source, placement, {}) == p::AutomaticCapture::Step::Fit,
             "Provider did not fit after retired admission");

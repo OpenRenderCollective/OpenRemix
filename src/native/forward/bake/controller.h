@@ -6,6 +6,7 @@
 #include "forward/mixed/map.h"
 #include "forward/probes/data.h"
 #include "forward/probes/capture_source.h"
+#include "forward/probes/capture_step.h"
 #include "forward/probes/image_asset.h"
 #include "forward/resources.h"
 #include "platform/gpu_frames.h"
@@ -93,8 +94,9 @@ namespace remix::forward::bake {
       std::shared_ptr<Volume> sampled;
       std::shared_ptr<probes::ImageAsset> reflectionUpload, reflectionSampled;
       uint32_t first = 0, count = 0, styled = 0;
-      bool preparation = false, radiance = false, surface = false, visibility = false, reflectionSite = false,
-           sun = false, sunDepth = false, sunDepthCache = false, probeSun = false, probeLocal = false, overflowVisibility = false, reflectionGeometry = false,
+      probes::CaptureStep reflection = probes::CaptureStep::None;
+      bool preparation = false, surface = false, visibility = false,
+           sun = false, sunDepth = false, sunDepthCache = false, probeSun = false, probeLocal = false, overflowVisibility = false,
            sunAntialiasing = false, direct = false, directionalField = false, reference = false, probeDepth = false,
            localReflection = false, reflectionReceiver = false, receiverSite = false, receiverSiteCheck = false, receiverFit = false, receiverFitCoverage = false,
            coarseTransfer = false, receiverGuardCoverage = false;

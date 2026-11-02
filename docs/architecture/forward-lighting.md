@@ -727,3 +727,14 @@ The default host still supplies transport provenance, admitted placement seeds,
 diagnostic scheduling, preparation tickets and the shared transport budget. This
 moves cache/reuse policy, not the entire scheduler. Full frame-time acceptance
 and independent default technique scheduling remain open.
+
+### Reflection submission identity
+
+Frame submissions carry `CaptureStep`, a small resource-independent stage type.
+The default scheduler shares its existing first/count range with that stage,
+replacing three reflection booleans without a second range or submission array.
+Both schedulers retire a typed `AutomaticCapture::Dispatch`; the provider rejects
+zero/truncated result ranges before updating completion. Its `workType` maps only
+GPU query stages to adaptive budget categories and rejects CPU preparation stages.
+The existing job/frame owners and shared budget still govern fence lifetime and
+throughput. This does not transfer default worker tickets or transport ownership.

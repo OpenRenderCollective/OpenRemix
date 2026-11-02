@@ -1,5 +1,5 @@
 #pragma once
-#include "forward/probes/automatic_capture.h"
+#include "forward/probes/capture_step.h"
 #include "forward/probes/capture_config.h"
 #include "forward/probes/capture_source.h"
 #include "platform/gpu_frames.h"
@@ -51,7 +51,7 @@ private:
     std::shared_ptr<const ImageAsset> sampled;
     std::shared_ptr<ImageAsset> upload;
     uint32_t first = 0, count = 0;
-    AutomaticCapture::Step step = AutomaticCapture::Step::PlanSites;
+    CaptureStep step = CaptureStep::None;
     bool preparation = false;
   };
   VkPhysicalDevice m_physical;

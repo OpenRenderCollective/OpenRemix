@@ -4,6 +4,14 @@
 #include <stdexcept>
 
 namespace remix::forward::probes {
+  bake::Work AutomaticCapture::workType(Step step) {
+    switch (step) {
+    case Step::ValidateSites: return bake::Work::Site;
+    case Step::CheckGeometry: return bake::Work::Geometry;
+    case Step::Capture: return bake::Work::Reflection;
+    default: throw std::logic_error("Reflection timing requires a GPU query stage");
+    }
+  }
   AutomaticCapture::Dispatch AutomaticCapture::record(VkCommandBuffer command, uint32_t slot,
       bake::Transport &transport, bake::Budget &budget, const CaptureConfig &config) {
     requirePreparing();
