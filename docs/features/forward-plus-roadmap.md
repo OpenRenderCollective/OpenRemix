@@ -1,3 +1,8 @@
+## Shader source interfaces - 2026-11-02
+
+- Added receiver-local enumeration hiding cluster headers/overflow and a sunlight sample separate from the standard BRDF.
+- Still pending: high-level baked receiver context, ambient/reflection queries, lighting composition and provider lifecycle/cache completion.
+
 # Shader API priority: Source 2 / s&box - 2026-11-02
 
 - Follow the reference material -> shading model -> lighting-source structure, including custom shading fetching shared lighting. Resource ownership refactors alone do not complete this requirement. See docs/architecture/shading-api.md for the audited revision and API plan.

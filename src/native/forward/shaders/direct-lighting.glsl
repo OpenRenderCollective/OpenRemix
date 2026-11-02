@@ -1,3 +1,5 @@
+#include "light-list.glsl"
+
 // Direct illumination provider shared by world and viewmodel materials.
 // Baked visibility, mixed shadows and analytic specular remain owned by the
 // existing sun/local implementations. No exposure or emission belongs here.
@@ -16,12 +18,9 @@ void accumulateDirectLighting(inout vec3 color, Surface surface, ShadingReceiver
   bool directChannels = receiver.directChannels && !indexedSurfaceDirect() && surface.metallic < 1 &&
       frame.target.z > 0u && any(notEqual(receiver.baked.directLights, uvec4(0xffffffffu)));
   vec4 directIrradiance = directChannels ? surfaceDirectIrradiance(coordinate, n, bounds) : vec4(-1);
-  uint base = clusterIndex(receiver.screenPosition, receiver.depth) * ClusterStride;
-  // Overflow evaluates the complete light array instead of losing illumination.
-  bool linear;
-  uint lightCount = receiverLightCount(base, aggregate, linear);
-  for (uint i = 0u; i < lightCount; ++i) {
-    uint index = linear ? i : clusters[base + ClusterHeaderWords + i];
+  LocalLightList localLights = localLightsForReceiver(receiver, aggregate);
+  for (uint i = 0u; i < localLights.count; ++i) {
+    uint index = localLightIndex(localLights, i);
     BrdfLobes local = localLightResponse(index, receiver.position, n, v, surface.color.rgb,
         surface.roughness, surface.metallic, directIrradiance, receiver.baked, vec3(.04),
         normalize(receiver.geometric), aggregate);

@@ -29,7 +29,7 @@ on OpenRemix's scalable indexed fields.
 | --- | --- | --- |
 | Material | Evaluate color, roughness, metalness, emission and normals | `Surface`, `evaluateStandardSurface` |
 | Receiver | Supply world/screen geometry and baked bindings | `ShadingReceiver`, separate from material values |
-| Lighting sources | Fetch source lighting and visibility independently of BRDF | local-light sample prototype; diffuse and reflection APIs need further work |
+| Lighting sources | Fetch source lighting and visibility independently of BRDF | local/sun samples and receiver-local enumeration; diffuse and reflection APIs need further work |
 | Shading model | Apply material response and compose contributions | `shadeStandardSurface`, `shadeStandardLocalLight` |
 | Renderer | Select providers, allocate/update resources and choose pipelines | typed selections and CPU `ResourcePlan`; lifecycle migration ongoing |
 
@@ -60,12 +60,27 @@ template with one caller-specific miss exit. This preserves the standard early
 returns without a runtime shader callback or duplicated transport implementation.
 The body template is backend implementation detail; material authors call functions.
 
+## Receiver enumeration and sunlight
+
+`localLightsForReceiver(receiver, aggregate)` returns a `LocalLightList` with a
+count. `localLightIndex(list, ordinal)` resolves the source index for
+`sampleLocalLight`. Cluster headers, baked-tail handling and overflow fallback
+are implementation details. The aggregate argument describes receiver ownership,
+not a global limit on static lights. Query once per receiver, then iterate its
+count; no temporary light array is allocated.
+
+`sampleSunLight` supplies direction, linear HDR radiance, unit diffuse irradiance
+and static visibility without material parameters. Its radiance includes the
+moving-caster shadow factor. `shadeStandardSunLight` applies the standard BRDF.
+The existing `sunLightResponse` entry is a compatibility wrapper over both, so
+world, water and viewmodel callers share transport without changing their passes.
+
 ## Remaining API work
 
-1. Add a receiver lighting query/iterator with Count/From-style access, hiding
-   cluster/index/channel bookkeeping from custom material authors. Keep light
-   indexing scalable.
-2. Give sunlight, diffuse irradiance and reflection radiance similarly explicit
+1. Build a high-level receiver sampling context over the existing enumeration
+   and local/sun queries, hiding baked-channel preparation and aggregate ownership
+   from custom material authors. Keep light indexing scalable.
+2. Give diffuse irradiance and reflection radiance similarly explicit
    source contracts. Standard and custom shading must use the same providers.
 3. Separate direct ownership and indirect transport in the composition contract.
    The current aggregate-bake flag and normalization bookkeeping still couple
