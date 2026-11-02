@@ -1,4 +1,5 @@
 #include "forward/probes/capture_cache.h"
+#include "forward/probes/cache_index.h"
 #include "forward/cache_directory.h"
 #include "forward/cache_file.h"
 #include <bit>
@@ -180,6 +181,14 @@ std::optional<Snapshot> readShared(const std::filesystem::path &directory,
   } catch (const std::exception &) {
     return {};
   }
+}
+cache_io::Persistence<Snapshot> &sharedPersistence() {
+  static cache_io::Persistence<Snapshot> service(maximumBytes, retainedCharge,
+      [](const auto &directory, uint64_t identity, const Snapshot &snapshot) {
+        const auto blob = storeShared(directory, snapshot.captures, snapshot.data);
+        return blob && cache_index::writeShared(directory, identity, blob);
+      }, "Forward reflection update");
+  return service;
 }
 cache_io::Persistence<Snapshot> &persistence() {
   static cache_io::Persistence<Snapshot> service(

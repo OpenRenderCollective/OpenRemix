@@ -477,7 +477,7 @@ int main() try {
       RecoveryDirectory directory;
       auto settings = config;
       settings.diskCache = diskCache;
-      settings.reflectionProbes = 1;
+      settings.reflectionProbes = diskCache ? 1 : 0;
       settings.reflectionResolution = 8;
       bake::Controller controller(fixture.physical, fixture.device, &pipelines, true, fixture.family);
       uint32_t frame = 0;
@@ -512,7 +512,17 @@ int main() try {
         require(controller.volume() == diffuse && controller.statistics().active &&
                     controller.content().grid == content.grid && diffuse->data->handle,
                 "Reflection-only edit removed or replaced live diffuse lighting before refresh");
+        if (edit == 0) {
+          settings.reflectionResolution = 32;
+          tick();
+          require(controller.volume() == diffuse,
+                  "Superseding an in-flight reflection refresh retired borrowed diffuse publication");
+        }
         ready();
+        require(controller.volume() == diffuse && controller.content().grid == content.grid &&
+                    controller.content().surfaces == content.surfaces &&
+                    controller.content().staticOcclusion == content.staticOcclusion,
+                "Reflection refresh rebuilt or reuploaded the published diffuse volume");
         require(controller.volume() && bool(controller.reflectionSource().image) == bool(settings.reflectionProbes),
                 "Retained diffuse publication prevented reflection edits from completing");
       }
@@ -527,6 +537,7 @@ int main() try {
               "Disabling diffuse baking must retire publication without destroying retained frame assets");
       for (uint32_t slot = 0; slot < gpuFrameCount; ++slot) controller.selectFrame(slot);
       bake::cache::persistence().waitIdle();
+      probes::capture_cache::sharedPersistence().waitIdle();
     }
   }
   require(test::validationErrors == 0,

@@ -1,4 +1,5 @@
 #include "forward/bake/cache.h"
+#include "forward/bake/probe_origin.h"
 #include "forward/cache_directory.h"
 #include "forward/bake/storage_options.h"
 #include "forward/probes/priority_bands.h"
@@ -459,16 +460,8 @@ namespace remix::forward::bake::cache {
         grid.points.resize(grid.probes.size());
         for (uint32_t index = 0; index < grid.probes.size(); ++index) {
           if ((index & 4095u) == 0) detail::check(cancelled);
-          const uint32_t coordinate[] = {index % grid.header.dimensions[0],
-              (index / grid.header.dimensions[0]) % grid.header.dimensions[1],
-              index / (grid.header.dimensions[0] * grid.header.dimensions[1])};
-          for (uint32_t c = 0; c < 3; ++c) {
-            float position = indexed(grid.header) ? grid.origins[index].position[c]
-                : grid.header.originSpacing[c] + coordinate[c] * grid.header.originSpacing[3];
-            if (uint32_t(grid.header.settings[2]) & 1u) position += grid.probes[index].irradiance[c][3];
-            require(std::isfinite(position));
-            grid.points[index].position[c] = position;
-          }
+          const auto position = probeOrigin(grid, index);
+          std::copy_n(position.begin(), 3, grid.points[index].position.begin());
         }
       }
       return std::optional<Snapshot>{std::move(result)};

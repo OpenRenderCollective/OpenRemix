@@ -43,7 +43,8 @@ namespace remix::forward::bake {
       job.reflections.prepare(
           *m_pipelines, "forward-probe-sites-" + std::to_string(++generation), [owner, config] {
             auto seeds = config.reflectionProbes
-                ? probes::placementSeeds(*owner->source, owner->grid, owner->cancellation.get_token())
+                ? owner->reflectionSeeds ? *owner->reflectionSeeds
+                    : probes::placementSeeds(*owner->source, owner->grid, owner->cancellation.get_token())
                 : probes::PlacementSeeds{};
             owner->reflections.prepareNext(*owner->source, {.requested = config.reflectionProbes},
                 owner->cancellation.get_token(), std::move(seeds));
@@ -133,7 +134,13 @@ namespace remix::forward::bake {
                                     Options{}.bias / owner->source->sceneScale, owner->cancellation.get_token());
             }
             owner->finishStage.store(Job::FinishStage::Reflections, std::memory_order_relaxed);
-            owner->reflections.finishRetainedPublication(physical, device, owner->cancellation.get_token());
+            if (owner->inMemoryDiffuse && owner->reflectionCacheKey && !owner->reflections.cachedRadiance) {
+              auto payload = owner->reflections.finishTransferredPublication(
+                  physical, device, owner->cancellation.get_token());
+              if (probes::capture_cache::retainedCharge(*payload) <= probes::capture_cache::maximumBytes)
+                owner->reflectionPersistence = std::move(payload);
+            } else
+              owner->reflections.finishRetainedPublication(physical, device, owner->cancellation.get_token());
             if (!owner->reflectionRecovery)
               owner->finishDiffuseAssets(physical, device, config, reflectionFingerprint);
           });

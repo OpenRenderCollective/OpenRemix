@@ -724,5 +724,21 @@ configuration still match. The capture refresh starts despite that retained
 publication; frame submissions keep their normal shared asset leases. Changes
 to diffuse settings, source bindings/content or baking enable still retire the
 incompatible volume. This separates publication lifetime from refresh-job
-lifetime; it does not yet bypass diffuse preparation or uploads when the disk
-cache is disabled. Full in-memory reuse remains required.
+lifetime. A capture-only refresh job borrows the published volume and immutable
+admission metadata, bypassing diffuse preparation, tracing, denoising and GPU
+uploads even when the disk cache is disabled. The volume retains only compact
+admitted positions/original indices (16 bytes per usable probe, plus bounds and
+allocation metadata), not diffuse SH or atlas pixels. Existing placement storage
+is transferred where available; complete cache hits recover origins from the
+same canonical reconstruction used by component recovery.
+
+Reflection-only jobs keep their transport and cancellation state private. They
+use the normal capture admission/budget and preserve the published direct-light
+ownership policy. Newly captured radiance is saved as a shared blob/index by a
+bounded background service, without serializing the diffuse snapshot again.
+The service starts lazily and drains at runtime shutdown. Subsequent map loads
+may still use the existing diffuse-index recovery path to assemble a combined
+cache for the requested reflection configuration. Optional diagnostic local
+capture companions are regenerated when their combined container is absent.
+This lifecycle change adds no shader variants or per-draw dispatch; matched
+whole-renderer performance acceptance remains separate.

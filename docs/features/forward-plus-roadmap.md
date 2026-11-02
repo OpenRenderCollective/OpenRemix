@@ -43,7 +43,10 @@ Implemented and checked:
   keys/wire bytes remain valid; current shared reflection blobs are skipped.
   Reflection-only configuration edits retain live diffuse publication throughout
   replacement work, including cache-disabled refreshes; source, diffuse-quality
-  and enable changes still invalidate incompatible publication.
+  and enable changes still invalidate incompatible publication. Capture-only jobs
+  now borrow compact admitted positions and the published light policy, bypassing
+  diffuse tracing/denoising/uploads. Shared reflection blobs persist independently
+  on a bounded worker; no diffuse snapshot is retained or rewritten for an edit.
   Preset admission and finishing order still share one transport budget. Diffuse
   finishing accepts compact diagnostic values rather than capture arrays; phase
   receipt hashing is reused without retaining provider storage. Capture stage
@@ -60,11 +63,11 @@ Still required for the complete modularity/performance objective:
 - Finish provider dependency/finishing orchestration beyond the current Source 2
   adapters. Keep source module resources, publication, cancellation and retirement
   explicit when adding/selecting implementations; preserve shared work admission.
-- Separate reflection-only invalidation from live diffuse publication. Independent
-  cache lookup now reuses validated diffuse payloads across reflection edits, but
-  live publication now survives reflection-only edits, but cache-disabled refreshes
-  still rebuild diffuse work and replacement uploads. Finish in-memory reuse while
-  preserving seed admission and frame lifetimes across those cases.
+- Broaden reflection-only refresh qualification to richer model-chart/styled-light
+  scenes. Live publication and in-memory diffuse reuse now survive reflection
+  edits, with bounded admission metadata and preserved frame lifetimes. New map
+  loads still use diffuse-index recovery when the exact combined cache is absent;
+  optional diagnostic local companions are regenerated in that case.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Water's baked/mixed sunlight policy still needs separate qualification.

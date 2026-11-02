@@ -17,6 +17,7 @@
 #include "forward/mixed/overflow.h"
 #include "forward/probes/capture_dump.h"
 #include "forward/probes/data.h"
+#include "forward/probes/capture_cache.h"
 #include "forward/probes/placement.h"
 #include "raster/renderer.h"
 #include <algorithm>
@@ -253,6 +254,7 @@ namespace remix::forward::bake {
           }
           cacheHit = true;
           filtering = !reflectionRecovery;
+          retainReflectionSeeds();
           return;
         }
       }
@@ -949,6 +951,17 @@ namespace remix::forward::bake {
     m_reflections = std::move(reflections);
     m_volume = std::move(volume);
     if (!diffusePublished) m_submissions[m_slot].upload = m_volume;
+    if (m_job->inMemoryDiffuse) {
+      if (m_job->reflectionPersistence && !m_job->cacheFile.empty()) {
+        try {
+          (void)probes::capture_cache::sharedPersistence().submit(m_job->cacheFile.parent_path(),
+              m_job->reflectionCacheKey, std::move(m_job->reflectionPersistence));
+        } catch (const std::exception &) {} // persistence cannot revoke published lighting
+      }
+      m_job.reset();
+      status(REMIXAPI_BAKE_READY_EXT, "Reflections refreshed; reused published diffuse lighting");
+      return;
+    }
     char message[sizeof(m_statistics.status)];
     const char *label = m_job->cacheHit ? "Cached lighting active"
         : m_job->reflections.cachedRadiance ? "Baked lighting active; reused reflections" : "Baked lighting active";
@@ -1125,13 +1138,22 @@ namespace remix::forward::bake {
             throw std::invalid_argument("Invalid bake batch settings");
           auto job = std::make_shared<Job>();
           job->source = source;
+          if (m_volume && m_volume->reflectionSeeds) {
+            job->inMemoryDiffuse = true;
+            job->publishedDiffuse = m_volume;
+            job->reflectionSeeds = m_volume->reflectionSeeds;
+            job->reflectionOwnership = m_volume->mixedLights;
+          }
           const auto physical = m_physical;
           const auto device = m_device;
           const auto queueFamily = m_queueFamily;
           // The worker owns only this frozen source and its private outputs;
           // no camera-frame resources or controller state cross threads.
           auto prepare = [job, physical, device, config, lightCutoff, queueFamily] {
-            job->prepareResources(physical, device, config, lightCutoff, queueFamily);
+            if (job->inMemoryDiffuse)
+              job->prepareReflectionRefresh(physical, device, config, lightCutoff, queueFamily);
+            else
+              job->prepareResources(physical, device, config, lightCutoff, queueFamily);
             if (job->cacheHit && !job->reflectionRecovery) {
               job->reflections.prepareImage(physical, device, job->cancellation.get_token());
               job->reflections.prepareContent(job->cancellation.get_token());
@@ -1178,8 +1200,9 @@ namespace remix::forward::bake {
           return;
         if (sceneRequest && m_job->transport) sceneRequest->offer(*m_job->transport);
         auto &job = *m_job;
-        m_statistics.probes = uint32_t(job.grid.tasks.size());
-        m_statistics.completed = job.received;
+        m_statistics.probes = job.inMemoryDiffuse ? job.publishedDiffuse->usableIrradianceProbes
+                                                  : uint32_t(job.grid.tasks.size());
+        m_statistics.completed = job.inMemoryDiffuse ? m_statistics.probes : job.received;
         if (job.reflectionRecovery && !job.filtering) {
           if (!job.prepared) {
             auto &submission = m_submissions[m_slot];
@@ -1438,11 +1461,14 @@ namespace remix::forward::bake {
         result.buffers += volume->staging->allocationBytes;
     };
     addVolume(m_volume);
+    if (m_job) addVolume(m_job->publishedDiffuse);
+    for (const auto &job : m_obsolete) addVolume(job->publishedDiffuse);
     addReflection(m_reflections);
     addLocalImage(m_localReflections);
     for (const auto &submission : m_submissions) {
       addVolume(submission.upload);
       addVolume(submission.sampled);
+      if (submission.job) addVolume(submission.job->publishedDiffuse);
       addReflection(submission.reflectionUpload);
       addReflection(submission.reflectionSampled);
       addLocalAsset(submission.localReflectionUpload);
