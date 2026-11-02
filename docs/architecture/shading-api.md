@@ -532,6 +532,21 @@ default environment source. This prevents material code from silently depending
 on the baked source's field layout. It is an internal shader module boundary;
 public custom program registration and provider resource selection are separate.
 
+## Reflection transport source
+
+The world reflection resolve queries `sampleTransportReflection(pixel, guide,
+centerDepth)` from `reflection-transport.glsl`. Its `ReflectionSample` contains
+current-frame incident radiance weighted by confidence. The default source owns
+screen/ray buffer sampling and the s&box-style bilateral reconstruction. The pass
+adapter supplies the receiver pixel, resolved guide and view depth; material
+composition retains environment fallback, confidence clamping and Fresnel. This
+is a compile-time source boundary, not a new GPU pass or runtime dispatch.
+
+The alternate-source compile fixture replaces this implementation without any
+raw radiance or bilateral storage access while retaining the actual resolve and
+environment source. CPU producer/resource selection for a new implementation is
+still required; implementing this function alone does not register a provider.
+
 ## Remaining API work
 
 1. Extend ownership metadata beyond the existing per-light attribution contract for

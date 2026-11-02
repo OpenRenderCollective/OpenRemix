@@ -66,6 +66,16 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
         subprocess.run([validator, "--target-env", "vulkan1.1", str(binary)], env=env, check=True)
     shutil.copyfile(root / "src/native/forward/shaders/reflection-environment.glsl",
                     tree / "shaders/reflection-environment.glsl")
+    # Replace only the screen/ray transport source. Keep the actual resolve,
+    # environment fallback and material Fresnel, with no bilateral source code.
+    shutil.copyfile(root / "tests/forward/shaders/custom-reflection-transport.glsl",
+                    tree / "shaders/reflection-transport.glsl")
+    binary = tree / "reflection-transport-source.spv"
+    subprocess.run([compiler, "-V", "--target-env", "vulkan1.1", "-DSSR_FILTER",
+                    str(tree / "shaders/reflections.comp"), "-o", str(binary)], env=env, check=True)
+    subprocess.run([validator, "--target-env", "vulkan1.1", str(binary)], env=env, check=True)
+    shutil.copyfile(root / "src/native/forward/shaders/reflection-transport.glsl",
+                    tree / "shaders/reflection-transport.glsl")
     # Replace the entire diffuse source/context, with no chart-shaped fields.
     # Real standard materials must consume the interface, not its representation.
     shutil.copyfile(root / "tests/forward/shaders/custom-diffuse-source.glsl",
@@ -98,4 +108,4 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
                         *["-D" + define for define in defines], str(source),
                         "-o", str(binary)], env=env, check=True)
         subprocess.run([validator, "--target-env", "vulkan1.1", str(binary)], env=env, check=True)
-print("Custom models and environment/diffuse/local sources compose through actual material passes")
+print("Custom models and environment/transport/diffuse/local sources compose through actual material passes")
