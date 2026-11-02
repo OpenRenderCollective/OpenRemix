@@ -306,6 +306,12 @@ retained path, which needs no GPU device or image. Source 2 cache restoration
 still interleaves its auxiliary-field restore before sealing publication, keeping
 that existing order explicit in its preset adapter.
 
+Diffuse finishing accepts only a compact `ReflectionFingerprint` diagnostic
+value, not capture arrays or a reflection source. The scheduler computes it once
+when phase receipts are enabled and reuses it for transport/filtered receipts.
+This removes diagnostic-only capture storage coupling and a repeated hash scan;
+normal publication, transport budgets and worker order are unchanged.
+
 The preset still determines admission and the order around diffuse finishing.
 The same callbacks, queue order, transport budget and early publication boundary
 are retained; this split creates no additional jobs, scene allocations or waits.

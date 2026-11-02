@@ -30,6 +30,7 @@
 namespace remix::forward::bake::cache { struct Snapshot; }
 
 namespace remix::forward::bake {
+  struct ReflectionFingerprint;
   struct Controller::Job : TransportSession {
     pipeline::PreparationQueue::Ticket ticket;
     bool preparationReady() const {
@@ -104,10 +105,10 @@ namespace remix::forward::bake {
     void logDirectionalTiming() const;
     void advanceDirectionals(bool finish);
     void prepareSurfaceStorage();
-    // Encodes diffuse assets on the preparation worker. Reflection records are
-    // diagnostic input only; capture/filter/publication ownership stays outside.
+    // Encodes diffuse assets on the preparation worker. Diagnostics borrow a
+    // compact value; no capture storage or reflection provider is required.
     void finishDiffuseAssets(VkPhysicalDevice physical, VkDevice device, const Config &config,
-                               std::span<const probes::Capture> diagnosticCaptures);
+                               const ReflectionFingerprint &reflectionFingerprint);
     std::vector<Vec4> visibility;
     std::vector<lightmap::Direct> direct;
     std::optional<mixed::DirectWork> directWork;

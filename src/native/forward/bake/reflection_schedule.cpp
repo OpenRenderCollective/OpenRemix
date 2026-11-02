@@ -123,16 +123,18 @@ namespace remix::forward::bake {
             // scratch before filtered cubemaps, denoising and atlas encoding.
             // Publication must not scan this potentially large buffer again.
             owner->reflections.complete(owner->cancellation.get_token());
+            const auto reflectionFingerprint = owner->reflectionRecovery ? ReflectionFingerprint{}
+                : fingerprintCaptures(owner->reflections.captureView());
             if (!owner->reflectionRecovery) {
               dumpPhaseFingerprint("transport", owner->source->contentHash, owner->grid, owner->surfaceLayout, owner->surfaces,
-                                   owner->sun, owner->reflections.captureView());
+                                   owner->sun, reflectionFingerprint);
               dumpVisibilityReport(*owner->mixedLights, owner->surfaceLayout,
                                     Options{}.bias / owner->source->sceneScale, owner->cancellation.get_token());
             }
             owner->finishStage.store(Job::FinishStage::Reflections, std::memory_order_relaxed);
             owner->reflections.finishRetainedPublication(physical, device, owner->cancellation.get_token());
             if (!owner->reflectionRecovery)
-              owner->finishDiffuseAssets(physical, device, config, owner->reflections.captureView());
+              owner->finishDiffuseAssets(physical, device, config, reflectionFingerprint);
           });
       status(REMIXAPI_BAKE_PREPARING_EXT, "Finishing baked lighting assets");
       return;

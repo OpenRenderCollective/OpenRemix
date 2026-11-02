@@ -18,7 +18,7 @@ template <typename T> void releaseStorage(std::vector<T> &values) {
 } // namespace
 void Controller::Job::finishDiffuseAssets(
     VkPhysicalDevice physical, VkDevice device, const Config &config,
-    std::span<const probes::Capture> diagnosticCaptures) {
+    const ReflectionFingerprint &reflectionFingerprint) {
   if (config.denoiseLightmaps && lightmap::denoiserVersion()) {
     finishStage.store(Job::FinishStage::Denoising, std::memory_order_relaxed);
     auto progress = [this](uint32_t completed, uint32_t total) {
@@ -71,7 +71,7 @@ void Controller::Job::finishDiffuseAssets(
                  static_cast<unsigned long long>(filtered.batchBufferBytes));
   }
   dumpPhaseFingerprint("filtered", source->contentHash, grid, surfaceLayout,
-                       surfaces, sun, diagnosticCaptures);
+                       surfaces, sun, reflectionFingerprint);
   finishStage.store(Job::FinishStage::Atlas, std::memory_order_relaxed);
   surfacePixels =
       lightmap::pixels(surfaceLayout, surfaces, cancellation.get_token(),

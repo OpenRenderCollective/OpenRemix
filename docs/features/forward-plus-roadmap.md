@@ -33,7 +33,9 @@ Implemented and checked:
 - Automatic reflections own placement/readback, radiance cache, filtering, worker
   tickets and publication. Retained, transferred and image-only finishing preserve
   array ownership without copies. Empty completion allocates no fallback image.
-  Preset admission and finishing order still share one transport budget.
+  Preset admission and finishing order still share one transport budget. Diffuse
+  finishing accepts compact diagnostic values rather than capture arrays; phase
+  receipt hashing is reused without retaining provider storage.
 - Targeted lifecycle, cancellation, cold/warm cache, material/source compilation,
   MSAA/shadow/reflection and live-GI checks pass. Recent shader API splits preserve
   optimized instruction/intrinsic counts; some variants differ in instruction
