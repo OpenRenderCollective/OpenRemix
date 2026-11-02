@@ -68,7 +68,10 @@ Still required for the complete modularity/performance objective:
   against recent db692f43 shows overlapping total GPU and CPU-recording ranges;
   baseline opaque weapon phases drift between sessions. No repeatable recent
   split overhead is established in that profile. Broaden map/provider coverage,
-  and investigate cold post-ready stalls separately.
+  and investigate cold post-ready stalls separately. A second-map Construct
+  indoor A/B/B/A through b7cab1d1 matches lighting/draw hashes and an inspected
+  scene crop, with no slowdown observed. Its pre-existing opaque world cost
+  dominates roughly 9-11 ms total GPU time; the 300 FPS target remains unmet.
 - Continue checking unused experiment paths before removal. Referenced low-level
   diagnostic modes and legacy aliases are not automatically dead code.
 
