@@ -245,6 +245,12 @@ The next lifecycle split must preserve these boundaries:
   ownership, lighting components, distance/bias and texture preparation. A source
   hash alone is insufficient to authorize reuse. Authored captures currently use
   different options and cannot blindly adopt the default bake transport.
+- `Transport::canShare` and the request-aware `initializeShared` overload now
+  enforce exact snapshot identity and memberwise option equality before allocating
+  or replacing a consumer. Caller-supplied packed input overrides are conservatively
+  excluded from this inferred compatibility. The inheritance-only overload remains
+  available when the caller explicitly wants the donor's complete policy/inputs.
+  These are preparation-time checks, not per-frame scene scans or new scheduling.
 - A requesting provider must obtain a compatible, retained scene lease before
   the default job retires. Do not retain an acceleration structure indefinitely
   merely to make a later request cheaper. Define demand and retirement explicitly.

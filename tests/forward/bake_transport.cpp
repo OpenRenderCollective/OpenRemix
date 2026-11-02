@@ -381,6 +381,7 @@ namespace {
       try { premature.initializeShared(transport); }
       catch (const std::invalid_argument &) { rejected = true; }
       require(rejected, "Shared transport accepted scene before build-input retirement");
+      require(!transport.canShare(*scene, options), "Transport advertised an unretired scene for sharing");
     }
     transport.releaseBuildInputs();
     require(transport.memoryBytes() < before,
@@ -429,7 +430,7 @@ namespace {
       bake::Transport independent;
       auto prepareShared = [&](bake::Transport &consumer, const bake::Transport &owner) {
         auto ticket = pipelines.prepare("bake-test-shared-" + std::to_string(++transportGeneration), [&] {
-          consumer.initializeShared(owner);
+          consumer.initializeShared(owner, *scene, options);
         });
         const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(60);
         while (!ticket->ready() && std::chrono::steady_clock::now() < until)
@@ -437,7 +438,38 @@ namespace {
         require(ticket->ready(), "Shared transport preparation timed out");
         ticket->check();
       };
+      require(transport.canShare(*scene, options), "Prepared transport rejected its exact request");
+      auto changedScene = *scene;
+      require(!transport.canShare(changedScene, options), "Shared transport accepted a different snapshot with the same hash");
+      auto mismatch = [&](auto change) {
+        auto changed = options;
+        change(changed);
+        require(!transport.canShare(*scene, changed), "Shared transport accepted a different option");
+        bool rejected = false;
+        try { independent.initializeShared(transport, *scene, changed); }
+        catch (const std::invalid_argument &) { rejected = true; }
+        require(rejected, "Shared consumer adopted incompatible transport policy");
+      };
+      mismatch([](auto &o) { ++o.textureResolution; });
+      mismatch([](auto &o) { ++o.batchPoints; });
+      mismatch([](auto &o) { ++o.initialBatchPoints; });
+      mismatch([](auto &o) { ++o.queueFamily; });
+      mismatch([](auto &o) { o.parallel = !o.parallel; });
+      mismatch([](auto &o) { o.lightImportanceSampling = !o.lightImportanceSampling; });
+      mismatch([](auto &o) { o.lightingComponents = !o.lightingComponents; });
+      mismatch([](auto &o) { o.directLighting.lights.push_back(bake::DirectMode::Baked); });
+      mismatch([](auto &o) { o.cpuReadback = !o.cpuReadback; });
+      mismatch([](auto &o) { o.depthCapture = !o.depthCapture; });
+      mismatch([](auto &o) { o.deviceLocalBatches = !o.deviceLocalBatches; });
+      mismatch([](auto &o) { ++o.rayBudget; });
+      mismatch([](auto &o) { ++o.atlasBudget; });
+      mismatch([](auto &o) { o.distance *= 2; });
+      mismatch([](auto &o) { o.bias *= 2; });
       prepareShared(independent, transport);
+      const auto admittedIdentity = independent.memory().consumerIdentity;
+      mismatch([](auto &o) { o.lightingComponents = !o.lightingComponents; });
+      require(independent.memory().consumerIdentity == admittedIdentity,
+              "Rejected sharing replaced an existing consumer");
       const auto originalMemory = transport.memory(), sharedMemory = independent.memory();
       require(originalMemory.sceneIdentity == sharedMemory.sceneIdentity &&
                   originalMemory.consumerIdentity != sharedMemory.consumerIdentity,
@@ -523,6 +555,21 @@ namespace {
           for (uint32_t channel = 0; channel < 3; ++channel)
             require(std::abs(radiance[channel] - scene->dome.radiance[channel]) < .0001f,
                     "Standalone reflection capture changed constant environment radiance");
+      bake::Transport overridden;
+      auto overrideTicket = pipelines.prepare("bake-test-overridden-inputs", [&] {
+        overridden.initialize(fixture.physical, fixture.device, scene, bake::pack(*scene), options);
+      });
+      const auto overrideDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+      while (!overrideTicket->ready() && std::chrono::steady_clock::now() < overrideDeadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      require(overrideTicket->ready(), "Overridden transport preparation timed out");
+      overrideTicket->check();
+      fixture.begin();
+      overridden.recordPrepare(fixture.command, world.resources);
+      fixture.finish();
+      overridden.releaseBuildInputs();
+      require(!overridden.canShare(*scene, options),
+              "Snapshot/options inferred compatibility for caller-supplied packed inputs");
       sharedSceneChecked = true;
     }
     return results[0];

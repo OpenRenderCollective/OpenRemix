@@ -80,6 +80,7 @@ namespace remix::forward::bake {
       throw std::invalid_argument("Missing radiance transport scene");
     auto inputs = pack(*source);
     initialize(physical, device, std::move(source), std::move(inputs), options);
+    m_gpu->world->canonicalInputs = true;
   }
   void Transport::initialize(VkPhysicalDevice physical, VkDevice device,
                              std::shared_ptr<const scene::BakeScene> source, Inputs inputs, Options options) {
@@ -117,6 +118,15 @@ namespace remix::forward::bake {
     next->createPipelines();
     next->createDescriptors();
     m_gpu = std::move(next);
+  }
+  bool Transport::canShare(const scene::BakeScene &source, const Options &options) const {
+    return m_gpu && m_gpu->prepared && m_gpu->world->ready && m_gpu->world->canonicalInputs &&
+        m_gpu->world->source.get() == &source && m_gpu->options == options;
+  }
+  void Transport::initializeShared(const Transport &prepared, const scene::BakeScene &source, const Options &options) {
+    if (!prepared.canShare(source, options))
+      throw std::invalid_argument("Shared transport request does not match a prepared scene and policy");
+    initializeShared(prepared);
   }
   void Transport::initializeShared(const Transport &prepared) {
     if (!prepared.m_gpu || !prepared.m_gpu->prepared || !prepared.m_gpu->world->ready)

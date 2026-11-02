@@ -17,6 +17,7 @@ namespace remix::forward::bake {
     // Captured light indices are stable across transport and runtime bindings.
     // Empty retains the legacy per-light path while integration is in progress.
     std::vector<DirectMode> lights;
+    bool operator==(const DirectPolicy &) const = default;
   };
   // Explicit membership first; automatic selection is a separate planning step.
   // Moving lights cannot contribute to immutable diffuse lightmaps.

@@ -23,6 +23,7 @@ namespace remix::forward::bake {
     uint32_t rayBudget = 1u << 20; // point * sample * bounce ceiling per dispatch
     uint64_t atlasBudget = 256ull << 20;
     float distance = 100, bias = .002f; // metres
+    bool operator==(const Options &) const = default;
   };
   // One scene snapshot's hardware diffuse/radiance transport. The caller owns
   // scheduling, submission and fences; no queue waits or hidden work occur here.
@@ -49,6 +50,15 @@ namespace remix::forward::bake {
     // must have run. All transport options are retained; no repacking/rebuild.
     // Call on a preparation worker. The original transport may then be retired.
     void initializeShared(const Transport &prepared);
+    // Conservative provider admission: exact immutable snapshot identity and all
+    // inherited options must match. Caller-supplied packed input overrides are
+    // not eligible for this inferred compatibility. Call across a completed worker/fence
+    // handoff; this is not synchronization for concurrently changing transports.
+    bool canShare(const scene::BakeScene &source, const Options &options) const;
+    // Reject incompatibility before replacing this consumer or allocating GPU
+    // resources. Unlike the inheritance-only overload, states the request policy.
+    void initializeShared(const Transport &prepared, const scene::BakeScene &source, const Options &options);
+
     void recordPrepare(VkCommandBuffer command, RasterRenderer &textures);
     // The selected slot's prior fence has completed. Call after recordPrepare.
     // A nonzero normal identifies a surface receiver: offset it along the normal
