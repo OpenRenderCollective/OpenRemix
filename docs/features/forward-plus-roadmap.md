@@ -1,3 +1,9 @@
+# Automatic capture module - 2026-11-02
+
+- Automatic placement/capture-ray/filter/image work now has an inline-owned probes::AutomaticCapture module; no duplicated rays or GPU passes.
+- The Source 2 bake scheduler still supplies transport, optional receiver diagnostics, and combined publication/cache. Separate scheduling and cache/publication remain unfinished.
+- First controlled 1080p Crossfire comparison found no measurable regression; expand qualification to other maps/providers before declaring the full no-overhead goal complete.
+
 # Reflection capture separation - 2026-11-02
 
 - Authored captures now accept ready scene identity, optional automatic image and reflection-only configuration rather than a diffuse bake volume.

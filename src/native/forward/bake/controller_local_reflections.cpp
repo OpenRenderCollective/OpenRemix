@@ -19,12 +19,12 @@ namespace remix::forward::bake {
       job.localCapturePlanned = true;
       const auto owner = m_job;
       job.ticket = m_pipelines->prepare("forward-local-reflection-plan-" + std::to_string(++generation), [owner] {
-        const auto baseline = probes::automaticCoverageBaseline(owner->reflectionImage->header());
+        const auto baseline = probes::automaticCoverageBaseline(owner->reflections.image->header());
         auto plan = probes::planReceiverCoverage(*owner->source, baseline, *owner->reflectionEvidence,
                                                  owner->cancellation.get_token());
         if (plan.replacements.empty()) return;
         owner->localCaptureWork = std::make_unique<probes::LocalCaptureWork>(*owner->source, baseline, plan,
-            owner->reflectionImage->header().parameters[1], .5f / owner->source->sceneScale,
+            owner->reflections.image->header().parameters[1], .5f / owner->source->sceneScale,
             owner->cancellation.get_token());
         owner->localReflections = std::make_shared<LocalReflections>();
         owner->localReflections->plan = std::make_shared<const probes::ReceiverCoveragePlan>(std::move(plan));
@@ -86,7 +86,7 @@ namespace remix::forward::bake {
       const Config &config, uint32_t family) {
     const char *enabled = std::getenv("REMIX_DEBUG_PROBE_LOCAL_CAPTURE");
     if (!enabled || std::strcmp(enabled, "1") || !cacheHit || localReflections) return;
-    auto audit = probes::prepareReceiverAudit(*source, captures, cancellation.get_token());
+    auto audit = probes::prepareReceiverAudit(*source, reflections.captures, cancellation.get_token());
     if (!audit) return; // Failed optional preparation retains the ordinary cache hit.
     if (!transport) {
       Options options;
@@ -106,8 +106,8 @@ namespace remix::forward::bake {
   }
   void Controller::Job::restoreLocalReflections(VkPhysicalDevice physical, VkDevice device, const Config &config) {
     const char *enabled = std::getenv("REMIX_DEBUG_PROBE_LOCAL_CAPTURE");
-    if (!enabled || std::strcmp(enabled, "1") != 0 || !cacheHit || !reflectionImage || cacheFile.empty()) return;
-    const auto baseline = probes::automaticCoverageBaseline(reflectionImage->header());
+    if (!enabled || std::strcmp(enabled, "1") != 0 || !cacheHit || !reflections.image || cacheFile.empty()) return;
+    const auto baseline = probes::automaticCoverageBaseline(reflections.image->header());
     auto cached = local_cache::read(local_cache::path(cacheFile), cacheKey, source, config, baseline,
                                     cancellation.get_token());
     if (!cached) return; // Base irradiance and cubemaps remain a valid cache hit.

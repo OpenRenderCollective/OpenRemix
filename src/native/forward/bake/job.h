@@ -15,8 +15,7 @@
 #include "forward/mixed/unified_masks.h"
 #include "forward/mixed/directional_fields.h"
 #include "forward/mixed/directional_capture.h"
-#include "forward/probes/evaluation.h"
-#include "forward/probes/capture_work.h"
+#include "forward/probes/automatic_capture.h"
 #include "forward/probes/local_capture_work.h"
 #include "forward/probes/receiver_audit.h"
 #include "forward/probes/receiver_sites.h"
@@ -126,15 +125,7 @@ namespace remix::forward::bake {
     std::vector<uint16_t> surfacePixels;
     std::shared_ptr<lightmap::Geometry> surfaceGeometry;
     uint32_t surfaceNext = 0, surfaceReceived = 0;
-    std::vector<Point> reflectionSites;
-    std::vector<uint8_t> usableReflectionSites;
-    uint32_t siteNext = 0, siteReceived = 0;
-    bool sitesPlanned = false;
-    std::vector<probes::FittedRegion> candidateRegions;
-    std::unique_ptr<probes::ProjectionAudit> projectionAudit;
-    uint32_t geometryNext = 0, geometryReceived = 0;
-    bool candidatesPlanned = false;
-    std::vector<probes::Capture> captures;
+    probes::AutomaticCapture reflections;
     std::unique_ptr<probes::ReceiverAudit> receiverAudit;
     uint32_t receiverNext = 0, receiverReceived = 0;
     bool receiverRetried = false;
@@ -161,13 +152,8 @@ namespace remix::forward::bake {
     bool localReflectionUpgrade = false;
     uint32_t localCaptureNext = 0, localCaptureReceived = 0;
     bool localCapturePlanned = false, localCaptureFiltered = false;
-    probes::CaptureWork captureWork;
-    uint64_t captureInputHash = 0;
-    probes::Data specular;
-    std::unique_ptr<probes::ImageAsset> reflectionImage;
     std::stop_source cancellation;
-    uint32_t captureNext = 0, captureReceived = 0;
-    bool capturePlanned = false, filtering = false;
+    bool filtering = false;
     enum class FinishStage { None, ProbeRefinement, CoarseTransfer, Reflections, Denoising, Atlas, Geometry, Styles };
     std::atomic<FinishStage> finishStage{FinishStage::None};
     std::atomic<uint32_t> denoisedCharts{0}, denoiseChartCount{0};
@@ -175,7 +161,6 @@ namespace remix::forward::bake {
     bool initialized = false, prepared = false, failed = false;
     void prepareResources(VkPhysicalDevice physical, VkDevice device, const Config &config, float lightCutoff,
                           uint32_t queueFamily);
-    void finishCaptureInputs(); // worker-only: retain provenance, release ray scratch
     enum class Visibility {
       Local, Direct, DirectionalField, Overflow, SurfaceSun, SurfaceSunAntialiasing, ProbeSun, ProbeLocal
     };

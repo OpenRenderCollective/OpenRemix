@@ -301,3 +301,22 @@ Submitted capture/composition frames retain that owner through their fences.
 Automatic placement, capture transport and cache publication are still inside the
 bake controller. Moving that lifecycle to a standalone reflection provider remains
 required; the input boundary alone does not complete interchangeable providers.
+
+
+### Automatic capture work ownership
+
+`probes::AutomaticCapture` now owns automatic site validation state, fitted
+regions/projection audits, selected raw captures, shared capture-ray mapping,
+input provenance, filtered cubemaps and the prepared GPU image. Its placement,
+selection, ray preparation/completion and filtering operations have no dependency
+on the bake controller, diffuse atlases or diffuse probe values. Placement still
+borrows grid positions and geometry-validity metadata as spatial seed inputs. State is stored inline in the
+owning job: this extraction adds no resource allocation or duplicate ray arrays.
+
+The current Source 2 scheduler still lends its transport, advances counters after
+submission fences, performs optional receiver diagnostics, and publishes/caches
+reflection output with the diffuse assets. This preserves existing cold/warm
+behavior while extracting reusable work. A standalone automatic reflection
+scheduler and independently keyed publication/cache remain unfinished. Keep the
+source ownership and cancellation token alive through every worker and submitted
+frame when moving that scheduling next.

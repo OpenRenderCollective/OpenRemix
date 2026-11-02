@@ -19,7 +19,7 @@ namespace remix::forward::bake {
           [owner, path = std::string(request)] {
         try {
           if (!owner->receiverFits || std::filesystem::exists(path)) return;
-          const auto baseline = probes::automaticCoverageBaseline(owner->captures);
+          const auto baseline = probes::automaticCoverageBaseline(owner->reflections.captures);
           auto guards = probes::coverageGuardPoints(baseline.volumes, owner->cancellation.get_token());
           const auto fits = owner->receiverFits->finish(*owner->source, owner->cancellation.get_token());
           auto pairs = probes::coverageGuardPairs(guards, fits, .002f / owner->source->sceneScale,
