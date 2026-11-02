@@ -251,6 +251,10 @@ The next lifecycle split must preserve these boundaries:
   excluded from this inferred compatibility. The inheritance-only overload remains
   available when the caller explicitly wants the donor's complete policy/inputs.
   These are preparation-time checks, not per-frame scene scans or new scheduling.
+- Authored capture edits use this compatibility check before reusing their prior
+  transport consumer. Matching edits retain the same slots/descriptors under the
+  existing fence discipline; they do not instantiate a second consumer. This
+  does not yet share the default bake's scene with the authored provider.
 - A requesting provider must obtain a compatible, retained scene lease before
   the default job retires. Do not retain an acceleration structure indefinitely
   merely to make a later request cheaper. Define demand and retirement explicitly.

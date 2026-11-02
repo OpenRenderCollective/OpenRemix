@@ -90,19 +90,20 @@ namespace remix::forward::probes {
         appendRays(captures[owner], rays, cancellation.get_token());
       }
       rayCount = uint32_t(rays.size());
-      if (prior && prior->transport) {
-        // Immutable acceleration/textures are reused. Mutable dispatch slots
-        // are accessed only after Authoring::selectFrame observed their fence.
+      bake::Options options;
+      options.queueFamily = family;
+      options.batchPoints = bake::Budget::maximumPoints;
+      options.rayBudget = bake::Budget::maximumWork;
+      options.initialBatchPoints = 1024;
+      options.textureResolution = config.textureResolution;
+      if (prior && prior->transport && prior->transport->canShare(*source, options)) {
+        // Completed edits can reuse the same compatible consumer without
+        // allocating another descriptor/dispatch set. Mutable slots are touched
+        // only after Authoring::selectFrame observed their owning fence.
         transport = prior->transport;
         prepared = prior->prepared;
         sceneReused = true;
       } else if (!rays.empty()) {
-        bake::Options options;
-        options.queueFamily = family;
-        options.batchPoints = bake::Budget::maximumPoints;
-        options.rayBudget = bake::Budget::maximumWork;
-        options.initialBatchPoints = 1024;
-        options.textureResolution = config.textureResolution;
         transport = std::make_shared<bake::Transport>();
         transport->initialize(physical, device, source, options);
       }
