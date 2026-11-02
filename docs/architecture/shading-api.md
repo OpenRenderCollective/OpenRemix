@@ -312,6 +312,12 @@ when phase receipts are enabled and reuses it for transport/filtered receipts.
 This removes diagnostic-only capture storage coupling and a repeated hash scan;
 normal publication, transport budgets and worker order are unchanged.
 
+Capture progress queries expose completed/total work units for active site,
+geometry and radiance stages. The preset scheduler no longer inspects those
+placement vectors, audit ray arrays or received counters to format status.
+Queries follow the same preparation/readback handoff as stage selection and do
+not allocate, scan rays or introduce another progress state.
+
 The preset still determines admission and the order around diffuse finishing.
 The same callbacks, queue order, transport budget and early publication boundary
 are retained; this split creates no additional jobs, scene allocations or waits.

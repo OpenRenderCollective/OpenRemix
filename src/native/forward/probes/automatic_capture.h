@@ -37,6 +37,19 @@ namespace remix::forward::probes {
       if (!capturePlanned) return Step::Select;
       return captureReceived < work.rays().size() ? Step::Capture : Step::Complete;
     }
+    struct Progress {
+      uint32_t completed = 0;
+      size_t total = 0;
+    };
+    // Scheduler diagnostics inspect work units, not placement/ray storage.
+    // As with nextStep(), call only after the preparation/readback handoff.
+    Progress progress(Step step) const {
+      if (step == Step::ValidateSites) return {siteReceived, reflectionSites.size()};
+      if (step == Step::CheckGeometry)
+        return {geometryReceived, projectionAudit ? projectionAudit->rays().size() : 0};
+      if (step == Step::Capture) return {captureReceived, work.rays().size()};
+      return {};
+    }
     static bake::Work workType(Step step);
     struct Dispatch {
       Step step;

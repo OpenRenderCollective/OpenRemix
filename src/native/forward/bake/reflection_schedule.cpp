@@ -53,9 +53,10 @@ namespace remix::forward::bake {
     }
     if (step == CaptureStep::ValidateSites) {
       dispatch();
+      const auto counts = job.reflections.progress(step);
       char progress[128];
       std::snprintf(progress, sizeof(progress), "Validating reflection capture sites (%u/%zu)",
-                    job.reflections.siteReceived, job.reflections.reflectionSites.size());
+                    counts.completed, counts.total);
       status(REMIXAPI_BAKE_TRACING_EXT, progress);
       return;
     }
@@ -72,10 +73,10 @@ namespace remix::forward::bake {
     }
     if (step == CaptureStep::CheckGeometry) {
       dispatch();
-      const auto rays = job.reflections.projectionAudit->rays();
+      const auto counts = job.reflections.progress(step);
       char progress[128];
       std::snprintf(progress, sizeof(progress), "Checking reflection projection geometry (%u/%zu rays)",
-                    job.reflections.geometryReceived, rays.size());
+                    counts.completed, counts.total);
       status(REMIXAPI_BAKE_TRACING_EXT, progress);
       return;
     }
@@ -140,9 +141,10 @@ namespace remix::forward::bake {
       return;
     }
     dispatch();
+    const auto counts = job.reflections.progress(step);
     char progress[128];
     std::snprintf(progress, sizeof(progress), "Capturing reflection cubemaps (%u/%zu texels, %u samples)",
-                  job.reflections.captureReceived, job.reflections.work.rays().size(), config.samples);
+                  counts.completed, counts.total, config.samples);
     status(REMIXAPI_BAKE_TRACING_EXT, progress);
     return;
   }
