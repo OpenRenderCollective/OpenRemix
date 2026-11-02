@@ -78,7 +78,10 @@ Still required for the complete modularity/performance objective:
   and investigate cold post-ready stalls separately. A second-map Construct
   indoor A/B/B/A through b7cab1d1 matches lighting/draw hashes and an inspected
   scene crop, with no slowdown observed. Its pre-existing opaque world cost
-  dominates roughly 9-11 ms total GPU time; the 300 FPS target remains unmet.
+  dominates roughly 9-11 ms total GPU time; the 300 FPS target remains unmet. A
+  focused uncapped Crossfire A/B/B/A through 75424e37 overlaps the retained recent
+  baseline at 277-283 FPS unarmed and 250-253 with weapon. CPU ranges overlap;
+  GPU intervals vary between sessions without a consistent two-run slowdown.
 - Continue checking unused experiment paths before removal. Referenced low-level
   diagnostic modes and legacy aliases are not automatically dead code.
 
