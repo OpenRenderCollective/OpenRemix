@@ -38,6 +38,9 @@ Implemented and checked:
 - Automatic reflections own placement/readback, radiance cache, filtering, worker
   tickets and publication. Retained, transferred and image-only finishing preserve
   array ownership without copies. Empty completion allocates no fallback image.
+  A bounded validated diffuse cache index reuses diffuse payloads across reflection
+  count/resolution/tolerance/enable edits without retracing or denoising. Legacy
+  keys/wire bytes remain valid; current shared reflection blobs are skipped.
   Preset admission and finishing order still share one transport budget. Diffuse
   finishing accepts compact diagnostic values rather than capture arrays; phase
   receipt hashing is reused without retaining provider storage. Capture stage
@@ -54,11 +57,10 @@ Still required for the complete modularity/performance objective:
 - Finish provider dependency/finishing orchestration beyond the current Source 2
   adapters. Keep source module resources, publication, cancellation and retirement
   explicit when adding/selecting implementations; preserve shared work admission.
-- Separate reflection-only invalidation from diffuse publication/cache identity.
-  Combined Config::sameLighting and cache::key still include count/resolution/
-  bounds tolerance; missing-blob recovery requires the old combined key. Preserve
-  diffuse assets during reflection edits, including without disk cache, and keep
-  seed admission, frame lifetimes and legacy cache validation explicit.
+- Separate reflection-only invalidation from live diffuse publication. Independent
+  cache lookup now reuses validated diffuse payloads across reflection edits, but
+  current volume invalidation and disk-cache-disabled rebuilding remain coupled.
+  Preserve live assets, seed admission and frame lifetimes across those cases.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Water's baked/mixed sunlight policy still needs separate qualification.

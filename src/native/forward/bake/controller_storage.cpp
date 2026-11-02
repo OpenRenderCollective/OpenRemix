@@ -110,6 +110,7 @@ namespace remix::forward::bake {
     snapshot->mixed.overflow = mixedLights->overflow;
     snapshot->mixed.occlusion = std::move(mixedLights->occlusion);
     snapshot->mixed.masks = std::move(mixedLights->masks);
+    snapshot->diffuseReference = diffuseReference;
     snapshot->reflectionKey = reflectionCacheKey;
     snapshot->reflectionOwner = reflections.retainPayload();
     snapshot->pixels = std::move(surfacePixels);

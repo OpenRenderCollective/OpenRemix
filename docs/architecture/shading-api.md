@@ -336,15 +336,33 @@ comparison changes. `cache::key` includes the same reflection fields and fit
 policy revisions. An independent radiance blob therefore does not by itself
 allow reuse of the diffuse publication under a changed reflection request.
 
-The existing missing-reflection recovery path preserves decoded diffuse data
-and recaptures reflections when a referenced blob disappears. It first requires
-a hit on the combined key, so it does not solve reflection-only settings edits.
+The persistence path now has a separate diffuse identity, canonicalizing only
+reflection request fields while retaining source, shader, diffuse policy and
+device identity. A 56-byte checksummed `.diffuse-index` hints at a validated
+legacy container and its original reflection settings. Full legacy hits register
+the hint; successful background writes publish it only after the container is
+committed. Missing/corrupt hints or containers remain ordinary misses, and no
+cache-directory scan is performed. Existing combined keys and wire bytes stay
+unchanged; legacy caches first encountered under changed settings without an
+index may still miss until a matching load or new bake registers one.
+
+On a requested combined-key miss, an indexed diffuse-only read recomputes the
+referenced container key from current diffuse settings plus stored reflection
+settings, then performs normal checksum/layout/policy validation. Shared radiance
+blobs are not opened; legacy inline payloads still need bounded decoding. The
+existing missing-component recovery path then reuses decoded diffuse fields and
+admitted origins while capturing the new reflection request. New manifests are
+persisted under that request's full identity, including reflection disable.
+Warm reflection edits avoid diffuse transport/denoising when this cache path hits.
+This does not yet preserve the current live volume through invalidation or avoid
+rebuilding diffuse data with disk cache disabled.
+
 Removing fields from `sameLighting` or the cache key alone would be incorrect:
 that could leave the requested reflection change unapplied or accept captures
 with the wrong resolution/placement policy.
 
-The next separation must give diffuse assets their own validated identity and
-reflection placement/radiance their requested identity, while preserving the
+The next separation must retain live diffuse publications independently of
+reflection placement/radiance requests, while preserving the
 Source 2 adapter's admitted seeds and shared GPU budget. Published diffuse assets
 should remain usable while reflection replacement is pending, including with
 disk persistence disabled. Old frame slots must retain the exact image/metadata

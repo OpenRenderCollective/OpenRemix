@@ -119,9 +119,10 @@ namespace remix::forward::bake {
     bool hasDirectDiffuse = false, hasSun = false; // survive release of the completed CPU arrays
     std::filesystem::path cacheFile;
     uint64_t cacheKey = 0, reflectionCacheKey = 0;
+    cache::DiffuseReference diffuseReference;
     cache::Device cacheDevice;
     std::unique_ptr<const cache::Snapshot> takeCacheSnapshot();
-    bool cacheHit = false, reflectionRecovery = false;
+    bool cacheHit = false, reflectionRecovery = false, diffuseRecovery = false;
     std::shared_ptr<Volume> publishedDiffuse; // render-thread recovery publication; never read by workers
     uint32_t sunNext = 0, sunReceived = 0;
     std::unique_ptr<SunAntialiasing> sunAntialiasing;

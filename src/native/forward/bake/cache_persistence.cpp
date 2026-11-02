@@ -86,6 +86,8 @@ Persistence::Persistence(uint64_t byteBudget, Writer write)
                      local_cache::write(local_cache::path(file), key,
                                         *data.localReflections);
             const bool saved = cache::write(file, key, data);
+            if (saved && snapshot.diffuseReference.containerKey == key)
+              (void)writeDiffuseReference(file.parent_path(), snapshot.diffuseReference);
             if (saved && data.localReflections)
               (void)local_cache::write(local_cache::path(file), key,
                                        *data.localReflections);

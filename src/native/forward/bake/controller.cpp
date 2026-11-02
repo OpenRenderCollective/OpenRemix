@@ -178,6 +178,9 @@ namespace remix::forward::bake {
       cacheDevice = deviceIdentity;
       cacheKey = cache::key(source->contentHash, config, lightCutoff, deviceIdentity, directLighting,
                             fallbackReflections);
+      diffuseReference = {cache::diffuseKey(source->contentHash, config, lightCutoff, deviceIdentity, directLighting),
+          cacheKey, config.reflectionProbes, config.reflectionResolution,
+          std::bit_cast<uint32_t>(config.reflectionDetailTolerance)};
       try {
         cacheFile = cache::path(cacheKey);
       } catch (const std::exception &) {
@@ -186,6 +189,11 @@ namespace remix::forward::bake {
       if (!cacheFile.empty()) {
         auto cached = cache::read(cacheFile, cacheKey, source, config, deviceIdentity,
                                   cancellation.get_token(), directLighting, cache::ReflectionRead::RecoverMissing);
+        if (!cached) {
+          cached = cache::readDiffuse(cacheFile.parent_path(), source->contentHash, source, config, lightCutoff,
+                                       deviceIdentity, cancellation.get_token(), directLighting, fallbackReflections);
+          diffuseRecovery = bool(cached);
+        }
         if (cached && directionalFieldsRequested() && cached->directDiffuse &&
             (!cached->directionalAttempted || (cached->directionals.empty() &&
              cached->directionalBudget < mixed::directionalStorageBudget(cached->layout))))
@@ -199,6 +207,8 @@ namespace remix::forward::bake {
                                cache::key(0, config, lightCutoff, deviceIdentity, directLighting,
                                           fallbackReflections), bool(cached));
         if (cached) {
+          if (!diffuseRecovery)
+            (void)cache::writeDiffuseReference(cacheFile.parent_path(), diffuseReference, cancellation.get_token());
           reflectionRecovery = cached->missingReflections;
           grid = std::move(cached->grid);
           surfaceLayout = std::move(cached->layout);
@@ -1003,7 +1013,7 @@ namespace remix::forward::bake {
     // GPU upload data and runtime bindings now own everything required for
     // publication. Move CPU cache inputs into an independent immutable task.
     // A slow/full/unavailable disk must never delay this ready transition.
-    if ((!m_job->cacheHit || m_job->reflectionRecovery) && !m_job->cacheFile.empty()) {
+    if ((!m_job->cacheHit || m_job->reflectionRecovery || m_job->diffuseRecovery) && !m_job->cacheFile.empty()) {
       try {
         if (!cache::persistence().submit(m_job->cacheFile, m_job->cacheKey, m_job->takeCacheSnapshot()))
           std::fprintf(stderr, "Background bake cache budget busy; retaining published lighting without persistence\n");
