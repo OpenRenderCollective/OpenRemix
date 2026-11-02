@@ -161,11 +161,15 @@ namespace remix {
     const uint32_t x0 = updates.dirty[0], y0 = updates.dirty[1], x1 = updates.dirty[2], y1 = updates.dirty[3];
     std::fill_n(updates.dirty, 4, 0u);
     const auto &p = source.pixels;
-    // Region updates cover plain RGBA8 images at full size. One with mips
-    // (generated again by every update) is uploaded whole, every level.
-    if (x1 <= x0 || y1 <= y0 || !value.data || p.compressed || !p.hdrMips.empty() ||
+    // Region updates cover plain RGBA8 or RGBA32F (hdrMips, one level) images
+    // at full size. One with mips (generated again by every update) is
+    // uploaded whole, every level.
+    const bool hdr = p.hdrMips.size() == 1;
+    if (x1 <= x0 || y1 <= y0 || !value.data || p.compressed || p.hdrMips.size() > 1 ||
         value.data->width != p.width || value.data->height != p.height || x1 > p.width || y1 > p.height)
       return;
+    const uint32_t texel = hdr ? 16 : 4;
+    const auto *texels = hdr ? reinterpret_cast<const uint8_t *>(p.hdrMips[0].data()) : p.mips[0].data();
     if (p.mips.size() > 1) {
       refreshLevels(value, source, command);
       return;
@@ -174,11 +178,11 @@ namespace remix {
     CounterTicks time{textureCounters.uploadTicks};
     dynamicTextureUploads += source.dynamic;
     textureCounters.uploads.fetch_add(1, std::memory_order_relaxed);
-    textureCounters.uploadBytes.fetch_add(uint64_t(width) * height * 4, std::memory_order_relaxed);
-    uploads.push_back(buffer(size_t(width) * height * 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, [&](uint8_t *mapped) {
+    textureCounters.uploadBytes.fetch_add(uint64_t(width) * height * texel, std::memory_order_relaxed);
+    uploads.push_back(buffer(size_t(width) * height * texel, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, [&](uint8_t *mapped) {
       for (uint32_t y = 0; y < height; ++y)
-        std::memcpy(mapped + size_t(y) * width * 4, p.mips[0].data() + (size_t(y0 + y) * p.width + x0) * 4,
-                    size_t(width) * 4);
+        std::memcpy(mapped + size_t(y) * width * texel, texels + (size_t(y0 + y) * p.width + x0) * texel,
+                    size_t(width) * texel);
     }));
     // Earlier frames on this queue may still sample the image: wait for
     // their reads, keep the untouched texels (no UNDEFINED transition).

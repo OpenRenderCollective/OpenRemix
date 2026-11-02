@@ -281,7 +281,9 @@ typedef struct remixapi_TextureInfoGenerateMipsEXT {
 //     dynamic textures was updated (accumulation restarts, a still frame is
 //     rendered again).
 // Requirements (INVALID_ARGUMENTS otherwise): dynamic is 0 or 1; with 1, the
-// format is R8G8B8A8 or B8G8R8A8 (UNORM or SRGB), mipLevels is 1 and
+// format is R8G8B8A8 or B8G8R8A8 (UNORM or SRGB) or a float one
+// (REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT, _R32G32B32A32_SFLOAT_EXT: an HDR
+// render target such as a dome's sky, updated in float), mipLevels is 1 and
 // remixapi_TextureInfoGenerateMipsEXT is absent or off: a dynamic texture has
 // one level. CreateTexture under the hash of an existing texture makes a new
 // texture, as it always does: materials created before keep the old one.
@@ -1394,4 +1396,8 @@ typedef struct remixapi_LightInfoCookieEXT {
 // A private value avoids the retained 0.1003 BC5 value (139).
 #define REMIXAPI_FORMAT_BC4_UNORM_EXT ((remixapi_Format)147)
 #define REMIXAPI_FORMAT_BC6H_UFLOAT_EXT ((remixapi_Format)143)
+// Uncompressed linear float texels (CreateTexture; a dynamic texture's
+// pixels and its UpdateTextureEXT regions): RGBA, 8 or 16 bytes a texel.
+#define REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT ((remixapi_Format)97)
+#define REMIXAPI_FORMAT_R32G32B32A32_SFLOAT_EXT ((remixapi_Format)109)
 #define REMIXAPI_FORMAT_BC6H_SFLOAT_EXT ((remixapi_Format)144)

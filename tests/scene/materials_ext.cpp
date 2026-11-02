@@ -531,9 +531,72 @@ namespace {
   }
 } // namespace
 
+  // A float dynamic texture (an HDR sky): RGBA32F texels updated from halves.
+  void floatDynamicTexture() {
+    remix::NativeResources r;
+    remixapi_TextureInfoDynamicEXT dynamic{};
+    dynamic.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_DYNAMIC_EXT;
+    dynamic.dynamic = 1;
+    const float bright[8] = {4, 0.5f, 0, 1, 4, 0.5f, 0, 1};
+    remixapi_TextureInfo info{};
+    info.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_INFO;
+    info.pNext = &dynamic;
+    info.hash = 0x71;
+    info.format = REMIXAPI_FORMAT_R32G32B32A32_SFLOAT_EXT;
+    info.width = 2;
+    info.height = 1;
+    info.depth = info.mipLevels = 1;
+    info.data = bright;
+    info.dataSize = sizeof(bright);
+    remixapi_TextureHandle handle{};
+    r.createTexture(info, handle);
+    remixapi_MaterialInfoOpaqueEXT o{};
+    o.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+    o.albedoConstant = {1, 1, 1};
+    o.opacityConstant = 1;
+    o.alphaTestType = 7;
+    remixapi_MaterialInfo m{};
+    m.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+    m.pNext = &o;
+    m.hash = 0x72;
+#ifdef _WIN32
+    m.albedoTexture = L"0x71";
+#else
+    m.albedoTexture = "0x71";
+#endif
+    remixapi_MaterialHandle mh{};
+    r.createMaterial(m, mh);
+    const auto t = drawn(r, quad(r, 0x73, mh))->texture;
+    require(t->dynamic && t->pixels.hdrMips.size() == 1 && t->pixels.hdrMips[0][0] == 4 &&
+                t->pixels.mips[0][0] == 255 && t->pixels.mips[0][1] == 127,
+            "Float dynamic texture");
+    // The second texel turns to (0.25, 2, 0, 1) in halves.
+    const uint16_t halves[4] = {0x3400, 0x4000, 0x0000, 0x3c00};
+    r.updateTexture(handle, 1, 0, 1, 1, REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT, halves, 8);
+    {
+      std::lock_guard lock(t->updates->lock);
+      const auto &u = *t->updates;
+      require(u.revision == 1 && u.dirty[0] == 1 && u.dirty[2] == 2 && t->pixels.hdrMips[0][4] == .25f &&
+                  t->pixels.hdrMips[0][5] == 2 && t->pixels.hdrMips[0][0] == 4 && t->pixels.mips[0][5] == 255,
+              "Float update");
+    }
+    // An 8-bit update of a float texture, and a float one of an 8-bit texture: rejected.
+    const uint8_t texel[4] = {1, 2, 3, 4};
+    rejected([&] { r.updateTexture(handle, 0, 0, 1, 1, REMIXAPI_FORMAT_R8G8B8A8_UNORM, texel, 4); });
+    info.hash = 0x74;
+    info.format = REMIXAPI_FORMAT_R8G8B8A8_UNORM;
+    info.data = texel;
+    info.dataSize = sizeof(texel);
+    info.width = 1;
+    remixapi_TextureHandle plain{};
+    r.createTexture(info, plain);
+    rejected([&] { r.updateTexture(plain, 0, 0, 1, 1, REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT, halves, 8); });
+  }
+
 int main() {
   materialOverride();
   dynamicTexture();
+  floatDynamicTexture();
   pbrRemap();
   iridescence();
   partialMod();

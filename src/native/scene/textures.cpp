@@ -111,9 +111,10 @@ namespace remix {
       const auto *mips = static_cast<const remixapi_TextureInfoGenerateMipsEXT *>(
           extension(info.pNext, REMIXAPI_STRUCT_TYPE_TEXTURE_GENERATE_MIPS_EXT));
       withMips = mips && mips->generate;
-      if (dynamic->dynamic > 1 || info.mipLevels != 1 ||
+      if (dynamic->dynamic > 1 || info.mipLevels != 1 || (withMips && isFloatFormat(info.format)) ||
           (info.format != REMIXAPI_FORMAT_R8G8B8A8_UNORM && info.format != REMIXAPI_FORMAT_R8G8B8A8_SRGB &&
-           info.format != REMIXAPI_FORMAT_B8G8R8A8_UNORM && info.format != REMIXAPI_FORMAT_B8G8R8A8_SRGB))
+           info.format != REMIXAPI_FORMAT_B8G8R8A8_UNORM && info.format != REMIXAPI_FORMAT_B8G8R8A8_SRGB &&
+           !isFloatFormat(info.format)))
         throw invalid;
       return true;
     }
@@ -126,8 +127,9 @@ namespace remix {
     bool withMips = false;
     if (dynamicTexture(info, withMips)) {
       auto pixels = decodeTexture(info);
-      if (pixels.mips.size() != 1 || !pixels.hdrMips.empty() || pixels.compressed ||
-          pixels.mips[0].size() != size_t(pixels.width) * pixels.height * 4)
+      // Float ones keep their texels in hdrMips[0] (mips[0] is its 8-bit preview).
+      if (pixels.mips.size() != 1 || pixels.hdrMips.size() != (isFloatFormat(info.format) ? 1u : 0u) ||
+          pixels.compressed || pixels.mips[0].size() != size_t(pixels.width) * pixels.height * 4)
         throw invalid;
       if (withMips)
         generateMips(pixels);
@@ -203,11 +205,15 @@ namespace remix {
     textureCounters.updateCalls.fetch_add(1, std::memory_order_relaxed);
     CounterTicks time{textureCounters.updateTicks};
     const bool bgra = format == REMIXAPI_FORMAT_B8G8R8A8_UNORM || format == REMIXAPI_FORMAT_B8G8R8A8_SRGB;
-    if (!width || !height || !pixels || uint64_t(rowPitch) < uint64_t(width) * 4 ||
-        (!bgra && format != REMIXAPI_FORMAT_R8G8B8A8_UNORM && format != REMIXAPI_FORMAT_R8G8B8A8_SRGB))
+    const bool half = format == REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT;
+    const bool hdr = isFloatFormat(format);
+    // Source and stored bytes a texel (a float texture stores RGBA32F).
+    const uint32_t sourceTexel = half ? 8 : hdr ? 16 : 4, texel = hdr ? 16 : 4;
+    if (!width || !height || !pixels || uint64_t(rowPitch) < uint64_t(width) * sourceTexel ||
+        (!bgra && !hdr && format != REMIXAPI_FORMAT_R8G8B8A8_UNORM && format != REMIXAPI_FORMAT_R8G8B8A8_SRGB))
       throw invalid;
     const auto it = m_textures.find(key(handle));
-    if (it == m_textures.end() || !it->second->dynamic)
+    if (it == m_textures.end() || !it->second->dynamic || it->second->pixels.hdrMips.empty() != !hdr)
       throw invalid;
     auto &texture = *it->second;
     auto &p = texture.pixels;
@@ -216,14 +222,31 @@ namespace remix {
     // Rows that differ, and the columns they differ in. Only this thread
     // writes the texels, so they are compared without the lock; the lock
     // (shared with the upload and the emission estimates) covers the copy.
-    const size_t bytes = size_t(width) * 4;
+    const size_t bytes = size_t(width) * texel;
     const auto *source = static_cast<const uint8_t *>(pixels);
-    uint8_t *const texels = p.mips[0].data();
+    uint8_t *const texels = hdr ? reinterpret_cast<uint8_t *>(p.hdrMips[0].data()) : p.mips[0].data();
     std::vector<uint8_t> converted;
-    if (bgra)
+    if (bgra || hdr)
       converted.resize(bytes);
     auto row = [&](uint32_t r) {
       const uint8_t *from = source + size_t(r) * rowPitch;
+      if (hdr) {
+        auto *to = reinterpret_cast<float *>(converted.data());
+        for (size_t i = 0; i < size_t(width) * 4; ++i) {
+          float value;
+          if (half) {
+            uint16_t bits;
+            std::memcpy(&bits, from + i * 2, 2);
+            value = halfToFloat(bits);
+          } else {
+            std::memcpy(&value, from + i * 4, 4);
+            if (!std::isfinite(value))
+              value = 0;
+          }
+          to[i] = value;
+        }
+        return static_cast<const uint8_t *>(converted.data());
+      }
       if (!bgra)
         return from;
       for (size_t i = 0; i < bytes; i += 4) {
@@ -234,7 +257,7 @@ namespace remix {
       }
       return static_cast<const uint8_t *>(converted.data());
     };
-    auto stored = [&](uint32_t r) { return texels + (size_t(y + r) * p.width + x) * 4; };
+    auto stored = [&](uint32_t r) { return texels + (size_t(y + r) * p.width + x) * texel; };
     uint32_t first = 0, last = height;
     while (first < height && std::memcmp(stored(first), row(first), bytes) == 0)
       ++first;
@@ -257,8 +280,15 @@ namespace remix {
         while (to[end - 1] == from[end - 1])
           --end;
         std::memcpy(to + begin, from + begin, end - begin);
-        x0 = std::min(x0, uint32_t(begin / 4));
-        x1 = std::max(x1, uint32_t((end + 3) / 4));
+        const uint32_t c0 = uint32_t(begin / texel), c1 = uint32_t((end + texel - 1) / texel);
+        x0 = std::min(x0, c0);
+        x1 = std::max(x1, c1);
+        if (hdr) { // the 8-bit preview the CPU consumers read
+          const float *values = p.hdrMips[0].data() + (size_t(y + r) * p.width + x) * 4;
+          uint8_t *preview = p.mips[0].data() + (size_t(y + r) * p.width + x) * 4;
+          for (size_t i = size_t(c0) * 4; i < size_t(c1) * 4; ++i)
+            preview[i] = uint8_t(std::clamp(values[i], 0.f, 1.f) * 255);
+        }
       }
       // Generated mips are made again from the new level 0: all of it is new.
       const bool mipped = p.mips.size() > 1;
@@ -279,7 +309,7 @@ namespace remix {
       ++updates.revision;
     }
     textureCounters.updates.fetch_add(1, std::memory_order_relaxed);
-    textureCounters.updateBytes.fetch_add(uint64_t(last - first) * (x1 - x0) * 4, std::memory_order_relaxed);
+    textureCounters.updateBytes.fetch_add(uint64_t(last - first) * (x1 - x0) * texel, std::memory_order_relaxed);
   }
 
   void NativeResources::destroyTexture(remixapi_TextureHandle handle) {

@@ -10,6 +10,10 @@ namespace remix::scene {
   Pixels loadTexture(const std::filesystem::path &path);
   // BC1/BC3/BC4/BC5/BC6H/BC7 formats that compressTexture accepts.
   bool isBlockCompressed(remixapi_Format format);
+  // R16G16B16A16 or R32G32B32A32 SFLOAT: decoded into Pixels::hdrMips.
+  bool isFloatFormat(remixapi_Format format);
+  // An IEEE half's value (infinities and NaNs read as 0).
+  float halfToFloat(uint16_t bits);
   // Validates BC data like decodeTexture and keeps the blocks for GPU upload.
   // Only mip-0 alpha coverage bits and a <=64x64 preview are decoded.
   Pixels compressTexture(const remixapi_TextureInfo &info);

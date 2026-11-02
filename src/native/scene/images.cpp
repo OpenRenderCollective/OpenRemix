@@ -178,10 +178,27 @@ namespace remix::scene {
     }
   } // namespace
 
+  bool isFloatFormat(remixapi_Format format) {
+    return format == REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT || format == REMIXAPI_FORMAT_R32G32B32A32_SFLOAT_EXT;
+  }
+
+  float halfToFloat(uint16_t bits) {
+    const uint32_t sign = uint32_t(bits & 0x8000) << 16, exponent = (bits >> 10) & 31, fraction = bits & 1023;
+    if (exponent == 31)
+      return 0;
+    if (!exponent) // zero or subnormal
+      return (sign ? -1.f : 1.f) * float(fraction) * 0x1p-24f;
+    return std::bit_cast<float>(sign | (exponent + 112) << 23 | fraction << 13);
+  }
+
   Pixels decodeTexture(const remixapi_TextureInfo &info) {
     if (info.depth > 1 || info.dataSize > SIZE_MAX) {
       throw invalid;
     }
+    if (isFloatFormat(info.format))
+      return decodeFloat(info.width, info.height, info.mipLevels, 4,
+                         info.format == REMIXAPI_FORMAT_R16G16B16A16_SFLOAT_EXT,
+                         static_cast<const uint8_t *>(info.data), size_t(info.dataSize));
     uint32_t block = 0;
     bool srgb = false, bgra = false, bc1Alpha = false;
     switch (uint32_t(info.format)) {
