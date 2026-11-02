@@ -61,6 +61,7 @@ layout(location = 2) out vec4 outReflectance;
 // Specialization removes diagnostic branches from ordinary world shading.
 layout(constant_id = 1) const uint LightingView = 0u;
 #ifndef WATER_SURFACE
+#include "direct-lighting.glsl"
 #include "standard-shading.glsl"
 #endif
 #endif

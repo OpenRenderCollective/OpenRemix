@@ -238,3 +238,24 @@ Measure visibility rejection on corridor and open maps separately. Early depth
 already removes much hidden fragment work; PVS can reduce submission and vertex
 work without necessarily reducing the visible material shading bottleneck.
 Occlusion/Hi-Z is a further candidate, not an implemented equivalent of PVS.
+
+
+### Technique separation in progress
+
+The standard material entry point delegates direct illumination to
+`shaders/direct-lighting.glsl`. That module accumulates sun and clustered local
+responses in the existing order, including attributed visibility, mixed shadows,
+and specular. World and viewmodel materials share this entry point; exposure,
+emission, and reflection composition stay outside the direct provider.
+
+This is a shader boundary, not a completed provider framework. Remaining work
+includes independently owned diffuse and reflection resources and update passes,
+compile-time provider selection, capability resolution, and removal of the
+bake/cubemap lifecycle coupling. A future radiance-cascade provider should supply
+diffuse transport through the shared receiver contract rather than teach each
+material about cascade storage. Keep direct illumination ownership explicit so
+replacing indirect transport cannot double-count baked direct light.
+
+Performance acceptance requires comparison against the unchanged Source 2
+profile, including shader work, CPU recording, GPU timings, and memory. Shader
+function extraction alone does not establish performance equivalence.
