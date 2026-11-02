@@ -6,17 +6,6 @@
 #include <cstring>
 
 namespace remix::forward::probes {
-  void AutomaticCapture::select(const scene::BakeScene &source, uint32_t count, uint32_t resolution,
-                                 float detailTolerance, std::stop_token cancelled) {
-    requirePreparing();
-    capturePlanned = true;
-    if (projectionAudit) {
-      candidateRegions = projectionAudit->finish();
-      projectionAudit.reset();
-    }
-    captures = captureCandidates(source, candidateRegions, count, resolution, cancelled, detailTolerance);
-    dumpCandidates(source, candidateRegions, captures, cancelled);
-  }
   void AutomaticCapture::restoreProjection(const scene::BakeScene &source, float detailTolerance,
                                             std::stop_token cancelled) {
     requirePreparing();

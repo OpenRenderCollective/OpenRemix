@@ -688,3 +688,20 @@ an early reflection image while diffuse finishing continues, then reuse that ima
 at volume activation. This does not yet separate default placement seed creation,
 receiver diagnostics, worker tickets, or transport scheduling from the diffuse job.
 Those still preserve the admitted-seed reuse and existing single GPU budget.
+
+### Automatic reflection CPU preparation
+
+`AutomaticCapture::prepareNext` advances the provider's CPU placement stages:
+site planning, fitting admitted sites, then capture selection. GPU site/projection
+checks must retire through the existing provider readback API before another CPU
+transition. A caller cannot submit admitted seeds after planning has begun. The
+requested placement count and device capture capacity remain distinct, preserving
+candidate fitting when the device can publish fewer images.
+
+Default and standalone controllers use this entry point inside their existing
+preparation tickets. The default host supplies moved admitted diffuse seeds only
+at the first transition; the standalone host omits them and uses geometry seed
+admission. Selection preserves the existing candidate reporter. No diffuse grid,
+atlas, worker queue, or transport is owned by this CPU preparation API. The default
+host still constructs borrowed seeds, schedules diagnostics/cache lookups and owns
+the combined preparation ticket/transport budget; those remain migration work.

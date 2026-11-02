@@ -8,6 +8,12 @@
 #include <cstring>
 #include <stdexcept>
 
+// CPU preparation tests omit optional filesystem diagnostics; native/GPU tests
+// still link the production candidate reporter.
+namespace remix::forward::probes {
+  void dumpCandidates(const scene::BakeScene &, std::span<const FittedRegion>,
+                      std::span<const Capture>, std::stop_token) noexcept {}
+}
 namespace p = remix::forward::probes;
 namespace {
   void require(bool value, const char *message) {
@@ -109,14 +115,28 @@ void testCaptureWork() {
     catch (const std::runtime_error &) { cancelled = true; }
     require(cancelled, "Cancelled geometry planning continued");
     p::AutomaticCapture owner;
-    owner.planSites(source, 4, {});
+    const p::AutomaticCapture::Placement placement{4, 4, 8, .5f};
+    require(owner.prepareNext(source, placement, {}) == p::AutomaticCapture::Step::PlanSites,
+            "Provider did not plan its first CPU stage");
+    bool pending = false;
+    try { owner.prepareNext(source, placement, {}); }
+    catch (const std::logic_error &) { pending = true; }
+    require(pending && owner.siteReceived == 0, "Preparation skipped pending GPU admission");
     require(owner.nextStep() == p::AutomaticCapture::Step::ValidateSites, "Standalone seeds bypassed admission");
     std::vector<remix::forward::bake::Result> results(owner.reflectionSites.size());
     for (auto &result : results) result.statistics = {1,0,float(p::AutomaticCapture::siteSamples),0};
     owner.siteNext = uint32_t(results.size());
     require(owner.observe(p::AutomaticCapture::Step::ValidateSites, 0, results), "Standalone admission readback refused");
-    owner.fit(source, 4, .5f, {});
+    require(owner.prepareNext(source, placement, {}) == p::AutomaticCapture::Step::Fit,
+            "Provider did not fit after retired admission");
     require(owner.seeds.points.empty() && owner.candidateRegions.empty(), "Rejected geometry seeds reached fitting");
+    require(owner.prepareNext(source, placement, {}) == p::AutomaticCapture::Step::Select &&
+                owner.captureView().empty() && owner.nextStep() == p::AutomaticCapture::Step::Complete,
+            "Rejected candidates generated captures or failed to complete preparation");
+    pending = false;
+    try { owner.prepareNext(source, placement, {}); }
+    catch (const std::logic_error &) { pending = true; }
+    require(pending, "Completed placement ran another CPU stage");
     auto room = source;
     room.minimum = {-4,-3,-2}; room.maximum = {4,3,2};
     auto partition = std::make_shared<remix::scene::VisibilityPartition>();

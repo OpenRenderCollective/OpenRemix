@@ -7,6 +7,7 @@
 #include "forward/probes/image_asset.h"
 #include <stdexcept>
 #include <atomic>
+#include <optional>
 
 namespace remix::forward::bake { class Transport; class Budget; }
 
@@ -37,6 +38,16 @@ namespace remix::forward::probes {
     // finish out of order. Completion state belongs to the
     // provider, so another scheduler need not understand capture storage.
     bool observe(Step step, uint32_t first, std::span<const bake::Result> results);
+    struct Placement {
+      uint32_t requested = 0, capacity = 0, resolution = 128;
+      float detailTolerance = .5f;
+    };
+    // Worker-only CPU transition. GPU admission/projection stages must retire
+    // before preparation can continue. Admitted seeds are borrowed from another
+    // provider only at PlanSites; otherwise geometry candidates are generated.
+    Step prepareNext(const scene::BakeScene &source, const Placement &placement,
+                     std::stop_token cancelled,
+                     std::optional<PlacementSeeds> admittedSeeds = std::nullopt);
     static constexpr uint32_t siteSamples = 64;
     void planSites(const scene::BakeScene &source, PlacementSeeds seeds,
                     uint32_t count, std::stop_token cancelled);

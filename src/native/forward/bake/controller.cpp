@@ -938,8 +938,8 @@ namespace remix::forward::bake {
             auto seeds = config.reflectionProbes
                 ? probes::placementSeeds(*owner->source, owner->grid, owner->cancellation.get_token())
                 : probes::PlacementSeeds{};
-            owner->reflections.planSites(*owner->source, std::move(seeds), config.reflectionProbes,
-                                           owner->cancellation.get_token());
+            owner->reflections.prepareNext(*owner->source, {.requested = config.reflectionProbes},
+                owner->cancellation.get_token(), std::move(seeds));
           });
       status(REMIXAPI_BAKE_PREPARING_EXT, "Finding reflection capture sites");
       return;
@@ -956,8 +956,9 @@ namespace remix::forward::bake {
       const auto owner = m_job;
       job.ticket =
           m_pipelines->prepare("forward-probe-placement-" + std::to_string(++generation), [owner, config] {
-            owner->reflections.fit(*owner->source, config.reflectionProbes,
-                                     config.reflectionDetailTolerance, owner->cancellation.get_token());
+            owner->reflections.prepareNext(*owner->source,
+                {.requested = config.reflectionProbes, .detailTolerance = config.reflectionDetailTolerance},
+                owner->cancellation.get_token());
           });
       status(REMIXAPI_BAKE_PREPARING_EXT, "Fitting reflection candidates");
       return;
@@ -980,8 +981,9 @@ namespace remix::forward::bake {
                                 limits.limits.maxImageArrayLayers, limits.limits.maxStorageBufferRange));
       job.ticket =
           m_pipelines->prepare("forward-probe-selection-" + std::to_string(++generation), [owner, config, captureCount] {
-            owner->reflections.select(*owner->source, captureCount, config.reflectionResolution,
-                                        config.reflectionDetailTolerance, owner->cancellation.get_token());
+            owner->reflections.prepareNext(*owner->source,
+                {config.reflectionProbes, captureCount, config.reflectionResolution, config.reflectionDetailTolerance},
+                owner->cancellation.get_token());
             owner->receiverAudit = probes::prepareReceiverAudit(*owner->source, owner->reflections.captureView(),
                                                                owner->cancellation.get_token());
             if (!owner->cacheFile.empty() && !owner->reflections.captureView().empty()) {

@@ -1,3 +1,9 @@
+## Provider CPU placement transitions - 2026-11-02
+
+- Both default and standalone controllers advance site planning, fitting and selection through AutomaticCapture::prepareNext. Provider rejects preparation while GPU admission/projection is pending, and rejects late admitted seeds. Requested placement count and device image capacity remain distinct.
+- Borrowed admitted seeds retain existing capture identities with no duplicate site queries; standalone geometry candidates still require admission. Native build and three CPU/GPU regressions pass, including early publication/cancellation and authored/standalone capture reuse.
+- Default host still creates borrowed seeds and owns combined tickets, diagnostics/cache lookup and transport budget. Those remain to migrate; full CPU/frame performance acceptance remains open. Playable unchanged.
+
 ## Provider-owned reflection publication - 2026-11-02
 
 - AutomaticCapture now owns the release/acquire completion handoff and one-time image upload used by default and standalone controllers. Removed reflection publication flags from the diffuse job; frame submissions still retain uploaded images through their fences. No new task, ray list or GPU pass.

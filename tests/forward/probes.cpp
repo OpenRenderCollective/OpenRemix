@@ -107,10 +107,12 @@ int main() {
   const auto placed = p::place(scene, grid, 4, 8);
   {
     p::AutomaticCapture borrowed;
-    borrowed.planSites(scene, p::placementSeeds(scene, grid), 4, {});
+    const p::AutomaticCapture::Placement settings{4, 4, 8, .5f};
+    borrowed.prepareNext(scene, settings, {}, p::placementSeeds(scene, grid));
     require(borrowed.reflectionSites.empty(), "Borrowed admitted seeds scheduled duplicate geometry queries");
-    borrowed.fit(scene, 4, .5f, {});
-    const auto matching = p::captureCandidates(scene, borrowed.candidateRegions, 4, 8);
+    borrowed.prepareNext(scene, settings, {});
+    borrowed.prepareNext(scene, settings, {});
+    const auto &matching = borrowed.captureView();
     require(matching.size() == placed.size(), "Borrowed placement changed capture count");
     for (size_t i = 0; i < matching.size(); ++i)
       require(matching[i].position == placed[i].position && matching[i].bounds.minimum == placed[i].bounds.minimum &&

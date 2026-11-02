@@ -171,8 +171,8 @@ void StandaloneCapture::record(VkCommandBuffer command,
                 }
               }
             }
-            job->capture.planSites(*job->source, count,
-                                   job->cancellation.get_token());
+            job->capture.prepareNext(*job->source, {.requested = count},
+                                      job->cancellation.get_token());
             bake::Options options;
             options.queueFamily = family;
             options.textureResolution = config.textureResolution;
@@ -220,16 +220,15 @@ void StandaloneCapture::record(VkCommandBuffer command,
       job.ticket = m_pipelines->prepare(
           "reflection-fit-" + std::to_string(++generation),
           [owner, count, detailTolerance] {
-            owner->capture.fit(*owner->source, count, detailTolerance,
-                               owner->cancellation.get_token());
+            owner->capture.prepareNext(*owner->source,
+                {.requested = count, .detailTolerance = detailTolerance}, owner->cancellation.get_token());
           });
     } else if (step == AutomaticCapture::Step::Select) {
       job.ticket = m_pipelines->prepare(
           "reflection-select-" + std::to_string(++generation),
           [owner, count, config, detailTolerance] {
-            owner->capture.select(*owner->source, count,
-                                  config.reflectionResolution, detailTolerance,
-                                  owner->cancellation.get_token());
+            owner->capture.prepareNext(*owner->source,
+                {count, count, config.reflectionResolution, detailTolerance}, owner->cancellation.get_token());
             owner->capture.prepareRays(owner->cancellation.get_token());
           });
     } else if (step == AutomaticCapture::Step::Complete) {
