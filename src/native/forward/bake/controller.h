@@ -30,7 +30,6 @@ namespace remix::forward::bake {
     std::vector<uint32_t> groupedStyles; // complete direct groups, separate from permanent aggregate policy
     std::shared_ptr<SunDepth> sunDepth;
     scene::DistantLight sun; // shape provenance for matching surface/probe static sunlight
-    probes::Header reflectionHeader;
     std::shared_ptr<const LocalReflections> localReflections; // Opt-in prepared captures, not active selection.
     std::shared_ptr<const probes::ReceiverCoverageEvidence> reflectionEvidence; // Optional completed local-fit diagnostics.
     GridHeader irradianceHeader;
@@ -45,7 +44,6 @@ namespace remix::forward::bake {
     std::array<uint32_t, 4> occlusionParameters{}; // stride + compact-atlas flag, charts, width, indexed-mask tail
     uint32_t surfaceDirectOffset = 0; // sparse directional table in the R32_UINT lookup; zero keeps atlas SH
     std::unique_ptr<Buffer> data, staging;
-    std::shared_ptr<probes::ImageAsset> specular;
     std::unique_ptr<Image> surfaceAtlas;
     std::unique_ptr<mixed::OcclusionMap> occlusion, visibilityPages;
     std::shared_ptr<lightmap::Geometry> surfaces;
@@ -77,9 +75,9 @@ namespace remix::forward::bake {
     VkDescriptorBufferInfo sunDepthValues() const;
     probes::Descriptors reflectionDescriptor() const;
     probes::CaptureSource reflectionSource() const {
-      if (!m_volume) return {};
-      return {m_volume->hash, m_volume->specular};
+      return {m_reflectionSceneHash, m_reflections};
     }
+    const probes::Header *reflectionHeader() const { return m_reflections ? &m_reflections->header() : nullptr; }
     VkDescriptorImageInfo surfaceDescriptor() const;
     VkDescriptorImageInfo occlusionDescriptor() const;
     VkDescriptorImageInfo visibilityDescriptor() const;
@@ -92,6 +90,7 @@ namespace remix::forward::bake {
       std::shared_ptr<Job> job;
       std::shared_ptr<Volume> upload;
       std::shared_ptr<Volume> sampled;
+      std::shared_ptr<probes::ImageAsset> reflectionUpload, reflectionSampled;
       uint32_t first = 0, count = 0, styled = 0;
       bool preparation = false, radiance = false, surface = false, visibility = false, reflectionSite = false,
            sun = false, sunDepth = false, sunDepthCache = false, probeSun = false, probeLocal = false, overflowVisibility = false, reflectionGeometry = false,
@@ -111,6 +110,8 @@ namespace remix::forward::bake {
     std::shared_ptr<const scene::BakeScene> m_source;
     std::vector<std::shared_ptr<Job>> m_obsolete;
     std::shared_ptr<Volume> m_volume;
+    std::shared_ptr<probes::ImageAsset> m_reflections;
+    uint64_t m_reflectionSceneHash = 0;
     std::array<Submission, gpuFrameCount> m_submissions;
     std::unique_ptr<Buffer> m_empty, m_emptySunDepth;
     std::unique_ptr<probes::ImageAsset> m_emptyReflections;

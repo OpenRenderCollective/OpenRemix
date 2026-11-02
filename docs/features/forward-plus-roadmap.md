@@ -1,3 +1,8 @@
+## Reflection publication ownership - 2026-11-02
+
+- Removed automatic reflection image/header from diffuse Volume. Controller keeps separate reflection scene identity/image, frame-fenced upload/sampling references and deduplicated memory accounting.
+- Activation still shares the bake scheduler; independent keys/cache lookup and publication timing remain unfinished. Frame-cost qualification is still required.
+
 ## Supported provider resource dependencies - 2026-11-02
 
 - Unsupported ray-only reflections no longer request guides/resolve; SSR and cubemap fallback remain independent sources. Zero/nonzero cubemap fallback is a target replacement boundary so in-place edits cannot mismatch attachments.

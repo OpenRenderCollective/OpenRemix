@@ -379,6 +379,8 @@ namespace remix::forward::bake {
       m_job.reset();
     }
     m_volume.reset();
+    m_reflections.reset();
+    m_reflectionSceneHash = 0;
     m_statistics.probes = m_statistics.completed = 0;
   }
   void Controller::selectFrame(uint32_t slot) {
@@ -393,9 +395,9 @@ namespace remix::forward::bake {
     if (submission.upload) {
       submission.upload->staging.reset();
       if (submission.upload->sunDepth) submission.upload->sunDepth->releaseUpload();
-      submission.upload->specular->releaseUpload();
       if (submission.upload->localReflections) submission.upload->localReflections->image->releaseUpload();
     }
+    if (submission.reflectionUpload) submission.reflectionUpload->releaseUpload();
     if (submission.job) {
       auto &job = *submission.job;
       if (submission.sunDepthCache && submission.job == m_job) {
@@ -1318,12 +1320,11 @@ namespace remix::forward::bake {
                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                              (ImageDump::enabled(m_physical) ? VK_BUFFER_USAGE_TRANSFER_SRC_BIT : 0u),
                          Buffer::Memory::Device);
-    volume->specular = std::move(m_job->reflections.image);
-    if (!volume->specular) throw std::logic_error("Missing prepared reflection image");
-    volume->reflectionHeader = volume->specular->header();
+    auto reflections = std::move(m_job->reflections.image);
+    if (!reflections) throw std::logic_error("Missing prepared reflection image");
     const VkBufferCopy copy{0, 0, bytes};
     vkCmdCopyBuffer(command, volume->staging->handle, volume->data->handle, 1, &copy);
-    volume->specular->recordUpload(command);
+    reflections->recordUpload(command);
     if (volume->localReflections) volume->localReflections->image->recordUpload(command);
     VkImageMemoryBarrier surfaceReady{};
     volume->occlusion->upload(command, volume->staging->handle, occlusionOffset);
@@ -1363,8 +1364,11 @@ namespace remix::forward::bake {
                          volume->surfaceAtlas ? &surfaceReady : nullptr);
     // The transfer and its visibility barrier precede this frame's surface
     // draws. Other frame slots keep their own previous volume alive.
+    m_reflectionSceneHash = volume->hash;
+    m_reflections = std::move(reflections);
     m_volume = std::move(volume);
     m_submissions[m_slot].upload = m_volume;
+    m_submissions[m_slot].reflectionUpload = m_reflections;
     char message[sizeof(m_statistics.status)];
     const char *label = m_job->cacheHit ? "Cached lighting active" : "Baked lighting active";
     if (m_job->surfaceReceived == 0)
@@ -1723,6 +1727,7 @@ namespace remix::forward::bake {
     m_statistics.active = bool(m_volume);
     m_statistics.activeHash = m_volume ? m_volume->hash : 0;
     m_submissions[m_slot].sampled = m_volume;
+    m_submissions[m_slot].reflectionSampled = m_reflections;
     const auto used = memory();
     m_statistics.memoryBytes = used.buffers + used.images + used.acceleration;
   }
@@ -1736,7 +1741,7 @@ namespace remix::forward::bake {
     return m_volume && m_volume->sunDepth ? m_volume->sunDepth->values() : m_emptySunDepth->descriptor();
   }
   probes::Descriptors Controller::reflectionDescriptor() const {
-    return m_volume ? m_volume->specular->descriptors() : m_emptyReflections->descriptors();
+    return m_reflections ? m_reflections->descriptors() : m_emptyReflections->descriptors();
   }
   VkDescriptorImageInfo Controller::surfaceDescriptor() const {
     const auto &image = m_volume && m_volume->surfaceAtlas ? m_volume->surfaceAtlas : m_emptySurface;
@@ -1767,6 +1772,12 @@ namespace remix::forward::bake {
       if (depth && depths.insert(depth.get()).second) result.buffers += depth->bytes();
     };
     std::unordered_set<const probes::ImageAsset *> localImages;
+    auto addReflection = [&](const std::shared_ptr<probes::ImageAsset> &image) {
+      if (image && localImages.insert(image.get()).second) {
+        result.buffers += image->bufferBytes();
+        result.images += image->imageBytes();
+      }
+    };
     auto addLocalImage = [&](const std::shared_ptr<const LocalReflections> &local) {
       if (local && local->image && localImages.insert(local->image.get()).second) {
         result.buffers += local->image->bufferBytes();
@@ -1812,15 +1823,16 @@ namespace remix::forward::bake {
         result.images += volume->visibilityPages->bytes();
       addLocalImage(volume->localReflections);
       result.buffers += volume->data->allocationBytes;
-      result.buffers += volume->specular->bufferBytes();
-      result.images += volume->specular->imageBytes();
       if (volume->staging)
         result.buffers += volume->staging->allocationBytes;
     };
     addVolume(m_volume);
+    addReflection(m_reflections);
     for (const auto &submission : m_submissions) {
       addVolume(submission.upload);
       addVolume(submission.sampled);
+      addReflection(submission.reflectionUpload);
+      addReflection(submission.reflectionSampled);
     }
     return result;
   }

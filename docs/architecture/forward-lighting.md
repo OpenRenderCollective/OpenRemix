@@ -337,8 +337,14 @@ Prepared and published automatic reflection images now have independent shared
 ownership. `make_shared<ImageAsset>` constructs the object and control block in
 one allocation; `CaptureSource` retains that image directly rather than aliasing
 the diffuse volume. Frame-fence retention still protects uploads and sampling.
-Consequently, retaining a reflection snapshot need not retain diffuse atlases or
-probe buffers. The Source 2 renderer still publishes both outputs together;
+The diffuse `Volume` no longer stores the reflection image or a duplicate header.
+The controller holds a separate image/scene identity, and frame slots retain
+reflection upload and sampling owners independently from diffuse owners. Header
+and descriptor queries read that publication directly; memory accounting deduplicates
+images across active/retired frame references. Neither owner needs to retain the
+other after its fences. This adds frame-slot shared ownership, not per-draw or
+per-pixel dispatch; matched frame-cost qualification remains required.
+The Source 2 scheduler still activates both outputs together;
 independent cache/publication and complete technique dependency resolution are
 outstanding.
 

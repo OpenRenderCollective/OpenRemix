@@ -2606,8 +2606,7 @@ namespace {
               require(cached.baking.active && std::strstr(cached.baking.status, "Cached lighting active") &&
                           cached.bakeContent.captureInputs == baseline.bakeContent.captureInputs,
                       "Warm automatic cubemap cache preserves exact capture provenance after scratch release");
-              // Reflection snapshots retain the image, not an unrelated diffuse
-              // volume. Retire all sampling slots before checking that lifetime.
+              // Each provider owner can retire independently after its sampling fences.
               const auto retainedImage = target.forward->bakeController()->reflectionSource();
               std::weak_ptr<const remix::forward::bake::Volume> retiredDiffuse =
                   target.forward->bakeController()->volume();
@@ -2617,6 +2616,23 @@ namespace {
               require(retiredDiffuse.expired() && retainedImage.image &&
                           retainedImage.image->header().parameters[0] > 0,
                       "Retaining a reflection image does not retain diffuse GPU publication after frame fences");
+              options.baking.enabled = true;
+              target.forward->updateLighting(options);
+              const auto reverseDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+              do {
+                render(false, false, true, false);
+                if (target.forward->statistics().baking.active) break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+              } while (std::chrono::steady_clock::now() < reverseDeadline);
+              const auto retainedDiffuse = target.forward->bakeController()->volume();
+              std::weak_ptr<const remix::forward::probes::ImageAsset> retiredReflection =
+                  target.forward->bakeController()->reflectionSource().image;
+              require(retainedDiffuse && !retiredReflection.expired(), "Reverse lifetime fixture publishes both providers");
+              options.baking.enabled = false;
+              target.forward->updateLighting(options);
+              for (uint32_t frame = 0; frame < 8; ++frame) render(false, false, true, false);
+              require(retiredReflection.expired() && retainedDiffuse,
+                      "Retaining diffuse publication does not retain the retired reflection image");
               // Start fresh so no old diffuse publication can help capture.
 
               options.authoredReflectionFallback = true;
