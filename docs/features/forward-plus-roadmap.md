@@ -1,3 +1,16 @@
+## 2026-11-03 — fresh CPU telemetry gives mixed host-FPS results
+
+A further warm 1080p comparison using adapter a024a72 for both runtimes reversed
+the previous host-FPS ranking: current ~275 unarmed/~242 weapon versus baseline
+~257–261/~230. Fresh successful CPU snapshots show comparable or slightly lower
+current recording cost; queue/acquisition phases are similar. Matching lighting
+hashes/settings/draw counts remain verified. Neither a stable host regression nor
+no-overhead acceptance is established by these mixed pairs. Continue controlled,
+counterbalanced measurements and isolate observer/host/frame-pacing variation.
+Adapter 952a8bf adds opt-in previous-sample profiler cost; a short current smoke
+verified ~0.014 ms median/~0.034 ms p95, with no clocks when profiling is disabled.
+Both test DLLs/config restored; no playable promotion.
+
 ## 2026-11-03 — foreground performance acceptance remains open
 
 Production-quality 1080p Crossfire measurements with matching lighting hashes,
