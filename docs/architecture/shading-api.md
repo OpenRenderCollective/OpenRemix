@@ -225,6 +225,40 @@ that is a debug policy, not a generic fallback for future GI providers. The
 normalization query preserves incident lighting for metal-only materials whose
 diffuse response can skip probe evaluation.
 
+## Provider scheduling and transport sharing
+
+Technique independence does not require separate acceleration structures or
+independent ray budgets. The Source 2 preset currently lends the automatic
+reflection provider its admitted placement seeds and the active bake transport.
+The reflection provider owns placement transitions, GPU ranges/readback,
+radiance-cache lookup, filtering, immutable payload and image publication. The
+bake scheduler still owns its worker ticket and the ordering around diffuse
+finishing. Standalone reflection capture supplies its own scheduler when diffuse
+baking is disabled.
+
+The next lifecycle split must preserve these boundaries:
+
+- A prepared transport scene can have independent dispatch consumers and frame
+  slots. Sharing requires the preparation fence and `releaseBuildInputs` boundary;
+  a worker must not borrow mutable descriptors or another consumer's slots.
+- `Transport::initializeShared` inherits all transport options, including direct
+  ownership, lighting components, distance/bias and texture preparation. A source
+  hash alone is insufficient to authorize reuse. Authored captures currently use
+  different options and cannot blindly adopt the default bake transport.
+- A requesting provider must obtain a compatible, retained scene lease before
+  the default job retires. Do not retain an acceleration structure indefinitely
+  merely to make a later request cheaper. Define demand and retirement explicitly.
+- Separate consumers must use one admission/budget policy while competing for
+  bake work. Publishing an early diffuse volume does not mean reflection work
+  has finished or a second scheduler may start spending the full budget.
+- Consumers retain submitted resources until their own fences retire. Provider
+  cancellation cannot invalidate another provider's published image or slots.
+  Account shared scene memory once and private consumer memory separately.
+
+This is the remaining integration contract, not a claim that runtime controllers
+already share a retained scene lease. It permits future diffuse providers without
+forcing material shaders to know their scheduling or storage.
+
 ## Remaining API work
 
 1. Extend ownership metadata beyond the existing aggregate-field contract for
