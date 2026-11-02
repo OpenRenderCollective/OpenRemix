@@ -897,6 +897,78 @@ namespace {
             "Removing streamed lights clears their contribution without stale "
             "captured illumination");
   }
+  void radianceScenePolicy(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
+    const auto surface = world.wall(world.material({.diffuse = .8f}), 1, 4);
+    auto source = world.scene({surface});
+    scene::SphereLight red;
+    red.id = 920;
+    red.position[0] = .5f; red.position[2] = -.5f;
+    red.radius = .3f; red.radiance[0] = 6;
+    auto styled = red;
+    styled.id = 921; styled.style = 12;
+    styled.position[0] = -.5f;
+    styled.radiance[0] = 0; styled.radiance[2] = 100;
+    source->lights = {red, styled};
+    const bake::Point ray{{0, 0, 0, 0}, {0, 0, 1, 0}};
+    for (bool parallel : {false, true}) {
+      bake::Options requested;
+      requested.textureResolution = 32;
+      requested.batchPoints = 4;
+      requested.parallel = parallel;
+      auto baked = requested;
+      baked.directLighting = bake::staticAggregatePolicy(*source);
+      baked.lightingComponents = true;
+      bake::Transport donor, legacy, consumer;
+      auto prepare = [&](bake::Transport &transport, const bake::Options &options, const char *name) {
+        auto ticket = pipelines.prepare(name, [&] {
+          transport.initialize(fixture.physical, fixture.device, source, options);
+        });
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        while (!ticket->ready() && std::chrono::steady_clock::now() < deadline)
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        require(ticket->ready(), "Radiance policy fixture preparation timed out");
+        ticket->check();
+        fixture.begin(); transport.recordPrepare(fixture.command, world.resources); fixture.finish();
+        transport.releaseBuildInputs();
+      };
+      prepare(donor, baked, parallel ? "radiance-policy-baked-parallel" : "radiance-policy-baked-serial");
+      prepare(legacy, requested, parallel ? "radiance-policy-legacy-parallel" : "radiance-policy-legacy-serial");
+      require(!donor.canShareScene(*source, requested) && donor.canShareRadianceScene(*source, requested),
+              "Radiance compatibility weakened general diffuse scene policy");
+      bake::SceneRequest exact(source, requested);
+      bake::SceneRequest demand(source, requested, bake::SceneRequest::Use::Radiance);
+      require(!exact.offer(donor) && demand.offer(donor), "Radiance demand did not preserve its explicit query scope");
+      auto lease = demand.take();
+      auto inherited = lease.radianceOptions(*source, requested);
+      require(inherited && inherited->directLighting == baked.directLighting && inherited->lightingComponents,
+              "Radiance consumer hid the donor's actual packed light policy");
+      auto invalid = requested;
+      invalid.lightingComponents = true;
+      require(!lease.radianceOptions(*source, invalid), "Component queries accepted an unstyled radiance contract");
+      auto ticket = pipelines.prepare(parallel ? "radiance-policy-shared-parallel" : "radiance-policy-shared-serial", [&] {
+        consumer.initializeShared(lease, *source, *inherited);
+      });
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+      while (!ticket->ready() && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      require(ticket->ready(), "Radiance shared consumer preparation timed out");
+      ticket->check();
+      require(consumer.memory().sceneIdentity == donor.memory().sceneIdentity &&
+                  consumer.matchesRequest(*source, *inherited) && !consumer.matchesRequest(*source, requested),
+              "Radiance sharing duplicated scene inputs or lost actual-policy identity");
+      fixture.begin();
+      for (auto *transport : {&donor, &legacy, &consumer})
+        transport->recordRadiance(fixture.command, 0, {&ray, 1}, 1, 256);
+      fixture.finish();
+      bake::Result a, b, c;
+      donor.read(0, {&a, 1}); legacy.read(0, {&b, 1}); consumer.read(0, {&c, 1});
+      require(a.irradiance == b.irradiance && a.moments == b.moments && a.statistics == b.statistics &&
+                  a.irradiance == c.irradiance && a.moments == c.moments && a.statistics == c.statistics,
+              "Diffuse ownership/component storage changed ordinary reflection transport");
+      require(a.irradiance[0][0] > .001f && a.irradiance[0][2] == 0,
+              "Radiance policy comparison missed local lighting or included switched style energy");
+    }
+  }
   void aggregateDiffuse(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {
     const auto black = world.material({});
     const auto background = world.quad(black, {{{-4, -4, -3}, {4, -4, -3}, {4, 4, -3}, {-4, 4, -3}}});
@@ -2750,6 +2822,7 @@ int main(int argc, char **argv) try {
     emitterParity(fixture, pipelines, world);
     lightSelectionVariance(fixture, pipelines, world);
     aggregateDiffuse(fixture, pipelines, world);
+    radianceScenePolicy(fixture, pipelines, world);
     test::lightingComponents(fixture, pipelines, world);
     liveLighting(fixture, pipelines, world);
     surfaceHemisphere(fixture, pipelines, world);

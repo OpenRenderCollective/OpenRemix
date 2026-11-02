@@ -27,6 +27,12 @@ namespace remix::forward::bake {
     float sunQueryDistance(double diagonal, float sceneScale, const Options &options) {
       return std::max(options.distance / sceneScale, float(diagonal + 2 * options.bias / sceneScale));
     }
+    bool consumerOptionsValid(const scene::BakeScene &source, const Options &options,
+        const VkPhysicalDeviceLimits &limits, double geometryDiagonal) {
+      return optionValidity(source, options) == OptionValidity::Valid &&
+          uint64_t(options.batchPoints) * sizeof(Result) <= limits.maxStorageBufferRange &&
+          std::isfinite(sunQueryDistance(geometryDiagonal, source.sceneScale, options));
+    }
     Frame lightingFrame(const scene::DistantLight &sun, const scene::DomeLight &dome, float distance,
                         float bias, float sceneScale) {
       Frame frame;
@@ -135,12 +141,20 @@ namespace remix::forward::bake {
   }
   bool Transport::consumerCompatible(const Options &options) const {
     return m_gpu && m_gpu->prepared && m_gpu->world->ready && m_gpu->options.sameScenePolicy(options) &&
-        optionValidity(*m_gpu->world->source, options) == OptionValidity::Valid &&
-        uint64_t(options.batchPoints) * sizeof(Result) <= m_gpu->limits.maxStorageBufferRange &&
-        std::isfinite(sunQueryDistance(m_gpu->world->geometryDiagonal, m_gpu->world->source->sceneScale, options));
+        consumerOptionsValid(*m_gpu->world->source, options, m_gpu->limits, m_gpu->world->geometryDiagonal);
   }
   bool Transport::canShareScene(const scene::BakeScene &source, const Options &options) const {
     return m_gpu && m_gpu->world->canonicalInputs && m_gpu->world->source.get() == &source && consumerCompatible(options);
+  }
+  bool Transport::canShareRadianceScene(const scene::BakeScene &source, const Options &options) const {
+    // This contract is only for non-component radiance queries. Diffuse callers
+    // must continue using exact scene policy; no general compatibility relaxation.
+    if (!m_gpu || !m_gpu->prepared || !m_gpu->world->ready || !m_gpu->world->canonicalInputs ||
+        m_gpu->world->source.get() != &source || options.lightingComponents || !options.directLighting.lights.empty())
+      return false;
+    const auto &prepared = m_gpu->options;
+    return prepared.sameTextureAndQueuePolicy(options) &&
+        consumerOptionsValid(source, options, m_gpu->limits, m_gpu->world->geometryDiagonal);
   }
   void Transport::initializeShared(const Transport &prepared, const Options &options) {
     if (!prepared.consumerCompatible(options))
@@ -170,12 +184,16 @@ namespace remix::forward::bake {
   }
   bool Transport::SceneLease::consumerCompatible(const Options &options) const {
     return m_scene && m_scene->ready && m_options.sameScenePolicy(options) &&
-        optionValidity(*m_scene->source, options) == OptionValidity::Valid &&
-        uint64_t(options.batchPoints) * sizeof(Result) <= m_limits.maxStorageBufferRange &&
-        std::isfinite(sunQueryDistance(m_scene->geometryDiagonal, m_scene->source->sceneScale, options));
+        consumerOptionsValid(*m_scene->source, options, m_limits, m_scene->geometryDiagonal);
   }
   bool Transport::SceneLease::compatible(const scene::BakeScene &source, const Options &options) const {
     return m_scene && m_scene->canonicalInputs && m_scene->source.get() == &source && consumerCompatible(options);
+  }
+  std::optional<Options> Transport::SceneLease::radianceOptions(const scene::BakeScene &source, Options requested) const {
+    if (requested.lightingComponents || !requested.directLighting.lights.empty()) return {};
+    requested.lightingComponents = m_options.lightingComponents;
+    requested.directLighting = m_options.directLighting;
+    return compatible(source, requested) ? std::optional<Options>(std::move(requested)) : std::nullopt;
   }
   void Transport::initializeShared(const SceneLease &lease, const scene::BakeScene &source, const Options &options) {
     if (!lease.compatible(source, options))

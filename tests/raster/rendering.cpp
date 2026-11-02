@@ -2390,6 +2390,14 @@ namespace {
                   if (state.active && !state.pending && state.revision == request.revision) return image;
                   std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 } while (std::chrono::steady_clock::now() < deadline);
+                const auto failed = target.forward->statistics();
+                std::fprintf(stderr, "Authored wait: bake state %u (%s), active %u, authored pending %u, "
+                    "rays %u completed %u, revision %llu/%llu, status %s\n",
+                    failed.baking.state, failed.baking.status, unsigned(failed.baking.active),
+                    unsigned(failed.authoredReflections.pending), failed.authoredReflections.rays,
+                    failed.authoredReflections.completed,
+                    static_cast<unsigned long long>(failed.authoredReflections.revision),
+                    static_cast<unsigned long long>(request.revision), target.forward->reflectionAuthoring()->status().c_str());
                 require(false, "Authored reflection publication completes without restarting the world bake");
                 return image;
               };
@@ -2776,6 +2784,19 @@ namespace {
               require(target.forward->reflectionAuthoring()->header() == independentHeader &&
                           !target.forward->statistics().authoredReflections.pending,
                       "Diffuse probe and direct-bake settings do not restart authored reflection transport");
+              options.baking.enabled = true;
+              options.baking.directDiffuse = true;
+              options.baking.modelLightmaps = true;
+              options.baking.diskCache = false;
+              // Identical editor saves intentionally preserve the last revision.
+              r.setReflectionVolumes(&request);
+              target.enableForward(options);
+              const auto bakedShared = waitForEdit();
+              require(target.forward->bakeController()->volume() &&
+                          target.forward->statistics().authoredReflections.sceneReused &&
+                          target.forward->statistics().authoredReflections.rays > 0 && bakedShared[centre] > 5,
+                      "Generated receiver charts preserve radiance sharing from the fully baked donor");
+
             }
             std::printf("Viewmodel probes %ux: overlay %u, world %u, analytic lights %u\n",
                         samples, probeWeapon[centre], probeWorld[centre], target.forward->statistics().lights);

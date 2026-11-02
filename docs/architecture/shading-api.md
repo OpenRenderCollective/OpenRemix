@@ -308,8 +308,9 @@ The next lifecycle split must preserve these boundaries:
   inheritance accepts those inputs, with either inherited or compatible private
   settings. These are preparation-time checks, not per-frame scene scans.
 - Scene compatibility is distinct from consumer reuse. Runtime authored requests
-  can now accept compatible automatic transport inputs before the donor retires;
-  incompatible ownership policies still require independent preparation.
+  can accept compatible automatic transport inputs before the donor retires.
+  Ordinary unstyled radiance requests have an explicit policy-inheritance path;
+  general diffuse compatibility remains strict.
 - `Transport::leaseScene` now provides scene-only retention after the preparation
   fence. A lease retains geometry, packed lighting and texture inputs without
   retaining donor pipelines, dispatch buffers, worker tickets or the bake job.
@@ -352,22 +353,29 @@ The runtime handoff retains two constraints:
   request on cancellation or map/config replacement. A warm-cache activation may
   have no transport at all, so the independent preparation path remains required.
 - The default job applies `DirectPolicy` to packed light ownership and may retain
-  styled component proposals. Authored capture options currently use legacy
-  direct ownership and no components. These are immutable input differences,
-  not merely different sample counts. Either establish equivalent radiance
-  semantics for the requesting capture, or separate consumer light-policy data
-  from shared geometry/textures before admitting that combination. Do not remove
-  `sameScenePolicy` checks to force sharing.
+  styled component proposals. Ordinary unstyled outgoing-radiance queries do not
+  read aggregate ownership, and select the ordinary proposal tree even when a
+  component tree exists. `canShareRadianceScene` checks that narrower query
+  contract. `SceneLease::radianceOptions` explicitly inherits the donor's actual
+  ownership/component fields; normal `initializeShared` still validates those
+  complete options. Authored jobs retain both the requested capture policy and
+  actual transport options, so later edits reuse the same consumer without
+  pretending its packed inputs changed. Component queries cannot request this
+  unstyled contract. Diffuse queries still require exact ownership policy.
+- Generated receiver charts are private atlas inputs and do not alter frozen
+  transport geometry, materials or lights. The default job keeps the original
+  snapshot as its transport source while using derived charts for atlas work.
+  This preserves exact caller identity without accepting hashes as proof of
+  transport compatibility.
 
-The cold standalone-to-authored integration now reuses a prepared scene after
-its automatic job retires, without relaxing sequential capture admission. Warm
-cache loads with no donor and incompatible default ownership retain independent
-preparation. Demand ownership is tested separately from mutable slot ownership;
-further lifecycle integration must preserve cancellation during preparation and
-replacement after submission. Requests without authored demand must retain no
-extra scene or bake-job owner. Default fully baked ownership still needs an
-explicit radiance-equivalence or light-policy separation decision before its
-scene can satisfy the legacy authored capture policy.
+The cold automatic-to-authored integration reuses a prepared scene after its
+donor job retires, without relaxing sequential capture admission. Warm cache
+loads with no donor retain independent preparation. Demand ownership is tested
+separately from mutable slot ownership; further lifecycle integration must
+preserve cancellation during preparation and replacement after submission.
+Requests without authored demand must retain no extra scene or bake-job owner.
+A shared radiance consumer uses the same shaders and buffers; policy inheritance
+adds no shader branch or duplicate geometry/light data.
 
 ## Reflection source values
 

@@ -35,6 +35,7 @@ namespace remix::forward::probes {
     std::vector<bake::Point> rays;
     std::vector<uint32_t> rayOwners; // one owner per complete six-face capture
     std::shared_ptr<bake::Transport> transport;
+    bake::Options requestedOptions, transportOptions;
     std::unique_ptr<ImageAsset> image;
     std::unique_ptr<ImageAsset> authoredImage;
     std::shared_ptr<const ImageAsset> automatic;
@@ -104,17 +105,22 @@ namespace remix::forward::probes {
       }
       rayCount = uint32_t(rays.size());
       const auto options = captureOptions(config, family);
-      if (prior && prior->transport && prior->transport->matchesRequest(*source, options)) {
+      requestedOptions = options;
+      transportOptions = options;
+      if (prior && prior->transport && prior->requestedOptions == options &&
+          prior->transport->matchesRequest(*source, prior->transportOptions)) {
         // Completed edits can reuse the same compatible consumer without
         // allocating another descriptor/dispatch set. Mutable slots are touched
         // only after Authoring::selectFrame observed their owning fence.
         transport = prior->transport;
+        transportOptions = prior->transportOptions;
         prepared = prior->prepared;
         sceneReused = true;
       } else if (!rays.empty()) {
         transport = std::make_shared<bake::Transport>();
-        if (lease.compatible(*source, options)) {
-          transport->initializeShared(lease, *source, options);
+        if (auto inherited = lease.radianceOptions(*source, options)) {
+          transportOptions = std::move(*inherited);
+          transport->initializeShared(lease, *source, transportOptions);
           prepared = sceneReused = true;
         } else {
           transport->initialize(physical, device, source, options);
@@ -233,12 +239,13 @@ namespace remix::forward::probes {
     }
     const auto options = captureOptions(config, m_queueFamily);
     if (sameLighting && m_active && m_active->transport &&
-        m_active->transport->matchesRequest(*source, options)) {
+        m_active->requestedOptions == options &&
+        m_active->transport->matchesRequest(*source, m_active->transportOptions)) {
       m_sceneRequest.reset();
       return nullptr;
     }
     if (!m_sceneRequest || !m_sceneRequest->matches(*source, options))
-      m_sceneRequest = std::make_unique<bake::SceneRequest>(source, options);
+      m_sceneRequest = std::make_unique<bake::SceneRequest>(source, options, bake::SceneRequest::Use::Radiance);
     return m_sceneRequest.get();
   }
   void Authoring::record(VkCommandBuffer command, RasterRenderer &resources, const CaptureConfig &config,

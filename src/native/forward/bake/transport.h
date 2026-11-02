@@ -25,9 +25,12 @@ namespace remix::forward::bake {
     float distance = 100, bias = .002f; // metres
     // Classify new options here: these fields alter immutable prepared inputs or
     // their queue ownership. All remaining fields configure a private consumer.
-    bool sameScenePolicy(const Options &other) const {
+    bool sameTextureAndQueuePolicy(const Options &other) const {
       return textureResolution == other.textureResolution && atlasBudget == other.atlasBudget &&
-          queueFamily == other.queueFamily && lightingComponents == other.lightingComponents &&
+          queueFamily == other.queueFamily;
+    }
+    bool sameScenePolicy(const Options &other) const {
+      return sameTextureAndQueuePolicy(other) && lightingComponents == other.lightingComponents &&
           directLighting == other.directLighting;
     }
     bool operator==(const Options &) const = default;
@@ -45,6 +48,10 @@ namespace remix::forward::bake {
       explicit operator bool() const { return bool(m_scene); }
       bool compatible(const scene::BakeScene &source, const Options &options) const;
       Memory memory() const; // scene-only accounting; deduplicates with consumers
+      // Ordinary unstyled outgoing-radiance queries do not consume diffuse
+      // ownership or component proposals. Explicitly inherit those input fields;
+      // the returned options describe the actual scene, including for reuse.
+      std::optional<Options> radianceOptions(const scene::BakeScene &source, Options requested) const;
     private:
       friend class Transport;
       std::shared_ptr<PreparedScene> m_scene;
@@ -89,6 +96,7 @@ namespace remix::forward::bake {
     // Immutable scene compatibility; valid private execution/query settings may
     // differ. Observe only after the preparation worker/fence handoff.
     bool canShareScene(const scene::BakeScene &source, const Options &options) const;
+    bool canShareRadianceScene(const scene::BakeScene &source, const Options &options) const;
     // Reject incompatible input policy before allocating/replacing a consumer;
     // accepted private options configure its own pipelines, slots and queries.
     void initializeShared(const Transport &prepared, const scene::BakeScene &source, const Options &options);

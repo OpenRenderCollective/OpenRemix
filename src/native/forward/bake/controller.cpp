@@ -142,6 +142,9 @@ namespace remix::forward::bake {
       writeModelPreflight(*source, std::filesystem::u8path(path), cancellation.get_token());
       throw std::runtime_error("Model eligibility preflight complete (diagnostic only; no bake scheduled)");
     }
+    // Generated receiver charts do not alter transport geometry/materials/lights.
+    // Preserve the caller's frozen identity for shared transport consumers.
+    const auto transportSource = source;
     // Initial preparation owns this job exclusively until its ticket completes.
     // Keep caller identity/bindings intact and derive only private atlas inputs.
     if (config.modelLightmaps) {
@@ -236,7 +239,7 @@ namespace remix::forward::bake {
             depthOptions.queueFamily = queueFamily;
             depthOptions.textureResolution = config.textureResolution;
             transport = std::make_unique<Transport>();
-            transport->initialize(physical, device, source, depthOptions);
+            transport->initialize(physical, device, transportSource, depthOptions);
           }
           cacheHit = true;
           filtering = !reflectionRecovery;
@@ -313,7 +316,7 @@ namespace remix::forward::bake {
       reference->combinedLighting = !reference->geometry && options.lightingComponents && !reference->baseLightingOnly;
     }
     transport = std::make_unique<Transport>();
-    transport->initialize(physical, device, source, options);
+    transport->initialize(physical, device, transportSource, options);
     const char *cpuVisibility = std::getenv("REMIX_DEBUG_BAKE_CPU_VISIBILITY");
     if ((!mixedLights->tasks.empty() || mixedLights->overflow) &&
         (!cpuVisibility || std::strcmp(cpuVisibility, "1") != 0))

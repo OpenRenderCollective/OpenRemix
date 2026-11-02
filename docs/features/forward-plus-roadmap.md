@@ -1,3 +1,15 @@
+## 2026-11-03 — radiance policy inheritance from baked scenes
+
+Ordinary unstyled reflection capture can now explicitly inherit the donor's
+actual aggregate/component storage policy, avoiding a duplicate transport scene.
+General diffuse compatibility remains strict. Serial/parallel GPU comparisons
+verify identical radiance with local lighting and a bright excluded styled light.
+Authored jobs preserve requested versus actual policy for subsequent edit reuse.
+Generated receiver charts now preserve the original frozen transport identity;
+a cold baked-to-authored integration with model charts verifies scene reuse for
+new rays after donor retirement. Remaining: broader provider lifecycle/dependency
+selection and matched foreground performance acceptance. No shaders changed.
+
 ## 2026-11-03 — demand-scoped runtime scene handoff
 
 Pending authored reflection requests now register transport demand before the
