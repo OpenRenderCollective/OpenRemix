@@ -325,6 +325,28 @@ The next lifecycle split must preserve these boundaries:
   cancellation cannot invalidate another provider's published image or slots.
   Account shared scene memory once and private consumer memory separately.
 
+The current runtime handoff has two concrete constraints:
+
+- `Controller::activate` releases its job before publishing the ready state.
+  Authored captures wait for that state, so looking up the donor after readiness
+  cannot recover a transport. Register actual authored demand before activation;
+  transfer a prepared scene owner after its preparation fence, and release the
+  request on cancellation or map/config replacement. A warm-cache activation may
+  have no transport at all, so the independent preparation path remains required.
+- The default job applies `DirectPolicy` to packed light ownership and may retain
+  styled component proposals. Authored capture options currently use legacy
+  direct ownership and no components. These are immutable input differences,
+  not merely different sample counts. Either establish equivalent radiance
+  semantics for the requesting capture, or separate consumer light-policy data
+  from shared geometry/textures before admitting that combination. Do not remove
+  `sameScenePolicy` checks to force sharing.
+
+The first integration should exercise cold/warm activation, cancellation during
+preparation, replacement after submission, and a donor retiring before its
+consumer. It must show one geometry/texture allocation for compatible requests,
+separate mutable slots, unchanged capture radiance and fence-safe retirement.
+Requests without authored demand must retain no extra scene or bake-job owner.
+
 This is the remaining integration contract, not a claim that runtime controllers
 already share a retained scene lease. It permits future diffuse providers without
 forcing material shaders to know their scheduling or storage.
