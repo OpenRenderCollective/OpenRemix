@@ -284,6 +284,8 @@ private:
   remixapi_ErrorCode fail(VkResult result = VK_ERROR_UNKNOWN);
   void destroySharedFrame();
   void sharedBarrier(VkCommandBuffer command, bool acquire);
+  // Outside a render pass, after the composite wrote the target's depth.
+  void copySharedDepth(VkCommandBuffer command);
   void destroySwapchain();
   void destroyVulkan();
   bool supportsDeviceExtension(VkPhysicalDevice device, const char *name) const;
@@ -652,8 +654,10 @@ private:
   VkImage m_sharedImage = VK_NULL_HANDLE;
   VkDeviceMemory m_sharedMemory = VK_NULL_HANDLE;
   VkSemaphore m_sharedReady = VK_NULL_HANDLE, m_sharedReleased = VK_NULL_HANDLE;
-  uint64_t m_sharedSize = 0;
-  uint32_t m_sharedMemoryType = 0;
+  // Shared frame version 2: the scene's depth, through a buffer.
+  VkImage m_sharedDepthImage = VK_NULL_HANDLE;
+  VkDeviceMemory m_sharedDepthMemory = VK_NULL_HANDLE, m_sharedDepthBufferMemory = VK_NULL_HANDLE;
+  VkBuffer m_sharedDepthBuffer = VK_NULL_HANDLE;
   bool m_sharedPresented = false;
   VkSwapchainKHR m_swapchain = VK_NULL_HANDLE;
   VkFormat m_swapchainFormat = VK_FORMAT_UNDEFINED;

@@ -1659,6 +1659,14 @@ void RemixNativeRuntime::presented() {
       }
     }
     lap(breakdown.compositeMilliseconds);
+    if (m_sharedDepthImage && !m_loading) {
+      // The scene's depth for the consumer, before a later pass clears it.
+      gpu::GpuScope scope(buffer, "Shared frame depth", m_swapchainExtent);
+      vkCmdEndRenderPass(buffer);
+      copySharedDepth(buffer);
+      pass.renderPass = m_resumePass;
+      vkCmdBeginRenderPass(buffer, &pass, VK_SUBPASS_CONTENTS_INLINE);
+    }
     if (capture) {
       gpu::GpuScope scope(buffer, "Last-frame snapshot capture", m_swapchainExtent);
       vkCmdEndRenderPass(buffer);

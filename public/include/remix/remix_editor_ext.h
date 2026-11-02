@@ -27,6 +27,25 @@ typedef struct remixapi_EditorSharedFrame {
   int memory_fd, ready_fd, released_fd;
 #endif
 } remixapi_EditorSharedFrame;
+// Version 2 (frame.version = 2; pass &frame) adds the scene's depth and may be
+// configured again for a new size. Depth: R32 SFLOAT at the frame's size,
+// optimal tiling, dedicated memory exported as the colour's, holding the depth
+// the composite wrote (forward [0,1] of the camera's projection, 1 where
+// nothing was hit; the previous frame's while the tracer rebuilds). Both images
+// share ready/released and the layout rules above. Without a float depth target
+// the depth descriptor is -1 (null on Windows) and depth_allocation_size 0.
+// Configuring again releases the previous images and semaphores: the consumer
+// must have finished with them.
+typedef struct remixapi_EditorSharedFrame2 {
+  remixapi_EditorSharedFrame frame;
+  uint64_t depth_allocation_size;
+  uint32_t depth_memory_type;
+#if defined(_WIN32)
+  void *depth_memory_handle;
+#else
+  int depth_memory_fd;
+#endif
+} remixapi_EditorSharedFrame2;
 #ifdef __cplusplus
 extern "C" {
 #endif
