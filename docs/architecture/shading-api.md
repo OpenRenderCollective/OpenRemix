@@ -29,7 +29,7 @@ on OpenRemix's scalable indexed fields.
 | --- | --- | --- |
 | Material | Evaluate color, roughness, metalness, emission and normals | `Surface`, `evaluateStandardSurface` |
 | Receiver | Supply world/screen geometry and baked bindings | `ShadingReceiver`, separate from material values |
-| Lighting sources | Fetch source lighting and visibility independently of BRDF | local/sun samples, receiver-local enumeration and diffuse query; reflection API pending |
+| Lighting sources | Fetch source lighting and visibility independently of BRDF | local/sun samples, receiver-local enumeration and diffuse query and environment reflection radiance; full reflection-provider integration pending |
 | Shading model | Apply material response and compose contributions | `shadeStandardSurface`, `shadeStandardLocalLight` |
 | Renderer | Select providers, allocate/update resources and choose pipelines | typed selections and CPU `ResourcePlan`; lifecycle migration ongoing |
 
@@ -91,13 +91,33 @@ that calculation into a helper increased control flow for metal-only variants;
 it needs a better shared contract before moving. Diagnostic baked-source views
 still query baked data explicitly, including when live GI is selected.
 
+## Reflection radiance
+
+`sampleEnvironmentReflection(ReflectionReceiver)` returns scene-linear incident
+radiance from the authored/automatic probe source or visibility-filtered sky.
+World reflection resolve and viewmodels share this query. It applies neither
+Fresnel nor SSR/ray confidence, so composition owns those factors exactly once.
+The pass adapter supplies the candidate mask, explicit layer and existing biased
+probe position; probe images and parallax selection remain implementation detail.
+
+`sampleViewModelReflection` combines that environment source with current-frame
+SSR and returns radiance without material color/metalness/Fresnel. The standard
+`viewModelReflection` wrapper applies its existing roughness-aware Fresnel term.
+This is a viewmodel adapter, not a universal world-space SSR API: its screen
+projection, source guides and descriptor layout belong to that pass.
+
+World SSR/ray transport still publishes a confidence/radiance image consumed by
+its resolve. Water retains separate optical composition and sky policy. A complete
+provider contract must accommodate these pass dependencies; the environment query
+alone does not make every reflection technique interchangeable.
+
 ## Remaining API work
 
 1. Build a high-level receiver sampling context over the existing enumeration
    and local/sun queries, hiding baked-channel preparation and aggregate ownership
    from custom material authors. Keep light indexing scalable.
-2. Give reflection radiance an explicit source contract shared by standard and
-   custom shading, and integrate the optical water path with shared queries.
+2. Connect the reflection radiance interface to interchangeable screen/ray and
+   environment providers, and integrate optical water with shared queries.
 3. Separate direct ownership and indirect transport in the composition contract.
    The current aggregate-bake flag and normalization bookkeeping still couple
    these concerns. Define units and provenance before exposing LightingTerms.

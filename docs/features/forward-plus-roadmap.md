@@ -1,3 +1,8 @@
+## Reflection shader interface - 2026-11-02
+
+- World resolve and viewmodels share material-independent environment radiance selection (authored/automatic probes then sky). Viewmodel SSR composition exposes radiance before Fresnel.
+- Remaining: unified reflection pass dependencies/provider selection, water optics integration and independent lifecycle/cache publication.
+
 ## Diffuse shader interface - 2026-11-02
 
 - Shared receiver context prepares chart data; diffuse query selects baked/probe or live-GI provider without material response. Reflection normalization extraction deferred after compiler evidence showed extra metal-variant control flow.
