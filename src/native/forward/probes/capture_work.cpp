@@ -42,6 +42,19 @@ namespace remix::forward::probes {
       appendRays(captures[owner], m_rays, cancelled);
     }
   }
+  uint64_t CaptureWork::planHash(std::span<const Capture> captures, std::stop_token cancelled) {
+    const CaptureWork plan(captures, cancelled, false);
+    if (captures.empty()) return 0;
+    scene::HashStream hash;
+    // Bump when CPU ray generation or its Point representation changes.
+    const uint32_t format[] = {1, sizeof(bake::Point), plan.m_resolution};
+    hash.append(format, sizeof(format));
+    for (const auto owner : plan.m_owners) {
+      check(cancelled);
+      hash.append(captures[owner].position.data(), sizeof(Vec3));
+    }
+    return hash.digest() | 1;
+  }
   uint64_t CaptureWork::inputHash(std::span<const Capture> captures, std::stop_token cancelled) {
     const CaptureWork plan(captures, cancelled, false);
     if (captures.empty()) return 0;

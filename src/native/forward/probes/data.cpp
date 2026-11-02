@@ -215,6 +215,7 @@ namespace remix::forward::probes {
     appendRays(capture, result);
     return result;
   }
+  // Emitted Point-bit changes require a CaptureWork::planHash format revision.
   void appendRays(const Capture &capture, std::vector<bake::Point> &output, std::stop_token cancelled) {
     validate(capture);
     const uint32_t size = capture.resolution;

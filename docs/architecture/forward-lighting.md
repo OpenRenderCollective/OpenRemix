@@ -395,10 +395,17 @@ adds a section checksum during background persistence.
 
 Reflection transport has an independent input key and optional 68-byte
 `.reflection-index` locator. The key includes frozen source content, exact ordered
-ray inputs, projection/feather metadata, capture quality, transport shaders,
+procedural ray inputs, projection/feather metadata, capture quality, transport shaders,
 component/direct ownership and device identity. It excludes diffuse atlas/grid
 settings and execution controls. Captured depth confidence is output, not key
 material; `projectionInputRecord` avoids scanning radiance for key construction.
+The versioned procedural signature includes origin bit patterns, resolution and
+unique-owner order without emitting a Point array. CPU ray generation/Point layout
+changes must bump its format revision. This is distinct from published ray-byte
+provenance, which retains the existing hash and is computed one cube at a time on
+a hit. Misses allocate/generate their ordinary complete work list once. The v2
+reflection key leaves older independent locators unused; full legacy bake keys
+and warm loads stay unchanged.
 
 After fitting, the automatic scheduler can read just the located reflection
 section and reuse raw radiance plus filtered images. The bounded reader validates

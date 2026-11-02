@@ -318,22 +318,22 @@ namespace remix::forward::bake::cache {
     const uint32_t filter[] = {0x4f49444eu, 2, lightmap::denoiserVersion()};
     return scene::fastHash(filter, sizeof(filter), raw);
   }
-  uint64_t reflectionKey(uint64_t content, uint64_t inputs, std::span<const probes::Capture> captures,
+  uint64_t reflectionKey(uint64_t content, uint64_t plan, std::span<const probes::Capture> captures,
                          const probes::CaptureConfig &config, const Device &device,
                          bool lightingComponents, const DirectPolicy &policy) {
-    if (!inputs || captures.empty()) return 0;
+    if (!plan || captures.empty()) return 0;
     static const uint64_t shaders = [] {
       auto hash = scene::fastHash(atlasShader, sizeof(atlasShader));
       hash = scene::fastHash(transportShader, sizeof(transportShader), hash);
       return scene::fastHash(parallelShader, sizeof(parallelShader), hash);
     }();
     // First word versions CPU filtering/projection and transport option defaults.
-    const uint32_t fields[] = {1, config.samples, config.bounces, config.textureResolution,
+    const uint32_t fields[] = {2, config.samples, config.bounces, config.textureResolution,
         uint32_t(lightingComponents), device.vendor, device.model, device.driver,
         device.imageSize, device.imageLayers, device.storageRange};
     auto hash = scene::fastHash(fields, sizeof(fields), content ^ shaders);
     hash = scene::fastHash(device.uuid.data(), device.uuid.size(), hash);
-    hash = scene::fastHash(&inputs, sizeof(inputs), hash);
+    hash = scene::fastHash(&plan, sizeof(plan), hash);
     hash = scene::fastHash(policy.lights.data(), policy.lights.size() * sizeof(DirectMode), hash);
     // Preserve fitted proxy, overlap and ordering as well as the deduplicated rays.
     for (const auto &capture : captures) {

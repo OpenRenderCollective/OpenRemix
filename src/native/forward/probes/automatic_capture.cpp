@@ -54,7 +54,7 @@ namespace remix::forward::probes {
     if (!captures.empty())
       inputHash = scene::fastHash(work.rays().data(), work.rays().size() * sizeof(bake::Point)) | 1;
   }
-  void AutomaticCapture::restoreCapture(std::vector<Capture> cached, Data data) {
+  void AutomaticCapture::restoreCapture(std::vector<Capture> cached, Data data, std::stop_token cancelled) {
     if (cached.size() != captures.size() || data.header.parameters[0] != captures.size()) return;
     for (size_t i = 0; i < captures.size(); ++i) {
       const auto expected = projectionInputRecord(captures[i]);
@@ -67,7 +67,10 @@ namespace remix::forward::probes {
     for (size_t i = 0; i < captures.size(); ++i)
       captures[i].radiance = std::move(cached[i].radiance);
     filtered = std::move(data);
+    inputHash = CaptureWork::inputHash(captures, cancelled);
     cachedRadiance = true;
+    std::vector<FittedRegion>().swap(candidateRegions);
+    seeds = {};
     work = {}; // completed cached radiance needs no GPU capture submissions
   }
   void AutomaticCapture::complete(std::stop_token cancelled) {

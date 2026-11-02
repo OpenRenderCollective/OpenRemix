@@ -24,8 +24,8 @@ namespace remix::forward::bake::cache {
   // its coverage policy must not invalidate fitted BSP or diffuse-only bakes.
   uint64_t key(uint64_t content, const Config &config, float cutoff, const Device &device,
                const DirectPolicy &policy = {}, bool fallbackReflections = false);
-  // Exact reflection transport/projection identity; excludes diffuse atlas/grid settings.
-  uint64_t reflectionKey(uint64_t content, uint64_t inputs, std::span<const probes::Capture> captures,
+  // Versioned procedural ray/projection identity; excludes diffuse atlas/grid settings.
+  uint64_t reflectionKey(uint64_t content, uint64_t plan, std::span<const probes::Capture> captures,
                          const probes::CaptureConfig &config, const Device &device,
                          bool lightingComponents, const DirectPolicy &policy = {});
   std::filesystem::path path(uint64_t key);

@@ -95,6 +95,24 @@ void testCaptureWork() {
   require(appendCancelled && appended.size() == prefix.size() + suffix.size(),
           "Cancelled direct ray append leaves the existing work buffer intact");
   std::vector<p::Capture> captures{base, alias, other, alias, other};
+  const auto signature = p::CaptureWork::planHash(captures);
+  const p::Capture unique[]{base, other};
+  require(signature == p::CaptureWork::planHash(unique),
+          "Procedural capture signature follows unique-ray owner order, not projection aliases");
+  const p::Capture reordered[]{other, base};
+  require(signature != p::CaptureWork::planHash(reordered), "Procedural signature preserves ray order");
+  auto resized = capture(16);
+  require(p::CaptureWork::planHash(std::span(&base, 1)) != p::CaptureWork::planHash(std::span(&resized, 1)),
+          "Procedural signature includes capture resolution");
+  auto signedOrigin = base;
+  signedOrigin.position[0] = -0.f;
+  require(p::CaptureWork::planHash(std::span(&base, 1)) != p::CaptureWork::planHash(std::span(&signedOrigin, 1)),
+          "Procedural signature retains signed-zero seed inputs");
+  bool planCancelled = false;
+  try { (void)p::CaptureWork::planHash(captures, stopped.get_token()); }
+  catch (const std::runtime_error &) { planCancelled = true; }
+  require(planCancelled && p::CaptureWork::planHash({}) == 0,
+          "Procedural signature handles cancellation and empty capture sets");
   p::CaptureWork work(captures);
   require(p::CaptureWork::inputHash(captures) ==
               (remix::scene::fastHash(work.rays().data(), work.rays().size_bytes()) | 1),

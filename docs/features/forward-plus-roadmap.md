@@ -1,3 +1,8 @@
+## Indexed reflection hit memory - 2026-11-02
+
+- Lookup now precedes full ray-list creation. Versioned procedural capture signature keys the index; hits retain exact ray-byte provenance through one-cube streaming. Misses generate their ordinary work list once.
+- Representative cache I/O/peak memory and full frame-performance qualification remain required; CPU preparation study is not an FPS benchmark.
+
 ## Independent reflection cache lookup - 2026-11-02
 
 - Optional checksummed section locator reuses exact automatic reflection radiance/filtering across diffuse-only rebakes without a second cubemap sidecar payload; combined cache wire bytes remain unchanged.

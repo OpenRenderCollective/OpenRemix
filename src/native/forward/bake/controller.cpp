@@ -999,23 +999,25 @@ namespace remix::forward::bake {
                                         config.reflectionDetailTolerance, owner->cancellation.get_token());
             owner->receiverAudit = probes::prepareReceiverAudit(*owner->source, owner->reflections.captures,
                                                                owner->cancellation.get_token());
-            owner->reflections.prepareRays(owner->cancellation.get_token());
             if (!owner->cacheFile.empty() && !owner->reflections.captures.empty()) {
               const probes::CaptureConfig captureConfig{.reflectionResolution = config.reflectionResolution,
                   .textureResolution = config.textureResolution, .samples = config.samples, .bounces = config.bounces};
               owner->reflectionCacheKey = cache::reflectionKey(owner->source->contentHash,
-                  owner->reflections.inputHash, owner->reflections.captures, captureConfig, owner->cacheDevice,
+                  probes::CaptureWork::planHash(owner->reflections.captures, owner->cancellation.get_token()),
+                  owner->reflections.captures, captureConfig, owner->cacheDevice,
                   config.styledIndirect && !styleIds(*owner->source).empty(), owner->mixedLights->lights.directLighting);
               auto cached = probes::cache_index::read(owner->cacheFile.parent_path(), owner->reflectionCacheKey,
                   {captureCount, config.reflectionResolution, owner->cacheDevice.imageSize,
                    owner->cacheDevice.imageLayers, owner->cacheDevice.storageRange}, owner->cancellation.get_token());
               const bool indexed = bool(cached);
-              if (cached) owner->reflections.restoreCapture(std::move(cached->captures), std::move(cached->data));
-              std::fprintf(stderr, "Forward reflection cache: key=%llu inputs=%llu indexed=%u reused=%u\n",
+              if (cached) owner->reflections.restoreCapture(std::move(cached->captures), std::move(cached->data), owner->cancellation.get_token());
+              std::fprintf(stderr, "Forward reflection cache: key=%llu indexed=%u reused=%u\n",
                   static_cast<unsigned long long>(owner->reflectionCacheKey),
-                  static_cast<unsigned long long>(owner->reflections.inputHash), unsigned(indexed),
+                  unsigned(indexed),
                   unsigned(owner->reflections.cachedRadiance));
             }
+            if (!owner->reflections.cachedRadiance)
+              owner->reflections.prepareRays(owner->cancellation.get_token());
           });
       status(REMIXAPI_BAKE_PREPARING_EXT, "Selecting reflection captures");
       return;

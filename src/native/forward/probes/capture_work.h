@@ -13,6 +13,9 @@ namespace remix::forward::probes {
     // Cache loads need provenance, but no transport work. Hash one unique
     // cubemap at a time instead of allocating the entire scene's ray list.
     static uint64_t inputHash(std::span<const Capture> captures, std::stop_token cancelled = {});
+    // Versioned procedural ray inputs for cache lookup, without generating rays.
+    // Origin bit patterns, resolution and unique-owner order define appendRays.
+    static uint64_t planHash(std::span<const Capture> captures, std::stop_token cancelled = {});
     std::span<const bake::Point> rays() const { return m_rays; }
     // Readback ray -> owning capture and its row-major face texel.
     std::pair<uint32_t, uint32_t> destination(uint32_t ray) const;
