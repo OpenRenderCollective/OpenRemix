@@ -26,7 +26,7 @@ namespace remix::forward::bake {
         owner->localCaptureWork = std::make_unique<probes::LocalCaptureWork>(*owner->source, baseline, plan,
             owner->reflections.image->header().parameters[1], .5f / owner->source->sceneScale,
             owner->cancellation.get_token());
-        owner->localReflections = std::make_shared<LocalReflections>();
+        owner->localReflections = std::make_shared<probes::LocalCaptureSource>();
         owner->localReflections->plan = std::make_shared<const probes::ReceiverCoveragePlan>(std::move(plan));
         std::fprintf(stderr, "Selected local reflection transport: %zu captures, %zu shared rays\n",
             owner->localReflections->plan->replacements.size(), owner->localCaptureWork->rays().size());
@@ -111,7 +111,7 @@ namespace remix::forward::bake {
     auto cached = local_cache::read(local_cache::path(cacheFile), cacheKey, source, config, baseline,
                                     cancellation.get_token());
     if (!cached) return; // Base irradiance and cubemaps remain a valid cache hit.
-    auto restored = std::make_shared<LocalReflections>();
+    auto restored = std::make_shared<probes::LocalCaptureSource>();
     restored->image = std::make_shared<probes::ImageAsset>(physical, device, cached->image.data, cancellation.get_token());
     restored->ready = std::make_shared<const probes::CoverageReadyImage>(std::move(cached->image.selection));
     reflectionEvidence = std::move(cached->evidence);

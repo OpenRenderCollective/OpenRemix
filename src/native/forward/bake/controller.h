@@ -7,6 +7,7 @@
 #include "forward/probes/data.h"
 #include "forward/probes/capture_source.h"
 #include "forward/probes/capture_step.h"
+#include "forward/probes/local_capture_source.h"
 #include "forward/probes/image_asset.h"
 #include "forward/resources.h"
 #include "platform/gpu_frames.h"
@@ -19,11 +20,6 @@ namespace remix {
 namespace remix::forward::probes { struct ReceiverCoverageEvidence; struct ReceiverCoveragePlan; struct CoverageReadyImage; }
 namespace remix::forward::bake {
   class SunDepth;
-  struct LocalReflections {
-    std::shared_ptr<probes::ImageAsset> image;
-    std::shared_ptr<const probes::ReceiverCoveragePlan> plan;
-    std::shared_ptr<const probes::CoverageReadyImage> ready;
-  };
   struct Volume {
     uint64_t hash = 0;
     ContentHashes content;
@@ -31,8 +27,6 @@ namespace remix::forward::bake {
     std::vector<uint32_t> groupedStyles; // complete direct groups, separate from permanent aggregate policy
     std::shared_ptr<SunDepth> sunDepth;
     scene::DistantLight sun; // shape provenance for matching surface/probe static sunlight
-    std::shared_ptr<const LocalReflections> localReflections; // Opt-in prepared captures, not active selection.
-    std::shared_ptr<const probes::ReceiverCoverageEvidence> reflectionEvidence; // Optional completed local-fit diagnostics.
     GridHeader irradianceHeader;
     uint32_t usableIrradianceProbes = 0;
     // Immutable private transfer candidate; GPU publication requires an explicit sampling flag.
@@ -78,6 +72,9 @@ namespace remix::forward::bake {
     probes::CaptureSource reflectionSource() const {
       return {m_reflectionSceneHash, m_reflections};
     }
+    const std::shared_ptr<const probes::LocalCaptureSource> &localReflectionSource() const {
+      return m_localReflections;
+    }
     const probes::Header *reflectionHeader() const { return m_reflections ? &m_reflections->header() : nullptr; }
     float reflectionSceneScale() const { return m_reflections && m_source ? m_source->sceneScale : 1; }
     VkDescriptorImageInfo surfaceDescriptor() const;
@@ -114,6 +111,7 @@ namespace remix::forward::bake {
     std::vector<std::shared_ptr<Job>> m_obsolete;
     std::shared_ptr<Volume> m_volume;
     std::shared_ptr<probes::ImageAsset> m_reflections;
+    std::shared_ptr<const probes::LocalCaptureSource> m_localReflections;
     uint64_t m_reflectionSceneHash = 0;
     std::array<Submission, gpuFrameCount> m_submissions;
     std::unique_ptr<Buffer> m_empty, m_emptySunDepth;

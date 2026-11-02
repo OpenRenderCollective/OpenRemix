@@ -152,7 +152,7 @@ namespace remix::forward::bake {
     uint32_t receiverGuardNext = 0, receiverGuardReceived = 0;
     std::shared_ptr<const probes::ReceiverCoverageEvidence> reflectionEvidence;
     std::unique_ptr<probes::LocalCaptureWork> localCaptureWork;
-    std::shared_ptr<LocalReflections> localReflections;
+    std::shared_ptr<probes::LocalCaptureSource> localReflections;
     std::shared_ptr<const local_cache::Snapshot> localReflectionCache;
     void restoreLocalReflections(VkPhysicalDevice physical, VkDevice device, const Config &config);
     void prepareLocalReflectionUpgrade(VkPhysicalDevice physical, VkDevice device, const Config &config, uint32_t family);

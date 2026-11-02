@@ -379,6 +379,7 @@ namespace remix::forward::bake {
     }
     m_volume.reset();
     m_reflections.reset();
+    m_localReflections.reset();
     m_reflectionSceneHash = 0;
     m_statistics.probes = m_statistics.completed = 0;
   }
@@ -1057,12 +1058,12 @@ namespace remix::forward::bake {
     if (!reflections) throw std::logic_error("Missing prepared reflection image");
     const bool diffusePublished = bool(m_job->publishedDiffuse);
     auto volume = diffusePublished ? m_job->publishedDiffuse : prepareVolume(command);
-    volume->reflectionEvidence = m_job->reflectionEvidence;
-    volume->localReflections = m_job->localReflections;
-    if (volume->localReflections) {
-      volume->localReflections->image->recordUpload(command);
-      m_submissions[m_slot].localReflectionUpload = volume->localReflections->image;
+    if (m_job->localReflections) {
+      m_job->localReflections->evidence = m_job->reflectionEvidence;
+      m_job->localReflections->image->recordUpload(command);
+      m_submissions[m_slot].localReflectionUpload = m_job->localReflections->image;
     }
+    m_localReflections = m_job->localReflections;
     probes::dumpCaptures(m_hash, m_job->reflections.captureView());
     if (!m_job->reflections.captureView().empty()) {
       volume->content.captureInputs = m_job->reflections.inputHash;
@@ -1515,7 +1516,7 @@ namespace remix::forward::bake {
         result.images += image->imageBytes();
       }
     };
-    auto addLocalImage = [&](const std::shared_ptr<const LocalReflections> &local) {
+    auto addLocalImage = [&](const std::shared_ptr<const probes::LocalCaptureSource> &local) {
       if (local) addLocalAsset(local->image);
     };
     std::unordered_set<const Job *> jobs;
@@ -1556,13 +1557,13 @@ namespace remix::forward::bake {
         result.images += volume->occlusion->bytes();
       if (volume->visibilityPages)
         result.images += volume->visibilityPages->bytes();
-      addLocalImage(volume->localReflections);
       result.buffers += volume->data->allocationBytes;
       if (volume->staging)
         result.buffers += volume->staging->allocationBytes;
     };
     addVolume(m_volume);
     addReflection(m_reflections);
+    addLocalImage(m_localReflections);
     for (const auto &submission : m_submissions) {
       addVolume(submission.upload);
       addVolume(submission.sampled);

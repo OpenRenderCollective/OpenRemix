@@ -766,15 +766,32 @@ then performs the existing status/persistence/job-retirement transition. The spl
 adds no volume/image allocation or GPU pass; the existing construction runs once.
 
 During reflection recovery the prepared diffuse volume publishes once before
-capture work starts. Final activation reuses its buffers/images and adds reflection
-diagnostics/optional attachments on the render thread; it does not recreate or
-upload diffuse resources. Published diffuse GPU data is unchanged. Workers must
-not read the render-thread `publishedDiffuse` owner or inspect mutable attachment
-metadata through that volume; preparation inputs remain in their private job.
+capture work starts. Final activation reuses its buffers/images and updates reflection
+diagnostics on the render thread; it does not recreate or upload diffuse
+resources. Optional reflection attachments publish separately. Published diffuse GPU data is unchanged. Workers must
+not read the render-thread `publishedDiffuse` owner; preparation inputs remain
+in their private job.
 
 Local-reflection image uploads have explicit owners in their originating frame
 submission. Retirement never discovers their staging through a volume that might
 have gained attachments later. Memory reporting deduplicates the frame-held image
-with volume/job owners. Sun-depth dependencies still complete before early diffuse
+with published reflection/job owners. Sun-depth dependencies still complete before early diffuse
 publication. Default independent scheduling and matched CPU/frame performance
 remain open; optional late-local-layer combinations need broader map coverage.
+
+### Optional local reflection source
+
+`probes::LocalCaptureSource` owns prepared local image layers, their coverage plan,
+ready-layer mapping and immutable receiver evidence. It is a reflection-only
+publication, independent of `bake::Volume`. Default activation publishes the
+completed source after its preparation ticket and binds its upload to the
+originating frame. Source invalidation retires it independently of diffuse data.
+
+The optional local-selection path obtains this source directly from the controller;
+it no longer reads local layers or evidence through a diffuse volume. Its existing
+disabled early return is preserved, so the default material path adds no local-source
+lookup or shared-pointer copy. Selection workers retain their source image/evidence
+inputs; submitted uploads retain their image until the matching fence. Memory
+reporting deduplicates published/job/frame owners. Controller scheduling still
+coordinates their preparation; the new source is not a separately scheduled
+producer by itself.

@@ -33,14 +33,13 @@ namespace remix::forward {
     if (!enabled && !localSelections.needsContext() &&
         (!localSelectionPreparation || !localSelectionPreparation->pending())) return;
     const auto source = resources.bakeScene();
-    const auto &volume = baking->volume();
     const auto snapshot = authoredReflections->snapshot(reflectionSource());
-    const auto local = volume ? volume->localReflections : nullptr;
+    const auto local = baking->localReflectionSource();
     // Disabled/author-only sets cannot accept automatic replacements. Retire
     // existing selections without scheduling a worker that can only return empty.
     const bool automaticAllowed = !snapshot.baseline.disabled && snapshot.baseline.automaticAllowed;
     const bool available = enabled && automaticAllowed && localSelectionPreparation && source && source->ready &&
-        snapshot.image && local && local->image && local->ready && !local->ready->layers.empty() && volume->reflectionEvidence &&
+        snapshot.image && local && local->image && local->ready && !local->ready->layers.empty() && local->evidence &&
         probes::matchesCoverageContext(local->ready->context, *source, local->ready->context.baseline);
     if (!available) {
       localSelections.invalidate();
@@ -54,7 +53,7 @@ namespace remix::forward {
       localSelectionBaseline = snapshot.image;
       localSelectionImage = local->image;
       try {
-        localSelectionPreparation->start(source, snapshot, volume->reflectionEvidence, local->ready, local->image);
+        localSelectionPreparation->start(source, snapshot, local->evidence, local->ready, local->image);
       } catch (const std::exception &error) {
         std::fprintf(stderr, "Local reflection preparation refused: %s\n", error.what());
       }

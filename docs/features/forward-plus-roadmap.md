@@ -1,3 +1,9 @@
+## Local reflection publication separated from diffuse volume - 2026-11-02
+
+- Prepared local image layers/coverage/evidence now publish as probes::LocalCaptureSource. Removed local reflection resources/evidence from diffuse Volume; optional selection reads the reflection source directly. Upload fence ownership and memory deduplication are preserved.
+- Native build and four focused regressions pass: local evidence/cache integrity, authored/standalone capture reuse and early publication/recovery/cancellation. Default-disabled selection still returns before looking up the optional source.
+- Remaining: broader late-local-layer/map coverage, default independent ticket/transport scheduling, shared-scene adoption and full CPU/frame performance acceptance. Playable unchanged.
+
 ## Early cached diffuse publication - 2026-11-02
 
 - Reflection recovery publishes cached diffuse lighting before capture work, then reuses the same volume at final activation without another diffuse build/upload. Local-reflection uploads have explicit per-submission image owners and matching fence retirement, independent of later volume attachments.
