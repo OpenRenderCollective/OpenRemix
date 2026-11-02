@@ -1,3 +1,13 @@
+## 2026-11-03 — resolved reflection resource selection
+
+Screen hierarchy allocation/recording and live-scene reflection batch capacity
+now follow the resolved ResourcePlan rather than rereading saved source requests.
+Quality/range settings remain separate. Viewmodel SSR follows prepared screen
+resources. Configuration/capability policy, SSR, viewmodel SSR, hardware reflection
+and live-GI GPU checks pass. No shaders, pass counts or default techniques changed.
+Full independent provider dependency/finishing orchestration and the broader
+performance acceptance gate remain open.
+
 ## 2026-11-03 — reflection provider owns worker preparation
 
 AutomaticCapture now owns placement/filter worker tickets instead of borrowing

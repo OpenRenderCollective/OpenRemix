@@ -25,7 +25,9 @@ namespace remix::forward::ray {
   public:
     LiveScene();
     ~LiveScene();
-    void initialize(VkPhysicalDevice physical, VkDevice device);
+    // The resolved provider plan decides whether compute reflection batches
+    // are needed; saved requests are not reinterpreted during scene capture.
+    void initialize(VkPhysicalDevice physical, VkDevice device, bool reflectionBatches);
     void selectFrame(uint32_t slot);
     void prepare(VkCommandBuffer command, RasterRenderer &resources, const Options &options, double seconds);
     bake::Transport *transport() const;

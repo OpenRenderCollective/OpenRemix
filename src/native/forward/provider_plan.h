@@ -13,6 +13,7 @@ namespace remix::forward::techniques {
     Diffuse diffuse = Diffuse::Disabled;
     bool rayReflections = false, rayWater = false;
     bool rayScene = false, reflectionResolve = false;
+    bool screenReflections = false;
     bool rayDiffuse() const { return diffuse == Diffuse::RayQueries; }
     bool bakedDiffuse() const { return diffuse == Diffuse::SurfaceAndProbes; }
     bool operator==(const ResourcePlan &) const = default;
@@ -25,11 +26,12 @@ namespace remix::forward::techniques {
         (!options.water || capabilities.waterRayQueries);
     plan.diffuse = liveDiffuse ? Diffuse::RayQueries
         : options.baking.enabled ? Diffuse::SurfaceAndProbes : Diffuse::Disabled;
+    plan.screenReflections = options.ssr;
     plan.rayReflections = options.rtReflections && capabilities.rayQueries;
     plan.rayWater = options.water && plan.rayReflections && capabilities.waterRayQueries;
     plan.rayScene = plan.rayDiffuse() || plan.rayReflections;
     // Allocate guides/resolve only for a supported active reflection source.
-    plan.reflectionResolve = options.ssr || plan.rayReflections || options.baking.reflectionProbes != 0;
+    plan.reflectionResolve = plan.screenReflections || plan.rayReflections || options.baking.reflectionProbes != 0;
     return plan;
   }
 }

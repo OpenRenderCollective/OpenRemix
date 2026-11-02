@@ -81,7 +81,7 @@ namespace remix::forward {
       const ScreenData screenData{scene::inverse(data.camera),
           {options.ssrDistance / options.sceneScale, options.ssrThickness / options.sceneScale,
            .002f / options.sceneScale, options.ssrRoughness},
-          {uint32_t(samples), options.ssrScale, options.ssr && screen.depth.imageView ? options.ssrSteps : 0u,
+          {uint32_t(samples), options.ssrScale, screen.depth.imageView ? options.ssrSteps : 0u,
            uint32_t(std::bit_width(std::max(extent.width, extent.height)))},
           {candidates[0], candidates[1], 0, 0}};
       ensure(frame.viewModelReflectionConstants, sizeof(ScreenData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);

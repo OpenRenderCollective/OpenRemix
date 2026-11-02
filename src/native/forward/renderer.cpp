@@ -173,7 +173,7 @@ namespace remix::forward {
     next->statistics.targetBytes += next->localMaps->memoryBytes();
     if (next->techniquePlan.reflectionResolve) {
       next->reflections = std::make_unique<Reflections>();
-      next->reflections->initialize(physical, device, extent, next->samples, options,
+      next->reflections->initialize(physical, device, extent, next->samples, options, next->techniquePlan,
                                     {next->depth->view, next->normalGuide->view, next->reflectanceGuide->view,
                                      next->resolved ? next->resolved->view : next->color->view,
                                      next->resolved ? next->resolved->handle : next->color->handle});

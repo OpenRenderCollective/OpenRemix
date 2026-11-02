@@ -58,6 +58,8 @@ int main() {
               require(resources.diffuse == (options.baking.enabled ? techniques::Diffuse::SurfaceAndProbes
                                                                    : techniques::Diffuse::Disabled),
                       "Unavailable live GI retains the configured baked or disabled fallback");
+            require(resources.screenReflections == options.ssr,
+                    "Resolved screen source selection is independent of ray and baked capabilities");
             require(resources.reflectionResolve == (options.ssr || resources.rayReflections || options.baking.reflectionProbes != 0),
                     "Only supported reflection sources allocate guides and resolve");
           }

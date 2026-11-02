@@ -97,17 +97,18 @@ namespace remix::forward {
   Reflections::~Reflections() = default;
 
   void Reflections::initialize(VkPhysicalDevice physical, VkDevice device, VkExtent2D extent,
-                               VkSampleCountFlagBits samples, const Options &options, Inputs inputs) {
+                               VkSampleCountFlagBits samples, const Options &options,
+                               const techniques::ResourcePlan &plan, Inputs inputs) {
     auto next = std::make_unique<Gpu>();
     auto &g = *next;
     g.device = device;
     g.extent = extent;
     g.samples = uint32_t(samples);
     g.scale = options.ssrScale;
-    g.screenSpace = options.ssr;
+    g.screenSpace = plan.screenReflections;
     g.traceExtent = {(extent.width + g.scale - 1) / g.scale, (extent.height + g.scale - 1) / g.scale};
     g.levels = std::bit_width(std::max(extent.width, extent.height));
-    g.colorLevels = options.ssr ? g.levels : 1;
+    g.colorLevels = g.screenSpace ? g.levels : 1;
     g.hdr = inputs.hdrImage;
     if (ImageDump::enabled(physical))
       g.dump = std::make_unique<ImageDump>(physical, device);
@@ -321,7 +322,7 @@ namespace remix::forward {
         source.cameraPosition,
         {options.ssrDistance / options.sceneScale, options.ssrThickness / options.sceneScale,
          .002f / options.sceneScale, options.ssrRoughness},
-        {g.samples, g.scale, options.ssr ? options.ssrSteps : 0u, g.levels},
+        {g.samples, g.scale, g.screenSpace ? options.ssrSteps : 0u, g.levels},
         {g.extent.width, g.extent.height, g.traceExtent.width, g.traceExtent.height}};
     probes::dumpFrameData(".reflection-frame.bin", &constants, sizeof(constants));
     frame.constants->write(&constants, sizeof(constants));
@@ -378,8 +379,8 @@ namespace remix::forward {
       g.dump->record(command, slot, "depth", g.depth->handle, VK_FORMAT_R32_SFLOAT, g.extent,
                      VK_IMAGE_LAYOUT_GENERAL);
     }
-    if (options.ssr) stage("Forward+ reflection hierarchy", g.extent);
-    for (uint32_t level = 1; options.ssr && level < g.levels; ++level) {
+    if (g.screenSpace) stage("Forward+ reflection hierarchy", g.extent);
+    for (uint32_t level = 1; g.screenSpace && level < g.levels; ++level) {
       const VkExtent2D size{std::max(1u, g.extent.width >> level), std::max(1u, g.extent.height >> level)};
       dispatch(g.reduce, frame.reduce[level - 1], size);
       readable(*g.depth, g.levels);

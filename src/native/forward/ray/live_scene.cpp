@@ -12,6 +12,7 @@ namespace remix::forward::ray {
     VkPhysicalDevice physical = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
     uint32_t slot = 0;
+    bool reflectionBatches = false;
     Statistics statistics;
     struct World {
       uint64_t key = 0;
@@ -30,10 +31,11 @@ namespace remix::forward::ray {
   };
   LiveScene::LiveScene() = default;
   LiveScene::~LiveScene() = default;
-  void LiveScene::initialize(VkPhysicalDevice physical, VkDevice device) {
+  void LiveScene::initialize(VkPhysicalDevice physical, VkDevice device, bool reflectionBatches) {
     auto next = std::make_unique<Gpu>();
     next->physical = physical;
     next->device = device;
+    next->reflectionBatches = reflectionBatches;
     next->statistics.available = true;
     bake::Transport::preparePipelines(device);
     m_gpu = std::move(next);
@@ -66,7 +68,7 @@ namespace remix::forward::ray {
     g.statistics.active = false;
     g.statistics.rays = 0;
     g.statistics.sceneBuilds = 0;
-    const float distance = options.rtReflections ? options.rtReflectionDistance : options.rtGIDistance;
+    const float distance = g.reflectionBatches ? options.rtReflectionDistance : options.rtGIDistance;
     auto snapshot = capture(resources.bakeScene().get(), resources.draws(), resources.sphereLights(),
                             resources.light(), resources.dome(), options.sceneScale, seconds);
     const auto sun = snapshot.source->sun;
@@ -86,7 +88,7 @@ namespace remix::forward::ray {
         bake::Options transport;
         transport.cpuReadback = false;
         transport.deviceLocalBatches = true;
-        transport.batchPoints = options.rtReflections ? 16384u : 1u;
+        transport.batchPoints = g.reflectionBatches ? 16384u : 1u;
         transport.textureResolution = options.rtTextureResolution;
         transport.distance = distance;
         next->transport.initialize(g.physical, g.device, std::move(snapshot.source),

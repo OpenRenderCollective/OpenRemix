@@ -1,6 +1,7 @@
 #pragma once
 #include "forward/bindings.h"
 #include "forward/options.h"
+#include "forward/provider_plan.h"
 #include "forward/probes/image_asset.h"
 #include <memory>
 #include <vulkan/vulkan.h>
@@ -30,7 +31,8 @@ namespace remix::forward {
     Reflections();
     ~Reflections();
     void initialize(VkPhysicalDevice physical, VkDevice device, VkExtent2D extent,
-                    VkSampleCountFlagBits samples, const Options &options, Inputs inputs);
+                    VkSampleCountFlagBits samples, const Options &options,
+                    const techniques::ResourcePlan &plan, Inputs inputs);
     // Caller has waited for this frame slot's fence. Targets are shared on the
     // renderer's one queue; all cross-pass and cross-frame barriers live here.
     void record(VkCommandBuffer command, uint32_t slot, const FrameData &frame, const Options &options,

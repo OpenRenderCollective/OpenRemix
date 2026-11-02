@@ -20,7 +20,7 @@ namespace remix::forward::ray {
     m_water = plan.rayWater;
     if (plan.rayScene) {
       m_scene = std::make_unique<LiveScene>();
-      m_scene->initialize(physical, device);
+      m_scene->initialize(physical, device, plan.rayReflections);
     }
     if (plan.rayReflections) {
       m_reflections = std::make_unique<Reflections>();

@@ -246,6 +246,23 @@ that is a debug policy, not a generic fallback for future GI providers. The
 normalization query preserves incident lighting for metal-only materials whose
 diffuse response can skip probe evaluation.
 
+## Resolved provider dependencies
+
+`techniques::ResourcePlan` carries active diffuse, screen/ray reflection and
+shared-scene requirements after capability resolution. Screen reflection
+allocation and hierarchy recording consume the resolved screen choice; quality
+and range values remain in `Options`. The live scene receives its compute
+reflection-batch requirement from the same plan instead of reading the saved ray
+request during capture. GI-only consumers keep their one-point dispatch capacity.
+Viewmodels consume the prepared screen descriptors, which are absent when that
+source is inactive. Material shaders do not inspect these plan IDs.
+
+Saved requests and resolved capabilities remain distinct, so unsupported effects
+retain their configured fallback without allocating the requested ray provider.
+This plan is derived once during target preparation and is not another persisted
+selector. Existing source modules consume it without a dynamic registry, virtual
+per-draw dispatch or additional shader branch.
+
 ## Provider scheduling and transport sharing
 
 Technique independence does not require separate acceleration structures or
