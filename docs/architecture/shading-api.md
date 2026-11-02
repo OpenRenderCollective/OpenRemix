@@ -232,6 +232,10 @@ independent ray budgets. The Source 2 preset currently lends the automatic
 reflection provider its admitted placement seeds and the active bake transport.
 The reflection provider owns placement transitions, GPU ranges/readback,
 radiance-cache lookup, filtering, immutable payload and image publication. The
+preset-specific scheduling/publication bridge lives in
+`forward/bake/reflection_schedule.cpp`, separate from the diffuse controller's
+main recording loop. It retains the existing shared job and finishing order;
+extracting the module does not yet supply an independent provider ticket. The
 bake scheduler still owns its worker ticket and the ordering around diffuse
 finishing. Standalone reflection capture supplies its own scheduler when diffuse
 baking is disabled.
