@@ -24,6 +24,8 @@ Implemented and checked:
   live water can share prepared scene descriptors with its own query limits.
   Capture recording, admission and source fallback share one resolved owner;
   image disable preserves the scheduler responsible for retiring prior work.
+  CaptureProviders now owns capture admission, frame-slot transitions and fallback
+  selection outside frame rendering, preserving the existing shared budget.
 - Immutable prepared scenes have demand-scoped leases and independent mutable
   consumers. Compatible automatic captures hand inputs to authored captures
   before retirement. Ordinary radiance can explicitly inherit baked light policy;

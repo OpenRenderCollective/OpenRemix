@@ -7,16 +7,11 @@
 namespace remix::forward {
   const probes::Header *Renderer::Gpu::reflectionHeader() const {
     if (const auto selected = localSelections.active()) return &selected->image->header();
-    if (const auto authored = authoredReflections->header()) return authored;
-    if (standaloneReflectionsUsed && !techniquePlan.capturesWithBake()) {
-      const auto &standalone = standaloneReflections->source();
-      if (standalone.image) return &standalone.image->header();
-    }
-    return baking->reflectionHeader();
+    return captureProviders.header(techniquePlan, *baking);
   }
   const probes::LayerIdentities *Renderer::Gpu::reflectionIdentities() const {
     if (const auto selected = localSelections.active()) return &selected->identities;
-    return authoredReflections->identities();
+    return captureProviders.authored()->identities();
   }
   uint32_t Renderer::Gpu::reflectionLayer(uint64_t sceneId, uint64_t volumeId) const {
     if (const auto selected = localSelections.active()) {
@@ -25,7 +20,7 @@ namespace remix::forward {
         if (selected->identities[i] == volumeId) return i + 1;
       return 0;
     }
-    return authoredReflections->receiverLayer(sceneId, volumeId);
+    return captureProviders.authored()->receiverLayer(sceneId, volumeId);
   }
   void Renderer::Gpu::prepareLocalReflections(VkCommandBuffer command, RasterRenderer &resources) {
     const char *request = std::getenv("REMIX_DEBUG_PROBE_LOCAL_SELECTION");
@@ -33,7 +28,7 @@ namespace remix::forward {
     if (!enabled && !localSelections.needsContext() &&
         (!localSelectionPreparation || !localSelectionPreparation->pending())) return;
     const auto source = resources.bakeScene();
-    const auto snapshot = authoredReflections->snapshot(reflectionSource());
+    const auto snapshot = captureProviders.authored()->snapshot(reflectionSource());
     const auto local = baking->localReflectionSource();
     // Disabled/author-only sets cannot accept automatic replacements. Retire
     // existing selections without scheduling a worker that can only return empty.

@@ -319,6 +319,21 @@ Standalone reflection capture supplies its own scheduler when diffuse baking is
 disabled. Full provider dependency and finishing orchestration remain separate
 integration work.
 
+`probes::CaptureProviders` owns the authored and standalone provider handles,
+frame-slot admission state and automatic fallback selection. Frame rendering
+calls its `record` entry point; it registers authored scene demand before lending
+the existing diffuse controller's preparation/transport admission, retires a
+previously used standalone provider when disabled, and admits authored work only
+after the selected shared scheduler finishes. Header, descriptor and scale
+fallback use the same resolved owner. Local receiver selection remains pass-owned.
+
+Replacement activation refreshes shared-provider usage after queue idle, and
+slot selection follows the existing completed frame fence. Teardown releases
+authored workers before diffuse ownership and retains standalone frame owners
+through normal teardown. The owner adds no virtual dispatch, jobs, ray lists or
+per-frame heap allocation. This is the captured-lighting adapter boundary;
+arbitrary provider dependency/finishing orchestration remains unfinished.
+
 `ResourcePlan::captureTransport` explicitly selects the automatic capture and
 shared-admission owner: the baked scene scheduler or the standalone scene
 scheduler. Recording, authored-work admission, automatic image/header fallback

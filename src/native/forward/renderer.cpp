@@ -27,18 +27,16 @@ namespace remix::forward {
       irradiance.coarseRecords = volume->coarseIrradianceProbes;
       irradiance.patchCounts = volume->irradiancePatchCounts;
     }
-    statistics.reflectionSceneScale = volume ? volume->sceneScale
-        : standaloneReflectionsUsed && !techniquePlan.capturesWithBake() ? standaloneReflections->sceneScale()
-                                                                              : baking->reflectionSceneScale();
-    statistics.authoredReflections = authoredReflections->statistics();
+    statistics.reflectionSceneScale = captureProviders.sceneScale(techniquePlan, *baking);
+    statistics.authoredReflections = captureProviders.authored()->statistics();
     const auto header = reflectionHeader();
     statistics.reflectionProbes = header ? *header : probes::Header{};
     const auto identities = reflectionIdentities();
     statistics.reflectionIdentities = identities ? *identities : probes::LayerIdentities{};
     bake::TransportMemory transportMemory;
     const auto memory = baking->memory(&transportMemory);
-    const auto authoredMemory = authoredReflections->memory(&transportMemory);
-    const auto standaloneMemory = standaloneReflectionsUsed ? standaloneReflections->memory(&transportMemory)
+    const auto authoredMemory = captureProviders.authored()->memory(&transportMemory);
+    const auto standaloneMemory = captureProviders.standaloneUsed() ? captureProviders.standalone()->memory(&transportMemory)
                                                           : probes::StandaloneCapture::Memory{};
     auto selectedMemory = localSelections.memory();
     if (localSelectionPreparation) {
@@ -87,7 +85,7 @@ namespace remix::forward {
     viewModelSun.reset();
     viewModelLocalMaps.reset();
     waterPass.reset();
-    authoredReflections.reset();
+    captureProviders.releaseAuthoring();
     baking.reset();
     localMaps.reset();
     reflections.reset();
@@ -199,11 +197,11 @@ namespace remix::forward {
     next->baking =
         baking ? std::move(baking)
                : std::make_shared<bake::Controller>(physical, device, pipelines, hardwareRay, queueFamily);
-    next->standaloneReflectionsUsed = standaloneReflections && standaloneReflections->wasUsed();
-    next->standaloneReflections = standaloneReflections ? std::move(standaloneReflections)
-        : std::make_shared<probes::StandaloneCapture>(physical, device, pipelines, hardwareRay, queueFamily);
-    next->authoredReflections = authoredReflections ? std::move(authoredReflections)
-        : std::make_shared<probes::Authoring>(physical, device, pipelines, hardwareRay, queueFamily);
+    if (!standaloneReflections)
+      standaloneReflections = std::make_shared<probes::StandaloneCapture>(physical, device, pipelines, hardwareRay, queueFamily);
+    if (!authoredReflections)
+      authoredReflections = std::make_shared<probes::Authoring>(physical, device, pipelines, hardwareRay, queueFamily);
+    next->captureProviders = probes::CaptureProviders(std::move(authoredReflections), std::move(standaloneReflections));
     next->baseTargetBytes = next->statistics.targetBytes;
     m_gpu = std::move(next);
   }
@@ -214,16 +212,16 @@ namespace remix::forward {
     return m_gpu ? m_gpu->postProcessing->state() : nullptr;
   }
   std::shared_ptr<probes::Authoring> Renderer::reflectionAuthoring() const {
-    return m_gpu ? m_gpu->authoredReflections : nullptr;
+    return m_gpu ? m_gpu->captureProviders.authored() : nullptr;
   }
   std::shared_ptr<probes::StandaloneCapture> Renderer::standaloneCaptures() const {
-    return m_gpu ? m_gpu->standaloneReflections : nullptr;
+    return m_gpu ? m_gpu->captureProviders.standalone() : nullptr;
   }
   void Renderer::activate(uint32_t slot) {
     // The old renderer may first use the shared controller after the replacement
     // worker's snapshot. Recheck only after queue-idle activation, before fences
     // and retained jobs are advanced by the new renderer.
-    m_gpu->standaloneReflectionsUsed |= m_gpu->standaloneReflections->wasUsed();
+    m_gpu->captureProviders.activate();
     selectFrame(slot);
     // Queue retirement precedes activation. Preparation workers must not
     // inspect a controller still used by the old renderer.
@@ -235,8 +233,7 @@ namespace remix::forward {
     g.fragmentStatistics->selectFrame(slot);
     g.postProcessing->selectFrame(slot);
     g.baking->selectFrame(slot);
-    g.authoredReflections->selectFrame(slot);
-    if (g.standaloneReflectionsUsed) g.standaloneReflections->selectFrame(slot);
+    g.captureProviders.selectFrame(slot);
     g.localSelections.selectFrame(slot);
     if (g.reflections)
       g.reflections->selectFrame(slot);
@@ -270,34 +267,7 @@ namespace remix::forward {
     };
     m_gpu->postProcessing->begin(command);
     gpu::GpuScope bakeTime(command, "Forward+ bake publication and transport");
-    const auto lightingPlan = m_gpu->options.lightingPlan(m_gpu->techniquePlan.rayDiffuse());
-    auto *sceneRequest = m_gpu->authoredReflections->requestScene(resources, m_gpu->options.captureConfiguration());
-    m_gpu->baking->record(command, resources, lightingPlan.baking,
-                         m_gpu->options.lightCutoff, sceneRequest);
-    const bool capturesWithBake = m_gpu->techniquePlan.capturesWithBake();
-    if (!capturesWithBake || m_gpu->standaloneReflectionsUsed) {
-      if (!m_gpu->standaloneReflectionsUsed) {
-        m_gpu->standaloneReflectionsUsed = true;
-        m_gpu->standaloneReflections->selectFrame(m_gpu->slot);
-      }
-      auto captureConfig = m_gpu->options.captureConfiguration();
-      captureConfig.enabled = captureConfig.enabled && !capturesWithBake;
-      m_gpu->standaloneReflections->record(command, resources, captureConfig,
-          m_gpu->options.baking.reflectionProbes, m_gpu->options.baking.reflectionDetailTolerance, sceneRequest);
-    }
-    auto captures = m_gpu->reflectionSource();
-    // Publish automatic images independently, but preserve the baked profile's
-    // transport priority: authored captures must not add a second work budget
-    // while diffuse/style transport is still running.
-    const bool capturesReady = capturesWithBake
-        ? m_gpu->baking->statistics().state == REMIXAPI_BAKE_READY_EXT
-        : !m_gpu->standaloneReflections->pending();
-    if (!capturesWithBake) {
-      const auto source = resources.bakeScene();
-      captures.sceneHash = source && source->ready ? source->contentHash : 0;
-    }
-    m_gpu->authoredReflections->record(command, resources,
-        m_gpu->options.captureConfiguration(), captures, m_gpu->options.authoredReflectionFallback, capturesReady);
+    m_gpu->captureProviders.record(command, resources, m_gpu->options, m_gpu->techniquePlan, *m_gpu->baking);
     m_gpu->prepareLocalReflections(command, resources);
     bakeTime.close();
     step(cpu.bake);
