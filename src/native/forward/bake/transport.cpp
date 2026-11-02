@@ -718,22 +718,31 @@ namespace remix::forward::bake {
     m_gpu->world->ready = true;
   }
   uint32_t Transport::textureResolution() const { return m_gpu->world->resolution; }
-  uint64_t Transport::memoryBytes() const {
+  Transport::Memory Transport::memory() const {
+    if (!m_gpu) return {};
     const auto &g = *m_gpu;
-    uint64_t bytes = g.world->rays.accelerationBytes() + g.world->rays.buildBytes() + g.world->atlas->bytes;
+    Memory result;
+    result.sceneIdentity = g.world.get();
+    result.consumerIdentity = m_gpu.get();
+    result.scene.acceleration = g.world->rays.accelerationBytes();
+    result.scene.images = g.world->atlas->bytes;
+    result.scene.buffers = g.world->rays.buildBytes();
     for (const auto *buffer : {g.world->vertices.get(), g.world->triangles.get(), g.world->materials.get(), g.world->lights.get(), g.world->lightNodes.get()})
-      bytes += buffer->allocationBytes;
-    if (g.world->componentLightNodes) bytes += g.world->componentLightNodes->allocationBytes;
+      result.scene.buffers += buffer->allocationBytes;
+    if (g.world->componentLightNodes) result.scene.buffers += g.world->componentLightNodes->allocationBytes;
+    for (const auto &upload : g.world->uploads) result.scene.buffers += upload.source->allocationBytes;
     for (const auto &slot : g.slots) {
-      bytes += slot.constants->allocationBytes + slot.points->allocationBytes + slot.results->allocationBytes;
-      if (slot.liveLights)
-        bytes += slot.liveLights->allocationBytes;
+      result.consumer.buffers += slot.constants->allocationBytes + slot.points->allocationBytes + slot.results->allocationBytes;
+      if (slot.liveLights) result.consumer.buffers += slot.liveLights->allocationBytes;
       for (const auto &fragment : slot.fragments)
-        if (fragment.constants) bytes += fragment.constants->allocationBytes;
+        if (fragment.constants) result.consumer.buffers += fragment.constants->allocationBytes;
     }
-    for (const auto &upload : g.world->uploads)
-      bytes += upload.source->allocationBytes;
-    return bytes;
+    return result;
+  }
+  uint64_t Transport::memoryBytes() const {
+    const auto value = memory();
+    return value.scene.buffers + value.scene.images + value.scene.acceleration +
+           value.consumer.buffers + value.consumer.images + value.consumer.acceleration;
   }
   uint64_t Transport::imageBytes() const { return m_gpu->world->atlas->bytes; }
   uint64_t Transport::accelerationBytes() const { return m_gpu->world->rays.accelerationBytes(); }

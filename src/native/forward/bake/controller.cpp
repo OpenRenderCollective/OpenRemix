@@ -1,4 +1,5 @@
 #include "forward/bake/job.h"
+#include "forward/bake/transport_memory.h"
 #include "forward/probes/capture_cache.h"
 #include "forward/bake/model_charts.h"
 #include "forward/bake/model_preflight.h"
@@ -1487,7 +1488,9 @@ namespace remix::forward::bake {
     // surface view. Do not reserve another image for maps with no R8 pages.
     return {VK_NULL_HANDLE, m_emptySurface->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
   }
-  Memory Controller::memory() const {
+  Memory Controller::memory(TransportMemory *shared) const {
+    TransportMemory local;
+    auto &transportMemory = shared ? *shared : local;
     Memory result;
     result.buffers = m_emptySunDepth->allocationBytes + m_empty->allocationBytes + m_emptyReflections->bufferBytes();
     result.images = m_emptySurface->bytes + m_emptyOcclusion->bytes() + m_emptyReflections->imageBytes();
@@ -1534,10 +1537,10 @@ namespace remix::forward::bake {
       }
       if (!job->transport)
         return; // a disk hit needs only geometry and the published volume upload
-      const auto &transport = *job->transport;
-      result.acceleration += transport.accelerationBytes();
-      result.images += transport.imageBytes();
-      result.buffers += transport.memoryBytes() - transport.accelerationBytes() - transport.imageBytes();
+      const auto bytes = transportMemory.add(*job->transport);
+      result.acceleration += bytes.acceleration;
+      result.images += bytes.images;
+      result.buffers += bytes.buffers;
     };
     addJob(m_job);
     for (const auto &submission : m_submissions)

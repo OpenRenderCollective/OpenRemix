@@ -1,5 +1,6 @@
 #include "forward/probes/standalone_capture.h"
 #include "forward/bake/transport_session.h"
+#include "forward/bake/transport_memory.h"
 #include "forward/probes/automatic_capture.h"
 #include "forward/probes/capture_cache.h"
 #include "raster/renderer.h"
@@ -271,7 +272,9 @@ void StandaloneCapture::record(VkCommandBuffer command,
 float StandaloneCapture::sceneScale() const {
   return m_source ? m_source->sceneScale : 1;
 }
-StandaloneCapture::Memory StandaloneCapture::memory() const {
+StandaloneCapture::Memory StandaloneCapture::memory(bake::TransportMemory *shared) const {
+  bake::TransportMemory local;
+  auto &transportMemory = shared ? *shared : local;
   Memory result;
   std::unordered_set<const Job *> jobs;
   std::unordered_set<const ImageAsset *> images;
@@ -285,11 +288,10 @@ StandaloneCapture::Memory StandaloneCapture::memory() const {
     if (!job || !jobs.insert(job.get()).second || !job->ticket->ready())
       return;
     if (job->transport) {
-      const auto &transport = *job->transport;
-      result.images += transport.imageBytes();
-      result.acceleration += transport.accelerationBytes();
-      result.buffers += transport.memoryBytes() - transport.imageBytes() -
-                        transport.accelerationBytes();
+      const auto bytes = transportMemory.add(*job->transport);
+      result.images += bytes.images;
+      result.acceleration += bytes.acceleration;
+      result.buffers += bytes.buffers;
     }
     addImage(job->capture.image);
   };

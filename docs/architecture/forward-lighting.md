@@ -504,8 +504,8 @@ slot index without overwriting one another's constants or readback storage.
 
 The normal Source 2 path still uses its existing single transport. Separate
 technique controllers have not yet adopted independent consumers or independent
-publication. `memoryBytes` includes the retained scene for each consumer; a
-future collector reporting multiple consumers must deduplicate that ownership.
+publication. `memoryBytes` retains its legacy single-consumer total; renderer
+statistics use the split shared-scene/private-consumer accounting described below.
 Shared ownership is acquired on preparation, not copied for every dispatch.
 No shader, descriptor binding layout or GPU dispatch algorithm changes here;
 CPU and complete frame-performance acceptance remain separate requirements.
@@ -828,5 +828,23 @@ The Source 2 recipe intentionally sequences its techniques through one consumer
 and budget, retaining admitted-seed and GPU-work reuse. Separately scheduled
 providers can use the existing fenced `Transport::initializeShared` contract for
 immutable scene sharing, but current default tickets have not yet migrated to
-independent provider scheduling. Memory deduplication for future coexisting
+independent provider scheduling. Runtime adoption by additional coexisting
 consumers and complete CPU/frame performance acceptance remain required.
+
+### Shared transport memory accounting
+
+`Transport::memory` separates shared scene buffers/images/acceleration from private
+consumer dispatch allocations and supplies borrowed identities for each domain.
+The legacy `memoryBytes` total remains their sum, preserving its existing category
+coverage. This is reported transport memory, not a new full Vulkan allocator census.
+
+One `TransportMemory` collector spans default/standalone controller snapshots in
+the renderer. It counts a scene once and every distinct consumer once, even if a
+consumer appears through several retained frame/job owners. Its normal eight
+entries are inline; cancellation bursts can spill without truncating accounting.
+It retains identities only for the synchronous snapshot, never GPU objects.
+Future providers using shared transport must pass this collector too.
+
+This enables correct accounting for shared-scene consumers; it does not itself
+make current default/standalone jobs share a scene, transfer their tickets, or
+prove no-overhead gameplay performance. Those remain separate qualification work.

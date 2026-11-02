@@ -21,6 +21,7 @@ namespace remix {
 namespace remix::forward::probes { struct ReceiverCoverageEvidence; struct ReceiverCoveragePlan; struct CoverageReadyImage; }
 namespace remix::forward::bake {
   class SunDepth;
+  class TransportMemory;
   struct Volume {
     uint64_t hash = 0;
     DiffuseContent content;
@@ -88,7 +89,7 @@ namespace remix::forward::bake {
     VkDescriptorImageInfo occlusionDescriptor() const;
     VkDescriptorImageInfo visibilityDescriptor() const;
     const remixapi_BakeStatisticsEXT &statistics() const { return m_statistics; }
-    Memory memory() const;
+    Memory memory(TransportMemory *transportMemory = nullptr) const;
 
   private:
     struct Job;

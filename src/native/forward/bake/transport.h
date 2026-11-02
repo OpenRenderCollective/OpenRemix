@@ -181,6 +181,14 @@ namespace remix::forward::bake {
     bool timingSupported() const;
     std::optional<double> elapsed(uint32_t slot) const; // owning slot fence completed
     void releaseBuildInputs();                          // after the preparation fence
+    struct Memory {
+      struct Bytes { uint64_t buffers = 0, images = 0, acceleration = 0; };
+      const void *sceneIdentity = nullptr, *consumerIdentity = nullptr;
+      Bytes scene, consumer;
+    };
+    // Identities are borrowed only while this consumer is retained. Shared
+    // scene bytes and private dispatch bytes are disjoint accounting domains.
+    Memory memory() const;
     uint64_t memoryBytes() const;
     uint64_t imageBytes() const;
     uint64_t accelerationBytes() const;

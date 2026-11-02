@@ -1,4 +1,5 @@
 #include "forward/gpu.h"
+#include "forward/bake/transport_memory.h"
 #include "platform/gpu_timers.h"
 #include "runtime/pipelines.h"
 #include <algorithm>
@@ -34,9 +35,10 @@ namespace remix::forward {
     statistics.reflectionProbes = header ? *header : probes::Header{};
     const auto identities = reflectionIdentities();
     statistics.reflectionIdentities = identities ? *identities : probes::LayerIdentities{};
-    const auto memory = baking->memory();
+    bake::TransportMemory transportMemory;
+    const auto memory = baking->memory(&transportMemory);
     const auto authoredMemory = authoredReflections->memory();
-    const auto standaloneMemory = standaloneReflectionsUsed ? standaloneReflections->memory()
+    const auto standaloneMemory = standaloneReflectionsUsed ? standaloneReflections->memory(&transportMemory)
                                                           : probes::StandaloneCapture::Memory{};
     auto selectedMemory = localSelections.memory();
     if (localSelectionPreparation) {

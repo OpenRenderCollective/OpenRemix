@@ -1,4 +1,5 @@
 #include "forward/bake/transport.h"
+#include "forward/bake/transport_memory.h"
 #include "forward/probes/automatic_capture.h"
 #include "forward/probes/standalone_capture.h"
 #include "forward/probes/capture_cache.h"
@@ -437,6 +438,36 @@ namespace {
         ticket->check();
       };
       prepareShared(independent, transport);
+      const auto originalMemory = transport.memory(), sharedMemory = independent.memory();
+      require(originalMemory.sceneIdentity == sharedMemory.sceneIdentity &&
+                  originalMemory.consumerIdentity != sharedMemory.consumerIdentity,
+              "Shared transport accounting lost distinct scene/consumer identities");
+      bake::TransportMemory memory;
+      const auto originalBytes = memory.add(transport), sharedBytes = memory.add(independent);
+      const auto repeatedBytes = memory.add(transport);
+      require(originalBytes.buffers == originalMemory.scene.buffers + originalMemory.consumer.buffers &&
+                  sharedBytes.buffers == sharedMemory.consumer.buffers &&
+                  sharedBytes.images == 0 && sharedBytes.acceleration == 0 &&
+                  originalBytes.images == transport.imageBytes() &&
+                  originalBytes.acceleration == transport.accelerationBytes() &&
+                  repeatedBytes.buffers == 0 && repeatedBytes.images == 0 && repeatedBytes.acceleration == 0,
+              "Shared scene or repeated consumer was double-counted");
+      // Metadata replay covers bursts beyond inline collection storage without
+      // allocating another dozen Vulkan consumers for an accounting check.
+      std::array<uint32_t, 12> identities{};
+      for (const auto &identity : identities) {
+        auto snapshot = sharedMemory;
+        snapshot.consumerIdentity = &identity;
+        const auto bytes = memory.add(snapshot);
+        const auto repeated = memory.add(snapshot);
+        require(bytes.buffers == sharedMemory.consumer.buffers && bytes.images == 0 &&
+                    bytes.acceleration == 0 && repeated.buffers == 0 && repeated.images == 0 &&
+                    repeated.acceleration == 0,
+                "Overflow accounting dropped private consumers or counted shared scene twice");
+      }
+      require(transport.memoryBytes() == originalMemory.scene.buffers + originalMemory.scene.images +
+                  originalMemory.scene.acceleration + originalMemory.consumer.buffers,
+              "Split transport accounting changed legacy single-consumer totals");
       fixture.begin();
       independent.recordBatch(fixture.command, 0, points, samples, bounces);
       transport.recordBatch(fixture.command, 0, {&distant, 1}, 256, bounces, 1024);

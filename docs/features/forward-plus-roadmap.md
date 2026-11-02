@@ -1,3 +1,9 @@
+## Shared transport memory reporting - 2026-11-02
+
+- Transport reports disjoint shared-scene/private-consumer bytes and borrowed identities. Renderer default/standalone snapshots share one dedup collector; legacy single-consumer totals are preserved. Eight inline entries avoid collection heap allocations for normal owner counts; overflow remains correct.
+- Native build and three GPU regressions pass, including actual shared-scene/distinct-consumer accounting, repeated owner/overflow checks, transport lifetime and capture/publication/recovery behavior.
+- Remaining: runtime adoption of compatible shared consumers, independent default ticket orchestration and full CPU/GPU/map performance acceptance. Foreground comparison remains pending user availability. Playable unchanged.
+
 ## Shared transport session ownership - 2026-11-02
 
 - Default bake and standalone reflection jobs now embed one TransportSession definition for frozen source, transport consumer, adaptive budget and cancellation. No separate session allocation, virtual interface or shared-session pointer. Provider state/tickets remain in concrete jobs.

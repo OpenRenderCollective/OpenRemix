@@ -10,6 +10,8 @@
 #include <string>
 #include <vector>
 
+namespace remix::forward::bake { class TransportMemory; }
+
 namespace remix {
 class RasterRenderer;
 }
@@ -39,7 +41,7 @@ public:
   void record(VkCommandBuffer command, RasterRenderer &resources,
               CaptureConfig config, uint32_t count, float detailTolerance);
   const CaptureSource &source() const { return m_active; }
-  Memory memory() const;
+  Memory memory(bake::TransportMemory *transportMemory = nullptr) const;
   float sceneScale() const;
   bool cacheHit() const { return m_cacheHit; }
   const std::string &status() const { return m_status; }
