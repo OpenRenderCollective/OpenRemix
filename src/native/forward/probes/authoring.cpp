@@ -3,6 +3,7 @@
 #include "platform/workers.h"
 #include "forward/bake/transport.h"
 #include "forward/bake/transport_memory.h"
+#include "forward/bake/scene_request.h"
 #include "forward/bake/budget.h"
 #include "raster/renderer.h"
 #include <algorithm>
@@ -14,7 +15,18 @@
 #include <unordered_set>
 
 namespace remix::forward::probes {
-  namespace { std::atomic_uint64_t generation = 0; }
+  namespace {
+    std::atomic_uint64_t generation = 0;
+    bake::Options captureOptions(const CaptureConfig &config, uint32_t family) {
+      bake::Options options;
+      options.queueFamily = family;
+      options.batchPoints = bake::Budget::maximumPoints;
+      options.rayBudget = bake::Budget::maximumWork;
+      options.initialBatchPoints = 1024;
+      options.textureResolution = config.textureResolution;
+      return options;
+    }
+  }
   struct Authoring::Job {
     pipeline::PreparationQueue::Ticket ticket;
     std::stop_source cancellation;
@@ -36,7 +48,8 @@ namespace remix::forward::probes {
     uint32_t next = 0, received = 0, rayCount = 0;
     bool prepared = false, filtering = false, sceneReused = false, fallbackAllowed = false;
     void prepare(const std::shared_ptr<Job> &prior, const std::shared_ptr<const scene::BakeScene> &source,
-                  VkPhysicalDevice physical, VkDevice device, uint32_t family, const CaptureConfig &config) {
+                  VkPhysicalDevice physical, VkDevice device, uint32_t family, const CaptureConfig &config,
+                  bake::Transport::SceneLease lease) {
       VkPhysicalDeviceProperties limits;
       vkGetPhysicalDeviceProperties(physical, &limits);
       if (request->volumes.size() > imageCapacity(config.reflectionResolution,
@@ -90,12 +103,7 @@ namespace remix::forward::probes {
         appendRays(captures[owner], rays, cancellation.get_token());
       }
       rayCount = uint32_t(rays.size());
-      bake::Options options;
-      options.queueFamily = family;
-      options.batchPoints = bake::Budget::maximumPoints;
-      options.rayBudget = bake::Budget::maximumWork;
-      options.initialBatchPoints = 1024;
-      options.textureResolution = config.textureResolution;
+      const auto options = captureOptions(config, family);
       if (prior && prior->transport && prior->transport->matchesRequest(*source, options)) {
         // Completed edits can reuse the same compatible consumer without
         // allocating another descriptor/dispatch set. Mutable slots are touched
@@ -105,7 +113,12 @@ namespace remix::forward::probes {
         sceneReused = true;
       } else if (!rays.empty()) {
         transport = std::make_shared<bake::Transport>();
-        transport->initialize(physical, device, source, options);
+        if (lease.compatible(*source, options)) {
+          transport->initializeShared(lease, *source, options);
+          prepared = sceneReused = true;
+        } else {
+          transport->initialize(physical, device, source, options);
+        }
       }
     }
     void finish(VkPhysicalDevice physical, VkDevice device) {
@@ -205,6 +218,29 @@ namespace remix::forward::probes {
     frame = {};
     std::erase_if(m_retired, [](const auto &job) { return job->ticket->ready(); });
   }
+  bake::SceneRequest *Authoring::requestScene(RasterRenderer &resources, const CaptureConfig &config) {
+    const auto &source = resources.bakeScene();
+    const auto request = resources.reflectionVolumes();
+    if (!m_hardware || !m_pipelines || !config.enabled || !source || !source->ready ||
+        !request || request->volumes.empty()) {
+      m_sceneRequest.reset();
+      return nullptr;
+    }
+    const bool sameLighting = source == m_source && config.sameLighting(m_config);
+    if (sameLighting && (m_job || (request == m_request && (m_active || !m_status.empty())))) {
+      m_sceneRequest.reset();
+      return nullptr;
+    }
+    const auto options = captureOptions(config, m_queueFamily);
+    if (sameLighting && m_active && m_active->transport &&
+        m_active->transport->matchesRequest(*source, options)) {
+      m_sceneRequest.reset();
+      return nullptr;
+    }
+    if (!m_sceneRequest || !m_sceneRequest->matches(*source, options))
+      m_sceneRequest = std::make_unique<bake::SceneRequest>(source, options);
+    return m_sceneRequest.get();
+  }
   void Authoring::record(VkCommandBuffer command, RasterRenderer &resources, const CaptureConfig &config,
                           const CaptureSource &automatic, bool fallback, bool captureReady) {
     const auto source = resources.bakeScene();
@@ -252,9 +288,12 @@ namespace remix::forward::probes {
       const auto physical = m_physical;
       const auto device = m_device;
       const auto family = m_queueFamily;
+      auto lease = m_sceneRequest && m_sceneRequest->matches(*source, captureOptions(config, family))
+          ? m_sceneRequest->take() : bake::Transport::SceneLease{};
+      m_sceneRequest.reset();
       job->ticket = m_pipelines->prepare("authored-reflection-prepare-" + std::to_string(++generation),
-          [job, previous, source, physical, device, family, config] {
-        job->prepare(previous, source, physical, device, family, config);
+          [job, previous, source, physical, device, family, config, lease = std::move(lease)]() mutable {
+        job->prepare(previous, source, physical, device, family, config, std::move(lease));
       });
       m_job = std::move(job);
     }
@@ -370,6 +409,12 @@ namespace remix::forward::probes {
     bake::TransportMemory local;
     auto &transportMemory = shared ? *shared : local;
     AuthoringMemory result;
+    if (m_sceneRequest) {
+      const auto bytes = transportMemory.add(m_sceneRequest->memory());
+      result.buffers += bytes.buffers;
+      result.images += bytes.images;
+      result.acceleration += bytes.acceleration;
+    }
     std::unordered_set<const Job *> jobs;
     auto count = [&](const std::shared_ptr<Job> &job) {
       if (!job || !jobs.insert(job.get()).second || !job->ticket->ready()) return;

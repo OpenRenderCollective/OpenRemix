@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-namespace remix::forward::bake { class TransportMemory; }
+namespace remix::forward::bake { class TransportMemory; class SceneRequest; }
 
 namespace remix {
 class RasterRenderer;
@@ -39,7 +39,8 @@ public:
   bool wasUsed() const { return m_used.load(std::memory_order_relaxed); }
   void selectFrame(uint32_t slot); // owning frame fence completed
   void record(VkCommandBuffer command, RasterRenderer &resources,
-              CaptureConfig config, uint32_t count, float detailTolerance);
+              CaptureConfig config, uint32_t count, float detailTolerance,
+              bake::SceneRequest *sceneRequest = nullptr);
   const CaptureSource &source() const { return m_active; }
   Memory memory(bake::TransportMemory *transportMemory = nullptr) const;
   float sceneScale() const;

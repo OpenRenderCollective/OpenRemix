@@ -10,7 +10,7 @@
 #include "platform/gpu_frames.h"
 #include <memory>
 namespace remix { class RasterRenderer; }
-namespace remix::forward::bake { class TransportMemory; }
+namespace remix::forward::bake { class TransportMemory; class SceneRequest; }
 namespace remix::forward::probes {
   // Reflection-only publication. Neither source ownership nor diffuse bake
   // buffers are modified; frame slots retain every sampled and submitted job.
@@ -27,6 +27,9 @@ namespace remix::forward::probes {
              hardware == m_hardware && queueFamily == m_queueFamily;
     }
     void selectFrame(uint32_t slot);
+    // Register demand before automatic producers can finish/retire this frame.
+    // Null when published/prior consumer reuse already satisfies the request.
+    bake::SceneRequest *requestScene(RasterRenderer &resources, const CaptureConfig &config);
     // captureReady grants transport work separately from published image identity.
     // A paused producer keeps its current publication and schedules no batches.
     void record(VkCommandBuffer command, RasterRenderer &resources, const CaptureConfig &config,
@@ -62,6 +65,7 @@ namespace remix::forward::probes {
     std::array<Frame, gpuFrameCount> m_frames;
     CaptureConfig m_config;
     std::string m_status;
+    std::unique_ptr<bake::SceneRequest> m_sceneRequest;
     void retire();
   };
 } // namespace remix::forward::probes

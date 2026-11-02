@@ -1,3 +1,4 @@
+#include "forward/bake/scene_request.h"
 #include "forward/bake/transport.h"
 #include "forward/bake/transport_memory.h"
 #include "forward/probes/automatic_capture.h"
@@ -679,7 +680,16 @@ namespace {
         fixture.finish();
         donor.releaseBuildInputs();
         leasedIdentity = donor.memory().sceneIdentity;
-        lease = donor.leaseScene();
+        bake::SceneRequest demand(scene, privateOptions);
+        require(demand.matches(*scene, privateOptions) && !demand.matches(changedScene, privateOptions),
+                "Transport demand lost exact request identity");
+        require(demand.offer(donor) && !demand.offer(donor),
+                "Compatible demand did not accept exactly one scene lease");
+        require(demand.memory().sceneIdentity == leasedIdentity && !demand.memory().consumerIdentity,
+                "Transport demand retained donor dispatch memory");
+        lease = demand.take();
+        require(!demand.take() && !demand.memory().sceneIdentity,
+                "Consuming a transport demand retained another scene owner");
       } // Destroy all donor pipelines/slots; only the lease retains this scene.
       require(lease && lease.compatible(*scene, privateOptions) && !lease.compatible(changedScene, options),
               "Retained scene lease lost its immutable request identity");

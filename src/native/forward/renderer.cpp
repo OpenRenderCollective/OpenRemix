@@ -271,8 +271,9 @@ namespace remix::forward {
     m_gpu->postProcessing->begin(command);
     gpu::GpuScope bakeTime(command, "Forward+ bake publication and transport");
     const auto lightingPlan = m_gpu->options.lightingPlan(m_gpu->techniquePlan.rayDiffuse());
+    auto *sceneRequest = m_gpu->authoredReflections->requestScene(resources, m_gpu->options.captureConfiguration());
     m_gpu->baking->record(command, resources, lightingPlan.baking,
-                         m_gpu->options.lightCutoff);
+                         m_gpu->options.lightCutoff, sceneRequest);
     if (!lightingPlan.baking.enabled || m_gpu->standaloneReflectionsUsed) {
       if (!m_gpu->standaloneReflectionsUsed) {
         m_gpu->standaloneReflectionsUsed = true;
@@ -281,7 +282,7 @@ namespace remix::forward {
       auto captureConfig = m_gpu->options.captureConfiguration();
       captureConfig.enabled = captureConfig.enabled && !lightingPlan.baking.enabled;
       m_gpu->standaloneReflections->record(command, resources, captureConfig,
-          m_gpu->options.baking.reflectionProbes, m_gpu->options.baking.reflectionDetailTolerance);
+          m_gpu->options.baking.reflectionProbes, m_gpu->options.baking.reflectionDetailTolerance, sceneRequest);
     }
     auto captures = m_gpu->reflectionSource();
     // Publish automatic images independently, but preserve the baked profile's

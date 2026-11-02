@@ -22,6 +22,7 @@ namespace remix::forward::probes { struct ReceiverCoverageEvidence; struct Recei
 namespace remix::forward::bake {
   class SunDepth;
   class TransportMemory;
+  class SceneRequest;
   struct Volume {
     uint64_t hash = 0;
     DiffuseContent content;
@@ -65,7 +66,7 @@ namespace remix::forward::bake {
     }
     void selectFrame(uint32_t slot);
     void record(VkCommandBuffer command, RasterRenderer &resources, const Config &config,
-                float lightCutoff = .001f);
+                float lightCutoff = .001f, SceneRequest *sceneRequest = nullptr);
     const std::shared_ptr<Volume> &volume() const { return m_volume; }
     ContentHashes content() const {
       const auto diffuse = m_volume ? m_volume->content : DiffuseContent{};

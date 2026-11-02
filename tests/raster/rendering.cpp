@@ -2721,8 +2721,8 @@ namespace {
               for (uint32_t frame = 0; frame < 8; ++frame) render(false, false, true, false);
               require(retiredReflection.expired() && retainedDiffuse,
                       "Retaining diffuse publication does not retain the retired reflection image");
-              // Start fresh so no old diffuse publication can help capture.
-
+              // Start fresh so no old diffuse publication/cache can help capture.
+              options.baking.diskCache = false;
               request.volumeCount = 2;
               request.volumes = authored; ++request.revision;
               r.setReflectionVolumes(&request);
@@ -2743,6 +2743,10 @@ namespace {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
               } while (std::chrono::steady_clock::now() < standaloneDeadline);
               require(observedStandaloneAdmission, "Standalone capture admission fixture did not run");
+              const auto sharedCapture = waitForEdit();
+              require(target.forward->statistics().authoredReflections.sceneReused &&
+                          target.forward->statistics().authoredReflections.rays > 0 && sharedCapture[centre] > 5,
+                      "Authored capture inherits a cold automatic scene after its donor job retires");
               r.setReflectionVolumes(nullptr);
               render(false, false, true, false);
               const auto standaloneImage = target.forward->standaloneCaptures()->source().image;

@@ -307,8 +307,9 @@ The next lifecycle split must preserve these boundaries:
   input overrides are excluded from inferred compatibility. Explicit donor
   inheritance accepts those inputs, with either inherited or compatible private
   settings. These are preparation-time checks, not per-frame scene scans.
-- This separates scene compatibility from consumer reuse, but does not yet share
-  the default bake's scene with the authored provider at runtime.
+- Scene compatibility is distinct from consumer reuse. Runtime authored requests
+  can now accept compatible automatic transport inputs before the donor retires;
+  incompatible ownership policies still require independent preparation.
 - `Transport::leaseScene` now provides scene-only retention after the preparation
   fence. A lease retains geometry, packed lighting and texture inputs without
   retaining donor pipelines, dispatch buffers, worker tickets or the bake job.
@@ -333,7 +334,16 @@ The next lifecycle split must preserve these boundaries:
   cancellation cannot invalidate another provider's published image or slots.
   Account shared scene memory once and private consumer memory separately.
 
-The current runtime handoff has two concrete constraints:
+`Authoring::requestScene` registers pending demand before automatic producers
+advance. `SceneRequest::offer` accepts one compatible prepared scene; repeated
+frames do not acquire more leases. The default and standalone controllers offer
+only after their worker handoff and before job retirement. The authored worker
+consumes that lease when new rays require a consumer, then releases the request.
+No demand is registered for an absent/disabled document, a current publication,
+or a reusable prior consumer. Map/config replacement cancels stale demand.
+Pending lease memory participates in the shared allocation collector.
+
+The runtime handoff retains two constraints:
 
 - `Controller::activate` releases its job before publishing the ready state.
   Authored captures wait for that state, so looking up the donor after readiness
@@ -349,15 +359,15 @@ The current runtime handoff has two concrete constraints:
   from shared geometry/textures before admitting that combination. Do not remove
   `sameScenePolicy` checks to force sharing.
 
-The first integration should exercise cold/warm activation, cancellation during
-preparation, replacement after submission, and a donor retiring before its
-consumer. It must show one geometry/texture allocation for compatible requests,
-separate mutable slots, unchanged capture radiance and fence-safe retirement.
-Requests without authored demand must retain no extra scene or bake-job owner.
-
-This is the remaining integration contract, not a claim that runtime controllers
-already share a retained scene lease. It permits future diffuse providers without
-forcing material shaders to know their scheduling or storage.
+The cold standalone-to-authored integration now reuses a prepared scene after
+its automatic job retires, without relaxing sequential capture admission. Warm
+cache loads with no donor and incompatible default ownership retain independent
+preparation. Demand ownership is tested separately from mutable slot ownership;
+further lifecycle integration must preserve cancellation during preparation and
+replacement after submission. Requests without authored demand must retain no
+extra scene or bake-job owner. Default fully baked ownership still needs an
+explicit radiance-equivalence or light-policy separation decision before its
+scene can satisfy the legacy authored capture policy.
 
 ## Reflection source values
 

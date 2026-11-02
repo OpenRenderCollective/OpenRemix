@@ -1,5 +1,6 @@
 #include "forward/bake/job.h"
 #include "forward/bake/transport_memory.h"
+#include "forward/bake/scene_request.h"
 #include "forward/bake/model_charts.h"
 #include "forward/bake/model_preflight.h"
 #include "forward/probes/priority_bands.h"
@@ -1025,7 +1026,7 @@ namespace remix::forward::bake {
     status(REMIXAPI_BAKE_READY_EXT, message);
   }
   void Controller::record(VkCommandBuffer command, RasterRenderer &resources, const Config &config,
-                          float lightCutoff) {
+                          float lightCutoff, SceneRequest *sceneRequest) {
     std::erase_if(m_obsolete, [](const auto &job) { return job->ticket->ready(); });
     if (!m_emptySurfaceReady) {
       m_emptyReflections->recordUpload(command);
@@ -1159,6 +1160,7 @@ namespace remix::forward::bake {
         m_job->initialized = true;
         if (m_job->failed)
           return;
+        if (sceneRequest && m_job->transport) sceneRequest->offer(*m_job->transport);
         auto &job = *m_job;
         m_statistics.probes = uint32_t(job.grid.tasks.size());
         m_statistics.completed = job.received;

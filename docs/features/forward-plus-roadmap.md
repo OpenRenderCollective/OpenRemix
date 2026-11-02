@@ -1,3 +1,15 @@
+## 2026-11-03 — demand-scoped runtime scene handoff
+
+Pending authored reflection requests now register transport demand before the
+automatic producers advance. Compatible inputs transfer through a scene-only
+lease before donor retirement, with unchanged sequential work admission. A cold
+standalone-to-authored GPU regression verifies reuse for new capture rays after
+the automatic job finishes. Requests without authored work retain no extra scene;
+prior consumers still serve compatible edits. Warm caches without a donor and
+incompatible fully baked light policy retain independent preparation. Remaining:
+resolve that policy boundary, complete provider scheduling/dependency selection,
+and verify matched foreground CPU/GPU performance. Shaders remain unchanged.
+
 ## 2026-11-03 — scene-only transport leases
 
 Prepared scenes now have an explicit demand-scoped lease independent of donor

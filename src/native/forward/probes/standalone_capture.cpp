@@ -1,5 +1,6 @@
 #include "forward/probes/standalone_capture.h"
 #include "forward/bake/transport_session.h"
+#include "forward/bake/scene_request.h"
 #include "forward/bake/transport_memory.h"
 #include "forward/probes/automatic_capture.h"
 #include "forward/probes/capture_cache.h"
@@ -70,7 +71,7 @@ void StandaloneCapture::selectFrame(uint32_t slot) {
 }
 void StandaloneCapture::record(VkCommandBuffer command,
                                RasterRenderer &resources, CaptureConfig config,
-                               uint32_t count, float detailTolerance) {
+                               uint32_t count, float detailTolerance, bake::SceneRequest *sceneRequest) {
   m_used.store(true, std::memory_order_relaxed);
   const auto source = resources.bakeScene();
   if (source != m_source || !config.sameLighting(m_config) ||
@@ -182,6 +183,7 @@ void StandaloneCapture::record(VkCommandBuffer command,
     job.ticket->check();
     if (job.failed)
       throw std::runtime_error("Invalid standalone reflection readback");
+    if (sceneRequest && job.transport) sceneRequest->offer(*job.transport);
     if (job.filtering) {
       frame.upload = job.capture.recordImageUpload(command);
       if (!frame.upload) throw std::logic_error("Standalone reflection image was not prepared");
