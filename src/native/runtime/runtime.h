@@ -658,6 +658,12 @@ private:
   VkImage m_sharedDepthImage = VK_NULL_HANDLE;
   VkDeviceMemory m_sharedDepthMemory = VK_NULL_HANDLE, m_sharedDepthBufferMemory = VK_NULL_HANDLE;
   VkBuffer m_sharedDepthBuffer = VK_NULL_HANDLE;
+  // Version 3: the developer UI's layer, drawn by its own pass.
+  VkImage m_sharedUiImage = VK_NULL_HANDLE;
+  VkDeviceMemory m_sharedUiMemory = VK_NULL_HANDLE;
+  VkImageView m_sharedUiView = VK_NULL_HANDLE;
+  VkRenderPass m_sharedUiPass = VK_NULL_HANDLE;
+  VkFramebuffer m_sharedUiFramebuffer = VK_NULL_HANDLE;
   bool m_sharedPresented = false;
   VkSwapchainKHR m_swapchain = VK_NULL_HANDLE;
   VkFormat m_swapchainFormat = VK_FORMAT_UNDEFINED;

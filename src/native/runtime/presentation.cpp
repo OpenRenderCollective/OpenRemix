@@ -1677,7 +1677,22 @@ void RemixNativeRuntime::presented() {
     lap(breakdown.snapshotMilliseconds);
     {
       gpu::GpuScope scope(buffer, "Developer UI", m_swapchainExtent);
-      drawUiLayer([&] { drawUi(buffer); });
+      if (m_sharedUiFramebuffer) {
+        // The shared frame's UI layer: over transparent black, for the host
+        // to composite over everything it draws.
+        vkCmdEndRenderPass(buffer);
+        const VkClearValue clear[2] = {};
+        const VkRenderPassBeginInfo uiPass = {.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+                                              .renderPass = m_sharedUiPass,
+                                              .framebuffer = m_sharedUiFramebuffer,
+                                              .renderArea = {{0, 0}, m_swapchainExtent},
+                                              .clearValueCount = 2,
+                                              .pClearValues = clear};
+        vkCmdBeginRenderPass(buffer, &uiPass, VK_SUBPASS_CONTENTS_INLINE);
+        drawUi(buffer);
+      } else {
+        drawUiLayer([&] { drawUi(buffer); });
+      }
       vkCmdEndRenderPass(buffer);
     }
     if (hdr) {

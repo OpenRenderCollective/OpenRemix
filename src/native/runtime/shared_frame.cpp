@@ -25,6 +25,7 @@ namespace remix {
     void *&readyHandle(remixapi_EditorSharedFrame &frame) { return frame.ready_handle; }
     void *&releasedHandle(remixapi_EditorSharedFrame &frame) { return frame.released_handle; }
     void *&depthHandle(remixapi_EditorSharedFrame2 &frame) { return frame.depth_memory_handle; }
+    void *&uiHandle(remixapi_EditorSharedFrame3 &frame) { return frame.ui_memory_handle; }
     constexpr void *kNoHandle = nullptr;
     void closeHandle(void *handle) {
       if (handle)
@@ -38,6 +39,7 @@ namespace remix {
     int &readyHandle(remixapi_EditorSharedFrame &frame) { return frame.ready_fd; }
     int &releasedHandle(remixapi_EditorSharedFrame &frame) { return frame.released_fd; }
     int &depthHandle(remixapi_EditorSharedFrame2 &frame) { return frame.depth_memory_fd; }
+    int &uiHandle(remixapi_EditorSharedFrame3 &frame) { return frame.ui_memory_fd; }
     constexpr int kNoHandle = -1;
     void closeHandle(int fd) {
       if (fd >= 0)
@@ -173,11 +175,18 @@ namespace remix {
 
   int RemixNativeRuntime::configureSharedFrame(remixapi_EditorSharedFrame &frame) {
 #if defined(__linux__) || defined(_WIN32)
-    const bool second = frame.version == 2;
+    // Versions 2 and 3 export depth and may be configured again; 3 the UI too.
+    const bool second = frame.version == 2 || frame.version == 3;
     if (!m_initialized || !m_headless || (frame.version != 1 && !second) || (m_sharedImage && !second) ||
         frame.width < 16 || frame.height < 16 || frame.width > 8192 || frame.height > 8192)
       return -1;
     auto *withDepth = second ? reinterpret_cast<remixapi_EditorSharedFrame2 *>(&frame) : nullptr;
+    auto *withUi = frame.version == 3 ? reinterpret_cast<remixapi_EditorSharedFrame3 *>(&frame) : nullptr;
+    if (withUi) {
+      uiHandle(*withUi) = kNoHandle;
+      withUi->ui_allocation_size = 0;
+      withUi->ui_memory_type = 0;
+    }
     memoryHandle(frame) = readyHandle(frame) = releasedHandle(frame) = kNoHandle;
     if (withDepth) {
       depthHandle(*withDepth) = kNoHandle;
@@ -216,7 +225,7 @@ namespace remix {
           VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT;
       m_snapshotSupported =
           (imageProperties.optimalTilingFeatures & blit) == blit;
-      if (createAttachments() != REMIXAPI_ERROR_CODE_SUCCESS)
+      if (createAttachments() != REMIXAPI_ERROR_CODE_SUCCESS || (m_gui && !initializeUiVulkan()))
         throw VK_ERROR_INITIALIZATION_FAILED;
       // The depth attachment's texels go to the shared R32 image through a
       // buffer (a depth image copies to a colour one only through memory).
@@ -242,6 +251,72 @@ namespace remix {
         withDepth->depth_allocation_size = depth.size;
         withDepth->depth_memory_type = depth.type;
       }
+      // The developer UI's layer: drawn by a pass compatible with the
+      // frame's (the UI's pipeline is made for that one), over the depth.
+      if (withUi && m_gui) {
+        const ExportedImage ui = createExported(
+            m_physicalDevice, m_device, VK_FORMAT_R8G8B8A8_UNORM,
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+            extent);
+        m_sharedUiImage = ui.image;
+        m_sharedUiMemory = ui.memory;
+        VkImageViewCreateInfo view{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+        view.image = m_sharedUiImage;
+        view.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        view.format = VK_FORMAT_R8G8B8A8_UNORM;
+        view.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        check(vkCreateImageView(m_device, &view, nullptr, &m_sharedUiView));
+        const VkAttachmentDescription attachments[] = {
+            {.format = VK_FORMAT_R8G8B8A8_UNORM,
+             .samples = VK_SAMPLE_COUNT_1_BIT,
+             .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+             .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+             .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+             .initialLayout = VK_IMAGE_LAYOUT_GENERAL,
+             .finalLayout = VK_IMAGE_LAYOUT_GENERAL},
+            {.format = renderer().depthFormat(),
+             .samples = VK_SAMPLE_COUNT_1_BIT,
+             .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+             .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+             .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+             .initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+             .finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}};
+        const VkAttachmentReference colourRef = {0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+        const VkAttachmentReference depthRef = {1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+        const VkSubpassDescription subpass = {.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                              .colorAttachmentCount = 1,
+                                              .pColorAttachments = &colourRef,
+                                              .pDepthStencilAttachment = &depthRef};
+        const VkSubpassDependency dependency = {
+            .srcSubpass = VK_SUBPASS_EXTERNAL,
+            .dstSubpass = 0,
+            .srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
+            .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT};
+        VkRenderPassCreateInfo pass{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
+        pass.attachmentCount = 2;
+        pass.pAttachments = attachments;
+        pass.subpassCount = 1;
+        pass.pSubpasses = &subpass;
+        pass.dependencyCount = 1;
+        pass.pDependencies = &dependency;
+        check(vkCreateRenderPass(m_device, &pass, nullptr, &m_sharedUiPass));
+        const VkImageView views[] = {m_sharedUiView, renderer().depthView()};
+        VkFramebufferCreateInfo framebuffer{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+        framebuffer.renderPass = m_sharedUiPass;
+        framebuffer.attachmentCount = 2;
+        framebuffer.pAttachments = views;
+        framebuffer.width = extent.width;
+        framebuffer.height = extent.height;
+        framebuffer.layers = 1;
+        check(vkCreateFramebuffer(m_device, &framebuffer, nullptr, &m_sharedUiFramebuffer));
+        uiHandle(*withUi) = exportMemory(m_device, m_sharedUiMemory);
+        withUi->ui_allocation_size = ui.size;
+        withUi->ui_memory_type = ui.type;
+      }
       memoryHandle(frame) = exportMemory(m_device, m_sharedMemory);
       readyHandle(frame) = exportSemaphore(m_device, m_sharedReady);
       releasedHandle(frame) = exportSemaphore(m_device, m_sharedReleased);
@@ -258,6 +333,11 @@ namespace remix {
       closeHandle(readyHandle(frame));
       closeHandle(releasedHandle(frame));
       memoryHandle(frame) = readyHandle(frame) = releasedHandle(frame) = kNoHandle;
+      if (withUi) {
+        closeHandle(uiHandle(*withUi));
+        uiHandle(*withUi) = kNoHandle;
+        withUi->ui_allocation_size = 0;
+      }
       if (withDepth) {
         closeHandle(depthHandle(*withDepth));
         depthHandle(*withDepth) = kNoHandle;
@@ -273,11 +353,15 @@ namespace remix {
   }
 
   void RemixNativeRuntime::sharedBarrier(VkCommandBuffer command, bool acquire) {
-    VkImageMemoryBarrier barriers[2];
-    for (uint32_t i = 0; i < 2; ++i) {
-      VkImageMemoryBarrier &barrier = barriers[i];
+    const VkImage images[] = {m_sharedImage, m_sharedDepthImage, m_sharedUiImage};
+    VkImageMemoryBarrier barriers[3];
+    uint32_t count = 0;
+    for (VkImage image : images) {
+      if (!image)
+        continue;
+      VkImageMemoryBarrier &barrier = barriers[count++];
       barrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-      barrier.image = i ? m_sharedDepthImage : m_sharedImage;
+      barrier.image = image;
       barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
       barrier.oldLayout = acquire && !m_sharedPresented ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_GENERAL;
       barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
@@ -295,7 +379,7 @@ namespace remix {
                                  : VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                          acquire ? VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
                                  : VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-                         0, 0, nullptr, 0, nullptr, m_sharedDepthImage ? 2 : 1, barriers);
+                         0, 0, nullptr, 0, nullptr, count, barriers);
   }
 
   void RemixNativeRuntime::copySharedDepth(VkCommandBuffer command) {
@@ -364,6 +448,21 @@ namespace remix {
       vkDestroyBuffer(m_device, m_sharedDepthBuffer, nullptr);
     if (m_sharedDepthBufferMemory)
       vkFreeMemory(m_device, m_sharedDepthBufferMemory, nullptr);
+    if (m_sharedUiFramebuffer)
+      vkDestroyFramebuffer(m_device, m_sharedUiFramebuffer, nullptr);
+    if (m_sharedUiPass)
+      vkDestroyRenderPass(m_device, m_sharedUiPass, nullptr);
+    if (m_sharedUiView)
+      vkDestroyImageView(m_device, m_sharedUiView, nullptr);
+    if (m_sharedUiImage)
+      vkDestroyImage(m_device, m_sharedUiImage, nullptr);
+    if (m_sharedUiMemory)
+      vkFreeMemory(m_device, m_sharedUiMemory, nullptr);
+    m_sharedUiFramebuffer = VK_NULL_HANDLE;
+    m_sharedUiPass = VK_NULL_HANDLE;
+    m_sharedUiView = VK_NULL_HANDLE;
+    m_sharedUiImage = VK_NULL_HANDLE;
+    m_sharedUiMemory = VK_NULL_HANDLE;
     m_sharedReady = m_sharedReleased = VK_NULL_HANDLE;
     m_sharedImage = m_sharedDepthImage = VK_NULL_HANDLE;
     m_sharedMemory = m_sharedDepthMemory = m_sharedDepthBufferMemory = VK_NULL_HANDLE;

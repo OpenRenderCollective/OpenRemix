@@ -1,6 +1,7 @@
 #include "runtime/runtime.h"
 #include "ui/context.h"
 
+#include <algorithm>
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
@@ -50,7 +51,8 @@ namespace remix {
     info.Queue = m_queue;
     info.DescriptorPoolSize = 4096;
     info.MinImageCount = 2;
-    info.ImageCount = static_cast<uint32_t>(m_swapchainImages.size());
+    // A headless shared frame is one image; the backend wants at least two.
+    info.ImageCount = std::max<uint32_t>(2, static_cast<uint32_t>(m_swapchainImages.size()));
     info.PipelineInfoMain.RenderPass = m_renderPass;
     info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     info.CheckVkResultFn = checkVulkan;

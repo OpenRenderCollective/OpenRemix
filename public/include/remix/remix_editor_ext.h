@@ -10,6 +10,18 @@ typedef struct remixapi_EditorStartupEXT {
   remixapi_Bool disableProfiles;
   remixapi_Bool disableMods;
 } remixapi_EditorStartupEXT;
+// Optional StartupInfo pNext beside a headless remixapi_EditorStartupEXT: an
+// SDL_Window the host made with the same SDL library in this process. The
+// developer UI runs on it: it reads the window's size and its events, which
+// an event watch takes while the host pumps them (the host keeps pumping;
+// PumpEvents then only runs the UI's shortcuts), and draws into the shared
+// frame's UI image (version 3). The window stays the host's.
+#define REMIXAPI_STRUCT_TYPE_EDITOR_HOST_WINDOW_EXT ((remixapi_StructType)0x7fff1025)
+typedef struct remixapi_EditorHostWindowEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  void *sdlWindow; // SDL_Window *
+} remixapi_EditorHostWindowEXT;
 // Version 1 is the toolkit EditorSharedFrame contract. The caller owns all
 // descriptors (Linux file descriptors, Windows NT handles).
 // RGBA8 UNORM, optimal tiling, exclusive sharing, dedicated opaque-FD memory
@@ -46,6 +58,22 @@ typedef struct remixapi_EditorSharedFrame2 {
   int depth_memory_fd;
 #endif
 } remixapi_EditorSharedFrame2;
+// Version 3 (frame.version = 3) adds the developer UI's own layer, made with
+// a remixapi_EditorHostWindowEXT: RGBA8 UNORM at the frame's size, exported
+// as the colour, holding the UI over transparent black with premultiplied
+// alpha (composite with ONE, ONE_MINUS_SRC_ALPHA), drawn after the colour
+// and depth and in their place no longer. Without a host window its
+// descriptor is -1 (null on Windows) and ui_allocation_size 0.
+typedef struct remixapi_EditorSharedFrame3 {
+  remixapi_EditorSharedFrame2 frame2;
+  uint64_t ui_allocation_size;
+  uint32_t ui_memory_type;
+#if defined(_WIN32)
+  void *ui_memory_handle;
+#else
+  int ui_memory_fd;
+#endif
+} remixapi_EditorSharedFrame3;
 #ifdef __cplusplus
 extern "C" {
 #endif
