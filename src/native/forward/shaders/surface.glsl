@@ -1,12 +1,4 @@
-// Evaluated material values. No lighting, exposure, receiver lookup or GPU
-// material-table layout belongs in this contract.
-struct Surface {
-  vec4 color;
-  vec3 emission;
-  vec3 normal;
-  float roughness;
-  float metallic;
-};
+#include "surface-values.glsl"
 
 // Compatibility decoder for the standard PBR material. Alternative material
 // implementations can produce Surface values without knowing lighting storage.

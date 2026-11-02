@@ -1,3 +1,9 @@
+## s&box-style evaluated material initialization - 2026-11-02
+
+- Rechecked the pinned local s&box Material::Init / ShadingModelStandard::Shade reference. Evaluated Surface values now live separately from the packed PBR decoder, with resource-free initSurface defaults and explicit world-normal initialization. Documented a material-to-standard-model example.
+- Native build, resource-independent vertex/fragment/compute compile/validation test and authored/standalone GPU regression pass. All 14 generated production shader headers remain byte-identical, so this API addition changes no production shader instructions or shader keys.
+- Runtime host shader loading, broader shading composition/provider work, independent scheduling and full CPU/frame/map performance acceptance remain unfinished. Playable unchanged.
+
 ## Authored capture work admission during recovery - 2026-11-02
 
 - Fixed an early-publication scheduling gap: authored work is admitted by complete bake readiness, not merely diffuse-volume visibility. Admission is explicit and separate from reflection image identity, preserving the single Source 2 capture budget during recovery.

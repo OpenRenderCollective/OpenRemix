@@ -5,6 +5,36 @@ choose a shading model, and fetch lighting through shared source APIs. The Sourc
 preset selects the existing baked/probe/cubemap techniques. Custom shading models
 and future GI techniques should reuse the same source interfaces.
 
+## Material authoring entry point
+
+The evaluated value contract lives in `forward/shaders/surface-values.glsl`, separate
+from the packed-material/texture compatibility decoder in `surface.glsl`. It can
+be included in vertex, fragment or compute code without material bindings or
+lighting resources. `initSurface()` initializes white color/alpha, black emission,
+roughness 1, metalness 0 and a +Z normal; `initSurface(normal)` uses the caller's
+normalized world shading normal. It performs no texture lookup or derivative work.
+Receiver geometry and lighting identity remain pass-owned inputs.
+
+A material author can use the existing standard shading model like this, once the
+pass has supplied the common shading declarations:
+
+```glsl
+ShadingResult shadePaint(ShadingReceiver receiver, vec3 baseColor) {
+  Surface surface = initSurface(normalize(receiver.geometric));
+  surface.color.rgb = baseColor;
+  surface.roughness = .65;
+  return shadeStandardSurface(surface, receiver);
+}
+```
+
+This follows the reference's material initialization and shading model call. The
+material function does not choose lightmap/probe/reflection storage. The standard
+model supplies its reflection guides; pass adapters still own alpha/depth/MSAA
+coverage and output writes. Custom models can use the lighting queries below.
+This is a shader-source contract, not a runtime custom-program loader or a
+`.shader` parser. Do not add unused material properties until their semantics are
+implemented through the selected shading model.
+
 ## Reference snapshot
 
 Audited `sbox-public` revision `e545b33037b49c59bff80b64359747436279d7f6`:
@@ -191,8 +221,8 @@ pass-specific reflection guides and final display transform.
    guide compatibility. A material shader should not need pass-specific storage
    knowledge to remain correctly lit.
 5. Complete independent provider scheduling/publication and dependency/pipeline
-   selection. Reflection lookup has an independent indexed section, but fitting
-   and physical persistence still share diffuse bake planning. Radiance cascades should implement the diffuse source interface;
+   selection. Reflection lookup/publication and content-addressed persistence are separated;
+   default orchestration still borrows admitted diffuse seeds and one transport budget. Radiance cascades should implement the diffuse source interface;
    material shaders should not learn cascade storage or update details.
 6. Add opt-in host material/shader programs and HLSL/`.shader` authoring above
    these contracts. No game-specific shader dispatch belongs in the native core.

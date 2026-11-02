@@ -365,3 +365,7 @@ coverage_guards_test = executable('remix-coverage-guards-test', 'coverage_guards
   '../../src/native/forward/probes/coverage_guards.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Reflection preservation guards retain ordering and projection space', coverage_guards_test)
+
+test('Evaluated material values are independent of pass resources', python,
+  args : [meson.current_source_dir() / 'surface_values.py', shader_tools,
+          meson.current_build_dir() / 'surface-values'], depends : [shader_tools])

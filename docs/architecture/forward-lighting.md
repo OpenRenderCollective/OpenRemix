@@ -39,8 +39,8 @@ Initial extraction: `shaders/receiver-lighting.glsl` owns diffuse receiver looku
 for world and viewmodels. It preserves the existing surface/probe/live-GI behavior
 and aggregate-light bookkeeping.
 
-`shaders/surface.glsl` now defines evaluated surface values and the standard PBR
-decoder. It separates material sampling, emission, normal mapping and roughness
+`shaders/surface-values.glsl` defines resource-free evaluated values and
+`initSurface` defaults; `shaders/surface.glsl` holds the standard PBR decoder. It separates material sampling, emission, normal mapping and roughness
 filtering from receiver lighting. The packed `Material` record remains an internal
 compatibility input; it is not the shader authoring contract.
 
