@@ -35,7 +35,29 @@ namespace remix::forward::bake {
   // One scene snapshot's hardware diffuse/radiance transport. The caller owns
   // scheduling, submission and fences; no queue waits or hidden work occur here.
   class Transport {
+    struct PreparedScene;
   public:
+    struct Memory;
+    // Demand-scoped immutable ownership, independent of the donor's mutable
+    // dispatch buffers and lifetime. Acquire after its preparation fence.
+    class SceneLease {
+    public:
+      explicit operator bool() const { return bool(m_scene); }
+      bool compatible(const scene::BakeScene &source, const Options &options) const;
+      Memory memory() const; // scene-only accounting; deduplicates with consumers
+    private:
+      friend class Transport;
+      std::shared_ptr<PreparedScene> m_scene;
+      Options m_options;
+      VkPhysicalDevice m_physical = VK_NULL_HANDLE;
+      VkPhysicalDeviceLimits m_limits{};
+      bool m_aggregateDiffuse = false;
+      bool consumerCompatible(const Options &options) const;
+    };
+    SceneLease leaseScene() const;
+    // Worker-only; rejects incompatible leases before replacing this consumer.
+    void initializeShared(const SceneLease &lease, const scene::BakeScene &source, const Options &options);
+
     Transport();
     ~Transport();
     // Compile immutable transport pipelines during renderer preparation, so a
@@ -224,6 +246,8 @@ namespace remix::forward::bake {
   private:
     bool consumerCompatible(const Options &options) const;
     void initializeConsumer(const Transport &prepared, const Options &options);
+    void initializeConsumer(std::shared_ptr<PreparedScene> scene, VkPhysicalDevice physical,
+                            const VkPhysicalDeviceLimits &limits, bool aggregateDiffuse, const Options &options);
     struct Gpu;
     std::unique_ptr<Gpu> m_gpu;
     enum class Mode : uint32_t {

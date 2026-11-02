@@ -7,6 +7,29 @@
 #include <optional>
 
 namespace remix::forward::bake {
+  // Immutable after preparation; independent leases retain no dispatch slots.
+  struct Transport::PreparedScene {
+    VkDevice device = VK_NULL_HANDLE;
+    std::shared_ptr<const scene::BakeScene> source;
+    RayScene rays;
+    std::unique_ptr<Buffer> vertices, triangles, materials, lights, lightNodes, componentLightNodes;
+    struct Upload {
+      std::unique_ptr<Buffer> source;
+      VkBuffer target;
+      size_t bytes;
+    };
+    std::vector<Upload> uploads;
+    std::unique_ptr<Image> atlas;
+    std::vector<Texture> textures;
+    std::vector<VkImageView> atlasViews;
+    uint32_t resolution = 0, domeLayer = 0;
+    double geometryDiagonal = 0; // recompute private sun-query bounds without rescanning vertices
+    bool canonicalInputs = false; // packed from source, not a caller-provided override
+    bool ready = false, hasDielectrics = false, hasContainingMedia = false, hasModulatingDecals = false;
+    Memory memory() const;
+    ~PreparedScene();
+  };
+
   struct Transport::Gpu {
     bool aggregateDiffuse = false;
     VkPhysicalDevice physical = VK_NULL_HANDLE;
@@ -15,29 +38,7 @@ namespace remix::forward::bake {
     VkPhysicalDeviceLimits limits{};
     float sunDistance = 0; // scene units; covers the complete frozen geometry bounds
     std::unique_ptr<Timing> timing;
-    // Immutable after the preparation fence. Consumers keep their own slots,
-    // descriptors, constants and timings while retaining this one scene owner.
-    struct Scene {
-      VkDevice device = VK_NULL_HANDLE;
-      std::shared_ptr<const scene::BakeScene> source;
-      RayScene rays;
-      std::unique_ptr<Buffer> vertices, triangles, materials, lights, lightNodes, componentLightNodes;
-      struct Upload {
-        std::unique_ptr<Buffer> source;
-        VkBuffer target;
-        size_t bytes;
-      };
-      std::vector<Upload> uploads;
-      std::unique_ptr<Image> atlas;
-      std::vector<Texture> textures;
-      std::vector<VkImageView> atlasViews;
-      uint32_t resolution = 0, domeLayer = 0;
-      double geometryDiagonal = 0; // recompute private sun-query bounds without rescanning vertices
-      bool canonicalInputs = false; // packed from source, not a caller-provided override
-      bool ready = false, hasDielectrics = false, hasContainingMedia = false, hasModulatingDecals = false;
-      ~Scene();
-    };
-    std::shared_ptr<Scene> world;
+    std::shared_ptr<PreparedScene> world;
     bool prepared = false;
     struct IndexedVisibility;
     std::unique_ptr<IndexedVisibility> indexedVisibility;

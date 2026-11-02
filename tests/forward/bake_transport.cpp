@@ -658,6 +658,65 @@ namespace {
       preparePrivate(explicitConsumer, overridden, privateOptions, false);
       require(explicitConsumer.memory().sceneIdentity == overridden.memory().sceneIdentity,
               "Explicit packed-input inheritance rebuilt the donor's scene");
+      bake::Transport::SceneLease lease;
+      require(!lease && !lease.compatible(*scene, options), "Empty scene lease accepted a request");
+      const void *leasedIdentity = nullptr;
+      {
+        bake::Transport donor;
+        auto ticket = pipelines.prepare("bake-test-lease-donor", [&] {
+          donor.initialize(fixture.physical, fixture.device, scene, options);
+        });
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        while (!ticket->ready() && std::chrono::steady_clock::now() < deadline)
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        require(ticket->ready(), "Scene lease donor preparation timed out");
+        ticket->check();
+        bool rejected = false;
+        try { donor.leaseScene(); } catch (const std::invalid_argument &) { rejected = true; }
+        require(rejected, "Scene lease escaped before its preparation fence");
+        fixture.begin();
+        donor.recordPrepare(fixture.command, world.resources);
+        fixture.finish();
+        donor.releaseBuildInputs();
+        leasedIdentity = donor.memory().sceneIdentity;
+        lease = donor.leaseScene();
+      } // Destroy all donor pipelines/slots; only the lease retains this scene.
+      require(lease && lease.compatible(*scene, privateOptions) && !lease.compatible(changedScene, options),
+              "Retained scene lease lost its immutable request identity");
+      auto incompatible = privateOptions;
+      incompatible.lightingComponents = !incompatible.lightingComponents;
+      require(!lease.compatible(*scene, incompatible), "Scene lease ignored packed light policy");
+      bake::TransportMemory leasedMemory;
+      const auto leasedBytes = lease.memory();
+      require(leasedBytes.sceneIdentity == leasedIdentity && !leasedBytes.consumerIdentity &&
+                  leasedBytes.consumer.buffers == 0 && leasedBytes.scene.acceleration > 0,
+              "Scene lease retained private dispatch memory or lost scene accounting");
+      leasedMemory.add(leasedBytes);
+      bake::Transport leasedConsumer;
+      auto leaseTicket = pipelines.prepare("bake-test-leased-consumer", [&] {
+        leasedConsumer.initializeShared(lease, *scene, privateOptions);
+      });
+      const auto leaseDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+      while (!leaseTicket->ready() && std::chrono::steady_clock::now() < leaseDeadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      require(leaseTicket->ready(), "Leased consumer preparation timed out");
+      leaseTicket->check();
+      const auto consumerOnly = leasedMemory.add(leasedConsumer);
+      require(consumerOnly.images == 0 && consumerOnly.acceleration == 0 &&
+                  consumerOnly.buffers == leasedConsumer.memory().consumer.buffers,
+              "Scene lease and consumer double-counted shared allocations");
+      lease = {}; // Consumer now retains the scene independently of the request.
+      require(leasedConsumer.memory().sceneIdentity == leasedIdentity,
+              "Scene lease rebuilt immutable GPU inputs");
+      fixture.begin();
+      leasedConsumer.recordBatch(fixture.command, 0, points, samples, bounces);
+      fixture.finish();
+      leasedConsumer.read(0, privateResults);
+      for (uint32_t i = 0; i < 2; ++i)
+        for (uint32_t c = 0; c < 3; ++c)
+          require(std::abs(privateResults[i].irradiance[0][c] - reference[i].irradiance[0][c]) < .001f,
+                  "Scene radiance changed after donor and lease retirement");
+
       sharedSceneChecked = true;
     }
     return results[0];

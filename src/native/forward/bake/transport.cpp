@@ -66,7 +66,7 @@ namespace remix::forward::bake {
     if (sampler)
       pipeline::destroySampler(device, sampler, nullptr);
   }
-  Transport::Gpu::Scene::~Scene() {
+  Transport::PreparedScene::~PreparedScene() {
     for (auto view : atlasViews)
       vkDestroyImageView(device, view, nullptr);
   }
@@ -117,7 +117,7 @@ namespace remix::forward::bake {
     next->limits = depthProperties.limits;
     next->physical = physical;
     next->device = device;
-    next->world = std::make_shared<Gpu::Scene>();
+    next->world = std::make_shared<PreparedScene>();
     next->world->device = device;
     next->world->source = std::move(source);
     next->options = options;
@@ -157,16 +157,45 @@ namespace remix::forward::bake {
       throw std::invalid_argument("Shared transport scene requires a completed preparation fence");
     initializeConsumer(prepared, prepared.m_gpu->options);
   }
+  Transport::SceneLease Transport::leaseScene() const {
+    if (!m_gpu || !m_gpu->prepared || !m_gpu->world->ready)
+      throw std::invalid_argument("Scene lease requires a completed preparation fence");
+    SceneLease lease;
+    lease.m_scene = m_gpu->world;
+    lease.m_options = m_gpu->options;
+    lease.m_physical = m_gpu->physical;
+    lease.m_limits = m_gpu->limits;
+    lease.m_aggregateDiffuse = m_gpu->aggregateDiffuse;
+    return lease;
+  }
+  bool Transport::SceneLease::consumerCompatible(const Options &options) const {
+    return m_scene && m_scene->ready && m_options.sameScenePolicy(options) &&
+        optionValidity(*m_scene->source, options) == OptionValidity::Valid &&
+        uint64_t(options.batchPoints) * sizeof(Result) <= m_limits.maxStorageBufferRange &&
+        std::isfinite(sunQueryDistance(m_scene->geometryDiagonal, m_scene->source->sceneScale, options));
+  }
+  bool Transport::SceneLease::compatible(const scene::BakeScene &source, const Options &options) const {
+    return m_scene && m_scene->canonicalInputs && m_scene->source.get() == &source && consumerCompatible(options);
+  }
+  void Transport::initializeShared(const SceneLease &lease, const scene::BakeScene &source, const Options &options) {
+    if (!lease.compatible(source, options))
+      throw std::invalid_argument("Scene lease does not match requested snapshot and policy");
+    initializeConsumer(lease.m_scene, lease.m_physical, lease.m_limits, lease.m_aggregateDiffuse, options);
+  }
   void Transport::initializeConsumer(const Transport &prepared, const Options &options) {
     const auto &owner = *prepared.m_gpu;
+    initializeConsumer(owner.world, owner.physical, owner.limits, owner.aggregateDiffuse, options);
+  }
+  void Transport::initializeConsumer(std::shared_ptr<PreparedScene> scene, VkPhysicalDevice physical,
+      const VkPhysicalDeviceLimits &limits, bool aggregateDiffuse, const Options &options) {
     auto next = std::make_unique<Gpu>();
-    next->physical = owner.physical;
-    next->device = owner.device;
+    next->physical = physical;
+    next->device = scene->device;
     next->options = options;
-    next->limits = owner.limits;
-    next->sunDistance = sunQueryDistance(owner.world->geometryDiagonal, owner.world->source->sceneScale, options);
-    next->aggregateDiffuse = owner.aggregateDiffuse;
-    next->world = owner.world;
+    next->limits = limits;
+    next->sunDistance = sunQueryDistance(scene->geometryDiagonal, scene->source->sceneScale, options);
+    next->aggregateDiffuse = aggregateDiffuse;
+    next->world = std::move(scene);
     next->prepared = true;
     next->timing = std::make_unique<Timing>(next->physical, next->device, next->options.queueFamily);
     next->createLayouts();
@@ -762,19 +791,26 @@ namespace remix::forward::bake {
     m_gpu->world->ready = true;
   }
   uint32_t Transport::textureResolution() const { return m_gpu->world->resolution; }
+  Transport::Memory Transport::PreparedScene::memory() const {
+    Memory result;
+    result.sceneIdentity = this;
+    result.scene.acceleration = rays.accelerationBytes();
+    result.scene.images = atlas->bytes;
+    result.scene.buffers = rays.buildBytes();
+    for (const auto *buffer : {vertices.get(), triangles.get(), materials.get(), lights.get(), lightNodes.get()})
+      result.scene.buffers += buffer->allocationBytes;
+    if (componentLightNodes) result.scene.buffers += componentLightNodes->allocationBytes;
+    for (const auto &upload : uploads) result.scene.buffers += upload.source->allocationBytes;
+    return result;
+  }
+  Transport::Memory Transport::SceneLease::memory() const {
+    return m_scene ? m_scene->memory() : Memory{};
+  }
   Transport::Memory Transport::memory() const {
     if (!m_gpu) return {};
     const auto &g = *m_gpu;
-    Memory result;
-    result.sceneIdentity = g.world.get();
+    Memory result = g.world->memory();
     result.consumerIdentity = m_gpu.get();
-    result.scene.acceleration = g.world->rays.accelerationBytes();
-    result.scene.images = g.world->atlas->bytes;
-    result.scene.buffers = g.world->rays.buildBytes();
-    for (const auto *buffer : {g.world->vertices.get(), g.world->triangles.get(), g.world->materials.get(), g.world->lights.get(), g.world->lightNodes.get()})
-      result.scene.buffers += buffer->allocationBytes;
-    if (g.world->componentLightNodes) result.scene.buffers += g.world->componentLightNodes->allocationBytes;
-    for (const auto &upload : g.world->uploads) result.scene.buffers += upload.source->allocationBytes;
     for (const auto &slot : g.slots) {
       result.consumer.buffers += slot.constants->allocationBytes + slot.points->allocationBytes + slot.results->allocationBytes;
       if (slot.liveLights) result.consumer.buffers += slot.liveLights->allocationBytes;

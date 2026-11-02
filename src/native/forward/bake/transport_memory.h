@@ -10,19 +10,19 @@ class TransportMemory {
 public:
   Transport::Memory::Bytes add(const Transport &transport) { return add(transport.memory()); }
   Transport::Memory::Bytes add(const Transport::Memory &memory) {
-    if (!memory.consumerIdentity) return {};
-    bool sceneSeen = false, consumerSeen = false;
+    if (!memory.sceneIdentity && !memory.consumerIdentity) return {};
+    bool sceneSeen = !memory.sceneIdentity, consumerSeen = !memory.consumerIdentity;
     auto inspect = [&](const Entry &entry) {
       sceneSeen |= entry.scene == memory.sceneIdentity;
       consumerSeen |= entry.consumer == memory.consumerIdentity;
     };
     for (size_t i = 0; i < m_count; ++i) inspect(m_inline[i]);
     for (const auto &entry : m_overflow) inspect(entry);
-    if (consumerSeen) return {};
+    if (sceneSeen && consumerSeen) return {};
     const Entry entry{memory.sceneIdentity, memory.consumerIdentity};
     if (m_count < m_inline.size()) m_inline[m_count++] = entry;
     else m_overflow.push_back(entry);
-    auto result = memory.consumer;
+    auto result = consumerSeen ? Transport::Memory::Bytes{} : memory.consumer;
     if (!sceneSeen) {
       result.buffers += memory.scene.buffers;
       result.images += memory.scene.images;

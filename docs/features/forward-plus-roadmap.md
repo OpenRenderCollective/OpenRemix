@@ -1,3 +1,12 @@
+## 2026-11-03 — scene-only transport leases
+
+Prepared scenes now have an explicit demand-scoped lease independent of donor
+pipelines, slots and bake-job ownership. New consumers can be prepared after the
+donor retires, with snapshot/policy checks and shared memory deduplication.
+The GPU regression covers donor destruction, lease release, private settings and
+unchanged radiance. Runtime demand registration/handoff is still pending; no
+controller retains extra scenes automatically. Drawing and shaders are unchanged.
+
 ## 2026-11-03 — scene sharing and private transport policy
 
 Prepared GPU scene compatibility is now distinct from exact mutable-consumer

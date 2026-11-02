@@ -309,6 +309,14 @@ The next lifecycle split must preserve these boundaries:
   settings. These are preparation-time checks, not per-frame scene scans.
 - This separates scene compatibility from consumer reuse, but does not yet share
   the default bake's scene with the authored provider at runtime.
+- `Transport::leaseScene` now provides scene-only retention after the preparation
+  fence. A lease retains geometry, packed lighting and texture inputs without
+  retaining donor pipelines, dispatch buffers, worker tickets or the bake job.
+  `initializeShared(lease, source, options)` creates an independent consumer on a
+  preparation worker, with the same snapshot/policy checks. Releasing the donor
+  or the request lease cannot invalidate the admitted consumer. Lease memory
+  snapshots contain only the shared allocation domain and deduplicate with
+  consumer snapshots in `TransportMemory`.
 - A requesting provider must obtain a compatible, retained scene lease before
   the default job retires. Do not retain an acceleration structure indefinitely
   merely to make a later request cheaper. Define demand and retirement explicitly.
