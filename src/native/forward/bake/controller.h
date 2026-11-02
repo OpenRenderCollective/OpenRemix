@@ -125,6 +125,7 @@ namespace remix::forward::bake {
     remixapi_BakeStatisticsEXT m_statistics{};
     void invalidate();
     void status(uint32_t state, const char *message);
+    std::shared_ptr<Volume> prepareVolume(VkCommandBuffer command);
     void activate(VkCommandBuffer command);
     void recordStyles(VkCommandBuffer command, const Config &config);
     void recordSurfaces(VkCommandBuffer command, const Config &config);

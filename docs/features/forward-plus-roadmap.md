@@ -1,3 +1,9 @@
+## Diffuse volume publication module - 2026-11-02
+
+- Diffuse volume construction/upload moved out of the controller into diffuse_publication.cpp. It reads no reflection capture/image state; activation composes completed reflection metadata afterward. The existing volume is constructed once, without an extra allocation/pass.
+- Native build and two GPU regressions pass, including diffuse hash preservation across reflection recovery, warm reuse, early reflection publication and cancellation.
+- Early diffuse display during recovery remains pending: first give late local-reflection attachments their own fenced upload ownership. Independent scheduling and full CPU/frame/map performance acceptance remain open. Playable unchanged.
+
 ## Reflection-only cache recovery - 2026-11-02
 
 - Default loads preserve verified diffuse lighting when an external reflection blob is missing/corrupt/incompatible, reconstruct admitted probe origins including relocation, and run reflection preparation/capture/filtering only. The existing writer repairs the combined reference. Strict readers retain full-miss behavior.

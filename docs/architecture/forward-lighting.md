@@ -755,3 +755,17 @@ then publishes a repaired combined reference, allowing the following complete
 warm load to skip capture. Complete warm loads allocate no reconstructed Point
 array. Publication waits for recovered reflections; earlier diffuse-only display,
 fully independent default scheduling and shared-scene adoption remain future work.
+
+### Diffuse volume publication boundary
+
+`bake/diffuse_publication.cpp` builds and uploads one diffuse `Volume`: irradiance,
+styles, mixed visibility, surface atlas, bindings and optional sun depth. It reads
+no reflection capture/image state and does not select or publish reflection assets.
+The controller composes its result with completed reflection metadata and images,
+then performs the existing status/persistence/job-retirement transition. The split
+adds no volume/image allocation or GPU pass; the existing construction runs once.
+
+Early diffuse display during reflection recovery is not yet enabled. In particular,
+local-reflection staging must gain explicit per-submission upload ownership before
+late attachments can be composed safely with an already sampled volume. Default
+independent scheduling and matched CPU/frame performance remain open.
