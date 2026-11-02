@@ -149,7 +149,7 @@ int main(int argc, char **argv) try {
   gpu.input.create(fixture.physical, fixture.device, queries.size() * sizeof(Query),
                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   gpu.input.write(queries.data(), queries.size() * sizeof(Query));
-  gpu.output.create(fixture.physical, fixture.device, queries.size() * sizeof(Vec4),
+  gpu.output.create(fixture.physical, fixture.device, 2 * queries.size() * sizeof(Vec4),
                     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   const VkSamplerCreateInfo sampler{.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
                                     .magFilter = VK_FILTER_NEAREST,
@@ -238,7 +238,7 @@ int main(int argc, char **argv) try {
   vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0,
                        1, &read, 0, nullptr, 0, nullptr);
   fixture.finish();
-  std::vector<Vec4> values(queries.size());
+  std::vector<Vec4> values(2 * queries.size());
   gpu.output.read(values.data(), values.size() * sizeof(Vec4));
   for (uint32_t mode = 0; mode < 2; ++mode) {
     float maximum = 0;
@@ -269,8 +269,20 @@ int main(int argc, char **argv) try {
   require(values[viewModelFirst][0] > .999f && values[viewModelFirst + 1][0] < .001f &&
               values[viewModelFirst + 2][0] < .001f,
           "Viewmodel mixed shadows exclude static occlusion only for baked receivers, retaining moving shadows");
-  for (size_t i = sunPlaneFirst; i < values.size(); ++i)
+  for (size_t i = sunPlaneFirst; i < queries.size(); ++i)
     require(values[i][0] > .999f, "Tilted sun receivers remain free of self shadowing across the filter footprint");
+  for (size_t i = 0; i < queries.size(); ++i) {
+    const float visibility = values[i][0];
+    require(std::abs(values[i][1] - 2 * visibility) < 1e-5f &&
+                std::abs(values[i][2] - values[i][1]) < 1e-5f,
+            "Attributed mixed residuals and shadowed unified fields conserve the same direct diffuse energy");
+    require(std::abs(values[i][3] - .25f * visibility) < 1e-5f,
+            "Owning diffuse preserves independently shadowed analytic highlights");
+    const auto &ownership = values[i + queries.size()];
+    require(ownership[0] == 0 && ownership[1] == 0 && ownership[2] == 0 &&
+                std::abs(ownership[3] - 2 * visibility) < 1e-5f,
+            "Owned lobes contribute no duplicate energy while unbaked analytic diffuse remains visible");
+  }
   require(validationErrors == 0, "Shadow filter readback is Vulkan validation clean");
 } catch (VkResult error) {
   std::fprintf(stderr, "Shadow filtering GPU test failed: %d\n", int(error));

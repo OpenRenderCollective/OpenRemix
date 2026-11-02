@@ -17,6 +17,8 @@ Implemented and checked:
   radiance independently of the shared standard material reflection response.
   Diffuse sources independently select analytic direct lobes, per-light residual
   attribution and reflection reference; unified transport provenance remains open.
+  GPU shadow sweeps verify energy equivalence between mixed residual and owned
+  direct-field composition, with independent analytic highlight selection.
 - Resolved provider dependencies drive live diffuse/ray scene and screen/ray
   reflection resources. Water and viewmodels share the selected diffuse source;
   live water can share prepared scene descriptors with its own query limits.

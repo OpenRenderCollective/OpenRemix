@@ -160,6 +160,14 @@ lobes without attribution/reference. The alternate diffuse compile fixture owns
 direct diffuse while retaining analytic specular. World, viewmodel, water and
 the example custom model select direct contributions through the same policy.
 
+The shadow-filter GPU regression checks an energy invariant using production
+shadow lookup, local composition, diffuse composition and lobe selection. For
+unit diffuse reflectance, a field containing unoccluded energy plus its mixed
+residual must equal a unified field containing already-shadowed energy. Both
+retain independently selected highlights; disabled lobes add zero. It covers
+fractional point/sun visibility, baked static exclusion and viewmodel shadow
+queries. It does not validate the transport of a future GI implementation.
+
 This separates lobe ownership, per-light residuals and reflection normalization.
 It does not yet describe full transport provenance or compatible normalization
 for arbitrary unified GI implementations; a new provider must supply those.
