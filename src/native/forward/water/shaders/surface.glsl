@@ -31,6 +31,11 @@ vec3 waterSkyRadiance(vec3 worldDirection) {
   vec2 coordinate = vec2(atan(d.z, d.x) / (2 * Pi) + .5, acos(clamp(d.y, -1, 1)) / Pi);
   return textureLod(waterDome, coordinate, 0).rgb * waterSky.radiance.rgb;
 }
+// Water retains its existing unfiltered-sky fallback and visibility policy.
+vec3 environmentReflection(vec3 position, vec3 normal, vec3 reflected, float roughness) {
+  return waterSkyRadiance(reflected) * bakedSkyVisibility(position, normal, reflected);
+}
+#include "../../shaders/reflection-lighting.glsl"
 void main() {
   Material m = materials[draw.index];
   WaterMaterial water = waterMaterials[draw.cascade];
@@ -104,30 +109,31 @@ void main() {
   } else
     through = waterThrough(boundary, water.transmittance.rgb, water.transmittance.w,
         behind.distance, behind.valid, waterFrame.settings.y > .5, surfaceWeight);
-  vec3 irradiance, diffuse = surface.rgb * frame.ambientExposure.rgb;
-  bool aggregateReceiver = bakedIrradiance(worldPosition, n, irradiance);
-  if (aggregateReceiver) diffuse = surface.rgb * irradiance / Pi;
+  ShadingReceiver receiver = ShadingReceiver(worldPosition, geometric, v, gl_FragCoord.xy, depth,
+      BakedReceiver(vec4(0), surfaceBounds, surfaceLights, surfaceDirectLights, surfaceChart), false, 0u, 1);
+  ReceiverLighting lighting = sampleDiffuseLighting(receiver, n, ReceiverLightContext(false, vec4(0)), true);
+  bool aggregateReceiver = lighting.aggregate;
+  vec3 diffuse = surface.rgb * lighting.diffuse;
   vec3 l = -frame.sunDirection.xyz;
   BrdfLobes sun = brdfLobes(surface.rgb, roughness, 0, n, v, l, specularF0);
-  float visibility = sunShadowVisibility(worldPosition, depth, true, normalize(cross(dFdx(worldPosition), dFdy(worldPosition))));
-  diffuse += sun.diffuse * max(dot(n, l), 0) * frame.sunRadiance.rgb * visibility;
-  vec3 specular = sun.specular * frame.sunRadiance.rgb * visibility;
-  uint base = clusterIndex(gl_FragCoord.xy, depth) * ClusterStride;
-  bool linear;
-  uint lightCount = receiverLightCount(base, aggregateReceiver, linear);
-  for (uint i = 0u; i < lightCount; ++i) {
-    uint light = linear ? i : clusters[base + ClusterHeaderWords + i];
+  // Preserve the current water CSM policy while sharing sunlight transport.
+  SunLightSample sunlight = sampleUnbakedSunLight(worldPosition, depth, n,
+      normalize(cross(dFdx(worldPosition), dFdy(worldPosition))));
+  diffuse += sun.diffuse * sunlight.diffuseIrradiance * sunlight.radiance;
+  vec3 specular = sun.specular * sunlight.staticVisibility * sunlight.radiance;
+  LocalLightingContext localLighting = prepareLocalLighting(receiver, n, false, aggregateReceiver);
+  for (uint i = 0u; i < localLighting.lights.count; ++i) {
+    uint light = localLightIndex(localLighting.lights, i);
     BrdfLobes response = localLightResponse(light, worldPosition, n, v, surface.rgb, roughness, 0,
-                                           vec4(-1), BakedReceiver(vec4(0), surfaceBounds, surfaceLights, surfaceDirectLights, surfaceChart),
+                                           localLighting.directIrradiance, receiver.baked,
                                            specularF0, normalize(geometric), aggregateReceiver);
     diffuse += response.diffuse;
     specular += response.specular;
   }
-  vec3 reflected;
-  float localLuma = aggregateReceiver ? dot(max(irradiance / Pi, vec3(0)), vec3(.2126, .7152, .0722)) : -1;
-  if (!probeRadiance(worldPosition, boundary.reflected, roughness, n, localLuma, reflected))
-    reflected = waterSkyRadiance(boundary.reflected) *
-                bakedSkyVisibility(worldPosition, n, boundary.reflected);
+  float localLuma = aggregateReceiver ? dot(max(lighting.diffuse, vec3(0)), vec3(.2126, .7152, .0722)) : -1;
+  ReflectionReceiver reflectionReceiver = ReflectionReceiver(worldPosition, worldPosition, n,
+      boundary.reflected, roughness, localLuma, 0u, uvec2(0));
+  vec3 reflected = sampleEnvironmentReflection(reflectionReceiver);
   ScreenReflectionView screen = ScreenReflectionView(frame.camera, waterFrame.inverseCamera, frame.view,
       waterFrame.reflectionTrace, waterFrame.reflectionConfig, uvec2(extent));
   vec4 screenHit = traceScreenReflection(screen, worldPosition, n, boundary.reflected, -v,

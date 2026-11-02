@@ -73,8 +73,9 @@ count; no temporary light array is allocated.
 and static visibility without material parameters. Its radiance includes the
 moving-caster shadow factor. `shadeStandardSunLight` applies the standard BRDF.
 The existing `sunLightResponse` entry is a compatibility wrapper over both, so
-world and viewmodel callers share transport without changing their passes. Water
-still has its optical BRDF and separate sun composition; that path needs integration.
+world and viewmodel callers share transport without changing their passes.
+`sampleUnbakedSunLight` exposes analytic/CSM visibility for passes without baked
+sun coverage. It is a source policy, not a BRDF or game-specific shader choice.
 
 ## Local receiver context
 
@@ -110,10 +111,12 @@ still query baked data explicitly, including when live GI is selected.
 
 `sampleEnvironmentReflection(ReflectionReceiver)` returns scene-linear incident
 radiance from the authored/automatic probe source or visibility-filtered sky.
-World reflection resolve and viewmodels share this query. It applies neither
+World reflection resolve, viewmodels and water share this query. It applies neither
 Fresnel nor SSR/ray confidence, so composition owns those factors exactly once.
 The pass adapter supplies the candidate mask, explicit layer and existing biased
-probe position; probe images and parallax selection remain implementation detail.
+probe position for tiled queries. The non-tiled water variant uses automatic
+selection. Probe images and parallax selection remain implementation detail;
+`environmentReflection` is the pass-owned sky fallback implementation.
 
 `sampleViewModelReflection` combines that environment source with current-frame
 SSR and returns radiance without material color/metalness/Fresnel. The standard
@@ -126,13 +129,28 @@ its resolve. Water retains separate optical composition and sky policy. A comple
 provider contract must accommodate these pass dependencies; the environment query
 alone does not make every reflection technique interchangeable.
 
+## Optical water adapter
+
+Water builds the same `ShadingReceiver` and uses `sampleDiffuseLighting`,
+`prepareLocalLighting` and `sampleEnvironmentReflection`. Its diffuse shader
+variant currently selects baked volume probes, with no surface-chart allocation.
+A constant false direct-channel request removes unused atlas reads. The optical
+model still owns absorption, sheet/body Fresnel, refraction and screen/ray hit
+composition. Its light-source queries do not apply those material weights.
+
+Water uses `sampleUnbakedSunLight` to preserve its existing CSM policy and supplies
+its existing unfiltered/visibility-gated sky fallback. Switching it to the same
+baked/mixed sun ownership as world/props and selecting live diffuse providers for
+water still need explicit quality/resource qualification. Shared queries alone
+must not be reported as finishing those policies.
+
 ## Remaining API work
 
 1. Complete the composition contract over receiver-local queries, including
    explicit ownership of aggregate baked energy and mixed-shadow corrections.
    Keep source-index and receiver-ordinal query semantics distinct.
-2. Connect the reflection radiance interface to interchangeable screen/ray and
-   environment providers, and integrate optical water with shared queries.
+2. Connect reflection radiance to interchangeable screen/ray and environment
+   providers; qualify water baked/mixed-sun ownership and live diffuse selection.
 3. Separate direct ownership and indirect transport in the composition contract.
    The current aggregate-bake flag and normalization bookkeeping still couple
    these concerns. Define units and provenance before exposing LightingTerms.

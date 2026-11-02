@@ -9,13 +9,15 @@ ReceiverLighting evaluateReceiverLighting(vec3 position, vec3 normal, vec3 geome
 #ifdef ZERO_DIFFUSE_MATERIAL
   } else if (localProbeStencil(position, normal)) {
     lighting.diffuse = vec3(0);
+    lighting.aggregate = true;
 #else
   } else {
     vec3 irradiance;
-    if (!bakedIrradiance(position, normal, irradiance)) return lighting;
-    lighting.diffuse = irradiance / Pi;
+    if (bakedIrradiance(position, normal, irradiance)) {
+      lighting.diffuse = irradiance / Pi;
+      lighting.aggregate = true;
+    }
 #endif
-    lighting.aggregate = true;
   }
   return lighting;
 }

@@ -1,3 +1,8 @@
+## Water lighting API integration - 2026-11-02
+
+- Optical water now consumes shared receiver diffuse/local/sun/environment queries. Its Fresnel/refraction/absorption and existing CSM/sky policies remain in the water adapter.
+- Still required: water baked/mixed-sun policy and live diffuse-provider qualification; fully interchangeable reflection passes, independent scheduling/storage and frame-performance acceptance.
+
 ## Indexed reflection hit memory - 2026-11-02
 
 - Lookup now precedes full ray-list creation. Versioned procedural capture signature keys the index; hits retain exact ray-byte provenance through one-cube streaming. Misses generate their ordinary work list once.
