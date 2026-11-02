@@ -310,7 +310,7 @@ regions/projection audits, selected raw captures, shared capture-ray mapping,
 input provenance, filtered cubemaps and the prepared GPU image. Its placement,
 selection, ray preparation/completion and filtering operations have no dependency
 on the bake controller, diffuse atlases or diffuse probe values. Placement uses compact owned
-positions, original task indices and geometry-validity flags as spatial seed inputs. State is stored inline in the
+usable positions with original task indices as spatial seed inputs. State is stored inline in the
 owning job: this extraction adds no resource allocation or duplicate ray arrays.
 
 The current Source 2 scheduler still lends its transport, retires readbacks after
@@ -389,8 +389,8 @@ needed for reflection-only recovery, without duplicating cubemap payloads.
 
 ### Reflection spatial inputs
 
-`probes::PlacementSeeds` contains the placement domain, original-index positions,
-geometry usability flags and task order. The fitting/selection implementation
+`probes::PlacementSeeds` contains the placement domain and usable positions with
+original indices, kept in task order. The fitting/selection implementation
 accepts these fields directly. `placement_grid.cpp` adapts the current diffuse
 grid and preserves original indices and ordering for distance ties; legacy CPU
 callers retain their existing helper signatures. Candidate-site-only requests
@@ -399,7 +399,16 @@ build only a domain, without copying point arrays.
 Automatic capture prepares one compact spatial snapshot on its worker, reuses it
 through validation/fitting, and releases it before capture-ray allocation. It no
 longer needs a diffuse grid in the placement worker API. This incurs transient
-cold-preparation storage (16 bytes per grid slot plus task indices) and a copy;
+cold-preparation storage (up to 16 bytes per input task) and a copy;
 it adds no frame-rendering allocation or shader work. Its cold-bake cost must be
 qualified rather than described as allocation-free. Persisting/recovering these
 spatial inputs and independently keyed capture publication/cache remain pending.
+
+
+Placement snapshots filter unusable geometry while gathering positions, preserve
+original IDs for distance tie-breaking, and avoid an array indexed by every grid
+slot. Core fitting streams this compact input instead of repeatedly touching SH
+records. Synthetic placement comparisons cover dense/sparse inputs and open/BSP
+rooms, with identical origin/bounds/count identities. This is CPU preparation
+work, not a GPU frame-time or complete bake-time result; small-budget copy costs
+and representative map qualification remain part of performance acceptance.

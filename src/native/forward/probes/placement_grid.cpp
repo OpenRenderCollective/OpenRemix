@@ -25,8 +25,7 @@ namespace remix::forward::probes {
                                  std::stop_token cancelled) {
     PlacementSeeds result;
     result.bounds = placementBounds(scene, grid);
-    result.points.resize(grid.probes.size());
-    result.tasks = grid.tasks;
+    result.points.reserve(grid.tasks.size());
     for (uint32_t index : grid.tasks) {
       if ((index & 4095u) == 0 && cancelled.stop_requested())
         throw std::runtime_error("Reflection placement superseded");
@@ -36,7 +35,7 @@ namespace remix::forward::probes {
       if (index >= grid.points.size())
         throw std::invalid_argument("Usable reflection seed has no captured position");
       const auto &point = grid.points[index].position;
-      result.points[index] = {{point[0], point[1], point[2]}, true};
+      result.points.push_back({{point[0], point[1], point[2]}, index});
     }
     return result;
   }

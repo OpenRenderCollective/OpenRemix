@@ -1,4 +1,5 @@
 #include "forward/probes/data.h"
+#include "forward/probes/placement.h"
 #include "forward/probes/priority_bands.h"
 #include "platform/workers.h"
 #include <algorithm>
@@ -104,6 +105,22 @@ int main() {
   }
   const auto placed = p::place(scene, grid, 4, 8);
   require(placed.size() == 4, "Playable volumes receive spatially distributed reflection captures");
+  {
+    auto reordered = grid;
+    std::reverse(reordered.tasks.begin(), reordered.tasks.end());
+    const auto spatial = p::placementSeeds(scene, reordered);
+    const auto fitted = p::fitSeedCandidates(scene, spatial, 4);
+    const auto independent = p::captureCandidates(scene, fitted, 4, 8);
+    require(independent.size() == placed.size(), "Task reordering preserves reflection coverage");
+    for (size_t i = 0; i < placed.size(); ++i)
+      require(independent[i].position == placed[i].position &&
+                  independent[i].bounds.minimum == placed[i].bounds.minimum &&
+                  independent[i].bounds.maximum == placed[i].bounds.maximum,
+              "Compact spatial inputs preserve original-index distance ties after task reordering");
+    reordered.probes.back().statistics[3] = 0;
+    require(p::placementSeeds(scene, reordered).points.size() + 1 == grid.tasks.size(),
+            "Unusable geometry has no entry in compact reflection placement inputs");
+  }
   for (const auto &probe : placed)
     require(std::abs(probe.position[0]) == .5f && std::abs(probe.position[1]) == .5f &&
                 probe.radiance.size() == 6 * 8 * 8,

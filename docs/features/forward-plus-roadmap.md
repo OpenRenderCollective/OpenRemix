@@ -1,3 +1,9 @@
+# Spatial-input performance study - 2026-11-02
+
+- Placement inputs now retain only usable positions/original IDs, removing the separate task array and unused grid slots. Original-index tie-breaking survives task reordering.
+- Controlled old/new CPU placement study uses 32,768 slots, dense/sparse tasks, open/BSP rooms and 1/16/64 capture budgets. Origin/bounds/count identities match. Dense default-budget placement improves substantially; small-budget cold-copy cost and real-map/full-bake timings remain acceptance work.
+- No frame rendering, GPU shader, quality or deployment change. Independent capture cache/publication and full provider composition remain unfinished.
+
 # Reflection spatial inputs - 2026-11-02
 
 - Placement now accepts compact geometry-only spatial inputs, preserving original indices/task order. A detached-input regression checks exact capture origins/proxy bounds after diffuse data is released.

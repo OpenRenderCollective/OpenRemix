@@ -3,11 +3,10 @@
 
 namespace remix::forward::probes {
   // Reflection placement needs geometry, never diffuse SH coefficients.
-  // Keep original indices and task order for deterministic distance tie breaks.
+  // Retain usable points in task order, with original indices for distance ties.
   struct PlacementSeeds {
-    struct Point { Vec3 position{}; bool usable = false; };
+    struct Point { Vec3 position{}; uint32_t originalIndex = 0; };
     Bounds bounds;
     std::vector<Point> points;
-    std::vector<uint32_t> tasks;
   };
 }

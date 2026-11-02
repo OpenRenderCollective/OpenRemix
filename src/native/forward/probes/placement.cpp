@@ -18,11 +18,10 @@ namespace remix::forward::probes {
       struct Cell { Bounds bounds; std::vector<Vec3> sites; };
       if (cancelled.stop_requested()) throw std::runtime_error("Reflection placement superseded");
       std::vector<Cell> cells{{bounds, {}}};
-      for (auto index : seeds.tasks) {
-        if ((index & 4095u) == 0 && cancelled.stop_requested())
+      for (const auto &seed : seeds.points) {
+        if ((seed.originalIndex & 4095u) == 0 && cancelled.stop_requested())
           throw std::runtime_error("Reflection placement superseded");
-        if (!seeds.points[index].usable) continue;
-        const auto &point = seeds.points[index].position;
+        const auto &point = seed.position;
         bool inside = true;
         for (uint32_t c = 0; c < 3; ++c)
           inside &= std::isfinite(point[c]) && point[c] >= bounds.minimum[c] && point[c] <= bounds.maximum[c];
@@ -186,9 +185,7 @@ namespace remix::forward::probes {
       for (uint32_t c = 0; c < 3; ++c)
         center[c] = std::midpoint(box.minimum[c], box.maximum[c]);
       std::vector<std::pair<float, uint32_t>> candidates;
-      for (uint32_t index : seeds.tasks) {
-        if (!seeds.points[index].usable)
-          continue;
+      for (uint32_t index = 0; index < seeds.points.size(); ++index) {
         const auto &p = seeds.points[index].position;
         bool inside = true;
         float distance = 0;
@@ -200,7 +197,10 @@ namespace remix::forward::probes {
         if (inside)
           candidates.emplace_back(distance, index);
       }
-      std::sort(candidates.begin(), candidates.end());
+      std::sort(candidates.begin(), candidates.end(), [&](const auto &a, const auto &b) {
+        if (a.first != b.first) return a.first < b.first;
+        return seeds.points[a.second].originalIndex < seeds.points[b.second].originalIndex;
+      });
       uint32_t selected = ~0u;
       for (size_t candidate = 0; candidate < std::min(size_t(16), candidates.size()); ++candidate) {
         if (cancelled.stop_requested())
