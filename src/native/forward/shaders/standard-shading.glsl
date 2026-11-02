@@ -45,9 +45,7 @@ ShadingResult shadeStandardSurface(Surface surface, ShadingReceiver receiver) {
       surface.color.rgb, surface.roughness, surface.metallic, receiver.reflectionLayer, shaded.irradianceLuma);
 #endif
   shaded.color = vec4(min(max(color, vec3(0)), vec3(65000)), receiver.opacity);
-  // The pass adapter stores this guide as RGBA8. Alpha retains ordinary
-  // selection or a one-based cubemap layer from the same covered MSAA sample.
-  shaded.reflectance = vec4(mix(vec3(.04), surface.color.rgb, surface.metallic),
-                            float(255u - receiver.reflectionLayer) / 255);
+  shaded.reflectance = mix(vec3(.04), surface.color.rgb, surface.metallic);
+  shaded.hasReflectance = true;
   return shaded;
 }

@@ -58,7 +58,7 @@ stages = {
     void main() {
       Surface material = initSurface();
       ShadingResult shaded = initShadingResult(material, .75);
-      ReflectionSample reflected = ReflectionSample(shaded.normalRoughness.xyz, .5);
+      ReflectionSample reflected = ReflectionSample(shaded.normal, .5);
       ReceiverLighting diffuse = ReceiverLighting(vec3(1), analyticDirectLighting(false), false);
       value = vec4(resolveReflection(reflected, material.emission) *
                    standardReflectionFresnel(vec3(.04), material.roughness, .5) +

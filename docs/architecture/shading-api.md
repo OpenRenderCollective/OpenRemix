@@ -602,13 +602,19 @@ reflection reference and black output with the supplied opacity. Standard shadin
 and the alternate diffuse model use the same initialization; a simple custom
 model only assigns its resulting color instead of manually initializing guide
 fields. Models requesting reflections still explicitly supply their response
-and reference. The current result retains pass-guide fields; this helper does
-not complete the public custom-program or arbitrary shading-model contract.
+and reference. Results carry normal, roughness, RGB reflectance and its presence
+as ordinary material values. Cubemap-layer byte encoding stays in the forward
+pass adapter, alongside MSAA guide packing, rather than the shading model. The
+adapter preserves the legacy zero guide when a model supplies no reflectance.
+This does not complete the public custom-program or arbitrary shading-model contract.
 
 The resource-free values fixture includes this header twice and consumes its
 result in compute as well as compiling it in vertex and fragment stages. Default
-world/viewmodel/water and live/metal variants preserve optimized sizes and opcode
-counts for this initialization change.
+world/viewmodel/water and live/metal variants preserved optimized sizes and opcode
+counts for the initialization extraction. The later unpacked-result adapter split
+changes data-extraction instructions; after shaded-path specialization it preserves
+arithmetic, texture and control-flow instruction counts. This is compiler evidence,
+not a runtime-equivalence claim.
 
 ## Standard reflection response
 

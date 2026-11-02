@@ -126,9 +126,12 @@ void main() {
   ShadingResult shaded = shadeStandardSurface(evaluated, receiver);
   result = shaded.color;
 #ifdef REFLECTION_GUIDES
-  outNormalRoughness = packReflectionGuide(shaded.normalRoughness.xyz, shaded.normalRoughness.w,
+  outNormalRoughness = packReflectionGuide(shaded.normal, shaded.roughness,
                                           shaded.irradianceLuma);
-  outReflectance = shaded.reflectance;
+  // Pass-owned RGBA8 encoding: alpha retains ordinary selection or a
+  // one-based cubemap layer from this same covered MSAA sample.
+  outReflectance = shaded.hasReflectance
+      ? vec4(shaded.reflectance, float(255u - receiver.reflectionLayer) / 255) : vec4(0);
 #endif
 #endif
 }

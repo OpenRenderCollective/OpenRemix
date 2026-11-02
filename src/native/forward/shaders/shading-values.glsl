@@ -4,8 +4,10 @@
 // Material shading output values, independent of receiver/source resources.
 struct ShadingResult {
   vec4 color;
-  vec4 normalRoughness;
-  vec4 reflectance;
+  vec3 normal;
+  float roughness;
+  vec3 reflectance;
+  bool hasReflectance;
   float irradianceLuma; // irradiance / pi luminance; -1 means unavailable
 };
 // Safe defaults for a diffuse/custom model. Models opt into a reflection
@@ -13,8 +15,10 @@ struct ShadingResult {
 ShadingResult initShadingResult(Surface surface, float opacity) {
   ShadingResult result;
   result.color = vec4(0, 0, 0, opacity);
-  result.normalRoughness = vec4(surface.normal, surface.roughness);
-  result.reflectance = vec4(0);
+  result.normal = surface.normal;
+  result.roughness = surface.roughness;
+  result.reflectance = vec3(0);
+  result.hasReflectance = false;
   result.irradianceLuma = -1;
   return result;
 }
