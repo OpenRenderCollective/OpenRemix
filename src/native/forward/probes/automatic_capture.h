@@ -95,6 +95,16 @@ namespace remix::forward::probes {
     void filter(VkPhysicalDevice physical, VkDevice device, std::stop_token cancelled);
     void prepareImage(VkPhysicalDevice physical, VkDevice device, std::stop_token cancelled);
     void prepareContent(std::stop_token cancelled); // optional worker diagnostics
+    // Worker-only finishing after complete(): both publish the image once.
+    // The default preset retains immutable CPU data for diffuse provenance/cache;
+    // standalone capture transfers its nonempty payload without copying arrays
+    // or calculating unused diffuse provenance. Same allocation count as before.
+    void finishRetainedPublication(VkPhysicalDevice physical, VkDevice device, std::stop_token cancelled);
+    // Nonempty cached/nonpersistent capture: release CPU arrays before handoff,
+    // without allocating a persistence payload or computing content diagnostics.
+    void finishImageOnlyPublication(VkPhysicalDevice physical, VkDevice device, std::stop_token cancelled);
+    std::unique_ptr<const CapturePayload> finishTransferredPublication(
+        VkPhysicalDevice physical, VkDevice device, std::stop_token cancelled);
     CaptureContent content; // published by the same release/acquire image handoff
     PlacementSeeds seeds;
     std::vector<bake::Point> reflectionSites;

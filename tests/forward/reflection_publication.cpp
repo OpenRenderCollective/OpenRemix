@@ -121,15 +121,18 @@ int main() try {
     {
       probes::AutomaticCapture empty;
       // An empty provider must not require a device or allocate fallback GPU data.
-      empty.filter(VK_NULL_HANDLE, VK_NULL_HANDLE, {});
+      empty.finishRetainedPublication(VK_NULL_HANDLE, VK_NULL_HANDLE, {});
       require(!empty.image, "Empty captures allocated a reflection image");
-      empty.retainPayload();
-      empty.sealPublication();
       require(!empty.recordImageUpload(VK_NULL_HANDLE) && !empty.recordImageUpload(VK_NULL_HANDLE),
               "Empty completion attempted a GPU upload");
       bool rejected = false;
       try { empty.sealPublication(); } catch (const std::logic_error &) { rejected = true; }
       require(rejected, "Empty reflection completion was repeated");
+      probes::AutomaticCapture emptyTransfer;
+      rejected = false;
+      try { emptyTransfer.finishTransferredPublication(VK_NULL_HANDLE, VK_NULL_HANDLE, {}); }
+      catch (const std::logic_error &) { rejected = true; }
+      require(rejected && !emptyTransfer.image, "Empty transfer acquired GPU resources instead of requiring retained completion");
       probes::AutomaticCapture incomplete;
       incomplete.captures.emplace_back();
       incomplete.retainPayload();
@@ -150,6 +153,27 @@ int main() try {
       source.bounds.include({-1,-1,-1}); source.bounds.include({1,1,1});
       source.influence = source.bounds; source.resolution = 8;
       source.radiance.resize(384, {1,2,3,4});
+      {
+        probes::AutomaticCapture transfer;
+        transfer.captures.push_back(source);
+        transfer.filtered = probes::filter(transfer.captures, 8, {});
+        transfer.cachedRadiance = true;
+        transfer.complete({});
+        const auto captures = transfer.captures.data();
+        const auto rays = transfer.captures.front().radiance.data();
+        const auto texels = transfer.filtered.texels.data();
+        auto payload = transfer.finishTransferredPublication(fixture.physical, fixture.device, {});
+        require(payload && payload->captures.data() == captures && payload->captures.front().radiance.data() == rays &&
+                    payload->data.texels.data() == texels && transfer.captureView().empty() &&
+                    transfer.filteredView().texels.empty(),
+                "Transferred publication copied or retained CPU capture/filter arrays");
+        payload.reset(); // Upload ownership must not depend on the persistence payload.
+        fixture.begin();
+        const auto image = transfer.recordImageUpload(fixture.command);
+        require(image && !transfer.recordImageUpload(fixture.command),
+                "Transferred reflection publication did not upload exactly once after CPU release");
+        fixture.finish();
+      }
       const auto directory = std::filesystem::temp_directory_path() /
           ("remix-provider-cache-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
       probes::CaptureConfig config; config.reflectionResolution = 8;

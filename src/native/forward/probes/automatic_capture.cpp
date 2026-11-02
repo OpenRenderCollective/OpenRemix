@@ -78,6 +78,33 @@ namespace remix::forward::probes {
     requirePreparing();
     content = captureContent(captureView(), filteredView(), inputHash, cancelled);
   }
+  void AutomaticCapture::finishRetainedPublication(VkPhysicalDevice physical, VkDevice device,
+                                                    std::stop_token cancelled) {
+    filter(physical, device, cancelled);
+    prepareContent(cancelled);
+    retainPayload();
+    sealPublication();
+  }
+  void AutomaticCapture::finishImageOnlyPublication(VkPhysicalDevice physical, VkDevice device,
+                                                     std::stop_token cancelled) {
+    requirePreparing();
+    if (captures.empty()) throw std::logic_error("Image-only reflection publication requires captures");
+    filter(physical, device, cancelled);
+    captures.clear();
+    filtered = {};
+    sealPublication();
+  }
+  std::unique_ptr<const CapturePayload> AutomaticCapture::finishTransferredPublication(
+      VkPhysicalDevice physical, VkDevice device, std::stop_token cancelled) {
+    requirePreparing();
+    if (captures.empty()) throw std::logic_error("Transferred reflection publication requires captures");
+    filter(physical, device, cancelled);
+    auto payload = std::make_unique<CapturePayload>();
+    payload->captures = std::move(captures);
+    payload->data = std::move(filtered);
+    sealPublication();
+    return payload;
+  }
   void AutomaticCapture::sealPublication() {
     if ((!image && (!m_payload || !emptyRadiance())) || m_publicationReady.load(std::memory_order_relaxed))
       throw std::logic_error("Reflection completion requires a prepared image or retained empty payload");

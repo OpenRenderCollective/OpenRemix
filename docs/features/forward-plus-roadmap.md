@@ -1,3 +1,15 @@
+## 2026-11-03 — provider-owned reflection finishing policies
+
+Reflection finishing now exposes retained, transferred and image-only publication
+paths. The default preset retains immutable provenance; standalone persistence
+moves existing arrays without copies; warm restores and captures with disk cache
+disabled release CPU arrays without allocating a persistence payload. Early
+publication and preset finishing order remain unchanged, with no additional jobs.
+Build and publication/cancellation, authored reuse and transport GPU tests pass.
+Storage-address checks verify no capture/filter copies, and upload succeeds after
+the transferred CPU payload is released. No shaders/draw loops or playable files
+changed. Broader provider integration and performance acceptance remain open.
+
 ## 2026-11-03 — resolved reflection resource selection
 
 Screen hierarchy allocation/recording and live-scene reflection batch capacity

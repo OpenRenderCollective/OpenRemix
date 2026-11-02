@@ -278,6 +278,17 @@ initial transport/diffuse ticket and inspect both owners before touching worker
 outputs, cancelling or retiring jobs. Queued cancellation releases captured inputs
 without executing the callback; cancellation is never successful readiness.
 
+Reflection finishing has three explicit provider-owned retention paths after
+transport completion (or cache restoration): `finishRetainedPublication` computes
+the default source's provenance and keeps its immutable payload;
+`finishTransferredPublication` moves nonempty capture/filter arrays into the
+existing unique persistence payload; `finishImageOnlyPublication` releases those
+CPU arrays without allocating a persistence payload. Warm standalone restores
+and persistence-disabled captures use the last path. Empty completion uses the
+retained path, which needs no GPU device or image. Source 2 cache restoration
+still interleaves its auxiliary-field restore before sealing publication, keeping
+that existing order explicit in its preset adapter.
+
 The preset still determines admission and the order around diffuse finishing.
 The same callbacks, queue order, transport budget and early publication boundary
 are retained; this split creates no additional jobs, scene allocations or waits.

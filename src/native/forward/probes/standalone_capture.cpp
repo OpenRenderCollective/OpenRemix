@@ -167,11 +167,7 @@ void StandaloneCapture::record(VkCommandBuffer command,
                   job->capture.captures = std::move(cached->captures);
                   job->capture.filtered = std::move(cached->data);
                   job->capture.cachedRadiance = true;
-                  job->capture.filter(physical, device,
-                                      job->cancellation.get_token());
-                  job->capture.captures.clear();
-                  job->capture.filtered = {};
-                  job->capture.sealPublication();
+                  job->capture.finishImageOnlyPublication(physical, device, job->cancellation.get_token());
                   job->cacheHit = job->filtering = true;
                   return;
                 }
@@ -251,17 +247,15 @@ void StandaloneCapture::record(VkCommandBuffer command,
           *m_pipelines, "reflection-filter-" + std::to_string(++generation),
           [owner, physical, device] {
             owner->capture.complete(owner->cancellation.get_token());
-            owner->capture.filter(physical, device,
-                                  owner->cancellation.get_token());
-            auto snapshot = std::make_unique<capture_cache::Snapshot>();
-            snapshot->captures = std::move(owner->capture.captures);
-            snapshot->data = std::move(owner->capture.filtered);
-            if (owner->cacheKey &&
-                capture_cache::retainedCharge(*snapshot) <=
-                    capture_cache::maximumBytes)
-              owner->persistence = std::move(snapshot);
-            // Declined payloads release raw/filter CPU storage on this worker.
-            owner->capture.sealPublication();
+            if (owner->cacheKey) {
+              auto snapshot = owner->capture.finishTransferredPublication(physical, device,
+                                                                            owner->cancellation.get_token());
+              if (capture_cache::retainedCharge(*snapshot) <= capture_cache::maximumBytes)
+                owner->persistence = std::move(snapshot);
+              // Declined payloads release CPU storage on this worker.
+            } else {
+              owner->capture.finishImageOnlyPublication(physical, device, owner->cancellation.get_token());
+            }
           });
     } else {
       if (frame.job)

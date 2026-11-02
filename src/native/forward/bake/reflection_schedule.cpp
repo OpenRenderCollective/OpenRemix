@@ -130,10 +130,7 @@ namespace remix::forward::bake {
                                     Options{}.bias / owner->source->sceneScale, owner->cancellation.get_token());
             }
             owner->finishStage.store(Job::FinishStage::Reflections, std::memory_order_relaxed);
-            owner->reflections.filter(physical, device, owner->cancellation.get_token());
-            owner->reflections.prepareContent(owner->cancellation.get_token());
-            owner->reflections.retainPayload();
-            owner->reflections.sealPublication();
+            owner->reflections.finishRetainedPublication(physical, device, owner->cancellation.get_token());
             if (!owner->reflectionRecovery)
               owner->finishDiffuseAssets(physical, device, config, owner->reflections.captureView());
           });
