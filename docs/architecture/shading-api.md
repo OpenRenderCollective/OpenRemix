@@ -296,6 +296,15 @@ Standalone reflection capture supplies its own scheduler when diffuse baking is
 disabled. Full provider dependency and finishing orchestration remain separate
 integration work.
 
+`ResourcePlan::captureTransport` explicitly selects the automatic capture and
+shared-admission owner: the baked scene scheduler or the standalone scene
+scheduler. Recording, authored-work admission, automatic image/header fallback
+and reflection scale reporting consume this selection rather than independently
+inferring it from diffuse-provider flags. Turning capture images off does not
+remove their retirement owner; an already-used scheduler still records its
+disabled transition so outstanding workers/frames can retire. This resolved
+selection is not saved separately and introduces no per-draw dispatch or scan.
+
 When supported live diffuse is selected, the resolved lighting plan disables the
 unused diffuse bake controller without changing saved bake preferences. Automatic
 cubemaps then use the standalone reflection scheduler; source selection, descriptor

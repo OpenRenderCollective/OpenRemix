@@ -83,7 +83,7 @@ namespace remix::forward {
     std::shared_ptr<probes::StandaloneCapture> standaloneReflections;
     bool standaloneReflectionsUsed = false;
     probes::CaptureSource reflectionSource() const {
-      if (standaloneReflectionsUsed && !techniquePlan.bakedDiffuse()) return standaloneReflections->source();
+      if (standaloneReflectionsUsed && !techniquePlan.capturesWithBake()) return standaloneReflections->source();
       return baking->reflectionSource();
     }
     probes::SelectionFrames localSelections;
@@ -98,7 +98,7 @@ namespace remix::forward {
       const auto selected = localSelections.active();
       if (selected) return selected->image->descriptors();
       auto automatic = baking->reflectionDescriptor();
-      if (standaloneReflectionsUsed && !techniquePlan.bakedDiffuse()) {
+      if (standaloneReflectionsUsed && !techniquePlan.capturesWithBake()) {
         const auto &standalone = standaloneReflections->source();
         if (standalone.image) automatic = standalone.image->descriptors();
       }

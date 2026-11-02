@@ -7,13 +7,19 @@ namespace remix::forward::techniques {
     bool fragmentGI = false;
     bool waterRayQueries = false;
   };
+  enum class CaptureTransport { BakedScene, StandaloneScene };
+
   // Derived resource/pipeline choices, never independently persisted. Resolve
   // outside draw loops; providers consume this rather than reinterpreting keys.
   struct ResourcePlan {
     Diffuse diffuse = Diffuse::Disabled;
+    // Select the automatic source and admission owner independently of image
+    // availability. Disabled captures still visit their owner to retire old work.
+    CaptureTransport captureTransport = CaptureTransport::StandaloneScene;
     bool rayReflections = false, rayWater = false;
     bool rayScene = false, reflectionResolve = false;
     bool screenReflections = false;
+    bool capturesWithBake() const { return captureTransport == CaptureTransport::BakedScene; }
     bool rayDiffuse() const { return diffuse == Diffuse::RayQueries; }
     bool bakedDiffuse() const { return diffuse == Diffuse::SurfaceAndProbes; }
     bool operator==(const ResourcePlan &) const = default;
@@ -26,6 +32,8 @@ namespace remix::forward::techniques {
         (!options.water || capabilities.waterRayQueries);
     plan.diffuse = liveDiffuse ? Diffuse::RayQueries
         : options.baking.enabled ? Diffuse::SurfaceAndProbes : Diffuse::Disabled;
+    plan.captureTransport = plan.bakedDiffuse() ? CaptureTransport::BakedScene
+                                               : CaptureTransport::StandaloneScene;
     plan.screenReflections = options.ssr;
     plan.rayReflections = options.rtReflections && capabilities.rayQueries;
     plan.rayWater = options.water && plan.rayReflections && capabilities.waterRayQueries;

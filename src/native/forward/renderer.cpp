@@ -28,7 +28,7 @@ namespace remix::forward {
       irradiance.patchCounts = volume->irradiancePatchCounts;
     }
     statistics.reflectionSceneScale = volume ? volume->sceneScale
-        : standaloneReflectionsUsed && !techniquePlan.bakedDiffuse() ? standaloneReflections->sceneScale()
+        : standaloneReflectionsUsed && !techniquePlan.capturesWithBake() ? standaloneReflections->sceneScale()
                                                                               : baking->reflectionSceneScale();
     statistics.authoredReflections = authoredReflections->statistics();
     const auto header = reflectionHeader();
@@ -274,13 +274,14 @@ namespace remix::forward {
     auto *sceneRequest = m_gpu->authoredReflections->requestScene(resources, m_gpu->options.captureConfiguration());
     m_gpu->baking->record(command, resources, lightingPlan.baking,
                          m_gpu->options.lightCutoff, sceneRequest);
-    if (!lightingPlan.baking.enabled || m_gpu->standaloneReflectionsUsed) {
+    const bool capturesWithBake = m_gpu->techniquePlan.capturesWithBake();
+    if (!capturesWithBake || m_gpu->standaloneReflectionsUsed) {
       if (!m_gpu->standaloneReflectionsUsed) {
         m_gpu->standaloneReflectionsUsed = true;
         m_gpu->standaloneReflections->selectFrame(m_gpu->slot);
       }
       auto captureConfig = m_gpu->options.captureConfiguration();
-      captureConfig.enabled = captureConfig.enabled && !lightingPlan.baking.enabled;
+      captureConfig.enabled = captureConfig.enabled && !capturesWithBake;
       m_gpu->standaloneReflections->record(command, resources, captureConfig,
           m_gpu->options.baking.reflectionProbes, m_gpu->options.baking.reflectionDetailTolerance, sceneRequest);
     }
@@ -288,10 +289,10 @@ namespace remix::forward {
     // Publish automatic images independently, but preserve the baked profile's
     // transport priority: authored captures must not add a second work budget
     // while diffuse/style transport is still running.
-    const bool capturesReady = lightingPlan.baking.enabled
+    const bool capturesReady = capturesWithBake
         ? m_gpu->baking->statistics().state == REMIXAPI_BAKE_READY_EXT
         : !m_gpu->standaloneReflections->pending();
-    if (!lightingPlan.baking.enabled) {
+    if (!capturesWithBake) {
       const auto source = resources.bakeScene();
       captures.sceneHash = source && source->ready ? source->contentHash : 0;
     }

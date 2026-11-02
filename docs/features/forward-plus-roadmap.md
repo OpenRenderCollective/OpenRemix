@@ -18,6 +18,8 @@ Implemented and checked:
 - Resolved provider dependencies drive live diffuse/ray scene and screen/ray
   reflection resources. Water and viewmodels share the selected diffuse source;
   live water can share prepared scene descriptors with its own query limits.
+  Capture recording, admission and source fallback share one resolved owner;
+  image disable preserves the scheduler responsible for retiring prior work.
 - Immutable prepared scenes have demand-scoped leases and independent mutable
   consumers. Compatible automatic captures hand inputs to authored captures
   before retirement. Ordinary radiance can explicitly inherit baked light policy;
