@@ -46,9 +46,18 @@ namespace remix::forward::ray {
     if (m_diffuse)
       inputs.diffuse = transport->prepareFragment(slot, options.rtGISamples, options.rtGIBounces,
                                                   options.rtGIDistance);
-    if (m_water)
-      inputs.water = transport->prepareFragment(slot, 1, options.rtReflectionBounces,
-          options.rtReflectionDistance, bake::Transport::FragmentUse::Reflection);
+    if (m_water) {
+      if (inputs.diffuse) {
+        const auto query = transport->fragmentQuery(1, options.rtReflectionBounces, options.rtReflectionDistance);
+        inputs.reflectionDistance = query.distance;
+        inputs.reflectionBounces = query.bounces;
+        // Share immutable inputs and the scene set; water supplies its own limits.
+        inputs.water = inputs.diffuse;
+      } else {
+        inputs.water = transport->prepareFragment(slot, 1, options.rtReflectionBounces,
+            options.rtReflectionDistance, bake::Transport::FragmentUse::Reflection);
+      }
+    }
     return inputs;
   }
 }

@@ -502,12 +502,19 @@ namespace remix::forward::bake {
     frame.counts[1] = uint32_t(lights.size());
     slot.lighting = frame;
   }
+  Transport::FragmentQuery Transport::fragmentQuery(uint32_t samples, uint32_t bounces, float distance) const {
+    if (!m_gpu || !m_gpu->prepared || samples < 1 || samples > 64 || bounces < 1 || bounces > 8 ||
+        !std::isfinite(distance) || distance <= m_gpu->options.bias * 2)
+      throw std::invalid_argument("Invalid fragment transport configuration");
+    const float scaled = distance / m_gpu->world->source->sceneScale;
+    if (!std::isfinite(scaled))
+      throw std::invalid_argument("Fragment transport range exceeds scene units");
+    return {scaled, samples, bounces};
+  }
   VkDescriptorSet Transport::prepareFragment(uint32_t index, uint32_t samples, uint32_t bounces,
                                              float distance, FragmentUse use) {
+    const auto query = fragmentQuery(samples, bounces, distance);
     auto &g = *m_gpu;
-    if (!g.prepared || samples < 1 || samples > 64 || bounces < 1 || bounces > 8 ||
-        !std::isfinite(distance) || distance <= g.options.bias * 2)
-      throw std::invalid_argument("Invalid fragment transport configuration");
     auto &slot = g.slots.at(index);
     auto &fragment = slot.fragments.at(size_t(use));
     if (!fragment.constants) {
@@ -520,11 +527,11 @@ namespace remix::forward::bake {
     }
     auto frame = slot.lighting.value_or(
         lightingFrame(g.world->source->sun, g.world->source->dome, distance, g.options.bias, g.world->source->sceneScale));
-    frame.trace[0] = distance / g.world->source->sceneScale;
+    frame.trace[0] = query.distance;
     frame.trace[2] = decalReachMetres / g.world->source->sceneScale;
     frame.trace[3] = g.world->hasModulatingDecals ? 1 : 0;
-    frame.counts[2] = samples;
-    frame.counts[3] = bounces;
+    frame.counts[2] = query.samples;
+    frame.counts[3] = query.bounces;
     if (!slot.lighting)
       frame.counts[1] = uint32_t(g.world->source->lights.size());
     frame.control = {g.world->domeLayer, 0, 1, uint32_t(g.world->hasDielectrics) |

@@ -39,7 +39,8 @@ int main() {
             const techniques::Capabilities capabilities{bool(support & 1), bool(support & 2), bool(support & 4)};
             const auto resources = techniques::resolveResources(options, capabilities);
             require(options == before, "Resolving device dependencies preserves requested techniques and quality");
-            require(resources.rayDiffuse() == (options.rtGI && capabilities.rayQueries && capabilities.fragmentGI) &&
+            require(resources.rayDiffuse() == (options.rtGI && capabilities.rayQueries && capabilities.fragmentGI &&
+                        (!options.water || capabilities.waterRayQueries)) &&
                         resources.rayReflections == (options.rtReflections && capabilities.rayQueries),
                     "Supported requested providers activate, while unsupported ray effects remain unallocated");
             require(!resources.rayScene || capabilities.rayQueries,
@@ -64,6 +65,15 @@ int main() {
           require(diffuse != techniques::Diffuse::RayQueries || !live.bakedReceivers,
                   "Live diffuse ownership cannot also consume aggregate baked direct");
         }
+    auto opaqueLive = defaults;
+    opaqueLive.rtGI = true;
+    opaqueLive.water = false;
+    const techniques::Capabilities opaqueOnly{true, true, false};
+    require(techniques::resolveResources(opaqueLive, opaqueOnly).rayDiffuse(),
+            "Opaque live diffuse does not require an inactive water pass's descriptor capability");
+    opaqueLive.water = true;
+    require(techniques::resolveResources(opaqueLive, opaqueOnly).bakedDiffuse(),
+            "Unsupported enabled live-water dependencies retain the configured baked fallback");
     auto rayOnly = defaults;
     rayOnly.ssr = false;
     rayOnly.rtReflections = true;

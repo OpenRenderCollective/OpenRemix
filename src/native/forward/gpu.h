@@ -136,8 +136,7 @@ namespace remix::forward {
       uint32_t poolCapacity = 0;
       VkDescriptorSet scene = VK_NULL_HANDLE, composite = VK_NULL_HANDLE;
       VkDescriptorSet viewModelScene = VK_NULL_HANDLE;
-      VkDescriptorSet giScene = VK_NULL_HANDLE;
-      VkDescriptorSet waterRayScene = VK_NULL_HANDLE;
+      ray::Provider::FrameInputs rayInputs;
       std::unique_ptr<Buffer> constants, lights, draws, clusters, skyConstants;
       std::shared_ptr<const probe_batch::Field> probeVisibility;
       std::unique_ptr<depth_batch::Batch> depthBatch;

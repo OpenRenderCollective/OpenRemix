@@ -39,7 +39,7 @@ BACKENDS = {
     'style_test': ('forward::test::style_input', 'vulkan1.1', ('query',)),
     'probe_test': ('forward::test::probe_input', 'vulkan1.1', ('reflection',)),
     'mask_test': ('forward::test::mask_input', 'vulkan1.1', ('decode',)),
-    'water_ray': ('forward::water::hardware', 'vulkan1.2', ('frag',)),
+    'water_ray': ('forward::water::hardware', 'vulkan1.2', ('frag', 'liveDiffuse', 'liveDiffuseRay')),
     'water_test': ('forward::test::water_input', 'vulkan1.1', ('vert', 'frag', 'query', 'depth')),
     'water': ('forward::water', 'vulkan1.1', ('snapshot', 'snapshotSingle', 'vert', 'frag', 'overlayVert', 'overlayFrag', 'compositeFrag', 'compositeSingle')),
     'live_gi': ('forward::ray::gi', 'vulkan1.2', ('frag', 'guides', 'viewModel', 'viewModelEarly')),
@@ -162,7 +162,9 @@ def defines_for(backend, stage, stages):
         source = directory / 'decode.comp'
     if backend == 'water_ray':
         source = ROOT / 'src/native/forward/shaders/forward.frag'
-        defines = ['-DWATER_SURFACE=1', '-DWATER_RAY=1']
+        defines = ['-DWATER_SURFACE=1']
+        if stage in ('frag', 'liveDiffuseRay'): defines += ['-DWATER_RAY=1']
+        if stage != 'frag': defines += ['-DLIVE_GI=1', '-DRAY_SCENE_SET=3']
     if backend == 'live_gi':
         source = ROOT / 'src/native/forward/shaders/forward.frag'
         defines = ['-DLIVE_GI=1'] + (['-DREFLECTION_GUIDES=1'] if stage == 'guides' else [])

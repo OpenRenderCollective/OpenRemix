@@ -309,12 +309,27 @@ API; material shaders should request lighting rather than manage ray-scene sets.
 Callers own validation and sampling policy. Bias, materials, light identities and
 other shared scene data retain the existing transport contract.
 
-Water uses the common diffuse query but is still compiled with its baked source.
-Selecting live diffuse does not yet route that source into water body lighting.
-The next water integration must bind one shared scene while supplying distinct
-live-diffuse and reflection limits; the reflection query must not overwrite the
-GI range or bounce count. Add a water lighting regression with different query
-ranges, including captured scene units, before treating this pass as interchangeable.
+Water selects the common live diffuse source in dedicated shader variants when
+supported. Both water queries use the world's GI scene descriptor at set 3;
+reflection-only range/bounce limits occupy the extra eight bytes of the live-water
+push constant range. Ordinary water layouts/shaders retain their eight-byte draw
+range. Rebind water set 2 when entering the live layout because push-constant
+ranges participate in Vulkan layout compatibility. Pass adapters keep refraction,
+optical composition, coverage and output storage outside the lighting source.
+
+`Transport::fragmentQuery` validates sampling/range policy and converts metres using
+the active immutable snapshot's scale without allocating descriptors or buffers.
+`prepareFragment` uses that same validation. Live water obtains its independent
+reflection limits from this query, then reuses the GI descriptor instead of making
+another reflection constants buffer/set. Other reflection-only users retain their
+existing prepared context. The enabled water pass requires the existing four-set
+water-ray capability; unavailable dependencies resolve coherently to the saved
+baked fallback. Disabling water does not impose that capability on opaque GI.
+
+The live-GI fixture checks colored water body lighting at 1/2/4x MSAA, with reflection
+rays on/off and different configured diffuse/reflection ranges. Hardware transport
+fixtures check query conversion across three host-unit scales and no allocation
+on query validation. Baked/mixed-sun ownership for water remains a separate task.
 
 ## Remaining API work
 
@@ -322,7 +337,7 @@ ranges, including captured scene units, before treating this pass as interchange
    future unified GI providers. Keep source-index and receiver-ordinal query
    semantics distinct; existing mixed/range/highlight composition is shared.
 2. Connect reflection radiance to interchangeable screen/ray and environment
-   providers; qualify water baked/mixed-sun ownership and live diffuse selection.
+   providers; qualify water baked/mixed-sun ownership.
 3. Separate direct ownership and indirect transport in the composition contract.
    The current aggregate-bake flag and normalization bookkeeping still couple
    these concerns. Define units and provenance before exposing LightingTerms.

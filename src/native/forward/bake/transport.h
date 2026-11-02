@@ -189,6 +189,12 @@ namespace remix::forward::bake {
     // Visibility-only compact batches; no directional coefficient expansion.
     void readScalarVisibility(uint32_t slot, std::span<float> results) const;
     bool timingSupported() const;
+    struct FragmentQuery {
+      float distance; // scene units
+      uint32_t samples, bounces;
+    };
+    // Validate query policy and units independently of descriptor allocation.
+    FragmentQuery fragmentQuery(uint32_t samples, uint32_t bounces, float distanceMetres) const;
     std::optional<double> elapsed(uint32_t slot) const; // owning slot fence completed
     void releaseBuildInputs();                          // after the preparation fence
     struct Memory {

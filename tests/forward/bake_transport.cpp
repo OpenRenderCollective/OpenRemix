@@ -439,6 +439,19 @@ namespace {
         ticket->check();
       };
       require(transport.canShare(*scene, options), "Prepared transport rejected its exact request");
+      auto rejectQuery = [&](uint32_t samples, uint32_t bounces, float distance) {
+        const auto bytes = transport.memoryBytes();
+        bool rejected = false;
+        try { (void)transport.fragmentQuery(samples, bounces, distance); }
+        catch (const std::invalid_argument &) { rejected = true; }
+        require(rejected && transport.memoryBytes() == bytes, "Invalid fragment policy allocated or passed admission");
+      };
+      rejectQuery(0, 1, 10);
+      rejectQuery(1, 0, 10);
+      rejectQuery(1, 9, 10);
+      rejectQuery(1, 1, 0);
+      rejectQuery(1, 1, std::numeric_limits<float>::infinity());
+
       auto changedScene = *scene;
       require(!transport.canShare(changedScene, options), "Shared transport accepted a different snapshot with the same hash");
       auto mismatch = [&](auto change) {
@@ -1414,6 +1427,12 @@ namespace {
         fixture.begin();
         transport.recordPrepare(fixture.command, world.resources);
         fixture.finish();
+        const auto memoryBeforeQuery = transport.memoryBytes();
+        const auto query = transport.fragmentQuery(4, 3, 10);
+        require(std::abs(query.distance - 10 * units) < 1e-5f * units &&
+                    query.samples == 4 && query.bounces == 3 && transport.memoryBytes() == memoryBeforeQuery,
+                "Independent fragment limits preserve physical range across host units without allocating descriptors");
+
         std::array<bake::VisibilityPoint, 9> points{};
         for (uint32_t i = 0; i < points.size(); ++i)
           points[i].light = i;

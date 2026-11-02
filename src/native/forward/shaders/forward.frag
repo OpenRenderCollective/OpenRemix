@@ -48,6 +48,10 @@ layout(location = 8) flat in vec4 surfaceBounds;
 layout(push_constant) uniform Draw {
   uint index;
   uint cascade;
+#if defined(WATER_SURFACE) && defined(LIVE_GI)
+  float reflectionDistance;
+  uint reflectionBounces;
+#endif
 }
 draw;
 #ifndef SHADOW_PASS

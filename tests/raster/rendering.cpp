@@ -601,7 +601,7 @@ namespace {
         options.rtGIBounces = 1;
         options.rtGIDistance = 10;
         options.rtReflections = reflections;
-        options.water = reflections;
+        options.water = true; // Live diffuse water must work with reflection rays both on and off.
         options.rtReflectionDistance = .1f;
         options.rtReflectionBounces = 3;
         options.ssr = false;
@@ -621,7 +621,7 @@ namespace {
         remixapi_MaterialInfoTranslucentEXT liquidOptics{};
         liquidOptics.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_TRANSLUCENT_EXT;
         liquidOptics.refractiveIndex = 1.333f;
-        liquidOptics.transmittanceColor = {1, 1, 1};
+        liquidOptics.transmittanceColor = {.1f, .1f, .1f};
         liquidOptics.transmittanceMeasurementDistance = 1;
         remixapi_MaterialInfo liquidInfo{};
         liquidInfo.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
@@ -705,7 +705,7 @@ namespace {
         identity.classification = REMIXAPI_INSTANCE_DYNAMIC_EXT;
         identity.rasterVisible = 0;
         panel.pNext = &identity;
-        auto render = [&](int source = 0, bool direct = false, bool viewModel = false) {
+        auto render = [&](int source = 0, bool direct = false, bool viewModel = false, bool waterBody = false) {
           camera(r);
           if (viewModel) {
             // Viewmodel conversion intentionally requires perspective cameras.
@@ -730,10 +730,10 @@ namespace {
             r.drawInstance(weapon);
           }
           r.drawRetained(nullptr);
-          if (reflections) {
+          if (reflections || waterBody) {
             // Hidden by the receiver, but prepares the water fragment context.
             // Its .1 m reflection range must not overwrite the 10 m GI range.
-            auto liquid = instance(liquidMesh, .2f);
+            auto liquid = instance(liquidMesh, waterBody ? -.2f : .2f);
             liquid.transform.matrix[0][0] = liquid.transform.matrix[1][1] = .4f;
             r.drawInstance(liquid);
           }
@@ -798,6 +798,10 @@ namespace {
           options.baking.reflectionResolution = oldResolution;
           target.enableForward(options, true);
         }
+        image = render(0, false, false, true);
+        require(target.forward->statistics().drawCalls.water > 0 &&
+                    image[at] < 3 && image[at + 1] > 100 && image[at + 2] < 3,
+                "Water body consumes live diffuse instead of unbaked white ambient fallback");
         image = render(0, false, true);
         std::printf("Live viewmodel RGB %u %u %u draws %u\n", unsigned(image[at]), unsigned(image[at + 1]), unsigned(image[at + 2]), unsigned(target.forward->statistics().drawCalls.viewModelColor));
         require(target.forward->statistics().drawCalls.viewModelColor > 0 &&

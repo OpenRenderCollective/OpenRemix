@@ -66,7 +66,7 @@ namespace remix::forward {
     gpu::GpuScope targetTime(command, "Forward+ viewmodel target", extent);
     viewModelTarget->record(command, [&] {
       auto drawModels = [&](bool depthOnly) {
-        const bool gi = !depthOnly && bool(frame.giScene);
+        const bool gi = !depthOnly && bool(frame.rayInputs.diffuse);
         const auto drawLayout = gi ? giLayout : layout;
         const auto colorPipeline = gi ? giViewModelPipeline : viewModelPipeline;
         const auto earlyPipeline = gi ? giViewModelEarlyPipeline : viewModelEarlyPipeline;
@@ -74,7 +74,7 @@ namespace remix::forward {
         vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 0, 1,
                                 &frame.viewModelScene, 0, nullptr);
         if (gi)
-          vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 2, 1, &frame.giScene, 0, nullptr);
+          vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 2, 1, &frame.rayInputs.diffuse, 0, nullptr);
         for (const auto &draw : frame.viewModelCommands) {
           if (!draw.source.rasterVisible || !intersectsClip(draw.worldBounds, frame.data.camera)) continue;
           const auto pipeline = depthOnly ? viewModelDepthPipeline

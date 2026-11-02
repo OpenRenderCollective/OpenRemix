@@ -194,7 +194,7 @@ namespace remix::forward {
       next->waterPass->initialize(physical, device, extent, next->samples, next->sceneLayout,
                                   next->materialLayout,
                                   {next->color->view, next->depth->view,
-                                   next->resolved ? next->resolved->view : VK_NULL_HANDLE}, next->techniquePlan.rayWater);
+                                   next->resolved ? next->resolved->view : VK_NULL_HANDLE}, next->techniquePlan.rayWater, next->techniquePlan.rayDiffuse());
     }
     next->baking =
         baking ? std::move(baking)
@@ -304,8 +304,7 @@ namespace remix::forward {
       rayInputs = m_gpu->rayLighting.prepare(command, resources, m_gpu->options,
                                               animationSeconds, m_gpu->slot);
     auto &frame = m_gpu->frames[m_gpu->slot];
-    frame.giScene = rayInputs.diffuse;
-    frame.waterRayScene = rayInputs.water;
+    frame.rayInputs = rayInputs;
     step(cpu.liveScene);
     gpu::GpuScope uploadTime(command, "Forward+ frame uploads");
     m_gpu->prepareFrame(command, resources, animationSeconds);

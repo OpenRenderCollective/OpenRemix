@@ -17,7 +17,7 @@ namespace remix::forward {
   } // namespace
   void Renderer::Gpu::drawGeometry(VkCommandBuffer command, bool terrain, bool depthOnly) {
     const auto &frame = frames[slot];
-    const bool gi = !depthOnly && bool(frame.giScene);
+    const bool gi = !depthOnly && bool(frame.rayInputs.diffuse);
     if (depthOnly && frame.depthBatch && frame.depthBatch->indexCount()) {
       vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, depthBatchPipeline);
       vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &frame.scene, 0, nullptr);
@@ -63,7 +63,7 @@ namespace remix::forward {
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 0, 1, &frame.scene, 0,
                             nullptr);
     if (gi)
-      vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 2, 1, &frame.giScene, 0,
+      vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 2, 1, &frame.rayInputs.diffuse, 0,
                               nullptr);
     // State persists between consecutive draws. Keep this cache local to the
     // pass so other cameras/passes cannot leave stale bindings behind.
@@ -315,7 +315,8 @@ namespace remix::forward {
             vkCmdDrawIndexed(command, draw.count, 1, draw.source.firstIndex, draw.source.vertexOffset, 0);
             ++statistics.drawCalls.water;
           }
-        }, frame.waterRayScene);
+        }, {frame.rayInputs.water, frame.rayInputs.diffuse,
+            frame.rayInputs.reflectionDistance, frame.rayInputs.reflectionBounces});
     frame.waterComposed = true;
   }
   void Renderer::background(VkCommandBuffer command) {

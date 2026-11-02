@@ -19,6 +19,8 @@ namespace remix::forward::ray {
     struct FrameInputs {
       VkDescriptorSet diffuse = VK_NULL_HANDLE;
       VkDescriptorSet water = VK_NULL_HANDLE;
+      float reflectionDistance = 0; // scene units, from the active transport snapshot
+      uint32_t reflectionBounces = 0;
     };
     FrameInputs prepare(VkCommandBuffer command, RasterRenderer &resources,
                         const Options &options, double animationSeconds, uint32_t slot);

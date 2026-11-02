@@ -1,3 +1,10 @@
+## 2026-11-03: live diffuse water integration
+
+- Water body lighting now selects the live diffuse provider with dedicated variants, including simultaneous hardware reflections. Both effects share the world GI scene descriptor; reflection query limits remain independent.
+- No extra scene or per-frame reflection constants buffer/set is needed in this combination. Query validation/conversion is shared with ordinary fragment preparation and uses the active snapshot's host units.
+- Thirty-seven pre-existing Forward+/water/water-ray shader variants are byte-identical. Colored water MSAA/ray combinations, existing water HDR/refraction/exposure/reflection suites, capability fallback, query validation and host-unit checks pass.
+- Water mixed-sun ownership, broader provider lifecycle separation and matched gameplay performance acceptance remain open. Playable deployment unchanged.
+
 ## 2026-11-03: provider query limits and water follow-up
 
 - Low-level radiance traversal now takes explicit range/bounce limits; existing consumers retain their settings without an added forwarding layer.

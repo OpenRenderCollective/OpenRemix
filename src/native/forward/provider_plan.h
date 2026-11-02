@@ -19,7 +19,10 @@ namespace remix::forward::techniques {
   };
   inline ResourcePlan resolveResources(const Options &options, Capabilities capabilities) {
     ResourcePlan plan;
-    const bool liveDiffuse = options.rtGI && capabilities.rayQueries && capabilities.fragmentGI;
+    // Water queries need the same four-set fragment capability as its ray pass.
+    // Fall back coherently rather than leaving one enabled pass on ambient only.
+    const bool liveDiffuse = options.rtGI && capabilities.rayQueries && capabilities.fragmentGI &&
+        (!options.water || capabilities.waterRayQueries);
     plan.diffuse = liveDiffuse ? Diffuse::RayQueries
         : options.baking.enabled ? Diffuse::SurfaceAndProbes : Diffuse::Disabled;
     plan.rayReflections = options.rtReflections && capabilities.rayQueries;

@@ -30,7 +30,7 @@ namespace remix::forward::water {
     static bool supportsRayReflections(VkPhysicalDevice physical);
     void initialize(VkPhysicalDevice physical, VkDevice device, VkExtent2D extent,
                     VkSampleCountFlagBits samples, VkDescriptorSetLayout scene,
-                    VkDescriptorSetLayout material, Targets targets, bool rayReflections = false);
+                    VkDescriptorSetLayout material, Targets targets, bool rayReflections = false, bool liveDiffuse = false);
     // The selected slot's fence has completed. All provider inputs and draw
     // owners must remain alive through the next completion of that fence.
     void prepare(uint32_t slot, const Parameters &parameters, std::span<const MaterialData> materials,
@@ -39,9 +39,14 @@ namespace remix::forward::water {
     // All commands remain on the caller's ordered queue. draw receives the
     // water pipeline/layout with set 2 already bound; it binds scene/material
     // sets and submits the retained water geometry.
+    struct RayInputs {
+      VkDescriptorSet reflections = VK_NULL_HANDLE, diffuse = VK_NULL_HANDLE;
+      float reflectionDistance = 0;
+      uint32_t reflectionBounces = 0;
+    };
     void record(VkCommandBuffer command, uint32_t slot, Snapshot::Inputs inputs,
                 const std::function<void(VkPipeline, VkPipelineLayout)> &draw,
-                VkDescriptorSet rayScene = VK_NULL_HANDLE);
+                RayInputs rays);
     uint64_t targetBytes() const;
     uint64_t bufferBytes() const;
 
