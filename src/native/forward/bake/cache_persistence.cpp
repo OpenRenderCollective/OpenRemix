@@ -22,7 +22,8 @@ View view(const Snapshot &s) {
           s.directionalBudget,
           s.localReflections.get(),
           s.localReflectionsOnly,
-          s.reflectionKey};
+          s.reflectionKey,
+          bool(s.reflectionOwner) && s.reflectionKey != 0};
 }
 template <typename T> uint64_t storage(const std::vector<T> &v) {
   return uint64_t(v.capacity()) * sizeof(T);

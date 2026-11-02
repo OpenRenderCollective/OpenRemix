@@ -359,7 +359,7 @@ namespace remix::forward::bake::cache {
       require(source && source->ready);
       Snapshot result;
       const auto flags = input.pod<uint32_t>();
-      require(flags <= 255 && (!(flags & 128) || (flags & 64)) &&
+      require(flags <= 511 && (!(flags & 128) || (flags & 64)) &&
               (!(flags & 64) || (flags & 1)) && (!(flags & 32) || (flags & 16)) &&
               (!(flags & 8) || config.styledIndirect) && (!(flags & 1) || config.directDiffuse) &&
               (!(flags & 2) || source->sun.isDistant));
@@ -384,9 +384,17 @@ namespace remix::forward::bake::cache {
           require(std::any_of(first, last, [&](const auto &id) { return id.second == entry.light; }));
         }
       }
-      probes::cache_codec::read(input, result.captures, result.specular,
-          {config.reflectionProbes, config.reflectionResolution, device.imageSize,
-           device.imageLayers, device.storageRange});
+      const probes::cache_codec::Limits reflectionLimits{config.reflectionProbes,
+          config.reflectionResolution, device.imageSize, device.imageLayers, device.storageRange};
+      if (flags & 256) {
+        auto reflection = probes::capture_cache::readShared(file.parent_path(), input.pod<uint64_t>(),
+                                                            reflectionLimits, cancelled);
+        require(reflection.has_value());
+        result.captures = std::move(reflection->captures);
+        result.specular = std::move(reflection->data);
+      } else {
+        probes::cache_codec::read(input, result.captures, result.specular, reflectionLimits);
+      }
       require(result.surfaceSamples || std::any_of(result.grid.probes.begin(), result.grid.probes.end(),
                                                    [](const auto &p) { return p.statistics[3] > .5f; }));
       const auto &layout = result.layout;
@@ -479,6 +487,8 @@ namespace remix::forward::bake::cache {
       temporary += ".tmp-" + std::to_string((uint64_t(random()) << 32) ^ random());
       if (std::filesystem::exists(temporary))
         return false;
+      const auto blob = view.shareReflectionPayload && view.reflectionKey
+          ? probes::capture_cache::storeShared(file.parent_path(), view.captures, view.specular, cancelled) : 0;
       detail::Writer output(temporary, identity, cancelled);
       const bool hasPolicy = !view.mixed.lights.directLighting.lights.empty();
       if (hasPolicy) {
@@ -488,7 +498,7 @@ namespace remix::forward::bake::cache {
       output.pod(uint32_t(view.directDiffuse) | uint32_t(view.sun) << 1 | uint32_t(hasPolicy) << 2 |
                  uint32_t(!view.styles.empty()) << 3 | uint32_t(view.localProbes != nullptr) << 4 |
                  uint32_t(view.localProbes && view.localProbes->directional()) << 5 |
-                 uint32_t(view.directionalAttempted) << 6 | uint32_t(view.directionalAttempted) << 7);
+                 uint32_t(view.directionalAttempted) << 6 | uint32_t(view.directionalAttempted) << 7 | uint32_t(blob != 0) << 8);
       output.pod(view.surfaceSamples);
       output.pod(view.grid.header);
       output.array(view.grid.probes);
@@ -523,9 +533,14 @@ namespace remix::forward::bake::cache {
       output.array(view.mixed.occlusion.words());
       output.array(view.mixed.masks.entries());
       output.array(view.mixed.masks.bytes());
-      if (view.reflectionKey) output.beginSection();
-      probes::cache_codec::write(output, view.captures, view.specular);
-      const auto reflectionSection = view.reflectionKey ? output.endSection() : cache_io::Section{};
+      cache_io::Section reflectionSection;
+      if (blob) {
+        output.pod(blob);
+      } else {
+        if (view.reflectionKey) output.beginSection();
+        probes::cache_codec::write(output, view.captures, view.specular);
+        if (view.reflectionKey) reflectionSection = output.endSection();
+      }
       output.array(view.pixels);
       if (!view.styles.empty()) output.array(view.styles);
       if (view.localProbes) {
@@ -540,7 +555,9 @@ namespace remix::forward::bake::cache {
       output.finish();
       detail::check(cancelled);
       detail::replaceFile(temporary, file);
-      if (view.reflectionKey)
+      if (view.reflectionKey && blob)
+        (void)probes::cache_index::writeShared(file.parent_path(), view.reflectionKey, blob, cancelled);
+      else if (view.reflectionKey)
         (void)probes::cache_index::write(file.parent_path(), view.reflectionKey,
             {identity, reflectionSection}, cancelled);
       return true;

@@ -241,7 +241,7 @@ test('Forward+ adaptive bake work and lighting identity', forward_budget_test)
 forward_cache_test = executable('remix-forward-cache-test', bake_shaders, 'cache.cpp',
   '../../src/native/forward/bake/probe_depth.cpp',
   '../../src/native/forward/bake/sparse_sh.cpp', '../../src/native/forward/bake/styles.cpp',
-  '../../src/native/forward/bake/cache.cpp', '../../src/native/forward/probes/cache_codec.cpp', '../../src/native/forward/bake/grid_directory.cpp', '../../src/native/forward/bake/probe_visibility.cpp', '../../src/native/forward/bake/probe_visibility_gpu.cpp', '../../src/native/forward/bake/policy.cpp', '../../src/native/forward/probes/data.cpp',
+  '../../src/native/forward/bake/cache.cpp', '../../src/native/forward/probes/cache_codec.cpp', '../../src/native/forward/probes/capture_cache.cpp', '../../src/native/forward/bake/grid_directory.cpp', '../../src/native/forward/bake/probe_visibility.cpp', '../../src/native/forward/bake/probe_visibility_gpu.cpp', '../../src/native/forward/bake/policy.cpp', '../../src/native/forward/probes/data.cpp',
   '../../src/native/forward/lightmap/data.cpp', '../../src/native/forward/mixed/data.cpp',
   '../../src/native/forward/mixed/occlusion.cpp', '../../src/native/forward/mixed/masks.cpp', '../../src/native/forward/mixed/mask_codec.cpp', '../../src/native/forward/mixed/mask_palette.cpp',
   '../../src/native/forward/lighting.cpp',

@@ -54,12 +54,14 @@ int main() {
     auto diffuse = std::make_shared<cache::Snapshot>();
     const auto base = cache::Persistence::retainedCharge(*diffuse);
     diffuse->reflectionOwner = reflection;
+    diffuse->reflectionKey = 17;
     require(cache::Persistence::retainedCharge(*diffuse) >= base + sizeof(*reflection) +
                 reflection->captures[0].radiance.capacity() * sizeof(remix::forward::Vec4),
             "Shared reflection storage bypassed persistence memory admission");
     cache::Persistence snapshotWriter(cache::Persistence::retainedCharge(*diffuse),
         [&](const auto &, uint64_t, const cache::View &data) {
-          require(data.captures[0].radiance.data() == raw && data.specular.texels.size() == 64,
+          require(data.captures[0].radiance.data() == raw && data.specular.texels.size() == 64 &&
+                      data.shareReflectionPayload && data.reflectionKey == 17,
                   "Persistence copied or ignored the independent reflection owner");
           return true;
         });

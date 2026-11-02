@@ -51,7 +51,8 @@ namespace remix::forward::bake::cache {
     uint64_t directionalBudget = 0; // zero on write selects the current layout allowance
     const local_cache::Snapshot *localReflections = nullptr;
     bool localReflectionsOnly = false;
-    uint64_t reflectionKey = 0; // optional independent capture index; no second payload
+    uint64_t reflectionKey = 0; // optional independent capture index
+    bool shareReflectionPayload = false; // legacy inline writes remain available
   };
   struct Snapshot {
     void takeGrid(Grid &source);

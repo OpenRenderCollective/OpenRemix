@@ -180,6 +180,58 @@ int main(int argc, char **argv) {
     };
     require(bytes(file) == bytes(ownedFile), "Shared reflection ownership changed legacy cache wire bytes");
   }
+  {
+    namespace storage = f::probes::capture_cache;
+    namespace index = f::probes::cache_index;
+    const auto directory = root / "blob-references";
+    const auto first = directory / "first.bake", second = directory / "second.bake";
+    bc::View view{data.grid, data.layout, data.mixed, data.captures, data.specular, data.pixels,
+                  data.surfaceSamples, data.directDiffuse, data.sun};
+    view.reflectionKey = 12345;
+    view.shareReflectionPayload = true;
+    auto otherLayout = data.layout;
+    otherLayout.luxelMetres += .25f;
+    bc::View otherView{data.grid, otherLayout, data.mixed, data.captures, data.specular, data.pixels,
+                       data.surfaceSamples, data.directDiffuse, data.sun};
+    otherView.reflectionKey = view.reflectionKey;
+    otherView.shareReflectionPayload = true;
+    require(bc::write(first, identity, view) && bc::write(second, identity + 2, otherView),
+            "Referenced cache write failed");
+    size_t blobs = 0;
+    std::filesystem::path blob;
+    for (const auto &entry : std::filesystem::directory_iterator(directory / "reflections" / "shared")) {
+      ++blobs; blob = entry.path();
+    }
+    require(blobs == 1 && std::filesystem::file_size(first) < std::filesystem::file_size(file),
+            "Diffuse containers duplicated reflection payload");
+    const f::probes::cache_codec::Limits limits{config.reflectionProbes, config.reflectionResolution,
+        device.imageSize, device.imageLayers, device.storageRange};
+    require(index::read(directory, view.reflectionKey, limits).has_value(), "Shared index lookup failed");
+    std::filesystem::remove(index::path(directory, view.reflectionKey));
+    auto referenced = bc::read(first, identity, source, config, device);
+    require(referenced && referenced->pixels == data.pixels &&
+                referenced->specular.texels == data.specular.texels &&
+                bc::read(second, identity + 2, source, config, device).has_value(),
+            "Container depended on mutable index or lost lighting");
+    std::filesystem::remove(blob);
+    require(!bc::read(first, identity, source, config, device), "Missing blob was accepted");
+    require(bc::write(first, identity, view), "Missing blob could not be recreated");
+    {
+      std::fstream corrupt(blob, std::ios::binary | std::ios::in | std::ios::out);
+      corrupt.seekp(sizeof(f::cache_io::Header)); char value = 99; corrupt.write(&value, 1);
+    }
+    require(!bc::read(first, identity, source, config, device), "Corrupt blob was accepted");
+    auto otherRestored = bc::read(second, identity + 2, source, config, device);
+    require(!otherRestored, "Other diffuse container accepted corrupt shared object");
+    const auto fallback = root / "blob-fallback";
+    std::filesystem::create_directories(fallback / "reflections");
+    { std::ofstream obstruction(fallback / "reflections" / "shared"); obstruction << "occupied"; }
+    const auto fallbackFile = index::path(fallback, identity, ".bake");
+    require(bc::write(fallbackFile, identity, view) &&
+                bc::read(fallbackFile, identity, source, config, device).has_value() &&
+                index::read(fallback, view.reflectionKey, limits).has_value(),
+            "Unavailable shared store did not fall back to inline payload/index");
+  }
   auto restored = load();
   require(restored && restored->pixels == data.pixels &&
               f::probes::serialize(restored->specular) == f::probes::serialize(data.specular) &&

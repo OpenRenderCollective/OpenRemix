@@ -1,3 +1,9 @@
+## Default cache reflection references - 2026-11-02
+
+- Default retained-owner snapshots use content-addressed reflection blobs, shared across diffuse layouts. Combined caches contain a numeric blob key; independent indexes accept legacy section locations or new blob keys. Full reads do not depend on the mutable index.
+- Legacy inline caches remain readable. Failed blob persistence falls back to inline format on the existing background writer; missing/corrupt references are ordinary misses. Old binaries cannot read the new containers. Existing caches are not rewritten or garbage-collected.
+- Remaining: default planning/scheduler separation, partial diffuse recovery, shared transport adoption/dependency work, garbage collection policy and full CPU/GPU/map performance qualification. Playable unchanged.
+
 ## Reflection storage module - 2026-11-02
 
 - Renamed standalone cache ownership to capture_cache, with explicit standalone planning keys and reusable content-addressed payload storage. Shared blobs reuse the existing codec and support checksum-verified reuse, corruption repair, cancellation and bounded files.

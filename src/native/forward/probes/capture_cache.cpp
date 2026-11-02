@@ -123,6 +123,8 @@ uint64_t storeShared(const std::filesystem::path &directory,
     const auto file = sharedPath(directory, identity);
     try {
       // Reader verifies the entire checksum without allocating decoded arrays.
+      if (std::filesystem::file_size(file) > maximumBytes)
+        throw std::length_error("Shared reflection object exceeds file budget");
       cache_io::Reader existing(file, identity, cancelled);
       const auto actual = existing.verifiedFingerprint();
       // A valid colliding object must never be replaced by different content.
