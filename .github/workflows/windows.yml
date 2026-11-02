@@ -1,0 +1,50 @@
+# The Windows x64 runtime as Garry's Mod loads it (bin/win64/openremix):
+# cross-built on Linux with clang-cl and the MSVC CRT/SDK from xwin
+# (scripts/linux/build-windows-remix.py), with OpenUSD, DLSS, FSR and XeSS.
+# Arch Linux for the same rolling toolchain (Clang, glslang, SPIR-V Tools) the
+# project is developed with: the build treats warnings as errors.
+name: Windows runtime
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    container: archlinux:latest
+    steps:
+      - name: Install build tools
+        run: |
+          pacman -Syu --noconfirm --needed git clang lld llvm meson ninja cmake pkgconf patch \
+            glslang spirv-tools python
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      # The CRT/SDK, SDL3, oneTBB and OpenUSD builds take most of an hour and
+      # change only with the script's pins.
+      - name: Restore dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            _work/deps/xwin/root
+            _work/deps/xwin/prefix
+            _work/deps/xwin/tbb
+            _work/deps/xwin/usd
+            _work/deps/xwin/json
+          key: windows-deps-${{ hashFiles('scripts/linux/build-windows-remix.py', 'scripts/linux/openusd-25.11-clang-cl.patch', 'scripts/common/dependencies.lock.json') }}
+
+      # --accept-msvc-license: xwin downloads Microsoft's CRT and Windows SDK,
+      # whose license this accepts on the repository's behalf.
+      - name: Build
+        run: python3 scripts/linux/build-windows-remix.py --accept-msvc-license --jobs "$(nproc)"
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: openremix-windows-x64
+          path: _work/dist/windows/openremix
