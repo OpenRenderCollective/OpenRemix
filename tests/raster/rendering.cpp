@@ -5243,8 +5243,10 @@ namespace {
       const auto liquid = quad(r, 0xe103, measured);
       const auto foreground = quad(r, 0xe104, material(r, 0xe105, 0, 0, 1));
       const auto centre = (32 * 64 + 32) * 4;
+      remixapi_LightHandle opticalSun = nullptr;
       auto draw = [&](bool water, bool front) {
         camera(r);
+        if (opticalSun) r.drawLight(opticalSun);
         r.drawInstance(instance(background, .3f));
         if (water) {
           auto surface = instance(liquid, -.2f);
@@ -5339,6 +5341,28 @@ namespace {
                   "Underwater body colour uses uniform camera environment without a sky dome");
         }
       }
+      options.ambient = 0;
+      target.forward->updateLighting(options);
+      const auto unlitWater = draw(true, false);
+      remixapi_LightInfoDistantEXT distant{};
+      distant.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT;
+      distant.direction = {0, 0, 1};
+      remixapi_LightInfo directSun{};
+      directSun.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+      directSun.pNext = &distant;
+      directSun.hash = 0xe10b;
+      directSun.radiance = {0, 4, 0};
+      r.createLight(directSun, opticalSun);
+      const auto litWater = draw(true, false);
+      require(litWater[centre + 1] > unlitWater[centre + 1] + 10,
+              "Optical material receives incident sunlight through the shared source query");
+      distant.direction = {0, 0, -1};
+      directSun.hash = 0xe10c;
+      r.createLight(directSun, opticalSun);
+      require(std::abs(int(draw(true, false)[centre + 1]) - int(unlitWater[centre + 1])) <= 2,
+              "Optical sunlight query preserves material receiver orientation");
+      opticalSun = nullptr;
+      require(draw(true, false) == unlitWater, "Removing optical sunlight leaves no stale source contribution");
       options.water = false;
       target.enableForward(options);
       draw(true, false);

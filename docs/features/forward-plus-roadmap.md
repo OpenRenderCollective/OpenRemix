@@ -13,8 +13,12 @@ Implemented and checked:
   hidden behind source queries. A resource-free shading-result initializer gives
   custom models safe defaults. Material results carry unpacked normal/roughness
   and RGB reflectance; the pass adapter owns guide and cubemap-layer byte encoding.
-  Alternate shading, diffuse, environment and local
-  sources compile through actual world/viewmodel/water passes. Current-frame
+  Alternate shading, diffuse, environment, local and sun
+  sources compile through actual world/viewmodel/water passes. Optical sunlight
+  now comes through a source query; water uses the returned direction and its
+  receiver geometry, preserving the default analytic/CSM policy. Eight checked
+  optimized variants are byte-identical; water/ray-water remove a redundant
+  derivative pair and two extended instructions, with no opcode-count increases. Current-frame
   screen/ray reconstruction has a separate radiance/confidence query, preserving
   shared environment fallback and Fresnel composition. Viewmodel sources return
   radiance independently of the shared standard material reflection response.

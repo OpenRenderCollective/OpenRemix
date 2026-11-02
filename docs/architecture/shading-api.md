@@ -763,3 +763,19 @@ providers may use the typed entry independently, but must not claim Source 2
 compatibility merely because they provide diffuse irradiance. Scene/generation
 validation, light-component ownership and cross-provider guide transport remain
 part of the broader provider contract work.
+
+### Optical receiver sunlight
+
+`sun-lighting.glsl` supplies both `sampleReceiverSunLight` and
+`sampleOpticalReceiverSunLight`. Opaque/viewmodel and optical materials consume
+`SunLightSample` direction, radiance and visibility; each material retains its
+own BRDF/optical response. Water no longer reads the packed frame sun direction
+or chooses low-level CSM/baked visibility itself. Its query uses the receiver's
+existing geometric normal rather than recomputing screen derivatives.
+
+The default optical adapter preserves the existing analytic/CSM policy. This
+interface split does not claim that water's static visibility is already mixed
+like opaque props. A replacement source may implement both queries using its own
+transport without changing water's material. The alternate-source fixture swaps
+sun queries independently through world, viewmodel, live-GI, water and ray-water
+material variants. Qualification of baked/mixed optical sunlight remains open.

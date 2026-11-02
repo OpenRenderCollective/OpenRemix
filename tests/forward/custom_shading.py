@@ -108,4 +108,20 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
                         *["-D" + define for define in defines], str(source),
                         "-o", str(binary)], env=env, check=True)
         subprocess.run([validator, "--target-env", "vulkan1.1", str(binary)], env=env, check=True)
-print("Custom models and environment/transport/diffuse/local sources compose through actual material passes")
+    shutil.copyfile(root / "src/native/forward/shaders/local-lighting.glsl",
+                    tree / "shaders/local-lighting.glsl")
+    shutil.copyfile(root / "tests/forward/shaders/custom-sun-source.glsl",
+                    tree / "shaders/sun-lighting.glsl")
+    for name, defines in {
+        "sun-source-world": [],
+        "sun-source-viewmodel": ["VIEWMODEL_PASS"],
+        "sun-source-live-world": ["LIVE_GI"],
+        "sun-source-water": ["WATER_SURFACE"],
+        "sun-source-water-ray": ["WATER_SURFACE", "WATER_RAY"],
+    }.items():
+        binary = tree / (name + ".spv")
+        subprocess.run([compiler, "-V", "--target-env", "vulkan1.1",
+                        *["-D" + define for define in defines], str(source),
+                        "-o", str(binary)], env=env, check=True)
+        subprocess.run([validator, "--target-env", "vulkan1.1", str(binary)], env=env, check=True)
+print("Custom models and environment/transport/diffuse/local/sun sources compose through actual material passes")
