@@ -165,6 +165,7 @@ void StandaloneCapture::record(VkCommandBuffer command,
                                       job->cancellation.get_token());
                   job->capture.captures.clear();
                   job->capture.filtered = {};
+                  job->capture.sealImage();
                   job->cacheHit = job->filtering = true;
                   return;
                 }
@@ -191,8 +192,8 @@ void StandaloneCapture::record(VkCommandBuffer command,
     if (job.failed)
       throw std::runtime_error("Invalid standalone reflection readback");
     if (job.filtering) {
-      job.capture.image->recordUpload(command);
-      frame.upload = job.capture.image;
+      frame.upload = job.capture.recordImageUpload(command);
+      if (!frame.upload) throw std::logic_error("Standalone reflection image was not prepared");
       m_active = {job.source->contentHash, job.capture.image};
       m_cacheHit = job.cacheHit;
       frame.sampled = m_active.image;
@@ -254,6 +255,7 @@ void StandaloneCapture::record(VkCommandBuffer command,
                     capture_cache::maximumBytes)
               owner->persistence = std::move(snapshot);
             // Declined payloads release raw/filter CPU storage on this worker.
+            owner->capture.sealImage();
           });
     } else {
       if (frame.job)

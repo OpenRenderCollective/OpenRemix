@@ -1,4 +1,5 @@
 #include "forward/bake/controller.h"
+#include "forward/probes/automatic_capture.h"
 #include "forward/lightmap/denoise.h"
 #include "gpu_fixture.h"
 #include "raster/renderer.h"
@@ -51,6 +52,23 @@ DenoiseStatistics denoise(const Layout &, std::span<bake::Result>,
 int main() try {
   {
     test::Fixture fixture;
+    {
+      probes::AutomaticCapture capture;
+      require(!capture.recordImageUpload(VK_NULL_HANDLE), "Unready image was published");
+      bool rejected = false;
+      try { capture.sealImage(); } catch (const std::logic_error &) { rejected = true; }
+      require(rejected, "Missing image was sealed");
+      capture.image = std::make_shared<probes::ImageAsset>(fixture.physical, fixture.device, probes::Data{});
+      capture.sealImage();
+      rejected = false;
+      try { capture.sealImage(); } catch (const std::logic_error &) { rejected = true; }
+      require(rejected, "Image completion was repeated");
+      fixture.begin();
+      const auto upload = capture.recordImageUpload(fixture.command);
+      require(upload == capture.image && !capture.recordImageUpload(fixture.command),
+              "Provider did not upload its image exactly once");
+      fixture.finish();
+    }
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(fixture.physical, &properties);
     pipeline::Service pipelines(fixture.device, properties, false);

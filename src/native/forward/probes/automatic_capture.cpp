@@ -67,4 +67,17 @@ namespace remix::forward::probes {
     }
     image = std::make_shared<ImageAsset>(physical, device, filtered, cancelled);
   }
+  void AutomaticCapture::sealImage() {
+    if (!image || m_imageReady.load(std::memory_order_relaxed))
+      throw std::logic_error("Reflection image completion requires one prepared image");
+    m_imageReady.store(true, std::memory_order_release);
+  }
+  std::shared_ptr<ImageAsset> AutomaticCapture::recordImageUpload(VkCommandBuffer command) {
+    if (m_imageUploaded || !m_imageReady.load(std::memory_order_acquire)) return {};
+    if (!image) throw std::logic_error("Ready reflection publication has no image");
+    image->recordUpload(command);
+    m_imageUploaded = true;
+    return image;
+  }
+
 }

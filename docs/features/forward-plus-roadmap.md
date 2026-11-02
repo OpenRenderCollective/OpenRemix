@@ -1,3 +1,9 @@
+## Provider-owned reflection publication - 2026-11-02
+
+- AutomaticCapture now owns the release/acquire completion handoff and one-time image upload used by default and standalone controllers. Removed reflection publication flags from the diffuse job; frame submissions still retain uploaded images through their fences. No new task, ray list or GPU pass.
+- Native build and two GPU regressions pass with synchronization validation: unready/missing/repeated completion, one-time upload, early reflection publication, diffuse activation reuse, cancellation and standalone/authored capture behavior.
+- Default admitted-seed planning, diagnostics and transport scheduling remain coupled to the bake job; preserve their reuse and single budget during the next split. Full performance acceptance remains open. Playable unchanged.
+
 ## Default cache reflection references - 2026-11-02
 
 - Default retained-owner snapshots use content-addressed reflection blobs, shared across diffuse layouts. Combined caches contain a numeric blob key; independent indexes accept legacy section locations or new blob keys. Full reads do not depend on the mutable index.

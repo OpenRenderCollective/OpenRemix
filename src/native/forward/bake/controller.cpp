@@ -1027,7 +1027,7 @@ namespace remix::forward::bake {
             owner->finishStage.store(Job::FinishStage::Reflections, std::memory_order_relaxed);
             owner->reflections.filter(physical, device, owner->cancellation.get_token());
             owner->reflections.retainPayload();
-            owner->reflectionReady.store(true, std::memory_order_release);
+            owner->reflections.sealImage();
             owner->finishDiffuseAssets(physical, device, config, owner->reflections.captureView());
           });
       status(REMIXAPI_BAKE_PREPARING_EXT, "Finishing baked lighting assets");
@@ -1041,15 +1041,12 @@ namespace remix::forward::bake {
     return;
   }
   void Controller::publishReadyReflections(VkCommandBuffer command) {
-    if (!m_job || m_job->reflectionPublished ||
-        !m_job->reflectionReady.load(std::memory_order_acquire)) return;
-    const auto image = m_job->reflections.image;
-    if (!image) throw std::logic_error("Ready reflection publication has no image");
-    image->recordUpload(command);
+    if (!m_job) return;
+    const auto image = m_job->reflections.recordImageUpload(command);
+    if (!image) return;
     m_reflections = image;
     m_reflectionSceneHash = m_job->source->contentHash;
     m_submissions[m_slot].reflectionUpload = image;
-    m_job->reflectionPublished = true;
   }
   void Controller::activate(VkCommandBuffer command) {
     auto &grid = m_job->grid;
@@ -1257,15 +1254,12 @@ namespace remix::forward::bake {
                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                              (ImageDump::enabled(m_physical) ? VK_BUFFER_USAGE_TRANSFER_SRC_BIT : 0u),
                          Buffer::Memory::Device);
+    if (auto upload = m_job->reflections.recordImageUpload(command))
+      m_submissions[m_slot].reflectionUpload = std::move(upload);
     auto reflections = std::move(m_job->reflections.image);
     if (!reflections) throw std::logic_error("Missing prepared reflection image");
     const VkBufferCopy copy{0, 0, bytes};
     vkCmdCopyBuffer(command, volume->staging->handle, volume->data->handle, 1, &copy);
-    if (!m_job->reflectionPublished) {
-      reflections->recordUpload(command);
-      m_submissions[m_slot].reflectionUpload = reflections;
-      m_job->reflectionPublished = true;
-    }
     if (volume->localReflections) volume->localReflections->image->recordUpload(command);
     VkImageMemoryBarrier surfaceReady{};
     volume->occlusion->upload(command, volume->staging->handle, occlusionOffset);
@@ -1492,7 +1486,7 @@ namespace remix::forward::bake {
               job->restoreLocalReflections(physical, device, config);
               job->prepareLocalReflectionUpgrade(physical, device, config, queueFamily);
               job->reflections.retainPayload();
-              job->reflectionReady.store(true, std::memory_order_release);
+              job->reflections.sealImage();
             }
           };
           job->ticket =

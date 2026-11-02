@@ -672,3 +672,19 @@ new reference containers. Existing inline caches are not automatically rewritten
 and garbage collection must treat referenced blobs as live. Partial diffuse
 recovery, default planning/scheduler separation, automatic garbage collection,
 real-map performance acceptance and playable deployment remain unfinished.
+
+### Automatic reflection image handoff
+
+`AutomaticCapture` owns worker completion and one-time image upload state for
+both default and standalone scheduling. The worker seals its prepared image with
+a release store; the render thread acquires readiness and records an upload only
+once. The returned shared image must stay in the submitted frame until its fence
+completes. The provider rejects sealing a missing/already sealed image and rejects
+further capture mutation after sealing. The image and retained CPU payload have
+separate lifetimes.
+
+The default bake job no longer owns reflection-ready/published flags. It can bind
+an early reflection image while diffuse finishing continues, then reuse that image
+at volume activation. This does not yet separate default placement seed creation,
+receiver diagnostics, worker tickets, or transport scheduling from the diffuse job.
+Those still preserve the admitted-seed reuse and existing single GPU budget.

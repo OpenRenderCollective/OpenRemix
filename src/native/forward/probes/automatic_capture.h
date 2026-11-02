@@ -6,6 +6,7 @@
 #include "forward/probes/evaluation.h"
 #include "forward/probes/image_asset.h"
 #include <stdexcept>
+#include <atomic>
 
 namespace remix::forward::bake { class Transport; class Budget; }
 
@@ -77,12 +78,22 @@ namespace remix::forward::probes {
     uint64_t inputHash = 0;
     Data filtered;
     std::shared_ptr<ImageAsset> image;
+    // Worker completion handoff. After sealing, the worker must not change the
+    // image. CPU payload ownership is independent and may already be retained.
+    void sealImage();
+    // Render-thread only; returns an owner only for the first upload. The caller
+    // retains it in the submitted frame until that frame's fence completes.
+    std::shared_ptr<ImageAsset> recordImageUpload(VkCommandBuffer command);
+
     uint32_t captureNext = 0, captureReceived = 0;
     bool capturePlanned = false;
   private:
     std::shared_ptr<const CapturePayload> m_payload;
+    std::atomic_bool m_imageReady = false;
+    bool m_imageUploaded = false;
     void requirePreparing() const {
-      if (m_payload) throw std::logic_error("Completed reflection payload is immutable");
+      if (m_payload || m_imageReady.load(std::memory_order_relaxed))
+        throw std::logic_error("Completed reflection capture is immutable");
     }
   };
 }
