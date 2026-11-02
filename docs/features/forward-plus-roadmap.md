@@ -10,18 +10,25 @@ Implemented and checked:
   preferences. Legacy setting names remain compatibility aliases.
 - Evaluated material, diffuse/reflection, sun and local-light sample values have
   resource-free headers. Receiver contexts and light-list/channel storage are
-  hidden behind source queries. Alternate shading, diffuse, environment and local
+  hidden behind source queries. A resource-free shading-result initializer gives
+  custom models safe defaults. Material results carry unpacked normal/roughness
+  and RGB reflectance; the pass adapter owns guide and cubemap-layer byte encoding.
+  Alternate shading, diffuse, environment and local
   sources compile through actual world/viewmodel/water passes. Current-frame
   screen/ray reconstruction has a separate radiance/confidence query, preserving
   shared environment fallback and Fresnel composition. Viewmodel sources return
   radiance independently of the shared standard material reflection response.
   Diffuse sources independently select analytic direct lobes, per-light residual
   attribution and reflection reference; unified transport provenance remains open.
+  GPU shadow sweeps verify energy equivalence between mixed residual and owned
+  direct-field composition, with independent analytic highlight selection.
 - Resolved provider dependencies drive live diffuse/ray scene and screen/ray
   reflection resources. Water and viewmodels share the selected diffuse source;
   live water can share prepared scene descriptors with its own query limits.
   Capture recording, admission and source fallback share one resolved owner;
   image disable preserves the scheduler responsible for retiring prior work.
+  CaptureProviders now owns capture admission, frame-slot transitions and fallback
+  selection outside frame rendering, preserving the existing shared budget.
 - Immutable prepared scenes have demand-scoped leases and independent mutable
   consumers. Compatible automatic captures hand inputs to authored captures
   before retirement. Ordinary radiance can explicitly inherit baked light policy;
@@ -31,7 +38,15 @@ Implemented and checked:
 - Automatic reflections own placement/readback, radiance cache, filtering, worker
   tickets and publication. Retained, transferred and image-only finishing preserve
   array ownership without copies. Empty completion allocates no fallback image.
-  Preset admission and finishing order still share one transport budget.
+  A bounded validated diffuse cache index reuses diffuse payloads across reflection
+  count/resolution/tolerance/enable edits without retracing or denoising. Legacy
+  keys/wire bytes remain valid; current shared reflection blobs are skipped.
+  Preset admission and finishing order still share one transport budget. Diffuse
+  finishing accepts compact diagnostic values rather than capture arrays; phase
+  receipt hashing is reused without retaining provider storage. Capture stage
+  progress is queried as work-unit counts rather than exposing scheduler ray arrays.
+  Bounded readback receipts reject duplicate/overlapping site and radiance ranges
+  before they can falsely complete provider work; no per-ray allocation is used.
 - Targeted lifecycle, cancellation, cold/warm cache, material/source compilation,
   MSAA/shadow/reflection and live-GI checks pass. Recent shader API splits preserve
   optimized instruction/intrinsic counts; some variants differ in instruction
@@ -42,6 +57,10 @@ Still required for the complete modularity/performance objective:
 - Finish provider dependency/finishing orchestration beyond the current Source 2
   adapters. Keep source module resources, publication, cancellation and retirement
   explicit when adding/selecting implementations; preserve shared work admission.
+- Separate reflection-only invalidation from live diffuse publication. Independent
+  cache lookup now reuses validated diffuse payloads across reflection edits, but
+  current volume invalidation and disk-cache-disabled rebuilding remain coupled.
+  Preserve live assets, seed admission and frame lifetimes across those cases.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Water's baked/mixed sunlight policy still needs separate qualification.
@@ -50,7 +69,19 @@ Still required for the complete modularity/performance objective:
   completed A/B/B/A 1080p Crossfire study shows overlapping CPU/GPU ranges and
   substantial baseline session drift, with no repeatable material split overhead
   in that profile. This is not universal equivalence or the 300 FPS target.
-  Broaden map/provider coverage, and investigate cold post-ready stalls separately.
+  A follow-up through ownership commit 4c66bddf improves uncapped host FPS but
+  shows higher GPU intervals. At a common 200 FPS cap, total GPU ranges overlap;
+  some current opaque/weapon intervals remain higher. A paced A/B/B/A isolation
+  against recent db692f43 shows overlapping total GPU and CPU-recording ranges;
+  baseline opaque weapon phases drift between sessions. No repeatable recent
+  split overhead is established in that profile. Broaden map/provider coverage,
+  and investigate cold post-ready stalls separately. A second-map Construct
+  indoor A/B/B/A through b7cab1d1 matches lighting/draw hashes and an inspected
+  scene crop, with no slowdown observed. Its pre-existing opaque world cost
+  dominates roughly 9-11 ms total GPU time; the 300 FPS target remains unmet. A
+  focused uncapped Crossfire A/B/B/A through 75424e37 overlaps the retained recent
+  baseline at 277-283 FPS unarmed and 250-253 with weapon. CPU ranges overlap;
+  GPU intervals vary between sessions without a consistent two-run slowdown.
 - Continue checking unused experiment paths before removal. Referenced low-level
   diagnostic modes and legacy aliases are not automatically dead code.
 

@@ -180,6 +180,10 @@ void testCaptureWork() {
     require(capture.observe(p::AutomaticCapture::Step::ValidateSites, 1, {&valid, 1}),
             "Out-of-order site readback rejected");
     require(capture.siteReceived == 1 && capture.usableReflectionSites[1], "Site completion not owned");
+    require(!capture.observe(p::AutomaticCapture::Step::ValidateSites, 1, {&valid, 1}) && capture.siteReceived == 1,
+            "Duplicate out-of-order site receipt advanced completion before the missing prefix");
+    require(capture.observe(p::AutomaticCapture::Step::ValidateSites, 0, {&valid, 1}) && capture.siteReceived == 2,
+            "Missing site prefix failed to complete after duplicate rejection");
     require(!capture.observe(p::AutomaticCapture::Step::Capture, 0, {&valid, 1}), "Unsubmitted capture accepted");
     require(!capture.observe(p::AutomaticCapture::Step::Fit, 0, {}), "Non-query phase accepted readback");
   }
@@ -194,6 +198,18 @@ void testCaptureWork() {
     require(owner.captureReceived == 1 && owner.captures[0].radiance[0][0] == 0 && owner.captures[0].radiance[0][1] == 65000 &&
             owner.captures[0].radiance[0][2] == 2 && owner.captures[0].radiance[0][3] == 4,
             "Capture readback changed radiance clamp or completion");
+    const std::array overlap{result, result};
+    require(!owner.observe(p::AutomaticCapture::Step::Capture, 0, overlap) && owner.captureReceived == 1,
+            "Overlapping radiance receipt advanced completion while other texels were missing");
+    std::vector<remix::forward::bake::Result> middle(128, result);
+    require(owner.observe(p::AutomaticCapture::Step::Capture, 128, middle),
+            "Out-of-order radiance range was rejected");
+    require(!owner.observe(p::AutomaticCapture::Step::Capture, 127, middle),
+            "Partially overlapping out-of-order radiance range was accepted");
+    require(owner.observe(p::AutomaticCapture::Step::Capture, 1, std::span(middle).first(127)),
+            "Missing radiance prefix failed to join a completed out-of-order range");
+    require(owner.observe(p::AutomaticCapture::Step::Capture, 256, middle) && owner.captureReceived == owner.captureNext,
+            "Remaining unique radiance texels failed after overlap rejection");
   }
   auto base = capture(), alias = base, other = base;
   alias.bounds.include({-2,-2,-2});

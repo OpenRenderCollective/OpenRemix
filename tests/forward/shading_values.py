@@ -19,6 +19,8 @@ common = """#version 450
 #extension GL_GOOGLE_include_directive : require
 #include "standard-reflection-response.glsl"
 #include "standard-reflection-response.glsl"
+#include "shading-values.glsl"
+#include "shading-values.glsl"
 #include "surface-values.glsl"
 #include "surface-values.glsl"
 #include "reflection-values.glsl"
@@ -55,11 +57,12 @@ stages = {
     layout(set=0,binding=0,std430) buffer Output { vec4 value; };
     void main() {
       Surface material = initSurface();
-      ReflectionSample reflected = ReflectionSample(material.normal, .5);
+      ShadingResult shaded = initShadingResult(material, .75);
+      ReflectionSample reflected = ReflectionSample(shaded.normal, .5);
       ReceiverLighting diffuse = ReceiverLighting(vec3(1), analyticDirectLighting(false), false);
       value = vec4(resolveReflection(reflected, material.emission) *
                    standardReflectionFresnel(vec3(.04), material.roughness, .5) +
-                   composeDiffuseLight(diffuse, material.color.rgb), material.metallic);
+                   composeDiffuseLight(diffuse, material.color.rgb), shaded.color.a);
     }""",
 }
 with tempfile.TemporaryDirectory(prefix="shading-values-", dir=output) as temporary:

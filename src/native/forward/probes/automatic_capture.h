@@ -1,5 +1,6 @@
 #pragma once
 #include "forward/probes/capture_work.h"
+#include "forward/probes/readback_receipts.h"
 #include "forward/probes/capture_config.h"
 #include "forward/probes/capture_step.h"
 #include "forward/probes/capture_content.h"
@@ -36,6 +37,19 @@ namespace remix::forward::probes {
       if (projectionAudit && geometryReceived < projectionAudit->rays().size()) return Step::CheckGeometry;
       if (!capturePlanned) return Step::Select;
       return captureReceived < work.rays().size() ? Step::Capture : Step::Complete;
+    }
+    struct Progress {
+      uint32_t completed = 0;
+      size_t total = 0;
+    };
+    // Scheduler diagnostics inspect work units, not placement/ray storage.
+    // As with nextStep(), call only after the preparation/readback handoff.
+    Progress progress(Step step) const {
+      if (step == Step::ValidateSites) return {siteReceived, reflectionSites.size()};
+      if (step == Step::CheckGeometry)
+        return {geometryReceived, projectionAudit ? projectionAudit->rays().size() : 0};
+      if (step == Step::Capture) return {captureReceived, work.rays().size()};
+      return {};
     }
     static bake::Work workType(Step step);
     struct Dispatch {
@@ -133,6 +147,7 @@ namespace remix::forward::probes {
     uint32_t captureNext = 0, captureReceived = 0;
     bool capturePlanned = false;
   private:
+    ReadbackReceipts m_siteReceipts, m_captureReceipts;
     pipeline::PreparationQueue::Ticket m_preparation;
     std::shared_ptr<const CapturePayload> m_payload;
     std::atomic_bool m_publicationReady = false;

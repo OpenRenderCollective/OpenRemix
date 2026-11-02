@@ -406,13 +406,17 @@ int main() try {
       config.diskCache = true;
       bake::ContentHashes original;
       uint32_t coldDenoises = 0;
-      for (uint32_t pass = 0; pass < 3; ++pass) {
+      for (uint32_t pass = 0; pass < 9; ++pass) {
         if (pass == 1) {
           size_t removed = 0;
           for (const auto &entry : std::filesystem::directory_iterator(directory.path / "reflections" / "shared"))
             if (entry.path().extension() == ".reflection") { std::filesystem::remove(entry.path()); ++removed; }
           require(removed != 0, "Cold run did not persist shared reflection data");
         }
+        if (pass == 3) config.reflectionResolution = 16;
+        if (pass == 5) config.reflectionProbes = 0;
+        if (pass == 6) config.reflectionProbes = 2;
+        if (pass == 7) config.reflectionDetailTolerance = .75f;
         bake::Controller controller(fixture.physical, fixture.device, &pipelines, true, fixture.family);
         uint32_t frame = 0;
         std::shared_ptr<bake::Volume> earlyDiffuse, cancelledDiffuse;
@@ -444,9 +448,9 @@ int main() try {
                       earlyDiffuse->content == earlyContent &&
                       cancelledDiffuse->data->handle,
                   "Diffuse recovery did not survive cancellation or rebuilt its volume for reflections");
-        require(controller.volume() && controller.reflectionSource().image &&
+        require(controller.volume() && bool(controller.reflectionSource().image) == bool(config.reflectionProbes) &&
                     controller.statistics().state == REMIXAPI_BAKE_READY_EXT,
-                "Cold/recovery/warm cache sequence failed to finish lighting");
+                "Cold/recovery/reflection-edit/warm cache sequence failed to finish lighting");
         const auto content = controller.content();
         if (pass == 0) { original = content; coldDenoises = denoiseCalls.load(); }
         else require(content.grid == original.grid && content.surfaces == original.surfaces &&
@@ -459,14 +463,13 @@ int main() try {
             properties.limits.maxImageDimension2D, properties.limits.maxImageArrayLayers,
             properties.limits.maxStorageBufferRange, {}};
         std::copy_n(properties.pipelineCacheUUID, cacheDevice.uuid.size(), cacheDevice.uuid.begin());
-        bool completeCache = false;
-        for (const auto &entry : std::filesystem::directory_iterator(directory.path)) {
-          if (entry.path().extension() != ".bake") continue;
-          cache_io::Header header;
-          { std::ifstream input(entry.path(), std::ios::binary); input.read(reinterpret_cast<char *>(&header), sizeof(header)); }
-          auto restored = bake::cache::read(entry.path(), header.key, resources.bakeScene(), config, cacheDevice);
-          completeCache = restored && !restored->missingReflections && !restored->captures.empty();
-        }
+        const auto scene = resources.bakeScene();
+        const auto expectedKey = bake::cache::key(scene->contentHash, config, .001f, cacheDevice, {},
+            !scene->partition || !scene->partition->closed);
+        auto restored = bake::cache::read(directory.path / bake::cache::path(expectedKey).filename(),
+            expectedKey, scene, config, cacheDevice);
+        const bool completeCache = restored && !restored->missingReflections &&
+            bool(restored->captures.size()) == bool(config.reflectionProbes);
         require(completeCache, "Reflection recovery did not persist a strict, complete cache for the next load");
       }
     }

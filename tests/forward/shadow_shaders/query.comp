@@ -13,6 +13,10 @@ struct Light { vec4 corners[3]; vec4 responseWeights; };
 layout(set = 0, binding = 3) uniform sampler2DArrayShadow sunShadow;
 #include "../../../src/native/forward/shaders/local-shadows.glsl"
 #include "../../../src/native/forward/shaders/sun-shadows.glsl"
+#include "../../../src/native/forward/shaders/brdf.glsl"
+#include "../../../src/native/forward/shaders/light-contribution.glsl"
+#include "../../../src/native/forward/shaders/local-light-values.glsl"
+#include "../../../src/native/forward/shaders/local-light-composition.glsl"
 struct Query { vec4 position, normal; uvec4 control; };
 layout(set = 0, binding = 1, std430) readonly buffer Queries { Query queries[]; };
 layout(set = 0, binding = 2, std430) writeonly buffer Answers { vec4 answers[]; };
@@ -30,5 +34,22 @@ void main() {
   float visibility = query.control.z == 0u
       ? localShadowVisibility(light, query.position.xyz, query.normal.xyz, fixedVisibility)
       : sunShadowVisibilityLayers(query.position.xyz, query.position.w, fixedVisibility, query.control.z == 2u, query.normal.xyz);
-  answers[index] = vec4(visibility, 0, 0, 1);
+  // Compare two ownership routes for the same shadowed unit material: a field
+  // with unoccluded direct energy plus a moving-caster residual, and a unified
+  // field that already contains the shadowed direct energy. Neither may add a
+  // second direct term. Analytic highlights remain independently selectable.
+  LocalLightSample source = LocalLightSample(true, false, vec3(0, 0, 1), vec3(1),
+      2, 1, visibility, 1, 1);
+  LightContribution mixed = composeLocalLight(source, BrdfLobes(vec3(1), vec3(.25)));
+  LightContribution attributed = selectDirectLight(mixed, analyticDirectLighting(true));
+  LightContribution owned = selectDirectLight(mixed, DirectLightingPolicy(false, true, false));
+  ReceiverLighting field = ReceiverLighting(vec3(2 * visibility), DirectLightingPolicy(false, true, false), false);
+  answers[index] = vec4(visibility, 2 + attributed.diffuse.r,
+      composeDiffuseLight(field, vec3(1)).r + owned.diffuse.r, owned.specular.r);
+  LightContribution diffuseOnly = selectDirectLight(mixed, DirectLightingPolicy(true, false, true));
+  LightContribution disabled = selectDirectLight(mixed, DirectLightingPolicy(false, false, false));
+  source.aggregateDiffuse = false;
+  LightContribution analytic = composeLocalLight(source, BrdfLobes(vec3(1), vec3(.25)));
+  answers[index + inputData.count] = vec4(owned.diffuse.r, diffuseOnly.specular.r,
+      disabled.diffuse.r + disabled.specular.r, analytic.diffuse.r);
 }

@@ -160,6 +160,14 @@ lobes without attribution/reference. The alternate diffuse compile fixture owns
 direct diffuse while retaining analytic specular. World, viewmodel, water and
 the example custom model select direct contributions through the same policy.
 
+The shadow-filter GPU regression checks an energy invariant using production
+shadow lookup, local composition, diffuse composition and lobe selection. For
+unit diffuse reflectance, a field containing unoccluded energy plus its mixed
+residual must equal a unified field containing already-shadowed energy. Both
+retain independently selected highlights; disabled lobes add zero. It covers
+fractional point/sun visibility, baked static exclusion and viewmodel shadow
+queries. It does not validate the transport of a future GI implementation.
+
 This separates lobe ownership, per-light residuals and reflection normalization.
 It does not yet describe full transport provenance or compatible normalization
 for arbitrary unified GI implementations; a new provider must supply those.
@@ -298,12 +306,96 @@ retained path, which needs no GPU device or image. Source 2 cache restoration
 still interleaves its auxiliary-field restore before sealing publication, keeping
 that existing order explicit in its preset adapter.
 
+Diffuse finishing accepts only a compact `ReflectionFingerprint` diagnostic
+value, not capture arrays or a reflection source. The scheduler computes it once
+when phase receipts are enabled and reuses it for transport/filtered receipts.
+This removes diagnostic-only capture storage coupling and a repeated hash scan;
+normal publication, transport budgets and worker order are unchanged.
+
+Automatic site/radiance readback owns bounded completion receipts in addition
+to aggregate progress counts. Duplicate or overlapping ranges are rejected
+before publishing values or advancing completion, including when other ranges
+are still missing. Out-of-order ranges merge into a completed prefix; only gaps
+bounded by frame submission slots need fixed storage. No per-ray bitmap or heap
+allocation is added. Numeric validation precedes receipt consumption so a bad
+batch can be retried without partially advancing ownership.
+
+Capture progress queries expose completed/total work units for active site,
+geometry and radiance stages. The preset scheduler no longer inspects those
+placement vectors, audit ray arrays or received counters to format status.
+Queries follow the same preparation/readback handoff as stage selection and do
+not allocate, scan rays or introduce another progress state.
+
+### Remaining captured-asset dependency
+
+The captured provider owner separates scheduling and publication selection, but
+reflection-only edits are not yet independent of diffuse asset invalidation.
+`bake::Config::sameLighting` compares reflection count, resolution and detail
+tolerance; `Controller::record` invalidates the combined job/volume when that
+comparison changes. `cache::key` includes the same reflection fields and fit
+policy revisions. An independent radiance blob therefore does not by itself
+allow reuse of the diffuse publication under a changed reflection request.
+
+The persistence path now has a separate diffuse identity, canonicalizing only
+reflection request fields while retaining source, shader, diffuse policy and
+device identity. A 56-byte checksummed `.diffuse-index` hints at a validated
+legacy container and its original reflection settings. Full legacy hits register
+the hint; successful background writes publish it only after the container is
+committed. Missing/corrupt hints or containers remain ordinary misses, and no
+cache-directory scan is performed. Existing combined keys and wire bytes stay
+unchanged; legacy caches first encountered under changed settings without an
+index may still miss until a matching load or new bake registers one.
+
+On a requested combined-key miss, an indexed diffuse-only read recomputes the
+referenced container key from current diffuse settings plus stored reflection
+settings, then performs normal checksum/layout/policy validation. Shared radiance
+blobs are not opened; legacy inline payloads still need bounded decoding. The
+existing missing-component recovery path then reuses decoded diffuse fields and
+admitted origins while capturing the new reflection request. New manifests are
+persisted under that request's full identity, including reflection disable.
+Warm reflection edits avoid diffuse transport/denoising when this cache path hits.
+This does not yet preserve the current live volume through invalidation or avoid
+rebuilding diffuse data with disk cache disabled.
+
+Removing fields from `sameLighting` or the cache key alone would be incorrect:
+that could leave the requested reflection change unapplied or accept captures
+with the wrong resolution/placement policy.
+
+The next separation must retain live diffuse publications independently of
+reflection placement/radiance requests, while preserving the
+Source 2 adapter's admitted seeds and shared GPU budget. Published diffuse assets
+should remain usable while reflection replacement is pending, including with
+disk persistence disabled. Old frame slots must retain the exact image/metadata
+pair they sampled. Legacy combined caches need a verified migration/fallback
+rather than a blanket invalidation or an unbounded cache-directory scan.
+
+Acceptance must cover count, resolution, tolerance and enable edits independently
+of diffuse quality edits; cold/warm and persistence-disabled operation; cancellation
+and target replacement; unchanged diffuse content and retained publication; and
+no extra settled-frame scans/allocations or transport work for the default preset.
+This remains required for full captured-technique independence.
+
 The preset still determines admission and the order around diffuse finishing.
 The same callbacks, queue order, transport budget and early publication boundary
 are retained; this split creates no additional jobs, scene allocations or waits.
 Standalone reflection capture supplies its own scheduler when diffuse baking is
 disabled. Full provider dependency and finishing orchestration remain separate
 integration work.
+
+`probes::CaptureProviders` owns the authored and standalone provider handles,
+frame-slot admission state and automatic fallback selection. Frame rendering
+calls its `record` entry point; it registers authored scene demand before lending
+the existing diffuse controller's preparation/transport admission, retires a
+previously used standalone provider when disabled, and admits authored work only
+after the selected shared scheduler finishes. Header, descriptor and scale
+fallback use the same resolved owner. Local receiver selection remains pass-owned.
+
+Replacement activation refreshes shared-provider usage after queue idle, and
+slot selection follows the existing completed frame fence. Teardown releases
+authored workers before diffuse ownership and retains standalone frame owners
+through normal teardown. The owner adds no virtual dispatch, jobs, ray lists or
+per-frame heap allocation. This is the captured-lighting adapter boundary;
+arbitrary provider dependency/finishing orchestration remains unfinished.
 
 `ResourcePlan::captureTransport` explicitly selects the automatic capture and
 shared-admission owner: the baked scene scheduler or the standalone scene
@@ -549,6 +641,29 @@ metal, viewmodel, live viewmodel, water and live-water shaders, alongside the
 default environment source. This prevents material code from silently depending
 on the baked source's field layout. It is an internal shader module boundary;
 public custom program registration and provider resource selection are separate.
+
+## Shading result initialization
+
+`shading-values.glsl` defines `ShadingResult` and
+`initShadingResult(surface, opacity)` without receiver or source resources. The
+initializer supplies normal/roughness, zero reflection response, unavailable
+reflection reference and black output with the supplied opacity. Standard shading
+and the alternate diffuse model use the same initialization; a simple custom
+model only assigns its resulting color instead of manually initializing guide
+fields. Models requesting reflections still explicitly supply their response
+and reference. Results carry normal, roughness, RGB reflectance and its presence
+as ordinary material values. Cubemap-layer byte encoding stays in the forward
+pass adapter, alongside MSAA guide packing, rather than the shading model. The
+adapter preserves the legacy zero guide when a model supplies no reflectance.
+This does not complete the public custom-program or arbitrary shading-model contract.
+
+The resource-free values fixture includes this header twice and consumes its
+result in compute as well as compiling it in vertex and fragment stages. Default
+world/viewmodel/water and live/metal variants preserved optimized sizes and opcode
+counts for the initialization extraction. The later unpacked-result adapter split
+changes data-extraction instructions; after shaded-path specialization it preserves
+arithmetic, texture and control-flow instruction counts. This is compiler evidence,
+not a runtime-equivalence claim.
 
 ## Standard reflection response
 

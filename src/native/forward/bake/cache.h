@@ -1,5 +1,6 @@
 #pragma once
 #include "forward/bake/grid.h"
+#include "forward/bake/diffuse_reference.h"
 #include "forward/bake/probe_visibility.h"
 #include "forward/mixed/data.h"
 #include "forward/probes/data.h"
@@ -25,6 +26,8 @@ namespace remix::forward::bake::cache {
   // its coverage policy must not invalidate fitted BSP or diffuse-only bakes.
   uint64_t key(uint64_t content, const Config &config, float cutoff, const Device &device,
                const DirectPolicy &policy = {}, bool fallbackReflections = false);
+  uint64_t diffuseKey(uint64_t content, const Config &config, float cutoff, const Device &device,
+                       const DirectPolicy &policy = {});
   // Versioned procedural ray/projection identity; excludes diffuse atlas/grid settings.
   uint64_t reflectionKey(uint64_t content, uint64_t plan, std::span<const probes::Capture> captures,
                          const probes::CaptureConfig &config, const Device &device,
@@ -55,6 +58,7 @@ namespace remix::forward::bake::cache {
     bool shareReflectionPayload = false; // legacy inline writes remain available
   };
   struct Snapshot {
+    DiffuseReference diffuseReference; // runtime persistence metadata; legacy payload stays unchanged
     void takeGrid(Grid &source);
     Grid grid;
     lightmap::Layout layout; // render mappings only; no surface sampling work lists
@@ -86,11 +90,15 @@ namespace remix::forward::bake::cache {
   // to tracing. Neither operation publishes resources or performs GPU work.
   // Stored aggregate ownership must also match the expected policy, independently
   // of the caller-supplied file key.
-  enum class ReflectionRead { Required, RecoverMissing };
+  enum class ReflectionRead { Required, RecoverMissing, DiffuseOnly };
   std::optional<Snapshot> read(const std::filesystem::path &file, uint64_t key,
                                std::shared_ptr<const scene::BakeScene> source, const Config &config,
                                const Device &device, std::stop_token cancelled = {},
                                const DirectPolicy &policy = {}, ReflectionRead reflections = ReflectionRead::Required);
+  std::optional<Snapshot> readDiffuse(const std::filesystem::path &directory, uint64_t content,
+      std::shared_ptr<const scene::BakeScene> source, const Config &config, float cutoff,
+      const Device &device, std::stop_token cancelled = {}, const DirectPolicy &policy = {},
+      bool fallbackReflections = false);
   bool write(const std::filesystem::path &file, uint64_t key, const View &view,
              std::stop_token cancelled = {});
 } // namespace remix::forward::bake::cache

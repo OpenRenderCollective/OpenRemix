@@ -215,6 +215,44 @@ int main(int argc, char **argv) {
             "Container depended on mutable index or lost lighting");
     std::filesystem::remove(blob);
     require(!bc::read(first, identity, source, config, device), "Missing blob was accepted");
+    // The independent diffuse hint must validate the original container's
+    // policy, but must not need the referenced radiance blob being replaced.
+    const auto canonical = directory / bc::path(identity).filename();
+    std::filesystem::copy_file(first, canonical);
+    const auto diffuseIdentity = bc::diffuseKey(source->contentHash, config, .001f, device);
+    bc::DiffuseReference reference{diffuseIdentity, identity, config.reflectionProbes,
+        config.reflectionResolution, std::bit_cast<uint32_t>(config.reflectionDetailTolerance)};
+    require(bc::writeDiffuseReference(directory, reference), "Diffuse reference persistence failed");
+    auto edited = config;
+    edited.reflectionProbes = 2;
+    edited.reflectionResolution = 16;
+    edited.reflectionDetailTolerance = 1;
+    require(bc::diffuseKey(source->contentHash, edited, .001f, device) == diffuseIdentity &&
+                bc::key(source->contentHash, edited, .001f, device) != identity,
+            "Reflection edits must preserve diffuse identity without aliasing the requested combined asset");
+    auto independent = bc::readDiffuse(directory, source->contentHash, source, edited, .001f, device);
+    require(independent && independent->missingReflections && independent->captures.empty() &&
+                independent->specular.texels.empty() && independent->pixels == data.pixels &&
+                independent->grid.points.size() == data.grid.probes.size(),
+            "Diffuse recovery read a missing reflection blob or lost admitted probe origins");
+    auto quality = edited; quality.samples *= 2;
+    require(!bc::readDiffuse(directory, source->contentHash, source, quality, .001f, device),
+            "Changed diffuse sampling reused an incompatible index");
+    auto spoofed = reference; ++spoofed.containerKey;
+    require(bc::writeDiffuseReference(directory, spoofed) &&
+                !bc::readDiffuse(directory, source->contentHash, source, edited, .001f, device),
+            "An index bypassed canonical container-key validation");
+    require(bc::writeDiffuseReference(directory, reference), "Diffuse reference restore failed");
+    const auto indexFile = bc::diffuseReferencePath(directory, diffuseIdentity);
+    { std::fstream damage(indexFile, std::ios::in | std::ios::out | std::ios::binary);
+      damage.seekp(-1, std::ios::end); damage.put(char(0xff)); }
+    require(!bc::readDiffuse(directory, source->contentHash, source, edited, .001f, device),
+            "Corrupt diffuse reference bypassed its checksum");
+    require(bc::writeDiffuseReference(directory, reference), "Corrupt reference could not be replaced");
+    std::stop_source stopped; stopped.request_stop();
+    require(!bc::readDiffuse(directory, source->contentHash, source, edited, .001f, device, stopped.get_token()),
+            "Cancelled diffuse recovery continued reading assets");
+
     auto partial = bc::read(first, identity, source, config, device, {}, {}, bc::ReflectionRead::RecoverMissing);
     require(partial && partial->missingReflections && partial->pixels == data.pixels &&
                 partial->grid.probes.size() == data.grid.probes.size() &&

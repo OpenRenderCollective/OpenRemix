@@ -16,10 +16,7 @@ ShadingResult shadeExampleDiffuse(Surface surface, ShadingReceiver receiver) {
       color += contribution.diffuse + contribution.specular;
     }
   }
-  ShadingResult result;
+  ShadingResult result = initShadingResult(surface, receiver.opacity);
   result.color = vec4(color + surface.emission, receiver.opacity);
-  result.normalRoughness = vec4(surface.normal, surface.roughness);
-  result.reflectance = vec4(0);
-  result.irradianceLuma = -1;
   return result;
 }

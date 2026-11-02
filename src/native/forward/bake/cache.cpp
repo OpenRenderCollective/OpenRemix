@@ -319,6 +319,14 @@ namespace remix::forward::bake::cache {
     const uint32_t filter[] = {0x4f49444eu, 2, lightmap::denoiserVersion()};
     return scene::fastHash(filter, sizeof(filter), raw);
   }
+  uint64_t diffuseKey(uint64_t content, const Config &config, float cutoff, const Device &device,
+                       const DirectPolicy &policy) {
+    auto diffuse = config;
+    diffuse.reflectionProbes = diffuse.reflectionResolution = 0;
+    diffuse.reflectionDetailTolerance = 0;
+    const uint64_t domain = 0x4449464655534501ull;
+    return scene::fastHash(&domain, sizeof(domain), key(content, diffuse, cutoff, device, policy)) | 1;
+  }
   uint64_t reflectionKey(uint64_t content, uint64_t plan, std::span<const probes::Capture> captures,
                          const probes::CaptureConfig &config, const Device &device,
                          bool lightingComponents, const DirectPolicy &policy) {
@@ -379,9 +387,10 @@ namespace remix::forward::bake::cache {
       const probes::cache_codec::Limits reflectionLimits{config.reflectionProbes,
           config.reflectionResolution, device.imageSize, device.imageLayers, device.storageRange};
       if (flags & 256) {
-        auto reflection = probes::capture_cache::readShared(file.parent_path(), input.pod<uint64_t>(),
-                                                            reflectionLimits, cancelled);
-        require(reflection.has_value() || reflections == ReflectionRead::RecoverMissing);
+        const auto blob = input.pod<uint64_t>();
+        auto reflection = reflections == ReflectionRead::DiffuseOnly ? std::optional<probes::CapturePayload>{}
+            : probes::capture_cache::readShared(file.parent_path(), blob, reflectionLimits, cancelled);
+        require(reflection.has_value() || reflections != ReflectionRead::Required);
         if (reflection) {
           result.captures = std::move(reflection->captures);
           result.specular = std::move(reflection->data);
@@ -438,6 +447,11 @@ namespace remix::forward::bake::cache {
           mixed::validateDirectionalCoverage(result.directionals, result.mixed, layout, cancelled);
       }
       input.finish();
+      if (reflections == ReflectionRead::DiffuseOnly) {
+        result.captures = {};
+        result.specular = {};
+        result.missingReflections = true;
+      }
       if (result.missingReflections) {
         // Reconstruct the actual admitted trace origins only for component
         // recovery. Warm complete hits still allocate no Point array.
@@ -463,6 +477,22 @@ namespace remix::forward::bake::cache {
         std::fprintf(stderr, "Bake cache miss: %s\n", error.what());
       return {};
     }
+  }
+  std::optional<Snapshot> readDiffuse(const std::filesystem::path &directory, uint64_t content,
+      std::shared_ptr<const scene::BakeScene> source, const Config &config, float cutoff,
+      const Device &device, std::stop_token cancelled, const DirectPolicy &policy, bool fallbackReflections) {
+    const auto identity = diffuseKey(content, config, cutoff, device, policy);
+    const auto reference = readDiffuseReference(directory, identity, cancelled);
+    if (!reference) return {};
+    auto stored = config;
+    stored.reflectionProbes = reference->reflectionProbes;
+    stored.reflectionResolution = reference->reflectionResolution;
+    stored.reflectionDetailTolerance = std::bit_cast<float>(reference->toleranceBits);
+    if (key(content, stored, cutoff, device, policy, fallbackReflections) != reference->containerKey) return {};
+    auto result = read(directory / path(reference->containerKey).filename(), reference->containerKey,
+                       std::move(source), stored, device, cancelled, policy, ReflectionRead::DiffuseOnly);
+    if (result && !config.reflectionProbes) result->missingReflections = false;
+    return result;
   }
   bool write(const std::filesystem::path &file, uint64_t identity, const View &view,
              std::stop_token cancelled) {

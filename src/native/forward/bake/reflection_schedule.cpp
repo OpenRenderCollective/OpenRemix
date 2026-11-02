@@ -53,9 +53,10 @@ namespace remix::forward::bake {
     }
     if (step == CaptureStep::ValidateSites) {
       dispatch();
+      const auto counts = job.reflections.progress(step);
       char progress[128];
       std::snprintf(progress, sizeof(progress), "Validating reflection capture sites (%u/%zu)",
-                    job.reflections.siteReceived, job.reflections.reflectionSites.size());
+                    counts.completed, counts.total);
       status(REMIXAPI_BAKE_TRACING_EXT, progress);
       return;
     }
@@ -72,10 +73,10 @@ namespace remix::forward::bake {
     }
     if (step == CaptureStep::CheckGeometry) {
       dispatch();
-      const auto rays = job.reflections.projectionAudit->rays();
+      const auto counts = job.reflections.progress(step);
       char progress[128];
       std::snprintf(progress, sizeof(progress), "Checking reflection projection geometry (%u/%zu rays)",
-                    job.reflections.geometryReceived, rays.size());
+                    counts.completed, counts.total);
       status(REMIXAPI_BAKE_TRACING_EXT, progress);
       return;
     }
@@ -123,24 +124,27 @@ namespace remix::forward::bake {
             // scratch before filtered cubemaps, denoising and atlas encoding.
             // Publication must not scan this potentially large buffer again.
             owner->reflections.complete(owner->cancellation.get_token());
+            const auto reflectionFingerprint = owner->reflectionRecovery ? ReflectionFingerprint{}
+                : fingerprintCaptures(owner->reflections.captureView());
             if (!owner->reflectionRecovery) {
               dumpPhaseFingerprint("transport", owner->source->contentHash, owner->grid, owner->surfaceLayout, owner->surfaces,
-                                   owner->sun, owner->reflections.captureView());
+                                   owner->sun, reflectionFingerprint);
               dumpVisibilityReport(*owner->mixedLights, owner->surfaceLayout,
                                     Options{}.bias / owner->source->sceneScale, owner->cancellation.get_token());
             }
             owner->finishStage.store(Job::FinishStage::Reflections, std::memory_order_relaxed);
             owner->reflections.finishRetainedPublication(physical, device, owner->cancellation.get_token());
             if (!owner->reflectionRecovery)
-              owner->finishDiffuseAssets(physical, device, config, owner->reflections.captureView());
+              owner->finishDiffuseAssets(physical, device, config, reflectionFingerprint);
           });
       status(REMIXAPI_BAKE_PREPARING_EXT, "Finishing baked lighting assets");
       return;
     }
     dispatch();
+    const auto counts = job.reflections.progress(step);
     char progress[128];
     std::snprintf(progress, sizeof(progress), "Capturing reflection cubemaps (%u/%zu texels, %u samples)",
-                  job.reflections.captureReceived, job.reflections.work.rays().size(), config.samples);
+                  counts.completed, counts.total, config.samples);
     status(REMIXAPI_BAKE_TRACING_EXT, progress);
     return;
   }

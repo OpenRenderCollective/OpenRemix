@@ -1,3 +1,4 @@
+#include "shading-values.glsl"
 // Receiver metadata is independent of material properties. These values are
 // prepared by the pass adapter, not by user material code.
 struct BakedReceiver {
@@ -17,10 +18,4 @@ struct ShadingReceiver {
   bool directChannels;
   uint reflectionLayer;
   float opacity;
-};
-struct ShadingResult {
-  vec4 color;
-  vec4 normalRoughness;
-  vec4 reflectance;
-  float irradianceLuma; // irradiance / pi luminance; -1 means unavailable
 };

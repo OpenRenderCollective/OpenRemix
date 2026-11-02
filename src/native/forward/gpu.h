@@ -7,7 +7,7 @@
 #include "forward/ray/provider.h"
 #include "forward/provider_plan.h"
 #include "forward/probes/authoring.h"
-#include "forward/probes/standalone_capture.h"
+#include "forward/probes/capture_providers.h"
 #include "forward/probes/selection_upload.h"
 #include "forward/probes/local_selection_preparation.h"
 #include "forward/probe_batch/batch.h"
@@ -101,13 +101,8 @@ namespace remix::forward {
                giTerrainPipeline = VK_NULL_HANDLE, giTerrainLightmapPipeline = VK_NULL_HANDLE;
     std::shared_ptr<bake::Controller> baking;
     std::unique_ptr<probe_batch::Cache> probeVisibility;
-    std::shared_ptr<probes::Authoring> authoredReflections;
-    std::shared_ptr<probes::StandaloneCapture> standaloneReflections;
-    bool standaloneReflectionsUsed = false;
-    probes::CaptureSource reflectionSource() const {
-      if (standaloneReflectionsUsed && !techniquePlan.capturesWithBake()) return standaloneReflections->source();
-      return baking->reflectionSource();
-    }
+    probes::CaptureProviders captureProviders;
+    probes::CaptureSource reflectionSource() const { return captureProviders.source(techniquePlan, *baking); }
     probes::SelectionFrames localSelections;
     std::unique_ptr<probes::LocalSelectionPreparation> localSelectionPreparation;
     std::optional<probes::CoveragePlanContext> localSelectionAttempt;
@@ -119,12 +114,7 @@ namespace remix::forward {
     probes::Descriptors reflectionDescriptor() const {
       const auto selected = localSelections.active();
       if (selected) return selected->image->descriptors();
-      auto automatic = baking->reflectionDescriptor();
-      if (standaloneReflectionsUsed && !techniquePlan.capturesWithBake()) {
-        const auto &standalone = standaloneReflections->source();
-        if (standalone.image) automatic = standalone.image->descriptors();
-      }
-      return authoredReflections->descriptor(automatic);
+      return captureProviders.descriptor(techniquePlan, *baking);
     }
     std::unique_ptr<shadows::Maps> localMaps;
     shadows::Planner shadowPlanner;
