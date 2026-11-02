@@ -4,6 +4,15 @@ The technique split is in progress; performance acceptance is not complete.
 The playable install remains separate from the branch build. Architecture and
 interfaces: [shading API](../architecture/shading-api.md).
 
+PR #37 integration work: radiance cascades use the compiled diffuse-source API
+and the shared resolved capture owner. Both live GI choices stop unused diffuse
+baking; independent cubemaps remain selectable. Procedural sky is opt-in. Water
+still uses its ambient fallback under cascades, and viewmodel cascade lighting
+is a screen-space approximation. Cascade GPU transitions, independent cubemap captures, both depth scheduling
+modes and 1x/4x MSAA pass synchronization validation. Existing Source 2 SSR,
+viewmodel, water and mixed-light regressions pass. Orthographic cascade receiver
+depth matching remains unsupported. The PR remains unmerged pending approval.
+
 Implemented and checked:
 
 - The Source 2 preset selects techniques while retaining quality/display/cache

@@ -280,6 +280,26 @@ This plan is derived once during target preparation and is not another persisted
 selector. Existing source modules consume it without a dynamic registry, virtual
 per-draw dispatch or additional shader branch.
 
+### Radiance cascades diffuse source
+
+`Diffuse::RadianceCascades` selects a compiled receiver-lighting implementation;
+materials continue to consume `ReceiverLighting`. It supplies indirect diffuse,
+keeps direct lights analytic, and does not claim baked attribution or a frozen
+reflection reference. `ResourcePlan::liveDiffuse()` includes both cascades and
+ray-query GI, so the capture owner retires unused diffuse baking for either.
+Cubemap captures remain an independently selectable reflection source. The
+procedural sky and sun override controls are opt-in; selecting this source does
+not replace the host sky or change the default Source 2 preset.
+
+Cascades require compute ray queries and share the prepared live scene. With a
+depth prepass they gather before world shading; otherwise the gather follows
+world shading and the next frame consumes it. The current viewmodel adapter
+approximates lighting from nearby world-screen samples; it is not a world-space
+probe volume. Water retains its existing ambient diffuse fallback. These are
+limits of this source, not requirements imposed on custom material models.
+Receiver depth matching currently assumes a perspective projection; orthographic
+cameras need a separate linear-depth contract before they can use this source.
+
 ## Provider scheduling and transport sharing
 
 Technique independence does not require separate acceleration structures or

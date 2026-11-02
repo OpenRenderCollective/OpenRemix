@@ -42,7 +42,7 @@ namespace remix::forward::cascades {
       Vec4 skyRadiance;               // rgb scale; w zero without a sky image
       Vec3 eye;
     };
-    // After the world pass; leaves the output readable by later fragment shading.
+    // After depth preparation; leaves the output readable by later fragment shading.
     void record(VkCommandBuffer command, const Inputs &inputs, const Options &options);
     // The most recently recorded gather (SHADER_READ_ONLY_OPTIMAL after its
     // frame's record) and the camera it used; false before the first record.

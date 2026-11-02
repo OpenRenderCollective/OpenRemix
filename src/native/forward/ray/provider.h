@@ -32,7 +32,7 @@ namespace remix::forward::ray {
     // sun: the frame's live distant light (the scene's, or a panel override).
     FrameInputs prepare(VkCommandBuffer command, RasterRenderer &resources, const Options &options,
                         const scene::DistantLight &sun, double animationSeconds, uint32_t slot);
-    // After the world pass: this frame's cascade gather, read by the next frame's shading.
+    // Gather after depth preparation, or after world shading when using previous-frame depth.
     void recordCascades(VkCommandBuffer command, const cascades::RadianceCascades::Inputs &inputs,
                         const Options &options);
     const cascades::RadianceCascades *cascades() const { return m_cascades.get(); }

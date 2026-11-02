@@ -38,6 +38,8 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
         "viewmodel": ["VIEWMODEL_PASS", "REFLECTION_GUIDES"],
         "live-diffuse": ["LIVE_GI", "REFLECTION_GUIDES"],
         "live-viewmodel": ["LIVE_GI", "VIEWMODEL_PASS"],
+        "cascade-diffuse": ["CASCADE_GI", "REFLECTION_GUIDES"],
+        "cascade-viewmodel": ["CASCADE_GI", "VIEWMODEL_PASS"],
     }
     for name, defines in variants.items():
         binary = tree / (name + ".spv")
@@ -53,6 +55,7 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
     variants = {
         "environment-viewmodel": (source, ["VIEWMODEL_PASS", "REFLECTION_GUIDES"]),
         "environment-live-viewmodel": (source, ["LIVE_GI", "VIEWMODEL_PASS"]),
+        "environment-cascade-viewmodel": (source, ["CASCADE_GI", "VIEWMODEL_PASS"]),
         "environment-water": (source, ["WATER_SURFACE"]),
         "environment-water-ray": (source, ["WATER_SURFACE", "WATER_RAY"]),
         "environment-world-resolve": (tree / "shaders/reflections.comp", ["SSR_FILTER"]),

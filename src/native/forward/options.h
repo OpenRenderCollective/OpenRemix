@@ -65,7 +65,7 @@ namespace remix::forward {
     float cascadeHistory = .97f;      // history weight h: a running mean of up to 1 / (1 - h) frames
     bool cascadeBounces = true;       // screen-space feedback of the previous frame's irradiance
     // Analytic sky for scenes without an authored dome, scaled by the sun.
-    bool proceduralSky = true;
+    bool proceduralSky = false; // opt in; preserve authored/host sky and Source 2 preset defaults
     float skyIntensity = 1;
     uint32_t skyUpAxis = 3; // 0 X, 1 Y, 2 Z, 3 automatic from the camera
     // Live light controls: replace the scene's distant light without rebaking.
