@@ -52,7 +52,11 @@ Still required for the complete modularity/performance objective:
   completed A/B/B/A 1080p Crossfire study shows overlapping CPU/GPU ranges and
   substantial baseline session drift, with no repeatable material split overhead
   in that profile. This is not universal equivalence or the 300 FPS target.
-  Broaden map/provider coverage, and investigate cold post-ready stalls separately.
+  A follow-up through ownership commit 4c66bddf improves uncapped host FPS but
+  shows higher GPU intervals. At a common 200 FPS cap, total GPU ranges overlap;
+  some current opaque/weapon intervals remain higher. Isolate against the previous
+  comparison build before accepting no overhead. Broaden map/provider coverage,
+  and investigate cold post-ready stalls separately.
 - Continue checking unused experiment paths before removal. Referenced low-level
   diagnostic modes and legacy aliases are not automatically dead code.
 
