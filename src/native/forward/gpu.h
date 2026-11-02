@@ -5,6 +5,7 @@
 #include "forward/highlight_selection.h"
 #include "forward/reflections.h"
 #include "forward/ray/provider.h"
+#include "forward/provider_plan.h"
 #include "forward/probes/authoring.h"
 #include "forward/probes/selection_upload.h"
 #include "forward/probes/local_selection_preparation.h"
@@ -28,6 +29,8 @@ namespace remix::forward {
     VkExtent2D extent{};
     VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
     Options options;
+    techniques::Capabilities capabilities;
+    techniques::ResourcePlan techniquePlan;
     scene::DisplayOutput displayOutput;
     std::unique_ptr<FragmentStatistics> fragmentStatistics;
     Statistics statistics;

@@ -1,4 +1,5 @@
 #include "forward/lighting.h"
+#include "forward/provider_plan.h"
 #include "forward/light_response.h"
 #include "forward/highlight_selection.h"
 #include "forward/shadows/sun_cache.h"
@@ -33,6 +34,32 @@ int main() {
           require(options.samples == 8 && options.baking.samples == 512 &&
                       options.baking.reflectionResolution == 256,
                   "Technique selection preserves quality settings");
+          for (uint32_t support = 0; support < 8; ++support) {
+            const auto before = options;
+            const techniques::Capabilities capabilities{bool(support & 1), bool(support & 2), bool(support & 4)};
+            const auto resources = techniques::resolveResources(options, capabilities);
+            require(options == before, "Resolving device dependencies preserves requested techniques and quality");
+            require(resources.rayDiffuse() == (options.rtGI && capabilities.rayQueries && capabilities.fragmentGI) &&
+                        resources.rayReflections == (options.rtReflections && capabilities.rayQueries),
+                    "Supported requested providers activate, while unsupported ray effects remain unallocated");
+            require(!resources.rayScene || capabilities.rayQueries,
+                    "Unsupported hardware cannot allocate a live ray scene");
+            require(resources.rayScene == (resources.rayDiffuse() || resources.rayReflections),
+                    "Diffuse and reflection providers share exactly one requested live scene");
+            require(!resources.rayDiffuse() || (capabilities.fragmentGI && diffuse == techniques::Diffuse::RayQueries),
+                    "Fragment GI pipelines require support and an explicit diffuse request");
+            require(!resources.rayWater || (resources.rayReflections && options.water && capabilities.waterRayQueries),
+                    "Water continuation requires its reflection provider and water capability");
+            const auto lighting = options.lightingPlan(resources.rayDiffuse());
+            require(!resources.rayDiffuse() || !lighting.bakedReceivers,
+                    "Resolved live GI cannot consume aggregate baked receiver lighting");
+            if (!resources.rayDiffuse())
+              require(resources.diffuse == (options.baking.enabled ? techniques::Diffuse::SurfaceAndProbes
+                                                                   : techniques::Diffuse::Disabled),
+                      "Unavailable live GI retains the configured baked or disabled fallback");
+            require(resources.reflectionResolve == options.reflections(),
+                    "Resolved attachments preserve the existing target compatibility contract");
+          }
           const auto live = options.lightingPlan(diffuse == techniques::Diffuse::RayQueries);
           require(diffuse != techniques::Diffuse::RayQueries || !live.bakedReceivers,
                   "Live diffuse ownership cannot also consume aggregate baked direct");

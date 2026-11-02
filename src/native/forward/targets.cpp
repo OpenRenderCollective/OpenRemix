@@ -20,7 +20,7 @@ namespace remix::forward {
     const auto depthUsage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     auto supported = supportedSamples(physical, colorFormat, colorUsage) &
                      supportedSamples(physical, depthFormat, depthUsage);
-    if (options.reflections())
+    if (techniquePlan.reflectionResolve)
       supported &= supportedSamples(physical, VK_FORMAT_R8G8B8A8_UNORM, colorUsage);
     for (auto count : {VK_SAMPLE_COUNT_4_BIT, VK_SAMPLE_COUNT_2_BIT, VK_SAMPLE_COUNT_1_BIT})
       if (uint32_t(count) <= options.samples && (supported & count)) {
@@ -42,12 +42,12 @@ namespace remix::forward {
     if (samples != VK_SAMPLE_COUNT_1_BIT)
       resolved = image(extent, colorFormat, colorUsage | debugUsage, VK_SAMPLE_COUNT_1_BIT,
                        VK_IMAGE_ASPECT_COLOR_BIT);
-    if (options.reflections()) {
+    if (techniquePlan.reflectionResolve) {
       normalGuide = image(extent, colorFormat, colorUsage, samples, VK_IMAGE_ASPECT_COLOR_BIT);
       reflectanceGuide =
           image(extent, VK_FORMAT_R8G8B8A8_UNORM, colorUsage, samples, VK_IMAGE_ASPECT_COLOR_BIT);
     }
-    const uint32_t resolveIndex = options.reflections() ? 4 : 2;
+    const uint32_t resolveIndex = techniquePlan.reflectionResolve ? 4 : 2;
     const uint32_t attachmentCount = resolveIndex + uint32_t(bool(resolved));
     VkAttachmentDescription attachments[5]{};
     attachments[0] = {.format = colorFormat,
@@ -61,7 +61,7 @@ namespace remix::forward {
     attachments[1] = attachments[0];
     attachments[1].format = depthFormat;
     attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-    if (options.reflections()) {
+    if (techniquePlan.reflectionResolve) {
       attachments[2] = attachments[0];
       attachments[3] = attachments[0];
       attachments[3].format = VK_FORMAT_R8G8B8A8_UNORM;
@@ -78,7 +78,7 @@ namespace remix::forward {
         {VK_ATTACHMENT_UNUSED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
         {VK_ATTACHMENT_UNUSED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}};
     const VkSubpassDescription subpass{.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                       .colorAttachmentCount = options.reflections() ? 3u : 1u,
+                                       .colorAttachmentCount = techniquePlan.reflectionResolve ? 3u : 1u,
                                        .pColorAttachments = colorReferences,
                                        .pDepthStencilAttachment = &depthReference};
     // Paint is lit in HDR after opaque receivers. Preserve their reflection
@@ -91,7 +91,7 @@ namespace remix::forward {
         .pColorAttachments = colorReferences,
         .pResolveAttachments = resolved ? resolveReferences : nullptr,
         .pDepthStencilAttachment = &readDepth,
-        .preserveAttachmentCount = options.reflections() ? 2u : 0u,
+        .preserveAttachmentCount = techniquePlan.reflectionResolve ? 2u : 0u,
         .pPreserveAttachments = preserveGuides};
     const VkSubpassDescription subpasses[] = {subpass, terrainSubpass};
     // Targets are shared between slots on one queue. The incoming dependency
@@ -139,7 +139,7 @@ namespace remix::forward {
                                       .pDependencies = dependencies};
     check(pipeline::createRenderPass(device, &info, nullptr, &worldPass));
     VkImageView views[5] = {color->view, depth->view};
-    if (options.reflections()) {
+    if (techniquePlan.reflectionResolve) {
       views[2] = normalGuide->view;
       views[3] = reflectanceGuide->view;
     }
@@ -257,7 +257,7 @@ namespace remix::forward {
                                                 .pushConstantRangeCount = 1,
                                                 .pPushConstantRanges = &push};
     check(pipeline::createPipelineLayout(device, &layoutInfo, nullptr, &layout));
-    if (rayLighting.diffuseActive()) {
+    if (techniquePlan.rayDiffuse()) {
       giSceneLayout = bake::Transport::createSceneLayout(device);
       const VkDescriptorSetLayout giSets[] = {sceneLayout, materialLayout, giSceneLayout};
       auto info = layoutInfo;

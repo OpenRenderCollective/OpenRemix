@@ -147,7 +147,9 @@ namespace remix::forward {
     next->options = options;
     next->encodeOutput = encodeOutput;
     next->hardwareSrgb = hardwareSrgb;
-    next->rayLighting.initialize(physical, device, options, hardwareRay);
+    next->capabilities = ray::Provider::capabilities(physical, hardwareRay);
+    next->techniquePlan = techniques::resolveResources(options, next->capabilities);
+    next->rayLighting.initialize(physical, device, next->techniquePlan, next->capabilities);
     next->statistics.rayGI = next->rayLighting.diffuseStatistics();
     next->statistics.rayReflections = next->rayLighting.reflectionStatistics();
     next->createLayouts();
@@ -160,7 +162,7 @@ namespace remix::forward {
     next->localMaps->initialize(physical, device, next->shadowPass, options.localShadowLights,
                                 options.localShadowResolution);
     next->statistics.targetBytes += next->localMaps->memoryBytes();
-    if (options.reflections()) {
+    if (next->techniquePlan.reflectionResolve) {
       next->reflections = std::make_unique<Reflections>();
       next->reflections->initialize(physical, device, extent, next->samples, options,
                                     {next->depth->view, next->normalGuide->view, next->reflectanceGuide->view,
@@ -182,7 +184,7 @@ namespace remix::forward {
       next->waterPass->initialize(physical, device, extent, next->samples, next->sceneLayout,
                                   next->materialLayout,
                                   {next->color->view, next->depth->view,
-                                   next->resolved ? next->resolved->view : VK_NULL_HANDLE}, next->rayLighting.waterActive());
+                                   next->resolved ? next->resolved->view : VK_NULL_HANDLE}, next->techniquePlan.rayWater);
     }
     next->baking =
         baking ? std::move(baking)
@@ -247,7 +249,7 @@ namespace remix::forward {
     };
     m_gpu->postProcessing->begin(command);
     gpu::GpuScope bakeTime(command, "Forward+ bake publication and transport");
-    const auto lightingPlan = m_gpu->options.lightingPlan(m_gpu->rayLighting.diffuseActive());
+    const auto lightingPlan = m_gpu->options.lightingPlan(m_gpu->techniquePlan.rayDiffuse());
     m_gpu->baking->record(command, resources, lightingPlan.baking,
                          m_gpu->options.lightCutoff);
     auto captures = m_gpu->baking->reflectionSource();
@@ -263,7 +265,7 @@ namespace remix::forward {
     bakeTime.close();
     step(cpu.bake);
     ray::Provider::FrameInputs rayInputs;
-    if (m_gpu->rayLighting.active())
+    if (m_gpu->techniquePlan.rayScene)
       rayInputs = m_gpu->rayLighting.prepare(command, resources, m_gpu->options,
                                               animationSeconds, m_gpu->slot);
     auto &frame = m_gpu->frames[m_gpu->slot];
@@ -305,6 +307,7 @@ namespace remix::forward {
     if (!m_gpu->options.sameTargets(options))
       throw VK_ERROR_INITIALIZATION_FAILED;
     m_gpu->options = options;
+    m_gpu->techniquePlan = techniques::resolveResources(options, m_gpu->capabilities);
   }
   void Renderer::Gpu::ensure(std::unique_ptr<Buffer> &buffer, VkDeviceSize bytes, VkBufferUsageFlags usage,
                              Buffer::Memory memory) {

@@ -341,3 +341,28 @@ Consequently, retaining a reflection snapshot need not retain diffuse atlases or
 probe buffers. The Source 2 renderer still publishes both outputs together;
 independent cache/publication and complete technique dependency resolution are
 outstanding.
+
+
+### Device-resolved resource plan
+
+`provider_plan.h` is a CPU-only boundary between requested techniques and GPU
+resource creation. `Capabilities` describes ray-query, fragment-GI and water
+limits; `resolveResources()` derives the diffuse provider, shared live scene,
+ray reflection/water effects and reflection attachment requirement. It does not
+mutate quality settings or introduce another saved preset/configuration.
+
+The renderer resolves this plan at initialization and compatible settings edits.
+Ray provider initialization, pipeline/layout selection, render targets, frame
+lighting ownership, and viewmodel reflection guides consume that same plan.
+Diffuse ownership is represented by one enum; the ray predicate is an inline
+query rather than a second mutable selector. No provider dispatch is added to
+material shaders. Unsupported live GI retains the existing baked/disabled
+fallback, while live GI cannot also claim aggregate baked receiver lighting.
+
+Reflection attachments deliberately retain the legacy requested-target rule,
+including the placeholder resolve when only unsupported ray reflections are
+requested. Removing that allocation requires changing both target compatibility
+and runtime replacement policy together; it is not silently optimized here.
+Automatic capture cache/publication is still coupled to the bake, and direct
+versus indirect diffuse storage/pipeline composition is not yet a fully generic
+provider API. These remain required work before claiming the split complete.

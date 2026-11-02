@@ -1,3 +1,9 @@
+# Shared provider dependency plan - 2026-11-02
+
+- A CPU-only resource plan now resolves device support and requested diffuse/ray/reflection dependencies once outside draw loops; targets, pipelines, provider allocation and frame ownership consume it.
+- Unsupported live GI keeps the existing baked/disabled fallback; requested settings/quality are preserved. Existing unsupported-reflection placeholder attachments remain until target replacement compatibility is updated coherently.
+- Still open: independent automatic capture cache/publication, direct/indirect storage composition and complete provider pipeline integration, wider performance qualification.
+
 # Capture scheduling and publication lifetime - 2026-11-02
 
 - Automatic capture selects its own phases and records bounded site/geometry/radiance batches through borrowed transport/budget. The adapter retains job owners and retires readbacks after fences.

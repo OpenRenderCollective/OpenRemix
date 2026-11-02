@@ -272,7 +272,7 @@ namespace remix::forward {
                                      .renderPass = worldPass,
                                      .framebuffer = worldFramebuffer,
                                      .renderArea = {{0, 0}, extent},
-                                     .clearValueCount = options.reflections() ? 4u : 2u,
+                                     .clearValueCount = techniquePlan.reflectionResolve ? 4u : 2u,
                                      .pClearValues = clear};
     vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
     viewport(command, extent);

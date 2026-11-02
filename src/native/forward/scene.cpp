@@ -63,7 +63,7 @@ namespace remix::forward {
         capturedLights[i] = captured;
         // Live GI evaluates direct lights analytically, so those lights retain
         // ordinary shadow priority rather than becoming baked-only fallbacks.
-        if (!rayLighting.diffuseActive() && captured != mixed::none && bindings.bakedDiffuse(captured) &&
+        if (!techniquePlan.rayDiffuse() && captured != mixed::none && bindings.bakedDiffuse(captured) &&
             !bindings.retainsVisibility(captured)) {
           if (fallbackShadows.empty()) fallbackShadows.resize(sources.size());
           fallbackShadows[i] = 1;
@@ -89,13 +89,13 @@ namespace remix::forward {
           groupedStyles[scale.style] = 1;
     }
     const auto grouped = [&](uint32_t captured) {
-      if (rayLighting.diffuseActive() || !bindings || captured >= bindings->source->lights.size()) return false;
+      if (techniquePlan.rayDiffuse() || !bindings || captured >= bindings->source->lights.size()) return false;
       const auto style = bindings->source->lights[captured].style;
       return style < groupedStyles.size() && groupedStyles[style] != 0;
     };
     std::vector<float> highlightWeights;
     std::vector<HighlightCandidate> highlightCandidates;
-    if (options.bakedLightingActive(rayLighting.diffuseActive()) && bindings) {
+    if (options.bakedLightingActive(techniquePlan.rayDiffuse()) && bindings) {
       // Captured indices distinguish emitters even when the adapter shares IDs.
       // Merge repeated submissions of the same captured emitter before selection.
       std::vector<float> priorities(bindings->source->lights.size(), 0);
@@ -236,7 +236,7 @@ namespace remix::forward {
       const auto value = std::getenv("REMIX_DEBUG_DIRECT_FETCH");
       return !value || std::strcmp(value, "0") != 0;
     }();
-    const bool selectDirectOwners = selectiveDirect && bindings && !rayLighting.diffuseActive() &&
+    const bool selectDirectOwners = selectiveDirect && bindings && !techniquePlan.rayDiffuse() &&
         std::any_of(bindings->directLighting.lights.begin(), bindings->directLighting.lights.end(),
                     bake::aggregatesDiffuse);
     std::vector<uint8_t> unitDirectNeeded(selectDirectOwners ? bindings->source->lights.size() : 0);
@@ -261,10 +261,10 @@ namespace remix::forward {
           {source.position[0], source.position[1], source.position[2]}, radius, clusterRadiusScale);
       const auto shadowSlot = shadowSelection.slots[sourceIndex];
       LightResponseInput responseInput;
-      responseInput.selectedOnly = options.selectBakedLights(rayLighting.diffuseActive());
+      responseInput.selectedOnly = options.selectBakedLights(techniquePlan.rayDiffuse());
       responseInput.shadowSelected = shadowSlot != UINT32_MAX;
       responseInput.shadowWeight = responseInput.shadowSelected ? shadowSelection.strength[shadowSlot] : 0;
-      responseInput.independentHighlights = options.bakedLightingActive(rayLighting.diffuseActive());
+      responseInput.independentHighlights = options.bakedLightingActive(techniquePlan.rayDiffuse());
       const auto captured = capturedLights[sourceIndex];
       if (captured < highlightWeights.size()) responseInput.highlightWeight = highlightWeights[captured];
       if (publishedBake && publishedBake->mixedLights) {
@@ -353,7 +353,7 @@ namespace remix::forward {
           if (intersectsClip(bounds, frame.viewModelProjection)) append(draw, frame.viewModelCasters, true);
         }
     }
-    if (probeVisibility && !rayLighting.diffuseActive()) {
+    if (probeVisibility && !techniquePlan.rayDiffuse()) {
       std::vector<uint32_t> selected;
       for (uint32_t i = 0; i < runtimeLights; ++i) {
         auto &light = lights[i];

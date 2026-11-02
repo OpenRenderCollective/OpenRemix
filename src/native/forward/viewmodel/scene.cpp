@@ -18,7 +18,7 @@ namespace remix::forward {
         viewModelLocalMaps->initialize(physical, device, shadowPass, options.localShadowLights,
                                        options.localShadowResolution, false);
       }
-      viewModelData.clusterInfo[3] = uint32_t(localShadows) | (uint32_t(options.reflections()) << 1);
+      viewModelData.clusterInfo[3] = uint32_t(localShadows) | (uint32_t(techniquePlan.reflectionResolve) << 1);
       viewModelData.shadows.fill(frame.viewModelProjection);
       viewModelData.splits.fill(std::numeric_limits<float>::max());
       ensure(frame.viewModelConstants, sizeof(FrameData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);

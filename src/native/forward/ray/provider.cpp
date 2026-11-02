@@ -4,21 +4,25 @@
 #include "platform/gpu_timers.h"
 
 namespace remix::forward::ray {
+  techniques::Capabilities Provider::capabilities(VkPhysicalDevice physical, bool hardwareRay) {
+    return {hardwareRay,
+            hardwareRay && LiveScene::supportsFragmentGI(physical),
+            hardwareRay && water::Pass::supportsRayReflections(physical)};
+  }
   void Provider::initialize(VkPhysicalDevice physical, VkDevice device,
-                            const Options &options, bool hardwareRay) {
+                            const techniques::ResourcePlan &plan, techniques::Capabilities capabilities) {
     reset();
     m_diffuseStatistics = {};
     m_reflectionStatistics = {};
-    m_diffuseStatistics.available = hardwareRay && LiveScene::supportsFragmentGI(physical);
-    m_reflectionStatistics.available = hardwareRay;
-    m_diffuse = options.rtGI && m_diffuseStatistics.available;
-    m_water = options.water && options.rtReflections && hardwareRay &&
-              water::Pass::supportsRayReflections(physical);
-    if ((options.rtReflections && hardwareRay) || m_diffuse) {
+    m_diffuseStatistics.available = capabilities.rayQueries && capabilities.fragmentGI;
+    m_reflectionStatistics.available = capabilities.rayQueries;
+    m_diffuse = plan.rayDiffuse();
+    m_water = plan.rayWater;
+    if (plan.rayScene) {
       m_scene = std::make_unique<LiveScene>();
       m_scene->initialize(physical, device);
     }
-    if (options.rtReflections && hardwareRay) {
+    if (plan.rayReflections) {
       m_reflections = std::make_unique<Reflections>();
       m_reflections->initialize(physical, device, *m_scene);
     }

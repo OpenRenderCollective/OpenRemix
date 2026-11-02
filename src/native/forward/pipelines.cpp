@@ -35,18 +35,18 @@ namespace remix::forward {
     const auto vertex = modules.add(vertShader, sizeof(vertShader));
     const auto lightmapVertex = modules.add(lightmapVertShader, sizeof(lightmapVertShader));
     const auto fragment = options.depthPrepass
-        ? (options.reflections() ? modules.add(prepassedSsrFragShader, sizeof(prepassedSsrFragShader))
+        ? (techniquePlan.reflectionResolve ? modules.add(prepassedSsrFragShader, sizeof(prepassedSsrFragShader))
                                  : modules.add(prepassedFragShader, sizeof(prepassedFragShader)))
-        : (options.reflections() ? modules.add(ssrFragShader, sizeof(ssrFragShader))
+        : (techniquePlan.reflectionResolve ? modules.add(ssrFragShader, sizeof(ssrFragShader))
                                  : modules.add(fragShader, sizeof(fragShader)));
     VkShaderModule giFragment = VK_NULL_HANDLE;
     const auto terrainFragment = modules.add(fragShader, sizeof(fragShader));
     const auto depthFragment = modules.add(opaqueDepthFragShader, sizeof(opaqueDepthFragShader));
     VkShaderModule giTerrainFragment = VK_NULL_HANDLE;
-    if (rayLighting.diffuseActive())
-      giFragment = options.reflections() ? modules.add(ray::gi::guidesShader, sizeof(ray::gi::guidesShader))
+    if (techniquePlan.rayDiffuse())
+      giFragment = techniquePlan.reflectionResolve ? modules.add(ray::gi::guidesShader, sizeof(ray::gi::guidesShader))
                                          : modules.add(ray::gi::fragShader, sizeof(ray::gi::fragShader));
-    if (rayLighting.diffuseActive())
+    if (techniquePlan.rayDiffuse())
       giTerrainFragment = modules.add(ray::gi::fragShader, sizeof(ray::gi::fragShader));
     const auto shadowVertex = modules.add(shadowVertShader, sizeof(shadowVertShader));
     const auto shadowFragment = modules.add(shadowFragShader, sizeof(shadowFragShader));
@@ -180,7 +180,7 @@ namespace remix::forward {
       const VkPipelineColorBlendStateCreateInfo blend{
           .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
           .attachmentCount = shadow                                ? 0u
-                             : composite || terrain || viewModel || !options.reflections() ? 1u
+                             : composite || terrain || viewModel || !techniquePlan.reflectionResolve ? 1u
                                                                    : 3u,
           .pAttachments = shadow ? nullptr : attachments};
       const VkGraphicsPipelineCreateInfo info{.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
@@ -209,11 +209,11 @@ namespace remix::forward {
     // Private qualification keeps the ordinary compiled fragment path intact.
     if (options.debugView == 0 && std::getenv("REMIX_DEBUG_ZERO_DIFFUSE_MATERIAL")) {
       const auto code = options.depthPrepass
-          ? (options.reflections() ? zeroDiffusePrepassedSsrFragShader : zeroDiffusePrepassedFragShader)
-          : (options.reflections() ? zeroDiffuseSsrFragShader : zeroDiffuseFragShader);
+          ? (techniquePlan.reflectionResolve ? zeroDiffusePrepassedSsrFragShader : zeroDiffusePrepassedFragShader)
+          : (techniquePlan.reflectionResolve ? zeroDiffuseSsrFragShader : zeroDiffuseFragShader);
       const auto bytes = options.depthPrepass
-          ? (options.reflections() ? sizeof(zeroDiffusePrepassedSsrFragShader) : sizeof(zeroDiffusePrepassedFragShader))
-          : (options.reflections() ? sizeof(zeroDiffuseSsrFragShader) : sizeof(zeroDiffuseFragShader));
+          ? (techniquePlan.reflectionResolve ? sizeof(zeroDiffusePrepassedSsrFragShader) : sizeof(zeroDiffusePrepassedFragShader))
+          : (techniquePlan.reflectionResolve ? sizeof(zeroDiffuseSsrFragShader) : sizeof(zeroDiffuseFragShader));
       const auto zeroDiffuse = modules.add(code, bytes);
       zeroDiffusePipeline = graphics(vertex, zeroDiffuse, worldPass);
     }
@@ -240,7 +240,7 @@ namespace remix::forward {
     terrainPipeline = graphics(vertex, terrainFragment, worldPass, Pass::Terrain);
     terrainLightmapPipeline = graphics(lightmapVertex, terrainFragment, worldPass, Pass::Terrain, Coverage::Mapped);
     terrainPartialLightmapPipeline = graphics(lightmapVertex, terrainFragment, worldPass, Pass::Terrain);
-    if (rayLighting.diffuseActive()) {
+    if (techniquePlan.rayDiffuse()) {
       giOpaquePipeline = graphics(vertex, giFragment, worldPass);
       giLightmapPipeline = graphics(lightmapVertex, giFragment, worldPass);
       giTerrainPipeline = graphics(vertex, giTerrainFragment, worldPass, Pass::Terrain);
