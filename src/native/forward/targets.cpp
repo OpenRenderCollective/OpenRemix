@@ -257,7 +257,7 @@ namespace remix::forward {
                                                 .pushConstantRangeCount = 1,
                                                 .pPushConstantRanges = &push};
     check(pipeline::createPipelineLayout(device, &layoutInfo, nullptr, &layout));
-    if (giSupported) {
+    if (rayLighting.diffuseActive()) {
       giSceneLayout = bake::Transport::createSceneLayout(device);
       const VkDescriptorSetLayout giSets[] = {sceneLayout, materialLayout, giSceneLayout};
       auto info = layoutInfo;

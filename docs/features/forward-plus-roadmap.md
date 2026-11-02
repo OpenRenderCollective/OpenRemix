@@ -1,3 +1,11 @@
+# Technique separation - 2026-11-02
+
+- Shared direct-light shader module extracted without changing light accumulation order.
+- Baked and ray-query diffuse implementations now have separate compile-time modules behind the receiver contract.
+- Live ray scene/reflection/water transport lifecycle moved into a concrete provider; disabled Source 2 path allocates no live ray scene.
+- Remaining: independent baked diffuse/direct/cubemap resource lifecycles, capability and dependency planning, provider pipeline selection beyond the existing LIVE_GI variants, and shader/material override integration.
+- Performance acceptance remains open: preserve default quality, compare CPU/GPU timings and memory, and keep source/deployment identities explicit.
+
 # Camera culling audit - 2026-11-01
 
 - Confirmed gap: retained BSP camera-PVS metadata is consumed by path tracing, not Forward+. Forward+ currently has camera frustum checks, camera backface rejection and depth prepass, but no equivalent camera-PVS draw rejection for the retained map.

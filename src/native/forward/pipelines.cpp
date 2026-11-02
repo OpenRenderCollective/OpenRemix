@@ -43,10 +43,10 @@ namespace remix::forward {
     const auto terrainFragment = modules.add(fragShader, sizeof(fragShader));
     const auto depthFragment = modules.add(opaqueDepthFragShader, sizeof(opaqueDepthFragShader));
     VkShaderModule giTerrainFragment = VK_NULL_HANDLE;
-    if (giSupported)
+    if (rayLighting.diffuseActive())
       giFragment = options.reflections() ? modules.add(ray::gi::guidesShader, sizeof(ray::gi::guidesShader))
                                          : modules.add(ray::gi::fragShader, sizeof(ray::gi::fragShader));
-    if (giSupported)
+    if (rayLighting.diffuseActive())
       giTerrainFragment = modules.add(ray::gi::fragShader, sizeof(ray::gi::fragShader));
     const auto shadowVertex = modules.add(shadowVertShader, sizeof(shadowVertShader));
     const auto shadowFragment = modules.add(shadowFragShader, sizeof(shadowFragShader));
@@ -240,7 +240,7 @@ namespace remix::forward {
     terrainPipeline = graphics(vertex, terrainFragment, worldPass, Pass::Terrain);
     terrainLightmapPipeline = graphics(lightmapVertex, terrainFragment, worldPass, Pass::Terrain, Coverage::Mapped);
     terrainPartialLightmapPipeline = graphics(lightmapVertex, terrainFragment, worldPass, Pass::Terrain);
-    if (giSupported) {
+    if (rayLighting.diffuseActive()) {
       giOpaquePipeline = graphics(vertex, giFragment, worldPass);
       giLightmapPipeline = graphics(lightmapVertex, giFragment, worldPass);
       giTerrainPipeline = graphics(vertex, giTerrainFragment, worldPass, Pass::Terrain);

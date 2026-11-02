@@ -1,4 +1,3 @@
-#include "forward/bake/transport.h"
 #include "forward/gpu.h"
 #include "platform/gpu_timers.h"
 #include "runtime/pipelines.h"
@@ -68,19 +67,12 @@ namespace remix::forward {
                              (viewModelSun ? viewModelSun->bytes() : 0) +
                              (viewModelLocalMaps ? viewModelLocalMaps->memoryBytes() : 0);
     statistics.accelerationBytes = memory.acceleration + authoredMemory.acceleration;
-    if (liveScene) {
-      const auto live = liveScene->memory();
-      statistics.bufferBytes += live.buffers;
-      statistics.targetBytes += live.images;
-      statistics.accelerationBytes += live.acceleration;
-    }
-    if (rayReflections) {
-      statistics.rayReflections = rayReflections->statistics();
-      const auto live = rayReflections->memory();
-      statistics.bufferBytes += live.buffers;
-      statistics.targetBytes += live.images;
-      statistics.accelerationBytes += live.acceleration;
-    }
+    statistics.rayGI = rayLighting.diffuseStatistics();
+    statistics.rayReflections = rayLighting.reflectionStatistics();
+    const auto rayMemory = rayLighting.memory();
+    statistics.bufferBytes += rayMemory.buffers;
+    statistics.targetBytes += rayMemory.images;
+    statistics.accelerationBytes += rayMemory.acceleration;
   }
   Renderer::Renderer() = default;
   Renderer::~Renderer() = default;
@@ -93,8 +85,7 @@ namespace remix::forward {
     baking.reset();
     localMaps.reset();
     reflections.reset();
-    rayReflections.reset();
-    liveScene.reset();
+    rayLighting.reset();
     for (auto &frame : frames) {
       if (frame.pool)
         vkDestroyDescriptorPool(device, frame.pool, nullptr);
@@ -156,10 +147,9 @@ namespace remix::forward {
     next->options = options;
     next->encodeOutput = encodeOutput;
     next->hardwareSrgb = hardwareSrgb;
-    next->giSupported = options.rtGI && hardwareRay && ray::LiveScene::supportsFragmentGI(physical);
-    next->waterRaySupported = options.water && options.rtReflections && hardwareRay &&
-                              water::Pass::supportsRayReflections(physical);
-    next->statistics.rayGI.available = hardwareRay && ray::LiveScene::supportsFragmentGI(physical);
+    next->rayLighting.initialize(physical, device, options, hardwareRay);
+    next->statistics.rayGI = next->rayLighting.diffuseStatistics();
+    next->statistics.rayReflections = next->rayLighting.reflectionStatistics();
     next->createLayouts();
     next->createTargets();
     next->postProcessing = std::make_unique<postfx::Renderer>();
@@ -178,15 +168,6 @@ namespace remix::forward {
                                      next->resolved ? next->resolved->handle : next->color->handle});
       next->statistics.targetBytes += next->reflections->targetBytes();
     }
-    next->statistics.rayReflections.available = hardwareRay;
-    if ((options.rtReflections && hardwareRay) || next->giSupported) {
-      next->liveScene = std::make_unique<ray::LiveScene>();
-      next->liveScene->initialize(physical, device);
-    }
-    if (options.rtReflections && hardwareRay) {
-      next->rayReflections = std::make_unique<ray::Reflections>();
-      next->rayReflections->initialize(physical, device, *next->liveScene);
-    }
     next->viewModelTarget = std::make_unique<viewmodel::Target>();
     next->viewModelTarget->initialize(physical, device, extent, next->samples);
     // Gather immutable selected-light masks once, then reuse vector lookups on
@@ -201,7 +182,7 @@ namespace remix::forward {
       next->waterPass->initialize(physical, device, extent, next->samples, next->sceneLayout,
                                   next->materialLayout,
                                   {next->color->view, next->depth->view,
-                                   next->resolved ? next->resolved->view : VK_NULL_HANDLE}, next->waterRaySupported);
+                                   next->resolved ? next->resolved->view : VK_NULL_HANDLE}, next->rayLighting.waterActive());
     }
     next->baking =
         baking ? std::move(baking)
@@ -236,10 +217,7 @@ namespace remix::forward {
     g.localSelections.selectFrame(slot);
     if (g.reflections)
       g.reflections->selectFrame(slot);
-    if (g.liveScene)
-      g.liveScene->selectFrame(slot);
-    if (g.rayReflections)
-      g.rayReflections->selectFrame(slot);
+    g.rayLighting.selectFrame(slot);
     auto &frame = g.frames.at(slot);
     frame.probeVisibility.reset();
     frame.commands.clear();
@@ -269,7 +247,7 @@ namespace remix::forward {
     };
     m_gpu->postProcessing->begin(command);
     gpu::GpuScope bakeTime(command, "Forward+ bake publication and transport");
-    const auto lightingPlan = m_gpu->options.lightingPlan(m_gpu->giSupported);
+    const auto lightingPlan = m_gpu->options.lightingPlan(m_gpu->rayLighting.diffuseActive());
     m_gpu->baking->record(command, resources, lightingPlan.baking,
                          m_gpu->options.lightCutoff);
     const auto &baked = m_gpu->baking->volume();
@@ -278,26 +256,13 @@ namespace remix::forward {
     m_gpu->prepareLocalReflections(command, resources);
     bakeTime.close();
     step(cpu.bake);
-    if (m_gpu->liveScene) {
-      gpu::GpuScope liveTime(command, "Forward+ live ray scene");
-      m_gpu->liveScene->prepare(command, resources, m_gpu->options, animationSeconds);
-    }
+    ray::Provider::FrameInputs rayInputs;
+    if (m_gpu->rayLighting.active())
+      rayInputs = m_gpu->rayLighting.prepare(command, resources, m_gpu->options,
+                                              animationSeconds, m_gpu->slot);
     auto &frame = m_gpu->frames[m_gpu->slot];
-    frame.giScene = VK_NULL_HANDLE;
-    frame.waterRayScene = VK_NULL_HANDLE;
-    if (m_gpu->giSupported)
-      m_gpu->statistics.rayGI = m_gpu->liveScene->statistics();
-    if (m_gpu->giSupported && m_gpu->liveScene->transport()) {
-      const auto &options = m_gpu->options;
-      frame.giScene = m_gpu->liveScene->transport()->prepareFragment(
-          m_gpu->slot, options.rtGISamples, options.rtGIBounces, options.rtGIDistance);
-    }
-    if (m_gpu->waterRaySupported && m_gpu->liveScene->transport()) {
-      const auto &options = m_gpu->options;
-      frame.waterRayScene = m_gpu->liveScene->transport()->prepareFragment(
-          m_gpu->slot, 1, options.rtReflectionBounces, options.rtReflectionDistance,
-          bake::Transport::FragmentUse::Reflection);
-    }
+    frame.giScene = rayInputs.diffuse;
+    frame.waterRayScene = rayInputs.water;
     step(cpu.liveScene);
     gpu::GpuScope uploadTime(command, "Forward+ frame uploads");
     m_gpu->prepareFrame(command, resources, animationSeconds);
@@ -312,7 +277,7 @@ namespace remix::forward {
           command, m_gpu->slot, m_gpu->frames[m_gpu->slot].data, m_gpu->options,
           m_gpu->reflectionDescriptor(),
           {frame.skyConstants->descriptor(), m_gpu->baking->descriptor(), frame.skyImage},
-          m_gpu->rayReflections.get());
+          m_gpu->rayLighting.reflections());
     }
     step(cpu.reflections);
     m_gpu->recordWater(command);

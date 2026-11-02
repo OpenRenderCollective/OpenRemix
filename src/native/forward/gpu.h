@@ -4,6 +4,7 @@
 #include "forward/fragment_statistics.h"
 #include "forward/highlight_selection.h"
 #include "forward/reflections.h"
+#include "forward/ray/provider.h"
 #include "forward/probes/authoring.h"
 #include "forward/probes/selection_upload.h"
 #include "forward/probes/local_selection_preparation.h"
@@ -64,10 +65,7 @@ namespace remix::forward {
     VkPipeline viewModelDepthPipeline = VK_NULL_HANDLE;
     std::unique_ptr<postfx::Renderer> postProcessing;
     VkDescriptorSetLayout postLayout = VK_NULL_HANDLE;
-    std::unique_ptr<ray::Reflections> rayReflections;
-    std::unique_ptr<ray::LiveScene> liveScene;
-    bool giSupported = false;
-    bool waterRaySupported = false;
+    ray::Provider rayLighting;
     VkDescriptorSetLayout giSceneLayout = VK_NULL_HANDLE;
     VkPipelineLayout giLayout = VK_NULL_HANDLE;
     VkPipeline giOpaquePipeline = VK_NULL_HANDLE, giLightmapPipeline = VK_NULL_HANDLE;

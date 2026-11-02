@@ -259,3 +259,23 @@ replacing indirect transport cannot double-count baked direct light.
 Performance acceptance requires comparison against the unchanged Source 2
 profile, including shader work, CPU recording, GPU timings, and memory. Shader
 function extraction alone does not establish performance equivalence.
+
+
+### Ray-query provider lifecycle
+
+`forward/ray/provider.h` owns the optional live scene and reflection continuation.
+It resolves device support at initialization, allocates only requested supported
+ray effects, selects frame slots after their fences, and prepares diffuse/water
+transport descriptors. Reflections retire before their shared scene. The main
+renderer schedules this concrete module; no virtual dispatch or provider-ID loop
+is introduced. The Source 2 profile retains no live ray scene and skips provider
+preparation. Resource access and disabled-path checks are inline.
+
+`shaders/receiver-lighting.glsl` is the shared diffuse contract. It includes
+`diffuse-baked.glsl` or `diffuse-ray.glsl` at compilation, retaining the existing
+`LIVE_GI` pipeline selection. Both return irradiance divided by pi before material
+response. The aggregate flag describes baked direct ownership; a new indirect
+provider must not set it merely because it supplies diffuse GI. Baked chart
+visibility and incident irradiance used for reflection normalization still need
+separation from the standard material orchestration. Automatic cubemap capture
+also still depends on the bake controller; the full provider split is unfinished.
