@@ -1,7 +1,7 @@
 // Direct illumination provider shared by world and viewmodel materials.
 // Baked visibility, mixed shadows and analytic specular remain owned by the
 // existing sun/local implementations. No exposure or emission belongs here.
-vec3 directLightComponent(BrdfLobes light, uint view) {
+vec3 directLightComponent(LightContribution light, uint view) {
   if (view == 2u || view == 7u) return light.diffuse;
   if (view == 3u) return light.specular;
   return light.diffuse + light.specular;
@@ -10,13 +10,13 @@ void accumulateDirectLighting(inout vec3 color, Surface surface, ShadingReceiver
                             float bakedSunVisibility, bool aggregate, uint debugView) {
   vec3 n = surface.normal, v = receiver.viewDirection;
   vec4 coordinate = receiver.baked.coordinate, bounds = receiver.baked.bounds;
-  BrdfLobes sun = sunLightResponse(coordinate, bounds, bakedSunVisibility, receiver.position, receiver.depth, n, v,
+  LightContribution sun = sunLightResponse(coordinate, bounds, bakedSunVisibility, receiver.position, receiver.depth, n, v,
       surface.color.rgb, surface.roughness, surface.metallic, normalize(receiver.geometric));
   color += directLightComponent(sun, debugView);
   LocalLightingContext localLighting = prepareLocalLighting(receiver, n, surface.metallic < 1, aggregate);
   for (uint i = 0u; i < localLighting.lights.count; ++i) {
     uint index = localLightIndex(localLighting.lights, i);
-    BrdfLobes local = localLightResponse(index, receiver.position, n, v, surface.color.rgb,
+    LightContribution local = localLightResponse(index, receiver.position, n, v, surface.color.rgb,
         surface.roughness, surface.metallic, localLighting.directIrradiance, receiver.baked, vec3(.04),
         normalize(receiver.geometric), aggregate);
     color += directLightComponent(local, debugView);

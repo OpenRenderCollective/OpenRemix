@@ -113,18 +113,19 @@ void main() {
       BakedReceiver(vec4(0), surfaceBounds, surfaceLights, surfaceDirectLights, surfaceChart), false, 0u, 1);
   ReceiverLighting lighting = sampleDiffuseLighting(receiver, n, ReceiverLightContext(false, vec4(0)), true);
   bool aggregateReceiver = lighting.aggregate;
-  vec3 diffuse = surface.rgb * lighting.diffuse;
+  vec3 diffuse = composeDiffuseLight(lighting, surface.rgb);
   vec3 l = -frame.sunDirection.xyz;
   BrdfLobes sun = brdfLobes(surface.rgb, roughness, 0, n, v, l, specularF0);
   // Preserve the current water CSM policy while sharing sunlight transport.
   SunLightSample sunlight = sampleUnbakedSunLight(worldPosition, depth, n,
       normalize(cross(dFdx(worldPosition), dFdy(worldPosition))));
-  diffuse += sun.diffuse * sunlight.diffuseIrradiance * sunlight.radiance;
-  vec3 specular = sun.specular * sunlight.staticVisibility * sunlight.radiance;
+  LightContribution sunContribution = composeSunLight(sunlight, sun);
+  diffuse += sunContribution.diffuse;
+  vec3 specular = sunContribution.specular;
   LocalLightingContext localLighting = prepareLocalLighting(receiver, n, false, aggregateReceiver);
   for (uint i = 0u; i < localLighting.lights.count; ++i) {
     uint light = localLightIndex(localLighting.lights, i);
-    BrdfLobes response = localLightResponse(light, worldPosition, n, v, surface.rgb, roughness, 0,
+    LightContribution response = localLightResponse(light, worldPosition, n, v, surface.rgb, roughness, 0,
                                            localLighting.directIrradiance, receiver.baked,
                                            specularF0, normalize(geometric), aggregateReceiver);
     diffuse += response.diffuse;

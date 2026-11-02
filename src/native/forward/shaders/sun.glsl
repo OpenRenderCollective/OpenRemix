@@ -46,19 +46,21 @@ SunLightSample sampleSunLight(vec4 coordinate, vec4 bounds, float unitIrradiance
 SunLightSample sampleUnbakedSunLight(vec3 p, float depth, vec3 n, vec3 receiverNormal) {
   return sampleSunLight(vec4(0), vec4(0), 0, p, depth, n, receiverNormal, false);
 }
-BrdfLobes shadeStandardSunLight(SunLightSample lighting, vec3 n, vec3 v,
-                               vec3 base, float roughness, float metallic) {
-  BrdfLobes response = brdfLobes(base, roughness, metallic, n, v, lighting.direction);
-  return BrdfLobes(response.diffuse * lighting.diffuseIrradiance * lighting.radiance,
-                   response.specular * lighting.staticVisibility * lighting.radiance);
+LightContribution composeSunLight(SunLightSample lighting, BrdfLobes response) {
+  return LightContribution(response.diffuse * lighting.diffuseIrradiance * lighting.radiance,
+                            response.specular * lighting.staticVisibility * lighting.radiance);
 }
-BrdfLobes sunLightResponse(vec4 coordinate, vec4 bounds, float unitIrradiance, vec3 p, float depth, vec3 n, vec3 v,
+LightContribution shadeStandardSunLight(SunLightSample lighting, vec3 n, vec3 v,
+                                        vec3 base, float roughness, float metallic) {
+  return composeSunLight(lighting, brdfLobes(base, roughness, metallic, n, v, lighting.direction));
+}
+LightContribution sunLightResponse(vec4 coordinate, vec4 bounds, float unitIrradiance, vec3 p, float depth, vec3 n, vec3 v,
                            vec3 base, float roughness, float metallic, vec3 receiverNormal) {
   SunLightSample lighting = sampleSunLight(coordinate, bounds, unitIrradiance, p, depth, n, receiverNormal);
   return shadeStandardSunLight(lighting, n, v, base, roughness, metallic);
 }
 vec3 sunLight(vec4 coordinate, vec4 bounds, float unitIrradiance, vec3 p, float depth, vec3 n, vec3 v,
               vec3 base, float roughness, float metallic) {
-  BrdfLobes response = sunLightResponse(coordinate, bounds, unitIrradiance, p, depth, n, v, base, roughness, metallic, n);
+  LightContribution response = sunLightResponse(coordinate, bounds, unitIrradiance, p, depth, n, v, base, roughness, metallic, n);
   return response.diffuse + response.specular;
 }

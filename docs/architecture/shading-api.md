@@ -144,11 +144,44 @@ baked/mixed sun ownership as world/props and selecting live diffuse providers fo
 water still need explicit quality/resource qualification. Shared queries alone
 must not be reported as finishing those policies.
 
+## Material response and composition
+
+`BrdfLobes` describes material response; `LightContribution` describes scene-linear
+radiance after source weighting. They are distinct types even though both have
+diffuse/specular fields. A mixed-shadow diffuse contribution can be negative:
+accumulate it into baked lighting before clamping the final color.
+
+- `composeDiffuseLight(incident, diffuseReflectance)` applies material color to
+  receiver irradiance / pi. The standard reflectance is base color times
+  `(1 - metallic)`; do not divide by pi again.
+- `composeLocalLight(source, response)` applies source irradiance, static/moving
+  visibility, range fade, selected-highlight weight and aggregate subtraction.
+  Diffuse response is a weight per unit irradiance; specular response includes
+  the analytic receiver cosine, matching `BrdfLobes` from the standard BRDF.
+- Models with different analytic and preintegrated diffuse responses can call
+  `composeLocalLight(source, analyticResponse, bakedDiffuseWeight)`. It chooses
+  the correct diffuse response without exposing visibility/fade bookkeeping.
+  The baked weight must match the model's response to the aggregate field.
+- `composeSunLight(source, response)` applies the separate sunlight query's
+  irradiance and visibility to custom or standard material lobes.
+
+For a custom Lambert model, use `BrdfLobes(albedo / Pi, vec3(0))` for local lights
+and `composeDiffuseLight(incident, albedo)` for the aggregate field. The local
+compositor subtracts newly occluded baked energy instead of adding the same
+static light twice. The model does not inspect channel masks, visibility flags,
+range fades or selected-shadow/highlight controls. Source enumeration and
+response remain per-light; the standard loop retains its fused accumulation
+order rather than allocating extra diffuse/specular accumulation buffers.
+
+These helpers cover the existing source contracts. They do not yet define a
+generic ownership schema for every future unified GI provider, nor replace the
+pass-specific reflection guides and final display transform.
+
 ## Remaining API work
 
-1. Complete the composition contract over receiver-local queries, including
-   explicit ownership of aggregate baked energy and mixed-shadow corrections.
-   Keep source-index and receiver-ordinal query semantics distinct.
+1. Extend ownership metadata beyond the existing aggregate-field contract for
+   future unified GI providers. Keep source-index and receiver-ordinal query
+   semantics distinct; existing mixed/range/highlight composition is shared.
 2. Connect reflection radiance to interchangeable screen/ray and environment
    providers; qualify water baked/mixed-sun ownership and live diffuse selection.
 3. Separate direct ownership and indirect transport in the composition contract.

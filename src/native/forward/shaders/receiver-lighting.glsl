@@ -28,3 +28,9 @@ ReceiverLighting sampleDiffuseLighting(ShadingReceiver receiver, vec3 normal,
   return evaluateReceiverLighting(receiver.position, normal, receiver.geometric,
       context.charted, context.chart.rgb, diffuseRequired, frame.ambientExposure.rgb);
 }
+
+// ReceiverLighting.diffuse already contains irradiance / pi. The material
+// supplies diffuse reflectance (for standard PBR: base color * (1 - metalness)).
+vec3 composeDiffuseLight(ReceiverLighting lighting, vec3 diffuseReflectance) {
+  return diffuseReflectance * lighting.diffuse;
+}

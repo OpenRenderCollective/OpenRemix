@@ -18,6 +18,7 @@ layout(early_fragment_tests) in;
 #include "material.glsl"
 #ifndef SHADOW_PASS
 #include "brdf.glsl"
+#include "light-contribution.glsl"
 #include "emitter.glsl"
 #include "surface.glsl"
 #include "reflection-guide.glsl"

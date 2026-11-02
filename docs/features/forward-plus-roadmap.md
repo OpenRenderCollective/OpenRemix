@@ -1,3 +1,8 @@
+## Shared light composition - 2026-11-02
+
+- Material BRDF lobes and scene-linear LightContribution now have distinct types. Generic diffuse/local/sun composition handles existing mixed-shadow/range/highlight semantics for standard and custom models.
+- Still required: ownership contracts for future unified GI providers, provider scheduling/storage and full performance acceptance; custom program loading remains separate unfinished work.
+
 ## Water lighting API integration - 2026-11-02
 
 - Optical water now consumes shared receiver diffuse/local/sun/environment queries. Its Fresnel/refraction/absorption and existing CSM/sky policies remain in the water adapter.
