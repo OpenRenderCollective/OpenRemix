@@ -112,7 +112,7 @@ void main() {
   ShadingReceiver receiver = ShadingReceiver(worldPosition, geometric, v, gl_FragCoord.xy, depth,
       BakedReceiver(vec4(0), surfaceBounds, surfaceLights, surfaceDirectLights, surfaceChart), false, 0u, 1);
   ReceiverLighting lighting = sampleDiffuseLighting(receiver, n, ReceiverLightContext(false, vec4(0)), true);
-  bool aggregateReceiver = lighting.aggregate;
+  bool aggregateReceiver = lighting.usesDirectAttribution;
   vec3 diffuse = composeDiffuseLight(lighting, surface.rgb);
   vec3 l = -frame.sunDirection.xyz;
   BrdfLobes sun = brdfLobes(surface.rgb, roughness, 0, n, v, l, specularF0);
@@ -131,7 +131,7 @@ void main() {
     diffuse += response.diffuse;
     specular += response.specular;
   }
-  float localLuma = aggregateReceiver ? dot(max(lighting.diffuse, vec3(0)), vec3(.2126, .7152, .0722)) : -1;
+  float localLuma = lighting.reflectionReference ? dot(max(lighting.diffuse, vec3(0)), vec3(.2126, .7152, .0722)) : -1;
   ReflectionReceiver reflectionReceiver = ReflectionReceiver(worldPosition, worldPosition, n,
       boundary.reflected, roughness, localLuma, 0u, uvec2(0));
   vec3 reflected = sampleEnvironmentReflection(reflectionReceiver);

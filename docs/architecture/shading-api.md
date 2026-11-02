@@ -137,13 +137,34 @@ irradiance once. `sampleDiffuseLighting(receiver, normal, context, required)`
 selects the compiled diffuse provider. Both standard and custom models can use
 this entry without accessing the surface atlas or probe storage. The returned
 `ReceiverLighting.diffuse` is linear HDR irradiance / pi, before material color
-and metalness. `aggregate` identifies baked direct energy already included in
-that value; it must be passed to the direct-light mixed-shadow correction.
+and metalness. The value type and `composeDiffuseLight` live in resource-free
+`diffuse-values.glsl`, separate from receiver bindings and provider queries.
+Its independent policy fields are:
 
-Reflection-normalization luminance remains in standard composition. Extracting
-that calculation into a helper increased control flow for metal-only variants;
-it needs a better shared contract before moving. Diagnostic baked-source views
-still query baked data explicitly, including when live GI is selected.
+- `usesDirectAttribution`: apply the receiver's per-light baked attribution policy
+  when composing direct lighting. This does not mean every light is included;
+  membership and moving-caster residuals remain source-query responsibilities.
+- `reflectionReference`: use this field under the selected reflection provider's
+  local incident-light normalization convention. It does not imply baked direct
+  membership or authorize subtracting a light contribution.
+
+These replace the former overloaded `aggregate` flag. Source 2 currently sets
+both for a valid chart/probe field; live diffuse and ambient fallback set neither,
+retaining their previous behavior. Custom providers can select the two policies
+independently. This separates normalization policy from direct-light attribution;
+it does not yet describe complete direct/indirect energy provenance for arbitrary
+unified GI implementations.
+
+Reflection-normalization luminance remains in standard composition. When a
+metal-only variant skips diffuse evaluation, the compiled provider's pure
+`needsDiffuseReferenceQuery(hasSurfaceField)` predicate selects whether to call
+`diffuseReferenceLuma(position, normal)`. A negative result means unavailable.
+Source 2 reads its baked incident field; live diffuse does not advertise a
+compatible frozen reference. A replacement provider implements these queries
+without forcing the model to read a baked probe. Evaluate the pure predicate
+before combining it with the reference flag: a function call inside `&&` added
+control flow in the metal variants. The current arrangement preserves the old
+optimized work. Diagnostic baked-source views still query baked data explicitly.
 
 ## Reflection radiance
 
@@ -215,9 +236,9 @@ These helpers cover the existing source contracts. They do not yet define a
 generic ownership schema for every future unified GI provider, nor replace the
 pass-specific reflection guides and final display transform.
 
-Receiver diagnostics and incident-light normalization also live behind the
+Receiver diagnostics and sun visibility also live behind the
 receiver-lighting API: `receiverBakedCoverage`, `receiverBakedDiffuse`,
-`receiverBakedIrradianceLuma` and `receiverSunVisibility`. The standard model does not
+`receiverSunVisibility`; metal reference lookup belongs to the diffuse provider. The standard model does not
 read chart channels or query baked probe storage directly; its prepared context
 still exposes whether the receiver has a surface chart. The diagnostic helpers
 intentionally show the baked reference field even with live diffuse selected;
@@ -314,7 +335,7 @@ confidence clamps/filtering. Their existing source queries and pass-owned depth,
 probe candidates and reflection guides remain unchanged. A replacement source
 can supply the same value contract without exposing its texture/volume layout.
 
-The `shading_values.py` compile fixture includes material/reflection headers twice
+The `shading_values.py` compile fixture includes material/diffuse/reflection headers twice
 and uses them in vertex, fragment and compute code without renderer bindings.
 It guards the resource boundary; it does not implement a runtime shader loader or
 prove visual equivalence for a new provider.
@@ -354,14 +375,15 @@ on query validation. Baked/mixed-sun ownership for water remains a separate task
 
 ## Remaining API work
 
-1. Extend ownership metadata beyond the existing aggregate-field contract for
+1. Extend ownership metadata beyond the existing per-light attribution contract for
    future unified GI providers. Keep source-index and receiver-ordinal query
    semantics distinct; existing mixed/range/highlight composition is shared.
 2. Connect reflection radiance to interchangeable screen/ray and environment
    providers; qualify water baked/mixed-sun ownership.
 3. Separate direct ownership and indirect transport in the composition contract.
-   The current aggregate-bake flag and normalization bookkeeping still couple
-   these concerns. Define units and provenance before exposing LightingTerms.
+   Direct-attribution and reflection-reference policies are now distinct, but the
+   underlying per-light baked policy does not describe arbitrary GI provenance.
+   Define contribution ownership and compatible normalization before LightingTerms.
 4. Provide standard/custom composition with depth, shadow, MSAA and reflection
    guide compatibility. A material shader should not need pass-specific storage
    knowledge to remain correctly lit.

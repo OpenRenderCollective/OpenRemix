@@ -1,3 +1,10 @@
+## 2026-11-03: diffuse values and independent policies
+
+- Diffuse irradiance values/composition now live in a resource-free header beside material/reflection values.
+- Replaced the overloaded receiver `aggregate` flag with separate direct-attribution and reflection-reference policies. Existing providers preserve their behavior; a replacement provider can choose these policies independently.
+- Metal incident-reference eligibility and lookup now belong to the compiled diffuse provider, so a replacement is not forced to read baked probes.
+- Eighteen affected optimized shader variants retain matching sizes/opcode counts. Full direct/indirect provenance, provider lifecycle separation and matched gameplay performance acceptance remain open.
+
 ## 2026-11-03: shared reflection sample contract
 
 - World, water and viewmodels share resource-free reflection radiance/confidence values and fallback composition. Source adapters retain their filtering/clamp policy; material Fresnel stays separate.

@@ -21,16 +21,17 @@ ShadingResult shadeStandardSurface(Surface surface, ShadingReceiver receiver) {
   }
   ReceiverLighting diffuse = sampleDiffuseLighting(receiver, n, lightingContext,
       surface.metallic < 1 && any(greaterThan(surface.color.rgb, vec3(0))));
-  if (diffuse.aggregate)
+  if (diffuse.reflectionReference)
     shaded.irradianceLuma = dot(max(diffuse.diffuse, vec3(0)), vec3(.2126, .7152, .0722));
 #ifdef ZERO_DIFFUSE_MATERIAL
-  if (diffuse.aggregate && !charted)
-    shaded.irradianceLuma = receiverBakedIrradianceLuma(receiver, n);
+  bool needsReference = needsDiffuseReferenceQuery(charted);
+  if (diffuse.reflectionReference && needsReference)
+    shaded.irradianceLuma = diffuseReferenceLuma(receiver.position, n);
 #endif
   shaded.irradianceLuma = min(shaded.irradianceLuma, 65000);
   bool includeBakedDiffuse = debugView == 0u || debugView == 7u;
   vec3 color = includeBakedDiffuse ? composeDiffuseLight(diffuse, surface.color.rgb * (1 - surface.metallic)) : vec3(0);
-  accumulateDirectLighting(color, surface, receiver, receiverSunVisibility(lightingContext), diffuse.aggregate, debugView);
+  accumulateDirectLighting(color, surface, receiver, receiverSunVisibility(lightingContext), diffuse.usesDirectAttribution, debugView);
   if (debugView == 0u) color += surface.emission;
 #ifdef VIEWMODEL_PASS
   if (debugView == 0u) color += viewModelReflection(receiver.position, n, receiver.viewDirection, surface.color.rgb,

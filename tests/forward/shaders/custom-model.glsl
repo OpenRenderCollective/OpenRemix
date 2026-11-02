@@ -4,7 +4,7 @@ ShadingResult shadeExampleDiffuse(Surface surface, ShadingReceiver receiver) {
   ReceiverLightContext context = prepareReceiverLighting(receiver, surface.normal);
   ReceiverLighting light = sampleDiffuseLighting(receiver, surface.normal, context, true);
   vec3 color = composeDiffuseLight(light, surface.color.rgb);
-  LocalLightingContext locals = prepareLocalLighting(receiver, surface.normal, true, light.aggregate);
+  LocalLightingContext locals = prepareLocalLighting(receiver, surface.normal, true, light.usesDirectAttribution);
   for (uint i = 0u; i < locals.lights.count; ++i) {
     LocalLightSample source;
     if (sampleReceiverLocalLight(i, receiver, surface.normal, locals, true, source)) {

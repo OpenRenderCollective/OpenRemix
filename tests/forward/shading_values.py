@@ -21,12 +21,16 @@ common = """#version 450
 #include "surface-values.glsl"
 #include "reflection-sample.glsl"
 #include "reflection-sample.glsl"
+#include "diffuse-values.glsl"
+#include "diffuse-values.glsl"
 """
 stages = {
     "vert": """void main() {
       Surface material = initSurface();
       vec3 reflected = resolveReflection(ReflectionSample(vec3(0), 0), material.color.rgb);
-      gl_Position = vec4(material.normal * material.roughness + reflected, material.color.a);
+      ReceiverLighting diffuse = ReceiverLighting(vec3(.1), false, true);
+      gl_Position = vec4(material.normal * material.roughness + reflected +
+                         composeDiffuseLight(diffuse, material.color.rgb), material.color.a);
     }""",
     "frag": """layout(location=0) out vec4 result;
     void main() {
@@ -34,14 +38,18 @@ stages = {
       material.color = vec4(.8,.3,.1,1);
       material.roughness = .6;
       ReflectionSample reflected = ReflectionSample(vec3(0), 1);
-      result = vec4(resolveReflection(reflected, material.color.rgb) + material.emission, material.color.a);
+      ReceiverLighting diffuse = ReceiverLighting(vec3(.2), true, false);
+      result = vec4(resolveReflection(reflected, material.color.rgb) + material.emission +
+                    composeDiffuseLight(diffuse, material.color.rgb), material.color.a);
     }""",
     "comp": """layout(local_size_x=1) in;
     layout(set=0,binding=0,std430) buffer Output { vec4 value; };
     void main() {
       Surface material = initSurface();
       ReflectionSample reflected = ReflectionSample(material.normal, .5);
-      value = vec4(resolveReflection(reflected, material.emission), material.metallic);
+      ReceiverLighting diffuse = ReceiverLighting(vec3(1), false, false);
+      value = vec4(resolveReflection(reflected, material.emission) +
+                   composeDiffuseLight(diffuse, material.color.rgb), material.metallic);
     }""",
 }
 with tempfile.TemporaryDirectory(prefix="shading-values-", dir=output) as temporary:
@@ -53,4 +61,4 @@ with tempfile.TemporaryDirectory(prefix="shading-values-", dir=output) as tempor
                         "-I" + str(root / "src/native/forward/shaders"),
                         str(source), "-o", str(binary)], env=env, check=True)
         subprocess.run([validator, "--target-env", "vulkan1.1", str(binary)], env=env, check=True)
-print("Material initialization and reflection values compile in vertex, fragment and compute without pass resources")
+print("Material, diffuse and reflection values compile in vertex, fragment and compute without pass resources")
