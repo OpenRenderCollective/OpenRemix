@@ -591,12 +591,15 @@ namespace {
       provider.selectFrame(frame++ % gpuFrameCount);
       fixture.begin(); provider.record(fixture.command, world.resources, config, 4, .5f); fixture.finish();
     };
+    tick();
+    require(provider.pending(), "Standalone capture must reserve admission while preparing");
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(90);
     while (!provider.source().image && provider.status().empty() && std::chrono::steady_clock::now() < deadline) {
       tick(); std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     if (!provider.status().empty()) std::fprintf(stderr, "%s\n", provider.status().c_str());
     const auto published = provider.source();
+    require(!provider.pending(), "Published standalone capture retained its work admission");
     require(published.image && published.sceneHash == world.resources.bakeScene()->contentHash &&
                 published.image->header().parameters[0] == 4, "Standalone reflection publication failed");
     probes::capture_cache::persistence().waitIdle(); // test only; publication never waits for disk
@@ -623,6 +626,7 @@ namespace {
     config.enabled = false;
     tick();
     for (uint32_t slot = 0; slot < gpuFrameCount; ++slot) provider.selectFrame(slot);
+    require(!provider.pending(), "Disabled standalone capture retained its work admission");
     require(!provider.source().image && published.image->header().parameters[0] == 4,
             "Disabled provider invalidated independently retained publication");
     std::puts("Standalone reflections: no diffuse grid; fenced publication, budget edit, source replacement and disable passed");

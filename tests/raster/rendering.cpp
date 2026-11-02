@@ -2661,16 +2661,28 @@ namespace {
                       "Retaining diffuse publication does not retain the retired reflection image");
               // Start fresh so no old diffuse publication can help capture.
 
-              r.setReflectionVolumes(nullptr);
+              request.volumeCount = 2;
+              request.volumes = authored; ++request.revision;
+              r.setReflectionVolumes(&request);
               target.enableForward(options);
+              bool observedStandaloneAdmission = false;
               const auto standaloneDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
               std::vector<uint8_t> standalonePixels;
               do {
                 standalonePixels = render(false, false, true, false);
+                if (target.forward->standaloneCaptures()->pending()) {
+                  observedStandaloneAdmission = true;
+                  require(target.forward->statistics().authoredReflections.rays == 0 &&
+                              !target.forward->reflectionAuthoring()->header(),
+                          "Authored captures spent work while automatic captures owned admission");
+                }
                 if (target.forward->standaloneCaptures()->source().image) break;
                 require(target.forward->standaloneCaptures()->status().empty(), "Standalone reflection capture failed");
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
               } while (std::chrono::steady_clock::now() < standaloneDeadline);
+              require(observedStandaloneAdmission, "Standalone capture admission fixture did not run");
+              r.setReflectionVolumes(nullptr);
+              render(false, false, true, false);
               const auto standaloneImage = target.forward->standaloneCaptures()->source().image;
               require(standaloneImage && !target.forward->bakeController()->volume() &&
                           target.forward->statistics().reflectionProbes.parameters[0] > 0 && standalonePixels[centre] > 5,

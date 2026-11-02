@@ -261,6 +261,12 @@ The next lifecycle split must preserve these boundaries:
 - Separate consumers must use one admission/budget policy while competing for
   bake work. Publishing an early diffuse volume does not mean reflection work
   has finished or a second scheduler may start spending the full budget.
+- When diffuse baking is disabled, standalone automatic capture work also holds
+  admission ahead of authored edits. `StandaloneCapture::pending()` describes its
+  current job, not image availability: publication, disable or failure releases
+  admission. The renderer checks it after recording automatic work. Previously
+  this configuration could run two full capture budgets concurrently. Published
+  authored images remain available while new authored work is paused.
 - Consumers retain submitted resources until their own fences retire. Provider
   cancellation cannot invalidate another provider's published image or slots.
   Account shared scene memory once and private consumer memory separately.

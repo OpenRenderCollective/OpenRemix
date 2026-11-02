@@ -44,6 +44,8 @@ public:
   Memory memory(bake::TransportMemory *transportMemory = nullptr) const;
   float sceneScale() const;
   bool cacheHit() const { return m_cacheHit; }
+  // Render-thread admission state, independent of an already published image.
+  bool pending() const { return bool(m_job); }
   const std::string &status() const { return m_status; }
 
 private:

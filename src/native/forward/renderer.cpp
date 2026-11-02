@@ -286,8 +286,9 @@ namespace remix::forward {
     // Publish automatic images independently, but preserve the baked profile's
     // transport priority: authored captures must not add a second work budget
     // while diffuse/style transport is still running.
-    const bool capturesReady = !lightingPlan.baking.enabled ||
-        m_gpu->baking->statistics().state == REMIXAPI_BAKE_READY_EXT;
+    const bool capturesReady = lightingPlan.baking.enabled
+        ? m_gpu->baking->statistics().state == REMIXAPI_BAKE_READY_EXT
+        : !m_gpu->standaloneReflections->pending();
     if (!lightingPlan.baking.enabled) {
       const auto source = resources.bakeScene();
       captures.sceneHash = source && source->ready ? source->contentHash : 0;
