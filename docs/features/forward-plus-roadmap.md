@@ -104,6 +104,12 @@ Still required for the complete modularity/performance objective:
   focused uncapped Crossfire A/B/B/A through 75424e37 overlaps the retained recent
   baseline at 277-283 FPS unarmed and 250-253 with weapon. CPU ranges overlap;
   GPU intervals vary between sessions without a consistent two-run slowdown.
+  A current-head follow-up through 40b2d3f1 again overlaps the retained 4c66bddf
+  baseline: 283.1-284.6 FPS unarmed and 250.1-252.7 with weapon; baseline ranges
+  are 282.6-285.6 and 248.0-252.9. CPU/GPU ranges overlap, with matched lighting,
+  quality and draw counts. The final baseline was retaken after an observer
+  request-file lock; failed/incomplete sessions are excluded and the install was
+  restored. Broader map/provider coverage and the 300 FPS target remain open.
 - Continue checking unused experiment paths before removal. Referenced low-level
   diagnostic modes and legacy aliases are not automatically dead code.
 
