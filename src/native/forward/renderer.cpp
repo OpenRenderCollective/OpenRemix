@@ -1,5 +1,6 @@
 #include "forward/gpu.h"
 #include "forward/bake/transport_memory.h"
+#include "forward/sky_model.h"
 #include "platform/gpu_timers.h"
 #include "runtime/pipelines.h"
 #include <algorithm>
@@ -75,6 +76,7 @@ namespace remix::forward {
     statistics.accelerationBytes = memory.acceleration + authoredMemory.acceleration + standaloneMemory.acceleration;
     statistics.rayGI = rayLighting.diffuseStatistics();
     statistics.rayReflections = rayLighting.reflectionStatistics();
+    statistics.cascades = rayLighting.cascadeStatistics();
     const auto rayMemory = rayLighting.memory();
     statistics.bufferBytes += rayMemory.buffers;
     statistics.targetBytes += rayMemory.images;
@@ -110,7 +112,8 @@ namespace remix::forward {
                         clusterPipeline, compositePipeline, viewModelPipeline, viewModelEarlyPipeline, viewModelDepthPipeline,
                         giViewModelPipeline, giViewModelEarlyPipeline, giOpaquePipeline, giLightmapPipeline,
                         terrainPipeline, terrainLightmapPipeline, terrainPartialLightmapPipeline,
-                        giTerrainPipeline, giTerrainLightmapPipeline})
+                        giTerrainPipeline, giTerrainLightmapPipeline,
+                        earlyDepthPipeline, earlyDepthLightmapPipeline, earlyDepthBatchPipeline})
       if (handle)
         pipeline::destroyPipeline(device, handle, nullptr);
     for (auto handle : {layout, compositeLayout, giLayout})
@@ -119,15 +122,16 @@ namespace remix::forward {
     for (auto handle : {sceneLayout, materialLayout, compositeSetLayout, giSceneLayout, postLayout})
       if (handle)
         pipeline::destroyDescriptorSetLayout(device, handle, nullptr);
-    if (worldFramebuffer)
-      vkDestroyFramebuffer(device, worldFramebuffer, nullptr);
+    for (auto handle : {worldFramebuffer, earlyDepthFramebuffer})
+      if (handle)
+        vkDestroyFramebuffer(device, handle, nullptr);
     for (auto handle : shadowFramebuffers)
       if (handle)
         vkDestroyFramebuffer(device, handle, nullptr);
     for (auto handle : shadowViews)
       if (handle)
         vkDestroyImageView(device, handle, nullptr);
-    for (auto handle : {worldPass, shadowPass})
+    for (auto handle : {worldPass, shadowPass, earlyDepthPass})
       if (handle)
         pipeline::destroyRenderPass(device, handle, nullptr);
     for (auto handle : {sampler, shadowSampler, surfaceSampler, skySampler})
@@ -159,10 +163,16 @@ namespace remix::forward {
     next->capabilities = ray::Provider::capabilities(physical, hardwareRay);
     next->techniquePlan = techniques::resolveResources(options, next->capabilities);
     next->rayLighting.initialize(physical, device, next->techniquePlan, next->capabilities);
+    next->earlyCascades = next->techniquePlan.cascadeDiffuse() && options.depthPrepass;
     next->statistics.rayGI = next->rayLighting.diffuseStatistics();
     next->statistics.rayReflections = next->rayLighting.reflectionStatistics();
     next->createLayouts();
     next->createTargets();
+    next->rayLighting.initializeCascades(extent, next->samples, options);
+    if (const auto *cascades = next->rayLighting.cascades()) {
+      next->statistics.cascades = cascades->statistics();
+      next->statistics.targetBytes += cascades->targetBytes();
+    }
     next->postProcessing = std::make_unique<postfx::Renderer>();
     next->postProcessing->initialize(physical, device, queueFamily, extent, extent, true, false,
                                      std::move(exposure), postfx::MeterMode::SceneRadiance);
@@ -184,7 +194,7 @@ namespace remix::forward {
     // Live diffuse never consumes baked receiver masks. Non-live modes retain
     // this capability even when baking is off, since bake-enable can change
     // without target recreation. Unsupported fields retain sparse reads.
-    if (!next->techniquePlan.rayDiffuse() && !std::getenv("REMIX_DEBUG_DISABLE_PROBE_BATCH")) {
+    if (!next->techniquePlan.liveDiffuse() && !std::getenv("REMIX_DEBUG_DISABLE_PROBE_BATCH")) {
       next->probeVisibility = std::make_unique<probe_batch::Cache>(physical, device);
       next->probeVisibility->prepare();
     }
@@ -243,6 +253,7 @@ namespace remix::forward {
     g.rayLighting.selectFrame(slot);
     auto &frame = g.frames.at(slot);
     frame.probeVisibility.reset();
+    frame.proceduralSky.reset();
     frame.commands.clear();
     frame.staticCommands.clear();
     frame.terrainCommands.clear();
@@ -269,8 +280,14 @@ namespace remix::forward {
       began = now;
     };
     m_gpu->postProcessing->begin(command);
+    // One live distant light for shading, shadows, rays and the sky. The bake
+    // keeps its captured sun; a differing live sun selects dynamic visibility.
+    m_gpu->upAxisDetector.observe(scene::inverse(resources.view()));
+    m_gpu->upAxis = m_gpu->upAxisDetector.resolve(m_gpu->options.skyUpAxis);
+    m_gpu->sun = sky_model::effectiveSun(resources.light(), m_gpu->options, m_gpu->upAxis);
     gpu::GpuScope bakeTime(command, "Forward+ bake publication and transport");
-    const auto lightingPlan = m_gpu->options.lightingPlan(m_gpu->techniquePlan.rayDiffuse());
+    // Either live provider owns indirect diffuse; the bake then stops.
+    const auto lightingPlan = m_gpu->options.lightingPlan(m_gpu->techniquePlan.liveDiffuse());
     auto *sceneRequest = m_gpu->authoredReflections->requestScene(resources, m_gpu->options.captureConfiguration());
     m_gpu->baking->record(command, resources, lightingPlan.baking,
                          m_gpu->options.lightCutoff, sceneRequest);
@@ -303,7 +320,7 @@ namespace remix::forward {
     step(cpu.bake);
     ray::Provider::FrameInputs rayInputs;
     if (m_gpu->techniquePlan.rayScene)
-      rayInputs = m_gpu->rayLighting.prepare(command, resources, m_gpu->options,
+      rayInputs = m_gpu->rayLighting.prepare(command, resources, m_gpu->options, m_gpu->sun,
                                               animationSeconds, m_gpu->slot);
     auto &frame = m_gpu->frames[m_gpu->slot];
     frame.rayInputs = rayInputs;
@@ -314,6 +331,9 @@ namespace remix::forward {
     uploadTime.close();
     step(cpu.frame);
     m_gpu->recordWorld(command);
+    // Without a separate prepass the cascades follow the world pass; shading
+    // then reads the previous frame's gather, reprojected.
+    if (!m_gpu->earlyCascades) m_gpu->recordCascades(command);
     step(cpu.world);
     if (m_gpu->reflections) {
       gpu::GpuScope reflectionTime(command, "Forward+ reflection resolve and composition", m_gpu->extent);

@@ -39,6 +39,12 @@ ShadingResult shadeStandardSurface(Surface surface, ShadingReceiver receiver) {
     shaded.irradianceLuma = diffuseReferenceLuma(receiver.position, n);
 #endif
   shaded.irradianceLuma = min(shaded.irradianceLuma, 65000);
+  if (debugView == 8u) {
+    // Indirect diffuse alone, from whichever diffuse provider was compiled in.
+    vec3 indirect = composeDiffuseLight(diffuse, surface.color.rgb * (1 - surface.metallic));
+    shaded.color = vec4(min(max(indirect, vec3(0)), vec3(65000)), receiver.opacity);
+    return shaded;
+  }
   bool includeBakedDiffuse = debugView == 0u || debugView == 7u;
   vec3 color = includeBakedDiffuse ? composeDiffuseLight(diffuse, surface.color.rgb * (1 - surface.metallic)) : vec3(0);
   accumulateDirectLighting(color, surface, receiver, receiverSunVisibility(lightingContext), diffuse.direct, debugView);

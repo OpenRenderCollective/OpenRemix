@@ -4,6 +4,7 @@
 #include "forward/material.h"
 #include "forward/viewmodel/lighting.h"
 #include "forward/probes/capture_dump.h"
+#include "forward/shadows/static_casters.h"
 #include <algorithm>
 #include <bit>
 #include <chrono>
@@ -30,6 +31,24 @@ namespace remix::forward {
     }
     return staticBounds;
   }
+  std::shared_ptr<const scene::BakeScene> Renderer::Gpu::staticCasterSource(RasterRenderer &resources) {
+    if (auto host = resources.bakeScene(); host && host->ready) {
+      implicitStatic.reset();
+      implicitStaticKey = 0;
+      return host;
+    }
+    const auto key = shadows::staticCasterKey(resources.draws());
+    if (!key) {
+      implicitStatic.reset();
+      implicitStaticKey = 0;
+      return nullptr;
+    }
+    if (!implicitStatic || key != implicitStaticKey) {
+      implicitStatic = shadows::implicitStaticScene(resources.draws(), options.sceneScale);
+      implicitStaticKey = key;
+    }
+    return implicitStatic;
+  }
   void Renderer::Gpu::prepareFrame(VkCommandBuffer command, RasterRenderer &resources, double seconds) {
     Statistics::CpuRecording::Preparation cpu;
     auto began = std::chrono::steady_clock::now();
@@ -40,7 +59,7 @@ namespace remix::forward {
     };
     auto &frame = frames[slot];
     statistics.boundReflectionDraws = statistics.unresolvedReflectionDraws = 0;
-    const auto sun = resources.light();
+    const auto sun = this->sun; // Renderer::prepare resolved the scene's or the panel's light
     frame.commands.clear();
     frame.probeVisibility.reset();
     frame.staticCommands.clear();
@@ -63,7 +82,7 @@ namespace remix::forward {
         capturedLights[i] = captured;
         // Live GI evaluates direct lights analytically, so those lights retain
         // ordinary shadow priority rather than becoming baked-only fallbacks.
-        if (!techniquePlan.rayDiffuse() && captured != mixed::none && bindings.bakedDiffuse(captured) &&
+        if (!techniquePlan.liveDiffuse() && captured != mixed::none && bindings.bakedDiffuse(captured) &&
             !bindings.retainsVisibility(captured)) {
           if (fallbackShadows.empty()) fallbackShadows.resize(sources.size());
           fallbackShadows[i] = 1;
@@ -72,7 +91,7 @@ namespace remix::forward {
     const auto eye = transformPoint(scene::inverse(resources.view()), {0, 0, 0});
     shadowSelection = shadowPlanner.update(sources, eye, options.localShadows ? options.localShadowLights : 0,
                                            options.lightCutoff, options.localShadowDistance,
-                                           options.sceneScale, resources.bakeScene(), seconds,
+                                           options.sceneScale, staticCasterSource(resources), seconds,
                                            options.localShadowFade, fallbackShadows);
     const auto bindings = publishedBake ? publishedBake->mixedLights : nullptr;
     if (highlightSource.lock() != bindings) {
@@ -89,13 +108,13 @@ namespace remix::forward {
           groupedStyles[scale.style] = 1;
     }
     const auto grouped = [&](uint32_t captured) {
-      if (techniquePlan.rayDiffuse() || !bindings || captured >= bindings->source->lights.size()) return false;
+      if (techniquePlan.liveDiffuse() || !bindings || captured >= bindings->source->lights.size()) return false;
       const auto style = bindings->source->lights[captured].style;
       return style < groupedStyles.size() && groupedStyles[style] != 0;
     };
     std::vector<float> highlightWeights;
     std::vector<HighlightCandidate> highlightCandidates;
-    if (options.bakedLightingActive(techniquePlan.rayDiffuse()) && bindings) {
+    if (options.bakedLightingActive(techniquePlan.liveDiffuse()) && bindings) {
       // Captured indices distinguish emitters even when the adapter shares IDs.
       // Merge repeated submissions of the same captured emitter before selection.
       std::vector<float> priorities(bindings->source->lights.size(), 0);
@@ -210,6 +229,16 @@ namespace remix::forward {
       data.sunDirection[3] = 1; // lightmap/probe receivers may use matching static visibility
     data.sunRadiance[3] = std::sin(sun.angularDiameterDegrees * .008726646259971648f);
     data.ambientExposure = {options.ambient, options.ambient, options.ambient, options.exposure};
+    // With the separate prepass, shading reads this frame's gather (recorded
+    // before the world pass) with this camera. Otherwise it reads the previous
+    // frame's gather, reprojected with that frame's camera.
+    const auto *radianceCascades = rayLighting.cascades();
+    const bool cascadeLighting = radianceCascades &&
+        (earlyCascades ? frame.rayInputs.cascades != VK_NULL_HANDLE : radianceCascades->hasOutput());
+    data.cascadeCamera = !cascadeLighting ? scene::identity()
+        : earlyCascades ? data.camera : radianceCascades->outputCamera();
+    data.cascadeControl = {cascadeLighting ? 1.f : 0.f, options.cascadeIntensity, .05f,
+                           radianceCascades ? float(radianceCascades->probeSpacing()) : 1.f};
     const auto range = depthRange(resources.projection());
     data.depth = {range.nearPlane, range.farPlane,
                   float(clusterSlices) / std::log(range.farPlane / range.nearPlane), range.sign};
@@ -236,7 +265,7 @@ namespace remix::forward {
       const auto value = std::getenv("REMIX_DEBUG_DIRECT_FETCH");
       return !value || std::strcmp(value, "0") != 0;
     }();
-    const bool selectDirectOwners = selectiveDirect && bindings && !techniquePlan.rayDiffuse() &&
+    const bool selectDirectOwners = selectiveDirect && bindings && !techniquePlan.liveDiffuse() &&
         std::any_of(bindings->directLighting.lights.begin(), bindings->directLighting.lights.end(),
                     bake::aggregatesDiffuse);
     std::vector<uint8_t> unitDirectNeeded(selectDirectOwners ? bindings->source->lights.size() : 0);
@@ -261,10 +290,10 @@ namespace remix::forward {
           {source.position[0], source.position[1], source.position[2]}, radius, clusterRadiusScale);
       const auto shadowSlot = shadowSelection.slots[sourceIndex];
       LightResponseInput responseInput;
-      responseInput.selectedOnly = options.selectBakedLights(techniquePlan.rayDiffuse());
+      responseInput.selectedOnly = options.selectBakedLights(techniquePlan.liveDiffuse());
       responseInput.shadowSelected = shadowSlot != UINT32_MAX;
       responseInput.shadowWeight = responseInput.shadowSelected ? shadowSelection.strength[shadowSlot] : 0;
-      responseInput.independentHighlights = options.bakedLightingActive(techniquePlan.rayDiffuse());
+      responseInput.independentHighlights = options.bakedLightingActive(techniquePlan.liveDiffuse());
       const auto captured = capturedLights[sourceIndex];
       if (captured < highlightWeights.size()) responseInput.highlightWeight = highlightWeights[captured];
       if (publishedBake && publishedBake->mixedLights) {
@@ -353,7 +382,7 @@ namespace remix::forward {
           if (intersectsClip(bounds, frame.viewModelProjection)) append(draw, frame.viewModelCasters, true);
         }
     }
-    if (probeVisibility && !techniquePlan.rayDiffuse()) {
+    if (probeVisibility && !techniquePlan.liveDiffuse()) {
       std::vector<uint32_t> selected;
       for (uint32_t i = 0; i < runtimeLights; ++i) {
         auto &light = lights[i];
@@ -407,7 +436,7 @@ namespace remix::forward {
       const VkDescriptorPoolSize sizes[] = {
           {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 7},
           {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 16},
-          {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frame.poolCapacity * 5 + 21}};
+          {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frame.poolCapacity * 5 + 25}};
       const VkDescriptorPoolCreateInfo info{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
                                             .maxSets = frame.poolCapacity,
                                             .poolSizeCount = 3,
@@ -545,6 +574,17 @@ namespace remix::forward {
         .dstSet = frame.scene, .dstBinding = 22, .descriptorCount = 1,
         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &probeField};
     vkUpdateDescriptorSets(device, 1, &probeWrite, 0, nullptr);
+    // The gather (23) and probe direction field (24). Without a gather, any
+    // valid sampled image; cascadeControl.x keeps them unread.
+    const VkDescriptorImageInfo cascadeImages[] = {
+        cascadeLighting ? radianceCascades->output() : frame.skyImage,
+        cascadeLighting ? radianceCascades->directions() : frame.skyImage};
+    VkWriteDescriptorSet cascadeWrites[2];
+    for (uint32_t i = 0; i < 2; ++i)
+      cascadeWrites[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+          .dstSet = frame.scene, .dstBinding = 23 + i, .descriptorCount = 1,
+          .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &cascadeImages[i]};
+    vkUpdateDescriptorSets(device, 2, cascadeWrites, 0, nullptr);
     prepareViewModelDescriptors();
     step(cpu.uploads);
     std::unordered_map<const scene::Material *, VkDescriptorSet> materials;

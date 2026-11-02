@@ -5,6 +5,8 @@
 // Select implementations at compilation; materials never branch on provider IDs.
 #ifdef LIVE_GI
 #include "diffuse-ray.glsl"
+#elif defined(CASCADE_GI)
+#include "diffuse-cascades.glsl"
 #else
 #include "diffuse-baked.glsl"
 #endif

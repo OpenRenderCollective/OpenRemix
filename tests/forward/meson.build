@@ -234,6 +234,11 @@ forward_shadow_test = executable('remix-forward-shadow-test', 'shadows.cpp',
   '../../src/native/forward/shadows/plan.cpp', '../../src/native/forward/lighting.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Local shadow projection, selection and explicit caster membership', forward_shadow_test)
+forward_live_lighting_test = executable('remix-forward-live-lighting-test', 'live_lighting.cpp',
+  '../../src/native/forward/sky_model.cpp', '../../src/native/forward/shadows/static_casters.cpp',
+  '../../src/native/forward/shadows/plan.cpp', '../../src/native/forward/lighting.cpp',
+  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+test('Live sun override, procedural sky and implied static shadow casters', forward_live_lighting_test)
 
 forward_budget_test = executable('remix-forward-budget-test', 'budget.cpp',
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)

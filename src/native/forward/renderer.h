@@ -1,5 +1,6 @@
 #pragma once
 #include "forward/bake/content.h"
+#include "forward/cascades/cascades.h"
 #include "forward/options.h"
 #include "scene/display.h"
 #include "forward/probes/data.h"
@@ -69,6 +70,7 @@ namespace remix::forward {
     bake::ContentHashes bakeContent;
     ray::Statistics rayReflections;
     ray::Statistics rayGI;
+    cascades::Statistics cascades;
     postfx::Statistics postProcessing;
     probes::Header reflectionProbes;
     probes::LayerIdentities reflectionIdentities{};

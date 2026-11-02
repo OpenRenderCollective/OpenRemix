@@ -1,0 +1,475 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#ifdef CASCADE_TRACE
+#extension GL_EXT_ray_query : require
+#extension GL_EXT_control_flow_attributes : require
+#endif
+// Screen-space radiance cascades; see forward/cascades/cascades.h.
+// Every image stays in GENERAL layout. One stage per define:
+// CASCADE_PREPARE (world position/normal from depth), CASCADE_TRACE (one
+// cascade, top first, merging its parent), CASCADE_INTEGRATE (cascade-0
+// irradiance per probe), CASCADE_GATHER (per pixel, accumulated over frames),
+// CASCADE_FILTER (one edge-aware a-trous pass of the accumulated result) and
+// CASCADE_CACHE (resolves the world irradiance cache written by the traces).
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(set = 0, binding = 0, std140) uniform CascadeFrame {
+  mat4 inverseCamera, view, previousCamera, worldToDome;
+  // interval: x cascade-0 length, y surface bias, z last cascade's reach (scene
+  // units), w relative depth tolerance. control: x most frames accumulated,
+  // y feedback, z world cache cell size (scene units, at the camera).
+  vec4 eye, interval, control, skyRadiance;
+  // target: extent, cascade count, cascade-0 probe spacing in pixels.
+  // history: x previous output valid, y frame number, z cascade-0 directions per side.
+  uvec4 target, history;
+} cascade;
+layout(push_constant) uniform Pass {
+  uint index; // the cascade, or the filter's step in pixels
+} pass;
+#ifdef SINGLE_SAMPLE
+layout(set = 0, binding = 1) uniform sampler2D depthBuffer;
+#else
+layout(set = 0, binding = 1) uniform sampler2DMS depthBuffer;
+#endif
+layout(set = 0, binding = 2, rgba32f) uniform image2D geometry; // world position, view depth (<= 0: sky)
+layout(set = 0, binding = 3, rgba16f) uniform image2D normals;
+layout(set = 0, binding = 4, rgba16f) uniform image2D current;  // this set's cascade
+layout(set = 0, binding = 5, rgba16f) uniform readonly image2D previousHistory;
+layout(set = 0, binding = 6, rgba16f) uniform writeonly image2D currentHistory;
+layout(set = 0, binding = 7) uniform sampler2D skyMap;
+layout(set = 0, binding = 8, rgba16f) uniform image2D probeIrradiance;
+layout(set = 0, binding = 9, rgba16f) uniform readonly image2D parent; // the next cascade up
+layout(set = 0, binding = 10, r32f) uniform readonly image2D previousCount; // frames accumulated
+layout(set = 0, binding = 11, r32f) uniform writeonly image2D currentCount;
+layout(set = 0, binding = 12, rgba16f) uniform readonly image2D filterSource;
+layout(set = 0, binding = 13, rgba16f) uniform writeonly image2D filterTarget;
+// World irradiance cache: incident light (irradiance / pi) at ray hits, hashed
+// by position (cells growing with distance from the camera) and facing. Hits
+// that are not on screen read it for further bounces, so multiple bounces
+// continue off screen and behind geometry. Keys: zero is empty. Hits add
+// fixed-point samples; CASCADE_CACHE averages them into the stable values that
+// the next frame reads (rgb, w frames since the cell was last written).
+layout(set = 0, binding = 14, std430) buffer CacheKeys { uint cacheKeys[]; };
+layout(set = 0, binding = 15, std430) buffer CacheSamples { uvec4 cacheSamples[]; };
+layout(set = 0, binding = 16, std430) buffer CacheValues { vec4 cacheValues[]; };
+// Cascade-0 luminance SH per probe (L1 xyz, L0 w) for shading normals.
+layout(set = 0, binding = 17, rgba16f) uniform writeonly image2D probeDirection;
+const float CacheScale = 256; // fixed-point steps per unit irradiance / pi
+const uint CacheProbe = 8u;   // linear probing distance
+
+const float CascadePi = 3.14159265359;
+uint cacheHash(uint x) {
+  x ^= x >> 16u;
+  x *= 0x7feb352du;
+  x ^= x >> 15u;
+  x *= 0x846ca68bu;
+  return x ^ (x >> 16u);
+}
+// The cell's key (never zero) and home slot.
+uint cacheCell(vec3 position, vec3 normal, out uint slot) {
+  float distance = length(position - cascade.eye.xyz);
+  float level = clamp(floor(log2(max(distance / (cascade.control.z * 32), 1))), 0, 15);
+  ivec3 cell = ivec3(floor(position / (cascade.control.z * exp2(level))));
+  vec3 a = abs(normal);
+  uint face = a.x > a.y && a.x > a.z ? (normal.x > 0 ? 0u : 1u)
+            : a.y > a.z ? (normal.y > 0 ? 2u : 3u) : (normal.z > 0 ? 4u : 5u);
+  uint h = cacheHash(uint(cell.x) ^ cacheHash(uint(cell.y) ^ cacheHash(uint(cell.z) ^ (face << 4u | uint(level)))));
+  slot = cacheHash(h ^ 0x9e3779b9u) & uint(cacheKeys.length() - 1);
+  return h | 1u;
+}
+int cacheFind(uint key, uint slot, bool insert) {
+  uint size = uint(cacheKeys.length());
+  for (uint i = 0u; i < CacheProbe; ++i) {
+    uint at = (slot + i) & (size - 1u);
+    uint stored = cacheKeys[at];
+    if (stored == key) return int(at);
+    if (stored == 0u) {
+      if (!insert) return -1;
+      uint previous = atomicCompSwap(cacheKeys[at], 0u, key);
+      if (previous == 0u || previous == key) return int(at);
+    }
+  }
+  return -1;
+}
+uint directionsAt(uint c) {
+  return cascade.history.z << c;
+}
+uvec2 cascadeProbes(uint c) {
+  uint spacing = cascade.target.w << c;
+  return (cascade.target.xy + spacing - 1u) / spacing;
+}
+ivec2 probePixel(uvec2 probe, uint c) {
+  uint spacing = cascade.target.w << c;
+  return min(ivec2(probe * spacing + spacing / 2u), ivec2(cascade.target.xy) - 1);
+}
+// Full-sphere octahedral cell centre. The unnormalised point's length gives
+// the cell's solid angle: proportional to 1 / length^3.
+vec3 octahedralPoint(vec2 uv) {
+  vec2 f = uv * 2 - 1;
+  vec3 n = vec3(f, 1 - abs(f.x) - abs(f.y));
+  float t = max(-n.z, 0);
+  n.xy += mix(vec2(t), vec2(-t), greaterThanEqual(n.xy, vec2(0)));
+  return n;
+}
+vec3 skyRadiance(vec3 direction) {
+  if (cascade.skyRadiance.w == 0) return cascade.skyRadiance.rgb;
+  vec3 d = normalize(mat3(cascade.worldToDome) * direction);
+  vec2 uv = vec2(atan(d.z, d.x) / (2 * CascadePi) + .5, acos(clamp(d.y, -1, 1)) / CascadePi);
+  return textureLod(skyMap, uv, 0).rgb * cascade.skyRadiance.rgb;
+}
+// The previous accumulation at a world position, when that surface was on screen.
+bool historyPixel(vec3 position, out ivec2 pixel, out vec3 value) {
+  value = vec3(0);
+  pixel = ivec2(0);
+  if (cascade.history.x == 0u) return false;
+  vec4 clip = cascade.previousCamera * vec4(position, 1);
+  if (abs(clip.w) < 1e-6) return false;
+  vec3 ndc = clip.xyz / clip.w;
+  if (any(greaterThan(abs(ndc.xy), vec2(1))) || ndc.z < 0 || ndc.z > 1) return false;
+  pixel = min(ivec2((ndc.xy * .5 + .5) * vec2(cascade.target.xy)), ivec2(cascade.target.xy) - 1);
+  vec4 stored = imageLoad(previousHistory, pixel);
+  float depth = abs(clip.w);
+  if (stored.a <= 0 || abs(stored.a - depth) > cascade.interval.w * depth) return false;
+  value = stored.rgb;
+  return true;
+}
+bool history(vec3 position, out vec3 value) {
+  ivec2 pixel;
+  return historyPixel(position, pixel, value);
+}
+
+#ifdef CASCADE_PREPARE
+float bufferDepth(ivec2 pixel) {
+  pixel = clamp(pixel, ivec2(0), ivec2(cascade.target.xy) - 1);
+  return texelFetch(depthBuffer, pixel, 0).r;
+}
+vec3 worldPosition(ivec2 pixel, float z) {
+  vec2 uv = (vec2(pixel) + .5) / vec2(cascade.target.xy);
+  vec4 world = cascade.inverseCamera * vec4(uv * 2 - 1, z, 1);
+  return world.xyz / world.w;
+}
+// The neighbour along one axis nearest in depth, so edges take the surface's side.
+vec3 tangent(ivec2 pixel, ivec2 axis, vec3 position, float depth) {
+  float before = bufferDepth(pixel - axis), after = bufferDepth(pixel + axis);
+  vec3 a = before < 1 ? worldPosition(pixel - axis, before) : position;
+  vec3 b = after < 1 ? worldPosition(pixel + axis, after) : position;
+  float da = before < 1 ? abs(abs((cascade.view * vec4(a, 1)).z) - depth) : 1e30;
+  float db = after < 1 ? abs(abs((cascade.view * vec4(b, 1)).z) - depth) : 1e30;
+  return db <= da ? b - position : position - a;
+}
+void main() {
+  ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+  if (any(greaterThanEqual(uvec2(pixel), cascade.target.xy))) return;
+  float z = bufferDepth(pixel);
+  if (z >= 1) {
+    imageStore(geometry, pixel, vec4(0, 0, 0, -1));
+    imageStore(normals, pixel, vec4(0));
+    return;
+  }
+  vec3 position = worldPosition(pixel, z);
+  float depth = abs((cascade.view * vec4(position, 1)).z);
+  vec3 normal = cross(tangent(pixel, ivec2(1, 0), position, depth), tangent(pixel, ivec2(0, 1), position, depth));
+  normal = dot(normal, normal) > 1e-20 ? normalize(normal) : normalize(cascade.eye.xyz - position);
+  if (dot(normal, cascade.eye.xyz - position) < 0) normal = -normal;
+  imageStore(geometry, pixel, vec4(position, depth));
+  imageStore(normals, pixel, vec4(normal, 1));
+}
+#endif
+
+#ifdef CASCADE_TRACE
+#define RAY_SCENE_SET 1
+#define RAY_FRAGMENT 1
+#include "../../bake/shaders/bindings.glsl"
+#include "../../bake/shaders/material.glsl"
+#include "../../bake/shaders/radiance.glsl"
+// Radiance arriving through one interval (rgb) and whether it escaped (a).
+// Hits are lit by the scene's direct light and, optionally, the last frame's
+// irradiance there: screen-space feedback that accumulates further bounces.
+vec4 traceInterval(vec3 origin, vec3 direction, float extent, inout uint seed) {
+  Hit hit;
+  if (extent <= rayFrame.trace.y || !traceBounceRay(origin, direction, extent, seed, hit))
+    return vec4(0, 0, 0, 1);
+  RayMaterial m = rayMaterials[rayTriangles[hit.primitive].w];
+  if (dielectric(m)) return vec4(0, 0, 0, 1); // water and glass pass the interval on
+  vec2 uv;
+  vec4 vertex;
+  vec3 n, geometric;
+  attributes(hit.primitive, hit.bary, uv, vertex, n, geometric);
+  if (dot(geometric, direction) > 0) geometric = -geometric;
+  if (dot(n, direction) > 0) n = -n;
+  if (dot(n, geometric) < .01) n = geometric;
+  vec3 position = origin + direction * hit.distance;
+  vec4 base = baseColor(m, uv, vertex);
+  vec3 modulation = decalModulation(position, geometric);
+  vec4 emitted = sampleMap(m.textures.y, uv, m.flags.xyz);
+  vec3 emission;
+  float reflected;
+  emissionLobes(m.shading.emission, m.shading.state, base, sampleMap(m.textures.x, uv, m.flags.xyz),
+                emitted, emission, reflected);
+  float metallic = m.textures.z != 0u ? mapValue(sampleMap(m.textures.z, uv, m.flags.xyz),
+                                                 m.shading.remap[1], m.shading.maps.w)
+                                      : m.shading.pbr.y;
+  vec3 diffuse = clamp(base.rgb * modulation, 0, 1) * (reflected * (1 - metallic));
+  // Sun shadow rays reach as far as the last cascade (scene units).
+  vec3 incident = directLight(position + geometric * rayFrame.trace.y, n, seed, airMedium(),
+                              cascade.interval.z) / RayPi;
+  if (cascade.control.y > .5) {
+    // Further bounces: the screen's gather where this surface was visible,
+    // otherwise the world cache. A share of hits feed the cache in turn.
+    vec3 bounced;
+    uint slot;
+    uint key = cacheCell(position, n, slot);
+    if (history(position, bounced)) incident += bounced;
+    else {
+      int found = cacheFind(key, slot, false);
+      // w < 0: inserted but not yet resolved.
+      if (found >= 0 && cacheValues[found].w >= 0) incident += cacheValues[found].rgb;
+    }
+    if (random(seed) < .25) {
+      int at = cacheFind(key, slot, true);
+      if (at >= 0) {
+        // At most 64 * 256 per sample: 32-bit sums hold 262144 samples a frame.
+        uvec3 value = uvec3(clamp(incident, vec3(0), vec3(64)) * CacheScale);
+        atomicAdd(cacheSamples[at].x, value.x);
+        atomicAdd(cacheSamples[at].y, value.y);
+        atomicAdd(cacheSamples[at].z, value.z);
+        atomicAdd(cacheSamples[at].w, 1u);
+      }
+    }
+  }
+  vec3 radiance = diffuse * incident;
+  if (lightingStyleSelected(0u)) radiance += emission * modulation;
+  return vec4(radiance, 0);
+}
+// Probes come from the depth buffer, whose error grows with distance. A fixed
+// bias leaves distant probes behind their own (double-sided) triangles, lighting
+// them from behind in triangle-shaped flecks. Offset in proportion to view
+// depth, along the normal and toward the eye. Parents use the same origin.
+vec3 rayOrigin(vec4 g, vec3 n) {
+  float bias = cascade.interval.y + g.w * .003;
+  return g.xyz + n * bias + normalize(cascade.eye.xyz - g.xyz) * bias;
+}
+// Continue an escaped interval into the parent cascade: its four directions
+// covering this cell, at the four nearest parent probes on this surface. A
+// parent whose interval start is hidden from this interval's end (a wall or
+// thin object between the probes) does not continue it: without this check,
+// light leaks through geometry thinner than the parent spacing.
+vec3 parentRadiance(uint c, uvec2 probe, vec4 g, vec3 n, uvec2 cell, vec3 direction, vec3 end,
+                    float reach, inout uint seed) {
+  uint up = c + 1u, spacing = cascade.target.w << c;
+  uvec2 parents = cascadeProbes(up);
+  int directions = int(directionsAt(up));
+  vec2 f = (vec2(probe * spacing + spacing / 2u) + .5) / float(spacing * 2u) - .5;
+  ivec2 base = ivec2(floor(f));
+  vec2 t = f - vec2(base);
+  vec3 sum = vec3(0);
+  float total = 0;
+  bool anyParent = false;
+  for (int i = 0; i < 4; ++i) {
+    ivec2 offset = ivec2(i & 1, i >> 1);
+    ivec2 q = clamp(base + offset, ivec2(0), ivec2(parents) - 1);
+    ivec2 at = probePixel(uvec2(q), up);
+    vec4 other = imageLoad(geometry, at);
+    if (other.w <= 0) continue;
+    anyParent = true;
+    vec3 start = rayOrigin(other, imageLoad(normals, at).xyz) + direction * reach;
+    vec3 gap = start - end;
+    float span = length(gap);
+    Hit hit;
+    if (span > rayFrame.trace.y &&
+        traceRayFlags(end, gap / span, span, seed, gl_RayFlagsTerminateOnFirstHitEXT, false, hit))
+      continue;
+    float plane = abs(dot(n, other.xyz - g.xyz)) / (cascade.interval.w * 4 * g.w);
+    float w = mix(1 - t.x, t.x, float(offset.x)) * mix(1 - t.y, t.y, float(offset.y)) *
+              (max(1 - plane, 0) + 1e-3);
+    ivec2 corner = q * directions + ivec2(cell * 2u);
+    vec3 radiance = imageLoad(parent, corner).rgb + imageLoad(parent, corner + ivec2(1, 0)).rgb +
+                    imageLoad(parent, corner + ivec2(0, 1)).rgb + imageLoad(parent, corner + ivec2(1)).rgb;
+    sum += w * radiance * .25;
+    total += w;
+  }
+  // No parent on any surface (sky behind): the escaped ray sees the sky.
+  // Parents that all hide behind geometry: the continuation is occluded.
+  return total > 0 ? sum / total : anyParent ? vec3(0) : skyRadiance(direction);
+}
+float intervalStart(uint c) {
+  return cascade.interval.x * (float(1u << (2u * c)) - 1) / 3;
+}
+void main() {
+  uint c = pass.index, directions = directionsAt(c);
+  uvec2 probes = cascadeProbes(c);
+  uvec2 texel = gl_GlobalInvocationID.xy;
+  if (any(greaterThanEqual(texel, probes * directions))) return;
+  uvec2 probe = texel / directions, cell = texel % directions;
+  vec4 g = imageLoad(geometry, probePixel(probe, c));
+  if (g.w <= 0) {
+    imageStore(current, ivec2(texel), vec4(0));
+    return;
+  }
+  vec3 n = imageLoad(normals, probePixel(probe, c)).xyz;
+  // A cell stands for every direction within it, not its centre. Point-sampled
+  // centres alias small bright emitters into fixed probe-sized blocks. Cycle
+  // each ray through a 4x4 stratification of its cell over sixteen frames, at
+  // a phase per probe, so accumulation covers every cell evenly and quickly.
+  uint seed = (texel.x * 1973u + texel.y * 9277u + c * 26699u) ^ (cascade.history.y * 2654435769u);
+  uint probeSeed = probe.x * 73856093u ^ probe.y * 19349663u ^ c * 83492791u;
+  uint stratum = (cascade.history.y + (probeSeed >> 8u)) & 15u;
+  // Bit reversal spreads consecutive frames across the cell.
+  stratum = ((stratum & 1u) << 3u) | ((stratum & 2u) << 1u) | ((stratum & 4u) >> 1u) | ((stratum & 8u) >> 3u);
+  vec2 jitter = (vec2(stratum & 3u, stratum >> 2u) + .5) / 4;
+  vec3 direction = normalize(octahedralPoint((vec2(cell) + jitter) / float(directions)));
+  bool last = c + 1u >= cascade.target.z;
+  vec4 traced = vec4(0); // directions below the surface see the surface itself
+  if (dot(n, direction) > 0) {
+    float start = intervalStart(c);
+    float end = last ? max(intervalStart(c + 1u), cascade.interval.z) : intervalStart(c + 1u);
+    vec3 origin = rayOrigin(g, n);
+    traced = traceInterval(origin + direction * start, direction, end - start, seed);
+    if (last) traced = vec4(traced.rgb + traced.a * skyRadiance(direction), 0);
+    else if (traced.a > 0)
+      traced.rgb += traced.a * parentRadiance(c, probe, g, n, cell, direction, origin + direction * end, end, seed);
+  }
+  imageStore(current, ivec2(texel), vec4(max(traced.rgb, vec3(0)), 1));
+}
+#endif
+
+#ifdef CASCADE_INTEGRATE
+// Cosine-weighted mean of cascade-0 radiance about the probe normal: E / pi.
+// Also the luminance's L0/L1 spherical harmonics (unnormalised by solid
+// angle), so shading can rescale irradiance to its own (normal-mapped) normal.
+void main() {
+  uvec2 probe = gl_GlobalInvocationID.xy;
+  if (any(greaterThanEqual(probe, cascadeProbes(0u)))) return;
+  vec4 g = imageLoad(geometry, probePixel(probe, 0u));
+  if (g.w <= 0) {
+    imageStore(probeIrradiance, ivec2(probe), vec4(0));
+    imageStore(probeDirection, ivec2(probe), vec4(0));
+    return;
+  }
+  vec3 n = imageLoad(normals, probePixel(probe, 0u)).xyz;
+  uint directions = directionsAt(0u);
+  vec3 sum = vec3(0);
+  vec4 sh = vec4(0);
+  float total = 0, sphere = 0;
+  for (uint y = 0u; y < directions; ++y)
+    for (uint x = 0u; x < directions; ++x) {
+      vec3 point = octahedralPoint((vec2(x, y) + .5) / float(directions));
+      float l = length(point), solid = 1 / (l * l * l);
+      vec3 radiance = imageLoad(current, ivec2(probe * directions + uvec2(x, y))).rgb;
+      float w = max(dot(n, point / l), 0) * solid;
+      sum += w * radiance;
+      total += w;
+      sh += solid * dot(radiance, vec3(.2126, .7152, .0722)) * vec4(point / l, 1);
+      sphere += solid;
+    }
+  imageStore(probeIrradiance, ivec2(probe), vec4(total > 0 ? sum / total : vec3(0), 1));
+  imageStore(probeDirection, ivec2(probe), sh / max(sphere, 1e-6));
+}
+#endif
+
+#ifdef CASCADE_GATHER
+// Bilateral interpolation of the four nearest probes, then a running mean with
+// the reprojected history: up to control.x frames, restarted on disocclusion.
+void main() {
+  ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+  if (any(greaterThanEqual(uvec2(pixel), cascade.target.xy))) return;
+  vec4 g = imageLoad(geometry, pixel);
+  if (g.w <= 0) {
+    imageStore(currentHistory, pixel, vec4(0));
+    imageStore(currentCount, pixel, vec4(0));
+    return;
+  }
+  vec3 n = imageLoad(normals, pixel).xyz;
+  uvec2 probes = cascadeProbes(0u);
+  vec2 f = (vec2(pixel) + .5) / float(cascade.target.w) - .5;
+  ivec2 base = ivec2(floor(f));
+  vec2 t = f - vec2(base);
+  vec3 sum = vec3(0), nearest = vec3(0);
+  float total = 0, nearestPlane = 1e30;
+  for (int i = 0; i < 4; ++i) {
+    ivec2 offset = ivec2(i & 1, i >> 1);
+    ivec2 q = clamp(base + offset, ivec2(0), ivec2(probes) - 1);
+    ivec2 at = probePixel(uvec2(q), 0u);
+    vec4 other = imageLoad(geometry, at);
+    if (other.w <= 0) continue;
+    vec3 value = imageLoad(probeIrradiance, q).rgb;
+    float plane = abs(dot(n, other.xyz - g.xyz)) / (cascade.interval.w * g.w);
+    if (plane < nearestPlane) {
+      nearestPlane = plane;
+      nearest = value;
+    }
+    float facing = max(dot(n, imageLoad(normals, at).xyz), 0);
+    float w = mix(1 - t.x, t.x, float(offset.x)) * mix(1 - t.y, t.y, float(offset.y)) *
+              max(1 - plane, 0) * facing * facing;
+    sum += w * value;
+    total += w;
+  }
+  vec3 irradiance = total > 1e-4 ? sum / total : nearest;
+  vec3 previous;
+  ivec2 at;
+  float frames = 1;
+  if (historyPixel(g.xyz, at, previous)) {
+    frames = min(imageLoad(previousCount, at).r + 1, max(cascade.control.x, 1));
+    irradiance = mix(previous, irradiance, 1 / frames);
+  }
+  if (any(isnan(irradiance)) || any(isinf(irradiance))) {
+    irradiance = vec3(0);
+    frames = 1;
+  }
+  imageStore(currentHistory, pixel, vec4(min(irradiance, vec3(65000)), g.w));
+  imageStore(currentCount, pixel, vec4(frames));
+}
+#endif
+
+#ifdef CASCADE_CACHE
+// Average this frame's samples into each cell's stable value (an exponential
+// mean, so lighting changes settle within a few frames). Cells unwritten for
+// about two seconds at 60 fps are freed. Freeing breaks a probe chain only
+// for lookups, which then miss once and re-insert the cell.
+void main() {
+  uint index = gl_WorkGroupID.x * 64u + gl_LocalInvocationIndex;
+  if (index >= uint(cacheKeys.length()) || cacheKeys[index] == 0u) return;
+  uvec4 samples = cacheSamples[index];
+  cacheSamples[index] = uvec4(0);
+  vec4 value = cacheValues[index];
+  if (samples.w > 0u) {
+    vec3 mean = vec3(samples.xyz) / (CacheScale * float(samples.w));
+    value = vec4(value.w < 0 ? mean : mix(value.rgb, mean, .2), 0);
+  } else if (++value.w > 120) {
+    cacheKeys[index] = 0u;
+    value = vec4(0, 0, 0, -1);
+  }
+  cacheValues[index] = value;
+}
+#endif
+
+#ifdef CASCADE_FILTER
+// One a-trous pass (3x3 B-spline taps, pass.index pixels apart) that stops at
+// depth and normal edges. Accumulation keeps the unfiltered result.
+void main() {
+  ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+  if (any(greaterThanEqual(uvec2(pixel), cascade.target.xy))) return;
+  vec4 centre = imageLoad(filterSource, pixel);
+  vec4 g = imageLoad(geometry, pixel);
+  if (g.w <= 0) {
+    imageStore(filterTarget, pixel, centre);
+    return;
+  }
+  vec3 n = imageLoad(normals, pixel).xyz;
+  const float kernel[3] = float[](.25, .5, .25);
+  vec3 sum = vec3(0);
+  float total = 0;
+  for (int y = -1; y <= 1; ++y)
+    for (int x = -1; x <= 1; ++x) {
+      ivec2 at = pixel + ivec2(x, y) * int(pass.index);
+      if (any(lessThan(at, ivec2(0))) || any(greaterThanEqual(uvec2(at), cascade.target.xy))) continue;
+      vec4 other = imageLoad(geometry, at);
+      if (other.w <= 0) continue;
+      float plane = abs(dot(n, other.xyz - g.xyz)) / (cascade.interval.w * g.w);
+      float facing = max(dot(n, imageLoad(normals, at).xyz), 0);
+      float w = kernel[x + 1] * kernel[y + 1] * max(1 - plane, 0) * pow(facing, 8);
+      sum += w * imageLoad(filterSource, at).rgb;
+      total += w;
+    }
+  imageStore(filterTarget, pixel, vec4(total > 0 ? sum / total : centre.rgb, centre.a));
+}
+#endif

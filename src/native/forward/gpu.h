@@ -19,6 +19,7 @@
 #include "forward/water/pass.h"
 #include "forward/viewmodel/target.h"
 #include "platform/gpu_frames.h"
+#include "scene/up_axis.h"
 #include <chrono>
 #include <unordered_map>
 #include <vector>
@@ -55,6 +56,15 @@ namespace remix::forward {
               skySampler = VK_NULL_HANDLE;
     VkRenderPass worldPass = VK_NULL_HANDLE, shadowPass = VK_NULL_HANDLE;
     VkFramebuffer worldFramebuffer = VK_NULL_HANDLE;
+    // Radiance cascades with a depth prepass: the prepass runs in its own pass,
+    // the cascades trace from it, and the world pass loads that depth. Shading
+    // then reads this frame's gather rather than the previous frame's.
+    bool earlyCascades = false;
+    VkRenderPass earlyDepthPass = VK_NULL_HANDLE;
+    VkFramebuffer earlyDepthFramebuffer = VK_NULL_HANDLE;
+    VkPipeline earlyDepthPipeline = VK_NULL_HANDLE, earlyDepthLightmapPipeline = VK_NULL_HANDLE,
+               earlyDepthBatchPipeline = VK_NULL_HANDLE;
+    void recordCascades(VkCommandBuffer command);
     std::array<VkFramebuffer, sunShadowLayers> shadowFramebuffers{};
     std::array<VkImageView, sunShadowLayers> shadowViews{};
     std::unique_ptr<Image> color, depth, resolved, shadow;
@@ -71,6 +81,18 @@ namespace remix::forward {
     std::unique_ptr<postfx::Renderer> postProcessing;
     VkDescriptorSetLayout postLayout = VK_NULL_HANDLE;
     ray::Provider rayLighting;
+    // The frame's live distant light (scene or panel override) and the world
+    // up axis shared by the analytic sky and that override.
+    scene::UpAxisDetector upAxisDetector;
+    uint32_t upAxis = 1;
+    scene::DistantLight sun;
+    struct ProceduralSky {
+      std::unique_ptr<Image> image;
+      std::unique_ptr<Buffer> staging;
+      Vec3 towardSun{};
+    };
+    std::shared_ptr<ProceduralSky> proceduralSky;
+    const ProceduralSky &proceduralSkyTexture(VkCommandBuffer command, const Vec3 &towardSun);
     VkDescriptorSetLayout giSceneLayout = VK_NULL_HANDLE;
     VkPipelineLayout giLayout = VK_NULL_HANDLE;
     VkPipeline giOpaquePipeline = VK_NULL_HANDLE, giLightmapPipeline = VK_NULL_HANDLE;
@@ -111,6 +133,12 @@ namespace remix::forward {
     std::weak_ptr<const mixed::Bindings> highlightSource;
     shadows::SunCache sunCache;
     std::weak_ptr<const scene::BakeScene> staticBoundsSource;
+    // Static shadow casters: the host's ready bake scene, or one implied by
+    // this frame's static-classified draws (rebuilt only when that set changes),
+    // so frozen shadow maps are reused without a host bake request.
+    std::shared_ptr<const scene::BakeScene> implicitStatic;
+    uint64_t implicitStaticKey = 0;
+    std::shared_ptr<const scene::BakeScene> staticCasterSource(RasterRenderer &resources);
     Bounds staticBounds;
     uint64_t baseTargetBytes = 0;
 
@@ -144,6 +172,9 @@ namespace remix::forward {
       Matrix viewModelProjection = scene::identity();
       bool skyEnabled = false;
       VkDescriptorImageInfo skyImage{};
+      std::shared_ptr<ProceduralSky> proceduralSky;
+      Matrix skyWorldToDome = scene::identity();
+      Vec4 skyRadiance{}; // rgb scale, w nonzero when the dome image is the sky
       std::vector<Command> commands, staticCommands;
       std::vector<Command> terrainCommands;
       std::vector<Command> waterCommands;
@@ -184,7 +215,8 @@ namespace remix::forward {
     void recordExposure(VkCommandBuffer command, RasterRenderer &resources, float seconds);
     bool castsLocalShadow(const Command &draw, uint32_t slot, bool staticCasters) const;
     void drawLocalCasters(VkCommandBuffer command, uint32_t slot, uint32_t face, bool staticCasters);
-    void drawGeometry(VkCommandBuffer command, bool terrain = false, bool depthOnly = false);
+    // early: depth-only draws into earlyDepthPass instead of the world pass.
+    void drawGeometry(VkCommandBuffer command, bool terrain = false, bool depthOnly = false, bool early = false);
     void drawSunCasters(VkCommandBuffer command, uint32_t cascade, bool staticCasters);
     void prepareSky(VkCommandBuffer command, RasterRenderer &resources);
     void display(VkCommandBuffer command, bool background);

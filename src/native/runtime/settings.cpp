@@ -165,7 +165,7 @@ namespace remix::config {
         result.push_back(scalar("rtx.native.forward.autoExposureMinEv", FIELD(forward.autoExposureMinEv), -24, 0));
         result.push_back(scalar("rtx.native.forward.autoExposureMaxEv", FIELD(forward.autoExposureMaxEv), 0, 24));
         result.push_back(scalar("rtx.native.forward.clusterLights", FIELD(forward.clusterLights), 0, 1024));
-        result.push_back(scalar("rtx.native.forward.debugView", FIELD(forward.debugView), 0, 7));
+        result.push_back(scalar("rtx.native.forward.debugView", FIELD(forward.debugView), 0, 8));
         result.push_back(scalar("rtx.native.forward.lightCutoff", FIELD(forward.lightCutoff), .000001, 10));
         result.push_back(scalar("rtx.native.forward.shadows", FIELD(forward.shadows), 0, 1));
         result.push_back(scalar("rtx.native.forward.localShadows", FIELD(forward.localShadows), 0, 1));
@@ -213,6 +213,32 @@ namespace remix::config {
         result.push_back(scalar("rtx.native.forward.ssrDistance", FIELD(forward.ssrDistance), .1, 10000));
         result.push_back(scalar("rtx.native.forward.ssrThickness", FIELD(forward.ssrThickness), .001, 10));
         result.push_back(scalar("rtx.native.forward.ssrRoughness", FIELD(forward.ssrRoughness), .05, 1));
+        result.push_back(scalar("rtx.native.forward.radianceCascades", FIELD(forward.radianceCascades), 0, 1));
+        result.push_back(scalar("rtx.native.forward.cascadeCount", FIELD(forward.cascadeCount), 2, 6));
+        result.push_back({"rtx.native.forward.cascadeDirections",
+                          [](const Settings &s) { return number(s.forward.cascadeDirections); },
+                          [](Settings &s, std::string_view text) {
+                            unsigned value;
+                            if (!readNumber(text, value) || (value != 4 && value != 8 && value != 16)) return false;
+                            s.forward.cascadeDirections = value;
+                            return true;
+                          }});
+        result.push_back(scalar("rtx.native.forward.cascadeInterval", FIELD(forward.cascadeInterval), .01, 10));
+        result.push_back(scalar("rtx.native.forward.cascadeDistance", FIELD(forward.cascadeDistance), 1, 10000));
+        result.push_back(scalar("rtx.native.forward.cascadeIntensity", FIELD(forward.cascadeIntensity), 0, 16));
+        result.push_back(scalar("rtx.native.forward.cascadeHistory", FIELD(forward.cascadeHistory), 0, .98));
+        result.push_back(scalar("rtx.native.forward.cascadeBounces", FIELD(forward.cascadeBounces), 0, 1));
+        result.push_back(scalar("rtx.native.forward.proceduralSky", FIELD(forward.proceduralSky), 0, 1));
+        result.push_back(scalar("rtx.native.forward.skyIntensity", FIELD(forward.skyIntensity), 0, 100));
+        result.push_back(scalar("rtx.native.forward.skyUpAxis", FIELD(forward.skyUpAxis), 0, 3));
+        result.push_back(scalar("rtx.native.forward.sunOverride", FIELD(forward.sunOverride), 0, 1));
+        result.push_back(scalar("rtx.native.forward.sunAzimuth", FIELD(forward.sunAzimuth), -360, 360));
+        result.push_back(scalar("rtx.native.forward.sunElevation", FIELD(forward.sunElevation), -90, 90));
+        result.push_back(scalar("rtx.native.forward.sunIntensity", FIELD(forward.sunIntensity), 0, 1000));
+        result.push_back(scalar("rtx.native.forward.sunColorR", FIELD(forward.sunColor[0]), 0, 1));
+        result.push_back(scalar("rtx.native.forward.sunColorG", FIELD(forward.sunColor[1]), 0, 1));
+        result.push_back(scalar("rtx.native.forward.sunColorB", FIELD(forward.sunColor[2]), 0, 1));
+        result.push_back(scalar("rtx.native.forward.sunAngularDiameter", FIELD(forward.sunAngularDiameter), 0, 30));
         result.push_back(scalar("rtx.native.forward.bake", FIELD(forward.baking.enabled), 0, 1));
         result.push_back(scalar("rtx.native.forward.bakeCache", FIELD(forward.baking.diskCache), 0, 1));
         result.push_back(scalar("rtx.native.forward.lightmapDenoise", FIELD(forward.baking.denoiseLightmaps), 0, 1));

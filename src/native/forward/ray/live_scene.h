@@ -1,4 +1,5 @@
 #pragma once
+#include "scene/types.h"
 #include <cstdint>
 #include <memory>
 #include <vulkan/vulkan.h>
@@ -29,7 +30,9 @@ namespace remix::forward::ray {
     // are needed; saved requests are not reinterpreted during scene capture.
     void initialize(VkPhysicalDevice physical, VkDevice device, bool reflectionBatches);
     void selectFrame(uint32_t slot);
-    void prepare(VkCommandBuffer command, RasterRenderer &resources, const Options &options, double seconds);
+    // sun: the frame's live distant light (the scene's or a panel override).
+    void prepare(VkCommandBuffer command, RasterRenderer &resources, const Options &options,
+                 const scene::DistantLight &sun, double seconds);
     bake::Transport *transport() const;
     const Statistics &statistics() const;
     struct Memory {

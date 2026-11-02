@@ -20,7 +20,12 @@ namespace remix::forward::techniques {
     bool rayScene = false, reflectionResolve = false;
     bool screenReflections = false;
     bool capturesWithBake() const { return captureTransport == CaptureTransport::BakedScene; }
+    // Per-fragment ray-query GI pipelines (LIVE_GI) and their scene set.
     bool rayDiffuse() const { return diffuse == Diffuse::RayQueries; }
+    // Screen-space cascades: CASCADE_GI world shaders and the cascade pass.
+    bool cascadeDiffuse() const { return diffuse == Diffuse::RadianceCascades; }
+    // A live provider owns indirect diffuse: no baked receivers or aggregate lights.
+    bool liveDiffuse() const { return rayDiffuse() || cascadeDiffuse(); }
     bool bakedDiffuse() const { return diffuse == Diffuse::SurfaceAndProbes; }
     bool operator==(const ResourcePlan &) const = default;
   };
@@ -30,14 +35,18 @@ namespace remix::forward::techniques {
     // Fall back coherently rather than leaving one enabled pass on ambient only.
     const bool liveDiffuse = options.rtGI && capabilities.rayQueries && capabilities.fragmentGI &&
         (!options.water || capabilities.waterRayQueries);
-    plan.diffuse = liveDiffuse ? Diffuse::RayQueries
+    // Cascades trace in compute only: ray queries suffice, with no fragment
+    // descriptor limits. An unsupported request keeps the baked/disabled fallback.
+    const bool cascades = options.radianceCascades && capabilities.rayQueries;
+    plan.diffuse = cascades ? Diffuse::RadianceCascades
+        : liveDiffuse ? Diffuse::RayQueries
         : options.baking.enabled ? Diffuse::SurfaceAndProbes : Diffuse::Disabled;
     plan.captureTransport = plan.bakedDiffuse() ? CaptureTransport::BakedScene
                                                : CaptureTransport::StandaloneScene;
     plan.screenReflections = options.ssr;
     plan.rayReflections = options.rtReflections && capabilities.rayQueries;
     plan.rayWater = options.water && plan.rayReflections && capabilities.waterRayQueries;
-    plan.rayScene = plan.rayDiffuse() || plan.rayReflections;
+    plan.rayScene = plan.liveDiffuse() || plan.rayReflections;
     // Allocate guides/resolve only for a supported active reflection source.
     plan.reflectionResolve = plan.screenReflections || plan.rayReflections || options.baking.reflectionProbes != 0;
     return plan;

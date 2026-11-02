@@ -61,6 +61,11 @@ namespace remix::forward {
     attachments[1] = attachments[0];
     attachments[1].format = depthFormat;
     attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+    if (earlyCascades) {
+      // The separate prepass (earlyDepthPass) wrote depth and the cascades read it.
+      attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+      attachments[1].initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+    }
     if (techniquePlan.reflectionResolve) {
       attachments[2] = attachments[0];
       attachments[3] = attachments[0];
@@ -107,8 +112,9 @@ namespace remix::forward {
          .dstStageMask = attachmentStages,
          .srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
                           VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-         .dstAccessMask =
-             VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT},
+         // Reads cover a loaded depth attachment (the separate cascade prepass).
+         .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                          VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT},
         {.srcSubpass = 0,
          .dstSubpass = 1,
          .srcStageMask = attachmentStages,
@@ -153,6 +159,47 @@ namespace remix::forward {
                                               .height = extent.height,
                                               .layers = 1};
     check(vkCreateFramebuffer(device, &framebuffer, nullptr, &worldFramebuffer));
+    if (earlyCascades) {
+      // Depth alone, before the cascades trace from it in the same frame.
+      VkAttachmentDescription depthOnly = attachments[1];
+      depthOnly.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+      depthOnly.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+      const VkAttachmentReference depthOnlyReference{0, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+      const VkSubpassDescription prepassSubpass{.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                                .pDepthStencilAttachment = &depthOnlyReference};
+      const auto depthStages = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+      const VkSubpassDependency depthDependencies[] = {
+          {.srcSubpass = VK_SUBPASS_EXTERNAL,
+           .dstSubpass = 0,
+           .srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | depthStages,
+           .dstStageMask = depthStages,
+           .srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+           .dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT},
+          {.srcSubpass = 0,
+           .dstSubpass = VK_SUBPASS_EXTERNAL,
+           .srcStageMask = depthStages,
+           .dstStageMask = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | depthStages,
+           .srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+           .dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT}};
+      const VkRenderPassCreateInfo depthInfo{.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+                                             .attachmentCount = 1,
+                                             .pAttachments = &depthOnly,
+                                             .subpassCount = 1,
+                                             .pSubpasses = &prepassSubpass,
+                                             .dependencyCount = 2,
+                                             .pDependencies = depthDependencies};
+      check(pipeline::createRenderPass(device, &depthInfo, nullptr, &earlyDepthPass));
+      const VkFramebufferCreateInfo depthFramebuffer{.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+                                                     .renderPass = earlyDepthPass,
+                                                     .attachmentCount = 1,
+                                                     .pAttachments = &depth->view,
+                                                     .width = extent.width,
+                                                     .height = extent.height,
+                                                     .layers = 1};
+      check(vkCreateFramebuffer(device, &depthFramebuffer, nullptr, &earlyDepthFramebuffer));
+    }
 
     const VkExtent2D shadowSize{options.shadowResolution, options.shadowResolution};
     shadow = image(shadowSize, depthFormat, depthUsage, VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_ASPECT_DEPTH_BIT,
@@ -221,7 +268,9 @@ namespace remix::forward {
         {19, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {20, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         {21, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
-        {22, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}};
+        {22, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+        {23, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+        {24, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}};
     const VkDescriptorSetLayoutCreateInfo sceneInfo{.sType =
                                                         VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
                                                     .bindingCount = uint32_t(std::size(sceneBindings)),

@@ -3,6 +3,7 @@
 #include "forward/bake/storage_options.h"
 #include "forward/lighting_plan.h"
 #include "forward/probes/capture_config.h"
+#include <array>
 #include <cstdint>
 
 namespace remix::forward {
@@ -19,7 +20,8 @@ namespace remix::forward {
     float autoExposureTarget = .18f, autoExposureSpeed = 2, autoExposureCentre = .75f;
     float autoExposureMinEv = -8, autoExposureMaxEv = 4;
     // 0 shaded, 1 baked irradiance, 2 analytic diffuse, 3 specular, 4 albedo,
-    // 5 irradiance without normal maps, 6 bake coverage, 7 total diffuse.
+    // 5 irradiance without normal maps, 6 bake coverage, 7 total diffuse,
+    // 8 indirect diffuse only (material colour times the selected diffuse provider).
     uint32_t debugView = 0;
     float lightCutoff = .001f;
     uint32_t clusterLights = 0; // zero adapts64..512; explicit1..1024 retains a bounded profiling override
@@ -52,6 +54,26 @@ namespace remix::forward {
     float ssrDistance = 50;    // metres
     float ssrThickness = .15f; // metres, single-layer screen depth tolerance
     float ssrRoughness = .6f;
+    // Radiance cascades diffuse provider (techniques::Diffuse::RadianceCascades):
+    // screen-space probes traced against the live ray scene (forward/cascades).
+    bool radianceCascades = false;
+    uint32_t cascadeCount = 5;        // 2..6
+    uint32_t cascadeDirections = 8;   // cascade-0 directions per octahedral side (4, 8, 16)
+    float cascadeInterval = .25f;     // metres traced by cascade 0; each cascade traces four times further
+    float cascadeDistance = 200;      // metres; the last cascade's reach before the sky
+    float cascadeIntensity = 1;       // indirect diffuse scale, for inspection
+    float cascadeHistory = .97f;      // history weight h: a running mean of up to 1 / (1 - h) frames
+    bool cascadeBounces = true;       // screen-space feedback of the previous frame's irradiance
+    // Analytic sky for scenes without an authored dome, scaled by the sun.
+    bool proceduralSky = true;
+    float skyIntensity = 1;
+    uint32_t skyUpAxis = 3; // 0 X, 1 Y, 2 Z, 3 automatic from the camera
+    // Live light controls: replace the scene's distant light without rebaking.
+    bool sunOverride = false;
+    float sunAzimuth = 30, sunElevation = 55; // degrees around and above the horizon
+    float sunIntensity = 9;                   // irradiance at normal incidence
+    std::array<float, 3> sunColor{1, .94f, .84f};
+    float sunAngularDiameter = .5f; // degrees
     bake::Config baking;
     bool bakedLightingActive(bool liveGiActive) const {
       return lighting::resolve(baking, {bakedLighting, selectedBakedLights}, liveGiActive).bakedReceivers;
@@ -87,7 +109,10 @@ namespace remix::forward {
              // A requested ray provider may be unsupported. Changing its cube
              // fallback can therefore change attachment requirements.
              (ssr || !rtReflections || bool(baking.reflectionProbes) == bool(other.baking.reflectionProbes)) &&
-             ssrScale == other.ssrScale;
+             ssrScale == other.ssrScale &&
+             // Provider selection changes compiled world shaders and cascade targets.
+             radianceCascades == other.radianceCascades && cascadeCount == other.cascadeCount &&
+             cascadeDirections == other.cascadeDirections;
     }
   };
 } // namespace remix::forward

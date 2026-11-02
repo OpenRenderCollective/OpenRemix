@@ -4,7 +4,9 @@
 #include "forward/ray/capture.h"
 #include "platform/gpu_frames.h"
 #include "raster/renderer.h"
+#include <cmath>
 #include <cstdio>
+#include <optional>
 #include <unordered_set>
 
 namespace remix::forward::ray {
@@ -26,6 +28,10 @@ namespace remix::forward::ray {
     };
     std::array<Frame, gpuFrameCount> frames;
     std::shared_ptr<World> current;
+    // Packing the whole scene is the costliest CPU work here. An identical
+    // submission (draws, transforms, poses, emitters) reuses the last packing.
+    uint64_t inputKey = 0;
+    std::vector<bake::TransportLight> lights;
     uint64_t failedKey = 0;
     bool failed = false;
   };
@@ -63,27 +69,78 @@ namespace remix::forward::ray {
     frame.prepared = false;
   }
   void LiveScene::prepare(VkCommandBuffer command, RasterRenderer &resources, const Options &options,
-                          double seconds) {
+                          const scene::DistantLight &liveSun, double seconds) {
     auto &g = *m_gpu;
     g.statistics.active = false;
     g.statistics.rays = 0;
     g.statistics.sceneBuilds = 0;
     const float distance = g.reflectionBatches ? options.rtReflectionDistance : options.rtGIDistance;
-    auto snapshot = capture(resources.bakeScene().get(), resources.draws(), resources.sphereLights(),
-                            resources.light(), resources.dome(), options.sceneScale, seconds);
-    const auto sun = snapshot.source->sun;
-    const auto dome = snapshot.source->dome;
-    auto lights = std::move(snapshot.inputs.lights);
+    const auto authored = resources.bakeScene();
+    const auto &draws = resources.draws();
+    const auto emitters = resources.sphereLights();
+    uint64_t inputKey = scene::fastHash(&options.sceneScale, sizeof(options.sceneScale),
+                                        reinterpret_cast<uintptr_t>(authored.get()));
+    auto add = [&](const void *data, size_t bytes) { inputKey = scene::fastHash(data, bytes, inputKey); };
+    for (const auto &draw : draws) {
+      const uintptr_t owners[] = {reinterpret_cast<uintptr_t>(draw.surface.get()),
+                                  reinterpret_cast<uintptr_t>(draw.material.get()),
+                                  reinterpret_cast<uintptr_t>(draw.mesh.get())};
+      add(owners, sizeof(owners));
+      add(draw.model.data(), sizeof(draw.model));
+      const uint64_t identity[] = {draw.instanceId, draw.instanceIndex, draw.surfaceIndex, draw.firstIndex,
+                                   draw.indexCount, uint64_t(uint32_t(draw.vertexOffset)), draw.classification,
+                                   uint64_t(draw.viewModel) | uint64_t(draw.reflectionOnly) << 1 |
+                                       uint64_t(draw.rasterVisible) << 2 | uint64_t(draw.doubleSided) << 3};
+      add(identity, sizeof(identity));
+      if (draw.bones && !draw.bones->empty())
+        add(draw.bones->data(), draw.bones->size() * sizeof(Matrix));
+      // Packing reads time only through sprite-sheet animation: its frame index
+      // (as in materialData) changes the packed scene, the clock alone does not.
+      if (const auto &m = *draw.material; m.fps > 0 && uint32_t(m.rows) * m.columns > 1) {
+        const uint32_t frame = uint32_t(std::fmod(seconds * m.fps, uint32_t(m.rows) * m.columns));
+        add(&frame, sizeof(frame));
+      }
+    }
+    for (const auto &light : emitters) {
+      add(&light.id, sizeof(light.id));
+      add(light.position, sizeof(light.position));
+      add(&light.radius, sizeof(light.radius));
+      add(light.radiance, sizeof(light.radiance));
+      add(light.corners, sizeof(light.corners));
+      add(light.direction, sizeof(light.direction));
+      const float shape[] = {light.coneCos, light.softness, light.focus, float(light.style), float(light.triangle)};
+      add(shape, sizeof(shape));
+    }
+    const bool complete = authored && authored->ready;
+    const auto sun = liveSun.isDistant || !complete ? liveSun : authored->sun;
+    const auto dome = resources.dome().enabled || !complete ? resources.dome() : authored->dome;
+    std::optional<Capture> snapshot;
+    std::vector<bake::TransportLight> lights;
+    uint64_t sceneKey = 0;
+    if (g.current && inputKey == g.inputKey) {
+      lights = g.lights;
+      sceneKey = g.current->key;
+    } else {
+      snapshot = capture(authored.get(), draws, emitters, liveSun, resources.dome(), options.sceneScale, seconds);
+      lights = snapshot->inputs.lights;
+      sceneKey = snapshot->key;
+      g.lights = lights;
+      g.inputKey = inputKey;
+    }
     auto &frame = g.frames[g.slot];
     const bool changed =
-        !g.current || g.current->key != snapshot.key || g.current->resolution != options.rtTextureResolution;
-    auto attemptKey = scene::fastHash(&distance, sizeof(distance), snapshot.key);
+        !g.current || g.current->key != sceneKey || g.current->resolution != options.rtTextureResolution;
+    auto attemptKey = scene::fastHash(&distance, sizeof(distance), sceneKey);
     attemptKey =
         scene::fastHash(&options.rtTextureResolution, sizeof(options.rtTextureResolution), attemptKey);
+    if (changed && !snapshot) {
+      // A resolution change keeps the scene inputs; pack them again.
+      snapshot = capture(authored.get(), draws, emitters, liveSun, resources.dome(), options.sceneScale, seconds);
+    }
     if (changed && (!g.failed || g.failedKey != attemptKey)) {
       try {
         auto next = std::make_shared<Gpu::World>();
-        next->key = snapshot.key;
+        next->key = snapshot->key;
         next->resolution = options.rtTextureResolution;
         bake::Options transport;
         transport.cpuReadback = false;
@@ -91,8 +148,8 @@ namespace remix::forward::ray {
         transport.batchPoints = g.reflectionBatches ? 16384u : 1u;
         transport.textureResolution = options.rtTextureResolution;
         transport.distance = distance;
-        next->transport.initialize(g.physical, g.device, std::move(snapshot.source),
-                                   std::move(snapshot.inputs), transport);
+        next->transport.initialize(g.physical, g.device, std::move(snapshot->source),
+                                   std::move(snapshot->inputs), transport);
         g.current = std::move(next);
         frame.prepared = true;
         g.statistics.sceneBuilds = 1;
