@@ -14,12 +14,14 @@ on:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     container: archlinux:latest
     steps:
       - name: Install build tools
         run: |
           pacman -Syu --noconfirm --needed git clang lld llvm meson ninja cmake pkgconf patch \
-            glslang spirv-tools python
+            glslang spirv-tools python github-cli
 
       - uses: actions/checkout@v4
         with:
@@ -48,3 +50,25 @@ jobs:
         with:
           name: openremix-windows-x64
           path: _work/dist/windows/openremix
+
+      # The launcher (RTXLauncher) installs from a rolling "nightly" prerelease:
+      # each push to main moves its tag and replaces its zip, whose upload time
+      # tells the launcher's download cache it is new.
+      - name: Publish nightly release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          git config --global --add safe.directory "$PWD"
+          python3 -c "import shutil; shutil.make_archive('openremix-windows-x64', 'zip', '_work/dist/windows/openremix')"
+          git tag -f nightly
+          git push -f origin refs/tags/nightly
+          title="Nightly ${GITHUB_SHA::7}"
+          notes="Built from ${GITHUB_SHA} by ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}."
+          if gh release view nightly >/dev/null 2>&1; then
+            gh release edit nightly --title "$title" --notes "$notes" --prerelease
+          else
+            gh release create nightly --title "$title" --notes "$notes" --prerelease
+          fi
+          gh release upload nightly openremix-windows-x64.zip --clobber
