@@ -1,6 +1,7 @@
 #pragma once
 #include "forward/probes/capture_work.h"
 #include "forward/probes/capture_config.h"
+#include "forward/probes/placement_seeds.h"
 #include "forward/probes/evaluation.h"
 #include "forward/probes/image_asset.h"
 
@@ -30,9 +31,9 @@ namespace remix::forward::probes {
     Dispatch record(VkCommandBuffer command, uint32_t slot, bake::Transport &transport,
                      bake::Budget &budget, const CaptureConfig &config);
     static constexpr uint32_t siteSamples = 64;
-    void planSites(const scene::BakeScene &source, const bake::Grid &grid,
+    void planSites(const scene::BakeScene &source, const PlacementSeeds &seeds,
                     uint32_t count, std::stop_token cancelled);
-    void fit(const scene::BakeScene &source, const bake::Grid &grid, uint32_t count,
+    void fit(const scene::BakeScene &source, const PlacementSeeds &seeds, uint32_t count,
               float detailTolerance, std::stop_token cancelled);
     void select(const scene::BakeScene &source, uint32_t count, uint32_t resolution,
                  float detailTolerance, std::stop_token cancelled);
@@ -41,6 +42,7 @@ namespace remix::forward::probes {
     void prepareRays(std::stop_token cancelled);
     void complete(std::stop_token cancelled); // retain provenance once, then release ray scratch
     void filter(VkPhysicalDevice physical, VkDevice device, std::stop_token cancelled);
+    PlacementSeeds seeds;
     std::vector<bake::Point> reflectionSites;
     std::vector<uint8_t> usableReflectionSites;
     uint32_t siteNext = 0, siteReceived = 0;

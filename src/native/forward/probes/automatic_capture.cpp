@@ -5,16 +5,16 @@
 #include "scene/types.h"
 
 namespace remix::forward::probes {
-  void AutomaticCapture::planSites(const scene::BakeScene &source, const bake::Grid &grid,
+  void AutomaticCapture::planSites(const scene::BakeScene &source, const PlacementSeeds &seeds,
                                     uint32_t count, std::stop_token cancelled) {
     sitesPlanned = true;
-    const auto sites = candidateSites(source, grid, count, cancelled);
+    const auto sites = candidateSeedSites(source, seeds, count, cancelled);
     reflectionSites.reserve(sites.size());
     for (const auto &position : sites)
       reflectionSites.push_back({{position[0], position[1], position[2], 0}, {}});
     usableReflectionSites.resize(sites.size());
   }
-  void AutomaticCapture::fit(const scene::BakeScene &source, const bake::Grid &grid, uint32_t count,
+  void AutomaticCapture::fit(const scene::BakeScene &source, const PlacementSeeds &seeds, uint32_t count,
                               float detailTolerance, std::stop_token cancelled) {
     candidatesPlanned = true;
     std::vector<Vec3> validated;
@@ -23,7 +23,7 @@ namespace remix::forward::probes {
         const auto &position = reflectionSites[i].position;
         validated.push_back({position[0], position[1], position[2]});
       }
-    auto regions = fitCandidates(source, grid, count, cancelled, detailTolerance, &validated);
+    auto regions = fitSeedCandidates(source, seeds, count, cancelled, detailTolerance, &validated);
     if (source.partition && source.partition->closed && !regions.empty())
       projectionAudit = std::make_unique<ProjectionAudit>(std::move(regions), cancelled);
     else
@@ -48,6 +48,7 @@ namespace remix::forward::probes {
   }
   void AutomaticCapture::prepareRays(std::stop_token cancelled) {
     std::vector<FittedRegion>().swap(candidateRegions);
+    seeds = {}; // release spatial inputs before allocating capture rays
     work = CaptureWork(captures, cancelled);
   }
   void AutomaticCapture::complete(std::stop_token cancelled) {

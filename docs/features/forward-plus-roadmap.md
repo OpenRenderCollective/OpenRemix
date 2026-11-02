@@ -1,3 +1,9 @@
+# Reflection spatial inputs - 2026-11-02
+
+- Placement now accepts compact geometry-only spatial inputs, preserving original indices/task order. A detached-input regression checks exact capture origins/proxy bounds after diffuse data is released.
+- Production prepares this snapshot once during cold capture work and frees it before allocating rays. It adds transient preparation storage/copy work; cold-bake timing qualification is required. No frame-rendering work was added.
+- Remaining: persist/recover spatial seeds for independent capture lookup, split cache/publication identities without duplicating payloads, finish provider composition/pipelines and broad performance qualification.
+
 # Reflection cache codec - 2026-11-02
 
 - Reflection payload validation/read/write moved to a reusable codec with reflection-only limits; shared bounded cache streams no longer belong exclusively to the diffuse bake. Existing keys/schema/bytes remain unchanged.

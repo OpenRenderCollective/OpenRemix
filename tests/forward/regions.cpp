@@ -446,6 +446,19 @@ int main(int argc, char **argv) {
   }
   const auto captures = p::place(authored, grid, 4, 8);
   require(captures.size() == 2, "Placement merges duplicate room fits while retaining both sides of a wall");
+  {
+    auto detached = grid;
+    const auto spatial = p::placementSeeds(authored, detached);
+    detached = {}; // the reflection input must survive all diffuse data retiring
+    const auto fitted = p::fitSeedCandidates(authored, spatial, 4);
+    const auto independent = p::captureCandidates(authored, fitted, 4, 8);
+    require(independent.size() == captures.size(), "Detached spatial seeds preserve room coverage");
+    for (size_t i = 0; i < captures.size(); ++i)
+      require(independent[i].position == captures[i].position &&
+                  independent[i].bounds.minimum == captures[i].bounds.minimum &&
+                  independent[i].bounds.maximum == captures[i].bounds.maximum,
+              "Reflection placement preserves exact origins and proxies without a diffuse grid");
+  }
   for (const auto &capture : captures)
     require(p::emptyRegion(separated, capture.bounds),
             "Published capture volumes never expand through solid walls");

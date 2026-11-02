@@ -23,6 +23,7 @@
 #include "forward/lightmap/upload.h"
 #include "forward/probes/capture_dump.h"
 #include "forward/probes/data.h"
+#include "forward/probes/placement.h"
 #include "raster/renderer.h"
 #include <algorithm>
 #include <atomic>
@@ -945,7 +946,10 @@ namespace remix::forward::bake {
       const auto owner = m_job;
       job.ticket =
           m_pipelines->prepare("forward-probe-sites-" + std::to_string(++generation), [owner, config] {
-            owner->reflections.planSites(*owner->source, owner->grid, config.reflectionProbes,
+            if (config.reflectionProbes)
+              owner->reflections.seeds = probes::placementSeeds(*owner->source, owner->grid,
+                                                                owner->cancellation.get_token());
+            owner->reflections.planSites(*owner->source, owner->reflections.seeds, config.reflectionProbes,
                                            owner->cancellation.get_token());
           });
       status(REMIXAPI_BAKE_PREPARING_EXT, "Finding reflection capture sites");
@@ -963,7 +967,7 @@ namespace remix::forward::bake {
       const auto owner = m_job;
       job.ticket =
           m_pipelines->prepare("forward-probe-placement-" + std::to_string(++generation), [owner, config] {
-            owner->reflections.fit(*owner->source, owner->grid, config.reflectionProbes,
+            owner->reflections.fit(*owner->source, owner->reflections.seeds, config.reflectionProbes,
                                      config.reflectionDetailTolerance, owner->cancellation.get_token());
           });
       status(REMIXAPI_BAKE_PREPARING_EXT, "Fitting reflection candidates");

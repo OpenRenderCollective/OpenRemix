@@ -309,8 +309,8 @@ required; the input boundary alone does not complete interchangeable providers.
 regions/projection audits, selected raw captures, shared capture-ray mapping,
 input provenance, filtered cubemaps and the prepared GPU image. Its placement,
 selection, ray preparation/completion and filtering operations have no dependency
-on the bake controller, diffuse atlases or diffuse probe values. Placement still
-borrows grid positions and geometry-validity metadata as spatial seed inputs. State is stored inline in the
+on the bake controller, diffuse atlases or diffuse probe values. Placement uses compact owned
+positions, original task indices and geometry-validity flags as spatial seed inputs. State is stored inline in the
 owning job: this extraction adds no resource allocation or duplicate ray arrays.
 
 The current Source 2 scheduler still lends its transport, retires readbacks after
@@ -385,3 +385,21 @@ This is not yet independent cache lookup: diffuse/reflection keys and atomic
 publication still share the existing container. The next step must preserve
 legacy warm reads while separating identities and retaining spatial seed data
 needed for reflection-only recovery, without duplicating cubemap payloads.
+
+
+### Reflection spatial inputs
+
+`probes::PlacementSeeds` contains the placement domain, original-index positions,
+geometry usability flags and task order. The fitting/selection implementation
+accepts these fields directly. `placement_grid.cpp` adapts the current diffuse
+grid and preserves original indices and ordering for distance ties; legacy CPU
+callers retain their existing helper signatures. Candidate-site-only requests
+build only a domain, without copying point arrays.
+
+Automatic capture prepares one compact spatial snapshot on its worker, reuses it
+through validation/fitting, and releases it before capture-ray allocation. It no
+longer needs a diffuse grid in the placement worker API. This incurs transient
+cold-preparation storage (16 bytes per grid slot plus task indices) and a copy;
+it adds no frame-rendering allocation or shader work. Its cold-bake cost must be
+qualified rather than described as allocation-free. Persisting/recovering these
+spatial inputs and independently keyed capture publication/cache remain pending.
