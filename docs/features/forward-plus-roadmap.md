@@ -1,3 +1,9 @@
+## Independent reflection cache lookup - 2026-11-02
+
+- Optional checksummed section locator reuses exact automatic reflection radiance/filtering across diffuse-only rebakes without a second cubemap sidecar payload; combined cache wire bytes remain unchanged.
+- Bounded section integrity supports reflection recovery when unrelated diffuse bytes are corrupt. Missing/stale/corrupt indices fall back to capture.
+- Still required: independently scheduled placement/capture/publication, physical cache deduplication and representative cold/warm time/memory plus frame-performance qualification.
+
 ## Reflection publication ownership - 2026-11-02
 
 - Removed automatic reflection image/header from diffuse Volume. Controller keeps separate reflection scene identity/image, frame-fenced upload/sampling references and deduplicated memory accounting.

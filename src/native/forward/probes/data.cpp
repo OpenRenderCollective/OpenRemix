@@ -284,10 +284,9 @@ namespace remix::forward::probes {
     // Positive weights keep normalized blending and HDR energy well-defined.
     return float(std::clamp(agreement / total, .05, 1.));
   }
-  Record projectionRecord(const Capture &capture) {
+  Record projectionInputRecord(const Capture &capture) {
     validate(capture);
     Record record;
-    record.position[3] = projectionConfidence(capture);
     record.minimum[3] = float(capture.priority);
     record.worldToLocal = capture.worldToLocal;
     for (uint32_t c = 0; c < 3; ++c) {
@@ -309,6 +308,11 @@ namespace remix::forward::probes {
     record.maximum[3] = inverseWidth[0];
     record.influenceMinimum[3] = inverseWidth[1];
     record.influenceMaximum[3] = inverseWidth[2];
+    return record;
+  }
+  Record projectionRecord(const Capture &capture) {
+    auto record = projectionInputRecord(capture);
+    record.position[3] = projectionConfidence(capture);
     return record;
   }
   Data filter(std::span<const Capture> captures, uint32_t samples, std::stop_token cancelled, WorkerPool *workers) {

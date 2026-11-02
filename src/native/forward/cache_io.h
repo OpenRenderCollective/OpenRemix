@@ -5,6 +5,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <stop_token>
@@ -18,6 +19,10 @@ namespace remix::forward::cache_io {
     uint64_t key = 0, bytes = 0, checksum = 0;
   };
   static_assert(sizeof(Header) == 32);
+  // Byte range in a cache payload, with integrity independent of other sections.
+  struct Section {
+    uint64_t offset = 0, bytes = 0, checksum = 1469598103934665603ull;
+  };
   inline void check(std::stop_token cancelled) {
     if (cancelled.stop_requested())
       throw std::runtime_error("Bake cache operation superseded");
@@ -45,7 +50,19 @@ namespace remix::forward::cache_io {
       bytes(values.data(), values.size_bytes());
     }
     template <typename T> void array(const std::vector<T> &values) { array(std::span(values)); }
+    void beginSection() {
+      if (section) throw std::logic_error("Nested cache section");
+      section = Section{header.bytes};
+    }
+    Section endSection() {
+      if (!section) throw std::logic_error("No open cache section");
+      auto result = *section;
+      result.bytes = header.bytes - result.offset;
+      section.reset();
+      return result;
+    }
     void finish() {
+      if (section) throw std::logic_error("Unfinished cache section");
       check(cancelled);
       header.checksum = checksum;
       output.seekp(0);
@@ -57,6 +74,7 @@ namespace remix::forward::cache_io {
     std::ofstream output;
     std::stop_token cancelled;
     Header header;
+    std::optional<Section> section;
     uint64_t checksum = 1469598103934665603ull;
     void bytes(const void *data, size_t count) {
       if (count > maximumFileBytes - header.bytes)
@@ -66,6 +84,7 @@ namespace remix::forward::cache_io {
         check(cancelled);
         const size_t chunk = std::min(count, size_t(1u << 20));
         checksum = scene::hashBytes(p, chunk, checksum);
+        if (section) section->checksum = scene::hashBytes(p, chunk, section->checksum);
         output.write(p, std::streamsize(chunk));
         header.bytes += chunk;
         count -= chunk;
@@ -75,7 +94,8 @@ namespace remix::forward::cache_io {
   };
   class Reader {
   public:
-    Reader(const std::filesystem::path &path, uint64_t key, std::stop_token cancelled)
+    Reader(const std::filesystem::path &path, uint64_t key, std::stop_token cancelled,
+           std::optional<Section> section = {})
         : input(path, std::ios::binary), cancelled(cancelled) {
       input.exceptions(std::ios::failbit | std::ios::badbit);
       Header header;
@@ -85,9 +105,14 @@ namespace remix::forward::cache_io {
           header.bytes > maximumFileBytes ||
           std::filesystem::file_size(path) != sizeof(Header) + header.bytes)
         throw std::runtime_error("Incompatible bake cache header");
+      if (section && (section->offset > header.bytes || section->bytes > header.bytes - section->offset))
+        throw std::runtime_error("Invalid cache section bounds");
+      const uint64_t offset = section ? section->offset : 0;
+      const uint64_t bytes = section ? section->bytes : header.bytes;
+      if (section) input.seekg(std::streamoff(sizeof(Header) + offset));
       // Verify integrity before allocating from any counts in the payload.
       std::vector<char> block(1u << 20);
-      uint64_t checksum = 1469598103934665603ull, left = header.bytes;
+      uint64_t checksum = 1469598103934665603ull, left = bytes;
       while (left) {
         check(cancelled);
         const size_t chunk = size_t(std::min(left, uint64_t(block.size())));
@@ -95,10 +120,10 @@ namespace remix::forward::cache_io {
         checksum = scene::hashBytes(block.data(), chunk, checksum);
         left -= chunk;
       }
-      if (checksum != header.checksum)
+      if (checksum != (section ? section->checksum : header.checksum))
         throw std::runtime_error("Bake cache checksum mismatch");
-      input.seekg(sizeof(Header));
-      remaining = header.bytes;
+      input.seekg(std::streamoff(sizeof(Header) + offset));
+      remaining = bytes;
     }
     template <typename T> T pod() {
       static_assert(std::is_trivially_copyable_v<T>);

@@ -1,4 +1,5 @@
 #include "forward/bake/cache.h"
+#include "forward/probes/cache_index.h"
 #include "forward/mixed/directional_fields.h"
 #include "forward/bake/cache_io.h"
 #include "forward/bake/sparse_sh.h"
@@ -169,6 +170,78 @@ int main(int argc, char **argv) {
               f::probes::serialize(restored->specular) == f::probes::serialize(data.specular) &&
               restored->surfaceSamples == 25 && restored->directDiffuse,
           "Atlas, reflection data and direct-light policy survive the cache round trip");
+  {
+    namespace index = f::probes::cache_index;
+    f::probes::CaptureConfig captureConfig;
+    captureConfig.reflectionResolution = capture.resolution;
+    const auto reflectionKey = bc::reflectionKey(source->contentHash, 123, data.captures, captureConfig, device, false);
+    auto execution = captureConfig;
+    ++execution.batch; execution.gpuBudgetMs = 0;
+    require(reflectionKey == bc::reflectionKey(source->contentHash, 123, data.captures, execution, device, false),
+            "Reflection identity excludes scheduling controls");
+    ++execution.samples;
+    require(reflectionKey != bc::reflectionKey(source->contentHash, 123, data.captures, execution, device, false) &&
+                reflectionKey != bc::reflectionKey(source->contentHash, 124, data.captures, captureConfig, device, false),
+            "Reflection quality and exact ray inputs invalidate capture reuse");
+    auto completedCapture = data.captures;
+    for (auto &pixel : completedCapture[0].radiance) pixel = {4, 3, 2, 100};
+    require(reflectionKey == bc::reflectionKey(source->contentHash, 123, completedCapture, captureConfig, device, false),
+            "Captured radiance/depth are outputs and do not change the input identity");
+    auto anotherDevice = device;
+    ++anotherDevice.driver;
+    require(reflectionKey != bc::reflectionKey(source->contentHash + 1, 123, data.captures, captureConfig, device, false) &&
+                reflectionKey != bc::reflectionKey(source->contentHash, 123, data.captures, captureConfig, anotherDevice, false) &&
+                reflectionKey != bc::reflectionKey(source->contentHash, 123, data.captures, captureConfig, device, true),
+            "Source, driver and styled-light transport proposal invalidate independent reuse");
+    auto moved = data.captures;
+    moved[0].bounds.maximum[0] += .1f;
+    require(reflectionKey != bc::reflectionKey(source->contentHash, 123, moved, captureConfig, device, false),
+            "Projection metadata and ordering participate independently of ray origin");
+    const auto indexedFile = index::path(root, identity, ".bake");
+    bc::View view{data.grid, data.layout, data.mixed, data.captures, data.specular, data.pixels,
+                  data.surfaceSamples, data.directDiffuse, data.sun};
+    view.reflectionKey = reflectionKey;
+    require(bc::write(indexedFile, identity, view), "Combined cache publishes a reflection locator");
+    auto bytes = [](const auto &path) {
+      std::ifstream input(path, std::ios::binary);
+      return std::vector<char>(std::istreambuf_iterator<char>(input), {});
+    };
+    require(bytes(indexedFile) == bytes(file), "Optional section indexing preserves the exact legacy payload bytes");
+    const f::probes::cache_codec::Limits limits{config.reflectionProbes, config.reflectionResolution,
+        device.imageSize, device.imageLayers, device.storageRange};
+    auto independent = index::read(root, reflectionKey, limits);
+    require(independent && f::probes::serialize(independent->data) == f::probes::serialize(data.specular),
+            "Reflection payload loads independently of diffuse layouts and grids");
+    auto flip = [&](uint64_t offset) {
+      std::fstream stream(indexedFile, std::ios::binary | std::ios::in | std::ios::out);
+      stream.seekg(std::streamoff(offset));
+      char value; stream.read(&value, 1); value ^= 1;
+      stream.seekp(std::streamoff(offset)); stream.write(&value, 1);
+    };
+    flip(sizeof(f::cache_io::Header));
+    require(!bc::read(indexedFile, identity, source, config, device) && index::read(root, reflectionKey, limits),
+            "Corrupt diffuse bytes do not invalidate an independently verified reflection section");
+    index::Location location;
+    {
+      f::cache_io::Reader locator(index::path(root, reflectionKey), reflectionKey, {});
+      require(locator.pod<uint32_t>() == 1, "Reflection index schema");
+      location.containerKey = locator.pod<uint64_t>();
+      location.section = locator.pod<f::cache_io::Section>();
+      locator.finish();
+    }
+    flip(sizeof(f::cache_io::Header) + location.section.offset + location.section.bytes - 1);
+    require(!index::read(root, reflectionKey, limits), "Reflection corruption rejects before allocating payload counts");
+    require(bc::write(indexedFile, identity, view), "Restore indexed fixture");
+    auto outside = location;
+    outside.section.offset = f::cache_io::maximumFileBytes;
+    require(index::write(root, reflectionKey, outside) && !index::read(root, reflectionKey, limits),
+            "Checksummed but out-of-bounds locators cannot read outside the payload");
+    require(!index::read(root, reflectionKey + 2, limits), "Missing independent reflection index is a normal miss");
+    std::stop_source stop; stop.request_stop();
+    require(!index::read(root, reflectionKey, limits, stop.get_token()) &&
+                !index::write(root, reflectionKey, location, stop.get_token()),
+            "Cancelled reflection indexing does not publish partial state");
+  }
   {
     auto imageConfig = config;
     imageConfig.reflectionResolution = 128;

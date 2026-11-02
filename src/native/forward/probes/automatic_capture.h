@@ -40,6 +40,8 @@ namespace remix::forward::probes {
     void restoreProjection(const scene::BakeScene &source, float detailTolerance,
                             std::stop_token cancelled);
     void prepareRays(std::stop_token cancelled);
+    void restoreCapture(std::vector<Capture> cached, Data data);
+    bool cachedRadiance = false;
     void complete(std::stop_token cancelled); // retain provenance once, then release ray scratch
     void filter(VkPhysicalDevice physical, VkDevice device, std::stop_token cancelled);
     PlacementSeeds seeds;

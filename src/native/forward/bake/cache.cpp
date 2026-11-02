@@ -2,6 +2,7 @@
 #include "forward/bake/storage_options.h"
 #include "forward/probes/priority_bands.h"
 #include "forward/probes/cache_codec.h"
+#include "forward/probes/cache_index.h"
 #include "forward/bake/sparse_sh.h"
 #include "forward/bake/cache_io.h"
 #include "forward/bake/cache_file.h"
@@ -317,6 +318,30 @@ namespace remix::forward::bake::cache {
     const uint32_t filter[] = {0x4f49444eu, 2, lightmap::denoiserVersion()};
     return scene::fastHash(filter, sizeof(filter), raw);
   }
+  uint64_t reflectionKey(uint64_t content, uint64_t inputs, std::span<const probes::Capture> captures,
+                         const probes::CaptureConfig &config, const Device &device,
+                         bool lightingComponents, const DirectPolicy &policy) {
+    if (!inputs || captures.empty()) return 0;
+    static const uint64_t shaders = [] {
+      auto hash = scene::fastHash(atlasShader, sizeof(atlasShader));
+      hash = scene::fastHash(transportShader, sizeof(transportShader), hash);
+      return scene::fastHash(parallelShader, sizeof(parallelShader), hash);
+    }();
+    // First word versions CPU filtering/projection and transport option defaults.
+    const uint32_t fields[] = {1, config.samples, config.bounces, config.textureResolution,
+        uint32_t(lightingComponents), device.vendor, device.model, device.driver,
+        device.imageSize, device.imageLayers, device.storageRange};
+    auto hash = scene::fastHash(fields, sizeof(fields), content ^ shaders);
+    hash = scene::fastHash(device.uuid.data(), device.uuid.size(), hash);
+    hash = scene::fastHash(&inputs, sizeof(inputs), hash);
+    hash = scene::fastHash(policy.lights.data(), policy.lights.size() * sizeof(DirectMode), hash);
+    // Preserve fitted proxy, overlap and ordering as well as the deduplicated rays.
+    for (const auto &capture : captures) {
+      const auto record = probes::projectionInputRecord(capture);
+      hash = scene::fastHash(&record, sizeof(record), hash);
+    }
+    return hash | 1;
+  }
   std::filesystem::path path(uint64_t identity) {
     const char *override = std::getenv("REMIX_BAKE_CACHE_DIR");
     const char *config = std::getenv("REMIX_CONFIG_DIR");
@@ -504,7 +529,9 @@ namespace remix::forward::bake::cache {
       output.array(view.mixed.occlusion.words());
       output.array(view.mixed.masks.entries());
       output.array(view.mixed.masks.bytes());
+      if (view.reflectionKey) output.beginSection();
       probes::cache_codec::write(output, view.captures, view.specular);
+      const auto reflectionSection = view.reflectionKey ? output.endSection() : cache_io::Section{};
       output.array(view.pixels);
       if (!view.styles.empty()) output.array(view.styles);
       if (view.localProbes) {
@@ -519,6 +546,9 @@ namespace remix::forward::bake::cache {
       output.finish();
       detail::check(cancelled);
       detail::replaceFile(temporary, file);
+      if (view.reflectionKey)
+        (void)probes::cache_index::write(file.parent_path(), view.reflectionKey,
+            {identity, reflectionSection}, cancelled);
       return true;
     } catch (const std::exception &error) {
       if (!temporary.empty()) {

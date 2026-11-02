@@ -317,7 +317,7 @@ The current Source 2 scheduler still lends its transport, retires readbacks afte
 submission fences, performs optional receiver diagnostics, and publishes/caches
 reflection output with the diffuse assets. This preserves existing cold/warm
 behavior while extracting reusable work. A standalone automatic reflection
-scheduler and independently keyed publication/cache remain unfinished. Keep the
+scheduler and independent publication timing/physical persistence remain unfinished. Keep the
 source ownership and cancellation token alive through every worker and submitted
 frame when moving that scheduling next.
 
@@ -390,11 +390,37 @@ before creating the bake cache's temporary file.
 `forward/cache_io.h` provides the existing bounded/checksummed stream machinery;
 `bake/cache_io.h` forwards its old internal names for the other cache consumers.
 The combined bake cache delegates its reflection section to this codec without
-changing its key, schema, payload order or number of scans/copies/writes.
-This is not yet independent cache lookup: diffuse/reflection keys and atomic
-publication still share the existing container. The next step must preserve
-legacy warm reads while separating identities and retaining spatial seed data
-needed for reflection-only recovery, without duplicating cubemap payloads.
+changing its key, schema, payload order or serialized bytes. Optional indexing
+adds a section checksum during background persistence.
+
+Reflection transport has an independent input key and optional 68-byte
+`.reflection-index` locator. The key includes frozen source content, exact ordered
+ray inputs, projection/feather metadata, capture quality, transport shaders,
+component/direct ownership and device identity. It excludes diffuse atlas/grid
+settings and execution controls. Captured depth confidence is output, not key
+material; `projectionInputRecord` avoids scanning radiance for key construction.
+
+After fitting, the automatic scheduler can read just the located reflection
+section and reuse raw radiance plus filtered images. The bounded reader validates
+container identity, file/range bounds and a section checksum before allocating
+from counts. Unrelated diffuse corruption does not invalidate that section.
+Missing, cancelled, stale or corrupt indices fall back to ordinary capture.
+The index is atomically published only after the containing bake is replaced;
+its payload contains no paths or duplicated cubemap texels. The existing combined
+cache warm-load path remains unchanged.
+
+Legacy capture records omit explicit blend distance. Reuse validates the newly
+fitted projection against the filtered header and keeps new fitting metadata
+while moving cached radiance. It must not infer feather widths from incomplete
+legacy raw metadata. Exact input/radiance/image provenance remains unchanged.
+
+This is independent lookup, not fully independent scheduling or physical storage.
+Placement still runs before lookup and is seeded from diffuse planning data.
+Combined containers still store their original full payloads; the locator avoids
+a second sidecar image but does not deduplicate old/new bake containers.
+Publication timing and persistence still share the bake scheduler. Worker I/O,
+checksum cost and transient cache-hit memory need representative qualification;
+no frame/draw/shader work is added by the locator path.
 
 
 ### Reflection spatial inputs
@@ -412,7 +438,7 @@ longer needs a diffuse grid in the placement worker API. This incurs transient
 cold-preparation storage (up to 16 bytes per input task) and a copy;
 it adds no frame-rendering allocation or shader work. Its cold-bake cost must be
 qualified rather than described as allocation-free. Persisting/recovering these
-spatial inputs and independently keyed capture publication/cache remain pending.
+spatial inputs and independently scheduled capture publication/persistence remain pending.
 
 
 Placement snapshots filter unusable geometry while gathering positions, preserve

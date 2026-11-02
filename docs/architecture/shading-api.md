@@ -139,8 +139,9 @@ alone does not make every reflection technique interchangeable.
 4. Provide standard/custom composition with depth, shadow, MSAA and reflection
    guide compatibility. A material shader should not need pass-specific storage
    knowledge to remain correctly lit.
-5. Complete independent provider cache/publication and dependency/pipeline
-   selection. Radiance cascades should implement the diffuse source interface;
+5. Complete independent provider scheduling/publication and dependency/pipeline
+   selection. Reflection lookup has an independent indexed section, but fitting
+   and physical persistence still share diffuse bake planning. Radiance cascades should implement the diffuse source interface;
    material shaders should not learn cascade storage or update details.
 6. Add opt-in host material/shader programs and HLSL/`.shader` authoring above
    these contracts. No game-specific shader dispatch belongs in the native core.

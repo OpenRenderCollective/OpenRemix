@@ -3,6 +3,7 @@
 #include "forward/bake/probe_visibility.h"
 #include "forward/mixed/data.h"
 #include "forward/probes/data.h"
+#include "forward/probes/capture_config.h"
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -23,6 +24,10 @@ namespace remix::forward::bake::cache {
   // its coverage policy must not invalidate fitted BSP or diffuse-only bakes.
   uint64_t key(uint64_t content, const Config &config, float cutoff, const Device &device,
                const DirectPolicy &policy = {}, bool fallbackReflections = false);
+  // Exact reflection transport/projection identity; excludes diffuse atlas/grid settings.
+  uint64_t reflectionKey(uint64_t content, uint64_t inputs, std::span<const probes::Capture> captures,
+                         const probes::CaptureConfig &config, const Device &device,
+                         bool lightingComponents, const DirectPolicy &policy = {});
   std::filesystem::path path(uint64_t key);
   // One small receipt per attempted disk lookup. Separates changed captured
   // inputs from shader/settings/device policy changes across installations.
@@ -45,6 +50,7 @@ namespace remix::forward::bake::cache {
     uint64_t directionalBudget = 0; // zero on write selects the current layout allowance
     const local_cache::Snapshot *localReflections = nullptr;
     bool localReflectionsOnly = false;
+    uint64_t reflectionKey = 0; // optional independent capture index; no second payload
   };
   struct Snapshot {
     void takeGrid(Grid &source);
@@ -63,6 +69,7 @@ namespace remix::forward::bake::cache {
     uint64_t directionalBudget = 0;
     std::shared_ptr<const local_cache::Snapshot> localReflections;
     bool localReflectionsOnly = false; // Companion upgrade; never replace the base cache.
+    uint64_t reflectionKey = 0;
   };
   // Misses, corruption, incompatible versions and unavailable files fall back
   // to tracing. Neither operation publishes resources or performs GPU work.

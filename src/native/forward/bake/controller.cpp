@@ -1,4 +1,5 @@
 #include "forward/bake/job.h"
+#include "forward/probes/cache_index.h"
 #include "forward/bake/model_charts.h"
 #include "forward/bake/model_preflight.h"
 #include "forward/probes/priority_bands.h"
@@ -181,6 +182,7 @@ namespace remix::forward::bake {
                                      {}};
       std::copy_n(properties.pipelineCacheUUID, deviceIdentity.uuid.size(), deviceIdentity.uuid.begin());
       const bool fallbackReflections = !source->partition || !source->partition->closed;
+      cacheDevice = deviceIdentity;
       cacheKey = cache::key(source->contentHash, config, lightCutoff, deviceIdentity, directLighting,
                             fallbackReflections);
       try {
@@ -998,6 +1000,22 @@ namespace remix::forward::bake {
             owner->receiverAudit = probes::prepareReceiverAudit(*owner->source, owner->reflections.captures,
                                                                owner->cancellation.get_token());
             owner->reflections.prepareRays(owner->cancellation.get_token());
+            if (!owner->cacheFile.empty() && !owner->reflections.captures.empty()) {
+              const probes::CaptureConfig captureConfig{.reflectionResolution = config.reflectionResolution,
+                  .textureResolution = config.textureResolution, .samples = config.samples, .bounces = config.bounces};
+              owner->reflectionCacheKey = cache::reflectionKey(owner->source->contentHash,
+                  owner->reflections.inputHash, owner->reflections.captures, captureConfig, owner->cacheDevice,
+                  config.styledIndirect && !styleIds(*owner->source).empty(), owner->mixedLights->lights.directLighting);
+              auto cached = probes::cache_index::read(owner->cacheFile.parent_path(), owner->reflectionCacheKey,
+                  {captureCount, config.reflectionResolution, owner->cacheDevice.imageSize,
+                   owner->cacheDevice.imageLayers, owner->cacheDevice.storageRange}, owner->cancellation.get_token());
+              const bool indexed = bool(cached);
+              if (cached) owner->reflections.restoreCapture(std::move(cached->captures), std::move(cached->data));
+              std::fprintf(stderr, "Forward reflection cache: key=%llu inputs=%llu indexed=%u reused=%u\n",
+                  static_cast<unsigned long long>(owner->reflectionCacheKey),
+                  static_cast<unsigned long long>(owner->reflections.inputHash), unsigned(indexed),
+                  unsigned(owner->reflections.cachedRadiance));
+            }
           });
       status(REMIXAPI_BAKE_PREPARING_EXT, "Selecting reflection captures");
       return;
@@ -1370,7 +1388,8 @@ namespace remix::forward::bake {
     m_submissions[m_slot].upload = m_volume;
     m_submissions[m_slot].reflectionUpload = m_reflections;
     char message[sizeof(m_statistics.status)];
-    const char *label = m_job->cacheHit ? "Cached lighting active" : "Baked lighting active";
+    const char *label = m_job->cacheHit ? "Cached lighting active"
+        : m_job->reflections.cachedRadiance ? "Baked lighting active; reused reflections" : "Baked lighting active";
     if (m_job->surfaceReceived == 0)
       std::snprintf(message, sizeof(message), "%s", label);
     else

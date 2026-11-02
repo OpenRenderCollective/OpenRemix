@@ -2280,6 +2280,30 @@ namespace {
               require(baseline.reflectionProbes.parameters[0] == 1 && baseline.bakeContent.captureInputs ==
                           (remix::scene::fastHash(inputRays.data(), inputRays.size() * sizeof(inputRays[0])) | 1),
                       "Published automatic capture provenance preserves exact ray bytes after work-buffer release");
+              remix::forward::bake::cache::persistence().waitIdle();
+              options.baking.lightmapTexels += samples; // diffuse-only key change; placement is unchanged
+              target.forward->updateLighting(options);
+              const auto reuseDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+              do {
+                render(false, false, true, false);
+                if (target.forward->statistics().baking.active) break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+              } while (std::chrono::steady_clock::now() < reuseDeadline);
+              const auto reused = target.forward->statistics();
+              require(reused.baking.active && std::strstr(reused.baking.status, "reused reflections") &&
+                          reused.bakeContent.captureInputs == baseline.bakeContent.captureInputs &&
+                          reused.bakeContent.captureRadiance == baseline.bakeContent.captureRadiance &&
+                          reused.bakeContent.reflections == baseline.bakeContent.reflections,
+                      "Diffuse-only rebakes reuse exact reflection transport and filtering from an indexed section");
+              options.baking.lightmapTexels -= samples;
+              target.forward->updateLighting(options);
+              const auto restoreDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+              do {
+                render(false, false, true, false);
+                if (target.forward->statistics().baking.active) break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+              } while (std::chrono::steady_clock::now() < restoreDeadline);
+              require(target.forward->statistics().baking.active, "Restore diffuse fixture after independent reflection reuse");
               remixapi_ReflectionVolumeEXT authored[2]{};
               authored[0].id = 71;
               for (uint32_t c = 0; c < 3; ++c) {

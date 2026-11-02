@@ -1,5 +1,6 @@
 #pragma once
 #include "forward/bake/controller.h"
+#include "forward/bake/cache.h"
 #include "forward/bake/adaptive_grid.h"
 #include "forward/bake/budget.h"
 #include "forward/bake/coarse_transfer.h"
@@ -104,7 +105,8 @@ namespace remix::forward::bake {
     std::vector<lightmap::Sun> sun;
     bool hasDirectDiffuse = false, hasSun = false; // survive release of the completed CPU arrays
     std::filesystem::path cacheFile;
-    uint64_t cacheKey = 0;
+    uint64_t cacheKey = 0, reflectionCacheKey = 0;
+    cache::Device cacheDevice;
     std::unique_ptr<const cache::Snapshot> takeCacheSnapshot();
     bool cacheHit = false;
     uint32_t sunNext = 0, sunReceived = 0;

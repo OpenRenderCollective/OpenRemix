@@ -83,6 +83,7 @@ namespace remix::forward::probes {
   // Interior props are allowed; geometry substantially beyond a proxy lowers
   // its preference where another capture overlaps. Unknown distances are neutral.
   float projectionConfidence(const Capture &capture);
+  Record projectionInputRecord(const Capture &capture); // no captured-depth scan
   Record projectionRecord(const Capture &capture);
   // Optional caller-owned workers process independent mip rows without changing
   // per-texel accumulation order. The pool must not be running another task.

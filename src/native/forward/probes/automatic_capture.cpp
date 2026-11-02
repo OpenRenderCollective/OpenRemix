@@ -3,6 +3,7 @@
 #include "forward/probes/placement.h"
 #include "platform/workers.h"
 #include "scene/types.h"
+#include <cstring>
 
 namespace remix::forward::probes {
   void AutomaticCapture::planSites(const scene::BakeScene &source, const PlacementSeeds &seeds,
@@ -50,16 +51,32 @@ namespace remix::forward::probes {
     std::vector<FittedRegion>().swap(candidateRegions);
     seeds = {}; // release spatial inputs before allocating capture rays
     work = CaptureWork(captures, cancelled);
+    if (!captures.empty())
+      inputHash = scene::fastHash(work.rays().data(), work.rays().size() * sizeof(bake::Point)) | 1;
+  }
+  void AutomaticCapture::restoreCapture(std::vector<Capture> cached, Data data) {
+    if (cached.size() != captures.size() || data.header.parameters[0] != captures.size()) return;
+    for (size_t i = 0; i < captures.size(); ++i) {
+      const auto expected = projectionInputRecord(captures[i]);
+      auto actual = data.header.probes[i];
+      actual.position[3] = 0; // captured confidence is output, not projection input
+      if (!sameCaptureRays(captures[i], cached[i]) || std::memcmp(&expected, &actual, sizeof(expected))) return;
+    }
+    // Legacy raw captures omit explicit feather distance; retain the newly fitted
+    // metadata and reuse only transport. The filtered header was checked above.
+    for (size_t i = 0; i < captures.size(); ++i)
+      captures[i].radiance = std::move(cached[i].radiance);
+    filtered = std::move(data);
+    cachedRadiance = true;
+    work = {}; // completed cached radiance needs no GPU capture submissions
   }
   void AutomaticCapture::complete(std::stop_token cancelled) {
-    work.complete(captures, cancelled);
-    if (!captures.empty())
-      inputHash = scene::fastHash(work.rays().data(),
-          work.rays().size() * sizeof(bake::Point)) | 1;
+    if (cancelled.stop_requested()) throw std::runtime_error("Reflection capture completion superseded");
+    if (!cachedRadiance) work.complete(captures, cancelled);
     work = {};
   }
   void AutomaticCapture::filter(VkPhysicalDevice physical, VkDevice device, std::stop_token cancelled) {
-    {
+    if (!cachedRadiance) {
       WorkerPool workers;
       filtered = probes::filter(captures, 128, cancelled, &workers);
     }
