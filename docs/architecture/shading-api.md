@@ -215,6 +215,16 @@ These helpers cover the existing source contracts. They do not yet define a
 generic ownership schema for every future unified GI provider, nor replace the
 pass-specific reflection guides and final display transform.
 
+Receiver diagnostics and incident-light normalization also live behind the
+receiver-lighting API: `receiverBakedCoverage`, `receiverBakedDiffuse`,
+`receiverBakedIrradianceLuma` and `receiverSunVisibility`. The standard model does not
+read chart channels or query baked probe storage directly; its prepared context
+still exposes whether the receiver has a surface chart. The diagnostic helpers
+intentionally show the baked reference field even with live diffuse selected;
+that is a debug policy, not a generic fallback for future GI providers. The
+normalization query preserves incident lighting for metal-only materials whose
+diffuse response can skip probe evaluation.
+
 ## Remaining API work
 
 1. Extend ownership metadata beyond the existing aggregate-field contract for

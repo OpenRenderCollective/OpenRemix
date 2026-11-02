@@ -34,3 +34,25 @@ ReceiverLighting sampleDiffuseLighting(ShadingReceiver receiver, vec3 normal,
 vec3 composeDiffuseLight(ReceiverLighting lighting, vec3 diffuseReflectance) {
   return diffuseReflectance * lighting.diffuse;
 }
+
+// These diagnostics intentionally inspect the baked reference field even when
+// live diffuse transport is selected. Keep that policy out of material models.
+vec3 receiverBakedCoverage(ShadingReceiver receiver, vec3 normal, ReceiverLightContext context) {
+  bool covered = context.charted || localProbeStencil(receiver.position, normal);
+  return context.charted ? vec3(0, 0, 1) : covered ? vec3(0, 1, 0) : vec3(1, 0, 0);
+}
+vec3 receiverBakedDiffuse(ShadingReceiver receiver, vec3 normal, ReceiverLightContext context, vec3 fallback) {
+  vec3 irradiance;
+  return context.charted ? context.chart.rgb / Pi
+      : bakedIrradiance(receiver.position, normal, irradiance) ? irradiance / Pi : fallback;
+}
+// Incident lighting is also needed for reflection normalization on metals,
+// whose diffuse material response can otherwise skip the probe evaluation.
+float receiverBakedIrradianceLuma(ShadingReceiver receiver, vec3 normal) {
+  vec3 incident;
+  return bakedIrradiance(receiver.position, normal, incident)
+      ? dot(max(incident / Pi, vec3(0)), vec3(.2126, .7152, .0722)) : -1;
+}
+float receiverSunVisibility(ReceiverLightContext context) {
+  return context.chart.w;
+}
