@@ -10,7 +10,8 @@ Implemented and checked:
   preferences. Legacy setting names remain compatibility aliases.
 - Evaluated material, diffuse/reflection, sun and local-light sample values have
   resource-free headers. Receiver contexts and light-list/channel storage are
-  hidden behind source queries. Alternate shading, diffuse, environment and local
+  hidden behind source queries. A resource-free shading-result initializer gives
+  custom models safe guide defaults. Alternate shading, diffuse, environment and local
   sources compile through actual world/viewmodel/water passes. Current-frame
   screen/ray reconstruction has a separate radiance/confidence query, preserving
   shared environment fallback and Fresnel composition. Viewmodel sources return

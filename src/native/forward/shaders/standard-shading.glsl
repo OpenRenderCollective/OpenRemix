@@ -15,10 +15,7 @@ ShadingResult shadeStandardSurface(Surface surface, ShadingReceiver receiver) {
   vec3 n = surface.normal;
   vec3 ambient = frame.ambientExposure.rgb;
   ReceiverLightContext lightingContext = prepareReceiverLighting(receiver, n);
-  ShadingResult shaded;
-  shaded.normalRoughness = vec4(n, surface.roughness);
-  shaded.reflectance = vec4(0);
-  shaded.irradianceLuma = -1;
+  ShadingResult shaded = initShadingResult(surface, receiver.opacity);
   uint debugView = LightingView;
   if (debugView == 6u) {
     shaded.color = vec4(receiverBakedCoverage(receiver, n, lightingContext), receiver.opacity);

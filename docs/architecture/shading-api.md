@@ -593,6 +593,23 @@ default environment source. This prevents material code from silently depending
 on the baked source's field layout. It is an internal shader module boundary;
 public custom program registration and provider resource selection are separate.
 
+## Shading result initialization
+
+`shading-values.glsl` defines `ShadingResult` and
+`initShadingResult(surface, opacity)` without receiver or source resources. The
+initializer supplies normal/roughness, zero reflection response, unavailable
+reflection reference and black output with the supplied opacity. Standard shading
+and the alternate diffuse model use the same initialization; a simple custom
+model only assigns its resulting color instead of manually initializing guide
+fields. Models requesting reflections still explicitly supply their response
+and reference. The current result retains pass-guide fields; this helper does
+not complete the public custom-program or arbitrary shading-model contract.
+
+The resource-free values fixture includes this header twice and consumes its
+result in compute as well as compiling it in vertex and fragment stages. Default
+world/viewmodel/water and live/metal variants preserve optimized sizes and opcode
+counts for this initialization change.
+
 ## Standard reflection response
 
 `standard-reflection-response.glsl` is a resource-free material response shared
