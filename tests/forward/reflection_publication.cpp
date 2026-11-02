@@ -263,14 +263,35 @@ int main() try {
         }
         bake::Controller controller(fixture.physical, fixture.device, &pipelines, true, fixture.family);
         uint32_t frame = 0;
+        std::shared_ptr<bake::Volume> earlyDiffuse, cancelledDiffuse;
+        bool cancelledRecovery = false;
         const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-        while (!controller.volume() && std::chrono::steady_clock::now() < until) {
+        while (controller.statistics().state != REMIXAPI_BAKE_READY_EXT && std::chrono::steady_clock::now() < until) {
           controller.selectFrame(frame++ % gpuFrameCount);
           fixture.begin(); controller.record(fixture.command, resources, config); fixture.finish();
+          if (pass == 1 && controller.volume() && !controller.reflectionSource().image) {
+            earlyDiffuse = controller.volume();
+            if (!cancelledRecovery) {
+              cancelledDiffuse = earlyDiffuse;
+              auto disabled = config; disabled.enabled = false;
+              controller.selectFrame(frame++ % gpuFrameCount);
+              fixture.begin(); controller.record(fixture.command, resources, disabled); fixture.finish();
+              require(!controller.volume() && cancelledDiffuse->data->handle,
+                      "Cancelling reflection recovery invalidated retained diffuse assets");
+              cancelledRecovery = true;
+              earlyDiffuse.reset();
+            }
+          }
+          (void)controller.memory();
           std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
-        require(controller.volume() && controller.reflectionSource().image,
-                "Cold/recovery/warm cache sequence failed to publish lighting");
+        if (pass == 1)
+          require(cancelledRecovery && earlyDiffuse && controller.volume() == earlyDiffuse &&
+                      cancelledDiffuse->data->handle,
+                  "Diffuse recovery did not survive cancellation or rebuilt its volume for reflections");
+        require(controller.volume() && controller.reflectionSource().image &&
+                    controller.statistics().state == REMIXAPI_BAKE_READY_EXT,
+                "Cold/recovery/warm cache sequence failed to finish lighting");
         const auto content = controller.volume()->content;
         if (pass == 0) { original = content; coldDenoises = denoiseCalls.load(); }
         else require(content.grid == original.grid && content.surfaces == original.surfaces &&

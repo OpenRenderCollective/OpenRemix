@@ -113,6 +113,7 @@ namespace remix::forward::bake {
     cache::Device cacheDevice;
     std::unique_ptr<const cache::Snapshot> takeCacheSnapshot();
     bool cacheHit = false, reflectionRecovery = false;
+    std::shared_ptr<Volume> publishedDiffuse; // render-thread recovery publication; never read by workers
     uint32_t sunNext = 0, sunReceived = 0;
     std::unique_ptr<SunAntialiasing> sunAntialiasing;
     bool sunAntialiasingPlanned = false, sunAntialiasingFinished = false;

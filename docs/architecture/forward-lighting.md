@@ -753,8 +753,8 @@ transport and schedules reflection placement/capture/filtering directly, bypassi
 diffuse queries, denoising and atlas encoding. The existing persistence thread
 then publishes a repaired combined reference, allowing the following complete
 warm load to skip capture. Complete warm loads allocate no reconstructed Point
-array. Publication waits for recovered reflections; earlier diffuse-only display,
-fully independent default scheduling and shared-scene adoption remain future work.
+array. Cached diffuse lighting can publish before recovered reflections; fully
+independent default scheduling and shared-scene adoption remain future work.
 
 ### Diffuse volume publication boundary
 
@@ -765,7 +765,16 @@ The controller composes its result with completed reflection metadata and images
 then performs the existing status/persistence/job-retirement transition. The split
 adds no volume/image allocation or GPU pass; the existing construction runs once.
 
-Early diffuse display during reflection recovery is not yet enabled. In particular,
-local-reflection staging must gain explicit per-submission upload ownership before
-late attachments can be composed safely with an already sampled volume. Default
-independent scheduling and matched CPU/frame performance remain open.
+During reflection recovery the prepared diffuse volume publishes once before
+capture work starts. Final activation reuses its buffers/images and adds reflection
+diagnostics/optional attachments on the render thread; it does not recreate or
+upload diffuse resources. Published diffuse GPU data is unchanged. Workers must
+not read the render-thread `publishedDiffuse` owner or inspect mutable attachment
+metadata through that volume; preparation inputs remain in their private job.
+
+Local-reflection image uploads have explicit owners in their originating frame
+submission. Retirement never discovers their staging through a volume that might
+have gained attachments later. Memory reporting deduplicates the frame-held image
+with volume/job owners. Sun-depth dependencies still complete before early diffuse
+publication. Default independent scheduling and matched CPU/frame performance
+remain open; optional late-local-layer combinations need broader map coverage.

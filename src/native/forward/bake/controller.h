@@ -92,7 +92,7 @@ namespace remix::forward::bake {
       std::shared_ptr<Job> job;
       std::shared_ptr<Volume> upload;
       std::shared_ptr<Volume> sampled;
-      std::shared_ptr<probes::ImageAsset> reflectionUpload, reflectionSampled;
+      std::shared_ptr<probes::ImageAsset> reflectionUpload, reflectionSampled, localReflectionUpload;
       uint32_t first = 0, count = 0, styled = 0;
       probes::CaptureStep reflection = probes::CaptureStep::None;
       bool preparation = false, surface = false, visibility = false,

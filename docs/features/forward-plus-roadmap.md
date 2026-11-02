@@ -1,3 +1,9 @@
+## Early cached diffuse publication - 2026-11-02
+
+- Reflection recovery publishes cached diffuse lighting before capture work, then reuses the same volume at final activation without another diffuse build/upload. Local-reflection uploads have explicit per-submission image owners and matching fence retirement, independent of later volume attachments.
+- Native build and two GPU regressions pass with synchronization validation. Recovery test observes diffuse data before reflections, cancels/restarts while retaining old assets, verifies stable final volume identity and unchanged diffuse hashes/no additional denoise, and checks repaired warm-cache reads.
+- Remaining: broader optional late-local-layer/map coverage, default independent ticket/transport scheduling, shared-scene adoption and full CPU/frame performance acceptance. Playable unchanged.
+
 ## Diffuse volume publication module - 2026-11-02
 
 - Diffuse volume construction/upload moved out of the controller into diffuse_publication.cpp. It reads no reflection capture/image state; activation composes completed reflection metadata afterward. The existing volume is constructed once, without an extra allocation/pass.

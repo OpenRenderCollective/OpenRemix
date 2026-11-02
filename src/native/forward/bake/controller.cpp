@@ -394,9 +394,9 @@ namespace remix::forward::bake {
     if (submission.upload) {
       submission.upload->staging.reset();
       if (submission.upload->sunDepth) submission.upload->sunDepth->releaseUpload();
-      if (submission.upload->localReflections) submission.upload->localReflections->image->releaseUpload();
     }
     if (submission.reflectionUpload) submission.reflectionUpload->releaseUpload();
+    if (submission.localReflectionUpload) submission.localReflectionUpload->releaseUpload();
     if (submission.job) {
       auto &job = *submission.job;
       if (submission.sunDepthCache && submission.job == m_job) {
@@ -915,6 +915,11 @@ namespace remix::forward::bake {
   void Controller::recordReflections(VkCommandBuffer command, const Config &config) {
     auto &job = *m_job;
     if (recordSunDepth(command, config)) return;
+    if (job.reflectionRecovery && !job.publishedDiffuse) {
+      job.publishedDiffuse = prepareVolume(command);
+      m_volume = job.publishedDiffuse;
+      m_submissions[m_slot].upload = m_volume;
+    }
     using CaptureStep = probes::AutomaticCapture::Step;
     auto step = job.reflections.nextStep();
     auto dispatch = [&] {
@@ -1050,10 +1055,14 @@ namespace remix::forward::bake {
       m_submissions[m_slot].reflectionUpload = std::move(upload);
     auto reflections = std::move(m_job->reflections.image);
     if (!reflections) throw std::logic_error("Missing prepared reflection image");
-    auto volume = prepareVolume(command);
+    const bool diffusePublished = bool(m_job->publishedDiffuse);
+    auto volume = diffusePublished ? m_job->publishedDiffuse : prepareVolume(command);
     volume->reflectionEvidence = m_job->reflectionEvidence;
     volume->localReflections = m_job->localReflections;
-    if (volume->localReflections) volume->localReflections->image->recordUpload(command);
+    if (volume->localReflections) {
+      volume->localReflections->image->recordUpload(command);
+      m_submissions[m_slot].localReflectionUpload = volume->localReflections->image;
+    }
     probes::dumpCaptures(m_hash, m_job->reflections.captureView());
     if (!m_job->reflections.captureView().empty()) {
       volume->content.captureInputs = m_job->reflections.inputHash;
@@ -1071,7 +1080,7 @@ namespace remix::forward::bake {
     m_reflectionSceneHash = volume->hash;
     m_reflections = std::move(reflections);
     m_volume = std::move(volume);
-    m_submissions[m_slot].upload = m_volume;
+    if (!diffusePublished) m_submissions[m_slot].upload = m_volume;
     char message[sizeof(m_statistics.status)];
     const char *label = m_job->cacheHit ? "Cached lighting active"
         : m_job->reflections.cachedRadiance ? "Baked lighting active; reused reflections" : "Baked lighting active";
@@ -1233,7 +1242,7 @@ namespace remix::forward::bake {
           status(REMIXAPI_BAKE_WAITING_EXT, "Static lights changed; waiting for updated map inputs");
           return;
         }
-        if (m_volume || m_statistics.state == REMIXAPI_BAKE_FAILED_EXT)
+        if ((m_volume && !m_job) || m_statistics.state == REMIXAPI_BAKE_FAILED_EXT)
           return;
         if (!m_job) {
           if (!config.samples || config.samples > 8192 || config.probeSamples > 8192 || !config.bounces || config.bounces > 8 ||
@@ -1500,11 +1509,14 @@ namespace remix::forward::bake {
         result.images += image->imageBytes();
       }
     };
-    auto addLocalImage = [&](const std::shared_ptr<const LocalReflections> &local) {
-      if (local && local->image && localImages.insert(local->image.get()).second) {
-        result.buffers += local->image->bufferBytes();
-        result.images += local->image->imageBytes();
+    auto addLocalAsset = [&](const std::shared_ptr<probes::ImageAsset> &image) {
+      if (image && localImages.insert(image.get()).second) {
+        result.buffers += image->bufferBytes();
+        result.images += image->imageBytes();
       }
+    };
+    auto addLocalImage = [&](const std::shared_ptr<const LocalReflections> &local) {
+      if (local) addLocalAsset(local->image);
     };
     std::unordered_set<const Job *> jobs;
     auto addJob = [&](const std::shared_ptr<Job> &job) {
@@ -1556,6 +1568,7 @@ namespace remix::forward::bake {
       addVolume(submission.sampled);
       addReflection(submission.reflectionUpload);
       addReflection(submission.reflectionSampled);
+      addLocalAsset(submission.localReflectionUpload);
     }
     return result;
   }
