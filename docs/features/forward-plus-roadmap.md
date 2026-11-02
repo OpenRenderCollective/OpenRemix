@@ -39,6 +39,8 @@ Implemented and checked:
   finishing accepts compact diagnostic values rather than capture arrays; phase
   receipt hashing is reused without retaining provider storage. Capture stage
   progress is queried as work-unit counts rather than exposing scheduler ray arrays.
+  Bounded readback receipts reject duplicate/overlapping site and radiance ranges
+  before they can falsely complete provider work; no per-ray allocation is used.
 - Targeted lifecycle, cancellation, cold/warm cache, material/source compilation,
   MSAA/shadow/reflection and live-GI checks pass. Recent shader API splits preserve
   optimized instruction/intrinsic counts; some variants differ in instruction

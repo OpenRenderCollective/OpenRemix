@@ -1,5 +1,6 @@
 #pragma once
 #include "forward/probes/capture_work.h"
+#include "forward/probes/readback_receipts.h"
 #include "forward/probes/capture_config.h"
 #include "forward/probes/capture_step.h"
 #include "forward/probes/capture_content.h"
@@ -146,6 +147,7 @@ namespace remix::forward::probes {
     uint32_t captureNext = 0, captureReceived = 0;
     bool capturePlanned = false;
   private:
+    ReadbackReceipts m_siteReceipts, m_captureReceipts;
     pipeline::PreparationQueue::Ticket m_preparation;
     std::shared_ptr<const CapturePayload> m_payload;
     std::atomic_bool m_publicationReady = false;

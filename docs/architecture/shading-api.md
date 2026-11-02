@@ -312,6 +312,14 @@ when phase receipts are enabled and reuses it for transport/filtered receipts.
 This removes diagnostic-only capture storage coupling and a repeated hash scan;
 normal publication, transport budgets and worker order are unchanged.
 
+Automatic site/radiance readback owns bounded completion receipts in addition
+to aggregate progress counts. Duplicate or overlapping ranges are rejected
+before publishing values or advancing completion, including when other ranges
+are still missing. Out-of-order ranges merge into a completed prefix; only gaps
+bounded by frame submission slots need fixed storage. No per-ray bitmap or heap
+allocation is added. Numeric validation precedes receipt consumption so a bad
+batch can be retried without partially advancing ownership.
+
 Capture progress queries expose completed/total work units for active site,
 geometry and radiance stages. The preset scheduler no longer inspects those
 placement vectors, audit ray arrays or received counters to format status.

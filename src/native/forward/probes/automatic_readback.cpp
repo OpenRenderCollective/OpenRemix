@@ -24,6 +24,10 @@ namespace remix::forward::probes {
       for (const auto &coefficient : value.irradiance)
         for (float channel : coefficient)
           if (!std::isfinite(channel)) return false;
+    // Completion counters cannot distinguish duplicate or overlapping ranges.
+    // Retire a receipt only after the whole batch validates, before publishing.
+    auto &receipts = sites ? m_siteReceipts : m_captureReceipts;
+    if (!receipts.consume(first, uint32_t(results.size()))) return false;
     for (uint32_t i = 0; i < results.size(); ++i) {
       const auto &value = results[i];
       if (sites) {
