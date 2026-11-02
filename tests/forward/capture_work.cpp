@@ -73,6 +73,56 @@ void testLocalCaptureWork() {
 void testCaptureWork() {
   testLocalCaptureWork();
   {
+    remix::scene::BakeScene source;
+    source.hasBounds = true;
+    source.minimum = {-500,-1,-1}; source.maximum = {500,1,1};
+    const auto candidates = p::geometricSeedCandidates(source, 64);
+    require(candidates.points.size() == 64 && candidates.points.front().position[0] < -480 &&
+            candidates.points.back().position[0] > 480, "Geometry seeds lost bounded corridor coverage");
+    invalid([&] { p::geometricSeedCandidates(source, 0); });
+    invalid([&] { p::geometricSeedCandidates(source, 4097); });
+    auto malformed = source; malformed.minimum[0] = 1000;
+    invalid([&] { p::geometricSeedCandidates(malformed, 64); });
+    std::stop_source stop; stop.request_stop();
+    bool cancelled = false;
+    try { p::geometricSeedCandidates(source, 64, stop.get_token()); }
+    catch (const std::runtime_error &) { cancelled = true; }
+    require(cancelled, "Cancelled geometry planning continued");
+    p::AutomaticCapture owner;
+    owner.planSites(source, 4, {});
+    require(owner.nextStep() == p::AutomaticCapture::Step::ValidateSites, "Standalone seeds bypassed admission");
+    std::vector<remix::forward::bake::Result> results(owner.reflectionSites.size());
+    for (auto &result : results) result.statistics = {1,0,float(p::AutomaticCapture::siteSamples),0};
+    owner.siteNext = uint32_t(results.size());
+    require(owner.observe(p::AutomaticCapture::Step::ValidateSites, 0, results), "Standalone admission readback refused");
+    owner.fit(source, 4, .5f, {});
+    require(owner.seeds.points.empty() && owner.candidateRegions.empty(), "Rejected geometry seeds reached fitting");
+    auto room = source;
+    room.minimum = {-4,-3,-2}; room.maximum = {4,3,2};
+    auto partition = std::make_shared<remix::scene::VisibilityPartition>();
+    partition->closed = true; partition->clusterCount = 1; partition->leafClusters = {-1,0};
+    partition->nodes.resize(6);
+    for (uint32_t i = 0; i < 6; ++i) {
+      auto &node = partition->nodes[i];
+      const uint32_t axis = i / 2;
+      node.plane[axis] = (i & 1u) ? -1.f : 1.f;
+      node.plane[3] = (i & 1u) ? -room.maximum[axis] : room.minimum[axis];
+      node.children[0] = i == 5 ? -2 : int32_t(i + 1);
+      node.children[1] = -1;
+    }
+    room.partition = partition;
+    p::AutomaticCapture enclosed;
+    enclosed.planSites(room, 4, {});
+    std::vector<remix::forward::bake::Result> clear(enclosed.reflectionSites.size());
+    for (auto &result : clear) result.statistics = {0,0,float(p::AutomaticCapture::siteSamples),0};
+    enclosed.siteNext = uint32_t(clear.size());
+    require(enclosed.observe(p::AutomaticCapture::Step::ValidateSites, 0, clear), "Room admission refused");
+    enclosed.fit(room, 4, 0, {});
+    require(enclosed.nextStep() == p::AutomaticCapture::Step::CheckGeometry &&
+                enclosed.projectionAudit && !enclosed.projectionAudit->rays().empty(),
+            "Standalone room planning skipped projection geometry assessment");
+  }
+  {
     p::AutomaticCapture capture;
     capture.reflectionSites.resize(2);
     capture.usableReflectionSites.resize(2);

@@ -1,4 +1,5 @@
 #include "forward/probes/data.h"
+#include "forward/probes/automatic_capture.h"
 #include "forward/probes/placement.h"
 #include "forward/probes/priority_bands.h"
 #include "platform/workers.h"
@@ -104,6 +105,18 @@ int main() {
     grid.probes.emplace_back().statistics[3] = 1;
   }
   const auto placed = p::place(scene, grid, 4, 8);
+  {
+    p::AutomaticCapture borrowed;
+    borrowed.planSites(scene, p::placementSeeds(scene, grid), 4, {});
+    require(borrowed.reflectionSites.empty(), "Borrowed admitted seeds scheduled duplicate geometry queries");
+    borrowed.fit(scene, 4, .5f, {});
+    const auto matching = p::captureCandidates(scene, borrowed.candidateRegions, 4, 8);
+    require(matching.size() == placed.size(), "Borrowed placement changed capture count");
+    for (size_t i = 0; i < matching.size(); ++i)
+      require(matching[i].position == placed[i].position && matching[i].bounds.minimum == placed[i].bounds.minimum &&
+                  matching[i].bounds.maximum == placed[i].bounds.maximum,
+              "Borrowed placement changed existing capture identities");
+  }
   require(placed.size() == 4, "Playable volumes receive spatially distributed reflection captures");
   {
     auto reordered = grid;

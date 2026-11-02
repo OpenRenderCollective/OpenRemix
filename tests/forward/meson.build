@@ -101,7 +101,7 @@ forward_probes_test = executable('remix-forward-probes-test', 'probes.cpp', 'cap
   '../../src/native/forward/probes/composition.cpp', '../../src/native/forward/probes/coverage_baseline.cpp', '../../src/native/forward/probes/coverage_context.cpp', '../../src/native/forward/probes/coverage_image_plan.cpp',
   '../../src/native/forward/probes/image_data.cpp',
   '../../src/native/forward/probes/normalization.cpp',
-  '../../src/native/forward/probes/capture_work.cpp', '../../src/native/forward/probes/automatic_readback.cpp', '../../src/native/forward/probes/evaluation.cpp', '../../src/native/forward/probes/refinement.cpp', '../../src/native/forward/probes/local_capture_work.cpp',
+  '../../src/native/forward/probes/capture_work.cpp', '../../src/native/forward/probes/automatic_readback.cpp', '../../src/native/forward/probes/automatic_placement.cpp', '../../src/native/forward/probes/placement_geometry.cpp', '../../src/native/forward/probes/evaluation.cpp', '../../src/native/forward/probes/refinement.cpp', '../../src/native/forward/probes/local_capture_work.cpp',
   '../../src/native/forward/probes/data.cpp', '../../src/native/forward/probes/placement.cpp', '../../src/native/forward/probes/placement_grid.cpp', '../../src/native/forward/probes/selection.cpp',
   '../../src/native/forward/probes/regions.cpp', '../../src/native/forward/probes/sites.cpp',
   '../../src/native/forward/lighting.cpp',

@@ -507,3 +507,26 @@ future collector reporting multiple consumers must deduplicate that ownership.
 Shared ownership is acquired on preparation, not copied for every dispatch.
 No shader, descriptor binding layout or GPU dispatch algorithm changes here;
 CPU and complete frame-performance acceptance remain separate requirements.
+
+### Diffuse-independent reflection seed planning
+
+`AutomaticCapture::planSites(source, count, cancellation)` can plan reflection
+placement without a diffuse grid. It gathers bounds from explicit map bounds or
+frozen geometry, distributes a bounded candidate grid by scene aspect ratio,
+and includes the existing BSP room/hint candidates. These are candidates only:
+all standalone fallback points pass through the provider's hardware site
+admission before fitting. Rejected points cannot become fallback capture origins.
+BSP fits still pass through projection geometry assessment before selection.
+Planning retains positions and stable IDs, not diffuse SH or lightmap storage.
+
+The existing Source 2 bake uses the other overload, moving its already-admitted
+`PlacementSeeds` into the provider. That path adds no duplicate admission queries
+and retains its existing placement identities. Planning/fitting live in
+`automatic_placement.cpp`; image creation/filtering remain in the image-facing
+capture implementation.
+
+Standalone candidates are capped at 4096, with budget derived from capture count.
+This is an independent provider entry point, not a newly enabled runtime mode.
+Representative map coverage, top-level independent scheduling/publication and
+cache persistence still need qualification and integration. A synthetic open
+scene or room is not evidence of adequate coverage on every map.

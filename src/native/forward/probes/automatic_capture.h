@@ -35,9 +35,12 @@ namespace remix::forward::probes {
     // provider, so another scheduler need not understand capture storage.
     bool observe(Step step, uint32_t first, std::span<const bake::Result> results);
     static constexpr uint32_t siteSamples = 64;
-    void planSites(const scene::BakeScene &source, const PlacementSeeds &seeds,
+    void planSites(const scene::BakeScene &source, PlacementSeeds seeds,
                     uint32_t count, std::stop_token cancelled);
-    void fit(const scene::BakeScene &source, const PlacementSeeds &seeds, uint32_t count,
+    // Standalone planning uses geometry candidates, then admits them with the
+    // same hardware site queries. It never needs diffuse probes or SH results.
+    void planSites(const scene::BakeScene &source, uint32_t count, std::stop_token cancelled);
+    void fit(const scene::BakeScene &source, uint32_t count,
               float detailTolerance, std::stop_token cancelled);
     void select(const scene::BakeScene &source, uint32_t count, uint32_t resolution,
                  float detailTolerance, std::stop_token cancelled);
@@ -53,6 +56,8 @@ namespace remix::forward::probes {
     std::vector<uint8_t> usableReflectionSites;
     uint32_t siteNext = 0, siteReceived = 0;
     bool sitesPlanned = false;
+    bool validateSeeds = false;
+    uint32_t seedSiteOffset = 0;
     std::vector<FittedRegion> candidateRegions;
     std::unique_ptr<ProjectionAudit> projectionAudit;
     uint32_t geometryNext = 0, geometryReceived = 0;

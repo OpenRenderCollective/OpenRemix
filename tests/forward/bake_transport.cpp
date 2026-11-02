@@ -1,4 +1,5 @@
 #include "forward/bake/transport.h"
+#include "forward/probes/automatic_capture.h"
 #include "forward/bake/budget.h"
 #include "forward/bake/sun_depth_layout.h"
 #include "forward/bake/sun_depth.h"
@@ -454,6 +455,41 @@ namespace {
       independent.read(0, sharedResults);
       require(sharedResults[0].irradiance == reference[0].irradiance,
               "Shared scene did not survive original transport retirement");
+      // Complete standalone reflection placement/capture over this shared scene,
+      // without constructing a diffuse grid or reading any irradiance results.
+      auto planning = *scene;
+      planning.hasBounds = true; planning.minimum = {-4,-4,-4}; planning.maximum = {4,4,4};
+      probes::AutomaticCapture standalone;
+      standalone.planSites(planning, 4, {});
+      bake::Budget captureBudget;
+      probes::CaptureConfig captureConfig;
+      captureConfig.samples = 4; captureConfig.bounces = 1; captureConfig.batch = 4; captureConfig.gpuBudgetMs = 0;
+      auto queries = [&] {
+        for (;;) {
+          const auto step = standalone.nextStep();
+          if (step != probes::AutomaticCapture::Step::ValidateSites &&
+              step != probes::AutomaticCapture::Step::Capture) break;
+          fixture.begin();
+          const auto dispatch = standalone.record(fixture.command, 0, independent, captureBudget, captureConfig);
+          fixture.finish();
+          require(dispatch.count != 0, "Standalone capture stalled without pending queries");
+          std::vector<bake::Result> readback(dispatch.count);
+          independent.read(0, readback);
+          require(standalone.observe(dispatch.step, dispatch.first, readback), "Standalone capture rejected hardware results");
+        }
+      };
+      queries();
+      standalone.fit(planning, 4, .5f, {});
+      standalone.select(planning, 4, 8, .5f, {});
+      require(standalone.captures.size() == 4, "Standalone reflection coverage missing in open scene");
+      standalone.prepareRays({});
+      queries();
+      standalone.complete({});
+      for (const auto &capture : standalone.captures)
+        for (const auto &radiance : capture.radiance)
+          for (uint32_t channel = 0; channel < 3; ++channel)
+            require(std::abs(radiance[channel] - scene->dome.radiance[channel]) < .0001f,
+                    "Standalone reflection capture changed constant environment radiance");
       sharedSceneChecked = true;
     }
     return results[0];

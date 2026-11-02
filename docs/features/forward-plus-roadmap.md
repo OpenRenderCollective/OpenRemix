@@ -1,3 +1,9 @@
+## Diffuse-independent reflection planning - 2026-11-02
+
+- AutomaticCapture has a geometry-only planning entry point with bounded aspect-aware candidates, hardware site admission and existing BSP projection assessment; it needs no diffuse grid/results.
+- Default Source 2 planning still moves existing admitted seeds into the provider, preserving placement and avoiding duplicate admission queries.
+- Remaining: adopt the standalone path in independent runtime scheduling/publication/cache persistence, qualify actual map coverage and complete CPU/frame-performance acceptance. The new entry point is not yet a selectable runtime mode.
+
 ## Shared prepared transport scene - 2026-11-02
 
 - Immutable transport geometry/material/light/texture/acceleration ownership is separate from consumer-local dispatch descriptors, buffers and timing queries. Prepared consumers can share a fenced scene without repacking or rebuilding it.
