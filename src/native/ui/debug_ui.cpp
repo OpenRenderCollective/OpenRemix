@@ -30,8 +30,9 @@ namespace remix {
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     // A host window usually hides the OS cursor on its thread (games do), so
-    // draw ImGui's own while the menu is open.
-    ImGui::GetIO().MouseDrawCursor = m_window.embedded() && m_uiState != REMIXAPI_UI_STATE_NONE;
+    // draw ImGui's own while the menu is open and the OS cursor is hidden.
+    ImGui::GetIO().MouseDrawCursor =
+        m_window.embedded() && m_uiState != REMIXAPI_UI_STATE_NONE && !SDL_CursorVisible();
     ImGui::NewFrame();
     if (preparationPending() || !m_preparationFailure.empty()) {
       const auto stats = m_pipelines->statistics();
