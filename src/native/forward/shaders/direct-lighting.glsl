@@ -9,9 +9,8 @@ vec3 directLightComponent(LightContribution light, uint view) {
 void accumulateDirectLighting(inout vec3 color, Surface surface, ShadingReceiver receiver,
                             float bakedSunVisibility, bool aggregate, uint debugView) {
   vec3 n = surface.normal, v = receiver.viewDirection;
-  vec4 coordinate = receiver.baked.coordinate, bounds = receiver.baked.bounds;
-  LightContribution sun = sunLightResponse(coordinate, bounds, bakedSunVisibility, receiver.position, receiver.depth, n, v,
-      surface.color.rgb, surface.roughness, surface.metallic, normalize(receiver.geometric));
+  SunLightSample sunlight = sampleReceiverSunLight(receiver, n, bakedSunVisibility);
+  LightContribution sun = shadeStandardSunLight(sunlight, n, v, surface.color.rgb, surface.roughness, surface.metallic);
   color += directLightComponent(sun, debugView);
   LocalLightingContext localLighting = prepareLocalLighting(receiver, n, surface.metallic < 1, aggregate);
   for (uint i = 0u; i < localLighting.lights.count; ++i) {

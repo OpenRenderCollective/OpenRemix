@@ -64,6 +64,7 @@ layout(location = 2) out vec4 outReflectance;
 #include "direct-light.glsl"
 #include "receiver-lighting.glsl"
 #include "local-lighting.glsl"
+#include "sun-lighting.glsl"
 // Specialization removes diagnostic branches from ordinary world shading.
 layout(constant_id = 1) const uint LightingView = 0u;
 #ifndef WATER_SURFACE

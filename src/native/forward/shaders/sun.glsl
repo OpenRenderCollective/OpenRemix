@@ -2,14 +2,7 @@
 #ifndef VIEWMODEL_PASS
 #include "sun-depth.glsl"
 #endif
-// Sun transport is independent of the material response. Irradiance excludes
-// RGB radiance; moving-caster visibility is already included in radiance.
-struct SunLightSample {
-  vec3 direction;
-  vec3 radiance;
-  float diffuseIrradiance;
-  float staticVisibility;
-};
+#include "sun-values.glsl"
 SunLightSample sampleSunLight(vec4 coordinate, vec4 bounds, float unitIrradiance,
                              vec3 p, float depth, vec3 n, vec3 receiverNormal, bool allowBakedVisibility) {
   bool baked = allowBakedVisibility && frame.sunDirection.w > .5 && coordinate.w > .5;
@@ -53,14 +46,4 @@ LightContribution composeSunLight(SunLightSample lighting, BrdfLobes response) {
 LightContribution shadeStandardSunLight(SunLightSample lighting, vec3 n, vec3 v,
                                         vec3 base, float roughness, float metallic) {
   return composeSunLight(lighting, brdfLobes(base, roughness, metallic, n, v, lighting.direction));
-}
-LightContribution sunLightResponse(vec4 coordinate, vec4 bounds, float unitIrradiance, vec3 p, float depth, vec3 n, vec3 v,
-                           vec3 base, float roughness, float metallic, vec3 receiverNormal) {
-  SunLightSample lighting = sampleSunLight(coordinate, bounds, unitIrradiance, p, depth, n, receiverNormal);
-  return shadeStandardSunLight(lighting, n, v, base, roughness, metallic);
-}
-vec3 sunLight(vec4 coordinate, vec4 bounds, float unitIrradiance, vec3 p, float depth, vec3 n, vec3 v,
-              vec3 base, float roughness, float metallic) {
-  LightContribution response = sunLightResponse(coordinate, bounds, unitIrradiance, p, depth, n, v, base, roughness, metallic, n);
-  return response.diffuse + response.specular;
 }

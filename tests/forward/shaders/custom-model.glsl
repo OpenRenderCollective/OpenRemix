@@ -4,6 +4,9 @@ ShadingResult shadeExampleDiffuse(Surface surface, ShadingReceiver receiver) {
   ReceiverLightContext context = prepareReceiverLighting(receiver, surface.normal);
   ReceiverLighting light = sampleDiffuseLighting(receiver, surface.normal, context, true);
   vec3 color = composeDiffuseLight(light, surface.color.rgb);
+  SunLightSample sunlight = sampleReceiverSunLight(receiver, surface.normal, receiverSunVisibility(context));
+  LightContribution sun = composeSunLight(sunlight, BrdfLobes(surface.color.rgb / Pi, vec3(0)));
+  color += sun.diffuse + sun.specular;
   LocalLightingContext locals = prepareLocalLighting(receiver, surface.normal, true, light.usesDirectAttribution);
   for (uint i = 0u; i < locals.lights.count; ++i) {
     LocalLightSample source;

@@ -1,3 +1,15 @@
+## 2026-11-03 — receiver-level sunlight source API
+
+Custom material models now sample sunlight through a receiver query and compose
+it with their own response, alongside local-light samples. SunLightSample is
+resource-free, and two unused legacy combined wrappers were removed. Default
+world/viewmodel shading uses the same query adapter; water keeps its explicit
+unbaked-sun policy pending separate qualification. Resource-free/custom-model
+compile checks and three sun/mixed/viewmodel GPU regressions pass. All 20 default
+variants retain identical optimized sizes and opcode/intrinsic counts (six are
+byte-identical; the others reorder material RGB extraction across the sun query).
+No-overhead acceptance still requires broader runtime evidence.
+
 ## 2026-11-03 — provider-owned reflection finishing policies
 
 Reflection finishing now exposes retained, transferred and image-only publication

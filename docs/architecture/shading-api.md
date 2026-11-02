@@ -480,6 +480,21 @@ rays on/off and different configured diffuse/reflection ranges. Hardware transpo
 fixtures check query conversion across three host-unit scales and no allocation
 on query validation. Baked/mixed-sun ownership for water remains a separate task.
 
+## Sun source queries for material models
+
+`sun-values.glsl` defines the resource-free `SunLightSample`. The receiver-level
+`sampleReceiverSunLight(receiver, normal, unitIrradiance)` adapter owns chart
+coordinates, bounds, position/depth and normalized geometric shadow inputs.
+Custom models compose this sample through `composeSunLight` with their own
+`BrdfLobes`; the standard model uses the shared standard response. The alternate
+model fixture combines sunlight and local light samples without the standard
+composition implementation. The unused legacy `sunLight` and low-level combined
+`sunLightResponse` wrappers have been removed.
+
+Water retains its explicit unbaked-sun query in this refactor. Its baked/mixed
+sun ownership still needs separate qualification; a source API change must not
+silently alter that optical/shadow policy.
+
 ## Provider-owned diffuse context
 
 Material models no longer access `ReceiverLightContext` fields. They obtain a

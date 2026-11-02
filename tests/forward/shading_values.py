@@ -23,6 +23,8 @@ common = """#version 450
 #include "reflection-values.glsl"
 #include "diffuse-values.glsl"
 #include "diffuse-values.glsl"
+#include "sun-values.glsl"
+#include "sun-values.glsl"
 """
 stages = {
     "vert": """void main() {
@@ -39,7 +41,8 @@ stages = {
       material.roughness = .6;
       ReflectionReceiver query = ReflectionReceiver(vec3(0), vec3(0), material.normal,
           vec3(0,0,1), material.roughness, -1, 0u, uvec2(0));
-      ReflectionSample reflected = ReflectionSample(query.direction * 0, 1);
+      SunLightSample sun = SunLightSample(vec3(0,0,1), vec3(1), 0, 1);
+      ReflectionSample reflected = ReflectionSample(query.direction * sun.diffuseIrradiance, 1);
       ReceiverLighting diffuse = ReceiverLighting(vec3(.2), true, false);
       result = vec4(resolveReflection(reflected, material.color.rgb) + material.emission +
                     composeDiffuseLight(diffuse, material.color.rgb), material.color.a);
@@ -63,4 +66,4 @@ with tempfile.TemporaryDirectory(prefix="shading-values-", dir=output) as tempor
                         "-I" + str(root / "src/native/forward/shaders"),
                         str(source), "-o", str(binary)], env=env, check=True)
         subprocess.run([validator, "--target-env", "vulkan1.1", str(binary)], env=env, check=True)
-print("Material, diffuse and reflection values compile in vertex, fragment and compute without pass resources")
+print("Material, diffuse, sun and reflection values compile in vertex, fragment and compute without pass resources")
