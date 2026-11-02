@@ -299,7 +299,8 @@ void main() {
       uint sampleSeed = stream ^ (rayFrame.control.y + i + 1u) * 2654435761u;
       float distance;
       bool back, miss;
-      sum += radiance(origin, direction, medium, sampleSeed, distance, back, miss);
+      sum += radiance(origin, direction, medium, sampleSeed, distance, back, miss,
+        rayFrame.trace.x, rayFrame.counts.w);
       if (i == 0u) {
         outputValue.irradiance[0].w = distance;
         outputValue.statistics.xy = vec2(back ? 1 : 0, miss ? 1 : 0);
@@ -327,7 +328,8 @@ void main() {
       direction = basisDirection(surfaceNormal, (float(i) + .5) / float(rayFrame.counts.z), phi);
     float distance;
     bool back, miss;
-    vec3 value = radiance(origin, direction, medium, seed, distance, back, miss);
+    vec3 value = radiance(origin, direction, medium, seed, distance, back, miss,
+        rayFrame.trace.x, rayFrame.counts.w);
     // Surface receivers see a hemisphere (2Pi); volume probes see 4Pi. Keep
     // the common epilogue unchanged for the separately normalized direct NEE.
     if (surfaceReceiver) value *= .5;

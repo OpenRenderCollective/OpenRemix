@@ -109,7 +109,7 @@ float emitterShadowDistance(RayLight light, float distance) {
   return light.radiance.w > 0 ? distance - rayFrame.trace.y : distance;
 }
 #include "light_sampling.glsl"
-vec3 directLight(vec3 p, vec3 n, inout uint seed, Medium medium) {
+vec3 directLight(vec3 p, vec3 n, inout uint seed, Medium medium, float sunDistance) {
   vec3 irradiance = vec3(0);
   if (any(greaterThan(rayFrame.sunRadiance.rgb, vec3(0)))) {
     vec3 direction = normalize(-rayFrame.sunDirection.xyz);
@@ -117,7 +117,7 @@ vec3 directLight(vec3 p, vec3 n, inout uint seed, Medium medium) {
                                2 * RayPi * random(seed));
     float cosine = max(dot(n, direction), 0);
     if (cosine > 0) {
-      vec3 passing = visibility(p, direction, rayFrame.trace.x, seed, medium);
+      vec3 passing = visibility(p, direction, sunDistance, seed, medium);
       if (lightingStyleSelected(0u))
         irradiance += rayFrame.sunRadiance.rgb * cosine * passing;
     }
@@ -143,16 +143,18 @@ vec3 directLight(vec3 p, vec3 n, inout uint seed, Medium medium) {
   }
   return irradiance;
 }
+// Query limits are independent of immutable scene bindings. Distances are in
+// scene units; the caller supplies a validated positive range and bounce count.
 vec3 radiance(vec3 origin, vec3 direction, Medium medium, inout uint seed, out float firstDistance,
-              out bool firstBack, out bool firstMiss) {
+              out bool firstBack, out bool firstMiss, float maximumDistance, uint maximumBounces) {
   vec3 result = vec3(0), throughput = vec3(1);
-  firstDistance = rayFrame.trace.x;
+  firstDistance = maximumDistance;
   firstBack = false;
   firstMiss = false;
   uint bounce = 0;
-  for (uint step = 0; bounce < rayFrame.counts.w && step < rayFrame.counts.w + 32u; ++step) {
+  for (uint step = 0; bounce < maximumBounces && step < maximumBounces + 32u; ++step) {
     Hit hit;
-    bool found = traceBounceRay(origin, direction, rayFrame.trace.x, seed, hit);
+    bool found = traceBounceRay(origin, direction, maximumDistance, seed, hit);
     if (step == 0u) {
       firstDistance = hit.distance;
       firstMiss = !found;
@@ -229,7 +231,7 @@ vec3 radiance(vec3 origin, vec3 direction, Medium medium, inout uint seed, out f
     vec3 diffuse = clamp(base.rgb * modulation, 0, 1) * (reflected * (1 - metallic));
     origin += direction * hit.distance;
     origin += geometric * rayFrame.trace.y;
-    result += throughput * diffuse / RayPi * directLight(origin, n, seed, medium);
+    result += throughput * diffuse / RayPi * directLight(origin, n, seed, medium, maximumDistance);
     throughput *= diffuse;
     if (max(max(throughput.x, throughput.y), throughput.z) < 1e-8)
       break;

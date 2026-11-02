@@ -298,6 +298,24 @@ This is the remaining integration contract, not a claim that runtime controllers
 already share a retained scene lease. It permits future diffuse providers without
 forcing material shaders to know their scheduling or storage.
 
+## Transport query limits
+
+The provider-level radiance traversal takes explicit `maximumDistance` (scene
+units) and `maximumBounces` arguments, separate from immutable scene bindings.
+Its direct-light query also receives the sun visibility distance explicitly.
+Offline capture, live diffuse and water reflection callers currently supply their
+existing prepared limits. Keep these low-level traversal inputs below the material
+API; material shaders should request lighting rather than manage ray-scene sets.
+Callers own validation and sampling policy. Bias, materials, light identities and
+other shared scene data retain the existing transport contract.
+
+Water uses the common diffuse query but is still compiled with its baked source.
+Selecting live diffuse does not yet route that source into water body lighting.
+The next water integration must bind one shared scene while supplying distinct
+live-diffuse and reflection limits; the reflection query must not overwrite the
+GI range or bounce count. Add a water lighting regression with different query
+ranges, including captured scene units, before treating this pass as interchangeable.
+
 ## Remaining API work
 
 1. Extend ownership metadata beyond the existing aggregate-field contract for

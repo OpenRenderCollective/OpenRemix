@@ -22,7 +22,8 @@ vec3 liveDiffuse(vec3 position, vec3 normal, vec3 geometric) {
                                     rotation + 2 * RayPi * phase);
     float distance;
     bool back, miss;
-    sum += radiance(origin, direction, medium, seed, distance, back, miss);
+    sum += radiance(origin, direction, medium, seed, distance, back, miss,
+        rayFrame.trace.x, rayFrame.counts.w);
   }
   // Cosine-weighted sampling cancels the diffuse cosine/Pi factor. Returning
   // E/Pi matches the baked ambient term and replaces it, including valid black.

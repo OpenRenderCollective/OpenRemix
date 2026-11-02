@@ -1,3 +1,9 @@
+## 2026-11-03: provider query limits and water follow-up
+
+- Low-level radiance traversal now takes explicit range/bounce limits; existing consumers retain their settings without an added forwarding layer.
+- Water's common diffuse query still compiles to baked lighting. Route live diffuse into this pass next, preserving independent reflection query limits and captured scene units.
+- Twelve optimized shader variants retain matching sizes/opcode counts; bake, live GI/viewmodel and hardware reflection suites pass. Gameplay timing acceptance remains open.
+
 ## 2026-11-03: live diffuse viewmodel integration
 
 - Viewmodels now consume the selected live diffuse provider using the world transport scene/descriptor, while retaining overlay, self shadows and reflection behavior.
