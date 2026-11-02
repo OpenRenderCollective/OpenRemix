@@ -41,6 +41,7 @@ public:
   const CaptureSource &source() const { return m_active; }
   Memory memory() const;
   float sceneScale() const;
+  bool cacheHit() const { return m_cacheHit; }
   const std::string &status() const { return m_status; }
 
 private:
@@ -66,6 +67,7 @@ private:
   std::vector<std::shared_ptr<Job>> m_retired;
   std::array<Frame, gpuFrameCount> m_frames;
   CaptureSource m_active;
+  bool m_cacheHit = false;
   std::string m_status;
   void retire();
 };

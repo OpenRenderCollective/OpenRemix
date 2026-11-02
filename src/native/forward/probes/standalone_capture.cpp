@@ -2,6 +2,7 @@
 #include "forward/bake/budget.h"
 #include "forward/bake/transport.h"
 #include "forward/probes/automatic_capture.h"
+#include "forward/probes/standalone_cache.h"
 #include "raster/renderer.h"
 #include <algorithm>
 #include <atomic>
@@ -22,6 +23,10 @@ struct StandaloneCapture::Job {
   AutomaticCapture capture;
   bake::Budget budget;
   std::vector<bake::Result> readback;
+  std::filesystem::path cacheFile;
+  uint64_t cacheKey = 0;
+  std::unique_ptr<const standalone_cache::Snapshot> persistence;
+  bool cacheHit = false;
   bool prepared = false, filtering = false, failed = false;
 };
 StandaloneCapture::StandaloneCapture(VkPhysicalDevice physical, VkDevice device,
@@ -81,6 +86,7 @@ void StandaloneCapture::record(VkCommandBuffer command,
       count != m_count || detailTolerance != m_tolerance) {
     retire();
     m_active = {};
+    m_cacheHit = false;
     m_status.clear();
     m_source = source;
     m_config = config;
@@ -118,7 +124,7 @@ void StandaloneCapture::record(VkCommandBuffer command,
       const auto family = m_family;
       job->ticket = m_pipelines->prepare(
           "reflection-scene-" + std::to_string(++generation),
-          [job, physical, device, family, config, count] {
+          [job, physical, device, family, config, count, detailTolerance] {
             VkPhysicalDeviceProperties limits;
             vkGetPhysicalDeviceProperties(physical, &limits);
             const auto capacity = imageCapacity(
@@ -128,6 +134,42 @@ void StandaloneCapture::record(VkCommandBuffer command,
             if (count > capacity)
               throw std::length_error(
                   "Standalone reflection set exceeds image capacity");
+            if (config.diskCache) {
+              standalone_cache::Device deviceIdentity{
+                  limits.vendorID,
+                  limits.deviceID,
+                  limits.driverVersion,
+                  {count, config.reflectionResolution,
+                   limits.limits.maxImageDimension2D,
+                   limits.limits.maxImageArrayLayers,
+                   limits.limits.maxStorageBufferRange}};
+              std::copy_n(limits.pipelineCacheUUID, deviceIdentity.uuid.size(),
+                          deviceIdentity.uuid.begin());
+              job->cacheKey = standalone_cache::key(
+                  job->source->contentHash,
+                  bake::Transport::shaderFingerprint(), config, count,
+                  detailTolerance, deviceIdentity);
+              try {
+                job->cacheFile = standalone_cache::path(job->cacheKey);
+              } catch (const std::exception &) {
+              }
+              if (!job->cacheFile.empty()) {
+                auto cached = standalone_cache::read(
+                    job->cacheFile, job->cacheKey, deviceIdentity.limits,
+                    job->cancellation.get_token());
+                if (cached) {
+                  job->capture.captures = std::move(cached->captures);
+                  job->capture.filtered = std::move(cached->data);
+                  job->capture.cachedRadiance = true;
+                  job->capture.filter(physical, device,
+                                      job->cancellation.get_token());
+                  job->capture.captures.clear();
+                  job->capture.filtered = {};
+                  job->cacheHit = job->filtering = true;
+                  return;
+                }
+              }
+            }
             job->capture.planSites(*job->source, count,
                                    job->cancellation.get_token());
             bake::Options options;
@@ -152,7 +194,15 @@ void StandaloneCapture::record(VkCommandBuffer command,
       job.capture.image->recordUpload(command);
       frame.upload = job.capture.image;
       m_active = {job.source->contentHash, job.capture.image};
+      m_cacheHit = job.cacheHit;
       frame.sampled = m_active.image;
+      if (config.diskCache && job.persistence && !job.cacheFile.empty()) {
+        try {
+          (void)standalone_cache::persistence().submit(
+              job.cacheFile, job.cacheKey, std::move(job.persistence));
+        } catch (const std::exception &) {
+        } // optional disk writes never revoke publication
+      }
       m_job.reset();
       return;
     }
@@ -196,6 +246,14 @@ void StandaloneCapture::record(VkCommandBuffer command,
             owner->capture.complete(owner->cancellation.get_token());
             owner->capture.filter(physical, device,
                                   owner->cancellation.get_token());
+            auto snapshot = std::make_unique<standalone_cache::Snapshot>();
+            snapshot->captures = std::move(owner->capture.captures);
+            snapshot->data = std::move(owner->capture.filtered);
+            if (owner->cacheKey &&
+                standalone_cache::retainedCharge(*snapshot) <=
+                    standalone_cache::maximumBytes)
+              owner->persistence = std::move(snapshot);
+            // Declined payloads release raw/filter CPU storage on this worker.
           });
     } else {
       if (frame.job)

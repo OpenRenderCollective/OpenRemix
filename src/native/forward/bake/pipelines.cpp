@@ -5,6 +5,15 @@
 #include <array>
 
 namespace remix::forward::bake {
+  uint64_t Transport::shaderFingerprint() {
+    static const uint64_t fingerprint = [] {
+      auto hash = scene::fastHash(atlasShader, sizeof(atlasShader));
+      hash = scene::fastHash(transportShader, sizeof(transportShader), hash);
+      return scene::fastHash(parallelShader, sizeof(parallelShader), hash);
+    }();
+    return fingerprint;
+  }
+
   VkDescriptorSetLayout Transport::createSceneLayout(VkDevice device) {
     VkDescriptorSetLayoutBinding bindings[10];
     for (uint32_t i = 0; i < 10; ++i) {

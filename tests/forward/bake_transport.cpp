@@ -1,6 +1,7 @@
 #include "forward/bake/transport.h"
 #include "forward/probes/automatic_capture.h"
 #include "forward/probes/standalone_capture.h"
+#include "forward/probes/standalone_cache.h"
 #include "forward/bake/budget.h"
 #include "forward/bake/sun_depth_layout.h"
 #include "forward/bake/sun_depth.h"
@@ -520,6 +521,20 @@ namespace {
     const auto published = provider.source();
     require(published.image && published.sceneHash == world.resources.bakeScene()->contentHash &&
                 published.image->header().parameters[0] == 4, "Standalone reflection publication failed");
+    probes::standalone_cache::persistence().waitIdle(); // test only; publication never waits for disk
+    {
+      probes::StandaloneCapture warm(fixture.physical, fixture.device, &pipelines, true, fixture.family);
+      const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+      while (!warm.source().image && warm.status().empty() && std::chrono::steady_clock::now() < until) {
+        warm.selectFrame(frame++ % gpuFrameCount);
+        fixture.begin(); warm.record(fixture.command, world.resources, config, 4, .5f); fixture.finish();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
+      require(warm.source().image && warm.cacheHit() && warm.memory().acceleration == 0 &&
+                  std::memcmp(&warm.source().image->header(), &published.image->header(), sizeof(probes::Header)) == 0,
+              "Warm standalone cache rebuilt transport or changed publication metadata");
+      for (uint32_t slot = 0; slot < gpuFrameCount; ++slot) warm.selectFrame(slot);
+    }
     config.batch = 64; config.gpuBudgetMs = 1;
     tick();
     require(provider.source().image == published.image, "Execution-only edit discarded standalone reflections");

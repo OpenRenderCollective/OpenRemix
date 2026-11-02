@@ -33,6 +33,7 @@ namespace remix::forward::bake {
     // Compile immutable transport pipelines during renderer preparation, so a
     // live scene update never needs to compile them on the rendering thread.
     static void preparePipelines(VkDevice device);
+    static uint64_t shaderFingerprint(); // immutable atlas/radiance transport provenance
     // Shared read-only scene contract for compute and optional fragment queries.
     // Caller owns the returned layout reference.
     static VkDescriptorSetLayout createSceneLayout(VkDevice device);

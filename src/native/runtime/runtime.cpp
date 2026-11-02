@@ -23,6 +23,7 @@
 #include "platform/memory_release.h"
 #include "runtime/runtime.h"
 #include "forward/bake/cache_persistence.h"
+#include "forward/probes/standalone_cache.h"
 #include "upscale/xess.h"
 
 #include <algorithm>
@@ -47,6 +48,7 @@ namespace remix {
       switchPresentation(false);
     m_renderThread.stop();
     forward::bake::cache::persistence().stop();
+    forward::probes::standalone_cache::persistence().stop();
     if (m_device && !m_deviceLost) {
       vkDeviceWaitIdle(m_device);
     }
@@ -166,6 +168,7 @@ namespace remix {
     m_renderThread.stop();
     // Join CPU-only persistence during explicit Shutdown, before DLL unload.
     forward::bake::cache::persistence().stop();
+    forward::probes::standalone_cache::persistence().stop();
     m_frameScene.reset();
     m_asyncCaller = m_previousAsyncCaller = m_asyncRender = {};
     m_renderedMemory = {};

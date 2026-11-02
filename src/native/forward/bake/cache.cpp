@@ -1,4 +1,5 @@
 #include "forward/bake/cache.h"
+#include "forward/cache_directory.h"
 #include "forward/bake/storage_options.h"
 #include "forward/probes/priority_bands.h"
 #include "forward/probes/cache_codec.h"
@@ -343,16 +344,9 @@ namespace remix::forward::bake::cache {
     return hash | 1;
   }
   std::filesystem::path path(uint64_t identity) {
-    const char *override = std::getenv("REMIX_BAKE_CACHE_DIR");
-    const char *config = std::getenv("REMIX_CONFIG_DIR");
-    const auto directory = override && *override
-                               ? std::filesystem::u8path(override)
-                               : (config && *config ? std::filesystem::u8path(config)
-                                                    : std::filesystem::current_path() / "openremix") /
-                                     "cache" / "forwardplus";
     std::ostringstream name;
     name << std::hex << identity << ".bake";
-    return directory / name.str();
+    return cache_io::directory() / name.str();
   }
   std::optional<Snapshot> read(const std::filesystem::path &file, uint64_t identity,
                                std::shared_ptr<const scene::BakeScene> source, const Config &config,

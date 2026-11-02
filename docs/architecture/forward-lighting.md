@@ -552,7 +552,39 @@ Published images retain no transport scene once all query receipts retire.
 The normal Source 2 bake path is unchanged and does not schedule this controller's
 capture work. This alternate path currently builds one transport for its frozen
 source and releases it after publication; it does not yet borrow a scene from a
-concurrent compatible provider. It has no disk persistence, receiver-guided repair
-or dedicated UI progress/status wiring. Shared prepared scene adoption in the
-default scheduler, standalone persistence, real-map coverage and full CPU/frame
-performance qualification remain necessary before the backend split is complete.
+concurrent compatible provider. Disk persistence is independent, as described
+below. Receiver-guided repair and dedicated UI progress/status wiring remain
+unfinished. Shared prepared scene adoption in the default scheduler, real-map
+coverage and full CPU/frame performance qualification remain necessary before
+the backend split is complete.
+
+### Independent reflection persistence
+
+Standalone captures persist a reflection-only snapshot: raw capture radiance,
+projection metadata and filtered HDR texels. The key includes the frozen source
+content, capture count/quality/tolerance, an explicit CPU planner/filter/defaults
+version, atlas/radiance shader fingerprint and device/driver/limit provenance.
+Source identity includes BSP data and capture hints. Diffuse atlas/probe settings,
+batch size, timing budget and disk-cache policy do not enter this identity.
+Increment the standalone key's CPU version when placement, filtering or fixed
+transport defaults change. A warm hit bypasses admission, fitting, acceleration
+construction, radiance queries and filtering; image preparation/upload still run.
+
+Files live under the existing Forward+ cache directory in
+`reflections/<key>.reflection`, using bounded/checksummed streams and atomic
+replacement. Missing, stale, invalid, truncated or corrupt files are normal
+misses. The existing disk-cache setting controls this provider too. Enabling
+persistence does not force an otherwise unnecessary lighting restart.
+
+`cache_io::Persistence<Snapshot>` is the common CPU-only background writer. The
+bake and reflection adapters supply their own immutable payload, memory charge
+and serializer. The queue preserves one active/one pending write and a combined
+retained-byte ceiling. Standalone snapshots and reads are capped at 256 MiB;
+larger captures still publish but skip optional persistence. Writes are submitted
+after publication without waiting for disk. No renderer, GPU image or transport
+is held by the standalone disk snapshot. Orderly shutdown drains/joins writers.
+The bake adapter keeps its existing budget and serialization format.
+
+This is independent persistence for the standalone planner. It does not deduplicate
+individual cubemaps across the older combined cache and standalone layouts, or
+complete migration of Source 2's default capture scheduling to independent owners.

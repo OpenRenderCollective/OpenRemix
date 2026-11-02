@@ -60,6 +60,12 @@ cache_persistence_test = executable('remix-cache-persistence-test', 'cache_persi
   include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
   cpp_args : test_cpp_args)
 test('Background bake persistence bounds slow writes, failures and shutdown', cache_persistence_test, timeout : 30)
+standalone_cache_test = executable('remix-standalone-cache-test', 'standalone_cache.cpp',
+  include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+  cpp_args : test_cpp_args)
+test('Standalone reflection persistence preserves content and rejects corrupt inputs', standalone_cache_test,
+  args : [meson.current_build_dir() / 'standalone-cache'], timeout : 30)
+
 forward_denoise_test = executable('remix-forward-lightmap-denoise-test', 'lightmap_denoise.cpp',
   include_directories : test_includes, link_with : lightmap_denoise_library, cpp_args : test_cpp_args + oidn_args)
 test('Offline lightmap denoising preserves directional SH and chart isolation', forward_denoise_test,

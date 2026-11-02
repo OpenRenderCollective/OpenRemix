@@ -1,3 +1,9 @@
+## Standalone reflection persistence - 2026-11-02
+
+- Reflection-only checksummed/atomic cache now loads before geometry planning or transport creation. Keys include source, planner/filter version, quality/projection, shader and device provenance; diffuse settings and execution budgets are excluded.
+- Bake and reflection persistence share a bounded CPU-only writer utility. Standalone snapshots/reads are capped at 256 MiB; cold captures publish before optional writes, and warm hits only prepare/upload the image. Existing bake payload format/budget are preserved.
+- Remaining: default Source 2 scheduler migration/shared-scene adoption, cache dedup across layouts, standalone UI status/progress, real-map coverage and matched CPU/frame performance qualification. Playable unchanged.
+
 ## Standalone automatic reflections in the renderer - 2026-11-02
 
 - With diffuse baking disabled and cubemaps requested, automatic reflections now have their own controller, worker tickets, frame-fenced query/image ownership and publication. No diffuse volume is needed. Compatible target replacements retain the controller/image.

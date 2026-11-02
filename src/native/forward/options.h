@@ -73,7 +73,7 @@ namespace remix::forward {
               .reflectionResolution = baking.reflectionResolution,
               .textureResolution = baking.textureResolution,
               .samples = baking.samples, .bounces = baking.bounces,
-              .batch = baking.batch, .gpuBudgetMs = baking.gpuBudgetMs};
+              .batch = baking.batch, .gpuBudgetMs = baking.gpuBudgetMs, .diskCache = baking.diskCache};
     }
     bool operator==(const Options &) const = default;
     bool reflections() const { return ssr || rtReflections || baking.reflectionProbes != 0; }
