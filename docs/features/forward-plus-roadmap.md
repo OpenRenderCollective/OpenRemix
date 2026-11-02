@@ -1,3 +1,9 @@
+## Shared transport session ownership - 2026-11-02
+
+- Default bake and standalone reflection jobs now embed one TransportSession definition for frozen source, transport consumer, adaptive budget and cancellation. No separate session allocation, virtual interface or shared-session pointer. Provider state/tickets remain in concrete jobs.
+- Native build and two GPU regressions pass, including cancellation/restart, recovery/warm reuse and authored/standalone capture behavior.
+- Remaining: independent default ticket orchestration, compatible consumer shared-scene adoption/memory deduplication and full CPU/GPU/map no-overhead acceptance. Foreground comparison awaits user availability; no new timings or playable changes this turn.
+
 ## Performance gate diagnostic coverage - 2026-11-02
 
 - Adapter opt-in frame CSV now appends CPU snapshot identity/freshness/presented flags and present/scene/acquire/submit/queue-present times from its existing API query. No additional queries or profiling-disabled work. Adapter commit a024a72. Build and offline dynamic-stub CSV harness pass.

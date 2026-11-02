@@ -4,7 +4,7 @@
 #include "forward/bake/adaptive_grid.h"
 #include "forward/bake/budget.h"
 #include "forward/bake/coarse_transfer.h"
-#include "forward/bake/transport.h"
+#include "forward/bake/transport_session.h"
 #include "forward/bake/reference_capture.h"
 #include "forward/bake/style_work.h"
 #include "forward/bake/local_reflection_cache.h"
@@ -30,12 +30,9 @@
 namespace remix::forward::bake::cache { struct Snapshot; }
 
 namespace remix::forward::bake {
-  struct Controller::Job {
-    std::shared_ptr<const scene::BakeScene> source;
+  struct Controller::Job : TransportSession {
     pipeline::PreparationQueue::Ticket ticket;
-    std::unique_ptr<Transport> transport;
     std::optional<ReferenceCapture> reference;
-    Budget budget;
     Grid grid;
     std::shared_ptr<SunDepth> sunDepth;
     uint32_t sunDepthNext = 0, sunDepthReceived = 0;
@@ -159,7 +156,6 @@ namespace remix::forward::bake {
     bool localReflectionUpgrade = false;
     uint32_t localCaptureNext = 0, localCaptureReceived = 0;
     bool localCapturePlanned = false, localCaptureFiltered = false;
-    std::stop_source cancellation;
     bool filtering = false;
     enum class FinishStage { None, ProbeRefinement, CoarseTransfer, Reflections, Denoising, Atlas, Geometry, Styles };
     std::atomic<FinishStage> finishStage{FinishStage::None};

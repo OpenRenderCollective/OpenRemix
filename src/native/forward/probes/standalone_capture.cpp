@@ -1,6 +1,5 @@
 #include "forward/probes/standalone_capture.h"
-#include "forward/bake/budget.h"
-#include "forward/bake/transport.h"
+#include "forward/bake/transport_session.h"
 #include "forward/probes/automatic_capture.h"
 #include "forward/probes/capture_cache.h"
 #include "raster/renderer.h"
@@ -15,13 +14,9 @@ namespace remix::forward::probes {
 namespace {
 std::atomic_uint64_t generation = 0;
 }
-struct StandaloneCapture::Job {
-  std::shared_ptr<const scene::BakeScene> source;
+struct StandaloneCapture::Job : bake::TransportSession {
   pipeline::PreparationQueue::Ticket ticket;
-  std::stop_source cancellation;
-  std::unique_ptr<bake::Transport> transport;
   AutomaticCapture capture;
-  bake::Budget budget;
   std::vector<bake::Result> readback;
   std::filesystem::path cacheFile;
   uint64_t cacheKey = 0;

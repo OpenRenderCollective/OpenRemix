@@ -814,3 +814,19 @@ image preparation does not request these diagnostics, preserving its previous wo
 
 This removes one render-thread preparation cost; it does not establish the full
 no-overhead frame gate or complete independent default scheduling.
+
+### Shared transport session ownership
+
+`bake::TransportSession` contains the frozen source owner, mutable transport
+consumer, adaptive budget and cancellation source. Default bake and standalone
+reflection jobs embed it as a nonvirtual base. Their existing frame/worker owners
+still retain the concrete job; there is no separately allocated session or shared
+session pointer. Provider-specific state and preparation tickets stay in the
+concrete jobs.
+
+The Source 2 recipe intentionally sequences its techniques through one consumer
+and budget, retaining admitted-seed and GPU-work reuse. Separately scheduled
+providers can use the existing fenced `Transport::initializeShared` contract for
+immutable scene sharing, but current default tickets have not yet migrated to
+independent provider scheduling. Memory deduplication for future coexisting
+consumers and complete CPU/frame performance acceptance remain required.
