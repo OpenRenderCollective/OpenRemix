@@ -7,6 +7,7 @@
 #include "forward/probes/placement_seeds.h"
 #include "forward/probes/evaluation.h"
 #include "forward/probes/image_asset.h"
+#include "runtime/pipelines.h"
 #include <stdexcept>
 #include <atomic>
 #include <optional>
@@ -21,6 +22,12 @@ namespace remix::forward::probes {
   // readback counters only after the owning frame fence. No copied ray arrays.
   struct AutomaticCapture {
     using Step = CaptureStep;
+    // Render-thread worker ownership. The preset lends transport/admission,
+    // not its diffuse preparation ticket. Submitted callbacks retain the owner.
+    void prepare(pipeline::Service &service, const std::string &key, std::function<void()> work);
+    bool preparationReady() const { return !m_preparation || m_preparation->ready(); }
+    void checkPreparation() const { if (m_preparation) m_preparation->check(); }
+    void cancelPreparation(pipeline::Service &service) { if (m_preparation) service.cancel(m_preparation); }
     // Inspect only after the owning preparation ticket or submission fence.
     Step nextStep() const {
       if (!sitesPlanned) return Step::PlanSites;
@@ -116,6 +123,7 @@ namespace remix::forward::probes {
     uint32_t captureNext = 0, captureReceived = 0;
     bool capturePlanned = false;
   private:
+    pipeline::PreparationQueue::Ticket m_preparation;
     std::shared_ptr<const CapturePayload> m_payload;
     std::atomic_bool m_publicationReady = false;
     bool m_publicationConsumed = false;

@@ -345,11 +345,8 @@ namespace remix::forward::bake {
   Controller::~Controller() {
     if (m_job)
       m_job->cancellation.request_stop();
-    if (m_job && m_job->ticket)
-      m_pipelines->cancel(m_job->ticket);
-    for (auto &job : m_obsolete)
-      if (job->ticket)
-        m_pipelines->cancel(job->ticket);
+    if (m_job) m_job->cancelPreparation(*m_pipelines);
+    for (auto &job : m_obsolete) job->cancelPreparation(*m_pipelines);
   }
   void Controller::status(uint32_t state, const char *message) {
     static const bool timing = [] {
@@ -373,8 +370,8 @@ namespace remix::forward::bake {
   void Controller::invalidate() {
     if (m_job) {
       m_job->cancellation.request_stop();
-      if (m_job->ticket && !m_job->ticket->ready()) {
-        m_pipelines->cancel(m_job->ticket);
+      if (!m_job->preparationReady()) {
+        m_job->cancelPreparation(*m_pipelines);
         m_obsolete.push_back(m_job);
       }
       m_job.reset();
@@ -1030,7 +1027,7 @@ namespace remix::forward::bake {
   }
   void Controller::record(VkCommandBuffer command, RasterRenderer &resources, const Config &config,
                           float lightCutoff, SceneRequest *sceneRequest) {
-    std::erase_if(m_obsolete, [](const auto &job) { return job->ticket->ready(); });
+    std::erase_if(m_obsolete, [](const auto &job) { return job->preparationReady(); });
     if (!m_emptySurfaceReady) {
       m_emptyReflections->recordUpload(command);
       m_emptyReflectionUpload = m_slot;
@@ -1134,7 +1131,7 @@ namespace remix::forward::bake {
           status(REMIXAPI_BAKE_PREPARING_EXT, "Preparing static bake resources");
         }
         publishReadyReflections(command);
-        if (!m_job->ticket->ready()) {
+        if (!m_job->preparationReady()) {
           const auto total = m_job->denoiseChartCount.load(std::memory_order_relaxed);
           const auto stage = m_job->finishStage.load(std::memory_order_relaxed);
           if (stage == Job::FinishStage::Denoising && total) {
@@ -1159,7 +1156,7 @@ namespace remix::forward::bake {
           }
           return;
         }
-        m_job->ticket->check();
+        m_job->checkPreparation();
         m_job->initialized = true;
         if (m_job->failed)
           return;
@@ -1388,7 +1385,7 @@ namespace remix::forward::bake {
         return;
       // Private preparation outputs may still be written on the worker. The
       // independently published reflection owner is counted separately below.
-      if (job->ticket->ready()) {
+      if (job->preparationReady()) {
         addSurfaces(job->surfaceGeometry);
         addDepth(job->sunDepth);
         for (const auto &slot : job->coarseTransferSlots) {

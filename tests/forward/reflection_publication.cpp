@@ -190,6 +190,41 @@ int main() try {
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(fixture.physical, &properties);
     pipeline::Service pipelines(fixture.device, properties, false);
+    {
+      struct Gate { std::atomic_bool entered = false, released = false; std::atomic_uint32_t cancelledRuns = 0; };
+      auto gate = std::make_shared<Gate>();
+      struct Release { std::shared_ptr<Gate> gate; ~Release() { gate->released = true; } } release{gate};
+      probes::AutomaticCapture running, queued;
+      running.prepare(pipelines, "reflection-worker-ownership-running", [gate] {
+        gate->entered = true;
+        while (!gate->released) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      });
+      const auto enteredDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+      while (!gate->entered && std::chrono::steady_clock::now() < enteredDeadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      require(gate->entered && !running.preparationReady(), "Reflection provider lost its running worker ownership");
+      bool rejected = false;
+      try { running.prepare(pipelines, "reflection-worker-ownership-overlap", [] {}); }
+      catch (const std::logic_error &) { rejected = true; }
+      require(rejected, "Reflection worker ticket replaced while its callback was running");
+      auto retained = std::make_shared<int>(1);
+      std::weak_ptr<int> retired = retained;
+      queued.prepare(pipelines, "reflection-worker-ownership-cancelled", [gate, retained] { ++gate->cancelledRuns; });
+      retained.reset();
+      require(!queued.preparationReady() && !retired.expired(), "Queued reflection callback lost its retained inputs");
+      queued.cancelPreparation(pipelines);
+      require(queued.preparationReady() && retired.expired() && gate->cancelledRuns == 0,
+              "Cancelling queued reflection work retained inputs or executed the callback");
+      rejected = false;
+      try { queued.checkPreparation(); } catch (const std::runtime_error &) { rejected = true; }
+      require(rejected, "Cancelled reflection preparation published successful readiness");
+      gate->released = true;
+      const auto finishedDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+      while (!running.preparationReady() && std::chrono::steady_clock::now() < finishedDeadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      require(running.preparationReady(), "Reflection worker completion did not release readiness");
+      running.checkPreparation();
+    }
     RasterRenderer resources;
     resources.initializeGpu(fixture.physical, fixture.device);
     remixapi_BakeSceneBoundsInfoEXT request{};

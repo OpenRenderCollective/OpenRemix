@@ -14,8 +14,8 @@ namespace remix::forward::bake {
   namespace { std::atomic<uint64_t> generation = 0; }
 
   // Source 2 preset adapter: reflection work owns its state machine; this
-  // scheduler lends the default bake's transport, admission and worker ticket.
-  // Preserve the shared budget and finishing order without another job/scene.
+  // scheduler lends the default bake's transport and admission. The provider
+  // owns its worker ticket. Preserve budget/order without another job or scene.
   void Controller::recordReflections(VkCommandBuffer command, const Config &config) {
     auto &job = *m_job;
     if (recordSunDepth(command, config)) return;
@@ -40,8 +40,8 @@ namespace remix::forward::bake {
     };
     if (step == CaptureStep::PlanSites) {
       const auto owner = m_job;
-      job.ticket =
-          m_pipelines->prepare("forward-probe-sites-" + std::to_string(++generation), [owner, config] {
+      job.reflections.prepare(
+          *m_pipelines, "forward-probe-sites-" + std::to_string(++generation), [owner, config] {
             auto seeds = config.reflectionProbes
                 ? probes::placementSeeds(*owner->source, owner->grid, owner->cancellation.get_token())
                 : probes::PlacementSeeds{};
@@ -61,8 +61,8 @@ namespace remix::forward::bake {
     }
     if (step == CaptureStep::Fit) {
       const auto owner = m_job;
-      job.ticket =
-          m_pipelines->prepare("forward-probe-placement-" + std::to_string(++generation), [owner, config] {
+      job.reflections.prepare(
+          *m_pipelines, "forward-probe-placement-" + std::to_string(++generation), [owner, config] {
             owner->reflections.prepareNext(*owner->source,
                 {.requested = config.reflectionProbes, .detailTolerance = config.reflectionDetailTolerance},
                 owner->cancellation.get_token());
@@ -86,8 +86,8 @@ namespace remix::forward::bake {
       const uint32_t captureCount = std::min(config.reflectionProbes,
           probes::imageCapacity(config.reflectionResolution, limits.limits.maxImageDimension2D,
                                 limits.limits.maxImageArrayLayers, limits.limits.maxStorageBufferRange));
-      job.ticket =
-          m_pipelines->prepare("forward-probe-selection-" + std::to_string(++generation), [owner, config, captureCount] {
+      job.reflections.prepare(
+          *m_pipelines, "forward-probe-selection-" + std::to_string(++generation), [owner, config, captureCount] {
             owner->reflections.prepareNext(*owner->source,
                 {config.reflectionProbes, captureCount, config.reflectionResolution, config.reflectionDetailTolerance},
                 owner->cancellation.get_token());
@@ -117,8 +117,8 @@ namespace remix::forward::bake {
       const auto owner = m_job;
       const auto physical = m_physical;
       const auto device = m_device;
-      job.ticket = m_pipelines->prepare(
-          "forward-probe-filter-" + std::to_string(++generation), [owner, physical, device, config] {
+      job.reflections.prepare(
+          *m_pipelines, "forward-probe-filter-" + std::to_string(++generation), [owner, physical, device, config] {
             // Preserve exact input provenance on the worker, then release ray
             // scratch before filtered cubemaps, denoising and atlas encoding.
             // Publication must not scan this potentially large buffer again.

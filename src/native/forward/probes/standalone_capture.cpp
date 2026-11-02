@@ -18,6 +18,15 @@ std::atomic_uint64_t generation = 0;
 }
 struct StandaloneCapture::Job : bake::TransportSession {
   pipeline::PreparationQueue::Ticket ticket;
+  bool preparationReady() const { return (!ticket || ticket->ready()) && capture.preparationReady(); }
+  void checkPreparation() const {
+    if (ticket) ticket->check();
+    capture.checkPreparation();
+  }
+  void cancelPreparation(pipeline::Service &service) {
+    if (ticket) service.cancel(ticket);
+    capture.cancelPreparation(service);
+  }
   AutomaticCapture capture;
   std::vector<bake::Result> readback;
   std::filesystem::path cacheFile;
@@ -32,15 +41,20 @@ StandaloneCapture::StandaloneCapture(VkPhysicalDevice physical, VkDevice device,
     : m_physical(physical), m_device(device), m_pipelines(pipelines),
       m_hardware(hardware), m_family(queueFamily) {}
 StandaloneCapture::~StandaloneCapture() {
-  if (m_job)
+  if (m_job) {
     m_job->cancellation.request_stop();
-  for (const auto &job : m_retired)
+    m_job->cancelPreparation(*m_pipelines);
+  }
+  for (const auto &job : m_retired) {
     job->cancellation.request_stop();
+    job->cancelPreparation(*m_pipelines);
+  }
 }
 void StandaloneCapture::retire() {
   if (!m_job)
     return;
   m_job->cancellation.request_stop();
+  m_job->cancelPreparation(*m_pipelines);
   m_retired.push_back(std::move(m_job));
 }
 void StandaloneCapture::selectFrame(uint32_t slot) {
@@ -67,7 +81,7 @@ void StandaloneCapture::selectFrame(uint32_t slot) {
   }
   frame = {};
   std::erase_if(m_retired,
-                [](const auto &job) { return job->ticket->ready(); });
+                [](const auto &job) { return job->preparationReady(); });
 }
 void StandaloneCapture::record(VkCommandBuffer command,
                                RasterRenderer &resources, CaptureConfig config,
@@ -177,10 +191,10 @@ void StandaloneCapture::record(VkCommandBuffer command,
           });
       m_job = std::move(job);
     }
-    if (!m_job || !m_job->ticket->ready())
+    if (!m_job || !m_job->preparationReady())
       return;
     auto &job = *m_job;
-    job.ticket->check();
+    job.checkPreparation();
     if (job.failed)
       throw std::runtime_error("Invalid standalone reflection readback");
     if (sceneRequest && job.transport) sceneRequest->offer(*job.transport);
@@ -210,15 +224,15 @@ void StandaloneCapture::record(VkCommandBuffer command,
     const auto step = job.capture.nextStep();
     const auto owner = m_job;
     if (step == AutomaticCapture::Step::Fit) {
-      job.ticket = m_pipelines->prepare(
-          "reflection-fit-" + std::to_string(++generation),
+      job.capture.prepare(
+          *m_pipelines, "reflection-fit-" + std::to_string(++generation),
           [owner, count, detailTolerance] {
             owner->capture.prepareNext(*owner->source,
                 {.requested = count, .detailTolerance = detailTolerance}, owner->cancellation.get_token());
           });
     } else if (step == AutomaticCapture::Step::Select) {
-      job.ticket = m_pipelines->prepare(
-          "reflection-select-" + std::to_string(++generation),
+      job.capture.prepare(
+          *m_pipelines, "reflection-select-" + std::to_string(++generation),
           [owner, count, config, detailTolerance] {
             owner->capture.prepareNext(*owner->source,
                 {count, count, config.reflectionResolution, detailTolerance}, owner->cancellation.get_token());
@@ -233,8 +247,8 @@ void StandaloneCapture::record(VkCommandBuffer command,
       job.filtering = true;
       const auto physical = m_physical;
       const auto device = m_device;
-      job.ticket = m_pipelines->prepare(
-          "reflection-filter-" + std::to_string(++generation),
+      job.capture.prepare(
+          *m_pipelines, "reflection-filter-" + std::to_string(++generation),
           [owner, physical, device] {
             owner->capture.complete(owner->cancellation.get_token());
             owner->capture.filter(physical, device,
@@ -287,7 +301,7 @@ StandaloneCapture::Memory StandaloneCapture::memory(bake::TransportMemory *share
     }
   };
   auto addJob = [&](const auto &job) {
-    if (!job || !jobs.insert(job.get()).second || !job->ticket->ready())
+    if (!job || !jobs.insert(job.get()).second || !job->preparationReady())
       return;
     if (job->transport) {
       const auto bytes = transportMemory.add(*job->transport);

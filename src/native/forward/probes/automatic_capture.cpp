@@ -6,6 +6,11 @@
 #include <cstring>
 
 namespace remix::forward::probes {
+  void AutomaticCapture::prepare(pipeline::Service &service, const std::string &key, std::function<void()> work) {
+    if (!preparationReady()) throw std::logic_error("Reflection preparation replaced before completion");
+    m_preparation = service.prepare(key, std::move(work));
+  }
+
   void AutomaticCapture::restoreProjection(const scene::BakeScene &source, float detailTolerance,
                                             std::stop_token cancelled) {
     requirePreparing();

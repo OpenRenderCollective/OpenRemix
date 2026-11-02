@@ -255,11 +255,18 @@ The reflection provider owns placement transitions, GPU ranges/readback,
 radiance-cache lookup, filtering, immutable payload and image publication. The
 preset-specific scheduling/publication bridge lives in
 `forward/bake/reflection_schedule.cpp`, separate from the diffuse controller's
-main recording loop. It retains the existing shared job and finishing order;
-extracting the module does not yet supply an independent provider ticket. The
-bake scheduler still owns its worker ticket and the ordering around diffuse
-finishing. Standalone reflection capture supplies its own scheduler when diffuse
-baking is disabled.
+main recording loop. `AutomaticCapture` now owns its preparation ticket and
+rejects replacing active preparation. Default and standalone jobs retain their
+initial transport/diffuse ticket and inspect both owners before touching worker
+outputs, cancelling or retiring jobs. Queued cancellation releases captured inputs
+without executing the callback; cancellation is never successful readiness.
+
+The preset still determines admission and the order around diffuse finishing.
+The same callbacks, queue order, transport budget and early publication boundary
+are retained; this split creates no additional jobs, scene allocations or waits.
+Standalone reflection capture supplies its own scheduler when diffuse baking is
+disabled. Full provider dependency and finishing orchestration remain separate
+integration work.
 
 When supported live diffuse is selected, the resolved lighting plan disables the
 unused diffuse bake controller without changing saved bake preferences. Automatic

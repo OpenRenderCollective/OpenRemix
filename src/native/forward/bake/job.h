@@ -32,6 +32,17 @@ namespace remix::forward::bake::cache { struct Snapshot; }
 namespace remix::forward::bake {
   struct Controller::Job : TransportSession {
     pipeline::PreparationQueue::Ticket ticket;
+    bool preparationReady() const {
+      return (!ticket || ticket->ready()) && reflections.preparationReady();
+    }
+    void checkPreparation() const {
+      if (ticket) ticket->check();
+      reflections.checkPreparation();
+    }
+    void cancelPreparation(pipeline::Service &service) {
+      if (ticket) service.cancel(ticket);
+      reflections.cancelPreparation(service);
+    }
     std::optional<ReferenceCapture> reference;
     Grid grid;
     std::shared_ptr<SunDepth> sunDepth;

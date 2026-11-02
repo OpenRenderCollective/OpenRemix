@@ -1,3 +1,15 @@
+## 2026-11-03 — reflection provider owns worker preparation
+
+AutomaticCapture now owns placement/filter worker tickets instead of borrowing
+the diffuse ticket. Default and standalone schedulers guard both preparation
+owners for inspection, cancellation and retirement; standalone supersession also
+cancels queued callbacks. Queue order, callback count, shared transport/budget and
+early publication remain unchanged. Build and publication/cancellation, authored
+capture reuse and live-GI GPU tests pass. Explicit coverage rejects overlapping
+preparation and verifies queued cancellation releases inputs without execution.
+Provider dependency/finishing orchestration and overall performance acceptance
+remain open; no shaders or steady-state draw loops changed.
+
 ## 2026-11-03 — diffuse context representation hidden from materials
 
 Standard shading no longer reads the baked context's chart flag; water no longer
