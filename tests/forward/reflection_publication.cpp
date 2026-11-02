@@ -473,6 +473,61 @@ int main() try {
         require(completeCache, "Reflection recovery did not persist a strict, complete cache for the next load");
       }
     }
+    for (bool diskCache : {false, true}) {
+      RecoveryDirectory directory;
+      auto settings = config;
+      settings.diskCache = diskCache;
+      settings.reflectionProbes = 1;
+      settings.reflectionResolution = 8;
+      bake::Controller controller(fixture.physical, fixture.device, &pipelines, true, fixture.family);
+      uint32_t frame = 0;
+      auto tick = [&] {
+        controller.selectFrame(frame++ % gpuFrameCount);
+        fixture.begin(); controller.record(fixture.command, resources, settings); fixture.finish();
+      };
+      bool preservePublished = false;
+      auto ready = [&] {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        do {
+          tick();
+          require(!preservePublished || controller.volume(),
+                  "Reflection refresh dropped diffuse publication while work was pending");
+          require(controller.statistics().state != REMIXAPI_BAKE_FAILED_EXT,
+                  "Live reflection refresh failed");
+          if (controller.statistics().state == REMIXAPI_BAKE_READY_EXT) return;
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        } while (std::chrono::steady_clock::now() < deadline);
+        require(false, "Live reflection refresh did not complete");
+      };
+      ready();
+      preservePublished = true;
+      for (uint32_t edit = 0; edit < 4; ++edit) {
+        const auto diffuse = controller.volume();
+        const auto content = controller.content();
+        if (edit == 0) settings.reflectionResolution = 16;
+        if (edit == 1) settings.reflectionProbes = 0;
+        if (edit == 2) settings.reflectionProbes = 2;
+        if (edit == 3) settings.reflectionDetailTolerance += .25f;
+        tick();
+        require(controller.volume() == diffuse && controller.statistics().active &&
+                    controller.content().grid == content.grid && diffuse->data->handle,
+                "Reflection-only edit removed or replaced live diffuse lighting before refresh");
+        ready();
+        require(controller.volume() && bool(controller.reflectionSource().image) == bool(settings.reflectionProbes),
+                "Retained diffuse publication prevented reflection edits from completing");
+      }
+      const auto retained = controller.volume();
+      ++settings.samples;
+      tick();
+      require(!controller.volume() && retained->data->handle,
+              "Diffuse quality changes must invalidate incompatible publication");
+      settings.enabled = false;
+      tick();
+      require(!controller.volume() && retained->data->handle,
+              "Disabling diffuse baking must retire publication without destroying retained frame assets");
+      for (uint32_t slot = 0; slot < gpuFrameCount; ++slot) controller.selectFrame(slot);
+      bake::cache::persistence().waitIdle();
+    }
   }
   require(test::validationErrors == 0,
           "Reflection handoff emitted Vulkan validation errors");

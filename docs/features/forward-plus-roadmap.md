@@ -41,6 +41,9 @@ Implemented and checked:
   A bounded validated diffuse cache index reuses diffuse payloads across reflection
   count/resolution/tolerance/enable edits without retracing or denoising. Legacy
   keys/wire bytes remain valid; current shared reflection blobs are skipped.
+  Reflection-only configuration edits retain live diffuse publication throughout
+  replacement work, including cache-disabled refreshes; source, diffuse-quality
+  and enable changes still invalidate incompatible publication.
   Preset admission and finishing order still share one transport budget. Diffuse
   finishing accepts compact diagnostic values rather than capture arrays; phase
   receipt hashing is reused without retaining provider storage. Capture stage
@@ -59,8 +62,9 @@ Still required for the complete modularity/performance objective:
   explicit when adding/selecting implementations; preserve shared work admission.
 - Separate reflection-only invalidation from live diffuse publication. Independent
   cache lookup now reuses validated diffuse payloads across reflection edits, but
-  current volume invalidation and disk-cache-disabled rebuilding remain coupled.
-  Preserve live assets, seed admission and frame lifetimes across those cases.
+  live publication now survives reflection-only edits, but cache-disabled refreshes
+  still rebuild diffuse work and replacement uploads. Finish in-memory reuse while
+  preserving seed admission and frame lifetimes across those cases.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Water's baked/mixed sunlight policy still needs separate qualification.

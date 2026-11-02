@@ -377,7 +377,7 @@ namespace remix::forward::bake {
     m_statistics.state = state;
     std::snprintf(m_statistics.status, sizeof(m_statistics.status), "%s", message);
   }
-  void Controller::invalidate() {
+  void Controller::invalidate(bool preserveDiffuse) {
     if (m_job) {
       m_job->cancellation.request_stop();
       if (!m_job->preparationReady()) {
@@ -386,7 +386,7 @@ namespace remix::forward::bake {
       }
       m_job.reset();
     }
-    m_volume.reset();
+    if (!preserveDiffuse) m_volume.reset();
     m_reflections.reset();
     m_localReflections.reset();
     m_reflectionSceneHash = 0;
@@ -1057,6 +1057,7 @@ namespace remix::forward::bake {
     }
     const auto source = resources.bakeScene();
     const uint64_t hash = source && source->ready ? source->contentHash : 0;
+    bool startReflectionRefresh = false;
     if (source != m_source || hash != m_hash || !config.sameLighting(m_config) ||
         lightCutoff != m_lightCutoff) {
       // A content hash excludes live handles. Even identical lighting needs
@@ -1071,7 +1072,12 @@ namespace remix::forward::bake {
             static_cast<unsigned long long>(m_hash), static_cast<unsigned long long>(hash),
             unsigned(source != m_source), unsigned(!config.sameLighting(m_config)),
             unsigned(lightCutoff != m_lightCutoff), unsigned(bool(m_volume)));
-      invalidate();
+      // Reflection quality changes do not invalidate already sampled diffuse assets.
+      // Keep them across cancellation/preparation; submissions own their frame leases.
+      const bool preserveDiffuse = m_volume && source == m_source && hash == m_hash &&
+          lightCutoff == m_lightCutoff && config.sameDiffuse(m_config);
+      invalidate(preserveDiffuse);
+      startReflectionRefresh = preserveDiffuse;
       m_source = source;
       m_hash = hash;
       m_config = config;
@@ -1110,7 +1116,7 @@ namespace remix::forward::bake {
           status(REMIXAPI_BAKE_WAITING_EXT, "Static lights changed; waiting for updated map inputs");
           return;
         }
-        if ((m_volume && !m_job) || m_statistics.state == REMIXAPI_BAKE_FAILED_EXT)
+        if ((m_volume && !m_job && !startReflectionRefresh) || m_statistics.state == REMIXAPI_BAKE_FAILED_EXT)
           return;
         if (!m_job) {
           if (!config.samples || config.samples > 8192 || config.probeSamples > 8192 || !config.bounces || config.bounces > 8 ||

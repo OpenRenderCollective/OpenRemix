@@ -715,3 +715,14 @@ The public custom-material program loader and full provider framework are not
 implemented by the local-light prototype. Performance acceptance includes
 compiled shader work, visual regressions, memory and matched CPU/GPU timings;
 source organization alone does not prove zero overhead.
+
+### Diffuse publication during reflection refresh
+
+A reflection count, resolution or bounds-tolerance edit retains the currently
+published diffuse volume when the frozen source, lighting cutoff and diffuse
+configuration still match. The capture refresh starts despite that retained
+publication; frame submissions keep their normal shared asset leases. Changes
+to diffuse settings, source bindings/content or baking enable still retire the
+incompatible volume. This separates publication lifetime from refresh-job
+lifetime; it does not yet bypass diffuse preparation or uploads when the disk
+cache is disabled. Full in-memory reuse remains required.

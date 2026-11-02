@@ -131,7 +131,7 @@ namespace remix::forward::bake {
     std::unique_ptr<mixed::OcclusionMap> m_emptyOcclusion;
     bool m_emptySurfaceReady = false;
     remixapi_BakeStatisticsEXT m_statistics{};
-    void invalidate();
+    void invalidate(bool preserveDiffuse = false);
     void status(uint32_t state, const char *message);
     std::shared_ptr<Volume> prepareVolume(VkCommandBuffer command);
     void activate(VkCommandBuffer command);
