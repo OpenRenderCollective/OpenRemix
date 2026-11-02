@@ -14,7 +14,6 @@
 #include "forward/bake/transport.h"
 #include "forward/image_dump.h"
 #include "forward/bake/sun_depth.h"
-#include "forward/lightmap/denoise.h"
 #include "forward/lightmap/interior_donors.h"
 #include "forward/mixed/overflow.h"
 #include "forward/mixed/ownership.h"
@@ -52,9 +51,7 @@ namespace remix::forward::bake {
       return atlas;
     }
 
-    template <typename T> void releaseStorage(std::vector<T> &values) {
-      std::vector<T>().swap(values);
-    }
+
   } // namespace
   bool Controller::Job::consumeVisibility(uint32_t slot, uint32_t first, uint32_t count, Visibility kind) {
     if (kind == Visibility::Local) {
@@ -1029,88 +1026,8 @@ namespace remix::forward::bake {
                                   Options{}.bias / owner->source->sceneScale, owner->cancellation.get_token());
             owner->finishStage.store(Job::FinishStage::Reflections, std::memory_order_relaxed);
             owner->reflections.filter(physical, device, owner->cancellation.get_token());
-            if (config.denoiseLightmaps && lightmap::denoiserVersion()) {
-              owner->finishStage.store(Job::FinishStage::Denoising, std::memory_order_relaxed);
-              auto progress = [owner](uint32_t completed, uint32_t total) {
-                owner->denoisedCharts.store(completed, std::memory_order_relaxed);
-                owner->denoiseChartCount.store(total, std::memory_order_relaxed);
-              };
-              const auto filtered = lightmap::denoise(owner->surfaceLayout, owner->surfaces,
-                                                       owner->cancellation.get_token(), std::move(progress));
-              std::fprintf(stderr, "Forward lightmap OIDN: %u charts, %llu texels, device type %d, %.3f s\n",
-                           filtered.charts, static_cast<unsigned long long>(filtered.texels),
-                           filtered.deviceType, filtered.seconds);
-              std::fprintf(stderr, "Forward lightmap OIDN work: %u executions, %u preparations, "
-                                   "%u constant fields, %u monitored, %u batches, %u waits; %llu host bytes, %llu image bytes, "
-                                   "%llu transfer bytes\n",
-                           filtered.executions, filtered.preparations, filtered.constantFields,
-                           filtered.monitoredExecutions,
-                           filtered.batches, filtered.synchronizations,
-                           static_cast<unsigned long long>(filtered.peakHostBytes),
-                           static_cast<unsigned long long>(filtered.imageBufferBytes),
-                           static_cast<unsigned long long>(filtered.transferBytes));
-              std::fprintf(stderr, "Forward lightmap OIDN graphs: %u captures, %u launches, %u fallbacks\n",
-                           filtered.graphCaptures, filtered.graphLaunches, filtered.graphFallbacks);
-              std::fprintf(stderr, "Forward lightmap OIDN CPU schedule: %u queues, %u threads per queue\n",
-                           filtered.cpuQueues, filtered.cpuThreadsPerQueue);
-              std::fprintf(stderr, "Forward lightmap OIDN summed worker time: initialize %.3f s, prepare %.3f s, "
-                                   "upload %.3f s, execute %.3f s, readback %.3f s, wait %.3f s, chart %.3f s\n",
-                           filtered.initializationSeconds, filtered.preparationSeconds,
-                           filtered.uploadSeconds, filtered.executionSeconds, filtered.readbackSeconds,
-                           filtered.waitSeconds, filtered.chartSeconds);
-              std::fprintf(stderr, "Forward lightmap OIDN staging: %llu pinned bytes, %.3f s host setup/copies; "
-                                   "%llu GPU batch bytes\n",
-                           static_cast<unsigned long long>(filtered.stagingBufferBytes), filtered.stagingSeconds,
-                           static_cast<unsigned long long>(filtered.batchBufferBytes));
-            }
-            dumpPhaseFingerprint("filtered", owner->source->contentHash, owner->grid, owner->surfaceLayout, owner->surfaces,
-                                 owner->sun, owner->reflections.captures);
-            owner->finishStage.store(Job::FinishStage::Atlas, std::memory_order_relaxed);
-            owner->surfacePixels =
-                lightmap::pixels(owner->surfaceLayout, owner->surfaces, owner->cancellation.get_token(),
-                                 owner->visibility, owner->direct, owner->sun);
-            if (owner->reference) owner->reference->reportGrid(owner->grid,
-                config.aggregateDiffuse || config.fullyBakedLights || config.bakedGeometryLights);
-            if (coarseTransferCpuReportsRequested() && owner->coarseTransferWords) {
-              auto candidate = owner->grid;
-              candidate.coarseTransferWords = owner->coarseTransferWords;
-              dumpReceiverReport(*owner->source, owner->surfaceLayout, owner->surfacePixels, candidate,
-                                  owner->cancellation.get_token());
-            } else {
-              dumpReceiverReport(*owner->source, owner->surfaceLayout, owner->surfacePixels, owner->grid,
-                                  owner->cancellation.get_token());
-            }
-            // These transport arrays are no longer needed once encoded. Avoid
-            // retaining them beside the much larger atlas and upload allocation.
-            releaseStorage(owner->visibility);
-            releaseStorage(owner->direct);
-            releaseStorage(owner->sun);
-            const char *samples = std::getenv("REMIX_DEBUG_BAKE_SURFACE_SAMPLES");
-            if (config.styledIndirect && !styleIds(*owner->source).empty()) {
-              VkPhysicalDeviceProperties limits;
-              vkGetPhysicalDeviceProperties(physical, &limits);
-              const uint64_t baseBytes = gridBytes(owner->grid);
-              const uint64_t localBytes = owner->localProbes ? owner->localProbes->gpuBytes() : 0;
-              if (baseBytes + localBytes + 16 >= limits.limits.maxStorageBufferRange)
-                throw std::length_error("No device storage range for attributed lighting");
-              const uint64_t maximum = std::min(uint64_t(config.styleStorageMiB) << 20,
-                  uint64_t(limits.limits.maxStorageBufferRange) - baseBytes - localBytes - 15);
-              owner->styles = std::make_unique<StyleWork>(*owner->source, owner->surfaceLayout, owner->grid, maximum);
-              owner->styles->takeSurfaces(owner->surfaces, owner->surfaceLayout.points.size());
-            } else if (!samples || std::strcmp(samples, "1") != 0) {
-              releaseStorage(owner->surfaces);
-            }
-            owner->finishStage.store(Job::FinishStage::Geometry, std::memory_order_relaxed);
-            if (!owner->source->charts.empty())
-              owner->surfaceGeometry = std::make_shared<lightmap::Geometry>(
-                  physical, device, owner->source, owner->surfaceLayout, owner->cancellation.get_token(),
-                  owner->mixedLights->charts, owner->mixedLights->directCharts);
-            owner->prepareSurfaceStorage();
-            VkPhysicalDeviceProperties groupLimits;
-            vkGetPhysicalDeviceProperties(physical, &groupLimits);
-            if (!owner->styles) owner->prepareGroupedStyles(groupLimits.limits.maxStorageBufferRange, config);
-            owner->baseFinished = true;
-            owner->filtering = !owner->styles;
+            owner->reflectionReady.store(true, std::memory_order_release);
+            owner->finishDiffuseAssets(physical, device, config, owner->reflections.captures);
           });
       status(REMIXAPI_BAKE_PREPARING_EXT, "Finishing baked lighting assets");
       return;
@@ -1121,6 +1038,17 @@ namespace remix::forward::bake {
                   job.reflections.captureReceived, job.reflections.work.rays().size(), config.samples);
     status(REMIXAPI_BAKE_TRACING_EXT, progress);
     return;
+  }
+  void Controller::publishReadyReflections(VkCommandBuffer command) {
+    if (!m_job || m_job->reflectionPublished ||
+        !m_job->reflectionReady.load(std::memory_order_acquire)) return;
+    const auto image = m_job->reflections.image;
+    if (!image) throw std::logic_error("Ready reflection publication has no image");
+    image->recordUpload(command);
+    m_reflections = image;
+    m_reflectionSceneHash = m_job->source->contentHash;
+    m_submissions[m_slot].reflectionUpload = image;
+    m_job->reflectionPublished = true;
   }
   void Controller::activate(VkCommandBuffer command) {
     auto &grid = m_job->grid;
@@ -1332,7 +1260,11 @@ namespace remix::forward::bake {
     if (!reflections) throw std::logic_error("Missing prepared reflection image");
     const VkBufferCopy copy{0, 0, bytes};
     vkCmdCopyBuffer(command, volume->staging->handle, volume->data->handle, 1, &copy);
-    reflections->recordUpload(command);
+    if (!m_job->reflectionPublished) {
+      reflections->recordUpload(command);
+      m_submissions[m_slot].reflectionUpload = reflections;
+      m_job->reflectionPublished = true;
+    }
     if (volume->localReflections) volume->localReflections->image->recordUpload(command);
     VkImageMemoryBarrier surfaceReady{};
     volume->occlusion->upload(command, volume->staging->handle, occlusionOffset);
@@ -1376,7 +1308,6 @@ namespace remix::forward::bake {
     m_reflections = std::move(reflections);
     m_volume = std::move(volume);
     m_submissions[m_slot].upload = m_volume;
-    m_submissions[m_slot].reflectionUpload = m_reflections;
     char message[sizeof(m_statistics.status)];
     const char *label = m_job->cacheHit ? "Cached lighting active"
         : m_job->reflections.cachedRadiance ? "Baked lighting active; reused reflections" : "Baked lighting active";
@@ -1559,6 +1490,7 @@ namespace remix::forward::bake {
                   physical, device, job->reflections.filtered, job->cancellation.get_token());
               job->restoreLocalReflections(physical, device, config);
               job->prepareLocalReflectionUpgrade(physical, device, config, queueFamily);
+              job->reflectionReady.store(true, std::memory_order_release);
             }
           };
           job->ticket =
@@ -1566,6 +1498,7 @@ namespace remix::forward::bake {
           m_job = std::move(job);
           status(REMIXAPI_BAKE_PREPARING_EXT, "Preparing static bake resources");
         }
+        publishReadyReflections(command);
         if (!m_job->ticket->ready()) {
           const auto total = m_job->denoiseChartCount.load(std::memory_order_relaxed);
           const auto stage = m_job->finishStage.load(std::memory_order_relaxed);
@@ -1797,17 +1730,18 @@ namespace remix::forward::bake {
     auto addJob = [&](const std::shared_ptr<Job> &job) {
       if (!job || !job->initialized || !jobs.insert(job.get()).second)
         return;
-      addSurfaces(job->surfaceGeometry);
-      addDepth(job->sunDepth);
-      for (const auto &slot : job->coarseTransferSlots) {
-        if (slot.output) result.buffers += slot.output->allocationBytes;
-        if (slot.readback) result.buffers += slot.readback->allocationBytes;
+      // Private preparation outputs may still be written on the worker. The
+      // independently published reflection owner is counted separately below.
+      if (job->ticket->ready()) {
+        addSurfaces(job->surfaceGeometry);
+        addDepth(job->sunDepth);
+        for (const auto &slot : job->coarseTransferSlots) {
+          if (slot.output) result.buffers += slot.output->allocationBytes;
+          if (slot.readback) result.buffers += slot.readback->allocationBytes;
+        }
+        addReflection(job->reflections.image);
+        addLocalImage(job->localReflections);
       }
-      if (job->ticket->ready() && job->reflections.image) {
-        result.buffers += job->reflections.image->bufferBytes();
-        result.images += job->reflections.image->imageBytes();
-      }
-      if (job->ticket->ready()) addLocalImage(job->localReflections);
       if (!job->transport)
         return; // a disk hit needs only geometry and the published volume upload
       const auto &transport = *job->transport;

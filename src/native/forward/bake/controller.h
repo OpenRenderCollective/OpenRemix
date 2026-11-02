@@ -78,6 +78,7 @@ namespace remix::forward::bake {
       return {m_reflectionSceneHash, m_reflections};
     }
     const probes::Header *reflectionHeader() const { return m_reflections ? &m_reflections->header() : nullptr; }
+    float reflectionSceneScale() const { return m_reflections && m_source ? m_source->sceneScale : 1; }
     VkDescriptorImageInfo surfaceDescriptor() const;
     VkDescriptorImageInfo occlusionDescriptor() const;
     VkDescriptorImageInfo visibilityDescriptor() const;
@@ -137,6 +138,7 @@ namespace remix::forward::bake {
     bool recordCoarseTransfer(VkCommandBuffer command, const Config &config);
     void recordProbeLocal(VkCommandBuffer command, const Config &config);
     void recordReflections(VkCommandBuffer command, const Config &config);
+    void publishReadyReflections(VkCommandBuffer command);
     bool recordLocalReflections(VkCommandBuffer command, const Config &config);
     bool recordReceiverDiagnostics(VkCommandBuffer command, const Config &config);
     bool recordCoverageGuardDiagnostics(VkCommandBuffer command, const Config &config);

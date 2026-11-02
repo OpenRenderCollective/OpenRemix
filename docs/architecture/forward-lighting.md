@@ -298,9 +298,10 @@ otherwise ready authored set. The bake-controller adapter returns the independen
 published image owner without copying images or allocating a new GPU resource.
 Submitted capture/composition frames retain that owner through their fences.
 
-Automatic placement, capture transport and cache publication are still inside the
-bake controller. Moving that lifecycle to a standalone reflection provider remains
-required; the input boundary alone does not complete interchangeable providers.
+For the baked profile, placement, capture transport and combined cache publication
+still live in the bake controller. The standalone provider handles the diffuse-disabled
+case separately. Default-profile lifecycle migration remains required; the input
+boundary alone does not complete interchangeable providers.
 
 
 ### Automatic capture work ownership
@@ -313,13 +314,12 @@ on the bake controller, diffuse atlases or diffuse probe values. Placement uses 
 usable positions with original task indices as spatial seed inputs. State is stored inline in the
 owning job: this extraction adds no resource allocation or duplicate ray arrays.
 
-The current Source 2 scheduler still lends its transport, retires readbacks after
-submission fences, performs optional receiver diagnostics, and publishes/caches
-reflection output with the diffuse assets. This preserves existing cold/warm
-behavior while extracting reusable work. A standalone automatic reflection
-scheduler and independent publication timing/physical persistence remain unfinished. Keep the
-source ownership and cancellation token alive through every worker and submitted
-frame when moving that scheduling next.
+The Source 2 scheduler still lends its transport, retires readbacks after
+submission fences, performs optional receiver diagnostics and keeps a combined
+cache container. Its reflection image can now publish before diffuse finishing
+completes. The standalone scheduler/persistence covers the diffuse-disabled case;
+default lifecycle migration and cross-layout physical deduplication remain open.
+Keep source ownership and cancellation alive through every worker/submitted frame.
 
 
 ### Automatic query scheduling and image lifetime
@@ -344,9 +344,9 @@ and descriptor queries read that publication directly; memory accounting dedupli
 images across active/retired frame references. Neither owner needs to retain the
 other after its fences. This adds frame-slot shared ownership, not per-draw or
 per-pixel dispatch; matched frame-cost qualification remains required.
-The Source 2 scheduler still activates both outputs together;
-independent cache/publication and complete technique dependency resolution are
-outstanding.
+The Source 2 image handoff now permits reflection publication before diffuse
+activation, using one upload. Default planning/cache scheduling and complete
+technique dependency resolution remain coupled.
 
 
 ### Device-resolved resource plan
@@ -373,9 +373,10 @@ Changing a nonzero capture count or toggling cubemaps while SSR is enabled still
 preserves target compatibility. For ray-only requests on capable devices, toggling
 cubemap fallback conservatively prepares replacement targets as well; this is an
 options-edit cost, not work added to rendered frames.
-Automatic capture cache/publication is still coupled to the bake, and direct
-versus indirect diffuse storage/pipeline composition is not yet a fully generic
-provider API. These remain required work before claiming the split complete.
+Default automatic capture planning and cache-container scheduling remain coupled
+to the bake, although image publication is independent. Direct versus indirect
+diffuse storage/pipeline composition is not yet a fully generic provider API.
+These remain required work before claiming the split complete.
 
 
 ### Reflection persistence codec
@@ -444,8 +445,9 @@ through validation/fitting, and releases it before capture-ray allocation. It no
 longer needs a diffuse grid in the placement worker API. This incurs transient
 cold-preparation storage (up to 16 bytes per input task) and a copy;
 it adds no frame-rendering allocation or shader work. Its cold-bake cost must be
-qualified rather than described as allocation-free. Persisting/recovering these
-spatial inputs and independently scheduled capture publication/persistence remain pending.
+qualified rather than described as allocation-free. Persisting/recovering the
+baked profile's spatial inputs and migrating its capture scheduling remain pending;
+standalone geometry planning and persistence have their own path.
 
 
 Placement snapshots filter unusable geometry while gathering positions, preserve
@@ -477,9 +479,9 @@ Site/radiance batches validate finite irradiance before publishing any result;
 projection assessment retains its own range/duplicate validation. No callback,
 virtual dispatch or extra ray/result array is introduced by this boundary.
 
-This is a completion boundary, not independent scheduling: diffuse planning still
-provides placement seeds, and the bake controller still orders preparation,
-filtering and publication. A separate provider scheduler must share prepared
+For the baked profile, diffuse planning still provides placement seeds and the
+bake controller orders preparation/filtering, while image publication has its own
+readiness handoff. Completing default lifecycle migration must share prepared
 transport resources rather than constructing another scene for each technique.
 
 ### Shared transport scene and independent consumers
@@ -588,3 +590,30 @@ The bake adapter keeps its existing budget and serialization format.
 This is independent persistence for the standalone planner. It does not deduplicate
 individual cubemaps across the older combined cache and standalone layouts, or
 complete migration of Source 2's default capture scheduling to independent owners.
+
+### Default reflection readiness and diffuse finishing
+
+`Job::finishDiffuseAssets` owns lightmap denoising, atlas encoding, styled diffuse
+preparation and surface binding creation. The reflection finishing worker calls
+it after capture completion/filtering, preserving existing work and order.
+`reflectionReady` is a release/acquire handoff for the completed immutable image;
+the worker never touches that image after signaling it. The render thread may
+upload/publish it while diffuse finishing continues, and retains upload/sampling
+owners through frame fences. Later diffuse activation reuses the image and skips
+its upload. The same handoff applies to successfully prepared cache hits.
+
+This adds no worker task, capture query, filtering pass, ray array or image upload.
+The readiness poll runs only while a bake job is pending; the steady active-volume
+path does not poll it. Reflection shading can start earlier during loading, so
+this is not a claim of identical transient GPU frame cost. Authored captures keep
+the baked profile's transport priority until diffuse publication, preventing two
+independent transport budgets from stacking during styled work.
+
+Memory reporting observes private preparation outputs only after ticket completion;
+independently published images are counted through the fenced image owner and
+deduplicated when a completed job still references them. The deterministic
+`reflection_publication.cpp` test links a paused test denoiser to prove publication
+before diffuse completion, image identity through later activation and retained
+image validity on cancellation. No production timing hook or artificial delay
+is used. Default planning/receiver audits/combined persistence are still not a
+fully independent reflection controller.

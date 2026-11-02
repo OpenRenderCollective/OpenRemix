@@ -1,3 +1,9 @@
+## Default reflection image handoff - 2026-11-02
+
+- Diffuse denoising/atlas/style/surface preparation moved into finishDiffuseAssets. One release/acquire handoff publishes a filtered reflection image while the same worker finishes diffuse assets; later volume activation reuses the image without another upload.
+- No additional worker task, capture/filter pass or ray array. Authored transport retains the baked profile's old priority to avoid stacked GPU budgets. Pending private assets are not read by memory reporting.
+- Remaining: default placement/receiver-audit/cache lifecycle migration, shared-scene/provider dependency completion, real-map quality and matched CPU/frame qualification. Earlier reflection shading can add transient loading-frame work; no broad no-overhead claim yet.
+
 ## Standalone reflection persistence - 2026-11-02
 
 - Reflection-only checksummed/atomic cache now loads before geometry planning or transport creation. Keys include source, planner/filter version, quality/projection, shader and device provenance; diffuse settings and execution budgets are excluded.

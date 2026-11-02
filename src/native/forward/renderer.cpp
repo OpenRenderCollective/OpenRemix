@@ -27,7 +27,8 @@ namespace remix::forward {
       irradiance.patchCounts = volume->irradiancePatchCounts;
     }
     statistics.reflectionSceneScale = volume ? volume->sceneScale
-        : standaloneReflectionsUsed && !options.baking.enabled ? standaloneReflections->sceneScale() : 1;
+        : standaloneReflectionsUsed && !options.baking.enabled ? standaloneReflections->sceneScale()
+                                                                              : baking->reflectionSceneScale();
     statistics.authoredReflections = authoredReflections->statistics();
     const auto header = reflectionHeader();
     statistics.reflectionProbes = header ? *header : probes::Header{};
@@ -280,8 +281,10 @@ namespace remix::forward {
           m_gpu->options.baking.reflectionProbes, m_gpu->options.baking.reflectionDetailTolerance);
     }
     auto captures = m_gpu->reflectionSource();
-    // Source 2 captures wait for published baked lighting. A replacement diffuse
-    // provider can supply readiness independently of a diffuse bake volume.
+    // Publish automatic images independently, but preserve the baked profile's
+    // transport priority: authored captures must not add a second work budget
+    // while diffuse/style transport is still running.
+    if (lightingPlan.baking.enabled && !m_gpu->baking->volume()) captures.sceneHash = 0;
     if (!lightingPlan.baking.enabled) {
       const auto source = resources.bakeScene();
       captures.sceneHash = source && source->ready ? source->contentHash : 0;

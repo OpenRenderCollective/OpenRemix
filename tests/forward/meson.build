@@ -189,6 +189,12 @@ if get_option('gpu_tests')
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)
   test('Hardware diffuse bake transport and textured visibility', bake_transport_test, timeout : 180)
+  reflection_publication_test = executable('remix-reflection-publication-test', 'reflection_publication.cpp',
+    include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
+    cpp_args : test_cpp_args)
+  test('Reflection publication precedes diffuse finishing and survives cancellation', reflection_publication_test,
+    timeout : 90)
+
   test('Coarse probe transfer GPU geometry and conservative reconstruction prototype', bake_transport_test,
     args : ['--coarse-transfer-only'], timeout : 120)
   test('Sparse sun depth capture matches narrow opening and receiver height', bake_transport_test,

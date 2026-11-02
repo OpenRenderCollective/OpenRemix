@@ -96,6 +96,10 @@ namespace remix::forward::bake {
     void logDirectionalTiming() const;
     void advanceDirectionals(bool finish);
     void prepareSurfaceStorage();
+    // Encodes diffuse assets on the preparation worker. Reflection records are
+    // diagnostic input only; capture/filter/publication ownership stays outside.
+    void finishDiffuseAssets(VkPhysicalDevice physical, VkDevice device, const Config &config,
+                               std::span<const probes::Capture> diagnosticCaptures);
     std::vector<Vec4> visibility;
     std::vector<lightmap::Direct> direct;
     std::optional<mixed::DirectWork> directWork;
@@ -128,6 +132,10 @@ namespace remix::forward::bake {
     std::shared_ptr<lightmap::Geometry> surfaceGeometry;
     uint32_t surfaceNext = 0, surfaceReceived = 0;
     probes::AutomaticCapture reflections;
+    // Release/acquire handoff: filtering never touches the image after ready.
+    // Diffuse finishing may continue; only the render thread marks publication.
+    std::atomic_bool reflectionReady = false;
+    bool reflectionPublished = false;
     std::unique_ptr<probes::ReceiverAudit> receiverAudit;
     uint32_t receiverNext = 0, receiverReceived = 0;
     bool receiverRetried = false;
