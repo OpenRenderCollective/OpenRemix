@@ -1300,16 +1300,30 @@ typedef struct remixapi_MaterialPbrRemapEXT {
 } remixapi_MaterialPbrRemapEXT;
 
 // Optional pNext on opaque MaterialInfo: the colour of its metal (linear, 0
-// to 1). Where the material is metallic its albedo blends toward this colour
-// by the metallic value, so the metal reflects it instead of the albedo: a
-// game's dark base texture under a strong reflection (Source's envmapped
-// metal, its $envmaptint) is chrome, not dark metal.
+// to 1). Where the material is metallic it reflects this colour instead of
+// its albedo, which its diffuse keeps: a game's dark base texture under a
+// strong reflection (Source's envmapped metal, its $envmaptint) is chrome,
+// not dark metal, and partly metal texels keep their own diffuse colour.
 #define REMIXAPI_STRUCT_TYPE_MATERIAL_METAL_COLOR_EXT ((remixapi_StructType)0x7fff1023)
 typedef struct remixapi_MaterialMetalColorEXT {
   remixapi_StructType sType;
   const void *pNext;
   remixapi_Float3D color;
 } remixapi_MaterialMetalColorEXT;
+
+// Optional pNext on opaque MaterialInfo: its roughness map is read no
+// sharper than mip level roughnessMinimumLod (0 to 15). A mask painted with
+// crisp patches (a game's reflection mask) then changes the reflection's
+// sharpness over about 2^roughnessMinimumLod texels at their edges, while
+// areas wider than that keep their values; seen from afar, where the map is
+// read blurrier anyway, nothing changes. The metallic map, which decides
+// where the albedo shows, stays as sharp as the view allows.
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_PBR_BLUR_EXT ((remixapi_StructType)0x7fff1024)
+typedef struct remixapi_MaterialPbrBlurEXT {
+  remixapi_StructType sType;
+  const void *pNext;
+  float roughnessMinimumLod;
+} remixapi_MaterialPbrBlurEXT;
 
 // Optional pNext on opaque or translucent MaterialInfo: a thin-film coating
 // whose interference colours the reflection (iridescence), evaluated

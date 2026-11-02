@@ -26,7 +26,7 @@ bool translucentRadiance(Hit hit,out vec3 radiance) {
     // EON and GGX are view-dependent even at high roughness.
     if(dot(-direction,hit.wo)<.995)return false;
     NRD_MaterialFactors(hit.n,-direction,hit.color.rgb*(1-hit.rm.y),
-      mix(vec3(.04),hit.color.rgb,hit.rm.y),hit.rm.x,diffuseFactor,specularFactor);
+      hitF0(hit),hit.rm.x,diffuseFactor,specularFactor);
     if(any(greaterThan(abs(imageLoad(pbrSpecularFactor,pixel).rgb-specularFactor),vec3(.005))))return false;
   }
   vec4 albedo=imageLoad(guideAlbedo,pixel);

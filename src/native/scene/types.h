@@ -147,6 +147,8 @@ namespace remix {
       // remixapi_MaterialMetalColorEXT: the metal's colour (metalColored).
       bool metalColored = false;
       float metalColor[3] = {1, 1, 1};
+      // remixapi_MaterialPbrBlurEXT: the roughness map's least mip.
+      float pbrBlur = 0;
       // remixapi_MaterialNormalScrollEXT (normal encoding 5): layers, then the
       // base, layer 1 and layer 2 rates.
       uint32_t scrollLayers = 1;
@@ -200,9 +202,10 @@ namespace remix {
       // 2 emissive alpha) in the two bits above.
       static constexpr uint32_t selfIllumination = 32, selfIlluminationMaskShift = 6;
       // A metal colour (remixapi_MaterialMetalColorEXT), as unorm8 RGB in
-      // metalColorBits.
-      static constexpr uint32_t metalColor = 256;
-      uint32_t flags = 0, metalColorBits = 0;
+      // pbrWord's low three bytes; a blur (remixapi_MaterialPbrBlurEXT) of
+      // the roughness map, in 1/16 mips in its high byte.
+      static constexpr uint32_t metalColor = 256, pbrBlur = 512;
+      uint32_t flags = 0, pbrWord = 0;
       float selfIlluminationScale = 0;
     };
     MaterialDecode materialDecode(const Material &material);

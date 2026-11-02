@@ -260,13 +260,24 @@ float materialMapValue(Surface s,uint map,vec4 texel) {
   float v=s.pbr[map]+uintBitsToFloat(s.material[1+map])*x;
   return (bits&8u)!=0?sqrt(sqrt(2/(max(v,0)+2))):v;
 }
+// A material's metal colour (remixapi_MaterialMetalColorEXT, unorm8 RGB in
+// pbr.w), w 1; zero without one (Hit.metal, brdf.glsl hitF0).
+vec4 materialMetal(Surface s) {
+  return (s.material.x&256u)!=0?vec4(unpackUnorm4x8(floatBitsToUint(s.pbr.w)).rgb,1):vec4(0);
+}
+// The roughness map's texel at uv: with a blur (remixapi_MaterialPbrBlurEXT,
+// 1/16 mips in pbr.w's high byte) no sharper than that mip.
+vec4 materialRoughnessTexel(Surface s,uint index,vec2 uv) {
+  if((s.material.x&512u)==0)return materialTexel(s,index,uv);
+  vec2 size=vec2(textureSize(textures[nonuniformEXT(index)],0));
+  vec2 gx=uvGradX*s.uv.xy*size,gy=uvGradY*s.uv.xy*size;
+  float lod=max(.5*log2(max(max(dot(gx,gx),dot(gy,gy)),1e-12)),float(floatBitsToUint(s.pbr.w)>>24)/16);
+  return slotTexel(index,textureLod(textures[nonuniformEXT(index)],uv*s.uv.xy+s.uv.zw,lod));
+}
 vec2 materialParameters(Surface s,vec2 uv,inout vec3 albedo) {
   float metallic=s.pbrTextures.y==0?s.pbr.y:materialMapValue(s,1,materialTexel(s,s.pbrTextures.y-1,uv));
-  // A metal colour (remixapi_MaterialMetalColorEXT, unorm8 RGB in pbr.w): the
-  // albedo turns to it as far as the surface is metal.
-  if((s.material.x&256u)!=0)albedo=mix(albedo,unpackUnorm4x8(floatBitsToUint(s.pbr.w)).rgb,clamp(metallic,0,1));
   if(s.pbrTextures.x==0)return clamp(vec2(s.pbr.x,metallic),0,1);
-  return clamp(vec2(materialMapValue(s,0,materialTexel(s,s.pbrTextures.x-1,uv)),metallic),0,1);
+  return clamp(vec2(materialMapValue(s,0,materialRoughnessTexel(s,s.pbrTextures.x-1,uv)),metallic),0,1);
 }
 // As materialTexel, at UVs scaled by k (the footprint scales with them).
 vec4 materialTexelScaled(Surface s,uint index,vec2 uv,float k) {

@@ -73,7 +73,7 @@ void materialLobes(Hit hit,vec3 wi,out vec3 diffuse,out vec3 specular) {
   if(ni<=0||no<=0||dot(hit.horizon,wi)<=0)return;
   if(!hit.pbr){diffuse=hit.color.rgb/eonPi;return;}
   diffuse=eonBrdfCosines(hit.color.rgb,hit.rm.x,ni,no,dot(wi,hit.wo));
-  vec3 h=normalize(wi+hit.wo),f0=mix(vec3(.04),hit.color.rgb,hit.rm.y);
+  vec3 h=normalize(wi+hit.wo),f0=hitF0(hit);
   vec3 f=surfaceFresnel(hit,f0,max(0,dot(hit.wo,h)));
   float alpha=max(.001,hit.rm.x*hit.rm.x);
   if(dot(hit.ng,wi)>0)specular=f*ggxMultiScatter(f0,hit.rm.x,no)*(ggxD(max(0,dot(hit.n,h)),alpha)*ggxG2(ni,no,alpha)/(4*ni*no));
@@ -131,7 +131,7 @@ vec3 materialResponse(Hit hit,vec3 wi) {
 // as grain on mirrors.
 float diffuseShare(Hit hit) {
   if(!hit.pbr)return 1;
-  vec3 f0=mix(vec3(.04),hit.color.rgb,hit.rm.y);
+  vec3 f0=hitF0(hit);
   float specular=dot(surfaceFresnel(hit,f0,max(0,dot(hit.n,hit.wo))),vec3(.2126,.7152,.0722));
   float diffuse=dot(hit.color.rgb,vec3(.2126,.7152,.0722))*(1-hit.rm.y)*(1-specular);
   float share=diffuse/max(diffuse+specular,1e-6);

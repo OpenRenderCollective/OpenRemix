@@ -80,7 +80,7 @@ namespace remix::trace::detail {
     pbr[2] = material.pbr ? 1.f : 0.f;
     const auto decode = scene::materialDecode(material);
     decodeOut[0] = decode.flags & ~(material.transmission && material.transmittanceDistance > 0
-                                        ? scene::MaterialDecode::metalColor
+                                        ? scene::MaterialDecode::metalColor | scene::MaterialDecode::pbrBlur
                                         : 0u);
     // A translucent body: its refractive index and measurement distance, half
     // floats in pbr[3] (scene.glsl thickSheet); zero for everything else.
@@ -88,9 +88,10 @@ namespace remix::trace::detail {
       const uint32_t packed = detail::halfBits(material.refractiveIndex) |
                               detail::halfBits(std::min(material.transmittanceDistance, 65504.f)) << 16;
       std::memcpy(&pbr[3], &packed, 4);
-    } else if (decode.flags & scene::MaterialDecode::metalColor) {
-      // An opaque metal's colour, unorm8 RGB (scene.glsl materialParameters).
-      std::memcpy(&pbr[3], &decode.metalColorBits, 4);
+    } else if (decode.flags & (scene::MaterialDecode::metalColor | scene::MaterialDecode::pbrBlur)) {
+      // An opaque material's metal colour (unorm8 RGB) and roughness map blur
+      // (1/16 mips, high byte): scene.glsl materialMetal, materialParameters.
+      std::memcpy(&pbr[3], &decode.pbrWord, 4);
     }
     const std::shared_ptr<scene::Texture> *textures[] = {&material.roughnessTexture, &material.metallicTexture};
     for (unsigned i = 0; i < 2; ++i) {
