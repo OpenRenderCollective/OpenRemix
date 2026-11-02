@@ -156,7 +156,7 @@ void StandaloneCapture::record(VkCommandBuffer command,
                                       job->cancellation.get_token());
                   job->capture.captures.clear();
                   job->capture.filtered = {};
-                  job->capture.sealImage();
+                  job->capture.sealPublication();
                   job->cacheHit = job->filtering = true;
                   return;
                 }
@@ -245,7 +245,7 @@ void StandaloneCapture::record(VkCommandBuffer command,
                     capture_cache::maximumBytes)
               owner->persistence = std::move(snapshot);
             // Declined payloads release raw/filter CPU storage on this worker.
-            owner->capture.sealImage();
+            owner->capture.sealPublication();
           });
     } else {
       if (frame.job)

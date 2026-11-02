@@ -51,29 +51,42 @@ namespace remix::forward::probes {
   void AutomaticCapture::filter(VkPhysicalDevice physical, VkDevice device, std::stop_token cancelled) {
     requirePreparing();
     if (!cachedRadiance) {
-      WorkerPool workers;
-      filtered = probes::filter(captures, 128, cancelled, &workers);
+      if (captures.empty()) {
+        filtered = probes::filter(captures, 128, cancelled);
+      } else {
+        WorkerPool workers;
+        filtered = probes::filter(captures, 128, cancelled, &workers);
+      }
     }
     prepareImage(physical, device, cancelled);
   }
   void AutomaticCapture::prepareImage(VkPhysicalDevice physical, VkDevice device, std::stop_token cancelled) {
     requirePreparing();
+    if (cancelled.stop_requested()) throw std::runtime_error("Reflection image preparation superseded");
+    if (emptyRadiance()) {
+      image.reset();
+      return;
+    }
     image = std::make_shared<ImageAsset>(physical, device, filteredView(), cancelled);
   }
   void AutomaticCapture::prepareContent(std::stop_token cancelled) {
     requirePreparing();
     content = captureContent(captureView(), filteredView(), inputHash, cancelled);
   }
-  void AutomaticCapture::sealImage() {
-    if (!image || m_imageReady.load(std::memory_order_relaxed))
-      throw std::logic_error("Reflection image completion requires one prepared image");
-    m_imageReady.store(true, std::memory_order_release);
+  void AutomaticCapture::sealPublication() {
+    if ((!image && (!m_payload || !emptyRadiance())) || m_publicationReady.load(std::memory_order_relaxed))
+      throw std::logic_error("Reflection completion requires a prepared image or retained empty payload");
+    m_publicationReady.store(true, std::memory_order_release);
   }
   std::shared_ptr<ImageAsset> AutomaticCapture::recordImageUpload(VkCommandBuffer command) {
-    if (m_imageUploaded || !m_imageReady.load(std::memory_order_acquire)) return {};
-    if (!image) throw std::logic_error("Ready reflection publication has no image");
+    if (m_publicationConsumed || !m_publicationReady.load(std::memory_order_acquire)) return {};
+    if (!image) {
+      if (!m_payload || !emptyRadiance()) throw std::logic_error("Ready reflection publication has no image");
+      m_publicationConsumed = true;
+      return {};
+    }
     image->recordUpload(command);
-    m_imageUploaded = true;
+    m_publicationConsumed = true;
     return image;
   }
 

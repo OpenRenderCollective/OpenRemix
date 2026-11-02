@@ -1,3 +1,9 @@
+## 2026-11-03: diffuse publication without a reflection asset
+
+- Empty automatic captures complete without a per-job reflection image/upload or filtering worker pool. Diffuse activation accepts an absent reflection asset; shared fallback descriptors remain valid.
+- Worker handoff is named `sealPublication` and validates either a prepared image or retained empty payload. Nonempty missing-image, repeated-completion and canceled-empty guards remain enforced.
+- Cold/warm diffuse-only publication, ordinary early image publication, cancellation, authored capture reuse and hardware transport suites pass. No shader changes or playable deployment.
+
 ## 2026-11-03: diffuse values and independent policies
 
 - Diffuse irradiance values/composition now live in a resource-free header beside material/reflection values.

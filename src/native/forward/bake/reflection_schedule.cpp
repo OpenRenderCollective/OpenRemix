@@ -133,7 +133,7 @@ namespace remix::forward::bake {
             owner->reflections.filter(physical, device, owner->cancellation.get_token());
             owner->reflections.prepareContent(owner->cancellation.get_token());
             owner->reflections.retainPayload();
-            owner->reflections.sealImage();
+            owner->reflections.sealPublication();
             if (!owner->reflectionRecovery)
               owner->finishDiffuseAssets(physical, device, config, owner->reflections.captureView());
           });

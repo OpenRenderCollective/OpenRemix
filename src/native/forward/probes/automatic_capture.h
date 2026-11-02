@@ -106,20 +106,24 @@ namespace remix::forward::probes {
     Data filtered;
     std::shared_ptr<ImageAsset> image;
     // Worker completion handoff. After sealing, the worker must not change the
-    // image. CPU payload ownership is independent and may already be retained.
-    void sealImage();
-    // Render-thread only; returns an owner only for the first upload. The caller
-    // retains it in the submitted frame until that frame's fence completes.
+    // image. A retained empty payload completes without allocating an image.
+    // CPU payload ownership is independent and may already be retained.
+    void sealPublication();
+    // Render-thread only; uploads a nonempty image once. Empty completion records
+    // no command and returns no owner. Retain a returned owner until its fence.
     std::shared_ptr<ImageAsset> recordImageUpload(VkCommandBuffer command);
 
     uint32_t captureNext = 0, captureReceived = 0;
     bool capturePlanned = false;
   private:
     std::shared_ptr<const CapturePayload> m_payload;
-    std::atomic_bool m_imageReady = false;
-    bool m_imageUploaded = false;
+    std::atomic_bool m_publicationReady = false;
+    bool m_publicationConsumed = false;
+    bool emptyRadiance() const {
+      return captureView().empty() && filteredView().header.parameters[0] == 0 && filteredView().texels.empty();
+    }
     void requirePreparing() const {
-      if (m_payload || m_imageReady.load(std::memory_order_relaxed))
+      if (m_payload || m_publicationReady.load(std::memory_order_relaxed))
         throw std::logic_error("Completed reflection capture is immutable");
     }
   };

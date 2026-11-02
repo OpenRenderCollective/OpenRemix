@@ -916,7 +916,8 @@ namespace remix::forward::bake {
     if (auto upload = m_job->reflections.recordImageUpload(command))
       m_submissions[m_slot].reflectionUpload = std::move(upload);
     auto reflections = std::move(m_job->reflections.image);
-    if (!reflections) throw std::logic_error("Missing prepared reflection image");
+    if (!reflections && !m_job->reflections.captureView().empty())
+      throw std::logic_error("Missing prepared reflection image");
     const bool diffusePublished = bool(m_job->publishedDiffuse);
     auto volume = diffusePublished ? m_job->publishedDiffuse : prepareVolume(command);
     if (m_job->localReflections) {
@@ -1120,7 +1121,7 @@ namespace remix::forward::bake {
               job->restoreLocalReflections(physical, device, config);
               job->prepareLocalReflectionUpgrade(physical, device, config, queueFamily);
               job->reflections.retainPayload();
-              job->reflections.sealImage();
+              job->reflections.sealPublication();
             }
           };
           job->ticket =

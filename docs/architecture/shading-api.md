@@ -280,6 +280,15 @@ do not require target recreation.
 It does not yet separate baked direct ownership from an independently selected
 indirect-only GI field.
 
+Reflection publication is optional when the completed capture payload is empty.
+`AutomaticCapture::sealPublication` seals either an image or a retained empty
+payload; a nonempty payload still requires an image. Empty completion allocates
+no per-job image, starts no filtering pool and records no image upload. The
+controller's existing fallback descriptors remain valid, and diffuse activation
+no longer depends on creating another empty reflection asset. The scene identity
+and complete diffuse data still publish normally, including on a warm cache load.
+Readiness/admission must follow job state rather than the presence of an image.
+
 The next lifecycle split must preserve these boundaries:
 
 - A prepared transport scene can have independent dispatch consumers and frame

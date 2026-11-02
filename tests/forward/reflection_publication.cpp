@@ -8,6 +8,7 @@
 #include "forward/bake/cache_persistence.h"
 #include <cstdlib>
 #include <optional>
+#include <string_view>
 #include <fstream>
 #include "forward/lightmap/denoise.h"
 #include "gpu_fixture.h"
@@ -104,18 +105,44 @@ int main() try {
       probes::AutomaticCapture capture;
       require(!capture.recordImageUpload(VK_NULL_HANDLE), "Unready image was published");
       bool rejected = false;
-      try { capture.sealImage(); } catch (const std::logic_error &) { rejected = true; }
+      try { capture.sealPublication(); } catch (const std::logic_error &) { rejected = true; }
       require(rejected, "Missing image was sealed");
       capture.image = std::make_shared<probes::ImageAsset>(fixture.physical, fixture.device, probes::Data{});
-      capture.sealImage();
+      capture.sealPublication();
       rejected = false;
-      try { capture.sealImage(); } catch (const std::logic_error &) { rejected = true; }
+      try { capture.sealPublication(); } catch (const std::logic_error &) { rejected = true; }
       require(rejected, "Image completion was repeated");
       fixture.begin();
       const auto upload = capture.recordImageUpload(fixture.command);
       require(upload == capture.image && !capture.recordImageUpload(fixture.command),
               "Provider did not upload its image exactly once");
       fixture.finish();
+    }
+    {
+      probes::AutomaticCapture empty;
+      // An empty provider must not require a device or allocate fallback GPU data.
+      empty.filter(VK_NULL_HANDLE, VK_NULL_HANDLE, {});
+      require(!empty.image, "Empty captures allocated a reflection image");
+      empty.retainPayload();
+      empty.sealPublication();
+      require(!empty.recordImageUpload(VK_NULL_HANDLE) && !empty.recordImageUpload(VK_NULL_HANDLE),
+              "Empty completion attempted a GPU upload");
+      bool rejected = false;
+      try { empty.sealPublication(); } catch (const std::logic_error &) { rejected = true; }
+      require(rejected, "Empty reflection completion was repeated");
+      probes::AutomaticCapture incomplete;
+      incomplete.captures.emplace_back();
+      incomplete.retainPayload();
+      rejected = false;
+      try { incomplete.sealPublication(); } catch (const std::logic_error &) { rejected = true; }
+      require(rejected, "Nonempty captures completed without an image");
+      std::stop_source cancelled;
+      cancelled.request_stop();
+      probes::AutomaticCapture superseded;
+      rejected = false;
+      try { superseded.prepareImage(VK_NULL_HANDLE, VK_NULL_HANDLE, cancelled.get_token()); }
+      catch (const std::runtime_error &) { rejected = true; }
+      require(rejected, "Cancelled empty publication was accepted");
     }
     {
       namespace storage = probes::capture_cache;
@@ -220,6 +247,38 @@ int main() try {
     config.batch = 1024;
     config.gpuBudgetMs = 0;
     config.denoiseLightmaps = true;
+    {
+      RecoveryDirectory directory;
+      auto diffuseOnly = config;
+      diffuseOnly.reflectionProbes = 0;
+      diffuseOnly.diskCache = true;
+      diffuseOnly.denoiseLightmaps = false;
+      bake::ContentHashes previous{};
+      for (uint32_t pass = 0; pass < 2; ++pass) {
+        bake::Controller controller(fixture.physical, fixture.device, &pipelines, true, fixture.family);
+        uint32_t frame = 0;
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        do {
+          controller.selectFrame(frame++ % gpuFrameCount);
+          fixture.begin(); controller.record(fixture.command, resources, diffuseOnly); fixture.finish();
+          require(!controller.reflectionSource().image && !controller.reflectionHeader(),
+                  "Diffuse-only bake published an unused reflection image");
+          require(controller.statistics().state != REMIXAPI_BAKE_FAILED_EXT, "Diffuse-only publication failed");
+          if (controller.statistics().state == REMIXAPI_BAKE_READY_EXT) break;
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        } while (std::chrono::steady_clock::now() < deadline);
+        require(controller.volume() && controller.statistics().state == REMIXAPI_BAKE_READY_EXT &&
+                    controller.reflectionSource().sceneHash == resources.bakeScene()->contentHash,
+                "Diffuse publication depended on a reflection image");
+        if (pass == 0) previous = controller.content();
+        else require(std::string_view(controller.statistics().status).starts_with("Cached lighting active") &&
+                         controller.content().grid == previous.grid &&
+                         controller.content().surfaces == previous.surfaces,
+                     "Warm diffuse-only cache changed lighting or missed persistence");
+        for (uint32_t slot = 0; slot < gpuFrameCount; ++slot) controller.selectFrame(slot);
+        bake::cache::persistence().waitIdle();
+      }
+    }
     for (bool cancel : {false, true}) {
       resetGate();
       bake::Controller controller(fixture.physical, fixture.device, &pipelines,
