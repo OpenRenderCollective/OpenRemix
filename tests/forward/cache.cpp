@@ -215,6 +215,31 @@ int main(int argc, char **argv) {
             "Container depended on mutable index or lost lighting");
     std::filesystem::remove(blob);
     require(!bc::read(first, identity, source, config, device), "Missing blob was accepted");
+    auto partial = bc::read(first, identity, source, config, device, {}, {}, bc::ReflectionRead::RecoverMissing);
+    require(partial && partial->missingReflections && partial->pixels == data.pixels &&
+                partial->grid.probes.size() == data.grid.probes.size() &&
+                std::memcmp(partial->grid.probes.data(), data.grid.probes.data(), data.grid.probes.size() * sizeof(f::bake::Result)) == 0 &&
+                partial->grid.points.size() == data.grid.probes.size() && partial->captures.empty(),
+            "Missing reflection discarded or changed valid diffuse lighting");
+    for (uint32_t mode : {1u, 3u}) {
+      auto relocated = data.grid;
+      relocated.header.settings[2] = float(mode);
+      for (auto &probe : relocated.probes)
+        for (uint32_t c = 0; c < 3; ++c) probe.irradiance[c][3] = .125f;
+      if (mode == 3) relocated.lookup = {1,2,3,4,5,6,7,8};
+      bc::View relocationView{relocated, data.layout, data.mixed, data.captures, data.specular, data.pixels,
+          data.surfaceSamples, data.directDiffuse, data.sun};
+      relocationView.reflectionKey = view.reflectionKey; relocationView.shareReflectionPayload = true;
+      const auto relocationFile = directory / "relocation.bake";
+      require(bc::write(relocationFile, identity, relocationView), "Recovery origin fixture write failed");
+      std::filesystem::remove(blob);
+      auto recovered = bc::read(relocationFile, identity, source, config, device, {}, {}, bc::ReflectionRead::RecoverMissing);
+      require(recovered && recovered->missingReflections, "Relocated origin recovery failed");
+      for (uint32_t index = 0; index < 8; ++index)
+        for (uint32_t c = 0; c < 3; ++c)
+          require(recovered->grid.points[index].position[c] == float((index >> c) & 1u) + .125f,
+                  "Recovery lost dense/indexed probe relocation");
+    }
     require(bc::write(first, identity, view), "Missing blob could not be recreated");
     {
       std::fstream corrupt(blob, std::ios::binary | std::ios::in | std::ios::out);

@@ -342,7 +342,7 @@ namespace remix::forward::bake::cache {
   }
   std::optional<Snapshot> read(const std::filesystem::path &file, uint64_t identity,
                                std::shared_ptr<const scene::BakeScene> source, const Config &config,
-                               const Device &device, std::stop_token cancelled, const DirectPolicy &policy) {
+                               const Device &device, std::stop_token cancelled, const DirectPolicy &policy, ReflectionRead reflections) {
     try {
       std::error_code error;
       if (!std::filesystem::is_regular_file(file, error))
@@ -381,9 +381,13 @@ namespace remix::forward::bake::cache {
       if (flags & 256) {
         auto reflection = probes::capture_cache::readShared(file.parent_path(), input.pod<uint64_t>(),
                                                             reflectionLimits, cancelled);
-        require(reflection.has_value());
-        result.captures = std::move(reflection->captures);
-        result.specular = std::move(reflection->data);
+        require(reflection.has_value() || reflections == ReflectionRead::RecoverMissing);
+        if (reflection) {
+          result.captures = std::move(reflection->captures);
+          result.specular = std::move(reflection->data);
+        } else {
+          result.missingReflections = true;
+        }
       } else {
         probes::cache_codec::read(input, result.captures, result.specular, reflectionLimits);
       }
@@ -434,6 +438,25 @@ namespace remix::forward::bake::cache {
           mixed::validateDirectionalCoverage(result.directionals, result.mixed, layout, cancelled);
       }
       input.finish();
+      if (result.missingReflections) {
+        // Reconstruct the actual admitted trace origins only for component
+        // recovery. Warm complete hits still allocate no Point array.
+        auto &grid = result.grid;
+        grid.points.resize(grid.probes.size());
+        for (uint32_t index = 0; index < grid.probes.size(); ++index) {
+          if ((index & 4095u) == 0) detail::check(cancelled);
+          const uint32_t coordinate[] = {index % grid.header.dimensions[0],
+              (index / grid.header.dimensions[0]) % grid.header.dimensions[1],
+              index / (grid.header.dimensions[0] * grid.header.dimensions[1])};
+          for (uint32_t c = 0; c < 3; ++c) {
+            float position = indexed(grid.header) ? grid.origins[index].position[c]
+                : grid.header.originSpacing[c] + coordinate[c] * grid.header.originSpacing[3];
+            if (uint32_t(grid.header.settings[2]) & 1u) position += grid.probes[index].irradiance[c][3];
+            require(std::isfinite(position));
+            grid.points[index].position[c] = position;
+          }
+        }
+      }
       return std::optional<Snapshot>{std::move(result)};
     } catch (const std::exception &error) {
       if (!cancelled.stop_requested())

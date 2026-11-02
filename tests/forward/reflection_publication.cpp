@@ -4,6 +4,10 @@
 #include "forward/bake/cache.h"
 #include "forward/bake/transport.h"
 #include "forward/bake/budget.h"
+#include "forward/bake/cache_persistence.h"
+#include <cstdlib>
+#include <optional>
+#include <fstream>
 #include "forward/lightmap/denoise.h"
 #include "gpu_fixture.h"
 #include "raster/renderer.h"
@@ -20,6 +24,35 @@ namespace {
 std::mutex mutex;
 std::condition_variable wake;
 bool entered = false, released = false;
+std::atomic_uint32_t denoiseCalls = 0;
+struct RecoveryDirectory {
+  std::filesystem::path path = std::filesystem::temp_directory_path() /
+      ("remix-reflection-recovery-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+  std::optional<std::string> previous;
+  RecoveryDirectory() {
+    if (const char *value = std::getenv("REMIX_BAKE_CACHE_DIR")) previous = value;
+    if (!std::filesystem::create_directory(path))
+      throw std::runtime_error("Recovery fixture directory already exists");
+    set(path.string().c_str());
+  }
+  static void set(const char *value) {
+#ifdef _WIN32
+    _putenv_s("REMIX_BAKE_CACHE_DIR", value ? value : "");
+#else
+    if (value) setenv("REMIX_BAKE_CACHE_DIR", value, 1);
+    else unsetenv("REMIX_BAKE_CACHE_DIR");
+#endif
+  }
+  ~RecoveryDirectory() {
+    bake::cache::persistence().waitIdle();
+    set(previous ? previous->c_str() : nullptr);
+    // This exact, newly created fixture directory is the only cleanup target.
+    if (path.parent_path() == std::filesystem::temp_directory_path() &&
+        path.filename().string().starts_with("remix-reflection-recovery-")) {
+      std::error_code ignored; std::filesystem::remove_all(path, ignored);
+    }
+  }
+};
 void resetGate() {
   std::lock_guard lock(mutex);
   entered = released = false;
@@ -40,6 +73,7 @@ DenoiseStatistics denoise(const Layout &, std::span<bake::Result>,
                           std::stop_token cancelled,
                           std::function<void(uint32_t, uint32_t)>,
                           HostTransfers, FilterDispatch) {
+  ++denoiseCalls;
   std::unique_lock lock(mutex);
   entered = true;
   wake.notify_all();
@@ -213,6 +247,52 @@ int main() try {
       }
       for (uint32_t slot = 0; slot < gpuFrameCount; ++slot)
         controller.selectFrame(slot);
+    }
+    {
+      RecoveryDirectory directory;
+      releaseGate();
+      config.diskCache = true;
+      bake::ContentHashes original;
+      uint32_t coldDenoises = 0;
+      for (uint32_t pass = 0; pass < 3; ++pass) {
+        if (pass == 1) {
+          size_t removed = 0;
+          for (const auto &entry : std::filesystem::directory_iterator(directory.path / "reflections" / "shared"))
+            if (entry.path().extension() == ".reflection") { std::filesystem::remove(entry.path()); ++removed; }
+          require(removed != 0, "Cold run did not persist shared reflection data");
+        }
+        bake::Controller controller(fixture.physical, fixture.device, &pipelines, true, fixture.family);
+        uint32_t frame = 0;
+        const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        while (!controller.volume() && std::chrono::steady_clock::now() < until) {
+          controller.selectFrame(frame++ % gpuFrameCount);
+          fixture.begin(); controller.record(fixture.command, resources, config); fixture.finish();
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        require(controller.volume() && controller.reflectionSource().image,
+                "Cold/recovery/warm cache sequence failed to publish lighting");
+        const auto content = controller.volume()->content;
+        if (pass == 0) { original = content; coldDenoises = denoiseCalls.load(); }
+        else require(content.grid == original.grid && content.surfaces == original.surfaces &&
+                         content.staticOcclusion == original.staticOcclusion &&
+                         content.styledIndirect == original.styledIndirect && denoiseCalls.load() == coldDenoises,
+                     "Reflection-only recovery retraced/denoised or changed cached diffuse lighting");
+        for (uint32_t slot = 0; slot < gpuFrameCount; ++slot) controller.selectFrame(slot);
+        bake::cache::persistence().waitIdle();
+        bake::cache::Device cacheDevice{properties.vendorID, properties.deviceID, properties.driverVersion,
+            properties.limits.maxImageDimension2D, properties.limits.maxImageArrayLayers,
+            properties.limits.maxStorageBufferRange, {}};
+        std::copy_n(properties.pipelineCacheUUID, cacheDevice.uuid.size(), cacheDevice.uuid.begin());
+        bool completeCache = false;
+        for (const auto &entry : std::filesystem::directory_iterator(directory.path)) {
+          if (entry.path().extension() != ".bake") continue;
+          cache_io::Header header;
+          { std::ifstream input(entry.path(), std::ios::binary); input.read(reinterpret_cast<char *>(&header), sizeof(header)); }
+          auto restored = bake::cache::read(entry.path(), header.key, resources.bakeScene(), config, cacheDevice);
+          completeCache = restored && !restored->missingReflections && !restored->captures.empty();
+        }
+        require(completeCache, "Reflection recovery did not persist a strict, complete cache for the next load");
+      }
     }
   }
   require(test::validationErrors == 0,

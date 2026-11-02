@@ -188,7 +188,7 @@ namespace remix::forward::bake {
       }
       if (!cacheFile.empty()) {
         auto cached = cache::read(cacheFile, cacheKey, source, config, deviceIdentity,
-                                  cancellation.get_token(), directLighting);
+                                  cancellation.get_token(), directLighting, cache::ReflectionRead::RecoverMissing);
         if (cached && directionalFieldsRequested() && cached->directDiffuse &&
             (!cached->directionalAttempted || (cached->directionals.empty() &&
              cached->directionalBudget < mixed::directionalStorageBudget(cached->layout))))
@@ -202,6 +202,7 @@ namespace remix::forward::bake {
                                cache::key(0, config, lightCutoff, deviceIdentity, directLighting,
                                           fallbackReflections), bool(cached));
         if (cached) {
+          reflectionRecovery = cached->missingReflections;
           grid = std::move(cached->grid);
           surfaceLayout = std::move(cached->layout);
           mixedLights = std::make_shared<mixed::Plan>(std::move(cached->mixed));
@@ -227,10 +228,14 @@ namespace remix::forward::bake {
           dumpReceiverReport(*source, surfaceLayout, surfacePixels, grid, cancellation.get_token());
           prepareSurfaceStorage();
           prepareGroupedStyles(properties.limits.maxStorageBufferRange, config);
-          if (sunDepth && !sunDepth->restored()) {
-            // A missing depth sidecar must not retrace cached irradiance/styles.
+          if (reflectionRecovery || (sunDepth && !sunDepth->restored())) {
+            // Missing auxiliary components must not retrace cached irradiance/styles.
             Options depthOptions;
-            depthOptions.depthCapture = true;
+            depthOptions.depthCapture = bool(sunDepth);
+            if (reflectionRecovery) {
+              depthOptions.directLighting = directLighting;
+              depthOptions.lightingComponents = config.styledIndirect && !styleIds(*source).empty();
+            }
             depthOptions.batchPoints = Budget::maximumPoints;
             depthOptions.rayBudget = Budget::maximumWork;
             depthOptions.initialBatchPoints = 1024;
@@ -239,7 +244,8 @@ namespace remix::forward::bake {
             transport = std::make_unique<Transport>();
             transport->initialize(physical, device, source, depthOptions);
           }
-          cacheHit = filtering = true;
+          cacheHit = true;
+          filtering = !reflectionRecovery;
           return;
         }
       }
@@ -1013,15 +1019,18 @@ namespace remix::forward::bake {
             // scratch before filtered cubemaps, denoising and atlas encoding.
             // Publication must not scan this potentially large buffer again.
             owner->reflections.complete(owner->cancellation.get_token());
-            dumpPhaseFingerprint("transport", owner->source->contentHash, owner->grid, owner->surfaceLayout, owner->surfaces,
-                                 owner->sun, owner->reflections.captureView());
-            dumpVisibilityReport(*owner->mixedLights, owner->surfaceLayout,
-                                  Options{}.bias / owner->source->sceneScale, owner->cancellation.get_token());
+            if (!owner->reflectionRecovery) {
+              dumpPhaseFingerprint("transport", owner->source->contentHash, owner->grid, owner->surfaceLayout, owner->surfaces,
+                                   owner->sun, owner->reflections.captureView());
+              dumpVisibilityReport(*owner->mixedLights, owner->surfaceLayout,
+                                    Options{}.bias / owner->source->sceneScale, owner->cancellation.get_token());
+            }
             owner->finishStage.store(Job::FinishStage::Reflections, std::memory_order_relaxed);
             owner->reflections.filter(physical, device, owner->cancellation.get_token());
             owner->reflections.retainPayload();
             owner->reflections.sealImage();
-            owner->finishDiffuseAssets(physical, device, config, owner->reflections.captureView());
+            if (!owner->reflectionRecovery)
+              owner->finishDiffuseAssets(physical, device, config, owner->reflections.captureView());
           });
       status(REMIXAPI_BAKE_PREPARING_EXT, "Finishing baked lighting assets");
       return;
@@ -1360,7 +1369,7 @@ namespace remix::forward::bake {
     // GPU upload data and runtime bindings now own everything required for
     // publication. Move CPU cache inputs into an independent immutable task.
     // A slow/full/unavailable disk must never delay this ready transition.
-    if (!m_job->cacheHit && !m_job->cacheFile.empty()) {
+    if ((!m_job->cacheHit || m_job->reflectionRecovery) && !m_job->cacheFile.empty()) {
       try {
         if (!cache::persistence().submit(m_job->cacheFile, m_job->cacheKey, m_job->takeCacheSnapshot()))
           std::fprintf(stderr, "Background bake cache budget busy; retaining published lighting without persistence\n");
@@ -1473,7 +1482,7 @@ namespace remix::forward::bake {
           // no camera-frame resources or controller state cross threads.
           auto prepare = [job, physical, device, config, lightCutoff, queueFamily] {
             job->prepareResources(physical, device, config, lightCutoff, queueFamily);
-            if (job->cacheHit) {
+            if (job->cacheHit && !job->reflectionRecovery) {
               job->reflections.image = std::make_shared<probes::ImageAsset>(
                   physical, device, job->reflections.filteredView(), job->cancellation.get_token());
               job->restoreLocalReflections(physical, device, config);
@@ -1520,6 +1529,21 @@ namespace remix::forward::bake {
         auto &job = *m_job;
         m_statistics.probes = uint32_t(job.grid.tasks.size());
         m_statistics.completed = job.received;
+        if (job.reflectionRecovery && !job.filtering) {
+          if (!job.prepared) {
+            auto &submission = m_submissions[m_slot];
+            if (submission.job) throw std::logic_error("Reflection recovery reused a live slot");
+            job.transport->recordPrepare(command, resources);
+            if (job.sunDepth && job.sunDepth->restored()) job.sunDepth->recordUpload(command);
+            job.prepared = true;
+            submission.job = m_job;
+            submission.preparation = true;
+            status(REMIXAPI_BAKE_PREPARING_EXT, "Preparing reflections from cached diffuse lighting");
+          } else {
+            recordReflections(command, config);
+          }
+          return;
+        }
         if (job.filtering) {
           if ((job.sunDepth && !job.sunDepth->restored()) || job.localReflectionUpgrade) {
             if (!job.prepared) {

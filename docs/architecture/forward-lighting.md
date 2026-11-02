@@ -667,10 +667,10 @@ The independent reflection index accepts legacy section locations (version 1)
 or shared blob keys (version 2). Full diffuse reads use their own stored blob key,
 so removing or replacing the index cannot redirect them.
 
-A missing/corrupt blob causes an ordinary cache miss. Old binaries cannot read
+Strict readers treat a missing/corrupt blob as a cache miss; the default controller
+can recover the reflection component as described below. Old binaries cannot read
 new reference containers. Existing inline caches are not automatically rewritten,
-and garbage collection must treat referenced blobs as live. Partial diffuse
-recovery, default planning/scheduler separation, automatic garbage collection,
+and garbage collection must treat referenced blobs as live. Default planning/scheduler separation, automatic garbage collection,
 real-map performance acceptance and playable deployment remain unfinished.
 
 ### Automatic reflection image handoff
@@ -738,3 +738,20 @@ zero/truncated result ranges before updating completion. Its `workType` maps onl
 GPU query stages to adaptive budget categories and rejects CPU preparation stages.
 The existing job/frame owners and shared budget still govern fence lifetime and
 throughput. This does not transfer default worker tickets or transport ownership.
+
+### Missing reflection component recovery
+
+The default controller reads combined caches with `ReflectionRead::RecoverMissing`.
+A verified diffuse container whose external reflection blob is missing, corrupt,
+or incompatible retains its atlas, irradiance, mixed masks and styled data.
+Strict readers still require every component. Recovery is reported explicitly in
+`Snapshot::missingReflections`; malformed diffuse data remains a complete miss.
+
+Only recovery loads reconstruct the admitted probe trace positions from dense or
+indexed origins and stored relocation offsets. The controller prepares one
+transport and schedules reflection placement/capture/filtering directly, bypassing
+diffuse queries, denoising and atlas encoding. The existing persistence thread
+then publishes a repaired combined reference, allowing the following complete
+warm load to skip capture. Complete warm loads allocate no reconstructed Point
+array. Publication waits for recovered reflections; earlier diffuse-only display,
+fully independent default scheduling and shared-scene adoption remain future work.

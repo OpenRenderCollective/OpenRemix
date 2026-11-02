@@ -80,15 +80,17 @@ namespace remix::forward::bake::cache {
     std::shared_ptr<const local_cache::Snapshot> localReflections;
     bool localReflectionsOnly = false; // Companion upgrade; never replace the base cache.
     uint64_t reflectionKey = 0;
+    bool missingReflections = false; // valid diffuse payload, missing external capture blob
   };
   // Misses, corruption, incompatible versions and unavailable files fall back
   // to tracing. Neither operation publishes resources or performs GPU work.
   // Stored aggregate ownership must also match the expected policy, independently
   // of the caller-supplied file key.
+  enum class ReflectionRead { Required, RecoverMissing };
   std::optional<Snapshot> read(const std::filesystem::path &file, uint64_t key,
                                std::shared_ptr<const scene::BakeScene> source, const Config &config,
                                const Device &device, std::stop_token cancelled = {},
-                               const DirectPolicy &policy = {});
+                               const DirectPolicy &policy = {}, ReflectionRead reflections = ReflectionRead::Required);
   bool write(const std::filesystem::path &file, uint64_t key, const View &view,
              std::stop_token cancelled = {});
 } // namespace remix::forward::bake::cache

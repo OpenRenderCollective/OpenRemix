@@ -1,3 +1,9 @@
+## Reflection-only cache recovery - 2026-11-02
+
+- Default loads preserve verified diffuse lighting when an external reflection blob is missing/corrupt/incompatible, reconstruct admitted probe origins including relocation, and run reflection preparation/capture/filtering only. The existing writer repairs the combined reference. Strict readers retain full-miss behavior.
+- Native build and three CPU/GPU regressions pass. Cold/delete-blob/recover/warm sequence preserves diffuse hashes, performs no additional diffuse denoise, and persists a strict complete cache. Dense and indexed relocated origins are checked. Complete warm loads allocate no reconstructed Point array.
+- Remaining: early diffuse-only publication during recovery, default independent ticket/transport scheduling, shared-scene adoption and full CPU/frame/map performance acceptance. Playable unchanged.
+
 ## Typed reflection frame submissions - 2026-11-02
 
 - Default reflection submissions use one CaptureStep instead of three booleans, sharing the existing first/count range. Both schedulers retire typed dispatches with result-count validation and use provider-owned GPU timing categories. Standalone header no longer imports the full capture implementation.
