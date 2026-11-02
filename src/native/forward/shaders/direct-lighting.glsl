@@ -13,11 +13,9 @@ void accumulateDirectLighting(inout vec3 color, Surface surface, ShadingReceiver
   LightContribution sun = shadeStandardSunLight(sunlight, n, v, surface.color.rgb, surface.roughness, surface.metallic);
   color += directLightComponent(sun, debugView);
   LocalLightingContext localLighting = prepareLocalLighting(receiver, n, surface.metallic < 1, aggregate);
-  for (uint i = 0u; i < localLighting.lights.count; ++i) {
-    uint index = localLightIndex(localLighting.lights, i);
-    LightContribution local = localLightResponse(index, receiver.position, n, v, surface.color.rgb,
-        surface.roughness, surface.metallic, localLighting.directIrradiance, receiver.baked, vec3(.04),
-        normalize(receiver.geometric), aggregate);
+  for (uint i = 0u; i < receiverLocalLightCount(localLighting); ++i) {
+    LightContribution local = standardReceiverLocalLight(i, receiver, n, v, surface.color.rgb,
+        surface.roughness, surface.metallic, localLighting, vec3(.04));
     color += directLightComponent(local, debugView);
   }
 }

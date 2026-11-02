@@ -480,6 +480,23 @@ rays on/off and different configured diffuse/reflection ranges. Hardware transpo
 fixtures check query conversion across three host-unit scales and no allocation
 on query validation. Baked/mixed-sun ownership for water remains a separate task.
 
+## Provider-owned local-light context
+
+`LocalLightSample` is defined in resource-free `local-light-values.glsl`.
+Material models use `receiverLocalLightCount(context)` and
+`sampleReceiverLocalLight(ordinal, receiver, normal, context, policy, sample)`;
+ordinals are source-local, not captured/global light indices. The source owns
+clustered lists, baked channels, selected-light bookkeeping and shadow inputs.
+Default PBR world/viewmodel and water composition use
+`standardReceiverLocalLight` with the same context and their dielectric response.
+Custom models compose the source sample with their own `BrdfLobes` instead.
+
+No material loop reads context fields. The alternate local-source fixture uses a
+single-entry context with no light-list or baked-channel fields through actual
+standard world, viewmodel, live-world and water shaders. Existing source query
+and mixed-shadow behavior remain below these functions. This boundary does not
+yet select custom host programs or allocate their descriptors at runtime.
+
 ## Sun source queries for material models
 
 `sun-values.glsl` defines the resource-free `SunLightSample`. The receiver-level

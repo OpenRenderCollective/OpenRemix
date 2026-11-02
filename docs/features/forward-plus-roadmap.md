@@ -1,3 +1,13 @@
+## 2026-11-03 — local-light context hidden from material loops
+
+Local-light sample values are resource-free. Material loops now use source count,
+sampling and standard-response functions instead of reading clustered-list or
+baked-channel fields. A different local context compiles through actual standard
+world/viewmodel/live-world/water shaders. Build, resource-free/custom-source
+compilation and mixed local-shadow/water GPU tests pass. All 20 default variants
+retain identical optimized sizes and opcode/intrinsic counts (two byte-identical).
+Runtime custom-program resources and overall performance acceptance remain open.
+
 ## 2026-11-03 — receiver-level sunlight source API
 
 Custom material models now sample sunlight through a receiver query and compose

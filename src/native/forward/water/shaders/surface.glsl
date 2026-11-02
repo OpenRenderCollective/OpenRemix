@@ -123,11 +123,9 @@ void main() {
   diffuse += sunContribution.diffuse;
   vec3 specular = sunContribution.specular;
   LocalLightingContext localLighting = prepareLocalLighting(receiver, n, false, aggregateReceiver);
-  for (uint i = 0u; i < localLighting.lights.count; ++i) {
-    uint light = localLightIndex(localLighting.lights, i);
-    LightContribution response = localLightResponse(light, worldPosition, n, v, surface.rgb, roughness, 0,
-                                           localLighting.directIrradiance, receiver.baked,
-                                           specularF0, normalize(geometric), aggregateReceiver);
+  for (uint i = 0u; i < receiverLocalLightCount(localLighting); ++i) {
+    LightContribution response = standardReceiverLocalLight(i, receiver, n, v, surface.rgb, roughness, 0,
+                                                            localLighting, specularF0);
     diffuse += response.diffuse;
     specular += response.specular;
   }

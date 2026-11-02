@@ -25,6 +25,8 @@ common = """#version 450
 #include "diffuse-values.glsl"
 #include "sun-values.glsl"
 #include "sun-values.glsl"
+#include "local-light-values.glsl"
+#include "local-light-values.glsl"
 """
 stages = {
     "vert": """void main() {

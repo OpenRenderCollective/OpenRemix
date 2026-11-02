@@ -6,20 +6,7 @@ bool emitterAbovePlane(Light light, vec3 p, vec3 n) {
   return max(max(dot(light.corners[0].xyz - p, n), dot(light.corners[1].xyz - p, n)),
              dot(light.corners[2].xyz - p, n)) > 0;
 }
-// Shader-facing lighting data, before material/BRDF response or exposure.
-// Diffuse irradiance and analytic weights exclude RGB radiance. Aggregate diffuse represents
-// already-baked energy and requires a moving-caster correction, not a second add.
-struct LocalLightSample {
-  bool aggregateDiffuse;
-  bool selectedHighlight;
-  vec3 direction;
-  vec3 radiance;
-  float diffuseIrradiance;
-  float analyticWeight;
-  float movingVisibility;
-  float influence;
-  float highlightWeight;
-};
+#include "local-light-values.glsl"
 // Custom shading models may retain back-light samples for transmission/wrap.
 // The standard model requests its existing front-facing early rejection.
 // Read the output only when the query succeeds.

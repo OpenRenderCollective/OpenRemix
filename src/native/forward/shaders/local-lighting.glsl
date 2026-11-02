@@ -21,3 +21,13 @@ bool sampleReceiverLocalLight(uint ordinal, ShadingReceiver receiver, vec3 norma
       context.directIrradiance, receiver.baked, normalize(receiver.geometric), context.aggregate,
       frontFacingOnly, sampled);
 }
+
+uint receiverLocalLightCount(LocalLightingContext context) { return context.lights.count; }
+// Standard response adapter: source indices, direct channels and shadow inputs
+// stay private to the source. Custom models use sampleReceiverLocalLight instead.
+LightContribution standardReceiverLocalLight(uint ordinal, ShadingReceiver receiver, vec3 normal, vec3 view,
+    vec3 base, float roughness, float metallic, LocalLightingContext context, vec3 dielectricF0) {
+  return localLightResponse(localLightIndex(context.lights, ordinal), receiver.position, normal, view,
+      base, roughness, metallic, context.directIrradiance, receiver.baked, dielectricF0,
+      normalize(receiver.geometric), context.aggregate);
+}
