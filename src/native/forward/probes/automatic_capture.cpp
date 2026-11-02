@@ -7,6 +7,7 @@
 namespace remix::forward::probes {
   void AutomaticCapture::planSites(const scene::BakeScene &source, const bake::Grid &grid,
                                     uint32_t count, std::stop_token cancelled) {
+    sitesPlanned = true;
     const auto sites = candidateSites(source, grid, count, cancelled);
     reflectionSites.reserve(sites.size());
     for (const auto &position : sites)
@@ -15,6 +16,7 @@ namespace remix::forward::probes {
   }
   void AutomaticCapture::fit(const scene::BakeScene &source, const bake::Grid &grid, uint32_t count,
                               float detailTolerance, std::stop_token cancelled) {
+    candidatesPlanned = true;
     std::vector<Vec3> validated;
     for (size_t i = 0; i < reflectionSites.size(); ++i)
       if (usableReflectionSites[i]) {
@@ -29,6 +31,7 @@ namespace remix::forward::probes {
   }
   void AutomaticCapture::select(const scene::BakeScene &source, uint32_t count, uint32_t resolution,
                                  float detailTolerance, std::stop_token cancelled) {
+    capturePlanned = true;
     if (projectionAudit) {
       candidateRegions = projectionAudit->finish();
       projectionAudit.reset();
@@ -59,6 +62,6 @@ namespace remix::forward::probes {
       WorkerPool workers;
       filtered = probes::filter(captures, 128, cancelled, &workers);
     }
-    image = std::make_unique<ImageAsset>(physical, device, filtered, cancelled);
+    image = std::make_shared<ImageAsset>(physical, device, filtered, cancelled);
   }
 }

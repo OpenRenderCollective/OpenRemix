@@ -37,7 +37,7 @@
 namespace remix::forward::bake {
   namespace {
     std::atomic<uint64_t> generation = 0;
-    constexpr uint32_t reflectionSiteSamples = 64;
+    constexpr uint32_t reflectionSiteSamples = probes::AutomaticCapture::siteSamples;
     lightmap::Options surfaceAtlasOptions(const Config &config, const VkPhysicalDeviceLimits &limits) {
       lightmap::Options atlas;
       atlas.padding = 0;
@@ -925,8 +925,23 @@ namespace remix::forward::bake {
   void Controller::recordReflections(VkCommandBuffer command, const Config &config) {
     auto &job = *m_job;
     if (recordSunDepth(command, config)) return;
-    if (!job.reflections.sitesPlanned) {
-      job.reflections.sitesPlanned = true;
+    using CaptureStep = probes::AutomaticCapture::Step;
+    auto step = job.reflections.nextStep();
+    auto dispatch = [&] {
+      auto &submission = m_submissions[m_slot];
+      if (submission.job) throw std::logic_error("Reflection slot reused before its fence");
+      const probes::CaptureConfig execution{.samples = config.samples, .bounces = config.bounces,
+                                            .batch = config.batch, .gpuBudgetMs = config.gpuBudgetMs};
+      const auto batch = job.reflections.record(command, m_slot, *job.transport, job.budget, execution);
+      if (!batch.count) return;
+      submission.job = m_job;
+      submission.first = batch.first;
+      submission.count = batch.count;
+      submission.reflectionSite = batch.step == CaptureStep::ValidateSites;
+      submission.reflectionGeometry = batch.step == CaptureStep::CheckGeometry;
+      submission.radiance = batch.step == CaptureStep::Capture;
+    };
+    if (step == CaptureStep::PlanSites) {
       const auto owner = m_job;
       job.ticket =
           m_pipelines->prepare("forward-probe-sites-" + std::to_string(++generation), [owner, config] {
@@ -936,30 +951,15 @@ namespace remix::forward::bake {
       status(REMIXAPI_BAKE_PREPARING_EXT, "Finding reflection capture sites");
       return;
     }
-    if (job.reflections.siteReceived < job.reflections.reflectionSites.size()) {
-      auto &submission = m_submissions[m_slot];
-      if (submission.job)
-        throw std::logic_error("Reflection validation slot reused before its fence");
-      if (job.reflections.siteNext < job.reflections.reflectionSites.size()) {
-        const uint32_t count = job.count(
-            Work::Site, config, uint32_t(job.reflections.reflectionSites.size() - job.reflections.siteNext), reflectionSiteSamples);
-        job.transport->recordSiteValidation(command, m_slot,
-                                            std::span(job.reflections.reflectionSites).subspan(job.reflections.siteNext, count),
-                                            reflectionSiteSamples);
-        submission.job = m_job;
-        submission.reflectionSite = true;
-        submission.first = job.reflections.siteNext;
-        submission.count = count;
-        job.reflections.siteNext += count;
-      }
+    if (step == CaptureStep::ValidateSites) {
+      dispatch();
       char progress[128];
       std::snprintf(progress, sizeof(progress), "Validating reflection capture sites (%u/%zu)",
                     job.reflections.siteReceived, job.reflections.reflectionSites.size());
       status(REMIXAPI_BAKE_TRACING_EXT, progress);
       return;
     }
-    if (!job.reflections.candidatesPlanned) {
-      job.reflections.candidatesPlanned = true;
+    if (step == CaptureStep::Fit) {
       const auto owner = m_job;
       job.ticket =
           m_pipelines->prepare("forward-probe-placement-" + std::to_string(++generation), [owner, config] {
@@ -969,28 +969,16 @@ namespace remix::forward::bake {
       status(REMIXAPI_BAKE_PREPARING_EXT, "Fitting reflection candidates");
       return;
     }
-    if (job.reflections.projectionAudit && job.reflections.geometryReceived < job.reflections.projectionAudit->rays().size()) {
-      auto &submission = m_submissions[m_slot];
-      if (submission.job)
-        throw std::logic_error("Reflection geometry slot reused before its fence");
+    if (step == CaptureStep::CheckGeometry) {
+      dispatch();
       const auto rays = job.reflections.projectionAudit->rays();
-      if (job.reflections.geometryNext < rays.size()) {
-        const uint32_t count = job.count(Work::Geometry, config, uint32_t(rays.size() - job.reflections.geometryNext), 1);
-        job.transport->recordGeometry(command, m_slot, rays.subspan(job.reflections.geometryNext, count));
-        submission.job = m_job;
-        submission.reflectionGeometry = true;
-        submission.first = job.reflections.geometryNext;
-        submission.count = count;
-        job.reflections.geometryNext += count;
-      }
       char progress[128];
       std::snprintf(progress, sizeof(progress), "Checking reflection projection geometry (%u/%zu rays)",
                     job.reflections.geometryReceived, rays.size());
       status(REMIXAPI_BAKE_TRACING_EXT, progress);
       return;
     }
-    if (!job.reflections.capturePlanned) {
-      job.reflections.capturePlanned = true;
+    if (step == CaptureStep::Select) {
       const auto owner = m_job;
       VkPhysicalDeviceProperties limits;
       vkGetPhysicalDeviceProperties(m_physical, &limits);
@@ -1009,7 +997,8 @@ namespace remix::forward::bake {
       return;
     }
     if (recordReceiverDiagnostics(command, config)) return;
-    if (job.reflections.captureReceived == job.reflections.work.rays().size()) {
+    step = job.reflections.nextStep();
+    if (step == CaptureStep::Complete) {
       job.filtering = true;
       const auto owner = m_job;
       const auto physical = m_physical;
@@ -1112,21 +1101,7 @@ namespace remix::forward::bake {
       status(REMIXAPI_BAKE_PREPARING_EXT, "Finishing baked lighting assets");
       return;
     }
-    if (job.reflections.captureNext < job.reflections.work.rays().size()) {
-      auto &submission = m_submissions[m_slot];
-      if (submission.job)
-        throw std::logic_error("Reflection slot reused before its fence");
-      const uint32_t count = job.count(Work::Reflection, config,
-                                       uint32_t(job.reflections.work.rays().size() - job.reflections.captureNext),
-                                       config.samples, config.bounces);
-      job.transport->recordRadiance(
-          command, m_slot, job.reflections.work.rays().subspan(job.reflections.captureNext, count), config.bounces, config.samples);
-      submission.job = m_job;
-      submission.radiance = true;
-      submission.first = job.reflections.captureNext;
-      submission.count = count;
-      job.reflections.captureNext += count;
-    }
+    dispatch();
     char progress[128];
     std::snprintf(progress, sizeof(progress), "Capturing reflection cubemaps (%u/%zu texels, %u samples)",
                   job.reflections.captureReceived, job.reflections.work.rays().size(), config.samples);
@@ -1563,7 +1538,7 @@ namespace remix::forward::bake {
           auto prepare = [job, physical, device, config, lightCutoff, queueFamily] {
             job->prepareResources(physical, device, config, lightCutoff, queueFamily);
             if (job->cacheHit) {
-              job->reflections.image = std::make_unique<probes::ImageAsset>(
+              job->reflections.image = std::make_shared<probes::ImageAsset>(
                   physical, device, job->reflections.filtered, job->cancellation.get_token());
               job->restoreLocalReflections(physical, device, config);
               job->prepareLocalReflectionUpgrade(physical, device, config, queueFamily);
@@ -1757,7 +1732,7 @@ namespace remix::forward::bake {
     return m_volume && m_volume->sunDepth ? m_volume->sunDepth->values() : m_emptySunDepth->descriptor();
   }
   probes::Descriptors Controller::reflectionDescriptor() const {
-    return (m_volume ? m_volume->specular : m_emptyReflections)->descriptors();
+    return m_volume ? m_volume->specular->descriptors() : m_emptyReflections->descriptors();
   }
   VkDescriptorImageInfo Controller::surfaceDescriptor() const {
     const auto &image = m_volume && m_volume->surfaceAtlas ? m_volume->surfaceAtlas : m_emptySurface;

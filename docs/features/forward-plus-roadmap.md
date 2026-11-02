@@ -1,3 +1,9 @@
+# Capture scheduling and publication lifetime - 2026-11-02
+
+- Automatic capture selects its own phases and records bounded site/geometry/radiance batches through borrowed transport/budget. The adapter retains job owners and retires readbacks after fences.
+- Automatic reflection images now have independent shared ownership; retaining captures no longer retains the diffuse volume. GPU lifecycle regression covers this after slot retirement.
+- Remaining: independently keyed capture cache/publication, resource/dependency resolution across direct/diffuse/reflection providers, pipeline-selection extension and broader no-regression qualification.
+
 # Automatic capture module - 2026-11-02
 
 - Automatic placement/capture-ray/filter/image work now has an inline-owned probes::AutomaticCapture module; no duplicated rays or GPU passes.

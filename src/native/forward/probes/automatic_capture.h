@@ -1,13 +1,35 @@
 #pragma once
 #include "forward/probes/capture_work.h"
+#include "forward/probes/capture_config.h"
 #include "forward/probes/evaluation.h"
 #include "forward/probes/image_asset.h"
+
+namespace remix::forward::bake { class Transport; class Budget; }
 
 namespace remix::forward::probes {
   // Automatic reflection work, independent of diffuse atlases and probe values.
   // Workers advance placement/filtering; the scheduler advances submission and
   // readback counters only after the owning frame fence. No copied ray arrays.
   struct AutomaticCapture {
+    enum class Step { PlanSites, ValidateSites, Fit, CheckGeometry, Select, Capture, Complete };
+    // Inspect only after the owning preparation ticket or submission fence.
+    Step nextStep() const {
+      if (!sitesPlanned) return Step::PlanSites;
+      if (siteReceived < reflectionSites.size()) return Step::ValidateSites;
+      if (!candidatesPlanned) return Step::Fit;
+      if (projectionAudit && geometryReceived < projectionAudit->rays().size()) return Step::CheckGeometry;
+      if (!capturePlanned) return Step::Select;
+      return captureReceived < work.rays().size() ? Step::Capture : Step::Complete;
+    }
+    struct Dispatch {
+      Step step;
+      uint32_t first = 0, count = 0;
+    };
+    // Borrows transport and adaptive budget; creates no second scene or ray list.
+    // The caller retains this owner and consumes readback after the slot fence.
+    Dispatch record(VkCommandBuffer command, uint32_t slot, bake::Transport &transport,
+                     bake::Budget &budget, const CaptureConfig &config);
+    static constexpr uint32_t siteSamples = 64;
     void planSites(const scene::BakeScene &source, const bake::Grid &grid,
                     uint32_t count, std::stop_token cancelled);
     void fit(const scene::BakeScene &source, const bake::Grid &grid, uint32_t count,
@@ -31,7 +53,7 @@ namespace remix::forward::probes {
     CaptureWork work;
     uint64_t inputHash = 0;
     Data filtered;
-    std::unique_ptr<ImageAsset> image;
+    std::shared_ptr<ImageAsset> image;
     uint32_t captureNext = 0, captureReceived = 0;
     bool capturePlanned = false;
   };

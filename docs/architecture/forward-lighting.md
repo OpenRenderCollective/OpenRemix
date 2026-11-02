@@ -294,7 +294,7 @@ The renderer supplies baked publication readiness for the Source 2 profile,
 preserving capture-after-bake ordering. With diffuse baking disabled it can supply
 ready retained-scene identity directly, allowing authored capture without any
 diffuse volume. Automatic fallback is optional: its absence does not block an
-otherwise ready authored set. The bake-controller adapter currently aliases the
+otherwise ready authored set. The bake-controller adapter returns the independent
 published image owner without copying images or allocating a new GPU resource.
 Submitted capture/composition frames retain that owner through their fences.
 
@@ -313,10 +313,31 @@ on the bake controller, diffuse atlases or diffuse probe values. Placement still
 borrows grid positions and geometry-validity metadata as spatial seed inputs. State is stored inline in the
 owning job: this extraction adds no resource allocation or duplicate ray arrays.
 
-The current Source 2 scheduler still lends its transport, advances counters after
+The current Source 2 scheduler still lends its transport, retires readbacks after
 submission fences, performs optional receiver diagnostics, and publishes/caches
 reflection output with the diffuse assets. This preserves existing cold/warm
 behavior while extracting reusable work. A standalone automatic reflection
 scheduler and independently keyed publication/cache remain unfinished. Keep the
 source ownership and cancellation token alive through every worker and submitted
 frame when moving that scheduling next.
+
+
+### Automatic query scheduling and image lifetime
+
+`AutomaticCapture::nextStep()` selects placement, validation, fitting, geometry,
+selection, capture or completion after the owning preparation ticket/fence is
+observed. `record()` borrows `bake::Transport` and `bake::Budget`, emits the same
+bounded query batches, advances submitted counters, and returns plain batch
+metadata. Pending readbacks keep their query phase with an empty dispatch;
+submission does not imply completion. The adapter scheduler retains job owners
+and advances completed counters after readback. No virtual callback, second ray
+scene, per-pixel branch or additional GPU pass is introduced.
+
+Prepared and published automatic reflection images now have independent shared
+ownership. `make_shared<ImageAsset>` constructs the object and control block in
+one allocation; `CaptureSource` retains that image directly rather than aliasing
+the diffuse volume. Frame-fence retention still protects uploads and sampling.
+Consequently, retaining a reflection snapshot need not retain diffuse atlases or
+probe buffers. The Source 2 renderer still publishes both outputs together;
+independent cache/publication and complete technique dependency resolution are
+outstanding.

@@ -45,7 +45,7 @@ namespace remix::forward::bake {
     std::array<uint32_t, 4> occlusionParameters{}; // stride + compact-atlas flag, charts, width, indexed-mask tail
     uint32_t surfaceDirectOffset = 0; // sparse directional table in the R32_UINT lookup; zero keeps atlas SH
     std::unique_ptr<Buffer> data, staging;
-    std::unique_ptr<probes::ImageAsset> specular;
+    std::shared_ptr<probes::ImageAsset> specular;
     std::unique_ptr<Image> surfaceAtlas;
     std::unique_ptr<mixed::OcclusionMap> occlusion, visibilityPages;
     std::shared_ptr<lightmap::Geometry> surfaces;
@@ -78,7 +78,7 @@ namespace remix::forward::bake {
     probes::Descriptors reflectionDescriptor() const;
     probes::CaptureSource reflectionSource() const {
       if (!m_volume) return {};
-      return {m_volume->hash, std::shared_ptr<const probes::ImageAsset>(m_volume, m_volume->specular.get())};
+      return {m_volume->hash, m_volume->specular};
     }
     VkDescriptorImageInfo surfaceDescriptor() const;
     VkDescriptorImageInfo occlusionDescriptor() const;

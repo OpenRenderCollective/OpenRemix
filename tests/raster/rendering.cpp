@@ -2606,9 +2606,19 @@ namespace {
               require(cached.baking.active && std::strstr(cached.baking.status, "Cached lighting active") &&
                           cached.bakeContent.captureInputs == baseline.bakeContent.captureInputs,
                       "Warm automatic cubemap cache preserves exact capture provenance after scratch release");
-              // Authored capture is an independent reflection provider. Start
-              // with a fresh controller so no old diffuse publication can help.
+              // Reflection snapshots retain the image, not an unrelated diffuse
+              // volume. Retire all sampling slots before checking that lifetime.
+              const auto retainedImage = target.forward->bakeController()->reflectionSource();
+              std::weak_ptr<const remix::forward::bake::Volume> retiredDiffuse =
+                  target.forward->bakeController()->volume();
               options.baking.enabled = false;
+              target.forward->updateLighting(options);
+              for (uint32_t frame = 0; frame < 8; ++frame) render(false, false, true, false);
+              require(retiredDiffuse.expired() && retainedImage.image &&
+                          retainedImage.image->header().parameters[0] > 0,
+                      "Retaining a reflection image does not retain diffuse GPU publication after frame fences");
+              // Start fresh so no old diffuse publication can help capture.
+
               options.authoredReflectionFallback = true;
               request.volumeCount = 2;
               request.volumes = authored; ++request.revision;
