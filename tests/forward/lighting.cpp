@@ -51,14 +51,14 @@ int main() {
                     "Fragment GI pipelines require support and an explicit diffuse request");
             require(!resources.rayWater || (resources.rayReflections && options.water && capabilities.waterRayQueries),
                     "Water continuation requires its reflection provider and water capability");
-            const auto lighting = options.lightingPlan(resources.rayDiffuse());
+            const auto lighting = options.lightingPlan(resources.liveDiffuse());
             require(resources.capturesWithBake() == lighting.baking.enabled,
                     "Capture source and shared transport admission follow the resolved provider, including fallback");
             auto disabledCaptures = options;
             disabledCaptures.baking.reflectionProbes = 0;
             require(techniques::resolveResources(disabledCaptures, capabilities).captureTransport == resources.captureTransport,
                     "Disabling images preserves the capture retirement owner");
-            require(!resources.rayDiffuse() || !lighting.bakedReceivers,
+            require(!resources.liveDiffuse() || !lighting.bakedReceivers,
                     "Resolved live GI cannot consume aggregate baked receiver lighting");
             if (!resources.rayDiffuse())
               require(resources.diffuse == (options.baking.enabled ? techniques::Diffuse::SurfaceAndProbes

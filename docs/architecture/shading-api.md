@@ -266,7 +266,14 @@ diffuse response can skip probe evaluation.
 ## Resolved provider dependencies
 
 `techniques::ResourcePlan` carries active diffuse, screen/ray reflection and
-shared-scene requirements after capability resolution. Screen reflection
+shared-scene requirements after capability resolution. Its `liveDiffuse()` query
+expresses replacement of the default baked receiver path independently of
+`rayDiffuse()`, which identifies the actual fragment ray-query implementation.
+Capture retirement, baked-light/highlight selection and receiver-mask scheduling
+consume the ownership query. Pipeline variants, descriptor layouts and ray
+transport continue to consume the implementation query. Today ray-query GI is
+the only live source on this branch; another live technique extends the central
+ownership query instead of editing each scene-lighting decision. Screen reflection
 allocation and hierarchy recording consume the resolved screen choice; quality
 and range values remain in `Options`. The live scene receives its compute
 reflection-batch requirement from the same plan instead of reading the saved ray

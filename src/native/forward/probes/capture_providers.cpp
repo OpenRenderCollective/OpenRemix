@@ -15,7 +15,7 @@ namespace remix::forward::probes {
   }
   void CaptureProviders::record(VkCommandBuffer command, RasterRenderer &resources, const Options &options,
                                 const techniques::ResourcePlan &plan, bake::Controller &baking) {
-    const auto lightingPlan = options.lightingPlan(plan.rayDiffuse());
+    const auto lightingPlan = options.lightingPlan(plan.liveDiffuse());
     const auto authoredConfig = options.captureConfiguration();
     auto *sceneRequest = m_authored->requestScene(resources, authoredConfig);
     baking.record(command, resources, lightingPlan.baking, options.lightCutoff, sceneRequest);

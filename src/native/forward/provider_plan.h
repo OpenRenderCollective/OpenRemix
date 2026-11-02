@@ -21,6 +21,9 @@ namespace remix::forward::techniques {
     bool screenReflections = false;
     bool capturesWithBake() const { return captureTransport == CaptureTransport::BakedScene; }
     bool rayDiffuse() const { return diffuse == Diffuse::RayQueries; }
+    // Ownership policy is separate from the implementation's ray capabilities.
+    // New live diffuse techniques extend this query without changing receivers.
+    bool liveDiffuse() const { return rayDiffuse(); }
     bool bakedDiffuse() const { return diffuse == Diffuse::SurfaceAndProbes; }
     bool operator==(const ResourcePlan &) const = default;
   };

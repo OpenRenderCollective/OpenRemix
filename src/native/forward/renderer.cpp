@@ -182,7 +182,7 @@ namespace remix::forward {
     // Live diffuse never consumes baked receiver masks. Non-live modes retain
     // this capability even when baking is off, since bake-enable can change
     // without target recreation. Unsupported fields retain sparse reads.
-    if (!next->techniquePlan.rayDiffuse() && !std::getenv("REMIX_DEBUG_DISABLE_PROBE_BATCH")) {
+    if (!next->techniquePlan.liveDiffuse() && !std::getenv("REMIX_DEBUG_DISABLE_PROBE_BATCH")) {
       next->probeVisibility = std::make_unique<probe_batch::Cache>(physical, device);
       next->probeVisibility->prepare();
     }

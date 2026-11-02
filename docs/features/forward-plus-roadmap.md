@@ -32,7 +32,11 @@ Implemented and checked:
   material/resolve variants; GPU reference-energy sweeps pass. General scene and
   component provenance across guide transport is still open.
 - Resolved provider dependencies drive live diffuse/ray scene and screen/ray
-  reflection resources. Water and viewmodels share the selected diffuse source;
+  reflection resources. Live diffuse ownership is queried independently of the
+  ray-query implementation for receiver masks, highlights, mixed fallback and
+  capture retirement. The affected three CPU objects retain identical machine
+  code and relocation manifests under the current optimized build. Water and
+  viewmodels share the selected diffuse source;
   live water can share prepared scene descriptors with its own query limits.
   Capture recording, admission and source fallback share one resolved owner;
   image disable preserves the scheduler responsible for retiring prior work.
