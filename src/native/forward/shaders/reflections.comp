@@ -188,7 +188,7 @@ void main() {
   ReflectionReceiver receiver = ReflectionReceiver(position, fma(normal, vec3(frame.trace.z), position),
       normal, reflected, guide.z, localLuma, layer, probeMask);
   vec3 fallback = sampleEnvironmentReflection(receiver);
-  radiance.rgb += fallback * (1 - clamp(radiance.a, 0, 1));
+  radiance.rgb = resolveReflection(ReflectionSample(radiance.rgb, clamp(radiance.a, 0, 1)), fallback);
   imageStore(outRadiance, pixel, vec4(min(radiance.rgb * fresnel, vec3(65000)), radiance.a));
 }
 #endif

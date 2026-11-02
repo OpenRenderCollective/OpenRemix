@@ -142,7 +142,7 @@ void main() {
 #ifdef WATER_RAY
   screenHit = waterHardwareReflection(worldPosition, n, boundary.reflected, roughness, screenHit);
 #endif
-  reflected = screenHit.rgb + (1 - screenHit.a) * reflected;
+  reflected = resolveReflection(ReflectionSample(screenHit.rgb, screenHit.a), reflected);
   // Bodies retain lit absorption colour; finite sheets lose absorbed energy.
   // Both use the shared filtered reflection path and their optical weights.
   vec3 color = through * background + max(0, surfaceWeight - boundary.reflectance) * diffuse +

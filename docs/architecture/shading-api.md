@@ -298,6 +298,27 @@ This is the remaining integration contract, not a claim that runtime controllers
 already share a retained scene lease. It permits future diffuse providers without
 forcing material shaders to know their scheduling or storage.
 
+## Reflection source values
+
+`reflection-sample.glsl` is resource-free, like evaluated material values.
+`ReflectionSample` contains scene-linear incident `radiance`, already multiplied
+by source `confidence`, and that confidence in [0, 1]. A valid black sample has
+confidence 1; an unavailable sample has confidence 0. Roughness filtering and
+confidence validation belong to the source adapter, not the material response.
+
+`resolveReflection(sample, fallbackRadiance)` adds fallback only for the remaining
+confidence. It does not clamp or reweight the sample, fetch another provider,
+apply Fresnel, normalize probe energy or transform display values. World, water
+and viewmodel adapters share this resolver while retaining their existing
+confidence clamps/filtering. Their existing source queries and pass-owned depth,
+probe candidates and reflection guides remain unchanged. A replacement source
+can supply the same value contract without exposing its texture/volume layout.
+
+The `shading_values.py` compile fixture includes material/reflection headers twice
+and uses them in vertex, fragment and compute code without renderer bindings.
+It guards the resource boundary; it does not implement a runtime shader loader or
+prove visual equivalence for a new provider.
+
 ## Transport query limits
 
 The provider-level radiance traversal takes explicit `maximumDistance` (scene

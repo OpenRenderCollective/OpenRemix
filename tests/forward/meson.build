@@ -366,9 +366,9 @@ coverage_guards_test = executable('remix-coverage-guards-test', 'coverage_guards
   include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
 test('Reflection preservation guards retain ordering and projection space', coverage_guards_test)
 
-test('Evaluated material values are independent of pass resources', python,
-  args : [meson.current_source_dir() / 'surface_values.py', shader_tools,
-          meson.current_build_dir() / 'surface-values'], depends : [shader_tools])
+test('Material and reflection values are independent of pass resources', python,
+  args : [meson.current_source_dir() / 'shading_values.py', shader_tools,
+          meson.current_build_dir() / 'shading-values'], depends : [shader_tools])
 
 test('Custom shading composes sources without the standard shading model', python,
   args : [meson.current_source_dir() / 'custom_shading.py', shader_tools,

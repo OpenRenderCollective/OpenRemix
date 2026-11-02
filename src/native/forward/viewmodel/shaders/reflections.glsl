@@ -32,7 +32,7 @@ vec3 viewModelReflectionRadiance(vec3 position, vec3 n, vec3 v, float roughness,
       frame.view, viewModelScreen.trace, viewModelScreen.config, frame.target.xy);
   vec4 hit = traceScreenReflection(screen, position, n, reflected, -v, roughness,
                                    gl_FragCoord.xy / vec2(frame.target.xy));
-  radiance = hit.rgb + (1 - hit.a) * radiance;
+  radiance = resolveReflection(ReflectionSample(hit.rgb, hit.a), radiance);
   return radiance;
 }
 vec3 sampleViewModelReflection(vec3 position, vec3 n, vec3 v, float roughness, uint layer, float localLuma) {

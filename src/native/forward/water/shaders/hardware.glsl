@@ -1,3 +1,4 @@
+#include "../../shaders/reflection-sample.glsl"
 // Water and opaque reflection rays use the same captured materials, lighting,
 // alpha coverage and measured dielectric transport. Only the primary ray differs.
 #ifndef LIVE_GI
@@ -25,5 +26,5 @@ vec4 waterHardwareReflection(vec3 position, vec3 normal, vec3 direction, float r
   // A valid black hit replaces the fallback; sky misses and invalid back faces
   // retain it. Interface Fresnel belongs to the caller, exactly as with SSR.
   if (back || miss || any(isnan(value)) || any(isinf(value))) return screen;
-  return vec4(screen.rgb + max(value, vec3(0)) * (1 - clamp(screen.a, 0, 1)), 1);
+  return vec4(resolveReflection(ReflectionSample(screen.rgb, clamp(screen.a, 0, 1)), max(value, vec3(0))), 1);
 }

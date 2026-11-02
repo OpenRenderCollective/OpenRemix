@@ -1,3 +1,9 @@
+## 2026-11-03: shared reflection sample contract
+
+- World, water and viewmodels share resource-free reflection radiance/confidence values and fallback composition. Source adapters retain their filtering/clamp policy; material Fresnel stays separate.
+- Nine affected optimized shader variants retain matching byte sizes/opcode counts. Reflection/SSR/water/live-GI suites pass; shader value headers compile in vertex/fragment/compute without pass resources.
+- Provider lifecycle separation, unified lighting provenance and matched gameplay performance acceptance remain open.
+
 ## 2026-11-03: live diffuse water integration
 
 - Water body lighting now selects the live diffuse provider with dedicated variants, including simultaneous hardware reflections. Both effects share the world GI scene descriptor; reflection query limits remain independent.
