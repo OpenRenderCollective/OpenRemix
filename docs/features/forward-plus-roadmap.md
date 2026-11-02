@@ -1,3 +1,9 @@
+## Performance gate diagnostic coverage - 2026-11-02
+
+- Adapter opt-in frame CSV now appends CPU snapshot identity/freshness/presented flags and present/scene/acquire/submit/queue-present times from its existing API query. No additional queries or profiling-disabled work. Adapter commit a024a72. Build and offline dynamic-stub CSV harness pass.
+- Previous weapon repeat had similar CPU recording but lower fence wait and lower host FPS in the test build; attribution needs the new phases, not another GPU-only conclusion. Coordinated foreground measurement is pending user availability. No playable changes or new FPS claim.
+- Default independent ticket/transport scheduling, shared-scene adoption and full CPU/GPU/map no-overhead acceptance remain open.
+
 ## Reflection content diagnostics separated - 2026-11-02
 
 - Diffuse volumes now retain only diffuse fingerprints. Reflection hashes publish with provider image readiness; controller statistics combine fixed-size values without mutating a published diffuse volume.
