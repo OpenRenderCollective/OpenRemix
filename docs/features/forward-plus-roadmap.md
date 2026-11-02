@@ -1,3 +1,16 @@
+## 2026-11-03 — foreground performance acceptance remains open
+
+Production-quality 1080p Crossfire measurements with matching lighting hashes,
+settings and draw counts show a remaining small unarmed host-frame gap to the
+pre-split baseline, despite slightly lower GPU time. Warm-cache reverse-order
+repeat: current ~273 FPS unarmed versus ~279–281; weapon ~243–244 versus ~243–244.
+No-overhead is not accepted yet. Next: use the latest adapter's CPU phase/freshness
+telemetry to isolate the host cost, then repeat with counterbalanced runs.
+Separately investigate severe host stalls immediately after a cold bake reports
+ready; warm-cache repeats avoid those stalls. Background persistence/retirement
+are candidates, not confirmed causes. Owned tests exited and playable DLL/config
+were restored; no deployment occurred.
+
 ## 2026-11-03 — radiance policy inheritance from baked scenes
 
 Ordinary unstyled reflection capture can now explicitly inherit the donor's
