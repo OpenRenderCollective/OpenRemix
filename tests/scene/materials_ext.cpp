@@ -531,6 +531,59 @@ namespace {
   }
 } // namespace
 
+  // A dynamic texture with generated mips: an update makes each level again
+  // only where it reads the changed texels, and the region stays level 0's.
+  void scopedMipUpdate() {
+    remix::NativeResources r;
+    remixapi_TextureInfoGenerateMipsEXT mips{};
+    mips.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_GENERATE_MIPS_EXT;
+    mips.generate = 1;
+    remixapi_TextureInfoDynamicEXT dynamic{};
+    dynamic.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_DYNAMIC_EXT;
+    dynamic.pNext = &mips;
+    dynamic.dynamic = 1;
+    std::vector<uint8_t> black(4 * 4 * 4, 0);
+    for (size_t i = 3; i < black.size(); i += 4)
+      black[i] = 255;
+    remixapi_TextureInfo info{};
+    info.sType = REMIXAPI_STRUCT_TYPE_TEXTURE_INFO;
+    info.pNext = &dynamic;
+    info.hash = 0x81;
+    info.format = REMIXAPI_FORMAT_R8G8B8A8_UNORM;
+    info.width = info.height = 4;
+    info.depth = info.mipLevels = 1;
+    info.data = black.data();
+    info.dataSize = black.size();
+    remixapi_TextureHandle handle{};
+    r.createTexture(info, handle);
+    remixapi_MaterialInfoOpaqueEXT o{};
+    o.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_EXT;
+    o.albedoConstant = {1, 1, 1};
+    o.opacityConstant = 1;
+    o.alphaTestType = 7;
+    remixapi_MaterialInfo m{};
+    m.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
+    m.pNext = &o;
+    m.hash = 0x82;
+#ifdef _WIN32
+    m.albedoTexture = L"0x81";
+#else
+    m.albedoTexture = "0x81";
+#endif
+    remixapi_MaterialHandle mh{};
+    r.createMaterial(m, mh);
+    const auto t = drawn(r, quad(r, 0x83, mh))->texture;
+    require(t->pixels.mips.size() == 3, "Scoped mips: chain");
+    const uint8_t white[4] = {255, 255, 255, 255};
+    r.updateTexture(handle, 0, 0, 1, 1, REMIXAPI_FORMAT_R8G8B8A8_UNORM, white, 4);
+    std::lock_guard lock(t->updates->lock);
+    const auto &p = t->pixels;
+    const auto &u = *t->updates;
+    require(u.dirty[0] == 0 && u.dirty[1] == 0 && u.dirty[2] == 1 && u.dirty[3] == 1, "Scoped mips: level 0 region");
+    require(p.mips[1][0] == 64 && p.mips[1][4] == 0 && p.mips[1][12] == 0, "Scoped mips: level 1 texels");
+    require(p.mips[2][0] == 16, "Scoped mips: level 2 texel");
+  }
+
   // A float dynamic texture (an HDR sky): RGBA32F texels updated from halves.
   void floatDynamicTexture() {
     remix::NativeResources r;
@@ -597,6 +650,7 @@ int main() {
   materialOverride();
   dynamicTexture();
   floatDynamicTexture();
+  scopedMipUpdate();
   pbrRemap();
   iridescence();
   partialMod();

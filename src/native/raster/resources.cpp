@@ -171,7 +171,7 @@ namespace remix {
     const uint32_t texel = hdr ? 16 : 4;
     const auto *texels = hdr ? reinterpret_cast<const uint8_t *>(p.hdrMips[0].data()) : p.mips[0].data();
     if (p.mips.size() > 1) {
-      refreshLevels(value, source, command);
+      refreshLevels(value, source, command, x0, y0, x1, y1);
       return;
     }
     const uint32_t width = x1 - x0, height = y1 - y0;
@@ -210,22 +210,36 @@ namespace remix {
                          nullptr, 1, &barrier);
   }
 
-  void RasterRenderer::Gpu::refreshLevels(TextureGpu &value, const Texture &source, VkCommandBuffer command) {
+  // Each level's part of the changed region of level 0 (scene::updateMips).
+  void RasterRenderer::Gpu::refreshLevels(TextureGpu &value, const Texture &source, VkCommandBuffer command,
+                                          uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1) {
     const auto &p = source.pixels;
+    const uint32_t levels = uint32_t(p.mips.size());
+    struct Region {
+      uint32_t x0, y0, x1, y1, width;
+    };
+    std::vector<Region> regions;
     size_t total = 0;
-    for (const auto &level : p.mips)
-      total += level.size();
+    uint32_t width = p.width, height = p.height;
+    for (uint32_t level = 0; level < levels; ++level) {
+      if (level)
+        scene::nextMipRegion(x0, y0, x1, y1, width, height), width = std::max(1u, width / 2),
+            height = std::max(1u, height / 2);
+      regions.push_back({x0, y0, x1, y1, width});
+      total += size_t(x1 - x0) * (y1 - y0) * 4;
+    }
     CounterTicks time{textureCounters.uploadTicks};
     dynamicTextureUploads += source.dynamic;
     textureCounters.uploads.fetch_add(1, std::memory_order_relaxed);
     textureCounters.uploadBytes.fetch_add(total, std::memory_order_relaxed);
     uploads.push_back(buffer(total, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, [&](uint8_t *mapped) {
-      for (const auto &level : p.mips) {
-        std::memcpy(mapped, level.data(), level.size());
-        mapped += level.size();
+      for (uint32_t level = 0; level < levels; ++level) {
+        const auto &r = regions[level];
+        const size_t row = size_t(r.x1 - r.x0) * 4;
+        for (uint32_t y = r.y0; y < r.y1; ++y, mapped += row)
+          std::memcpy(mapped, p.mips[level].data() + (size_t(y) * r.width + r.x0) * 4, row);
       }
     }));
-    const uint32_t levels = uint32_t(p.mips.size());
     VkImageMemoryBarrier barrier = {.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
                                     .srcAccessMask = VK_ACCESS_SHADER_READ_BIT,
                                     .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
@@ -240,11 +254,12 @@ namespace remix {
     std::vector<VkBufferImageCopy> copies;
     VkDeviceSize offset = 0;
     for (uint32_t level = 0; level < levels; ++level) {
-      const uint32_t w = std::max(1u, p.width >> level), h = std::max(1u, p.height >> level);
+      const auto &r = regions[level];
       copies.push_back({.bufferOffset = offset,
                         .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, 0, 1},
-                        .imageExtent = {w, h, 1}});
-      offset += p.mips[level].size();
+                        .imageOffset = {int32_t(r.x0), int32_t(r.y0), 0},
+                        .imageExtent = {r.x1 - r.x0, r.y1 - r.y0, 1}});
+      offset += VkDeviceSize(r.x1 - r.x0) * (r.y1 - r.y0) * 4;
     }
     vkCmdCopyBufferToImage(command, uploads.back()->buffer, value.data->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                            uint32_t(copies.size()), copies.data());
@@ -298,7 +313,8 @@ namespace remix {
     // sRGB texels stay encoded: the shaders decode them (pow 2.2).
     const VkFormat format = !p.hdrMips.empty() ? VK_FORMAT_R32G32B32A32_SFLOAT : VK_FORMAT_R8G8B8A8_UNORM;
     const auto queryBegin = std::chrono::steady_clock::now();
-    uint32_t skip = textureMipSkip(p.width, p.height, available);
+    // A dynamic texture keeps every level: its updates are made for all of them.
+    uint32_t skip = source && source->dynamic ? 0 : textureMipSkip(p.width, p.height, available);
     textureCosts.query +=
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - queryBegin).count();
     std::unique_ptr<Image> allocated;

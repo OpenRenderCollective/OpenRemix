@@ -290,14 +290,12 @@ namespace remix {
             preview[i] = uint8_t(std::clamp(values[i], 0.f, 1.f) * 255);
         }
       }
-      // Generated mips are made again from the new level 0: all of it is new.
-      const bool mipped = p.mips.size() > 1;
-      if (mipped) {
-        p.mips.resize(1);
-        generateMips(p);
-      }
-      const uint32_t region[4] = {mipped ? 0 : x + x0, mipped ? 0 : y + first, mipped ? p.width : x + x1,
-                                  mipped ? p.height : y + last};
+      // Generated mips are made again where level 0 changed; the region
+      // stays level 0's (each level uploads its part of it).
+      if (x1 <= x0)
+        return; // the rows differed in nothing after all
+      const uint32_t region[4] = {x + x0, y + first, x + x1, y + last};
+      updateMips(p, region[0], region[1], region[2], region[3]);
       if (updates.dirty[2] <= updates.dirty[0] || updates.dirty[3] <= updates.dirty[1]) {
         std::copy_n(region, 4, updates.dirty);
       } else {
