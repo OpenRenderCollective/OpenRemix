@@ -1,123 +1,32 @@
 #include "diffuse-residual.glsl"
-#include "directional-fields.glsl"
-#include "probe-batch.glsl"
-bool emitterAbovePlane(Light light, vec3 p, vec3 n) {
-  if (light.radiance.w <= 0)
-    return dot(light.positionRadius.xyz - p, n) + light.positionRadius.w > 0;
-  return max(max(dot(light.corners[0].xyz - p, n), dot(light.corners[1].xyz - p, n)),
-             dot(light.corners[2].xyz - p, n)) > 0;
-}
-BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, float roughness, float metallic,
-                vec4 directIrradiance, BakedReceiver receiver, vec3 dielectricF0, vec3 receiverNormal,
-                bool aggregateReceiver) {
-  vec4 surfaceLightmap = receiver.coordinate;
-  Light light = lights[index];
-  bool aggregateDiffuse = aggregateReceiver && light.corners[2].w > .5;
-  vec3 delta = light.positionRadius.xyz - p;
-  float distance2 = max(dot(delta, delta), 1e-8), distance = sqrt(distance2);
-  float range = light.shaping.z;
-  if (distance >= range)
-    return BrdfLobes(vec3(0), vec3(0));
-  // Both analytic lobes vanish below the shading horizon. Retained direct SH
-  // can still represent the part of a finite emitter crossing that horizon,
-  // so reject only when its entire shape is below the plane as well.
-  if (dot(n, delta) <= 0 && !emitterAbovePlane(light, p, n))
-    return BrdfLobes(vec3(0), vec3(0));
-  uint cachedVisibility = staticLightVisibility(receiver.chart, uint(light.shaping.w));
-  if (cachedVisibility == 1u)
-    return BrdfLobes(vec3(0), vec3(0));
-  uint directChannel = lightChannel(receiver.directLights, uint(light.shaping.w));
-  bool bakedDiffuse = directChannel < 4u && directIrradiance[min(directChannel, 3u)] >= 0;
-  bool movingShadow = movingLocalShadowRequired(light);
-#ifdef ZERO_DIFFUSE_MATERIAL
-  // Scalar visibility and specular remain; this material has no diffuse energy.
-  bool probeCorrection = false;
-#else
-  bool probeCorrection = aggregateDiffuse && movingShadow;
-#endif
-  float attributedDiffuse = bakedDiffuse ? directIrradiance[min(directChannel, 3u)] : 0;
-  if (indexedSurfaceDirect() && (!aggregateDiffuse || probeCorrection))
-    bakedDiffuse = surfaceDirectionalField(receiver.chart, uint(light.shaping.w), surfaceLightmap, n, receiver.bounds, attributedDiffuse);
-  vec3 l = delta / distance;
-  float shape = emitterConeWeight(light.directionCone.xyz, light.directionCone.w,
-                                   light.shaping.x, light.shaping.y, -l);
-  // A zero analytic response needs no filtered masks or shadow filtering.
-  // Retained direct SH can still contain a finite emitter crossing the cone
-  // boundary even when its centre response vanishes.
-  if (shape <= 0 && !bakedDiffuse && !(probeCorrection && surfaceLightmap.w < .5))
-    return BrdfLobes(vec3(0), vec3(0));
-  // Clear is recorded only when every receiver sample is exactly one. Its
-  // working channel has already been released, so no filtered lookup is needed.
-  float visibility = 1;
-  uint channel;
-  bool baked = cachedVisibility == 2u;
-  if (!baked)
-    baked = bakedLightVisibility(surfaceLightmap, receiver.bounds, receiver.lights,
-                                uint(light.shaping.w), visibility, channel);
-  if (!baked)
-    baked = overflowLightVisibility(receiver.chart, uint(light.shaping.w), surfaceLightmap, receiver.bounds, visibility);
-  if (!FullyMappedReceiver && !baked && surfaceLightmap.w < .5) {
-    float probeVisibility, probeDiffuse;
-    // Aggregate corrections use the same normal-dependent probe stencil as
-    // bakedIrradiance; otherwise normal maps could subtract another mixture.
-    if (!probeCorrection && batchedProbeVisibility(p, aggregateDiffuse ? n : receiverNormal,
-                                                   uint(light.responseWeights.z), probeVisibility)) {
-      baked = true;
-      visibility = probeVisibility;
-    } else if (bakedLocalProbeResponse(p, aggregateDiffuse ? n : receiverNormal, n, uint(light.shaping.w), probeCorrection,
-                                 probeVisibility, probeDiffuse)) {
-      baked = true;
-      visibility = probeVisibility;
-      if (probeDiffuse >= 0) {
-        bakedDiffuse = true;
-        attributedDiffuse = probeDiffuse;
-      }
-    }
-  }
-  // Probe SH, like surface SH, may retain a finite emitter crossing the cone.
-  if (shape <= 0 && !bakedDiffuse)
-    return BrdfLobes(vec3(0), vec3(0));
-  if (!bakedDiffuse && visibility <= 0)
-    return BrdfLobes(vec3(0), vec3(0));
-  // A covered bake already contains static visibility. Without a moving
-  // caster, its correction is exactly zero: neither unit SH nor PCF is needed.
-  float moving = baked && !movingShadow ? 1 : localShadowVisibility(light, p, receiverNormal, !baked);
-  if (moving <= 0 && !aggregateDiffuse)
-    return BrdfLobes(vec3(0), vec3(0));
-  float solidAngle;
-  if (light.radiance.w > 0) {
-    vec3 normal =
-        cross(light.corners[1].xyz - light.corners[0].xyz, light.corners[2].xyz - light.corners[0].xyz);
-    float area = .5 * length(normal);
-    float cosine = dot(normal / max(2 * area, 1e-8), -l);
-    if (light.radiance.w > 1)
-      cosine = abs(cosine);
-    solidAngle = area * max(cosine, 0) / distance2;
-  } else
-    solidAngle = 2 * Pi * sphereOneMinusCos(distance2, light.positionRadius.w);
-  float fade = pow(clamp(1 - pow(distance / range, 4), 0, 1), 2);
-  BrdfLobes response = brdfLobes(base, roughness, metallic, n, v, l, dielectricF0);
-  // Truncated SH can ring below the receiver plane. Clip a wholly hidden
-  // emitter analytically while allowing a finite emitter to cross the horizon.
-  float unitDiffuse = bakedDiffuse ? (emitterAbovePlane(light, p, n) ? attributedDiffuse : 0)
-                                   : max(dot(n, l), 0) * solidAngle * shape * visibility;
-  // Missing attributed coverage is not evidence that the aggregate contains
-  // this analytic estimate. Do not subtract unproven energy from other lights.
-  // Automatic aggregate selection must supply correction coverage first.
-  if (aggregateDiffuse && !baked && !bakedDiffuse)
-    unitDiffuse = 0;
+#include "light-sample.glsl"
+
+// Standard PBR response is separate from light transport and visibility.
+BrdfLobes shadeStandardLocalLight(LocalLightSample lighting, vec3 n, vec3 v,
+                                  vec3 base, float roughness, float metallic, vec3 dielectricF0) {
+  BrdfLobes response = brdfLobes(base, roughness, metallic, n, v, lighting.direction, dielectricF0);
   // The aggregate SH is irradiance, shaded by the same Lambertian material
   // weight as the ambient term. Keep its moving-caster correction in those
   // units instead of adding another view-dependent analytic diffuse lobe.
-  vec3 diffuseWeight = aggregateDiffuse ? base * (1 - metallic) / Pi : response.diffuse;
-  vec3 diffuse = diffuseResidual(diffuseWeight * unitDiffuse, moving, aggregateDiffuse);
-  vec3 specular = response.specular * (solidAngle * shape * visibility);
+  vec3 diffuseWeight = lighting.aggregateDiffuse ? base * (1 - metallic) / Pi : response.diffuse;
+  vec3 diffuse = diffuseResidual(diffuseWeight * lighting.diffuseIrradiance, lighting.movingVisibility, lighting.aggregateDiffuse);
+  vec3 specular = response.specular * lighting.analyticWeight;
   // SelectedAggregate has a separate highlight weight. Its shadow-map strength
   // must remain independent. Uncovered receivers retain the analytic fallback.
-  if (aggregateReceiver && light.corners[2].w == 3)
-    specular *= light.responseWeights.x;
+  if (lighting.selectedHighlight)
+    specular *= lighting.highlightWeight;
   // Aggregate transport integrates the physical emitter without the runtime
   // influence fade. Its subtraction must use those same radiometric units.
-  return BrdfLobes(diffuse * light.radiance.rgb * (aggregateDiffuse ? 1 : fade),
-                   specular * light.radiance.rgb * (fade * moving));
+  return BrdfLobes(diffuse * lighting.radiance * (lighting.aggregateDiffuse ? 1 : lighting.influence),
+                   specular * lighting.radiance * (lighting.influence * lighting.movingVisibility));
+}
+
+BrdfLobes localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 base, float roughness, float metallic,
+                vec4 directIrradiance, BakedReceiver receiver, vec3 dielectricF0, vec3 receiverNormal,
+                bool aggregateReceiver) {
+  const bool frontFacingOnly = true;
+#define LOCAL_LIGHT_MISS return BrdfLobes(vec3(0), vec3(0))
+#include "local-light-query.glsl"
+#undef LOCAL_LIGHT_MISS
+  return shadeStandardLocalLight(lighting, n, v, base, roughness, metallic, dielectricF0);
 }

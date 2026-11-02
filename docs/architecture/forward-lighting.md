@@ -412,3 +412,13 @@ records. Synthetic placement comparisons cover dense/sparse inputs and open/BSP
 rooms, with identical origin/bounds/count identities. This is CPU preparation
 work, not a GPU frame-time or complete bake-time result; small-budget copy costs
 and representative map qualification remain part of performance acceptance.
+
+
+### Source 2 / s&box shader-facing API direction
+
+The [shading API design](shading-api.md) records the audited reference and current
+contracts. Provider resource ownership alone does not finish the requested API.
+Materials evaluate Surface values, shading models apply BRDF/composition, and
+lighting-source queries supply lighting/visibility independently of material response.
+The first local-light query split is in place; sunlight, ambient/reflection queries,
+Count/From-style receiver access, composition and host shader programs remain work.

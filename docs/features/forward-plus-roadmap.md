@@ -1,3 +1,10 @@
+# Shader API priority: Source 2 / s&box - 2026-11-02
+
+- Follow the reference material -> shading model -> lighting-source structure, including custom shading fetching shared lighting. Resource ownership refactors alone do not complete this requirement. See docs/architecture/shading-api.md for the audited revision and API plan.
+- First local-light query separates transport/visibility from the standard PBR response. Preserve scalable indices and mixed-shadow ownership; do not inherit the reference helper's four-slot storage constraint.
+- Next: receiver Count/From-style facade, sun/ambient/reflection queries, explicit direct/indirect terms and common standard/custom composition. Keep HLSL/.shader host program support opt-in and engine-agnostic.
+- Independent cache/publication and broad performance acceptance remain required; the cache work is not discarded.
+
 # Spatial-input performance study - 2026-11-02
 
 - Placement inputs now retain only usable positions/original IDs, removing the separate task array and unused grid slots. Original-index tie-breaking survives task reordering.
