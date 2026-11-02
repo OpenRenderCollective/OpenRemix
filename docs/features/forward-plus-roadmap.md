@@ -110,6 +110,12 @@ Still required for the complete modularity/performance objective:
   quality and draw counts. The final baseline was retaken after an observer
   request-file lock; failed/incomplete sessions are excluded and the install was
   restored. Broader map/provider coverage and the 300 FPS target remain open.
+  Current-head Construct indoor A/B/B/A adds second-map coverage: current total
+  GPU medians 8.63-8.64 ms unarmed / 9.62-9.68 ms weapon lie within baseline
+  session drift (8.52-8.68 / 9.52-9.71); CPU ranges overlap. Quality, hashes and
+  draw counts match. Opaque world remains the largest GPU scope, with no static
+  shadow refreshes. This does not prove equivalence or exclude small regressions;
+  alternative provider modes and wider map coverage still need qualification.
 - Continue checking unused experiment paths before removal. Referenced low-level
   diagnostic modes and legacy aliases are not automatically dead code.
 
