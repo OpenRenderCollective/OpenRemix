@@ -6,6 +6,7 @@
 namespace remix::forward::probes {
   AutomaticCapture::Dispatch AutomaticCapture::record(VkCommandBuffer command, uint32_t slot,
       bake::Transport &transport, bake::Budget &budget, const CaptureConfig &config) {
+    requirePreparing();
     const auto step = nextStep();
     const float milliseconds = transport.timingSupported() ? config.gpuBudgetMs : 0;
     auto count = [&](bake::Work kind, uint32_t remaining, uint32_t samples, uint32_t bounces = 1) {

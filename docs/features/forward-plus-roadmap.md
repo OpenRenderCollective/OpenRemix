@@ -1,3 +1,9 @@
+## Immutable completed reflection payload - 2026-11-02
+
+- Completed raw captures/filtered HDR data have an independent immutable CapturePayload owner. Default cache snapshots retain it without copying large arrays; standalone/index adapters use the same payload type. Mutation is rejected after retention.
+- Legacy combined cache bytes/keys are preserved; no additional disk writes or per-frame CPU payload retention. Shared storage is charged to persistence admission. There is preparation-time allocation/fixed metadata transfer, so no allocation-free claim.
+- Remaining: default persistence/scheduler migration, physical cache dedup, broader technique ownership/dependency work and full CPU/GPU/map qualification. Playable unchanged.
+
 ## Default reflection image handoff - 2026-11-02
 
 - Diffuse denoising/atlas/style/surface preparation moved into finishDiffuseAssets. One release/acquire handoff publishes a filtered reflection image while the same worker finishes diffuse assets; later volume activation reuses the image without another upload.

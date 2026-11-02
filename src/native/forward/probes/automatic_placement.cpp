@@ -6,6 +6,7 @@
 namespace remix::forward::probes {
   void AutomaticCapture::planSites(const scene::BakeScene &source, PlacementSeeds input,
                                     uint32_t count, std::stop_token cancelled) {
+    requirePreparing();
     seeds = std::move(input);
     sitesPlanned = true;
     const auto sites = candidateSeedSites(source, seeds, count, cancelled);
@@ -16,6 +17,7 @@ namespace remix::forward::probes {
   }
   void AutomaticCapture::fit(const scene::BakeScene &source, uint32_t count,
                               float detailTolerance, std::stop_token cancelled) {
+    requirePreparing();
     candidatesPlanned = true;
     if (validateSeeds) {
       std::erase_if(seeds.points, [&](const PlacementSeeds::Point &seed) {
@@ -36,6 +38,7 @@ namespace remix::forward::probes {
   }
   void AutomaticCapture::planSites(const scene::BakeScene &source, uint32_t count,
                                     std::stop_token cancelled) {
+    requirePreparing();
     if (count > maxProbes) throw std::invalid_argument("Too many standalone reflection probes");
     auto input = count ? geometricSeedCandidates(source, std::clamp(count * 16, 64u, 4096u), cancelled)
                        : PlacementSeeds{};

@@ -3,6 +3,7 @@
 #include "forward/bake/probe_visibility.h"
 #include "forward/mixed/data.h"
 #include "forward/probes/data.h"
+#include "forward/probes/capture_payload.h"
 #include "forward/probes/capture_config.h"
 #include <filesystem>
 #include <memory>
@@ -59,6 +60,14 @@ namespace remix::forward::bake::cache {
     mixed::Plan mixed;
     std::vector<probes::Capture> captures;
     probes::Data specular;
+    // Runtime snapshots retain a completed reflection component. Inline fields
+    // remain the owning destination for legacy cache decoding and CPU callers.
+    std::shared_ptr<const probes::CapturePayload> reflectionOwner;
+    const std::vector<probes::Capture> &reflectionCaptures() const {
+      return reflectionOwner ? reflectionOwner->captures : captures;
+    }
+    const probes::Data &reflectionData() const { return reflectionOwner ? reflectionOwner->data : specular; }
+
     std::vector<uint16_t> pixels;
     std::vector<uint32_t> styles;
     std::optional<ProbeVisibility> localProbes;

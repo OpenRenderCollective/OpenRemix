@@ -1,9 +1,11 @@
 #pragma once
 #include "forward/probes/capture_work.h"
 #include "forward/probes/capture_config.h"
+#include "forward/probes/capture_payload.h"
 #include "forward/probes/placement_seeds.h"
 #include "forward/probes/evaluation.h"
 #include "forward/probes/image_asset.h"
+#include <stdexcept>
 
 namespace remix::forward::bake { class Transport; class Budget; }
 
@@ -48,6 +50,14 @@ namespace remix::forward::probes {
                             std::stop_token cancelled);
     void prepareRays(std::stop_token cancelled);
     void restoreCapture(std::vector<Capture> cached, Data data, std::stop_token cancelled = {});
+    const std::vector<Capture> &captureView() const { return m_payload ? m_payload->captures : captures; }
+    const Data &filteredView() const { return m_payload ? m_payload->data : filtered; }
+    // Worker-only completion boundary. Moves vector storage once; subsequent
+    // readers/persistence retain the immutable payload without copying arrays.
+    const std::shared_ptr<const CapturePayload> &retainPayload() {
+      if (!m_payload) m_payload = std::make_shared<CapturePayload>(CapturePayload{std::move(captures), std::move(filtered)});
+      return m_payload;
+    }
     bool cachedRadiance = false;
     void complete(std::stop_token cancelled); // retain provenance once, then release ray scratch
     void filter(VkPhysicalDevice physical, VkDevice device, std::stop_token cancelled);
@@ -69,5 +79,10 @@ namespace remix::forward::probes {
     std::shared_ptr<ImageAsset> image;
     uint32_t captureNext = 0, captureReceived = 0;
     bool capturePlanned = false;
+  private:
+    std::shared_ptr<const CapturePayload> m_payload;
+    void requirePreparing() const {
+      if (m_payload) throw std::logic_error("Completed reflection payload is immutable");
+    }
   };
 }

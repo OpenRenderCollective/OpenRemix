@@ -2,6 +2,7 @@
 #include "forward/cache_persistence.h"
 #include "forward/probes/cache_codec.h"
 #include "forward/probes/capture_config.h"
+#include "forward/probes/capture_payload.h"
 #include <optional>
 
 namespace remix::forward::probes::standalone_cache {
@@ -10,10 +11,7 @@ struct Device {
   cache_codec::Limits limits;
   std::array<uint8_t, 16> uuid{};
 };
-struct Snapshot {
-  std::vector<Capture> captures;
-  Data data;
-};
+using Snapshot = CapturePayload;
 constexpr uint64_t maximumBytes = 256ull << 20;
 // Versions placement/filtering and fixed transport defaults. No diffuse
 // settings, execution budget, runtime handles or GPU objects enter this key.

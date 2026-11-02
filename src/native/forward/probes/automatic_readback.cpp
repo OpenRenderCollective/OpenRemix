@@ -4,6 +4,7 @@
 
 namespace remix::forward::probes {
   bool AutomaticCapture::observe(Step step, uint32_t first, std::span<const bake::Result> results) {
+    if (m_payload) return false;
     if (step == Step::CheckGeometry) {
       if (!projectionAudit || !projectionAudit->observe(first, results)) return false;
       geometryReceived += uint32_t(results.size());

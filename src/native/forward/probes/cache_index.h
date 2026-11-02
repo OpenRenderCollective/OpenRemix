@@ -1,6 +1,7 @@
 #pragma once
 #include "forward/cache_file.h"
 #include "forward/probes/cache_codec.h"
+#include "forward/probes/capture_payload.h"
 #include <optional>
 #include <random>
 #include <sstream>
@@ -10,10 +11,7 @@ namespace remix::forward::probes::cache_index {
     uint64_t containerKey = 0;
     cache_io::Section section;
   };
-  struct Snapshot {
-    std::vector<Capture> captures;
-    Data data;
-  };
+  using Snapshot = CapturePayload;
   inline std::filesystem::path path(const std::filesystem::path &directory, uint64_t key,
                                      const char *suffix = ".reflection-index") {
     std::ostringstream name;

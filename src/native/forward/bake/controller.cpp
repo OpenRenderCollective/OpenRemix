@@ -219,7 +219,7 @@ namespace remix::forward::bake {
           hasDirectDiffuse = cached->directDiffuse;
           hasSun = cached->sun;
           received = uint32_t(grid.tasks.size());
-          reflections.inputHash = probes::CaptureWork::inputHash(reflections.captures, cancellation.get_token());
+          reflections.inputHash = probes::CaptureWork::inputHash(reflections.captureView(), cancellation.get_token());
           if (!source->charts.empty())
             surfaceGeometry = std::make_shared<lightmap::Geometry>(
                 physical, device, source, surfaceLayout, cancellation.get_token(),
@@ -982,14 +982,14 @@ namespace remix::forward::bake {
           m_pipelines->prepare("forward-probe-selection-" + std::to_string(++generation), [owner, config, captureCount] {
             owner->reflections.select(*owner->source, captureCount, config.reflectionResolution,
                                         config.reflectionDetailTolerance, owner->cancellation.get_token());
-            owner->receiverAudit = probes::prepareReceiverAudit(*owner->source, owner->reflections.captures,
+            owner->receiverAudit = probes::prepareReceiverAudit(*owner->source, owner->reflections.captureView(),
                                                                owner->cancellation.get_token());
-            if (!owner->cacheFile.empty() && !owner->reflections.captures.empty()) {
+            if (!owner->cacheFile.empty() && !owner->reflections.captureView().empty()) {
               const probes::CaptureConfig captureConfig{.reflectionResolution = config.reflectionResolution,
                   .textureResolution = config.textureResolution, .samples = config.samples, .bounces = config.bounces};
               owner->reflectionCacheKey = cache::reflectionKey(owner->source->contentHash,
-                  probes::CaptureWork::planHash(owner->reflections.captures, owner->cancellation.get_token()),
-                  owner->reflections.captures, captureConfig, owner->cacheDevice,
+                  probes::CaptureWork::planHash(owner->reflections.captureView(), owner->cancellation.get_token()),
+                  owner->reflections.captureView(), captureConfig, owner->cacheDevice,
                   config.styledIndirect && !styleIds(*owner->source).empty(), owner->mixedLights->lights.directLighting);
               auto cached = probes::cache_index::read(owner->cacheFile.parent_path(), owner->reflectionCacheKey,
                   {captureCount, config.reflectionResolution, owner->cacheDevice.imageSize,
@@ -1021,13 +1021,14 @@ namespace remix::forward::bake {
             // Publication must not scan this potentially large buffer again.
             owner->reflections.complete(owner->cancellation.get_token());
             dumpPhaseFingerprint("transport", owner->source->contentHash, owner->grid, owner->surfaceLayout, owner->surfaces,
-                                 owner->sun, owner->reflections.captures);
+                                 owner->sun, owner->reflections.captureView());
             dumpVisibilityReport(*owner->mixedLights, owner->surfaceLayout,
                                   Options{}.bias / owner->source->sceneScale, owner->cancellation.get_token());
             owner->finishStage.store(Job::FinishStage::Reflections, std::memory_order_relaxed);
             owner->reflections.filter(physical, device, owner->cancellation.get_token());
+            owner->reflections.retainPayload();
             owner->reflectionReady.store(true, std::memory_order_release);
-            owner->finishDiffuseAssets(physical, device, config, owner->reflections.captures);
+            owner->finishDiffuseAssets(physical, device, config, owner->reflections.captureView());
           });
       status(REMIXAPI_BAKE_PREPARING_EXT, "Finishing baked lighting assets");
       return;
@@ -1057,7 +1058,7 @@ namespace remix::forward::bake {
         m_job->surfaceReceived == 0)
       throw std::runtime_error("Bake contains no usable irradiance probes");
     auto volume = std::make_shared<Volume>();
-    probes::dumpCaptures(m_hash, m_job->reflections.captures);
+    probes::dumpCaptures(m_hash, m_job->reflections.captureView());
     volume->directDiffuse = m_job->hasDirectDiffuse;
     if (m_job->hasSun || std::any_of(grid.probes.begin(), grid.probes.end(),
                                     [](const auto &p) { return p.irradiance[7][3] > .5f; }))
@@ -1067,10 +1068,10 @@ namespace remix::forward::bake {
     volume->hash = m_hash;
     volume->reflectionEvidence = m_job->reflectionEvidence;
     volume->localReflections = m_job->localReflections;
-    if (!m_job->reflections.captures.empty()) {
+    if (!m_job->reflections.captureView().empty()) {
       volume->content.captureInputs = m_job->reflections.inputHash;
       uint64_t captured = 1469598103934665603ull;
-      for (const auto &capture : m_job->reflections.captures)
+      for (const auto &capture : m_job->reflections.captureView())
         for (const auto &color : capture.radiance)
           captured = scene::hashBytes(color.data(), 3 * sizeof(float), captured);
       volume->content.captureRadiance = captured | 1;
@@ -1117,7 +1118,7 @@ namespace remix::forward::bake {
     const size_t baseBytes = legacyBytes + transferBytes;
     const size_t localOffset = (baseBytes + styleBytes + 15) & ~size_t(15);
     const size_t bytes = localOffset + localBytes;
-    const auto specular = probes::serialize(m_job->reflections.filtered);
+    const auto specular = probes::serialize(m_job->reflections.filteredView());
     probes::dumpPublishedData(".probes-published.bin", specular.data(), specular.size());
     probes::dumpPublishedData(".surfaces-published.bin", m_job->surfacePixels.data(), m_job->surfacePixels.size() * sizeof(uint16_t));
     probes::dumpPublishedData(".surface-charts.bin", m_job->surfaceLayout.charts.data(),
@@ -1487,9 +1488,10 @@ namespace remix::forward::bake {
             job->prepareResources(physical, device, config, lightCutoff, queueFamily);
             if (job->cacheHit) {
               job->reflections.image = std::make_shared<probes::ImageAsset>(
-                  physical, device, job->reflections.filtered, job->cancellation.get_token());
+                  physical, device, job->reflections.filteredView(), job->cancellation.get_token());
               job->restoreLocalReflections(physical, device, config);
               job->prepareLocalReflectionUpgrade(physical, device, config, queueFamily);
+              job->reflections.retainPayload();
               job->reflectionReady.store(true, std::memory_order_release);
             }
           };

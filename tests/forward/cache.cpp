@@ -165,6 +165,21 @@ int main(int argc, char **argv) {
   auto load = [&] { return bc::read(file, identity, source, config, device); };
   require(!load(), "Missing cache is an ordinary miss");
   require(save(), "Completed lighting is saved");
+  {
+    bc::Snapshot owned;
+    auto reflection = std::make_shared<f::probes::CapturePayload>();
+    reflection->captures = data.captures; reflection->data = data.specular;
+    owned.reflectionOwner = std::move(reflection);
+    const auto ownedFile = root / "shared-owner.bake";
+    require(bc::write(ownedFile, identity,
+        {data.grid, data.layout, data.mixed, owned.reflectionCaptures(), owned.reflectionData(), data.pixels,
+         data.surfaceSamples, data.directDiffuse, data.sun}), "Shared-owner cache write failed");
+    auto bytes = [](const auto &path) {
+      std::ifstream input(path, std::ios::binary);
+      return std::string(std::istreambuf_iterator<char>(input), {});
+    };
+    require(bytes(file) == bytes(ownedFile), "Shared reflection ownership changed legacy cache wire bytes");
+  }
   auto restored = load();
   require(restored && restored->pixels == data.pixels &&
               f::probes::serialize(restored->specular) == f::probes::serialize(data.specular) &&

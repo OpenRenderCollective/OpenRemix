@@ -73,6 +73,26 @@ void testLocalCaptureWork() {
 void testCaptureWork() {
   testLocalCaptureWork();
   {
+    std::shared_ptr<const p::CapturePayload> retained;
+    {
+      p::AutomaticCapture owner;
+      owner.captures.push_back(capture());
+      owner.filtered.texels.resize(16, {1,2,3,4});
+      const auto *raw = owner.captures[0].radiance.data();
+      const auto *filtered = owner.filtered.texels.data();
+      retained = owner.retainPayload();
+      require(owner.captures.empty() && owner.filtered.texels.empty() &&
+                  owner.captureView()[0].radiance.data() == raw && owner.filteredView().texels.data() == filtered,
+              "Payload retention copied arrays or kept duplicate preparing storage");
+      bool immutable = false;
+      try { owner.fit(remix::scene::BakeScene{}, 0, .5f, {}); } catch (const std::logic_error &) { immutable = true; }
+      require(immutable && !owner.observe(p::AutomaticCapture::Step::Capture, 0, {}),
+              "Completed reflection payload accepted mutation/readback");
+    }
+    require(retained->captures.size() == 1 && retained->data.texels.size() == 16,
+            "Retained payload depended on capture scheduler lifetime");
+  }
+  {
     remix::scene::BakeScene source;
     source.hasBounds = true;
     source.minimum = {-500,-1,-1}; source.maximum = {500,1,1};

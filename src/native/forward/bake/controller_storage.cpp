@@ -111,8 +111,7 @@ namespace remix::forward::bake {
     snapshot->mixed.occlusion = std::move(mixedLights->occlusion);
     snapshot->mixed.masks = std::move(mixedLights->masks);
     snapshot->reflectionKey = reflectionCacheKey;
-    snapshot->captures = std::move(reflections.captures);
-    snapshot->specular = std::move(reflections.filtered);
+    snapshot->reflectionOwner = reflections.retainPayload();
     snapshot->pixels = std::move(surfacePixels);
     snapshot->styles = std::move(styleWords);
     snapshot->localProbes = std::move(localProbes);

@@ -9,8 +9,8 @@ View view(const Snapshot &s) {
   return {s.grid,
           s.layout,
           s.mixed,
-          s.captures,
-          s.specular,
+          s.reflectionCaptures(),
+          s.reflectionData(),
           s.pixels,
           s.surfaceSamples,
           s.directDiffuse,
@@ -48,6 +48,13 @@ uint64_t Persistence::retainedCharge(const Snapshot &s) {
     bytes += storage(mapping.texcoords);
   for (const auto &capture : s.captures)
     bytes += storage(capture.radiance);
+  if (s.reflectionOwner) {
+    const auto &reflection = *s.reflectionOwner;
+    bytes += sizeof(probes::CapturePayload) + 64 +
+             storage(reflection.captures) + storage(reflection.data.texels);
+    for (const auto &capture : reflection.captures)
+      bytes += storage(capture.radiance);
+  }
   // Private compressed containers expose logical storage. Charge twice their
   // size plus per-entry metadata to cover vector growth and identity tables.
   bytes += 2 * (s.mixed.occlusion.words().size_bytes() +

@@ -45,6 +45,32 @@ int main() {
   cache::Persistence bounded(withoutLocal, [](const auto &, uint64_t, const cache::View &) { return true; });
   require(!bounded.submit("oversized-local-reflections", 0, std::make_unique<cache::Snapshot>(withScratch)),
           "Local reflection storage cannot bypass the background memory budget");
+  {
+    auto reflection = std::make_shared<remix::forward::probes::CapturePayload>();
+    reflection->captures.resize(1);
+    reflection->captures[0].radiance.resize(384, {1,2,3,4});
+    reflection->data.texels.resize(64, {2,3,4,5});
+    const auto *raw = reflection->captures[0].radiance.data();
+    auto diffuse = std::make_shared<cache::Snapshot>();
+    const auto base = cache::Persistence::retainedCharge(*diffuse);
+    diffuse->reflectionOwner = reflection;
+    require(cache::Persistence::retainedCharge(*diffuse) >= base + sizeof(*reflection) +
+                reflection->captures[0].radiance.capacity() * sizeof(remix::forward::Vec4),
+            "Shared reflection storage bypassed persistence memory admission");
+    cache::Persistence snapshotWriter(cache::Persistence::retainedCharge(*diffuse),
+        [&](const auto &, uint64_t, const cache::View &data) {
+          require(data.captures[0].radiance.data() == raw && data.specular.texels.size() == 64,
+                  "Persistence copied or ignored the independent reflection owner");
+          return true;
+        });
+    require(snapshotWriter.submit("shared-reflection", 1, std::make_unique<cache::Snapshot>(*diffuse)),
+            "Shared reflection snapshot submission failed");
+    snapshotWriter.waitIdle();
+    std::weak_ptr<cache::Snapshot> weakDiffuse = diffuse;
+    diffuse.reset();
+    require(weakDiffuse.expired() && reflection->captures[0].radiance.data() == raw,
+            "Reflection payload retained diffuse ownership or lost its arrays");
+  }
   std::promise<void> started, release;
   auto released = release.get_future().share();
   std::vector<uint64_t> written;

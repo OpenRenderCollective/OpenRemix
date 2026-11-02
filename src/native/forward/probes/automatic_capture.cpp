@@ -8,6 +8,7 @@
 namespace remix::forward::probes {
   void AutomaticCapture::select(const scene::BakeScene &source, uint32_t count, uint32_t resolution,
                                  float detailTolerance, std::stop_token cancelled) {
+    requirePreparing();
     capturePlanned = true;
     if (projectionAudit) {
       candidateRegions = projectionAudit->finish();
@@ -18,12 +19,14 @@ namespace remix::forward::probes {
   }
   void AutomaticCapture::restoreProjection(const scene::BakeScene &source, float detailTolerance,
                                             std::stop_token cancelled) {
+    requirePreparing();
     // Derived overlap may change without invalidating captured radiance.
     configureInfluence(source, captures, detailTolerance, cancelled);
     for (size_t i = 0; i < captures.size(); ++i)
       filtered.header.probes[i] = projectionRecord(captures[i]);
   }
   void AutomaticCapture::prepareRays(std::stop_token cancelled) {
+    requirePreparing();
     std::vector<FittedRegion>().swap(candidateRegions);
     seeds = {}; // release spatial inputs before allocating capture rays
     work = CaptureWork(captures, cancelled);
@@ -31,6 +34,7 @@ namespace remix::forward::probes {
       inputHash = scene::fastHash(work.rays().data(), work.rays().size() * sizeof(bake::Point)) | 1;
   }
   void AutomaticCapture::restoreCapture(std::vector<Capture> cached, Data data, std::stop_token cancelled) {
+    requirePreparing();
     if (cached.size() != captures.size() || data.header.parameters[0] != captures.size()) return;
     for (size_t i = 0; i < captures.size(); ++i) {
       const auto expected = projectionInputRecord(captures[i]);
@@ -50,11 +54,13 @@ namespace remix::forward::probes {
     work = {}; // completed cached radiance needs no GPU capture submissions
   }
   void AutomaticCapture::complete(std::stop_token cancelled) {
+    requirePreparing();
     if (cancelled.stop_requested()) throw std::runtime_error("Reflection capture completion superseded");
     if (!cachedRadiance) work.complete(captures, cancelled);
     work = {};
   }
   void AutomaticCapture::filter(VkPhysicalDevice physical, VkDevice device, std::stop_token cancelled) {
+    requirePreparing();
     if (!cachedRadiance) {
       WorkerPool workers;
       filtered = probes::filter(captures, 128, cancelled, &workers);

@@ -16,9 +16,9 @@ namespace remix::forward::bake {
         const bool retry = !job.receiverRetried;
         job.receiverRetried = true;
         job.ticket = m_pipelines->prepare("forward-receiver-report-" + std::to_string(++receiverDiagnosticGeneration), [owner, retry] {
-          if (retry && probes::retryReceiverAudit(*owner->source, owner->reflections.captures, *owner->receiverAudit,
+          if (retry && probes::retryReceiverAudit(*owner->source, owner->reflections.captureView(), *owner->receiverAudit,
                                                  owner->cancellation.get_token())) return;
-          probes::dumpReceiverAudit(*owner->source, owner->reflections.captures, *owner->receiverAudit,
+          probes::dumpReceiverAudit(*owner->source, owner->reflections.captureView(), *owner->receiverAudit,
                                    owner->cancellation.get_token());
           owner->receiverSites = probes::prepareReceiverSites(*owner->source, *owner->receiverAudit,
                                                              owner->cancellation.get_token());
@@ -97,7 +97,7 @@ namespace remix::forward::bake {
           const auto owner = m_job;
           job.ticket = m_pipelines->prepare("forward-local-coverage-plan-" + std::to_string(++receiverDiagnosticGeneration), [owner] {
             if (owner->receiverFits)
-              owner->receiverFitCoverage = probes::prepareReceiverFitCoverage(*owner->source, owner->reflections.captures,
+              owner->receiverFitCoverage = probes::prepareReceiverFitCoverage(*owner->source, owner->reflections.captureView(),
                   *owner->receiverFits, owner->cancellation.get_token());
           });
           return true;
@@ -121,7 +121,7 @@ namespace remix::forward::bake {
         if (recordCoverageGuardDiagnostics(command, config)) return true;
         const auto owner = m_job;
         job.ticket = m_pipelines->prepare("forward-receiver-sites-" + std::to_string(++receiverDiagnosticGeneration), [owner] {
-          probes::dumpReceiverSites(*owner->source, owner->reflections.captures, *owner->receiverSites, owner->receiverSiteChecks.get(), owner->receiverFits.get(), owner->receiverFitCoverage.get(),
+          probes::dumpReceiverSites(*owner->source, owner->reflections.captureView(), *owner->receiverSites, owner->receiverSiteChecks.get(), owner->receiverFits.get(), owner->receiverFitCoverage.get(),
                                    owner->cancellation.get_token());
           if (owner->receiverFits && owner->receiverFitCoverage)
             owner->reflectionEvidence = std::make_shared<const probes::ReceiverCoverageEvidence>(

@@ -617,3 +617,28 @@ before diffuse completion, image identity through later activation and retained
 image validity on cancellation. No production timing hook or artificial delay
 is used. Default planning/receiver audits/combined persistence are still not a
 fully independent reflection controller.
+
+### Completed reflection payload ownership
+
+`probes::CapturePayload` is the common CPU representation of raw captures and
+filtered HDR data. Standalone cache and indexed-section adapters use the same
+payload type. It owns no diffuse grid/atlas, scene, scheduler, transport or GPU
+image. `AutomaticCapture::retainPayload` moves completed vector storage into an
+immutable shared owner once; `captureView` and `filteredView` select preparing
+or retained storage. Mutation/query APIs reject a retained payload. The baked
+profile retains it after filtering (and after cached projection restoration),
+before signaling image readiness.
+
+Runtime bake-cache snapshots retain that component through `reflectionOwner`;
+legacy cache decoding and CPU construction still use inline capture/specular
+fields. Snapshot read views choose the retained component when present. The disk
+adapter uses those views and includes shared storage/control allowance in its
+memory charge. No large capture/texel array is copied, no new cache file is
+written, and the existing combined container bytes/key remain unchanged.
+
+Retention adds a preparation-time payload/control allocation and transfers fixed
+metadata; it is not allocation-free. Image sampling and steady rendering do not
+retain or query this CPU payload. Default persistence still starts with the
+combined snapshot after diffuse activation. This separates storage ownership;
+it does not yet independently schedule the baked profile's reflection persistence
+or physically deduplicate its combined containers.
