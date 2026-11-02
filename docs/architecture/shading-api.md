@@ -240,6 +240,16 @@ bake scheduler still owns its worker ticket and the ordering around diffuse
 finishing. Standalone reflection capture supplies its own scheduler when diffuse
 baking is disabled.
 
+When supported live diffuse is selected, the resolved lighting plan disables the
+unused diffuse bake controller without changing saved bake preferences. Automatic
+cubemaps then use the standalone reflection scheduler; source selection, descriptor
+selection and reported scale follow the resolved diffuse provider rather than the
+saved bake-enable flag. Unsupported live GI still resolves to the configured baked
+fallback, and selecting Source 2 schedules the baked provider again. This avoids
+baking surface/probe fields merely to obtain cubemaps under a live diffuse provider.
+It does not yet separate baked direct ownership from an independently selected
+indirect-only GI field.
+
 The next lifecycle split must preserve these boundaries:
 
 - A prepared transport scene can have independent dispatch consumers and frame

@@ -25,6 +25,9 @@ namespace remix::forward::lighting {
       plan.baking.groupedStyledDirect = true;
     }
     if (liveGiActive) {
+      // The selected live provider replaces this pipeline; independent cubemap
+      // capture uses the reflection-only scheduler instead of baking unused fields.
+      plan.baking.enabled = false;
       plan.baking.groupedStyledDirect = false;
       plan.baking.aggregateDiffuse = false;
       plan.baking.fullyBakedLights = false;

@@ -136,7 +136,7 @@ int main() {
       require(requested == original && plan.baking.samples == 37 && plan.baking.reflectionResolution == 256,
               "Resolving techniques preserves requested settings and independent quality budgets");
       if (live)
-        require(!plan.bakedReceivers && !plan.selectedMixedLights && !plan.baking.aggregateDiffuse &&
+        require(!plan.baking.enabled && !plan.bakedReceivers && !plan.selectedMixedLights && !plan.baking.aggregateDiffuse &&
                     !plan.baking.groupedStyledDirect && !plan.baking.bakedGeometryLights,
                 "Live GI replaces aggregate ownership and selected baked responses for every request combination");
       if (!requested.enabled || !requested.directDiffuse)
@@ -344,11 +344,12 @@ int main() {
     options.baking.styledIndirect = true;
     const auto requested = options.baking;
     auto expected = requested;
+    expected.enabled = false;
     expected.aggregateDiffuse = false;
     expected.fullyBakedLights = false;
     expected.bakedGeometryLights = false;
     require(options.bakeConfiguration(true) == expected && options.baking == requested,
-            "Live GI retains attributed visibility without changing requested bake quality or preferences");
+            "Live GI stops unused bake work without changing requested bake quality or preferences");
     options.rtGI = true;
     require(options.bakeConfiguration(false) == requested,
             "Inactive or unsupported live GI preserves the requested aggregate bake policy");

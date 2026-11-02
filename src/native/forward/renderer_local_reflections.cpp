@@ -8,7 +8,7 @@ namespace remix::forward {
   const probes::Header *Renderer::Gpu::reflectionHeader() const {
     if (const auto selected = localSelections.active()) return &selected->image->header();
     if (const auto authored = authoredReflections->header()) return authored;
-    if (standaloneReflectionsUsed && !options.baking.enabled) {
+    if (standaloneReflectionsUsed && !techniquePlan.bakedDiffuse()) {
       const auto &standalone = standaloneReflections->source();
       if (standalone.image) return &standalone.image->header();
     }

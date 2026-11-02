@@ -28,7 +28,7 @@ namespace remix::forward {
       irradiance.patchCounts = volume->irradiancePatchCounts;
     }
     statistics.reflectionSceneScale = volume ? volume->sceneScale
-        : standaloneReflectionsUsed && !options.baking.enabled ? standaloneReflections->sceneScale()
+        : standaloneReflectionsUsed && !techniquePlan.bakedDiffuse() ? standaloneReflections->sceneScale()
                                                                               : baking->reflectionSceneScale();
     statistics.authoredReflections = authoredReflections->statistics();
     const auto header = reflectionHeader();

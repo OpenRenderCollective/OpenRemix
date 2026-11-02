@@ -1,3 +1,10 @@
+## 2026-11-03: resolved diffuse provider dependencies
+
+- Supported live ray-query diffuse now disables unused diffuse bake work while preserving saved Source 2 fallback settings.
+- Cubemaps under live diffuse use the independent reflection-only scheduler; automatic and authored work share admission priority.
+- Baked/live/baked transitions, independent live-GI cubemap publication, MSAA and unsupported-capability fallback are covered. Gameplay performance acceptance and independent direct/indirect ownership remain open.
+- Shader/provider contracts and remaining lifecycle work: `docs/architecture/shading-api.md`.
+
 ## s&box-style evaluated material initialization - 2026-11-02
 
 - Rechecked the pinned local s&box Material::Init / ShadingModelStandard::Shade reference. Evaluated Surface values now live separately from the packed PBR decoder, with resource-free initSurface defaults and explicit world-normal initialization. Documented a material-to-standard-model example.

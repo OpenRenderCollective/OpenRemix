@@ -738,13 +738,44 @@ namespace {
           require(false, "GI fixture surface lighting published");
           return image;
         };
+        // Publish the captured reference first, then replace its provider while
+        // preserving the controller so retirement is exercised across slots.
+        options.rtGI = false;
+        target.enableForward(options);
         auto image = ready();
         const size_t at = (32 * 64 + 32) * 4;
+        require(image[at] > 150 && image[at + 1] < 3, "GI fixture begins with captured red diffuse lighting");
+        options.rtGI = true;
+        target.enableForward(options, true);
+        image = render();
+        require(!target.forward->bakeController()->volume() &&
+                    !target.forward->statistics().baking.active,
+                "Live diffuse provider stops and retires unused baked diffuse publication");
         std::printf("Live GI %ux, reflections %u: RGB %u %u %u\n", samples, unsigned(reflections),
                     unsigned(image[at]), unsigned(image[at + 1]), unsigned(image[at + 2]));
         require(target.forward->statistics().rayGI.active && image[at] < 3 && image[at + 1] > 150 &&
                     image[at + 2] < 3,
-                "Live green GI replaces an active red surface lightmap instead of adding to it");
+                "Live green GI replaces the previous red surface lightmap instead of adding to it");
+        if (!reflections && samples == 1) {
+          const auto oldResolution = options.baking.reflectionResolution;
+          options.baking.reflectionProbes = 1;
+          options.baking.reflectionResolution = 8;
+          target.enableForward(options, true);
+          const auto cubeDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+          do {
+            render();
+            if (target.forward->standaloneCaptures()->source().image) break;
+            require(target.forward->standaloneCaptures()->status().empty(), "Live GI cubemap capture succeeds");
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+          } while (std::chrono::steady_clock::now() < cubeDeadline);
+          require(target.forward->standaloneCaptures()->source().image &&
+                      target.forward->statistics().reflectionProbes.parameters[0] == 1 &&
+                      target.forward->statistics().rayGI.active && !target.forward->bakeController()->volume(),
+                  "Live diffuse and independent cubemaps publish without a diffuse bake");
+          options.baking.reflectionProbes = 0;
+          options.baking.reflectionResolution = oldResolution;
+          target.enableForward(options, true);
+        }
         options.prism = true;
         target.forward->updateLighting(options);
         image = render();

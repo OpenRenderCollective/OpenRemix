@@ -14,6 +14,7 @@ namespace remix::forward::techniques {
     bool rayReflections = false, rayWater = false;
     bool rayScene = false, reflectionResolve = false;
     bool rayDiffuse() const { return diffuse == Diffuse::RayQueries; }
+    bool bakedDiffuse() const { return diffuse == Diffuse::SurfaceAndProbes; }
     bool operator==(const ResourcePlan &) const = default;
   };
   inline ResourcePlan resolveResources(const Options &options, Capabilities capabilities) {
