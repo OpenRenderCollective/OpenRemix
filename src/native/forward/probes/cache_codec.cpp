@@ -115,7 +115,7 @@ namespace remix::forward::probes::cache_codec {
               record.worldToLocal == capture.worldToLocal && record.minimum[3] == float(capture.priority));
     }
   }
-  void write(cache_io::Writer &output, std::span<const Capture> captures, const Data &data) {
+  template <typename Sink> void writePayload(Sink &output, std::span<const Capture> captures, const Data &data) {
     output.pod(uint32_t(captures.size()));
     for (const auto &capture : captures) {
       output.pod(uint32_t(capture.bounds.valid) | uint32_t(capture.influence.valid) << 1);
@@ -138,4 +138,13 @@ namespace remix::forward::probes::cache_codec {
     }
     output.array(data.texels);
   }
+  void write(cache_io::Writer &output, std::span<const Capture> captures, const Data &data) {
+    writePayload(output, captures, data);
+  }
+  cache_io::Section fingerprint(std::span<const Capture> captures, const Data &data, std::stop_token cancelled) {
+    cache_io::Fingerprint output(cancelled);
+    writePayload(output, captures, data);
+    return output.digest();
+  }
+
 }

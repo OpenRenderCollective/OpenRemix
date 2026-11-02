@@ -2,7 +2,7 @@
 #include "forward/bake/budget.h"
 #include "forward/bake/transport.h"
 #include "forward/probes/automatic_capture.h"
-#include "forward/probes/standalone_cache.h"
+#include "forward/probes/capture_cache.h"
 #include "raster/renderer.h"
 #include <algorithm>
 #include <atomic>
@@ -25,7 +25,7 @@ struct StandaloneCapture::Job {
   std::vector<bake::Result> readback;
   std::filesystem::path cacheFile;
   uint64_t cacheKey = 0;
-  std::unique_ptr<const standalone_cache::Snapshot> persistence;
+  std::unique_ptr<const capture_cache::Snapshot> persistence;
   bool cacheHit = false;
   bool prepared = false, filtering = false, failed = false;
 };
@@ -135,7 +135,7 @@ void StandaloneCapture::record(VkCommandBuffer command,
               throw std::length_error(
                   "Standalone reflection set exceeds image capacity");
             if (config.diskCache) {
-              standalone_cache::Device deviceIdentity{
+              capture_cache::Device deviceIdentity{
                   limits.vendorID,
                   limits.deviceID,
                   limits.driverVersion,
@@ -145,16 +145,16 @@ void StandaloneCapture::record(VkCommandBuffer command,
                    limits.limits.maxStorageBufferRange}};
               std::copy_n(limits.pipelineCacheUUID, deviceIdentity.uuid.size(),
                           deviceIdentity.uuid.begin());
-              job->cacheKey = standalone_cache::key(
+              job->cacheKey = capture_cache::standaloneKey(
                   job->source->contentHash,
                   bake::Transport::shaderFingerprint(), config, count,
                   detailTolerance, deviceIdentity);
               try {
-                job->cacheFile = standalone_cache::path(job->cacheKey);
+                job->cacheFile = capture_cache::standalonePath(job->cacheKey);
               } catch (const std::exception &) {
               }
               if (!job->cacheFile.empty()) {
-                auto cached = standalone_cache::read(
+                auto cached = capture_cache::read(
                     job->cacheFile, job->cacheKey, deviceIdentity.limits,
                     job->cancellation.get_token());
                 if (cached) {
@@ -198,7 +198,7 @@ void StandaloneCapture::record(VkCommandBuffer command,
       frame.sampled = m_active.image;
       if (config.diskCache && job.persistence && !job.cacheFile.empty()) {
         try {
-          (void)standalone_cache::persistence().submit(
+          (void)capture_cache::persistence().submit(
               job.cacheFile, job.cacheKey, std::move(job.persistence));
         } catch (const std::exception &) {
         } // optional disk writes never revoke publication
@@ -246,12 +246,12 @@ void StandaloneCapture::record(VkCommandBuffer command,
             owner->capture.complete(owner->cancellation.get_token());
             owner->capture.filter(physical, device,
                                   owner->cancellation.get_token());
-            auto snapshot = std::make_unique<standalone_cache::Snapshot>();
+            auto snapshot = std::make_unique<capture_cache::Snapshot>();
             snapshot->captures = std::move(owner->capture.captures);
             snapshot->data = std::move(owner->capture.filtered);
             if (owner->cacheKey &&
-                standalone_cache::retainedCharge(*snapshot) <=
-                    standalone_cache::maximumBytes)
+                capture_cache::retainedCharge(*snapshot) <=
+                    capture_cache::maximumBytes)
               owner->persistence = std::move(snapshot);
             // Declined payloads release raw/filter CPU storage on this worker.
           });

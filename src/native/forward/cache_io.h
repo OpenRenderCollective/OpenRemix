@@ -92,6 +92,34 @@ namespace remix::forward::cache_io {
       }
     }
   };
+  // Same byte/count/checksum contract as Writer, without a file or allocation.
+  class Fingerprint {
+  public:
+    explicit Fingerprint(std::stop_token cancelled = {}) : cancelled(cancelled) {}
+    template <typename T> void pod(const T &value) {
+      static_assert(std::is_trivially_copyable_v<T>);
+      bytes(&value, sizeof(value));
+    }
+    template <typename T> void array(const std::vector<T> &values) {
+      static_assert(std::is_trivially_copyable_v<T>);
+      pod(uint64_t(values.size()));
+      bytes(values.data(), values.size() * sizeof(T));
+    }
+    Section digest() const { return value; }
+  private:
+    std::stop_token cancelled;
+    Section value;
+    void bytes(const void *data, size_t count) {
+      if (count > maximumFileBytes - value.bytes) throw std::length_error("Cache fingerprint exceeds file budget");
+      const auto *p = static_cast<const char *>(data);
+      while (count) {
+        check(cancelled);
+        const size_t chunk = std::min(count, size_t(1u << 20));
+        value.checksum = scene::hashBytes(p, chunk, value.checksum);
+        value.bytes += chunk; p += chunk; count -= chunk;
+      }
+    }
+  };
   class Reader {
   public:
     Reader(const std::filesystem::path &path, uint64_t key, std::stop_token cancelled,
@@ -124,6 +152,7 @@ namespace remix::forward::cache_io {
         throw std::runtime_error("Bake cache checksum mismatch");
       input.seekg(std::streamoff(sizeof(Header) + offset));
       remaining = bytes;
+      fingerprint = {offset, bytes, checksum};
     }
     template <typename T> T pod() {
       static_assert(std::is_trivially_copyable_v<T>);
@@ -150,7 +179,9 @@ namespace remix::forward::cache_io {
       check(cancelled);
     }
 
+    Section verifiedFingerprint() const { return fingerprint; }
   private:
+    Section fingerprint;
     std::ifstream input;
     std::stop_token cancelled;
     uint64_t remaining = 0;

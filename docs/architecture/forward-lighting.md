@@ -642,3 +642,24 @@ retain or query this CPU payload. Default persistence still starts with the
 combined snapshot after diffuse activation. This separates storage ownership;
 it does not yet independently schedule the baked profile's reflection persistence
 or physically deduplicate its combined containers.
+
+### Reflection capture storage
+
+`probes/capture_cache` owns CPU-only reflection payload persistence. Standalone
+capture keys describe planner, shader, quality and device provenance; they do not
+include diffuse layout or execution budgets. `CapturePayload` remains the common
+raw capture and filtered HDR representation.
+
+The same module provides content-addressed shared blobs. Their keys include a
+storage domain/version, serialized byte count and checksum. Serialization and
+fingerprinting use one codec, so changes in raw radiance, filtered texels or
+projection metadata change the stored identity. Existing objects are checksum
+verified before reuse without allocating decoded capture arrays. Missing or
+corrupt objects are ordinary misses; writes are atomic and cancellation-aware.
+These are local cache integrity checks, not cryptographic authentication.
+
+Shared blobs are currently a tested storage primitive, not yet used by default
+combined diffuse cache files. Those retain their existing inline format and
+independent section index. Migrating them requires a versioned reference record,
+legacy reading, inline fallback, and tests proving reuse across diffuse layouts.
+No cache garbage collection or playable deployment is included in this step.

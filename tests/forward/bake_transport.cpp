@@ -1,7 +1,7 @@
 #include "forward/bake/transport.h"
 #include "forward/probes/automatic_capture.h"
 #include "forward/probes/standalone_capture.h"
-#include "forward/probes/standalone_cache.h"
+#include "forward/probes/capture_cache.h"
 #include "forward/bake/budget.h"
 #include "forward/bake/sun_depth_layout.h"
 #include "forward/bake/sun_depth.h"
@@ -521,7 +521,7 @@ namespace {
     const auto published = provider.source();
     require(published.image && published.sceneHash == world.resources.bakeScene()->contentHash &&
                 published.image->header().parameters[0] == 4, "Standalone reflection publication failed");
-    probes::standalone_cache::persistence().waitIdle(); // test only; publication never waits for disk
+    probes::capture_cache::persistence().waitIdle(); // test only; publication never waits for disk
     {
       probes::StandaloneCapture warm(fixture.physical, fixture.device, &pipelines, true, fixture.family);
       const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(30);

@@ -11,5 +11,7 @@ namespace remix::forward::probes::cache_codec {
   // renderer state. Existing 32-record disk blocks remain byte-compatible.
   void read(cache_io::Reader &input, std::vector<Capture> &captures, Data &data, Limits limits);
   void validate(std::span<const Capture> captures, const Data &data);
+  cache_io::Section fingerprint(std::span<const Capture> captures, const Data &data,
+                                  std::stop_token cancelled = {});
   void write(cache_io::Writer &output, std::span<const Capture> captures, const Data &data);
 }

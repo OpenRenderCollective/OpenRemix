@@ -1,3 +1,14 @@
+## Reflection storage module - 2026-11-02
+
+- Renamed standalone cache ownership to capture_cache, with explicit standalone planning keys and reusable content-addressed payload storage. Shared blobs reuse the existing codec and support checksum-verified reuse, corruption repair, cancellation and bounded files.
+- Native build and focused cache tests pass. No per-frame runtime selection changed. Default combined caches still embed captures; next migrate them to versioned blob references with legacy/inline fallback and physical reuse tests. No storage savings or performance acceptance claimed yet.
+
+## Foreground performance repeat - 2026-11-02
+
+- Crossfire 1080p, 4x MSAA, full-resolution SSR, completed bake: test build measured 259 FPS unarmed / 237 with weapon; historical baseline 277-280 / 246. Lighting hashes, rendering diagnostics and draw counts matched. Focus held throughout measured intervals.
+- Test GPU medians were 2.89-2.94 ms unarmed / 3.84-3.85 with weapon versus baseline 3.02-3.08 / 3.86-3.87. Lower GPU time did not translate to higher host FPS; no-overhead acceptance remains open. One run order is not equivalence proof.
+- Next: isolate host/presentation pacing and opaque/viewmodel cost. Installed DLL/configuration restored; unbuilt cache changes were not tested or deployed.
+
 ## Immutable completed reflection payload - 2026-11-02
 
 - Completed raw captures/filtered HDR data have an independent immutable CapturePayload owner. Default cache snapshots retain it without copying large arrays; standalone/index adapters use the same payload type. Mutation is rejected after retention.
