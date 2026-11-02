@@ -106,7 +106,7 @@ namespace remix::forward::bake {
     check(pipeline::createSampler(device, &info, nullptr, &sampler));
   }
   void Transport::Gpu::createDescriptors() {
-    const uint32_t images = uint32_t(textures.size());
+    const uint32_t images = prepared ? 0 : uint32_t(world->textures.size());
     const uint32_t sets = gpuFrameCount * (1 + uint32_t(FragmentUse::Count));
     const VkDescriptorPoolSize sizes[] = {{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, sets},
                                           {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, sets},
@@ -118,12 +118,12 @@ namespace remix::forward::bake {
                                               .poolSizeCount = 5,
                                               .pPoolSizes = sizes};
     check(vkCreateDescriptorPool(device, &poolInfo, nullptr, &pool));
-    const auto acceleration = rays.handle();
+    const auto acceleration = world->rays.handle();
     const VkWriteDescriptorSetAccelerationStructureKHR rayInfo{
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
         .accelerationStructureCount = 1,
         .pAccelerationStructures = &acceleration};
-    const VkDescriptorImageInfo image{sampler, atlas->view, VK_IMAGE_LAYOUT_GENERAL};
+    const VkDescriptorImageInfo image{sampler, world->atlas->view, VK_IMAGE_LAYOUT_GENERAL};
     for (auto &slot : slots) {
       slot.capacity = options.initialBatchPoints ? options.initialBatchPoints : options.batchPoints;
       slot.constants = buffer(nullptr, sizeof(Frame), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
@@ -134,9 +134,9 @@ namespace remix::forward::bake {
                                                  .descriptorSetCount = 1,
                                                  .pSetLayouts = &setLayout};
       check(vkAllocateDescriptorSets(device, &allocate, &slot.set));
-      const VkDescriptorBufferInfo buffers[] = {slot.constants->descriptor(), vertices->descriptor(),
-                                                triangles->descriptor(),      materials->descriptor(),
-                                                lights->descriptor(),         slot.points->descriptor(),
+      const VkDescriptorBufferInfo buffers[] = {slot.constants->descriptor(), world->vertices->descriptor(),
+                                                world->triangles->descriptor(),      world->materials->descriptor(),
+                                                world->lights->descriptor(),         slot.points->descriptor(),
                                                 slot.results->descriptor()};
       VkWriteDescriptorSet writes[10]{};
       writes[0] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
@@ -159,7 +159,7 @@ namespace remix::forward::bake {
                    .descriptorCount = 1,
                    .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                    .pImageInfo = &image};
-      const auto nodes = lightNodes->descriptor();
+      const auto nodes = world->lightNodes->descriptor();
       writes[9] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                    .dstSet = slot.set,
                    .dstBinding = 9,

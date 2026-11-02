@@ -50,7 +50,7 @@ namespace remix::forward::bake {
         uint64_t(tasks.size()) * samples > g.options.rayBudget)
       throw std::invalid_argument("Indexed visibility exceeds its point or sample limits");
     for (const auto &task : tasks) {
-      if (task.point >= receivers.size() || task.light >= g.source->lights.size() || task.light >= (1u << 24))
+      if (task.point >= receivers.size() || task.light >= g.world->source->lights.size() || task.light >= (1u << 24))
         throw std::invalid_argument("Invalid indexed visibility receiver or light");
       if (!validatedReceivers)
         for (const auto &values : {receivers[task.point].position, receivers[task.point].normal})

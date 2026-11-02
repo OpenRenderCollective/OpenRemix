@@ -371,6 +371,13 @@ namespace {
     transport.recordPrepare(fixture.command, world.resources);
     fixture.finish();
     const auto before = transport.memoryBytes();
+    {
+      bake::Transport premature;
+      bool rejected = false;
+      try { premature.initializeShared(transport); }
+      catch (const std::invalid_argument &) { rejected = true; }
+      require(rejected, "Shared transport accepted scene before build-input retirement");
+    }
     transport.releaseBuildInputs();
     require(transport.memoryBytes() < before,
             "Bake releases acceleration build storage after its preparation fence");
@@ -413,6 +420,42 @@ namespace {
     transport.read(0, {&reused, 1});
     require(reused.statistics[1] == 1 && reused.statistics[2] == 256,
             "Reused slots replace points, counts and sampling offsets");
+    static bool sharedSceneChecked = false;
+    if (!sharedSceneChecked) {
+      bake::Transport independent;
+      auto prepareShared = [&](bake::Transport &consumer, const bake::Transport &owner) {
+        auto ticket = pipelines.prepare("bake-test-shared-" + std::to_string(++transportGeneration), [&] {
+          consumer.initializeShared(owner);
+        });
+        const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        while (!ticket->ready() && std::chrono::steady_clock::now() < until)
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        require(ticket->ready(), "Shared transport preparation timed out");
+        ticket->check();
+      };
+      prepareShared(independent, transport);
+      fixture.begin();
+      independent.recordBatch(fixture.command, 0, points, samples, bounces);
+      transport.recordBatch(fixture.command, 0, {&distant, 1}, 256, bounces, 1024);
+      fixture.finish();
+      std::array<bake::Result, 2> sharedResults;
+      independent.read(0, sharedResults);
+      for (uint32_t i = 0; i < 2; ++i)
+        require(sharedResults[i].irradiance == reference[i].irradiance &&
+                    sharedResults[i].moments == reference[i].moments &&
+                    sharedResults[i].statistics == reference[i].statistics,
+                "Shared scene consumers overwrote one another's dispatch state");
+      // Replace the original transport, retiring its descriptor/batch ownership.
+      // The independent consumer must retain acceleration, buffers and textures.
+      prepareShared(transport, independent);
+      fixture.begin();
+      independent.recordBatch(fixture.command, 0, points, samples, bounces);
+      fixture.finish();
+      independent.read(0, sharedResults);
+      require(sharedResults[0].irradiance == reference[0].irradiance,
+              "Shared scene did not survive original transport retirement");
+      sharedSceneChecked = true;
+    }
     return results[0];
   }
   void lightSelectionVariance(test::Fixture &fixture, pipeline::Service &pipelines, World &world) {

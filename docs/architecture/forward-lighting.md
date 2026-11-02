@@ -481,3 +481,29 @@ This is a completion boundary, not independent scheduling: diffuse planning stil
 provides placement seeds, and the bake controller still orders preparation,
 filtering and publication. A separate provider scheduler must share prepared
 transport resources rather than constructing another scene for each technique.
+
+### Shared transport scene and independent consumers
+
+`bake::Transport` now separates a retained scene owner from consumer-local
+execution state. The scene owns frozen geometry/material/light buffers, light
+proposal trees, acceleration structures, texture atlas/views and upload scratch.
+Each consumer owns its descriptor pool, dispatch/result buffers, constants,
+optional live-light overrides, indexed receiver storage and timing queries.
+
+After the preparation fence, `releaseBuildInputs` retires scene build scratch
+and marks it available for sharing. A preparation worker can then call
+`initializeShared(prepared)` to retain that scene and allocate independent
+execution state. All options and direct-light ownership policy are inherited;
+this API does not silently reinterpret the scene for another lighting policy.
+It does not repack materials, recapture textures or rebuild acceleration. The
+original transport may retire after consumer initialization, provided its own
+submissions have completed. Consumers may submit different work using the same
+slot index without overwriting one another's constants or readback storage.
+
+The normal Source 2 path still uses its existing single transport. Separate
+technique controllers have not yet adopted independent consumers or independent
+publication. `memoryBytes` includes the retained scene for each consumer; a
+future collector reporting multiple consumers must deduplicate that ownership.
+Shared ownership is acquired on preparation, not copied for every dispatch.
+No shader, descriptor binding layout or GPU dispatch algorithm changes here;
+CPU and complete frame-performance acceptance remain separate requirements.

@@ -1,3 +1,8 @@
+## Shared prepared transport scene - 2026-11-02
+
+- Immutable transport geometry/material/light/texture/acceleration ownership is separate from consumer-local dispatch descriptors, buffers and timing queries. Prepared consumers can share a fenced scene without repacking or rebuilding it.
+- Existing Source 2 scheduling still uses one transport. Next: adopt consumers in independent technique controllers, split seed planning/publication and deduplicate shared ownership in multi-consumer memory reporting. Full CPU/frame performance acceptance remains open.
+
 ## Automatic reflection readback ownership - 2026-11-02
 
 - Provider now consumes its fenced site/projection/radiance batches and advances its own completion counters. Bake controller no longer knows reflection texel layout or site-validation policy.

@@ -50,6 +50,8 @@ namespace remix::forward::bake {
         pipeline::destroyDescriptorSetLayout(device, handle, nullptr);
     if (sampler)
       pipeline::destroySampler(device, sampler, nullptr);
+  }
+  Transport::Gpu::Scene::~Scene() {
     for (auto view : atlasViews)
       vkDestroyImageView(device, view, nullptr);
   }
@@ -104,11 +106,32 @@ namespace remix::forward::bake {
     next->limits = depthProperties.limits;
     next->physical = physical;
     next->device = device;
-    next->source = std::move(source);
+    next->world = std::make_shared<Gpu::Scene>();
+    next->world->device = device;
+    next->world->source = std::move(source);
     next->options = options;
-    next->aggregateDiffuse = applyDirectPolicy(*next->source, options.directLighting, inputs.lights);
+    next->aggregateDiffuse = applyDirectPolicy(*next->world->source, options.directLighting, inputs.lights);
     next->timing = std::make_unique<Timing>(physical, device, options.queueFamily);
     next->createInputs(std::move(inputs));
+    next->createLayouts();
+    next->createPipelines();
+    next->createDescriptors();
+    m_gpu = std::move(next);
+  }
+  void Transport::initializeShared(const Transport &prepared) {
+    if (!prepared.m_gpu || !prepared.m_gpu->prepared || !prepared.m_gpu->world->ready)
+      throw std::invalid_argument("Shared transport scene requires a completed preparation fence");
+    const auto &owner = *prepared.m_gpu;
+    auto next = std::make_unique<Gpu>();
+    next->physical = owner.physical;
+    next->device = owner.device;
+    next->options = owner.options;
+    next->limits = owner.limits;
+    next->sunDistance = owner.sunDistance;
+    next->aggregateDiffuse = owner.aggregateDiffuse;
+    next->world = owner.world;
+    next->prepared = true;
+    next->timing = std::make_unique<Timing>(next->physical, next->device, next->options.queueFamily);
     next->createLayouts();
     next->createPipelines();
     next->createDescriptors();
@@ -120,7 +143,7 @@ namespace remix::forward::bake {
                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                    Buffer::Memory::Device);
     if (bytes)
-      uploads.push_back({buffer(data, bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT), result->handle, bytes});
+      world->uploads.push_back({buffer(data, bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT), result->handle, bytes});
     return result;
   }
   void Transport::Gpu::createInputs(Inputs inputs) {
@@ -142,11 +165,11 @@ namespace remix::forward::bake {
     if (inputs.textures.size() + 1 > properties.limits.maxImageArrayLayers)
       throw VK_ERROR_TOO_MANY_OBJECTS;
     const auto nodes = lightSelectionTree(inputs.lights);
-    resolution = options.textureResolution;
-    while (resolution > 16 &&
-           uint64_t(resolution) * resolution * 8 * (inputs.textures.size() + 1) > options.atlasBudget)
-      resolution /= 2;
-    if (uint64_t(resolution) * resolution * 8 * (inputs.textures.size() + 1) > options.atlasBudget)
+    world->resolution = options.textureResolution;
+    while (world->resolution > 16 &&
+           uint64_t(world->resolution) * world->resolution * 8 * (inputs.textures.size() + 1) > options.atlasBudget)
+      world->resolution /= 2;
+    if (uint64_t(world->resolution) * world->resolution * 8 * (inputs.textures.size() + 1) > options.atlasBudget)
       throw VK_ERROR_OUT_OF_DEVICE_MEMORY;
     std::vector<RayScene::Position> positions;
     std::vector<uint32_t> indices;
@@ -163,65 +186,65 @@ namespace remix::forward::bake {
         const double size = double(sunBounds.maximum[c]) - sunBounds.minimum[c];
         diagonalSquared += size * size;
       }
-    sunDistance = std::max(options.distance / source->sceneScale,
-                           float(std::sqrt(diagonalSquared) + 2 * options.bias / source->sceneScale));
+    sunDistance = std::max(options.distance / world->source->sceneScale,
+                           float(std::sqrt(diagonalSquared) + 2 * options.bias / world->source->sceneScale));
     if (!std::isfinite(sunDistance))
       throw std::invalid_argument("Sun visibility bounds exceed transport precision");
     for (const auto &t : inputs.triangles)
       indices.insert(indices.end(), t.begin(), t.begin() + 3);
-    rays.initialize(physical, device, {positions, indices});
-    vertices = staticBuffer(inputs.vertices.data(), inputs.vertices.size() * sizeof(Vertex));
-    triangles = staticBuffer(inputs.triangles.data(), inputs.triangles.size() * sizeof(UInt4));
-    hasDielectrics = std::any_of(inputs.materials.begin(), inputs.materials.end(), [](const auto &material) {
+    world->rays.initialize(physical, device, {positions, indices});
+    world->vertices = staticBuffer(inputs.vertices.data(), inputs.vertices.size() * sizeof(Vertex));
+    world->triangles = staticBuffer(inputs.triangles.data(), inputs.triangles.size() * sizeof(UInt4));
+    world->hasDielectrics = std::any_of(inputs.materials.begin(), inputs.materials.end(), [](const auto &material) {
       return (material.flags[3] & dielectricBoundaryFlag) != 0;
     });
-    hasContainingMedia = std::any_of(inputs.materials.begin(), inputs.materials.end(), [](const auto &material) {
+    world->hasContainingMedia = std::any_of(inputs.materials.begin(), inputs.materials.end(), [](const auto &material) {
       return (material.flags[3] & (dielectricBoundaryFlag | thinDielectricFlag)) == dielectricBoundaryFlag;
     });
-    hasModulatingDecals = std::any_of(inputs.materials.begin(), inputs.materials.end(), [](const auto &material) {
+    world->hasModulatingDecals = std::any_of(inputs.materials.begin(), inputs.materials.end(), [](const auto &material) {
       return (material.flags[3] & modulatingDecalFlag) != 0;
     });
-    materials = staticBuffer(inputs.materials.data(), inputs.materials.size() * sizeof(Material));
-    lights = staticBuffer(inputs.lights.data(), inputs.lights.size() * sizeof(TransportLight));
-    lightNodes = staticBuffer(nodes.data(), nodes.size() * sizeof(scene::LightNode));
+    world->materials = staticBuffer(inputs.materials.data(), inputs.materials.size() * sizeof(Material));
+    world->lights = staticBuffer(inputs.lights.data(), inputs.lights.size() * sizeof(TransportLight));
+    world->lightNodes = staticBuffer(nodes.data(), nodes.size() * sizeof(scene::LightNode));
     std::vector<scene::LightNode> componentNodes;
     if (options.lightingComponents) {
       componentNodes = lightSelectionTree(inputs.lights, true);
-      componentLightNodes = staticBuffer(componentNodes.data(), componentNodes.size() * sizeof(scene::LightNode));
+      world->componentLightNodes = staticBuffer(componentNodes.data(), componentNodes.size() * sizeof(scene::LightNode));
     }
-    domeLayer = inputs.domeLayer;
+    world->domeLayer = inputs.domeLayer;
     for (;;) {
-      atlas = std::make_unique<Image>();
-      atlas->create(physical, device, {resolution, resolution}, VK_FORMAT_R16G16B16A16_SFLOAT,
+      world->atlas = std::make_unique<Image>();
+      world->atlas->create(physical, device, {world->resolution, world->resolution}, VK_FORMAT_R16G16B16A16_SFLOAT,
                     VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
                     VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_ASPECT_COLOR_BIT, uint32_t(inputs.textures.size() + 1), 1,
                     VK_IMAGE_VIEW_TYPE_2D_ARRAY);
-      if (atlas->bytes <= options.atlasBudget)
+      if (world->atlas->bytes <= options.atlasBudget)
         break;
-      if (resolution == 16)
+      if (world->resolution == 16)
         throw VK_ERROR_OUT_OF_DEVICE_MEMORY;
-      resolution /= 2; // Account for device tiling/alignment beyond the nominal texel budget.
+      world->resolution /= 2; // Account for device tiling/alignment beyond the nominal texel budget.
     }
-    dumpInputFingerprint(source->sceneId, inputs, nodes, componentNodes,
-                         lightingFrame(source->sun, source->dome, options.distance, options.bias, source->sceneScale),
-                         resolution, sunDistance);
-    textures = std::move(inputs.textures);
-    for (uint32_t i = 0; i < textures.size(); ++i) {
+    dumpInputFingerprint(world->source->sceneId, inputs, nodes, componentNodes,
+                         lightingFrame(world->source->sun, world->source->dome, options.distance, options.bias, world->source->sceneScale),
+                         world->resolution, sunDistance);
+    world->textures = std::move(inputs.textures);
+    for (uint32_t i = 0; i < world->textures.size(); ++i) {
       VkImageView view;
       const VkImageViewCreateInfo info{.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-                                       .image = atlas->handle,
+                                       .image = world->atlas->handle,
                                        .viewType = VK_IMAGE_VIEW_TYPE_2D,
                                        .format = VK_FORMAT_R16G16B16A16_SFLOAT,
                                        .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, i + 1, 1}};
       check(vkCreateImageView(device, &info, nullptr, &view));
-      atlasViews.push_back(view);
+      world->atlasViews.push_back(view);
     }
   }
   void Transport::recordPrepare(VkCommandBuffer command, RasterRenderer &textures) {
     auto &g = *m_gpu;
     if (g.prepared)
       throw std::logic_error("Bake transport is already prepared");
-    for (const auto &upload : g.uploads) {
+    for (const auto &upload : g.world->uploads) {
       const VkBufferCopy copy{0, 0, upload.bytes};
       vkCmdCopyBuffer(command, upload.source->handle, upload.target, 1, &copy);
     }
@@ -232,7 +255,7 @@ namespace remix::forward::bake {
                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 1,
                          &transferred, 0, nullptr, 0, nullptr);
     g.recordAtlas(command, textures);
-    g.rays.recordBuild(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+    g.world->rays.recordBuild(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
     g.prepared = true;
   }
   void Transport::recordBatch(VkCommandBuffer command, uint32_t index, std::span<const Point> points,
@@ -313,13 +336,13 @@ namespace remix::forward::bake {
     slot.externalDepth = true;
     slot.count = 0; // Ordinary CPU result readers cannot read this caller-owned output.
     slot.compactVisibility = slot.scalarVisibility = false;
-    Frame frame = lightingFrame(g.source->sun, g.source->dome, g.options.distance, g.options.bias, g.source->sceneScale);
+    Frame frame = lightingFrame(g.world->source->sun, g.world->source->dome, g.options.distance, g.options.bias, g.world->source->sceneScale);
     frame.trace[0] = distance > 0 ? distance : g.sunDistance;
-    frame.trace[2] = decalReachMetres / g.source->sceneScale;
-    frame.trace[3] = g.hasModulatingDecals ? 1 : 0;
+    frame.trace[2] = decalReachMetres / g.world->source->sceneScale;
+    frame.trace[3] = g.world->hasModulatingDecals ? 1 : 0;
     frame.counts[0] = uint32_t(rays.size());
-    frame.control = {g.domeLayer, firstWord, uint32_t(indexed), uint32_t(g.hasDielectrics) |
-                                              (g.hasContainingMedia ? containingMediaFlag : 0u)};
+    frame.control = {g.world->domeLayer, firstWord, uint32_t(indexed), uint32_t(g.world->hasDielectrics) |
+                                              (g.world->hasContainingMedia ? containingMediaFlag : 0u)};
     slot.constants->write(&frame, sizeof(frame));
     g.timing->begin(command, index);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, g.depthPipeline);
@@ -344,7 +367,7 @@ namespace remix::forward::bake {
     std::vector<Point> packed;
     packed.reserve(points.size());
     for (const auto &point : points) {
-      if (point.light >= m_gpu->source->lights.size() || point.light >= (1u << 24))
+      if (point.light >= m_gpu->world->source->lights.size() || point.light >= (1u << 24))
         throw std::invalid_argument("Visibility point references an invalid captured light");
       auto surface = point.surface;
       surface.position[3] = float(point.light);
@@ -354,14 +377,14 @@ namespace remix::forward::bake {
   }
   void Transport::recordSun(VkCommandBuffer command, uint32_t slot, std::span<const Point> points,
                             uint32_t samples, bool directDiffuse) {
-    if (!m_gpu->source->sun.isDistant)
+    if (!m_gpu->world->source->sun.isDistant)
       throw std::invalid_argument("Sun visibility requires a captured distant light");
     record(command, slot, points, samples, 1, 0,
            directDiffuse ? Mode::SunDirectVisibility : Mode::SunVisibility);
   }
   void Transport::recordSurfaceSun(VkCommandBuffer command, uint32_t slot, std::span<const Point> sites,
                                    uint32_t samples, bool directDiffuse, uint32_t receiverSites) {
-    if (!m_gpu->source->sun.isDistant)
+    if (!m_gpu->world->source->sun.isDistant)
       throw std::invalid_argument("Sun visibility requires a captured distant light");
     record(command, slot, sites, samples, 1, 0,
            directDiffuse ? Mode::SunDirectVisibility : Mode::SunVisibility, {}, receiverSites);
@@ -373,7 +396,7 @@ namespace remix::forward::bake {
     packed.reserve(sites.size());
     for (size_t i = 0; i < sites.size(); ++i) {
       const auto &site = sites[i];
-      if (site.light >= m_gpu->source->lights.size() || site.light >= (1u << 24) ||
+      if (site.light >= m_gpu->world->source->lights.size() || site.light >= (1u << 24) ||
           site.light != sites[i - i % 4].light)
         throw std::invalid_argument("Surface visibility sites must share one valid captured light");
       auto point = site.surface;
@@ -394,7 +417,7 @@ namespace remix::forward::bake {
     if (component) {
       if (!g.options.lightingComponents || *component > combinedLighting ||
           (*component != 0 && *component != combinedLighting &&
-           std::none_of(g.source->lights.begin(), g.source->lights.end(),
+           std::none_of(g.world->source->lights.begin(), g.world->source->lights.end(),
                         [&](const auto &light) { return light.style == *component; })))
         throw std::invalid_argument("Lighting component requires a prepared captured style proposal");
       if (g.slots.at(index).lighting)
@@ -446,7 +469,7 @@ namespace remix::forward::bake {
                                  float distance, float animationSeconds) {
     auto &g = *m_gpu;
     if (!std::isfinite(animationSeconds) || !std::isfinite(distance) || distance <= g.options.bias * 2 ||
-        !std::isfinite(distance / g.source->sceneScale))
+        !std::isfinite(distance / g.world->source->sceneScale))
       throw std::invalid_argument("Invalid live radiance range or animation time");
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(g.physical, &properties);
@@ -464,7 +487,7 @@ namespace remix::forward::bake {
                                      .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                                      .pBufferInfo = &buffer};
     vkUpdateDescriptorSets(g.device, 1, &write, 0, nullptr);
-    auto frame = lightingFrame(sun, dome, distance, g.options.bias, g.source->sceneScale);
+    auto frame = lightingFrame(sun, dome, distance, g.options.bias, g.world->source->sceneScale);
     frame.domeRadiance[3] = animationSeconds; // tint clock; independent of acceleration identity
     frame.counts[1] = uint32_t(lights.size());
     slot.lighting = frame;
@@ -486,27 +509,27 @@ namespace remix::forward::bake {
       check(vkAllocateDescriptorSets(g.device, &allocate, &fragment.set));
     }
     auto frame = slot.lighting.value_or(
-        lightingFrame(g.source->sun, g.source->dome, distance, g.options.bias, g.source->sceneScale));
-    frame.trace[0] = distance / g.source->sceneScale;
-    frame.trace[2] = decalReachMetres / g.source->sceneScale;
-    frame.trace[3] = g.hasModulatingDecals ? 1 : 0;
+        lightingFrame(g.world->source->sun, g.world->source->dome, distance, g.options.bias, g.world->source->sceneScale));
+    frame.trace[0] = distance / g.world->source->sceneScale;
+    frame.trace[2] = decalReachMetres / g.world->source->sceneScale;
+    frame.trace[3] = g.world->hasModulatingDecals ? 1 : 0;
     frame.counts[2] = samples;
     frame.counts[3] = bounces;
     if (!slot.lighting)
-      frame.counts[1] = uint32_t(g.source->lights.size());
-    frame.control = {g.domeLayer, 0, 1, uint32_t(g.hasDielectrics) |
-                         (g.hasContainingMedia ? containingMediaFlag : 0u) |
+      frame.counts[1] = uint32_t(g.world->source->lights.size());
+    frame.control = {g.world->domeLayer, 0, 1, uint32_t(g.world->hasDielectrics) |
+                         (g.world->hasContainingMedia ? containingMediaFlag : 0u) |
                          (g.options.lightImportanceSampling && !slot.lighting ? 2u : 0u)};
     fragment.constants->write(&frame, sizeof(frame));
-    const auto acceleration = g.rays.handle();
+    const auto acceleration = g.world->rays.handle();
     const VkWriteDescriptorSetAccelerationStructureKHR rayInfo{
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
         .accelerationStructureCount = 1,
         .pAccelerationStructures = &acceleration};
     const VkDescriptorBufferInfo buffers[] = {
-        fragment.constants->descriptor(), g.vertices->descriptor(), g.triangles->descriptor(),
-        g.materials->descriptor(), slot.liveLights ? slot.liveLights->descriptor() : g.lights->descriptor()};
-    const VkDescriptorImageInfo atlas{g.sampler, g.atlas->view, VK_IMAGE_LAYOUT_GENERAL};
+        fragment.constants->descriptor(), g.world->vertices->descriptor(), g.world->triangles->descriptor(),
+        g.world->materials->descriptor(), slot.liveLights ? slot.liveLights->descriptor() : g.world->lights->descriptor()};
+    const VkDescriptorImageInfo atlas{g.sampler, g.world->atlas->view, VK_IMAGE_LAYOUT_GENERAL};
     VkWriteDescriptorSet writes[8]{};
     writes[0] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                  .pNext = &rayInfo,
@@ -528,7 +551,7 @@ namespace remix::forward::bake {
                  .descriptorCount = 1,
                  .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                  .pImageInfo = &atlas};
-    const auto nodes = g.lightNodes->descriptor();
+    const auto nodes = g.world->lightNodes->descriptor();
     writes[7] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                  .dstSet = fragment.set,
                  .dstBinding = 9,
@@ -561,7 +584,7 @@ namespace remix::forward::bake {
       slot.externalDepth = false;
     }
     if (slot.componentProposal != bool(component)) {
-      const auto nodes = (component ? g.componentLightNodes : g.lightNodes)->descriptor();
+      const auto nodes = (component ? g.world->componentLightNodes : g.world->lightNodes)->descriptor();
       const VkWriteDescriptorSet write{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
           .dstSet = slot.set, .dstBinding = 9, .descriptorCount = 1,
           .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &nodes};
@@ -572,21 +595,21 @@ namespace remix::forward::bake {
     if (slot.lighting) {
       frame = *slot.lighting;
     } else {
-      frame = lightingFrame(g.source->sun, g.source->dome, g.options.distance, g.options.bias,
-                            g.source->sceneScale);
-      frame.counts[1] = uint32_t(g.source->lights.size());
+      frame = lightingFrame(g.world->source->sun, g.world->source->dome, g.options.distance, g.options.bias,
+                            g.world->source->sceneScale);
+      frame.counts[1] = uint32_t(g.world->source->lights.size());
     }
     frame.counts[0] = count;
-    frame.trace[2] = decalReachMetres / g.source->sceneScale;
-    frame.trace[3] = g.hasModulatingDecals ? 1 : 0;
+    frame.trace[2] = decalReachMetres / g.world->source->sceneScale;
+    frame.trace[3] = g.world->hasModulatingDecals ? 1 : 0;
     if (mode == Mode::SunVisibility || mode == Mode::SunDirectVisibility)
       frame.trace[0] = g.sunDistance;
     frame.counts[2] = samples;
     frame.counts[3] = bounces;
     const bool aggregate = mode == Mode::Irradiance && g.aggregateDiffuse && !slot.lighting;
-    frame.control = {g.domeLayer, firstSample, uint32_t(mode),
-                     uint32_t(g.hasDielectrics) |
-                         (g.hasContainingMedia ? containingMediaFlag : 0u) |
+    frame.control = {g.world->domeLayer, firstSample, uint32_t(mode),
+                     uint32_t(g.world->hasDielectrics) |
+                         (g.world->hasContainingMedia ? containingMediaFlag : 0u) |
                          (g.options.lightImportanceSampling && !slot.lighting ? 2u : 0u) |
                          (aggregate && receiverDirect ? 4u : 0u) |
                          (receiverSites == 4    ? 16u
@@ -690,16 +713,17 @@ namespace remix::forward::bake {
     slot.results->read(results.data(), results.size_bytes());
   }
   void Transport::releaseBuildInputs() {
-    m_gpu->rays.releaseBuildInputs();
-    m_gpu->uploads.clear();
+    m_gpu->world->rays.releaseBuildInputs();
+    m_gpu->world->uploads.clear();
+    m_gpu->world->ready = true;
   }
-  uint32_t Transport::textureResolution() const { return m_gpu->resolution; }
+  uint32_t Transport::textureResolution() const { return m_gpu->world->resolution; }
   uint64_t Transport::memoryBytes() const {
     const auto &g = *m_gpu;
-    uint64_t bytes = g.rays.accelerationBytes() + g.rays.buildBytes() + g.atlas->bytes;
-    for (const auto *buffer : {g.vertices.get(), g.triangles.get(), g.materials.get(), g.lights.get(), g.lightNodes.get()})
+    uint64_t bytes = g.world->rays.accelerationBytes() + g.world->rays.buildBytes() + g.world->atlas->bytes;
+    for (const auto *buffer : {g.world->vertices.get(), g.world->triangles.get(), g.world->materials.get(), g.world->lights.get(), g.world->lightNodes.get()})
       bytes += buffer->allocationBytes;
-    if (g.componentLightNodes) bytes += g.componentLightNodes->allocationBytes;
+    if (g.world->componentLightNodes) bytes += g.world->componentLightNodes->allocationBytes;
     for (const auto &slot : g.slots) {
       bytes += slot.constants->allocationBytes + slot.points->allocationBytes + slot.results->allocationBytes;
       if (slot.liveLights)
@@ -707,10 +731,10 @@ namespace remix::forward::bake {
       for (const auto &fragment : slot.fragments)
         if (fragment.constants) bytes += fragment.constants->allocationBytes;
     }
-    for (const auto &upload : g.uploads)
+    for (const auto &upload : g.world->uploads)
       bytes += upload.source->allocationBytes;
     return bytes;
   }
-  uint64_t Transport::imageBytes() const { return m_gpu->atlas->bytes; }
-  uint64_t Transport::accelerationBytes() const { return m_gpu->rays.accelerationBytes(); }
+  uint64_t Transport::imageBytes() const { return m_gpu->world->atlas->bytes; }
+  uint64_t Transport::accelerationBytes() const { return m_gpu->world->rays.accelerationBytes(); }
 } // namespace remix::forward::bake

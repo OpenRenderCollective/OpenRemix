@@ -43,6 +43,11 @@ namespace remix::forward::bake {
     // Reuse a caller's packed inputs (for example a live posed-scene cache).
     void initialize(VkPhysicalDevice physical, VkDevice device, std::shared_ptr<const scene::BakeScene> scene,
                     Inputs inputs, Options options);
+    // Create independent dispatch slots over the same immutable prepared scene.
+    // The owner's preparation fence must have completed and releaseBuildInputs
+    // must have run. All transport options are retained; no repacking/rebuild.
+    // Call on a preparation worker. The original transport may then be retired.
+    void initializeShared(const Transport &prepared);
     void recordPrepare(VkCommandBuffer command, RasterRenderer &textures);
     // The selected slot's prior fence has completed. Call after recordPrepare.
     // A nonzero normal identifies a surface receiver: offset it along the normal
