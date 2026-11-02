@@ -13,7 +13,8 @@ Implemented and checked:
   hidden behind source queries. Alternate shading, diffuse, environment and local
   sources compile through actual world/viewmodel/water passes. Current-frame
   screen/ray reconstruction has a separate radiance/confidence query, preserving
-  shared environment fallback and Fresnel composition.
+  shared environment fallback and Fresnel composition. Viewmodel sources return
+  radiance independently of the shared standard material reflection response.
 - Resolved provider dependencies drive live diffuse/ray scene and screen/ray
   reflection resources. Water and viewmodels share the selected diffuse source;
   live water can share prepared scene descriptors with its own query limits.

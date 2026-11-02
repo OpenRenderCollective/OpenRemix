@@ -532,6 +532,16 @@ default environment source. This prevents material code from silently depending
 on the baked source's field layout. It is an internal shader module boundary;
 public custom program registration and provider resource selection are separate.
 
+## Standard reflection response
+
+`standard-reflection-response.glsl` is a resource-free material response shared
+by world reflection composition and the standard viewmodel shading model. It
+applies the existing roughness-aware Fresnel to incident radiance. Viewmodel
+source code supplies radiance and availability only; it no longer applies the
+standard material response. Custom shading models can choose their own response
+without importing standard shading. Disabled reflections retain an early exit
+before response evaluation. Water keeps its separate optical-interface weights.
+
 ## Reflection transport source
 
 The world reflection resolve queries `sampleTransportReflection(pixel, guide,

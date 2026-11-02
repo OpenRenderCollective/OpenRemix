@@ -136,6 +136,7 @@ void main() {
 #include "reflection-lighting.glsl"
 #include "probe-tiles.glsl"
 #include "reflection-transport.glsl"
+#include "standard-reflection-response.glsl"
 void main() {
   ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
   bool inBounds = all(lessThan(pixel, ivec2(frame.target.xy)));
@@ -157,7 +158,7 @@ void main() {
   vec4 receiverReflectance = texelFetch(reflectance, pixel, 0);
   vec3 f0 = receiverReflectance.rgb;
   float nv = max(reflectionDot(reflectionGuideNormal(guide), v), 0);
-  vec3 fresnel = f0 + (max(vec3(1 - guide.z), f0) - f0) * pow(1 - nv, 5);
+  vec3 fresnel = standardReflectionFresnel(f0, guide.z, nv);
   vec3 reflected = reflectionDirection(-v, normal);
   uint layer = uint(round(clamp(1 - receiverReflectance.a, 0, 1) * 255));
   float localLuma = guide.w;

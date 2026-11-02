@@ -1,3 +1,14 @@
+#include "standard-reflection-response.glsl"
+#ifdef VIEWMODEL_PASS
+vec3 standardViewModelReflection(vec3 position, vec3 n, vec3 v, vec3 base, float roughness, float metallic,
+                                 uint layer, float localLuma) {
+  // Do not evaluate the material response when this pass has no reflection source.
+  if (viewModelReflectionsDisabled()) return vec3(0);
+  vec3 radiance = viewModelReflectionRadiance(position, n, v, roughness, layer, localLuma);
+  vec3 f0 = mix(vec3(.04), base, metallic);
+  return radiance * standardReflectionFresnel(f0, roughness, max(dot(n, v), 0));
+}
+#endif
 // Standard material entry point shared by world surfaces and viewmodels.
 // Providers own lighting storage; materials supply evaluated Surface values.
 ShadingResult shadeStandardSurface(Surface surface, ShadingReceiver receiver) {
@@ -33,8 +44,8 @@ ShadingResult shadeStandardSurface(Surface surface, ShadingReceiver receiver) {
   accumulateDirectLighting(color, surface, receiver, receiverSunVisibility(lightingContext), diffuse.usesDirectAttribution, debugView);
   if (debugView == 0u) color += surface.emission;
 #ifdef VIEWMODEL_PASS
-  if (debugView == 0u) color += viewModelReflection(receiver.position, n, receiver.viewDirection, surface.color.rgb,
-      surface.roughness, surface.metallic, receiver.reflectionLayer, shaded.irradianceLuma);
+  if (debugView == 0u) color += standardViewModelReflection(receiver.position, n, receiver.viewDirection,
+      surface.color.rgb, surface.roughness, surface.metallic, receiver.reflectionLayer, shaded.irradianceLuma);
 #endif
   shaded.color = vec4(min(max(color, vec3(0)), vec3(65000)), receiver.opacity);
   // The pass adapter stores this guide as RGBA8. Alpha retains ordinary

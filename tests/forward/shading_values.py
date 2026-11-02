@@ -17,6 +17,8 @@ output = Path(sys.argv[2])
 output.mkdir(parents=True, exist_ok=True)
 common = """#version 450
 #extension GL_GOOGLE_include_directive : require
+#include "standard-reflection-response.glsl"
+#include "standard-reflection-response.glsl"
 #include "surface-values.glsl"
 #include "surface-values.glsl"
 #include "reflection-values.glsl"
@@ -55,7 +57,8 @@ stages = {
       Surface material = initSurface();
       ReflectionSample reflected = ReflectionSample(material.normal, .5);
       ReceiverLighting diffuse = ReceiverLighting(vec3(1), false, false);
-      value = vec4(resolveReflection(reflected, material.emission) +
+      value = vec4(resolveReflection(reflected, material.emission) *
+                   standardReflectionFresnel(vec3(.04), material.roughness, .5) +
                    composeDiffuseLight(diffuse, material.color.rgb), material.metallic);
     }""",
 }
