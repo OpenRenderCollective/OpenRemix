@@ -24,10 +24,8 @@ namespace remix::forward::techniques {
     plan.rayReflections = options.rtReflections && capabilities.rayQueries;
     plan.rayWater = options.water && plan.rayReflections && capabilities.waterRayQueries;
     plan.rayScene = plan.rayDiffuse() || plan.rayReflections;
-    // Keep the existing attachment compatibility contract on unsupported ray
-    // devices. Removing their placeholder resolve requires a coordinated
-    // change to Options::sameTargets and runtime target replacement policy.
-    plan.reflectionResolve = options.reflections();
+    // Allocate guides/resolve only for a supported active reflection source.
+    plan.reflectionResolve = options.ssr || plan.rayReflections || options.baking.reflectionProbes != 0;
     return plan;
   }
 }

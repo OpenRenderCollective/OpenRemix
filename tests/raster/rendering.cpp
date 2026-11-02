@@ -3812,7 +3812,43 @@ namespace {
   }
 #include "forward_skinning.h"
 #include "forward_depth.h"
+  void unsupportedReflectionTests() {
+    for (uint32_t samples : {1u, 4u}) {
+      Target target; // Ray features deliberately not enabled on this device.
+      camera(target.raster);
+      remix::forward::Options options;
+      options.samples = samples;
+      options.ssr = options.rtReflections = options.shadows = options.water = false;
+      options.baking.enabled = false;
+      options.baking.reflectionProbes = 0;
+      options.localShadowLights = 0;
+      options.shadowResolution = 64;
+      const auto mesh = quad(target.raster, 8790, material(target.raster, 8791, 1, 1, 1));
+      auto render = [&] {
+        target.raster.drawInstance(instance(mesh));
+        return target.render();
+      };
+      target.enableForward(options);
+      const auto disabled = render();
+      const auto disabledBytes = target.forward->statistics().targetBytes;
+      options.rtReflections = true;
+      target.enableForward(options);
+      require(render() == disabled, "Unsupported ray-only reflections preserve disabled-source pixels");
+      require(target.forward->statistics().targetBytes == disabledBytes,
+              "Unsupported ray-only reflections allocate no extra guides or resolve targets");
+      options.baking.reflectionProbes = 1;
+      bool rejected = false;
+      try { target.forward->updateLighting(options); }
+      catch (VkResult status) { rejected = status == VK_ERROR_INITIALIZATION_FAILED; }
+      require(rejected, "Cube fallback attachment changes reject in-place updates");
+      target.enableForward(options);
+      render();
+      require(target.forward->statistics().targetBytes > disabledBytes,
+              "Explicit cube fallback allocates reflection targets independently of ray support");
+    }
+  }
   void forwardTests(const std::filesystem::path &directory) {
+    unsupportedReflectionTests();
     cameraBackfaceTests();
     forwardDepthPrepassTests();
     Target target;

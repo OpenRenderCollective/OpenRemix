@@ -57,13 +57,30 @@ int main() {
               require(resources.diffuse == (options.baking.enabled ? techniques::Diffuse::SurfaceAndProbes
                                                                    : techniques::Diffuse::Disabled),
                       "Unavailable live GI retains the configured baked or disabled fallback");
-            require(resources.reflectionResolve == options.reflections(),
-                    "Resolved attachments preserve the existing target compatibility contract");
+            require(resources.reflectionResolve == (options.ssr || resources.rayReflections || options.baking.reflectionProbes != 0),
+                    "Only supported reflection sources allocate guides and resolve");
           }
           const auto live = options.lightingPlan(diffuse == techniques::Diffuse::RayQueries);
           require(diffuse != techniques::Diffuse::RayQueries || !live.bakedReceivers,
                   "Live diffuse ownership cannot also consume aggregate baked direct");
         }
+    auto rayOnly = defaults;
+    rayOnly.ssr = false;
+    rayOnly.rtReflections = true;
+    rayOnly.baking.reflectionProbes = 0;
+    auto cubeFallback = rayOnly;
+    cubeFallback.baking.reflectionProbes = 1;
+    require(!rayOnly.sameTargets(cubeFallback),
+            "Cube fallback changes prepare targets even when unsupported rays were requested");
+    auto screenRay = rayOnly;
+    screenRay.ssr = true;
+    auto screenCube = cubeFallback;
+    screenCube.ssr = true;
+    require(screenRay.sameTargets(screenCube), "SSR already supplies the reflection attachment boundary");
+    cubeFallback.baking.reflectionProbes = 2;
+    auto cubeBudget = cubeFallback;
+    cubeBudget.baking.reflectionProbes = 3;
+    require(cubeFallback.sameTargets(cubeBudget), "Nonzero cube budget edits preserve target resources");
     require(defaults == presets::source2() && presets::source2Name == "Source 2" &&
                 defaults.ssr && !defaults.rtGI && !defaults.rtReflections &&
                 defaults.baking.reflectionProbes > 0 && defaults.lightingPlan(false).bakedReceivers,

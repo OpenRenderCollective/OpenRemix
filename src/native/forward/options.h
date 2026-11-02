@@ -83,7 +83,11 @@ namespace remix::forward {
              localShadowLights == other.localShadowLights &&
              localShadowResolution == other.localShadowResolution && samples == other.samples &&
              shadowResolution == other.shadowResolution && ssr == other.ssr &&
-             reflections() == other.reflections() && ssrScale == other.ssrScale;
+             reflections() == other.reflections() &&
+             // A requested ray provider may be unsupported. Changing its cube
+             // fallback can therefore change attachment requirements.
+             (ssr || !rtReflections || bool(baking.reflectionProbes) == bool(other.baking.reflectionProbes)) &&
+             ssrScale == other.ssrScale;
     }
   };
 } // namespace remix::forward

@@ -1,3 +1,8 @@
+## Supported provider resource dependencies - 2026-11-02
+
+- Unsupported ray-only reflections no longer request guides/resolve; SSR and cubemap fallback remain independent sources. Zero/nonzero cubemap fallback is a target replacement boundary so in-place edits cannot mismatch attachments.
+- Remaining: independent automatic reflection cache/publication and complete technique composition/performance acceptance.
+
 ## Local receiver shader context - 2026-11-02
 
 - Shared local context prepares baked channels and light enumeration once; ordinal query hides source-index, channel sentinel and geometric-normal preparation from custom shading.

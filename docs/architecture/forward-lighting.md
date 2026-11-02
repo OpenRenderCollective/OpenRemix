@@ -359,10 +359,14 @@ query rather than a second mutable selector. No provider dispatch is added to
 material shaders. Unsupported live GI retains the existing baked/disabled
 fallback, while live GI cannot also claim aggregate baked receiver lighting.
 
-Reflection attachments deliberately retain the legacy requested-target rule,
-including the placeholder resolve when only unsupported ray reflections are
-requested. Removing that allocation requires changing both target compatibility
-and runtime replacement policy together; it is not silently optimized here.
+Reflection attachments follow supported sources: SSR, enabled cubemaps or supported
+ray reflections. Unsupported ray-only requests allocate no guides or resolve.
+`Options::sameTargets` distinguishes zero/nonzero cubemap fallback, so runtime
+replacement and in-place update validation agree on the attachment boundary.
+Changing a nonzero capture count or toggling cubemaps while SSR is enabled still
+preserves target compatibility. For ray-only requests on capable devices, toggling
+cubemap fallback conservatively prepares replacement targets as well; this is an
+options-edit cost, not work added to rendered frames.
 Automatic capture cache/publication is still coupled to the bake, and direct
 versus indirect diffuse storage/pipeline composition is not yet a fully generic
 provider API. These remain required work before claiming the split complete.
@@ -420,5 +424,6 @@ The [shading API design](shading-api.md) records the audited reference and curre
 contracts. Provider resource ownership alone does not finish the requested API.
 Materials evaluate Surface values, shading models apply BRDF/composition, and
 lighting-source queries supply lighting/visibility independently of material response.
-The first local-light query split is in place; sunlight, ambient/reflection queries,
-Count/From-style receiver access, composition and host shader programs remain work.
+Local/sun samples, receiver-local enumeration/context, diffuse queries and shared
+environment reflection radiance are in place. Full composition, reflection pass
+dependencies, water integration and host shader programs remain work.
