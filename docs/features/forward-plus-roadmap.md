@@ -63,11 +63,13 @@ Still required for the complete modularity/performance objective:
 - Finish provider dependency/finishing orchestration beyond the current Source 2
   adapters. Keep source module resources, publication, cancellation and retirement
   explicit when adding/selecting implementations; preserve shared work admission.
-- Broaden reflection-only refresh qualification to richer model-chart/styled-light
-  scenes. Live publication and in-memory diffuse reuse now survive reflection
-  edits, with bounded admission metadata and preserved frame lifetimes. New map
-  loads still use diffuse-index recovery when the exact combined cache is absent;
-  optional diagnostic local companions are regenerated in that case.
+- Reflection-only refresh qualification now includes styled indirect, grouped
+  direct and combined lighting: exact surface/dynamic-probe pixels survive
+  automatic capture enable/disable at 1x/4x MSAA, including live style-off behavior.
+  A model-lightmap-enabled target retains its mapped geometry and content through
+  automatic capture edits. Broaden real-map coverage and no-overhead measurements;
+  new map loads still use diffuse-index recovery when the exact combined cache is
+  absent, and optional diagnostic local companions are regenerated in that case.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Water's baked/mixed sunlight policy still needs separate qualification.

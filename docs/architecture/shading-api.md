@@ -734,7 +734,9 @@ same canonical reconstruction used by component recovery.
 
 Reflection-only jobs keep their transport and cancellation state private. They
 use the normal capture admission/budget and preserve the published direct-light
-ownership policy. Newly captured radiance is saved as a shared blob/index by a
+ownership policy. The capture-policy query borrows that policy directly; a
+reflection-only job does not allocate a dummy mixed-light plan or copy receiver
+identity/visibility maps. Newly captured radiance is saved as a shared blob/index by a
 bounded background service, without serializing the diffuse snapshot again.
 The service starts lazily and drains at runtime shutdown. Subsequent map loads
 may still use the existing diffuse-index recovery path to assemble a combined

@@ -49,6 +49,9 @@ namespace remix::forward::bake {
     std::shared_ptr<const probes::PlacementSeeds> reflectionSeeds;
     void retainReflectionSeeds();
     void prepareReflectionRefresh(VkPhysicalDevice physical, VkDevice device, const Config &config, float cutoff, uint32_t family);
+    const DirectPolicy &captureDirectPolicy() const {
+      return reflectionOwnership ? reflectionOwnership->directLighting : mixedLights->lights.directLighting;
+    }
     bool inMemoryDiffuse = false;
     std::shared_ptr<const mixed::Bindings> reflectionOwnership;
     std::unique_ptr<const probes::CapturePayload> reflectionPersistence;

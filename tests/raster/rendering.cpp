@@ -2813,6 +2813,27 @@ namespace {
                           target.forward->statistics().authoredReflections.rays > 0 && bakedShared[centre] > 5,
                       "Superseding an unpublished edit retains shared geometry after automatic donor retirement");
 
+              const auto modelDiffuse = target.forward->bakeController()->volume();
+              const auto modelContent = modelDiffuse->content;
+              const auto mappedGeometry = modelDiffuse->surfaces;
+              require(mappedGeometry && target.forward->statistics().baking.state == REMIXAPI_BAKE_READY_EXT,
+                      "Model-enabled refresh fixture begins with completed mapped geometry");
+              ++options.baking.reflectionProbes;
+              target.forward->updateLighting(options);
+              const auto refreshDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+              do {
+                render(false, false, true, false);
+                require(target.forward->bakeController()->volume() == modelDiffuse &&
+                            target.forward->statistics().baking.state != REMIXAPI_BAKE_FAILED_EXT,
+                        "Automatic reflection refresh must retain model-enabled diffuse publication");
+                if (target.forward->statistics().baking.state == REMIXAPI_BAKE_READY_EXT) break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+              } while (std::chrono::steady_clock::now() < refreshDeadline);
+              require(target.forward->statistics().baking.state == REMIXAPI_BAKE_READY_EXT &&
+                          target.forward->bakeController()->reflectionSource().image &&
+                          modelDiffuse->content == modelContent && modelDiffuse->surfaces == mappedGeometry,
+                      "Capture-only refresh reuses mapped geometry and diffuse data with model lightmaps enabled");
+
             }
             std::printf("Viewmodel probes %ux: overlay %u, world %u, analytic lights %u\n",
                         samples, probeWeapon[centre], probeWorld[centre], target.forward->statistics().lights);

@@ -105,7 +105,7 @@ namespace remix::forward::bake {
               cacheRequest = {owner->cacheFile.parent_path(), owner->source->contentHash,
                   Transport::shaderFingerprint(), cacheDevice,
                   config.styledIndirect && !styleIds(*owner->source).empty(),
-                  std::as_bytes(std::span(owner->mixedLights->lights.directLighting.lights))};
+                  std::as_bytes(std::span(owner->captureDirectPolicy().lights))};
             owner->reflectionCacheKey = owner->reflections.prepareRadiance(captureConfig, cacheRequest,
                                                                           owner->cancellation.get_token());
           });

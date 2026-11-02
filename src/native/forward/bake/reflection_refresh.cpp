@@ -17,11 +17,9 @@ namespace remix::forward::bake {
                                                   const Config &config, float cutoff, uint32_t family) {
     if (!reflectionSeeds || !reflectionOwnership)
       throw std::logic_error("Reflection refresh requires published diffuse admission and ownership");
-    mixedLights = std::make_shared<mixed::Plan>();
-    mixedLights->lights.directLighting = reflectionOwnership->directLighting;
     // This job borrows immutable publication metadata, never its SH or atlas pixels.
     Options options;
-    options.directLighting = mixedLights->lights.directLighting;
+    options.directLighting = captureDirectPolicy();
     options.lightingComponents = config.styledIndirect && !styleIds(*source).empty();
     options.batchPoints = Budget::maximumPoints;
     options.rayBudget = Budget::maximumWork;
