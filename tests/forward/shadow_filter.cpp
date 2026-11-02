@@ -149,7 +149,7 @@ int main(int argc, char **argv) try {
   gpu.input.create(fixture.physical, fixture.device, queries.size() * sizeof(Query),
                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   gpu.input.write(queries.data(), queries.size() * sizeof(Query));
-  gpu.output.create(fixture.physical, fixture.device, 2 * queries.size() * sizeof(Vec4),
+  gpu.output.create(fixture.physical, fixture.device, 4 * queries.size() * sizeof(Vec4),
                     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   const VkSamplerCreateInfo sampler{.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
                                     .magFilter = VK_FILTER_NEAREST,
@@ -238,7 +238,7 @@ int main(int argc, char **argv) try {
   vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0,
                        1, &read, 0, nullptr, 0, nullptr);
   fixture.finish();
-  std::vector<Vec4> values(2 * queries.size());
+  std::vector<Vec4> values(4 * queries.size());
   gpu.output.read(values.data(), values.size() * sizeof(Vec4));
   for (uint32_t mode = 0; mode < 2; ++mode) {
     float maximum = 0;
@@ -282,6 +282,14 @@ int main(int argc, char **argv) try {
     require(ownership[0] == 0 && ownership[1] == 0 && ownership[2] == 0 &&
                 std::abs(ownership[3] - 2 * visibility) < 1e-5f,
             "Owned lobes contribute no duplicate energy while unbaked analytic diffuse remains visible");
+    const auto &reference = values[i + 2 * queries.size()];
+    const auto &neutral = values[i + 3 * queries.size()];
+    require(std::abs(reference[0] - visibility) < 1e-5f && reference[1] == 1 &&
+                reference[2] == 1 && reference[3] == 0,
+            "Only compatible lighting references attenuate reflections; known black differs from unavailable");
+    require(neutral == Vec4{1, 1, 1, 1},
+            "Bright receivers never amplify captures and dark/unknown/incompatible references remain neutral");
+
   }
   require(validationErrors == 0, "Shadow filter readback is Vulkan validation clean");
 } catch (VkResult error) {

@@ -22,6 +22,11 @@ Implemented and checked:
   attribution and reflection reference; unified transport provenance remains open.
   GPU shadow sweeps verify energy equivalence between mixed residual and owned
   direct-field composition, with independent analytic highlight selection.
+  Resource-free lighting references now declare normalization domains; mismatched
+  or unknown references are neutral, and valid black remains distinct. The Source
+  2 specialization preserves optimized sizes/opcode counts across ten checked
+  material/resolve variants; GPU reference-energy sweeps pass. General scene and
+  component provenance across guide transport is still open.
 - Resolved provider dependencies drive live diffuse/ray scene and screen/ray
   reflection resources. Water and viewmodels share the selected diffuse source;
   live water can share prepared scene descriptors with its own query limits.

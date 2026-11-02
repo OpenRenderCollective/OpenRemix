@@ -17,6 +17,7 @@ layout(set = 0, binding = 3) uniform sampler2DArrayShadow sunShadow;
 #include "../../../src/native/forward/shaders/light-contribution.glsl"
 #include "../../../src/native/forward/shaders/local-light-values.glsl"
 #include "../../../src/native/forward/shaders/local-light-composition.glsl"
+#include "../../../src/native/forward/shaders/lighting-reference.glsl"
 struct Query { vec4 position, normal; uvec4 control; };
 layout(set = 0, binding = 1, std430) readonly buffer Queries { Query queries[]; };
 layout(set = 0, binding = 2, std430) writeonly buffer Answers { vec4 answers[]; };
@@ -52,4 +53,17 @@ void main() {
   LightContribution analytic = composeLocalLight(source, BrdfLobes(vec3(1), vec3(.25)));
   answers[index + inputData.count] = vec4(owned.diffuse.r, diffuseOnly.specular.r,
       disabled.diffuse.r + disabled.specular.r, analytic.diffuse.r);
+  LightingReference capture = LightingReference(2, Source2StaticLightingReference);
+  LightingReference receiver = LightingReference(2 * visibility, Source2StaticLightingReference);
+  answers[index + 2u * inputData.count] = vec4(
+      normalizeReflectionReference(vec3(1), receiver, capture).r,
+      normalizeReflectionReference(vec3(1), LightingReference(receiver.luminance, 2u), capture).r,
+      normalizeReflectionReference(vec3(1), unavailableLightingReference(), capture).r,
+      normalizeReflectionReference(vec3(1), LightingReference(0, capture.domain), capture).r);
+  answers[index + 3u * inputData.count] = vec4(
+      normalizeReflectionReference(vec3(1), LightingReference(4, capture.domain), capture).r,
+      normalizeReflectionReference(vec3(1), receiver, LightingReference(0, capture.domain)).r,
+      normalizeReflectionReference(vec3(1), LightingReference(-1, capture.domain), capture).r,
+      normalizeReflectionReference(vec3(1), LightingReference(0, NoLightingReference), capture).r);
+
 }

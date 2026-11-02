@@ -744,3 +744,22 @@ cache for the requested reflection configuration. Optional diagnostic local
 capture companions are regenerated when their combined container is absent.
 This lifecycle change adds no shader variants or per-draw dispatch; matched
 whole-renderer performance acceptance remains separate.
+
+### Compatible reflection normalization references
+
+`lighting-reference.glsl` is resource-free. `LightingReference` carries incident
+irradiance/pi luminance and a provider contract domain; zero means unavailable.
+A valid zero-luminance receiver is distinct from an unavailable reference.
+`normalizeReflectionReference` attenuates only matching, nonzero domains, never
+amplifies a capture, and keeps unknown receivers/dark capture references neutral.
+Different domains are neutral even when both values use the same radiometric
+units. Providers must declare comparable lighting contents as well as units.
+
+The Source 2 probe adapter explicitly specializes both sides to its existing
+frozen-static domain and preserves the old scalar guard/vector operations. That
+adapter still transports receiver luminance through its existing float guide;
+this change does not add an arbitrary provenance ID to the guide ABI. Other
+providers may use the typed entry independently, but must not claim Source 2
+compatibility merely because they provide diffuse irradiance. Scene/generation
+validation, light-component ownership and cross-provider guide transport remain
+part of the broader provider contract work.

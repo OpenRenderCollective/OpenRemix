@@ -1,3 +1,4 @@
+#include "lighting-reference.glsl"
 // Projection metadata matches forward/probes/data.h; radiance uses HDR image
 // layers. No optional cube-array or descriptor-indexing features are needed.
 #ifndef PROBE_BINDING
@@ -232,8 +233,12 @@ bool probeSample(vec3 position, vec3 reflected, float roughness,
 // Match the modern non-VR Source 2 viewer profile: correction may darken a
 // capture, but cannot amplify it. Unknown lighting and dark references are neutral.
 vec3 normalizedProbeRadiance(vec4 captureSample, float receiverLuma) {
+  // This adapter's capture SH and receiver guide have the same frozen-static
+  // contract. Other environment sources must declare their own compatibility.
+  if (!compatibleLightingReferenceDomains(Source2StaticLightingReference, Source2StaticLightingReference))
+    return captureSample.rgb;
   if (receiverLuma < 0 || captureSample.a <= 0) return captureSample.rgb;
-  return captureSample.rgb * min(max(receiverLuma, 0) / captureSample.a, 1);
+  return captureSample.rgb * reflectionReferenceScale(receiverLuma, captureSample.a);
 }
 bool boundProbeRadiance(uint layer, vec3 position, vec3 reflected, float roughness,
                         vec3 normal, float receiverLuma, out vec3 result) {
