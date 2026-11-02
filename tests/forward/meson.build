@@ -369,3 +369,7 @@ test('Reflection preservation guards retain ordering and projection space', cove
 test('Evaluated material values are independent of pass resources', python,
   args : [meson.current_source_dir() / 'surface_values.py', shader_tools,
           meson.current_build_dir() / 'surface-values'], depends : [shader_tools])
+
+test('Custom shading composes sources without the standard shading model', python,
+  args : [meson.current_source_dir() / 'custom_shading.py', shader_tools,
+          meson.current_build_dir() / 'custom-shading'], depends : [shader_tools])

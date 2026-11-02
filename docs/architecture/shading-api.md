@@ -35,6 +35,14 @@ This is a shader-source contract, not a runtime custom-program loader or a
 `.shader` parser. Do not add unused material properties until their semantics are
 implemented through the selected shading model.
 
+The tracked `tests/forward/shaders/custom-model.glsl` fixture demonstrates a
+minimal alternate diffuse response using the shared diffuse/local-light queries.
+`custom_shading.py` substitutes it into the real pass with the standard shading
+model and its direct-light composition removed, then compiles and validates world,
+reflection-guide, viewmodel and live-diffuse variants. The pass still decodes its
+usual material and owns coverage/output writes. This verifies the composition
+boundary, not visual parity, sun/reflection completeness or runtime shader loading.
+
 ## Reference snapshot
 
 Audited `sbox-public` revision `e545b33037b49c59bff80b64359747436279d7f6`:
