@@ -1,6 +1,7 @@
 #include "forward/bake/controller.h"
 #include "forward/probes/automatic_capture.h"
 #include "forward/probes/cache_index.h"
+#include "forward/probes/authoring.h"
 #include "forward/bake/cache.h"
 #include "forward/bake/transport.h"
 #include "forward/bake/budget.h"
@@ -175,6 +176,39 @@ int main() try {
       request.maximum[c] = 2;
     }
     resources.setBakeScene(&request.scene);
+    {
+      remixapi_ReflectionVolumeEXT volume{};
+      volume.id = 77;
+      for (uint32_t c = 0; c < 3; ++c) {
+        volume.minimum[c] = -1; volume.maximum[c] = 1; volume.worldToLocal[c][c] = 1;
+      }
+      remixapi_ReflectionVolumesInfoEXT volumes{sizeof(volumes), REMIXAPI_REFLECTION_VOLUMES_VERSION_EXT,
+          request.scene.sceneId, 1, 1, 0, &volume};
+      resources.setReflectionVolumes(&volumes);
+      probes::Authoring authored(fixture.physical, fixture.device, &pipelines, true, fixture.family);
+      probes::CaptureConfig captureConfig; captureConfig.reflectionResolution = 8;
+      captureConfig.samples = captureConfig.bounces = 1;
+      const probes::CaptureSource inputs{resources.bakeScene()->contentHash, {}};
+      for (uint32_t frame = 0; frame < gpuFrameCount + 1; ++frame) {
+        authored.selectFrame(frame % gpuFrameCount);
+        fixture.begin(); authored.record(fixture.command, resources, captureConfig, inputs, false, false); fixture.finish();
+      }
+      require(authored.statistics().pending && authored.statistics().rays == 0 &&
+                  authored.memory().buffers == 0 && authored.memory().acceleration == 0,
+              "Deferred authored captures consumed a second transport budget");
+      const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+      uint32_t frame = 0;
+      while (!authored.statistics().active && std::chrono::steady_clock::now() < until) {
+        authored.selectFrame(frame++ % gpuFrameCount);
+        fixture.begin(); authored.record(fixture.command, resources, captureConfig, inputs, false, true); fixture.finish();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
+      require(authored.statistics().active && authored.statistics().completed == 384,
+              "Authored capture did not resume when granted its work budget");
+      for (uint32_t slot = 0; slot < gpuFrameCount; ++slot) authored.selectFrame(slot);
+      resources.setReflectionVolumes(nullptr);
+    }
+
     bake::Config config;
     config.diskCache = false;
     config.maxProbes = 64;

@@ -10,6 +10,7 @@
 #include "platform/gpu_frames.h"
 #include <memory>
 namespace remix { class RasterRenderer; }
+namespace remix::forward::bake { class TransportMemory; }
 namespace remix::forward::probes {
   // Reflection-only publication. Neither source ownership nor diffuse bake
   // buffers are modified; frame slots retain every sampled and submitted job.
@@ -26,14 +27,16 @@ namespace remix::forward::probes {
              hardware == m_hardware && queueFamily == m_queueFamily;
     }
     void selectFrame(uint32_t slot);
+    // captureReady grants transport work separately from published image identity.
+    // A paused producer keeps its current publication and schedules no batches.
     void record(VkCommandBuffer command, RasterRenderer &resources, const CaptureConfig &config,
-                const CaptureSource &automatic, bool fallback);
+                const CaptureSource &automatic, bool fallback, bool captureReady = true);
     ReflectionSnapshot snapshot(const CaptureSource &automatic) const;
     Descriptors descriptor(Descriptors automatic) const;
     const Header *header() const;
     const LayerIdentities *identities() const;
     uint32_t receiverLayer(uint64_t sceneId, uint64_t volumeId) const; // one-based; zero uses ordinary selection
-    AuthoringMemory memory() const;
+    AuthoringMemory memory(bake::TransportMemory *transportMemory = nullptr) const;
     AuthoringStatistics statistics() const;
     const std::string &status() const { return m_status; }
   private:

@@ -37,7 +37,7 @@ namespace remix::forward {
     statistics.reflectionIdentities = identities ? *identities : probes::LayerIdentities{};
     bake::TransportMemory transportMemory;
     const auto memory = baking->memory(&transportMemory);
-    const auto authoredMemory = authoredReflections->memory();
+    const auto authoredMemory = authoredReflections->memory(&transportMemory);
     const auto standaloneMemory = standaloneReflectionsUsed ? standaloneReflections->memory(&transportMemory)
                                                           : probes::StandaloneCapture::Memory{};
     auto selectedMemory = localSelections.memory();
@@ -286,13 +286,14 @@ namespace remix::forward {
     // Publish automatic images independently, but preserve the baked profile's
     // transport priority: authored captures must not add a second work budget
     // while diffuse/style transport is still running.
-    if (lightingPlan.baking.enabled && !m_gpu->baking->volume()) captures.sceneHash = 0;
+    const bool capturesReady = !lightingPlan.baking.enabled ||
+        m_gpu->baking->statistics().state == REMIXAPI_BAKE_READY_EXT;
     if (!lightingPlan.baking.enabled) {
       const auto source = resources.bakeScene();
       captures.sceneHash = source && source->ready ? source->contentHash : 0;
     }
     m_gpu->authoredReflections->record(command, resources,
-        m_gpu->options.captureConfiguration(), captures, m_gpu->options.authoredReflectionFallback);
+        m_gpu->options.captureConfiguration(), captures, m_gpu->options.authoredReflectionFallback, capturesReady);
     m_gpu->prepareLocalReflections(command, resources);
     bakeTime.close();
     step(cpu.bake);

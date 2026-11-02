@@ -2,6 +2,7 @@
 #include "forward/probes/identities.h"
 #include "platform/workers.h"
 #include "forward/bake/transport.h"
+#include "forward/bake/transport_memory.h"
 #include "forward/bake/budget.h"
 #include "raster/renderer.h"
 #include <algorithm>
@@ -204,7 +205,7 @@ namespace remix::forward::probes {
     std::erase_if(m_retired, [](const auto &job) { return job->ticket->ready(); });
   }
   void Authoring::record(VkCommandBuffer command, RasterRenderer &resources, const CaptureConfig &config,
-                          const CaptureSource &automatic, bool fallback) {
+                          const CaptureSource &automatic, bool fallback, bool captureReady) {
     const auto source = resources.bakeScene();
     const auto request = resources.reflectionVolumes();
     if (source != m_source || !config.sameLighting(m_config)) {
@@ -234,7 +235,7 @@ namespace remix::forward::probes {
       m_frames[m_slot].sampled.reset();
       return;
     }
-    if (!request || !source || !source->ready || !automatic.sceneHash ||
+    if (!captureReady || !request || !source || !source->ready || !automatic.sceneHash ||
         source->contentHash != automatic.sceneHash) return;
     if (useFallback && automatic.image && automatic.image->header().parameters[0] &&
         automatic.image->header().parameters[1] != config.reflectionResolution) return;
@@ -364,10 +365,11 @@ namespace remix::forward::probes {
     }
     return result;
   }
-  AuthoringMemory Authoring::memory() const {
+  AuthoringMemory Authoring::memory(bake::TransportMemory *shared) const {
+    bake::TransportMemory local;
+    auto &transportMemory = shared ? *shared : local;
     AuthoringMemory result;
     std::unordered_set<const Job *> jobs;
-    std::unordered_set<const bake::Transport *> scenes;
     auto count = [&](const std::shared_ptr<Job> &job) {
       if (!job || !jobs.insert(job.get()).second || !job->ticket->ready()) return;
       if (job->image) {
@@ -378,10 +380,11 @@ namespace remix::forward::probes {
         result.buffers += job->authoredImage->bufferBytes();
         result.images += job->authoredImage->imageBytes();
       }
-      if (job->prepared && job->transport && scenes.insert(job->transport.get()).second) {
-        result.buffers += job->transport->memoryBytes();
-        result.images += job->transport->imageBytes();
-        result.acceleration += job->transport->accelerationBytes();
+      if (job->prepared && job->transport) {
+        const auto bytes = transportMemory.add(*job->transport);
+        result.buffers += bytes.buffers;
+        result.images += bytes.images;
+        result.acceleration += bytes.acceleration;
       }
     };
     count(m_active); count(m_job);

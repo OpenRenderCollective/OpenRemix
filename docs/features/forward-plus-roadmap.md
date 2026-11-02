@@ -1,3 +1,9 @@
+## Authored capture work admission during recovery - 2026-11-02
+
+- Fixed an early-publication scheduling gap: authored work is admitted by complete bake readiness, not merely diffuse-volume visibility. Admission is explicit and separate from reflection image identity, preserving the single Source 2 capture budget during recovery.
+- Authored memory joins the shared collector and no longer counts image/acceleration bytes both as buffers and in their own categories. Native build and two GPU regressions pass; deferred authored fixture has zero rays/transport bytes before admission and completes after release.
+- Prepared-scene reuse for authored consumers remains unenabled until source/options/light-policy compatibility is proven. Independent scheduling and full CPU/GPU/map performance acceptance remain open. Playable unchanged.
+
 ## Shared transport memory reporting - 2026-11-02
 
 - Transport reports disjoint shared-scene/private-consumer bytes and borrowed identities. Renderer default/standalone snapshots share one dedup collector; legacy single-consumer totals are preserved. Eight inline entries avoid collection heap allocations for normal owner counts; overflow remains correct.

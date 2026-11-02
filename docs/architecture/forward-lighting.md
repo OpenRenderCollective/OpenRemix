@@ -838,7 +838,7 @@ consumer dispatch allocations and supplies borrowed identities for each domain.
 The legacy `memoryBytes` total remains their sum, preserving its existing category
 coverage. This is reported transport memory, not a new full Vulkan allocator census.
 
-One `TransportMemory` collector spans default/standalone controller snapshots in
+One `TransportMemory` collector spans default/authored/standalone controller snapshots in
 the renderer. It counts a scene once and every distinct consumer once, even if a
 consumer appears through several retained frame/job owners. Its normal eight
 entries are inline; cancellation bursts can spill without truncating accounting.
@@ -848,3 +848,18 @@ Future providers using shared transport must pass this collector too.
 This enables correct accounting for shared-scene consumers; it does not itself
 make current default/standalone jobs share a scene, transfer their tickets, or
 prove no-overhead gameplay performance. Those remain separate qualification work.
+
+### Secondary capture work admission
+
+Authored capture accepts `captureReady` separately from its automatic image/source
+identity. The Source 2 scheduler grants this work only when the baked-lighting
+controller reaches `REMIXAPI_BAKE_READY_EXT`, including during reflection-only
+recovery. An early diffuse volume or automatic image does not grant a second
+capture budget. The authored producer can retain its published image while paused;
+when admitted, its existing job/worker/fence scheduling resumes normally.
+
+Authored memory reporting participates in the renderer's shared transport collector.
+Buffer totals exclude the scene's image and acceleration categories rather than
+counting those categories both in buffers and again separately. Sharing an authored
+consumer with a default prepared scene still requires compatible source/options and
+policy provenance; this admission/accounting change does not enable that reuse.
