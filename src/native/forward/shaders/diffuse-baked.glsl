@@ -2,22 +2,22 @@
 ReceiverLighting evaluateReceiverLighting(vec3 position, vec3 normal, vec3 geometric,
                                          bool charted, vec3 chartIrradiance,
                                          bool diffuseRequired, vec3 fallback) {
-  ReceiverLighting lighting = ReceiverLighting(fallback, false, false);
+  ReceiverLighting lighting = ReceiverLighting(fallback, analyticDirectLighting(false), false);
   if (charted) {
     lighting.diffuse = chartIrradiance / Pi;
-    lighting.usesDirectAttribution = true;
+    lighting.direct.attribution = true;
     lighting.reflectionReference = true;
 #ifdef ZERO_DIFFUSE_MATERIAL
   } else if (localProbeStencil(position, normal)) {
     lighting.diffuse = vec3(0);
-    lighting.usesDirectAttribution = true;
+    lighting.direct.attribution = true;
     lighting.reflectionReference = true;
 #else
   } else {
     vec3 irradiance;
     if (bakedIrradiance(position, normal, irradiance)) {
       lighting.diffuse = irradiance / Pi;
-      lighting.usesDirectAttribution = true;
+      lighting.direct.attribution = true;
       lighting.reflectionReference = true;
     }
 #endif

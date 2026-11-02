@@ -141,19 +141,28 @@ and metalness. The value type and `composeDiffuseLight` live in resource-free
 `diffuse-values.glsl`, separate from receiver bindings and provider queries.
 Its independent policy fields are:
 
-- `usesDirectAttribution`: apply the receiver's per-light baked attribution policy
-  when composing direct lighting. This does not mean every light is included;
-  membership and moving-caster residuals remain source-query responsibilities.
+- `direct.diffuse` and `direct.specular`: permit these analytic lobes in addition
+  to the incident field. A unified source owning direct diffuse can disable that
+  lobe while retaining analytic highlights. Owning both lobes skips standard
+  direct-light evaluation. Reflected environment radiance remains separate.
+- `direct.attribution`: apply the receiver's per-light baked attribution policy.
+  This does not mean every light is included; membership and moving-caster
+  residuals remain source-query responsibilities. Keep the diffuse lobe enabled
+  when those residual corrections must still be applied to the field.
 - `reflectionReference`: use this field under the selected reflection provider's
   local incident-light normalization convention. It does not imply baked direct
   membership or authorize subtracting a light contribution.
 
-These replace the former overloaded `aggregate` flag. Source 2 currently sets
-both for a valid chart/probe field; live diffuse and ambient fallback set neither,
-retaining their previous behavior. Custom providers can select the two policies
-independently. This separates normalization policy from direct-light attribution;
-it does not yet describe complete direct/indirect energy provenance for arbitrary
-unified GI implementations.
+`analyticDirectLighting(attribution)` preserves the existing analytic diffuse
+and specular paths. Source 2 enables attribution and a reflection reference for
+valid chart/probe fields; live ray diffuse and ambient fallback retain analytic
+lobes without attribution/reference. The alternate diffuse compile fixture owns
+direct diffuse while retaining analytic specular. World, viewmodel, water and
+the example custom model select direct contributions through the same policy.
+
+This separates lobe ownership, per-light residuals and reflection normalization.
+It does not yet describe full transport provenance or compatible normalization
+for arbitrary unified GI implementations; a new provider must supply those.
 
 Reflection-normalization luminance remains in standard composition. When a
 metal-only variant skips diffuse evaluation, the compiled provider's pure
@@ -568,13 +577,13 @@ still required; implementing this function alone does not register a provider.
 
 ## Remaining API work
 
-1. Extend ownership metadata beyond the existing per-light attribution contract for
+1. Extend transport provenance beyond the lobe ownership/per-light attribution contract for
    future unified GI providers. Keep source-index and receiver-ordinal query
    semantics distinct; existing mixed/range/highlight composition is shared.
 2. Connect reflection radiance to interchangeable screen/ray and environment
    providers; qualify water baked/mixed-sun ownership.
-3. Separate direct ownership and indirect transport in the composition contract.
-   Direct-attribution and reflection-reference policies are now distinct, but the
+3. Qualify direct ownership and indirect transport for complete provider replacements.
+   Analytic-lobe, direct-attribution and reflection-reference policies are distinct, but the
    underlying per-light baked policy does not describe arbitrary GI provenance.
    Define contribution ownership and compatible normalization before LightingTerms.
 4. Provide standard/custom composition with depth, shadow, MSAA and reflection

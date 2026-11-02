@@ -34,7 +34,7 @@ stages = {
     "vert": """void main() {
       Surface material = initSurface();
       vec3 reflected = resolveReflection(ReflectionSample(vec3(0), 0), material.color.rgb);
-      ReceiverLighting diffuse = ReceiverLighting(vec3(.1), false, true);
+      ReceiverLighting diffuse = ReceiverLighting(vec3(.1), analyticDirectLighting(false), true);
       gl_Position = vec4(material.normal * material.roughness + reflected +
                          composeDiffuseLight(diffuse, material.color.rgb), material.color.a);
     }""",
@@ -47,7 +47,7 @@ stages = {
           vec3(0,0,1), material.roughness, -1, 0u, uvec2(0));
       SunLightSample sun = SunLightSample(vec3(0,0,1), vec3(1), 0, 1);
       ReflectionSample reflected = ReflectionSample(query.direction * sun.diffuseIrradiance, 1);
-      ReceiverLighting diffuse = ReceiverLighting(vec3(.2), true, false);
+      ReceiverLighting diffuse = ReceiverLighting(vec3(.2), analyticDirectLighting(true), false);
       result = vec4(resolveReflection(reflected, material.color.rgb) + material.emission +
                     composeDiffuseLight(diffuse, material.color.rgb), material.color.a);
     }""",
@@ -56,7 +56,7 @@ stages = {
     void main() {
       Surface material = initSurface();
       ReflectionSample reflected = ReflectionSample(material.normal, .5);
-      ReceiverLighting diffuse = ReceiverLighting(vec3(1), false, false);
+      ReceiverLighting diffuse = ReceiverLighting(vec3(1), analyticDirectLighting(false), false);
       value = vec4(resolveReflection(reflected, material.emission) *
                    standardReflectionFresnel(vec3(.04), material.roughness, .5) +
                    composeDiffuseLight(diffuse, material.color.rgb), material.metallic);

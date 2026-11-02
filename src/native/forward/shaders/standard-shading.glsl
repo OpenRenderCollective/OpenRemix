@@ -41,7 +41,7 @@ ShadingResult shadeStandardSurface(Surface surface, ShadingReceiver receiver) {
   shaded.irradianceLuma = min(shaded.irradianceLuma, 65000);
   bool includeBakedDiffuse = debugView == 0u || debugView == 7u;
   vec3 color = includeBakedDiffuse ? composeDiffuseLight(diffuse, surface.color.rgb * (1 - surface.metallic)) : vec3(0);
-  accumulateDirectLighting(color, surface, receiver, receiverSunVisibility(lightingContext), diffuse.usesDirectAttribution, debugView);
+  accumulateDirectLighting(color, surface, receiver, receiverSunVisibility(lightingContext), diffuse.direct, debugView);
   if (debugView == 0u) color += surface.emission;
 #ifdef VIEWMODEL_PASS
   if (debugView == 0u) color += standardViewModelReflection(receiver.position, n, receiver.viewDirection,

@@ -15,6 +15,8 @@ Implemented and checked:
   screen/ray reconstruction has a separate radiance/confidence query, preserving
   shared environment fallback and Fresnel composition. Viewmodel sources return
   radiance independently of the shared standard material reflection response.
+  Diffuse sources independently select analytic direct lobes, per-light residual
+  attribution and reflection reference; unified transport provenance remains open.
 - Resolved provider dependencies drive live diffuse/ray scene and screen/ray
   reflection resources. Water and viewmodels share the selected diffuse source;
   live water can share prepared scene descriptors with its own query limits.

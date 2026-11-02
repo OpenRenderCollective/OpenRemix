@@ -112,20 +112,21 @@ void main() {
   ShadingReceiver receiver = ShadingReceiver(worldPosition, geometric, v, gl_FragCoord.xy, depth,
       BakedReceiver(vec4(0), surfaceBounds, surfaceLights, surfaceDirectLights, surfaceChart), false, 0u, 1);
   ReceiverLighting lighting = sampleDiffuseLighting(receiver, n, prepareVolumeReceiverLighting(receiver, n), true);
-  bool aggregateReceiver = lighting.usesDirectAttribution;
+  bool aggregateReceiver = lighting.direct.attribution;
   vec3 diffuse = composeDiffuseLight(lighting, surface.rgb);
   vec3 l = -frame.sunDirection.xyz;
   BrdfLobes sun = brdfLobes(surface.rgb, roughness, 0, n, v, l, specularF0);
   // Preserve the current water CSM policy while sharing sunlight transport.
   SunLightSample sunlight = sampleUnbakedSunLight(worldPosition, depth, n,
       normalize(cross(dFdx(worldPosition), dFdy(worldPosition))));
-  LightContribution sunContribution = composeSunLight(sunlight, sun);
+  LightContribution sunContribution = selectDirectLight(composeSunLight(sunlight, sun), lighting.direct);
   diffuse += sunContribution.diffuse;
   vec3 specular = sunContribution.specular;
   LocalLightingContext localLighting = prepareLocalLighting(receiver, n, false, aggregateReceiver);
   for (uint i = 0u; i < receiverLocalLightCount(localLighting); ++i) {
     LightContribution response = standardReceiverLocalLight(i, receiver, n, v, surface.rgb, roughness, 0,
                                                             localLighting, specularF0);
+    response = selectDirectLight(response, lighting.direct);
     diffuse += response.diffuse;
     specular += response.specular;
   }
