@@ -30,6 +30,10 @@ namespace remix::forward::probes {
     // The caller retains this owner and consumes readback after the slot fence.
     Dispatch record(VkCommandBuffer command, uint32_t slot, bake::Transport &transport,
                      bake::Budget &budget, const CaptureConfig &config);
+    // Consume each submitted range exactly once, after its fence. Ranges may
+    // finish out of order. Completion state belongs to the
+    // provider, so another scheduler need not understand capture storage.
+    bool observe(Step step, uint32_t first, std::span<const bake::Result> results);
     static constexpr uint32_t siteSamples = 64;
     void planSites(const scene::BakeScene &source, const PlacementSeeds &seeds,
                     uint32_t count, std::stop_token cancelled);

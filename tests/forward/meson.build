@@ -101,11 +101,11 @@ forward_probes_test = executable('remix-forward-probes-test', 'probes.cpp', 'cap
   '../../src/native/forward/probes/composition.cpp', '../../src/native/forward/probes/coverage_baseline.cpp', '../../src/native/forward/probes/coverage_context.cpp', '../../src/native/forward/probes/coverage_image_plan.cpp',
   '../../src/native/forward/probes/image_data.cpp',
   '../../src/native/forward/probes/normalization.cpp',
-  '../../src/native/forward/probes/capture_work.cpp', '../../src/native/forward/probes/local_capture_work.cpp',
+  '../../src/native/forward/probes/capture_work.cpp', '../../src/native/forward/probes/automatic_readback.cpp', '../../src/native/forward/probes/evaluation.cpp', '../../src/native/forward/probes/refinement.cpp', '../../src/native/forward/probes/local_capture_work.cpp',
   '../../src/native/forward/probes/data.cpp', '../../src/native/forward/probes/placement.cpp', '../../src/native/forward/probes/placement_grid.cpp', '../../src/native/forward/probes/selection.cpp',
   '../../src/native/forward/probes/regions.cpp', '../../src/native/forward/probes/sites.cpp',
   '../../src/native/forward/lighting.cpp',
-  include_directories : test_includes, link_with : scene_library, cpp_args : test_cpp_args)
+  include_directories : test_includes, link_with : scene_library, dependencies : vulkan_dep, cpp_args : test_cpp_args)
 test('Reflection probe parallax, filtering and packed data', forward_probes_test)
 forward_projection_test = executable('remix-forward-projection-test', 'evaluation.cpp',
   '../../src/native/forward/probes/refinement.cpp',

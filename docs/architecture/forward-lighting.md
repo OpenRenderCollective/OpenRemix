@@ -466,3 +466,18 @@ lighting-source queries supply lighting/visibility independently of material res
 Local/sun samples, receiver-local enumeration/context, diffuse queries and shared
 environment reflection radiance are in place. Full composition, reflection pass
 dependencies, water integration and host shader programs remain work.
+
+### Automatic reflection completion ownership
+
+`AutomaticCapture::record` borrows the shared transport and budget. Its matching
+`observe` consumes fenced site, projection and radiance batches, updates provider
+completion counters and writes provider-owned capture storage. The scheduler
+submits each range exactly once and may deliver different slots out of order.
+Site/radiance batches validate finite irradiance before publishing any result;
+projection assessment retains its own range/duplicate validation. No callback,
+virtual dispatch or extra ray/result array is introduced by this boundary.
+
+This is a completion boundary, not independent scheduling: diffuse planning still
+provides placement seeds, and the bake controller still orders preparation,
+filtering and publication. A separate provider scheduler must share prepared
+transport resources rather than constructing another scene for each technique.

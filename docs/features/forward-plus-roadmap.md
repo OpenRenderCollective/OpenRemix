@@ -1,3 +1,8 @@
+## Automatic reflection readback ownership - 2026-11-02
+
+- Provider now consumes its fenced site/projection/radiance batches and advances its own completion counters. Bake controller no longer knows reflection texel layout or site-validation policy.
+- Independent scheduling, diffuse-independent seed planning and shared prepared transport remain required. This does not complete the swappable backend framework or its performance gate.
+
 ## Focused performance qualification - 2026-11-02
 
 - Crossfire at 1920x1080, 4x MSAA, full-resolution SSR: two foreground baseline/modular comparisons confirmed identical lighting hashes, workload counts and checked world-image regions.

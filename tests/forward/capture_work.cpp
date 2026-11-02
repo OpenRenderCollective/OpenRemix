@@ -1,4 +1,5 @@
 #include "forward/probes/capture_work.h"
+#include "forward/probes/automatic_capture.h"
 #include "forward/probes/local_capture_work.h"
 #include <limits>
 #include "scene/hash_stream.h"
@@ -71,6 +72,37 @@ void testLocalCaptureWork() {
 }
 void testCaptureWork() {
   testLocalCaptureWork();
+  {
+    p::AutomaticCapture capture;
+    capture.reflectionSites.resize(2);
+    capture.usableReflectionSites.resize(2);
+    capture.siteNext = 2;
+    remix::forward::bake::Result valid{};
+    valid.statistics = {.1f, 0, float(p::AutomaticCapture::siteSamples), 0};
+    auto bad = valid;
+    bad.irradiance[1][2] = std::numeric_limits<float>::quiet_NaN();
+    const std::array batch{valid, bad};
+    require(!capture.observe(p::AutomaticCapture::Step::ValidateSites, 0, batch),
+            "Invalid site batch accepted");
+    require(!capture.siteReceived && !capture.usableReflectionSites[0], "Partial site batch published");
+    require(capture.observe(p::AutomaticCapture::Step::ValidateSites, 1, {&valid, 1}),
+            "Out-of-order site readback rejected");
+    require(capture.siteReceived == 1 && capture.usableReflectionSites[1], "Site completion not owned");
+    require(!capture.observe(p::AutomaticCapture::Step::Capture, 0, {&valid, 1}), "Unsubmitted capture accepted");
+    require(!capture.observe(p::AutomaticCapture::Step::Fit, 0, {}), "Non-query phase accepted readback");
+  }
+  {
+    p::AutomaticCapture owner;
+    owner.captures.push_back(capture());
+    owner.work = p::CaptureWork(owner.captures);
+    owner.captureNext = uint32_t(owner.work.rays().size());
+    remix::forward::bake::Result result{};
+    result.irradiance[0] = {-1, 70000, 2, 4};
+    require(owner.observe(p::AutomaticCapture::Step::Capture, 0, {&result, 1}), "Capture readback rejected");
+    require(owner.captureReceived == 1 && owner.captures[0].radiance[0][0] == 0 && owner.captures[0].radiance[0][1] == 65000 &&
+            owner.captures[0].radiance[0][2] == 2 && owner.captures[0].radiance[0][3] == 4,
+            "Capture readback changed radiance clamp or completion");
+  }
   auto base = capture(), alias = base, other = base;
   alias.bounds.include({-2,-2,-2});
   alias.bounds.include({2,2,2});

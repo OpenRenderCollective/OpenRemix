@@ -39,7 +39,6 @@
 namespace remix::forward::bake {
   namespace {
     std::atomic<uint64_t> generation = 0;
-    constexpr uint32_t reflectionSiteSamples = probes::AutomaticCapture::siteSamples;
     lightmap::Options surfaceAtlasOptions(const Config &config, const VkPhysicalDeviceLimits &limits) {
       lightmap::Options atlas;
       atlas.padding = 0;
@@ -492,10 +491,13 @@ namespace remix::forward::bake {
               job.failed = true;
               status(REMIXAPI_BAKE_FAILED_EXT, "Invalid reflection receiver readback ownership");
             }
-          } else if (submission.reflectionGeometry) {
-            if (!job.reflections.projectionAudit->observe(submission.first, results)) {
+          } else if (submission.reflectionGeometry || submission.reflectionSite || submission.radiance) {
+            using Step = probes::AutomaticCapture::Step;
+            const auto step = submission.reflectionGeometry ? Step::CheckGeometry
+                            : submission.reflectionSite ? Step::ValidateSites : Step::Capture;
+            if (!job.reflections.observe(step, submission.first, results)) {
               job.failed = true;
-              status(REMIXAPI_BAKE_FAILED_EXT, "Invalid reflection projection geometry");
+              status(REMIXAPI_BAKE_FAILED_EXT, "Invalid automatic reflection readback");
             }
           } else {
             for (uint32_t i = 0; i < submission.count; ++i) {
@@ -508,19 +510,7 @@ namespace remix::forward::bake {
                 job.failed = true;
                 status(REMIXAPI_BAKE_FAILED_EXT, "Bake produced non-finite irradiance");
               }
-              if (submission.radiance) {
-                const uint32_t ray = submission.first + i;
-                const auto [capture, texel] = job.reflections.work.destination(ray);
-                auto color = value.irradiance[0];
-                for (uint32_t c = 0; c < 3; ++c)
-                  color[c] = std::clamp(color[c], 0.f, 65000.f);
-                job.reflections.captures[capture].radiance[texel] = color;
-              } else if (submission.reflectionSite) {
-                job.reflections.usableReflectionSites[submission.first + i] =
-                    !job.failed && value.statistics[2] == reflectionSiteSamples &&
-                    std::isfinite(value.statistics[0]) && value.statistics[0] >= 0 &&
-                    value.statistics[0] < .5f;
-              } else if (submission.surface) {
+              if (submission.surface) {
                 job.surfaces[submission.first + i] = value;
               } else {
                 value.statistics[3] = !job.failed && value.statistics[0] < .5f ? 1.f : 0.f;
@@ -542,17 +532,15 @@ namespace remix::forward::bake {
                               submission.direct || submission.directionalField || submission.sun ||
                               submission.probeSun || submission.probeLocal
                                   ? sizeof(VisibilityResult) : sizeof(Result));
-        if (!submission.styled && !submission.reference && !submission.probeDepth && !submission.coarseTransfer) (submission.sunDepth ? job.sunDepthReceived
+        if (!submission.styled && !submission.reference && !submission.probeDepth && !submission.coarseTransfer &&
+            !submission.radiance && !submission.reflectionGeometry && !submission.reflectionSite) (submission.sunDepth ? job.sunDepthReceived
          : submission.localReflection ? job.localCaptureReceived
-         : submission.radiance ? job.reflections.captureReceived
          : submission.receiverGuardCoverage ? job.receiverGuardReceived
          : submission.receiverFitCoverage ? job.receiverCoverageReceived
          : submission.receiverFit ? job.receiverFitReceived
          : submission.receiverSiteCheck ? job.receiverCheckReceived
          : submission.receiverSite ? job.receiverSiteReceived
          : submission.reflectionReceiver ? job.receiverReceived
-         : submission.reflectionGeometry ? job.reflections.geometryReceived
-         : submission.reflectionSite     ? job.reflections.siteReceived
          : submission.visibility         ? job.visibilityReceived
          : submission.directionalField   ? job.directionalReceived
          : submission.direct             ? job.directReceived
