@@ -381,7 +381,8 @@ namespace {
       try { premature.initializeShared(transport); }
       catch (const std::invalid_argument &) { rejected = true; }
       require(rejected, "Shared transport accepted scene before build-input retirement");
-      require(!transport.canShare(*scene, options), "Transport advertised an unretired scene for sharing");
+      require(!transport.matchesRequest(*scene, options) && !transport.canShareScene(*scene, options),
+              "Transport advertised an unretired scene for sharing");
     }
     transport.releaseBuildInputs();
     require(transport.memoryBytes() < before,
@@ -438,7 +439,7 @@ namespace {
         require(ticket->ready(), "Shared transport preparation timed out");
         ticket->check();
       };
-      require(transport.canShare(*scene, options), "Prepared transport rejected its exact request");
+      require(transport.matchesRequest(*scene, options), "Prepared transport rejected its exact request");
       auto rejectQuery = [&](uint32_t samples, uint32_t bounces, float distance) {
         const auto bytes = transport.memoryBytes();
         bool rejected = false;
@@ -453,36 +454,106 @@ namespace {
       rejectQuery(1, 1, std::numeric_limits<float>::infinity());
 
       auto changedScene = *scene;
-      require(!transport.canShare(changedScene, options), "Shared transport accepted a different snapshot with the same hash");
+      require(!transport.matchesRequest(changedScene, options) && !transport.canShareScene(changedScene, options),
+              "Shared transport accepted a different snapshot with the same hash");
       auto mismatch = [&](auto change) {
         auto changed = options;
         change(changed);
-        require(!transport.canShare(*scene, changed), "Shared transport accepted a different option");
+        require(!transport.matchesRequest(*scene, changed) && !transport.canShareScene(*scene, changed),
+                "Shared transport accepted an incompatible scene policy");
         bool rejected = false;
         try { independent.initializeShared(transport, *scene, changed); }
         catch (const std::invalid_argument &) { rejected = true; }
         require(rejected, "Shared consumer adopted incompatible transport policy");
       };
       mismatch([](auto &o) { ++o.textureResolution; });
-      mismatch([](auto &o) { ++o.batchPoints; });
-      mismatch([](auto &o) { ++o.initialBatchPoints; });
       mismatch([](auto &o) { ++o.queueFamily; });
-      mismatch([](auto &o) { o.parallel = !o.parallel; });
-      mismatch([](auto &o) { o.lightImportanceSampling = !o.lightImportanceSampling; });
       mismatch([](auto &o) { o.lightingComponents = !o.lightingComponents; });
       mismatch([](auto &o) { o.directLighting.lights.push_back(bake::DirectMode::Baked); });
-      mismatch([](auto &o) { o.cpuReadback = !o.cpuReadback; });
-      mismatch([](auto &o) { o.depthCapture = !o.depthCapture; });
-      mismatch([](auto &o) { o.deviceLocalBatches = !o.deviceLocalBatches; });
-      mismatch([](auto &o) { ++o.rayBudget; });
       mismatch([](auto &o) { ++o.atlasBudget; });
-      mismatch([](auto &o) { o.distance *= 2; });
-      mismatch([](auto &o) { o.bias *= 2; });
+      auto privateChange = [&](auto change) {
+        auto changed = options;
+        change(changed);
+        require(!transport.matchesRequest(*scene, changed) && transport.canShareScene(*scene, changed),
+                "Private consumer settings either matched mutable slots or prevented scene reuse");
+      };
+      privateChange([](auto &o) { ++o.batchPoints; });
+      privateChange([](auto &o) { ++o.initialBatchPoints; });
+      privateChange([](auto &o) { o.parallel = !o.parallel; });
+      privateChange([](auto &o) { o.lightImportanceSampling = !o.lightImportanceSampling; });
+      privateChange([](auto &o) { o.cpuReadback = !o.cpuReadback; });
+      privateChange([](auto &o) { o.depthCapture = !o.depthCapture; });
+      privateChange([](auto &o) { o.deviceLocalBatches = !o.deviceLocalBatches; });
+      privateChange([](auto &o) { ++o.rayBudget; });
+      privateChange([](auto &o) { o.distance *= 2; });
+      privateChange([](auto &o) { o.bias *= 2; });
+      auto invalid = options;
+      invalid.batchPoints = 0;
+      require(!transport.canShareScene(*scene, invalid), "Shared scene accepted zero batch capacity");
+      invalid = options; invalid.initialBatchPoints = options.batchPoints + 1;
+      require(!transport.canShareScene(*scene, invalid), "Shared scene accepted invalid initial capacity");
+      invalid = options; invalid.distance = std::numeric_limits<float>::infinity();
+      require(!transport.canShareScene(*scene, invalid), "Shared scene accepted a nonfinite private range");
+      invalid = options; invalid.bias = 0;
+      require(!transport.canShareScene(*scene, invalid), "Shared scene accepted zero private bias");
+
       prepareShared(independent, transport);
       const auto admittedIdentity = independent.memory().consumerIdentity;
       mismatch([](auto &o) { o.lightingComponents = !o.lightingComponents; });
       require(independent.memory().consumerIdentity == admittedIdentity,
               "Rejected sharing replaced an existing consumer");
+      auto privateOptions = options;
+      privateOptions.batchPoints = 8;
+      privateOptions.initialBatchPoints = 2;
+      privateOptions.parallel = !options.parallel;
+      privateOptions.lightImportanceSampling = !options.lightImportanceSampling;
+      privateOptions.cpuReadback = false;
+      privateOptions.depthCapture = true;
+      privateOptions.rayBudget /= 2;
+      privateOptions.distance = 12;
+      privateOptions.bias *= .5f;
+      auto preparePrivate = [&](bake::Transport &consumer, const bake::Transport &owner,
+                                 const bake::Options &requested, bool inferSnapshot = true) {
+        auto ticket = pipelines.prepare("bake-test-private-" + std::to_string(++transportGeneration), [&] {
+          if (inferSnapshot) consumer.initializeShared(owner, *scene, requested);
+          else consumer.initializeShared(owner, requested);
+        });
+        const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+        while (!ticket->ready() && std::chrono::steady_clock::now() < until)
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        require(ticket->ready(), "Private shared consumer preparation timed out");
+        ticket->check();
+      };
+      bake::Transport privateConsumer;
+      preparePrivate(privateConsumer, transport, privateOptions);
+      require(privateConsumer.matchesRequest(*scene, privateOptions) &&
+                  !privateConsumer.matchesRequest(*scene, options) && transport.matchesRequest(*scene, options) &&
+                  privateConsumer.memory().sceneIdentity == transport.memory().sceneIdentity &&
+                  privateConsumer.memory().consumerIdentity != transport.memory().consumerIdentity,
+              "Sharing either ignored private settings, changed the producer or duplicated the scene");
+      fixture.begin();
+      privateConsumer.recordBatch(fixture.command, 0, points, samples, bounces);
+      fixture.finish();
+      std::array<bake::Result, 2> privateResults;
+      privateConsumer.read(0, privateResults);
+      for (uint32_t i = 0; i < 2; ++i) {
+        for (uint32_t c = 0; c < 3; ++c)
+          require(std::abs(privateResults[i].irradiance[0][c] - reference[i].irradiance[0][c]) < .001f,
+                  "Private serial/parallel and readback policies changed constant environment energy");
+        for (const auto &moment : privateResults[i].moments)
+          if (moment[3] > 0)
+            require(std::abs(moment[0] - privateOptions.distance) < .01f,
+                    "Shared consumer inherited the producer's query range");
+      }
+      auto localOptions = privateOptions;
+      localOptions.deviceLocalBatches = true;
+      bake::Transport deviceConsumer;
+      preparePrivate(deviceConsumer, privateConsumer, localOptions);
+      bool cpuRejected = false;
+      try { deviceConsumer.recordBatch(VK_NULL_HANDLE, 0, points, 1, 1); }
+      catch (const std::logic_error &) { cpuRejected = true; }
+      require(cpuRejected && deviceConsumer.memory().sceneIdentity == transport.memory().sceneIdentity,
+              "Device-local consumer either lost its API guard or rebuilt immutable inputs");
       const auto originalMemory = transport.memory(), sharedMemory = independent.memory();
       require(originalMemory.sceneIdentity == sharedMemory.sceneIdentity &&
                   originalMemory.consumerIdentity != sharedMemory.consumerIdentity,
@@ -581,8 +652,12 @@ namespace {
       overridden.recordPrepare(fixture.command, world.resources);
       fixture.finish();
       overridden.releaseBuildInputs();
-      require(!overridden.canShare(*scene, options),
+      require(!overridden.matchesRequest(*scene, options) && !overridden.canShareScene(*scene, privateOptions),
               "Snapshot/options inferred compatibility for caller-supplied packed inputs");
+      bake::Transport explicitConsumer;
+      preparePrivate(explicitConsumer, overridden, privateOptions, false);
+      require(explicitConsumer.memory().sceneIdentity == overridden.memory().sceneIdentity,
+              "Explicit packed-input inheritance rebuilt the donor's scene");
       sharedSceneChecked = true;
     }
     return results[0];

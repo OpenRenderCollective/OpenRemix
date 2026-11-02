@@ -32,6 +32,7 @@ namespace remix::forward::bake {
       std::vector<Texture> textures;
       std::vector<VkImageView> atlasViews;
       uint32_t resolution = 0, domeLayer = 0;
+      double geometryDiagonal = 0; // recompute private sun-query bounds without rescanning vertices
       bool canonicalInputs = false; // packed from source, not a caller-provided override
       bool ready = false, hasDielectrics = false, hasContainingMedia = false, hasModulatingDecals = false;
       ~Scene();

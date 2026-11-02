@@ -23,6 +23,13 @@ namespace remix::forward::bake {
     uint32_t rayBudget = 1u << 20; // point * sample * bounce ceiling per dispatch
     uint64_t atlasBudget = 256ull << 20;
     float distance = 100, bias = .002f; // metres
+    // Classify new options here: these fields alter immutable prepared inputs or
+    // their queue ownership. All remaining fields configure a private consumer.
+    bool sameScenePolicy(const Options &other) const {
+      return textureResolution == other.textureResolution && atlasBudget == other.atlasBudget &&
+          queueFamily == other.queueFamily && lightingComponents == other.lightingComponents &&
+          directLighting == other.directLighting;
+    }
     bool operator==(const Options &) const = default;
   };
   // One scene snapshot's hardware diffuse/radiance transport. The caller owns
@@ -50,15 +57,19 @@ namespace remix::forward::bake {
     // must have run. All transport options are retained; no repacking/rebuild.
     // Call on a preparation worker. The original transport may then be retired.
     void initializeShared(const Transport &prepared);
-    // Conservative provider admission: exact immutable snapshot identity and all
-    // inherited options must match. Caller-supplied packed input overrides are
-    // not eligible for this inferred compatibility. Call across a completed worker/fence
-    // handoff; this is not synchronization for concurrently changing transports.
-    bool canShare(const scene::BakeScene &source, const Options &options) const;
-    // Reject incompatibility before replacing this consumer or allocating GPU
-    // resources. Unlike the inheritance-only overload, states the request policy.
-    void initializeShared(const Transport &prepared, const scene::BakeScene &source, const Options &options);
+    // Explicitly inherit the donor's packed inputs, including caller overrides,
+    // while selecting valid private settings. Immutable scene policy must match.
+    void initializeShared(const Transport &prepared, const Options &options);
 
+    // Exact prepared consumer identity/policy, for reusing the same mutable slots
+    // only after their fences. Caller-supplied packed overrides are not inferred.
+    bool matchesRequest(const scene::BakeScene &source, const Options &options) const;
+    // Immutable scene compatibility; valid private execution/query settings may
+    // differ. Observe only after the preparation worker/fence handoff.
+    bool canShareScene(const scene::BakeScene &source, const Options &options) const;
+    // Reject incompatible input policy before allocating/replacing a consumer;
+    // accepted private options configure its own pipelines, slots and queries.
+    void initializeShared(const Transport &prepared, const scene::BakeScene &source, const Options &options);
     void recordPrepare(VkCommandBuffer command, RasterRenderer &textures);
     // The selected slot's prior fence has completed. Call after recordPrepare.
     // A nonzero normal identifies a surface receiver: offset it along the normal
@@ -211,6 +222,8 @@ namespace remix::forward::bake {
     uint32_t textureResolution() const;
 
   private:
+    bool consumerCompatible(const Options &options) const;
+    void initializeConsumer(const Transport &prepared, const Options &options);
     struct Gpu;
     std::unique_ptr<Gpu> m_gpu;
     enum class Mode : uint32_t {

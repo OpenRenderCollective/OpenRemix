@@ -96,7 +96,7 @@ namespace remix::forward::probes {
       options.rayBudget = bake::Budget::maximumWork;
       options.initialBatchPoints = 1024;
       options.textureResolution = config.textureResolution;
-      if (prior && prior->transport && prior->transport->canShare(*source, options)) {
+      if (prior && prior->transport && prior->transport->matchesRequest(*source, options)) {
         // Completed edits can reuse the same compatible consumer without
         // allocating another descriptor/dispatch set. Mutable slots are touched
         // only after Authoring::selectFrame observed their owning fence.

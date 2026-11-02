@@ -12,6 +12,21 @@
 namespace remix::forward::bake {
   static_assert(uint64_t(maximumBatchPoints) * sizeof(Result) <= (128ull << 20));
   namespace {
+    enum class OptionValidity { Valid, Invalid, Precision };
+    OptionValidity optionValidity(const scene::BakeScene &source, const Options &options) {
+      if (!source.ready || !std::isfinite(source.sceneScale) || source.sceneScale <= 0 ||
+          !options.batchPoints || !options.rayBudget || options.batchPoints > maximumBatchPoints ||
+          options.initialBatchPoints > options.batchPoints || options.textureResolution < 16 ||
+          options.textureResolution > 1024 || !std::has_single_bit(options.textureResolution) ||
+          !std::isfinite(options.distance) || !std::isfinite(options.bias) || options.bias <= 0 ||
+          options.distance <= options.bias * 2 || !std::isfinite(options.distance / source.sceneScale))
+        return OptionValidity::Invalid;
+      const float distance = options.distance / source.sceneScale, bias = options.bias / source.sceneScale;
+      return std::isfinite(distance * distance) && bias > 0 ? OptionValidity::Valid : OptionValidity::Precision;
+    }
+    float sunQueryDistance(double diagonal, float sceneScale, const Options &options) {
+      return std::max(options.distance / sceneScale, float(diagonal + 2 * options.bias / sceneScale));
+    }
     Frame lightingFrame(const scene::DistantLight &sun, const scene::DomeLight &dome, float distance,
                         float bias, float sceneScale) {
       Frame frame;
@@ -84,15 +99,10 @@ namespace remix::forward::bake {
   }
   void Transport::initialize(VkPhysicalDevice physical, VkDevice device,
                              std::shared_ptr<const scene::BakeScene> source, Inputs inputs, Options options) {
-    if (!source || !source->ready || !std::isfinite(source->sceneScale) || source->sceneScale <= 0 ||
-        !options.batchPoints || !options.rayBudget || options.batchPoints > maximumBatchPoints ||
-        options.initialBatchPoints > options.batchPoints || options.textureResolution < 16 ||
-        options.textureResolution > 1024 || !std::has_single_bit(options.textureResolution) ||
-        !std::isfinite(options.distance) || !std::isfinite(options.bias) || options.bias <= 0 ||
-        options.distance <= options.bias * 2 || !std::isfinite(options.distance / source->sceneScale))
+    const auto validity = source ? optionValidity(*source, options) : OptionValidity::Invalid;
+    if (validity == OptionValidity::Invalid)
       throw std::invalid_argument("Invalid static bake transport options or scene");
-    const float distance = options.distance / source->sceneScale, bias = options.bias / source->sceneScale;
-    if (!std::isfinite(distance * distance) || !(bias > 0))
+    if (validity == OptionValidity::Precision)
       throw std::invalid_argument("Bake units exceed the distance-moment precision range");
     if (options.lightingComponents) {
       if (inputs.lights.size() != source->lights.size())
@@ -119,25 +129,42 @@ namespace remix::forward::bake {
     next->createDescriptors();
     m_gpu = std::move(next);
   }
-  bool Transport::canShare(const scene::BakeScene &source, const Options &options) const {
+  bool Transport::matchesRequest(const scene::BakeScene &source, const Options &options) const {
     return m_gpu && m_gpu->prepared && m_gpu->world->ready && m_gpu->world->canonicalInputs &&
         m_gpu->world->source.get() == &source && m_gpu->options == options;
   }
+  bool Transport::consumerCompatible(const Options &options) const {
+    return m_gpu && m_gpu->prepared && m_gpu->world->ready && m_gpu->options.sameScenePolicy(options) &&
+        optionValidity(*m_gpu->world->source, options) == OptionValidity::Valid &&
+        uint64_t(options.batchPoints) * sizeof(Result) <= m_gpu->limits.maxStorageBufferRange &&
+        std::isfinite(sunQueryDistance(m_gpu->world->geometryDiagonal, m_gpu->world->source->sceneScale, options));
+  }
+  bool Transport::canShareScene(const scene::BakeScene &source, const Options &options) const {
+    return m_gpu && m_gpu->world->canonicalInputs && m_gpu->world->source.get() == &source && consumerCompatible(options);
+  }
+  void Transport::initializeShared(const Transport &prepared, const Options &options) {
+    if (!prepared.consumerCompatible(options))
+      throw std::invalid_argument("Shared transport requires compatible scene policy and private settings");
+    initializeConsumer(prepared, options);
+  }
   void Transport::initializeShared(const Transport &prepared, const scene::BakeScene &source, const Options &options) {
-    if (!prepared.canShare(source, options))
+    if (!prepared.canShareScene(source, options))
       throw std::invalid_argument("Shared transport request does not match a prepared scene and policy");
-    initializeShared(prepared);
+    initializeConsumer(prepared, options);
   }
   void Transport::initializeShared(const Transport &prepared) {
     if (!prepared.m_gpu || !prepared.m_gpu->prepared || !prepared.m_gpu->world->ready)
       throw std::invalid_argument("Shared transport scene requires a completed preparation fence");
+    initializeConsumer(prepared, prepared.m_gpu->options);
+  }
+  void Transport::initializeConsumer(const Transport &prepared, const Options &options) {
     const auto &owner = *prepared.m_gpu;
     auto next = std::make_unique<Gpu>();
     next->physical = owner.physical;
     next->device = owner.device;
-    next->options = owner.options;
+    next->options = options;
     next->limits = owner.limits;
-    next->sunDistance = owner.sunDistance;
+    next->sunDistance = sunQueryDistance(owner.world->geometryDiagonal, owner.world->source->sceneScale, options);
     next->aggregateDiffuse = owner.aggregateDiffuse;
     next->world = owner.world;
     next->prepared = true;
@@ -196,8 +223,8 @@ namespace remix::forward::bake {
         const double size = double(sunBounds.maximum[c]) - sunBounds.minimum[c];
         diagonalSquared += size * size;
       }
-    sunDistance = std::max(options.distance / world->source->sceneScale,
-                           float(std::sqrt(diagonalSquared) + 2 * options.bias / world->source->sceneScale));
+    world->geometryDiagonal = std::sqrt(diagonalSquared);
+    sunDistance = sunQueryDistance(world->geometryDiagonal, world->source->sceneScale, options);
     if (!std::isfinite(sunDistance))
       throw std::invalid_argument("Sun visibility bounds exceed transport precision");
     for (const auto &t : inputs.triangles)

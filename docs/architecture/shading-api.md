@@ -294,20 +294,21 @@ The next lifecycle split must preserve these boundaries:
 - A prepared transport scene can have independent dispatch consumers and frame
   slots. Sharing requires the preparation fence and `releaseBuildInputs` boundary;
   a worker must not borrow mutable descriptors or another consumer's slots.
-- `Transport::initializeShared` inherits all transport options, including direct
-  ownership, lighting components, distance/bias and texture preparation. A source
-  hash alone is insufficient to authorize reuse. Authored captures currently use
-  different options and cannot blindly adopt the default bake transport.
-- `Transport::canShare` and the request-aware `initializeShared` overload now
-  enforce exact snapshot identity and memberwise option equality before allocating
-  or replacing a consumer. Caller-supplied packed input overrides are conservatively
-  excluded from this inferred compatibility. The inheritance-only overload remains
-  available when the caller explicitly wants the donor's complete policy/inputs.
-  These are preparation-time checks, not per-frame scene scans or new scheduling.
-- Authored capture edits use this compatibility check before reusing their prior
-  transport consumer. Matching edits retain the same slots/descriptors under the
-  existing fence discipline; they do not instantiate a second consumer. This
-  does not yet share the default bake's scene with the authored provider.
+- `Transport::matchesRequest` checks exact snapshot identity and all options when
+  reusing an existing mutable consumer after its fences. Authored capture edits
+  use this check to retain their existing slots and descriptors.
+- `Transport::canShareScene` instead checks immutable scene policy: texture
+  resolution/budget, queue ownership, direct-light ownership and component data.
+  Independent consumers may choose their own batch capacity, readback memory,
+  dispatch budget, sampling policy, optional depth pipeline and distance/bias.
+  Sun-query range is computed per consumer from retained geometry bounds.
+- Request-aware `initializeShared` checks this compatibility before allocating or
+  replacing a consumer. Snapshot hashes alone do not authorize reuse; packed
+  input overrides are excluded from inferred compatibility. Explicit donor
+  inheritance accepts those inputs, with either inherited or compatible private
+  settings. These are preparation-time checks, not per-frame scene scans.
+- This separates scene compatibility from consumer reuse, but does not yet share
+  the default bake's scene with the authored provider at runtime.
 - A requesting provider must obtain a compatible, retained scene lease before
   the default job retires. Do not retain an acceleration structure indefinitely
   merely to make a later request cheaper. Define demand and retirement explicitly.

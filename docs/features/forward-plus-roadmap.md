@@ -1,3 +1,15 @@
+## 2026-11-03 — scene sharing and private transport policy
+
+Prepared GPU scene compatibility is now distinct from exact mutable-consumer
+reuse. Independent consumers can share immutable inputs while choosing their
+own sampling, distance/bias, batch memory/capacity and optional depth pipeline.
+Texture preparation, light ownership/components and queue ownership must match.
+Snapshot identity and completed preparation remain mandatory; explicit packed
+input overrides require explicit donor inheritance. No shaders or per-draw
+work changed. Default/authored provider lease integration and foreground
+performance acceptance remain outstanding. See the shading API guide for the
+remaining lifecycle contract.
+
 ## 2026-11-03: diffuse publication without a reflection asset
 
 - Empty automatic captures complete without a per-job reflection image/upload or filtering worker pool. Diffuse activation accepts an absent reflection asset; shared fallback descriptors remain valid.
