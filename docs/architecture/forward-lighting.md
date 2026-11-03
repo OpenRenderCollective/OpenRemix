@@ -119,8 +119,10 @@ changes and viewmodel changes must not invalidate unrelated static lighting.
 
 Initial CPU integration: `lighting_plan.h` resolves existing baked/live-GI energy
 ownership and mixed-light selection without mutating requested quality or custom
-bake settings. Bake publication and authored reflection composition share one
-resolved configuration per recording. `presets::source2()` now constructs the
+bake settings. The bake recorder and frame setup consume the same resolved plan.
+Frame setup snapshots its receiver/highlight policy before light enumeration;
+per-light response preparation does not reinterpret saved options. Capture
+configuration remains independently resolved for reflection transport. `presets::source2()` now constructs the
 runtime default profile under the name Source 2, preserving its previous values.
 Typed technique selection now lives in `techniques.h`: static direct lighting,
 diffuse transport, reflection fallback, SSR and dynamic shadow requests are separate

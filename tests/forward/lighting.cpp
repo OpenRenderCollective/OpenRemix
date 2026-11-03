@@ -410,9 +410,9 @@ int main() {
     const auto ordinary = options;
     options.bakedLighting = true;
     require(options.lightingPlan(false).baking == expected && options.baking == requested &&
-                options.selectBakedLights(false) && options.sameTargets(ordinary),
+                options.lightingPlan(false).selectedMixedLights && options.sameTargets(ordinary),
             "Baked mode derives aggregate/geometry/selected lighting without changing quality, preferences or targets");
-    require(!options.bakedLightingActive(true) && !options.selectBakedLights(true),
+    require(!options.lightingPlan(true).bakedReceivers && !options.lightingPlan(true).selectedMixedLights,
             "Legacy live GI retains whole-field replacement for saved profiles");
     options.bakedDirectWithLiveGI = true;
     auto composed = expected;
@@ -422,7 +422,7 @@ int main() {
     composed.reflectionProbes = 0;
     composed.reflectionResolution = 8;
     composed.reflectionDetailTolerance = 0;
-    require(options.selectBakedLights(true) && options.bakedLightingActive(true) &&
+    require(options.lightingPlan(true).selectedMixedLights && options.lightingPlan(true).bakedReceivers &&
                 options.lightingPlan(true).baking == composed && options.baking == requested,
             "Live incoming preserves baked direct ownership while excluding baked indirect/captures");
     auto liveTargets = options;
@@ -432,14 +432,14 @@ int main() {
     require(!liveTargets.sameTargets(analyticTargets),
             "Changing composed versus analytic direct ownership rebuilds specialized live pipelines");
     options.baking.directDiffuse = false;
-    require(!options.bakedLightingActive(false) && options.lightingPlan(false).baking == options.baking,
+    require(!options.lightingPlan(false).bakedReceivers && options.lightingPlan(false).baking == options.baking,
             "Baked mode pauses when baked direct diffuse is disabled");
     options.baking = requested;
     options.baking.enabled = false;
-    require(!options.bakedLightingActive(false), "Baked mode does not implicitly enable map baking");
+    require(!options.lightingPlan(false).bakedReceivers, "Baked mode does not implicitly enable map baking");
     options.baking = requested;
     options.bakedLighting = false;
-    require(options.lightingPlan(false).baking == requested && !options.selectBakedLights(false),
+    require(options.lightingPlan(false).baking == requested && !options.lightingPlan(false).selectedMixedLights,
             "Disabling baked mode restores the exact requested custom lighting policy");
   }
   {

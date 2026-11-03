@@ -76,12 +76,6 @@ namespace remix::forward {
     std::array<float, 3> sunColor{1, .94f, .84f};
     float sunAngularDiameter = .5f; // degrees
     bake::Config baking;
-    bool bakedLightingActive(bool liveGiActive) const {
-      return lighting::resolve(baking, {bakedLighting, selectedBakedLights, bakedDirectWithLiveGI}, liveGiActive).bakedReceivers;
-    }
-    bool selectBakedLights(bool liveGiActive) const {
-      return lighting::resolve(baking, {bakedLighting, selectedBakedLights, bakedDirectWithLiveGI}, liveGiActive).selectedMixedLights;
-    }
     lighting::Plan lightingPlan(bool liveGiActive) const {
       auto config = baking;
       config.modelLightmaps = bake::modelChartsRequested(config.modelLightmaps);

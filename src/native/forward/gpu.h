@@ -213,7 +213,8 @@ namespace remix::forward {
     void createLayouts();
     void createTargets();
     void createPipelines(VkRenderPass output);
-    void prepareFrame(VkCommandBuffer command, RasterRenderer &resources, double seconds);
+    void prepareFrame(VkCommandBuffer command, RasterRenderer &resources, double seconds,
+                      const lighting::Plan &lightingPlan);
     void recordWorld(VkCommandBuffer command);
     void recordWater(VkCommandBuffer command);
     void recordViewModels(VkCommandBuffer command);

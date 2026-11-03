@@ -162,9 +162,12 @@ Readers live beside their [bake](../../src/native/forward/bake),
 
 ## Retirement decisions
 
-The unused internal `Options::bakeConfiguration()` forwarding helper was removed.
-Configuration recording already uses `lightingPlan`; tests now read its `baking`
-member directly. The shared ownership resolver and its behavior remain unchanged.
+The internal `Options::bakeConfiguration()` forwarding helper was removed.
+Frame setup also consumes the existing resolved `lightingPlan`, so the obsolete
+`bakedLightingActive()` and `selectBakedLights()` helper methods were removed with
+their callers. Baking and frame receiver decisions use one plan; tests inspect
+its fields directly. The ownership resolver, saved controls and behavior remain
+unchanged.
 
 No lighting technique or fallback is declared retired by this catalog. The
 reviewed default-on paths, regression modes and pending experiments have live
