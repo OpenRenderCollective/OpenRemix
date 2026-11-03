@@ -29,10 +29,10 @@ namespace remix::forward::probes {
     const CaptureSource *standaloneSource(CaptureTransport transport) const {
       return m_standaloneUsed && transport != CaptureTransport::SharedScene ? &m_standalone->source() : nullptr;
     }
-    Descriptors descriptor(CaptureTransport transport, Descriptors fallback) const {
+    Descriptors descriptor(CaptureTransport transport, Descriptors fallback, ReferenceProvenance receiver) const {
       if (const auto source = standaloneSource(transport); source && source->image)
-        fallback = source->image->descriptors();
-      return m_authored->descriptor(fallback);
+        fallback = source->image->descriptors(receiver);
+      return m_authored->descriptor(fallback, receiver);
     }
     const Header *header(CaptureTransport transport) const {
       if (const auto authored = m_authored->header()) return authored;

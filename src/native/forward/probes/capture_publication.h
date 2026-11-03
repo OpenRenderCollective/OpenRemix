@@ -18,8 +18,8 @@ namespace remix::forward::probes {
     CaptureSource source() const { return {sceneHash, image}; }
     const Header *header() const { return image ? &image->header() : nullptr; }
     // The caller supplies a fallback when no image has published yet.
-    Descriptors descriptor(const ImageAsset *fallback) const {
-      return image ? image->descriptors() : fallback->descriptors();
+    Descriptors descriptor(const ImageAsset *fallback, ReferenceProvenance receiver) const {
+      return image ? image->descriptors(receiver) : fallback->descriptors();
     }
   };
 }

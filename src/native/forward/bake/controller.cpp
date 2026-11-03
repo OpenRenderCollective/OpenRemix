@@ -1406,7 +1406,8 @@ namespace remix::forward::bake {
     return m_volume && m_volume->sunDepth ? m_volume->sunDepth->values() : m_emptySunDepth->descriptor();
   }
   probes::Descriptors Controller::reflectionDescriptor() const {
-    return m_captures.descriptor(m_emptyReflections.get());
+    return m_captures.descriptor(m_emptyReflections.get(), m_volume ? m_volume->reflectionReference
+                                                              : probes::ReferenceProvenance{});
   }
   VkDescriptorImageInfo Controller::surfaceDescriptor() const {
     const auto &image = m_volume && m_volume->surfaceAtlas ? m_volume->surfaceAtlas : m_emptySurface;

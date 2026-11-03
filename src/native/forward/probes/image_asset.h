@@ -34,9 +34,14 @@ namespace remix::forward::probes {
     void recordSelection(VkCommandBuffer command, const ImageAsset &baseline, const ImageAsset &local);
     // Only after the upload submission's fence has completed.
     void releaseUpload();
-    VkDescriptorBufferInfo metadata() const { return m_metadata->descriptor(); }
+    VkDescriptorBufferInfo metadata() const { return m_normalizedMetadata; }
     VkDescriptorImageInfo radiance() const;
     Descriptors descriptors() const { return {metadata(), radiance()}; }
+    // Binding-time admission: mismatched/unknown input identities use the same
+    // radiance and projection with neutral normalization, without shader work.
+    Descriptors descriptors(ReferenceProvenance receiver) const {
+      return {receiver.compatible(m_reference) ? m_normalizedMetadata : m_neutralMetadata, radiance()};
+    }
     const Image &image() const { return *m_image; }
     const Header &header() const { return m_header; }
     // CPU-only metadata follows the same layer mapping as normalization SH.
@@ -48,10 +53,13 @@ namespace remix::forward::probes {
   private:
     void recordCopies(VkCommandBuffer command, const ImageAsset &first, const ImageAsset &second);
     void initialize(VkPhysicalDevice physical, const Header &header, const Normalization &normalization = {});
+    void writeMetadata();
     VkDevice m_device;
     Header m_header;
     Normalization m_normalization;
     std::array<ReferenceProvenance, maxProbes> m_references{};
+    ReferenceProvenance m_reference; // only known when every sampled layer agrees
+    VkDescriptorBufferInfo m_normalizedMetadata{}, m_neutralMetadata{};
     VkSampler m_sampler = VK_NULL_HANDLE;
     std::unique_ptr<Buffer> m_metadata, m_staging;
     std::unique_ptr<Image> m_image;
