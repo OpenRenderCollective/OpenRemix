@@ -292,7 +292,7 @@ namespace remix::forward {
     frame.rayInputs = rayInputs;
     step(cpu.liveScene);
     gpu::GpuScope uploadTime(command, "Forward+ frame uploads");
-    m_gpu->prepareFrame(command, resources, animationSeconds);
+    m_gpu->prepareFrame(command, resources, animationSeconds, lightingPlan);
     cpu.preparation = m_gpu->statistics.cpuRecording.preparation;
     uploadTime.close();
     step(cpu.frame);

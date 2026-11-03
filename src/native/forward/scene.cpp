@@ -30,7 +30,12 @@ namespace remix::forward {
     }
     return staticBounds;
   }
-  void Renderer::Gpu::prepareFrame(VkCommandBuffer command, RasterRenderer &resources, double seconds) {
+  void Renderer::Gpu::prepareFrame(VkCommandBuffer command, RasterRenderer &resources, double seconds,
+                                   const lighting::Plan &lightingPlan) {
+    // Baking and all receiver decisions consume the same frame request.
+    // Keep these values outside receiver/light loops and callback work.
+    const bool bakedReceivers = lightingPlan.bakedReceivers;
+    const bool selectedMixedLights = lightingPlan.selectedMixedLights;
     Statistics::CpuRecording::Preparation cpu;
     auto began = std::chrono::steady_clock::now();
     auto step = [&](double &milliseconds) {
@@ -95,7 +100,7 @@ namespace remix::forward {
     };
     std::vector<float> highlightWeights;
     std::vector<HighlightCandidate> highlightCandidates;
-    if (options.bakedLightingActive(techniquePlan.liveDiffuse()) && bindings) {
+    if (bakedReceivers && bindings) {
       // Captured indices distinguish emitters even when the adapter shares IDs.
       // Merge repeated submissions of the same captured emitter before selection.
       std::vector<float> priorities(bindings->source->lights.size(), 0);
@@ -261,10 +266,10 @@ namespace remix::forward {
           {source.position[0], source.position[1], source.position[2]}, radius, clusterRadiusScale);
       const auto shadowSlot = shadowSelection.slots[sourceIndex];
       LightResponseInput responseInput;
-      responseInput.selectedOnly = options.selectBakedLights(techniquePlan.liveDiffuse());
+      responseInput.selectedOnly = selectedMixedLights;
       responseInput.shadowSelected = shadowSlot != UINT32_MAX;
       responseInput.shadowWeight = responseInput.shadowSelected ? shadowSelection.strength[shadowSlot] : 0;
-      responseInput.independentHighlights = options.bakedLightingActive(techniquePlan.liveDiffuse());
+      responseInput.independentHighlights = bakedReceivers;
       const auto captured = capturedLights[sourceIndex];
       if (captured < highlightWeights.size()) responseInput.highlightWeight = highlightWeights[captured];
       if (publishedBake && publishedBake->mixedLights) {

@@ -54,12 +54,6 @@ namespace remix::forward {
     float ssrThickness = .15f; // metres, single-layer screen depth tolerance
     float ssrRoughness = .6f;
     bake::Config baking;
-    bool bakedLightingActive(bool liveGiActive) const {
-      return lighting::resolve(baking, {bakedLighting, selectedBakedLights, bakedDirectWithLiveGI}, liveGiActive).bakedReceivers;
-    }
-    bool selectBakedLights(bool liveGiActive) const {
-      return lighting::resolve(baking, {bakedLighting, selectedBakedLights, bakedDirectWithLiveGI}, liveGiActive).selectedMixedLights;
-    }
     lighting::Plan lightingPlan(bool liveGiActive) const {
       auto config = baking;
       config.modelLightmaps = bake::modelChartsRequested(config.modelLightmaps);
