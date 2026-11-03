@@ -1,7 +1,7 @@
 #pragma once
 #include "forward/probes/authoring.h"
+#include "forward/probes/capture_config.h"
 #include "forward/probes/standalone_capture.h"
-#include "forward/provider_plan.h"
 
 namespace remix::forward::probes {
   // Captured reflection scheduling and publication selection. The Source 2
@@ -22,21 +22,21 @@ namespace remix::forward::probes {
     bake::SceneRequest *requestScene(RasterRenderer &resources, const CaptureConfig &config) {
       return m_authored->requestScene(resources, config);
     }
-    void record(VkCommandBuffer command, RasterRenderer &resources, const Options &options,
-                const techniques::ResourcePlan &plan, const CaptureConfig &config,
-                bake::SceneRequest *sceneRequest, CaptureSource captures, bool sharedTransportIdle);
+    void record(VkCommandBuffer command, RasterRenderer &resources, const CapturePolicy &policy,
+                const CaptureConfig &config, bake::SceneRequest *sceneRequest,
+                CaptureSource captures, bool sharedTransportIdle);
     // Borrowed publication view; the provider/frame owners retain the image.
-    const CaptureSource *standaloneSource(const techniques::ResourcePlan &plan) const {
-      return m_standaloneUsed && !plan.capturesWithBake() ? &m_standalone->source() : nullptr;
+    const CaptureSource *standaloneSource(CaptureTransport transport) const {
+      return m_standaloneUsed && transport != CaptureTransport::SharedScene ? &m_standalone->source() : nullptr;
     }
-    Descriptors descriptor(const techniques::ResourcePlan &plan, Descriptors fallback) const {
-      if (const auto source = standaloneSource(plan); source && source->image)
+    Descriptors descriptor(CaptureTransport transport, Descriptors fallback) const {
+      if (const auto source = standaloneSource(transport); source && source->image)
         fallback = source->image->descriptors();
       return m_authored->descriptor(fallback);
     }
-    const Header *header(const techniques::ResourcePlan &plan) const {
+    const Header *header(CaptureTransport transport) const {
       if (const auto authored = m_authored->header()) return authored;
-      if (const auto source = standaloneSource(plan); source && source->image)
+      if (const auto source = standaloneSource(transport); source && source->image)
         return &source->image->header();
       return nullptr;
     }

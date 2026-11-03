@@ -29,7 +29,7 @@ namespace remix::forward {
     }
     // A diffuse publication retains scale precedence over capture metadata.
     statistics.reflectionSceneScale = volume ? volume->sceneScale
-        : captureProviders.standaloneSource(techniquePlan) ? captureProviders.standaloneSceneScale()
+        : captureProviders.standaloneSource(techniquePlan.capturePolicy.transport) ? captureProviders.standaloneSceneScale()
                                                          : baking->reflectionSceneScale();
     statistics.authoredReflections = captureProviders.authored()->statistics();
     const auto header = reflectionHeader();
@@ -274,11 +274,12 @@ namespace remix::forward {
     // reflection work against that transport budget and publication.
     const auto lightingPlan = m_gpu->options.lightingPlan(m_gpu->techniquePlan.liveDiffuse());
     const auto captureConfig = m_gpu->options.captureConfiguration();
+    const auto &capturePolicy = m_gpu->techniquePlan.capturePolicy;
     auto *sceneRequest = m_gpu->captureProviders.requestScene(resources, captureConfig);
     m_gpu->baking->record(command, resources, lightingPlan.baking, m_gpu->options.lightCutoff, sceneRequest);
-    const bool sharedCaptures = m_gpu->techniquePlan.capturesWithBake();
-    m_gpu->captureProviders.record(command, resources, m_gpu->options, m_gpu->techniquePlan,
-        captureConfig, sceneRequest, sharedCaptures ? m_gpu->baking->reflectionSource() : probes::CaptureSource{},
+    const bool sharedCaptures = m_gpu->techniquePlan.sharedCaptures();
+    m_gpu->captureProviders.record(command, resources, capturePolicy, captureConfig, sceneRequest,
+        sharedCaptures ? m_gpu->baking->reflectionSource() : probes::CaptureSource{},
         sharedCaptures && m_gpu->baking->statistics().state == REMIXAPI_BAKE_READY_EXT);
     m_gpu->prepareLocalReflections(command, resources);
     bakeTime.close();

@@ -59,6 +59,10 @@ Implemented and checked:
   live water can share prepared scene descriptors with its own query limits.
   Capture recording, admission and source fallback share one resolved owner;
   image disable preserves the scheduler responsible for retiring prior work.
+  Capture scheduling now consumes a capture-owned policy resolved with the
+  resource plan, not the complete saved renderer options or plan. It is prepared
+  on initialization/settings changes, keeping policy construction out of frame
+  recording; radiance configuration/cache formats remain separate.
   Capture metadata selection now takes explicit fallback descriptors and exposes
   borrowed capture-only publications; the renderer supplies Source 2 fallbacks.
   The capture module no longer includes or accepts the diffuse controller.

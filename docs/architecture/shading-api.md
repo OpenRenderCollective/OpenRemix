@@ -411,7 +411,7 @@ through normal teardown. The owner adds no virtual dispatch, jobs, ray lists or
 per-frame heap allocation. This is the captured-lighting adapter boundary;
 arbitrary provider dependency/finishing orchestration remains unfinished.
 
-`ResourcePlan::captureTransport` explicitly selects the automatic capture and
+`ResourcePlan::capturePolicy.transport` explicitly selects the automatic capture and
 shared-admission owner: the baked scene scheduler or the standalone scene
 scheduler. Recording, authored-work admission, automatic image/header fallback
 and reflection scale reporting consume this selection rather than independently
@@ -908,3 +908,21 @@ wrapper. Other sources use the shared adapter automatically. There is no runtime
 callback, setting, extra pass or duplicate material equation. The query-only
 fixture removes the default sampler implementation while exercising the real
 standard material across its supported passes.
+
+### Capture policy without saved renderer options
+
+`probes::CapturePolicy` carries the transport owner, automatic probe count,
+fitting tolerance and authored fallback choice. `CaptureTransport` is owned by
+the capture module: shared scene transport or standalone scene transport, without
+requiring the shared owner to be a diffuse baker. `ResourcePlan` stores the
+policy resolved at initialization/settings changes. Recording borrows it rather
+than building another policy every frame.
+
+The capture module accepts neither the full renderer `Options` nor its complete
+resource plan. Metadata lookup takes only the selected transport; sampling still
+uses the existing `CaptureConfig`. Selection policy is separate from radiance
+configuration and cache identity, preserving the existing sampling/cache formats.
+The Source 2 adapter still selects shared captures for baked diffuse and
+standalone captures for supported live or disabled diffuse. Image disable retains
+the owner that must retire pending work. No new runtime setting or GPU work is
+introduced; CPU timing acceptance still needs to include this boundary.

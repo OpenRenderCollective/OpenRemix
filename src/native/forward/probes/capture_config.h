@@ -2,6 +2,15 @@
 #include <cstdint>
 
 namespace remix::forward::probes {
+  enum class CaptureTransport { SharedScene, StandaloneScene };
+  // Selection/admission policy, separate from sampled radiance/cache identity.
+  struct CapturePolicy {
+    CaptureTransport transport = CaptureTransport::StandaloneScene;
+    uint32_t automaticCount = 0;
+    float detailTolerance = .5f; // metres
+    bool authoredFallback = true;
+    bool operator==(const CapturePolicy &) const = default;
+  };
   struct CaptureConfig {
     bool enabled = true;
     uint32_t reflectionResolution = 128, textureResolution = 256;

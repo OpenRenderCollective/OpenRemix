@@ -68,6 +68,9 @@ namespace remix::forward {
     bake::Config bakeConfiguration(bool liveGiActive) const {
       return lightingPlan(liveGiActive).baking;
     }
+    probes::CapturePolicy capturePolicy(probes::CaptureTransport transport) const {
+      return {transport, baking.reflectionProbes, baking.reflectionDetailTolerance, authoredReflectionFallback};
+    }
     probes::CaptureConfig captureConfiguration() const {
       return {.enabled = baking.reflectionProbes != 0,
               .reflectionResolution = baking.reflectionResolution,
