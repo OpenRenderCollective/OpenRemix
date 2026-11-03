@@ -72,7 +72,7 @@ namespace remix::forward::probes {
       image.reset();
       return;
     }
-    image = std::make_shared<ImageAsset>(physical, device, filteredView(), cancelled);
+    image = std::make_shared<ImageAsset>(physical, device, filteredView(), cancelled, reference);
   }
   void AutomaticCapture::prepareContent(std::stop_token cancelled) {
     requirePreparing();

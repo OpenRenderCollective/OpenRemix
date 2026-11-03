@@ -4,6 +4,7 @@
 #include "forward/bake/transport_memory.h"
 #include "forward/probes/automatic_capture.h"
 #include "forward/probes/capture_cache.h"
+#include "forward/probes/source2_reference.h"
 #include "raster/renderer.h"
 #include <algorithm>
 #include <atomic>
@@ -125,6 +126,7 @@ void StandaloneCapture::record(VkCommandBuffer command,
             "Invalid standalone reflection configuration");
       auto job = std::make_shared<Job>();
       job->source = source;
+      job->capture.reference = source2Reference(source->lightingHash(scene::BakeLightScope::Combined));
       const auto physical = m_physical;
       const auto device = m_device;
       const auto family = m_family;

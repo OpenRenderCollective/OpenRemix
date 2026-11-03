@@ -1,5 +1,6 @@
 #include "forward/probes/authoring.h"
 #include "forward/probes/identities.h"
+#include "forward/probes/source2_reference.h"
 #include "platform/workers.h"
 #include "forward/bake/transport.h"
 #include "forward/bake/transport_memory.h"
@@ -43,6 +44,7 @@ namespace remix::forward::probes {
     uint32_t automaticCount = 0, covered = 0, omitted = 0;
     Data filtered;
     LayerIdentities identities{};
+    ReferenceProvenance reference;
     bake::Budget budget;
     std::vector<int32_t> reused, aliases;
     std::shared_ptr<Job> previous;
@@ -51,6 +53,7 @@ namespace remix::forward::probes {
     void prepare(const std::shared_ptr<Job> &prior, const std::shared_ptr<const scene::BakeScene> &source,
                   VkPhysicalDevice physical, VkDevice device, uint32_t family, const CaptureConfig &config,
                   bake::Transport::SceneLease lease) {
+      reference = source2Reference(source->lightingHash(scene::BakeLightScope::Combined));
       VkPhysicalDeviceProperties limits;
       vkGetPhysicalDeviceProperties(physical, &limits);
       if (request->volumes.size() > imageCapacity(config.reflectionResolution,
@@ -165,7 +168,7 @@ namespace remix::forward::probes {
       ids.reserve(request->volumes.size());
       for (const auto &volume : request->volumes) ids.push_back(volume.id);
       identities = imageIdentities(filtered.header, ids);
-      image = std::make_unique<ImageAsset>(physical, device, filtered, cancellation.get_token());
+      image = std::make_unique<ImageAsset>(physical, device, filtered, cancellation.get_token(), reference);
       if (automatic && !captures.empty()) {
         const auto plan = compose(image->header(), automatic->header());
         automaticCount = plan.automatic;

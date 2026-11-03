@@ -1,4 +1,5 @@
 #pragma once
+#include "forward/probes/reference_provenance.h"
 #include "forward/bake/content.h"
 #include "forward/bake/irradiance_contents.h"
 #include "forward/bake/grid.h"
@@ -28,6 +29,7 @@ namespace remix::forward::bake {
   struct Volume {
     uint64_t hash = 0;
     DiffuseContent content;
+    probes::ReferenceProvenance reflectionReference; // immutable receiver-field publication identity
     IrradianceContents irradianceContents = IrradianceContents::Combined;
     bool directDiffuse = false, styledLighting = false;
     std::vector<uint32_t> groupedStyles; // complete direct groups, separate from permanent aggregate policy

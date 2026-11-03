@@ -6,6 +6,7 @@
 #include "forward/mixed/ownership.h"
 #include "forward/mixed/publication.h"
 #include "forward/probes/capture_dump.h"
+#include "forward/probes/source2_reference.h"
 #include <algorithm>
 #include <bit>
 #include <cstdio>
@@ -22,6 +23,9 @@ namespace remix::forward::bake {
     auto volume = std::make_shared<Volume>();
     volume->irradianceContents = m_job->irradianceContents;
     volume->directDiffuse = m_job->hasDirectDiffuse;
+    if (volume->irradianceContents == IrradianceContents::Combined && volume->directDiffuse)
+      volume->reflectionReference = probes::source2Reference(
+          m_job->source->lightingHash(scene::BakeLightScope::Combined));
     if (m_job->hasSun || std::any_of(grid.probes.begin(), grid.probes.end(),
                                     [](const auto &p) { return p.irradiance[7][3] > .5f; }))
       volume->sun = m_job->source->sun;

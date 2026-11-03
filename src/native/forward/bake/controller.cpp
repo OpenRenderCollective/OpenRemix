@@ -19,6 +19,7 @@
 #include "forward/probes/data.h"
 #include "forward/probes/capture_cache.h"
 #include "forward/probes/placement.h"
+#include "forward/probes/source2_reference.h"
 #include "raster/renderer.h"
 #include <algorithm>
 #include <atomic>
@@ -133,6 +134,7 @@ namespace remix::forward::bake {
   void Controller::Job::prepareResources(VkPhysicalDevice physical, VkDevice device, const Config &config,
                                          float lightCutoff, uint32_t queueFamily) {
     irradianceContents = config.irradianceContents;
+    reflections.reference = probes::source2Reference(source->lightingHash(scene::BakeLightScope::Combined));
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physical, &properties);
     if (const char *path = std::getenv("REMIX_DEBUG_BAKE_MODEL_ATLAS_PREFLIGHT"); path && *path) {
@@ -957,7 +959,9 @@ namespace remix::forward::bake {
     }
     // The transfer and its visibility barrier precede this frame's surface
     // draws. Other frame slots keep their own previous volume alive.
-    m_captures.sceneHash = volume->hash;
+    // Capture admission describes the full frozen scene, not the selected
+    // diffuse component identity (receiver-direct fields have a different hash).
+    m_captures.sceneHash = m_job->source->contentHash;
     m_captures.image = std::move(reflections);
     m_volume = std::move(volume);
     if (!diffusePublished) {
