@@ -26,10 +26,6 @@ namespace remix::forward {
     // Capacity; mixed-prefix length + 1 (zero = all), high bit = clustered baked tail;
     // sparse SH word; viewmodel flags (local shadows, reflections).
     std::array<uint32_t, 4> clusterInfo{};
-    // Radiance cascade irradiance from the previous frame (binding 23): the
-    // camera it was gathered with; control x enabled, y intensity, z depth tolerance.
-    Matrix cascadeCamera{};
-    Vec4 cascadeControl{};
   };
   struct LightData {
     Vec4 positionRadius{}, radiance{}, directionCone{}, shaping{};
@@ -48,7 +44,7 @@ namespace remix::forward {
     Vec4 remap[2]{};
     std::array<uint32_t, 4> state{}, maps{};
   };
-  static_assert(sizeof(FrameData) == 4416);
+  static_assert(sizeof(FrameData) == 4336);
   static_assert(sizeof(LightData) == 144);
   static_assert(offsetof(LightData, responseWeights) == 112);
   static_assert(offsetof(LightData, clusterBounds) == 128);

@@ -38,7 +38,7 @@ namespace remix::forward {
     if (debugDraws && !depthOnly && !terrain && baking->volume() && baking->volume()->hash != reported) {
       std::array<uint64_t, 3> counts{}, indices{}, receiverRuns{};
       for (const auto &draw : frame.commands) {
-        if (!draw.source.rasterVisible || !intersectsClip(draw.worldBounds, frame.data.camera)) continue;
+        if (!draw.source.rasterVisible || !intersectsClip(draw.worldBounds, frame.uniforms.data.camera)) continue;
         const uint32_t kind = !draw.lightmap ? 0 : draw.lightmap->fullyMapped ? 1 : 2;
         ++counts[kind];
         indices[kind] += draw.lightmap ? draw.lightmap->count : draw.count;
@@ -74,7 +74,7 @@ namespace remix::forward {
       if (depthOnly && draw.depthBatched) return;
       if (!draw.source.rasterVisible)
         return;
-      if (!intersectsClip(draw.worldBounds, frame.data.camera))
+      if (!intersectsClip(draw.worldBounds, frame.uniforms.data.camera))
         return;
       const auto *mapped = draw.lightmap;
       VkPipeline selected;
@@ -145,7 +145,7 @@ namespace remix::forward {
       std::optional<gpu::GpuScope> receiverTime;
       uint32_t kind = 3;
       for (const auto &draw : frame.commands) {
-        if (!draw.source.rasterVisible || !intersectsClip(draw.worldBounds, frame.data.camera)) continue;
+        if (!draw.source.rasterVisible || !intersectsClip(draw.worldBounds, frame.uniforms.data.camera)) continue;
         const uint32_t receiver = !draw.lightmap ? 0 : draw.lightmap->fullyMapped ? 1 : 2;
         if (receiver != kind) {
           receiverTime.reset();
@@ -169,7 +169,7 @@ namespace remix::forward {
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &frame.scene, 0, nullptr);
     for (const auto &draw : commands) {
-      if ((!staticCasters && draw.captured) || !intersectsClip(draw.worldBounds, frame.data.shadows[cascade]))
+      if ((!staticCasters && draw.captured) || !intersectsClip(draw.worldBounds, frame.uniforms.data.shadows[cascade]))
         continue;
       vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 1, 1, &draw.material, 0,
                               nullptr);
@@ -224,7 +224,7 @@ namespace remix::forward {
     gpu::GpuScope clusterTime(command, "Forward+ light clustering");
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, clusterPipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 0, 1, &frame.scene, 0, nullptr);
-    vkCmdDispatch(command, (frame.data.grid[3] + 63) / 64, 1, 1);
+    vkCmdDispatch(command, (frame.uniforms.data.grid[3] + 63) / 64, 1, 1);
     const VkBufferMemoryBarrier barrier{.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
                                         .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
                                         .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
@@ -252,7 +252,7 @@ namespace remix::forward {
                                        .pClearValues = &shadowClear};
       vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
       viewport(command, size);
-      if (frame.data.target[3])
+      if (frame.uniforms.data.target[3])
         drawSunCasters(command, c % cascadeCount, c < cascadeCount);
       vkCmdEndRenderPass(command);
     }
@@ -307,7 +307,7 @@ namespace remix::forward {
   void Renderer::Gpu::recordCascades(VkCommandBuffer command) {
     const auto &frame = frames[slot];
     if (!frame.rayInputs.cascades) return;
-    const auto &data = frame.data;
+    const auto &data = frame.uniforms.data;
     rayLighting.recordCascades(
         command,
         {depth->view, frame.rayInputs.cascades, frame.skyImage, data.camera, data.view, frame.skyWorldToDome,
@@ -319,7 +319,7 @@ namespace remix::forward {
     auto &frame = frames[slot];
     frame.waterComposed = false;
     if (!waterPass || !std::any_of(frame.waterCommands.begin(), frame.waterCommands.end(), [&](const auto &draw) {
-          return draw.source.rasterVisible && intersectsClip(draw.worldBounds, frame.data.camera);
+          return draw.source.rasterVisible && intersectsClip(draw.worldBounds, frame.uniforms.data.camera);
         })) return;
     gpu::GpuScope time(command, "Forward+ measured water", extent);
     // This pass also overlays opaque reflections, even when water is occluded.
@@ -332,7 +332,7 @@ namespace remix::forward {
           vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, waterLayout, 0, 1,
                                   &frame.scene, 0, nullptr);
           for (const auto &draw : frame.waterCommands) {
-            if (!draw.source.rasterVisible || !intersectsClip(draw.worldBounds, frame.data.camera)) continue;
+            if (!draw.source.rasterVisible || !intersectsClip(draw.worldBounds, frame.uniforms.data.camera)) continue;
             vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, waterLayout, 1, 1,
                                     &draw.material, 0, nullptr);
             const uint32_t push[] = {draw.index, draw.waterIndex};

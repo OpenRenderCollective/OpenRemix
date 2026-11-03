@@ -1,6 +1,7 @@
 #pragma once
 #include "forward/bake/controller.h"
 #include "forward/bindings.h"
+#include "forward/cascades/receiver.h"
 #include "forward/fragment_statistics.h"
 #include "forward/highlight_selection.h"
 #include "forward/reflections.h"
@@ -30,6 +31,14 @@ namespace remix::forward {
     VkDevice device = VK_NULL_HANDLE;
     VkExtent2D extent{};
     VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
+    struct FrameUniforms {
+      FrameData data;
+      cascades::ReceiverData cascades;
+    };
+    static_assert(offsetof(FrameUniforms, data) == 0);
+    static_assert(offsetof(FrameUniforms, cascades) == sizeof(FrameData));
+    static_assert(sizeof(FrameUniforms) == sizeof(FrameData) + sizeof(cascades::ReceiverData));
+    size_t frameUniformBytes = sizeof(FrameData); // resolved once with the technique plan
     Options options;
     techniques::Capabilities capabilities;
     techniques::ResourcePlan techniquePlan;
@@ -180,7 +189,7 @@ namespace remix::forward {
       bool waterComposed = false;
       bool waterMedium = false;
       std::array<bool, cascadeCount> staticSunDirty{};
-      FrameData data;
+      FrameUniforms uniforms;
     };
     std::array<Frame, gpuFrameCount> frames;
     // CPU-only upload scratch. prepareFrame runs serially and Buffer::write

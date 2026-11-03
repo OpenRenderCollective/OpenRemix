@@ -8,9 +8,10 @@
 namespace remix::forward {
   void Renderer::Gpu::prepareViewModelDescriptors() {
     auto &frame = frames[slot];
-    const auto &data = frame.data;
+    const auto &data = frame.uniforms.data;
     if (!frame.viewModelCommands.empty()) {
-      auto viewModelData = data;
+      auto uniforms = frame.uniforms;
+      auto &viewModelData = uniforms.data;
       const bool localShadows = options.localShadows &&
           std::any_of(shadowSelection.active.begin(), shadowSelection.active.end(), [](bool active) { return active; });
       if (localShadows && !viewModelLocalMaps) {
@@ -21,8 +22,8 @@ namespace remix::forward {
       viewModelData.clusterInfo[3] = uint32_t(localShadows) | (uint32_t(techniquePlan.reflectionResolve) << 1);
       viewModelData.shadows.fill(frame.viewModelProjection);
       viewModelData.splits.fill(std::numeric_limits<float>::max());
-      ensure(frame.viewModelConstants, sizeof(FrameData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-      frame.viewModelConstants->write(&viewModelData, sizeof(viewModelData));
+      ensure(frame.viewModelConstants, frameUniformBytes, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+      frame.viewModelConstants->write(&uniforms, frameUniformBytes);
       frame.viewModelScene = allocate(frame, sceneLayout);
       VkCopyDescriptorSet copies[12];
       for (uint32_t binding = 0; binding < 12; ++binding)

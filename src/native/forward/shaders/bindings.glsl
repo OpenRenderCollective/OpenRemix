@@ -12,8 +12,7 @@ layout(set = 0, binding = 0, std140) uniform Frame {
   vec4 styleScales[32];
   uvec4 occlusion;
   uvec4 clusterInfo;
-  mat4 cascadeCamera;
-  vec4 cascadeControl;
+#include "incoming-frame.glsl"
 } frame;
 struct Light {
   vec4 positionRadius, radiance, directionCone, shaping;

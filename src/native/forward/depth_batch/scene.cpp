@@ -16,7 +16,7 @@ namespace remix::forward {
           uint32_t(mapped ? sizeof(lightmap::Vertex) : sizeof(scene::Vertex)),
           mapped ? 0 : draw.source.firstIndex, mapped ? mapped->count : draw.count,
           mapped ? 0 : draw.source.vertexOffset, draw.index,
-          draw.source.rasterVisible && intersectsClip(draw.worldBounds, frame.data.camera),
+          draw.source.rasterVisible && intersectsClip(draw.worldBounds, frame.uniforms.data.camera),
           mapped ? std::static_pointer_cast<const void>(source) :
                    std::static_pointer_cast<const void>(draw.geometry)});
       draws.push_back(&draw);

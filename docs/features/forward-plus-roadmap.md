@@ -188,6 +188,12 @@ Still required for the complete modularity/performance objective:
   Twelve shader variants preserve normalized executable/global semantics and
   sizes, and viewmodel/water GPU checks pass. General reference provenance remains
   open; raw SPIR-V declaration order changes, with no new FPS claim.
+- The cascade branch separates its 80-byte receiver payload from the fixed
+  4336-byte common frame. Selected sources append their own declaration; one
+  existing buffer write uploads the resolved size, with no new descriptors.
+  Nine GPU checks pass; twelve cascade variants retain optimized bytes, and
+  22 normal-lit shader/coverage comparisons match main after specialization.
+  Prior timing studies predate this frame-packet refactor; no new speedup claim.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Composed optical sunlight has fixture coverage; broader optical/probe edge

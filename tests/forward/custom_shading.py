@@ -149,6 +149,8 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
         '#include "gi.glsl"', ''), encoding="utf-8")
     (tree / "shaders/gi.glsl").unlink()
     (tree / "shaders/incoming-cascades.glsl").unlink()
+    (tree / "cascades/shaders/receiver-frame.glsl").unlink()
+    (tree / "shaders/incoming-frame.glsl").write_text("", encoding="utf-8")
     shutil.copyfile(root / "tests/forward/shaders/custom-incoming-source.glsl",
                     tree / "shaders/incoming-lighting.glsl")
     for name, defines in {
@@ -175,8 +177,10 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
                         "-o", str(binary)], env=env, check=True)
         subprocess.run([validator, "--target-env", "vulkan1.2", str(binary)], env=env, check=True)
     source.write_text((root / "src/native/forward/shaders/forward.frag").read_text(), encoding="utf-8")
-    for name in ("gi.glsl", "incoming-lighting.glsl", "incoming-cascades.glsl"):
+    for name in ("gi.glsl", "incoming-lighting.glsl", "incoming-cascades.glsl", "incoming-frame.glsl"):
         shutil.copyfile(root / "src/native/forward/shaders" / name, tree / "shaders" / name)
+    shutil.copyfile(root / "src/native/forward/cascades/shaders/receiver-frame.glsl",
+                    tree / "cascades/shaders/receiver-frame.glsl")
     # The alternate local source must not rely on default Source 2 transport
     # declarations being incidentally imported by the pass/material response.
     # It supplies queries only: the real standard material must acquire its

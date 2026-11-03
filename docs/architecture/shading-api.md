@@ -1263,3 +1263,30 @@ timing repeat is required before claiming that residual is resolved.
 All 173 existing stage source/define selections are unchanged. Legacy Source 2,
 water, ray composition and ordinary cascade GPU tests pass. This is functional
 qualification, not a matched FPS claim or a PR merge.
+
+
+### Optional incoming frame payload
+
+On the cascade branch, `FrameData` is again the fixed 4336-byte common std140
+prefix. Cascade camera/control values belong to `cascades::ReceiverData`, an
+80-byte provider-owned tail. Its declaration fragment is selected through
+`incoming-frame.glsl` inside the shader uniform. Sources needing no extra frame
+values leave that fragment empty. The C++ packet asserts the tail offset and
+complete size against the prefix and provider value type.
+
+The target resolves the uploaded byte count once. World and viewmodel frames
+use one contiguous packet and the existing single buffer write/descriptor;
+ordinary Source 2 uploads only the common prefix. Cascade variants retain the
+4416-byte layout, including the same world-gather camera when viewmodel-specific
+common fields change. No new descriptor or per-draw dispatch is introduced.
+This is an internal compiled-provider contract, not a runtime shader plugin ABI.
+
+Replacement compilation removes the default gather implementation and its frame
+declaration, providing an empty incoming-frame fragment. Nine targeted GPU checks
+cover common clustering, Source 2, ray composition, cascade transitions, optical
+and viewmodel mixed sunlight, water, SSR and seven-owner correction. Twelve
+ordinary/composed cascade variants remain optimized-byte-identical to the prior
+PR build. Normal-lit comparison against main is byte-identical in 22 shader/
+coverage cases after the renderer's lighting specialization; unspecialized PR
+code retains its separate debug-view-8 branch. The earlier matched FPS studies
+predate this packet refactor; it does not claim a new measured speedup.

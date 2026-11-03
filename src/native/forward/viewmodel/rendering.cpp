@@ -15,7 +15,7 @@ namespace remix::forward {
         vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1,
                                 &frame.viewModelScene, 0, nullptr);
         for (const auto &draw : frame.viewModelCommands) {
-          if (!intersectsClip(draw.worldBounds, frame.data.localShadows[cascade])) continue;
+          if (!intersectsClip(draw.worldBounds, frame.uniforms.data.localShadows[cascade])) continue;
           vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 1, 1,
                                   &draw.material, 0, nullptr);
           const uint32_t push[] = {draw.index, cascade};
@@ -29,7 +29,7 @@ namespace remix::forward {
         }
       });
     }
-    if (frame.data.target[3]) {
+    if (frame.uniforms.data.target[3]) {
       gpu::GpuScope shadowTime(command, "Forward+ viewmodel sun shadow",
                                 options.shadowResolution, options.shadowResolution);
       viewModelSun->record(command, [&](uint32_t layer) {
@@ -76,7 +76,7 @@ namespace remix::forward {
         if (gi)
           vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, drawLayout, 2, 1, &frame.rayInputs.diffuse, 0, nullptr);
         for (const auto &draw : frame.viewModelCommands) {
-          if (!draw.source.rasterVisible || !intersectsClip(draw.worldBounds, frame.data.camera)) continue;
+          if (!draw.source.rasterVisible || !intersectsClip(draw.worldBounds, frame.uniforms.data.camera)) continue;
           const auto pipeline = depthOnly ? viewModelDepthPipeline
               : earlyPipeline && draw.unconditionalCoverage ? earlyPipeline : colorPipeline;
           if (!depthOnly)

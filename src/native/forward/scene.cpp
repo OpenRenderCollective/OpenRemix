@@ -203,7 +203,7 @@ namespace remix::forward {
     if (options.shadows && sun.isDistant)
       casters.merge(frozenShadowBounds());
     step(cpu.draws);
-    auto &data = frame.data;
+    auto &data = frame.uniforms.data;
     data = {};
     if (const auto &volume = baking->volume(); volume && volume->styledLighting && volume->mixedLights) {
       for (const auto &scale : liveStyles)
@@ -235,10 +235,12 @@ namespace remix::forward {
     const auto *radianceCascades = rayLighting.cascades();
     const bool cascadeLighting = radianceCascades &&
         (earlyCascades ? frame.rayInputs.cascades != VK_NULL_HANDLE : radianceCascades->hasOutput());
-    data.cascadeCamera = !cascadeLighting ? scene::identity()
-        : earlyCascades ? data.camera : radianceCascades->outputCamera();
-    data.cascadeControl = {cascadeLighting ? 1.f : 0.f, options.cascadeIntensity, .05f,
-                           radianceCascades ? float(radianceCascades->probeSpacing()) : 1.f};
+    if (radianceCascades) {
+      frame.uniforms.cascades.camera = !cascadeLighting ? scene::identity()
+          : earlyCascades ? data.camera : radianceCascades->outputCamera();
+      frame.uniforms.cascades.control = {cascadeLighting ? 1.f : 0.f, options.cascadeIntensity, .05f,
+                             radianceCascades ? float(radianceCascades->probeSpacing()) : 1.f};
+    }
     const auto range = depthRange(resources.projection());
     data.depth = {range.nearPlane, range.farPlane,
                   float(clusterSlices) / std::log(range.farPlane / range.nearPlane), range.sign};
@@ -413,16 +415,16 @@ namespace remix::forward {
                              VkDeviceSize(draws.size() * sizeof(DrawData))})
       if (bytes > properties.limits.maxStorageBufferRange)
         throw VK_ERROR_TOO_MANY_OBJECTS;
-    ensure(frame.constants, sizeof(data), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+    ensure(frame.constants, frameUniformBytes, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
     ensure(frame.lights, lights.size() * sizeof(LightData), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     ensure(frame.draws, draws.size() * sizeof(DrawData), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     // Only compute writes and fragment shading reads this list. Keeping it
     // GPU-local avoids scattered writes into host-visible memory on discrete GPUs.
     ensure(frame.clusters, clusterBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, Buffer::Memory::Device);
-    frame.constants->write(&data, sizeof(data));
+    frame.constants->write(&frame.uniforms, frameUniformBytes);
     frame.lights->write(lights.data(), lights.size() * sizeof(LightData));
     frame.draws->write(draws.data(), draws.size() * sizeof(DrawData));
-    probes::dumpFrameData(".world-frame.bin", &data, sizeof(data));
+    probes::dumpFrameData(".world-frame.bin", &frame.uniforms, frameUniformBytes);
     probes::dumpFrameData(".draws.bin", draws.data(), draws.size() * sizeof(DrawData));
     probes::dumpFrameData(".lights.bin", lights.data(), lights.size() * sizeof(LightData));
     const uint32_t capacity = uint32_t(frame.commands.size() + frame.staticCommands.size() +

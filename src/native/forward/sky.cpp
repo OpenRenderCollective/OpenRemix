@@ -65,9 +65,9 @@ namespace remix::forward {
     const bool procedural = !dome.enabled && options.proceduralSky;
     frame.skyEnabled = dome.enabled || procedural;
     SkyData data;
-    data.inverseProjection = frame.data.inverseProjection;
+    data.inverseProjection = frame.uniforms.data.inverseProjection;
     const auto worldToDome = dome.enabled ? dome.worldToLocal : sky_model::worldToDome(upAxis);
-    data.viewToDome = scene::multiply(worldToDome, scene::inverse(frame.data.view));
+    data.viewToDome = scene::multiply(worldToDome, scene::inverse(frame.uniforms.data.view));
     // A uniform camera environment lights water even without a displayed dome.
     // Keep background ownership separate: only a dome (authored or analytic) enables it.
     std::array<float, 3> radiance = dome.enabled ? dome.radiance : resources.skyRadiance();

@@ -163,6 +163,7 @@ namespace remix::forward {
     next->hardwareSrgb = hardwareSrgb;
     next->capabilities = ray::Provider::capabilities(physical, hardwareRay);
     next->techniquePlan = techniques::resolveResources(options, next->capabilities);
+    next->frameUniformBytes = next->techniquePlan.cascadeDiffuse() ? sizeof(Gpu::FrameUniforms) : sizeof(FrameData);
     next->rayLighting.initialize(physical, device, next->techniquePlan, next->capabilities);
     next->earlyCascades = next->techniquePlan.cascadeDiffuse() && options.depthPrepass;
     next->statistics.rayGI = next->rayLighting.diffuseStatistics();
@@ -325,7 +326,7 @@ namespace remix::forward {
     if (m_gpu->reflections) {
       gpu::GpuScope reflectionTime(command, "Forward+ reflection resolve and composition", m_gpu->extent);
       m_gpu->reflections->record(
-          command, m_gpu->slot, m_gpu->frames[m_gpu->slot].data, m_gpu->options,
+          command, m_gpu->slot, m_gpu->frames[m_gpu->slot].uniforms.data, m_gpu->options,
           m_gpu->reflectionDescriptor(),
           {frame.skyConstants->descriptor(), m_gpu->baking->descriptor(), frame.skyImage},
           m_gpu->rayLighting.reflections());
