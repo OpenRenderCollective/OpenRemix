@@ -145,6 +145,15 @@ Still required for the complete modularity/performance objective:
   This is inconclusive for strict no-overhead acceptance and cannot isolate the
   final two CPU commits. Compare their immediate predecessor next; small
   regressions, alternative providers and wider map coverage remain open.
+  An immediate-predecessor isolation through 38c46f34 now covers those two
+  capture CPU commits against 40e14d07, holding shaders/dependencies constant.
+  Crossfire A/B/B/A shows lower current unarmed CPU medians (.831-.848 ms versus
+  .855-.867), overlapping weapon CPU intervals and total GPU ranges inside the
+  baseline session ranges. Current FPS is 283.6-289.2 unarmed / 255.3-256.1 weapon;
+  baseline is 279.6-288.2 / 249.4-255.0. Quality, hashes and draw counts match;
+  both current upper-world crops match the first baseline pixel-exactly. This
+  supports no recent capture-split slowdown in that steady-state profile, not
+  universal equivalence, a precise speedup or completion of provider coverage.
 - Continue checking unused experiment paths before removal. Referenced low-level
   diagnostic modes and legacy aliases are not automatically dead code.
 
