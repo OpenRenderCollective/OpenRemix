@@ -978,3 +978,13 @@ Alpha coverage, measured optical inputs and all other conservative material
 dependencies remain in the direct key. No shader or frame-loop query is added;
 snapshot preparation hashes a second small record stream without rereading image
 pixels. Broader material dependency pruning and real-map reuse timing remain open.
+
+### Reflection image selection before binding
+
+CaptureProviders exposes the selected authored/standalone ImageAsset as a borrowed
+immutable view. Provider/frame owners retain its lifetime. Frame setup first
+selects local overrides, then this image, then the shared capture fallback. Only
+the winning image prepares reference-qualified descriptors. The reflection
+provider has no diffuse-controller dependency and never eagerly evaluates the
+shared fallback for an authored or standalone replacement. The frame descriptor
+snapshot still serves world reflections, viewmodels and water.
