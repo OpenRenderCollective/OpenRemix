@@ -128,10 +128,13 @@ keys remain the persisted representation; no separate preset state can contradic
 them. A disabled zero cubemap budget is restored to the default positive budget
 when the preset enables cubemaps. Existing supported technique combinations can
 be selected without exposing storage details to materials. This is not a generic
-provider registry: bake captures, surface fields and probe fields still share a
-controller and resource lifecycle. Fully independent resource ownership and
-shader-module composition remain pending. Disabled baking also stops cubemap
-capture updates; the UI explains that coupling rather than implying independence.
+provider registry. The Source 2 recipe shares transport admission between diffuse
+baking and automatic captures; the controller still coordinates their finishing.
+Reflection images, placement admission, cache providers and shader sampling have
+separate owners and contracts. Live or disabled diffuse uses the standalone
+capture lifecycle instead. Capture enable follows the cubemap budget independently
+of diffuse enable, so disabling surface/probe baking does not disable cubemaps.
+The shared recipe's remaining finishing and provenance work is tracked separately.
 
 Preset application preserves model lightmap chart eligibility as a receiver-coverage
 preference. The default profile enables it, but manual-density configurations may
@@ -757,6 +760,12 @@ array. Cached diffuse lighting can publish before recovered reflections; fully
 independent default scheduling and shared-scene adoption remain future work.
 
 ### Diffuse volume publication boundary
+
+The diffuse asset encoder finishes SH/style storage, surface pixels and geometry.
+It does not retain reflection placement admission or advance scheduler flags.
+The Source 2 recipe performs those transitions after encoding completes, on the
+same preparation worker and in the existing order. The worker's ready ticket
+still gates all render-thread reads of the completed assets and transition state.
 
 `bake/diffuse_publication.cpp` builds and uploads one diffuse `Volume`: irradiance,
 styles, mixed visibility, surface atlas, bindings and optional sun depth. It reads
