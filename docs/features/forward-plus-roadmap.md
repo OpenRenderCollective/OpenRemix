@@ -168,6 +168,10 @@ Still required for the complete modularity/performance objective:
   on its unmerged branch (`d4bededc`), with build, policy, replacement-source and
   five focused GPU checks passing. Baked-direct/cascade composition, optical
   cascade lookups and matched runtime performance remain open.
+  The shared composed receiver no longer requires a ray-provider define;
+  non-ray incoming replacement tests retain baked storage through world, metal,
+  viewmodel and water passes. Sixteen existing optimized variants remain byte-
+  identical. Composed cascade host resources/pipelines remain a separate gate.
   Preserve existing presets and the default Source 2 combined fast path.
 - Environment replacement no longer imports default cubemap storage through
   world/viewmodel/water passes. The provider owns probe sampling and candidate

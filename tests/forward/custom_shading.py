@@ -136,12 +136,14 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
         "incoming-source-metal": ["ZERO_DIFFUSE_MATERIAL"],
         "incoming-source-water": ["WATER_SURFACE"],
     }.items():
-        binary = tree / (name + ".spv")
-        subprocess.run([compiler, "-V", "--target-env", "vulkan1.2",
-                        "-DLIVE_GI", "-DOPENREMIX_BAKED_DIRECT_LIVE_INDIRECT", "-DREFLECTION_GUIDES",
-                        *["-D" + define for define in defines], str(source),
-                        "-o", str(binary)], env=env, check=True)
-        subprocess.run([validator, "--target-env", "vulkan1.2", str(binary)], env=env, check=True)
+        for ray_pass in (False, True):
+            binary = tree / (name + ("-ray-pass" if ray_pass else "-non-ray") + ".spv")
+            subprocess.run([compiler, "-V", "--target-env", "vulkan1.2",
+                            *(["-DLIVE_GI"] if ray_pass else []),
+                            "-DOPENREMIX_BAKED_DIRECT_LIVE_INDIRECT", "-DREFLECTION_GUIDES",
+                            *["-D" + define for define in defines], str(source),
+                            "-o", str(binary)], env=env, check=True)
+            subprocess.run([validator, "--target-env", "vulkan1.2", str(binary)], env=env, check=True)
     source.write_text((root / "src/native/forward/shaders/forward.frag").read_text(), encoding="utf-8")
     for name in ("gi.glsl", "incoming-lighting.glsl"):
         shutil.copyfile(root / "src/native/forward/shaders" / name, tree / "shaders" / name)

@@ -1049,11 +1049,14 @@ Missing baked coverage retains ordinary analytic direct response. Composition
 never advertises the sum as a compatible frozen-cubemap normalization reference.
 
 `OPENREMIX_BAKED_DIRECT_LIVE_INDIRECT` selects the composed source at compilation,
-using the baked receiver context and the incoming query. It currently requires
-`LIVE_GI` for the pass's existing live-source plumbing. Standard and custom
-materials compile through this source, including viewmodel, zero-diffuse metal
-and water passes. A query-only incoming replacement compiles with the ray
-implementation physically absent from the test tree. GPU numerical checks cover
+using the baked receiver context and the incoming query. Composition itself does
+not require `LIVE_GI`: ray capability belongs to the selected incoming source.
+Standard and custom materials compile through this source, including viewmodel,
+zero-diffuse metal and water passes. A query-only incoming replacement compiles
+with the ray implementation physically absent from the test tree, both with and
+without the ray-pass define. Sixteen existing default/custom/composed shader
+variants remain optimized-byte-identical after removing the unnecessary guard.
+This shader contract does not by itself enable composed cascade host pipelines. GPU numerical checks cover
 mixed visibility, valid black and missing baked coverage alongside independent
 producer energy-conservation tests.
 
