@@ -168,6 +168,7 @@ namespace remix::forward {
     const auto &commands = staticCasters ? frame.staticCommands : frame.commands;
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &frame.scene, 0, nullptr);
+    uint32_t draws = 0;
     for (const auto &draw : commands) {
       if ((!staticCasters && draw.captured) || !intersectsClip(draw.worldBounds, frame.uniforms.data.shadows[cascade]))
         continue;
@@ -180,7 +181,12 @@ namespace remix::forward {
       vkCmdBindVertexBuffers(command, 0, 1, &draw.geometry->vertices->handle, &offset);
       vkCmdBindIndexBuffer(command, draw.geometry->indices->handle, 0, VK_INDEX_TYPE_UINT32);
       vkCmdDrawIndexed(command, draw.count, 1, draw.source.firstIndex, draw.source.vertexOffset, 0);
-      ++(staticCasters ? statistics.drawCalls.staticSunShadow : statistics.drawCalls.movingSunShadow);
+      ++draws;
+    }
+    if (staticCasters) statistics.drawCalls.staticSunShadow += draws;
+    else {
+      statistics.drawCalls.movingSunShadow += draws;
+      statistics.movingSunDraws[cascade] = draws;
     }
   }
   bool Renderer::Gpu::castsLocalShadow(const Command &draw, uint32_t lightSlot, bool staticCasters) const {
@@ -216,6 +222,7 @@ namespace remix::forward {
   void Renderer::Gpu::recordWorld(VkCommandBuffer command) {
     auto &frame = frames[slot];
     statistics.drawCalls = {};
+    statistics.movingSunDraws = {};
     statistics.localShadowDraws = {};
     for (uint32_t i = 0; i < shadows::maximumLights; ++i) {
       statistics.localShadowDraws[i].active = shadowSelection.active[i];

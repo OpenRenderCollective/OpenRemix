@@ -44,6 +44,7 @@ namespace remix::forward {
     } drawCalls;
     uint32_t shadowedLights = 0, shadowOverflow = 0, staticShadowUpdates = 0;
     uint32_t staticSunUpdates = 0, movingSunUpdates = 0, capturedCasters = 0, liveCasters = 0;
+    std::array<uint32_t, cascadeCount> movingSunDraws{}; // submitted draws per world cascade
     uint32_t staticCasterPreparations = 0, emptyMovingShadowMaps = 0;
     struct LocalShadowDraws {
       uint64_t lightId = 0;
