@@ -1,5 +1,12 @@
 ## Next performance isolation
 
+Latest split qualification: matched fixed-warm-up Construct/Crossfire ABBA
+checks preserve content, settings, draw counts and the checked world-image crop.
+No consistent latest-host CPU/GPU regression was demonstrated. This qualifies
+the current split on those workloads, not all hardware or future providers.
+The 300 FPS target, HDR/receiver quality and further opaque-pass optimization
+remain open. Historical pending timing entries below describe their checkpoints.
+
 - Retain the fused directional sampler. Shared-record/shared-SH and compact
   address-handle trials were reverted after frame-time qualification. Keep the
   linear/bicubic decoder coverage; do not infer a speedup from hoisted source text.
@@ -86,7 +93,8 @@
 
 ## Current modular renderer status — 2026-11-04
 
-The technique split is in progress; performance acceptance is not complete.
+The supported technique split is implemented and qualified on the checked
+Construct/Crossfire workloads; broader renderer optimization remains open.
 The playable install remains separate from the branch build. Architecture and
 interfaces: [shading API](../architecture/shading-api.md).
 

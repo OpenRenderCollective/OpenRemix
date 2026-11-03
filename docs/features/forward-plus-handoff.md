@@ -136,8 +136,11 @@ That fix does not establish fitted Construct outdoor coverage.
    package. Recent matched Crossfire checks preserve the checked output but show
    a small positive armed CPU recording residual. An exact-binary repeat reversed
    that difference, so no stable regression or zero-overhead conclusion is established.
-   The once-per-frame binding snapshot has focused matched comparisons; broader acceptance remains open. Neutral metadata also adds one aligned header per nonempty image.
-   No new default performance gain or visual parity is claimed.
+   Matched Construct/Crossfire comparisons now cover the latest host ownership
+   and resolved-plan changes, with no consistent CPU/GPU regression in the checked
+   workloads. Neutral metadata still adds one aligned header per nonempty image.
+   Additional recipes, hardware and scenes require their own qualification; no
+   universal zero-cost claim or new default performance gain is implied.
 5. Continue lightmap/probe quality, Construct room/seam defects, outdoor cubemap
    coverage, saturated probe-budget selection, bake times and runtime profiling.
    The complete queue and map list are in the roadmap.
@@ -162,9 +165,13 @@ differs in those shader trees. Consolidated Crossfire/Construct comparisons pres
 output/settings/draws and have overlapping GPU timing ranges. The latest frame
 snapshot also has an isolated Crossfire comparison. Earlier large armed CPU
 residuals were not reproduced by the fixed-warm-up follow-up. The latest host
-ownership/plan changes still need matched qualification. This does not
-complete the no-overhead gate. 300 FPS at 1920x1080 and the broader runtime
-optimization queue are not achieved.
+ownership/plan changes now have fixed-warm-up ABBA checks on both maps:
+content/settings/draws and the checked world crop match, and repeated CPU/GPU
+ranges show no consistent regression. This closes the current split's matched
+runtime gate on those workloads, not a guarantee for all hardware or future
+providers. Crossfire was capped at 200 FPS; Construct remained roughly
+115-129 FPS. 300 FPS at 1920x1080 and the broader runtime optimization queue
+are not achieved.
 
 ## How to continue safely
 
