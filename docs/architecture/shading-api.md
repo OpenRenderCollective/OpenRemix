@@ -212,17 +212,18 @@ alone does not make every reflection technique interchangeable.
 ## Optical water adapter
 
 Water builds the same `ShadingReceiver` and uses `sampleDiffuseLighting`,
-`prepareLocalLighting` and `sampleEnvironmentReflection`. Its diffuse shader
-variant currently selects baked volume probes, with no surface-chart allocation.
-A constant false direct-channel request removes unused atlas reads. The optical
-model still owns absorption, sheet/body Fresnel, refraction and screen/ray hit
-composition. Its light-source queries do not apply those material weights.
+`prepareLocalLighting` and `sampleEnvironmentReflection`. The default Source 2
+source selects volume probes without surface-chart allocation. Supported live
+ray diffuse variants share the world's prepared scene with explicit water query
+limits. A constant false direct-channel request removes unused atlas reads.
+The optical model owns absorption, sheet/body Fresnel, refraction and screen/ray
+hit composition. Its light-source queries do not apply those material weights.
 
-Water uses `sampleUnbakedSunLight` to preserve its existing CSM policy and supplies
-its existing unfiltered/visibility-gated sky fallback. Switching it to the same
-baked/mixed sun ownership as world/props and selecting live diffuse providers for
-water still need explicit quality/resource qualification. Shared queries alone
-must not be reported as finishing those policies.
+Water obtains sunlight through `sampleOpticalReceiverSunLight`; the default
+source preserves its existing analytic/CSM policy. It retains the existing
+unfiltered/visibility-gated sky fallback. Switching static sunlight to the same
+baked/mixed ownership as world/props still needs explicit quality/resource
+qualification. Shared queries alone do not establish that policy.
 
 ## Material response and composition
 

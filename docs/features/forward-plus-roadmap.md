@@ -137,6 +137,14 @@ Still required for the complete modularity/performance objective:
   draw counts match. Opaque world remains the largest GPU scope, with no static
   shadow refreshes. This does not prove equivalence or exclude small regressions;
   alternative provider modes and wider map coverage still need qualification.
+  A subsequent Crossfire A/B/B/A through capture metadata commit 38c46f34
+  preserves quality, content hashes, draw counts and the inspected upper-world
+  crop. Current FPS ranges are 283.2-286.3 unarmed / 250.2-256.2 weapon versus
+  281.6-290.9 / 253.1-254.0 for retained 4c66bddf. CPU/GPU intervals overlap,
+  but first-current weapon timings are elevated and session drift is substantial.
+  This is inconclusive for strict no-overhead acceptance and cannot isolate the
+  final two CPU commits. Compare their immediate predecessor next; small
+  regressions, alternative providers and wider map coverage remain open.
 - Continue checking unused experiment paths before removal. Referenced low-level
   diagnostic modes and legacy aliases are not automatically dead code.
 
