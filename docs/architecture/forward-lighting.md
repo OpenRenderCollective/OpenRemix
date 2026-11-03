@@ -820,6 +820,13 @@ The Source 2 recipe performs those transitions after encoding completes, on the
 same preparation worker and in the existing order. The worker's ready ticket
 still gates all render-thread reads of the completed assets and transition state.
 
+The final combined worker is retained by the recipe job's preparation ticket,
+not the reflection provider's placement/filtering ticket. It still queues once
+and performs capture completion, diffuse encoding and recipe transitions in
+order. Job readiness, error propagation and cancellation join both ticket owners;
+obsolete/submitted jobs retain their normal owners. Sealed reflection-image
+release/acquire publication can still occur before the whole recipe finishes.
+
 `bake/diffuse_publication.cpp` builds and uploads one diffuse `Volume`: irradiance,
 styles, mixed visibility, surface atlas, bindings and optional sun depth. It reads
 no reflection capture/image state and does not select or publish reflection assets.
