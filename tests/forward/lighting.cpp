@@ -372,7 +372,7 @@ int main() {
     expected.groupedStyledDirect = true;
     const auto ordinary = options;
     options.bakedLighting = true;
-    require(options.bakeConfiguration(false) == expected && options.baking == requested &&
+    require(options.lightingPlan(false).baking == expected && options.baking == requested &&
                 options.selectBakedLights(false) && options.sameTargets(ordinary),
             "Baked mode derives aggregate/geometry/selected lighting without changing quality, preferences or targets");
     require(!options.bakedLightingActive(true) && !options.selectBakedLights(true),
@@ -386,7 +386,7 @@ int main() {
     composed.reflectionResolution = 8;
     composed.reflectionDetailTolerance = 0;
     require(options.selectBakedLights(true) && options.bakedLightingActive(true) &&
-                options.bakeConfiguration(true) == composed && options.baking == requested,
+                options.lightingPlan(true).baking == composed && options.baking == requested,
             "Live incoming preserves baked direct ownership while excluding baked indirect/captures");
     auto liveTargets = options;
     liveTargets.rtGI = true;
@@ -395,14 +395,14 @@ int main() {
     require(!liveTargets.sameTargets(analyticTargets),
             "Changing composed versus analytic direct ownership rebuilds specialized live pipelines");
     options.baking.directDiffuse = false;
-    require(!options.bakedLightingActive(false) && options.bakeConfiguration(false) == options.baking,
+    require(!options.bakedLightingActive(false) && options.lightingPlan(false).baking == options.baking,
             "Baked mode pauses when baked direct diffuse is disabled");
     options.baking = requested;
     options.baking.enabled = false;
     require(!options.bakedLightingActive(false), "Baked mode does not implicitly enable map baking");
     options.baking = requested;
     options.bakedLighting = false;
-    require(options.bakeConfiguration(false) == requested && !options.selectBakedLights(false),
+    require(options.lightingPlan(false).baking == requested && !options.selectBakedLights(false),
             "Disabling baked mode restores the exact requested custom lighting policy");
   }
   {
@@ -418,10 +418,10 @@ int main() {
     expected.aggregateDiffuse = false;
     expected.fullyBakedLights = false;
     expected.bakedGeometryLights = false;
-    require(options.bakeConfiguration(true) == expected && options.baking == requested,
+    require(options.lightingPlan(true).baking == expected && options.baking == requested,
             "Live GI stops unused bake work without changing requested bake quality or preferences");
     options.rtGI = true;
-    require(options.bakeConfiguration(false) == requested,
+    require(options.lightingPlan(false).baking == requested,
             "Inactive or unsupported live GI preserves the requested aggregate bake policy");
   }
   require(clusterListCapacity(1, 12240, 128u << 20) == 64 &&
