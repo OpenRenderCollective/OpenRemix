@@ -991,7 +991,12 @@ unarmed CPU medians .8724-.8872 ms versus main .8609-.8920 ms; weapon CPU
 intervals overlap, as do GPU ranges. Settings/content/draws/inspected pixels match.
 The formerly consistent unarmed residual is not reproduced in this scene, but
 session drift prevents assigning a precise causal speedup or universal equality.
-Real-map quality, general normalization provenance and matched FPS remain open.
+A second matched default-path study on Construct also has overlapping CPU/GPU
+intervals and matching quality/content/draws/inspected pixels. Fixed PR runs at
+111.58-112.41 FPS unarmed and 102.01-102.63 with a weapon; world shading dominates
+at 7.26-7.79 ms. This supports the inactive-provider split on two scoped maps,
+not enabled-source acceptance, universal equality or the 300 FPS goal.
+Real-map quality, general normalization provenance and enabled-provider timing remain open.
 Preserve the combined Source 2 fast path while extending providers.
 
 ### Receiver-direct irradiance producer

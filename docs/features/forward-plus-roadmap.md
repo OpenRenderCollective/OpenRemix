@@ -217,6 +217,13 @@ Still required for the complete modularity/performance objective:
   reproduced; session drift prevents assigning a precise speedup or universal
   equivalence. Wider maps and enabled-provider performance remain open.
   Installed binaries/configuration restored exactly; no playable promotion.
+- A second matched default Source 2 study on Construct (main versus PR
+  `f854c29d`) has overlapping CPU/GPU intervals and matching settings, bake
+  content, draws and inspected pixels. PR reaches 111.58-112.41 FPS unarmed and
+  102.01-102.63 with a weapon; opaque world shading costs 7.26-7.79 ms and remains
+  dominant. No repeatable default-provider slowdown is observed in these two
+  scoped maps. Enabled-source cost/quality, other cases and 300 FPS remain open.
+  Installed binaries/configuration restored exactly; PR remains unmerged.
 - Complete no-overhead acceptance with controlled CPU/GPU comparisons. Earlier
   host-FPS rankings reversed between runs despite matching lighting/draws. The
   completed A/B/B/A 1080p Crossfire study shows overlapping CPU/GPU ranges and
