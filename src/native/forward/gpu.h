@@ -103,7 +103,7 @@ namespace remix::forward {
     std::unique_ptr<probe_batch::Cache> probeVisibility;
     probes::CaptureProviders captureProviders;
     probes::CaptureSource reflectionSource() const {
-      if (const auto source = captureProviders.standaloneSource(techniquePlan)) return *source;
+      if (const auto source = captureProviders.standaloneSource(techniquePlan.capturePolicy.transport)) return *source;
       return baking->reflectionSource();
     }
     probes::SelectionFrames localSelections;
@@ -117,7 +117,7 @@ namespace remix::forward {
     probes::Descriptors reflectionDescriptor() const {
       const auto selected = localSelections.active();
       if (selected) return selected->image->descriptors();
-      return captureProviders.descriptor(techniquePlan, baking->reflectionDescriptor());
+      return captureProviders.descriptor(techniquePlan.capturePolicy.transport, baking->reflectionDescriptor());
     }
     std::unique_ptr<shadows::Maps> localMaps;
     shadows::Planner shadowPlanner;

@@ -12,30 +12,30 @@ namespace remix::forward::probes {
     m_authored->selectFrame(slot);
     if (m_standaloneUsed) m_standalone->selectFrame(slot);
   }
-  void CaptureProviders::record(VkCommandBuffer command, RasterRenderer &resources, const Options &options,
-                                const techniques::ResourcePlan &plan, const CaptureConfig &authoredConfig,
+  void CaptureProviders::record(VkCommandBuffer command, RasterRenderer &resources, const CapturePolicy &policy,
+                                const CaptureConfig &authoredConfig,
                                 bake::SceneRequest *sceneRequest, CaptureSource captures, bool sharedTransportIdle) {
-    const bool capturesWithBake = plan.capturesWithBake();
-    if (!capturesWithBake || m_standaloneUsed) {
+    const bool sharedCaptures = policy.transport == CaptureTransport::SharedScene;
+    if (!sharedCaptures || m_standaloneUsed) {
       if (!m_standaloneUsed) {
         m_standaloneUsed = true;
         m_standalone->selectFrame(m_slot);
       }
       auto automaticConfig = authoredConfig;
-      automaticConfig.enabled = automaticConfig.enabled && !capturesWithBake;
+      automaticConfig.enabled = automaticConfig.enabled && !sharedCaptures;
       m_standalone->record(command, resources, automaticConfig,
-          options.baking.reflectionProbes, options.baking.reflectionDetailTolerance, sceneRequest);
+          policy.automaticCount, policy.detailTolerance, sceneRequest);
     }
     // Image availability is not transport admission. Keep one default work
     // budget until diffuse/style work retires, even after early image publication.
-    const bool capturesReady = capturesWithBake
+    const bool capturesReady = sharedCaptures
         ? sharedTransportIdle : !m_standalone->pending();
-    if (!capturesWithBake) {
+    if (!sharedCaptures) {
       captures = m_standalone->source();
       const auto scene = resources.bakeScene();
       captures.sceneHash = scene && scene->ready ? scene->contentHash : 0;
     }
     m_authored->record(command, resources, authoredConfig, captures,
-                        options.authoredReflectionFallback, capturesReady);
+                        policy.authoredFallback, capturesReady);
   }
 }

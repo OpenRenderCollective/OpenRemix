@@ -27,6 +27,9 @@ int main() {
           options.samples = 8;
           options.baking.samples = 512;
           options.baking.reflectionResolution = 256;
+          options.baking.reflectionProbes = 7;
+          options.baking.reflectionDetailTolerance = diffuse == techniques::Diffuse::Disabled ? 0 : .75f;
+          options.authoredReflectionFallback = direct != techniques::Direct::Analytic;
           const techniques::Selection requested{direct, diffuse, reflection, false, false, true};
           techniques::apply(options, requested);
           require(techniques::requested(options) == requested,
@@ -57,12 +60,17 @@ int main() {
                     "One live diffuse provider at most owns indirect light");
             require(!resources.rayWater || (resources.rayReflections && options.water && capabilities.waterRayQueries),
                     "Water continuation requires its reflection provider and water capability");
+            const auto &capturePolicy = resources.capturePolicy;
+            require(capturePolicy.automaticCount == options.baking.reflectionProbes &&
+                        capturePolicy.detailTolerance == options.baking.reflectionDetailTolerance &&
+                        capturePolicy.authoredFallback == options.authoredReflectionFallback,
+                    "Capture policy carries resolved ownership and capture-only selection settings");
             const auto lighting = options.lightingPlan(resources.liveDiffuse());
-            require(resources.capturesWithBake() == lighting.baking.enabled,
+            require(resources.sharedCaptures() == lighting.baking.enabled,
                     "Capture source and shared transport admission follow the resolved provider, including fallback");
             auto disabledCaptures = options;
             disabledCaptures.baking.reflectionProbes = 0;
-            require(techniques::resolveResources(disabledCaptures, capabilities).captureTransport == resources.captureTransport,
+            require(techniques::resolveResources(disabledCaptures, capabilities).capturePolicy.transport == resources.capturePolicy.transport,
                     "Disabling images preserves the capture retirement owner");
             require(!resources.liveDiffuse() || (!lighting.bakedReceivers && !lighting.baking.enabled),
                     "A resolved live provider stops diffuse baking and aggregate baked receiver lighting");

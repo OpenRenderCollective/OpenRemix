@@ -7,7 +7,6 @@ namespace remix::forward::techniques {
     bool fragmentGI = false;
     bool waterRayQueries = false;
   };
-  enum class CaptureTransport { BakedScene, StandaloneScene };
 
   // Derived resource/pipeline choices, never independently persisted. Resolve
   // outside draw loops; providers consume this rather than reinterpreting keys.
@@ -15,11 +14,11 @@ namespace remix::forward::techniques {
     Diffuse diffuse = Diffuse::Disabled;
     // Select the automatic source and admission owner independently of image
     // availability. Disabled captures still visit their owner to retire old work.
-    CaptureTransport captureTransport = CaptureTransport::StandaloneScene;
+    probes::CapturePolicy capturePolicy;
     bool rayReflections = false, rayWater = false;
     bool rayScene = false, reflectionResolve = false;
     bool screenReflections = false;
-    bool capturesWithBake() const { return captureTransport == CaptureTransport::BakedScene; }
+    bool sharedCaptures() const { return capturePolicy.transport == probes::CaptureTransport::SharedScene; }
     // Per-fragment ray-query GI pipelines (LIVE_GI) and their scene set.
     bool rayDiffuse() const { return diffuse == Diffuse::RayQueries; }
     // Screen-space cascades: CASCADE_GI world shaders and the cascade pass.
@@ -41,8 +40,8 @@ namespace remix::forward::techniques {
     plan.diffuse = cascades ? Diffuse::RadianceCascades
         : liveDiffuse ? Diffuse::RayQueries
         : options.baking.enabled ? Diffuse::SurfaceAndProbes : Diffuse::Disabled;
-    plan.captureTransport = plan.bakedDiffuse() ? CaptureTransport::BakedScene
-                                               : CaptureTransport::StandaloneScene;
+    plan.capturePolicy = options.capturePolicy(plan.bakedDiffuse() ? probes::CaptureTransport::SharedScene
+                                                                 : probes::CaptureTransport::StandaloneScene);
     plan.screenReflections = options.ssr;
     plan.rayReflections = options.rtReflections && capabilities.rayQueries;
     plan.rayWater = options.water && plan.rayReflections && capabilities.waterRayQueries;

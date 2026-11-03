@@ -12,15 +12,20 @@ is a screen-space approximation. Cascade GPU transitions, independent cubemap ca
 modes and 1x/4x MSAA pass synchronization validation. Existing Source 2 SSR,
 viewmodel, water and mixed-light regressions pass. Orthographic cascade receiver
 depth matching remains unsupported. The PR is synchronized with the complete
-baked/live context split through 0ab5a707: cascades and rays share the chart-free
+baked/live context split through abb8f2de: cascades and rays share the chart-free
 live adapter, and capture-only refresh/publication updates are included. Sun
 transport/material response and typed reflection references are synchronized;
 cascades explicitly declare no frozen-static normalization reference. The
 capture scheduler and metadata lookup no longer depend on the diffuse controller;
-query-only local providers reuse the shared standard material adapter. Alternate
+query-only local providers reuse the shared standard material adapter. Capture
+selection is resolved once into the capture-owned policy; shared/standalone
+transport selection is no longer coupled to saved renderer options. Alternate
 local/sun source isolation also covers cascade world/viewmodel composition. Cascade
 depth-mode toggles prepare their required early-depth targets; 1x/4x transition
 readbacks pass. The PR remains unmerged pending approval.
+
+Hybrid baked-direct/live-indirect composition is not implemented: selecting a
+live diffuse provider still retires the complete baked receiver path.
 
 Implemented and checked:
 
@@ -77,6 +82,10 @@ Implemented and checked:
   live water can share prepared scene descriptors with its own query limits.
   Capture recording, admission and source fallback share one resolved owner;
   image disable preserves the scheduler responsible for retiring prior work.
+  Capture scheduling now consumes a capture-owned policy resolved with the
+  resource plan, not the complete saved renderer options or plan. It is prepared
+  on initialization/settings changes, keeping policy construction out of frame
+  recording; radiance configuration/cache formats remain separate.
   Capture metadata selection now takes explicit fallback descriptors and exposes
   borrowed capture-only publications; the renderer supplies Source 2 fallbacks.
   The capture module no longer includes or accepts the diffuse controller.
