@@ -5,8 +5,11 @@
   binding records keep strict live pointer, instance and chart checks.
 - Scene and cache tests cover same-material reuse, replacement rebinding, image
   edits and retained alpha/optical dependencies. Direct caches change domain once.
-- Remaining: broader conservative material dependency review, completed live-GPU
-  publication reuse after roughness edits, real-map reuse and timing qualification.
+- Live GPU checks with disk caching disabled retain the exact direct publication
+  after same-material roughness edits at 1/2/4x MSAA. Restoring the material
+  restores exact shaded output. Real-map reuse and timing remain unqualified.
+- Remaining: broader conservative material dependency review and real-map reuse
+  and timing qualification.
 
 ### Receiver-direct component identity (2026-11-03)
 
