@@ -65,7 +65,11 @@ int main() {
                         capturePolicy.detailTolerance == options.baking.reflectionDetailTolerance &&
                         capturePolicy.authoredFallback == options.authoredReflectionFallback,
                     "Capture policy carries resolved ownership and capture-only selection settings");
-            const auto lighting = options.lightingPlan(resources.liveDiffuse());
+            const auto &lighting = resources.receiverLighting;
+            require(lighting.baking.samples == 512 && resources.captureConfig.samples == 512 &&
+                        resources.captureConfig.reflectionResolution == 256 &&
+                        resources.captureConfig.enabled == (options.baking.reflectionProbes != 0),
+                    "Resolved producer inputs preserve quality independently of ownership and device fallback");
             require(resources.sharedCaptures() == (lighting.baking.enabled && !resources.liveDiffuse()),
                     "Capture source and shared transport admission follow the resolved provider, including fallback");
             auto disabledCaptures = options;

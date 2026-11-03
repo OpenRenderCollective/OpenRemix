@@ -11,6 +11,7 @@ namespace remix::forward::lighting {
     bake::Config baking;
     bool bakedReceivers = false;
     bool selectedMixedLights = false;
+    bool operator==(const Plan &) const = default;
   };
 
   // Resolve direct and incoming ownership once. Requested settings remain
