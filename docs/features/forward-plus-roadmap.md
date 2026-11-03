@@ -1,3 +1,11 @@
+### Reflection binding selection cleanup (2026-11-04)
+
+- Select the authored/standalone image before preparing descriptors, avoiding
+  unused shared-bake descriptor work when another reflection provider wins.
+  Borrowed views keep existing provider/frame ownership; shader work is unchanged.
+- Authored replacement, viewmodel environment and water environment GPU checks
+  pass with synchronization validation. Real-map timing remains separate.
+
 ### Direct-only roughness dependency split (2026-11-04)
 
 - Receiver-direct identity now excludes roughness scalar, image and remapping.
