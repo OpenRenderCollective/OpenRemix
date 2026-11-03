@@ -89,8 +89,11 @@ Implemented and checked:
 
 - The bake recorder and frame setup share one resolved lighting plan. Receiver
   and mixed-light ownership are captured before light enumeration, removing
-  per-light option reinterpretation and obsolete helper methods. Saved controls
-  and quality policy remain intact.
+  per-light option reinterpretation and obsolete helper methods. Producer inputs
+  are retained in the resolved resource plan and refreshed on actual option
+  changes; unchanged runtime updates no longer reconstruct it. Frame recording
+  borrows the receiver and independent capture configurations. Saved controls
+  and quality policy remain intact; this is not an FPS qualification.
 
 
 - Material passes now use the compile-selected `shadeSurface` entry from
