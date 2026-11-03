@@ -42,7 +42,7 @@ namespace remix::forward::techniques {
     plan.diffuse = cascades ? Diffuse::RadianceCascades
         : liveDiffuse ? Diffuse::RayQueries
         : options.baking.enabled ? Diffuse::SurfaceAndProbes : Diffuse::Disabled;
-    plan.bakedDirect = plan.rayDiffuse() && options.lightingPlan(true).bakedReceivers;
+    plan.bakedDirect = plan.liveDiffuse() && options.lightingPlan(true).bakedReceivers;
     plan.capturePolicy = options.capturePolicy(plan.bakedDiffuse() ? probes::CaptureTransport::SharedScene
                                                                  : probes::CaptureTransport::StandaloneScene);
     plan.screenReflections = options.ssr;

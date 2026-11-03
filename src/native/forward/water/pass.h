@@ -6,6 +6,7 @@
 #include <span>
 
 namespace remix::forward::water {
+  enum class Diffuse { Baked, Ray, RayIncoming, CascadeIncoming };
   struct Parameters {
     Matrix projection, inverseCamera;
     Vec4 cameraMedium{}, target{}, settings{}, domeUp{}, sunFog{}, reflectionTrace{};
@@ -30,7 +31,7 @@ namespace remix::forward::water {
     static bool supportsRayReflections(VkPhysicalDevice physical);
     void initialize(VkPhysicalDevice physical, VkDevice device, VkExtent2D extent,
                     VkSampleCountFlagBits samples, VkDescriptorSetLayout scene,
-                    VkDescriptorSetLayout material, Targets targets, bool rayReflections = false, bool liveDiffuse = false, bool bakedDirect = false);
+                    VkDescriptorSetLayout material, Targets targets, bool rayReflections = false, Diffuse diffuse = Diffuse::Baked);
     // The selected slot's fence has completed. All provider inputs and draw
     // owners must remain alive through the next completion of that fence.
     void prepare(uint32_t slot, const Parameters &parameters, std::span<const MaterialData> materials,

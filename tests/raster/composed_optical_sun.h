@@ -1,12 +1,18 @@
 // Optical direct-light checks; black transmission background isolates body light.
-void composedOpticalSunTests() {
+void composedOpticalSunTests(bool cascades = false) {
   namespace f = remix::forward;
   for (uint32_t samples : {1u, 2u, 4u}) {
     Target target(64, 64, true);
     auto &r = target.raster;
     f::Options options;
     options.samples = samples;
-    options.rtGI = options.bakedDirectWithLiveGI = options.bakedLighting = true;
+    options.rtGI = !cascades;
+    options.radianceCascades = cascades;
+    options.bakedDirectWithLiveGI = options.bakedLighting = true;
+    options.cascadeCount = 2;
+    options.cascadeDirections = 4;
+    options.cascadeHistory = 0;
+    options.cascadeBounces = false;
     options.rtGISamples = options.rtGIBounces = 1;
     options.rtGIDistance = .1f;
     options.rtReflections = samples == 2; // qualify both composed water pipeline variants
@@ -107,7 +113,7 @@ void composedOpticalSunTests() {
     } while (std::chrono::steady_clock::now() < deadline);
     const auto volume = target.forward->bakeController()->volume();
     require(volume && volume->irradianceContents == f::bake::IrradianceContents::ReceiverDirect &&
-                target.forward->statistics().rayGI.active,
+                (cascades ? target.forward->statistics().cascades.active : target.forward->statistics().rayGI.active),
             "Optical sunlight fixture publishes direct-only data with live incoming active");
     const size_t centre = (32 * 64 + 32) * 4, left = (32 * 64 + 24) * 4;
     const auto clear = render();

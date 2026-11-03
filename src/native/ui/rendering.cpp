@@ -157,13 +157,13 @@ namespace remix {
       auto selectedTechniques = remix::forward::techniques::requested(forward);
       int diffuseTechnique = int(selectedTechniques.diffuse);
       if (ui::Combo("Diffuse lighting", &diffuseTechnique,
-                    "Surface lightmaps + volume probes\0Live ray-query GI\0Disabled\0Radiance cascades\0Live incoming + baked direct\0"))
+                    "Surface lightmaps + volume probes\0Live ray-query GI\0Disabled\0Radiance cascades\0Live incoming + baked direct\0Cascade incoming + baked direct\0"))
         remix::forward::techniques::selectDiffuse(forward,
             remix::forward::techniques::Diffuse(diffuseTechnique));
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Selects diffuse transport independently of material shading.\n"
                           "Radiance cascades: real-time screen-space cascades traced with ray queries;\n"
-                          "it retains whole-field replacement. Live incoming + baked direct is a separate choice.\n"
+                          "Use the incoming + baked direct choices to retain static direct fields and mixed shadows.\n"
                           "Live sources use independent cubemap capture ownership.");
       if (forward.radianceCascades) {
         const auto &cascades = statistics.cascades;

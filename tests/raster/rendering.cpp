@@ -587,7 +587,7 @@ namespace {
     std::puts("Sprite overlays: frames, green/alpha, sequences, soft depth and modulation passed");
   }
 #include "preset_transition.h"
-  void cascadeProviderTests() {
+  void cascadeProviderTests(bool composed = false) {
     for (uint32_t samples : {1u, 4u})
       for (bool depthPrepass : {false, true}) {
         Target target(64, 64, true);
@@ -598,6 +598,7 @@ namespace {
         options.samples = samples;
         options.depthPrepass = depthPrepass;
         options.radianceCascades = true;
+        options.bakedLighting = options.bakedDirectWithLiveGI = composed;
         options.cascadeCount = 2;
         options.cascadeDirections = 4;
         options.cascadeHistory = 0;
@@ -630,6 +631,18 @@ namespace {
         info.radiance = {1, 0, 0};
         remixapi_LightHandle bakedRed;
         r.createLight(info, bakedRed);
+        remixapi_LightHandle local = nullptr;
+        if (composed) {
+          remixapi_LightInfoSphereEXT sphere{};
+          sphere.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_SPHERE_EXT;
+          sphere.position = {0, 0, -1};
+          sphere.radius = .1f;
+          info.hash = 9576;
+          info.pNext = &sphere;
+          info.radiance = {32, 0, 0}; // distinct in the linear 8-bit readback
+          r.createLight(info, local);
+        }
+        const remixapi_LightHandle captured[] = {bakedRed, local};
         remixapi_InstanceIdentityEXT identity{};
         identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
         identity.instanceId = 9574;
@@ -643,7 +656,7 @@ namespace {
         remixapi_BakeSceneSurfacesInfoEXT request{};
         auto &base = request.bounds.scene;
         base = {sizeof(request), REMIXAPI_BAKE_SCENE_SURFACES_VERSION_EXT, 9575, 1, 1,
-                REMIXAPI_BAKE_SCENE_READY_EXT, 1, 1, &retained, &bakedRed};
+                REMIXAPI_BAKE_SCENE_READY_EXT, 1, composed ? 2u : 1u, &retained, captured};
         for (uint32_t c = 0; c < 3; ++c) {
           request.bounds.minimum[c] = 10;
           request.bounds.maximum[c] = 11;
@@ -667,10 +680,12 @@ namespace {
           r.setupCamera(worldCamera);
           r.drawRetained(nullptr);
           r.drawLight(light);
+          if (local) r.drawLight(local);
           return target.render();
         };
         std::vector<uint8_t> image;
         options.radianceCascades = false;
+        options.bakedDirectWithLiveGI = false;
         target.enableForward(options, true);
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
         do {
@@ -683,20 +698,34 @@ namespace {
         require(target.forward->statistics().baking.active,
                 "Cascade fixture publishes its initial baked diffuse source");
         options.radianceCascades = true;
+        options.bakedDirectWithLiveGI = composed;
         target.enableForward(options, true);
-        for (uint32_t frame = 0; frame < 8; ++frame)
+        const auto composedDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        uint32_t frame = 0;
+        do {
           image = render();
+          require(target.forward->statistics().baking.state != REMIXAPI_BAKE_FAILED_EXT,
+                  "Cascade incoming direct publication succeeds");
+          if (++frame >= 8 && (!composed || target.forward->statistics().baking.active)) break;
+        } while (std::chrono::steady_clock::now() < composedDeadline);
         const auto &stats = target.forward->statistics();
         require(stats.cascades.available && stats.cascades.active && stats.cascades.rays > 0,
                 "Cascade provider records ray transport with either depth scheduling mode");
-        require(!stats.rayGI.active && !target.forward->bakeController()->volume(),
-                "Cascades do not run the alternate ray GI or publish baked diffuse");
+        const auto directVolume = target.forward->bakeController()->volume();
+        require(!stats.rayGI.active && (composed
+                    ? directVolume && stats.baking.active &&
+                        directVolume->irradianceContents == remix::forward::bake::IrradianceContents::ReceiverDirect
+                    : !directVolume),
+                "Cascade incoming retains only its selected direct field without per-pixel ray GI");
         const size_t at = (32 * 64 + 32) * 4;
         std::printf("Cascades %ux, prepass %u: RGB %u %u %u, rays %llu\n", samples,
                     unsigned(depthPrepass), unsigned(image[at]), unsigned(image[at + 1]),
                     unsigned(image[at + 2]), static_cast<unsigned long long>(stats.cascades.rays));
         require(image[at + 1] > image[at] + 20 && image[at + 1] > image[at + 2] + 20,
                 "Cascade receiver consumes the live green environment through the shading interface");
+        if (composed)
+          require(image[at] > 10,
+                  "Cascade incoming preserves nonzero captured local direct energy alongside live green sky");
         if (samples == 1 && !depthPrepass) {
           options.baking.reflectionProbes = 1;
           options.baking.reflectionResolution = 8;
@@ -711,14 +740,14 @@ namespace {
           } while (std::chrono::steady_clock::now() < captureDeadline);
           require(target.forward->standaloneCaptures()->source().image &&
                       target.forward->statistics().cascades.active &&
-                      !target.forward->bakeController()->volume(),
+                      (composed ? bool(target.forward->bakeController()->volume()) : !target.forward->bakeController()->volume()),
                   "Cascades and independent cubemap captures coexist without diffuse baking");
         }
         options.depthPrepass = !depthPrepass;
         target.enableForward(options, true);
         for (uint32_t frame = 0; frame < 8; ++frame) image = render();
         require(target.forward->statistics().cascades.active && image[at + 1] > image[at] + 20 &&
-                    image[at + 1] > image[at + 2] + 20 && !target.forward->bakeController()->volume(),
+                    image[at + 1] > image[at + 2] + 20 && (composed ? bool(target.forward->bakeController()->volume()) : !target.forward->bakeController()->volume()),
                 "Cascade target replacement preserves live output when depth scheduling changes");
         options.radianceCascades = false;
         options.rtGI = true;
@@ -5713,6 +5742,7 @@ int main(int argc, char **argv) try {
   }
   else if (argc>2 && std::strcmp(argv[2],"water")==0) waterTests();
   else if (argc>2 && std::strcmp(argv[2],"composed-optical-sun")==0) composedOpticalSunTests();
+  else if (argc>2 && std::strcmp(argv[2],"composed-cascade-optical-sun")==0) composedOpticalSunTests(true);
   else if (argc>2 && std::strcmp(argv[2],"sheet")==0) sheetTests();
   else if (argc>2 && std::strcmp(argv[2],"sheet-environment")==0) waterEnvironmentTests(false, true);
   else if (argc>2 && std::strcmp(argv[2],"water-environment")==0) waterEnvironmentTests();
@@ -5721,6 +5751,7 @@ int main(int argc, char **argv) try {
   else if (argc>2 && std::strcmp(argv[2],"sky")==0) skyTests();
   else if (argc>2 && std::strcmp(argv[2],"live-gi")==0) liveGITests();
   else if (argc>2 && std::strcmp(argv[2],"cascades")==0) cascadeProviderTests();
+  else if (argc>2 && std::strcmp(argv[2],"composed-cascades")==0) cascadeProviderTests(true);
   else if (argc>2 && std::strcmp(argv[2],"composed-gi")==0) liveGITests(true);
   else if (argc>2 && std::strcmp(argv[2],"hardware-reflections")==0) reflectionTests(directory, false, true);
   else if (argc>2 && std::strcmp(argv[2],"reflections")==0) reflectionTests(directory);
@@ -5756,6 +5787,7 @@ int main(int argc, char **argv) try {
   else if (argc>2 && std::strcmp(argv[2],"viewmodel-lighting")==0) viewModelLightingTests(directory);
   else if (argc>2 && std::strcmp(argv[2],"viewmodel-probes")==0) viewModelLightingTests(directory, true);
   else if (argc>2 && std::strcmp(argv[2],"composed-viewmodel-sun")==0) composedViewmodelSunTests();
+  else if (argc>2 && std::strcmp(argv[2],"composed-cascade-viewmodel-sun")==0) composedViewmodelSunTests(true);
   else if (argc>2 && std::strcmp(argv[2],"authored-reflections")==0) viewModelLightingTests(directory, true, true, true);
   else if (argc>2 && std::strcmp(argv[2],"viewmodel-ssr")==0) reflectionTests(directory, false, false, false, 4, true);
   else if (argc>2 && std::strcmp(argv[2],"viewmodel-environment")==0) viewModelLightingTests(directory, true, true);

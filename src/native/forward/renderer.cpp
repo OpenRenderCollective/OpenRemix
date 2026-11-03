@@ -202,10 +202,15 @@ namespace remix::forward {
     next->createPipelines(output);
     if (options.water) {
       next->waterPass = std::make_unique<water::Pass>();
+      auto waterDiffuse = water::Diffuse::Baked;
+      if (next->techniquePlan.rayDiffuse())
+        waterDiffuse = next->techniquePlan.bakedDirect ? water::Diffuse::RayIncoming : water::Diffuse::Ray;
+      else if (next->techniquePlan.cascadeDiffuse() && next->techniquePlan.bakedDirect)
+        waterDiffuse = water::Diffuse::CascadeIncoming;
       next->waterPass->initialize(physical, device, extent, next->samples, next->sceneLayout,
                                   next->materialLayout,
                                   {next->color->view, next->depth->view,
-                                   next->resolved ? next->resolved->view : VK_NULL_HANDLE}, next->techniquePlan.rayWater, next->techniquePlan.rayDiffuse(), next->techniquePlan.bakedDirect);
+                                   next->resolved ? next->resolved->view : VK_NULL_HANDLE}, next->techniquePlan.rayWater, waterDiffuse);
     }
     next->baking =
         baking ? std::move(baking)

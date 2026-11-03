@@ -956,16 +956,14 @@ This does not complete component modularity. Renderer fixtures now qualify
 seven-owner static corrections on surfaces/dynamic probes and baked sunlight
 with moving-caster corrections. Real-map hybrid/optical edge quality, reflection-reference provenance and matched runtime
 performance remain open.
-PR #37 now adapts its whole-field cascade source to the incoming query at
-`d4bededc` on its own branch. It remains unmerged and undeployed. Its build,
-replacement-source compilation, policy and five focused GPU checks pass.
-Normalized default/ray shader variants are unchanged; checked cascade variants
-have no opcode-count increases. Matched runtime performance is still unqualified.
-The branch also includes the private cube/sky source boundary and receiver-direct
-fingerprints/in-memory reuse. Its refreshed native build and five focused checks
-(policy, replacement sources, cascade transport/MSAA, viewmodel environment and
-composed viewmodel sunlight) pass.
-Baked-direct/cascade composition and optical cascade lookups remain outstanding.
+On the unmerged PR #37 branch, cascade incoming uses the same query and explicit
+baked-direct composition as ray incoming. Its native build, policy, replacement
+sources and focused runtime fixtures pass. The private cube/sky source boundary
+and receiver-direct fingerprint/reuse changes are included. Functional coverage
+includes local direct plus incoming transitions, optical mixed sunlight and
+viewmodel self/world isolation. All legacy shader-stage inputs are unchanged.
+Real-map quality, general normalization provenance and matched runtime performance
+remain unqualified. No playable deployment or PR merge is implied.
 Preserve the combined Source 2 fast path while extending providers.
 
 ### Receiver-direct irradiance producer
@@ -1056,7 +1054,7 @@ zero-diffuse metal and water passes. A query-only incoming replacement compiles
 with the ray implementation physically absent from the test tree, both with and
 without the ray-pass define. Sixteen existing default/custom/composed shader
 variants remain optimized-byte-identical after removing the unnecessary guard.
-This shader contract does not by itself enable composed cascade host pipelines. GPU numerical checks cover
+The cascade branch adds its own host pipeline selection. GPU numerical checks cover
 mixed visibility, valid black and missing baked coverage alongside independent
 producer energy-conservation tests.
 
@@ -1209,13 +1207,22 @@ that private source. The thin whole-field diffuse adapter consumes the same
 incoming query as other live providers. Valid black remains distinct from an
 unavailable gather through the source's existing fallback policy.
 
-Existing cascades remain whole-field replacement with analytic direct lighting.
-Selecting them clears the explicit ray/baked-direct composition request. Raw
-profiles containing both switches are also guarded: unsupported composed cascade
-pipelines must not consume ReceiverDirect publications through whole-field
-shaders. The Source 2 and explicit ray-incoming choices retain their main-branch
-behavior. Composition with baked direct and a suitable optical-water lookup are
-still required cascade-provider extensions; this sync does not advertise them.
+Ordinary cascades remain whole-field replacement with analytic direct lighting.
+The explicit `CascadeIncoming` selection uses the existing incoming-composition
+switch alongside cascade selection. It resolves ReceiverDirect publications,
+retains mixed attribution and chooses specialized composed world, prepassed,
+terrain, viewmodel and water shaders at target creation. Changing that ownership
+recreates targets. Unsupported ray-query hardware keeps the ordinary baked or
+disabled fallback. No per-draw provider dispatch is added.
+
+Water selects a typed internal diffuse mode: baked, ray, ray incoming or cascade
+incoming. Composed cascade water has separate variants with and without reflection
+rays; cascade incoming itself does not require fragment ray-query resources.
+The Source 2 and existing whole-field choices preserve their shader inputs.
+Incoming queries retain the cascade source's current screen-depth validity and
+ambient fallback; optical positions missing the gather are not reconstructed as
+full 3D GI. Viewmodel incoming remains a screen-neighbourhood approximation.
+Real-map optical/incoming quality and runtime performance remain open.
 
 The query wrapper avoids an extra early return. Relative to the previous PR head,
 checked default/ray fragment variants remain normalized-byte-identical and six
@@ -1226,6 +1233,17 @@ remains unmerged and is not deployed.
 The shared composer no longer requires the ray-pass define. On this branch the
 actual cascade source compiles through composed world, prepassed world, viewmodel,
 early viewmodel, metal, water and ray-water material variants. These checks use
-`CASCADE_GI` plus the composed-receiver define without `LIVE_GI`. They qualify the
-shader connection only. Host composition remains guarded until pipeline selection,
-resource/optical coverage and numerical mixed-light behavior are verified.
+`CASCADE_GI` plus the composed-receiver define without `LIVE_GI`.
+
+Runtime transition fixtures retain nonzero red captured local direct energy
+(35-36 in linear 8-bit readback) alongside green live incoming (255), while
+rejecting the previous red baked sky. They cover 1x/4x MSAA, both depth schedules,
+independent cubemap publication and switching back to ray GI. Optical checks at
+1x/2x/4x retain baked sunlight visibility, moving shadows, colour reuse and complete
+sun fallback outside probes, including both reflection-ray water variants.
+Viewmodel sunlight checks at 1x/2x/4x retain world-space static probe visibility,
+moving/self shadows, self/world isolation, colour reuse, fallback outside probes
+and the same direct publication across incoming-only recapture.
+All 173 existing stage source/define selections are unchanged. Legacy Source 2,
+water, ray composition and ordinary cascade GPU tests pass. This is functional
+qualification, not a matched FPS claim or a PR merge.

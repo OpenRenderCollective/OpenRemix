@@ -59,6 +59,12 @@ if get_option('gpu_tests')
     args : [meson.current_build_dir() / 'composed-optical-sun-readback', 'composed-optical-sun'], timeout : 180)
   test('Forward+ hardware reflection transport, current actors and MSAA', raster_test,
     args : [meson.current_build_dir() / 'hardware-reflection-readback', 'hardware-reflections'], timeout : 180)
+  test('Forward+ composed cascade viewmodel sunlight preserves direct probes and isolated shadows', raster_test,
+    args : [meson.current_build_dir() / 'composed-cascade-viewmodel-readback', 'composed-cascade-viewmodel-sun'], timeout : 240)
+  test('Forward+ composed cascade optical sunlight preserves baked and moving shadows', raster_test,
+    args : [meson.current_build_dir() / 'composed-cascade-optical-readback', 'composed-cascade-optical-sun'], timeout : 240)
+  test('Forward+ composed cascade incoming preserves direct publication and provider transitions', raster_test,
+    args : [meson.current_build_dir() / 'composed-cascade-readback', 'composed-cascades'], timeout : 240)
   test('Forward+ cascade provider transport, depth scheduling and MSAA', raster_test,
     args : [meson.current_build_dir() / 'cascade-readback', 'cascades'], timeout : 180)
   test('Forward+ SSR transport and MSAA guide readback', raster_test,

@@ -20,7 +20,7 @@ int main() {
     for (auto direct : {techniques::Direct::Analytic, techniques::Direct::AttributedBake,
                         techniques::Direct::AggregateBake})
       for (auto diffuse : {techniques::Diffuse::SurfaceAndProbes, techniques::Diffuse::RayQueries,
-                           techniques::Diffuse::Disabled, techniques::Diffuse::RadianceCascades, techniques::Diffuse::RayIncoming})
+                           techniques::Diffuse::Disabled, techniques::Diffuse::RadianceCascades, techniques::Diffuse::RayIncoming, techniques::Diffuse::CascadeIncoming})
         for (auto reflection : {techniques::Reflections::Disabled, techniques::Reflections::Cubemaps,
                                 techniques::Reflections::RayQueries, techniques::Reflections::RayQueriesAndCubemaps}) {
           auto options = defaults;
@@ -53,7 +53,7 @@ int main() {
             require(!resources.rayDiffuse() || (capabilities.fragmentGI && options.rtGI),
                     "Fragment GI pipelines require support and an explicit diffuse request");
             require(resources.cascadeDiffuse() ==
-                        (diffuse == techniques::Diffuse::RadianceCascades && capabilities.rayQueries),
+                        ((diffuse == techniques::Diffuse::RadianceCascades || diffuse == techniques::Diffuse::CascadeIncoming) && capabilities.rayQueries),
                     "Radiance cascades need only ray queries: their traces run in compute");
             require(resources.liveDiffuse() == (resources.rayDiffuse() || resources.cascadeDiffuse()) &&
                         !(resources.rayDiffuse() && resources.cascadeDiffuse()),
@@ -117,11 +117,12 @@ int main() {
     require(!cascades.sameTargets(cascadeLimits), "Cascade count changes the cascade targets");
     {
       auto requested = defaults;
-      requested.radianceCascades = requested.rtGI = requested.bakedDirectWithLiveGI = true;
+      requested.radianceCascades = requested.rtGI = requested.bakedDirectWithLiveGI = requested.bakedLighting = true;
       const auto resolved = techniques::resolveResources(requested, {true, true, true});
       const auto lighting = requested.lightingPlan(resolved.liveDiffuse());
-      require(resolved.cascadeDiffuse() && !resolved.bakedDirect && !lighting.baking.enabled,
-              "Cascades retain whole-field ownership until composed cascade pipelines are qualified");
+      require(resolved.cascadeDiffuse() && resolved.bakedDirect && lighting.baking.enabled &&
+                  lighting.baking.irradianceContents == bake::IrradianceContents::ReceiverDirect,
+              "Explicit cascade incoming retains independent receiver-direct ownership");
     }
     auto opaqueLive = defaults;
     opaqueLive.rtGI = true;

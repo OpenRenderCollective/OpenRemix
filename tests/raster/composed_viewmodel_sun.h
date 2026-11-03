@@ -1,12 +1,18 @@
 // Included after the shared perspective-camera helper in rendering.cpp.
-void composedViewmodelSunTests() {
+void composedViewmodelSunTests(bool cascades = false) {
   namespace f = remix::forward;
   for (uint32_t samples : {1u, 2u, 4u}) {
     Target target(64, 64, true);
     auto &r = target.raster;
     f::Options options;
     options.samples = samples;
-    options.rtGI = options.bakedDirectWithLiveGI = options.bakedLighting = true;
+    options.rtGI = !cascades;
+    options.radianceCascades = cascades;
+    options.bakedDirectWithLiveGI = options.bakedLighting = true;
+    options.cascadeCount = 2;
+    options.cascadeDirections = 4;
+    options.cascadeHistory = 0;
+    options.cascadeBounces = false;
     options.rtGISamples = options.rtGIBounces = 1;
     options.rtGIDistance = .1f; // isolate direct sun; incoming transport has separate fixtures
     options.prism = options.gamma22 = options.ssr = options.localShadows = false;
@@ -97,7 +103,7 @@ void composedViewmodelSunTests() {
     } while (std::chrono::steady_clock::now() < deadline);
     const auto volume = target.forward->bakeController()->volume();
     require(volume && volume->irradianceContents == f::bake::IrradianceContents::ReceiverDirect &&
-                target.forward->statistics().rayGI.active,
+                (cascades ? target.forward->statistics().cascades.active : target.forward->statistics().rayGI.active),
             "Viewmodel sunlight fixture publishes direct-only data with live incoming active");
     const size_t centre = (32 * 64 + 32) * 4, left = (32 * 64 + 27) * 4;
     const auto clear = render();

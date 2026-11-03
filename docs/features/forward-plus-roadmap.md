@@ -164,14 +164,19 @@ Still required for the complete modularity/performance objective:
   Component-specific receiver-direct source identities and compatible in-memory
   reuse now exclude incoming sky power and capture hints; conservative material
   dependencies remain. Qualify reflection-reference provenance and real-map
-  quality/performance. PR #37 now uses the shared incoming query
-  on its unmerged branch (`d4bededc`), with build, policy, replacement-source and
-  five focused GPU checks passing. Baked-direct/cascade composition, optical
-  cascade lookups and matched runtime performance remain open.
+  quality/performance. The unmerged PR #37 branch now composes cascade incoming
+  with baked direct through the shared query. Real-map optical/incoming quality,
+  general normalization provenance and matched runtime performance remain open.
   The shared composed receiver no longer requires a ray-provider define;
   non-ray incoming replacement tests retain baked storage through world, metal,
   viewmodel and water passes. Sixteen existing optimized variants remain byte-
-  identical. Composed cascade host resources/pipelines remain a separate gate.
+  identical. The cascade branch supplies specialized host resources/pipelines.
+  On the cascade branch, runtime composed selection now has specialized world,
+  terrain, viewmodel and both optical shader paths. Transition tests retain
+  nonzero captured local direct energy alongside live sky at 1x/4x and both depth
+  schedules; optical sun/mixed-shadow tests pass at 1x/2x/4x. Stage inputs remain
+  identical for all 173 legacy stages. Real-map incoming/optical quality and
+  matched performance remain open; missing screen-gather samples retain fallback.
   Preserve existing presets and the default Source 2 combined fast path.
 - Environment replacement no longer imports default cubemap storage through
   world/viewmodel/water passes. The provider owns probe sampling and candidate

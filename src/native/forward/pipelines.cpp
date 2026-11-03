@@ -42,21 +42,31 @@ namespace remix::forward {
     // The radiance cascade provider is compiled into the ordinary world
     // shaders: same layout and draw paths, no per-draw provider selection.
     const bool cascadeWorld = techniquePlan.cascadeDiffuse();
+    auto cascadeModule = [&](const uint32_t *ordinary, size_t ordinaryBytes,
+                             const uint32_t *composed, size_t composedBytes) {
+      return techniquePlan.bakedDirect ? modules.add(composed, composedBytes)
+                                       : modules.add(ordinary, ordinaryBytes);
+    };
     const auto fragment = cascadeWorld
         ? (options.depthPrepass
                ? (techniquePlan.reflectionResolve
-                      ? modules.add(cascades::worldPrepassedGuidesShader, sizeof(cascades::worldPrepassedGuidesShader))
-                      : modules.add(cascades::worldPrepassedShader, sizeof(cascades::worldPrepassedShader)))
+                      ? cascadeModule(cascades::worldPrepassedGuidesShader, sizeof(cascades::worldPrepassedGuidesShader),
+                          cascades::composedWorldPrepassedGuidesShader, sizeof(cascades::composedWorldPrepassedGuidesShader))
+                      : cascadeModule(cascades::worldPrepassedShader, sizeof(cascades::worldPrepassedShader),
+                          cascades::composedWorldPrepassedShader, sizeof(cascades::composedWorldPrepassedShader)))
                : (techniquePlan.reflectionResolve
-                      ? modules.add(cascades::worldGuidesShader, sizeof(cascades::worldGuidesShader))
-                      : modules.add(cascades::worldShader, sizeof(cascades::worldShader))))
+                      ? cascadeModule(cascades::worldGuidesShader, sizeof(cascades::worldGuidesShader),
+                          cascades::composedWorldGuidesShader, sizeof(cascades::composedWorldGuidesShader))
+                      : cascadeModule(cascades::worldShader, sizeof(cascades::worldShader),
+                          cascades::composedWorldShader, sizeof(cascades::composedWorldShader))))
         : options.depthPrepass
         ? (techniquePlan.reflectionResolve ? modules.add(prepassedSsrFragShader, sizeof(prepassedSsrFragShader))
                                  : modules.add(prepassedFragShader, sizeof(prepassedFragShader)))
         : (techniquePlan.reflectionResolve ? modules.add(ssrFragShader, sizeof(ssrFragShader))
                                  : modules.add(fragShader, sizeof(fragShader)));
     VkShaderModule giFragment = VK_NULL_HANDLE;
-    const auto terrainFragment = cascadeWorld ? modules.add(cascades::worldShader, sizeof(cascades::worldShader))
+    const auto terrainFragment = cascadeWorld ? cascadeModule(cascades::worldShader, sizeof(cascades::worldShader),
+                          cascades::composedWorldShader, sizeof(cascades::composedWorldShader))
                                           : modules.add(fragShader, sizeof(fragShader));
     const auto depthFragment = modules.add(opaqueDepthFragShader, sizeof(opaqueDepthFragShader));
     VkShaderModule giTerrainFragment = VK_NULL_HANDLE;
@@ -254,14 +264,16 @@ namespace remix::forward {
     if (viewModelPrepass)
       viewModelDepthPipeline = graphics(vertex, depthFragment, viewModelTarget->pass(), Pass::ViewModelDepth);
     const auto viewModelFragment = cascadeWorld
-        ? modules.add(cascades::viewModelShader, sizeof(cascades::viewModelShader))
+        ? cascadeModule(cascades::viewModelShader, sizeof(cascades::viewModelShader),
+                          cascades::composedViewModelShader, sizeof(cascades::composedViewModelShader))
         : modules.add(viewModelFragShader, sizeof(viewModelFragShader));
     viewModelPipeline = graphics(vertex, viewModelFragment, viewModelTarget->pass(), Pass::ViewModel);
     if (giViewModelFragment)
       giViewModelPipeline = graphics(vertex, giViewModelFragment, viewModelTarget->pass(), Pass::ViewModel);
     if (!std::getenv("REMIX_DEBUG_DISABLE_VIEWMODEL_EARLY_DEPTH")) {
       const auto early = cascadeWorld
-          ? modules.add(cascades::viewModelEarlyShader, sizeof(cascades::viewModelEarlyShader))
+          ? cascadeModule(cascades::viewModelEarlyShader, sizeof(cascades::viewModelEarlyShader),
+                          cascades::composedViewModelEarlyShader, sizeof(cascades::composedViewModelEarlyShader))
           : modules.add(viewModelEarlyFragShader, sizeof(viewModelEarlyFragShader));
       viewModelEarlyPipeline = graphics(vertex, early, viewModelTarget->pass(), Pass::ViewModel);
       if (giViewModelEarlyFragment)
