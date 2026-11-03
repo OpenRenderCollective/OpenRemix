@@ -954,3 +954,13 @@ diffuse volume, source snapshot, worker, transport or scheduler. Borrowed source
 header and descriptor views live with that capture state. The controller retains
 its existing publication order, explicit invalidation policy and frame-owned
 image references; grouping does not allocate another owner or add dispatch.
+
+### Source 2 recipe finishing
+
+`bake/source2_finish.cpp` owns the default recipe transition from completed
+transport to reflection publication and diffuse assets. The reflection scheduler
+submits it on the existing recipe preparation ticket. It preserves the shared
+transport budget, reflection-first finishing order, cancellation ownership and
+early image publication; it does not create another job or frame-time dispatch.
+Individual reflection and diffuse encoders remain responsible for their assets.
+This boundary does not yet make default technique scheduling independent.
