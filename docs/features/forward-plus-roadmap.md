@@ -112,6 +112,11 @@ Still required for the complete modularity/performance objective:
   automatic capture edits. Broaden real-map coverage and no-overhead measurements;
   new map loads still use diffuse-index recovery when the exact combined cache is
   absent, and optional diagnostic local companions are regenerated in that case.
+- Implement independent direct/indirect provider composition. The current
+  `lighting::resolve(..., liveGiActive)` disables all baking for live GI; it does
+  not support lightmapped direct plus live indirect. Preserve existing presets,
+  split transport ownership/storage deliberately and prevent double-counting
+  aggregate direct energy. Keep the default Source 2 combined fast path unchanged.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Water's baked/mixed sunlight policy still needs separate qualification.

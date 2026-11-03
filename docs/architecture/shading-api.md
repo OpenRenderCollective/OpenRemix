@@ -926,3 +926,26 @@ The Source 2 adapter still selects shared captures for baked diffuse and
 standalone captures for supported live or disabled diffuse. Image disable retains
 the owner that must retire pending work. No new runtime setting or GPU work is
 introduced; CPU timing acceptance still needs to include this boundary.
+
+### Remaining component-composition gap
+
+The source interfaces are interchangeable, but direct/indirect selection is not
+yet fully independent. `lighting::resolve(..., liveGiActive)` currently disables
+the complete bake when a live source is selected. The baked evaluator returns
+combined chart/probe irradiance; ray diffuse returns a live field with analytic
+direct lobes. Consequently, replacing ambient/indirect lighting while retaining
+lightmapped direct lighting is not an implemented combination. The cascade PR
+uses the same whole-field replacement policy.
+
+The next component split must distinguish retained direct energy from indirect
+transport, including dynamic receivers and controllable components. It must not
+add a live indirect field to a combined aggregate containing the same indirect
+energy, or subtract mixed shadows from energy absent from the selected field.
+Its cache identity, publication readiness and normalization reference must
+identify the actual retained contents. Keep existing preset behavior and the
+combined Source 2 shader fast path; expose an explicit hybrid composition rather
+than silently changing the meaning of the saved live-GI switch. Qualification
+needs separate direct/indirect energy fixtures, styled on/off behavior and mixed
+shadow checks across surfaces/probes/viewmodels/water, followed by compiled
+shader and matched performance acceptance. This is required modularity work,
+not satisfied by the current source adapter or its green compilation tests.
