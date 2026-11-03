@@ -957,7 +957,7 @@ seven-owner static corrections on surfaces/dynamic probes and baked sunlight
 with moving-caster corrections. Real-map hybrid/optical edge quality, reflection-reference provenance and matched runtime
 performance remain open.
 PR #37 now adapts its whole-field cascade source to the incoming query at
-`f854c29d` on its own branch. It remains unmerged and undeployed. Its build,
+`eeb98b7f` on its own branch. It remains unmerged and undeployed. Its build,
 replacement-source compilation, policy and five focused GPU checks pass.
 Normalized default/ray shader variants are unchanged; checked cascade variants
 have no opcode-count increases. Matched runtime performance is still unqualified.
@@ -978,8 +978,8 @@ non-scalar fallback, moving-only local shadows, cancellation and exact cache
 restore. Seven-light surface/probe corrections pass at 1x/4x using the correct
 receiver-direct cache identity. Their bounded incoming range isolates direct
 ownership from distant bounce transport. Ray-based equivalents also pass.
-Water uses a typed internal diffuse mode; legacy stage inputs are unchanged for
-all 173 existing stages. Cascade incoming remains screen-space: missing optical
+Water uses a typed internal diffuse mode; all 173 legacy stage names, source-file
+and define selections are preserved. Cascade incoming remains screen-space: missing optical
 gather samples use its existing fallback, and viewmodels use neighbourhood incoming.
 A capped main-versus-PR default Source 2 comparison matched settings, content,
 draws and inspected pixels. GPU ranges overlap/improve, but pre-fix PR unarmed
@@ -996,6 +996,14 @@ intervals and matching quality/content/draws/inspected pixels. Fixed PR runs at
 111.58-112.41 FPS unarmed and 102.01-102.63 with a weapon; world shading dominates
 at 7.26-7.79 ms. This supports the inactive-provider split on two scoped maps,
 not enabled-source acceptance, universal equality or the 300 FPS goal.
+Those matched timing studies used `f854c29d`. The newer `eeb98b7f` checkpoint
+separates a provider-owned 80-byte cascade tail from the fixed 4336-byte common
+frame. Only selected cascade receivers declare/upload the tail, through the same
+single uniform write and descriptor. Replacement compilation removes the default
+frame fragment, and nine targeted GPU checks pass. Twelve cascade variants retain
+optimized bytes; 22 normal-lit shader/coverage comparisons match main after the
+actual lighting specialization. Unspecialized PR code retains its debug-view-8
+branch. The frame-packet revision has no new matched runtime timing claim.
 Real-map quality, general normalization provenance and enabled-provider timing remain open.
 Preserve the combined Source 2 fast path while extending providers.
 

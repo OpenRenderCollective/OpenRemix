@@ -165,14 +165,14 @@ Still required for the complete modularity/performance objective:
   reuse now exclude incoming sky power and capture hints; conservative material
   dependencies remain. Qualify reflection-reference provenance and real-map
   quality/performance. PR #37 now uses the shared incoming query
-  on its unmerged branch (`f854c29d`), with build, policy, replacement-source and
+  on its unmerged branch (`eeb98b7f`), with build, policy, replacement-source and
   focused checks passing. Composed cascade host selection now covers world,
   terrain, viewmodel and water. Transition tests retain nonzero baked local direct
   alongside live sky; optical/viewmodel mixed sunlight passes at 1x/2x/4x. Existing
   controllable local fixtures pass at 1x/2x/4x, and seven-light surface/probe
   correction/cache fixtures pass at 1x/4x, alongside ray-based equivalents.
   Cache lookups now select the same component domain as the controller. Stage
-  inputs remain unchanged for all 173 legacy shader stages. Missing screen-space
+  names, source-file and define selections remain preserved for all 173 legacy stages. Missing screen-space
   samples retain provider fallback. Real-map quality, general reference provenance
   and matched runtime performance remain open.
   The shared composed receiver no longer requires a ray-provider define;
@@ -188,6 +188,12 @@ Still required for the complete modularity/performance objective:
   Twelve shader variants preserve normalized executable/global semantics and
   sizes, and viewmodel/water GPU checks pass. General reference provenance remains
   open; raw SPIR-V declaration order changes, with no new FPS claim.
+- PR `eeb98b7f` moves cascade receiver constants into an optional provider-owned
+  80-byte tail after the fixed 4336-byte common frame. Target selection resolves
+  upload size once; no new descriptor or uniform write is added. Nine GPU checks
+  and replacement compilation pass. Twelve cascade variants retain optimized
+  bytes; 22 normal-lit shader/coverage comparisons match main after specialization.
+  Prior matched studies used `f854c29d` and predate this packet revision.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Composed optical sunlight has fixture coverage; broader optical/probe edge
