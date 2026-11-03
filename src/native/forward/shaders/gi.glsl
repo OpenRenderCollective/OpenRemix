@@ -1,12 +1,6 @@
 // Reuse the material-aware radiance transport without a second lighting model.
 // This descriptor set is present only in optional hardware-GI pipelines.
-#ifndef RAY_SCENE_SET
-#define RAY_SCENE_SET 2
-#endif
-#define RAY_FRAGMENT 1
-#include "../bake/shaders/bindings.glsl"
-#include "../bake/shaders/material.glsl"
-#include "../bake/shaders/radiance.glsl"
+#include "ray-transport.glsl"
 
 vec3 liveDiffuse(vec3 position, vec3 normal, vec3 geometric) {
   geometric = dot(geometric, geometric) > 1e-12 ? normalize(geometric) : normal;

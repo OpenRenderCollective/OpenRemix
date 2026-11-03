@@ -1,13 +1,10 @@
 #include "../../shaders/reflection-sample.glsl"
 // Water and opaque reflection rays use the same captured materials, lighting,
 // alpha coverage and measured dielectric transport. Only the primary ray differs.
-#ifndef LIVE_GI
+#ifndef RAY_SCENE_SET
 #define RAY_SCENE_SET 3
-#define RAY_FRAGMENT 1
-#include "../../bake/shaders/bindings.glsl"
-#include "../../bake/shaders/material.glsl"
-#include "../../bake/shaders/radiance.glsl"
 #endif
+#include "../../shaders/ray-transport.glsl"
 
 vec4 waterHardwareReflection(vec3 position, vec3 normal, vec3 direction, float roughness, vec4 screen) {
   if (screen.a >= .999 || roughness >= waterFrame.reflectionTrace.w) return screen;
