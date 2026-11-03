@@ -93,8 +93,9 @@ requires the existing mixed-shadow residual; adding it again would double-count
 baked direct lighting. This ownership still needs a friendlier high-level facade.
 
 `local-light-response.glsl` applies the standard PBR response to sampled values
-without importing transport resources. The default source privately imports
-`direct-light.glsl`; its optimized standard entry and raw query share
+without importing transport resources. The default local source owns the static
+visibility and local shadow-map imports (`occlusion.glsl`, `local-shadows.glsl`)
+as well as `direct-light.glsl`; its optimized standard entry and raw query share
 `local-light-query.glsl`, a function-body
 template with one caller-specific miss exit. This preserves the standard early
 returns without a runtime shader callback or duplicated transport implementation.

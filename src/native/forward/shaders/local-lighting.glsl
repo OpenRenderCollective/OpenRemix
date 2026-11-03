@@ -1,3 +1,5 @@
+#include "occlusion.glsl"
+#include "local-shadows.glsl"
 #include "direct-light.glsl"
 #include "light-list.glsl"
 

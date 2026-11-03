@@ -26,8 +26,6 @@ layout(early_fragment_tests) in;
 #include "irradiance.glsl"
 #include "style-lighting.glsl"
 #include "lightmap.glsl"
-#include "occlusion.glsl"
-#include "local-shadows.glsl"
 #include "sun-response.glsl"
 #ifdef VIEWMODEL_PASS
 #include "../viewmodel/shaders/reflections.glsl"
