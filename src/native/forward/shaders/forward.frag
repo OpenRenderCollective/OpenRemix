@@ -17,13 +17,13 @@ layout(early_fragment_tests) in;
 #include "bindings.glsl"
 #include "material.glsl"
 #ifndef SHADOW_PASS
-#include "brdf.glsl"
+#include "brdf-values.glsl"
 #include "light-contribution.glsl"
 #include "emitter.glsl"
 #include "surface.glsl"
 #include "reflection-guide-reference.glsl"
 #include "receiver-coverage.glsl"
-#include "sun-response.glsl"
+#include "sun-composition.glsl"
 #ifdef VIEWMODEL_PASS
 #include "../viewmodel/shaders/reflections.glsl"
 #endif
@@ -53,7 +53,7 @@ layout(location = 1) out vec4 outNormalRoughness;
 layout(location = 2) out vec4 outReflectance;
 #endif
 #include "receiver.glsl"
-#include "local-light-response.glsl"
+#include "local-light-composition.glsl"
 #include "receiver-lighting.glsl"
 #include "local-lighting.glsl"
 #include "sun-lighting.glsl"

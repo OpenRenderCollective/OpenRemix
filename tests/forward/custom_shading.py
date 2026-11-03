@@ -26,7 +26,9 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
     # supplying declarations to the custom model.
     source = tree / "shaders/forward.frag"
     source.write_bytes((root / "src/native/forward/shaders/forward.frag").read_bytes())
-    model_files = ("standard-shading.glsl", "direct-lighting.glsl", "standard-local-lighting.glsl")
+    model_files = ("standard-shading.glsl", "direct-lighting.glsl", "standard-local-lighting.glsl",
+                   "brdf.glsl", "local-light-response.glsl", "sun-response.glsl",
+                   "direct-light.glsl", "local-response-source.glsl")
     for name in model_files:
         (tree / "shaders" / name).unlink()
     shutil.copyfile(root / "tests/forward/shaders/custom-model.glsl",

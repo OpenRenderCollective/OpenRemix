@@ -1,5 +1,6 @@
 #ifndef OPENREMIX_LOCAL_LIGHT_RESPONSE
 #define OPENREMIX_LOCAL_LIGHT_RESPONSE
+#include "brdf.glsl"
 #include "local-light-values.glsl"
 #include "local-light-composition.glsl"
 

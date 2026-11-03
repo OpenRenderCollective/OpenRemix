@@ -1,3 +1,6 @@
+#ifndef OPENREMIX_LOCAL_LIGHT_COMPOSITION
+#define OPENREMIX_LOCAL_LIGHT_COMPOSITION
+#include "local-light-values.glsl"
 #include "diffuse-residual.glsl"
 
 // Response.diffuse is a weight per unit diffuse irradiance. For an aggregate
@@ -19,3 +22,5 @@ LightContribution composeLocalLight(LocalLightSample lighting, BrdfLobes analyti
   analytic.diffuse = lighting.aggregateDiffuse ? bakedDiffuseWeight : analytic.diffuse;
   return composeLocalLight(lighting, analytic);
 }
+
+#endif

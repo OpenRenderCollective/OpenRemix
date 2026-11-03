@@ -1,4 +1,5 @@
 #include "standard-local-lighting.glsl"
+#include "sun-response.glsl"
 #include "direct-lighting.glsl"
 #include "standard-reflection-response.glsl"
 #ifdef VIEWMODEL_PASS
