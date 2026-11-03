@@ -748,6 +748,9 @@ water exits and disabled-pass compatibility at 1x, 2x and 4x with ray-tracing fe
 | `waterThickness` | 0.15 | Screen refraction hit tolerance in metres |
 | `lightCutoff` | 0.001 | Contribution threshold used to bound local-light influence |
 | `ssr` | 1 | Enable current-frame screen-space reflections |
+| `radianceCascades` | 0 | Radiance cascade diffuse provider (see [Radiance cascade diffuse GI](#radiance-cascade-diffuse-gi)) |
+| `proceduralSky` | 1 | Analytic sky when the scene has no dome light |
+| `sunOverride` | 0 | Replace the scene's sun with the panel's (see [Live sun and procedural sky](#live-sun-and-procedural-sky)) |
 | `reflectionProbes` | 64 | Maximum baked box-projected cubemaps, 0 to 64 |
 | `reflectionResolution` | 32 | Power-of-two cube face size, 8 to 128 |
 | `lightmapPageSize` | 1024 | Maximum power-of-two surface atlas page size, 64 to 4096 |
@@ -1043,6 +1046,49 @@ samples have no temporal accumulation or spatial denoiser, so complex or small e
 higher budgets can be expensive. Secondary metallic/glossy lobes and secondary normal/roughness maps
 remain outside the shared diffuse transport. Reduced-resolution reconstruction, denoising and static/
 dynamic acceleration optimizations remain performance/quality work; real GMod maps are not profiled.
+
+## Radiance cascade diffuse GI
+
+`rtx.native.forward.radianceCascades = 1` (Diffuse lighting: "Radiance cascades") selects screen-space
+radiance cascades as the diffuse provider. Like live GI it replaces the surface-lightmap/probe indirect
+term and stops diffuse baking; direct lighting, shadows, emission and reflections are unchanged. It needs
+ray-query support only (the traces run in compute); without it the configured baked fallback remains.
+Architecture, limits and ownership are in [the lighting architecture](../architecture/forward-lighting.md).
+
+Probes sit on the depth buffer. With the depth prepass enabled (the default), the prepass runs in its
+own pass, the cascades trace from it and the world is shaded with the same frame's result. Hits are lit
+by the sun and lights, plus further bounces from the previous result on screen or a world irradiance
+cache off screen. The per-pixel result accumulates over frames and is filtered at depth and normal edges.
+Shading-normal response comes from per-probe luminance spherical harmonics. Viewmodels average the
+world's result around their screen position; water keeps the ambient fallback.
+
+Controls: `cascadeCount` (2..6, default 5) and `cascadeDirections` (cascade-0 directions per side: 4, 8
+or 16, default 8) prepare replacement targets. Probe spacing in pixels equals the direction count, and
+doubles from 1440p up so the ray count stays near 1080p's. Applied immediately: `cascadeInterval`
+(metres traced by cascade 0, default .25; each cascade traces four times further), `cascadeDistance`
+(reach before the sky, default 200 m), `cascadeIntensity` (default 1), `cascadeHistory` (running mean of
+up to 1/(1-h) frames, default .97) and `cascadeBounces` (default on). Lighting view 8, "Indirect diffuse
+only", shows material colour times the selected provider's irradiance.
+
+## Live sun and procedural sky
+
+Scenes without a dome light get a procedural clear sky (`proceduralSky`, default on) around the live sun,
+scaled by its irradiance and `skyIntensity`. It is drawn as the background, used for sky reflections and
+seen by radiance cascade rays. `skyUpAxis` selects the world up axis (0 X, 1 Y, 2 Z, 3 automatic from the
+camera, the default). An authored dome always takes precedence.
+
+`sunOverride` replaces the scene's distant light for Forward+ shading, shadows, rays and sky, with
+`sunAzimuth` and `sunElevation` (degrees about the up axis), `sunIntensity`, `sunColorR/G/B` and
+`sunAngularDiameter`. It never rebakes: baked sun visibility applies only while the live sun matches the
+bake's, otherwise shadow maps are used.
+
+## Implied static shadow casters
+
+When the host supplies no ready bake scene, the renderer implies one from the frame's static-classified
+opaque world draws, rebuilt only when that set changes (surfaces, materials, transforms, ranges). Frozen
+sun and local shadow maps then reuse static geometry exactly as for a host scene, rather than redrawing
+every caster each frame; dynamic instances stay in the moving-caster maps. Scenes with a host bake scene
+are unchanged.
 
 ## Hardware transport foundation
 

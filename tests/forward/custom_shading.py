@@ -38,6 +38,8 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
         "viewmodel": ["VIEWMODEL_PASS", "REFLECTION_GUIDES"],
         "live-diffuse": ["LIVE_GI", "REFLECTION_GUIDES"],
         "live-viewmodel": ["LIVE_GI", "VIEWMODEL_PASS"],
+        "cascade-diffuse": ["CASCADE_GI", "REFLECTION_GUIDES"],
+        "cascade-viewmodel": ["CASCADE_GI", "VIEWMODEL_PASS"],
         "composed-model": ["LIVE_GI", "OPENREMIX_BAKED_DIRECT_LIVE_INDIRECT"],
         "composed-model-viewmodel": ["LIVE_GI", "OPENREMIX_BAKED_DIRECT_LIVE_INDIRECT", "VIEWMODEL_PASS"],
     }
@@ -60,6 +62,7 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
     variants = {
         "environment-viewmodel": (source, ["VIEWMODEL_PASS", "REFLECTION_GUIDES"]),
         "environment-live-viewmodel": (source, ["LIVE_GI", "VIEWMODEL_PASS"]),
+        "environment-cascade-viewmodel": (source, ["CASCADE_GI", "VIEWMODEL_PASS"]),
         "environment-water": (source, ["WATER_SURFACE"]),
         "environment-water-ray": (source, ["WATER_SURFACE", "WATER_RAY"]),
         "environment-world-resolve": (tree / "shaders/reflections.comp", ["SSR_FILTER"]),
@@ -122,12 +125,30 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
                         *["-D" + define for define in defines], str(source),
                         "-o", str(binary)], env=env, check=True)
         subprocess.run([validator, "--target-env", "vulkan1.2", str(binary)], env=env, check=True)
+    # Real cascade gathering composes with baked receivers without a ray-pass
+    # define. Host selection remains guarded until these pipelines are qualified.
+    for name, defines in {
+        "composed-cascade-world": [],
+        "composed-cascade-prepassed": ["PREPASSED_WORLD"],
+        "composed-cascade-viewmodel": ["VIEWMODEL_PASS"],
+        "composed-cascade-early-viewmodel": ["VIEWMODEL_PASS", "EARLY_OPAQUE"],
+        "composed-cascade-metal": ["ZERO_DIFFUSE_MATERIAL"],
+        "composed-cascade-water": ["WATER_SURFACE"],
+        "composed-cascade-ray-water": ["WATER_SURFACE", "WATER_RAY"],
+    }.items():
+        binary = tree / (name + ".spv")
+        subprocess.run([compiler, "-V", "--target-env", "vulkan1.2", "-DCASCADE_GI",
+                        "-DOPENREMIX_BAKED_DIRECT_LIVE_INDIRECT", "-DREFLECTION_GUIDES",
+                        *["-D" + define for define in defines], str(source),
+                        "-o", str(binary)], env=env, check=True)
+        subprocess.run([validator, "--target-env", "vulkan1.2", str(binary)], env=env, check=True)
     # Replace incoming transport while retaining baked direct storage, contexts,
     # mixed-shadow attribution and the real standard material. No ray include is
     # available, so accidental dependencies cannot pass on unused declarations.
     source.write_text((root / "src/native/forward/shaders/forward.frag").read_text().replace(
         '#include "gi.glsl"', ''), encoding="utf-8")
     (tree / "shaders/gi.glsl").unlink()
+    (tree / "shaders/incoming-cascades.glsl").unlink()
     shutil.copyfile(root / "tests/forward/shaders/custom-incoming-source.glsl",
                     tree / "shaders/incoming-lighting.glsl")
     for name, defines in {
@@ -144,8 +165,17 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
                             *["-D" + define for define in defines], str(source),
                             "-o", str(binary)], env=env, check=True)
             subprocess.run([validator, "--target-env", "vulkan1.2", str(binary)], env=env, check=True)
+    for name, defines in {
+        "incoming-source-cascade-world": [],
+        "incoming-source-cascade-viewmodel": ["VIEWMODEL_PASS"],
+    }.items():
+        binary = tree / (name + ".spv")
+        subprocess.run([compiler, "-V", "--target-env", "vulkan1.2", "-DCASCADE_GI",
+                        *["-D" + define for define in defines], str(source),
+                        "-o", str(binary)], env=env, check=True)
+        subprocess.run([validator, "--target-env", "vulkan1.2", str(binary)], env=env, check=True)
     source.write_text((root / "src/native/forward/shaders/forward.frag").read_text(), encoding="utf-8")
-    for name in ("gi.glsl", "incoming-lighting.glsl"):
+    for name in ("gi.glsl", "incoming-lighting.glsl", "incoming-cascades.glsl"):
         shutil.copyfile(root / "src/native/forward/shaders" / name, tree / "shaders" / name)
     # The alternate local source must not rely on default Source 2 transport
     # declarations being incidentally imported by the pass/material response.
@@ -158,6 +188,8 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
         "local-source-world": [],
         "local-source-viewmodel": ["VIEWMODEL_PASS"],
         "local-source-live-world": ["LIVE_GI"],
+        "local-source-cascade-world": ["CASCADE_GI"],
+        "local-source-cascade-viewmodel": ["CASCADE_GI", "VIEWMODEL_PASS"],
         "local-source-water": ["WATER_SURFACE"],
     }.items():
         binary = tree / (name + ".spv")
@@ -178,6 +210,8 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
         "sun-source-world": [],
         "sun-source-viewmodel": ["VIEWMODEL_PASS"],
         "sun-source-live-world": ["LIVE_GI"],
+        "sun-source-cascade-world": ["CASCADE_GI"],
+        "sun-source-cascade-viewmodel": ["CASCADE_GI", "VIEWMODEL_PASS"],
         "sun-source-water": ["WATER_SURFACE"],
         "sun-source-water-ray": ["WATER_SURFACE", "WATER_RAY"],
         "sun-source-composed-water": ["WATER_SURFACE", "LIVE_GI", "RAY_SCENE_SET=3",

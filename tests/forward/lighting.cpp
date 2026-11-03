@@ -20,7 +20,7 @@ int main() {
     for (auto direct : {techniques::Direct::Analytic, techniques::Direct::AttributedBake,
                         techniques::Direct::AggregateBake})
       for (auto diffuse : {techniques::Diffuse::SurfaceAndProbes, techniques::Diffuse::RayQueries,
-                           techniques::Diffuse::Disabled, techniques::Diffuse::RayIncoming})
+                           techniques::Diffuse::Disabled, techniques::Diffuse::RadianceCascades, techniques::Diffuse::RayIncoming})
         for (auto reflection : {techniques::Reflections::Disabled, techniques::Reflections::Cubemaps,
                                 techniques::Reflections::RayQueries, techniques::Reflections::RayQueriesAndCubemaps}) {
           auto options = defaults;
@@ -48,10 +48,16 @@ int main() {
                     "Supported requested providers activate, while unsupported ray effects remain unallocated");
             require(!resources.rayScene || capabilities.rayQueries,
                     "Unsupported hardware cannot allocate a live ray scene");
-            require(resources.rayScene == (resources.rayDiffuse() || resources.rayReflections),
+            require(resources.rayScene == (resources.liveDiffuse() || resources.rayReflections),
                     "Diffuse and reflection providers share exactly one requested live scene");
             require(!resources.rayDiffuse() || (capabilities.fragmentGI && options.rtGI),
                     "Fragment GI pipelines require support and an explicit diffuse request");
+            require(resources.cascadeDiffuse() ==
+                        (diffuse == techniques::Diffuse::RadianceCascades && capabilities.rayQueries),
+                    "Radiance cascades need only ray queries: their traces run in compute");
+            require(resources.liveDiffuse() == (resources.rayDiffuse() || resources.cascadeDiffuse()) &&
+                        !(resources.rayDiffuse() && resources.cascadeDiffuse()),
+                    "One live diffuse provider at most owns indirect light");
             require(!resources.rayWater || (resources.rayReflections && options.water && capabilities.waterRayQueries),
                     "Water continuation requires its reflection provider and water capability");
             const auto &capturePolicy = resources.capturePolicy;
@@ -73,10 +79,10 @@ int main() {
                          lighting.baking.bounces == 1 && !lighting.baking.styledIndirect &&
                          !lighting.baking.reflectionProbes && lighting.selectedMixedLights),
                     "Composed resources require direct-only transport and independent capture ownership");
-            if (!resources.rayDiffuse())
+            if (!resources.liveDiffuse())
               require(resources.diffuse == (options.baking.enabled ? techniques::Diffuse::SurfaceAndProbes
                                                                    : techniques::Diffuse::Disabled),
-                      "Unavailable live GI retains the configured baked or disabled fallback");
+                      "Unavailable live diffuse retains the configured baked or disabled fallback");
             require(resources.screenReflections == options.ssr,
                     "Resolved screen source selection is independent of ray and baked capabilities");
             require(resources.reflectionResolve == (options.ssr || resources.rayReflections || options.baking.reflectionProbes != 0),
@@ -87,6 +93,36 @@ int main() {
                       live.baking.irradianceContents == bake::IrradianceContents::ReceiverDirect,
                   "Live incoming never consumes combined baked irradiance");
         }
+    auto cascades = defaults;
+    techniques::selectDiffuse(cascades, techniques::Diffuse::RadianceCascades);
+    require(cascades.radianceCascades && !cascades.rtGI && cascades.baking.enabled &&
+                !presets::isSource2(cascades),
+            "Radiance cascades replace ray-query GI, keep the bake as fallback and derive Custom");
+    require(!defaults.sameTargets(cascades) &&
+                techniques::resolveResources(cascades, {false, false, false}).bakedDiffuse(),
+            "Selecting cascades prepares new targets; without ray queries the bake remains");
+    auto lateCascades = cascades;
+    lateCascades.depthPrepass = !cascades.depthPrepass;
+    require(!cascades.sameTargets(lateCascades),
+            "Changing cascade depth scheduling must prepare the matching early-depth attachments");
+    auto lateDefault = defaults;
+    lateDefault.depthPrepass = !defaults.depthPrepass;
+    require(defaults.sameTargets(lateDefault), "Source 2 depth toggles retain their existing target contract");
+    auto cascadeLimits = cascades;
+    cascadeLimits.cascadeIntensity = 2;
+    cascadeLimits.cascadeHistory = .5f;
+    cascadeLimits.cascadeInterval = 1;
+    require(cascades.sameTargets(cascadeLimits), "Cascade quality edits apply without new targets");
+    cascadeLimits.cascadeCount = 3;
+    require(!cascades.sameTargets(cascadeLimits), "Cascade count changes the cascade targets");
+    {
+      auto requested = defaults;
+      requested.radianceCascades = requested.rtGI = requested.bakedDirectWithLiveGI = true;
+      const auto resolved = techniques::resolveResources(requested, {true, true, true});
+      const auto lighting = requested.lightingPlan(resolved.liveDiffuse());
+      require(resolved.cascadeDiffuse() && !resolved.bakedDirect && !lighting.baking.enabled,
+              "Cascades retain whole-field ownership until composed cascade pipelines are qualified");
+    }
     auto opaqueLive = defaults;
     opaqueLive.rtGI = true;
     opaqueLive.water = false;
@@ -888,11 +924,41 @@ int main() {
   changed = settings.forward;
   changed.rtGI = false;
   require(!changed.sameTargets(settings.forward), "GI enable changes prepare replacement pipelines");
+  require(config::set(settings, "rtx.native.forward.cascadeCount", "1") == config::SetResult::Invalid &&
+              config::set(settings, "rtx.native.forward.cascadeCount", "7") == config::SetResult::Invalid &&
+              config::set(settings, "rtx.native.forward.cascadeDirections", "6") == config::SetResult::Invalid &&
+              config::set(settings, "rtx.native.forward.cascadeHistory", "1") == config::SetResult::Invalid &&
+              config::set(settings, "rtx.native.forward.cascadeInterval", "nan") == config::SetResult::Invalid &&
+              config::set(settings, "rtx.native.forward.sunElevation", "91") == config::SetResult::Invalid &&
+              config::set(settings, "rtx.native.forward.skyUpAxis", "4") == config::SetResult::Invalid,
+          "Cascade, sky and sun settings reject counts, layouts and angles outside their ranges");
+  require(config::set(settings, "rtx.native.forward.radianceCascades", "1") == config::SetResult::Success &&
+              config::set(settings, "rtx.native.forward.cascadeCount", "4") == config::SetResult::Success &&
+              config::set(settings, "rtx.native.forward.cascadeDirections", "16") == config::SetResult::Success &&
+              config::set(settings, "rtx.native.forward.sunOverride", "1") == config::SetResult::Success &&
+              config::set(settings, "rtx.native.forward.sunAzimuth", "-45") == config::SetResult::Success &&
+              config::set(settings, "rtx.native.forward.sunColorG", ".5") == config::SetResult::Success &&
+              settings.forward.radianceCascades && settings.forward.cascadeCount == 4 &&
+              settings.forward.cascadeDirections == 16 && settings.forward.sunOverride &&
+              settings.forward.sunAzimuth == -45 && settings.forward.sunColor[1] == .5f,
+          "Cascade, sky and sun settings persist through their keys");
+  {
+    config::Settings restored;
+    config::UnknownSettings unknown;
+    std::vector<std::string> warnings;
+    std::string parseError;
+    require(config::parse(config::serialize(settings), restored, unknown, warnings, parseError) &&
+                restored.forward == settings.forward,
+            "Saved profiles restore cascade, sky and sun settings exactly");
+  }
+  config::set(settings, "rtx.native.forward.radianceCascades", "0");
+  config::set(settings, "rtx.native.forward.sunOverride", "0");
   std::string error;
   require(remix::forward::bake::Config{}.denoiseLightmaps,
           "New bake configurations request indirect lightmap denoising by default");
   require(settings.forward.debugView == 0 &&
-              config::set(settings, "rtx.native.forward.debugView", "8") == config::SetResult::Invalid &&
+              config::set(settings, "rtx.native.forward.debugView", "9") == config::SetResult::Invalid &&
+              config::set(settings, "rtx.native.forward.debugView", "8") == config::SetResult::Success &&
               config::set(settings, "rtx.native.forward.debugView", "7") == config::SetResult::Success &&
               config::set(settings, "rtx.native.forward.debugView", "6") == config::SetResult::Success &&
               config::set(settings, "rtx.native.forward.debugView", "4") == config::SetResult::Success &&

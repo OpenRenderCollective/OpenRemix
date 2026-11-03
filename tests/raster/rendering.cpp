@@ -587,6 +587,148 @@ namespace {
     std::puts("Sprite overlays: frames, green/alpha, sequences, soft depth and modulation passed");
   }
 #include "preset_transition.h"
+  void cascadeProviderTests() {
+    for (uint32_t samples : {1u, 4u})
+      for (bool depthPrepass : {false, true}) {
+        Target target(64, 64, true);
+        auto &r = target.raster;
+        remix::forward::Options options;
+        options.prism = false;
+        options.proceduralSky = false;
+        options.samples = samples;
+        options.depthPrepass = depthPrepass;
+        options.radianceCascades = true;
+        options.cascadeCount = 2;
+        options.cascadeDirections = 4;
+        options.cascadeHistory = 0;
+        options.cascadeBounces = false;
+        options.ssr = false;
+        options.shadows = false;
+        options.localShadowLights = 0;
+        options.baking.reflectionProbes = 0;
+        options.baking.lightmapFitBudget = false;
+        options.baking.maxProbes = 64;
+        options.baking.samples = 16;
+        options.baking.bounces = 1;
+        options.baking.batch = 64;
+        options.baking.lightmapPageSize = 64;
+        options.baking.lightmapTexels = 4096;
+        target.enableForward(options);
+        const auto mesh = quad(r, 9570, material(r, 9571, 1, 1, 1));
+        remixapi_LightInfoDomeEXT shape{};
+        shape.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT;
+        for (uint32_t c = 0; c < 3; ++c)
+          shape.transform.matrix[c][c] = 1;
+        remixapi_LightInfo info{};
+        info.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+        info.hash = 9572;
+        info.pNext = &shape;
+        info.radiance = {0, 1, 0};
+        remixapi_LightHandle light;
+        r.createLight(info, light);
+        info.hash = 9573;
+        info.radiance = {1, 0, 0};
+        remixapi_LightHandle bakedRed;
+        r.createLight(info, bakedRed);
+        remixapi_InstanceIdentityEXT identity{};
+        identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+        identity.instanceId = 9574;
+        identity.classification = REMIXAPI_INSTANCE_STATIC_EXT;
+        identity.rasterVisible = 1;
+        auto receiver = instance(mesh);
+        receiver.pNext = &identity;
+        const auto retained = r.createRetained(receiver);
+        const float uv[] = {0, 0, 8, 8, 8, 0, 0, 0, 0, 8, 8, 8};
+        const remixapi_BakeSurfaceChartEXT chart{retained, 0, 0, 0, 6, 9, 9, uv};
+        remixapi_BakeSceneSurfacesInfoEXT request{};
+        auto &base = request.bounds.scene;
+        base = {sizeof(request), REMIXAPI_BAKE_SCENE_SURFACES_VERSION_EXT, 9575, 1, 1,
+                REMIXAPI_BAKE_SCENE_READY_EXT, 1, 1, &retained, &bakedRed};
+        for (uint32_t c = 0; c < 3; ++c) {
+          request.bounds.minimum[c] = 10;
+          request.bounds.maximum[c] = 11;
+        }
+        request.chartRevision = request.chartCount = 1;
+        request.charts = &chart;
+        r.setBakeScene(&base);
+        auto render = [&]() {
+          remixapi_CameraInfoParameterizedEXT parameters{};
+          parameters.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO_PARAMETERIZED_EXT;
+          parameters.aspect = 1;
+          parameters.fovYInDegrees = 90;
+          parameters.nearPlane = .05f;
+          parameters.farPlane = 100;
+          parameters.right = {1, 0, 0};
+          parameters.up = {0, 1, 0};
+          parameters.forward = {0, 0, 1};
+          remixapi_CameraInfo worldCamera{};
+          worldCamera.sType = REMIXAPI_STRUCT_TYPE_CAMERA_INFO;
+          worldCamera.pNext = &parameters;
+          r.setupCamera(worldCamera);
+          r.drawRetained(nullptr);
+          r.drawLight(light);
+          return target.render();
+        };
+        std::vector<uint8_t> image;
+        options.radianceCascades = false;
+        target.enableForward(options, true);
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        do {
+          image = render();
+          require(target.forward->statistics().baking.state != REMIXAPI_BAKE_FAILED_EXT,
+                  "Cascade fixture reference bake succeeds");
+          if (target.forward->statistics().baking.active) break;
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        } while (std::chrono::steady_clock::now() < deadline);
+        require(target.forward->statistics().baking.active,
+                "Cascade fixture publishes its initial baked diffuse source");
+        options.radianceCascades = true;
+        target.enableForward(options, true);
+        for (uint32_t frame = 0; frame < 8; ++frame)
+          image = render();
+        const auto &stats = target.forward->statistics();
+        require(stats.cascades.available && stats.cascades.active && stats.cascades.rays > 0,
+                "Cascade provider records ray transport with either depth scheduling mode");
+        require(!stats.rayGI.active && !target.forward->bakeController()->volume(),
+                "Cascades do not run the alternate ray GI or publish baked diffuse");
+        const size_t at = (32 * 64 + 32) * 4;
+        std::printf("Cascades %ux, prepass %u: RGB %u %u %u, rays %llu\n", samples,
+                    unsigned(depthPrepass), unsigned(image[at]), unsigned(image[at + 1]),
+                    unsigned(image[at + 2]), static_cast<unsigned long long>(stats.cascades.rays));
+        require(image[at + 1] > image[at] + 20 && image[at + 1] > image[at + 2] + 20,
+                "Cascade receiver consumes the live green environment through the shading interface");
+        if (samples == 1 && !depthPrepass) {
+          options.baking.reflectionProbes = 1;
+          options.baking.reflectionResolution = 8;
+          target.enableForward(options, true);
+          const auto captureDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+          do {
+            render();
+            if (target.forward->standaloneCaptures()->source().image) break;
+            require(target.forward->standaloneCaptures()->status().empty(),
+                    "Cascade cubemap capture succeeds");
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+          } while (std::chrono::steady_clock::now() < captureDeadline);
+          require(target.forward->standaloneCaptures()->source().image &&
+                      target.forward->statistics().cascades.active &&
+                      !target.forward->bakeController()->volume(),
+                  "Cascades and independent cubemap captures coexist without diffuse baking");
+        }
+        options.depthPrepass = !depthPrepass;
+        target.enableForward(options, true);
+        for (uint32_t frame = 0; frame < 8; ++frame) image = render();
+        require(target.forward->statistics().cascades.active && image[at + 1] > image[at] + 20 &&
+                    image[at + 1] > image[at + 2] + 20 && !target.forward->bakeController()->volume(),
+                "Cascade target replacement preserves live output when depth scheduling changes");
+        options.radianceCascades = false;
+        options.rtGI = true;
+        target.enableForward(options, true);
+        render();
+        require(target.forward->statistics().rayGI.active && !target.forward->statistics().cascades.active,
+                "Switching diffuse providers retires cascade dispatch");
+      }
+  }
+
   void liveGITests(bool composed = false) {
     for (bool reflections : {false, true})
       for (uint32_t samples : {1u, 2u, 4u}) {
@@ -5578,6 +5720,7 @@ int main(int argc, char **argv) try {
   else if (argc>2 && std::strcmp(argv[2],"water-shoreline")==0) waterShorelineTests(directory);
   else if (argc>2 && std::strcmp(argv[2],"sky")==0) skyTests();
   else if (argc>2 && std::strcmp(argv[2],"live-gi")==0) liveGITests();
+  else if (argc>2 && std::strcmp(argv[2],"cascades")==0) cascadeProviderTests();
   else if (argc>2 && std::strcmp(argv[2],"composed-gi")==0) liveGITests(true);
   else if (argc>2 && std::strcmp(argv[2],"hardware-reflections")==0) reflectionTests(directory, false, true);
   else if (argc>2 && std::strcmp(argv[2],"reflections")==0) reflectionTests(directory);

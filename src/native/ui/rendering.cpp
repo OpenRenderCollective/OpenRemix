@@ -81,7 +81,8 @@ namespace remix {
       int lightingView = int(forward.debugView);
       if (ui::Combo("Lighting view", &lightingView,
                     "Shaded\0Baked irradiance (neutral)\0Analytic direct diffuse\0Direct specular\0"
-                    "Albedo (unlit)\0Baked irradiance (no normal maps)\0Bake coverage\0Total diffuse\0"))
+                    "Albedo (unlit)\0Baked irradiance (no normal maps)\0Bake coverage\0Total diffuse\0"
+                    "Indirect diffuse only\0"))
         forward.debugView = uint32_t(lightingView);
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Separates opaque-world lighting using the current bake.\n"
@@ -90,7 +91,28 @@ namespace remix {
                           "Total diffuse retains material colour, baked and live diffuse, excluding emission and specular.\n"
                           "Unmapped irradiance excludes normal maps. Direct views exclude screen-space and probe reflections.\n"
                           "Bake coverage: blue = surface lightmap, green = valid probe, red = uncovered opaque receiver.\n"
+                          "Indirect diffuse only: material colour times baked, live-ray or radiance cascade irradiance.\n"
                           "Does not rebake.");
+      if (ImGui::CollapsingHeader("Live lighting: sun and sky", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ui::Checkbox("Override sun", &forward.sunOverride);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Replaces the scene's distant light for shading, shadows, rays and the sky.\n"
+                            "Does not rebake: baked sun visibility applies only while it matches the bake.");
+        ImGui::BeginDisabled(!forward.sunOverride);
+        ui::SliderFloat("Sun azimuth (degrees)", &forward.sunAzimuth, -180, 180, "%.1f");
+        ui::SliderFloat("Sun elevation (degrees)", &forward.sunElevation, -10, 90, "%.1f");
+        ui::SliderFloat("Sun intensity", &forward.sunIntensity, 0, 50, "%.2f", ImGuiSliderFlags_Logarithmic);
+        ui::ColorEdit3("Sun colour", forward.sunColor.data());
+        ui::SliderFloat("Sun angular diameter (degrees)", &forward.sunAngularDiameter, 0, 5, "%.2f");
+        ImGui::EndDisabled();
+        ui::Checkbox("Procedural sky", &forward.proceduralSky);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("A clear analytic sky around the live sun when the scene has no dome light.\n"
+                            "Drawn as the background, reflected, and seen by radiance cascade rays.");
+        ui::SliderFloat("Sky brightness", &forward.skyIntensity, 0, 4, "%.2f");
+        int upAxis = int(std::min(forward.skyUpAxis, 3u));
+        if (ui::Combo("World up axis", &upAxis, "X\0Y\0Z\0Automatic\0")) forward.skyUpAxis = uint32_t(upAxis);
+      }
       int samples = forward.samples == 4 ? 2 : forward.samples == 2 ? 1 : 0;
       ui::Checkbox("Batch static depth draws", &forward.staticDepthBatch);
       if (ImGui::IsItemHovered())
@@ -135,13 +157,41 @@ namespace remix {
       auto selectedTechniques = remix::forward::techniques::requested(forward);
       int diffuseTechnique = int(selectedTechniques.diffuse);
       if (ui::Combo("Diffuse lighting", &diffuseTechnique,
-                    "Surface lightmaps + volume probes\0Live ray-query GI\0Disabled\0Live incoming + baked direct\0"))
+                    "Surface lightmaps + volume probes\0Live ray-query GI\0Disabled\0Radiance cascades\0Live incoming + baked direct\0"))
         remix::forward::techniques::selectDiffuse(forward,
             remix::forward::techniques::Diffuse(diffuseTechnique));
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Selects diffuse transport independently of material shading.\n"
-                          "Live incoming retains the selected baked direct technique; full live GI replaces the baked field.\n"
-                          "Cubemap captures use an independent owner when live incoming is active.");
+                          "Radiance cascades: real-time screen-space cascades traced with ray queries;\n"
+                          "it retains whole-field replacement. Live incoming + baked direct is a separate choice.\n"
+                          "Live sources use independent cubemap capture ownership.");
+      if (forward.radianceCascades) {
+        const auto &cascades = statistics.cascades;
+        if (!cascades.available)
+          ImGui::TextWrapped("Hardware ray queries unavailable; using baked indirect lighting.");
+        else if (cascades.status[0])
+          ImGui::TextWrapped("%s", cascades.status);
+        if (cascades.active)
+          ImGui::Text("Cascade-0 probes: %u | traced texels: %.2f M", cascades.probes, cascades.rays / 1e6);
+        int count = int(forward.cascadeCount);
+        if (ui::SliderInt("Cascades", &count, 2, 6)) forward.cascadeCount = uint32_t(count);
+        int directions = forward.cascadeDirections == 4 ? 0 : forward.cascadeDirections == 16 ? 2 : 1;
+        if (ui::Combo("Cascade-0 directions", &directions, "4 x 4\0 8 x 8\0 16 x 16\0"))
+          forward.cascadeDirections = 4u << directions;
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Directions per cascade-0 probe; probe spacing in pixels follows it,\n"
+                            "doubled at 1440p and above so the ray count stays near 1080p's.");
+        ui::SliderFloat("First interval (m)", &forward.cascadeInterval, .02f, 2, "%.3f",
+                        ImGuiSliderFlags_Logarithmic);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Ray length of cascade 0; each cascade traces four times further than the last.");
+        ui::DragFloat("Reach before sky (m)", &forward.cascadeDistance, 1, 1, 10000);
+        ui::SliderFloat("GI intensity", &forward.cascadeIntensity, 0, 4, "%.2f");
+        ui::SliderFloat("Temporal history", &forward.cascadeHistory, 0, .98f, "%.2f");
+        ui::Checkbox("Multiple bounces (screen feedback)", &forward.cascadeBounces);
+        if (ImGui::IsItemHovered())
+          ImGui::SetTooltip("Lights ray hits with the previous frame's irradiance where they were on screen.");
+      }
       if (forward.rtGI) {
         if (!statistics.rayGI.available)
           ImGui::TextWrapped("Fragment ray queries unavailable; using baked indirect lighting.");

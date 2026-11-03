@@ -44,6 +44,9 @@ BACKENDS = {
     'water': ('forward::water', 'vulkan1.1', ('snapshot', 'snapshotSingle', 'vert', 'frag', 'overlayVert', 'overlayFrag', 'compositeFrag', 'compositeSingle')),
     'live_gi': ('forward::ray::gi', 'vulkan1.2', ('frag', 'guides', 'viewModel', 'viewModelEarly', 'composedFrag', 'composedGuides', 'composedViewModel', 'composedViewModelEarly')),
     'live_ray': ('forward::ray', 'vulkan1.2', ('launch', 'merge')),
+    'cascades': ('forward::cascades', 'vulkan1.2', ('prepare', 'prepareSingle', 'trace', 'integrate', 'gather', 'filter', 'cache',
+                                                    'world', 'worldGuides', 'worldPrepassed', 'worldPrepassedGuides',
+                                                    'viewModel', 'viewModelEarly')),
     'bake': ('forward::bake', 'vulkan1.2', ('atlas', 'transport', 'parallel', 'visibility', 'aggregate', 'aggregateParallel', 'receiverDirect', 'receiverDirectParallel', 'depth')),
     'forward_test': ('forward::test', 'vulkan1.2', ('comp', 'probes', 'water', 'coarseTransfer')),
     'forward': ('forward', 'vulkan1.1', ('vert', 'lightmapVert', 'frag', 'prepassedFrag', 'viewModelFrag', 'viewModelEarlyFrag', 'cluster', 'shadowVert', 'shadowFrag', 'opaqueDepthFrag', 'localShadowVert', 'localShadowFrag', 'depthBatchVert', 'depthBatchFrag', 'compositeVert', 'compositeFrag', 'compositeSingle', 'ssrFrag', 'prepassedSsrFrag', 'zeroDiffuseFrag', 'zeroDiffuseSsrFrag', 'zeroDiffusePrepassedFrag', 'zeroDiffusePrepassedSsrFrag', 'ssrResolve', 'ssrResolveSingle', 'ssrReduce', 'ssrTrace', 'ssrFilter')),
@@ -85,6 +88,8 @@ def shader_directory(backend):
         return ROOT / 'src/native/forward/ray/gi_shaders'
     if backend == 'live_ray':
         return ROOT / 'src/native/forward/ray/shaders'
+    if backend == 'cascades':
+        return ROOT / 'src/native/forward/cascades/shaders'
     if backend == 'bake':
         return ROOT / 'src/native/forward/bake/shaders'
     if backend == 'forward_test':
@@ -179,6 +184,21 @@ def defines_for(backend, stage, stages):
     if backend == 'live_ray':
         source = directory / 'screen.comp'
         defines = ['-DRAY_LAUNCH=1'] if stage == 'launch' else []
+    if backend == 'cascades' and stage.startswith('world'):
+        # World receivers with the radiance cascade diffuse provider compiled in.
+        return (['-DCASCADE_GI=1'] + (['-DREFLECTION_GUIDES=1'] if 'Guides' in stage else []) +
+                (['-DPREPASSED_WORLD=1'] if 'Prepassed' in stage else []),
+                ROOT / 'src/native/forward/shaders/forward.frag')
+    if backend == 'cascades' and stage.startswith('viewModel'):
+        return (['-DCASCADE_GI=1', '-DVIEWMODEL_PASS=1'] + (['-DEARLY_OPAQUE=1'] if stage == 'viewModelEarly' else []),
+                ROOT / 'src/native/forward/shaders/forward.frag')
+    if backend == 'cascades':
+        # Radiance cascades (forward/cascades): one compute source, a pass per stage.
+        source = directory / 'cascades.comp'
+        defines = ['-DCASCADE_' + {'prepare': 'PREPARE', 'prepareSingle': 'PREPARE', 'trace': 'TRACE',
+                                   'integrate': 'INTEGRATE', 'gather': 'GATHER', 'filter': 'FILTER',
+                                   'cache': 'CACHE'}[stage] + '=1']
+        if stage == 'prepareSingle': defines += ['-DSINGLE_SAMPLE=1']
     if backend == 'bake':
         source = directory / ('transport.comp' if stage in ('parallel', 'visibility', 'aggregate', 'aggregateParallel', 'receiverDirect', 'receiverDirectParallel') else stage + '.comp')
         if stage in ('parallel', 'visibility', 'aggregateParallel', 'receiverDirectParallel'): defines = ['-DPARALLEL_BAKE=1']

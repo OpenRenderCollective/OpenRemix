@@ -15,11 +15,11 @@ namespace remix::forward {
       vkCmdSetScissor(command, 0, 1, &scissor);
     }
   } // namespace
-  void Renderer::Gpu::drawGeometry(VkCommandBuffer command, bool terrain, bool depthOnly) {
+  void Renderer::Gpu::drawGeometry(VkCommandBuffer command, bool terrain, bool depthOnly, bool early) {
     const auto &frame = frames[slot];
     const bool gi = !depthOnly && bool(frame.rayInputs.diffuse);
     if (depthOnly && frame.depthBatch && frame.depthBatch->indexCount()) {
-      vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, depthBatchPipeline);
+      vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, early ? earlyDepthBatchPipeline : depthBatchPipeline);
       vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &frame.scene, 0, nullptr);
       const VkBuffer buffers[] = {frame.depthBatch->positions().handle, frame.depthBatch->materials().handle};
       const VkDeviceSize offsets[] = {0, 0};
@@ -78,7 +78,8 @@ namespace remix::forward {
         return;
       const auto *mapped = draw.lightmap;
       VkPipeline selected;
-      if (depthOnly) selected = mapped ? depthLightmapPipeline : depthPipeline;
+      if (depthOnly && early) selected = mapped ? earlyDepthLightmapPipeline : earlyDepthPipeline;
+      else if (depthOnly) selected = mapped ? depthLightmapPipeline : depthPipeline;
       else if (gi) selected = terrain ? (mapped ? giTerrainLightmapPipeline : giTerrainPipeline)
                                      : (mapped ? giLightmapPipeline : giOpaquePipeline);
       else if (terrain) selected = !mapped ? terrainPipeline : mapped->fullyMapped ? terrainLightmapPipeline
@@ -263,6 +264,24 @@ namespace remix::forward {
     });
     localTime.close();
     fragmentStatistics->reset(command, extent, samples, baking->volume() ? baking->volume()->hash : 0);
+    if (earlyCascades) {
+      // Depth first, then this frame's cascades, so shading needs no reprojection.
+      const VkClearValue depthClear{.depthStencil = {1, 0}};
+      const VkRenderPassBeginInfo depthPass{.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+                                            .renderPass = earlyDepthPass,
+                                            .framebuffer = earlyDepthFramebuffer,
+                                            .renderArea = {{0, 0}, extent},
+                                            .clearValueCount = 1,
+                                            .pClearValues = &depthClear};
+      {
+        gpu::GpuScope depthTime(command, "Forward+ opaque depth prepass", extent);
+        vkCmdBeginRenderPass(command, &depthPass, VK_SUBPASS_CONTENTS_INLINE);
+        viewport(command, extent);
+        drawGeometry(command, false, true, true);
+        vkCmdEndRenderPass(command);
+      }
+      recordCascades(command);
+    }
     gpu::GpuScope worldTime(command, "Forward+ opaque world shading", extent);
     const VkClearValue clear[] = {{.color = {{0, 0, 0, 0}}},
                                   {.depthStencil = {1, 0}},
@@ -276,7 +295,7 @@ namespace remix::forward {
                                      .pClearValues = clear};
     vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
     viewport(command, extent);
-    if (options.depthPrepass) {
+    if (options.depthPrepass && !earlyCascades) {
       gpu::GpuScope depthTime(command, "Forward+ opaque depth prepass", extent);
       drawGeometry(command, false, true);
     }
@@ -284,6 +303,16 @@ namespace remix::forward {
     vkCmdNextSubpass(command, VK_SUBPASS_CONTENTS_INLINE);
     drawGeometry(command, true);
     vkCmdEndRenderPass(command);
+  }
+  void Renderer::Gpu::recordCascades(VkCommandBuffer command) {
+    const auto &frame = frames[slot];
+    if (!frame.rayInputs.cascades) return;
+    const auto &data = frame.data;
+    rayLighting.recordCascades(
+        command,
+        {depth->view, frame.rayInputs.cascades, frame.skyImage, data.camera, data.view, frame.skyWorldToDome,
+         frame.skyRadiance, {data.cameraPosition[0], data.cameraPosition[1], data.cameraPosition[2]}},
+        options);
   }
   void Renderer::composite(VkCommandBuffer command) { m_gpu->display(command, false); }
   void Renderer::Gpu::recordWater(VkCommandBuffer command) {

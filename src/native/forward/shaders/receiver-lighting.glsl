@@ -8,6 +8,9 @@
 #elif defined(LIVE_GI)
 #include "diffuse-ray.glsl"
 #include "receiver-live.glsl"
+#elif defined(CASCADE_GI)
+#include "diffuse-cascades.glsl"
+#include "receiver-live.glsl"
 #else
 #include "diffuse-baked.glsl"
 #include "receiver-baked.glsl"

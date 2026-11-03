@@ -183,6 +183,7 @@ namespace remix::forward::bake {
     enum class FragmentUse : uint32_t {
       Diffuse,
       Reflection,
+      Cascades, // forward/cascades compute traces
       Count
     };
     VkDescriptorSet prepareFragment(uint32_t slot, uint32_t samples, uint32_t bounces, float distance,

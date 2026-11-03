@@ -1198,3 +1198,34 @@ changes some raw SPIR-V declaration order; it is not byte-identical. This is not
 a new matched runtime FPS study. Scene/component normalization provenance remains
 separate work; the default environment still accepts only the typed Source 2
 static reference domain.
+
+
+### Cascade PR incoming-query adaptation
+
+On the unmerged cascade branch, `incoming-lighting.glsl` now selects either the
+ray adapter or `incoming-cascades.glsl`. Cascade gather storage, normal-response
+reconstruction, viewmodel approximation and unavailable-gather fallback stay in
+that private source. The thin whole-field diffuse adapter consumes the same
+incoming query as other live providers. Valid black remains distinct from an
+unavailable gather through the source's existing fallback policy.
+
+Existing cascades remain whole-field replacement with analytic direct lighting.
+Selecting them clears the explicit ray/baked-direct composition request. Raw
+profiles containing both switches are also guarded: unsupported composed cascade
+pipelines must not consume ReceiverDirect publications through whole-field
+shaders. The Source 2 and explicit ray-incoming choices retain their main-branch
+behavior. Composition with baked direct and a suitable optical-water lookup are
+still required cascade-provider extensions; this sync does not advertise them.
+
+The query wrapper avoids an extra early return. Relative to the previous PR head,
+checked default/ray fragment variants remain normalized-byte-identical and six
+cascade fragment variants have fewer instructions with no opcode-count increases.
+That compiler evidence is not matched runtime performance acceptance. The PR
+remains unmerged and is not deployed.
+
+The shared composer no longer requires the ray-pass define. On this branch the
+actual cascade source compiles through composed world, prepassed world, viewmodel,
+early viewmodel, metal, water and ray-water material variants. These checks use
+`CASCADE_GI` plus the composed-receiver define without `LIVE_GI`. They qualify the
+shader connection only. Host composition remains guarded until pipeline selection,
+resource/optical coverage and numerical mixed-light behavior are verified.

@@ -3,7 +3,8 @@
 
 namespace remix::forward::techniques {
   enum class Direct { Analytic, AttributedBake, AggregateBake };
-  enum class Diffuse { SurfaceAndProbes, RayQueries, Disabled, RayIncoming };
+  // RadianceCascades: screen-space cascades traced against the live ray scene.
+  enum class Diffuse { SurfaceAndProbes, RayQueries, Disabled, RadianceCascades, RayIncoming };
   enum class Reflections { Disabled, Cubemaps, RayQueries, RayQueriesAndCubemaps };
 
   // Requested techniques, independent of sampling, atlas sizes and display.
@@ -22,7 +23,8 @@ namespace remix::forward::techniques {
     Selection result;
     result.direct = !options.baking.directDiffuse ? Direct::Analytic
         : options.bakedLighting ? Direct::AggregateBake : Direct::AttributedBake;
-    result.diffuse = options.rtGI ? options.bakedDirectWithLiveGI ? Diffuse::RayIncoming : Diffuse::RayQueries
+    result.diffuse = options.radianceCascades ? Diffuse::RadianceCascades
+        : options.rtGI ? options.bakedDirectWithLiveGI ? Diffuse::RayIncoming : Diffuse::RayQueries
         : options.baking.enabled ? Diffuse::SurfaceAndProbes : Diffuse::Disabled;
     result.reflections = options.baking.reflectionProbes
         ? options.rtReflections ? Reflections::RayQueriesAndCubemaps : Reflections::Cubemaps
@@ -41,6 +43,8 @@ namespace remix::forward::techniques {
   inline void selectDiffuse(Options &options, Diffuse diffuse) {
     options.rtGI = diffuse == Diffuse::RayQueries || diffuse == Diffuse::RayIncoming;
     options.bakedDirectWithLiveGI = diffuse == Diffuse::RayIncoming;
+    options.radianceCascades = diffuse == Diffuse::RadianceCascades;
+    // Live providers keep the bake request as their unsupported-device fallback.
     options.baking.enabled = diffuse != Diffuse::Disabled;
   }
 

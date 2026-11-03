@@ -138,7 +138,9 @@ preference. The default profile enables it, but manual-density configurations ma
 disable it because model charts require budget fitting. Technique selection must
 not silently change that quality policy or enable an unsupported combination.
 
-Candidate future providers include DDGI, radiance cascades, distance-field or
+Screen-space radiance cascades are now an experimental opt-in diffuse provider
+(see [Radiance cascade diffuse provider](#radiance-cascade-diffuse-provider)); no
+preset selects them. Candidate future providers include DDGI, distance-field or
 volume-based reflections and virtual shadow maps. They are design targets, not
 implemented options or promises of interchangeable quality. Their directional,
 visibility, temporal and specular limits must be measured before presets use them.
@@ -279,6 +281,57 @@ provider must not set it merely because it supplies diffuse GI. Baked chart
 visibility and incident irradiance used for reflection normalization still need
 separation from the standard material orchestration. Automatic cubemap capture
 also still depends on the bake controller; the full provider split is unfinished.
+
+
+### Radiance cascade diffuse provider
+
+`techniques::Diffuse::RadianceCascades` selects screen-space radiance cascades,
+saved as `Options::radianceCascades`. `resolveResources()` requires only ray-query
+support (the traces run in compute, without fragment descriptor limits); otherwise
+the request keeps the baked/disabled fallback. `ResourcePlan::liveDiffuse()` covers
+both live providers wherever the question is ownership: the lighting plan stops
+diffuse baking and aggregate light ownership exactly as for ray-query GI.
+`rayDiffuse()` still means the per-fragment `LIVE_GI` pipelines and their scene set.
+
+`ray::Provider` owns `forward/cascades` beside the shared live scene and prepares
+the cascade transport set with `FragmentUse::Cascades`. With the depth prepass
+enabled, the prepass runs in its own render pass (`earlyDepthPass`), the cascades
+trace from that depth, and the world pass loads it: shading reads this frame's
+gather with no reprojection. Without the prepass the cascades follow the world
+pass and shading reprojects the previous gather (one frame of latency).
+
+Cascade c places probes every s·2^c pixels on the depth buffer with (d·2^c)²
+octahedral directions and traces [l(4^c−1)/3, l(4^(c+1)−1)/3) top down; the last
+cascade sees the sky. An escaped interval continues into the four nearest parent
+probes, each only if a visibility ray reaches that parent's interval start from
+this interval's end (a cheaper form of the bilinear fix that stops leaks through
+geometry thinner than the parent spacing). Hits use the transport's material and
+direct-light code, plus further bounces: the previous gather where the hit was on
+screen, otherwise a world irradiance cache. That cache hashes cells by position
+(sized by distance from the camera) and facing; a share of hits add their incident
+light, a resolve pass averages it, and idle cells are freed. Bounces therefore
+continue off screen and behind geometry. Rays cycle through a 4x4 stratification of their direction cell over
+sixteen frames. The cascade-0 gather is a running mean over frames (restarting
+on disocclusion), filtered at depth/normal edges. Probe spacing grows with
+resolution so 4K traces about as many rays as 1080p.
+
+World shaders compile `diffuse-cascades.glsl` (`CASCADE_GI`) into the ordinary
+world pipelines: the draw loops and layouts are unchanged. It reads the gather
+(scene binding 23) through `FrameData::cascadeCamera` and returns irradiance/π
+without claiming baked direct attribution or a reflection reference. The gather
+is irradiance about the depth-derived normal; cascade-0 probes also store their
+luminance as L0/L1 spherical harmonics (binding 24), and shading rescales by the
+response ratio between its own and the geometric normal, so normal maps respond.
+Viewmodels, drawn with another camera, average the world's gather around their
+screen position. Water keeps its existing path and receives the ambient fallback.
+Limits: receivers are screen pixels (the world cache supplies only bounce light
+to rays), normal-map response is a luminance approximation, and small bright
+emitters are sampled by direction cell only, so accumulation averages their noise.
+
+Static shadow casters: without a ready host bake scene, the renderer implies one
+from the frame's static-classified draws (`staticCasterSource`), rebuilt only when
+that set changes. Frozen sun and local shadow maps are then reused exactly as for
+a host scene; dynamic instances stay in the moving-caster maps.
 
 
 ### Reflection capture input boundary

@@ -3,6 +3,7 @@ subdir('bake/shaders')
 subdir('probe_batch/shaders')
 subdir('ray/shaders')
 subdir('ray/gi_shaders')
+subdir('cascades/shaders')
 subdir('water/shaders')
 subdir('water/ray_shaders')
 
@@ -20,7 +21,8 @@ lightmap_denoise_library = static_library('remix_lightmap_denoise', 'lightmap/de
   cpp_args : oidn_args, gnu_symbol_visibility : 'hidden', pic : true)
 
 forward_library = static_library('remix_forward',
-  forward_shaders, bake_shaders, probe_batch_shaders, live_ray_shaders, live_gi_shaders, water_shaders, water_ray_shaders,
+  forward_shaders, bake_shaders, probe_batch_shaders, live_ray_shaders, live_gi_shaders, cascade_shaders, water_shaders, water_ray_shaders,
+  'cascades/cascades.cpp', 'sky_model.cpp', 'shadows/static_casters.cpp',
   'probe_batch/batch.cpp',
   'bake/reference_capture.cpp',
   'bake/reference_grid_report.cpp',
