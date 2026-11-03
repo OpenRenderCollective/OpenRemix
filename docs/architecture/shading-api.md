@@ -975,3 +975,26 @@ Hybrid work still requires component-aware cache identity, publication/storage,
 controlled direct fields and sun ownership, renderer masks and source composition.
 Do not label the current aggregate as direct-only or reuse it under a hybrid cache
 key. Preserve the combined Source 2 fast path while adding that explicit mode.
+
+### Irradiance cache content identity
+
+`IrradianceContents` distinguishes the default combined estimator from the
+receiver-direct estimator. Transport options expose their kind for a caller
+constructing cache metadata. Container/diffuse keys accept that kind explicitly;
+receiver-direct keys add their own version and both estimator shader hashes.
+Combined keys retain their legacy computation.
+
+`cache::View` and decoded `Snapshot` carry the kind. A previously unused payload
+flag records receiver-direct contents; default combined bytes are unchanged.
+Decoding checks the expected kind independently of the supplied key, and diffuse
+index recovery threads it through both identity reconstruction and payload
+validation. Thus a correct container key or spoofed index cannot relabel combined
+energy as receiver-direct, or vice versa. Direct-only recovery needs no reflection
+work or transient probe-origin array.
+
+Receiver-direct cache views currently accept diffuse data only. Bundled or
+referenced reflection captures and local-reflection companions are rejected until
+their normalization reference contract is qualified. This tag describes RGB
+irradiance contents, not reflection compatibility. Controller publication and
+renderer selection still default to combined data; the hybrid preset, component
+selection and publication metadata are not wired by this cache extension.

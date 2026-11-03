@@ -1,5 +1,6 @@
 #pragma once
 #include "forward/bake/grid.h"
+#include "forward/bake/irradiance_contents.h"
 #include "forward/bake/diffuse_reference.h"
 #include "forward/bake/probe_visibility.h"
 #include "forward/mixed/data.h"
@@ -21,13 +22,16 @@ namespace remix::forward::bake::cache {
   // CPU-algorithm revision participate, along with the frozen source content.
   // Explicit aggregate membership adds its estimator shaders and policy bytes;
   // an empty policy adds neither ownership bytes nor aggregate shader hashes.
+  // Receiver-direct contents add a separate domain and estimator fingerprint;
+  // the default combined identity and payload bytes retain their legacy form.
   // CPU planning revisions still invalidate the complete lighting cache key.
   // Fallback reflection placement is used without a closed spatial partition;
   // its coverage policy must not invalidate fitted BSP or diffuse-only bakes.
   uint64_t key(uint64_t content, const Config &config, float cutoff, const Device &device,
-               const DirectPolicy &policy = {}, bool fallbackReflections = false);
+               const DirectPolicy &policy = {}, bool fallbackReflections = false,
+               IrradianceContents contents = IrradianceContents::Combined);
   uint64_t diffuseKey(uint64_t content, const Config &config, float cutoff, const Device &device,
-                       const DirectPolicy &policy = {});
+                       const DirectPolicy &policy = {}, IrradianceContents contents = IrradianceContents::Combined);
   // Versioned procedural ray/projection identity; excludes diffuse atlas/grid settings.
   uint64_t reflectionKey(uint64_t content, uint64_t plan, std::span<const probes::Capture> captures,
                          const probes::CaptureConfig &config, const Device &device,
@@ -56,6 +60,7 @@ namespace remix::forward::bake::cache {
     bool localReflectionsOnly = false;
     uint64_t reflectionKey = 0; // optional independent capture index
     bool shareReflectionPayload = false; // legacy inline writes remain available
+    IrradianceContents contents = IrradianceContents::Combined; // receiver-direct views are diffuse-only
   };
   struct Snapshot {
     DiffuseReference diffuseReference; // runtime persistence metadata; legacy payload stays unchanged
@@ -85,20 +90,22 @@ namespace remix::forward::bake::cache {
     bool localReflectionsOnly = false; // Companion upgrade; never replace the base cache.
     uint64_t reflectionKey = 0;
     bool missingReflections = false; // valid diffuse payload, missing external capture blob
+    IrradianceContents contents = IrradianceContents::Combined;
   };
   // Misses, corruption, incompatible versions and unavailable files fall back
   // to tracing. Neither operation publishes resources or performs GPU work.
   // Stored aggregate ownership must also match the expected policy, independently
-  // of the caller-supplied file key.
+  // of the caller-supplied file key. Contents must match the payload tag too.
   enum class ReflectionRead { Required, RecoverMissing, DiffuseOnly };
   std::optional<Snapshot> read(const std::filesystem::path &file, uint64_t key,
                                std::shared_ptr<const scene::BakeScene> source, const Config &config,
                                const Device &device, std::stop_token cancelled = {},
-                               const DirectPolicy &policy = {}, ReflectionRead reflections = ReflectionRead::Required);
+                               const DirectPolicy &policy = {}, ReflectionRead reflections = ReflectionRead::Required,
+                               IrradianceContents contents = IrradianceContents::Combined);
   std::optional<Snapshot> readDiffuse(const std::filesystem::path &directory, uint64_t content,
       std::shared_ptr<const scene::BakeScene> source, const Config &config, float cutoff,
       const Device &device, std::stop_token cancelled = {}, const DirectPolicy &policy = {},
-      bool fallbackReflections = false);
+      bool fallbackReflections = false, IrradianceContents contents = IrradianceContents::Combined);
   bool write(const std::filesystem::path &file, uint64_t key, const View &view,
              std::stop_token cancelled = {});
 } // namespace remix::forward::bake::cache

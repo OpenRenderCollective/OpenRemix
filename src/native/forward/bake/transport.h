@@ -1,5 +1,6 @@
 #pragma once
 #include "forward/bake/data.h"
+#include "forward/bake/irradiance_contents.h"
 #include "forward/bake/dispatch.h"
 #include "forward/bake/policy.h"
 #include <optional>
@@ -36,6 +37,9 @@ namespace remix::forward::bake {
     bool sameScenePolicy(const Options &other) const {
       return sameTextureAndQueuePolicy(other) && lightingComponents == other.lightingComponents &&
           directLighting == other.directLighting;
+    }
+    IrradianceContents irradianceContents() const {
+      return receiverDirectOnly ? IrradianceContents::ReceiverDirect : IrradianceContents::Combined;
     }
     bool operator==(const Options &) const = default;
   };

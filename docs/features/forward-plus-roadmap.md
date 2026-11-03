@@ -119,7 +119,12 @@ Still required for the complete modularity/performance objective:
   from incoming paths using shared prepared inputs. GPU surface/probe tests
   reconstruct combined SH from the two fields, including serial/parallel and
   empty ownership; seven existing bake kernels remain byte-identical. This is
-  not a wired hybrid preset. Next add component-aware cache/publication/storage,
+  not a wired hybrid preset. Typed cache identities and payload tags now separate
+  combined from receiver-direct data, including index recovery and independent
+  decoder checks. The legacy combined key/payload are byte-identical to a captured
+  pre-change fixture. Receiver-direct containers remain diffuse-only until
+  reflection-reference provenance is qualified. Next wire component selection,
+  controller publication/storage metadata,
   retained sun/controllable direct fields and renderer composition/masks; then
   split transport ownership/storage deliberately and prevent double-counting
   aggregate direct energy. Preserve existing presets and the default Source 2
