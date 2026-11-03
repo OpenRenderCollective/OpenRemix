@@ -328,8 +328,17 @@ void main() {
       direction = basisDirection(surfaceNormal, (float(i) + .5) / float(rayFrame.counts.z), phi);
     float distance;
     bool back, miss;
+#ifdef RECEIVER_DIRECT_ONLY
+    // Preserve primary geometry evidence without tracing incoming lighting paths.
+    Hit primary;
+    miss = !traceBounceRay(origin, direction, rayFrame.trace.x, seed, primary);
+    distance = primary.distance;
+    back = !miss && solidBackface(primary, direction);
+    vec3 value = vec3(0);
+#else
     vec3 value = radiance(origin, direction, medium, seed, distance, back, miss,
         rayFrame.trace.x, rayFrame.counts.w);
+#endif
     // Surface receivers see a hemisphere (2Pi); volume probes see 4Pi. Keep
     // the common epilogue unchanged for the separately normalized direct NEE.
     if (surfaceReceiver) value *= .5;

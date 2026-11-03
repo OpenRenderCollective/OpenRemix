@@ -20,6 +20,7 @@ namespace remix::forward::bake {
         m_job->surfaceReceived == 0)
       throw std::runtime_error("Bake contains no usable irradiance probes");
     auto volume = std::make_shared<Volume>();
+    volume->irradianceContents = m_job->irradianceContents;
     volume->reflectionSeeds = m_job->reflectionSeeds;
     volume->directDiffuse = m_job->hasDirectDiffuse;
     if (m_job->hasSun || std::any_of(grid.probes.begin(), grid.probes.end(),

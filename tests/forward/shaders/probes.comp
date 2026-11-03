@@ -6,6 +6,7 @@ layout(local_size_x = 64) in;
 #define IRRADIANCE_BINDING 2
 #include "../../../src/native/forward/shaders/irradiance.glsl"
 #include "../../../src/native/forward/shaders/diffuse-residual.glsl"
+#include "../../../src/native/forward/shaders/diffuse-compose.glsl"
 struct Query {
   vec4 position, reflected;
 };
@@ -17,6 +18,18 @@ void main() {
   if (index >= count)
     return;
   Query q = queries[index];
+  if (q.position.w >= 12) {
+    bool covered = q.position.w == 12;
+    ReceiverLighting direct = ReceiverLighting(covered ? q.position.xyz : vec3(0),
+        DirectLightingPolicy(true, !covered, covered), true);
+    ReceiverLighting composed = composeDirectAndIncoming(direct, q.reflected.xyz);
+    vec3 corrected = composed.diffuse + diffuseResidual(q.position.xyz, q.reflected.w,
+                                                        composed.direct.attribution);
+    uint policy = uint(composed.direct.diffuse) | uint(composed.direct.specular) << 1 |
+        uint(composed.direct.attribution) << 2 | uint(composed.reflectionReference) << 3;
+    results[index] = vec4(corrected, float(policy));
+    return;
+  }
   if (q.position.w >= 9) {
     float visibility = 0, diffuse = -1;
     uint light = q.position.w == 10 ? 2u : q.position.w == 11 ? 65u : 1u;

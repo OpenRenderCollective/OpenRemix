@@ -80,9 +80,9 @@ namespace remix::forward {
         const auto &bindings = *publishedBake->mixedLights;
         const auto captured = bindings.match(sources[i]);
         capturedLights[i] = captured;
-        // Live GI evaluates direct lights analytically, so those lights retain
-        // ordinary shadow priority rather than becoming baked-only fallbacks.
-        if (!techniquePlan.liveDiffuse() && captured != mixed::none && bindings.bakedDiffuse(captured) &&
+        // Incoming-only GI can retain baked direct ownership; analytic-only
+        // receivers keep ordinary shadow priority.
+        if (techniquePlan.bakedAttribution() && captured != mixed::none && bindings.bakedDiffuse(captured) &&
             !bindings.retainsVisibility(captured)) {
           if (fallbackShadows.empty()) fallbackShadows.resize(sources.size());
           fallbackShadows[i] = 1;
@@ -108,7 +108,7 @@ namespace remix::forward {
           groupedStyles[scale.style] = 1;
     }
     const auto grouped = [&](uint32_t captured) {
-      if (techniquePlan.liveDiffuse() || !bindings || captured >= bindings->source->lights.size()) return false;
+      if (!techniquePlan.bakedAttribution() || !bindings || captured >= bindings->source->lights.size()) return false;
       const auto style = bindings->source->lights[captured].style;
       return style < groupedStyles.size() && groupedStyles[style] != 0;
     };
@@ -265,7 +265,7 @@ namespace remix::forward {
       const auto value = std::getenv("REMIX_DEBUG_DIRECT_FETCH");
       return !value || std::strcmp(value, "0") != 0;
     }();
-    const bool selectDirectOwners = selectiveDirect && bindings && !techniquePlan.liveDiffuse() &&
+    const bool selectDirectOwners = selectiveDirect && bindings && techniquePlan.bakedAttribution() &&
         std::any_of(bindings->directLighting.lights.begin(), bindings->directLighting.lights.end(),
                     bake::aggregatesDiffuse);
     std::vector<uint8_t> unitDirectNeeded(selectDirectOwners ? bindings->source->lights.size() : 0);
@@ -382,7 +382,7 @@ namespace remix::forward {
           if (intersectsClip(bounds, frame.viewModelProjection)) append(draw, frame.viewModelCasters, true);
         }
     }
-    if (probeVisibility && !techniquePlan.liveDiffuse()) {
+    if (probeVisibility && techniquePlan.bakedAttribution()) {
       std::vector<uint32_t> selected;
       for (uint32_t i = 0; i < runtimeLights; ++i) {
         auto &light = lights[i];

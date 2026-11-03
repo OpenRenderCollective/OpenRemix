@@ -27,6 +27,8 @@ common = """#version 450
 #include "reflection-values.glsl"
 #include "diffuse-values.glsl"
 #include "diffuse-values.glsl"
+#include "diffuse-compose.glsl"
+#include "diffuse-compose.glsl"
 #include "lighting-reference.glsl"
 #include "lighting-reference.glsl"
 #include "sun-values.glsl"
@@ -69,6 +71,7 @@ stages = {
       ShadingResult shaded = initShadingResult(material, .75);
       ReflectionSample reflected = ReflectionSample(shaded.normal, .5);
       ReceiverLighting diffuse = ReceiverLighting(vec3(1), analyticDirectLighting(false), false);
+      diffuse = composeDirectAndIncoming(diffuse, vec3(.2));
       value = vec4(resolveReflection(reflected, material.emission) *
                    standardReflectionFresnel(vec3(.04), material.roughness, .5) +
                    composeDiffuseLight(diffuse, material.color.rgb), shaded.color.a);

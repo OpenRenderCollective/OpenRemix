@@ -1,5 +1,5 @@
 // Included beside the readback Target fixture in rendering.cpp.
-std::array<uint8_t, 3> styledIndirectTests(bool directGroups = false, bool includeIndirect = false, uint32_t emitterCount = 1) {
+std::array<uint8_t, 3> styledIndirectTests(bool directGroups = false, bool includeIndirect = false, uint32_t emitterCount = 1, bool liveIncoming = false) {
   require(emitterCount > 0 && emitterCount <= 7, "Styled fixture fits the mixed-shadow slot budget");
   std::array<uint8_t, 3> litBySample{};
   uint32_t sampleOrdinal = 0;
@@ -8,6 +8,10 @@ std::array<uint8_t, 3> styledIndirectTests(bool directGroups = false, bool inclu
     auto &r = target.raster;
     remix::forward::Options options;
     options.samples = samples;
+    options.rtGI = liveIncoming;
+    options.bakedDirectWithLiveGI = liveIncoming;
+    options.rtGISamples = options.rtGIBounces = 1;
+    options.rtGIDistance = .1f; // isolate controllable direct; live incoming has no nearby hit
     options.ambient = 0;
     options.debugView = 1; // Indirect only: live direct/specular cannot satisfy this test.
     options.shadows = options.localShadows = options.ssr = false;
@@ -172,7 +176,7 @@ std::array<uint8_t, 3> styledIndirectTests(bool directGroups = false, bool inclu
     require(std::strstr(target.forward->statistics().baking.status, "Cached") &&
             cached == on && target.forward->bakeController()->volume()->styledLighting,
             "Attributed cache reload preserves exact surface pixels and runtime style ownership");
-    if (samples != 2 && emitterCount == 1) {
+    if (!liveIncoming && samples != 2 && emitterCount == 1) {
       const auto diffuse = target.forward->bakeController()->volume();
       const auto content = target.forward->bakeController()->content();
       const auto dynamicBefore = render(false);

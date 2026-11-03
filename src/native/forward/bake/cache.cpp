@@ -212,6 +212,7 @@ namespace remix::forward::bake::cache {
   } // namespace
   uint64_t key(uint64_t content, const Config &c, float cutoff, const Device &d, const DirectPolicy &policy,
                bool fallbackReflections) {
+    const auto contents = c.irradianceContents;
     static const uint64_t shaders = [] {
       auto hash = scene::fastHash(atlasShader, sizeof(atlasShader));
       hash = scene::fastHash(transportShader, sizeof(transportShader), hash);
@@ -315,6 +316,14 @@ namespace remix::forward::bake::cache {
       const uint32_t styles[] = {sparse::magic, sparse::version, c.styleStorageMiB};
       raw = scene::fastHash(styles, sizeof(styles), raw);
     }
+    if (contents == IrradianceContents::ReceiverDirect) {
+      const uint32_t receiverDirect[] = {0x52444952u, 1};
+      raw = scene::fastHash(receiverDirect, sizeof(receiverDirect), raw);
+      raw = scene::fastHash(receiverDirectShader, sizeof(receiverDirectShader), raw);
+      raw = scene::fastHash(receiverDirectParallelShader, sizeof(receiverDirectParallelShader), raw);
+    } else if (contents != IrradianceContents::Combined) {
+      throw std::invalid_argument("Unknown irradiance cache contents");
+    }
     if (!c.denoiseLightmaps)
       return raw; // preserve existing raw cache entries when this optional stage is disabled
     const uint32_t filter[] = {0x4f49444eu, 2, lightmap::denoiserVersion()};
@@ -352,6 +361,7 @@ namespace remix::forward::bake::cache {
   std::optional<Snapshot> read(const std::filesystem::path &file, uint64_t identity,
                                std::shared_ptr<const scene::BakeScene> source, const Config &config,
                                const Device &device, std::stop_token cancelled, const DirectPolicy &policy, ReflectionRead reflections) {
+    const auto contents = config.irradianceContents;
     try {
       std::error_code error;
       if (!std::filesystem::is_regular_file(file, error))
@@ -360,10 +370,13 @@ namespace remix::forward::bake::cache {
       require(source && source->ready);
       Snapshot result;
       const auto flags = input.pod<uint32_t>();
-      require(flags <= 511 && (!(flags & 128) || (flags & 64)) &&
+      require(flags <= 1023 && (!(flags & 128) || (flags & 64)) &&
               (!(flags & 64) || (flags & 1)) && (!(flags & 32) || (flags & 16)) &&
               (!(flags & 8) || config.styledIndirect) && (!(flags & 1) || config.directDiffuse) &&
               (!(flags & 2) || source->sun.isDistant));
+      result.contents = (flags & 512) ? IrradianceContents::ReceiverDirect : IrradianceContents::Combined;
+      require(result.contents == contents);
+      require(contents != IrradianceContents::ReceiverDirect || !(flags & 256));
       result.directDiffuse = (flags & 1) != 0;
       result.sun = (flags & 2) != 0;
       result.surfaceSamples = input.pod<uint32_t>();
@@ -401,6 +414,7 @@ namespace remix::forward::bake::cache {
       } else {
         probes::cache_codec::read(input, result.captures, result.specular, reflectionLimits);
       }
+      require(contents != IrradianceContents::ReceiverDirect || result.captures.empty());
       require(result.surfaceSamples || std::any_of(result.grid.probes.begin(), result.grid.probes.end(),
                                                    [](const auto &p) { return p.statistics[3] > .5f; }));
       const auto &layout = result.layout;
@@ -451,7 +465,7 @@ namespace remix::forward::bake::cache {
       if (reflections == ReflectionRead::DiffuseOnly) {
         result.captures = {};
         result.specular = {};
-        result.missingReflections = true;
+        result.missingReflections = contents == IrradianceContents::Combined;
       }
       if (result.missingReflections) {
         // Reconstruct the actual admitted trace origins only for component
@@ -492,6 +506,11 @@ namespace remix::forward::bake::cache {
     std::filesystem::path temporary;
     try {
       detail::check(cancelled);
+      require(view.contents == IrradianceContents::Combined || view.contents == IrradianceContents::ReceiverDirect);
+      // Reflection normalization references have their own contents contract.
+      // Do not bundle them into this new field kind before that is qualified.
+      require(view.contents != IrradianceContents::ReceiverDirect ||
+              (view.captures.empty() && !view.reflectionKey && !view.localReflections && !view.localReflectionsOnly));
       probes::cache_codec::validate(view.captures, view.specular);
       require(view.directionals.empty() || view.directionalAttempted);
       require(!view.directionalAttempted || view.directDiffuse);
@@ -536,7 +555,8 @@ namespace remix::forward::bake::cache {
       output.pod(uint32_t(view.directDiffuse) | uint32_t(view.sun) << 1 | uint32_t(hasPolicy) << 2 |
                  uint32_t(!view.styles.empty()) << 3 | uint32_t(view.localProbes != nullptr) << 4 |
                  uint32_t(view.localProbes && view.localProbes->directional()) << 5 |
-                 uint32_t(view.directionalAttempted) << 6 | uint32_t(view.directionalAttempted) << 7 | uint32_t(blob != 0) << 8);
+                 uint32_t(view.directionalAttempted) << 6 | uint32_t(view.directionalAttempted) << 7 | uint32_t(blob != 0) << 8 |
+                 uint32_t(view.contents == IrradianceContents::ReceiverDirect) << 9);
       output.pod(view.surfaceSamples);
       output.pod(view.grid.header);
       output.array(view.grid.probes);

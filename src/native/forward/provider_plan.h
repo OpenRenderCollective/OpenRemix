@@ -15,6 +15,7 @@ namespace remix::forward::techniques {
     // Select the automatic source and admission owner independently of image
     // availability. Disabled captures still visit their owner to retire old work.
     probes::CapturePolicy capturePolicy;
+    bool bakedDirect = false; // composed with a live incoming source
     bool rayReflections = false, rayWater = false;
     bool rayScene = false, reflectionResolve = false;
     bool screenReflections = false;
@@ -23,9 +24,10 @@ namespace remix::forward::techniques {
     bool rayDiffuse() const { return diffuse == Diffuse::RayQueries; }
     // Screen-space cascades: CASCADE_GI world shaders and the cascade pass.
     bool cascadeDiffuse() const { return diffuse == Diffuse::RadianceCascades; }
-    // A live provider owns indirect diffuse: no baked receivers or aggregate lights.
+    // Live incoming ownership is separate from retained baked direct ownership.
     bool liveDiffuse() const { return rayDiffuse() || cascadeDiffuse(); }
     bool bakedDiffuse() const { return diffuse == Diffuse::SurfaceAndProbes; }
+    bool bakedAttribution() const { return !liveDiffuse() || bakedDirect; }
     bool operator==(const ResourcePlan &) const = default;
   };
   inline ResourcePlan resolveResources(const Options &options, Capabilities capabilities) {
@@ -40,6 +42,7 @@ namespace remix::forward::techniques {
     plan.diffuse = cascades ? Diffuse::RadianceCascades
         : liveDiffuse ? Diffuse::RayQueries
         : options.baking.enabled ? Diffuse::SurfaceAndProbes : Diffuse::Disabled;
+    plan.bakedDirect = plan.rayDiffuse() && options.lightingPlan(true).bakedReceivers;
     plan.capturePolicy = options.capturePolicy(plan.bakedDiffuse() ? probes::CaptureTransport::SharedScene
                                                                  : probes::CaptureTransport::StandaloneScene);
     plan.screenReflections = options.ssr;

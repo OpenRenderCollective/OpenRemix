@@ -135,9 +135,48 @@ Still required for the complete modularity/performance objective:
   automatic capture edits. Broaden real-map coverage and no-overhead measurements;
   new map loads still use diffuse-index recovery when the exact combined cache is
   absent, and optional diagnostic local companions are regenerated in that case.
+- Finish qualification of independent direct/indirect provider composition.
+  Explicit live incoming now requests ReceiverDirect surface/probe data while
+  retaining sun/controllable fields and mixed-shadow attribution. Legacy live GI
+  remains whole-field replacement; the Source 2 default remains combined.
+  A low-level receiver-direct producer now isolates eligible local-light NEE
+  from incoming paths using shared prepared inputs. GPU surface/probe tests
+  reconstruct combined SH from the two fields, including serial/parallel and
+  empty ownership; seven existing bake kernels remain byte-identical. This is
+  not a wired hybrid preset. Typed cache identities and payload tags now separate
+  combined from receiver-direct data, including index recovery and independent
+  decoder checks. The legacy combined key/payload are byte-identical to a captured
+  pre-change fixture. Receiver-direct containers remain diffuse-only until
+  reflection-reference provenance is qualified. Internal bake configuration now
+  selects the contents, with cold/warm publication and asynchronous storage
+  retaining that kind. The restricted direct-only mode traces one bounce and
+  rejects combined-reference diagnostics, indirect styles and bundled reflections.
+  Runtime Source 2 selection still requests combined data. A composed shader
+  source adds a replaceable incoming-only query to the baked direct field,
+  preserving direct attribution and rejecting a frozen reflection reference.
+  Standard/custom material passes compile, and GPU mixed-shadow checks preserve
+  incoming energy with and without baked coverage. Twelve normalized optimized
+  default/custom variants remain identical. Host world/viewmodel/water selection
+  now has an explicit live-incoming technique and saved switch, retaining baked
+  masks and independently owned reflection captures. Capture quality is removed
+  from the direct bake's derived identity. Seven-owner surface/probe corrections,
+  exact cache restore and baked sun/moving-shadow fixtures now pass in composed
+  mode. Component-scoped scene dependency validity retains direct-only data for
+  sun/dome updates while invalidating changed local emitters. Composed viewmodel
+  sun tests pass at 1x/2x/4x: baked world probe visibility, moving/self shadows,
+  self/world isolation, colour reuse and complete fallback outside probe coverage.
+  Composed optical sunlight now shares probe visibility and moving shadows,
+  with complete fallback outside probe coverage. Tests cover 1x/2x/4x and both
+  water pipeline variants; default water shader variants remain unchanged.
+  Qualify reflection-reference provenance, component-specific source identities
+  and real-map quality/performance. On this PR branch, cascades now uses the
+  shared incoming-query boundary while retaining whole-field replacement; baked
+  direct composition and optical lookup support remain deferred.
+  Preserve existing presets and the default Source 2 combined fast path.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
-  Water's baked/mixed sunlight policy still needs separate qualification.
+  Composed optical sunlight has fixture coverage; broader optical/probe edge
+  quality and general replacement-provider sunlight policies still need work.
 - Complete no-overhead acceptance with controlled CPU/GPU comparisons. Earlier
   host-FPS rankings reversed between runs despite matching lighting/draws. The
   completed A/B/B/A 1080p Crossfire study shows overlapping CPU/GPU ranges and

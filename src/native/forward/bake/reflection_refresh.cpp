@@ -15,6 +15,7 @@ namespace remix::forward::bake {
   }
   void Controller::Job::prepareReflectionRefresh(VkPhysicalDevice physical, VkDevice device,
                                                   const Config &config, float cutoff, uint32_t family) {
+    irradianceContents = config.irradianceContents;
     if (!reflectionSeeds || !reflectionOwnership)
       throw std::logic_error("Reflection refresh requires published diffuse admission and ownership");
     // This job borrows immutable publication metadata, never its SH or atlas pixels.

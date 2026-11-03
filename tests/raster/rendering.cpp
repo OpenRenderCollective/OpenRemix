@@ -729,7 +729,7 @@ namespace {
       }
   }
 
-  void liveGITests() {
+  void liveGITests(bool composed = false) {
     for (bool reflections : {false, true})
       for (uint32_t samples : {1u, 2u, 4u}) {
         Target target(64, 64, true);
@@ -739,6 +739,7 @@ namespace {
         options.baking.lightmapFitBudget = false; // Controlled-density lighting fixtures.
         options.samples = samples;
         options.rtGI = true;
+        options.bakedLighting = options.bakedDirectWithLiveGI = composed;
         options.rtGISamples = 16;
         options.rtGIBounces = 1;
         options.rtGIDistance = 10;
@@ -911,10 +912,13 @@ namespace {
         require(image[at] > 150 && image[at + 1] < 3, "GI fixture begins with captured red diffuse lighting");
         options.rtGI = true;
         target.enableForward(options, true);
-        image = render();
-        require(!target.forward->bakeController()->volume() &&
-                    !target.forward->statistics().baking.active,
-                "Live diffuse provider stops and retires unused baked diffuse publication");
+        image = composed ? ready() : render();
+        const auto composedVolume = target.forward->bakeController()->volume();
+        require(composed
+                    ? composedVolume && target.forward->statistics().baking.active &&
+                        composedVolume->irradianceContents == remix::forward::bake::IrradianceContents::ReceiverDirect
+                    : !composedVolume && !target.forward->statistics().baking.active,
+                "Live incoming either retains direct-only publication or retires the unused combined bake");
         std::printf("Live GI %ux, reflections %u: RGB %u %u %u\n", samples, unsigned(reflections),
                     unsigned(image[at]), unsigned(image[at + 1]), unsigned(image[at + 2]));
         require(target.forward->statistics().rayGI.active && image[at] < 3 && image[at + 1] > 150 &&
@@ -934,8 +938,10 @@ namespace {
           } while (std::chrono::steady_clock::now() < cubeDeadline);
           require(target.forward->standaloneCaptures()->source().image &&
                       target.forward->statistics().reflectionProbes.parameters[0] == 1 &&
-                      target.forward->statistics().rayGI.active && !target.forward->bakeController()->volume(),
-                  "Live diffuse and independent cubemaps publish without a diffuse bake");
+                      target.forward->statistics().rayGI.active &&
+                      (composed ? target.forward->bakeController()->volume() == composedVolume
+                                : !target.forward->bakeController()->volume()),
+                  "Independent cubemaps preserve the selected direct publication without retracing irradiance");
           options.baking.reflectionProbes = 0;
           options.baking.reflectionResolution = oldResolution;
           target.enableForward(options, true);
@@ -3489,7 +3495,7 @@ namespace {
       require(errors.load() == 0, "Compact clear visibility and realtime shadows are validation clean");
     }
   }
-  void sunLightingTests() {
+  void sunLightingTests(bool composed = false) {
     for (uint32_t samples : {1u, 2u, 4u}) {
       Target target(64, 64, true);
       auto &r = target.raster;
@@ -3500,7 +3506,9 @@ namespace {
       options.prism = false;
       options.exposure = 2;
       options.samples = samples;
-      options.rtGI = samples == 2;
+      options.rtGI = composed;
+      options.bakedDirectWithLiveGI = options.bakedLighting = composed;
+      if (composed) options.rtGIDistance = .1f; // isolate the independently baked sun fields
       options.rtGISamples = options.rtGIBounces = 1;
       options.ambient = 0;
       options.ssr = options.localShadows = false;
@@ -3590,6 +3598,11 @@ namespace {
       ++base.revision;
       r.setBakeScene(&base);
       auto pixels = until(true);
+      if (composed)
+        require(target.forward->statistics().rayGI.active &&
+                    target.forward->bakeController()->volume()->irradianceContents ==
+                        remix::forward::bake::IrradianceContents::ReceiverDirect,
+                "Composed sun test consumes live incoming and separately published direct fields");
       const size_t left = (32 * 64 + 16) * 4, edge = (32 * 64 + 32) * 4,
                    right = (32 * 64 + 48) * 4, adjacent = (27 * 64 + 48) * 4;
       const auto lit = pixels[right];
@@ -3657,8 +3670,10 @@ namespace {
       require(std::abs(int(pixels[right + 2]) - int(lit)) < 4,
               "Moving the sun caster restores its old pixel without shadow trails");
       r.destroyRetained(&actor, 1);
-      options.baking.directDiffuse = false;
-      target.forward->updateLighting(options);
+      if (!composed) {
+        options.baking.directDiffuse = false;
+        target.forward->updateLighting(options);
+      }
       pixels = until(true);
       require(pixels[left + 2] < 3 && pixels[edge + 2] > 15 && pixels[edge + 2] < pixels[right + 2] - 10,
               "Visibility-only sunlight still keeps the baked soft static mask");
@@ -4151,6 +4166,7 @@ namespace {
   }
 #include "forward_skinning.h"
 #include "forward_depth.h"
+#include "composed_viewmodel_sun.h"
   void unsupportedReflectionTests() {
     for (uint32_t samples : {1u, 4u}) {
       Target target; // Ray features deliberately not enabled on this device.
@@ -5356,6 +5372,7 @@ namespace {
         "Raster GPU readback: depth, culling, textures, cutouts, blending, skinning, UI and lifetime passed");
   }
 #include "forward_sheet.h"
+#include "composed_optical_sun.h"
   void waterTests() {
     for (uint32_t samples : {1u, 2u, 4u}) {
       Target target;
@@ -5695,6 +5712,7 @@ int main(int argc, char **argv) try {
     surfaceLightmapTests();
   }
   else if (argc>2 && std::strcmp(argv[2],"water")==0) waterTests();
+  else if (argc>2 && std::strcmp(argv[2],"composed-optical-sun")==0) composedOpticalSunTests();
   else if (argc>2 && std::strcmp(argv[2],"sheet")==0) sheetTests();
   else if (argc>2 && std::strcmp(argv[2],"sheet-environment")==0) waterEnvironmentTests(false, true);
   else if (argc>2 && std::strcmp(argv[2],"water-environment")==0) waterEnvironmentTests();
@@ -5703,6 +5721,7 @@ int main(int argc, char **argv) try {
   else if (argc>2 && std::strcmp(argv[2],"sky")==0) skyTests();
   else if (argc>2 && std::strcmp(argv[2],"live-gi")==0) liveGITests();
   else if (argc>2 && std::strcmp(argv[2],"cascades")==0) cascadeProviderTests();
+  else if (argc>2 && std::strcmp(argv[2],"composed-gi")==0) liveGITests(true);
   else if (argc>2 && std::strcmp(argv[2],"hardware-reflections")==0) reflectionTests(directory, false, true);
   else if (argc>2 && std::strcmp(argv[2],"reflections")==0) reflectionTests(directory);
   else if (argc>2 && std::strcmp(argv[2],"baking")==0) bakingTests();
@@ -5718,6 +5737,7 @@ int main(int argc, char **argv) try {
   else if (argc>2 && std::strcmp(argv[2],"finite-cone")==0) finiteConeLightingTests();
   else if (argc>2 && std::strcmp(argv[2],"styled-indirect")==0) styledIndirectTests();
   else if (argc>2 && std::strcmp(argv[2],"styled-direct")==0) styledIndirectTests(true);
+  else if (argc>2 && std::strcmp(argv[2],"composed-styled")==0) styledIndirectTests(true, false, 1, true);
   else if (argc>2 && std::strcmp(argv[2],"styled-combined")==0) {
     const auto one = styledIndirectTests(true, true);
     const auto seven = styledIndirectTests(true, true, 7);
@@ -5735,6 +5755,7 @@ int main(int argc, char **argv) try {
   else if (argc>2 && std::strcmp(argv[2],"overflow-masks")==0) compactOcclusionTests(true, true);
   else if (argc>2 && std::strcmp(argv[2],"viewmodel-lighting")==0) viewModelLightingTests(directory);
   else if (argc>2 && std::strcmp(argv[2],"viewmodel-probes")==0) viewModelLightingTests(directory, true);
+  else if (argc>2 && std::strcmp(argv[2],"composed-viewmodel-sun")==0) composedViewmodelSunTests();
   else if (argc>2 && std::strcmp(argv[2],"authored-reflections")==0) viewModelLightingTests(directory, true, true, true);
   else if (argc>2 && std::strcmp(argv[2],"viewmodel-ssr")==0) reflectionTests(directory, false, false, false, 4, true);
   else if (argc>2 && std::strcmp(argv[2],"viewmodel-environment")==0) viewModelLightingTests(directory, true, true);
@@ -5742,6 +5763,8 @@ int main(int argc, char **argv) try {
   else if (argc>2 && std::strcmp(argv[2],"decal-lighting")==0) terrainLightingTests(true);
   else if (argc>2 && std::strcmp(argv[2],"clear-visibility")==0) clearVisibilityTests();
   else if (argc>2 && std::strcmp(argv[2],"mixed-sun")==0) sunLightingTests();
+  else if (argc>2 && std::strcmp(argv[2],"composed-sun")==0) sunLightingTests(true);
+  else if (argc>2 && std::strcmp(argv[2],"composed-directionals")==0) selectedDirectionalTests(true);
   else if (argc>2 && std::strcmp(argv[2],"sun-depth-lifecycle")==0) sunDepthLifecycleTests();
   else if (argc>2 && std::strcmp(argv[2],"probe-blend")==0) reflectionTests(directory, true);
   else if (argc>2 && std::strcmp(argv[2],"sky-reflections")==0) {

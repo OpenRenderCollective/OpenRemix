@@ -190,6 +190,7 @@ namespace remix::config {
         result.push_back(scalar("rtx.native.forward.waterThickness", FIELD(forward.waterThickness), .001, 10));
         result.push_back(scalar("rtx.native.forward.rtReflections", FIELD(forward.rtReflections), 0, 1));
         result.push_back(scalar("rtx.native.forward.rtGI", FIELD(forward.rtGI), 0, 1));
+        result.push_back(scalar("rtx.native.forward.bakedDirectWithLiveGI", FIELD(forward.bakedDirectWithLiveGI), 0, 1));
         result.push_back(scalar("rtx.native.forward.rtGISamples", FIELD(forward.rtGISamples), 1, 64));
         result.push_back(scalar("rtx.native.forward.rtGIBounces", FIELD(forward.rtGIBounces), 1, 8));
         result.push_back(scalar("rtx.native.forward.rtGIDistance", FIELD(forward.rtGIDistance), .1, 10000));

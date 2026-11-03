@@ -21,7 +21,7 @@ namespace remix {
     m_materialReflections.reset();
     m_bakeInstances.clear();
     m_bakeLights.clear();
-    m_publishedBakeLightsCurrent.reset();
+    m_publishedBakeLightValidity.reset();
     m_draws.clear();
     m_frameIds.clear();
     m_hiddenTextures.clear();

@@ -626,7 +626,8 @@ baked fallback. Disabling water does not impose that capability on opaque GI.
 The live-GI fixture checks colored water body lighting at 1/2/4x MSAA, with reflection
 rays on/off and different configured diffuse/reflection ranges. Hardware transport
 fixtures check query conversion across three host-unit scales and no allocation
-on query validation. Baked/mixed-sun ownership for water remains a separate task.
+on query validation. Composed optical sunlight coverage is described below;
+real-map optical/probe edge quality remains open.
 
 ## Provider-owned local-light context
 
@@ -817,7 +818,8 @@ interface split does not claim that water's static visibility is already mixed
 like opaque props. A replacement source may implement both queries using its own
 transport without changing water's material. The alternate-source fixture swaps
 sun queries independently through world, viewmodel, live-GI, water and ray-water
-material variants. Qualification of baked/mixed optical sunlight remains open.
+material variants. Composed optical sunlight now uses the shared probe/moving
+visibility policy described below; the default preset retains its existing policy.
 
 ### Cascade context integration
 
@@ -959,3 +961,228 @@ The Source 2 adapter still selects shared captures for baked diffuse and
 standalone captures for supported live or disabled diffuse. Image disable retains
 the owner that must retire pending work. No new runtime setting or GPU work is
 introduced; CPU timing acceptance still needs to include this boundary.
+
+### Component composition and remaining qualification
+
+The normal Source 2 preset retains combined chart/probe irradiance. The existing
+live-GI choice retains whole-field replacement with analytic direct lighting.
+An explicit `Diffuse::RayIncoming` selection now composes retained baked direct
+with live incoming light. Its saved representation uses `rtGI` together with
+`bakedDirectWithLiveGI`; old saved live-GI profiles leave the new switch off.
+Direct technique selection still controls whether baked receivers are requested.
+In the renderer menu choose aggregate baked direct plus "Live incoming + baked
+direct". The equivalent saved keys are `rtx.native.forward.bakedLighting=1`,
+`rtx.native.forward.rtGI=1` and `rtx.native.forward.bakedDirectWithLiveGI=1`, with
+map baking and direct diffuse enabled. Unsupported fragment/water ray capability
+falls back to the configured baked source.
+
+The composed plan requests ReceiverDirect data, one transport bounce and no
+baked styled indirect. Per-light sun/controllable fields and mixed attribution
+remain active. Standalone captures own complete reflection radiance; capture
+resolution/count/tolerance do not participate in the direct producer's derived
+configuration. Missing direct coverage retains analytic direct response.
+Specialized composed world/viewmodel/water shaders are chosen at pipeline
+creation. Switching direct ownership while live GI is active recreates those
+pipelines; no per-draw source switch is added.
+
+This does not complete component modularity. Renderer fixtures now qualify
+seven-owner static corrections on surfaces/dynamic probes and baked sunlight
+with moving-caster corrections. Real-map hybrid/optical edge quality, reflection-reference provenance and matched runtime
+performance remain open.
+The unmerged cascade PR now adapts its whole-field source to the incoming query;
+composed cascade pipelines and optical lookup coverage still need work.
+Preserve the combined Source 2 fast path while extending providers.
+
+### Receiver-direct irradiance producer
+
+`bake::Options::receiverDirectOnly` selects an offline consumer producing only
+the eligible captured local-light receiver NEE term. It borrows the same prepared
+scene as combined/incoming consumers; membership still comes from `DirectPolicy`.
+Dedicated serial/parallel aggregate kernels omit incoming radiance integration
+and retain primary geometry evidence. No receiver-direct kernels are created for
+ordinary consumers. Existing kernel bytes and default pipeline counts remain
+unchanged. Request one bounce for this consumer's work-budget accounting; its
+receiver estimator itself does not trace diffuse bounce paths.
+
+This is an algorithmic partition of the current aggregate, not a claim that every
+physical direct/indirect source is already classified. Incoming paths include
+sky, visible emission and bounced light. Sun and controllable direct fields remain
+separate. The GPU fixture checks direct + incoming SH against combined energy
+for volume and surface receivers, serial/parallel execution, mixed eligibility
+and empty ownership, including signed coefficients. It verifies shared prepared
+inputs and rejects incoming-field requests on a direct-only consumer before
+recording. Mutable-lighting slots cannot produce this immutable direct field.
+
+The producer is not yet exposed through a preset or user-persisted setting.
+Internal bake configuration now selects its contents and carries that selection
+through cold tracing, cache recovery, snapshots and the published volume.
+Hybrid work still requires controlled direct fields and sun ownership, renderer
+masks and source composition.
+Do not label the current aggregate as direct-only or reuse it under a hybrid cache
+key. Preserve the combined Source 2 fast path while adding that explicit mode.
+
+### Irradiance cache content identity
+
+`IrradianceContents` distinguishes the default combined estimator from the
+receiver-direct estimator. Transport options expose their kind for a caller
+constructing cache metadata. Internal `Config::irradianceContents` supplies the
+expected kind to both container/diffuse keys and cache readers;
+receiver-direct keys add their own version and both estimator shader hashes.
+Combined keys retain their legacy computation.
+
+`cache::View` and decoded `Snapshot` carry the kind. A previously unused payload
+flag records receiver-direct contents; default combined bytes are unchanged.
+Decoding checks the expected kind independently of the supplied key, and diffuse
+index recovery threads it through both identity reconstruction and payload
+validation. The background snapshot-to-view transfer preserves the same tag
+through queued map writes. Thus a correct container key or spoofed index cannot
+relabel combined energy as receiver-direct, or vice versa. Direct-only recovery needs no reflection
+work or transient probe-origin array.
+
+Receiver-direct cache views currently accept diffuse data only. Bundled or
+referenced reflection captures and local-reflection companions are rejected until
+their normalization reference contract is qualified. This tag describes RGB
+irradiance contents, not reflection compatibility.
+
+Controller jobs and published volumes carry the kind as CPU metadata; GPU data
+layouts and the existing material shader variants are unchanged. The internal
+receiver-direct mode currently requires aggregate direct ownership, direct fields,
+one bounce, no styled indirect, and no automatic reflections. One bounce avoids
+charging the scheduler for diffuse bounce paths that this estimator never traces.
+Initialization rejects unsupported combinations and combined-reference diagnostics
+rather than silently tagging mixed energy as direct-only. The mode participates in
+configuration equality, so changing it invalidates the old diffuse publication.
+
+Runtime Source 2 selection requests combined data; explicit live incoming with
+baked direct requests the restricted direct-only mode. A direct-only volume is
+never advertised as a complete Source 2 reflection-normalization reference.
+
+
+### Composing baked direct with live incoming diffuse
+
+`diffuse-baked-field.glsl` provides the shared chart/probe lookup without owning
+the final combination. `incoming-lighting.glsl` supplies an incoming-only query;
+its current adapter calls the existing ray transport. Incoming means sky, visible
+emission and bounced radiance, excluding receiver-direct local-light NEE. A
+replacement source implements that query without changing the material model,
+baked field lookup or per-light mixed-shadow response.
+
+`diffuse-compose.glsl` adds incoming irradiance / pi to a receiver-direct field.
+It preserves the direct diffuse/specular/attribution policy: moving occluders
+subtract from captured direct energy, while incoming energy remains present.
+Missing baked coverage retains ordinary analytic direct response. Composition
+never advertises the sum as a compatible frozen-cubemap normalization reference.
+
+`OPENREMIX_BAKED_DIRECT_LIVE_INDIRECT` selects the composed source at compilation,
+using the baked receiver context and the incoming query. It currently requires
+`LIVE_GI` for the pass's existing live-source plumbing. Standard and custom
+materials compile through this source, including viewmodel, zero-diffuse metal
+and water passes. A query-only incoming replacement compiles with the ray
+implementation physically absent from the test tree. GPU numerical checks cover
+mixed visibility, valid black and missing baked coverage alongside independent
+producer energy-conservation tests.
+
+The explicit live-incoming technique now connects this shader boundary to host
+pipeline/resource selection and ReceiverDirect publication. The default Source 2
+preset and the legacy whole-field ray-GI choice remain unchanged. Surface/probe
+mixed attribution remains active during live incoming evaluation. Independent
+cubemap capture edits retain the direct volume, and the sum keeps an unavailable
+frozen normalization reference. Composed optical sunlight uses the same volume
+visibility source with complete fallback; wider source/reference provenance and
+real-map edge quality remain separate qualification tasks.
+
+The earlier shader extraction's checked default optimized variants are identical
+after stripping debug data and compacting SPIR-V identifiers. The composed mode
+adds work only when selected; matched runtime performance acceptance and broader
+real-map coverage remain open. It has not been promoted to the playable install.
+
+
+### Component-scoped captured light validity
+
+`scene::BakeLightScope` distinguishes complete captured radiance dependencies
+from receiver-direct dependencies without depending on a GPU renderer. The API
+registry classifies each captured definition by whether it supplied local
+emitters. The existing dependency scan computes both validity answers together;
+frame publication retains both as immutable values, so the render thread needs
+no registry access or additional dependency traversal.
+
+Combined data remains stale after any captured definition changes. ReceiverDirect
+also becomes stale after local-emitter changes or invalid controllable-light
+envelopes, but sun/dome definition changes do not invalidate its local direct RGB.
+The sun fields store geometry-qualified unit responses: receivers still reject
+changed sun shapes and use full current shadow fallback, and can reuse the field
+when the captured shape returns. This lets current sun colour change without
+restarting direct-only baking. Shape classification belongs to the captured
+definition, rather than whichever representation a later update happens to use.
+
+This is validity for an existing immutable capture, not a component-specific
+source fingerprint. Explicitly republishing a new capture can still change the
+whole scene identity; splitting those incoming-only identity inputs remains
+separate work. No default shader or GPU work changes accompany this boundary.
+Matched CPU/frame-time acceptance must include the scene-publication change.
+
+
+### Composed viewmodel sunlight coverage
+
+A dedicated renderer fixture now exercises composed viewmodel sunlight at 1x,
+2x and 4x MSAA. A frozen occluder supplies a static sun mask through world-space
+probes. Current world casters and viewmodel self casters use the close-up cascade,
+with self casters excluded from world shadows. Removing the casters restores
+exact pixels, and changing sun colour retains the same direct-only publication.
+Moving the viewmodel outside probe coverage verifies complete static fallback.
+The incoming ray range is bounded to isolate direct ownership; separate material
+fixtures cover changing incoming illumination.
+
+This qualifies the existing source/context composition for these cases; it adds
+no production path. It does not prove every viewmodel shadow submission is
+necessary: fallback caster preparation and close-up shadow cost still belong in
+runtime profiling. Composed optical water sunlight coverage is described below.
+
+
+### Composed optical sunlight
+
+In composed mode, `sampleOpticalReceiverSunLight` now uses the dynamic receiver's
+baked sun visibility, moving-caster shadow term and complete static fallback.
+It has no chart coordinate or pre-integrated surface sun term. The water material
+continues to consume `SunLightSample` and apply its own optical/PBR response;
+no packed storage or shadow-policy selection moves into that material.
+The default Source 2 and legacy live-GI optical adapters retain their prior
+analytic/CSM policy through compile-time selection.
+
+A renderer fixture exercises static probe occlusion outside realtime cascades,
+moving shadows, unchanged static-mask values outside the moving caster, exact
+restoration, sun-colour reuse and complete fallback outside probe coverage.
+It covers 1x/2x/4x MSAA and both composed water pipeline variants, with reflection
+rays on/off. A custom sun source also compiles through composed water with the
+default sun implementation absent. Existing scalar-probe interpolation is reused;
+this boundary does not promise sharper or leak-free probe visibility edges.
+
+Optimized descriptor reflection reports twelve storage buffers in the composed
+ray-water fragment, within the existing water capability gate; no new capability
+requirement is introduced. Checked default/custom optimized shader variants are
+unchanged after identifier normalization. Matched runtime performance and wider
+real-map optical quality acceptance remain open.
+
+
+### Cascade PR incoming-query adaptation
+
+On the unmerged cascade branch, `incoming-lighting.glsl` now selects either the
+ray adapter or `incoming-cascades.glsl`. Cascade gather storage, normal-response
+reconstruction, viewmodel approximation and unavailable-gather fallback stay in
+that private source. The thin whole-field diffuse adapter consumes the same
+incoming query as other live providers. Valid black remains distinct from an
+unavailable gather through the source's existing fallback policy.
+
+Existing cascades remain whole-field replacement with analytic direct lighting.
+Selecting them clears the explicit ray/baked-direct composition request. Raw
+profiles containing both switches are also guarded: unsupported composed cascade
+pipelines must not consume ReceiverDirect publications through whole-field
+shaders. The Source 2 and explicit ray-incoming choices retain their main-branch
+behavior. Composition with baked direct and a suitable optical-water lookup are
+still required cascade-provider extensions; this sync does not advertise them.
+
+The query wrapper avoids an extra early return. Relative to the previous PR head,
+checked default/ray fragment variants remain normalized-byte-identical and six
+cascade fragment variants have fewer instructions with no opcode-count increases.
+That compiler evidence is not matched runtime performance acceptance. The PR
+remains unmerged and is not deployed.

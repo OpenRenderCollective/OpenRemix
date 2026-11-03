@@ -1039,6 +1039,63 @@ namespace {
                 "Incoming-only control matches transport without analytic receiver direct light");
     require(incoming.moments == actual.moments && incoming.statistics == actual.statistics,
             "Receiver-direct selection preserves path geometry and transport statistics");
+    // The direct estimator must be independently producible without copying or
+    // retracing the incident field. Both consumers borrow the same prepared scene.
+    const bake::Point partitionPoints[] = {point, {{0, 0, 0, 0}, {0, 0, 1, 0}}};
+    struct PartitionCase { bool parallel, eligible; const char *name; };
+    const PartitionCase partitionCases[] = {
+        {false, true, "receiver-direct-serial"}, {true, true, "receiver-direct-parallel"},
+        {true, false, "receiver-direct-empty"}};
+    for (const auto &test : partitionCases) {
+      auto settings = test.eligible ? options : legacyOptions;
+      settings.parallel = test.parallel;
+      settings.receiverDirectOnly = true;
+      auto &donor = test.eligible ? aggregate : legacy;
+      bake::Transport receiverDirect;
+      auto ticket = pipelines.prepare(test.name, [&] {
+        receiverDirect.initializeShared(donor, *source, settings);
+      });
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+      while (!ticket->ready() && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      require(ticket->ready(), "Receiver-direct consumer preparation completed");
+      ticket->check();
+      fixture.begin();
+      aggregate.recordBatch(fixture.command, 0, partitionPoints, 4096, 1);
+      aggregate.recordIncomingIrradiance(fixture.command, 1, partitionPoints, 4096, 1);
+      receiverDirect.recordBatch(fixture.command, 0, partitionPoints, 4096, 1);
+      fixture.finish();
+      bake::Result combined[2], paths[2], receiver[2];
+      aggregate.read(0, combined);
+      aggregate.read(1, paths);
+      receiverDirect.read(0, receiver);
+      for (uint32_t pointIndex = 0; pointIndex < 2; ++pointIndex) {
+        for (uint32_t coefficient = 0; coefficient < 9; ++coefficient)
+          for (uint32_t channel = 0; channel < 3; ++channel) {
+            const float total = combined[pointIndex].irradiance[coefficient][channel];
+            const float sum = paths[pointIndex].irradiance[coefficient][channel] +
+                              receiver[pointIndex].irradiance[coefficient][channel];
+            if (test.eligible)
+              require(std::abs(total - sum) < 2e-4f * std::max(1.f, std::abs(total)),
+                      "Independent direct and incoming SH reconstruct combined surface/probe energy");
+            else
+              require(receiver[pointIndex].irradiance[coefficient][channel] == 0,
+                      "An empty direct ownership set produces a black field, not incoming lighting");
+          }
+        require(receiver[pointIndex].irradiance[0][2] == 0 &&
+                    (!test.eligible || receiver[pointIndex].irradiance[0][0] > 0) &&
+                    paths[pointIndex].irradiance[0][2] > 0,
+                "Direct-only fields retain eligible lights without environment or unowned-light energy");
+        require(receiver[pointIndex].statistics == combined[pointIndex].statistics,
+                "Direct-only fields retain primary geometry classification in opaque scenes");
+      }
+      bool rejected = false;
+      try {
+        receiverDirect.recordIncomingIrradiance(VK_NULL_HANDLE, 0, {&point, 1}, 1, 1);
+      } catch (const std::logic_error &) { rejected = true; }
+      require(rejected, "Direct-only consumers reject contradictory incoming-field requests before recording");
+    }
+
     fixture.begin();
     aggregate.recordBatch(fixture.command, 1, {&point, 1}, 8192, 1);
     fixture.finish();
@@ -2644,6 +2701,11 @@ int main(int argc, char **argv) try {
     vkGetPhysicalDeviceProperties(fixture.physical, &properties);
     pipeline::Service pipelines(fixture.device, properties, false);
     World world(fixture);
+    if (argc == 2 && std::strcmp(argv[1], "--irradiance-partitions-only") == 0) {
+      aggregateDiffuse(fixture, pipelines, world);
+      require(test::validationErrors == 0, "Irradiance partition validation stayed clean");
+      return 0;
+    }
     if (argc == 2 && std::strcmp(argv[1], "--coarse-transfer-only") == 0) {
       const auto transfer = coarseTransferPrototype(fixture, pipelines, world);
       for (uint32_t factor : {2u,4u,8u}) {

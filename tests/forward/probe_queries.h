@@ -38,7 +38,12 @@ namespace remix::forward::test {
         {{2, 3, 5, 8}, {.25f, 0, 0, 0}}, {{0, 0, 0, 8}, {.5f, 1, 0, 0}},
         {{0, 0, 0, 9}, {0, 0, 1, 0}}, {{.5f, 0, 0, 9}, {1, 0, 0, 0}},
         {{4, 0, 0, 9}, {0, 0, 1, 0}}, {{0, 0, 0, 9}, {0, 0, -1, 0}},
-        {{0, 0, 0, 10}, {0, 0, 1, 0}}, {{0, 0, 0, 11}, {0, 0, 1, 0}}};
+        {{0, 0, 0, 10}, {0, 0, 1, 0}}, {{0, 0, 0, 11}, {0, 0, 1, 0}},
+        // Live incoming energy must survive a fully blocked direct light.
+        {{2, 3, 5, 12}, {.2f, .4f, .6f, 0}}, {{2, 3, 5, 12}, {.2f, .4f, .6f, 1}},
+        {{2, 3, 5, 12}, {.2f, .4f, .6f, .25f}}, {{0, 0, 0, 12}, {0, 0, 0, .5f}},
+        // Outside baked coverage analytic direct adds normally, once.
+        {{2, 3, 5, 13}, {.2f, .4f, .6f, .25f}}, {{2, 3, 5, 13}, {0, 0, 0, 0}}};
     struct Gpu {
       VkDevice device;
       Buffer input, output, sky;
@@ -231,6 +236,14 @@ namespace remix::forward::test {
     gpu.output.read(values, sizeof(values));
     for (uint32_t i = 0; i < count; ++i) {
       const auto &q = queries[i];
+      if (q.position[3] >= 12) {
+        for (uint32_t c = 0; c < 3; ++c)
+          require(std::abs(values[i][c] - (q.position[c] * q.reflected[3] + q.reflected[c])) < 1e-6f,
+                  "Composed incoming energy survives mixed direct shadows and missing baked coverage");
+        require(values[i][3] == (q.position[3] == 12 ? 5.f : 3.f),
+                "Composition preserves analytic lobe/attribution policy without a false frozen reflection reference");
+        continue;
+      }
       if (q.position[3] >= 9) {
         const uint32_t light = q.position[3] == 10 ? 1u : q.position[3] == 11 ? 64u : 0u;
         const Vec3 position{q.position[0], q.position[1], q.position[2]};

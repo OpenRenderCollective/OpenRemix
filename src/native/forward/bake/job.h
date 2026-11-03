@@ -131,6 +131,7 @@ namespace remix::forward::bake {
     cache::DiffuseReference diffuseReference;
     cache::Device cacheDevice;
     std::unique_ptr<const cache::Snapshot> takeCacheSnapshot();
+    IrradianceContents irradianceContents = IrradianceContents::Combined;
     bool cacheHit = false, reflectionRecovery = false, diffuseRecovery = false;
     std::shared_ptr<Volume> publishedDiffuse; // render-thread publication; workers use separate immutable admission/ownership
     uint32_t sunNext = 0, sunReceived = 0;

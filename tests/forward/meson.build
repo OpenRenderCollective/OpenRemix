@@ -189,6 +189,8 @@ if get_option('gpu_tests')
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)
   test('Hardware diffuse bake transport and textured visibility', bake_transport_test, timeout : 180)
+  test('Receiver-direct and incoming irradiance partitions conserve surface and probe energy', bake_transport_test,
+    args : ['--irradiance-partitions-only'], timeout : 180)
   reflection_publication_test = executable('remix-reflection-publication-test', 'reflection_publication.cpp',
     include_directories : test_includes, link_with : forward_library, dependencies : vulkan_dep,
     cpp_args : test_cpp_args)

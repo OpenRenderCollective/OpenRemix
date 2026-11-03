@@ -181,6 +181,55 @@ int main(int argc, char **argv) {
     require(bytes(file) == bytes(ownedFile), "Shared reflection ownership changed legacy cache wire bytes");
   }
   {
+    using Contents = f::bake::IrradianceContents;
+    auto directConfig = config;
+    directConfig.reflectionProbes = 0;
+    auto combinedConfig = directConfig;
+    directConfig.irradianceContents = Contents::ReceiverDirect;
+    const auto directIdentity = bc::key(source->contentHash, directConfig, .001f, device);
+    const auto combinedIdentity = bc::key(source->contentHash, combinedConfig, .001f, device);
+    const auto directDiffuse = bc::diffuseKey(source->contentHash, directConfig, .001f, device);
+    const auto combinedDiffuse = bc::diffuseKey(source->contentHash, combinedConfig, .001f, device);
+    require(directIdentity != combinedIdentity && directDiffuse != combinedDiffuse,
+            "Receiver-direct and combined fields require separate container and diffuse identities");
+    require(!bc::read(file, identity, source, directConfig, device),
+            "A combined payload cannot masquerade as direct-only even with its correct container key");
+    const auto directory = root / "irradiance-contents";
+    const auto directFile = directory / bc::path(directIdentity).filename();
+    const f::probes::Data emptyReflections;
+    bc::View directView{data.grid, data.layout, data.mixed, {}, emptyReflections, data.pixels,
+                        data.surfaceSamples, data.directDiffuse, data.sun};
+    directView.contents = Contents::ReceiverDirect;
+    require(bc::write(directFile, directIdentity, directView), "Receiver-direct field persistence failed");
+    auto direct = bc::read(directFile, directIdentity, source, directConfig, device);
+    require(direct && direct->contents == Contents::ReceiverDirect && direct->pixels == data.pixels &&
+                direct->grid.probes.size() == data.grid.probes.size(),
+            "Receiver-direct payloads retain their content tag and complete irradiance data");
+    for (size_t i = 0; i < data.grid.probes.size(); ++i)
+      require(direct->grid.probes[i].irradiance == data.grid.probes[i].irradiance &&
+                  direct->grid.probes[i].moments == data.grid.probes[i].moments &&
+                  direct->grid.probes[i].statistics == data.grid.probes[i].statistics,
+              "Receiver-direct probe coefficients and geometry metadata survive persistence");
+    require(!bc::read(directFile, directIdentity, source, combinedConfig, device),
+            "Default combined readers must reject a correctly keyed direct-only payload");
+    bc::DiffuseReference reference{directDiffuse, directIdentity, directConfig.reflectionProbes,
+        directConfig.reflectionResolution, std::bit_cast<uint32_t>(directConfig.reflectionDetailTolerance)};
+    require(bc::writeDiffuseReference(directory, reference), "Receiver-direct index write failed");
+    auto recovered = bc::readDiffuse(directory, source->contentHash, source, directConfig, .001f, device);
+    require(recovered && recovered->contents == Contents::ReceiverDirect &&
+                !recovered->missingReflections && recovered->grid.points.empty() && recovered->pixels == data.pixels,
+            "Direct-only index recovery must not require reflection work or transient origin reconstruction");
+    reference.diffuseKey = combinedDiffuse;
+    require(bc::writeDiffuseReference(directory, reference) &&
+                !bc::readDiffuse(directory, source->contentHash, source, combinedConfig, .001f, device),
+            "A spoofed index cannot cross irradiance-content domains");
+    bc::View withCaptures{data.grid, data.layout, data.mixed, data.captures, data.specular, data.pixels,
+                          data.surfaceSamples, data.directDiffuse, data.sun};
+    withCaptures.contents = Contents::ReceiverDirect;
+    require(!bc::write(directory / "unqualified-reflections.bake", directIdentity, withCaptures),
+            "Direct-only caches cannot bundle unqualified reflection references");
+  }
+  {
     namespace storage = f::probes::capture_cache;
     namespace index = f::probes::cache_index;
     const auto directory = root / "blob-references";

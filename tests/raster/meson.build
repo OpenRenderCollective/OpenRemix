@@ -45,6 +45,18 @@ if get_option('gpu_tests')
     args : [meson.current_build_dir() / 'sky-readback', 'sky'], timeout : 120)
   test('Forward+ live GI replacement, dynamic transport and MSAA', raster_test,
     args : [meson.current_build_dir() / 'live-gi-readback', 'live-gi'], timeout : 180)
+  test('Forward+ baked direct and live incoming composition across material passes', raster_test,
+    args : [meson.current_build_dir() / 'composed-gi-readback', 'composed-gi'], timeout : 180)
+  test('Forward+ composed incoming retains controllable direct and mixed shadows', raster_test,
+    args : [meson.current_build_dir() / 'composed-styled-readback', 'composed-styled'], timeout : 180)
+  test('Forward+ composed incoming retains seven-light surface and probe corrections', raster_test,
+    args : [meson.current_build_dir() / 'composed-directional-readback', 'composed-directionals'], timeout : 240)
+  test('Forward+ composed incoming retains baked sunlight and moving shadows', raster_test,
+    args : [meson.current_build_dir() / 'composed-sun-readback', 'composed-sun'], timeout : 240)
+  test('Forward+ composed viewmodel sunlight preserves probes and isolated shadows', raster_test,
+    args : [meson.current_build_dir() / 'composed-viewmodel-sun-readback', 'composed-viewmodel-sun'], timeout : 180)
+  test('Forward+ composed optical sunlight preserves probes and mixed shadows', raster_test,
+    args : [meson.current_build_dir() / 'composed-optical-sun-readback', 'composed-optical-sun'], timeout : 180)
   test('Forward+ hardware reflection transport, current actors and MSAA', raster_test,
     args : [meson.current_build_dir() / 'hardware-reflection-readback', 'hardware-reflections'], timeout : 180)
   test('Forward+ cascade provider transport, depth scheduling and MSAA', raster_test,

@@ -39,6 +39,7 @@ namespace remix::forward {
     bool authoredReflectionFallback = true;
     bool rtReflections = false;
     bool rtGI = false;
+    bool bakedDirectWithLiveGI = false; // explicit incoming-only composition; legacy rtGI replaces the whole field
     bool selectedBakedLights = false; // experimental: aggregate lights use selected mixed-shadow slots
     bool bakedLighting = false; // runtime profiles default on; low-level callers retain explicit control
     uint32_t bakedHighlightLights = 16; // highlight budget independent of the mixed-shadow budget
@@ -76,16 +77,16 @@ namespace remix::forward {
     float sunAngularDiameter = .5f; // degrees
     bake::Config baking;
     bool bakedLightingActive(bool liveGiActive) const {
-      return lighting::resolve(baking, {bakedLighting, selectedBakedLights}, liveGiActive).bakedReceivers;
+      return lighting::resolve(baking, {bakedLighting, selectedBakedLights, bakedDirectWithLiveGI && !radianceCascades}, liveGiActive).bakedReceivers;
     }
     bool selectBakedLights(bool liveGiActive) const {
-      return lighting::resolve(baking, {bakedLighting, selectedBakedLights}, liveGiActive).selectedMixedLights;
+      return lighting::resolve(baking, {bakedLighting, selectedBakedLights, bakedDirectWithLiveGI && !radianceCascades}, liveGiActive).selectedMixedLights;
     }
     lighting::Plan lightingPlan(bool liveGiActive) const {
       auto config = baking;
       config.modelLightmaps = bake::modelChartsRequested(config.modelLightmaps);
       config.directionalProbeDepth = bake::directionalProbeDepthRequested();
-      return lighting::resolve(config, {bakedLighting, selectedBakedLights}, liveGiActive);
+      return lighting::resolve(config, {bakedLighting, selectedBakedLights, bakedDirectWithLiveGI && !radianceCascades}, liveGiActive);
     }
     bake::Config bakeConfiguration(bool liveGiActive) const {
       return lightingPlan(liveGiActive).baking;
@@ -105,6 +106,7 @@ namespace remix::forward {
     bool sameTargets(const Options &other) const {
       return debugView == other.debugView && staticDepthBatch == other.staticDepthBatch &&
              water == other.water && rtGI == other.rtGI && rtReflections == other.rtReflections &&
+             (!rtGI || lightingPlan(true).bakedReceivers == other.lightingPlan(true).bakedReceivers) &&
              localShadowLights == other.localShadowLights &&
              localShadowResolution == other.localShadowResolution && samples == other.samples &&
              shadowResolution == other.shadowResolution && ssr == other.ssr &&

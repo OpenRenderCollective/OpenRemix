@@ -20,7 +20,7 @@ int main() {
     for (auto direct : {techniques::Direct::Analytic, techniques::Direct::AttributedBake,
                         techniques::Direct::AggregateBake})
       for (auto diffuse : {techniques::Diffuse::SurfaceAndProbes, techniques::Diffuse::RayQueries,
-                           techniques::Diffuse::Disabled, techniques::Diffuse::RadianceCascades})
+                           techniques::Diffuse::Disabled, techniques::Diffuse::RadianceCascades, techniques::Diffuse::RayIncoming})
         for (auto reflection : {techniques::Reflections::Disabled, techniques::Reflections::Cubemaps,
                                 techniques::Reflections::RayQueries, techniques::Reflections::RayQueriesAndCubemaps}) {
           auto options = defaults;
@@ -50,7 +50,7 @@ int main() {
                     "Unsupported hardware cannot allocate a live ray scene");
             require(resources.rayScene == (resources.liveDiffuse() || resources.rayReflections),
                     "Diffuse and reflection providers share exactly one requested live scene");
-            require(!resources.rayDiffuse() || (capabilities.fragmentGI && diffuse == techniques::Diffuse::RayQueries),
+            require(!resources.rayDiffuse() || (capabilities.fragmentGI && options.rtGI),
                     "Fragment GI pipelines require support and an explicit diffuse request");
             require(resources.cascadeDiffuse() ==
                         (diffuse == techniques::Diffuse::RadianceCascades && capabilities.rayQueries),
@@ -66,14 +66,19 @@ int main() {
                         capturePolicy.authoredFallback == options.authoredReflectionFallback,
                     "Capture policy carries resolved ownership and capture-only selection settings");
             const auto lighting = options.lightingPlan(resources.liveDiffuse());
-            require(resources.sharedCaptures() == lighting.baking.enabled,
+            require(resources.sharedCaptures() == (lighting.baking.enabled && !resources.liveDiffuse()),
                     "Capture source and shared transport admission follow the resolved provider, including fallback");
             auto disabledCaptures = options;
             disabledCaptures.baking.reflectionProbes = 0;
             require(techniques::resolveResources(disabledCaptures, capabilities).capturePolicy.transport == resources.capturePolicy.transport,
                     "Disabling images preserves the capture retirement owner");
-            require(!resources.liveDiffuse() || (!lighting.bakedReceivers && !lighting.baking.enabled),
-                    "A resolved live provider stops diffuse baking and aggregate baked receiver lighting");
+            require(resources.bakedDirect == (resources.liveDiffuse() && lighting.bakedReceivers),
+                    "Live incoming composes only with an explicitly selected baked direct field");
+            require(!resources.bakedDirect ||
+                        (lighting.baking.irradianceContents == bake::IrradianceContents::ReceiverDirect &&
+                         lighting.baking.bounces == 1 && !lighting.baking.styledIndirect &&
+                         !lighting.baking.reflectionProbes && lighting.selectedMixedLights),
+                    "Composed resources require direct-only transport and independent capture ownership");
             if (!resources.liveDiffuse())
               require(resources.diffuse == (options.baking.enabled ? techniques::Diffuse::SurfaceAndProbes
                                                                    : techniques::Diffuse::Disabled),
@@ -83,9 +88,10 @@ int main() {
             require(resources.reflectionResolve == (options.ssr || resources.rayReflections || options.baking.reflectionProbes != 0),
                     "Only supported reflection sources allocate guides and resolve");
           }
-          const auto live = options.lightingPlan(diffuse == techniques::Diffuse::RayQueries);
-          require(diffuse != techniques::Diffuse::RayQueries || !live.bakedReceivers,
-                  "Live diffuse ownership cannot also consume aggregate baked direct");
+          const auto live = options.lightingPlan(options.rtGI);
+          require(!options.rtGI || !live.bakedReceivers ||
+                      live.baking.irradianceContents == bake::IrradianceContents::ReceiverDirect,
+                  "Live incoming never consumes combined baked irradiance");
         }
     auto cascades = defaults;
     techniques::selectDiffuse(cascades, techniques::Diffuse::RadianceCascades);
@@ -109,6 +115,14 @@ int main() {
     require(cascades.sameTargets(cascadeLimits), "Cascade quality edits apply without new targets");
     cascadeLimits.cascadeCount = 3;
     require(!cascades.sameTargets(cascadeLimits), "Cascade count changes the cascade targets");
+    {
+      auto requested = defaults;
+      requested.radianceCascades = requested.rtGI = requested.bakedDirectWithLiveGI = true;
+      const auto resolved = techniques::resolveResources(requested, {true, true, true});
+      const auto lighting = requested.lightingPlan(resolved.liveDiffuse());
+      require(resolved.cascadeDiffuse() && !resolved.bakedDirect && !lighting.baking.enabled,
+              "Cascades retain whole-field ownership until composed cascade pipelines are qualified");
+    }
     auto opaqueLive = defaults;
     opaqueLive.rtGI = true;
     opaqueLive.water = false;
@@ -177,7 +191,22 @@ int main() {
                   restored.forward == profile.forward && presets::isSource2(restored.forward) == !rayGi,
               "Saved component settings restore both Source 2 and Custom identity without a preset key");
     }
-    for (uint32_t combination = 0; combination < 32; ++combination) {
+    {
+      config::Settings profile, restored;
+      profile.forward = quality;
+      techniques::selectDiffuse(profile.forward, techniques::Diffuse::RayIncoming);
+      config::UnknownSettings unknown;
+      std::vector<std::string> warnings;
+      std::string error;
+      require(config::parse(config::serialize(profile), restored, unknown, warnings, error) &&
+                  restored.forward == profile.forward &&
+                  techniques::requested(restored.forward).diffuse == techniques::Diffuse::RayIncoming,
+              "Explicit direct/incoming composition persists without changing legacy live-GI requests");
+      presets::applySource2(restored.forward);
+      require(!restored.forward.bakedDirectWithLiveGI && presets::isSource2(restored.forward),
+              "Source 2 resets explicit composition while retaining the normal baked preset");
+    }
+    for (uint32_t combination = 0; combination < 64; ++combination) {
       bake::Config requested;
       requested.enabled = (combination & 1) != 0;
       requested.directDiffuse = (combination & 2) != 0;
@@ -185,11 +214,17 @@ int main() {
       requested.reflectionResolution = 256;
       const auto original = requested;
       const bool live = (combination & 4) != 0;
-      const lighting::Request request{(combination & 8) != 0, (combination & 16) != 0};
+      const lighting::Request request{(combination & 8) != 0, (combination & 16) != 0, (combination & 32) != 0};
       const auto plan = lighting::resolve(requested, request, live);
-      require(requested == original && plan.baking.samples == 37 && plan.baking.reflectionResolution == 256,
+      require(requested == original && plan.baking.samples == 37 &&
+                  plan.baking.reflectionResolution == (live && plan.bakedReceivers ? 8u : 256u),
               "Resolving techniques preserves requested settings and independent quality budgets");
-      if (live)
+      if (live && request.composeBakedDirect && request.baked && requested.enabled && requested.directDiffuse)
+        require(plan.baking.enabled && plan.bakedReceivers && plan.selectedMixedLights &&
+                    plan.baking.irradianceContents == bake::IrradianceContents::ReceiverDirect &&
+                    plan.baking.bounces == 1 && !plan.baking.styledIndirect && !plan.baking.reflectionProbes,
+                "Selected baked direct composes independently with live incoming across request combinations");
+      else if (live)
         require(!plan.baking.enabled && !plan.bakedReceivers && !plan.selectedMixedLights && !plan.baking.aggregateDiffuse &&
                     !plan.baking.groupedStyledDirect && !plan.baking.bakedGeometryLights,
                 "Live GI replaces aggregate ownership and selected baked responses for every request combination");
@@ -376,8 +411,25 @@ int main() {
     require(options.bakeConfiguration(false) == expected && options.baking == requested &&
                 options.selectBakedLights(false) && options.sameTargets(ordinary),
             "Baked mode derives aggregate/geometry/selected lighting without changing quality, preferences or targets");
-    require(!options.selectBakedLights(true) && !options.bakedLightingActive(true),
-            "Supported live GI pauses baked mode and its selected responses");
+    require(!options.bakedLightingActive(true) && !options.selectBakedLights(true),
+            "Legacy live GI retains whole-field replacement for saved profiles");
+    options.bakedDirectWithLiveGI = true;
+    auto composed = expected;
+    composed.irradianceContents = bake::IrradianceContents::ReceiverDirect;
+    composed.bounces = 1;
+    composed.styledIndirect = false;
+    composed.reflectionProbes = 0;
+    composed.reflectionResolution = 8;
+    composed.reflectionDetailTolerance = 0;
+    require(options.selectBakedLights(true) && options.bakedLightingActive(true) &&
+                options.bakeConfiguration(true) == composed && options.baking == requested,
+            "Live incoming preserves baked direct ownership while excluding baked indirect/captures");
+    auto liveTargets = options;
+    liveTargets.rtGI = true;
+    auto analyticTargets = liveTargets;
+    analyticTargets.bakedLighting = false;
+    require(!liveTargets.sameTargets(analyticTargets),
+            "Changing composed versus analytic direct ownership rebuilds specialized live pipelines");
     options.baking.directDiffuse = false;
     require(!options.bakedLightingActive(false) && options.bakeConfiguration(false) == options.baking,
             "Baked mode pauses when baked direct diffuse is disabled");
