@@ -208,7 +208,7 @@ This is a viewmodel adapter, not a universal world-space SSR API: its screen
 projection, source guides and descriptor layout belong to that pass.
 
 World SSR/ray transport still publishes a confidence/radiance image consumed by
-its resolve. Water retains separate optical composition and sky policy. A complete
+its resolve. Water retains separate optical composition and transmission background. A complete
 provider contract must accommodate these pass dependencies; the environment query
 alone does not make every reflection technique interchangeable.
 
@@ -1230,7 +1230,10 @@ Viewmodel and water composition continue to use the same incident-radiance query
 The alternate-environment test removes `probes.glsl`, `probe-tiles.glsl`,
 `environment.glsl`, `environment-sampling.glsl` and the viewmodel environment
 resource file before compiling real world resolve, viewmodel and water material
-passes. Water's sky transmission background remains a separate material input;
+passes. The default water reflection fallback also lives in the selected source's
+`water/shaders/environment.glsl`; its baked-sky visibility policy is no longer
+defined by the optical material. Replacement compilation removes that file too.
+Water's sky transmission background remains a separate material input;
 replacing reflected radiance does not replace transmitted background lighting. Default
 and custom-material shader checks preserve sizes and opcode counts across twelve
 variants. After structural global-ID/declaration-order normalization, their

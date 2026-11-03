@@ -3,6 +3,8 @@
 #include "environment.glsl"
 #elif defined(VIEWMODEL_PASS)
 #include "../viewmodel/shaders/environment.glsl"
+#elif defined(WATER_SURFACE)
+#include "../water/shaders/environment.glsl"
 #endif
 vec3 environmentReflectionPosition(vec3 position, vec3 normal) {
 #ifdef VIEWMODEL_PASS

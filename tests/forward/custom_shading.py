@@ -55,7 +55,7 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
     (tree / "shaders/probes.glsl").unlink()
     (tree / "shaders/probe-tiles.glsl").unlink()
     for name in ("shaders/environment.glsl", "shaders/environment-sampling.glsl",
-                 "viewmodel/shaders/environment.glsl"):
+                 "viewmodel/shaders/environment.glsl", "water/shaders/environment.glsl"):
         (tree / name).unlink()
     variants = {
         "environment-viewmodel": (source, ["VIEWMODEL_PASS", "REFLECTION_GUIDES"]),
@@ -76,7 +76,7 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
     for name in ("probes.glsl", "probe-tiles.glsl"):
         shutil.copyfile(root / "src/native/forward/shaders" / name, tree / "shaders" / name)
     for name in ("shaders/environment.glsl", "shaders/environment-sampling.glsl",
-                 "viewmodel/shaders/environment.glsl"):
+                 "viewmodel/shaders/environment.glsl", "water/shaders/environment.glsl"):
         shutil.copyfile(root / "src/native/forward" / name, tree / name)
     # Replace only the screen/ray transport source. Keep the actual resolve,
     # environment fallback and material Fresnel, with no bilateral source code.

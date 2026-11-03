@@ -30,10 +30,6 @@ vec3 waterSkyRadiance(vec3 worldDirection) {
   vec2 coordinate = vec2(atan(d.z, d.x) / (2 * Pi) + .5, acos(clamp(d.y, -1, 1)) / Pi);
   return textureLod(waterDome, coordinate, 0).rgb * waterSky.radiance.rgb;
 }
-// Water retains its existing unfiltered-sky fallback and visibility policy.
-vec3 environmentReflection(vec3 position, vec3 normal, vec3 reflected, float roughness) {
-  return waterSkyRadiance(reflected) * bakedSkyVisibility(position, normal, reflected);
-}
 #include "../../shaders/reflection-lighting.glsl"
 void main() {
   Material m = materials[draw.index];
