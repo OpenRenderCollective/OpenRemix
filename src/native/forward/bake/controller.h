@@ -7,7 +7,7 @@
 #include "forward/mixed/map.h"
 #include "forward/probes/data.h"
 #include "forward/probes/placement_seeds.h"
-#include "forward/probes/capture_source.h"
+#include "forward/probes/capture_publication.h"
 #include "forward/probes/capture_step.h"
 #include "forward/probes/local_capture_source.h"
 #include "forward/probes/capture_content.h"
@@ -73,22 +73,22 @@ namespace remix::forward::bake {
     const std::shared_ptr<Volume> &volume() const { return m_volume; }
     ContentHashes content() const {
       const auto diffuse = m_volume ? m_volume->content : DiffuseContent{};
-      return {diffuse.grid, m_reflectionContent.filtered, diffuse.surfaces,
-              diffuse.staticOcclusion, m_reflectionContent.radiance,
-              m_reflectionContent.inputs, diffuse.styledIndirect};
+      return {diffuse.grid, m_captures.content.filtered, diffuse.surfaces,
+              diffuse.staticOcclusion, m_captures.content.radiance,
+              m_captures.content.inputs, diffuse.styledIndirect};
     }
     VkDescriptorBufferInfo descriptor() const;
     VkDescriptorBufferInfo sunDepthTable() const;
     VkDescriptorBufferInfo sunDepthValues() const;
     probes::Descriptors reflectionDescriptor() const;
     probes::CaptureSource reflectionSource() const {
-      return {m_reflectionSceneHash, m_reflections};
+      return m_captures.source();
     }
     const std::shared_ptr<const probes::LocalCaptureSource> &localReflectionSource() const {
-      return m_localReflections;
+      return m_captures.local;
     }
-    const probes::Header *reflectionHeader() const { return m_reflections ? &m_reflections->header() : nullptr; }
-    float reflectionSceneScale() const { return m_reflections && m_source ? m_source->sceneScale : 1; }
+    const probes::Header *reflectionHeader() const { return m_captures.header(); }
+    float reflectionSceneScale() const { return m_captures.image && m_source ? m_source->sceneScale : 1; }
     VkDescriptorImageInfo surfaceDescriptor() const;
     VkDescriptorImageInfo occlusionDescriptor() const;
     VkDescriptorImageInfo visibilityDescriptor() const;
@@ -122,13 +122,7 @@ namespace remix::forward::bake {
     std::shared_ptr<const scene::BakeScene> m_source;
     std::vector<std::shared_ptr<Job>> m_obsolete;
     std::shared_ptr<Volume> m_volume;
-    std::shared_ptr<probes::ImageAsset> m_reflections;
-    // Source 2 admission retained for later capture edits, independently of
-    // the diffuse GPU publication. Jobs borrow their own immutable owner.
-    std::shared_ptr<const probes::PlacementSeeds> m_reflectionSeeds;
-    std::shared_ptr<const probes::LocalCaptureSource> m_localReflections;
-    uint64_t m_reflectionSceneHash = 0;
-    probes::CaptureContent m_reflectionContent;
+    probes::CapturePublication m_captures;
     std::array<Submission, gpuFrameCount> m_submissions;
     std::unique_ptr<Buffer> m_empty, m_emptySunDepth;
     std::unique_ptr<probes::ImageAsset> m_emptyReflections;

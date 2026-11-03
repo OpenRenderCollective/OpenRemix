@@ -397,12 +397,12 @@ namespace remix::forward::bake {
     }
     if (!preserveDiffuse) {
       m_volume.reset();
-      m_reflectionSeeds.reset();
+      m_captures.seeds.reset();
     }
-    m_reflections.reset();
-    m_localReflections.reset();
-    m_reflectionSceneHash = 0;
-    m_reflectionContent = {};
+    m_captures.image.reset();
+    m_captures.local.reset();
+    m_captures.sceneHash = 0;
+    m_captures.content = {};
     m_statistics.probes = m_statistics.completed = 0;
   }
   void Controller::selectFrame(uint32_t slot) {
@@ -948,20 +948,20 @@ namespace remix::forward::bake {
       m_job->localReflections->image->recordUpload(command);
       m_submissions[m_slot].localReflectionUpload = m_job->localReflections->image;
     }
-    m_localReflections = m_job->localReflections;
+    m_captures.local = m_job->localReflections;
     probes::dumpCaptures(m_hash, m_job->reflections.captureView());
-    m_reflectionContent = m_job->reflections.content;
+    m_captures.content = m_job->reflections.content;
     if (const char *prefix = std::getenv("REMIX_DEBUG_BAKE_CAPTURE_PREFIX"); prefix && *prefix) {
       const auto specular = probes::serialize(m_job->reflections.filteredView());
       probes::dumpPublishedData(".probes-published.bin", specular.data(), specular.size());
     }
     // The transfer and its visibility barrier precede this frame's surface
     // draws. Other frame slots keep their own previous volume alive.
-    m_reflectionSceneHash = volume->hash;
-    m_reflections = std::move(reflections);
+    m_captures.sceneHash = volume->hash;
+    m_captures.image = std::move(reflections);
     m_volume = std::move(volume);
     if (!diffusePublished) {
-      m_reflectionSeeds = m_job->reflectionSeeds;
+      m_captures.seeds = m_job->reflectionSeeds;
       m_submissions[m_slot].upload = m_volume;
     }
     if (m_job->inMemoryDiffuse) {
@@ -1170,10 +1170,10 @@ namespace remix::forward::bake {
             throw std::invalid_argument("Invalid bake batch settings");
           auto job = std::make_shared<Job>();
           job->source = source;
-          if (m_volume && m_reflectionSeeds) {
+          if (m_volume && m_captures.seeds) {
             job->inMemoryDiffuse = true;
             job->publishedDiffuse = m_volume;
-            job->reflectionSeeds = m_reflectionSeeds;
+            job->reflectionSeeds = m_captures.seeds;
             job->reflectionOwnership = m_volume->mixedLights;
           }
           const auto physical = m_physical;
@@ -1388,7 +1388,7 @@ namespace remix::forward::bake {
     m_statistics.active = bool(m_volume);
     m_statistics.activeHash = m_volume ? m_volume->hash : 0;
     m_submissions[m_slot].sampled = m_volume;
-    m_submissions[m_slot].reflectionSampled = m_reflections;
+    m_submissions[m_slot].reflectionSampled = m_captures.image;
     const auto used = memory();
     m_statistics.memoryBytes = used.buffers + used.images + used.acceleration;
   }
@@ -1402,7 +1402,7 @@ namespace remix::forward::bake {
     return m_volume && m_volume->sunDepth ? m_volume->sunDepth->values() : m_emptySunDepth->descriptor();
   }
   probes::Descriptors Controller::reflectionDescriptor() const {
-    return m_reflections ? m_reflections->descriptors() : m_emptyReflections->descriptors();
+    return m_captures.descriptor(m_emptyReflections.get());
   }
   VkDescriptorImageInfo Controller::surfaceDescriptor() const {
     const auto &image = m_volume && m_volume->surfaceAtlas ? m_volume->surfaceAtlas : m_emptySurface;
@@ -1495,8 +1495,8 @@ namespace remix::forward::bake {
     addVolume(m_volume);
     if (m_job) addVolume(m_job->publishedDiffuse);
     for (const auto &job : m_obsolete) addVolume(job->publishedDiffuse);
-    addReflection(m_reflections);
-    addLocalImage(m_localReflections);
+    addReflection(m_captures.image);
+    addLocalImage(m_captures.local);
     for (const auto &submission : m_submissions) {
       addVolume(submission.upload);
       addVolume(submission.sampled);

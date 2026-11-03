@@ -22,7 +22,7 @@ namespace remix::forward::bake {
     if (job.reflectionRecovery && !job.publishedDiffuse) {
       job.publishedDiffuse = prepareVolume(command);
       m_volume = job.publishedDiffuse;
-      m_reflectionSeeds = job.reflectionSeeds;
+      m_captures.seeds = job.reflectionSeeds;
       m_submissions[m_slot].upload = m_volume;
     }
     using CaptureStep = probes::AutomaticCapture::Step;
@@ -160,9 +160,9 @@ namespace remix::forward::bake {
     if (!m_job) return;
     const auto image = m_job->reflections.recordImageUpload(command);
     if (!image) return;
-    m_reflections = image;
-    m_reflectionSceneHash = m_job->source->contentHash;
-    m_reflectionContent = m_job->reflections.content;
+    m_captures.image = image;
+    m_captures.sceneHash = m_job->source->contentHash;
+    m_captures.content = m_job->reflections.content;
     m_submissions[m_slot].reflectionUpload = image;
   }
 }

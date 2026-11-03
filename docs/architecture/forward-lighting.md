@@ -878,3 +878,10 @@ Workers never read the controller's retained owner, and obsolete/submitted jobs
 retain their inputs through normal cancellation and fence retirement. This moves
 an existing shared ownership reference; it adds no scene traversal, allocation,
 GPU resource or pass. Independent producer scheduling remains separate work.
+
+The retained image, optional local source, placement admission, source identity
+and content diagnostics are grouped in `probes::CapturePublication`. It owns no
+diffuse volume, source snapshot, worker, transport or scheduler. Borrowed source,
+header and descriptor views live with that capture state. The controller retains
+its existing publication order, explicit invalidation policy and frame-owned
+image references; grouping does not allocate another owner or add dispatch.
