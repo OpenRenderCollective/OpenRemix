@@ -1,8 +1,11 @@
 #pragma once
 #include "forward/probes/image_data.h"
 #include "forward/probes/composition.h"
+#include "forward/probes/reference_provenance.h"
 #include "forward/resources.h"
+#include <array>
 #include <memory>
+#include <span>
 
 namespace remix::forward::probes {
   struct CoverageImagePlan;
@@ -16,7 +19,7 @@ namespace remix::forward::probes {
   class ImageAsset {
   public:
     ImageAsset(VkPhysicalDevice physical, VkDevice device, const Data &data,
-                 std::stop_token cancelled = {});
+                 std::stop_token cancelled = {}, ReferenceProvenance reference = {});
     ImageAsset(VkPhysicalDevice physical, VkDevice device, const Composition &composition);
     ImageAsset(VkPhysicalDevice physical, VkDevice device, const CoverageImagePlan &plan);
     ~ImageAsset();
@@ -36,6 +39,10 @@ namespace remix::forward::probes {
     Descriptors descriptors() const { return {metadata(), radiance()}; }
     const Image &image() const { return *m_image; }
     const Header &header() const { return m_header; }
+    // CPU-only metadata follows the same layer mapping as normalization SH.
+    std::span<const ReferenceProvenance> references() const {
+      return std::span(m_references).first(m_header.parameters[0]);
+    }
     uint64_t bufferBytes() const;
     uint64_t imageBytes() const { return m_image->bytes; }
   private:
@@ -44,6 +51,7 @@ namespace remix::forward::probes {
     VkDevice m_device;
     Header m_header;
     Normalization m_normalization;
+    std::array<ReferenceProvenance, maxProbes> m_references{};
     VkSampler m_sampler = VK_NULL_HANDLE;
     std::unique_ptr<Buffer> m_metadata, m_staging;
     std::unique_ptr<Image> m_image;
