@@ -210,6 +210,10 @@ Still required for the complete modularity/performance objective:
   compatible reflection edits preserve it and full invalidation retires it.
   Refresh workers retain private immutable seed ownership. No transport work or
   steady-frame query is added; broader independent scheduling remains open.
+- Retained capture assets/admission/content now have a reflection-owned
+  CapturePublication type with borrowed source/header/descriptor views. Preset
+  invalidation and frame image lifetime remain explicit in the controller; the
+  value contains no diffuse publication or transport/scheduling owner.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Composed optical sunlight has fixture coverage; broader optical/probe edge
