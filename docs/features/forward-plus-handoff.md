@@ -114,14 +114,16 @@ That fix does not establish fitted Construct outdoor coverage.
 
 ## What remains unfinished
 
-1. Finish the remaining recipe orchestration and general scene/component reflection
-   reference provenance. Existing query sources own their shader resources;
+1. Qualify additional provider recipes against resource/admission and reflection
+   reference contracts. Existing query sources own their shader resources;
    captures have separate publications/caches and a standalone lifecycle. The
    default recipe now owns its combined finisher separately from capture scheduling,
    while retaining shared transport/admission. Frozen reference identities and
    binding-time neutral metadata views are implemented for default sources. Mixed
-   identities neutralize the whole image; further component recipes still need
-   qualified domain contracts. Retain work reuse and avoid duplicate energy.
+   identities neutralize the whole image; further component recipes need their
+   own qualified domain contracts. The default shared budget is intentional;
+   do not create independent jobs merely to make every technique run in parallel.
+   Retain work reuse and avoid duplicate energy.
 2. Later: evaluate HLSL/Slang and single-file shader authoring. Build opt-in adapter shader
    mappings and a Refract proof first. No adapter-supplied material program loader,
    .vfx/.shader compiler, or Source shader compatibility system exists yet.
@@ -154,10 +156,13 @@ Replacement compilation exercises actual world, metal, viewmodel, live, water
 and resolve passes with default storage/implementations physically absent.
 Numerical GPU checks cover mixed shadows, styles, cache and provider transitions.
 Shader-equivalence checks are evidence about checked work, not universal FPS
-acceptance. Consolidated Crossfire/Construct comparisons preserve the checked
+acceptance. Current shader variants are byte-identical to the material-response
+checkpoint for 17 main and 23 adapted-PR cases; only a sampler rationale comment
+differs in those shader trees. Consolidated Crossfire/Construct comparisons preserve the checked
 output/settings/draws and have overlapping GPU timing ranges. The latest frame
-snapshot also has an isolated Crossfire comparison. Construct retains a
-case-dependent CPU-recording residual that needs follow-up. This does not
+snapshot also has an isolated Crossfire comparison. Earlier large armed CPU
+residuals were not reproduced by the fixed-warm-up follow-up. The latest host
+ownership/plan changes still need matched qualification. This does not
 complete the no-overhead gate. 300 FPS at 1920x1080 and the broader runtime
 optimization queue are not achieved.
 
