@@ -957,7 +957,7 @@ seven-owner static corrections on surfaces/dynamic probes and baked sunlight
 with moving-caster corrections. Real-map hybrid/optical edge quality, reflection-reference provenance and matched runtime
 performance remain open.
 PR #37 now adapts its whole-field cascade source to the incoming query at
-`61d7e605` on its own branch. It remains unmerged and undeployed. Its build,
+`4da87f3b` on its own branch. It remains unmerged and undeployed. Its build,
 replacement-source compilation, policy and five focused GPU checks pass.
 Normalized default/ray shader variants are unchanged; checked cascade variants
 have no opcode-count increases. Matched runtime performance is still unqualified.
@@ -969,8 +969,14 @@ The actual cascade query also compiles through composed world/prepassed,
 viewmodel/early-viewmodel, metal, water and ray-water receiver contexts without
 `LIVE_GI`. Existing ray composition and cascade GPU regressions pass; these new
 checks qualify the shader contract, not composed cascade runtime behavior.
-Baked-direct/cascade host pipeline selection, numerical qualification and optical
-lookup behavior remain outstanding.
+The branch now selects specialized composed world/terrain/viewmodel and optical
+pipelines through `CascadeIncoming`. Transition tests retain local direct energy
+while replacing old baked sky, with independent cubemap capture and target/provider
+changes. Optical and viewmodel sunlight/mixed-shadow checks pass at 1x/2x/4x.
+Water uses a typed internal diffuse mode; legacy stage inputs are unchanged for
+all 173 existing stages. Cascade incoming remains screen-space: missing optical
+gather samples use its existing fallback, and viewmodels use neighbourhood incoming.
+Real-map quality, general normalization provenance and matched FPS remain open.
 Preserve the combined Source 2 fast path while extending providers.
 
 ### Receiver-direct irradiance producer
