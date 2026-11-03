@@ -99,6 +99,14 @@ identity must be part of the design before accepting adapter-supplied programs.
 
 ## Modules and presets
 
+The private `shadows::SunMaps` owner retains the world sun image, per-layer views
+and framebuffers, and frozen-projection cache. The renderer borrows its targets
+for the existing cascade draw schedule; this boundary adds no per-draw callback
+or shader dispatch. Local shadows and world sun maps borrow the same compatible
+depth render pass. Retire those resource owners before destroying that pass,
+after the renderer's outstanding fences have completed. Viewmodel sunlight keeps
+its separate close-up owner and uses the world image only as its existing fallback.
+
 Resolve configuration into an immutable per-frame lighting plan on the CPU. A
 preset supplies defaults; explicit component overrides produce a Custom selection.
 Keep quality parameters independent of technique selection. Preserve existing

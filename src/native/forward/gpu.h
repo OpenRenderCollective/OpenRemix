@@ -16,7 +16,7 @@
 #include "forward/renderer.h"
 #include "forward/resources.h"
 #include "forward/shadows/maps.h"
-#include "forward/shadows/sun_cache.h"
+#include "forward/shadows/sun_maps.h"
 #include "forward/water/pass.h"
 #include "forward/viewmodel/target.h"
 #include "platform/gpu_frames.h"
@@ -74,9 +74,8 @@ namespace remix::forward {
     VkPipeline earlyDepthPipeline = VK_NULL_HANDLE, earlyDepthLightmapPipeline = VK_NULL_HANDLE,
                earlyDepthBatchPipeline = VK_NULL_HANDLE;
     void recordCascades(VkCommandBuffer command);
-    std::array<VkFramebuffer, sunShadowLayers> shadowFramebuffers{};
-    std::array<VkImageView, sunShadowLayers> shadowViews{};
-    std::unique_ptr<Image> color, depth, resolved, shadow;
+    std::unique_ptr<Image> color, depth, resolved;
+    std::unique_ptr<shadows::SunMaps> sunMaps;
     std::unique_ptr<Image> normalGuide, reflectanceGuide;
     std::unique_ptr<Reflections> reflections;
     std::unique_ptr<water::Pass> waterPass;
@@ -137,7 +136,6 @@ namespace remix::forward {
     shadows::Selection shadowSelection;
     HighlightSelection highlightSelection;
     std::weak_ptr<const mixed::Bindings> highlightSource;
-    shadows::SunCache sunCache;
     std::weak_ptr<const scene::BakeScene> staticBoundsSource;
     // Static shadow casters: the host's ready bake scene, or one implied by
     // this frame's static-classified draws (rebuilt only when that set changes),

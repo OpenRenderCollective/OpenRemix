@@ -41,7 +41,7 @@ namespace remix::forward {
       vkUpdateDescriptorSets(device, 0, nullptr, laterCount, laterCopies);
       const auto constants = frame.viewModelConstants->descriptor();
       const VkDescriptorImageInfo sun{shadowSampler,
-          viewModelSun ? viewModelSun->view() : shadow->view, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
+          viewModelSun ? viewModelSun->view() : sunMaps->view(), VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
       const VkWriteDescriptorSet overrides[] = {
           {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = frame.viewModelScene,
            .dstBinding = 0, .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,

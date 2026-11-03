@@ -360,7 +360,7 @@ namespace remix::forward {
     if (clusterFallback && firstBaked != lights.end()) data.clusterInfo[1] |= clusteredBakedTail;
     data.target = {extent.width, extent.height, uint32_t(lights.size()),
                    uint32_t(options.shadows && sun.isDistant)};
-    frame.staticSunDirty = sunCache.update(shadowPlanner.source(), data.target[3] != 0, data.shadows, options.shadowResolution);
+    frame.staticSunDirty = sunMaps->update(shadowPlanner.source(), data.target[3] != 0, data.shadows);
     const bool refreshLocal = std::any_of(shadowSelection.dirty.begin(), shadowSelection.dirty.end(),
                                          [](bool dirty) { return dirty; });
     const bool refreshSun = data.target[3] && std::any_of(frame.staticSunDirty.begin(), frame.staticSunDirty.end(),
@@ -497,7 +497,7 @@ namespace remix::forward {
                        i == 0 ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                    .pBufferInfo = &buffers[i]};
     const VkDescriptorImageInfo images[] = {
-        {shadowSampler, shadow->view, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL},
+        {shadowSampler, sunMaps->view(), VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL},
         {sampler, resolved ? resolved->view : color->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
         {sampler, depth->view, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL},
         reflections ? reflections->output()

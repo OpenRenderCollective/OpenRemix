@@ -126,12 +126,7 @@ namespace remix::forward {
     for (auto handle : {worldFramebuffer, earlyDepthFramebuffer})
       if (handle)
         vkDestroyFramebuffer(device, handle, nullptr);
-    for (auto handle : shadowFramebuffers)
-      if (handle)
-        vkDestroyFramebuffer(device, handle, nullptr);
-    for (auto handle : shadowViews)
-      if (handle)
-        vkDestroyImageView(device, handle, nullptr);
+    sunMaps.reset();
     for (auto handle : {worldPass, shadowPass, earlyDepthPass})
       if (handle)
         pipeline::destroyRenderPass(device, handle, nullptr);

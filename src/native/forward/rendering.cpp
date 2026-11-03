@@ -246,7 +246,7 @@ namespace remix::forward {
         continue;
       const VkRenderPassBeginInfo pass{.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
                                        .renderPass = shadowPass,
-                                       .framebuffer = shadowFramebuffers[c],
+                                       .framebuffer = sunMaps->framebuffer(c),
                                        .renderArea = {{0, 0}, size},
                                        .clearValueCount = 1,
                                        .pClearValues = &shadowClear};

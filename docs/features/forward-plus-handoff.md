@@ -67,6 +67,7 @@ private report. The most recent source is not the owner's older playable binary.
 | Selected shade entry | `forward/shaders/shading-model.glsl`: `shadeSurface(surface, receiver)`; default aliases the standard model for world and viewmodels |
 | Diffuse receiver lookup | `forward/shaders/receiver-lighting.glsl`: selected private contexts; `diffuse-composed.glsl` combines baked direct and incoming |
 | CPU ownership policy | `forward/lighting_plan.h`, `provider_plan.h`: energy ownership, capabilities and resource dependencies |
+| Sun visibility resources | `forward/shadows/sun_maps.h`: image, layer targets and frozen-projection cache; renderer retains the existing draw schedule |
 | Techniques / preset | `forward/techniques.h`, `forward/presets.h`, Rendering panel: component selectors and Source 2 / derived Custom |
 | Reflection lighting | `forward/shaders/reflection-environment.glsl`: source-owned cube/sky fallback; `reflection-transport.glsl`: current-frame radiance/confidence |
 | Packed transport | `forward/shaders/reflection-guide.glsl`, `reflection-guide-reference.glsl`: geometry packing and paired normalization-domain adapter |
