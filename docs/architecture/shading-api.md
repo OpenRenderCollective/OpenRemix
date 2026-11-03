@@ -120,6 +120,12 @@ template with one caller-specific miss exit. This preserves the standard early
 returns without a runtime shader callback or duplicated transport implementation.
 The body template is backend implementation detail; material authors call functions.
 
+The shadow-filter GPU fixture compares the standard response with composition of
+the raw query across a filtered moving-shadow boundary. It checks positive,
+known-black and missing captured fields, including finite-emitter energy outside
+the analytic cone and exactly unshadowed receivers. Raw queries retain their full
+unit-irradiance contract even when a standard mixed residual would be zero.
+
 ## Receiver enumeration and sunlight
 
 `localLightsForReceiver(receiver, aggregate)` returns a `LocalLightList` with a
