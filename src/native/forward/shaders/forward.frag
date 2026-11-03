@@ -21,7 +21,7 @@ layout(early_fragment_tests) in;
 #include "light-contribution.glsl"
 #include "emitter.glsl"
 #include "surface.glsl"
-#include "reflection-guide.glsl"
+#include "reflection-guide-reference.glsl"
 #define STYLED_BAKE
 #include "irradiance.glsl"
 #include "style-lighting.glsl"
@@ -127,8 +127,7 @@ void main() {
   ShadingResult shaded = shadeStandardSurface(evaluated, receiver);
   result = shaded.color;
 #ifdef REFLECTION_GUIDES
-  outNormalRoughness = packReflectionGuide(shaded.normal, shaded.roughness,
-                                          lightingReferenceLuminance(shaded.reflectionReference, Source2StaticLightingReference));
+  outNormalRoughness = packReflectionGuide(shaded.normal, shaded.roughness, shaded.reflectionReference);
   // Pass-owned RGBA8 encoding: alpha retains ordinary selection or a
   // one-based cubemap layer from this same covered MSAA sample.
   outReflectance = shaded.hasReflectance

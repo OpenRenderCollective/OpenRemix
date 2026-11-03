@@ -1239,3 +1239,12 @@ changes some raw SPIR-V declaration order; it is not byte-identical. This is not
 a new matched runtime FPS study. Scene/component normalization provenance remains
 separate work; the default environment still accepts only the typed Source 2
 static reference domain.
+
+The scalar reflection-guide convention belongs to
+`reflection-guide-reference.glsl`. Its typed `packReflectionGuide` overload and
+`reflectionGuideReference` decoder form one adapter: replace them together when
+a provider uses another normalization domain. Material passes and the reflection
+resolve do not assign the Source 2 domain themselves. The default adapter rejects
+foreign references and keeps the existing RGBA16F layout; no extra guide image
+or domain channel is allocated. This is a compile-selected convention, not
+per-pixel support for mixed domains or proof of scene/component compatibility.
