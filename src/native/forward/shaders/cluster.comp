@@ -2,6 +2,7 @@
 #extension GL_GOOGLE_include_directive : require
 #define CLUSTER_BUILD
 #include "bindings.glsl"
+#include "local-light-storage.glsl"
 layout(local_size_x = 64) in;
 shared vec4 lightBounds[64];
 vec3 viewPoint(vec2 ndc, float depth) {

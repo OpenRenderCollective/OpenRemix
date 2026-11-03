@@ -171,6 +171,7 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
     # It supplies queries only: the real standard material must acquire its
     # response adapter from the shared material module, not this fixture.
     (tree / "shaders/light-sample.glsl").unlink()
+    (tree / "shaders/local-light-storage.glsl").unlink()
     (tree / "shaders/occlusion.glsl").unlink()
     (tree / "shaders/local-shadows.glsl").unlink()
     shutil.copyfile(root / "tests/forward/shaders/custom-local-source.glsl",
@@ -188,7 +189,7 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
         subprocess.run([validator, "--target-env", "vulkan1.1", str(binary)], env=env, check=True)
     shutil.copyfile(root / "src/native/forward/shaders/light-sample.glsl",
                     tree / "shaders/light-sample.glsl")
-    for name in ("occlusion.glsl", "local-shadows.glsl"):
+    for name in ("occlusion.glsl", "local-shadows.glsl", "local-light-storage.glsl"):
         shutil.copyfile(root / "src/native/forward/shaders" / name, tree / "shaders" / name)
     shutil.copyfile(root / "src/native/forward/shaders/local-lighting.glsl",
                     tree / "shaders/local-lighting.glsl")
@@ -220,7 +221,7 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
                             ("custom-environment.glsl", "reflection-environment.glsl")):
         shutil.copyfile(root / "tests/forward/shaders" / fixture, tree / "shaders" / target)
     for name in ("baked-storage.glsl", "irradiance.glsl", "style-lighting.glsl", "lightmap.glsl",
-                 "occlusion.glsl", "local-shadows.glsl", "light-sample.glsl"):
+                 "occlusion.glsl", "local-shadows.glsl", "light-sample.glsl", "local-light-storage.glsl"):
         (tree / "shaders" / name).unlink()
     for name, (stage, defines) in {
         "unified-world": (source, []),

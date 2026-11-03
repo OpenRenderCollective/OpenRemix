@@ -1,6 +1,7 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
 #include "../../../src/native/forward/shaders/bindings.glsl"
+#include "../../../src/native/forward/shaders/local-light-storage.glsl"
 layout(local_size_x = 64) in;
 layout(set = 0, binding = 5, std430) writeonly buffer Results { uvec4 results[]; };
 void main() {
