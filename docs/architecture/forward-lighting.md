@@ -1014,3 +1014,20 @@ without a layer scan. Nonempty images add
 one aligned `GpuHeader` of retained metadata (11,280 bytes before alignment);
 empty fallback images reuse one view. Allocation count is unchanged. This memory
 tradeoff and broad frame-time acceptance remain part of performance qualification.
+
+### Direct-only material dependencies
+
+Frozen scene creation computes combined and receiver-direct material identities
+in one pass. Receiver-direct excludes the roughness scalar, image content and
+roughness remapping: straight visibility and measured smooth-boundary transport
+do not evaluate them. Combined transport keeps its existing hash byte order.
+The direct domain is versioned independently, so older direct caches miss once.
+
+Ordered receiver-binding identity uses the same direct records, while weak live
+material/surface pointers and instance/chart identities remain mandatory. An edit
+to the same live material can retain a compatible direct publication; replacing
+the material requires rebinding and may recover its data through the disk cache.
+Alpha coverage, measured optical inputs and all other conservative material
+dependencies remain in the direct key. No shader or frame-loop query is added;
+snapshot preparation hashes a second small record stream without rereading image
+pixels. Broader material dependency pruning and real-map reuse timing remain open.

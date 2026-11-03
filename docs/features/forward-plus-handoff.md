@@ -12,7 +12,7 @@ context, not proof that an old experiment is still enabled or a defect is fixed.
 | Item | Current state |
 | --- | --- |
 | Native checkout | `OpenRemix/`, `forward-plus-renderer` |
-| Native modular code checkpoint | `4d3ebe66` (read the branch history for subsequent changes) |
+| Native modular code checkpoint | `a2f1fb74` (read the branch history for subsequent changes) |
 | Native official remote | `https://github.com/OpenRenderCollective/OpenRemix.git` |
 | Adapter checkout | `garrys-mod-rtx-remixed-2/`, `forward-plus-renderer` |
 | Adapter checkpoint | `952a8bf` (profiling observer-cost qualification; upstream integration retained) |
