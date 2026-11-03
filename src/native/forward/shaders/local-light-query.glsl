@@ -1,8 +1,6 @@
 // Function-body template shared by raw sampling and the standard shading model.
 // LOCAL_LIGHT_MISS exits using the caller's result type. Keeping that exit in
 // the standard function preserves its existing early-rejection control flow.
-// LOCAL_LIGHT_FINAL_RESPONSE may defer work that cannot affect that response;
-// raw samplers must not define it.
   vec4 surfaceLightmap = receiver.coordinate;
   Light light = lights[index];
   bool aggregateDiffuse = aggregateReceiver && light.corners[2].w > .5;
@@ -28,21 +26,8 @@
 #else
   bool probeCorrection = aggregateDiffuse && movingShadow;
 #endif
-#if defined(LOCAL_LIGHT_FINAL_RESPONSE) && !defined(ZERO_DIFFUSE_MATERIAL)
-#define LOCAL_LIGHT_DEFER_DIRECTIONAL
-  // Only the final standard response can discard a zero mixed residual. Raw
-  // queries retain full unit irradiance, even for an unshadowed receiver.
-  bool deferredDirectional = indexedSurfaceDirect() && probeCorrection && surfaceLightmap.w >= .5;
-#define LOCAL_LIGHT_REJECT_IF_READY(condition) if ((condition) && !deferredDirectional) LOCAL_LIGHT_MISS
-#else
-#define LOCAL_LIGHT_REJECT_IF_READY(condition) if (condition) LOCAL_LIGHT_MISS
-#endif
   float attributedDiffuse = bakedDiffuse ? directIrradiance[min(directChannel, 3u)] : 0;
-  if (indexedSurfaceDirect() && (!aggregateDiffuse || probeCorrection)
-#ifdef LOCAL_LIGHT_DEFER_DIRECTIONAL
-      && !deferredDirectional
-#endif
-      )
+  if (indexedSurfaceDirect() && (!aggregateDiffuse || probeCorrection))
     bakedDiffuse = surfaceDirectionalField(receiver.chart, uint(light.shaping.w), surfaceLightmap, n, receiver.bounds, attributedDiffuse);
   vec3 l = delta / distance;
   float shape = emitterConeWeight(light.directionCone.xyz, light.directionCone.w,
@@ -50,7 +35,8 @@
   // A zero analytic response needs no filtered masks or shadow filtering.
   // Retained direct SH can still contain a finite emitter crossing the cone
   // boundary even when its centre response vanishes.
-  LOCAL_LIGHT_REJECT_IF_READY(shape <= 0 && !bakedDiffuse && !(probeCorrection && surfaceLightmap.w < .5));
+  if (shape <= 0 && !bakedDiffuse && !(probeCorrection && surfaceLightmap.w < .5))
+    LOCAL_LIGHT_MISS;
   // Clear is recorded only when every receiver sample is exactly one. Its
   // working channel has already been released, so no filtered lookup is needed.
   float visibility = 1;
@@ -80,27 +66,13 @@
     }
   }
   // Probe SH, like surface SH, may retain a finite emitter crossing the cone.
-  LOCAL_LIGHT_REJECT_IF_READY(shape <= 0 && !bakedDiffuse);
-  LOCAL_LIGHT_REJECT_IF_READY(!bakedDiffuse && visibility <= 0);
+  if (shape <= 0 && !bakedDiffuse)
+    LOCAL_LIGHT_MISS;
+  if (!bakedDiffuse && visibility <= 0)
+    LOCAL_LIGHT_MISS;
   // A covered bake already contains static visibility. Without a moving
   // caster, its correction is exactly zero: neither unit SH nor PCF is needed.
   float moving = baked && !movingShadow ? 1 : localShadowVisibility(light, p, receiverNormal, !baked);
-#ifdef LOCAL_LIGHT_DEFER_DIRECTIONAL
-  if (deferredDirectional) {
-    // Exact equality only: do not turn small PCF residuals into fully lit ones.
-    if (moving != 1)
-      bakedDiffuse = surfaceDirectionalField(receiver.chart, uint(light.shaping.w),
-          surfaceLightmap, n, receiver.bounds, attributedDiffuse);
-    // A missing field cannot retain finite-emitter energy outside the analytic
-    // cone. These guards now run after the deferred ownership decision.
-    if (shape <= 0 && !bakedDiffuse)
-      LOCAL_LIGHT_MISS;
-    if (!bakedDiffuse && visibility <= 0)
-      LOCAL_LIGHT_MISS;
-  }
-#undef LOCAL_LIGHT_DEFER_DIRECTIONAL
-#endif
-#undef LOCAL_LIGHT_REJECT_IF_READY
   if (moving <= 0 && !aggregateDiffuse)
     LOCAL_LIGHT_MISS;
   float solidAngle;
