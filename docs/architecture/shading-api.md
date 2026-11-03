@@ -793,3 +793,11 @@ like opaque props. A replacement source may implement both queries using its own
 transport without changing water's material. The alternate-source fixture swaps
 sun queries independently through world, viewmodel, live-GI, water and ray-water
 material variants. Qualification of baked/mixed optical sunlight remains open.
+
+### Sun transport and material response
+
+`sun.glsl` owns visibility and incident sunlight samples. `sun-response.glsl`
+composes those samples with material BRDF lobes; it has no pass resources and
+can be used without the default sun transport. The pass includes both for the
+standard material. Custom models may consume `SunLightSample` directly or reuse
+that response, while replacement sun sources retain the same sample contract.

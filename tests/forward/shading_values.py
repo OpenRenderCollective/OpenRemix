@@ -31,6 +31,10 @@ common = """#version 450
 #include "lighting-reference.glsl"
 #include "sun-values.glsl"
 #include "sun-values.glsl"
+#include "brdf.glsl"
+#include "light-contribution.glsl"
+#include "sun-response.glsl"
+#include "sun-response.glsl"
 #include "local-light-values.glsl"
 #include "local-light-values.glsl"
 """
@@ -50,7 +54,8 @@ stages = {
       ReflectionReceiver query = ReflectionReceiver(vec3(0), vec3(0), material.normal,
           vec3(0,0,1), material.roughness, -1, 0u, uvec2(0));
       SunLightSample sun = SunLightSample(vec3(0,0,1), vec3(1), 0, 1);
-      ReflectionSample reflected = ReflectionSample(query.direction * sun.diffuseIrradiance, 1);
+      LightContribution sunlight = composeSunLight(sun, BrdfLobes(material.color.rgb, vec3(0)));
+      ReflectionSample reflected = ReflectionSample(query.direction * sunlight.diffuse, 1);
       ReceiverLighting diffuse = ReceiverLighting(vec3(.2), analyticDirectLighting(true), false);
       result = vec4(resolveReflection(reflected, material.color.rgb) + material.emission +
                     composeDiffuseLight(diffuse, material.color.rgb), material.color.a);

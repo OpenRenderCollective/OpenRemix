@@ -17,6 +17,8 @@ Implemented and checked:
   Source 2 shaders remain byte-identical. A resource-free shading-result initializer gives
   custom models safe defaults. Material results carry unpacked normal/roughness
   and RGB reflectance; the pass adapter owns guide and cubemap-layer byte encoding.
+  Sun transport and material BRDF response now live in separate modules; the
+  response can compile without pass resources or the default transport.
   Alternate shading, diffuse, environment, local and sun
   sources compile through actual world/viewmodel/water passes. Optical sunlight
   now comes through a source query; water uses the returned direction and its

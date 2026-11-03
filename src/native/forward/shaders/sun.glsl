@@ -39,11 +39,3 @@ SunLightSample sampleSunLight(vec4 coordinate, vec4 bounds, float unitIrradiance
 SunLightSample sampleUnbakedSunLight(vec3 p, float depth, vec3 n, vec3 receiverNormal) {
   return sampleSunLight(vec4(0), vec4(0), 0, p, depth, n, receiverNormal, false);
 }
-LightContribution composeSunLight(SunLightSample lighting, BrdfLobes response) {
-  return LightContribution(response.diffuse * lighting.diffuseIrradiance * lighting.radiance,
-                            response.specular * lighting.staticVisibility * lighting.radiance);
-}
-LightContribution shadeStandardSunLight(SunLightSample lighting, vec3 n, vec3 v,
-                                        vec3 base, float roughness, float metallic) {
-  return composeSunLight(lighting, brdfLobes(base, roughness, metallic, n, v, lighting.direction));
-}
