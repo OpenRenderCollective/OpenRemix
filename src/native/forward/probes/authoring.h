@@ -35,7 +35,8 @@ namespace remix::forward::probes {
     void record(VkCommandBuffer command, RasterRenderer &resources, const CaptureConfig &config,
                 const CaptureSource &automatic, bool fallback, bool captureReady = true);
     ReflectionSnapshot snapshot(const CaptureSource &automatic) const;
-    Descriptors descriptor(Descriptors automatic, ReferenceProvenance receiver) const;
+    // Borrowed from the publication retained by this provider/frame slots.
+    const ImageAsset *image() const;
     const Header *header() const;
     const LayerIdentities *identities() const;
     uint32_t receiverLayer(uint64_t sceneId, uint64_t volumeId) const; // one-based; zero uses ordinary selection

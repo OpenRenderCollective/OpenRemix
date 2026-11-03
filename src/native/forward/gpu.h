@@ -97,7 +97,9 @@ namespace remix::forward {
       const auto reference = volume ? volume->reflectionReference : probes::ReferenceProvenance{};
       const auto selected = localSelections.active();
       if (selected) return selected->image->descriptors(reference);
-      return captureProviders.descriptor(techniquePlan.capturePolicy.transport, baking->reflectionDescriptor(), reference);
+      if (const auto image = captureProviders.image(techniquePlan.capturePolicy.transport))
+        return image->descriptors(reference);
+      return baking->reflectionDescriptor();
     }
     std::unique_ptr<shadows::Maps> localMaps;
     shadows::Planner shadowPlanner;
