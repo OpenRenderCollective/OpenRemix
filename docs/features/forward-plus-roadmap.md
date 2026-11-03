@@ -180,6 +180,13 @@ Still required for the complete modularity/performance objective:
   not pass no-overhead acceptance: isolate opaque/depth/viewmodel differences
   using a nearer baseline and common frame cap before attributing the residual.
   Installed binaries/configuration were restored; no playable promotion.
+- A nearer-baseline A/B/B/A at a common 200 FPS cap compares `38c46f34`
+  with runtime `9e96d558`, matching quality/content/draws/world pixels. Current
+  GPU medians are 2.578-2.595 ms unarmed and 3.115-3.130 ms weapon versus baseline
+  2.583-2.655 and 3.118-3.210 ms; CPU intervals overlap. No repeatable recent
+  component-split overhead is observed in this scoped steady-state profile.
+  This does not resolve the older uncapped residual or qualify other providers,
+  maps, cold work or the 300 FPS weapon target. Install/config restored exactly.
 - Complete no-overhead acceptance with controlled CPU/GPU comparisons. Earlier
   host-FPS rankings reversed between runs despite matching lighting/draws. The
   completed A/B/B/A 1080p Crossfire study shows overlapping CPU/GPU ranges and
