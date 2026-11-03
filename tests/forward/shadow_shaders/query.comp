@@ -65,5 +65,9 @@ void main() {
       normalizeReflectionReference(vec3(1), receiver, LightingReference(0, capture.domain)).r,
       normalizeReflectionReference(vec3(1), LightingReference(-1, capture.domain), capture).r,
       normalizeReflectionReference(vec3(1), LightingReference(0, NoLightingReference), capture).r);
-
+  answers[index + 4u * inputData.count] = vec4(
+      lightingReferenceLuminance(receiver, capture.domain),
+      lightingReferenceLuminance(LightingReference(receiver.luminance, 42u), capture.domain),
+      lightingReferenceLuminance(unavailableLightingReference(), capture.domain),
+      lightingReferenceLuminance(LightingReference(0, capture.domain), capture.domain));
 }

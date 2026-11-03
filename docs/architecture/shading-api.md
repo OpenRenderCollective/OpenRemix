@@ -823,4 +823,39 @@ early gather needs dedicated depth attachments; ordinary Source 2 depth toggles
 keep their existing target contract. Late cascade dispatch is skipped when the
 resolved technique is inactive. This PR remains an opt-in implementation, with
 screen-space viewmodel approximation, ambient water fallback and perspective-only
-receiver depth matching; it is not merged into the main feature branch.
+receiver depth matching; it is not merged into the main feature branch. Cascade
+diffuse declares `NoLightingReference`, so live energy cannot be relabeled as
+the frozen static cubemap normalization field.
+
+### Sun transport and material response
+
+`sun.glsl` owns visibility and incident sunlight samples. `sun-response.glsl`
+composes those samples with material BRDF lobes; it has no pass resources and
+can be used without the default sun transport. The pass includes both for the
+standard material. Custom models may consume `SunLightSample` directly or reuse
+that response, while replacement sun sources retain the same sample contract.
+
+### Reference domains through material composition
+
+Diffuse sources declare `diffuseReflectionReferenceDomain()` independently of
+`ReceiverLighting.reflectionReference`, which still says whether a particular
+receiver has usable reference energy. The domain describes comparable lighting
+contents, not just units or validity. The baked source declares the frozen
+Source 2 static domain; live ray diffuse declares no compatible reference.
+Replacement sources choose their own contract rather than implicitly inheriting
+the baked domain.
+
+`ShadingResult.reflectionReference` and `ReflectionReceiver.reference` retain the
+typed `LightingReference` through standard/custom composition, viewmodel and
+water queries. The current world guide still stores a single luminance. Its
+pass adapter accepts only Source 2 static references, converting a foreign or
+unavailable domain to the existing unknown sentinel. Resolve reconstructs that
+explicit domain; the default environment source applies the same compatibility
+adapter before its scalar cubemap lookup. A compatible zero remains black.
+This prevents a foreign reference being silently relabeled as frozen static
+lighting without adding a guide attachment or changing the packed ABI.
+
+Source domain declarations specialize away in the default shaders. The current
+guide cannot transport arbitrary domains; a future provider requiring another
+domain across that pass must add a compatible guide adapter. Scene/generation
+and component provenance remain separate requirements.

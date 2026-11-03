@@ -12,8 +12,10 @@ is a screen-space approximation. Cascade GPU transitions, independent cubemap ca
 modes and 1x/4x MSAA pass synchronization validation. Existing Source 2 SSR,
 viewmodel, water and mixed-light regressions pass. Orthographic cascade receiver
 depth matching remains unsupported. The PR is synchronized with the complete
-baked/live context split through f4605565: cascades and rays share the chart-free
-live adapter, and capture-only refresh/publication updates are included. Cascade
+baked/live context split through d11fa570: cascades and rays share the chart-free
+live adapter, and capture-only refresh/publication updates are included. Sun
+transport/material response and typed reflection references are synchronized;
+cascades explicitly declare no frozen-static normalization reference. Cascade
 depth-mode toggles prepare their required early-depth targets; 1x/4x transition
 readbacks pass. The PR remains unmerged pending approval.
 
@@ -30,6 +32,8 @@ Implemented and checked:
   Source 2 shaders remain byte-identical. A resource-free shading-result initializer gives
   custom models safe defaults. Material results carry unpacked normal/roughness
   and RGB reflectance; the pass adapter owns guide and cubemap-layer byte encoding.
+  Sun transport and material BRDF response now live in separate modules; the
+  response can compile without pass resources or the default transport.
   Alternate shading, diffuse, environment, local and sun
   sources compile through actual world/viewmodel/water passes. Optical sunlight
   now comes through a source query; water uses the returned direction and its
@@ -47,7 +51,11 @@ Implemented and checked:
   or unknown references are neutral, and valid black remains distinct. The Source
   2 specialization preserves optimized sizes/opcode counts across ten checked
   material/resolve variants; GPU reference-energy sweeps pass. General scene and
-  component provenance across guide transport is still open.
+  component provenance across guide transport is still open. Typed normalization
+  references now survive material, viewmodel and water composition; diffuse
+  sources declare their domain separately from receiver availability. The current
+  scalar guide rejects foreign domains instead of relabeling their energy as
+  Source 2 static lighting; arbitrary domains still need a guide adapter.
 - Resolved provider dependencies drive live diffuse/ray scene and screen/ray
   reflection resources. Live diffuse ownership is queried independently of the
   ray-query implementation for receiver masks, highlights, mixed fallback and

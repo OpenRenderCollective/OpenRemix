@@ -1,6 +1,7 @@
 #ifndef OPENREMIX_SHADING_VALUES
 #define OPENREMIX_SHADING_VALUES
 #include "surface-values.glsl"
+#include "lighting-reference.glsl"
 // Material shading output values, independent of receiver/source resources.
 struct ShadingResult {
   vec4 color;
@@ -8,7 +9,7 @@ struct ShadingResult {
   float roughness;
   vec3 reflectance;
   bool hasReflectance;
-  float irradianceLuma; // irradiance / pi luminance; -1 means unavailable
+  LightingReference reflectionReference;
 };
 // Safe defaults for a diffuse/custom model. Models opt into a reflection
 // response/reference explicitly; no pass bindings or chart fields are needed.
@@ -19,7 +20,7 @@ ShadingResult initShadingResult(Surface surface, float opacity) {
   result.roughness = surface.roughness;
   result.reflectance = vec3(0);
   result.hasReflectance = false;
-  result.irradianceLuma = -1;
+  result.reflectionReference = unavailableLightingReference();
   return result;
 }
 #endif

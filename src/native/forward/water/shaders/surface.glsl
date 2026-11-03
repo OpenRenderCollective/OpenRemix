@@ -129,7 +129,7 @@ void main() {
   }
   float localLuma = lighting.reflectionReference ? dot(max(lighting.diffuse, vec3(0)), vec3(.2126, .7152, .0722)) : -1;
   ReflectionReceiver reflectionReceiver = ReflectionReceiver(worldPosition, worldPosition, n,
-      boundary.reflected, roughness, localLuma, 0u, uvec2(0));
+      boundary.reflected, roughness, LightingReference(localLuma, diffuseReflectionReferenceDomain()), 0u, uvec2(0));
   vec3 reflected = sampleEnvironmentReflection(reflectionReceiver);
   ScreenReflectionView screen = ScreenReflectionView(frame.camera, waterFrame.inverseCamera, frame.view,
       waterFrame.reflectionTrace, waterFrame.reflectionConfig, uvec2(extent));

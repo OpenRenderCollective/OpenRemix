@@ -101,3 +101,6 @@ ReceiverLighting evaluateReceiverLighting(vec3 position, vec3 normal, vec3 geome
 float diffuseReferenceLuma(vec3 position, vec3 normal) {
   return -1;
 }
+
+// Live cascade energy is not the frozen static capture reference.
+uint diffuseReflectionReferenceDomain() { return NoLightingReference; }

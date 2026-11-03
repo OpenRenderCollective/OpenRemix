@@ -149,7 +149,7 @@ int main(int argc, char **argv) try {
   gpu.input.create(fixture.physical, fixture.device, queries.size() * sizeof(Query),
                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   gpu.input.write(queries.data(), queries.size() * sizeof(Query));
-  gpu.output.create(fixture.physical, fixture.device, 4 * queries.size() * sizeof(Vec4),
+  gpu.output.create(fixture.physical, fixture.device, 5 * queries.size() * sizeof(Vec4),
                     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   const VkSamplerCreateInfo sampler{.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
                                     .magFilter = VK_FILTER_NEAREST,
@@ -238,7 +238,7 @@ int main(int argc, char **argv) try {
   vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0,
                        1, &read, 0, nullptr, 0, nullptr);
   fixture.finish();
-  std::vector<Vec4> values(4 * queries.size());
+  std::vector<Vec4> values(5 * queries.size());
   gpu.output.read(values.data(), values.size() * sizeof(Vec4));
   for (uint32_t mode = 0; mode < 2; ++mode) {
     float maximum = 0;
@@ -287,6 +287,10 @@ int main(int argc, char **argv) try {
     require(std::abs(reference[0] - visibility) < 1e-5f && reference[1] == 1 &&
                 reference[2] == 1 && reference[3] == 0,
             "Only compatible lighting references attenuate reflections; known black differs from unavailable");
+    const auto &packedReference = values[i + 4 * queries.size()];
+    require(std::abs(packedReference[0] - 2 * visibility) < 1e-5f &&
+                packedReference[1] == -1 && packedReference[2] == -1 && packedReference[3] == 0,
+            "Scalar guide adapters retain compatible black and reject unknown or foreign reference domains");
     require(neutral == Vec4{1, 1, 1, 1},
             "Bright receivers never amplify captures and dark/unknown/incompatible references remain neutral");
 
