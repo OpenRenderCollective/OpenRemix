@@ -29,7 +29,6 @@ namespace remix::forward::bake {
     uint64_t hash = 0;
     DiffuseContent content;
     IrradianceContents irradianceContents = IrradianceContents::Combined;
-    std::shared_ptr<const probes::PlacementSeeds> reflectionSeeds;
     bool directDiffuse = false, styledLighting = false;
     std::vector<uint32_t> groupedStyles; // complete direct groups, separate from permanent aggregate policy
     std::shared_ptr<SunDepth> sunDepth;
@@ -124,6 +123,9 @@ namespace remix::forward::bake {
     std::vector<std::shared_ptr<Job>> m_obsolete;
     std::shared_ptr<Volume> m_volume;
     std::shared_ptr<probes::ImageAsset> m_reflections;
+    // Source 2 admission retained for later capture edits, independently of
+    // the diffuse GPU publication. Jobs borrow their own immutable owner.
+    std::shared_ptr<const probes::PlacementSeeds> m_reflectionSeeds;
     std::shared_ptr<const probes::LocalCaptureSource> m_localReflections;
     uint64_t m_reflectionSceneHash = 0;
     probes::CaptureContent m_reflectionContent;

@@ -22,6 +22,7 @@ namespace remix::forward::bake {
     if (job.reflectionRecovery && !job.publishedDiffuse) {
       job.publishedDiffuse = prepareVolume(command);
       m_volume = job.publishedDiffuse;
+      m_reflectionSeeds = job.reflectionSeeds;
       m_submissions[m_slot].upload = m_volume;
     }
     using CaptureStep = probes::AutomaticCapture::Step;
