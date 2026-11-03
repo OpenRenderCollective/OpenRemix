@@ -146,7 +146,10 @@ Still required for the complete modularity/performance objective:
   with complete fallback outside probe coverage. Tests cover 1x/2x/4x and both
   water pipeline variants; default water shader variants remain unchanged.
   Qualify reflection-reference provenance, component-specific source identities
-  and real-map quality/performance; adapt the cascade PR to this contract.
+  and real-map quality/performance. PR #37 now uses the shared incoming query
+  on its unmerged branch (`295d7a95`), with build, policy, replacement-source and
+  five focused GPU checks passing. Baked-direct/cascade composition, optical
+  cascade lookups and matched runtime performance remain open.
   Preserve existing presets and the default Source 2 combined fast path.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
