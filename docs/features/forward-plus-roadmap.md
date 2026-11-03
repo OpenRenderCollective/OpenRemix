@@ -193,7 +193,12 @@ Still required for the complete modularity/performance objective:
   existing buffer write uploads the resolved size, with no new descriptors.
   Nine GPU checks pass; twelve cascade variants retain optimized bytes, and
   22 normal-lit shader/coverage comparisons match main after specialization.
-  Prior timing studies predate this frame-packet refactor; no new speedup claim.
+  A later matched Crossfire A/B/B/A isolates this packet revision against
+  `f854c29d`: settings, content, draws and the checked world crop match. GPU
+  timing ranges overlap, as do weapon CPU ranges. One current unarmed CPU
+  window is elevated (0.917 ms versus baseline 0.866-0.881 ms); the remaining
+  current windows are 0.869-0.885 ms. CPU no-overhead acceptance remains open.
+  Both installed binaries and all four user configuration files were restored.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Composed optical sunlight has fixture coverage; broader optical/probe edge
