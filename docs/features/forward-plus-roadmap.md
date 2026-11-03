@@ -1,17 +1,18 @@
 ## Next performance isolation
 
-- Split indexed directional-field record lookup from filtering. Bicubic taps
-  currently repeat ownership search, record decode and SH basis preparation.
-  Preserve missing/known-black semantics, interpolation and mixed-light output;
-  qualify correctness and cost before accepting the change.
-  The first shared-record/shared-SH trial was reverted after a positive GPU
-  timing residual. Retained linear-filter decoder coverage. Next isolate record
-  ownership from SH lifetime and context size; do not assume hoisting is free.
+- Retain the fused directional sampler. Shared-record/shared-SH and compact
+  address-handle trials were reverted after frame-time qualification. Keep the
+  linear/bicubic decoder coverage; do not infer a speedup from hoisted source text.
+- Investigate deferred directional unit-irradiance work when the standard mixed
+  residual is exactly zero. Preserve the raw query's full value contract, analytic
+  specular visibility, missing/known-black ownership and finite-emitter cone and
+  horizon behavior. Isolate standard-response demand from generic source values.
 - Isolate opaque color shading: baked-field filtering/reconstruction, material
   response and selected baked-highlight queries. Keep normal quality and output
   parity as acceptance gates; diagnostic variants must not become silent defaults.
-- Repeat an armed CPU recording residual only with an isolation question and
-  matched foreground/content/settings. Attribute it only if it reproduces.
+- Separate early weapon transients from steady-state CPU cost using fixed warm-up
+  and complete measurement windows. Longer warm-up did not reproduce the large
+  early CPU residual; its cause is not established.
 - Preserve the existing depth prepass and independent caster visibility while
   profiling. Technique modularity alone does not establish the frame-rate target.
 
