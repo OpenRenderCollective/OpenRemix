@@ -925,9 +925,16 @@ identity from the same source layer as normalization SH. Empty images expose no
 reference layers. GPU metadata, descriptor layouts and shader inputs are unchanged.
 This costs a fixed 1 KiB per CPU image owner without another allocation.
 
-Producer assignment and receiver compatibility admission remain unfinished.
-Existing producers default to unavailable; the new metadata does not yet change
-normalization eligibility. A later host integration must derive identities from
-validated frozen inputs, preserve them across warm cache reconstruction, and
-resolve compatibility outside pixel shading. Do not treat this storage boundary
-alone as proof of scene/component compatibility.
+Default automatic, authored and local producers assign the Source 2 static
+combined-reference domain from their frozen combined-lighting input identity.
+Warm-cache reconstruction uses the validated job inputs; image owners never read
+current frame state to relabel old captures. Projection edits retain source-layer
+identities. Sampling quality and output/placement hashes are not component domains.
+Other lighting-component recipes must supply another domain or stay unavailable.
+
+Diffuse publication retains the same receiver identity only for a combined field
+with direct diffuse ownership. Receiver-direct and partial fields stay unavailable.
+Capture scene admission retains the full frozen content identity separately from
+the diffuse component hash. Frame-level compatibility enforcement remains pending;
+this metadata does not yet change normalization eligibility. The shader arithmetic
+and GPU layouts remain unchanged.

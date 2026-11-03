@@ -1,3 +1,4 @@
+#include "forward/probes/source2_reference.h"
 #include "forward/bake/job.h"
 #include "forward/probes/capture_dump.h"
 #include "platform/workers.h"
@@ -63,7 +64,8 @@ namespace remix::forward::bake {
         probes::dumpLocalImage(prepared.data);
         owner->localReflections->ready = std::make_shared<const probes::CoverageReadyImage>(std::move(prepared.selection));
         owner->localReflections->image = std::make_shared<probes::ImageAsset>(physical, device, prepared.data,
-                                                                          owner->cancellation.get_token());
+            owner->cancellation.get_token(),
+            probes::source2Reference(owner->source->lightingHash(scene::BakeLightScope::Combined)));
         if (keepCache && !owner->cacheFile.empty()) {
           auto snapshot = std::make_shared<local_cache::Snapshot>();
           snapshot->source = owner->source; snapshot->evidence = owner->reflectionEvidence;
@@ -112,7 +114,8 @@ namespace remix::forward::bake {
                                     cancellation.get_token());
     if (!cached) return; // Base irradiance and cubemaps remain a valid cache hit.
     auto restored = std::make_shared<probes::LocalCaptureSource>();
-    restored->image = std::make_shared<probes::ImageAsset>(physical, device, cached->image.data, cancellation.get_token());
+    restored->image = std::make_shared<probes::ImageAsset>(physical, device, cached->image.data, cancellation.get_token(),
+        probes::source2Reference(source->lightingHash(scene::BakeLightScope::Combined)));
     restored->ready = std::make_shared<const probes::CoverageReadyImage>(std::move(cached->image.selection));
     reflectionEvidence = std::move(cached->evidence);
     localReflections = std::move(restored);

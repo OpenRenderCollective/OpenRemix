@@ -1,3 +1,4 @@
+#include "forward/probes/source2_reference.h"
 #include "forward/bake/controller.h"
 #include "forward/probes/automatic_capture.h"
 #include "forward/probes/cache_index.h"
@@ -334,6 +335,11 @@ int main() try {
                   "Diffuse publication depended on a reflection image");
           require(controller.volume()->irradianceContents == contents,
                   "Cold/warm publication lost the selected irradiance contents");
+          const auto expectedReference = contents == bake::IrradianceContents::Combined &&
+                  controller.volume()->directDiffuse
+              ? probes::source2Reference(resources.bakeScene()->contentHash) : probes::ReferenceProvenance{};
+          require(controller.volume()->reflectionReference == expectedReference,
+                  "Receiver-direct or partial publication cannot acquire a combined normalization reference");
           if (pass == 0) previous = controller.content();
           else require(std::string_view(controller.statistics().status).starts_with("Cached lighting active") &&
                            controller.content().grid == previous.grid &&
@@ -382,6 +388,9 @@ int main() try {
               controller.reflectionSceneScale() == .5f,
           "Reflections did not publish independently while diffuse finishing "
           "was paused");
+      require(early.image->references().size() == 1 &&
+                  early.image->references()[0] == probes::source2Reference(early.sceneHash),
+              "Early reflection publication retains frozen lighting provenance before diffuse readiness");
       if (cancel) {
         auto disabled = config;
         disabled.enabled = false;
@@ -457,6 +466,14 @@ int main() try {
         require(controller.volume() && bool(controller.reflectionSource().image) == bool(config.reflectionProbes) &&
                     controller.statistics().state == REMIXAPI_BAKE_READY_EXT,
                 "Cold/recovery/reflection-edit/warm cache sequence failed to finish lighting");
+        if (const auto image = controller.reflectionSource().image) {
+          const auto reference = controller.volume()->reflectionReference;
+          const auto frozenReference = probes::source2Reference(resources.bakeScene()->contentHash);
+          require((!controller.volume()->directDiffuse || reference.compatible(frozenReference)) &&
+                      std::all_of(image->references().begin(), image->references().end(),
+                          [&](const auto &capture) { return frozenReference.compatible(capture); }),
+                  "Cold, recovery, edit and warm publications retain matching producer/receiver references");
+        }
         const auto content = controller.content();
         if (pass == 0) { original = content; coldDenoises = denoiseCalls.load(); }
         else require(content.grid == original.grid && content.surfaces == original.surfaces &&

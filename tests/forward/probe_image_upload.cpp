@@ -1,4 +1,6 @@
 #include "forward/probes/image_asset.h"
+#include "forward/probes/source2_reference.h"
+#include "forward/probes/automatic_capture.h"
 #include "forward/probes/priority_bands.h"
 #include "forward/probes/coverage_image_plan.h"
 #include "forward/probes/selection_upload.h"
@@ -20,7 +22,10 @@ void uploadCase(uint32_t count, uint32_t size, bool composition = false, bool se
   source.texels.resize(size_t(count) * stride);
   for (size_t i = 0; i < source.texels.size(); ++i)
     source.texels[i] = {float(i % 1000) / 16, float(i % 31), .001f, 1000000};
-  const probes::ReferenceProvenance authoredReference{1, 101}, automaticReference{1, 202};
+  const auto authoredReference = probes::source2Reference(101);
+  const auto automaticReference = probes::source2Reference(202);
+  require(probes::source2Reference(0) == probes::ReferenceProvenance{},
+          "Unidentified frozen lighting inputs stay unavailable");
   require(authoredReference.compatible(authoredReference) &&
               !authoredReference.compatible(automaticReference) &&
               !authoredReference.compatible({2, 101}) &&
@@ -266,7 +271,23 @@ void selectionLifetimeCase(uint32_t stale) {
   require(repeated, "A copy cannot retire twice");
   require(validationErrors == 0, "Selection ownership and retirement are validation clean");
 }
+void automaticReferenceCase() {
+  Fixture fixture(false);
+  probes::AutomaticCapture capture;
+  capture.reference = probes::source2Reference(901);
+  capture.filtered.header.parameters = {1, 8, 4, probes::levelOffset(8, 4)};
+  capture.filtered.texels.resize(capture.filtered.header.parameters[3], Vec4{1, 2, 3, 0});
+  // Image preparation is shared by cold finishing and validated warm-cache restore.
+  capture.prepareImage(fixture.physical, fixture.device, {});
+  require(capture.image->references().size() == 1 &&
+              capture.image->references()[0] == probes::source2Reference(901),
+          "Automatic image preparation retains its frozen producer reference");
+  capture.reference = probes::source2Reference(902);
+  require(capture.image->references()[0] == probes::source2Reference(901),
+          "A published image reference cannot follow a later producer identity");
+}
 int main() try {
+  automaticReferenceCase();
   testLocalSelectionPreparation();
   for (uint32_t stale = 0; stale < 8; ++stale) selectionLifetimeCase(stale);
   uploadCase(0, 0);

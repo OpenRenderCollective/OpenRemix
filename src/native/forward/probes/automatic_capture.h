@@ -119,6 +119,7 @@ namespace remix::forward::probes {
     void finishImageOnlyPublication(VkPhysicalDevice physical, VkDevice device, std::stop_token cancelled);
     std::unique_ptr<const CapturePayload> finishTransferredPublication(
         VkPhysicalDevice physical, VkDevice device, std::stop_token cancelled);
+    ReferenceProvenance reference; // frozen producer inputs, never current frame state
     CaptureContent content; // published by the same release/acquire image handoff
     PlacementSeeds seeds;
     std::vector<bake::Point> reflectionSites;
