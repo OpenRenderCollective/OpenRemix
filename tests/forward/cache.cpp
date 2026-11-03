@@ -186,9 +186,9 @@ int main(int argc, char **argv) {
     directConfig.reflectionProbes = 0;
     auto combinedConfig = directConfig;
     directConfig.irradianceContents = Contents::ReceiverDirect;
-    const auto directIdentity = bc::key(source->contentHash, directConfig, .001f, device);
+    const auto directIdentity = bc::key(source->receiverDirectHash, directConfig, .001f, device);
     const auto combinedIdentity = bc::key(source->contentHash, combinedConfig, .001f, device);
-    const auto directDiffuse = bc::diffuseKey(source->contentHash, directConfig, .001f, device);
+    const auto directDiffuse = bc::diffuseKey(source->receiverDirectHash, directConfig, .001f, device);
     const auto combinedDiffuse = bc::diffuseKey(source->contentHash, combinedConfig, .001f, device);
     require(directIdentity != combinedIdentity && directDiffuse != combinedDiffuse,
             "Receiver-direct and combined fields require separate container and diffuse identities");
@@ -215,10 +215,33 @@ int main(int argc, char **argv) {
     bc::DiffuseReference reference{directDiffuse, directIdentity, directConfig.reflectionProbes,
         directConfig.reflectionResolution, std::bit_cast<uint32_t>(directConfig.reflectionDetailTolerance)};
     require(bc::writeDiffuseReference(directory, reference), "Receiver-direct index write failed");
-    auto recovered = bc::readDiffuse(directory, source->contentHash, source, directConfig, .001f, device);
+    auto recovered = bc::readDiffuse(directory, source->receiverDirectHash, source, directConfig, .001f, device);
     require(recovered && recovered->contents == Contents::ReceiverDirect &&
                 !recovered->missingReflections && recovered->grid.points.empty() && recovered->pixels == data.pixels,
             "Direct-only index recovery must not require reflection work or transient origin reconstruction");
+    auto changedSource = [&](bool localEdit) {
+      auto changed = std::make_shared<scene::BakeScene>();
+      changed->ready = true;
+      changed->draws = resources.retained(handle)->records;
+      changed->charts = source->charts;
+      changed->lights = source->lights;
+      changed->dome.enabled = true;
+      changed->dome.radiance[0] = 4;
+      changed->sun.radiance[1] = 8;
+      changed->reflectionHints.push_back({2, 3, 4});
+      if (localEdit) changed->lights[0].radius *= 2;
+      scene::freezeBakeScene(*changed);
+      return changed;
+    };
+    const auto incomingEdit = changedSource(false);
+    const auto warm = bc::readDiffuse(directory, incomingEdit->receiverDirectHash, incomingEdit,
+                                      directConfig, .001f, device);
+    require(incomingEdit->contentHash != source->contentHash && warm &&
+                warm->pixels == data.pixels && warm->mixed.lights.source == incomingEdit,
+            "Incoming-only edits warm-load direct data and bind ownership to the new snapshot");
+    const auto localEdit = changedSource(true);
+    require(!bc::readDiffuse(directory, localEdit->receiverDirectHash, localEdit, directConfig, .001f, device),
+            "Changed local transport cannot recover stale receiver-direct data");
     reference.diffuseKey = combinedDiffuse;
     require(bc::writeDiffuseReference(directory, reference) &&
                 !bc::readDiffuse(directory, source->contentHash, source, combinedConfig, .001f, device),

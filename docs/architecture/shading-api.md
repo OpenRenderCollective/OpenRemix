@@ -1144,6 +1144,9 @@ visibility shape. It excludes reflection hints, sun power and dome inputs, which
 belong to reflection or incoming-light providers. Both hashes are computed at
 snapshot creation; frame recording selects one scalar without traversing inputs.
 Receiver-direct controller/cache lookup and diffuse-index lookup use this domain.
+Persistence regression coverage warm-loads unchanged direct payloads after incoming
+power/reflection-hint edits, rebinds mixed ownership to the replacement snapshot,
+and rejects local-light radius edits.
 
 Replacing a snapshot still refreshes retained receiver bindings and cancels work
 against the old snapshot. Equal component fingerprints permit cache lookup reuse;
