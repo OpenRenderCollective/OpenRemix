@@ -12,7 +12,7 @@ context, not proof that an old experiment is still enabled or a defect is fixed.
 | Item | Current state |
 | --- | --- |
 | Native checkout | `OpenRemix/`, `forward-plus-renderer` |
-| Native modular code checkpoint | `3e32025b` (sun-map ownership; shader response split at `0c167245`) |
+| Native modular code checkpoint | `d6ffa861` (disabled sun scheduling; shader response split at `0c167245`) |
 | Native official remote | `https://github.com/OpenRenderCollective/OpenRemix.git` |
 | Adapter checkout | `garrys-mod-rtx-remixed-2/`, `forward-plus-renderer` |
 | Adapter checkpoint | `952a8bf` (profiling observer-cost qualification; upstream integration retained) |
@@ -67,7 +67,7 @@ private report. The most recent source is not the owner's older playable binary.
 | Selected shade entry | `forward/shaders/shading-model.glsl`: `shadeSurface(surface, receiver)`; default aliases the standard model for world and viewmodels |
 | Diffuse receiver lookup | `forward/shaders/receiver-lighting.glsl`: selected private contexts; `diffuse-composed.glsl` combines baked direct and incoming |
 | CPU ownership policy | `forward/lighting_plan.h`, `provider_plan.h`: energy ownership, capabilities and resource dependencies |
-| Sun visibility resources | `forward/shadows/sun_maps.h`: image, layer targets and frozen-projection cache; renderer retains the existing draw schedule |
+| Sun visibility resources | `forward/shadows/sun_maps.h`: image, layer targets and frozen-projection cache; renderer schedules enabled cascades and transition clears |
 | Techniques / preset | `forward/techniques.h`, `forward/presets.h`, Rendering panel: component selectors and Source 2 / derived Custom |
 | Reflection lighting | `forward/shaders/reflection-environment.glsl`: source-owned cube/sky fallback; `reflection-transport.glsl`: current-frame radiance/confidence |
 | Packed transport | `forward/shaders/reflection-guide.glsl`, `reflection-guide-reference.glsl`: geometry packing and paired normalization-domain adapter |
@@ -145,7 +145,7 @@ That fix does not establish fitted Construct outdoor coverage.
 [PR #37](https://github.com/OpenRenderCollective/OpenRemix/pull/37) is the real
 alternative used to exercise the contracts: Radiance Cascades, including explicit
 baked-direct plus live-incoming composition. Its adapted code checkpoint is
-`98f028f2` on the contributor's `radiance-cascades` branch. It is **unmerged**;
+`04063feb` on the contributor's `radiance-cascades` branch. It is **unmerged**;
 wait for the owner's explicit merge clear. The main branch does not contain the
 cascade implementation. Do not deploy it or start another GI prototype merely
 to demonstrate the API. The public HLSL/single-file loader remains future work.

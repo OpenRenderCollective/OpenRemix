@@ -101,11 +101,15 @@ identity must be part of the design before accepting adapter-supplied programs.
 
 The private `shadows::SunMaps` owner retains the world sun image, per-layer views
 and framebuffers, and frozen-projection cache. The renderer borrows its targets
-for the existing cascade draw schedule; this boundary adds no per-draw callback
+for enabled-cascade draws; this boundary adds no per-draw callback
 or shader dispatch. Local shadows and world sun maps borrow the same compatible
 depth render pass. Retire those resource owners before destroying that pass,
 after the renderer's outstanding fences have completed. Viewmodel sunlight keeps
 its separate close-up owner and uses the world image only as its existing fallback.
+Sun layers are initialized and neutralized on enable/source transitions. Unchanged
+disabled sunlight reuses those valid neutral images instead of clearing moving
+layers every frame. Re-enabling sunlight refreshes all cascades. The diagnostic
+`movingSunUpdates` counts actual moving-layer render passes, including clears.
 
 Resolve configuration into an immutable per-frame lighting plan on the CPU. A
 preset supplies defaults; explicit component overrides produce a Custom selection.
