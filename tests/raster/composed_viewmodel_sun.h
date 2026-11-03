@@ -130,6 +130,27 @@ void composedViewmodelSunTests() {
     require(render() == blue && target.forward->bakeController()->volume() == volume &&
                 target.forward->statistics().baking.state == REMIXAPI_BAKE_READY_EXT,
             "Incoming-only snapshot replacement keeps the exact in-memory direct publication without disk cache");
+    // Exercise a compatible edit to the same live material. Replacing its
+    // resource has a different binding lifetime and is covered by scene/cache tests.
+    auto liveMaterial = r.retained(wallHandle)->records[0].material;
+    const auto previousRoughness = liveMaterial->roughness;
+    const auto beforeRoughness = r.bakeScene();
+    liveMaterial->roughness = previousRoughness == .25f ? .75f : .25f;
+    ++request.scene.revision;
+    r.setBakeScene(&request.scene);
+    require(r.bakeScene() != beforeRoughness &&
+                r.bakeScene()->contentHash != beforeRoughness->contentHash &&
+                r.bakeScene()->receiverDirectHash == beforeRoughness->receiverDirectHash,
+            "Roughness recapture replaces combined inputs without changing direct transport");
+    render();
+    require(target.forward->bakeController()->volume() == volume &&
+                target.forward->statistics().baking.state == REMIXAPI_BAKE_READY_EXT,
+            "Roughness edits retain exact GPU direct publication with disk cache disabled");
+    liveMaterial->roughness = previousRoughness;
+    ++request.scene.revision;
+    r.setBakeScene(&request.scene);
+    require(render() == blue && target.forward->bakeController()->volume() == volume,
+            "Restoring roughness preserves the direct publication and exact shaded output");
     weapon.transform.matrix[2][3] = 3.5f; // outside the probe volume
     const auto fallback = render();
     const size_t fallbackLeft = (32 * 64 + 29) * 4;
