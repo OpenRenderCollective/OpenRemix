@@ -154,7 +154,7 @@ void selectedDirectionalTests(bool composed = false, bool cascades = false) {
       std::copy_n(properties.pipelineCacheUUID, device.uuid.size(), device.uuid.begin());
       const auto source = r.bakeScene();
       const auto policy = f::bake::staticAggregatePolicy(*source, f::bake::DirectMode::BakedMixed);
-      const auto configuration = options.bakeConfiguration(composed);
+      const auto configuration = options.lightingPlan(composed).baking;
       const auto sourceHash = source->lightingHash(composed
           ? remix::scene::BakeLightScope::ReceiverDirect : remix::scene::BakeLightScope::Combined);
       const auto key = cache::key(sourceHash, configuration, options.lightCutoff, device, policy);

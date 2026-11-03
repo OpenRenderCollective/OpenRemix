@@ -88,9 +88,6 @@ namespace remix::forward {
       config.directionalProbeDepth = bake::directionalProbeDepthRequested();
       return lighting::resolve(config, {bakedLighting, selectedBakedLights, bakedDirectWithLiveGI}, liveGiActive);
     }
-    bake::Config bakeConfiguration(bool liveGiActive) const {
-      return lightingPlan(liveGiActive).baking;
-    }
     probes::CapturePolicy capturePolicy(probes::CaptureTransport transport) const {
       return {transport, baking.reflectionProbes, baking.reflectionDetailTolerance, authoredReflectionFallback};
     }

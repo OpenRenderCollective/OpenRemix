@@ -258,9 +258,15 @@ Still required for the complete modularity/performance objective:
   Keep that residual and the full no-overhead gate open. The 200 FPS comparison
   cap does not qualify the 300 FPS target, and Construct remains GPU-bound far
   below it. Current policy/value/replacement compilation checks also pass.
-- Controls inventory remains a required cleanup task. A literal-name scan is
-  available as a local review aid, but behavior/alias classification and dynamic
-  control names still need review. Do not delete unreviewed working fallbacks.
+- The [controls catalog](forward-plus-controls.md) now classifies all 49 literal
+  environment names used by main native Forward+ and captured-input diagnostics:
+  supported paths/ablations, private experiments and diagnostic/reference modes.
+  It also distinguishes the three saved-key aliases from five legacy policy
+  requests. No live fallback is declared retired. Dynamic/shared/adapter controls
+  and the broader performance/quality acceptance still need review.
+  The unused internal bakeConfiguration forwarding helper is removed; tests
+  query the shared lighting plan directly. Production instruction bytes remain
+  unchanged; the build-stamp relocation difference is separately controlled.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Composed optical sunlight has fixture coverage; broader optical/probe edge

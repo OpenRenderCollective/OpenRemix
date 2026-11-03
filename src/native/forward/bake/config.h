@@ -5,9 +5,9 @@ namespace remix::forward::bake {
   struct Config {
     bool enabled = true;
     bool directDiffuse = true;
-    // Internal producer selection; runtime technique plans still request Combined.
+    // Internal producer selection; the Source 2 recipe uses Combined by default.
     IrradianceContents irradianceContents = IrradianceContents::Combined;
-    // Low-level transport/comparison controls. Options::bakeConfiguration
+    // Low-level transport/comparison controls. Options::lightingPlan
     // derives aggregate/grouped policy when runtime baked lighting is enabled.
     bool aggregateDiffuse = false;
     bool fullyBakedLights = false; // experimental: static lights have no per-light baked-receiver work

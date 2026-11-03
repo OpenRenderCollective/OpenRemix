@@ -77,7 +77,10 @@ private report. The most recent source is not the owner's older playable binary.
 All paths above are relative to `src/native/`. These are internal interfaces,
 not a stable public shader ABI or a completed provider/plugin framework.
 Local-light receiver identities/bounds are explicit; the unused localLight wrapper
-was removed. Other legacy flags/experiments have not received a comprehensive purge.
+was removed. The [controls catalog](forward-plus-controls.md) classifies the
+main native Forward+ environment controls and compatibility keys. No blanket
+purge is implied; shared native/adapter controls and dynamic names still need
+separate review.
 
 Source 2 selects the existing baked surface/direct and diffuse lighting, probe
 lighting for moving receivers, mixed shadows and cubemap + SSR reflections.
