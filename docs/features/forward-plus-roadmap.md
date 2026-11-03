@@ -16,6 +16,10 @@
   early CPU residual; its cause is not established.
 - Preserve the existing depth prepass and independent caster visibility while
   profiling. Technique modularity alone does not establish the frame-rate target.
+- Sun visibility scheduling: disabled sunlight still clears moving cascades
+  every frame. Qualify initialization, disable/re-enable and scene replacement
+  before skipping redundant clears. The resource ownership split preserves
+  that existing schedule; it does not claim this optimization is implemented.
 
 ### Standard material response ownership (2026-11-04)
 
@@ -86,6 +90,11 @@ The playable install remains separate from the branch build. Architecture and
 interfaces: [shading API](../architecture/shading-api.md).
 
 Implemented and checked:
+
+- World sun images, layer views/framebuffers and frozen-projection cache now
+  have a private `shadows::SunMaps` owner. The renderer borrows handles for the
+  existing draw schedule; shader bindings, formats and cascade counts stay the
+  same. The compatible depth pass remains shared with local-shadow maps.
 
 - The bake recorder and frame setup share one resolved lighting plan. Receiver
   and mixed-light ownership are captured before light enumeration, removing
