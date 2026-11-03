@@ -1,3 +1,16 @@
+// The selected source owns its sky fallback and viewmodel probe bias.
+#ifdef SSR_FILTER
+#include "environment.glsl"
+#elif defined(VIEWMODEL_PASS)
+#include "../viewmodel/shaders/environment.glsl"
+#endif
+vec3 environmentReflectionPosition(vec3 position, vec3 normal) {
+#ifdef VIEWMODEL_PASS
+  return position + normal * sky.target.z;
+#else
+  return position;
+#endif
+}
 // Storage and candidate gathering belong to this provider, not material passes.
 #include "probes.glsl"
 #ifdef SSR_FILTER

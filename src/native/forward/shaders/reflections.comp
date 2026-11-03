@@ -131,7 +131,6 @@ void main() {
 #endif
 
 #ifdef SSR_FILTER
-#include "environment.glsl"
 #include "reflection-lighting.glsl"
 #include "reflection-transport.glsl"
 #include "standard-reflection-response.glsl"

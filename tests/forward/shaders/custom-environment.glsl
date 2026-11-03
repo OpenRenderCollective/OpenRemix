@@ -10,3 +10,7 @@ vec3 sampleEnvironmentReflection(ReflectionReceiver receiver) {
 uvec2 environmentReflectionCandidates(vec3 position, bool valid) {
   return uvec2(0);
 }
+
+vec3 environmentReflectionPosition(vec3 position, vec3 normal) {
+  return position;
+}

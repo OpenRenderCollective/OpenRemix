@@ -1167,16 +1167,22 @@ matched runtime performance require further qualification.
 ### Private environment storage and candidate gathering
 
 The default `reflection-environment.glsl` owns the parallax-probe storage include
-and, for world resolve, its tile-candidate implementation. Material passes supply
-binding assignments without including that storage themselves. Replacements
-implement `sampleEnvironmentReflection(ReflectionReceiver)` and the world-resolve
-query `environmentReflectionCandidates(position, valid)`. The candidate query runs
+and, for world resolve, its tile-candidate implementation and sky fallback.
+Viewmodel sky resources and probe-position bias are private to that source too.
+Material passes supply binding assignments without including this storage.
+Replacements implement `sampleEnvironmentReflection(ReflectionReceiver)`, the
+viewmodel query `environmentReflectionPosition(position, normal)` and the
+world-resolve query `environmentReflectionCandidates(position, valid)`.
+A source with no position bias returns the position unchanged. The candidate query runs
 uniformly before out-of-bounds/invalid lanes return, preserving the default
 provider's workgroup barrier contract. A source without candidates returns zero.
 Viewmodel and water composition continue to use the same incident-radiance query.
 
-The alternate-environment test removes both `probes.glsl` and `probe-tiles.glsl`
-before compiling real world resolve, viewmodel and water material passes. Default
+The alternate-environment test removes `probes.glsl`, `probe-tiles.glsl`,
+`environment.glsl`, `environment-sampling.glsl` and the viewmodel environment
+resource file before compiling real world resolve, viewmodel and water material
+passes. Water's sky transmission background remains a separate material input;
+replacing reflected radiance does not replace transmitted background lighting. Default
 and custom-material shader checks preserve sizes and opcode counts across twelve
 variants. After structural global-ID/declaration-order normalization, their
 ordered executable instructions and global declarations match. Viewmodel

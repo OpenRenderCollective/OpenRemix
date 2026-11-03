@@ -171,7 +171,9 @@ Still required for the complete modularity/performance objective:
   Preserve existing presets and the default Source 2 combined fast path.
 - Environment replacement no longer imports default cubemap storage through
   world/viewmodel/water passes. The provider owns probe sampling and candidate
-  gathering; replacement compilation removes both default implementation files.
+  gathering, world/viewmodel sky sampling and viewmodel probe bias. Replacement
+  compilation removes all five default cube/sky implementation files. Water sky
+  transmission remains an explicit material input.
   Twelve shader variants preserve normalized executable/global semantics and
   sizes, and viewmodel/water GPU checks pass. General reference provenance remains
   open; raw SPIR-V declaration order changes, with no new FPS claim.
