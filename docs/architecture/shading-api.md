@@ -1162,3 +1162,26 @@ it requires the same publication pointer, ready state and exact rendered output.
 Material records remain conservative: incoming-only albedo/emission edits can
 still invalidate direct content. These dependencies, broader real-map reuse and
 matched runtime performance require further qualification.
+
+
+### Private environment storage and candidate gathering
+
+The default `reflection-environment.glsl` owns the parallax-probe storage include
+and, for world resolve, its tile-candidate implementation. Material passes supply
+binding assignments without including that storage themselves. Replacements
+implement `sampleEnvironmentReflection(ReflectionReceiver)` and the world-resolve
+query `environmentReflectionCandidates(position, valid)`. The candidate query runs
+uniformly before out-of-bounds/invalid lanes return, preserving the default
+provider's workgroup barrier contract. A source without candidates returns zero.
+Viewmodel and water composition continue to use the same incident-radiance query.
+
+The alternate-environment test removes both `probes.glsl` and `probe-tiles.glsl`
+before compiling real world resolve, viewmodel and water material passes. Default
+and custom-material shader checks preserve sizes and opcode counts across twelve
+variants. After structural global-ID/declaration-order normalization, their
+ordered executable instructions and global declarations match. Viewmodel
+reflection and water environment/HDR/MSAA GPU fixtures pass. The source-file move
+changes some raw SPIR-V declaration order; it is not byte-identical. This is not
+a new matched runtime FPS study. Scene/component normalization provenance remains
+separate work; the default environment still accepts only the typed Source 2
+static reference domain.

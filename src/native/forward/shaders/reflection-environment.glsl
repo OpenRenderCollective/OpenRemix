@@ -1,3 +1,11 @@
+// Storage and candidate gathering belong to this provider, not material passes.
+#include "probes.glsl"
+#ifdef SSR_FILTER
+#include "probe-tiles.glsl"
+uvec2 environmentReflectionCandidates(vec3 position, bool valid) {
+  return probeTileCandidates(position, valid);
+}
+#endif
 // Source 2 environment source: authored/automatic parallax probes, then sky.
 // Implementations return scene-linear incident radiance, before material Fresnel.
 vec3 sampleEnvironmentReflection(ReflectionReceiver receiver) {

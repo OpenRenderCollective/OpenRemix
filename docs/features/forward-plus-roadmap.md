@@ -169,6 +169,12 @@ Still required for the complete modularity/performance objective:
   five focused GPU checks passing. Baked-direct/cascade composition, optical
   cascade lookups and matched runtime performance remain open.
   Preserve existing presets and the default Source 2 combined fast path.
+- Environment replacement no longer imports default cubemap storage through
+  world/viewmodel/water passes. The provider owns probe sampling and candidate
+  gathering; replacement compilation removes both default implementation files.
+  Twelve shader variants preserve normalized executable/global semantics and
+  sizes, and viewmodel/water GPU checks pass. General reference provenance remains
+  open; raw SPIR-V declaration order changes, with no new FPS claim.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Composed optical sunlight has fixture coverage; broader optical/probe edge

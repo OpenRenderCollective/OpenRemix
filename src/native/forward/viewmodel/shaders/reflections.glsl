@@ -1,7 +1,6 @@
 #define PROBE_BINDING 12
 #define PROBE_IMAGE_BINDING 19
 #define PROBE_TILE_CANDIDATES
-#include "../../shaders/probes.glsl"
 layout(set = 0, binding = 13, std140) uniform ViewModelSky {
   mat4 inverseProjection, viewToDome;
   vec4 radiance, target;

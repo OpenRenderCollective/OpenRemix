@@ -3,7 +3,6 @@
 #ifdef SSR_FILTER
 #define PROBE_TILE_CANDIDATES
 #define PROBE_IMAGE_BINDING 17
-#include "probes.glsl"
 #endif
 // All reflection intermediates are current-frame scene-linear data. Sampling
 // opaque HDR before reflection composition avoids recursive history feedback.
@@ -134,7 +133,6 @@ void main() {
 #ifdef SSR_FILTER
 #include "environment.glsl"
 #include "reflection-lighting.glsl"
-#include "probe-tiles.glsl"
 #include "reflection-transport.glsl"
 #include "standard-reflection-response.glsl"
 void main() {
@@ -146,7 +144,7 @@ void main() {
   vec2 uv = (vec2(pixel) + .5) / vec2(frame.target.xy);
   vec3 position = valid ? worldPosition(uv, depth) : vec3(0);
   vec3 normal = valid ? reflectionGuideNormal(guide) : vec3(0);
-  uvec2 probeMask = probeTileCandidates(fma(normal, vec3(frame.trace.z), position), valid);
+  uvec2 probeMask = environmentReflectionCandidates(fma(normal, vec3(frame.trace.z), position), valid);
   if (!inBounds) return;
   if (!valid) {
     imageStore(outRadiance, pixel, vec4(0));

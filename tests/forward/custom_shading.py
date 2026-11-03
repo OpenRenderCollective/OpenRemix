@@ -52,6 +52,8 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
     source.write_text((root / "src/native/forward/shaders/forward.frag").read_text(), encoding="utf-8")
     shutil.copyfile(root / "tests/forward/shaders/custom-environment.glsl",
                     tree / "shaders/reflection-environment.glsl")
+    (tree / "shaders/probes.glsl").unlink()
+    (tree / "shaders/probe-tiles.glsl").unlink()
     variants = {
         "environment-viewmodel": (source, ["VIEWMODEL_PASS", "REFLECTION_GUIDES"]),
         "environment-live-viewmodel": (source, ["LIVE_GI", "VIEWMODEL_PASS"]),
@@ -68,6 +70,8 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
         subprocess.run([validator, "--target-env", "vulkan1.1", str(binary)], env=env, check=True)
     shutil.copyfile(root / "src/native/forward/shaders/reflection-environment.glsl",
                     tree / "shaders/reflection-environment.glsl")
+    for name in ("probes.glsl", "probe-tiles.glsl"):
+        shutil.copyfile(root / "src/native/forward/shaders" / name, tree / "shaders" / name)
     # Replace only the screen/ray transport source. Keep the actual resolve,
     # environment fallback and material Fresnel, with no bilateral source code.
     shutil.copyfile(root / "tests/forward/shaders/custom-reflection-transport.glsl",
