@@ -154,9 +154,6 @@ namespace remix::forward {
                                               .layers = 1};
     check(vkCreateFramebuffer(device, &framebuffer, nullptr, &worldFramebuffer));
 
-    const VkExtent2D shadowSize{options.shadowResolution, options.shadowResolution};
-    shadow = image(shadowSize, depthFormat, depthUsage, VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_ASPECT_DEPTH_BIT,
-                   sunShadowLayers);
     const VkAttachmentDescription shadowAttachment{.format = depthFormat,
                                                    .samples = VK_SAMPLE_COUNT_1_BIT,
                                                    .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
@@ -178,22 +175,9 @@ namespace remix::forward {
                                             .dependencyCount = 2,
                                             .pDependencies = shadowDependencies};
     check(pipeline::createRenderPass(device, &shadowInfo, nullptr, &shadowPass));
-    for (uint32_t c = 0; c < sunShadowLayers; ++c) {
-      const VkImageViewCreateInfo view{.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-                                       .image = shadow->handle,
-                                       .viewType = VK_IMAGE_VIEW_TYPE_2D,
-                                       .format = depthFormat,
-                                       .subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, c, 1}};
-      check(vkCreateImageView(device, &view, nullptr, &shadowViews[c]));
-      const VkFramebufferCreateInfo target{.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-                                           .renderPass = shadowPass,
-                                           .attachmentCount = 1,
-                                           .pAttachments = &shadowViews[c],
-                                           .width = shadowSize.width,
-                                           .height = shadowSize.height,
-                                           .layers = 1};
-      check(vkCreateFramebuffer(device, &target, nullptr, &shadowFramebuffers[c]));
-    }
+    sunMaps = std::make_unique<shadows::SunMaps>();
+    sunMaps->initialize(physical, device, shadowPass, options.shadowResolution);
+    statistics.targetBytes += sunMaps->memoryBytes();
   }
   void Renderer::Gpu::createLayouts() {
     const auto stages =

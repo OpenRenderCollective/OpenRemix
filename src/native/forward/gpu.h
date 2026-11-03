@@ -15,7 +15,7 @@
 #include "forward/renderer.h"
 #include "forward/resources.h"
 #include "forward/shadows/maps.h"
-#include "forward/shadows/sun_cache.h"
+#include "forward/shadows/sun_maps.h"
 #include "forward/water/pass.h"
 #include "forward/viewmodel/target.h"
 #include "platform/gpu_frames.h"
@@ -55,9 +55,8 @@ namespace remix::forward {
               skySampler = VK_NULL_HANDLE;
     VkRenderPass worldPass = VK_NULL_HANDLE, shadowPass = VK_NULL_HANDLE;
     VkFramebuffer worldFramebuffer = VK_NULL_HANDLE;
-    std::array<VkFramebuffer, sunShadowLayers> shadowFramebuffers{};
-    std::array<VkImageView, sunShadowLayers> shadowViews{};
-    std::unique_ptr<Image> color, depth, resolved, shadow;
+    std::unique_ptr<Image> color, depth, resolved;
+    std::unique_ptr<shadows::SunMaps> sunMaps;
     std::unique_ptr<Image> normalGuide, reflectanceGuide;
     std::unique_ptr<Reflections> reflections;
     std::unique_ptr<water::Pass> waterPass;
@@ -106,7 +105,6 @@ namespace remix::forward {
     shadows::Selection shadowSelection;
     HighlightSelection highlightSelection;
     std::weak_ptr<const mixed::Bindings> highlightSource;
-    shadows::SunCache sunCache;
     std::weak_ptr<const scene::BakeScene> staticBoundsSource;
     Bounds staticBounds;
     uint64_t baseTargetBytes = 0;
