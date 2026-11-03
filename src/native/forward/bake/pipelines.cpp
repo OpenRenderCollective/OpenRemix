@@ -81,13 +81,18 @@ namespace remix::forward::bake {
       append(parallelShader, sizeof(parallelShader), layout, parallelPipeline);
       // Keep optional aggregate transport out of the ordinary bake/live kernels.
       // Compile only the variant this immutable policy can actually dispatch.
-      if (aggregateDiffuse) {
-        if (options.parallel)
-          append(aggregateParallelShader, sizeof(aggregateParallelShader), layout,
-                 aggregateParallelPipeline);
-        else
-          append(aggregateShader, sizeof(aggregateShader), layout,
-                 aggregatePipeline);
+      if (aggregateIrradiance) {
+        if (options.parallel) {
+          if (options.receiverDirectOnly)
+            append(receiverDirectParallelShader, sizeof(receiverDirectParallelShader), layout, aggregateParallelPipeline);
+          else
+            append(aggregateParallelShader, sizeof(aggregateParallelShader), layout, aggregateParallelPipeline);
+        } else {
+          if (options.receiverDirectOnly)
+            append(receiverDirectShader, sizeof(receiverDirectShader), layout, aggregatePipeline);
+          else
+            append(aggregateShader, sizeof(aggregateShader), layout, aggregatePipeline);
+        }
       }
       if (options.cpuReadback && options.parallel)
         append(visibilityShader, sizeof(visibilityShader), layout,

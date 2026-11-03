@@ -31,7 +31,7 @@ namespace remix::forward::bake {
   };
 
   struct Transport::Gpu {
-    bool aggregateDiffuse = false;
+    bool aggregateDiffuse = false, aggregateIrradiance = false;
     VkPhysicalDevice physical = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
     Options options;

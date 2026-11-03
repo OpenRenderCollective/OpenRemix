@@ -15,6 +15,10 @@ namespace remix::forward::bake {
     uint32_t initialBatchPoints = 0, queueFamily = VK_QUEUE_FAMILY_IGNORED;
     bool parallel = true; // sample-parallel offline transport; single radiance rays and site queries stay serial
     bool lightImportanceSampling = true; // static snapshots; live lighting retains uniform selection
+    // Offline irradiance consumer: retain eligible receiver-direct NEE only.
+    // Incoming environment/emission/bounce paths are omitted; sun/style fields
+    // remain separate. Does not alter immutable scene sharing or radiance queries.
+    bool receiverDirectOnly = false;
     bool lightingComponents = false; // retain styled power in the immutable component proposal
     DirectPolicy directLighting; // explicit fully baked diffuse membership; default preserves legacy output
     bool cpuReadback = true; // prefer CPU-cached results for baking
@@ -110,6 +114,7 @@ namespace remix::forward::bake {
                      uint32_t bounces = 3, uint32_t firstSample = 0);
     // Offline SH control: identical transport/proposal, omitting only analytic
     // direct NEE at the receiver. Geometry moments and path lighting remain.
+    // Contradicts receiverDirectOnly consumers and is rejected before recording.
     void recordIncomingIrradiance(VkCommandBuffer command, uint32_t slot, std::span<const Point> points,
                                   uint32_t samples, uint32_t bounces = 3, uint32_t firstSample = 0,
                                   std::optional<uint32_t> component = {});

@@ -949,3 +949,29 @@ needs separate direct/indirect energy fixtures, styled on/off behavior and mixed
 shadow checks across surfaces/probes/viewmodels/water, followed by compiled
 shader and matched performance acceptance. This is required modularity work,
 not satisfied by the current source adapter or its green compilation tests.
+
+### Receiver-direct irradiance producer
+
+`bake::Options::receiverDirectOnly` selects an offline consumer producing only
+the eligible captured local-light receiver NEE term. It borrows the same prepared
+scene as combined/incoming consumers; membership still comes from `DirectPolicy`.
+Dedicated serial/parallel aggregate kernels omit incoming radiance integration
+and retain primary geometry evidence. No receiver-direct kernels are created for
+ordinary consumers. Existing kernel bytes and default pipeline counts remain
+unchanged. Request one bounce for this consumer's work-budget accounting; its
+receiver estimator itself does not trace diffuse bounce paths.
+
+This is an algorithmic partition of the current aggregate, not a claim that every
+physical direct/indirect source is already classified. Incoming paths include
+sky, visible emission and bounced light. Sun and controllable direct fields remain
+separate. The GPU fixture checks direct + incoming SH against combined energy
+for volume and surface receivers, serial/parallel execution, mixed eligibility
+and empty ownership, including signed coefficients. It verifies shared prepared
+inputs and rejects incoming-field requests on a direct-only consumer before
+recording. Mutable-lighting slots cannot produce this immutable direct field.
+
+The producer is not yet exposed through a preset or persisted bake configuration.
+Hybrid work still requires component-aware cache identity, publication/storage,
+controlled direct fields and sun ownership, renderer masks and source composition.
+Do not label the current aggregate as direct-only or reuse it under a hybrid cache
+key. Preserve the combined Source 2 fast path while adding that explicit mode.

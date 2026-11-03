@@ -114,9 +114,16 @@ Still required for the complete modularity/performance objective:
   absent, and optional diagnostic local companions are regenerated in that case.
 - Implement independent direct/indirect provider composition. The current
   `lighting::resolve(..., liveGiActive)` disables all baking for live GI; it does
-  not support lightmapped direct plus live indirect. Preserve existing presets,
+  not support lightmapped direct plus live indirect.
+  A low-level receiver-direct producer now isolates eligible local-light NEE
+  from incoming paths using shared prepared inputs. GPU surface/probe tests
+  reconstruct combined SH from the two fields, including serial/parallel and
+  empty ownership; seven existing bake kernels remain byte-identical. This is
+  not a wired hybrid preset. Next add component-aware cache/publication/storage,
+  retained sun/controllable direct fields and renderer composition/masks; then
   split transport ownership/storage deliberately and prevent double-counting
-  aggregate direct energy. Keep the default Source 2 combined fast path unchanged.
+  aggregate direct energy. Preserve existing presets and the default Source 2
+  combined fast path.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Water's baked/mixed sunlight policy still needs separate qualification.

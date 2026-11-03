@@ -128,6 +128,7 @@ namespace remix::forward::bake {
     next->world->source = std::move(source);
     next->options = options;
     next->aggregateDiffuse = applyDirectPolicy(*next->world->source, options.directLighting, inputs.lights);
+    next->aggregateIrradiance = next->aggregateDiffuse || options.receiverDirectOnly;
     next->timing = std::make_unique<Timing>(physical, device, options.queueFamily);
     next->createInputs(std::move(inputs));
     next->createLayouts();
@@ -213,6 +214,7 @@ namespace remix::forward::bake {
     next->limits = limits;
     next->sunDistance = sunQueryDistance(scene->geometryDiagonal, scene->source->sceneScale, options);
     next->aggregateDiffuse = aggregateDiffuse;
+    next->aggregateIrradiance = aggregateDiffuse || options.receiverDirectOnly;
     next->world = std::move(scene);
     next->prepared = true;
     next->timing = std::make_unique<Timing>(next->physical, next->device, next->options.queueFamily);
@@ -498,6 +500,9 @@ namespace remix::forward::bake {
       throw std::logic_error("Device-local batches require GPU-produced points");
     if (!g.prepared)
       throw std::logic_error("Bake transport must be prepared before tracing");
+    if (g.options.receiverDirectOnly && mode == Mode::Irradiance &&
+        (!receiverDirect || g.slots.at(index).lighting))
+      throw std::logic_error("Receiver-direct irradiance requires frozen lighting and its own direct estimator");
     if (component) {
       if (!g.options.lightingComponents || *component > combinedLighting ||
           (*component != 0 && *component != combinedLighting &&
@@ -697,7 +702,7 @@ namespace remix::forward::bake {
       frame.trace[0] = g.sunDistance;
     frame.counts[2] = samples;
     frame.counts[3] = bounces;
-    const bool aggregate = mode == Mode::Irradiance && g.aggregateDiffuse && !slot.lighting;
+    const bool aggregate = mode == Mode::Irradiance && g.aggregateIrradiance && !slot.lighting;
     frame.control = {g.world->domeLayer, firstSample, uint32_t(mode),
                      uint32_t(g.world->hasDielectrics) |
                          (g.world->hasContainingMedia ? containingMediaFlag : 0u) |
