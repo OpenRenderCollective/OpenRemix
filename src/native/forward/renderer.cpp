@@ -323,6 +323,8 @@ namespace remix::forward {
            (m_gpu && m_gpu->waterPass && water::accepts(draw));
   }
   void Renderer::updateLighting(const Options &options) {
+    if (m_gpu->options == options)
+      return;
     if (!m_gpu->options.sameTargets(options))
       throw VK_ERROR_INITIALIZATION_FAILED;
     m_gpu->options = options;
