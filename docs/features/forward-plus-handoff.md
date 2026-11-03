@@ -12,7 +12,7 @@ context, not proof that an old experiment is still enabled or a defect is fixed.
 | Item | Current state |
 | --- | --- |
 | Native checkout | `OpenRemix/`, `forward-plus-renderer` |
-| Native modular code checkpoint | `d6ffa861` (disabled sun scheduling; shader response split at `0c167245`) |
+| Native modular code checkpoint | `ebfc5c85` (sun submission diagnostics; shader response split at `0c167245`) |
 | Native official remote | `https://github.com/OpenRenderCollective/OpenRemix.git` |
 | Adapter checkout | `garrys-mod-rtx-remixed-2/`, `forward-plus-renderer` |
 | Adapter checkpoint | `952a8bf` (profiling observer-cost qualification; upstream integration retained) |
@@ -145,7 +145,7 @@ That fix does not establish fitted Construct outdoor coverage.
 [PR #37](https://github.com/OpenRenderCollective/OpenRemix/pull/37) is the real
 alternative used to exercise the contracts: Radiance Cascades, including explicit
 baked-direct plus live-incoming composition. Its adapted code checkpoint is
-`04063feb` on the contributor's `radiance-cascades` branch. It is **unmerged**;
+`bae33938` on the contributor's `radiance-cascades` branch. It is **unmerged**;
 wait for the owner's explicit merge clear. The main branch does not contain the
 cascade implementation. Do not deploy it or start another GI prototype merely
 to demonstrate the API. The public HLSL/single-file loader remains future work.

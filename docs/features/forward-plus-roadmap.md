@@ -16,10 +16,11 @@
   early CPU residual; its cause is not established.
 - Preserve the existing depth prepass and independent caster visibility while
   profiling. Technique modularity alone does not establish the frame-rate target.
-- Isolate baked-sun query work with no moving world casters. The current source
-  still calls filtered moving visibility for covered receivers. Prove conservative
-  caster absence and keep viewmodel self shadows and missing-coverage static
-  fallback independent before attempting to skip that query.
+- Inspect actual sun-caster admission and receiver overlap before another
+  visibility shortcut. The global frozen-only query trial was reverted: real
+  unarmed map views still contain non-captured world commands. Per-cascade
+  `movingSunDraws` diagnostics now distinguish submitted work from candidate
+  counts. Preserve viewmodel self shadows and missing-coverage static fallback.
 
 ### Standard material response ownership (2026-11-04)
 
