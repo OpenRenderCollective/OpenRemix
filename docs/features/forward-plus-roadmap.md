@@ -199,6 +199,12 @@ Still required for the complete modularity/performance objective:
   window is elevated (0.917 ms versus baseline 0.866-0.881 ms); the remaining
   current windows are 0.869-0.885 ms. CPU no-overhead acceptance remains open.
   Both installed binaries and all four user configuration files were restored.
+  An exact-binary repeat of `f854c29d` versus `eeb98b7f` did not repeat the
+  elevated CPU window: unarmed CPU ranges overlap (0.888-0.914 ms baseline,
+  0.864-0.899 ms current), as do weapon CPU and both GPU ranges. Content,
+  settings, draws and the checked world crop still match; restoration is exact.
+  This qualifies that earlier packet change only, not later ownership changes
+  or the uncapped 300 FPS target. Broader performance acceptance stays open.
 - Reflection guide reference encoding/decoding now belongs to one replaceable
   adapter. World and reflection resolve passes no longer assign the Source 2
   domain themselves. An alternate domain compiles through real world/viewmodel
@@ -214,6 +220,9 @@ Still required for the complete modularity/performance objective:
   CapturePublication type with borrowed source/header/descriptor views. Preset
   invalidation and frame image lifetime remain explicit in the controller; the
   value contains no diffuse publication or transport/scheduling owner.
+- Diffuse asset finishing no longer retains capture-placement admission or
+  advances Source 2 scheduler flags. The recipe caller performs those transitions
+  on the same worker after encoding, preserving transition order and ticket gates.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Composed optical sunlight has fixture coverage; broader optical/probe edge

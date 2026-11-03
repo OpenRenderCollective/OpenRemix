@@ -142,8 +142,14 @@ namespace remix::forward::bake {
                 owner->reflectionPersistence = std::move(payload);
             } else
               owner->reflections.finishRetainedPublication(physical, device, owner->cancellation.get_token());
-            if (!owner->reflectionRecovery)
+            if (!owner->reflectionRecovery) {
               owner->finishDiffuseAssets(physical, device, config, reflectionFingerprint);
+              // Source 2 recipe transition: capture admission and scheduling
+              // flags are not outputs of the diffuse asset encoder.
+              owner->retainReflectionSeeds();
+              owner->baseFinished = true;
+              owner->filtering = !owner->styles;
+            }
           });
       status(REMIXAPI_BAKE_PREPARING_EXT, "Finishing baked lighting assets");
       return;

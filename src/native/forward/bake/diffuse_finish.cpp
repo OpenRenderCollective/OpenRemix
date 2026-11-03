@@ -122,8 +122,5 @@ void Controller::Job::finishDiffuseAssets(
   vkGetPhysicalDeviceProperties(physical, &groupLimits);
   if (!styles)
     prepareGroupedStyles(groupLimits.limits.maxStorageBufferRange, config);
-  retainReflectionSeeds();
-  baseFinished = true;
-  filtering = !styles;
 }
 } // namespace remix::forward::bake
