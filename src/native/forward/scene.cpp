@@ -373,6 +373,8 @@ namespace remix::forward {
     }
     prepareDepthBatch(publishedBake);
     step(cpu.lighting);
+    frame.reflectionProbes = reflections || waterPass || !frame.viewModelCommands.empty()
+        ? reflectionDescriptor() : probes::Descriptors{};
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physical, &properties);
     data.clusterInfo[0] = clusterListCapacity(runtimeLights, data.grid[3],
@@ -438,7 +440,7 @@ namespace remix::forward {
           screen.depth.imageView ? options.ssrSteps : 0u,
           uint32_t(std::bit_width(std::max(extent.width, extent.height)))};
       waterPass->prepare(slot, parameters, waterMaterials,
-                          {reflectionDescriptor(), frame.skyConstants->descriptor(), frame.skyImage,
+                          {frame.reflectionProbes, frame.skyConstants->descriptor(), frame.skyImage,
                            screen.depth, screen.normals, screen.color});
       const auto medium = waterPass->parameters(slot);
       const VkWriteDescriptorSet write{.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,

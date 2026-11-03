@@ -131,8 +131,9 @@ That fix does not establish fitted Construct outdoor coverage.
 4. Qualify packed guides and normalization across scenes, profile bandwidth/ALU
    costs, exercise the configured panel shortcut interactively, and prepare a protected-settings-preserving
    package. Recent matched Crossfire checks preserve the checked output but show
-   a small positive armed CPU recording residual; isolate/repeat before claiming
-   no overhead. Neutral metadata also adds one aligned header per nonempty image.
+   a small positive armed CPU recording residual. An exact-binary repeat reversed
+   that difference, so no stable regression or zero-overhead conclusion is established.
+   The subsequent once-per-frame binding snapshot needs separate timing qualification. Neutral metadata also adds one aligned header per nonempty image.
    No new default performance gain or visual parity is claimed.
 5. Continue lightmap/probe quality, Construct room/seam defects, outdoor cubemap
    coverage, saturated probe-budget selection, bake times and runtime profiling.

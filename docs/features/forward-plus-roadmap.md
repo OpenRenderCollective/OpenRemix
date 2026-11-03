@@ -4955,3 +4955,23 @@ An isolated Construct replay showed modest reflection changes, not a reproductio
 or resolution of the severe HDR haze. Continue with matched in-game HDR diffuse,
 exposure and reflection isolation, rough nonmetal SH behavior, bandwidth/device
 capability qualification and playable verification before deployment.
+### Modular reference binding checkpoint (2026-11-04)
+
+The default recipe now owns combined finishing outside capture scheduling.
+Frozen reflection-reference identities follow automatic, authored and local
+images through cache reconstruction and layer composition. Receiver-direct and
+partial fields stay unavailable. Binding selects compatible or neutral metadata
+without changing shader resources or pixel work. Mixed identities currently
+neutralize the whole image; finer per-layer normalization admission remains open.
+Reflection bindings are resolved once during frame preparation for SSR, water
+and viewmodel consumers, under the existing provider/frame ownership.
+
+Keep s&box as the material/shading-model API reference and VRF as the rendering
+behavior reference. Do not infer bounce-only lighting from VRF's DiffuseIndirect
+variable name. Further component recipes need qualified reference domains.
+
+Performance acceptance remains open: exact-binary repeats have not established a
+stable CPU regression or zero overhead. Qualify the latest frame snapshot across
+maps before promoting it. Neutral metadata retains an additional aligned header
+per nonempty image. Preserve the default shared transport/admission work reuse;
+independent default scheduling is still a separate architecture decision.

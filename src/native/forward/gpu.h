@@ -132,6 +132,9 @@ namespace remix::forward {
       VkDescriptorSet scene = VK_NULL_HANDLE, composite = VK_NULL_HANDLE;
       VkDescriptorSet viewModelScene = VK_NULL_HANDLE;
       ray::Provider::FrameInputs rayInputs;
+      // One binding snapshot after provider publication, shared by all passes.
+      // Provider frame owners retain the referenced images through this fence.
+      probes::Descriptors reflectionProbes;
       std::unique_ptr<Buffer> constants, lights, draws, clusters, skyConstants;
       std::shared_ptr<const probe_batch::Field> probeVisibility;
       std::unique_ptr<depth_batch::Batch> depthBatch;
