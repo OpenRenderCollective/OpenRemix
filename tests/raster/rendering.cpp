@@ -3504,6 +3504,10 @@ namespace {
               "A realtime sun caster cuts a narrow shadow into baked static lighting at independent resolution");
       require(target.forward->statistics().liveCasters == 1 && target.forward->statistics().capturedCasters == 2,
               "Only the new actor enters moving sun maps alongside the captured world");
+      uint32_t submittedSunDraws = 0;
+      for (auto draws : target.forward->statistics().movingSunDraws) submittedSunDraws += draws;
+      require(submittedSunDraws > 0 && submittedSunDraws == target.forward->statistics().drawCalls.movingSunShadow,
+              "Per-cascade moving draw evidence accounts for every submitted world sun draw");
       require(target.forward->statistics().staticCasterPreparations == 0,
               "A live actor inside the frozen scene bounds needs no frozen caster preparation");
       moving.categoryFlags = REMIXAPI_INSTANCE_CATEGORY_BIT_THIRD_PERSON_PLAYER_BODY;

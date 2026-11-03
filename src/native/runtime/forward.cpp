@@ -68,6 +68,8 @@ namespace remix {
         << ", \"worldDepthLogical\": " << state.drawCalls.worldDepthLogical
         << ", \"batchedDepthSources\": " << state.drawCalls.batchedDepthSources
         << ", \"unconditionalCapturedDepth\": " << state.drawCalls.unconditionalCapturedDepth << '}'
+        << ",\n  \"movingSunDraws\": [" << state.movingSunDraws[0] << ", " << state.movingSunDraws[1]
+        << ", " << state.movingSunDraws[2] << ", " << state.movingSunDraws[3] << ']'
         << ",\n  \"probeVisibility\": {\"lights\": " << state.probeVisibility.lights
         << ", \"groups\": " << state.probeVisibility.groups
         << ", \"fieldBytes\": " << state.probeVisibility.fieldBytes
