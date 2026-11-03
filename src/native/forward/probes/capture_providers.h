@@ -18,8 +18,14 @@ namespace remix::forward::probes {
     // a shared provider after the replacement worker took its initial snapshot.
     void activate();
     void selectFrame(uint32_t slot);
+    // Request sharing before the selected diffuse provider records work. The
+    // caller then supplies its publication and transport admission explicitly.
+    bake::SceneRequest *requestScene(RasterRenderer &resources, const CaptureConfig &config) {
+      return m_authored->requestScene(resources, config);
+    }
     void record(VkCommandBuffer command, RasterRenderer &resources, const Options &options,
-                const techniques::ResourcePlan &plan, bake::Controller &baking);
+                const techniques::ResourcePlan &plan, const CaptureConfig &config,
+                bake::SceneRequest *sceneRequest, CaptureSource captures, bool sharedTransportIdle);
     CaptureSource source(const techniques::ResourcePlan &plan, const bake::Controller &baking) const;
     Descriptors descriptor(const techniques::ResourcePlan &plan, const bake::Controller &baking) const;
     const Header *header(const techniques::ResourcePlan &plan, const bake::Controller &baking) const;

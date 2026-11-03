@@ -849,3 +849,22 @@ importing default sunlight transport. The custom-source fixture removes the
 default sun implementation before compiling world, viewmodel, live, water and
 ray-water materials. This is a compile-time boundary; CPU shadow resource and
 caster scheduling still require the resolved provider plan.
+
+### Explicit capture scheduling inputs
+
+`CaptureProviders::record` records reflection work only. The renderer composes
+the current preset by requesting compatible scene sharing, recording the
+selected diffuse/bake work, then passing the automatic capture publication and
+shared-transport readiness into the reflection scheduler. The scheduler does
+not call the diffuse controller or derive its lighting configuration. A live
+source can therefore supply its own readiness/publication contract without
+making the capture scheduler start a diffuse bake.
+
+The Source 2 adapter retains its existing order and single transport budget:
+a published image alone does not release admission while diffuse/style work
+is pending. Standalone retirement still records after switching back to baked
+captures. Capture source ownership and frame-fence retention are unchanged.
+Metadata fallback queries still use the baked-controller adapter; removing that
+remaining coupling and complete alternative-provider orchestration are separate
+work. This split changes CPU call organization, so shader checks alone cannot
+prove whole-renderer performance equivalence.

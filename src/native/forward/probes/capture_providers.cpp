@@ -14,11 +14,8 @@ namespace remix::forward::probes {
     if (m_standaloneUsed) m_standalone->selectFrame(slot);
   }
   void CaptureProviders::record(VkCommandBuffer command, RasterRenderer &resources, const Options &options,
-                                const techniques::ResourcePlan &plan, bake::Controller &baking) {
-    const auto lightingPlan = options.lightingPlan(plan.liveDiffuse());
-    const auto authoredConfig = options.captureConfiguration();
-    auto *sceneRequest = m_authored->requestScene(resources, authoredConfig);
-    baking.record(command, resources, lightingPlan.baking, options.lightCutoff, sceneRequest);
+                                const techniques::ResourcePlan &plan, const CaptureConfig &authoredConfig,
+                                bake::SceneRequest *sceneRequest, CaptureSource captures, bool sharedTransportIdle) {
     const bool capturesWithBake = plan.capturesWithBake();
     if (!capturesWithBake || m_standaloneUsed) {
       if (!m_standaloneUsed) {
@@ -30,12 +27,12 @@ namespace remix::forward::probes {
       m_standalone->record(command, resources, automaticConfig,
           options.baking.reflectionProbes, options.baking.reflectionDetailTolerance, sceneRequest);
     }
-    auto captures = source(plan, baking);
     // Image availability is not transport admission. Keep one default work
     // budget until diffuse/style work retires, even after early image publication.
     const bool capturesReady = capturesWithBake
-        ? baking.statistics().state == REMIXAPI_BAKE_READY_EXT : !m_standalone->pending();
+        ? sharedTransportIdle : !m_standalone->pending();
     if (!capturesWithBake) {
+      captures = m_standalone->source();
       const auto scene = resources.bakeScene();
       captures.sceneHash = scene && scene->ready ? scene->contentHash : 0;
     }

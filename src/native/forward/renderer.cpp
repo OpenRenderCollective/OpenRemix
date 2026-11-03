@@ -267,7 +267,16 @@ namespace remix::forward {
     };
     m_gpu->postProcessing->begin(command);
     gpu::GpuScope bakeTime(command, "Forward+ bake publication and transport");
-    m_gpu->captureProviders.record(command, resources, m_gpu->options, m_gpu->techniquePlan, *m_gpu->baking);
+    // Preset composition: offer shared inputs before diffuse work, then admit
+    // reflection work against that transport budget and publication.
+    const auto lightingPlan = m_gpu->options.lightingPlan(m_gpu->techniquePlan.liveDiffuse());
+    const auto captureConfig = m_gpu->options.captureConfiguration();
+    auto *sceneRequest = m_gpu->captureProviders.requestScene(resources, captureConfig);
+    m_gpu->baking->record(command, resources, lightingPlan.baking, m_gpu->options.lightCutoff, sceneRequest);
+    const bool sharedCaptures = m_gpu->techniquePlan.capturesWithBake();
+    m_gpu->captureProviders.record(command, resources, m_gpu->options, m_gpu->techniquePlan,
+        captureConfig, sceneRequest, sharedCaptures ? m_gpu->baking->reflectionSource() : probes::CaptureSource{},
+        sharedCaptures && m_gpu->baking->statistics().state == REMIXAPI_BAKE_READY_EXT);
     m_gpu->prepareLocalReflections(command, resources);
     bakeTime.close();
     step(cpu.bake);
