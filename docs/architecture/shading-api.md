@@ -70,7 +70,7 @@ on OpenRemix's scalable indexed fields.
 | --- | --- | --- |
 | Material | Evaluate color, roughness, metalness, emission and normals | `Surface`, `evaluateStandardSurface` |
 | Receiver | Supply world/screen geometry and baked bindings | `ShadingReceiver`, separate from material values |
-| Lighting sources | Fetch source lighting and visibility independently of BRDF | local/sun samples, receiver-local enumeration and diffuse query and environment reflection radiance; full reflection-provider integration pending |
+| Lighting sources | Fetch source lighting and visibility independently of BRDF | local/sun samples, receiver-local enumeration, diffuse queries and replaceable environment/screen-ray reflection sources |
 | Shading model | Apply material response and compose contributions | `shadeSurface` selects the model; default uses `shadeStandardSurface` and `shadeStandardLocalLight` |
 | Renderer | Select providers, allocate/update resources and choose pipelines | typed selections and CPU `ResourcePlan`; lifecycle migration ongoing |
 
@@ -92,7 +92,7 @@ removes the default baked field, style, atlas, visibility and local-shadow files
 and compiles world, metal, viewmodel, live, water and reflection-resolve passes.
 This proves shader composition; host resources still follow the resolved plan.
 
-## Local-light prototype
+## Local-light samples
 
 `shaders/light-sample.glsl` defines `LocalLightSample` and `sampleLocalLight`.
 The query accepts geometry and baked receiver context, with no base color,
@@ -107,12 +107,14 @@ Read the output only when the boolean query succeeds. `frontFacingOnly` is a
 query policy: the standard model keeps its existing rejection, while a custom
 wrap/transmission model can retain back-light samples. Aggregate diffuse data
 requires the existing mixed-shadow residual; adding it again would double-count
-baked direct lighting. This ownership still needs a friendlier high-level facade.
+baked direct lighting. Custom models use the receiver-level queries below; the
+standard model uses `shadeSurface`.
 
 `local-light-response.glsl` applies the standard PBR response to sampled values
 without importing transport resources. The default local source owns the static
 visibility and local shadow-map imports (`occlusion.glsl`, `local-shadows.glsl`)
-as well as `direct-light.glsl`; its optimized standard entry and raw query share
+while its optional `local-response-source.glsl` adapter imports `direct-light.glsl`
+only for standard materials. Its optimized standard entry and raw query share
 `local-light-query.glsl`, a function-body
 template with one caller-specific miss exit. This preserves the standard early
 returns without a runtime shader callback or duplicated transport implementation.
@@ -137,8 +139,8 @@ inherit clustered enumeration or default light-record types.
 `sampleSunLight` supplies direction, linear HDR radiance, unit diffuse irradiance
 and static visibility without material parameters. Its radiance includes the
 moving-caster shadow factor. `shadeStandardSunLight` applies the standard BRDF.
-The existing `sunLightResponse` entry is a compatibility wrapper over both, so
-world and viewmodel callers share transport without changing their passes.
+Models use `sampleReceiverSunLight` and `composeSunLight`; the standard model
+uses `shadeStandardSunLight`. The old combined `sunLightResponse` wrapper was removed.
 `sampleUnbakedSunLight` exposes analytic/CSM visibility for passes without baked
 sun coverage. It is a source policy, not a BRDF or game-specific shader choice.
 
@@ -232,8 +234,8 @@ selection. Probe images and parallax selection remain implementation detail;
 `environmentReflection` is the pass-owned sky fallback implementation.
 
 `sampleViewModelReflection` combines that environment source with current-frame
-SSR and returns radiance without material color/metalness/Fresnel. The standard
-`viewModelReflection` wrapper applies its existing roughness-aware Fresnel term.
+SSR and returns radiance without material color/metalness/Fresnel. The standard model
+uses `standardViewModelReflection` to apply its roughness-aware Fresnel term.
 This is a viewmodel adapter, not a universal world-space SSR API: its screen
 projection, source guides and descriptor layout belong to that pass.
 
@@ -371,54 +373,32 @@ placement vectors, audit ray arrays or received counters to format status.
 Queries follow the same preparation/readback handoff as stage selection and do
 not allocate, scan rays or introduce another progress state.
 
-### Remaining captured-asset dependency
+### Captured asset identity and reuse
 
-The captured provider owner separates scheduling and publication selection, but
-reflection-only edits are not yet independent of diffuse asset invalidation.
-`bake::Config::sameLighting` compares reflection count, resolution and detail
-tolerance; `Controller::record` invalidates the combined job/volume when that
-comparison changes. `cache::key` includes the same reflection fields and fit
-policy revisions. An independent radiance blob therefore does not by itself
-allow reuse of the diffuse publication under a changed reflection request.
+Reflection-only edits preserve a completed diffuse publication when frozen
+source/bindings, cutoff and `Config::sameDiffuse` match. `sameLighting` still
+includes reflection quality so a replacement capture job is scheduled; removing
+those fields would leave reflection edits unapplied. The controller invalidates
+incompatible jobs while retaining compatible diffuse assets and frame leases.
+This works with disk caching disabled. The detailed lifecycle is described in
+[Diffuse publication during reflection refresh](#diffuse-publication-during-reflection-refresh).
 
-The persistence path now has a separate diffuse identity, canonicalizing only
-reflection request fields while retaining source, shader, diffuse policy and
-device identity. A 56-byte checksummed `.diffuse-index` hints at a validated
-legacy container and its original reflection settings. Full legacy hits register
-the hint; successful background writes publish it only after the container is
-committed. Missing/corrupt hints or containers remain ordinary misses, and no
-cache-directory scan is performed. Existing combined keys and wire bytes stay
-unchanged; legacy caches first encountered under changed settings without an
-index may still miss until a matching load or new bake registers one.
+Persistence has a separate diffuse identity, canonicalizing reflection request
+fields while retaining source, shader, diffuse policy and device identity. A
+56-byte checksummed `.diffuse-index` hints at a validated legacy container and
+its original reflection settings. Full legacy hits register the hint; background
+writes publish it after the container commits. Recovery recomputes the referenced
+container key and validates checksum/layout/policy. It does not scan the cache
+directory or require shared radiance blobs. Legacy inline payloads still need
+bounded decoding. Missing/corrupt hints remain ordinary misses; older caches
+without an index may miss after a changed reflection request until a matching
+load or new bake registers one. Existing combined keys/wire bytes remain valid.
 
-On a requested combined-key miss, an indexed diffuse-only read recomputes the
-referenced container key from current diffuse settings plus stored reflection
-settings, then performs normal checksum/layout/policy validation. Shared radiance
-blobs are not opened; legacy inline payloads still need bounded decoding. The
-existing missing-component recovery path then reuses decoded diffuse fields and
-admitted origins while capturing the new reflection request. New manifests are
-persisted under that request's full identity, including reflection disable.
-Warm reflection edits avoid diffuse transport/denoising when this cache path hits.
-This does not yet preserve the current live volume through invalidation or avoid
-rebuilding diffuse data with disk cache disabled.
-
-Removing fields from `sameLighting` or the cache key alone would be incorrect:
-that could leave the requested reflection change unapplied or accept captures
-with the wrong resolution/placement policy.
-
-The next separation must retain live diffuse publications independently of
-reflection placement/radiance requests, while preserving the
-Source 2 adapter's admitted seeds and shared GPU budget. Published diffuse assets
-should remain usable while reflection replacement is pending, including with
-disk persistence disabled. Old frame slots must retain the exact image/metadata
-pair they sampled. Legacy combined caches need a verified migration/fallback
-rather than a blanket invalidation or an unbounded cache-directory scan.
-
-Acceptance must cover count, resolution, tolerance and enable edits independently
-of diffuse quality edits; cold/warm and persistence-disabled operation; cancellation
-and target replacement; unchanged diffuse content and retained publication; and
-no extra settled-frame scans/allocations or transport work for the default preset.
-This remains required for full captured-technique independence.
+Reflection recovery reuses decoded diffuse fields/admitted origins, then captures
+the requested reflection settings. Count, resolution, tolerance and enable edits
+must remain independent of diffuse quality edits. Preserve cancellation, target
+replacement and exact image/metadata leases; broader real-map performance and
+new provider recipes still require qualification.
 
 The preset still determines admission and the order around diffuse finishing.
 The same callbacks, queue order, transport budget and early publication boundary
@@ -811,9 +791,9 @@ frozen-static domain and preserves the old scalar guard/vector operations. That
 adapter still transports receiver luminance through its existing float guide;
 this change does not add an arbitrary provenance ID to the guide ABI. Other
 providers may use the typed entry independently, but must not claim Source 2
-compatibility merely because they provide diffuse irradiance. Scene/generation
-validation, light-component ownership and cross-provider guide transport remain
-part of the broader provider contract work.
+compatibility merely because they provide diffuse irradiance. CPU capture binding
+additionally checks frozen scene/component provenance as described below; arbitrary
+cross-provider guide transport remains an extension point.
 
 ### Optical receiver sunlight
 
@@ -835,10 +815,11 @@ visibility policy described below; the default preset retains its existing polic
 ### Sun transport and material response
 
 `sun.glsl` owns visibility and incident sunlight samples. `sun-response.glsl`
-composes those samples with material BRDF lobes; it has no pass resources and
-can be used without the default sun transport. The pass includes both for the
-standard material. Custom models may consume `SunLightSample` directly or reuse
-that response, while replacement sun sources retain the same sample contract.
+applies standard GGX, while `sun-composition.glsl` composes sampled values with
+caller-supplied lobes. Both have no transport resources. The pass imports generic
+composition; the standard model imports its response. Custom models may consume
+`SunLightSample` directly or reuse that response, while replacement sun sources
+retain the same sample contract.
 
 ### Reference domains through material composition
 
@@ -862,8 +843,9 @@ lighting without adding a guide attachment or changing the packed ABI.
 
 Source domain declarations specialize away in the default shaders. The current
 guide cannot transport arbitrary domains; a future provider requiring another
-domain across that pass must add a compatible guide adapter. Scene/generation
-and component provenance remain separate requirements.
+domain across that pass must add a compatible guide adapter. CPU capture binding
+separately validates scene/component provenance; shader domain compatibility alone
+does not authorize normalization.
 
 ### Local source isolation
 
@@ -1242,9 +1224,12 @@ CPU regressions reject changed instance identities, missing bindings and reorder
 charts despite equal unordered content. The composed viewmodel sunlight fixture
 explicitly recaptures changed sun power with disk caching disabled at 1/2/4x MSAA;
 it requires the same publication pointer, ready state and exact rendered output.
-Material records remain conservative: incoming-only albedo/emission edits can
-still invalidate direct content. These dependencies, broader real-map reuse and
-matched runtime performance require further qualification.
+Direct identity excludes roughness scalar/image/remapping; same-live-material
+roughness edits preserve exact GPU publication with disk caching disabled. Material
+replacement still requires rebinding and can warm-load compatible direct data.
+Alpha and measured optical inputs remain dependencies. Other material records stay
+conservative: albedo/emission edits can still invalidate direct content. Broader
+material dependency pruning, real-map reuse and matched timing remain unqualified.
 
 
 ### Private environment storage and candidate gathering
@@ -1274,8 +1259,8 @@ variants. After structural global-ID/declaration-order normalization, their
 ordered executable instructions and global declarations match. Viewmodel
 reflection and water environment/HDR/MSAA GPU fixtures pass. The source-file move
 changes some raw SPIR-V declaration order; it is not byte-identical. This is not
-a new matched runtime FPS study. Scene/component normalization provenance remains
-separate work; the default environment still accepts only the typed Source 2
+a new matched runtime FPS study. CPU scene/component provenance is checked at
+binding time; the default shader environment still accepts only the typed Source 2
 static reference domain.
 
 The scalar reflection-guide convention belongs to
@@ -1286,6 +1271,26 @@ resolve do not assign the Source 2 domain themselves. The default adapter reject
 foreign references and keeps the existing RGBA16F layout; no extra guide image
 or domain channel is allocated. This is a compile-selected convention, not
 per-pixel support for mixed domains or proof of scene/component compatibility.
+
+### Capture-reference provenance at binding time
+
+Shader `LightingReference` domains describe comparable lighting conventions.
+CPU `probes::ReferenceProvenance` separately carries a nonzero domain and frozen
+input identity; both must match before an image advertises normalized metadata.
+`source2Reference` uses the combined static-lighting input hash. Complete combined
+receiver fields can advertise that identity; receiver-direct and incomplete fields
+cannot. Capture output hashes, quality counts and projection bounds do not define
+which lighting components the normalization reference represents.
+
+ImageAsset retains normalized and neutral metadata views over the same radiance
+and projection. Binding an unknown/mismatched receiver selects neutral metadata
+without a shader comparison. Composition/selection carry per-layer provenance,
+but one descriptor selects the whole image: mixed-provenance images conservatively
+neutralize normalization for the whole image. Per-layer normalization is not
+implemented. Zeroing foreign layers' reference coefficients alone would be wrong,
+because the shader blends their radiance before applying the common ratio. A
+future mixed-layer scheme needs matching radiance/reference composition semantics.
+New lighting recipes must provide a qualified domain/input identity or stay neutral.
 
 ### Material response ownership
 
