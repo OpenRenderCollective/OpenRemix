@@ -1133,3 +1133,21 @@ ray-water fragment, within the existing water capability gate; no new capability
 requirement is introduced. Checked default/custom optimized shader variants are
 unchanged after identifier normalization. Matched runtime performance and wider
 real-map optical quality acceptance remain open.
+
+
+### Receiver-direct snapshot identity
+
+Frozen scenes retain a separate receiver-direct fingerprint alongside the
+unchanged combined fingerprint. The direct domain includes the existing frozen
+geometry/material records, local emitters, partition, receiver layout and sun
+visibility shape. It excludes reflection hints, sun power and dome inputs, which
+belong to reflection or incoming-light providers. Both hashes are computed at
+snapshot creation; frame recording selects one scalar without traversing inputs.
+Receiver-direct controller/cache lookup and diffuse-index lookup use this domain.
+
+Replacing a snapshot still refreshes retained receiver bindings and cancels work
+against the old snapshot. Equal component fingerprints permit cache lookup reuse;
+they do not yet preserve an in-memory publication across snapshot replacement.
+Material records remain conservative: incoming-only albedo/emission edits can
+still invalidate direct content. These remaining dependencies and matched runtime
+performance require further qualification.

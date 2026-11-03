@@ -180,9 +180,11 @@ namespace remix::forward::bake {
       std::copy_n(properties.pipelineCacheUUID, deviceIdentity.uuid.size(), deviceIdentity.uuid.begin());
       const bool fallbackReflections = !source->partition || !source->partition->closed;
       cacheDevice = deviceIdentity;
-      cacheKey = cache::key(source->contentHash, config, lightCutoff, deviceIdentity, directLighting,
+      const auto sourceHash = source->lightingHash(irradianceContents == IrradianceContents::ReceiverDirect
+          ? scene::BakeLightScope::ReceiverDirect : scene::BakeLightScope::Combined);
+      cacheKey = cache::key(sourceHash, config, lightCutoff, deviceIdentity, directLighting,
                             fallbackReflections);
-      diffuseReference = {cache::diffuseKey(source->contentHash, config, lightCutoff, deviceIdentity, directLighting),
+      diffuseReference = {cache::diffuseKey(sourceHash, config, lightCutoff, deviceIdentity, directLighting),
           cacheKey, config.reflectionProbes, config.reflectionResolution,
           std::bit_cast<uint32_t>(config.reflectionDetailTolerance)};
       try {
@@ -194,7 +196,7 @@ namespace remix::forward::bake {
         auto cached = cache::read(cacheFile, cacheKey, source, config, deviceIdentity,
                                   cancellation.get_token(), directLighting, cache::ReflectionRead::RecoverMissing);
         if (!cached) {
-          cached = cache::readDiffuse(cacheFile.parent_path(), source->contentHash, source, config, lightCutoff,
+          cached = cache::readDiffuse(cacheFile.parent_path(), sourceHash, source, config, lightCutoff,
                                        deviceIdentity, cancellation.get_token(), directLighting, fallbackReflections);
           diffuseRecovery = bool(cached);
         }
@@ -207,7 +209,7 @@ namespace remix::forward::bake {
                                        true, config.textureResolution);
         }
         if (!cancellation.stop_requested())
-          cache::recordLookup(cacheFile, cacheKey, source->contentHash,
+          cache::recordLookup(cacheFile, cacheKey, sourceHash,
                                cache::key(0, config, lightCutoff, deviceIdentity, directLighting,
                                           fallbackReflections), bool(cached));
         if (cached) {
@@ -1074,7 +1076,9 @@ namespace remix::forward::bake {
       m_emptyOcclusion->clear(command);
     }
     const auto source = resources.bakeScene();
-    const uint64_t hash = source && source->ready ? source->contentHash : 0;
+    const uint64_t hash = source && source->ready
+        ? source->lightingHash(config.irradianceContents == IrradianceContents::ReceiverDirect
+            ? scene::BakeLightScope::ReceiverDirect : scene::BakeLightScope::Combined) : 0;
     bool startReflectionRefresh = false;
     if (source != m_source || hash != m_hash || !config.sameLighting(m_config) ||
         lightCutoff != m_lightCutoff) {

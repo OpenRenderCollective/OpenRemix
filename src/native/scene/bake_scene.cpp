@@ -325,6 +325,16 @@ namespace remix::scene {
         hash.add(cluster);
     }
     prefixes[1] = hash.value;
+    Hash receiverDirect = hash;
+    receiverDirect.add(uint32_t(0x52444931u)); // receiver-direct input domain, version 1
+    receiverDirect.add(uint64_t(scene.draws.size()));
+    receiverDirect.add(uint64_t(scene.lights.size()));
+    for (auto record : records)
+      receiverDirect.add(record);
+    receiverDirect.add(scene.sun.direction);
+    receiverDirect.add(scene.sun.angularDiameterDegrees);
+    receiverDirect.add(scene.sun.isDistant);
+    scene.receiverDirectHash = receiverDirect.value ? receiverDirect.value : 1;
     hash.add(uint64_t(scene.reflectionHints.size()));
     for (const auto &position : scene.reflectionHints)
       hash.add(position);

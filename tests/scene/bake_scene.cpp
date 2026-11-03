@@ -27,6 +27,42 @@ int main() {
     require(ordinary->contentHash != reflectionOnly->contentHash &&
                 ordinary->contentHash == snapshot(0, false)->contentHash,
             "Ray-purpose changes invalidate affected bakes without changing ordinary scene identity");
+    auto componentSnapshot = [&](auto edit) {
+      scene::BakeScene input;
+      input.ready = true;
+      input.draws.push_back(fixture.draws().back());
+      input.draws.back().classification = REMIXAPI_INSTANCE_STATIC_EXT;
+      input.sun.isDistant = true;
+      input.sun.direction[2] = -1;
+      edit(input);
+      scene::freezeBakeScene(input);
+      return input;
+    };
+    const auto components = componentSnapshot([](auto &) {});
+    const auto incoming = componentSnapshot([](auto &input) {
+      input.sun.radiance[0] = 8;
+      input.dome.enabled = true;
+      input.dome.radiance[1] = 4;
+      input.reflectionHints.push_back({1, 2, 3});
+    });
+    require(components.contentHash != incoming.contentHash && components.receiverDirectHash &&
+                components.receiverDirectHash == incoming.receiverDirectHash,
+            "Incoming power and reflection hints do not invalidate receiver-direct content");
+    const auto sunShape = componentSnapshot([](auto &input) { input.sun.direction[0] = .5f; });
+    const auto local = componentSnapshot([](auto &input) { input.lights.emplace_back(); });
+    const auto brighterLocal = componentSnapshot([](auto &input) {
+      input.lights.emplace_back();
+      input.lights.back().radiance[0] = 8;
+    });
+    const auto geometry = componentSnapshot([](auto &input) { input.draws[0].model[12] += 1; });
+    require(components.receiverDirectHash != sunShape.receiverDirectHash &&
+                components.receiverDirectHash != local.receiverDirectHash &&
+                local.receiverDirectHash != brighterLocal.receiverDirectHash &&
+                components.receiverDirectHash != geometry.receiverDirectHash,
+            "Sun visibility shape, local emitters and geometry remain direct dependencies");
+    require(components.lightingHash(scene::BakeLightScope::Combined) == components.contentHash &&
+                components.lightingHash(scene::BakeLightScope::ReceiverDirect) == components.receiverDirectHash,
+            "Component consumers select their frozen content domain explicitly");
     const auto receiver = snapshot(0, true);
     const auto invisibleReceiver = snapshot(REMIXAPI_INSTANCE_CATEGORY_BIT_THIRD_PERSON_PLAYER_MODEL, true);
     require(receiver->charts.size() == 1 && invisibleReceiver->charts.empty() && invisibleReceiver->draws.size() == 1,

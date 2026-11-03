@@ -24,6 +24,12 @@ namespace remix::scene {
   // on a camera, frame visibility, automatic settling, or caller-owned arrays.
   struct BakeScene {
     uint64_t sceneId = 0, revision = 0, contentHash = 0;
+    // Direct receivers retain local light power and unit sun visibility, not
+    // incoming sky power or reflection capture placement. Computed once at freeze.
+    uint64_t receiverDirectHash = 0;
+    uint64_t lightingHash(BakeLightScope scope) const {
+      return scope == BakeLightScope::ReceiverDirect ? receiverDirectHash : contentHash;
+    }
     float sceneScale = 1;
     bool ready = false;
     bool hasBounds = false;

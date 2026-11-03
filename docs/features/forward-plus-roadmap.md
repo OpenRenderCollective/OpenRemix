@@ -1,3 +1,14 @@
+### Receiver-direct component identity (2026-11-03)
+
+- Frozen snapshots now compute a separate receiver-direct identity. Controller,
+  cache and diffuse-index lookups select it for direct-only publications; the
+  existing combined identity is unchanged. Sky power and reflection hints are
+  excluded; local light power, geometry and unit sun visibility shape remain.
+- Native build, scene identity regressions and composed mixed-lighting GPU checks
+  pass. No new per-frame input traversal is introduced. Runtime timing is pending.
+- Still open: preserve safe in-memory publication reuse across snapshot replacement,
+  narrow conservative material dependencies, and qualify cache reuse on real maps.
+
 ## Current modular renderer status — 2026-11-03
 
 The technique split is in progress; performance acceptance is not complete.
