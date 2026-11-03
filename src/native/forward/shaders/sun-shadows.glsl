@@ -3,15 +3,10 @@
 #define SUN_SHADOW_BINDING 4
 #endif
 layout(set = 0, binding = SUN_SHADOW_BINDING) uniform sampler2DArrayShadow sunShadow;
-// Matches worldSunMovingEmpty in bindings.h; legacy/unproven frames keep zero.
-const uint WorldSunMovingEmpty = 4u;
 // Cascades 0..3 contain complete frozen geometry; 4..7 contain current casters
 // outside that snapshot. Matching lightmaps/probes replace the frozen term.
 float sunShadowVisibilityLayers(vec3 p, float depth, bool includeStatic, bool viewModel, vec3 receiverNormal) {
   if (frame.target.w == 0u || depth > frame.splits.w)
-    return 1;
-  bool hasMovingCasters = viewModel || (frame.clusterInfo.w & WorldSunMovingEmpty) == 0u;
-  if (!includeStatic && !hasMovingCasters)
     return 1;
   int cascade = depth < frame.splits.x ? 0 : depth < frame.splits.y ? 1 : depth < frame.splits.z ? 2 : 3;
   vec4 clip = frame.shadows[cascade] * vec4(p, 1);
@@ -46,7 +41,7 @@ float sunShadowVisibilityLayers(vec3 p, float depth, bool includeStatic, bool vi
       // The viewmodel has one close-up pair; the world has four cascade pairs.
       uint movingLayer = viewModel ? 1u : uint(cascade + 4);
       uint staticLayer = viewModel ? 0u : uint(cascade);
-      float moving = hasMovingCasters ? texture(sunShadow, vec4(uv, movingLayer, reference)) : 1;
+      float moving = texture(sunShadow, vec4(uv, movingLayer, reference));
       float frozen = includeStatic ? texture(sunShadow, vec4(uv, staticLayer, reference)) : 1;
       visibility += weight * min(moving, frozen);
     }
