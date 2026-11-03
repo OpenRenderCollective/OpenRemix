@@ -7,6 +7,7 @@
 #include "gpu_fixture.h"
 #include <algorithm>
 #include <bit>
+#include <cstring>
 #include <stdexcept>
 
 using namespace remix::forward;
@@ -74,7 +75,7 @@ void uploadCase(uint32_t count, uint32_t size, bool composition = false, bool se
   Buffer readback;
   readback.create(fixture.physical, fixture.device, bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT, Buffer::Memory::Readback);
   Buffer metadataReadback;
-  metadataReadback.create(fixture.physical, fixture.device, sizeof(probes::GpuHeader),
+  metadataReadback.create(fixture.physical, fixture.device, 2 * sizeof(probes::GpuHeader),
                          VK_BUFFER_USAGE_TRANSFER_DST_BIT, Buffer::Memory::Readback);
   const auto &image = output.image();
   require(asset.metadata().range == sizeof(probes::GpuHeader), "Projection descriptor excludes radiance payload");
@@ -120,8 +121,15 @@ void uploadCase(uint32_t count, uint32_t size, bool composition = false, bool se
                        0, 0, nullptr, 0, nullptr, 1, &barrier);
   vkCmdCopyImageToBuffer(fixture.command, image.handle, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                          readback.handle, uint32_t(copies.size()), copies.data());
-  const VkBufferCopy metadataCopy{0, 0, sizeof(probes::GpuHeader)};
-  vkCmdCopyBuffer(fixture.command, output.metadata().buffer, metadataReadback.handle, 1, &metadataCopy);
+  const auto guarded = output.descriptors(authoredReference);
+  require(guarded.radiance.imageView == output.radiance().imageView &&
+              guarded.metadata.buffer == output.metadata().buffer &&
+              guarded.metadata.range == output.metadata().range,
+          "Reference admission reuses radiance, descriptor shape and the metadata allocation");
+  const VkBufferCopy metadataCopies[]{
+      {0, 0, sizeof(probes::GpuHeader)},
+      {guarded.metadata.offset, sizeof(probes::GpuHeader), sizeof(probes::GpuHeader)}};
+  vkCmdCopyBuffer(fixture.command, output.metadata().buffer, metadataReadback.handle, 2, metadataCopies);
   const VkMemoryBarrier host{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
       .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
   vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
@@ -137,8 +145,17 @@ void uploadCase(uint32_t count, uint32_t size, bool composition = false, bool se
           "Completed upload releases staging while retaining sampled metadata");
   std::vector<uint16_t> actual(packed.pixels.size());
   readback.read(actual.data(), bytes);
-  probes::GpuHeader actualMetadata;
-  metadataReadback.read(&actualMetadata, sizeof(actualMetadata));
+  std::array<probes::GpuHeader, 2> metadataViews;
+  metadataReadback.read(metadataViews.data(), sizeof(metadataViews));
+  const auto &actualMetadata = metadataViews[0];
+  require(std::memcmp(&metadataViews[0].captures, &metadataViews[1].captures, sizeof(probes::Header)) == 0,
+          "Neutral normalization preserves all capture projection metadata");
+  require(metadataViews[1].normalization.coefficients ==
+              (composition ? probes::Normalization{}.coefficients : packed.normalization.coefficients),
+          "Binding uses matching reference coefficients and neutralizes mixed input identities");
+  require(output.descriptors({}).metadata.offset == output.descriptors({2, 101}).metadata.offset &&
+              output.descriptors({}).metadata.offset == output.descriptors(automaticReference).metadata.offset,
+          "Unknown, foreign-domain and mismatched-input receivers select neutral metadata");
   require(actualMetadata.normalization.coefficients == packed.normalization.coefficients,
           "Capture normalization follows GPU upload, authored composition and local selection layers");
   require(output.references().size() == count, "Empty images expose no reference layers");

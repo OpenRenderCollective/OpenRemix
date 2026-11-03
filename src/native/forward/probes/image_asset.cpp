@@ -29,6 +29,7 @@ namespace remix::forward::probes {
     m_staging->write(packed.pixels.data(), packed.pixels.size()*sizeof(uint16_t));
     initialize(physical, packed.header, packed.normalization);
     std::fill_n(m_references.begin(), count, reference);
+    if (count) m_reference = reference;
   }
   ImageAsset::ImageAsset(VkPhysicalDevice physical, VkDevice device, const Composition &composition)
       : m_device(device), m_layerCopies(composition.layers) {
@@ -70,11 +71,17 @@ namespace remix::forward::probes {
         VK_FORMAT_FEATURE_TRANSFER_DST_BIT | VK_FORMAT_FEATURE_TRANSFER_SRC_BIT;
     if ((format.optimalTilingFeatures & required) != required)
       throw std::runtime_error("Device cannot sample uploaded RGBA16F reflection images");
+    // Both views share one allocation and the existing descriptor layout.
+    // Empty fallback images need only their already-neutral header.
+    const auto alignment = properties.limits.minStorageBufferOffsetAlignment;
+    const auto stride = (sizeof(GpuHeader) + alignment - 1) / alignment * alignment;
+    const auto neutralOffset = count ? stride : 0;
     m_metadata = std::make_unique<Buffer>();
-    m_metadata->create(physical, m_device, sizeof(GpuHeader),
+    m_metadata->create(physical, m_device, neutralOffset + sizeof(GpuHeader),
                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-    const GpuHeader metadata{m_header, priorityBands(m_header), m_normalization};
-    m_metadata->write(&metadata, sizeof(metadata));
+    m_normalizedMetadata = {m_metadata->handle, 0, sizeof(GpuHeader)};
+    m_neutralMetadata = {m_metadata->handle, neutralOffset, sizeof(GpuHeader)};
+    writeMetadata();
     m_image = std::make_unique<Image>();
     m_image->create(physical, m_device, extent, VK_FORMAT_R16G16B16A16_SFLOAT,
                      VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
@@ -86,6 +93,14 @@ namespace remix::forward::probes {
         .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
         .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, .maxLod = float(m_levels-1)};
     check(vkCreateSampler(m_device, &sampler, nullptr, &m_sampler));
+  }
+  void ImageAsset::writeMetadata() {
+    GpuHeader metadata{m_header, priorityBands(m_header), m_normalization};
+    m_metadata->write(&metadata, sizeof(metadata));
+    if (m_neutralMetadata.offset) {
+      metadata.normalization = {};
+      m_metadata->write(&metadata, sizeof(metadata), m_neutralMetadata.offset);
+    }
   }
   ImageAsset::~ImageAsset() {
     if (m_sampler) vkDestroySampler(m_device, m_sampler, nullptr);
@@ -141,8 +156,15 @@ namespace remix::forward::probes {
             .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, level, layer, 1}, .extent = {size, 6*size, 1}});
       }
     }
-    const GpuHeader metadata{m_header, priorityBands(m_header), m_normalization};
-    m_metadata->write(&metadata, sizeof(metadata));
+    // Mixed input/domain sets remain sampleable, but their image-wide binding
+    // cannot advertise one compatible normalization convention.
+    m_reference = m_references[0];
+    for (uint32_t layer = 1; layer < m_layerCopies.size(); ++layer)
+      if (m_references[layer] != m_reference) {
+        m_reference = {};
+        break;
+      }
+    writeMetadata();
     std::vector<VkImageMemoryBarrier> barriers;
     auto barrier = [](const ImageAsset &asset, VkImageLayout oldLayout, VkImageLayout newLayout,
                       VkAccessFlags source, VkAccessFlags destination) {

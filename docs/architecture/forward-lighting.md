@@ -935,6 +935,19 @@ Other lighting-component recipes must supply another domain or stay unavailable.
 Diffuse publication retains the same receiver identity only for a combined field
 with direct diffuse ownership. Receiver-direct and partial fields stay unavailable.
 Capture scene admission retains the full frozen content identity separately from
-the diffuse component hash. Frame-level compatibility enforcement remains pending;
-this metadata does not yet change normalization eligibility. The shader arithmetic
-and GPU layouts remain unchanged.
+the diffuse component hash.
+
+Automatic, authored and selected-local bindings select metadata against that
+receiver publication identity. A nonempty image retains two aligned views in one
+buffer allocation: original normalization and neutral (zero coefficients).
+Radiance, projection and priority metadata are identical. Compatible uniform
+provenance selects the original view; unavailable, mismatched or mixed provenance
+selects neutral. Mixed sets currently neutralize the whole image rather than
+normalizing only a subset of layers. This is safe but conservative for future
+mixed-component producers.
+
+The shader arithmetic, descriptor layout and GPU instruction path are unchanged.
+Binding adds a CPU identity comparison, without a layer scan. Nonempty images add
+one aligned `GpuHeader` of retained metadata (11,280 bytes before alignment);
+empty fallback images reuse one view. Allocation count is unchanged. This memory
+tradeoff and broad frame-time acceptance remain part of performance qualification.

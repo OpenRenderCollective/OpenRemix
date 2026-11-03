@@ -380,8 +380,8 @@ namespace remix::forward::probes {
     }
     return result;
   }
-  Descriptors Authoring::descriptor(Descriptors automatic) const {
-    return m_active ? m_active->image->descriptors() : automatic;
+  Descriptors Authoring::descriptor(Descriptors automatic, ReferenceProvenance receiver) const {
+    return m_active ? m_active->image->descriptors(receiver) : automatic;
   }
   const Header *Authoring::header() const { return m_active ? &m_active->image->header() : nullptr; }
   const LayerIdentities *Authoring::identities() const { return m_active ? &m_active->identities : nullptr; }
