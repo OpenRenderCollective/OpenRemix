@@ -27,9 +27,6 @@ layout(early_fragment_tests) in;
 #ifdef VIEWMODEL_PASS
 #include "../viewmodel/shaders/reflections.glsl"
 #endif
-#ifdef LIVE_GI
-#include "gi.glsl"
-#endif
 #endif
 layout(location = 0) in vec3 worldPosition;
 layout(location = 1) in vec2 uv;

@@ -165,12 +165,13 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
     # Replace incoming transport while retaining baked direct storage, contexts,
     # mixed-shadow attribution and the real standard material. No ray include is
     # available, so accidental dependencies cannot pass on unused declarations.
-    source.write_text((root / "src/native/forward/shaders/forward.frag").read_text().replace(
-        '#include "gi.glsl"', ''), encoding="utf-8")
+    # The original pass is untouched: only the provider implementation changes.
+    assert source.read_bytes() == (root / "src/native/forward/shaders/forward.frag").read_bytes()
     (tree / "shaders/gi.glsl").unlink()
     (tree / "shaders/incoming-cascades.glsl").unlink()
     (tree / "cascades/shaders/receiver-frame.glsl").unlink()
     (tree / "shaders/incoming-frame.glsl").write_text("", encoding="utf-8")
+    (tree / "shaders/ray-transport.glsl").unlink()
     shutil.copyfile(root / "tests/forward/shaders/custom-incoming-source.glsl",
                     tree / "shaders/incoming-lighting.glsl")
     for name, defines in {
@@ -197,7 +198,7 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
                         "-o", str(binary)], env=env, check=True)
         subprocess.run([validator, "--target-env", "vulkan1.2", str(binary)], env=env, check=True)
     source.write_text((root / "src/native/forward/shaders/forward.frag").read_text(), encoding="utf-8")
-    for name in ("gi.glsl", "incoming-lighting.glsl", "incoming-cascades.glsl", "incoming-frame.glsl"):
+    for name in ("gi.glsl", "ray-transport.glsl", "incoming-lighting.glsl", "incoming-cascades.glsl", "incoming-frame.glsl"):
         shutil.copyfile(root / "src/native/forward/shaders" / name, tree / "shaders" / name)
     shutil.copyfile(root / "src/native/forward/cascades/shaders/receiver-frame.glsl",
                     tree / "cascades/shaders/receiver-frame.glsl")
