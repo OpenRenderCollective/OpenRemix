@@ -39,6 +39,50 @@ int main() {
       return input;
     };
     const auto components = componentSnapshot([](auto &) {});
+    auto liveMaterial = fixture.draws().back().material;
+    const auto savedRoughness = liveMaterial->roughness;
+    liveMaterial->roughness = savedRoughness == .25f ? .75f : .25f;
+    const auto roughness = componentSnapshot([](auto &) {});
+    liveMaterial->roughness = savedRoughness;
+    const auto savedRemap = liveMaterial->remap[0];
+    liveMaterial->remap[0].scale += .5f;
+    const auto roughnessRemap = componentSnapshot([](auto &) {});
+    liveMaterial->remap[0] = savedRemap;
+    require(components.contentHash != roughness.contentHash &&
+                components.contentHash != roughnessRemap.contentHash &&
+                components.receiverDirectHash == roughness.receiverDirectHash &&
+                components.receiverDirectHash == roughnessRemap.receiverDirectHash &&
+                scene::sameBakeReceiverBindings(components, roughness) &&
+                scene::sameBakeReceiverBindings(components, roughnessRemap),
+            "Specular roughness edits retain direct visibility and live bindings, not combined transport");
+    const auto savedRoughnessTexture = liveMaterial->roughnessTexture;
+    liveMaterial->roughnessTexture = std::make_shared<scene::Texture>();
+    liveMaterial->roughnessTexture->pixels.width = 1;
+    liveMaterial->roughnessTexture->pixels.height = 1;
+    liveMaterial->roughnessTexture->pixels.mips = {{32, 32, 32, 255}};
+    const auto roughnessMap = componentSnapshot([](auto &) {});
+    liveMaterial->roughnessTexture->pixels.mips[0][0] = 192;
+    const auto editedRoughnessMap = componentSnapshot([](auto &) {});
+    liveMaterial->roughnessTexture = savedRoughnessTexture;
+    require(components.contentHash != roughnessMap.contentHash &&
+                roughnessMap.contentHash != editedRoughnessMap.contentHash &&
+                components.receiverDirectHash == roughnessMap.receiverDirectHash &&
+                components.receiverDirectHash == editedRoughnessMap.receiverDirectHash &&
+                scene::sameBakeReceiverBindings(components, editedRoughnessMap),
+            "Roughness image presence and pixels affect combined transport only");
+    const auto replacedMaterial = componentSnapshot([](auto &input) {
+      input.draws[0].material = std::make_shared<scene::Material>(*input.draws[0].material);
+    });
+    require(components.receiverDirectHash == replacedMaterial.receiverDirectHash &&
+                !scene::sameBakeReceiverBindings(components, replacedMaterial),
+            "Equal direct content never bypasses live material replacement guards");
+    const auto savedReference = liveMaterial->reference;
+    liveMaterial->reference += .125f;
+    const auto coverage = componentSnapshot([](auto &) {});
+    liveMaterial->reference = savedReference;
+    require(components.receiverDirectHash != coverage.receiverDirectHash &&
+                !scene::sameBakeReceiverBindings(components, coverage),
+            "Alpha coverage remains a direct visibility and live-binding dependency");
     const auto incoming = componentSnapshot([](auto &input) {
       input.sun.radiance[0] = 8;
       input.dome.enabled = true;
@@ -313,6 +357,7 @@ int main() {
   auto boundary = boundarySource;
   scene::freezeBakeScene(boundary);
   const auto boundaryHash = boundary.contentHash;
+  const auto boundaryDirectHash = boundary.receiverDirectHash;
   auto decalIdentity = boundarySource;
   decalIdentity.draws[0].decal = true;
   scene::freezeBakeScene(decalIdentity);
@@ -331,7 +376,8 @@ int main() {
   water->transmittanceDistance = 20;
   boundary = boundarySource;
   scene::freezeBakeScene(boundary);
-  require(boundary.contentHash != boundaryHash, "Optical edits invalidate the frozen boundary");
+  require(boundary.contentHash != boundaryHash && boundary.receiverDirectHash != boundaryDirectHash,
+          "Optical edits invalidate both combined transport and direct visibility");
   const auto measuredBodyHash = boundary.contentHash;
   water->thinWallThickness = .25f;
   boundary = boundarySource;

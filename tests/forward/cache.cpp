@@ -219,7 +219,7 @@ int main(int argc, char **argv) {
     require(recovered && recovered->contents == Contents::ReceiverDirect &&
                 !recovered->missingReflections && recovered->grid.points.empty() && recovered->pixels == data.pixels,
             "Direct-only index recovery must not require reflection work or transient origin reconstruction");
-    auto changedSource = [&](bool localEdit) {
+    auto changedSource = [&](bool localEdit, bool roughnessEdit = false) {
       auto changed = std::make_shared<scene::BakeScene>();
       changed->ready = true;
       changed->draws = resources.retained(handle)->records;
@@ -229,6 +229,11 @@ int main(int argc, char **argv) {
       changed->dome.radiance[0] = 4;
       changed->sun.radiance[1] = 8;
       changed->reflectionHints.push_back({2, 3, 4});
+      if (roughnessEdit) {
+        changed->draws[0].material = std::make_shared<scene::Material>(*changed->draws[0].material);
+        auto &roughness = changed->draws[0].material->roughness;
+        roughness = roughness == .25f ? .75f : .25f;
+      }
       if (localEdit) changed->lights[0].radius *= 2;
       scene::freezeBakeScene(*changed);
       return changed;
@@ -239,6 +244,12 @@ int main(int argc, char **argv) {
     require(incomingEdit->contentHash != source->contentHash && warm &&
                 warm->pixels == data.pixels && warm->mixed.lights.source == incomingEdit,
             "Incoming-only edits warm-load direct data and bind ownership to the new snapshot");
+    const auto roughnessEdit = changedSource(false, true);
+    const auto roughnessWarm = bc::readDiffuse(directory, roughnessEdit->receiverDirectHash, roughnessEdit,
+                                               directConfig, .001f, device);
+    require(roughnessEdit->contentHash != incomingEdit->contentHash && roughnessWarm &&
+                roughnessWarm->pixels == data.pixels && roughnessWarm->mixed.lights.source == roughnessEdit,
+            "Specular-only replacement warm-loads direct data and rebinds the new snapshot");
     const auto localEdit = changedSource(true);
     require(!bc::readDiffuse(directory, localEdit->receiverDirectHash, localEdit, directConfig, .001f, device),
             "Changed local transport cannot recover stale receiver-direct data");
