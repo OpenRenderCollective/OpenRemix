@@ -27,7 +27,7 @@ namespace remix::scene {
     // Direct receivers retain local light power and unit sun visibility, not
     // incoming sky power or reflection capture placement. Computed once at freeze.
     uint64_t receiverDirectHash = 0;
-    uint64_t receiverBindingHash = 0; // ordered records and live instance/light identities
+    uint64_t receiverBindingHash = 0; // ordered direct records and live instance/light identities
     uint64_t lightingHash(BakeLightScope scope) const {
       return scope == BakeLightScope::ReceiverDirect ? receiverDirectHash : contentHash;
     }

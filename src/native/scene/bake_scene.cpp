@@ -25,9 +25,23 @@ namespace remix::scene {
           add(element);
       }
     };
+    // Compute both identities while freezing once. The complete transport key
+    // retains its historical byte order; direct visibility omits specular-only
+    // material inputs. This work belongs to snapshot creation, never the frame.
+    struct TransportHash {
+      Hash combined, direct;
+      template <class T> void add(const T &value, bool directDependency = true) {
+        combined.add(value);
+        if (directDependency) direct.add(value);
+      }
+    };
+    struct FrozenMaterial {
+      std::shared_ptr<Material> material;
+      uint64_t combined, direct;
+    };
     struct Freezer {
       std::unordered_map<const Texture *, uint64_t> textures;
-      std::unordered_map<const Material *, std::pair<std::shared_ptr<Material>, uint64_t>> materials;
+      std::unordered_map<const Material *, FrozenMaterial> materials;
       std::unordered_map<const Surface *, std::pair<std::shared_ptr<Surface>, uint64_t>> surfaces;
 
       uint64_t texture(const std::shared_ptr<Texture> &source) {
@@ -58,7 +72,7 @@ namespace remix::scene {
         textures.emplace(source.get(), hash.value);
         return hash.value;
       }
-      std::pair<std::shared_ptr<Material>, uint64_t> material(const std::shared_ptr<Material> &source) {
+      FrozenMaterial material(const std::shared_ptr<Material> &source) {
         if (!source || source->fps ||
             (source->transmittanceScroll[0] != 0 && !(source->bakeTintAxes & 1u)) ||
             (source->transmittanceScroll[1] != 0 && !(source->bakeTintAxes & 2u)) ||
@@ -68,25 +82,25 @@ namespace remix::scene {
         if (auto found = materials.find(source.get()); found != materials.end())
           return found->second;
         auto result = std::make_shared<Material>();
-        Hash hash;
-        auto copy = [&]<class T>(T &out, const T &in) {
+        TransportHash hash;
+        auto copy = [&]<class T>(T &out, const T &in, bool directDependency = true) {
           if constexpr (std::is_array_v<T>)
             std::copy(std::begin(in), std::end(in), std::begin(out));
           else
             out = in;
-          hash.add(in);
+          hash.add(in, directDependency);
         };
         // Copy transport/shading fields explicitly. Mutable emission caches and
         // retirement flags belong to their source resource, never this snapshot.
         result->sourceHash = source->sourceHash;
         result->replacementKeys = source->replacementKeys;
-        auto map = [&](auto &out, const auto &in) {
+        auto map = [&](auto &out, const auto &in, bool directDependency = true) {
           out = in;
-          hash.add(texture(in));
+          hash.add(texture(in), directDependency);
         };
         map(result->texture, source->texture);
         map(result->emissionTexture, source->emissionTexture);
-        map(result->roughnessTexture, source->roughnessTexture);
+        map(result->roughnessTexture, source->roughnessTexture, false);
         map(result->metallicTexture, source->metallicTexture);
         // Mean optical boundaries own no ripple image, including dynamic normal
         // frames. Other maps still pass the ordinary immutability checks.
@@ -94,7 +108,7 @@ namespace remix::scene {
           map(result->normalTexture, source->normalTexture);
         else
           hash.add(uint64_t(0));
-        copy(result->roughness, source->roughness);
+        copy(result->roughness, source->roughness, false);
         copy(result->metallic, source->metallic);
         copy(result->pbr, source->pbr);
         copy(result->normalEncoding, source->bakeSmoothBoundary ? 0u : source->normalEncoding);
@@ -102,12 +116,12 @@ namespace remix::scene {
         for (uint32_t i = 0; i < 2; ++i) {
           auto &out = result->remap[i];
           const auto &in = source->remap[i];
-          copy(out.channel, in.channel);
-          copy(out.curve, in.curve);
-          copy(out.invert, in.invert);
-          copy(out.exponent, in.exponent);
-          copy(out.bias, in.bias);
-          copy(out.scale, in.scale);
+          copy(out.channel, in.channel, i != 0);
+          copy(out.curve, in.curve, i != 0);
+          copy(out.invert, in.invert, i != 0);
+          copy(out.exponent, in.exponent, i != 0);
+          copy(out.bias, in.bias, i != 0);
+          copy(out.scale, in.scale, i != 0);
         }
         copy(result->refractiveIndex, source->refractiveIndex);
         copy(result->transmittanceDistance, source->transmittanceDistance);
@@ -143,7 +157,7 @@ namespace remix::scene {
         copy(result->wrapV, source->wrapV);
         copy(result->rows, source->rows);
         copy(result->columns, source->columns);
-        auto entry = std::pair{std::move(result), hash.value};
+        auto entry = FrozenMaterial{std::move(result), hash.combined.value, hash.direct.value};
         materials.emplace(source.get(), entry);
         return entry;
       }
@@ -230,7 +244,7 @@ namespace remix::scene {
     std::vector<BakeDrawFingerprint> fingerprints;
     std::array<uint64_t, 6> prefixes{};
     scene.bindings.clear();
-    std::vector<uint64_t> records;
+    std::vector<uint64_t> records, directRecords;
     for (size_t drawIndex = 0; drawIndex < scene.draws.size(); ++drawIndex) {
       auto &draw = scene.draws[drawIndex];
       if (!draw.traced() || draw.classification != REMIXAPI_INSTANCE_STATIC_EXT || draw.bones || !draw.mesh ||
@@ -245,20 +259,21 @@ namespace remix::scene {
         if (!receiverMaterial) receiverMaterial = std::make_shared<Material>();
         draw.material = receiverMaterial;
       }
-      auto [material, materialHash] = freezer.material(draw.material);
+      auto [material, materialHash, directMaterialHash] = freezer.material(draw.material);
       draw.surface = std::move(surface);
       draw.material = std::move(material);
       // A backend needs only the frozen surface, not a mutable source mesh.
       draw.mesh.reset();
-      Hash hash;
+      TransportHash hash;
       auto &charts = chartHashes[drawIndex];
       std::sort(charts.begin(), charts.end());
       hash.add(uint64_t(charts.size()));
       for (auto chart : charts)
         hash.add(chart);
-      const auto chartHash = hash.value;
+      const auto chartHash = hash.combined.value;
       hash.add(geometryHash);
-      hash.add(materialHash);
+      hash.combined.add(materialHash);
+      hash.direct.add(directMaterialHash);
       if (scene.receiverOnly(drawIndex)) hash.add(uint32_t(0x52435652u));
       hash.add(draw.model);
       hash.add(draw.doubleSided);
@@ -290,9 +305,10 @@ namespace remix::scene {
       hash.add(blend.alpha1);
       hash.add(blend.alpha2);
       hash.add(blend.factor);
-      records.push_back(hash.value);
+      records.push_back(hash.combined.value);
+      directRecords.push_back(hash.direct.value);
       if (diagnostics)
-        fingerprints.push_back({geometryHash, materialHash, chartHash, hash.value});
+        fingerprints.push_back({geometryHash, materialHash, chartHash, hash.combined.value});
     }
     for (const auto &light : scene.lights) {
       if (light.dynamic || light.style > 127)
@@ -300,10 +316,11 @@ namespace remix::scene {
       Hash hash;
       lightHash(hash, light);
       records.push_back(hash.value);
+      directRecords.push_back(hash.value);
     }
     Hash bindings;
     bindings.add(chartOrder.value);
-    for (auto record : records) bindings.add(record);
+    for (auto record : directRecords) bindings.add(record);
     for (const auto &draw : scene.draws) {
       bindings.add(draw.instanceId);
       bindings.add(draw.instanceIndex);
@@ -314,6 +331,7 @@ namespace remix::scene {
     // Membership order and runtime handles are not content. Preserve duplicate
     // placements/lights, because multiplicity can change transport.
     std::sort(records.begin(), records.end());
+    std::sort(directRecords.begin(), directRecords.end());
     Hash hash;
     hash.add(uint32_t(5)); // serialized input schema; bump when transport fields change
     hash.add(scene.sceneId);
@@ -339,10 +357,10 @@ namespace remix::scene {
     }
     prefixes[1] = hash.value;
     Hash receiverDirect = hash;
-    receiverDirect.add(uint32_t(0x52444931u)); // receiver-direct input domain, version 1
+    receiverDirect.add(uint32_t(0x52444932u)); // receiver-direct input domain, version 2
     receiverDirect.add(uint64_t(scene.draws.size()));
     receiverDirect.add(uint64_t(scene.lights.size()));
-    for (auto record : records)
+    for (auto record : directRecords)
       receiverDirect.add(record);
     receiverDirect.add(scene.sun.direction);
     receiverDirect.add(scene.sun.angularDiameterDegrees);
