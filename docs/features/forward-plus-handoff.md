@@ -1,6 +1,6 @@
 # Forward+ handoff
 
-Current checkpoint: 2026-11-01. This page supersedes older handoff narratives;
+Current checkpoint: 2026-11-03. This page supersedes older handoff narratives;
 Git history retains them. Start with AGENTS.md, this page and the
 [fresh-clone setup](forward-plus-setup.md) and
 [lighting architecture](../architecture/forward-lighting.md), then the
@@ -12,18 +12,19 @@ context, not proof that an old experiment is still enabled or a defect is fixed.
 | Item | Current state |
 | --- | --- |
 | Native checkout | `OpenRemix/`, `forward-plus-renderer` |
-| Native material API checkpoint | `5ebf5f37` (subsequent integration and technique selectors follow it) |
+| Native modular code checkpoint | `a78a8526` (read the branch history for subsequent changes) |
 | Native official remote | `https://github.com/OpenRenderCollective/OpenRemix.git` |
 | Adapter checkout | `garrys-mod-rtx-remixed-2/`, `forward-plus-renderer` |
-| Adapter checkpoint | `ba1d9b41d7e601638b40857be0872c0f9516533d` (upstream main integrated) |
+| Adapter checkpoint | `952a8bf` (profiling observer-cost qualification; upstream integration retained) |
 | Adapter official remote | `https://github.com/sambow23/garrys-mod-rtx-remixed-2.git` |
 | Previous playable install | Owner-local installation; not distributed in Git |
-| Installed package | `forwardplus-visibility-20261027` |
-| Installed native / adapter | `93c2ae0a` / `26dc7770` |
+| Installed package | Owner-local; not supplied by Git |
+| Last restored native / adapter SHA256 prefixes | `887678bc649e` / `79d14dddcdd0` (binary hashes, not Git revisions) |
 
-Source and playable installation are deliberately different. The material API,
-Source 2 selector, normalization and packed-guide changes are not deployed.
-Installed native bytes match the package above. Preserve user settings, mods,
+Source and playable installation are deliberately different. Recent modular
+changes are not promoted to the playable install by this qualification.
+Benchmark runs temporarily install candidates and restore the exact previous
+binaries; they do not promote a playable package. Preserve user settings, mods,
 launchers and authored cubemaps when qualifying a future package. Path tracing
 remains the configured backend default; Source 2 is the preset within Forward+.
 
@@ -41,7 +42,7 @@ before further integration. The source/playable distinction still applies.
    a build/test baseline before changing renderer behavior. The guide includes
    tracked compilation helpers and packaging commands; private tooling is unnecessary.
 2. Read the [architecture](../architecture/forward-lighting.md), especially the
-   internal material/receiver boundary and unfinished provider selection. Source 2
+   internal material/receiver boundary and resolved provider dependencies. Source 2
    is a technique preset, not a claim of exact Source 2 behavior or a public ABI.
 3. Pick a bounded task from the [current roadmap queue](forward-plus-roadmap.md).
    HDR haze and receiver/probe artifacts need a reproducible game comparison;
@@ -61,14 +62,17 @@ private report. The most recent source is not the owner's older playable binary.
 
 | Boundary | Code / state |
 | --- | --- |
-| Evaluated material | `forward/shaders/surface.glsl`: Surface and standard PBR decoder |
-| Receiver / result | `forward/shaders/receiver.glsl`: explicit receiver metadata and shading result |
+| Evaluated material | `forward/shaders/surface-values.glsl`: resource-free Surface; `surface.glsl` decodes PBR assets |
+| Receiver / result | `forward/shaders/receiver.glsl`, `shading-values.glsl`: pass inputs and resource-free results |
 | Standard shade entry | `forward/shaders/standard-shading.glsl`: `shadeStandardSurface(surface, receiver)` for world and viewmodels |
-| Diffuse receiver lookup | `forward/shaders/receiver-lighting.glsl`: existing surface/probe/live-GI behavior |
-| CPU ownership policy | `forward/lighting_plan.h`: resolve baked/live-GI ownership and mixed-light selection |
+| Diffuse receiver lookup | `forward/shaders/receiver-lighting.glsl`: selected private contexts; `diffuse-composed.glsl` combines baked direct and incoming |
+| CPU ownership policy | `forward/lighting_plan.h`, `provider_plan.h`: energy ownership, capabilities and resource dependencies |
 | Techniques / preset | `forward/techniques.h`, `forward/presets.h`, Rendering panel: component selectors and Source 2 / derived Custom |
-| Reflection lighting | `forward/probes/normalization.*`, `forward/shaders/probes.glsl`: shared capture-reference normalization before SSR |
-| Packed transport | `forward/shaders/reflection-guide.glsl`: normal/roughness/irradiance in the existing guide |
+| Reflection lighting | `forward/shaders/reflection-environment.glsl`: source-owned cube/sky fallback; `reflection-transport.glsl`: current-frame radiance/confidence |
+| Packed transport | `forward/shaders/reflection-guide.glsl`, `reflection-guide-reference.glsl`: geometry packing and paired normalization-domain adapter |
+| Baked storage | `forward/shaders/baked-storage.glsl`: guarded field declarations imported by their query sources |
+| Local storage | `forward/shaders/local-light-storage.glsl`: default records/clusters shared by source and builder |
+| Capture ownership | `forward/probes/capture_publication.h`, `capture_providers.h`: retained assets, admission and standalone lifecycle |
 
 All paths above are relative to `src/native/`. These are internal interfaces,
 not a stable public shader ABI or a completed provider/plugin framework.
@@ -83,7 +87,9 @@ positive budget. Model charts stay enabled in default profiles, but preset
 application preserves manual-density users' disabled model-chart preference.
 Existing component keys persist settings; the displayed preset is derived from
 them. Typed component selections now drive presets and UI through those existing keys.
-A general capability/resource graph and independent provider lifecycle are not implemented.
+A bounded capability/resource plan and standalone capture lifecycle are implemented.
+The default Source 2 recipe still coordinates diffuse/capture finishing through
+one job and transport budget. It is not a general runtime provider registry.
 
 Normalization blends capture reference luminance with the same spatial, priority
 and feather weights as radiance. Explicit assignments use their own layer's
@@ -94,8 +100,8 @@ Source 2 profiles or the rough nonmetal lightmap-SH reflection transition.
 
 The guide is RGBA16F: octahedral normal XY, roughness Z, irradiance/pi luminance W.
 Negative roughness is invalid geometry; negative luminance is unknown lighting;
-zero luminance is known black. Decode through reflection-guide.glsl, never by
-reading normals.xyz. MSAA selects one covered sample for all associated fields.
+zero luminance is known black. Decode through reflection-guide.glsl and
+reflection-guide-reference.glsl, never by reading normals.xyz. MSAA selects one covered sample for all associated fields.
 The separate irradiance targets and fifth storage-image write were removed.
 Precision is tested after half conversion; scene appearance and FPS still need
 qualification. Sparse fallback cubemap placement also no longer leaves empty
@@ -104,10 +110,12 @@ That fix does not establish fitted Construct outdoor coverage.
 
 ## What remains unfinished
 
-1. Finish independent provider resource ownership behind the typed technique selections. Support
-   providers owning several services together without double-counting lighting.
-   Migrate overlapping controls deliberately; preserve existing saved settings.
-2. Evaluate HLSL/Slang and single-file shader authoring. Build opt-in adapter shader
+1. Finish the remaining recipe orchestration and general scene/component reflection
+   reference provenance. Existing query sources own their shader resources;
+   captures have separate publications/caches and a standalone lifecycle. The
+   default recipe still shares finishing/admission. Retain that work reuse while
+   making any further scheduling changes; do not duplicate baked/analytic energy.
+2. Later: evaluate HLSL/Slang and single-file shader authoring. Build opt-in adapter shader
    mappings and a Refract proof first. No adapter-supplied material program loader,
    .vfx/.shader compiler, or Source shader compatibility system exists yet.
 3. Reproduce severe HDR haze in the actual game with matched exposure, sky and
@@ -123,9 +131,23 @@ That fix does not establish fitted Construct outdoor coverage.
 6. Qualify the integrated upstream features in game, including camera screens,
    fog, material extensions, screenshots and upscaler/backend transitions.
 
-Do not immediately start implementing DDGI/radiance cascades/SDF reflections to
-prove modularity. First stabilize the current providers and use one real alternative
-to validate the contracts. Those alternatives and virtual shadow maps are proposals.
+[PR #37](https://github.com/OpenRenderCollective/OpenRemix/pull/37) is the real
+alternative used to exercise the contracts: Radiance Cascades, including explicit
+baked-direct plus live-incoming composition. Its adapted code checkpoint is
+`754cb707` on the contributor's `radiance-cascades` branch. It is **unmerged**;
+wait for the owner's explicit merge clear. The main branch does not contain the
+cascade implementation. Do not deploy it or start another GI prototype merely
+to demonstrate the API. The public HLSL/single-file loader remains future work.
+
+Replacement compilation exercises actual world, metal, viewmodel, live, water
+and resolve passes with default storage/implementations physically absent.
+Numerical GPU checks cover mixed shadows, styles, cache and provider transitions.
+Shader-equivalence checks are evidence about checked work, not universal FPS
+acceptance. Consolidated Crossfire/Construct comparisons preserve the checked
+output/settings/draws and have overlapping GPU timing ranges. Construct retains
+a case-dependent CPU-recording residual that needs follow-up. This does not
+complete the no-overhead gate. 300 FPS at 1920x1080 and the broader runtime
+optimization queue are not achieved.
 
 ## How to continue safely
 
@@ -180,5 +202,5 @@ The current PBR/AutoPBR/replacement path remains default for ordinary materials.
   playable packages are not supplied by either repository. Wider map cases include
   gm_fork, d1_trainstation_02, bm_c1a1b and combined Half-Life addon maps.
 
-Work resumed on 2026-11-01 for upstream integration, modular provider migration
-and controlled performance diagnosis. This does not declare the renderer or roadmap complete.
+Work resumed on 2026-11-01; this 2026-11-03 checkpoint covers modular provider
+migration, resource ownership and controlled performance diagnosis. This does not declare the renderer or roadmap complete.

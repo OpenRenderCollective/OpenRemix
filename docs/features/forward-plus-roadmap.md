@@ -251,6 +251,16 @@ Still required for the complete modularity/performance objective:
   source, cluster builder and GPU membership fixture. Common material bindings
   no longer import them. Replacement-source tests remove that module. Host
   record/descriptor layouts and clustered fallback policy are unchanged.
+- Consolidated default-path comparison through `a78a8526` against retained
+  earlier main preserves checked content/settings/draws/world crops in Crossfire
+  and Construct at 1080p. GPU timing ranges overlap; Construct's current first
+  unarmed CPU windows are elevated while later ones overlap/undercut baseline.
+  Keep that residual and the full no-overhead gate open. The 200 FPS comparison
+  cap does not qualify the 300 FPS target, and Construct remains GPU-bound far
+  below it. Current policy/value/replacement compilation checks also pass.
+- Controls inventory remains a required cleanup task. A literal-name scan is
+  available as a local review aid, but behavior/alias classification and dynamic
+  control names still need review. Do not delete unreviewed working fallbacks.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Composed optical sunlight has fixture coverage; broader optical/probe edge
