@@ -1164,7 +1164,9 @@ snapshot creation; frame recording selects one scalar without traversing inputs.
 Receiver-direct controller/cache lookup and diffuse-index lookup use this domain.
 Persistence regression coverage warm-loads unchanged direct payloads after incoming
 power/reflection-hint edits, rebinds mixed ownership to the replacement snapshot,
-and rejects local-light radius edits.
+and rejects local-light radius edits. The seven-light surface/probe GPU fixture
+uses the same selected component identity for persistence lookup and passes its
+correction/cache checks.
 
 Completed receiver-direct publications survive snapshot replacement when component
 content, configuration, ordered records, instance/light identities, chart order

@@ -147,7 +147,9 @@ void selectedDirectionalTests(bool composed = false) {
       const auto source = r.bakeScene();
       const auto policy = f::bake::staticAggregatePolicy(*source, f::bake::DirectMode::BakedMixed);
       const auto configuration = options.bakeConfiguration(composed);
-      const auto key = cache::key(source->contentHash, configuration, options.lightCutoff, device, policy);
+      const auto sourceHash = source->lightingHash(composed
+          ? remix::scene::BakeLightScope::ReceiverDirect : remix::scene::BakeLightScope::Combined);
+      const auto key = cache::key(sourceHash, configuration, options.lightCutoff, device, policy);
       const auto file = cache::path(key);
       auto cached = cache::read(file, key, source, configuration, device, {}, policy);
       require(bool(cached), "Selected aggregate capture is persisted");
