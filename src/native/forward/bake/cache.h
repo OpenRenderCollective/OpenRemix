@@ -28,10 +28,9 @@ namespace remix::forward::bake::cache {
   // Fallback reflection placement is used without a closed spatial partition;
   // its coverage policy must not invalidate fitted BSP or diffuse-only bakes.
   uint64_t key(uint64_t content, const Config &config, float cutoff, const Device &device,
-               const DirectPolicy &policy = {}, bool fallbackReflections = false,
-               IrradianceContents contents = IrradianceContents::Combined);
+               const DirectPolicy &policy = {}, bool fallbackReflections = false);
   uint64_t diffuseKey(uint64_t content, const Config &config, float cutoff, const Device &device,
-                       const DirectPolicy &policy = {}, IrradianceContents contents = IrradianceContents::Combined);
+                       const DirectPolicy &policy = {});
   // Versioned procedural ray/projection identity; excludes diffuse atlas/grid settings.
   uint64_t reflectionKey(uint64_t content, uint64_t plan, std::span<const probes::Capture> captures,
                          const probes::CaptureConfig &config, const Device &device,
@@ -100,12 +99,11 @@ namespace remix::forward::bake::cache {
   std::optional<Snapshot> read(const std::filesystem::path &file, uint64_t key,
                                std::shared_ptr<const scene::BakeScene> source, const Config &config,
                                const Device &device, std::stop_token cancelled = {},
-                               const DirectPolicy &policy = {}, ReflectionRead reflections = ReflectionRead::Required,
-                               IrradianceContents contents = IrradianceContents::Combined);
+                               const DirectPolicy &policy = {}, ReflectionRead reflections = ReflectionRead::Required);
   std::optional<Snapshot> readDiffuse(const std::filesystem::path &directory, uint64_t content,
       std::shared_ptr<const scene::BakeScene> source, const Config &config, float cutoff,
       const Device &device, std::stop_token cancelled = {}, const DirectPolicy &policy = {},
-      bool fallbackReflections = false, IrradianceContents contents = IrradianceContents::Combined);
+      bool fallbackReflections = false);
   bool write(const std::filesystem::path &file, uint64_t key, const View &view,
              std::stop_token cancelled = {});
 } // namespace remix::forward::bake::cache

@@ -1,9 +1,12 @@
 #pragma once
+#include "forward/bake/irradiance_contents.h"
 #include <cstdint>
 namespace remix::forward::bake {
   struct Config {
     bool enabled = true;
     bool directDiffuse = true;
+    // Internal producer selection; runtime technique plans still request Combined.
+    IrradianceContents irradianceContents = IrradianceContents::Combined;
     // Low-level transport/comparison controls. Options::bakeConfiguration
     // derives aggregate/grouped policy when runtime baked lighting is enabled.
     bool aggregateDiffuse = false;

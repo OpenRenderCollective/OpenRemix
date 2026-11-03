@@ -970,9 +970,11 @@ and empty ownership, including signed coefficients. It verifies shared prepared
 inputs and rejects incoming-field requests on a direct-only consumer before
 recording. Mutable-lighting slots cannot produce this immutable direct field.
 
-The producer is not yet exposed through a preset or persisted bake configuration.
-Hybrid work still requires component-aware cache identity, publication/storage,
-controlled direct fields and sun ownership, renderer masks and source composition.
+The producer is not yet exposed through a preset or user-persisted setting.
+Internal bake configuration now selects its contents and carries that selection
+through cold tracing, cache recovery, snapshots and the published volume.
+Hybrid work still requires controlled direct fields and sun ownership, renderer
+masks and source composition.
 Do not label the current aggregate as direct-only or reuse it under a hybrid cache
 key. Preserve the combined Source 2 fast path while adding that explicit mode.
 
@@ -980,7 +982,8 @@ key. Preserve the combined Source 2 fast path while adding that explicit mode.
 
 `IrradianceContents` distinguishes the default combined estimator from the
 receiver-direct estimator. Transport options expose their kind for a caller
-constructing cache metadata. Container/diffuse keys accept that kind explicitly;
+constructing cache metadata. Internal `Config::irradianceContents` supplies the
+expected kind to both container/diffuse keys and cache readers;
 receiver-direct keys add their own version and both estimator shader hashes.
 Combined keys retain their legacy computation.
 
@@ -989,13 +992,24 @@ flag records receiver-direct contents; default combined bytes are unchanged.
 Decoding checks the expected kind independently of the supplied key, and diffuse
 index recovery threads it through both identity reconstruction and payload
 validation. The background snapshot-to-view transfer preserves the same tag
-through queued map writes. Thus a correct container key or spoofed index cannot relabel combined
-energy as receiver-direct, or vice versa. Direct-only recovery needs no reflection
+through queued map writes. Thus a correct container key or spoofed index cannot
+relabel combined energy as receiver-direct, or vice versa. Direct-only recovery needs no reflection
 work or transient probe-origin array.
 
 Receiver-direct cache views currently accept diffuse data only. Bundled or
 referenced reflection captures and local-reflection companions are rejected until
 their normalization reference contract is qualified. This tag describes RGB
-irradiance contents, not reflection compatibility. Controller publication and
-renderer selection still default to combined data; the hybrid preset, component
-selection and publication metadata are not wired by this cache extension.
+irradiance contents, not reflection compatibility.
+
+Controller jobs and published volumes carry the kind as CPU metadata; GPU data
+layouts and the existing material shader variants are unchanged. The internal
+receiver-direct mode currently requires aggregate direct ownership, direct fields,
+one bounce, no styled indirect, and no automatic reflections. One bounce avoids
+charging the scheduler for diffuse bounce paths that this estimator never traces.
+Initialization rejects unsupported combinations and combined-reference diagnostics
+rather than silently tagging mixed energy as direct-only. The mode participates in
+configuration equality, so changing it invalidates the old diffuse publication.
+
+Runtime technique selection still requests combined data. The hybrid preset and
+renderer composition are not wired: a direct-only volume must not be advertised
+as a complete Source 2 lighting or reflection-normalization reference.

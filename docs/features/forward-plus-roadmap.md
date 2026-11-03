@@ -123,9 +123,12 @@ Still required for the complete modularity/performance objective:
   combined from receiver-direct data, including index recovery and independent
   decoder checks. The legacy combined key/payload are byte-identical to a captured
   pre-change fixture. Receiver-direct containers remain diffuse-only until
-  reflection-reference provenance is qualified. Next wire component selection,
-  controller publication/storage metadata,
-  retained sun/controllable direct fields and renderer composition/masks; then
+  reflection-reference provenance is qualified. Internal bake configuration now
+  selects the contents, with cold/warm publication and asynchronous storage
+  retaining that kind. The restricted direct-only mode traces one bounce and
+  rejects combined-reference diagnostics, indirect styles and bundled reflections.
+  Runtime selection still requests combined data. Next wire retained
+  sun/controllable direct fields and renderer composition/masks; then
   split transport ownership/storage deliberately and prevent double-counting
   aggregate direct energy. Preserve existing presets and the default Source 2
   combined fast path.

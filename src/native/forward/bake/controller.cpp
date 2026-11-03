@@ -132,6 +132,7 @@ namespace remix::forward::bake {
   }
   void Controller::Job::prepareResources(VkPhysicalDevice physical, VkDevice device, const Config &config,
                                          float lightCutoff, uint32_t queueFamily) {
+    irradianceContents = config.irradianceContents;
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physical, &properties);
     if (const char *path = std::getenv("REMIX_DEBUG_BAKE_MODEL_ATLAS_PREFLIGHT"); path && *path) {
@@ -167,6 +168,8 @@ namespace remix::forward::bake {
         : DirectPolicy{};
     const char *samples = std::getenv("REMIX_DEBUG_BAKE_SURFACE_SAMPLES");
     reference = ReferenceCapture::fromEnvironment();
+    if (reference && irradianceContents != IrradianceContents::Combined)
+      throw std::invalid_argument("Reference diagnostics require combined irradiance");
     const bool depthCapture = std::getenv("REMIX_DEBUG_BAKE_SUN_DEPTH") != nullptr;
     if (!coarseTransferPreparationRequested() && !reference && config.diskCache && (!samples || std::strcmp(samples, "1") != 0)) {
       cache::Device deviceIdentity{properties.vendorID, properties.deviceID, properties.driverVersion,
@@ -210,6 +213,7 @@ namespace remix::forward::bake {
         if (cached) {
           if (!diffuseRecovery)
             (void)cache::writeDiffuseReference(cacheFile.parent_path(), diffuseReference, cancellation.get_token());
+          irradianceContents = cached->contents;
           reflectionRecovery = cached->missingReflections;
           grid = std::move(cached->grid);
           surfaceLayout = std::move(cached->layout);
@@ -289,6 +293,7 @@ namespace remix::forward::bake {
                                                             config.diskCache, config.textureResolution);
     surfaces.resize(surfaceLayout.points.size());
     Options options;
+    options.receiverDirectOnly = irradianceContents == IrradianceContents::ReceiverDirect;
     options.directLighting = directLighting;
     options.depthCapture = bool(sunDepth) || coarseTransferPreparationRequested();
     mixedLights = std::make_shared<mixed::Plan>(
@@ -1132,6 +1137,13 @@ namespace remix::forward::bake {
         if ((m_volume && !m_job && !startReflectionRefresh) || m_statistics.state == REMIXAPI_BAKE_FAILED_EXT)
           return;
         if (!m_job) {
+          if (config.irradianceContents != IrradianceContents::Combined &&
+              config.irradianceContents != IrradianceContents::ReceiverDirect)
+            throw std::invalid_argument("Unknown irradiance contents");
+          if (config.irradianceContents == IrradianceContents::ReceiverDirect &&
+              (!config.aggregateDiffuse || !config.directDiffuse || config.bounces != 1 ||
+               config.styledIndirect || config.reflectionProbes))
+            throw std::invalid_argument("Receiver-direct baking requires aggregate direct, one bounce, no indirect styles or reflections");
           if (!config.samples || config.samples > 8192 || config.probeSamples > 8192 || !config.bounces || config.bounces > 8 ||
               !config.batch || config.batch > 1024 ||
               ((config.styledIndirect || config.groupedStyledDirect) && (!config.styleStorageMiB || config.styleStorageMiB > 512)))

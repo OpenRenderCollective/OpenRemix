@@ -312,30 +312,36 @@ int main() try {
       diffuseOnly.reflectionProbes = 0;
       diffuseOnly.diskCache = true;
       diffuseOnly.denoiseLightmaps = false;
-      bake::ContentHashes previous{};
-      for (uint32_t pass = 0; pass < 2; ++pass) {
-        bake::Controller controller(fixture.physical, fixture.device, &pipelines, true, fixture.family);
-        uint32_t frame = 0;
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-        do {
-          controller.selectFrame(frame++ % gpuFrameCount);
-          fixture.begin(); controller.record(fixture.command, resources, diffuseOnly); fixture.finish();
-          require(!controller.reflectionSource().image && !controller.reflectionHeader(),
-                  "Diffuse-only bake published an unused reflection image");
-          require(controller.statistics().state != REMIXAPI_BAKE_FAILED_EXT, "Diffuse-only publication failed");
-          if (controller.statistics().state == REMIXAPI_BAKE_READY_EXT) break;
-          std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        } while (std::chrono::steady_clock::now() < deadline);
-        require(controller.volume() && controller.statistics().state == REMIXAPI_BAKE_READY_EXT &&
-                    controller.reflectionSource().sceneHash == resources.bakeScene()->contentHash,
-                "Diffuse publication depended on a reflection image");
-        if (pass == 0) previous = controller.content();
-        else require(std::string_view(controller.statistics().status).starts_with("Cached lighting active") &&
-                         controller.content().grid == previous.grid &&
-                         controller.content().surfaces == previous.surfaces,
-                     "Warm diffuse-only cache changed lighting or missed persistence");
-        for (uint32_t slot = 0; slot < gpuFrameCount; ++slot) controller.selectFrame(slot);
-        bake::cache::persistence().waitIdle();
+      for (auto contents : {bake::IrradianceContents::Combined, bake::IrradianceContents::ReceiverDirect}) {
+        diffuseOnly.irradianceContents = contents;
+        diffuseOnly.aggregateDiffuse = contents == bake::IrradianceContents::ReceiverDirect;
+        bake::ContentHashes previous{};
+        for (uint32_t pass = 0; pass < 2; ++pass) {
+          bake::Controller controller(fixture.physical, fixture.device, &pipelines, true, fixture.family);
+          uint32_t frame = 0;
+          const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+          do {
+            controller.selectFrame(frame++ % gpuFrameCount);
+            fixture.begin(); controller.record(fixture.command, resources, diffuseOnly); fixture.finish();
+            require(!controller.reflectionSource().image && !controller.reflectionHeader(),
+                    "Diffuse-only bake published an unused reflection image");
+            require(controller.statistics().state != REMIXAPI_BAKE_FAILED_EXT, "Diffuse-only publication failed");
+            if (controller.statistics().state == REMIXAPI_BAKE_READY_EXT) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+          } while (std::chrono::steady_clock::now() < deadline);
+          require(controller.volume() && controller.statistics().state == REMIXAPI_BAKE_READY_EXT &&
+                      controller.reflectionSource().sceneHash == resources.bakeScene()->contentHash,
+                  "Diffuse publication depended on a reflection image");
+          require(controller.volume()->irradianceContents == contents,
+                  "Cold/warm publication lost the selected irradiance contents");
+          if (pass == 0) previous = controller.content();
+          else require(std::string_view(controller.statistics().status).starts_with("Cached lighting active") &&
+                           controller.content().grid == previous.grid &&
+                           controller.content().surfaces == previous.surfaces,
+                       "Warm diffuse-only cache changed lighting or missed persistence");
+          for (uint32_t slot = 0; slot < gpuFrameCount; ++slot) controller.selectFrame(slot);
+          bake::cache::persistence().waitIdle();
+        }
       }
     }
     for (bool cancel : {false, true}) {

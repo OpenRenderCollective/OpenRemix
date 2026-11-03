@@ -211,7 +211,8 @@ namespace remix::forward::bake::cache {
     }
   } // namespace
   uint64_t key(uint64_t content, const Config &c, float cutoff, const Device &d, const DirectPolicy &policy,
-               bool fallbackReflections, IrradianceContents contents) {
+               bool fallbackReflections) {
+    const auto contents = c.irradianceContents;
     static const uint64_t shaders = [] {
       auto hash = scene::fastHash(atlasShader, sizeof(atlasShader));
       hash = scene::fastHash(transportShader, sizeof(transportShader), hash);
@@ -329,12 +330,12 @@ namespace remix::forward::bake::cache {
     return scene::fastHash(filter, sizeof(filter), raw);
   }
   uint64_t diffuseKey(uint64_t content, const Config &config, float cutoff, const Device &device,
-                       const DirectPolicy &policy, IrradianceContents contents) {
+                       const DirectPolicy &policy) {
     auto diffuse = config;
     diffuse.reflectionProbes = diffuse.reflectionResolution = 0;
     diffuse.reflectionDetailTolerance = 0;
     const uint64_t domain = 0x4449464655534501ull;
-    return scene::fastHash(&domain, sizeof(domain), key(content, diffuse, cutoff, device, policy, false, contents)) | 1;
+    return scene::fastHash(&domain, sizeof(domain), key(content, diffuse, cutoff, device, policy)) | 1;
   }
   uint64_t reflectionKey(uint64_t content, uint64_t plan, std::span<const probes::Capture> captures,
                          const probes::CaptureConfig &config, const Device &device,
@@ -359,8 +360,8 @@ namespace remix::forward::bake::cache {
   }
   std::optional<Snapshot> read(const std::filesystem::path &file, uint64_t identity,
                                std::shared_ptr<const scene::BakeScene> source, const Config &config,
-                               const Device &device, std::stop_token cancelled, const DirectPolicy &policy, ReflectionRead reflections,
-                               IrradianceContents contents) {
+                               const Device &device, std::stop_token cancelled, const DirectPolicy &policy, ReflectionRead reflections) {
+    const auto contents = config.irradianceContents;
     try {
       std::error_code error;
       if (!std::filesystem::is_regular_file(file, error))
@@ -486,18 +487,17 @@ namespace remix::forward::bake::cache {
   }
   std::optional<Snapshot> readDiffuse(const std::filesystem::path &directory, uint64_t content,
       std::shared_ptr<const scene::BakeScene> source, const Config &config, float cutoff,
-      const Device &device, std::stop_token cancelled, const DirectPolicy &policy, bool fallbackReflections,
-      IrradianceContents contents) {
-    const auto identity = diffuseKey(content, config, cutoff, device, policy, contents);
+      const Device &device, std::stop_token cancelled, const DirectPolicy &policy, bool fallbackReflections) {
+    const auto identity = diffuseKey(content, config, cutoff, device, policy);
     const auto reference = readDiffuseReference(directory, identity, cancelled);
     if (!reference) return {};
     auto stored = config;
     stored.reflectionProbes = reference->reflectionProbes;
     stored.reflectionResolution = reference->reflectionResolution;
     stored.reflectionDetailTolerance = std::bit_cast<float>(reference->toleranceBits);
-    if (key(content, stored, cutoff, device, policy, fallbackReflections, contents) != reference->containerKey) return {};
+    if (key(content, stored, cutoff, device, policy, fallbackReflections) != reference->containerKey) return {};
     auto result = read(directory / path(reference->containerKey).filename(), reference->containerKey,
-                       std::move(source), stored, device, cancelled, policy, ReflectionRead::DiffuseOnly, contents);
+                       std::move(source), stored, device, cancelled, policy, ReflectionRead::DiffuseOnly);
     if (result && !config.reflectionProbes) result->missingReflections = false;
     return result;
   }

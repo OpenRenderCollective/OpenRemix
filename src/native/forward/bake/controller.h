@@ -1,5 +1,6 @@
 #pragma once
 #include "forward/bake/content.h"
+#include "forward/bake/irradiance_contents.h"
 #include "forward/bake/grid.h"
 #include "forward/lightmap/geometry.h"
 #include "forward/mixed/data.h"
@@ -27,6 +28,7 @@ namespace remix::forward::bake {
   struct Volume {
     uint64_t hash = 0;
     DiffuseContent content;
+    IrradianceContents irradianceContents = IrradianceContents::Combined;
     std::shared_ptr<const probes::PlacementSeeds> reflectionSeeds;
     bool directDiffuse = false, styledLighting = false;
     std::vector<uint32_t> groupedStyles; // complete direct groups, separate from permanent aggregate policy
