@@ -957,7 +957,7 @@ seven-owner static corrections on surfaces/dynamic probes and baked sunlight
 with moving-caster corrections. Real-map hybrid/optical edge quality, reflection-reference provenance and matched runtime
 performance remain open.
 PR #37 now adapts its whole-field cascade source to the incoming query at
-`d4bededc` on its own branch. It remains unmerged and undeployed. Its build,
+`61d7e605` on its own branch. It remains unmerged and undeployed. Its build,
 replacement-source compilation, policy and five focused GPU checks pass.
 Normalized default/ray shader variants are unchanged; checked cascade variants
 have no opcode-count increases. Matched runtime performance is still unqualified.
@@ -965,7 +965,12 @@ The branch also includes the private cube/sky source boundary and receiver-direc
 fingerprints/in-memory reuse. Its refreshed native build and five focused checks
 (policy, replacement sources, cascade transport/MSAA, viewmodel environment and
 composed viewmodel sunlight) pass.
-Baked-direct/cascade composition and optical cascade lookups remain outstanding.
+The actual cascade query also compiles through composed world/prepassed,
+viewmodel/early-viewmodel, metal, water and ray-water receiver contexts without
+`LIVE_GI`. Existing ray composition and cascade GPU regressions pass; these new
+checks qualify the shader contract, not composed cascade runtime behavior.
+Baked-direct/cascade host pipeline selection, numerical qualification and optical
+lookup behavior remain outstanding.
 Preserve the combined Source 2 fast path while extending providers.
 
 ### Receiver-direct irradiance producer
