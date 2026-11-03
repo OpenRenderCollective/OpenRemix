@@ -45,14 +45,20 @@ namespace remix::forward {
     VkShaderModule giTerrainFragment = VK_NULL_HANDLE;
     VkShaderModule giViewModelFragment = VK_NULL_HANDLE, giViewModelEarlyFragment = VK_NULL_HANDLE;
     if (techniquePlan.rayDiffuse()) {
-      giViewModelFragment = modules.add(ray::gi::viewModelShader, sizeof(ray::gi::viewModelShader));
-      giViewModelEarlyFragment = modules.add(ray::gi::viewModelEarlyShader, sizeof(ray::gi::viewModelEarlyShader));
+      const bool composed = techniquePlan.bakedDirect;
+      giViewModelFragment = composed
+          ? modules.add(ray::gi::composedViewModelShader, sizeof(ray::gi::composedViewModelShader))
+          : modules.add(ray::gi::viewModelShader, sizeof(ray::gi::viewModelShader));
+      giViewModelEarlyFragment = composed
+          ? modules.add(ray::gi::composedViewModelEarlyShader, sizeof(ray::gi::composedViewModelEarlyShader))
+          : modules.add(ray::gi::viewModelEarlyShader, sizeof(ray::gi::viewModelEarlyShader));
+      giTerrainFragment = composed ? modules.add(ray::gi::composedFragShader, sizeof(ray::gi::composedFragShader))
+                                   : modules.add(ray::gi::fragShader, sizeof(ray::gi::fragShader));
+      giFragment = techniquePlan.reflectionResolve
+          ? composed ? modules.add(ray::gi::composedGuidesShader, sizeof(ray::gi::composedGuidesShader))
+                     : modules.add(ray::gi::guidesShader, sizeof(ray::gi::guidesShader))
+          : giTerrainFragment;
     }
-    if (techniquePlan.rayDiffuse())
-      giFragment = techniquePlan.reflectionResolve ? modules.add(ray::gi::guidesShader, sizeof(ray::gi::guidesShader))
-                                         : modules.add(ray::gi::fragShader, sizeof(ray::gi::fragShader));
-    if (techniquePlan.rayDiffuse())
-      giTerrainFragment = modules.add(ray::gi::fragShader, sizeof(ray::gi::fragShader));
     const auto shadowVertex = modules.add(shadowVertShader, sizeof(shadowVertShader));
     const auto shadowFragment = modules.add(shadowFragShader, sizeof(shadowFragShader));
     const auto localVertex = modules.add(localShadowVertShader, sizeof(localShadowVertShader));

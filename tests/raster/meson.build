@@ -45,6 +45,10 @@ if get_option('gpu_tests')
     args : [meson.current_build_dir() / 'sky-readback', 'sky'], timeout : 120)
   test('Forward+ live GI replacement, dynamic transport and MSAA', raster_test,
     args : [meson.current_build_dir() / 'live-gi-readback', 'live-gi'], timeout : 180)
+  test('Forward+ baked direct and live incoming composition across material passes', raster_test,
+    args : [meson.current_build_dir() / 'composed-gi-readback', 'composed-gi'], timeout : 180)
+  test('Forward+ composed incoming retains controllable direct and mixed shadows', raster_test,
+    args : [meson.current_build_dir() / 'composed-styled-readback', 'composed-styled'], timeout : 180)
   test('Forward+ hardware reflection transport, current actors and MSAA', raster_test,
     args : [meson.current_build_dir() / 'hardware-reflection-readback', 'hardware-reflections'], timeout : 180)
   test('Forward+ SSR transport and MSAA guide readback', raster_test,

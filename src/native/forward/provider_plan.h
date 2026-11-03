@@ -15,6 +15,7 @@ namespace remix::forward::techniques {
     // Select the automatic source and admission owner independently of image
     // availability. Disabled captures still visit their owner to retire old work.
     probes::CapturePolicy capturePolicy;
+    bool bakedDirect = false; // composed with a live incoming source
     bool rayReflections = false, rayWater = false;
     bool rayScene = false, reflectionResolve = false;
     bool screenReflections = false;
@@ -24,6 +25,7 @@ namespace remix::forward::techniques {
     // New live diffuse techniques extend this query without changing receivers.
     bool liveDiffuse() const { return rayDiffuse(); }
     bool bakedDiffuse() const { return diffuse == Diffuse::SurfaceAndProbes; }
+    bool bakedAttribution() const { return !liveDiffuse() || bakedDirect; }
     bool operator==(const ResourcePlan &) const = default;
   };
   inline ResourcePlan resolveResources(const Options &options, Capabilities capabilities) {
@@ -34,6 +36,7 @@ namespace remix::forward::techniques {
         (!options.water || capabilities.waterRayQueries);
     plan.diffuse = liveDiffuse ? Diffuse::RayQueries
         : options.baking.enabled ? Diffuse::SurfaceAndProbes : Diffuse::Disabled;
+    plan.bakedDirect = liveDiffuse && options.lightingPlan(true).bakedReceivers;
     plan.capturePolicy = options.capturePolicy(plan.bakedDiffuse() ? probes::CaptureTransport::SharedScene
                                                                  : probes::CaptureTransport::StandaloneScene);
     plan.screenReflections = options.ssr;

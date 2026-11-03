@@ -927,28 +927,34 @@ standalone captures for supported live or disabled diffuse. Image disable retain
 the owner that must retire pending work. No new runtime setting or GPU work is
 introduced; CPU timing acceptance still needs to include this boundary.
 
-### Remaining component-composition gap
+### Component composition and remaining qualification
 
-The source interfaces are interchangeable, but direct/indirect selection is not
-yet fully independent. `lighting::resolve(..., liveGiActive)` currently disables
-the complete bake when a live source is selected. The baked evaluator returns
-combined chart/probe irradiance; ray diffuse returns a live field with analytic
-direct lobes. Consequently, replacing ambient/indirect lighting while retaining
-lightmapped direct lighting is not an implemented combination. The cascade PR
-uses the same whole-field replacement policy.
+The normal Source 2 preset retains combined chart/probe irradiance. The existing
+live-GI choice retains whole-field replacement with analytic direct lighting.
+An explicit `Diffuse::RayIncoming` selection now composes retained baked direct
+with live incoming light. Its saved representation uses `rtGI` together with
+`bakedDirectWithLiveGI`; old saved live-GI profiles leave the new switch off.
+Direct technique selection still controls whether baked receivers are requested.
+In the renderer menu choose aggregate baked direct plus "Live incoming + baked
+direct". The equivalent saved keys are `rtx.native.forward.bakedLighting=1`,
+`rtx.native.forward.rtGI=1` and `rtx.native.forward.bakedDirectWithLiveGI=1`, with
+map baking and direct diffuse enabled. Unsupported fragment/water ray capability
+falls back to the configured baked source.
 
-The next component split must distinguish retained direct energy from indirect
-transport, including dynamic receivers and controllable components. It must not
-add a live indirect field to a combined aggregate containing the same indirect
-energy, or subtract mixed shadows from energy absent from the selected field.
-Its cache identity, publication readiness and normalization reference must
-identify the actual retained contents. Keep existing preset behavior and the
-combined Source 2 shader fast path; expose an explicit hybrid composition rather
-than silently changing the meaning of the saved live-GI switch. Qualification
-needs separate direct/indirect energy fixtures, styled on/off behavior and mixed
-shadow checks across surfaces/probes/viewmodels/water, followed by compiled
-shader and matched performance acceptance. This is required modularity work,
-not satisfied by the current source adapter or its green compilation tests.
+The composed plan requests ReceiverDirect data, one transport bounce and no
+baked styled indirect. Per-light sun/controllable fields and mixed attribution
+remain active. Standalone captures own complete reflection radiance; capture
+resolution/count/tolerance do not participate in the direct producer's derived
+configuration. Missing direct coverage retains analytic direct response.
+Specialized composed world/viewmodel/water shaders are chosen at pipeline
+creation. Switching direct ownership while live GI is active recreates those
+pipelines; no per-draw source switch is added.
+
+This does not complete component modularity. Real-map hybrid quality, sunlight
+and optical mixed-shadow qualification, high-overlap static-light corrections,
+reflection-reference provenance and matched runtime performance remain open.
+The cascade PR still needs adaptation to this incoming-source contract and is
+not merged. Preserve the combined Source 2 fast path while extending providers.
 
 ### Receiver-direct irradiance producer
 
@@ -1010,9 +1016,9 @@ Initialization rejects unsupported combinations and combined-reference diagnosti
 rather than silently tagging mixed energy as direct-only. The mode participates in
 configuration equality, so changing it invalidates the old diffuse publication.
 
-Runtime technique selection still requests combined data. The hybrid preset and
-renderer composition are not wired: a direct-only volume must not be advertised
-as a complete Source 2 lighting or reflection-normalization reference.
+Runtime Source 2 selection requests combined data; explicit live incoming with
+baked direct requests the restricted direct-only mode. A direct-only volume is
+never advertised as a complete Source 2 reflection-normalization reference.
 
 
 ### Composing baked direct with live incoming diffuse
@@ -1039,11 +1045,15 @@ implementation physically absent from the test tree. GPU numerical checks cover
 mixed visibility, valid black and missing baked coverage alongside independent
 producer energy-conservation tests.
 
-This is a shader composition boundary, not an enabled runtime technique. Host
-pipeline/resource selection must require a ReceiverDirect publication, retain
-sun/controllable fields and masks, and resolve reflection-reference ownership
-before enabling it. In particular the optical water sunlight policy remains a
-separate qualification task. Existing default optimized variants are identical
-after stripping debug data and compacting SPIR-V identifiers; no draw-time source
-switch or extra default sampling has been introduced. Matched runtime performance
-acceptance for the complete hybrid remains open.
+The explicit live-incoming technique now connects this shader boundary to host
+pipeline/resource selection and ReceiverDirect publication. The default Source 2
+preset and the legacy whole-field ray-GI choice remain unchanged. Surface/probe
+mixed attribution remains active during live incoming evaluation. Independent
+cubemap capture edits retain the direct volume, and the sum keeps an unavailable
+frozen normalization reference. Optical water sunlight and wider source/reference
+provenance remain separate qualification tasks.
+
+The earlier shader extraction's checked default optimized variants are identical
+after stripping debug data and compacting SPIR-V identifiers. The composed mode
+adds work only when selected; matched runtime performance acceptance and broader
+real-map coverage remain open. It has not been promoted to the playable install.

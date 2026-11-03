@@ -112,9 +112,10 @@ Still required for the complete modularity/performance objective:
   automatic capture edits. Broaden real-map coverage and no-overhead measurements;
   new map loads still use diffuse-index recovery when the exact combined cache is
   absent, and optional diagnostic local companions are regenerated in that case.
-- Implement independent direct/indirect provider composition. The current
-  `lighting::resolve(..., liveGiActive)` disables all baking for live GI; it does
-  not support lightmapped direct plus live indirect.
+- Finish qualification of independent direct/indirect provider composition.
+  Explicit live incoming now requests ReceiverDirect surface/probe data while
+  retaining sun/controllable fields and mixed-shadow attribution. Legacy live GI
+  remains whole-field replacement; the Source 2 default remains combined.
   A low-level receiver-direct producer now isolates eligible local-light NEE
   from incoming paths using shared prepared inputs. GPU surface/probe tests
   reconstruct combined SH from the two fields, including serial/parallel and
@@ -127,16 +128,18 @@ Still required for the complete modularity/performance objective:
   selects the contents, with cold/warm publication and asynchronous storage
   retaining that kind. The restricted direct-only mode traces one bounce and
   rejects combined-reference diagnostics, indirect styles and bundled reflections.
-  Runtime selection still requests combined data. A compile-time composed shader
-  source now adds a replaceable incoming-only query to the baked direct field,
+  Runtime Source 2 selection still requests combined data. A composed shader
+  source adds a replaceable incoming-only query to the baked direct field,
   preserving direct attribution and rejecting a frozen reflection reference.
   Standard/custom material passes compile, and GPU mixed-shadow checks preserve
   incoming energy with and without baked coverage. Twelve normalized optimized
-  default/custom variants remain identical. Next wire host pipeline/resource
-  selection, retained sun/controllable fields and renderer masks; then
-  split transport ownership/storage deliberately and prevent double-counting
-  aggregate direct energy. Preserve existing presets and the default Source 2
-  combined fast path.
+  default/custom variants remain identical. Host world/viewmodel/water selection
+  now has an explicit live-incoming technique and saved switch, retaining baked
+  masks and independently owned reflection captures. Capture quality is removed
+  from the direct bake's derived identity. Qualify sun/optical mixed shadows,
+  high-overlap static corrections, reflection-reference provenance and real-map
+  quality/performance; adapt the cascade PR to this contract. Preserve existing
+  presets and the default Source 2 combined fast path.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Water's baked/mixed sunlight policy still needs separate qualification.

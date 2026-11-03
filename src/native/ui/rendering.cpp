@@ -135,12 +135,13 @@ namespace remix {
       auto selectedTechniques = remix::forward::techniques::requested(forward);
       int diffuseTechnique = int(selectedTechniques.diffuse);
       if (ui::Combo("Diffuse lighting", &diffuseTechnique,
-                    "Surface lightmaps + volume probes\0Live ray-query GI\0Disabled\0"))
+                    "Surface lightmaps + volume probes\0Live ray-query GI\0Disabled\0Live incoming + baked direct\0"))
         remix::forward::techniques::selectDiffuse(forward,
             remix::forward::techniques::Diffuse(diffuseTechnique));
       if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Selects diffuse transport independently of material shading.\n"
-                          "Automatic cubemap captures still depend on baking; authored captures work independently.");
+                          "Live incoming retains the selected baked direct technique; full live GI replaces the baked field.\n"
+                          "Cubemap captures use an independent owner when live incoming is active.");
       if (forward.rtGI) {
         if (!statistics.rayGI.available)
           ImGui::TextWrapped("Fragment ray queries unavailable; using baked indirect lighting.");
@@ -189,7 +190,9 @@ namespace remix {
         else if (!forward.baking.directDiffuse)
           ImGui::TextWrapped("Enable baked direct diffuse to use baked lighting.");
         else if (forward.rtGI && statistics.rayGI.available)
-          ImGui::TextWrapped("Live ray-traced GI uses its own lighting policy. Baked lighting resumes when GI is off.");
+          ImGui::TextWrapped(forward.bakedDirectWithLiveGI
+              ? "Direct lighting stays baked; incoming lighting is evaluated live."
+              : "Live ray-traced GI replaces the baked field. Baked lighting resumes when GI is off.");
       }
       ImGui::BeginDisabled(!remix::forward::lightmap::denoiserVersion());
       ui::Checkbox("Denoise indirect lightmaps", &forward.baking.denoiseLightmaps);

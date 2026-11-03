@@ -182,10 +182,10 @@ namespace remix::forward {
     }
     next->viewModelTarget = std::make_unique<viewmodel::Target>();
     next->viewModelTarget->initialize(physical, device, extent, next->samples);
-    // Live diffuse never consumes baked receiver masks. Non-live modes retain
+    // Baked direct receivers consume masks independently of incoming GI. Non-live modes retain
     // this capability even when baking is off, since bake-enable can change
     // without target recreation. Unsupported fields retain sparse reads.
-    if (!next->techniquePlan.liveDiffuse() && !std::getenv("REMIX_DEBUG_DISABLE_PROBE_BATCH")) {
+    if (next->techniquePlan.bakedAttribution() && !std::getenv("REMIX_DEBUG_DISABLE_PROBE_BATCH")) {
       next->probeVisibility = std::make_unique<probe_batch::Cache>(physical, device);
       next->probeVisibility->prepare();
     }
@@ -195,7 +195,7 @@ namespace remix::forward {
       next->waterPass->initialize(physical, device, extent, next->samples, next->sceneLayout,
                                   next->materialLayout,
                                   {next->color->view, next->depth->view,
-                                   next->resolved ? next->resolved->view : VK_NULL_HANDLE}, next->techniquePlan.rayWater, next->techniquePlan.rayDiffuse());
+                                   next->resolved ? next->resolved->view : VK_NULL_HANDLE}, next->techniquePlan.rayWater, next->techniquePlan.rayDiffuse(), next->techniquePlan.bakedDirect);
     }
     next->baking =
         baking ? std::move(baking)

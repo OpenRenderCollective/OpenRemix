@@ -3,7 +3,7 @@
 
 namespace remix::forward::techniques {
   enum class Direct { Analytic, AttributedBake, AggregateBake };
-  enum class Diffuse { SurfaceAndProbes, RayQueries, Disabled };
+  enum class Diffuse { SurfaceAndProbes, RayQueries, Disabled, RayIncoming };
   enum class Reflections { Disabled, Cubemaps, RayQueries, RayQueriesAndCubemaps };
 
   // Requested techniques, independent of sampling, atlas sizes and display.
@@ -22,7 +22,7 @@ namespace remix::forward::techniques {
     Selection result;
     result.direct = !options.baking.directDiffuse ? Direct::Analytic
         : options.bakedLighting ? Direct::AggregateBake : Direct::AttributedBake;
-    result.diffuse = options.rtGI ? Diffuse::RayQueries
+    result.diffuse = options.rtGI ? options.bakedDirectWithLiveGI ? Diffuse::RayIncoming : Diffuse::RayQueries
         : options.baking.enabled ? Diffuse::SurfaceAndProbes : Diffuse::Disabled;
     result.reflections = options.baking.reflectionProbes
         ? options.rtReflections ? Reflections::RayQueriesAndCubemaps : Reflections::Cubemaps
@@ -39,7 +39,8 @@ namespace remix::forward::techniques {
   }
 
   inline void selectDiffuse(Options &options, Diffuse diffuse) {
-    options.rtGI = diffuse == Diffuse::RayQueries;
+    options.rtGI = diffuse == Diffuse::RayQueries || diffuse == Diffuse::RayIncoming;
+    options.bakedDirectWithLiveGI = diffuse == Diffuse::RayIncoming;
     options.baking.enabled = diffuse != Diffuse::Disabled;
   }
 

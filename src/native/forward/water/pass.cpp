@@ -22,7 +22,7 @@ namespace remix::forward::water {
     VkDescriptorSetLayout raySceneLayout = VK_NULL_HANDLE;
     VkPipelineLayout rayLayout = VK_NULL_HANDLE;
     VkPipeline raySurface = VK_NULL_HANDLE, liveSurface = VK_NULL_HANDLE, liveRaySurface = VK_NULL_HANDLE;
-    bool rayReflections = false, liveDiffuse = false;
+    bool rayReflections = false, liveDiffuse = false, bakedDirect = false;
     VkDescriptorPool pool = VK_NULL_HANDLE;
     struct Frame {
       VkDescriptorSet set = VK_NULL_HANDLE;
@@ -138,9 +138,13 @@ namespace remix::forward::water {
       const auto rayFragment =
           rayReflections ? modules.add(hardware::fragShader, sizeof(hardware::fragShader)) : VK_NULL_HANDLE;
       const auto liveFragment = liveDiffuse
-          ? modules.add(hardware::liveDiffuseShader, sizeof(hardware::liveDiffuseShader)) : VK_NULL_HANDLE;
+          ? bakedDirect ? modules.add(hardware::composedDiffuseShader, sizeof(hardware::composedDiffuseShader))
+                        : modules.add(hardware::liveDiffuseShader, sizeof(hardware::liveDiffuseShader))
+          : VK_NULL_HANDLE;
       const auto liveRayFragment = liveDiffuse && rayReflections
-          ? modules.add(hardware::liveDiffuseRayShader, sizeof(hardware::liveDiffuseRayShader)) : VK_NULL_HANDLE;
+          ? bakedDirect ? modules.add(hardware::composedDiffuseRayShader, sizeof(hardware::composedDiffuseRayShader))
+                        : modules.add(hardware::liveDiffuseRayShader, sizeof(hardware::liveDiffuseRayShader))
+          : VK_NULL_HANDLE;
       const auto overlayVertex = modules.add(overlayVertShader, sizeof(overlayVertShader));
       const auto overlayFragment = modules.add(overlayFragShader, sizeof(overlayFragShader));
       const VkVertexInputBindingDescription binding{0, sizeof(scene::Vertex), VK_VERTEX_INPUT_RATE_VERTEX};
@@ -247,7 +251,7 @@ namespace remix::forward::water {
   }
   void Pass::initialize(VkPhysicalDevice physical, VkDevice device, VkExtent2D extent,
                         VkSampleCountFlagBits samples, VkDescriptorSetLayout scene,
-                        VkDescriptorSetLayout material, Targets targets, bool rayReflections, bool liveDiffuse) {
+                        VkDescriptorSetLayout material, Targets targets, bool rayReflections, bool liveDiffuse, bool bakedDirect) {
     auto next = std::make_unique<Gpu>();
     auto &g = *next;
     g.physical = physical;
@@ -255,6 +259,7 @@ namespace remix::forward::water {
     g.extent = extent;
     g.rayReflections = rayReflections;
     g.liveDiffuse = liveDiffuse;
+    g.bakedDirect = bakedDirect;
     g.snapshot.initialize(physical, device, extent, samples);
     const VkDescriptorType types[] = {
         VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,

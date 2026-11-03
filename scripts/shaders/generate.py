@@ -39,10 +39,10 @@ BACKENDS = {
     'style_test': ('forward::test::style_input', 'vulkan1.1', ('query',)),
     'probe_test': ('forward::test::probe_input', 'vulkan1.1', ('reflection',)),
     'mask_test': ('forward::test::mask_input', 'vulkan1.1', ('decode',)),
-    'water_ray': ('forward::water::hardware', 'vulkan1.2', ('frag', 'liveDiffuse', 'liveDiffuseRay')),
+    'water_ray': ('forward::water::hardware', 'vulkan1.2', ('frag', 'liveDiffuse', 'liveDiffuseRay', 'composedDiffuse', 'composedDiffuseRay')),
     'water_test': ('forward::test::water_input', 'vulkan1.1', ('vert', 'frag', 'query', 'depth')),
     'water': ('forward::water', 'vulkan1.1', ('snapshot', 'snapshotSingle', 'vert', 'frag', 'overlayVert', 'overlayFrag', 'compositeFrag', 'compositeSingle')),
-    'live_gi': ('forward::ray::gi', 'vulkan1.2', ('frag', 'guides', 'viewModel', 'viewModelEarly')),
+    'live_gi': ('forward::ray::gi', 'vulkan1.2', ('frag', 'guides', 'viewModel', 'viewModelEarly', 'composedFrag', 'composedGuides', 'composedViewModel', 'composedViewModelEarly')),
     'live_ray': ('forward::ray', 'vulkan1.2', ('launch', 'merge')),
     'bake': ('forward::bake', 'vulkan1.2', ('atlas', 'transport', 'parallel', 'visibility', 'aggregate', 'aggregateParallel', 'receiverDirect', 'receiverDirectParallel', 'depth')),
     'forward_test': ('forward::test', 'vulkan1.2', ('comp', 'probes', 'water', 'coarseTransfer')),
@@ -163,13 +163,19 @@ def defines_for(backend, stage, stages):
     if backend == 'water_ray':
         source = ROOT / 'src/native/forward/shaders/forward.frag'
         defines = ['-DWATER_SURFACE=1']
-        if stage in ('frag', 'liveDiffuseRay'): defines += ['-DWATER_RAY=1']
+        if stage in ('frag', 'liveDiffuseRay', 'composedDiffuseRay'): defines += ['-DWATER_RAY=1']
+        if stage.startswith('composed'): defines += ['-DOPENREMIX_BAKED_DIRECT_LIVE_INDIRECT=1']
         if stage != 'frag': defines += ['-DLIVE_GI=1', '-DRAY_SCENE_SET=3']
     if backend == 'live_gi':
+        composed = stage.startswith('composed')
+        if composed:
+            stage = stage[len('composed'):]
+            stage = stage[0].lower() + stage[1:]
         source = ROOT / 'src/native/forward/shaders/forward.frag'
         defines = ['-DLIVE_GI=1'] + (['-DREFLECTION_GUIDES=1'] if stage == 'guides' else [])
         if stage in ('viewModel', 'viewModelEarly'): defines += ['-DVIEWMODEL_PASS=1']
         if stage == 'viewModelEarly': defines += ['-DEARLY_OPAQUE=1']
+        if composed: defines += ['-DOPENREMIX_BAKED_DIRECT_LIVE_INDIRECT=1']
     if backend == 'live_ray':
         source = directory / 'screen.comp'
         defines = ['-DRAY_LAUNCH=1'] if stage == 'launch' else []
