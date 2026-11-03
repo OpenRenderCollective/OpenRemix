@@ -144,7 +144,7 @@ That fix does not establish fitted Construct outdoor coverage.
 [PR #37](https://github.com/OpenRenderCollective/OpenRemix/pull/37) is the real
 alternative used to exercise the contracts: Radiance Cascades, including explicit
 baked-direct plus live-incoming composition. Its adapted code checkpoint is
-`88c4807f` on the contributor's `radiance-cascades` branch. It is **unmerged**;
+`02bef4b2` on the contributor's `radiance-cascades` branch. It is **unmerged**;
 wait for the owner's explicit merge clear. The main branch does not contain the
 cascade implementation. Do not deploy it or start another GI prototype merely
 to demonstrate the API. The public HLSL/single-file loader remains future work.
