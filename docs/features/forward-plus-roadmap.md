@@ -1,3 +1,16 @@
+### Incoming source dependency ownership (2026-11-04)
+
+- The material pass no longer imports the default ray-GI implementation. The
+  incoming source owns that dependency; hardware water reflections explicitly
+  import guarded shared ray transport. Custom incoming source checks use the
+  untouched material pass with both default GI implementation files absent.
+- Default shader instruction counts/sizes and normalized function bodies match
+  across 17 checked variants; some declaration ordering changes. This is not a
+  universal GPU timing claim.
+  Native builds and live/composed incoming GPU checks pass, including optical
+  mixed shadows and PR cascade provider transitions. Custom incoming also compiles
+  with hardware-water rays while default GI is absent.
+
 ### Reflection binding selection cleanup (2026-11-04)
 
 - Select the authored/standalone image before preparing descriptors, avoiding
