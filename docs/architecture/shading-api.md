@@ -122,18 +122,20 @@ local-light list and baked direct channels once. `diffuseRequired` describes the
 shading model's work, not a material type or engine shader name. The aggregate
 ownership comes from the selected diffuse query.
 
-Iterate `context.lights.count`, then call
+Iterate `receiverLocalLightCount(context)`, then call
 `sampleReceiverLocalLight(ordinal, receiver, normal, context, frontFacingOnly, sample)`.
 This entry resolves the index, geometric receiver normal and channel data;
 custom models do not need atlas, cluster or four-channel sentinel knowledge.
 It returns the same `LocalLightSample` as the lower-level source-index query.
 Its ordinal must be within the prepared list, and output is valid only on success.
-The standard model retains its specialized miss exits through `localLightResponse`.
+The standard model retains its specialized miss exits through `standardReceiverLocalLight`.
 
 ## Diffuse receiver query
 
-`prepareReceiverLighting(receiver, normal)` prepares chart irradiance and sun
-irradiance once. `sampleDiffuseLighting(receiver, normal, context, required)`
+`prepareReceiverLighting(receiver, normal)` prepares the selected source's private
+context. The baked source prepares chart irradiance and sun irradiance once; the
+live source retains its geometric ray basis without chart fields.
+`sampleDiffuseLighting(receiver, normal, context, required)`
 selects the compiled diffuse provider. Both standard and custom models can use
 this entry without accessing the surface atlas or probe storage. The returned
 `ReceiverLighting.diffuse` is linear HDR irradiance / pi, before material color
@@ -256,8 +258,8 @@ pass-specific reflection guides and final display transform.
 Receiver diagnostics and sun visibility also live behind the
 receiver-lighting API: `receiverBakedCoverage`, `receiverBakedDiffuse`,
 `receiverSunVisibility`; metal reference lookup belongs to the diffuse provider. The standard model does not
-read chart channels or query baked probe storage directly; its prepared context
-still exposes whether the receiver has a surface chart. The diagnostic helpers
+read chart channels or query baked probe storage directly; source-specific
+context fields remain private to that implementation. The diagnostic helpers
 intentionally show the baked reference field even with live diffuse selected;
 that is a debug policy, not a generic fallback for future GI providers. The
 normalization query preserves incident lighting for metal-only materials whose
@@ -605,7 +607,7 @@ on query validation. Baked/mixed-sun ownership for water remains a separate task
 
 `LocalLightSample` is defined in resource-free `local-light-values.glsl`.
 Material models use `receiverLocalLightCount(context)` and
-`sampleReceiverLocalLight(ordinal, receiver, normal, context, policy, sample)`;
+`sampleReceiverLocalLight(ordinal, receiver, normal, context, frontFacingOnly, sample)`;
 ordinals are source-local, not captured/global light indices. The source owns
 clustered lists, baked channels, selected-light bookkeeping and shadow inputs.
 Default PBR world/viewmodel and water composition use
@@ -639,7 +641,12 @@ Material models no longer access `ReceiverLightContext` fields. They obtain a
 context through `prepareReceiverLighting` and ask `receiverNeedsDiffuseReference`
 when a metal needs a compatible reflection reference. Volume-only receivers use
 `prepareVolumeReceiverLighting`; water does not construct a chart-shaped context.
-The default source retains the same chart/probe queries and diagnostic semantics.
+`receiver-lighting.glsl` selects both the value evaluator and the complete
+context implementation. `receiver-baked.glsl` retains chart/probe preparation;
+`receiver-live.glsl` stores only the geometric basis and supplies no chart unit
+irradiance or frozen reflection reference. The ray evaluator takes no chart
+arguments. Explicit legacy baked diagnostic views retain their baked lookups,
+prepared within those diagnostic functions rather than ordinary live shading.
 
 A source owns its context representation and the sampling/reference/diagnostic
 functions in `receiver-lighting.glsl`. The alternate-source compilation fixture

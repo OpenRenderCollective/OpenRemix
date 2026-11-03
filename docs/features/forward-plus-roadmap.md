@@ -10,7 +10,11 @@ Implemented and checked:
   preferences. Legacy setting names remain compatibility aliases.
 - Evaluated material, diffuse/reflection, sun and local-light sample values have
   resource-free headers. Receiver contexts and light-list/channel storage are
-  hidden behind source queries. A resource-free shading-result initializer gives
+  hidden behind source queries. Complete baked/live receiver contexts are now
+  selected with their source: the ray path has no chart fields or chart arguments,
+  while explicit baked diagnostic views retain their reference queries. Actual
+  specialized ray world/viewmodel shaders remove a few instructions; checked
+  Source 2 shaders remain byte-identical. A resource-free shading-result initializer gives
   custom models safe defaults. Material results carry unpacked normal/roughness
   and RGB reflectance; the pass adapter owns guide and cubemap-layer byte encoding.
   Alternate shading, diffuse, environment, local and sun
