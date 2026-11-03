@@ -165,7 +165,7 @@ Still required for the complete modularity/performance objective:
   reuse now exclude incoming sky power and capture hints; conservative material
   dependencies remain. Qualify reflection-reference provenance and real-map
   quality/performance. PR #37 now uses the shared incoming query
-  on its unmerged branch (`6a9ed4a5`), with build, policy, replacement-source and
+  on its unmerged branch (`f854c29d`), with build, policy, replacement-source and
   focused checks passing. Composed cascade host selection now covers world,
   terrain, viewmodel and water. Transition tests retain nonzero baked local direct
   alongside live sky; optical/viewmodel mixed sunlight passes at 1x/2x/4x. Existing
@@ -206,6 +206,13 @@ Still required for the complete modularity/performance objective:
   component-split overhead is observed in this scoped steady-state profile.
   This does not resolve the older uncapped residual or qualify other providers,
   maps, cold work or the 300 FPS weapon target. Install/config restored exactly.
+- Main versus PR default Source 2 A/B/B/A at 1080p/200 FPS matches content,
+  settings, draws and inspected pixels. GPU intervals overlap/improve; pre-fix
+  unarmed PR CPU medians are .8807-.9004 ms versus main .8699-.8746 ms, so
+  blanket no-overhead acceptance remains open. PR `f854c29d` removes inactive
+  cascade bindings, pool reservations, world writes and viewmodel copies; five
+  GPU validation checks pass. Repeat the matched timings before assigning a gain.
+  Installed binaries/configuration restored exactly; no playable promotion.
 - Complete no-overhead acceptance with controlled CPU/GPU comparisons. Earlier
   host-FPS rankings reversed between runs despite matching lighting/draws. The
   completed A/B/B/A 1080p Crossfire study shows overlapping CPU/GPU ranges and

@@ -957,7 +957,7 @@ seven-owner static corrections on surfaces/dynamic probes and baked sunlight
 with moving-caster corrections. Real-map hybrid/optical edge quality, reflection-reference provenance and matched runtime
 performance remain open.
 PR #37 now adapts its whole-field cascade source to the incoming query at
-`6a9ed4a5` on its own branch. It remains unmerged and undeployed. Its build,
+`f854c29d` on its own branch. It remains unmerged and undeployed. Its build,
 replacement-source compilation, policy and five focused GPU checks pass.
 Normalized default/ray shader variants are unchanged; checked cascade variants
 have no opcode-count increases. Matched runtime performance is still unqualified.
@@ -981,6 +981,12 @@ ownership from distant bounce transport. Ray-based equivalents also pass.
 Water uses a typed internal diffuse mode; legacy stage inputs are unchanged for
 all 173 existing stages. Cascade incoming remains screen-space: missing optical
 gather samples use its existing fallback, and viewmodels use neighbourhood incoming.
+A capped main-versus-PR default Source 2 comparison matched settings, content,
+draws and inspected pixels. GPU ranges overlap/improve, but pre-fix PR unarmed
+CPU recording medians were .8807-.9004 ms versus main .8699-.8746 ms. This does
+not pass blanket no-overhead acceptance. The PR now omits inactive cascade scene
+bindings, pool reservations, world updates and viewmodel copies; five functional
+GPU checks pass, while the matched timing repeat remains pending.
 Real-map quality, general normalization provenance and matched FPS remain open.
 Preserve the combined Source 2 fast path while extending providers.
 
