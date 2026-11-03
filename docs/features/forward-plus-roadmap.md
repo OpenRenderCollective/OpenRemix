@@ -3,10 +3,11 @@
 - Retain the fused directional sampler. Shared-record/shared-SH and compact
   address-handle trials were reverted after frame-time qualification. Keep the
   linear/bicubic decoder coverage; do not infer a speedup from hoisted source text.
-- Investigate deferred directional unit-irradiance work when the standard mixed
-  residual is exactly zero. Preserve the raw query's full value contract, analytic
-  specular visibility, missing/known-black ownership and finite-emitter cone and
-  horizon behavior. Isolate standard-response demand from generic source values.
+- Retain full directional unit irradiance in raw queries. Deferring it in the
+  standard response until moving visibility was known passed numerical checks
+  but did not qualify a frame-time improvement, so that trial was reverted.
+  Keep the raw-versus-standard mixed-shadow regression coverage; do not retain
+  an inactive optimization switch or weaken missing/known-black ownership.
 - Isolate opaque color shading: baked-field filtering/reconstruction, material
   response and selected baked-highlight queries. Keep normal quality and output
   parity as acceptance gates; diagnostic variants must not become silent defaults.
