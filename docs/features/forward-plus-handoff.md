@@ -64,7 +64,7 @@ private report. The most recent source is not the owner's older playable binary.
 | --- | --- |
 | Evaluated material | `forward/shaders/surface-values.glsl`: resource-free Surface; `surface.glsl` decodes PBR assets |
 | Receiver / result | `forward/shaders/receiver.glsl`, `shading-values.glsl`: pass inputs and resource-free results |
-| Standard shade entry | `forward/shaders/standard-shading.glsl`: `shadeStandardSurface(surface, receiver)` for world and viewmodels |
+| Selected shade entry | `forward/shaders/shading-model.glsl`: `shadeSurface(surface, receiver)`; default aliases the standard model for world and viewmodels |
 | Diffuse receiver lookup | `forward/shaders/receiver-lighting.glsl`: selected private contexts; `diffuse-composed.glsl` combines baked direct and incoming |
 | CPU ownership policy | `forward/lighting_plan.h`, `provider_plan.h`: energy ownership, capabilities and resource dependencies |
 | Techniques / preset | `forward/techniques.h`, `forward/presets.h`, Rendering panel: component selectors and Source 2 / derived Custom |

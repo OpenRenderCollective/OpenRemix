@@ -1,3 +1,5 @@
+#include "standard-local-lighting.glsl"
+#include "direct-lighting.glsl"
 #include "standard-reflection-response.glsl"
 #ifdef VIEWMODEL_PASS
 vec3 standardViewModelReflection(vec3 position, vec3 n, vec3 v, vec3 base, float roughness, float metallic,

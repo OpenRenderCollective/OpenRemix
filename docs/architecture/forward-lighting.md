@@ -44,13 +44,16 @@ and aggregate-light bookkeeping.
 filtering from receiver lighting. The packed `Material` record remains an internal
 compatibility input; it is not the shader authoring contract.
 
-`shadeStandardSurface(Surface, ShadingReceiver)` is the standard world/viewmodel
-entry point. `ShadingResult` contains scene-linear colour and reflection guides;
+`shadeSurface(Surface, ShadingReceiver)` is the selected world/viewmodel model
+entry point. `shading-model.glsl` binds the default to `shadeStandardSurface` at
+compile time. Alternate models replace that module rather than editing the pass.
+Standard direct-light composition is imported by the standard model; the water
+model imports its own standard local-response adapter. `ShadingResult` contains scene-linear colour and reflection guides;
 pass adapters retain coverage/depth policy and output attachment writes. Baked
 receiver coordinates, chart bounds and light identities are explicit inputs to
 local-light evaluation, shared with the specialized water path. These are internal
-contracts, not a stable public shader ABI. Independent provider lifecycles and runtime
-material program loading remain pending.
+contracts, not a stable public shader ABI. The implemented providers have separate
+publication/cache ownership; runtime material program loading remains pending.
 
 Reflection normalization uses the existing RGBA16F guide: octahedral world normal
 in XY, roughness in Z, receiver irradiance/pi luminance in W. Negative roughness

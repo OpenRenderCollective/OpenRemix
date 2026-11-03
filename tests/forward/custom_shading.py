@@ -21,17 +21,16 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
         destination = tree / source.relative_to(root / "src/native/forward")
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, destination)
-    fragment = (root / "src/native/forward/shaders/forward.frag").read_text()
-    # Replace the standard model, rather than appending a model that could
-    # accidentally depend on declarations provided by the standard one.
-    fragment = fragment.replace('#include "direct-lighting.glsl"', '')
-    assert fragment.count('#include "standard-shading.glsl"') == 1
-    fragment = fragment.replace('#include "standard-shading.glsl"', '#include "custom-model.glsl"')
-    assert fragment.count('shadeStandardSurface(evaluated, receiver)') == 1
-    fragment = fragment.replace('shadeStandardSurface(evaluated, receiver)', 'shadeExampleDiffuse(evaluated, receiver)')
+    # Replace only the model module. The actual material pass stays unchanged,
+    # and default implementation files are absent rather than incidentally
+    # supplying declarations to the custom model.
     source = tree / "shaders/forward.frag"
-    source.write_text(fragment, encoding="utf-8")
-    shutil.copyfile(root / "tests/forward/shaders/custom-model.glsl", source.parent / "custom-model.glsl")
+    source.write_bytes((root / "src/native/forward/shaders/forward.frag").read_bytes())
+    model_files = ("standard-shading.glsl", "direct-lighting.glsl", "standard-local-lighting.glsl")
+    for name in model_files:
+        (tree / "shaders" / name).unlink()
+    shutil.copyfile(root / "tests/forward/shaders/custom-model.glsl",
+                    tree / "shaders/shading-model.glsl")
     variants = {
         "world": [],
         "world-guides": ["REFLECTION_GUIDES"],
@@ -49,6 +48,8 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
         subprocess.run([validator, "--target-env", "vulkan1.1", str(binary)], env=env, check=True)
     # Restore the actual standard material, then swap only its environment
     # source. World resolve, viewmodels and water keep their real composition.
+    for name in (*model_files, "shading-model.glsl"):
+        shutil.copyfile(root / "src/native/forward/shaders" / name, tree / "shaders" / name)
     source.write_text((root / "src/native/forward/shaders/forward.frag").read_text(), encoding="utf-8")
     shutil.copyfile(root / "tests/forward/shaders/custom-environment.glsl",
                     tree / "shaders/reflection-environment.glsl")
