@@ -133,8 +133,9 @@ struct Push {
   float target{}, blend{}, minEv{}, maxEv{}, radius{};
   uint32_t reset{};
   uint32_t meterMode{};
+  uint32_t hasBackground{};
 };
-static_assert(sizeof(Push) == 44); // mirrored by shaders/postfx.comp
+static_assert(sizeof(Push) == 48); // mirrored by shaders/postfx.comp
 } // namespace
 class State {
 public:
@@ -176,7 +177,7 @@ struct Renderer::Gpu {
     VkDescriptorPool pool{};
     VkDescriptorSet composite{}, meter{};
     std::vector<VkDescriptorSet> down, up;
-    std::unique_ptr<Buffer> uniform, readback;
+    std::unique_ptr<Buffer> uniform, readback, emptyBackground;
     VkQueryPool timestamps{};
     bool pending = false;
   } frames[gpuFrameCount];
@@ -311,16 +312,18 @@ void Renderer::initialize(VkPhysicalDevice physical, VkDevice device,
   sampler.borderColor = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
   check(pipeline::createSampler(device, &sampler, nullptr, &g.border));
   g.compositeSetLayout = compositeLayout(device);
-  VkDescriptorSetLayoutBinding bindings[5]{};
+  VkDescriptorSetLayoutBinding bindings[7]{};
   for (uint32_t i = 0; i < 5; ++i)
     bindings[i] = {i,
                    i < 2    ? VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
                    : i == 2 ? VK_DESCRIPTOR_TYPE_STORAGE_IMAGE
                             : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                    1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
+  bindings[5] = {5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
+  bindings[6] = {6, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_COMPUTE_BIT, nullptr};
   VkDescriptorSetLayoutCreateInfo si{
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-      .bindingCount = 5,
+      .bindingCount = 7,
       .pBindings = bindings};
   check(pipeline::createDescriptorSetLayout(device, &si, nullptr,
                                             &g.computeSetLayout));
@@ -367,10 +370,10 @@ void Renderer::initialize(VkPhysicalDevice physical, VkDevice device,
   uint32_t sets = 2 + g.down.size() + g.up.size();
   for (auto &f : g.frames) {
     VkDescriptorPoolSize sizes[] = {
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, sets * 2},
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, sets * 3},
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, sets},
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, sets * 2},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1}};
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, sets + 1}};
     VkDescriptorPoolCreateInfo pool{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .maxSets = sets,
@@ -387,6 +390,8 @@ void Renderer::initialize(VkPhysicalDevice physical, VkDevice device,
         buffer(physical, device, 16, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true);
     f.readback =
         buffer(physical, device, 16, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
+    f.emptyBackground = buffer(physical, device, 160, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true);
+    std::memset(f.emptyBackground->mapped, 0, 160);
     if (g.timestampBits) {
       VkQueryPoolCreateInfo qi{.sType =
                                    VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO,
@@ -394,7 +399,7 @@ void Renderer::initialize(VkPhysicalDevice physical, VkDevice device,
                                .queryCount = 2};
       check(vkCreateQueryPool(device, &qi, nullptr, &f.timestamps));
     }
-    g.stats.memoryBytes += f.uniform->bytes + f.readback->bytes;
+    g.stats.memoryBytes += f.uniform->bytes + f.readback->bytes + f.emptyBackground->bytes;
   }
   g.stats.memoryBytes +=
       g.state->exposure->bytes + g.partials->bytes + g.dummy->bytes;
@@ -567,6 +572,17 @@ void Renderer::record(VkCommandBuffer command, upscale::Input hdr,
         ? inputs.auxiliary.imageLayout : VK_IMAGE_LAYOUT_GENERAL;
     g.descriptors(f.meter, hdr.view, auxiliary, g.dummy->view, g.edge,
                   inputs.colorLayout, auxiliaryLayout);
+    const bool background = g.radianceMeter && inputs.background.imageView && inputs.backgroundConstants.buffer;
+    const VkDescriptorImageInfo sky = background ? inputs.background
+        : VkDescriptorImageInfo{g.edge, g.dummy->view, VK_IMAGE_LAYOUT_GENERAL};
+    const VkDescriptorBufferInfo skyConstants = background ? inputs.backgroundConstants
+        : VkDescriptorBufferInfo{f.emptyBackground->handle, 0, 160};
+    const VkWriteDescriptorSet skyWrites[] = {
+        {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = f.meter, .dstBinding = 5,
+         .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &sky},
+        {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, .dstSet = f.meter, .dstBinding = 6,
+         .descriptorCount = 1, .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .pBufferInfo = &skyConstants}};
+    vkUpdateDescriptorSets(g.device, 2, skyWrites, 0, nullptr);
     Push p{g.display.width,
            g.display.height,
            ((g.display.width + 15) / 16) * ((g.display.height + 15) / 16),
@@ -577,7 +593,7 @@ void Renderer::record(VkCommandBuffer command, upscale::Input hdr,
            options.autoExposureMaxEv,
            0,
            uint32_t(reset),
-           uint32_t(g.radianceMeter)};
+           uint32_t(g.radianceMeter), uint32_t(background)};
     {
       gpu::GpuScope scope(command, "Auto exposure meter", g.display);
       g.dispatch(command, 0, f.meter, p);

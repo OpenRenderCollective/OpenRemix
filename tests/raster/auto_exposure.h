@@ -1,4 +1,48 @@
 void autoExposureTests() {
+  // Raster HDR leaves sky samples uncovered. Meter the same visible dome that
+  // the compositor later puts behind them, including fractional MSAA edges.
+  for (uint32_t samples : {1u, 4u}) {
+    Target target(64, 64);
+    target.exposureSeconds = .1f;
+    auto &r = target.raster;
+    remix::forward::Options options;
+    options.samples = samples;
+    options.autoExposure = true;
+    options.ambient = .018f;
+    options.shadows = options.localShadows = options.ssr = options.water = false;
+    options.baking.enabled = false;
+    options.baking.reflectionProbes = 0;
+    target.enableForward(options);
+    remixapi_LightInfoDomeEXT dome{};
+    dome.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT;
+    for (uint32_t c = 0; c < 3; ++c) dome.transform.matrix[c][c] = 1;
+    remixapi_LightInfo light{};
+    light.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+    light.pNext = &dome;
+    light.hash = 889001;
+    light.radiance = {.018f, .018f, .018f};
+    remixapi_LightHandle sky;
+    r.createLight(light, sky);
+    for (uint32_t frame = 0; frame < 48; ++frame) {
+      camera(r);
+      r.drawLight(sky);
+      target.render();
+    }
+    require(std::abs(target.forward->statistics().postProcessing.exposure - 10) < .01f,
+            "A visible sky alone participates in automatic exposure");
+    light.radiance = {18, 18, 18};
+    r.createLight(light, sky);
+    auto surface = instance(quad(r, 889003, material(r, 889002, 1, 1, 1)));
+    surface.transform.matrix[0][0] = surface.transform.matrix[1][1] = .5f;
+    for (uint32_t frame = 0; frame < 64; ++frame) {
+      camera(r);
+      r.drawLight(sky);
+      r.drawInstance(surface);
+      target.render();
+    }
+    require(target.forward->statistics().postProcessing.exposure < 1,
+            "Bright visible sky prevents a dark raster receiver from overexposing the scene");
+  }
   for (uint32_t samples : {1u, 4u}) {
     Target target(64, 64);
     target.exposureSeconds = .1f;

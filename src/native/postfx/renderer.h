@@ -12,6 +12,10 @@ struct MeterInputs {
   // SceneRadiance adds this optional linear reflection image to unpremultiplied
   // HDR color. MaterialNormalized uses the renderer's own albedo guide instead.
   VkDescriptorImageInfo auxiliary{};
+  // Optional scene-linear dome behind uncovered raster samples. Its constants
+  // use the compositor's inverseProjection/viewToDome/radiance/target layout.
+  VkDescriptorImageInfo background{};
+  VkDescriptorBufferInfo backgroundConstants{};
 };
 struct Statistics {
   float exposure = 1, target = 1, limit = 0, milliseconds = 0;

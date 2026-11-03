@@ -14,7 +14,8 @@ namespace remix::forward {
       epoch.world = scene::fastHash(&source->sceneId, sizeof(source->sceneId), epoch.world);
     postProcessing->record(command, {hdr->handle, hdr->view}, post, epoch, true,
                             options.debugView != 0, seconds, 0,
-                            {VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, reflected});
+                            {VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, reflected,
+                             frame.skyImage, frame.skyConstants->descriptor()});
     statistics.postProcessing = postProcessing->statistics();
   }
 }
