@@ -957,7 +957,7 @@ seven-owner static corrections on surfaces/dynamic probes and baked sunlight
 with moving-caster corrections. Real-map hybrid/optical edge quality, reflection-reference provenance and matched runtime
 performance remain open.
 PR #37 now adapts its whole-field cascade source to the incoming query at
-`4da87f3b` on its own branch. It remains unmerged and undeployed. Its build,
+`6a9ed4a5` on its own branch. It remains unmerged and undeployed. Its build,
 replacement-source compilation, policy and five focused GPU checks pass.
 Normalized default/ray shader variants are unchanged; checked cascade variants
 have no opcode-count increases. Matched runtime performance is still unqualified.
@@ -973,6 +973,11 @@ The branch now selects specialized composed world/terrain/viewmodel and optical
 pipelines through `CascadeIncoming`. Transition tests retain local direct energy
 while replacing old baked sky, with independent cubemap capture and target/provider
 changes. Optical and viewmodel sunlight/mixed-shadow checks pass at 1x/2x/4x.
+Controllable local-light fixtures pass at 1x/2x/4x, including off/partial/on,
+non-scalar fallback, moving-only local shadows, cancellation and exact cache
+restore. Seven-light surface/probe corrections pass at 1x/4x using the correct
+receiver-direct cache identity. Their bounded incoming range isolates direct
+ownership from distant bounce transport. Ray-based equivalents also pass.
 Water uses a typed internal diffuse mode; legacy stage inputs are unchanged for
 all 173 existing stages. Cascade incoming remains screen-space: missing optical
 gather samples use its existing fallback, and viewmodels use neighbourhood incoming.
