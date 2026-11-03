@@ -243,7 +243,7 @@ namespace remix::forward {
     gpu::GpuScope sunTime(command, "Forward+ sun shadow cascades", size);
     statistics.movingSunUpdates = 0;
     for (uint32_t c = 0; c < sunShadowLayers; ++c) {
-      if (!frame.staticSunDirty[c % cascadeCount] && (c < cascadeCount || !frame.data.target[3]))
+      if (!frame.staticSunDirty[c % cascadeCount] && (c < cascadeCount || !frame.uniforms.data.target[3]))
         continue;
       const VkRenderPassBeginInfo pass{.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
                                        .renderPass = shadowPass,
