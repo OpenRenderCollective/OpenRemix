@@ -20,6 +20,8 @@ Implemented and checked:
   Default local-light transport is now imported only by its selected source;
   the standard local material response compiles independently. Alternate source
   checks remove the default raw sampler file to verify that separation.
+  Sun transport is also imported only by its selected source; alternate-source
+  checks remove the default sun implementation before compiling all material passes.
   Sun transport and material BRDF response now live in separate modules; the
   response can compile without pass resources or the default transport.
   Alternate shading, diffuse, environment, local and sun

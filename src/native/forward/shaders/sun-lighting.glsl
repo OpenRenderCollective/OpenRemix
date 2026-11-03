@@ -1,3 +1,4 @@
+#include "sun.glsl"
 // Receiver-level source query. Packed chart coordinates and shadow bias
 // inputs stay here; a material model supplies its own response to the sample.
 SunLightSample sampleReceiverSunLight(ShadingReceiver receiver, vec3 normal, float unitIrradiance) {

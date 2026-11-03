@@ -28,7 +28,6 @@ layout(early_fragment_tests) in;
 #include "lightmap.glsl"
 #include "occlusion.glsl"
 #include "local-shadows.glsl"
-#include "sun.glsl"
 #include "sun-response.glsl"
 #ifdef VIEWMODEL_PASS
 #include "../viewmodel/shaders/reflections.glsl"

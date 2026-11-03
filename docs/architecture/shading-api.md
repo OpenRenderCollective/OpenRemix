@@ -839,3 +839,13 @@ bringing in chart visibility, directional fields or default sampling functions.
 The default optimized caller-specific miss exits are unchanged. The alternate
 source compile fixture removes the default sampler file before compiling world,
 viewmodel, live and water materials, so an incidental import fails immediately.
+
+### Sun source isolation
+
+Only the default `sun-lighting.glsl` imports `sun.glsl` and its baked visibility
+and CSM implementation. The pass imports the material response independently.
+An alternate source supplies the receiver and optical sun queries without
+importing default sunlight transport. The custom-source fixture removes the
+default sun implementation before compiling world, viewmodel, live, water and
+ray-water materials. This is a compile-time boundary; CPU shadow resource and
+caster scheduling still require the resolved provider plan.
