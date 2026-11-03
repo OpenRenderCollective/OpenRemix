@@ -211,7 +211,11 @@ Still required for the complete modularity/performance objective:
   unarmed PR CPU medians are .8807-.9004 ms versus main .8699-.8746 ms, so
   blanket no-overhead acceptance remains open. PR `f854c29d` removes inactive
   cascade bindings, pool reservations, world writes and viewmodel copies; five
-  GPU validation checks pass. Repeat the matched timings before assigning a gain.
+  GPU validation checks pass. The matched repeat has unarmed PR CPU medians
+  .8724-.8872 ms versus main .8609-.8920 ms, with weapon CPU/GPU overlap and
+  matching settings/content/draws/pixels. The prior unarmed residual is not
+  reproduced; session drift prevents assigning a precise speedup or universal
+  equivalence. Wider maps and enabled-provider performance remain open.
   Installed binaries/configuration restored exactly; no playable promotion.
 - Complete no-overhead acceptance with controlled CPU/GPU comparisons. Earlier
   host-FPS rankings reversed between runs despite matching lighting/draws. The

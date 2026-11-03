@@ -986,7 +986,11 @@ draws and inspected pixels. GPU ranges overlap/improve, but pre-fix PR unarmed
 CPU recording medians were .8807-.9004 ms versus main .8699-.8746 ms. This does
 not pass blanket no-overhead acceptance. The PR now omits inactive cascade scene
 bindings, pool reservations, world updates and viewmodel copies; five functional
-GPU checks pass, while the matched timing repeat remains pending.
+GPU checks pass. The matched repeat at a common 200 FPS cap has fixed-PR
+unarmed CPU medians .8724-.8872 ms versus main .8609-.8920 ms; weapon CPU
+intervals overlap, as do GPU ranges. Settings/content/draws/inspected pixels match.
+The formerly consistent unarmed residual is not reproduced in this scene, but
+session drift prevents assigning a precise causal speedup or universal equality.
 Real-map quality, general normalization provenance and matched FPS remain open.
 Preserve the combined Source 2 fast path while extending providers.
 
