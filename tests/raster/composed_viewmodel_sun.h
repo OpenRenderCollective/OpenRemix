@@ -120,6 +120,16 @@ void composedViewmodelSunTests() {
     require(blue[centre] < 3 && blue[centre + 2] > 80 && blue[left + 2] < blue[centre + 2] / 3 &&
                 target.forward->bakeController()->volume() == volume,
             "Viewmodel sun colour changes reuse the same baked visibility publication");
+    const auto previousSource = r.bakeScene();
+    ++request.scene.revision;
+    r.setBakeScene(&request.scene);
+    require(r.bakeScene() != previousSource &&
+                r.bakeScene()->contentHash != previousSource->contentHash &&
+                r.bakeScene()->receiverDirectHash == previousSource->receiverDirectHash,
+            "Explicit sun-power recapture replaces the snapshot but preserves direct content");
+    require(render() == blue && target.forward->bakeController()->volume() == volume &&
+                target.forward->statistics().baking.state == REMIXAPI_BAKE_READY_EXT,
+            "Incoming-only snapshot replacement keeps the exact in-memory direct publication without disk cache");
     weapon.transform.matrix[2][3] = 3.5f; // outside the probe volume
     const auto fallback = render();
     const size_t fallbackLeft = (32 * 64 + 29) * 4;

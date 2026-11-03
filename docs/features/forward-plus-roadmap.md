@@ -1,31 +1,23 @@
+### Receiver-direct component identity (2026-11-03)
+
+- Frozen snapshots now compute a separate receiver-direct identity. Controller,
+  cache and diffuse-index lookups select it for direct-only publications; the
+  existing combined identity is unchanged. Sky power and reflection hints are
+  excluded; local light power, geometry and unit sun visibility shape remain.
+- Native build, scene identity regressions and composed mixed-lighting GPU checks
+  pass. No new per-frame input traversal is introduced. Runtime timing is pending.
+- Completed direct publications now survive incoming-only snapshot replacement
+  when ordered records, instance/light identities, chart order and live bindings
+  remain identical. CPU rejection checks and 1/2/4x MSAA GPU recapture checks pass
+  with disk caching disabled; in-flight jobs still cancel normally.
+- Still open: narrow conservative material dependencies, qualify real-map reuse
+  and measure matched runtime performance.
+
 ## Current modular renderer status — 2026-11-03
 
 The technique split is in progress; performance acceptance is not complete.
 The playable install remains separate from the branch build. Architecture and
 interfaces: [shading API](../architecture/shading-api.md).
-
-PR #37 integration work: radiance cascades use the compiled diffuse-source API
-and the shared resolved capture owner. Both live GI choices stop unused diffuse
-baking; independent cubemaps remain selectable. Procedural sky is opt-in. Water
-still uses its ambient fallback under cascades, and viewmodel cascade lighting
-is a screen-space approximation. Cascade GPU transitions, independent cubemap captures, both depth scheduling
-modes and 1x/4x MSAA pass synchronization validation. Existing Source 2 SSR,
-viewmodel, water and mixed-light regressions pass. Orthographic cascade receiver
-depth matching remains unsupported. The PR is synchronized with the complete
-baked/live context split through abb8f2de: cascades and rays share the chart-free
-live adapter, and capture-only refresh/publication updates are included. Sun
-transport/material response and typed reflection references are synchronized;
-cascades explicitly declare no frozen-static normalization reference. The
-capture scheduler and metadata lookup no longer depend on the diffuse controller;
-query-only local providers reuse the shared standard material adapter. Capture
-selection is resolved once into the capture-owned policy; shared/standalone
-transport selection is no longer coupled to saved renderer options. Alternate
-local/sun source isolation also covers cascade world/viewmodel composition. Cascade
-depth-mode toggles prepare their required early-depth targets; 1x/4x transition
-readbacks pass. The PR remains unmerged pending approval.
-
-Hybrid baked-direct/live-indirect composition is not implemented: selecting a
-live diffuse provider still retires the complete baked receiver path.
 
 Implemented and checked:
 
@@ -143,7 +135,8 @@ Still required for the complete modularity/performance objective:
   from incoming paths using shared prepared inputs. GPU surface/probe tests
   reconstruct combined SH from the two fields, including serial/parallel and
   empty ownership; seven existing bake kernels remain byte-identical. This is
-  not a wired hybrid preset. Typed cache identities and payload tags now separate
+  a low-level producer rather than a new default preset. Typed cache identities
+  and payload tags now separate
   combined from receiver-direct data, including index recovery and independent
   decoder checks. The legacy combined key/payload are byte-identical to a captured
   pre-change fixture. Receiver-direct containers remain diffuse-only until
@@ -168,15 +161,40 @@ Still required for the complete modularity/performance objective:
   Composed optical sunlight now shares probe visibility and moving shadows,
   with complete fallback outside probe coverage. Tests cover 1x/2x/4x and both
   water pipeline variants; default water shader variants remain unchanged.
-  Qualify reflection-reference provenance, component-specific source identities
-  and real-map quality/performance. On this PR branch, cascades now uses the
-  shared incoming-query boundary while retaining whole-field replacement; baked
-  direct composition and optical lookup support remain deferred.
+  Component-specific receiver-direct source identities and compatible in-memory
+  reuse now exclude incoming sky power and capture hints; conservative material
+  dependencies remain. Qualify reflection-reference provenance and real-map
+  quality/performance. PR #37 now uses the shared incoming query
+  on its unmerged branch (`295d7a95`), with build, policy, replacement-source and
+  five focused GPU checks passing. Baked-direct/cascade composition, optical
+  cascade lookups and matched runtime performance remain open.
   Preserve existing presets and the default Source 2 combined fast path.
+- Environment replacement no longer imports default cubemap storage through
+  world/viewmodel/water passes. The provider owns probe sampling and candidate
+  gathering, world/viewmodel sky sampling and viewmodel probe bias. Replacement
+  compilation removes all five default cube/sky implementation files. Water sky
+  transmission remains an explicit material input.
+  Twelve shader variants preserve normalized executable/global semantics and
+  sizes, and viewmodel/water GPU checks pass. General reference provenance remains
+  open; raw SPIR-V declaration order changes, with no new FPS claim.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Composed optical sunlight has fixture coverage; broader optical/probe edge
   quality and general replacement-provider sunlight policies still need work.
+- Latest 1080p Crossfire A/B/B/A through `9e96d558` matches settings, bake
+  content, draws and upper-world pixels. Unarmed current GPU medians overlap
+  baseline; weapon current GPU medians are 3.845-3.871 ms versus 3.683-3.835 ms.
+  CPU recording and host FPS broadly overlap, with baseline drift. This does
+  not pass no-overhead acceptance: isolate opaque/depth/viewmodel differences
+  using a nearer baseline and common frame cap before attributing the residual.
+  Installed binaries/configuration were restored; no playable promotion.
+- A nearer-baseline A/B/B/A at a common 200 FPS cap compares `38c46f34`
+  with runtime `9e96d558`, matching quality/content/draws/world pixels. Current
+  GPU medians are 2.578-2.595 ms unarmed and 3.115-3.130 ms weapon versus baseline
+  2.583-2.655 and 3.118-3.210 ms; CPU intervals overlap. No repeatable recent
+  component-split overhead is observed in this scoped steady-state profile.
+  This does not resolve the older uncapped residual or qualify other providers,
+  maps, cold work or the 300 FPS weapon target. Install/config restored exactly.
 - Complete no-overhead acceptance with controlled CPU/GPU comparisons. Earlier
   host-FPS rankings reversed between runs despite matching lighting/draws. The
   completed A/B/B/A 1080p Crossfire study shows overlapping CPU/GPU ranges and

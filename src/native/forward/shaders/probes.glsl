@@ -233,10 +233,8 @@ bool probeSample(vec3 position, vec3 reflected, float roughness,
 // Match the modern non-VR Source 2 viewer profile: correction may darken a
 // capture, but cannot amplify it. Unknown lighting and dark references are neutral.
 vec3 normalizedProbeRadiance(vec4 captureSample, float receiverLuma) {
-  // This adapter's capture SH and receiver guide have the same frozen-static
-  // contract. Other environment sources must declare their own compatibility.
-  if (!compatibleLightingReferenceDomains(Source2StaticLightingReference, Source2StaticLightingReference))
-    return captureSample.rgb;
+  // The environment adapter validates the typed receiver reference before
+  // passing scalar luminance into this provider-private sampling helper.
   if (receiverLuma < 0 || captureSample.a <= 0) return captureSample.rgb;
   return captureSample.rgb * reflectionReferenceScale(receiverLuma, captureSample.a);
 }

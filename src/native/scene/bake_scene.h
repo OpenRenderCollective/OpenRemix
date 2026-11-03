@@ -24,6 +24,13 @@ namespace remix::scene {
   // on a camera, frame visibility, automatic settling, or caller-owned arrays.
   struct BakeScene {
     uint64_t sceneId = 0, revision = 0, contentHash = 0;
+    // Direct receivers retain local light power and unit sun visibility, not
+    // incoming sky power or reflection capture placement. Computed once at freeze.
+    uint64_t receiverDirectHash = 0;
+    uint64_t receiverBindingHash = 0; // ordered records and live instance/light identities
+    uint64_t lightingHash(BakeLightScope scope) const {
+      return scope == BakeLightScope::ReceiverDirect ? receiverDirectHash : contentHash;
+    }
     float sceneScale = 1;
     bool ready = false;
     bool hasBounds = false;
@@ -47,6 +54,9 @@ namespace remix::scene {
   // Copies geometry/material state; shares only immutable texture assets.
   // Rejects inputs whose transport would depend on animation or mutable texels.
   void freezeBakeScene(BakeScene &scene);
+  // Published data may retain the old immutable snapshot only when record order
+  // and every live receiver binding still match. Called on snapshot replacement.
+  bool sameBakeReceiverBindings(const BakeScene &a, const BakeScene &b);
   // True only for an unchanged, explicitly retained member of this snapshot.
   bool matchesBakeDraw(const BakeScene &scene, uint32_t index, const Draw &draw);
 } // namespace remix::scene

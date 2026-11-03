@@ -278,9 +278,9 @@ expresses replacement of the default baked receiver path independently of
 `rayDiffuse()`, which identifies the actual fragment ray-query implementation.
 Capture retirement, baked-light/highlight selection and receiver-mask scheduling
 consume the ownership query. Pipeline variants, descriptor layouts and ray
-transport continue to consume the implementation query. Ray-query GI and
-radiance cascades are live sources on this PR branch; the central ownership
-query covers both instead of editing each scene-lighting decision. Screen reflection
+transport continue to consume the implementation query. Today ray-query GI is
+the only live source on this branch; another live technique extends the central
+ownership query instead of editing each scene-lighting decision. Screen reflection
 allocation and hierarchy recording consume the resolved screen choice; quality
 and range values remain in `Options`. The live scene receives its compute
 reflection-batch requirement from the same plan instead of reading the saved ray
@@ -293,26 +293,6 @@ retain their configured fallback without allocating the requested ray provider.
 This plan is derived once during target preparation and is not another persisted
 selector. Existing source modules consume it without a dynamic registry, virtual
 per-draw dispatch or additional shader branch.
-
-### Radiance cascades diffuse source
-
-`Diffuse::RadianceCascades` selects a compiled receiver-lighting implementation;
-materials continue to consume `ReceiverLighting`. It supplies indirect diffuse,
-keeps direct lights analytic, and does not claim baked attribution or a frozen
-reflection reference. `ResourcePlan::liveDiffuse()` includes both cascades and
-ray-query GI, so the capture owner retires unused diffuse baking for either.
-Cubemap captures remain an independently selectable reflection source. The
-procedural sky and sun override controls are opt-in; selecting this source does
-not replace the host sky or change the default Source 2 preset.
-
-Cascades require compute ray queries and share the prepared live scene. With a
-depth prepass they gather before world shading; otherwise the gather follows
-world shading and the next frame consumes it. The current viewmodel adapter
-approximates lighting from nearby world-screen samples; it is not a world-space
-probe volume. Water retains its existing ambient diffuse fallback. These are
-limits of this source, not requirements imposed on custom material models.
-Receiver depth matching currently assumes a perspective projection; orthographic
-cameras need a separate linear-depth contract before they can use this source.
 
 ## Provider scheduling and transport sharing
 
@@ -821,19 +801,6 @@ sun queries independently through world, viewmodel, live-GI, water and ray-water
 material variants. Composed optical sunlight now uses the shared probe/moving
 visibility policy described below; the default preset retains its existing policy.
 
-### Cascade context integration
-
-Radiance cascades select `receiver-live.glsl` alongside their private evaluator,
-with no chart parameters or chart-shaped context. Ray GI uses the same live
-context API. Cascade depth-prepass changes cross a target boundary because the
-early gather needs dedicated depth attachments; ordinary Source 2 depth toggles
-keep their existing target contract. Late cascade dispatch is skipped when the
-resolved technique is inactive. This PR remains an opt-in implementation, with
-screen-space viewmodel approximation, ambient water fallback and perspective-only
-receiver depth matching; it is not merged into the main feature branch. Cascade
-diffuse declares `NoLightingReference`, so live energy cannot be relabeled as
-the frozen static cubemap normalization field.
-
 ### Sun transport and material response
 
 `sun.glsl` owns visibility and incident sunlight samples. `sun-response.glsl`
@@ -989,8 +956,12 @@ This does not complete component modularity. Renderer fixtures now qualify
 seven-owner static corrections on surfaces/dynamic probes and baked sunlight
 with moving-caster corrections. Real-map hybrid/optical edge quality, reflection-reference provenance and matched runtime
 performance remain open.
-The unmerged cascade PR now adapts its whole-field source to the incoming query;
-composed cascade pipelines and optical lookup coverage still need work.
+PR #37 now adapts its whole-field cascade source to the incoming query at
+`295d7a95` on its own branch. It remains unmerged and undeployed. Its build,
+replacement-source compilation, policy and five focused GPU checks pass.
+Normalized default/ray shader variants are unchanged; checked cascade variants
+have no opcode-count increases. Matched runtime performance is still unqualified.
+Baked-direct/cascade composition and optical cascade lookups remain outstanding.
 Preserve the combined Source 2 fast path while extending providers.
 
 ### Receiver-direct irradiance producer
@@ -1162,6 +1133,64 @@ ray-water fragment, within the existing water capability gate; no new capability
 requirement is introduced. Checked default/custom optimized shader variants are
 unchanged after identifier normalization. Matched runtime performance and wider
 real-map optical quality acceptance remain open.
+
+
+### Receiver-direct snapshot identity
+
+Frozen scenes retain a separate receiver-direct fingerprint alongside the
+unchanged combined fingerprint. The direct domain includes the existing frozen
+geometry/material records, local emitters, partition, receiver layout and sun
+visibility shape. It excludes reflection hints, sun power and dome inputs, which
+belong to reflection or incoming-light providers. Both hashes are computed at
+snapshot creation; frame recording selects one scalar without traversing inputs.
+Receiver-direct controller/cache lookup and diffuse-index lookup use this domain.
+Persistence regression coverage warm-loads unchanged direct payloads after incoming
+power/reflection-hint edits, rebinds mixed ownership to the replacement snapshot,
+and rejects local-light radius edits.
+
+Completed receiver-direct publications survive snapshot replacement when component
+content, configuration, ordered records, instance/light identities, chart order
+and live bindings all match. The publication retains its original immutable
+snapshot; submitted-frame leases and GPU allocations are not mutated. Ongoing
+jobs, reordered/replaced bindings and other content take the cancellation/cache
+path. The binding comparison runs only when the snapshot pointer changes.
+
+CPU regressions reject changed instance identities, missing bindings and reordered
+charts despite equal unordered content. The composed viewmodel sunlight fixture
+explicitly recaptures changed sun power with disk caching disabled at 1/2/4x MSAA;
+it requires the same publication pointer, ready state and exact rendered output.
+Material records remain conservative: incoming-only albedo/emission edits can
+still invalidate direct content. These dependencies, broader real-map reuse and
+matched runtime performance require further qualification.
+
+
+### Private environment storage and candidate gathering
+
+The default `reflection-environment.glsl` owns the parallax-probe storage include
+and, for world resolve, its tile-candidate implementation and sky fallback.
+Viewmodel sky resources and probe-position bias are private to that source too.
+Material passes supply binding assignments without including this storage.
+Replacements implement `sampleEnvironmentReflection(ReflectionReceiver)`, the
+viewmodel query `environmentReflectionPosition(position, normal)` and the
+world-resolve query `environmentReflectionCandidates(position, valid)`.
+A source with no position bias returns the position unchanged. The candidate query runs
+uniformly before out-of-bounds/invalid lanes return, preserving the default
+provider's workgroup barrier contract. A source without candidates returns zero.
+Viewmodel and water composition continue to use the same incident-radiance query.
+
+The alternate-environment test removes `probes.glsl`, `probe-tiles.glsl`,
+`environment.glsl`, `environment-sampling.glsl` and the viewmodel environment
+resource file before compiling real world resolve, viewmodel and water material
+passes. Water's sky transmission background remains a separate material input;
+replacing reflected radiance does not replace transmitted background lighting. Default
+and custom-material shader checks preserve sizes and opcode counts across twelve
+variants. After structural global-ID/declaration-order normalization, their
+ordered executable instructions and global declarations match. Viewmodel
+reflection and water environment/HDR/MSAA GPU fixtures pass. The source-file move
+changes some raw SPIR-V declaration order; it is not byte-identical. This is not
+a new matched runtime FPS study. Scene/component normalization provenance remains
+separate work; the default environment still accepts only the typed Source 2
+static reference domain.
 
 
 ### Cascade PR incoming-query adaptation
