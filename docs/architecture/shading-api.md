@@ -1066,7 +1066,10 @@ never advertised as a complete Source 2 reflection-normalization reference.
 
 `diffuse-baked-field.glsl` provides the shared chart/probe lookup without owning
 the final combination. `incoming-lighting.glsl` supplies an incoming-only query;
-its current adapter calls the existing ray transport. Incoming means sky, visible
+its current adapter owns the ray-transport import. The material pass does not
+import ray GI directly. Incoming diffuse and hardware water reflections share
+the guarded `ray-transport.glsl` implementation, with descriptor-set selection
+owned by the source. Incoming means sky, visible
 emission and bounced radiance, excluding receiver-direct local-light NEE. A
 replacement source implements that query without changing the material model,
 baked field lookup or per-light mixed-shadow response.
