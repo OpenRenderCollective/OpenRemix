@@ -395,7 +395,10 @@ namespace remix::forward::bake {
       }
       m_job.reset();
     }
-    if (!preserveDiffuse) m_volume.reset();
+    if (!preserveDiffuse) {
+      m_volume.reset();
+      m_reflectionSeeds.reset();
+    }
     m_reflections.reset();
     m_localReflections.reset();
     m_reflectionSceneHash = 0;
@@ -957,7 +960,10 @@ namespace remix::forward::bake {
     m_reflectionSceneHash = volume->hash;
     m_reflections = std::move(reflections);
     m_volume = std::move(volume);
-    if (!diffusePublished) m_submissions[m_slot].upload = m_volume;
+    if (!diffusePublished) {
+      m_reflectionSeeds = m_job->reflectionSeeds;
+      m_submissions[m_slot].upload = m_volume;
+    }
     if (m_job->inMemoryDiffuse) {
       if (m_job->reflectionPersistence && !m_job->cacheFile.empty()) {
         try {
@@ -1164,10 +1170,10 @@ namespace remix::forward::bake {
             throw std::invalid_argument("Invalid bake batch settings");
           auto job = std::make_shared<Job>();
           job->source = source;
-          if (m_volume && m_volume->reflectionSeeds) {
+          if (m_volume && m_reflectionSeeds) {
             job->inMemoryDiffuse = true;
             job->publishedDiffuse = m_volume;
-            job->reflectionSeeds = m_volume->reflectionSeeds;
+            job->reflectionSeeds = m_reflectionSeeds;
             job->reflectionOwnership = m_volume->mixedLights;
           }
           const auto physical = m_physical;

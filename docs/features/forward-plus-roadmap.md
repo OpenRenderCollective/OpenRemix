@@ -205,6 +205,11 @@ Still required for the complete modularity/performance objective:
   and resolve passes; 22 default optimized shader/coverage comparisons remain
   byte-identical. The scalar layout is unchanged. Mixed per-pixel domains and
   scene/component reference provenance remain open.
+- Retained reflection-placement admission now belongs to controller capture
+  state instead of the diffuse Volume. Early/final publication retains it once;
+  compatible reflection edits preserve it and full invalidation retires it.
+  Refresh workers retain private immutable seed ownership. No transport work or
+  steady-frame query is added; broader independent scheduling remains open.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Composed optical sunlight has fixture coverage; broader optical/probe edge

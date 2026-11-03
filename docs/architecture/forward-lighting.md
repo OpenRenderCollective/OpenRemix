@@ -916,3 +916,18 @@ Buffer totals exclude the scene's image and acceleration categories rather than
 counting those categories both in buffers and again separately. Sharing an authored
 consumer with a default prepared scene still requires compatible source/options and
 policy provenance; this admission/accounting change does not enable that reuse.
+
+### Retained reflection placement admission
+
+The Source 2 controller retains immutable reflection placement seeds separately
+from the diffuse `Volume`. Preparing a diffuse publication no longer copies or
+owns capture-placement metadata. Early diffuse publication and final activation
+publish the retained admission once; final activation after early publication
+reuses it. Reflection-only edits preserve the admission together with compatible
+diffuse data, while full source/diffuse invalidation drops both.
+
+A refresh job takes its own immutable seed owner before preparation is queued.
+Workers never read the controller's retained owner, and obsolete/submitted jobs
+retain their inputs through normal cancellation and fence retirement. This moves
+an existing shared ownership reference; it adds no scene traversal, allocation,
+GPU resource or pass. Independent producer scheduling remains separate work.
