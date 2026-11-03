@@ -249,4 +249,31 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
                         *["-D" + define for define in defines], str(source),
                         "-o", str(binary)], env=env, check=True)
         subprocess.run([validator, "--target-env", "vulkan1.1", str(binary)], env=env, check=True)
+    # Replace the whole lighting set and remove default baked storage. Pass
+    # coverage metadata must remain usable without a lightmap/probe backend.
+    for fixture, target in (("custom-diffuse-source.glsl", "receiver-lighting.glsl"),
+                            ("custom-local-source.glsl", "local-lighting.glsl"),
+                            ("custom-sun-source.glsl", "sun-lighting.glsl"),
+                            ("custom-environment.glsl", "reflection-environment.glsl")):
+        shutil.copyfile(root / "tests/forward/shaders" / fixture, tree / "shaders" / target)
+    for name in ("baked-storage.glsl", "irradiance.glsl", "style-lighting.glsl", "lightmap.glsl",
+                 "occlusion.glsl", "local-shadows.glsl", "light-sample.glsl"):
+        (tree / "shaders" / name).unlink()
+    for name, (stage, defines) in {
+        "unified-world": (source, []),
+        "unified-guides": (source, ["REFLECTION_GUIDES"]),
+        "unified-metal": (source, ["ZERO_DIFFUSE_MATERIAL", "REFLECTION_GUIDES"]),
+        "unified-viewmodel": (source, ["VIEWMODEL_PASS", "REFLECTION_GUIDES"]),
+        "unified-live": (source, ["LIVE_GI"]),
+        "unified-live-viewmodel": (source, ["LIVE_GI", "VIEWMODEL_PASS"]),
+        "unified-water": (source, ["WATER_SURFACE"]),
+        "unified-ray-water": (source, ["WATER_SURFACE", "WATER_RAY"]),
+        "unified-live-water": (source, ["WATER_SURFACE", "LIVE_GI", "RAY_SCENE_SET=3"]),
+        "unified-resolve": (tree / "shaders/reflections.comp", ["SSR_FILTER"]),
+    }.items():
+        binary = tree / (name + ".spv")
+        subprocess.run([compiler, "-V", "--target-env", "vulkan1.1",
+                        *["-D" + define for define in defines], str(stage),
+                        "-o", str(binary)], env=env, check=True)
+        subprocess.run([validator, "--target-env", "vulkan1.1", str(binary)], env=env, check=True)
 print("Custom models and environment/transport/diffuse/local/sun sources compose through actual material passes")

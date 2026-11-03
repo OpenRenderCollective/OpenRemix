@@ -4,9 +4,7 @@
 // Retained direct coefficients start at (layer count - 10); sun is always last.
 bool indexedSurfaceVisibility() { return (frame.occlusion.x & 0x80000000u) != 0u; }
 layout(constant_id = 2) const bool IndexedSurfaceDirectionals = false;
-layout(constant_id = 3) const bool FullyMappedReceiver = false;
-// The ordinary vertex layout always supplies the invalid chart coordinate.
-layout(constant_id = 4) const bool UnmappedReceiver = false;
+#include "receiver-coverage.glsl"
 bool indexedSurfaceDirect() { return IndexedSurfaceDirectionals && frame.clusterInfo.z != 0u; }
 #define SurfaceAtlasLayers (20.0 - (indexedSurfaceVisibility() ? 1.0 : 0.0) - (indexedSurfaceDirect() ? 9.0 : 0.0))
 void surfaceBasis(vec3 normal, out float sh[9]) {

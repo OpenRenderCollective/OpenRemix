@@ -1,3 +1,4 @@
+#include "baked-storage.glsl"
 #include "sun.glsl"
 // Receiver-level source query. Packed chart coordinates and shadow bias
 // inputs stay here; a material model supplies its own response to the sample.

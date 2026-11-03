@@ -230,11 +230,18 @@ Still required for the complete modularity/performance objective:
 - Static local-light visibility and local shadow resources are now imported
   by the default local source rather than the material pass. Replacement-source
   compilation removes both implementations, alongside the raw local sampler.
-  Host descriptors and shader interfaces are unchanged; other baked storage
-  imports remain separate migration work.
+  Host descriptors and shader interfaces are unchanged.
 - The default water reflection sky/visibility fallback is now private to the
   environment source. Replacement compilation removes its file while preserving
   the material's sky transmission input. No host descriptors or passes change.
+- Default baked field/style/atlas storage is now imported by the selected
+  query sources, not the material pass. Pass receiver-coverage specializations
+  remain resource-free. A full replacement lighting set compiles ten real pass
+  variants with the default storage implementations physically absent. Shared
+  default storage declarations are guarded; world resolve keeps its own binding.
+  Native build, replacement compilation and six GPU checks pass. Twelve checked
+  variants preserve normalized globals/instructions, sizes and opcode counts;
+  declaration order changes raw bytes. No new runtime FPS claim.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Composed optical sunlight has fixture coverage; broader optical/probe edge
