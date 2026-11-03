@@ -19,7 +19,6 @@ namespace remix::forward {
         viewModelLocalMaps->initialize(physical, device, shadowPass, options.localShadowLights,
                                        options.localShadowResolution, false);
       }
-      // World caster absence says nothing about this camera's self shadows.
       viewModelData.clusterInfo[3] = uint32_t(localShadows) | (uint32_t(techniquePlan.reflectionResolve) << 1);
       viewModelData.shadows.fill(frame.viewModelProjection);
       viewModelData.splits.fill(std::numeric_limits<float>::max());

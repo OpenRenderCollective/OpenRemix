@@ -251,9 +251,6 @@ namespace remix::forward {
                   float(clusterSlices) / std::log(range.farPlane / range.nearPlane), range.sign};
     const uint32_t x = std::max(1u, (extent.width + 63) / 64), y = std::max(1u, (extent.height + 63) / 64);
     data.grid = {x, y, clusterSlices, x * y * clusterSlices};
-    // Same candidate set as drawSunCasters, before camera/cascade culling.
-    // Existing counts provide a conservative proof without another traversal.
-    data.clusterInfo[3] = capturedCasters == frame.commands.size() ? worldSunMovingEmpty : 0u;
     const auto cascades =
         shadowCascades(data.camera, data.view, range, direction, casters,
                        options.shadowDistance / options.sceneScale, options.shadowResolution);

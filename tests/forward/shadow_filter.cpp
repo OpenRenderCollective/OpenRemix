@@ -1,5 +1,4 @@
 #include "forward/probes/data.h"
-#include "forward/bindings.h"
 #include "gpu_fixture.h"
 #include "shadow_shaders/embedded.h"
 #include <algorithm>
@@ -227,21 +226,18 @@ int main(int argc, char **argv) try {
                  .pImageInfo = i >= 3 ? &images[i - 3] : nullptr,
                  .pBufferInfo = i < 3 ? &buffers[i] : nullptr};
   vkUpdateDescriptorSets(fixture.device, 6, writes, 0, nullptr);
-  auto dispatch = [&] {
-    fixture.begin();
-    vkCmdBindPipeline(fixture.command, VK_PIPELINE_BIND_POINT_COMPUTE, gpu.pipeline);
-    vkCmdBindDescriptorSets(fixture.command, VK_PIPELINE_BIND_POINT_COMPUTE, gpu.layout, 0, 1, &set, 0,
-                            nullptr);
-    vkCmdPushConstants(fixture.command, gpu.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(count), &count);
-    vkCmdDispatch(fixture.command, (count + 63) / 64, 1, 1);
-    const VkMemoryBarrier read{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-                               .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
-                               .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
-    vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0,
-                         1, &read, 0, nullptr, 0, nullptr);
-    fixture.finish();
-  };
-  dispatch();
+  fixture.begin();
+  vkCmdBindPipeline(fixture.command, VK_PIPELINE_BIND_POINT_COMPUTE, gpu.pipeline);
+  vkCmdBindDescriptorSets(fixture.command, VK_PIPELINE_BIND_POINT_COMPUTE, gpu.layout, 0, 1, &set, 0,
+                          nullptr);
+  vkCmdPushConstants(fixture.command, gpu.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(count), &count);
+  vkCmdDispatch(fixture.command, (count + 63) / 64, 1, 1);
+  const VkMemoryBarrier read{.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+                             .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+                             .dstAccessMask = VK_ACCESS_HOST_READ_BIT};
+  vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0,
+                       1, &read, 0, nullptr, 0, nullptr);
+  fixture.finish();
   std::vector<Vec4> values(6 * queries.size());
   gpu.output.read(values.data(), values.size() * sizeof(Vec4));
   float unshadowedResponses = 0;
@@ -308,19 +304,6 @@ int main(int argc, char **argv) try {
             "Bright receivers never amplify captures and dark/unknown/incompatible references remain neutral");
 
   }
-  // Deliberately leave occluders in the textures: the host proof replaces only
-  // the world moving layer, never frozen geometry or viewmodel self shadows.
-  parameters.cluster[3] = worldSunMovingEmpty;
-  gpu.parameters.write(&parameters, sizeof(parameters));
-  dispatch();
-  std::vector<Vec4> empty(values.size());
-  gpu.output.read(empty.data(), empty.size() * sizeof(Vec4));
-  for (uint32_t i = sweepSteps; i < 2 * sweepSteps; ++i)
-    require(empty[i][0] == 1, "Proven empty moving sun maps return exact unoccluded visibility");
-  require(empty[exclusionFirst + 2][0] < .001f,
-          "An empty moving sun map cannot remove frozen fallback occlusion");
-  for (size_t i = viewModelFirst; i < sunPlaneFirst; ++i)
-    require(empty[i] == values[i], "World caster absence cannot suppress viewmodel shadow layers");
   require(validationErrors == 0, "Shadow filter readback is Vulkan validation clean");
 } catch (VkResult error) {
   std::fprintf(stderr, "Shadow filtering GPU test failed: %d\n", int(error));
