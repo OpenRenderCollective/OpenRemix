@@ -48,6 +48,26 @@ int main() {
     require(components.contentHash != incoming.contentHash && components.receiverDirectHash &&
                 components.receiverDirectHash == incoming.receiverDirectHash,
             "Incoming power and reflection hints do not invalidate receiver-direct content");
+    require(scene::sameBakeReceiverBindings(components, incoming),
+            "Incoming-only snapshots preserve ordered live receiver bindings");
+    const auto replacedInstance = componentSnapshot([](auto &input) { ++input.draws[0].instanceId; });
+    auto replacedBinding = components;
+    replacedBinding.bindings[0].material.reset();
+    require(components.receiverDirectHash == replacedInstance.receiverDirectHash &&
+                !scene::sameBakeReceiverBindings(components, replacedInstance) &&
+                !scene::sameBakeReceiverBindings(components, replacedBinding),
+            "Equal content does not allow changed instance identity or missing live bindings");
+    auto orderedCharts = [&](bool reverse) {
+      return componentSnapshot([&](auto &input) {
+        input.charts.push_back({0, 0, 2, 2, {{0, 0}, {1, 0}, {1, 1}}});
+        input.charts.push_back({0, 3, 2, 2, {{0, 0}, {1, 1}, {0, 1}}});
+        if (reverse) std::reverse(input.charts.begin(), input.charts.end());
+      });
+    };
+    const auto charts = orderedCharts(false), reorderedCharts = orderedCharts(true);
+    require(charts.receiverDirectHash == reorderedCharts.receiverDirectHash &&
+                !scene::sameBakeReceiverBindings(charts, reorderedCharts),
+            "Equal unordered chart content cannot reuse differently indexed live publication metadata");
     const auto sunShape = componentSnapshot([](auto &input) { input.sun.direction[0] = .5f; });
     const auto local = componentSnapshot([](auto &input) { input.lights.emplace_back(); });
     const auto brighterLocal = componentSnapshot([](auto &input) {

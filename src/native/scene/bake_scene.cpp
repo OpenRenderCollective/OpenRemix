@@ -211,6 +211,7 @@ namespace remix::scene {
     // receiver charts for surfaces the camera must never see.
     std::erase_if(scene.charts, [&](const auto &chart) { return scene.draws[chart.draw].reflectionOnly; });
     std::vector<std::vector<uint64_t>> chartHashes(scene.draws.size());
+    Hash chartOrder;
     for (const auto &chart : scene.charts) {
       Hash hash;
       hash.add(chart.firstIndex);
@@ -220,6 +221,8 @@ namespace remix::scene {
       for (const auto &uv : chart.texcoords)
         hash.add(uv);
       chartHashes[chart.draw].push_back(hash.value);
+      chartOrder.add(chart.draw);
+      chartOrder.add(hash.value);
     }
     Freezer freezer;
     std::shared_ptr<Material> receiverMaterial;
@@ -298,6 +301,16 @@ namespace remix::scene {
       lightHash(hash, light);
       records.push_back(hash.value);
     }
+    Hash bindings;
+    bindings.add(chartOrder.value);
+    for (auto record : records) bindings.add(record);
+    for (const auto &draw : scene.draws) {
+      bindings.add(draw.instanceId);
+      bindings.add(draw.instanceIndex);
+      bindings.add(draw.surfaceIndex);
+    }
+    for (const auto &light : scene.lights) bindings.add(light.id);
+    scene.receiverBindingHash = bindings.value;
     // Membership order and runtime handles are not content. Preserve duplicate
     // placements/lights, because multiplicity can change transport.
     std::sort(records.begin(), records.end());

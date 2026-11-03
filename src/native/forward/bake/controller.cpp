@@ -1079,6 +1079,15 @@ namespace remix::forward::bake {
     const uint64_t hash = source && source->ready
         ? source->lightingHash(config.irradianceContents == IrradianceContents::ReceiverDirect
             ? scene::BakeLightScope::ReceiverDirect : scene::BakeLightScope::Combined) : 0;
+    // Keep immutable GPU data and its original binding snapshot when only an
+    // independent incoming source changed. Reordered/replaced receivers still
+    // take the normal cancellation and cache-rebinding path.
+    if (source != m_source && source && m_source && m_volume && !m_job &&
+        config.irradianceContents == IrradianceContents::ReceiverDirect &&
+        m_volume->irradianceContents == IrradianceContents::ReceiverDirect &&
+        hash == m_hash && config.sameLighting(m_config) && lightCutoff == m_lightCutoff &&
+        scene::sameBakeReceiverBindings(*m_source, *source))
+      m_source = source;
     bool startReflectionRefresh = false;
     if (source != m_source || hash != m_hash || !config.sameLighting(m_config) ||
         lightCutoff != m_lightCutoff) {

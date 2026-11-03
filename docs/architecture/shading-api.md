@@ -1148,9 +1148,17 @@ Persistence regression coverage warm-loads unchanged direct payloads after incom
 power/reflection-hint edits, rebinds mixed ownership to the replacement snapshot,
 and rejects local-light radius edits.
 
-Replacing a snapshot still refreshes retained receiver bindings and cancels work
-against the old snapshot. Equal component fingerprints permit cache lookup reuse;
-they do not yet preserve an in-memory publication across snapshot replacement.
+Completed receiver-direct publications survive snapshot replacement when component
+content, configuration, ordered records, instance/light identities, chart order
+and live bindings all match. The publication retains its original immutable
+snapshot; submitted-frame leases and GPU allocations are not mutated. Ongoing
+jobs, reordered/replaced bindings and other content take the cancellation/cache
+path. The binding comparison runs only when the snapshot pointer changes.
+
+CPU regressions reject changed instance identities, missing bindings and reordered
+charts despite equal unordered content. The composed viewmodel sunlight fixture
+explicitly recaptures changed sun power with disk caching disabled at 1/2/4x MSAA;
+it requires the same publication pointer, ready state and exact rendered output.
 Material records remain conservative: incoming-only albedo/emission edits can
-still invalidate direct content. These remaining dependencies and matched runtime
-performance require further qualification.
+still invalidate direct content. These dependencies, broader real-map reuse and
+matched runtime performance require further qualification.

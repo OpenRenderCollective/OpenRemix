@@ -6,8 +6,12 @@
   excluded; local light power, geometry and unit sun visibility shape remain.
 - Native build, scene identity regressions and composed mixed-lighting GPU checks
   pass. No new per-frame input traversal is introduced. Runtime timing is pending.
-- Still open: preserve safe in-memory publication reuse across snapshot replacement,
-  narrow conservative material dependencies, and qualify cache reuse on real maps.
+- Completed direct publications now survive incoming-only snapshot replacement
+  when ordered records, instance/light identities, chart order and live bindings
+  remain identical. CPU rejection checks and 1/2/4x MSAA GPU recapture checks pass
+  with disk caching disabled; in-flight jobs still cancel normally.
+- Still open: narrow conservative material dependencies, qualify real-map reuse
+  and measure matched runtime performance.
 
 ## Current modular renderer status — 2026-11-03
 

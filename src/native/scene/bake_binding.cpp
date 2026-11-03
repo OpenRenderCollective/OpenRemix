@@ -11,6 +11,18 @@ namespace remix::scene {
              a.factor == b.factor;
     }
   } // namespace
+  bool sameBakeReceiverBindings(const BakeScene &a, const BakeScene &b) {
+    if (!a.receiverBindingHash || a.receiverBindingHash != b.receiverBindingHash ||
+        a.bindings.size() != b.bindings.size() || a.draws.size() != b.draws.size() ||
+        a.bindings.size() != a.draws.size()) return false;
+    for (size_t i = 0; i < a.bindings.size(); ++i) {
+      const auto surface = a.bindings[i].surface.lock();
+      const auto material = a.bindings[i].material.lock();
+      if (!surface || surface != b.bindings[i].surface.lock() ||
+          !material || material != b.bindings[i].material.lock()) return false;
+    }
+    return true;
+  }
   bool matchesBakeDraw(const BakeScene &scene, uint32_t index, const Draw &draw) {
     if (draw.classification != REMIXAPI_INSTANCE_STATIC_EXT || index >= scene.draws.size() ||
         index >= scene.bindings.size())
