@@ -1,6 +1,6 @@
 # Forward+ handoff
 
-Current checkpoint: 2026-11-03. This page supersedes older handoff narratives;
+Current checkpoint: 2026-11-04. This page supersedes older handoff narratives;
 Git history retains them. Start with AGENTS.md, this page and the
 [fresh-clone setup](forward-plus-setup.md) and
 [lighting architecture](../architecture/forward-lighting.md), then the
@@ -12,7 +12,7 @@ context, not proof that an old experiment is still enabled or a defect is fixed.
 | Item | Current state |
 | --- | --- |
 | Native checkout | `OpenRemix/`, `forward-plus-renderer` |
-| Native modular code checkpoint | `f8c9de1e` (read the branch history for subsequent changes) |
+| Native modular code checkpoint | `aa00d3c1` (read the branch history for subsequent changes) |
 | Native official remote | `https://github.com/OpenRenderCollective/OpenRemix.git` |
 | Adapter checkout | `garrys-mod-rtx-remixed-2/`, `forward-plus-renderer` |
 | Adapter checkpoint | `952a8bf` (profiling observer-cost qualification; upstream integration retained) |
@@ -133,7 +133,7 @@ That fix does not establish fitted Construct outdoor coverage.
    package. Recent matched Crossfire checks preserve the checked output but show
    a small positive armed CPU recording residual. An exact-binary repeat reversed
    that difference, so no stable regression or zero-overhead conclusion is established.
-   The subsequent once-per-frame binding snapshot needs separate timing qualification. Neutral metadata also adds one aligned header per nonempty image.
+   The once-per-frame binding snapshot has focused matched comparisons; broader acceptance remains open. Neutral metadata also adds one aligned header per nonempty image.
    No new default performance gain or visual parity is claimed.
 5. Continue lightmap/probe quality, Construct room/seam defects, outdoor cubemap
    coverage, saturated probe-budget selection, bake times and runtime profiling.
@@ -144,7 +144,7 @@ That fix does not establish fitted Construct outdoor coverage.
 [PR #37](https://github.com/OpenRenderCollective/OpenRemix/pull/37) is the real
 alternative used to exercise the contracts: Radiance Cascades, including explicit
 baked-direct plus live-incoming composition. Its adapted code checkpoint is
-`754cb707` on the contributor's `radiance-cascades` branch. It is **unmerged**;
+`608c0143` on the contributor's `radiance-cascades` branch. It is **unmerged**;
 wait for the owner's explicit merge clear. The main branch does not contain the
 cascade implementation. Do not deploy it or start another GI prototype merely
 to demonstrate the API. The public HLSL/single-file loader remains future work.
@@ -154,8 +154,9 @@ and resolve passes with default storage/implementations physically absent.
 Numerical GPU checks cover mixed shadows, styles, cache and provider transitions.
 Shader-equivalence checks are evidence about checked work, not universal FPS
 acceptance. Consolidated Crossfire/Construct comparisons preserve the checked
-output/settings/draws and have overlapping GPU timing ranges. Construct retains
-a case-dependent CPU-recording residual that needs follow-up. This does not
+output/settings/draws and have overlapping GPU timing ranges. The latest frame
+snapshot also has an isolated Crossfire comparison. Construct retains a
+case-dependent CPU-recording residual that needs follow-up. This does not
 complete the no-overhead gate. 300 FPS at 1920x1080 and the broader runtime
 optimization queue are not achieved.
 
@@ -212,5 +213,5 @@ The current PBR/AutoPBR/replacement path remains default for ordinary materials.
   playable packages are not supplied by either repository. Wider map cases include
   gm_fork, d1_trainstation_02, bm_c1a1b and combined Half-Life addon maps.
 
-Work resumed on 2026-11-01; this 2026-11-03 checkpoint covers modular provider
+Work resumed on 2026-11-01; this 2026-11-04 checkpoint covers modular provider
 migration, resource ownership and controlled performance diagnosis. This does not declare the renderer or roadmap complete.
