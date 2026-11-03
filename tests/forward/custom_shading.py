@@ -97,6 +97,8 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
                     tree / "shaders/receiver-lighting.glsl")
     # The alternate local source must not rely on default Source 2 transport
     # declarations being incidentally imported by the pass/material response.
+    # It supplies queries only: the real standard material must acquire its
+    # response adapter from the shared material module, not this fixture.
     (tree / "shaders/light-sample.glsl").unlink()
     shutil.copyfile(root / "tests/forward/shaders/custom-local-source.glsl",
                     tree / "shaders/local-lighting.glsl")

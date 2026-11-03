@@ -130,7 +130,9 @@ This entry resolves the index, geometric receiver normal and channel data;
 custom models do not need atlas, cluster or four-channel sentinel knowledge.
 It returns the same `LocalLightSample` as the lower-level source-index query.
 Its ordinal must be within the prepared list, and output is valid only on success.
-The standard model retains its specialized miss exits through `standardReceiverLocalLight`.
+The standard model calls `standardReceiverLocalLight`. The shared material
+adapter supplies it for query-only sources; Source 2 retains its specialized
+miss exits through an optional source-specific implementation.
 
 ## Diffuse receiver query
 
@@ -889,3 +891,20 @@ Borrowed pointers are consumed immediately on the render thread; submitted
 frames retain their existing image leases. The capture module no longer includes
 or takes `bake::Controller`; the shared prepared-scene request remains the
 lower-level transport handoff.
+
+### Query-only local providers and standard materials
+
+`standard-local-lighting.glsl` supplies `standardReceiverLocalLight` from the
+selected source's sampler and the shared resource-free PBR response. A new local
+provider only needs its context preparation, count and sample queries. It does
+not need to implement material BRDF functions just to work with standard world,
+viewmodel or water materials.
+
+The default Source 2 source declares the private compile-time
+`OPENREMIX_SPECIALIZED_LOCAL_RESPONSE` hook and supplies its existing optimized
+entry. This preserves caller-specific miss exits and avoids the code-generation
+cost previously observed when forcing that source through a boolean sample
+wrapper. Other sources use the shared adapter automatically. There is no runtime
+callback, setting, extra pass or duplicate material equation. The query-only
+fixture removes the default sampler implementation while exercising the real
+standard material across its supported passes.

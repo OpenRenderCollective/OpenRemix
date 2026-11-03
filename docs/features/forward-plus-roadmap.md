@@ -17,6 +17,10 @@ Implemented and checked:
   Source 2 shaders remain byte-identical. A resource-free shading-result initializer gives
   custom models safe defaults. Material results carry unpacked normal/roughness
   and RGB reflectance; the pass adapter owns guide and cubemap-layer byte encoding.
+  Query-only local providers now acquire the standard PBR adapter from a shared
+  material module, without implementing BRDF entry points themselves. Source 2
+  keeps its specialized miss exits; twelve checked default/custom variants remain
+  byte-identical after moving the alternate source's adapter into shared code.
   Default local-light transport is now imported only by its selected source;
   the standard local material response compiles independently. Alternate source
   checks remove the default raw sampler file to verify that separation.
