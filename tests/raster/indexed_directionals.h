@@ -2,11 +2,13 @@
 void indexedDirectionalTests() {
   namespace f = remix::forward;
   namespace cache = f::bake::cache;
-  for (uint32_t samples : {1u, 2u, 4u}) {
+  for (auto [samples, bicubic] : {std::pair{1u, true}, std::pair{2u, true},
+                                  std::pair{4u, true}, std::pair{1u, false}}) {
     Target target(64, 64, true);
     auto &r = target.raster;
     f::Options options;
     options.samples = samples;
+    options.bicubicLightmaps = bicubic;
     options.ambient = 0;
     options.debugView = 2; // Isolate direct diffuse from specular and shared indirect energy.
     options.prism = options.gamma22 = false;
@@ -152,7 +154,8 @@ void indexedDirectionalTests() {
     require(std::strstr(target.forward->statistics().baking.status, "Cached lighting active") &&
                 restored == original,
             "Seven-owner disk reload restores exact captured GPU shading without transient receiver arrays");
-    std::printf("Indexed seven-owner %ux MSAA: blue %u -> %u -> %u\n", samples,
+    std::printf("Indexed seven-owner %ux MSAA %s: blue %u -> %u -> %u\n", samples,
+        bicubic ? "bicubic" : "linear",
         original[centre + 2], black[centre + 2], restored[centre + 2]);
   }
 }
