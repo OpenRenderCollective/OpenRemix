@@ -10,7 +10,7 @@ layout(set = 0, binding = 0, std140) uniform Parameters {
   uvec4 target;
 } frame;
 struct Light { vec4 corners[3]; vec4 responseWeights; };
-layout(set = 0, binding = 3) uniform sampler2DArrayShadow sunShadow;
+#define SUN_SHADOW_BINDING 3
 #include "../../../src/native/forward/shaders/local-shadows.glsl"
 #include "../../../src/native/forward/shaders/sun-shadows.glsl"
 #include "../../../src/native/forward/shaders/brdf.glsl"

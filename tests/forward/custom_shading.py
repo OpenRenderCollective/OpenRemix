@@ -195,6 +195,7 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
     # A replacement sunlight source needs only values and receiver queries,
     # not the default baked visibility/CSM implementation.
     (tree / "shaders/sun.glsl").unlink()
+    (tree / "shaders/sun-shadows.glsl").unlink()
     shutil.copyfile(root / "tests/forward/shaders/custom-sun-source.glsl",
                     tree / "shaders/sun-lighting.glsl")
     for name, defines in {
