@@ -1,3 +1,4 @@
+#include "baked-storage.glsl"
 #include "occlusion.glsl"
 #include "local-shadows.glsl"
 #include "direct-light.glsl"

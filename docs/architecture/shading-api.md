@@ -75,6 +75,20 @@ Keep receiver geometry separate even though the reference Material also carries
 it. Shared exposure/output transforms remain outside material lighting. Source
 shader names, VMT semantics and lightstyle translation belong in the host adapter.
 
+Default surface/probe/style storage is imported through `baked-storage.glsl` by
+sources that query it: baked diffuse (including explicit live diagnostic views),
+local lights, sun, and the viewmodel/water environment fallbacks. The material
+pass does not import that storage. Shared includes are guarded, so sources can
+use the same field without duplicate declarations. World reflection resolve
+retains its separate irradiance binding through its own environment source.
+
+`receiver-coverage.glsl` owns pass coverage specialization IDs 3 and 4 independently
+of baked storage. A replacement lighting set can therefore use normal geometry
+coverage without declaring lightmaps/probes. The full replacement compilation
+removes the default baked field, style, atlas, visibility and local-shadow files
+and compiles world, metal, viewmodel, live, water and reflection-resolve passes.
+This proves shader composition; host resources still follow the resolved plan.
+
 ## Local-light prototype
 
 `shaders/light-sample.glsl` defines `LocalLightSample` and `sampleLocalLight`.

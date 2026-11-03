@@ -22,10 +22,7 @@ layout(early_fragment_tests) in;
 #include "emitter.glsl"
 #include "surface.glsl"
 #include "reflection-guide-reference.glsl"
-#define STYLED_BAKE
-#include "irradiance.glsl"
-#include "style-lighting.glsl"
-#include "lightmap.glsl"
+#include "receiver-coverage.glsl"
 #include "sun-response.glsl"
 #ifdef VIEWMODEL_PASS
 #include "../viewmodel/shaders/reflections.glsl"
