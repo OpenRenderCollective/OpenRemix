@@ -174,7 +174,9 @@ Still required for the complete modularity/performance objective:
   On the cascade branch, runtime composed selection now has specialized world,
   terrain, viewmodel and both optical shader paths. Transition tests retain
   nonzero captured local direct energy alongside live sky at 1x/4x and both depth
-  schedules; optical sun/mixed-shadow tests pass at 1x/2x/4x. Stage inputs remain
+  schedules; optical sun/mixed-shadow tests pass at 1x/2x/4x. Styled local and
+  seven-light surface/probe fixtures also pass: style control, moving corrections,
+  cancellation and exact component-cache restoration. Stage inputs remain
   identical for all 173 legacy stages. Real-map incoming/optical quality and
   matched performance remain open; missing screen-gather samples retain fallback.
   Preserve existing presets and the default Source 2 combined fast path.

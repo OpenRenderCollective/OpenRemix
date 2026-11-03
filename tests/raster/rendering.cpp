@@ -5769,6 +5769,7 @@ int main(int argc, char **argv) try {
   else if (argc>2 && std::strcmp(argv[2],"styled-indirect")==0) styledIndirectTests();
   else if (argc>2 && std::strcmp(argv[2],"styled-direct")==0) styledIndirectTests(true);
   else if (argc>2 && std::strcmp(argv[2],"composed-styled")==0) styledIndirectTests(true, false, 1, true);
+  else if (argc>2 && std::strcmp(argv[2],"composed-cascade-styled")==0) styledIndirectTests(true, false, 1, true, true);
   else if (argc>2 && std::strcmp(argv[2],"styled-combined")==0) {
     const auto one = styledIndirectTests(true, true);
     const auto seven = styledIndirectTests(true, true, 7);
@@ -5797,6 +5798,7 @@ int main(int argc, char **argv) try {
   else if (argc>2 && std::strcmp(argv[2],"mixed-sun")==0) sunLightingTests();
   else if (argc>2 && std::strcmp(argv[2],"composed-sun")==0) sunLightingTests(true);
   else if (argc>2 && std::strcmp(argv[2],"composed-directionals")==0) selectedDirectionalTests(true);
+  else if (argc>2 && std::strcmp(argv[2],"composed-cascade-directionals")==0) selectedDirectionalTests(true, true);
   else if (argc>2 && std::strcmp(argv[2],"sun-depth-lifecycle")==0) sunDepthLifecycleTests();
   else if (argc>2 && std::strcmp(argv[2],"probe-blend")==0) reflectionTests(directory, true);
   else if (argc>2 && std::strcmp(argv[2],"sky-reflections")==0) {

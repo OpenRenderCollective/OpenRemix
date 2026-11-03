@@ -1,5 +1,5 @@
 // Included inside rendering.cpp's fixture namespace.
-void selectedDirectionalTests(bool composed = false) {
+void selectedDirectionalTests(bool composed = false, bool cascades = false) {
   namespace f = remix::forward;
   namespace cache = f::bake::cache;
   for (uint32_t samples : {1u, 4u}) {
@@ -8,7 +8,15 @@ void selectedDirectionalTests(bool composed = false) {
     f::Options options;
     options.samples = samples;
     if (composed) {
-      options.rtGI = options.bakedDirectWithLiveGI = options.bakedLighting = true;
+      options.rtGI = !cascades;
+      options.radianceCascades = cascades;
+      options.bakedDirectWithLiveGI = options.bakedLighting = true;
+      options.cascadeCount = 2;
+      options.cascadeDirections = 4;
+      options.cascadeInterval = .01f;
+      options.cascadeDistance = 1; // omit distant incoming geometry from this direct-only fixture
+      options.cascadeHistory = 0;
+      options.cascadeBounces = false;
       options.rtGISamples = options.rtGIBounces = 1;
       options.rtGIDistance = .1f; // isolate direct correction from incoming transport
       options.bakedHighlightFade = 0; // cache pixel comparisons need settled highlight weights
@@ -147,7 +155,9 @@ void selectedDirectionalTests(bool composed = false) {
       const auto source = r.bakeScene();
       const auto policy = f::bake::staticAggregatePolicy(*source, f::bake::DirectMode::BakedMixed);
       const auto configuration = options.bakeConfiguration(composed);
-      const auto key = cache::key(source->contentHash, configuration, options.lightCutoff, device, policy);
+      const auto sourceHash = source->lightingHash(composed
+          ? remix::scene::BakeLightScope::ReceiverDirect : remix::scene::BakeLightScope::Combined);
+      const auto key = cache::key(sourceHash, configuration, options.lightCutoff, device, policy);
       const auto file = cache::path(key);
       auto cached = cache::read(file, key, source, configuration, device, {}, policy);
       require(bool(cached), "Selected aggregate capture is persisted");

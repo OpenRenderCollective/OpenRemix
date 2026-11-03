@@ -1,5 +1,5 @@
 // Included beside the readback Target fixture in rendering.cpp.
-std::array<uint8_t, 3> styledIndirectTests(bool directGroups = false, bool includeIndirect = false, uint32_t emitterCount = 1, bool liveIncoming = false) {
+std::array<uint8_t, 3> styledIndirectTests(bool directGroups = false, bool includeIndirect = false, uint32_t emitterCount = 1, bool liveIncoming = false, bool cascades = false) {
   require(emitterCount > 0 && emitterCount <= 7, "Styled fixture fits the mixed-shadow slot budget");
   std::array<uint8_t, 3> litBySample{};
   uint32_t sampleOrdinal = 0;
@@ -8,7 +8,14 @@ std::array<uint8_t, 3> styledIndirectTests(bool directGroups = false, bool inclu
     auto &r = target.raster;
     remix::forward::Options options;
     options.samples = samples;
-    options.rtGI = liveIncoming;
+    options.rtGI = liveIncoming && !cascades;
+    options.radianceCascades = cascades;
+    options.cascadeCount = 2;
+    options.cascadeDirections = 4;
+    options.cascadeInterval = .01f;
+    options.cascadeDistance = 1; // isolate local direct from the distant bounce ceiling
+    options.cascadeHistory = 0;
+    options.cascadeBounces = false;
     options.bakedDirectWithLiveGI = liveIncoming;
     options.rtGISamples = options.rtGIBounces = 1;
     options.rtGIDistance = .1f; // isolate controllable direct; live incoming has no nearby hit

@@ -1244,6 +1244,13 @@ sun fallback outside probes, including both reflection-ray water variants.
 Viewmodel sunlight checks at 1x/2x/4x retain world-space static probe visibility,
 moving/self shadows, self/world isolation, colour reuse, fallback outside probes
 and the same direct publication across incoming-only recapture.
+Controllable local-light tests at 1x/2x/4x cover off/partial/on style values,
+non-scalar colour fallback, cancellation, exact cache restoration and dynamic
+probe receivers. Moving local shadows subtract only the direct component, with
+zero static-world shadow updates. Seven-light tests at 1x/4x cover surface/probe
+directional correction, moving casters, cache payload integrity and cancellation.
+These direct-isolation fixtures bound cascade reach to exclude distant bounce
+geometry. Persistence lookups use the receiver-direct component identity.
 All 173 existing stage source/define selections are unchanged. Legacy Source 2,
 water, ray composition and ordinary cascade GPU tests pass. This is functional
 qualification, not a matched FPS claim or a PR merge.
