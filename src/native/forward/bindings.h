@@ -4,6 +4,9 @@
 #include <cstddef>
 
 namespace remix::forward {
+  // Private frame flag mirrored by the default sun visibility source. Unset
+  // means unknown; viewmodel flags deliberately do not inherit this proof.
+  constexpr uint32_t worldSunMovingEmpty = 1u << 2;
   struct SkyData {
     Matrix inverseProjection, viewToDome;
     Vec4 radiance{}, target{}; // target.z: world-unit reflection receiver bias
@@ -24,7 +27,8 @@ namespace remix::forward {
     std::array<Vec4, 32> styleScales{}; // current/authored envelope scalar, indexed by adapter-assigned group ID
     std::array<uint32_t, 4> occlusion{}; // words per chart, chart count, texture width, indexed-mask tail
     // Capacity; mixed-prefix length + 1 (zero = all), high bit = clustered baked tail;
-    // sparse SH word; viewmodel flags (local shadows, reflections).
+    // sparse SH word; visibility/viewmodel flags (local shadows, reflections,
+    // proven empty world moving-sun caster set).
     std::array<uint32_t, 4> clusterInfo{};
   };
   struct LightData {
