@@ -952,8 +952,8 @@ pipelines; no per-draw source switch is added.
 
 This does not complete component modularity. Renderer fixtures now qualify
 seven-owner static corrections on surfaces/dynamic probes and baked sunlight
-with moving-caster corrections. Real-map hybrid quality, optical/viewmodel
-sunlight qualification, reflection-reference provenance and matched runtime
+with moving-caster corrections. Real-map hybrid quality, optical sunlight
+qualification, reflection-reference provenance and matched runtime
 performance remain open.
 The cascade PR still needs adaptation to this incoming-source contract and is
 not merged. Preserve the combined Source 2 fast path while extending providers.
@@ -1084,3 +1084,20 @@ source fingerprint. Explicitly republishing a new capture can still change the
 whole scene identity; splitting those incoming-only identity inputs remains
 separate work. No default shader or GPU work changes accompany this boundary.
 Matched CPU/frame-time acceptance must include the scene-publication change.
+
+
+### Composed viewmodel sunlight coverage
+
+A dedicated renderer fixture now exercises composed viewmodel sunlight at 1x,
+2x and 4x MSAA. A frozen occluder supplies a static sun mask through world-space
+probes. Current world casters and viewmodel self casters use the close-up cascade,
+with self casters excluded from world shadows. Removing the casters restores
+exact pixels, and changing sun colour retains the same direct-only publication.
+Moving the viewmodel outside probe coverage verifies complete static fallback.
+The incoming ray range is bounded to isolate direct ownership; separate material
+fixtures cover changing incoming illumination.
+
+This qualifies the existing source/context composition for these cases; it adds
+no production path. It does not prove every viewmodel shadow submission is
+necessary: fallback caster preparation and close-up shadow cost still belong in
+runtime profiling. Optical water sunlight still needs qualification.

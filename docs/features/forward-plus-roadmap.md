@@ -139,9 +139,12 @@ Still required for the complete modularity/performance objective:
   from the direct bake's derived identity. Seven-owner surface/probe corrections,
   exact cache restore and baked sun/moving-shadow fixtures now pass in composed
   mode. Component-scoped scene dependency validity retains direct-only data for
-  sun/dome updates while invalidating changed local emitters. Qualify optical and
-  viewmodel sunlight, reflection-reference provenance, component-specific source
-  identities and real-map quality/performance; adapt the cascade PR to this contract. Preserve existing
+  sun/dome updates while invalidating changed local emitters. Composed viewmodel
+  sun tests pass at 1x/2x/4x: baked world probe visibility, moving/self shadows,
+  self/world isolation, colour reuse and complete fallback outside probe coverage.
+  Qualify optical sunlight, reflection-reference provenance, component-specific
+  source identities and real-map quality/performance; adapt the cascade PR to
+  this contract. Preserve existing
   presets and the default Source 2 combined fast path.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.

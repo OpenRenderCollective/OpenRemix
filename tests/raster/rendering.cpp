@@ -4024,6 +4024,7 @@ namespace {
   }
 #include "forward_skinning.h"
 #include "forward_depth.h"
+#include "composed_viewmodel_sun.h"
   void unsupportedReflectionTests() {
     for (uint32_t samples : {1u, 4u}) {
       Target target; // Ray features deliberately not enabled on this device.
@@ -5609,6 +5610,7 @@ int main(int argc, char **argv) try {
   else if (argc>2 && std::strcmp(argv[2],"overflow-masks")==0) compactOcclusionTests(true, true);
   else if (argc>2 && std::strcmp(argv[2],"viewmodel-lighting")==0) viewModelLightingTests(directory);
   else if (argc>2 && std::strcmp(argv[2],"viewmodel-probes")==0) viewModelLightingTests(directory, true);
+  else if (argc>2 && std::strcmp(argv[2],"composed-viewmodel-sun")==0) composedViewmodelSunTests();
   else if (argc>2 && std::strcmp(argv[2],"authored-reflections")==0) viewModelLightingTests(directory, true, true, true);
   else if (argc>2 && std::strcmp(argv[2],"viewmodel-ssr")==0) reflectionTests(directory, false, false, false, 4, true);
   else if (argc>2 && std::strcmp(argv[2],"viewmodel-environment")==0) viewModelLightingTests(directory, true, true);
