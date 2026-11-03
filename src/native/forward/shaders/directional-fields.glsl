@@ -19,8 +19,11 @@ float directionalFieldValue(uint data, uint encoding, uint width, uvec2 pixel, f
   }
   return value;
 }
-bool linearSurfaceDirectionalField(uint chart, uint capturedLight, vec4 coordinate, vec3 normal, out float value) {
-  value = 0;
+// An immutable record address, not a material/SH sampling context. Keep only
+// ownership across filter taps so interpolation retains its original lifetime.
+struct SurfaceDirectionalField { uint table, entry; };
+bool findSurfaceDirectionalField(uint chart, uint capturedLight, vec4 coordinate,
+                                  out SurfaceDirectionalField field) {
   uint table = frame.clusterInfo.z;
   if (table == 0u || capturedLight == 0u || coordinate.w < .5 ||
       occlusionWord(table) != 0x48534452u || occlusionWord(table + 1u) != 1u ||
@@ -36,6 +39,11 @@ bool linearSurfaceDirectionalField(uint chart, uint capturedLight, vec4 coordina
   if (first == last) return false;
   uint entry = entries + first * 8u;
   if (occlusionWord(entry) != light) return false;
+  field = SurfaceDirectionalField(table, entry);
+  return true;
+}
+float sampleSurfaceDirectionalField(SurfaceDirectionalField field, vec4 coordinate, vec3 normal) {
+  uint table = field.table, entry = field.entry;
   uvec2 origin = uvec2(occlusionWord(entry + 1u), occlusionWord(entry + 2u));
   uvec2 size = uvec2(occlusionWord(entry + 3u), occlusionWord(entry + 4u));
   vec2 pixel = clamp(coordinate.xy * vec2(textureSize(surfaceAtlas, 0).xy) - .5 - vec2(origin),
@@ -49,22 +57,21 @@ bool linearSurfaceDirectionalField(uint chart, uint capturedLight, vec4 coordina
   float b = directionalFieldValue(data, encoding, size.x, uvec2(high.x, low.y), sh);
   float c = directionalFieldValue(data, encoding, size.x, uvec2(low.x, high.y), sh);
   float d = directionalFieldValue(data, encoding, size.x, high, sh);
-  value = mix(mix(a, b, fraction.x), mix(c, d, fraction.x), fraction.y);
-  return true;
+  return mix(mix(a, b, fraction.x), mix(c, d, fraction.x), fraction.y);
 }
 bool surfaceDirectionalField(uint chart, uint capturedLight, vec4 coordinate, vec3 normal, vec4 bounds,
                               out float value) {
+  value = 0;
+  SurfaceDirectionalField field;
+  if (!findSurfaceDirectionalField(chart, capturedLight, coordinate, field)) return false;
   if (!BicubicLightmaps) {
-    bool found = linearSurfaceDirectionalField(chart, capturedLight, coordinate, normal, value);
-    value = max(value, 0);
-    return found;
+    value = max(sampleSurfaceDirectionalField(field, coordinate, normal), 0);
+    return true;
   }
   LightmapFilter stencil = surfaceFilter(coordinate, bounds);
-  value = 0;
   for (uint tap = 0u; tap < 4u; ++tap) {
-    float sampleValue;
-    if (!linearSurfaceDirectionalField(chart, capturedLight,
-        vec4(lightmapTap(stencil, tap), coordinate.zw), normal, sampleValue)) return false;
+    float sampleValue = sampleSurfaceDirectionalField(field,
+        vec4(lightmapTap(stencil, tap), coordinate.zw), normal);
     value += lightmapWeight(stencil, tap) * sampleValue;
   }
   value = max(value, 0);
