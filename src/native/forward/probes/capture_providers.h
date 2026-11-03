@@ -29,16 +29,16 @@ namespace remix::forward::probes {
     const CaptureSource *standaloneSource(CaptureTransport transport) const {
       return m_standaloneUsed && transport != CaptureTransport::SharedScene ? &m_standalone->source() : nullptr;
     }
-    Descriptors descriptor(CaptureTransport transport, Descriptors fallback, ReferenceProvenance receiver) const {
-      if (const auto source = standaloneSource(transport); source && source->image)
-        fallback = source->image->descriptors(receiver);
-      return m_authored->descriptor(fallback, receiver);
+    // Select before binding so replaced providers do not prepare unused descriptors.
+    // The provider and frame owners retain this borrowed immutable image.
+    const ImageAsset *image(CaptureTransport transport) const {
+      if (const auto authored = m_authored->image()) return authored;
+      if (const auto source = standaloneSource(transport)) return source->image.get();
+      return nullptr;
     }
     const Header *header(CaptureTransport transport) const {
-      if (const auto authored = m_authored->header()) return authored;
-      if (const auto source = standaloneSource(transport); source && source->image)
-        return &source->image->header();
-      return nullptr;
+      const auto selected = image(transport);
+      return selected ? &selected->header() : nullptr;
     }
     float standaloneSceneScale() const { return m_standalone->sceneScale(); }
     // Preserve renderer teardown order: authored workers retire before bake

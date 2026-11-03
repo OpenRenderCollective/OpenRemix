@@ -380,9 +380,7 @@ namespace remix::forward::probes {
     }
     return result;
   }
-  Descriptors Authoring::descriptor(Descriptors automatic, ReferenceProvenance receiver) const {
-    return m_active ? m_active->image->descriptors(receiver) : automatic;
-  }
+  const ImageAsset *Authoring::image() const { return m_active ? m_active->image.get() : nullptr; }
   const Header *Authoring::header() const { return m_active ? &m_active->image->header() : nullptr; }
   const LayerIdentities *Authoring::identities() const { return m_active ? &m_active->identities : nullptr; }
   uint32_t Authoring::receiverLayer(uint64_t sceneId, uint64_t volumeId) const {
