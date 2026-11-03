@@ -436,7 +436,8 @@ namespace remix::forward {
       const VkDescriptorPoolSize sizes[] = {
           {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 7},
           {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 16},
-          {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frame.poolCapacity * 5 + 25}};
+          {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, frame.poolCapacity * 5 + 21 +
+              (techniquePlan.cascadeDiffuse() ? 4u : 0u)}};
       const VkDescriptorPoolCreateInfo info{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
                                             .maxSets = frame.poolCapacity,
                                             .poolSizeCount = 3,
@@ -574,17 +575,19 @@ namespace remix::forward {
         .dstSet = frame.scene, .dstBinding = 22, .descriptorCount = 1,
         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .pBufferInfo = &probeField};
     vkUpdateDescriptorSets(device, 1, &probeWrite, 0, nullptr);
-    // The gather (23) and probe direction field (24). Without a gather, any
-    // valid sampled image; cascadeControl.x keeps them unread.
-    const VkDescriptorImageInfo cascadeImages[] = {
-        cascadeLighting ? radianceCascades->output() : frame.skyImage,
-        cascadeLighting ? radianceCascades->directions() : frame.skyImage};
-    VkWriteDescriptorSet cascadeWrites[2];
-    for (uint32_t i = 0; i < 2; ++i)
-      cascadeWrites[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-          .dstSet = frame.scene, .dstBinding = 23 + i, .descriptorCount = 1,
-          .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &cascadeImages[i]};
-    vkUpdateDescriptorSets(device, 2, cascadeWrites, 0, nullptr);
+    if (techniquePlan.cascadeDiffuse()) {
+      // The gather (23) and probe direction field (24). Without a gather, any
+      // valid sampled image; cascadeControl.x keeps them unread.
+      const VkDescriptorImageInfo cascadeImages[] = {
+          cascadeLighting ? radianceCascades->output() : frame.skyImage,
+          cascadeLighting ? radianceCascades->directions() : frame.skyImage};
+      VkWriteDescriptorSet cascadeWrites[2];
+      for (uint32_t i = 0; i < 2; ++i)
+        cascadeWrites[i] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = frame.scene, .dstBinding = 23 + i, .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &cascadeImages[i]};
+      vkUpdateDescriptorSets(device, 2, cascadeWrites, 0, nullptr);
+    }
     prepareViewModelDescriptors();
     step(cpu.uploads);
     std::unordered_map<const scene::Material *, VkDescriptorSet> materials;

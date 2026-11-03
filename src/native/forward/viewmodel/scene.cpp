@@ -32,11 +32,12 @@ namespace remix::forward {
       vkUpdateDescriptorSets(device, 0, nullptr, 12, copies);
       // Selected probe masks (22) and the radiance cascade gather and directions (23, 24).
       VkCopyDescriptorSet laterCopies[3];
-      for (uint32_t i = 0; i < 3; ++i)
+      const uint32_t laterCount = techniquePlan.cascadeDiffuse() ? 3u : 1u;
+      for (uint32_t i = 0; i < laterCount; ++i)
         laterCopies[i] = {.sType = VK_STRUCTURE_TYPE_COPY_DESCRIPTOR_SET,
             .srcSet = frame.scene, .srcBinding = 22 + i, .dstSet = frame.viewModelScene,
             .dstBinding = 22 + i, .descriptorCount = 1};
-      vkUpdateDescriptorSets(device, 0, nullptr, 3, laterCopies);
+      vkUpdateDescriptorSets(device, 0, nullptr, laterCount, laterCopies);
       const auto constants = frame.viewModelConstants->descriptor();
       const VkDescriptorImageInfo sun{shadowSampler,
           viewModelSun ? viewModelSun->view() : shadow->view, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};

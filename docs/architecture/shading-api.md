@@ -1251,6 +1251,15 @@ zero static-world shadow updates. Seven-light tests at 1x/4x cover surface/probe
 directional correction, moving casters, cache payload integrity and cancellation.
 These direct-isolation fixtures bound cascade reach to exclude distant bounce
 geometry. Persistence lookups use the receiver-direct component identity.
+Inactive cascades reserve no scene-image bindings or sampler-pool slots and
+perform no world descriptor updates or viewmodel copies for those images.
+The scene layout includes bindings 23/24 only for a resolved cascade source;
+active sources still receive valid fallback images before a gather is available.
+Source 2, water, ray composition, ordinary cascade and composed optical GPU tests
+pass with Vulkan/synchronization validation after this allocation split.
+A capped default-path comparison before the fix observed a small unarmed CPU
+residual against main. The fix removes demonstrably unused work, but a matched
+timing repeat is required before claiming that residual is resolved.
 All 173 existing stage source/define selections are unchanged. Legacy Source 2,
 water, ray composition and ordinary cascade GPU tests pass. This is functional
 qualification, not a matched FPS claim or a PR merge.

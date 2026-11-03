@@ -273,7 +273,9 @@ namespace remix::forward {
         {24, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}};
     const VkDescriptorSetLayoutCreateInfo sceneInfo{.sType =
                                                         VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-                                                    .bindingCount = uint32_t(std::size(sceneBindings)),
+                                                    // The last two bindings belong only to the cascade source.
+                                                    .bindingCount = uint32_t(std::size(sceneBindings)) -
+                                                        (techniquePlan.cascadeDiffuse() ? 0u : 2u),
                                                     .pBindings = sceneBindings};
     check(pipeline::createDescriptorSetLayout(device, &sceneInfo, nullptr, &sceneLayout));
     VkDescriptorSetLayoutBinding materialBindings[5];
