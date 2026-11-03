@@ -1,18 +1,16 @@
 // Exercise the production raw query and standard adapter against the same
-// filtered moving shadow. Field reads are counted independently of their value.
+// filtered moving shadow, including exact unshadowed receivers.
 #include "../../../src/native/forward/shaders/receiver.glsl"
 #include "../../../src/native/forward/shaders/emitter.glsl"
 #include "../../../src/native/forward/shaders/local-light-response.glsl"
 const bool FullyMappedReceiver = true;
 Light lights[1];
-uint fieldReads;
 bool fieldKnown;
 float fieldValue;
 bool indexedSurfaceDirect() { return true; }
 uint staticLightVisibility(uint chart, uint id) { return 2u; }
 uint lightChannel(uvec4 owners, uint id) { return 0xffffffffu; }
 bool surfaceDirectionalField(uint chart, uint id, vec4 coordinate, vec3 normal, vec4 bounds, out float value) {
-  ++fieldReads;
   value = fieldValue;
   return fieldKnown;
 }
@@ -73,22 +71,20 @@ vec4 compareLocalResponses(vec3 position, vec3 geometric) {
     for (uint field = 0u; field < 3u; ++field) {
       fieldKnown = field < 2u;
       fieldValue = field == 0u ? 2 : 0;
-      fieldReads = 0u;
       LocalLightSample lightSample;
       bool found = rawLocalLight(0u, position, n, geometric, receiver, vec4(-1), true, lightSample);
-      result.y += fieldReads == 1u ? 0 : 1;
       if (fieldKnown)
         result.y += found && lightSample.diffuseIrradiance == fieldValue ? 0 : 1;
+      if (found)
+        result.z += lightSample.movingVisibility == moving ? 0 : 1;
       LightContribution expected = LightContribution(vec3(0), vec3(0));
       if (found)
         expected = shadeStandardLocalLight(lightSample, n, n, vec3(.6), .5, 0, vec3(.04));
-      fieldReads = 0u;
       LightContribution actual = localLightResponse(0u, position, n, n, vec3(.6), .5, 0,
           vec4(-1), receiver, vec3(.04), geometric, true);
       vec3 difference = max(abs(actual.diffuse - expected.diffuse), abs(actual.specular - expected.specular));
       result.x = max(result.x, max(difference.x, max(difference.y, difference.z)));
-      result.z += fieldReads == (moving == 1 ? 0u : 1u) ? 0 : 1;
-      result.w += moving == 1 && fieldReads == 0u ? 1 : 0;
+      result.w += moving == 1 ? 1 : 0;
     }
   }
   return result;

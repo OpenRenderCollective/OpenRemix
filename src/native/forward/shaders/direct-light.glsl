@@ -5,9 +5,7 @@ LightContribution localLightResponse(uint index, vec3 p, vec3 n, vec3 v, vec3 ba
                 bool aggregateReceiver) {
   const bool frontFacingOnly = true;
 #define LOCAL_LIGHT_MISS return LightContribution(vec3(0), vec3(0))
-#define LOCAL_LIGHT_FINAL_RESPONSE
 #include "local-light-query.glsl"
-#undef LOCAL_LIGHT_FINAL_RESPONSE
 #undef LOCAL_LIGHT_MISS
   return shadeStandardLocalLight(lighting, n, v, base, roughness, metallic, dielectricF0);
 }

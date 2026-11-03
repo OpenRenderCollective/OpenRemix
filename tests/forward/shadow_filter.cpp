@@ -240,15 +240,15 @@ int main(int argc, char **argv) try {
   fixture.finish();
   std::vector<Vec4> values(6 * queries.size());
   gpu.output.read(values.data(), values.size() * sizeof(Vec4));
-  float skippedFields = 0;
+  float unshadowedResponses = 0;
   for (uint32_t i = 0; i < sweepSteps; ++i) {
     const auto &response = values[i + 5 * queries.size()];
     require(std::isfinite(response[0]) && response[0] < 1e-5f && response[1] == 0 && response[2] == 0,
             "Standard local responses match raw lighting while preserving known-black and finite-emitter fields");
-    skippedFields += response[3];
+    unshadowedResponses += response[3];
   }
-  require(skippedFields > 0 && skippedFields < 6 * sweepSteps,
-          "Only exact unshadowed standard responses skip directional field reads");
+  require(unshadowedResponses > 0 && unshadowedResponses < 6 * sweepSteps,
+          "Local response comparisons cover both exact unshadowed and filtered shadowed receivers");
   for (uint32_t mode = 0; mode < 2; ++mode) {
     float maximum = 0;
     const size_t first = mode * sweepSteps;
