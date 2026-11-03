@@ -6,9 +6,15 @@ SunLightSample sampleReceiverSunLight(ShadingReceiver receiver, vec3 normal, flo
       receiver.position, receiver.depth, normal, normalize(receiver.geometric));
 }
 
-// Optical passes retain the default preset's existing analytic/CSM sunlight policy.
-// Keep that choice in the source adapter, not in the water material. A different
-// source can supply its own visibility without exposing shadow storage to it.
+// Keep optical visibility policy in the source adapter, not the water material.
+// Composed receivers share the dynamic-probe sun mask and moving-only shadows;
+// missing coverage retains complete static CSM fallback. The default preset's
+// existing analytic/CSM policy is unchanged.
 SunLightSample sampleOpticalReceiverSunLight(ShadingReceiver receiver, vec3 normal) {
+#ifdef OPENREMIX_BAKED_DIRECT_LIVE_INDIRECT
+  return sampleSunLight(vec4(0), vec4(0), 0, receiver.position, receiver.depth, normal,
+      normalize(receiver.geometric));
+#else
   return sampleUnbakedSunLight(receiver.position, receiver.depth, normal, normalize(receiver.geometric));
+#endif
 }

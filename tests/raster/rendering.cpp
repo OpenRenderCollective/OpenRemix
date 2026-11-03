@@ -5230,6 +5230,7 @@ namespace {
         "Raster GPU readback: depth, culling, textures, cutouts, blending, skinning, UI and lifetime passed");
   }
 #include "forward_sheet.h"
+#include "composed_optical_sun.h"
   void waterTests() {
     for (uint32_t samples : {1u, 2u, 4u}) {
       Target target;
@@ -5569,6 +5570,7 @@ int main(int argc, char **argv) try {
     surfaceLightmapTests();
   }
   else if (argc>2 && std::strcmp(argv[2],"water")==0) waterTests();
+  else if (argc>2 && std::strcmp(argv[2],"composed-optical-sun")==0) composedOpticalSunTests();
   else if (argc>2 && std::strcmp(argv[2],"sheet")==0) sheetTests();
   else if (argc>2 && std::strcmp(argv[2],"sheet-environment")==0) waterEnvironmentTests(false, true);
   else if (argc>2 && std::strcmp(argv[2],"water-environment")==0) waterEnvironmentTests();

@@ -168,6 +168,8 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
         "sun-source-live-world": ["LIVE_GI"],
         "sun-source-water": ["WATER_SURFACE"],
         "sun-source-water-ray": ["WATER_SURFACE", "WATER_RAY"],
+        "sun-source-composed-water": ["WATER_SURFACE", "LIVE_GI", "RAY_SCENE_SET=3",
+                                       "OPENREMIX_BAKED_DIRECT_LIVE_INDIRECT"],
     }.items():
         binary = tree / (name + ".spv")
         subprocess.run([compiler, "-V", "--target-env", "vulkan1.1",

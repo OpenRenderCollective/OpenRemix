@@ -606,7 +606,8 @@ baked fallback. Disabling water does not impose that capability on opaque GI.
 The live-GI fixture checks colored water body lighting at 1/2/4x MSAA, with reflection
 rays on/off and different configured diffuse/reflection ranges. Hardware transport
 fixtures check query conversion across three host-unit scales and no allocation
-on query validation. Baked/mixed-sun ownership for water remains a separate task.
+on query validation. Composed optical sunlight coverage is described below;
+real-map optical/probe edge quality remains open.
 
 ## Provider-owned local-light context
 
@@ -797,7 +798,8 @@ interface split does not claim that water's static visibility is already mixed
 like opaque props. A replacement source may implement both queries using its own
 transport without changing water's material. The alternate-source fixture swaps
 sun queries independently through world, viewmodel, live-GI, water and ray-water
-material variants. Qualification of baked/mixed optical sunlight remains open.
+material variants. Composed optical sunlight now uses the shared probe/moving
+visibility policy described below; the default preset retains its existing policy.
 
 ### Sun transport and material response
 
@@ -952,8 +954,7 @@ pipelines; no per-draw source switch is added.
 
 This does not complete component modularity. Renderer fixtures now qualify
 seven-owner static corrections on surfaces/dynamic probes and baked sunlight
-with moving-caster corrections. Real-map hybrid quality, optical sunlight
-qualification, reflection-reference provenance and matched runtime
+with moving-caster corrections. Real-map hybrid/optical edge quality, reflection-reference provenance and matched runtime
 performance remain open.
 The cascade PR still needs adaptation to this incoming-source contract and is
 not merged. Preserve the combined Source 2 fast path while extending providers.
@@ -1052,8 +1053,9 @@ pipeline/resource selection and ReceiverDirect publication. The default Source 2
 preset and the legacy whole-field ray-GI choice remain unchanged. Surface/probe
 mixed attribution remains active during live incoming evaluation. Independent
 cubemap capture edits retain the direct volume, and the sum keeps an unavailable
-frozen normalization reference. Optical water sunlight and wider source/reference
-provenance remain separate qualification tasks.
+frozen normalization reference. Composed optical sunlight uses the same volume
+visibility source with complete fallback; wider source/reference provenance and
+real-map edge quality remain separate qualification tasks.
 
 The earlier shader extraction's checked default optimized variants are identical
 after stripping debug data and compacting SPIR-V identifiers. The composed mode
@@ -1100,4 +1102,29 @@ fixtures cover changing incoming illumination.
 This qualifies the existing source/context composition for these cases; it adds
 no production path. It does not prove every viewmodel shadow submission is
 necessary: fallback caster preparation and close-up shadow cost still belong in
-runtime profiling. Optical water sunlight still needs qualification.
+runtime profiling. Composed optical water sunlight coverage is described below.
+
+
+### Composed optical sunlight
+
+In composed mode, `sampleOpticalReceiverSunLight` now uses the dynamic receiver's
+baked sun visibility, moving-caster shadow term and complete static fallback.
+It has no chart coordinate or pre-integrated surface sun term. The water material
+continues to consume `SunLightSample` and apply its own optical/PBR response;
+no packed storage or shadow-policy selection moves into that material.
+The default Source 2 and legacy live-GI optical adapters retain their prior
+analytic/CSM policy through compile-time selection.
+
+A renderer fixture exercises static probe occlusion outside realtime cascades,
+moving shadows, unchanged static-mask values outside the moving caster, exact
+restoration, sun-colour reuse and complete fallback outside probe coverage.
+It covers 1x/2x/4x MSAA and both composed water pipeline variants, with reflection
+rays on/off. A custom sun source also compiles through composed water with the
+default sun implementation absent. Existing scalar-probe interpolation is reused;
+this boundary does not promise sharper or leak-free probe visibility edges.
+
+Optimized descriptor reflection reports twelve storage buffers in the composed
+ray-water fragment, within the existing water capability gate; no new capability
+requirement is introduced. Checked default/custom optimized shader variants are
+unchanged after identifier normalization. Matched runtime performance and wider
+real-map optical quality acceptance remain open.

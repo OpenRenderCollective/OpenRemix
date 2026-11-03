@@ -142,13 +142,16 @@ Still required for the complete modularity/performance objective:
   sun/dome updates while invalidating changed local emitters. Composed viewmodel
   sun tests pass at 1x/2x/4x: baked world probe visibility, moving/self shadows,
   self/world isolation, colour reuse and complete fallback outside probe coverage.
-  Qualify optical sunlight, reflection-reference provenance, component-specific
-  source identities and real-map quality/performance; adapt the cascade PR to
-  this contract. Preserve existing
-  presets and the default Source 2 combined fast path.
+  Composed optical sunlight now shares probe visibility and moving shadows,
+  with complete fallback outside probe coverage. Tests cover 1x/2x/4x and both
+  water pipeline variants; default water shader variants remain unchanged.
+  Qualify reflection-reference provenance, component-specific source identities
+  and real-map quality/performance; adapt the cascade PR to this contract.
+  Preserve existing presets and the default Source 2 combined fast path.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
-  Water's baked/mixed sunlight policy still needs separate qualification.
+  Composed optical sunlight has fixture coverage; broader optical/probe edge
+  quality and general replacement-provider sunlight policies still need work.
 - Complete no-overhead acceptance with controlled CPU/GPU comparisons. Earlier
   host-FPS rankings reversed between runs despite matching lighting/draws. The
   completed A/B/B/A 1080p Crossfire study shows overlapping CPU/GPU ranges and
