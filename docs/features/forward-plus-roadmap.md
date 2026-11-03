@@ -165,7 +165,7 @@ Still required for the complete modularity/performance objective:
   reuse now exclude incoming sky power and capture hints; conservative material
   dependencies remain. Qualify reflection-reference provenance and real-map
   quality/performance. PR #37 now uses the shared incoming query
-  on its unmerged branch (`295d7a95`), with build, policy, replacement-source and
+  on its unmerged branch (`d4bededc`), with build, policy, replacement-source and
   five focused GPU checks passing. Baked-direct/cascade composition, optical
   cascade lookups and matched runtime performance remain open.
   Preserve existing presets and the default Source 2 combined fast path.

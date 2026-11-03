@@ -957,10 +957,14 @@ seven-owner static corrections on surfaces/dynamic probes and baked sunlight
 with moving-caster corrections. Real-map hybrid/optical edge quality, reflection-reference provenance and matched runtime
 performance remain open.
 PR #37 now adapts its whole-field cascade source to the incoming query at
-`295d7a95` on its own branch. It remains unmerged and undeployed. Its build,
+`d4bededc` on its own branch. It remains unmerged and undeployed. Its build,
 replacement-source compilation, policy and five focused GPU checks pass.
 Normalized default/ray shader variants are unchanged; checked cascade variants
 have no opcode-count increases. Matched runtime performance is still unqualified.
+The branch also includes the private cube/sky source boundary and receiver-direct
+fingerprints/in-memory reuse. Its refreshed native build and five focused checks
+(policy, replacement sources, cascade transport/MSAA, viewmodel environment and
+composed viewmodel sunlight) pass.
 Baked-direct/cascade composition and optical cascade lookups remain outstanding.
 Preserve the combined Source 2 fast path while extending providers.
 
