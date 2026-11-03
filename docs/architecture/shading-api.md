@@ -987,55 +987,15 @@ probes and baked sunlight with moving-caster corrections for this composition.
 Real-map hybrid/optical edge quality, reference compatibility of additional
 component recipes, and matched runtime performance remain open. This does not
 qualify every future provider combination.
-PR #37 now adapts its whole-field cascade source to the incoming query at
-`eeb98b7f` on its own branch. It remains unmerged and undeployed. Its build,
-replacement-source compilation, policy and five focused GPU checks pass.
-Normalized default/ray shader variants are unchanged; checked cascade variants
-have no opcode-count increases. Matched runtime performance is still unqualified.
-The branch also includes the private cube/sky source boundary and receiver-direct
-fingerprints/in-memory reuse. Its refreshed native build and five focused checks
-(policy, replacement sources, cascade transport/MSAA, viewmodel environment and
-composed viewmodel sunlight) pass.
-The actual cascade query also compiles through composed world/prepassed,
-viewmodel/early-viewmodel, metal, water and ray-water receiver contexts without
-`LIVE_GI`. Existing ray composition and cascade GPU regressions pass; these new
-checks qualify the shader contract, not composed cascade runtime behavior.
-The branch now selects specialized composed world/terrain/viewmodel and optical
-pipelines through `CascadeIncoming`. Transition tests retain local direct energy
-while replacing old baked sky, with independent cubemap capture and target/provider
-changes. Optical and viewmodel sunlight/mixed-shadow checks pass at 1x/2x/4x.
-Controllable local-light fixtures pass at 1x/2x/4x, including off/partial/on,
-non-scalar fallback, moving-only local shadows, cancellation and exact cache
-restore. Seven-light surface/probe corrections pass at 1x/4x using the correct
-receiver-direct cache identity. Their bounded incoming range isolates direct
-ownership from distant bounce transport. Ray-based equivalents also pass.
-Water uses a typed internal diffuse mode; all 173 legacy stage names, source-file
-and define selections are preserved. Cascade incoming remains screen-space: missing optical
-gather samples use its existing fallback, and viewmodels use neighbourhood incoming.
-A capped main-versus-PR default Source 2 comparison matched settings, content,
-draws and inspected pixels. GPU ranges overlap/improve, but pre-fix PR unarmed
-CPU recording medians were .8807-.9004 ms versus main .8699-.8746 ms. This does
-not pass blanket no-overhead acceptance. The PR now omits inactive cascade scene
-bindings, pool reservations, world updates and viewmodel copies; five functional
-GPU checks pass. The matched repeat at a common 200 FPS cap has fixed-PR
-unarmed CPU medians .8724-.8872 ms versus main .8609-.8920 ms; weapon CPU
-intervals overlap, as do GPU ranges. Settings/content/draws/inspected pixels match.
-The formerly consistent unarmed residual is not reproduced in this scene, but
-session drift prevents assigning a precise causal speedup or universal equality.
-A second matched default-path study on Construct also has overlapping CPU/GPU
-intervals and matching quality/content/draws/inspected pixels. Fixed PR runs at
-111.58-112.41 FPS unarmed and 102.01-102.63 with a weapon; world shading dominates
-at 7.26-7.79 ms. This supports the inactive-provider split on two scoped maps,
-not enabled-source acceptance, universal equality or the 300 FPS goal.
-Those matched timing studies used `f854c29d`. The newer `eeb98b7f` checkpoint
-separates a provider-owned 80-byte cascade tail from the fixed 4336-byte common
-frame. Only selected cascade receivers declare/upload the tail, through the same
-single uniform write and descriptor. Replacement compilation removes the default
-frame fragment, and nine targeted GPU checks pass. Twelve cascade variants retain
-optimized bytes; 22 normal-lit shader/coverage comparisons match main after the
-actual lighting specialization. Unspecialized PR code retains its debug-view-8
-branch. The frame-packet revision has no new matched runtime timing claim.
-Real-map quality, general normalization provenance and enabled-provider timing remain open.
+On the unmerged PR #37 branch, cascade incoming uses the same query and explicit
+baked-direct composition as ray incoming. Its native build, policy, replacement
+sources and focused runtime fixtures pass. The private cube/sky source boundary
+and receiver-direct fingerprint/reuse changes are included. Functional coverage
+includes local direct plus incoming transitions, optical mixed sunlight and
+viewmodel self/world isolation. The private cascade frame tail is declared and
+uploaded only by selected cascade receivers; inactive Source 2 retains the common
+frame and descriptor set. Real-map quality and matched runtime performance remain
+unqualified. No playable deployment or PR merge is implied.
 Preserve the combined Source 2 fast path while extending providers.
 
 ### Receiver-direct irradiance producer
