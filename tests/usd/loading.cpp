@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <map>
 #include <thread>
 #ifdef _WIN32
 #include <process.h>
@@ -283,6 +284,43 @@ int main(int argc, char **argv) {
       resources.finishFrame();
     }
     require(legacy, "legacy light attributes");
+    // Lights under a mesh's replacement stay the same lights while its
+    // instance moves (the host gives it no identity): new ones each frame
+    // would rebuild the light tree, and the guide with it, as it moves.
+    write("#usda 1.0\n(\nmetersPerUnit = 1\nupAxis = \"Y\"\n)\ndef Xform \"RootNode\" { def Scope \"meshes\" { "
+          "def Xform \"mesh_0123456789ABCDEF\" {\n def SphereLight \"child\" {\n float inputs:radius = 1\n }\n }\n }\n }\n");
+    auto attached = [&](std::initializer_list<float> positions) {
+      usd::modBoundary(resources);
+      for (float x : positions) {
+        auto instance = original;
+        for (int c = 0; c < 3; ++c)
+          instance.transform.matrix[c][c] = 1;
+        instance.transform.matrix[0][3] = x;
+        usd::modInstance(resources, instance);
+      }
+      std::map<float, uint64_t> ids;
+      for (const auto &light : resources.sphereLights())
+        ids[light.position[0]] = light.id;
+      resources.finishFrame();
+      return ids;
+    };
+    bool attachedReady = false;
+    for (int i = 0; i < 300 && !attachedReady; ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      attachedReady = attached({0}).size() == 1;
+    }
+    require(attachedReady, "lights under a mesh replacement");
+    const auto still = attached({0}).at(0);
+    const auto moved = attached({1});
+    require(moved.size() == 1 && moved.at(1) == still, "a moving instance keeps its attached lights");
+    require(attached({100}).at(100) != still, "an instance far from the last frame's gets new lights");
+    const auto pair = attached({0, 5});
+    const auto swapped = attached({5, 0});
+    require(pair.size() == 2 && pair.at(0) != pair.at(5) && swapped == pair,
+            "static instances keep their lights in any draw order");
+    const auto returning = attached({20}).at(20);
+    attached({});
+    require(attached({20}).at(20) == returning, "an instance back in view keeps its lights");
     usd::stopMods(resources);
     std::filesystem::remove_all(dir);
     std::cout << "USD tests passed\n";

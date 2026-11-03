@@ -1,9 +1,11 @@
 #include "usd/mods.h"
 #include "usd/submission.h"
 #include <pxr/usd/sdf/layer.h>
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <future>
 #include <optional>
@@ -52,6 +54,13 @@ namespace remix::usd {
       Set active;
       std::set<std::string> failedDependencies;
       std::set<remixapi_LightHandle> overriddenLights;
+      // Replaced instances without an identity of the host's, by the mesh they
+      // replace: this frame's, and the last frame's not yet matched.
+      struct PlacedInstance {
+        remixapi_Transform transform;
+        uint64_t id;
+      };
+      std::map<uint64_t, std::vector<PlacedInstance>> placed, placedBefore;
       uint64_t generation = 0;
       std::vector<std::unique_ptr<Submission>> submissions;
       std::future<MaterialBatch> materialBatch;
@@ -268,6 +277,50 @@ namespace remix::usd {
       auto it = state.lightScales.find(mod.name);
       return it == state.lightScales.end() ? mod.authoredLightScale : it->second;
     }
+    // The identity of a replaced instance the host gave none. It is the one of
+    // the last frame's instance at the same transform, else of the nearest one
+    // within 3 m (dxvk-remix's rtx.uniqueObjectDistance), so what hangs under
+    // the replacement stays the same when the instance moves. Draws sharing a
+    // transform share an identity, as they would a hash of it.
+    uint64_t instanceIdentity(uint64_t mesh, const remixapi_Transform &transform) {
+      const auto same = [&](const auto &placed) {
+        return std::memcmp(&placed.transform, &transform, sizeof(transform)) == 0;
+      };
+      auto &now = state.placed[mesh];
+      if (const auto found = std::find_if(now.begin(), now.end(), same); found != now.end())
+        return found->id;
+      auto &before = state.placedBefore[mesh];
+      auto match = std::find_if(before.begin(), before.end(), same);
+      if (match == before.end()) {
+        const float reach = 3 / float(state.options.meters > 0 ? state.options.meters : .01);
+        float nearest = reach * reach;
+        for (auto candidate = before.begin(); candidate != before.end(); ++candidate) {
+          float distance = 0;
+          for (int r = 0; r < 3; ++r) {
+            const float delta = candidate->transform.matrix[r][3] - transform.matrix[r][3];
+            distance += delta * delta;
+          }
+          if (distance <= nearest) {
+            nearest = distance;
+            match = candidate;
+          }
+        }
+      }
+      uint64_t id;
+      if (match != before.end()) {
+        id = match->id;
+        before.erase(match);
+      } else {
+        // A hash of the transform: an instance back in view is the one it was.
+        // Unless a moved instance took that identity along with it.
+        id = scene::hashBytes(&transform, sizeof(transform));
+        const auto taken = [&](const auto &placed) { return placed.id == id; };
+        while (std::any_of(now.begin(), now.end(), taken) || std::any_of(before.begin(), before.end(), taken))
+          id = scene::hashBytes(&id, sizeof(id));
+      }
+      now.push_back({transform, id});
+      return id;
+    }
     // The frame a game light's replacement lights are authored in (dxvk-remix
     // LightUtils::getLightTransform): at its position, its -Z along its
     // direction (spot and distant lights).
@@ -357,6 +410,8 @@ namespace remix::usd {
   void modBoundary(NativeResources &resources) {
     if (!state.enabled)
       return;
+    state.placedBefore.swap(state.placed);
+    state.placed.clear();
     for (size_t i = 0; i < state.submissions.size(); ++i) {
       state.submissions[i]->retireAttachments();
       state.submissions[i]->service();
@@ -457,8 +512,19 @@ namespace remix::usd {
     if (!state.submissions[index]->ready(entry["path"]))
       return false;
     const auto &parts = state.active.mods[index].parts;
-    if (parts.meshes || parts.lights)
-      state.submissions[index]->draw(false, 1, &info, entry["path"], parts.meshes, parts.lights);
+    if (parts.meshes || parts.lights) {
+      auto parent = info;
+      const auto *own = static_cast<const remixapi_InstanceIdentityEXT *>(
+          scene::extension(info.pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT));
+      remixapi_InstanceIdentityEXT identity{};
+      if (!own || !own->instanceId) {
+        identity.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
+        identity.pNext = info.pNext;
+        identity.instanceId = instanceIdentity(it->first, info.transform);
+        parent.pNext = &identity;
+      }
+      state.submissions[index]->draw(false, 1, &parent, entry["path"], parts.meshes, parts.lights);
+    }
     if (entry.value("preserve", false)) {
       if (!parts.materials || !entry.contains("material"))
         return false;

@@ -111,6 +111,14 @@ frame: at its position, with their -Z along its direction (spot and distant
 lights). They are placed as authored when the replacement has a transform of
 its own.
 
+A mesh replacement's instance that the host gives no identity takes the one of
+the last frame's instance of that mesh at the same transform, else of the
+nearest within 3 m, else a hash of its transform (so an instance back in view is
+the one it was). What it authors therefore stays the same instances and lights
+while it moves. With the hash alone, a moving instance made new lights each
+frame, which rebuilt the light tree and lost the visibility guide (HL2 RTX's
+flashlight faded while walking).
+
 As in RTX Remix, a light attribute with no `inputs:` opinion reads the name USD
 lights had before it (`intensity`, `color`, ...), which older mods author.
 
