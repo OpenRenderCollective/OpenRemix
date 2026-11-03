@@ -21,6 +21,12 @@ interfaces: [shading API](../architecture/shading-api.md).
 
 Implemented and checked:
 
+- The bake recorder and frame setup share one resolved lighting plan. Receiver
+  and mixed-light ownership are captured before light enumeration, removing
+  per-light option reinterpretation and obsolete helper methods. Saved controls
+  and quality policy remain intact.
+
+
 - Material passes now use the compile-selected `shadeSurface` entry from
   `shading-model.glsl`. Custom models replace that module without rewriting pass
   includes/calls. The default binds directly to the standard implementation;
