@@ -236,13 +236,14 @@ namespace remix::forward {
     vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                          0, 0, nullptr, 1, &barrier, 0, nullptr);
     clusterTime.close();
-    // Always clear/transition each layer, including when sunlight is disabled:
-    // descriptors remain valid and later switches need no special layout state.
+    // Initialization and enable/source transitions clear every layer. Once
+    // disabled, those neutral maps remain valid without repeating empty passes.
     const VkClearValue shadowClear{.depthStencil = {1, 0}};
     const VkExtent2D size{options.shadowResolution, options.shadowResolution};
     gpu::GpuScope sunTime(command, "Forward+ sun shadow cascades", size);
+    statistics.movingSunUpdates = 0;
     for (uint32_t c = 0; c < sunShadowLayers; ++c) {
-      if (c < cascadeCount && !frame.staticSunDirty[c])
+      if (!frame.staticSunDirty[c % cascadeCount] && (c < cascadeCount || !frame.data.target[3]))
         continue;
       const VkRenderPassBeginInfo pass{.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
                                        .renderPass = shadowPass,
@@ -255,6 +256,7 @@ namespace remix::forward {
       if (frame.uniforms.data.target[3])
         drawSunCasters(command, c % cascadeCount, c < cascadeCount);
       vkCmdEndRenderPass(command);
+      statistics.movingSunUpdates += uint32_t(c >= cascadeCount);
     }
     sunTime.close();
     gpu::GpuScope localTime(command, "Forward+ local shadow maps", options.localShadowResolution,

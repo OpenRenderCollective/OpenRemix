@@ -48,6 +48,7 @@ namespace remix {
         << ", \"clusters\": " << state.clusters << ", \"clusterCapacity\": " << state.clusterLightCapacity
         << ", \"staticShadowUpdates\": " << state.staticShadowUpdates
         << ", \"staticSunUpdates\": " << state.staticSunUpdates
+        << ", \"movingSunUpdates\": " << state.movingSunUpdates
         << ", \"capturedCasters\": " << state.capturedCasters
         << ", \"liveCasters\": " << state.liveCasters
         << ", \"emptyMovingShadowMaps\": " << state.emptyMovingShadowMaps

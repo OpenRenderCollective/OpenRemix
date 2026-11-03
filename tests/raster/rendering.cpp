@@ -3593,7 +3593,6 @@ namespace {
       }
       request.chartRevision = request.chartCount = 1;
       request.charts = &chart;
-      r.setBakeScene(&base);
       std::optional<remixapi_InstanceInfo> probeCaster;
       auto render = [&](bool charted = true) {
         camera(r);
@@ -3617,6 +3616,21 @@ namespace {
         require(false, "Mixed sunlight reaches the requested bake phase");
         return pixels;
       };
+      options.shadows = false;
+      target.forward->updateLighting(options);
+      render();
+      require(target.forward->statistics().staticSunUpdates == remix::forward::cascadeCount &&
+                  target.forward->statistics().movingSunUpdates == remix::forward::cascadeCount,
+              "Starting with sun shadows disabled initializes every frozen and moving layer");
+      for (uint32_t frame = 0; frame < remix::gpuFrameCount + 1; ++frame) {
+        render();
+        require(target.forward->statistics().staticSunUpdates == 0 &&
+                    target.forward->statistics().movingSunUpdates == 0,
+                "Disabled sunlight reuses initialized maps across frame slots");
+      }
+      options.shadows = true;
+      target.forward->updateLighting(options);
+      r.setBakeScene(&base);
       // Cancel the new dispatch mode while its owning frame submissions exist.
       until(false);
       r.setBakeScene(nullptr);
@@ -3732,10 +3746,22 @@ namespace {
       target.forward->updateLighting(options);
       pixels = render();
       require(pixels[left + 2] > 80, "Disabling sun shadows also bypasses cached static sunlight occlusion");
+      require(target.forward->statistics().staticSunUpdates == remix::forward::cascadeCount &&
+                  target.forward->statistics().movingSunUpdates == remix::forward::cascadeCount,
+              "Disabling sunlight neutralizes maps left by the active shadow source");
+      for (uint32_t frame = 0; frame < remix::gpuFrameCount + 1; ++frame) {
+        pixels = render();
+        require(target.forward->statistics().staticSunUpdates == 0 &&
+                    target.forward->statistics().movingSunUpdates == 0 && pixels[left + 2] > 80,
+                "Disabled sun maps need no repeated passes and remain visually unshadowed");
+      }
       options.shadows = true;
       target.forward->updateLighting(options);
       pixels = render();
       require(pixels[left + 2] < 3, "Re-enabling sun shadows restores the matching baked mask");
+      require(target.forward->statistics().staticSunUpdates == remix::forward::cascadeCount &&
+                  target.forward->statistics().movingSunUpdates == remix::forward::cascadeCount,
+              "Re-enabling sunlight refreshes current frozen and moving cascades");
       r.destroyRetained(&instances[1], 1);
       pixels = render(false);
       require(pixels[left + 2] < 3 && pixels[right + 2] > 80,
