@@ -126,7 +126,7 @@ int main(int argc, char **argv) try {
     for (uint32_t i = 0; i < sweepSteps; ++i) {
       const float pixel = 13.5f + 4.f * float(i) / (sweepSteps - 1), u = 2 * (pixel + .5f) / resolution - 1;
       queries.push_back(
-          {mode == 0 ? Vec4{u * 4, 0, 4, .5f} : Vec4{u, 0, .5f, .5f}, {0, 0, 1, 0}, {0, 0, mode, 0}});
+          {mode == 0 ? Vec4{u * 4, 0, 4, .5f} : Vec4{u, 0, .5f, .5f}, {0, 0, 1, 0}, {0, 0, mode, mode == 0 ? 1u : 0u}});
     }
   const auto planeFirst = queries.size();
   for (float x : {0.f, 3.9f, 4.f, 4.1f, 12.f, 30.f, 60.f})
@@ -149,7 +149,7 @@ int main(int argc, char **argv) try {
   gpu.input.create(fixture.physical, fixture.device, queries.size() * sizeof(Query),
                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   gpu.input.write(queries.data(), queries.size() * sizeof(Query));
-  gpu.output.create(fixture.physical, fixture.device, 5 * queries.size() * sizeof(Vec4),
+  gpu.output.create(fixture.physical, fixture.device, 6 * queries.size() * sizeof(Vec4),
                     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   const VkSamplerCreateInfo sampler{.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
                                     .magFilter = VK_FILTER_NEAREST,
@@ -238,8 +238,17 @@ int main(int argc, char **argv) try {
   vkCmdPipelineBarrier(fixture.command, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0,
                        1, &read, 0, nullptr, 0, nullptr);
   fixture.finish();
-  std::vector<Vec4> values(5 * queries.size());
+  std::vector<Vec4> values(6 * queries.size());
   gpu.output.read(values.data(), values.size() * sizeof(Vec4));
+  float skippedFields = 0;
+  for (uint32_t i = 0; i < sweepSteps; ++i) {
+    const auto &response = values[i + 5 * queries.size()];
+    require(std::isfinite(response[0]) && response[0] < 1e-5f && response[1] == 0 && response[2] == 0,
+            "Standard local responses match raw lighting while preserving known-black and finite-emitter fields");
+    skippedFields += response[3];
+  }
+  require(skippedFields > 0 && skippedFields < 6 * sweepSteps,
+          "Only exact unshadowed standard responses skip directional field reads");
   for (uint32_t mode = 0; mode < 2; ++mode) {
     float maximum = 0;
     const size_t first = mode * sweepSteps;
