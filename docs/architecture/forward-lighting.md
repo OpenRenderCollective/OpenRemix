@@ -110,6 +110,10 @@ Sun layers are initialized and neutralized on enable/source transitions. Unchang
 disabled sunlight reuses those valid neutral images instead of clearing moving
 layers every frame. Re-enabling sunlight refreshes all cascades. The diagnostic
 `movingSunUpdates` counts actual moving-layer render passes, including clears.
+The diagnostic `movingSunDraws` array counts submitted world geometry calls per
+cascade. `rendering.liveCasters` instead counts non-captured world commands,
+not distinct actors or visible props. An unarmed camera need not have empty
+moving shadow maps; establish conservative admission before bypassing queries.
 
 Resolve configuration into an immutable per-frame lighting plan on the CPU. A
 preset supplies defaults; explicit component overrides produce a Custom selection.
