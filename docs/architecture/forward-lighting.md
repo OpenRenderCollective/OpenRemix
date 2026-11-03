@@ -1000,7 +1000,12 @@ normalizing only a subset of layers. This is safe but conservative for future
 mixed-component producers.
 
 The shader arithmetic, descriptor layout and GPU instruction path are unchanged.
-Binding adds a CPU identity comparison, without a layer scan. Nonempty images add
+Frame preparation resolves the binding once, after provider publication. SSR,
+water and viewmodel setup consume that frame's `reflectionProbes` snapshot;
+provider frame owners retain the images through the existing fence. This avoids
+repeated selection/identity queries and keeps the passes on one publication.
+Frames without consumers skip selection. Binding adds a CPU identity comparison,
+without a layer scan. Nonempty images add
 one aligned `GpuHeader` of retained metadata (11,280 bytes before alignment);
 empty fallback images reuse one view. Allocation count is unchanged. This memory
 tradeoff and broad frame-time acceptance remain part of performance qualification.
