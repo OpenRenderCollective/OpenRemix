@@ -12,10 +12,13 @@ is a screen-space approximation. Cascade GPU transitions, independent cubemap ca
 modes and 1x/4x MSAA pass synchronization validation. Existing Source 2 SSR,
 viewmodel, water and mixed-light regressions pass. Orthographic cascade receiver
 depth matching remains unsupported. The PR is synchronized with the complete
-baked/live context split through d11fa570: cascades and rays share the chart-free
+baked/live context split through 0ab5a707: cascades and rays share the chart-free
 live adapter, and capture-only refresh/publication updates are included. Sun
 transport/material response and typed reflection references are synchronized;
-cascades explicitly declare no frozen-static normalization reference. Cascade
+cascades explicitly declare no frozen-static normalization reference. The
+capture scheduler and metadata lookup no longer depend on the diffuse controller;
+query-only local providers reuse the shared standard material adapter. Alternate
+local/sun source isolation also covers cascade world/viewmodel composition. Cascade
 depth-mode toggles prepare their required early-depth targets; 1x/4x transition
 readbacks pass. The PR remains unmerged pending approval.
 
@@ -32,6 +35,15 @@ Implemented and checked:
   Source 2 shaders remain byte-identical. A resource-free shading-result initializer gives
   custom models safe defaults. Material results carry unpacked normal/roughness
   and RGB reflectance; the pass adapter owns guide and cubemap-layer byte encoding.
+  Query-only local providers now acquire the standard PBR adapter from a shared
+  material module, without implementing BRDF entry points themselves. Source 2
+  keeps its specialized miss exits; twelve checked default/custom variants remain
+  byte-identical after moving the alternate source's adapter into shared code.
+  Default local-light transport is now imported only by its selected source;
+  the standard local material response compiles independently. Alternate source
+  checks remove the default raw sampler file to verify that separation.
+  Sun transport is also imported only by its selected source; alternate-source
+  checks remove the default sun implementation before compiling all material passes.
   Sun transport and material BRDF response now live in separate modules; the
   response can compile without pass resources or the default transport.
   Alternate shading, diffuse, environment, local and sun
@@ -65,6 +77,12 @@ Implemented and checked:
   live water can share prepared scene descriptors with its own query limits.
   Capture recording, admission and source fallback share one resolved owner;
   image disable preserves the scheduler responsible for retiring prior work.
+  Capture metadata selection now takes explicit fallback descriptors and exposes
+  borrowed capture-only publications; the renderer supplies Source 2 fallbacks.
+  The capture module no longer includes or accepts the diffuse controller.
+  Reflection recording now takes scene-sharing, publication and shared-budget
+  readiness explicitly; it no longer invokes diffuse baking. The renderer
+  composes the existing preset order without adding a scheduler or GPU pass.
   CaptureProviders now owns capture admission, frame-slot transitions and fallback
   selection outside frame rendering, preserving the existing shared budget.
 - Immutable prepared scenes have demand-scoped leases and independent mutable
@@ -141,6 +159,23 @@ Still required for the complete modularity/performance objective:
   draw counts match. Opaque world remains the largest GPU scope, with no static
   shadow refreshes. This does not prove equivalence or exclude small regressions;
   alternative provider modes and wider map coverage still need qualification.
+  A subsequent Crossfire A/B/B/A through capture metadata commit 38c46f34
+  preserves quality, content hashes, draw counts and the inspected upper-world
+  crop. Current FPS ranges are 283.2-286.3 unarmed / 250.2-256.2 weapon versus
+  281.6-290.9 / 253.1-254.0 for retained 4c66bddf. CPU/GPU intervals overlap,
+  but first-current weapon timings are elevated and session drift is substantial.
+  This is inconclusive for strict no-overhead acceptance and cannot isolate the
+  final two CPU commits. Compare their immediate predecessor next; small
+  regressions, alternative providers and wider map coverage remain open.
+  An immediate-predecessor isolation through 38c46f34 now covers those two
+  capture CPU commits against 40e14d07, holding shaders/dependencies constant.
+  Crossfire A/B/B/A shows lower current unarmed CPU medians (.831-.848 ms versus
+  .855-.867), overlapping weapon CPU intervals and total GPU ranges inside the
+  baseline session ranges. Current FPS is 283.6-289.2 unarmed / 255.3-256.1 weapon;
+  baseline is 279.6-288.2 / 249.4-255.0. Quality, hashes and draw counts match;
+  both current upper-world crops match the first baseline pixel-exactly. This
+  supports no recent capture-split slowdown in that steady-state profile, not
+  universal equivalence, a precise speedup or completion of provider coverage.
 - Continue checking unused experiment paths before removal. Referenced low-level
   diagnostic modes and legacy aliases are not automatically dead code.
 

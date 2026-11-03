@@ -35,6 +35,8 @@ common = """#version 450
 #include "light-contribution.glsl"
 #include "sun-response.glsl"
 #include "sun-response.glsl"
+#include "local-light-response.glsl"
+#include "local-light-response.glsl"
 #include "local-light-values.glsl"
 #include "local-light-values.glsl"
 """

@@ -102,7 +102,10 @@ namespace remix::forward {
     std::shared_ptr<bake::Controller> baking;
     std::unique_ptr<probe_batch::Cache> probeVisibility;
     probes::CaptureProviders captureProviders;
-    probes::CaptureSource reflectionSource() const { return captureProviders.source(techniquePlan, *baking); }
+    probes::CaptureSource reflectionSource() const {
+      if (const auto source = captureProviders.standaloneSource(techniquePlan)) return *source;
+      return baking->reflectionSource();
+    }
     probes::SelectionFrames localSelections;
     std::unique_ptr<probes::LocalSelectionPreparation> localSelectionPreparation;
     std::optional<probes::CoveragePlanContext> localSelectionAttempt;
@@ -114,7 +117,7 @@ namespace remix::forward {
     probes::Descriptors reflectionDescriptor() const {
       const auto selected = localSelections.active();
       if (selected) return selected->image->descriptors();
-      return captureProviders.descriptor(techniquePlan, *baking);
+      return captureProviders.descriptor(techniquePlan, baking->reflectionDescriptor());
     }
     std::unique_ptr<shadows::Maps> localMaps;
     shadows::Planner shadowPlanner;

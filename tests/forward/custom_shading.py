@@ -98,12 +98,19 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
         subprocess.run([validator, "--target-env", "vulkan1.1", str(binary)], env=env, check=True)
     shutil.copyfile(root / "src/native/forward/shaders/receiver-lighting.glsl",
                     tree / "shaders/receiver-lighting.glsl")
+    # The alternate local source must not rely on default Source 2 transport
+    # declarations being incidentally imported by the pass/material response.
+    # It supplies queries only: the real standard material must acquire its
+    # response adapter from the shared material module, not this fixture.
+    (tree / "shaders/light-sample.glsl").unlink()
     shutil.copyfile(root / "tests/forward/shaders/custom-local-source.glsl",
                     tree / "shaders/local-lighting.glsl")
     for name, defines in {
         "local-source-world": [],
         "local-source-viewmodel": ["VIEWMODEL_PASS"],
         "local-source-live-world": ["LIVE_GI"],
+        "local-source-cascade-world": ["CASCADE_GI"],
+        "local-source-cascade-viewmodel": ["CASCADE_GI", "VIEWMODEL_PASS"],
         "local-source-water": ["WATER_SURFACE"],
     }.items():
         binary = tree / (name + ".spv")
@@ -111,14 +118,21 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
                         *["-D" + define for define in defines], str(source),
                         "-o", str(binary)], env=env, check=True)
         subprocess.run([validator, "--target-env", "vulkan1.1", str(binary)], env=env, check=True)
+    shutil.copyfile(root / "src/native/forward/shaders/light-sample.glsl",
+                    tree / "shaders/light-sample.glsl")
     shutil.copyfile(root / "src/native/forward/shaders/local-lighting.glsl",
                     tree / "shaders/local-lighting.glsl")
+    # A replacement sunlight source needs only values and receiver queries,
+    # not the default baked visibility/CSM implementation.
+    (tree / "shaders/sun.glsl").unlink()
     shutil.copyfile(root / "tests/forward/shaders/custom-sun-source.glsl",
                     tree / "shaders/sun-lighting.glsl")
     for name, defines in {
         "sun-source-world": [],
         "sun-source-viewmodel": ["VIEWMODEL_PASS"],
         "sun-source-live-world": ["LIVE_GI"],
+        "sun-source-cascade-world": ["CASCADE_GI"],
+        "sun-source-cascade-viewmodel": ["CASCADE_GI", "VIEWMODEL_PASS"],
         "sun-source-water": ["WATER_SURFACE"],
         "sun-source-water-ray": ["WATER_SURFACE", "WATER_RAY"],
     }.items():

@@ -92,8 +92,10 @@ wrap/transmission model can retain back-light samples. Aggregate diffuse data
 requires the existing mixed-shadow residual; adding it again would double-count
 baked direct lighting. This ownership still needs a friendlier high-level facade.
 
-`direct-light.glsl` applies the standard PBR response to the sampled data. Its
-standard entry and raw query share `local-light-query.glsl`, a function-body
+`local-light-response.glsl` applies the standard PBR response to sampled values
+without importing transport resources. The default source privately imports
+`direct-light.glsl`; its optimized standard entry and raw query share
+`local-light-query.glsl`, a function-body
 template with one caller-specific miss exit. This preserves the standard early
 returns without a runtime shader callback or duplicated transport implementation.
 The body template is backend implementation detail; material authors call functions.
@@ -128,7 +130,9 @@ This entry resolves the index, geometric receiver normal and channel data;
 custom models do not need atlas, cluster or four-channel sentinel knowledge.
 It returns the same `LocalLightSample` as the lower-level source-index query.
 Its ordinal must be within the prepared list, and output is valid only on success.
-The standard model retains its specialized miss exits through `standardReceiverLocalLight`.
+The standard model calls `standardReceiverLocalLight`. The shared material
+adapter supplies it for query-only sources; Source 2 retains its specialized
+miss exits through an optional source-specific implementation.
 
 ## Diffuse receiver query
 
@@ -210,17 +214,18 @@ alone does not make every reflection technique interchangeable.
 ## Optical water adapter
 
 Water builds the same `ShadingReceiver` and uses `sampleDiffuseLighting`,
-`prepareLocalLighting` and `sampleEnvironmentReflection`. Its diffuse shader
-variant currently selects baked volume probes, with no surface-chart allocation.
-A constant false direct-channel request removes unused atlas reads. The optical
-model still owns absorption, sheet/body Fresnel, refraction and screen/ray hit
-composition. Its light-source queries do not apply those material weights.
+`prepareLocalLighting` and `sampleEnvironmentReflection`. The default Source 2
+source selects volume probes without surface-chart allocation. Supported live
+ray diffuse variants share the world's prepared scene with explicit water query
+limits. A constant false direct-channel request removes unused atlas reads.
+The optical model owns absorption, sheet/body Fresnel, refraction and screen/ray
+hit composition. Its light-source queries do not apply those material weights.
 
-Water uses `sampleUnbakedSunLight` to preserve its existing CSM policy and supplies
-its existing unfiltered/visibility-gated sky fallback. Switching it to the same
-baked/mixed sun ownership as world/props and selecting live diffuse providers for
-water still need explicit quality/resource qualification. Shared queries alone
-must not be reported as finishing those policies.
+Water obtains sunlight through `sampleOpticalReceiverSunLight`; the default
+source preserves its existing analytic/CSM policy. It retains the existing
+unfiltered/visibility-gated sky fallback. Switching static sunlight to the same
+baked/mixed ownership as world/props still needs explicit quality/resource
+qualification. Shared queries alone do not establish that policy.
 
 ## Material response and composition
 
@@ -859,3 +864,80 @@ Source domain declarations specialize away in the default shaders. The current
 guide cannot transport arbitrary domains; a future provider requiring another
 domain across that pass must add a compatible guide adapter. Scene/generation
 and component provenance remain separate requirements.
+
+### Local source isolation
+
+The pass imports the resource-free local material response independently of the
+selected local-light source. Only the default `local-lighting.glsl` imports
+`direct-light.glsl` and its Source 2 raw sampler. Replacement sources implement
+the receiver/context queries and may reuse `shadeStandardLocalLight` without
+bringing in chart visibility, directional fields or default sampling functions.
+The default optimized caller-specific miss exits are unchanged. The alternate
+source compile fixture removes the default sampler file before compiling world,
+viewmodel, live and water materials, so an incidental import fails immediately.
+
+### Sun source isolation
+
+Only the default `sun-lighting.glsl` imports `sun.glsl` and its baked visibility
+and CSM implementation. The pass imports the material response independently.
+An alternate source supplies the receiver and optical sun queries without
+importing default sunlight transport. The custom-source fixture removes the
+default sun implementation before compiling world, viewmodel, live, water and
+ray-water materials. This is a compile-time boundary; CPU shadow resource and
+caster scheduling still require the resolved provider plan.
+
+### Explicit capture scheduling inputs
+
+`CaptureProviders::record` records reflection work only. The renderer composes
+the current preset by requesting compatible scene sharing, recording the
+selected diffuse/bake work, then passing the automatic capture publication and
+shared-transport readiness into the reflection scheduler. The scheduler does
+not call the diffuse controller or derive its lighting configuration. A live
+source can therefore supply its own readiness/publication contract without
+making the capture scheduler start a diffuse bake.
+
+The Source 2 adapter retains its existing order and single transport budget:
+a published image alone does not release admission while diffuse/style work
+is pending. Standalone retirement still records after switching back to baked
+captures. Capture source ownership and frame-fence retention are unchanged.
+Metadata lookup now exposes borrowed capture publications and accepts fallback
+descriptors explicitly. The renderer supplies the Source 2 fallback; the capture
+module has no diffuse-controller dependency. Complete alternative-provider
+orchestration remains separate work. This split changes CPU call organization, so shader checks alone cannot
+prove whole-renderer performance equivalence.
+
+### Capture publication lookup
+
+`CaptureProviders` exposes a borrowed standalone source, capture-only header
+selection and descriptor selection with an explicit fallback. The renderer
+supplies the default baked descriptor/header/source and retains the original
+precedence: authored header, available standalone image, then default source;
+descriptors retain their existing authored-overlay selection. A published
+diffuse volume still determines the reported scene scale before standalone or
+default capture metadata. An active standalone owner with no image remains
+selected for source identity and retirement; it does not manufacture a new
+image or discard the default descriptor fallback.
+
+The small selection adapters are inline and borrow existing owners. They add
+no publication snapshot, reference-count copy, resource allocation or GPU work.
+Borrowed pointers are consumed immediately on the render thread; submitted
+frames retain their existing image leases. The capture module no longer includes
+or takes `bake::Controller`; the shared prepared-scene request remains the
+lower-level transport handoff.
+
+### Query-only local providers and standard materials
+
+`standard-local-lighting.glsl` supplies `standardReceiverLocalLight` from the
+selected source's sampler and the shared resource-free PBR response. A new local
+provider only needs its context preparation, count and sample queries. It does
+not need to implement material BRDF functions just to work with standard world,
+viewmodel or water materials.
+
+The default Source 2 source declares the private compile-time
+`OPENREMIX_SPECIALIZED_LOCAL_RESPONSE` hook and supplies its existing optimized
+entry. This preserves caller-specific miss exits and avoids the code-generation
+cost previously observed when forcing that source through a boolean sample
+wrapper. Other sources use the shared adapter automatically. There is no runtime
+callback, setting, extra pass or duplicate material equation. The query-only
+fixture removes the default sampler implementation while exercising the real
+standard material across its supported passes.

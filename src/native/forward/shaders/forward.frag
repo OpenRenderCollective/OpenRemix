@@ -28,7 +28,6 @@ layout(early_fragment_tests) in;
 #include "lightmap.glsl"
 #include "occlusion.glsl"
 #include "local-shadows.glsl"
-#include "sun.glsl"
 #include "sun-response.glsl"
 #ifdef VIEWMODEL_PASS
 #include "../viewmodel/shaders/reflections.glsl"
@@ -62,9 +61,10 @@ layout(location = 1) out vec4 outNormalRoughness;
 layout(location = 2) out vec4 outReflectance;
 #endif
 #include "receiver.glsl"
-#include "direct-light.glsl"
+#include "local-light-response.glsl"
 #include "receiver-lighting.glsl"
 #include "local-lighting.glsl"
+#include "standard-local-lighting.glsl"
 #include "sun-lighting.glsl"
 // Specialization removes diagnostic branches from ordinary world shading.
 layout(constant_id = 1) const uint LightingView = 0u;
