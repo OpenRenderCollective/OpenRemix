@@ -19,13 +19,8 @@ float directionalFieldValue(uint data, uint encoding, uint width, uvec2 pixel, f
   }
   return value;
 }
-// Resolve immutable ownership once. Filtering taps share this record and SH basis.
-struct SurfaceDirectionalField {
-  uvec2 origin, size;
-  uint encoding, data;
-};
-bool findSurfaceDirectionalField(uint chart, uint capturedLight, vec4 coordinate,
-                                  out SurfaceDirectionalField field) {
+bool linearSurfaceDirectionalField(uint chart, uint capturedLight, vec4 coordinate, vec3 normal, out float value) {
+  value = 0;
   uint table = frame.clusterInfo.z;
   if (table == 0u || capturedLight == 0u || coordinate.w < .5 ||
       occlusionWord(table) != 0x48534452u || occlusionWord(table + 1u) != 1u ||
@@ -43,36 +38,33 @@ bool findSurfaceDirectionalField(uint chart, uint capturedLight, vec4 coordinate
   if (occlusionWord(entry) != light) return false;
   uvec2 origin = uvec2(occlusionWord(entry + 1u), occlusionWord(entry + 2u));
   uvec2 size = uvec2(occlusionWord(entry + 3u), occlusionWord(entry + 4u));
-  field = SurfaceDirectionalField(origin, size, occlusionWord(entry + 5u),
-                                   table + occlusionWord(entry + 6u));
-  return true;
-}
-float sampleSurfaceDirectionalField(SurfaceDirectionalField field, vec2 coordinate, float sh[9]) {
-  vec2 pixel = clamp(coordinate * vec2(textureSize(surfaceAtlas, 0).xy) - .5 - vec2(field.origin),
-                     vec2(0), vec2(field.size - 1u));
-  uvec2 low = uvec2(floor(pixel)), high = min(low + 1u, field.size - 1u);
+  vec2 pixel = clamp(coordinate.xy * vec2(textureSize(surfaceAtlas, 0).xy) - .5 - vec2(origin),
+                     vec2(0), vec2(size - 1u));
+  uvec2 low = uvec2(floor(pixel)), high = min(low + 1u, size - 1u);
   vec2 fraction = fract(pixel);
-
-  float a = directionalFieldValue(field.data, field.encoding, field.size.x, low, sh);
-  float b = directionalFieldValue(field.data, field.encoding, field.size.x, uvec2(high.x, low.y), sh);
-  float c = directionalFieldValue(field.data, field.encoding, field.size.x, uvec2(low.x, high.y), sh);
-  float d = directionalFieldValue(field.data, field.encoding, field.size.x, high, sh);
-  return mix(mix(a, b, fraction.x), mix(c, d, fraction.x), fraction.y);
+  uint encoding = occlusionWord(entry + 5u), data = table + occlusionWord(entry + 6u);
+  float sh[9];
+  surfaceBasis(normal, sh);
+  float a = directionalFieldValue(data, encoding, size.x, low, sh);
+  float b = directionalFieldValue(data, encoding, size.x, uvec2(high.x, low.y), sh);
+  float c = directionalFieldValue(data, encoding, size.x, uvec2(low.x, high.y), sh);
+  float d = directionalFieldValue(data, encoding, size.x, high, sh);
+  value = mix(mix(a, b, fraction.x), mix(c, d, fraction.x), fraction.y);
+  return true;
 }
 bool surfaceDirectionalField(uint chart, uint capturedLight, vec4 coordinate, vec3 normal, vec4 bounds,
                               out float value) {
-  value = 0;
-  SurfaceDirectionalField field;
-  if (!findSurfaceDirectionalField(chart, capturedLight, coordinate, field)) return false;
-  float sh[9];
-  surfaceBasis(normal, sh);
   if (!BicubicLightmaps) {
-    value = max(sampleSurfaceDirectionalField(field, coordinate.xy, sh), 0);
-    return true;
+    bool found = linearSurfaceDirectionalField(chart, capturedLight, coordinate, normal, value);
+    value = max(value, 0);
+    return found;
   }
   LightmapFilter stencil = surfaceFilter(coordinate, bounds);
+  value = 0;
   for (uint tap = 0u; tap < 4u; ++tap) {
-    float sampleValue = sampleSurfaceDirectionalField(field, lightmapTap(stencil, tap), sh);
+    float sampleValue;
+    if (!linearSurfaceDirectionalField(chart, capturedLight,
+        vec4(lightmapTap(stencil, tap), coordinate.zw), normal, sampleValue)) return false;
     value += lightmapWeight(stencil, tap) * sampleValue;
   }
   value = max(value, 0);
