@@ -988,7 +988,8 @@ Combined keys retain their legacy computation.
 flag records receiver-direct contents; default combined bytes are unchanged.
 Decoding checks the expected kind independently of the supplied key, and diffuse
 index recovery threads it through both identity reconstruction and payload
-validation. Thus a correct container key or spoofed index cannot relabel combined
+validation. The background snapshot-to-view transfer preserves the same tag
+through queued map writes. Thus a correct container key or spoofed index cannot relabel combined
 energy as receiver-direct, or vice versa. Direct-only recovery needs no reflection
 work or transient probe-origin array.
 

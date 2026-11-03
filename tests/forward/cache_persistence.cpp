@@ -9,9 +9,11 @@ using remix::test::require;
 using namespace std::chrono_literals;
 
 namespace {
-  std::unique_ptr<const cache::Snapshot> snapshot(uint16_t marker) {
+  std::unique_ptr<const cache::Snapshot> snapshot(
+      uint16_t marker, IrradianceContents contents = IrradianceContents::Combined) {
     auto data = std::make_unique<cache::Snapshot>();
     data->pixels.resize(128, marker);
+    data->contents = contents;
     data->directionalAttempted = true;
     data->directionals.resize(16, marker);
     return data;
@@ -81,6 +83,8 @@ int main() {
             "The writer owns the completed snapshot independently of its submitting caller");
     require(data.directionalAttempted && data.directionals.size() == 16 && data.directionals.front() == key,
             "Directional capability and payload survive asynchronous snapshot ownership transfer");
+    require(data.contents == (key == 2 ? IrradianceContents::ReceiverDirect : IrradianceContents::Combined),
+            "Background persistence must preserve irradiance contents across queued maps");
     if (key == 1) {
       started.set_value();
       released.wait();
@@ -91,7 +95,7 @@ int main() {
   });
   require(writer.submit("first", 1, snapshot(1)), "First completed snapshot is admitted");
   require(started.get_future().wait_for(5s) == std::future_status::ready, "Slow writer started");
-  require(writer.submit("second-map", 2, snapshot(2)),
+  require(writer.submit("second-map", 2, snapshot(2, IrradianceContents::ReceiverDirect)),
           "A later map can publish while an earlier map's write is blocked");
   require(!writer.submit("third-map", 3, snapshot(3)),
           "Slow storage cannot accumulate an unbounded map queue");
