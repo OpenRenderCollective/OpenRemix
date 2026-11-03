@@ -50,4 +50,6 @@ std::optional<Snapshot> readShared(const std::filesystem::path &directory,
                                    std::stop_token cancelled = {});
 uint64_t retainedCharge(const Snapshot &snapshot);
 cache_io::Persistence<Snapshot> &persistence();
+// Directory + planned identity; stores a shared blob and publishes its index.
+cache_io::Persistence<Snapshot> &sharedPersistence();
 } // namespace remix::forward::probes::capture_cache

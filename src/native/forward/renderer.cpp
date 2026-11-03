@@ -302,7 +302,7 @@ namespace remix::forward {
     m_gpu->recordWorld(command);
     // Without a separate prepass the cascades follow the world pass; shading
     // then reads the previous frame's gather, reprojected.
-    if (!m_gpu->earlyCascades) m_gpu->recordCascades(command);
+    if (m_gpu->techniquePlan.cascadeDiffuse() && !m_gpu->earlyCascades) m_gpu->recordCascades(command);
     step(cpu.world);
     if (m_gpu->reflections) {
       gpu::GpuScope reflectionTime(command, "Forward+ reflection resolve and composition", m_gpu->extent);

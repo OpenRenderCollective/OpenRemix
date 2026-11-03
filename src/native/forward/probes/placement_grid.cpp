@@ -1,4 +1,5 @@
 #include "forward/probes/placement.h"
+#include "forward/bake/probe_origin.h"
 #include <cmath>
 #include <stdexcept>
 
@@ -32,10 +33,18 @@ namespace remix::forward::probes {
       if (index >= grid.probes.size())
         throw std::invalid_argument("Reflection seed index is outside captured geometry");
       if (grid.probes[index].statistics[3] < .5f) continue;
-      if (index >= grid.points.size())
-        throw std::invalid_argument("Usable reflection seed has no captured position");
-      const auto &point = grid.points[index].position;
-      result.points.push_back({{point[0], point[1], point[2]}, index});
+      Vec3 position;
+      if (index < grid.points.size()) {
+        const auto &point = grid.points[index].position;
+        position = {point[0], point[1], point[2]};
+      } else {
+        // Complete cache hits omit transient Point arrays. Recover the admitted
+        // origin directly, retaining only the compact reflection metadata.
+        if (!grid.points.empty())
+          throw std::invalid_argument("Usable reflection seed has no captured position");
+        position = bake::probeOrigin(grid, index);
+      }
+      result.points.push_back({position, index});
     }
     return result;
   }

@@ -122,18 +122,20 @@ local-light list and baked direct channels once. `diffuseRequired` describes the
 shading model's work, not a material type or engine shader name. The aggregate
 ownership comes from the selected diffuse query.
 
-Iterate `context.lights.count`, then call
+Iterate `receiverLocalLightCount(context)`, then call
 `sampleReceiverLocalLight(ordinal, receiver, normal, context, frontFacingOnly, sample)`.
 This entry resolves the index, geometric receiver normal and channel data;
 custom models do not need atlas, cluster or four-channel sentinel knowledge.
 It returns the same `LocalLightSample` as the lower-level source-index query.
 Its ordinal must be within the prepared list, and output is valid only on success.
-The standard model retains its specialized miss exits through `localLightResponse`.
+The standard model retains its specialized miss exits through `standardReceiverLocalLight`.
 
 ## Diffuse receiver query
 
-`prepareReceiverLighting(receiver, normal)` prepares chart irradiance and sun
-irradiance once. `sampleDiffuseLighting(receiver, normal, context, required)`
+`prepareReceiverLighting(receiver, normal)` prepares the selected source's private
+context. The baked source prepares chart irradiance and sun irradiance once; the
+live source retains its geometric ray basis without chart fields.
+`sampleDiffuseLighting(receiver, normal, context, required)`
 selects the compiled diffuse provider. Both standard and custom models can use
 this entry without accessing the surface atlas or probe storage. The returned
 `ReceiverLighting.diffuse` is linear HDR irradiance / pi, before material color
@@ -256,8 +258,8 @@ pass-specific reflection guides and final display transform.
 Receiver diagnostics and sun visibility also live behind the
 receiver-lighting API: `receiverBakedCoverage`, `receiverBakedDiffuse`,
 `receiverSunVisibility`; metal reference lookup belongs to the diffuse provider. The standard model does not
-read chart channels or query baked probe storage directly; its prepared context
-still exposes whether the receiver has a surface chart. The diagnostic helpers
+read chart channels or query baked probe storage directly; source-specific
+context fields remain private to that implementation. The diagnostic helpers
 intentionally show the baked reference field even with live diffuse selected;
 that is a debug policy, not a generic fallback for future GI providers. The
 normalization query preserves incident lighting for metal-only materials whose
@@ -266,7 +268,14 @@ diffuse response can skip probe evaluation.
 ## Resolved provider dependencies
 
 `techniques::ResourcePlan` carries active diffuse, screen/ray reflection and
-shared-scene requirements after capability resolution. Screen reflection
+shared-scene requirements after capability resolution. Its `liveDiffuse()` query
+expresses replacement of the default baked receiver path independently of
+`rayDiffuse()`, which identifies the actual fragment ray-query implementation.
+Capture retirement, baked-light/highlight selection and receiver-mask scheduling
+consume the ownership query. Pipeline variants, descriptor layouts and ray
+transport continue to consume the implementation query. Ray-query GI and
+radiance cascades are live sources on this PR branch; the central ownership
+query covers both instead of editing each scene-lighting decision. Screen reflection
 allocation and hierarchy recording consume the resolved screen choice; quality
 and range values remain in `Options`. The live scene receives its compute
 reflection-batch requirement from the same plan instead of reading the saved ray
@@ -618,7 +627,7 @@ on query validation. Baked/mixed-sun ownership for water remains a separate task
 
 `LocalLightSample` is defined in resource-free `local-light-values.glsl`.
 Material models use `receiverLocalLightCount(context)` and
-`sampleReceiverLocalLight(ordinal, receiver, normal, context, policy, sample)`;
+`sampleReceiverLocalLight(ordinal, receiver, normal, context, frontFacingOnly, sample)`;
 ordinals are source-local, not captured/global light indices. The source owns
 clustered lists, baked channels, selected-light bookkeeping and shadow inputs.
 Default PBR world/viewmodel and water composition use
@@ -652,7 +661,12 @@ Material models no longer access `ReceiverLightContext` fields. They obtain a
 context through `prepareReceiverLighting` and ask `receiverNeedsDiffuseReference`
 when a metal needs a compatible reflection reference. Volume-only receivers use
 `prepareVolumeReceiverLighting`; water does not construct a chart-shaped context.
-The default source retains the same chart/probe queries and diagnostic semantics.
+`receiver-lighting.glsl` selects both the value evaluator and the complete
+context implementation. `receiver-baked.glsl` retains chart/probe preparation;
+`receiver-live.glsl` stores only the geometric basis and supplies no chart unit
+irradiance or frozen reflection reference. The ray evaluator takes no chart
+arguments. Explicit legacy baked diagnostic views retain their baked lookups,
+prepared within those diagnostic functions rather than ordinary live shading.
 
 A source owns its context representation and the sampling/reference/diagnostic
 functions in `receiver-lighting.glsl`. The alternate-source compilation fixture
@@ -735,3 +749,78 @@ The public custom-material program loader and full provider framework are not
 implemented by the local-light prototype. Performance acceptance includes
 compiled shader work, visual regressions, memory and matched CPU/GPU timings;
 source organization alone does not prove zero overhead.
+
+### Diffuse publication during reflection refresh
+
+A reflection count, resolution or bounds-tolerance edit retains the currently
+published diffuse volume when the frozen source, lighting cutoff and diffuse
+configuration still match. The capture refresh starts despite that retained
+publication; frame submissions keep their normal shared asset leases. Changes
+to diffuse settings, source bindings/content or baking enable still retire the
+incompatible volume. This separates publication lifetime from refresh-job
+lifetime. A capture-only refresh job borrows the published volume and immutable
+admission metadata, bypassing diffuse preparation, tracing, denoising and GPU
+uploads even when the disk cache is disabled. The volume retains only compact
+admitted positions/original indices (16 bytes per usable probe, plus bounds and
+allocation metadata), not diffuse SH or atlas pixels. Existing placement storage
+is transferred where available; complete cache hits recover origins from the
+same canonical reconstruction used by component recovery.
+
+Reflection-only jobs keep their transport and cancellation state private. They
+use the normal capture admission/budget and preserve the published direct-light
+ownership policy. The capture-policy query borrows that policy directly; a
+reflection-only job does not allocate a dummy mixed-light plan or copy receiver
+identity/visibility maps. Newly captured radiance is saved as a shared blob/index by a
+bounded background service, without serializing the diffuse snapshot again.
+The service starts lazily and drains at runtime shutdown. Subsequent map loads
+may still use the existing diffuse-index recovery path to assemble a combined
+cache for the requested reflection configuration. Optional diagnostic local
+capture companions are regenerated when their combined container is absent.
+This lifecycle change adds no shader variants or per-draw dispatch; matched
+whole-renderer performance acceptance remains separate.
+
+### Compatible reflection normalization references
+
+`lighting-reference.glsl` is resource-free. `LightingReference` carries incident
+irradiance/pi luminance and a provider contract domain; zero means unavailable.
+A valid zero-luminance receiver is distinct from an unavailable reference.
+`normalizeReflectionReference` attenuates only matching, nonzero domains, never
+amplifies a capture, and keeps unknown receivers/dark capture references neutral.
+Different domains are neutral even when both values use the same radiometric
+units. Providers must declare comparable lighting contents as well as units.
+
+The Source 2 probe adapter explicitly specializes both sides to its existing
+frozen-static domain and preserves the old scalar guard/vector operations. That
+adapter still transports receiver luminance through its existing float guide;
+this change does not add an arbitrary provenance ID to the guide ABI. Other
+providers may use the typed entry independently, but must not claim Source 2
+compatibility merely because they provide diffuse irradiance. Scene/generation
+validation, light-component ownership and cross-provider guide transport remain
+part of the broader provider contract work.
+
+### Optical receiver sunlight
+
+`sun-lighting.glsl` supplies both `sampleReceiverSunLight` and
+`sampleOpticalReceiverSunLight`. Opaque/viewmodel and optical materials consume
+`SunLightSample` direction, radiance and visibility; each material retains its
+own BRDF/optical response. Water no longer reads the packed frame sun direction
+or chooses low-level CSM/baked visibility itself. Its query uses the receiver's
+existing geometric normal rather than recomputing screen derivatives.
+
+The default optical adapter preserves the existing analytic/CSM policy. This
+interface split does not claim that water's static visibility is already mixed
+like opaque props. A replacement source may implement both queries using its own
+transport without changing water's material. The alternate-source fixture swaps
+sun queries independently through world, viewmodel, live-GI, water and ray-water
+material variants. Qualification of baked/mixed optical sunlight remains open.
+
+### Cascade context integration
+
+Radiance cascades select `receiver-live.glsl` alongside their private evaluator,
+with no chart parameters or chart-shaped context. Ray GI uses the same live
+context API. Cascade depth-prepass changes cross a target boundary because the
+early gather needs dedicated depth attachments; ordinary Source 2 depth toggles
+keep their existing target contract. Late cascade dispatch is skipped when the
+resolved technique is inactive. This PR remains an opt-in implementation, with
+screen-space viewmodel approximation, ambient water fallback and perspective-only
+receiver depth matching; it is not merged into the main feature branch.

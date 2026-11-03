@@ -114,11 +114,8 @@ void main() {
   ReceiverLighting lighting = sampleDiffuseLighting(receiver, n, prepareVolumeReceiverLighting(receiver, n), true);
   bool aggregateReceiver = lighting.direct.attribution;
   vec3 diffuse = composeDiffuseLight(lighting, surface.rgb);
-  vec3 l = -frame.sunDirection.xyz;
-  BrdfLobes sun = brdfLobes(surface.rgb, roughness, 0, n, v, l, specularF0);
-  // Preserve the current water CSM policy while sharing sunlight transport.
-  SunLightSample sunlight = sampleUnbakedSunLight(worldPosition, depth, n,
-      normalize(cross(dFdx(worldPosition), dFdy(worldPosition))));
+  SunLightSample sunlight = sampleOpticalReceiverSunLight(receiver, n);
+  BrdfLobes sun = brdfLobes(surface.rgb, roughness, 0, n, v, sunlight.direction, specularF0);
   LightContribution sunContribution = selectDirectLight(composeSunLight(sunlight, sun), lighting.direct);
   diffuse += sunContribution.diffuse;
   vec3 specular = sunContribution.specular;

@@ -27,6 +27,8 @@ common = """#version 450
 #include "reflection-values.glsl"
 #include "diffuse-values.glsl"
 #include "diffuse-values.glsl"
+#include "lighting-reference.glsl"
+#include "lighting-reference.glsl"
 #include "sun-values.glsl"
 #include "sun-values.glsl"
 #include "local-light-values.glsl"

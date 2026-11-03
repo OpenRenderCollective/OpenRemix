@@ -112,7 +112,9 @@ namespace remix::forward {
              ssrScale == other.ssrScale &&
              // Provider selection changes compiled world shaders and cascade targets.
              radianceCascades == other.radianceCascades && cascadeCount == other.cascadeCount &&
-             cascadeDirections == other.cascadeDirections;
+             cascadeDirections == other.cascadeDirections &&
+             // Early cascade gathers require their own depth pass/framebuffer.
+             (!radianceCascades || depthPrepass == other.depthPrepass);
     }
   };
 } // namespace remix::forward

@@ -11,7 +11,11 @@ still uses its ambient fallback under cascades, and viewmodel cascade lighting
 is a screen-space approximation. Cascade GPU transitions, independent cubemap captures, both depth scheduling
 modes and 1x/4x MSAA pass synchronization validation. Existing Source 2 SSR,
 viewmodel, water and mixed-light regressions pass. Orthographic cascade receiver
-depth matching remains unsupported. The PR remains unmerged pending approval.
+depth matching remains unsupported. The PR is synchronized with the complete
+baked/live context split through f4605565: cascades and rays share the chart-free
+live adapter, and capture-only refresh/publication updates are included. Cascade
+depth-mode toggles prepare their required early-depth targets; 1x/4x transition
+readbacks pass. The PR remains unmerged pending approval.
 
 Implemented and checked:
 
@@ -19,11 +23,19 @@ Implemented and checked:
   preferences. Legacy setting names remain compatibility aliases.
 - Evaluated material, diffuse/reflection, sun and local-light sample values have
   resource-free headers. Receiver contexts and light-list/channel storage are
-  hidden behind source queries. A resource-free shading-result initializer gives
+  hidden behind source queries. Complete baked/live receiver contexts are now
+  selected with their source: the ray path has no chart fields or chart arguments,
+  while explicit baked diagnostic views retain their reference queries. Actual
+  specialized ray world/viewmodel shaders remove a few instructions; checked
+  Source 2 shaders remain byte-identical. A resource-free shading-result initializer gives
   custom models safe defaults. Material results carry unpacked normal/roughness
   and RGB reflectance; the pass adapter owns guide and cubemap-layer byte encoding.
-  Alternate shading, diffuse, environment and local
-  sources compile through actual world/viewmodel/water passes. Current-frame
+  Alternate shading, diffuse, environment, local and sun
+  sources compile through actual world/viewmodel/water passes. Optical sunlight
+  now comes through a source query; water uses the returned direction and its
+  receiver geometry, preserving the default analytic/CSM policy. Eight checked
+  optimized variants are byte-identical; water/ray-water remove a redundant
+  derivative pair and two extended instructions, with no opcode-count increases. Current-frame
   screen/ray reconstruction has a separate radiance/confidence query, preserving
   shared environment fallback and Fresnel composition. Viewmodel sources return
   radiance independently of the shared standard material reflection response.
@@ -31,8 +43,17 @@ Implemented and checked:
   attribution and reflection reference; unified transport provenance remains open.
   GPU shadow sweeps verify energy equivalence between mixed residual and owned
   direct-field composition, with independent analytic highlight selection.
+  Resource-free lighting references now declare normalization domains; mismatched
+  or unknown references are neutral, and valid black remains distinct. The Source
+  2 specialization preserves optimized sizes/opcode counts across ten checked
+  material/resolve variants; GPU reference-energy sweeps pass. General scene and
+  component provenance across guide transport is still open.
 - Resolved provider dependencies drive live diffuse/ray scene and screen/ray
-  reflection resources. Water and viewmodels share the selected diffuse source;
+  reflection resources. Live diffuse ownership is queried independently of the
+  ray-query implementation for receiver masks, highlights, mixed fallback and
+  capture retirement. The affected three CPU objects retain identical machine
+  code and relocation manifests under the current optimized build. Water and
+  viewmodels share the selected diffuse source;
   live water can share prepared scene descriptors with its own query limits.
   Capture recording, admission and source fallback share one resolved owner;
   image disable preserves the scheduler responsible for retiring prior work.
@@ -50,6 +71,12 @@ Implemented and checked:
   A bounded validated diffuse cache index reuses diffuse payloads across reflection
   count/resolution/tolerance/enable edits without retracing or denoising. Legacy
   keys/wire bytes remain valid; current shared reflection blobs are skipped.
+  Reflection-only configuration edits retain live diffuse publication throughout
+  replacement work, including cache-disabled refreshes; source, diffuse-quality
+  and enable changes still invalidate incompatible publication. Capture-only jobs
+  now borrow compact admitted positions and the published light policy, bypassing
+  diffuse tracing/denoising/uploads. Shared reflection blobs persist independently
+  on a bounded worker; no diffuse snapshot is retained or rewritten for an edit.
   Preset admission and finishing order still share one transport budget. Diffuse
   finishing accepts compact diagnostic values rather than capture arrays; phase
   receipt hashing is reused without retaining provider storage. Capture stage
@@ -66,10 +93,13 @@ Still required for the complete modularity/performance objective:
 - Finish provider dependency/finishing orchestration beyond the current Source 2
   adapters. Keep source module resources, publication, cancellation and retirement
   explicit when adding/selecting implementations; preserve shared work admission.
-- Separate reflection-only invalidation from live diffuse publication. Independent
-  cache lookup now reuses validated diffuse payloads across reflection edits, but
-  current volume invalidation and disk-cache-disabled rebuilding remain coupled.
-  Preserve live assets, seed admission and frame lifetimes across those cases.
+- Reflection-only refresh qualification now includes styled indirect, grouped
+  direct and combined lighting: exact surface/dynamic-probe pixels survive
+  automatic capture enable/disable at 1x/4x MSAA, including live style-off behavior.
+  A model-lightmap-enabled target retains its mapped geometry and content through
+  automatic capture edits. Broaden real-map coverage and no-overhead measurements;
+  new map loads still use diffuse-index recovery when the exact combined cache is
+  absent, and optional diagnostic local companions are regenerated in that case.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Water's baked/mixed sunlight policy still needs separate qualification.
@@ -91,6 +121,18 @@ Still required for the complete modularity/performance objective:
   focused uncapped Crossfire A/B/B/A through 75424e37 overlaps the retained recent
   baseline at 277-283 FPS unarmed and 250-253 with weapon. CPU ranges overlap;
   GPU intervals vary between sessions without a consistent two-run slowdown.
+  A current-head follow-up through 40b2d3f1 again overlaps the retained 4c66bddf
+  baseline: 283.1-284.6 FPS unarmed and 250.1-252.7 with weapon; baseline ranges
+  are 282.6-285.6 and 248.0-252.9. CPU/GPU ranges overlap, with matched lighting,
+  quality and draw counts. The final baseline was retaken after an observer
+  request-file lock; failed/incomplete sessions are excluded and the install was
+  restored. Broader map/provider coverage and the 300 FPS target remain open.
+  Current-head Construct indoor A/B/B/A adds second-map coverage: current total
+  GPU medians 8.63-8.64 ms unarmed / 9.62-9.68 ms weapon lie within baseline
+  session drift (8.52-8.68 / 9.52-9.71); CPU ranges overlap. Quality, hashes and
+  draw counts match. Opaque world remains the largest GPU scope, with no static
+  shadow refreshes. This does not prove equivalence or exclude small regressions;
+  alternative provider modes and wider map coverage still need qualification.
 - Continue checking unused experiment paths before removal. Referenced low-level
   diagnostic modes and legacy aliases are not automatically dead code.
 

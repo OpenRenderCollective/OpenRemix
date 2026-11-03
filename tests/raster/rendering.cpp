@@ -714,6 +714,12 @@ namespace {
                       !target.forward->bakeController()->volume(),
                   "Cascades and independent cubemap captures coexist without diffuse baking");
         }
+        options.depthPrepass = !depthPrepass;
+        target.enableForward(options, true);
+        for (uint32_t frame = 0; frame < 8; ++frame) image = render();
+        require(target.forward->statistics().cascades.active && image[at + 1] > image[at] + 20 &&
+                    image[at + 1] > image[at + 2] + 20 && !target.forward->bakeController()->volume(),
+                "Cascade target replacement preserves live output when depth scheduling changes");
         options.radianceCascades = false;
         options.rtGI = true;
         target.enableForward(options, true);
@@ -2948,6 +2954,27 @@ namespace {
                           target.forward->statistics().authoredReflections.sceneReused &&
                           target.forward->statistics().authoredReflections.rays > 0 && bakedShared[centre] > 5,
                       "Superseding an unpublished edit retains shared geometry after automatic donor retirement");
+
+              const auto modelDiffuse = target.forward->bakeController()->volume();
+              const auto modelContent = modelDiffuse->content;
+              const auto mappedGeometry = modelDiffuse->surfaces;
+              require(mappedGeometry && target.forward->statistics().baking.state == REMIXAPI_BAKE_READY_EXT,
+                      "Model-enabled refresh fixture begins with completed mapped geometry");
+              ++options.baking.reflectionProbes;
+              target.forward->updateLighting(options);
+              const auto refreshDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+              do {
+                render(false, false, true, false);
+                require(target.forward->bakeController()->volume() == modelDiffuse &&
+                            target.forward->statistics().baking.state != REMIXAPI_BAKE_FAILED_EXT,
+                        "Automatic reflection refresh must retain model-enabled diffuse publication");
+                if (target.forward->statistics().baking.state == REMIXAPI_BAKE_READY_EXT) break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+              } while (std::chrono::steady_clock::now() < refreshDeadline);
+              require(target.forward->statistics().baking.state == REMIXAPI_BAKE_READY_EXT &&
+                          target.forward->bakeController()->reflectionSource().image &&
+                          modelDiffuse->content == modelContent && modelDiffuse->surfaces == mappedGeometry,
+                      "Capture-only refresh reuses mapped geometry and diffuse data with model lightmaps enabled");
 
             }
             std::printf("Viewmodel probes %ux: overlay %u, world %u, analytic lights %u\n",
@@ -5358,8 +5385,10 @@ namespace {
       const auto liquid = quad(r, 0xe103, measured);
       const auto foreground = quad(r, 0xe104, material(r, 0xe105, 0, 0, 1));
       const auto centre = (32 * 64 + 32) * 4;
+      remixapi_LightHandle opticalSun = nullptr;
       auto draw = [&](bool water, bool front) {
         camera(r);
+        if (opticalSun) r.drawLight(opticalSun);
         r.drawInstance(instance(background, .3f));
         if (water) {
           auto surface = instance(liquid, -.2f);
@@ -5454,6 +5483,28 @@ namespace {
                   "Underwater body colour uses uniform camera environment without a sky dome");
         }
       }
+      options.ambient = 0;
+      target.forward->updateLighting(options);
+      const auto unlitWater = draw(true, false);
+      remixapi_LightInfoDistantEXT distant{};
+      distant.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT;
+      distant.direction = {0, 0, 1};
+      remixapi_LightInfo directSun{};
+      directSun.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+      directSun.pNext = &distant;
+      directSun.hash = 0xe10b;
+      directSun.radiance = {0, 4, 0};
+      r.createLight(directSun, opticalSun);
+      const auto litWater = draw(true, false);
+      require(litWater[centre + 1] > unlitWater[centre + 1] + 10,
+              "Optical material receives incident sunlight through the shared source query");
+      distant.direction = {0, 0, -1};
+      directSun.hash = 0xe10c;
+      r.createLight(directSun, opticalSun);
+      require(std::abs(int(draw(true, false)[centre + 1]) - int(unlitWater[centre + 1])) <= 2,
+              "Optical sunlight query preserves material receiver orientation");
+      opticalSun = nullptr;
+      require(draw(true, false) == unlitWater, "Removing optical sunlight leaves no stale source contribution");
       options.water = false;
       target.enableForward(options);
       draw(true, false);

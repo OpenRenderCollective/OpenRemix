@@ -104,6 +104,28 @@ int main() {
     grid.tasks.push_back(index);
     grid.probes.emplace_back().statistics[3] = 1;
   }
+  for (uint32_t mode : {0u, 1u, 2u, 3u}) {
+    auto cached = grid;
+    cached.header.originSpacing = {-.5f, -.5f, -.5f, 1};
+    cached.header.dimensions = {2, 2, 2, 8};
+    cached.header.settings[2] = float(mode);
+    for (uint32_t i = 0; i < 8; ++i) {
+      const auto point = cached.points[i].position;
+      cached.origins.push_back({{point[0], point[1], point[2]}, 1, 1});
+      if (mode & 1u) {
+        cached.probes[i].irradiance[0][3] = .125f;
+        cached.points[i].position[0] += .125f;
+      }
+    }
+    const auto expected = p::placementSeeds(scene, cached);
+    cached.points.clear();
+    const auto restored = p::placementSeeds(scene, cached);
+    require(expected.points.size() == restored.points.size(), "Warm cache preserves admitted reflection seed count");
+    for (size_t i = 0; i < expected.points.size(); ++i)
+      require(expected.points[i].position == restored.points[i].position &&
+                  expected.points[i].originalIndex == restored.points[i].originalIndex,
+              "Dense/indexed and relocated warm seed origins match captured positions");
+  }
   const auto placed = p::place(scene, grid, 4, 8);
   {
     p::AutomaticCapture borrowed;

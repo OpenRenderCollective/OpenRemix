@@ -5,6 +5,7 @@
 #include "forward/mixed/data.h"
 #include "forward/mixed/map.h"
 #include "forward/probes/data.h"
+#include "forward/probes/placement_seeds.h"
 #include "forward/probes/capture_source.h"
 #include "forward/probes/capture_step.h"
 #include "forward/probes/local_capture_source.h"
@@ -26,6 +27,7 @@ namespace remix::forward::bake {
   struct Volume {
     uint64_t hash = 0;
     DiffuseContent content;
+    std::shared_ptr<const probes::PlacementSeeds> reflectionSeeds;
     bool directDiffuse = false, styledLighting = false;
     std::vector<uint32_t> groupedStyles; // complete direct groups, separate from permanent aggregate policy
     std::shared_ptr<SunDepth> sunDepth;
@@ -131,7 +133,7 @@ namespace remix::forward::bake {
     std::unique_ptr<mixed::OcclusionMap> m_emptyOcclusion;
     bool m_emptySurfaceReady = false;
     remixapi_BakeStatisticsEXT m_statistics{};
-    void invalidate();
+    void invalidate(bool preserveDiffuse = false);
     void status(uint32_t state, const char *message);
     std::shared_ptr<Volume> prepareVolume(VkCommandBuffer command);
     void activate(VkCommandBuffer command);

@@ -84,7 +84,6 @@ float cascadeNormalResponse(vec3 position, vec3 normal, vec3 geometric) {
 }
 #endif
 ReceiverLighting evaluateReceiverLighting(vec3 position, vec3 normal, vec3 geometric,
-                                         bool charted, vec3 chartIrradiance,
                                          bool diffuseRequired, vec3 fallback) {
   // Indirect transport only: no baked direct attribution, so analytic lights
   // stay analytic, and no frozen-reflection reference.
@@ -99,9 +98,6 @@ ReceiverLighting evaluateReceiverLighting(vec3 position, vec3 normal, vec3 geome
   return lighting;
 }
 
-bool needsDiffuseReferenceQuery(bool hasSurfaceField) {
-  return false;
-}
 float diffuseReferenceLuma(vec3 position, vec3 normal) {
   return -1;
 }

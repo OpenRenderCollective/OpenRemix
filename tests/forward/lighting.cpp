@@ -87,6 +87,13 @@ int main() {
     require(!defaults.sameTargets(cascades) &&
                 techniques::resolveResources(cascades, {false, false, false}).bakedDiffuse(),
             "Selecting cascades prepares new targets; without ray queries the bake remains");
+    auto lateCascades = cascades;
+    lateCascades.depthPrepass = !cascades.depthPrepass;
+    require(!cascades.sameTargets(lateCascades),
+            "Changing cascade depth scheduling must prepare the matching early-depth attachments");
+    auto lateDefault = defaults;
+    lateDefault.depthPrepass = !defaults.depthPrepass;
+    require(defaults.sameTargets(lateDefault), "Source 2 depth toggles retain their existing target contract");
     auto cascadeLimits = cascades;
     cascadeLimits.cascadeIntensity = 2;
     cascadeLimits.cascadeHistory = .5f;

@@ -46,6 +46,15 @@ namespace remix::forward::bake {
     }
     std::optional<ReferenceCapture> reference;
     Grid grid;
+    std::shared_ptr<const probes::PlacementSeeds> reflectionSeeds;
+    void retainReflectionSeeds();
+    void prepareReflectionRefresh(VkPhysicalDevice physical, VkDevice device, const Config &config, float cutoff, uint32_t family);
+    const DirectPolicy &captureDirectPolicy() const {
+      return reflectionOwnership ? reflectionOwnership->directLighting : mixedLights->lights.directLighting;
+    }
+    bool inMemoryDiffuse = false;
+    std::shared_ptr<const mixed::Bindings> reflectionOwnership;
+    std::unique_ptr<const probes::CapturePayload> reflectionPersistence;
     std::shared_ptr<SunDepth> sunDepth;
     uint32_t sunDepthNext = 0, sunDepthReceived = 0;
     bool sunDepthLogged = false;
@@ -123,7 +132,7 @@ namespace remix::forward::bake {
     cache::Device cacheDevice;
     std::unique_ptr<const cache::Snapshot> takeCacheSnapshot();
     bool cacheHit = false, reflectionRecovery = false, diffuseRecovery = false;
-    std::shared_ptr<Volume> publishedDiffuse; // render-thread recovery publication; never read by workers
+    std::shared_ptr<Volume> publishedDiffuse; // render-thread publication; workers use separate immutable admission/ownership
     uint32_t sunNext = 0, sunReceived = 0;
     std::unique_ptr<SunAntialiasing> sunAntialiasing;
     bool sunAntialiasingPlanned = false, sunAntialiasingFinished = false;

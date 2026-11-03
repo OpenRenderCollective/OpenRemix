@@ -172,6 +172,40 @@ std::array<uint8_t, 3> styledIndirectTests(bool directGroups = false, bool inclu
     require(std::strstr(target.forward->statistics().baking.status, "Cached") &&
             cached == on && target.forward->bakeController()->volume()->styledLighting,
             "Attributed cache reload preserves exact surface pixels and runtime style ownership");
+    if (samples != 2 && emitterCount == 1) {
+      const auto diffuse = target.forward->bakeController()->volume();
+      const auto content = target.forward->bakeController()->content();
+      const auto dynamicBefore = render(false);
+      options.baking.diskCache = false; // This refresh cannot obtain diffuse data from disk.
+      auto refresh = [&](uint32_t captures) {
+        options.baking.reflectionProbes = captures;
+        options.baking.reflectionResolution = 8;
+        target.enableForward(options, true); // Reflection enable changes pass attachments, not diffuse ownership.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        std::vector<uint8_t> image;
+        do {
+          image = render(true);
+          const auto &stats = target.forward->statistics().baking;
+          require(stats.state != REMIXAPI_BAKE_FAILED_EXT &&
+                      target.forward->bakeController()->volume() == diffuse,
+                  "Styled reflection refresh must retain its exact diffuse publication");
+          if (stats.state == REMIXAPI_BAKE_READY_EXT) break;
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        } while (std::chrono::steady_clock::now() < deadline);
+        require(target.forward->statistics().baking.state == REMIXAPI_BAKE_READY_EXT &&
+                    bool(target.forward->bakeController()->reflectionSource().image) == bool(captures),
+                "Styled automatic reflection refresh completes with the requested capture source");
+        require(image == on && target.forward->bakeController()->content().styledIndirect == content.styledIndirect &&
+                    render(false) == dynamicBefore,
+                "Reflection-only transport preserves exact styled surface and dynamic-probe pixels");
+      };
+      refresh(1);
+      set(0);
+      require(render(true)[at] < 3 && render(false)[at] < 3,
+              "Styled surface/probe components still turn off after reflection-only refresh");
+      set(1);
+      refresh(0);
+    }
     if (directGroups) {
       options.debugView = 0;
       options.localShadows = true;

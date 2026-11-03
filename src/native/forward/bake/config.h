@@ -35,6 +35,13 @@ namespace remix::forward::bake {
       return size;
     }
     bool operator==(const Config &) const = default;
+    bool sameDiffuse(const Config &other) const {
+      auto a = *this, b = other;
+      a.reflectionProbes = b.reflectionProbes = 0;
+      a.reflectionResolution = b.reflectionResolution = 0;
+      a.reflectionDetailTolerance = b.reflectionDetailTolerance = 0;
+      return a.sameLighting(b);
+    }
     bool sameLighting(const Config &other) const {
       auto a = *this, b = other;
       a.probeSamples = a.probeSampleCount();
