@@ -136,9 +136,12 @@ Still required for the complete modularity/performance objective:
   default/custom variants remain identical. Host world/viewmodel/water selection
   now has an explicit live-incoming technique and saved switch, retaining baked
   masks and independently owned reflection captures. Capture quality is removed
-  from the direct bake's derived identity. Qualify sun/optical mixed shadows,
-  high-overlap static corrections, reflection-reference provenance and real-map
-  quality/performance; adapt the cascade PR to this contract. Preserve existing
+  from the direct bake's derived identity. Seven-owner surface/probe corrections,
+  exact cache restore and baked sun/moving-shadow fixtures now pass in composed
+  mode. Component-scoped scene dependency validity retains direct-only data for
+  sun/dome updates while invalidating changed local emitters. Qualify optical and
+  viewmodel sunlight, reflection-reference provenance, component-specific source
+  identities and real-map quality/performance; adapt the cascade PR to this contract. Preserve existing
   presets and the default Source 2 combined fast path.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.

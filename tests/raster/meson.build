@@ -49,6 +49,10 @@ if get_option('gpu_tests')
     args : [meson.current_build_dir() / 'composed-gi-readback', 'composed-gi'], timeout : 180)
   test('Forward+ composed incoming retains controllable direct and mixed shadows', raster_test,
     args : [meson.current_build_dir() / 'composed-styled-readback', 'composed-styled'], timeout : 180)
+  test('Forward+ composed incoming retains seven-light surface and probe corrections', raster_test,
+    args : [meson.current_build_dir() / 'composed-directional-readback', 'composed-directionals'], timeout : 240)
+  test('Forward+ composed incoming retains baked sunlight and moving shadows', raster_test,
+    args : [meson.current_build_dir() / 'composed-sun-readback', 'composed-sun'], timeout : 240)
   test('Forward+ hardware reflection transport, current actors and MSAA', raster_test,
     args : [meson.current_build_dir() / 'hardware-reflection-readback', 'hardware-reflections'], timeout : 180)
   test('Forward+ SSR transport and MSAA guide readback', raster_test,

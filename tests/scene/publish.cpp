@@ -305,6 +305,55 @@ namespace {
 } // namespace
 
 namespace {
+  void bakeComponentDependencies() {
+    using Scope = scene::BakeLightScope;
+    for (bool dome : {false, true}) {
+      NativeResources api, original, changed;
+      const auto point = sphereLight(api, 9810, 0);
+      remixapi_LightInfoDistantEXT distant{};
+      distant.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DISTANT_EXT;
+      distant.direction = {0, 0, 1};
+      remixapi_LightInfoDomeEXT environment{};
+      environment.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO_DOME_EXT;
+      for (uint32_t c = 0; c < 3; ++c) environment.transform.matrix[c][c] = 1;
+      remixapi_LightInfo info{};
+      info.sType = REMIXAPI_STRUCT_TYPE_LIGHT_INFO;
+      info.hash = 9811;
+      info.pNext = dome ? static_cast<void *>(&environment) : static_cast<void *>(&distant);
+      info.radiance = {1, 1, 1};
+      remixapi_LightHandle global;
+      api.createLight(info, global);
+      const remixapi_LightHandle lights[] = {point, global};
+      remixapi_BakeSceneInfoEXT request{};
+      request.structSize = sizeof(request);
+      request.version = REMIXAPI_BAKE_SCENE_VERSION_EXT;
+      request.sceneId = request.revision = 1;
+      request.sceneScale = 1;
+      request.state = REMIXAPI_BAKE_SCENE_READY_EXT;
+      request.lightCount = 2;
+      request.lights = lights;
+      api.setBakeScene(&request);
+      api.publishFrame(original);
+      require(original.bakeLightsCurrent() && original.bakeLightsCurrent(Scope::ReceiverDirect),
+              "A publication retains both captured energy dependency scopes");
+      info.radiance = {2, 3, 4};
+      api.updateLight(global, info);
+      require(!api.bakeLightsCurrent() && api.bakeLightsCurrent(Scope::ReceiverDirect),
+              "Sun/dome power changes invalidate combined energy, not receiver-direct energy");
+      api.publishFrame(changed);
+      require(!changed.bakeLightsCurrent() && changed.bakeLightsCurrent(Scope::ReceiverDirect) &&
+                  original.bakeLightsCurrent() && original.bakeLightsCurrent(Scope::ReceiverDirect),
+              "Published dependency scopes stay immutable without a light registry");
+      api.destroyLight(point);
+      require(!api.bakeLightsCurrent() && !api.bakeLightsCurrent(Scope::ReceiverDirect) &&
+                  changed.bakeLightsCurrent(Scope::ReceiverDirect),
+              "Local emitter removal invalidates future direct fields without altering published frames");
+      api.setBakeScene(nullptr);
+      api.publishFrame(changed);
+      require(!changed.bakeLightsCurrent() && !changed.bakeLightsCurrent(Scope::ReceiverDirect),
+              "Unload clears both dependency scopes");
+    }
+  }
   void bakeLightDependencies() {
     NativeResources api, original, missing, replaced;
     auto light = sphereLight(api, 9800, 0);
@@ -343,6 +392,7 @@ namespace {
 }
 
 int main() {
+  bakeComponentDependencies();
   bakeLightDependencies();
   snapshot();
   lifetime();

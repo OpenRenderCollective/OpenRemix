@@ -950,9 +950,11 @@ Specialized composed world/viewmodel/water shaders are chosen at pipeline
 creation. Switching direct ownership while live GI is active recreates those
 pipelines; no per-draw source switch is added.
 
-This does not complete component modularity. Real-map hybrid quality, sunlight
-and optical mixed-shadow qualification, high-overlap static-light corrections,
-reflection-reference provenance and matched runtime performance remain open.
+This does not complete component modularity. Renderer fixtures now qualify
+seven-owner static corrections on surfaces/dynamic probes and baked sunlight
+with moving-caster corrections. Real-map hybrid quality, optical/viewmodel
+sunlight qualification, reflection-reference provenance and matched runtime
+performance remain open.
 The cascade PR still needs adaptation to this incoming-source contract and is
 not merged. Preserve the combined Source 2 fast path while extending providers.
 
@@ -1057,3 +1059,28 @@ The earlier shader extraction's checked default optimized variants are identical
 after stripping debug data and compacting SPIR-V identifiers. The composed mode
 adds work only when selected; matched runtime performance acceptance and broader
 real-map coverage remain open. It has not been promoted to the playable install.
+
+
+### Component-scoped captured light validity
+
+`scene::BakeLightScope` distinguishes complete captured radiance dependencies
+from receiver-direct dependencies without depending on a GPU renderer. The API
+registry classifies each captured definition by whether it supplied local
+emitters. The existing dependency scan computes both validity answers together;
+frame publication retains both as immutable values, so the render thread needs
+no registry access or additional dependency traversal.
+
+Combined data remains stale after any captured definition changes. ReceiverDirect
+also becomes stale after local-emitter changes or invalid controllable-light
+envelopes, but sun/dome definition changes do not invalidate its local direct RGB.
+The sun fields store geometry-qualified unit responses: receivers still reject
+changed sun shapes and use full current shadow fallback, and can reuse the field
+when the captured shape returns. This lets current sun colour change without
+restarting direct-only baking. Shape classification belongs to the captured
+definition, rather than whichever representation a later update happens to use.
+
+This is validity for an existing immutable capture, not a component-specific
+source fingerprint. Explicitly republishing a new capture can still change the
+whole scene identity; splitting those incoming-only identity inputs remains
+separate work. No default shader or GPU work changes accompany this boundary.
+Matched CPU/frame-time acceptance must include the scene-publication change.

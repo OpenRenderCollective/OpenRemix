@@ -1,5 +1,5 @@
 // Included inside rendering.cpp's fixture namespace.
-void selectedDirectionalTests() {
+void selectedDirectionalTests(bool composed = false) {
   namespace f = remix::forward;
   namespace cache = f::bake::cache;
   for (uint32_t samples : {1u, 4u}) {
@@ -7,6 +7,12 @@ void selectedDirectionalTests() {
     auto &r = target.raster;
     f::Options options;
     options.samples = samples;
+    if (composed) {
+      options.rtGI = options.bakedDirectWithLiveGI = options.bakedLighting = true;
+      options.rtGISamples = options.rtGIBounces = 1;
+      options.rtGIDistance = .1f; // isolate direct correction from incoming transport
+      options.bakedHighlightFade = 0; // cache pixel comparisons need settled highlight weights
+    }
     options.ambient = 0;
     options.prism = options.gamma22 = options.shadows = options.ssr = false;
     options.selectedBakedLights = true;
@@ -140,10 +146,14 @@ void selectedDirectionalTests() {
       std::copy_n(properties.pipelineCacheUUID, device.uuid.size(), device.uuid.begin());
       const auto source = r.bakeScene();
       const auto policy = f::bake::staticAggregatePolicy(*source, f::bake::DirectMode::BakedMixed);
-      const auto key = cache::key(source->contentHash, options.baking, options.lightCutoff, device, policy);
+      const auto configuration = options.bakeConfiguration(composed);
+      const auto key = cache::key(source->contentHash, configuration, options.lightCutoff, device, policy);
       const auto file = cache::path(key);
-      auto cached = cache::read(file, key, source, options.baking, device, {}, policy);
+      auto cached = cache::read(file, key, source, configuration, device, {}, policy);
       require(bool(cached), "Selected aggregate capture is persisted");
+      require(cached->contents == (composed ? f::bake::IrradianceContents::ReceiverDirect
+                                          : f::bake::IrradianceContents::Combined),
+              "Seven-light surface/probe caches preserve the selected energy contents");
       const auto blue = uint32_t(std::find_if(source->lights.begin(), source->lights.end(),
           [](const auto &light) { return light.radiance[2] > 0; }) - source->lights.begin());
       const auto originalWords = cached->directionals;
@@ -177,11 +187,12 @@ void selectedDirectionalTests() {
         cached->directionals = replacement.words();
       }
       const auto save = [&] {
-        return cache::write(file, key,
-            {cached->grid, cached->layout, cached->mixed, cached->captures, cached->specular, cached->pixels,
-             cached->surfaceSamples, cached->directDiffuse, cached->sun, cached->styles,
-             cached->localProbes ? &*cached->localProbes : nullptr,
-             cached->directionalAttempted, cached->directionals});
+        cache::View view{cached->grid, cached->layout, cached->mixed, cached->captures, cached->specular, cached->pixels,
+                         cached->surfaceSamples, cached->directDiffuse, cached->sun, cached->styles,
+                         cached->localProbes ? &*cached->localProbes : nullptr,
+                         cached->directionalAttempted, cached->directionals};
+        view.contents = cached->contents;
+        return cache::write(file, key, view);
       };
       require(save(), "Only the extra light's correction is blackened, preserving aggregate RGB");
       unload();

@@ -4,6 +4,9 @@
 #include <stop_token>
 
 namespace remix::scene {
+  // Which captured definitions contribute energy to the selected irradiance.
+  // Sun visibility is shape-qualified separately; incoming sources own dome/sun power.
+  enum class BakeLightScope { Combined, ReceiverDirect };
   struct BakeSurfaceChart {
     uint32_t draw = 0, firstIndex = 0, width = 0, height = 0;
     std::vector<std::array<float, 2>> texcoords; // one per indexed corner

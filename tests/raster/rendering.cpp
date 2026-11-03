@@ -3353,7 +3353,7 @@ namespace {
       require(errors.load() == 0, "Compact clear visibility and realtime shadows are validation clean");
     }
   }
-  void sunLightingTests() {
+  void sunLightingTests(bool composed = false) {
     for (uint32_t samples : {1u, 2u, 4u}) {
       Target target(64, 64, true);
       auto &r = target.raster;
@@ -3364,7 +3364,9 @@ namespace {
       options.prism = false;
       options.exposure = 2;
       options.samples = samples;
-      options.rtGI = samples == 2;
+      options.rtGI = composed;
+      options.bakedDirectWithLiveGI = options.bakedLighting = composed;
+      if (composed) options.rtGIDistance = .1f; // isolate the independently baked sun fields
       options.rtGISamples = options.rtGIBounces = 1;
       options.ambient = 0;
       options.ssr = options.localShadows = false;
@@ -3454,6 +3456,11 @@ namespace {
       ++base.revision;
       r.setBakeScene(&base);
       auto pixels = until(true);
+      if (composed)
+        require(target.forward->statistics().rayGI.active &&
+                    target.forward->bakeController()->volume()->irradianceContents ==
+                        remix::forward::bake::IrradianceContents::ReceiverDirect,
+                "Composed sun test consumes live incoming and separately published direct fields");
       const size_t left = (32 * 64 + 16) * 4, edge = (32 * 64 + 32) * 4,
                    right = (32 * 64 + 48) * 4, adjacent = (27 * 64 + 48) * 4;
       const auto lit = pixels[right];
@@ -3521,8 +3528,10 @@ namespace {
       require(std::abs(int(pixels[right + 2]) - int(lit)) < 4,
               "Moving the sun caster restores its old pixel without shadow trails");
       r.destroyRetained(&actor, 1);
-      options.baking.directDiffuse = false;
-      target.forward->updateLighting(options);
+      if (!composed) {
+        options.baking.directDiffuse = false;
+        target.forward->updateLighting(options);
+      }
       pixels = until(true);
       require(pixels[left + 2] < 3 && pixels[edge + 2] > 15 && pixels[edge + 2] < pixels[right + 2] - 10,
               "Visibility-only sunlight still keeps the baked soft static mask");
@@ -5607,6 +5616,8 @@ int main(int argc, char **argv) try {
   else if (argc>2 && std::strcmp(argv[2],"decal-lighting")==0) terrainLightingTests(true);
   else if (argc>2 && std::strcmp(argv[2],"clear-visibility")==0) clearVisibilityTests();
   else if (argc>2 && std::strcmp(argv[2],"mixed-sun")==0) sunLightingTests();
+  else if (argc>2 && std::strcmp(argv[2],"composed-sun")==0) sunLightingTests(true);
+  else if (argc>2 && std::strcmp(argv[2],"composed-directionals")==0) selectedDirectionalTests(true);
   else if (argc>2 && std::strcmp(argv[2],"sun-depth-lifecycle")==0) sunDepthLifecycleTests();
   else if (argc>2 && std::strcmp(argv[2],"probe-blend")==0) reflectionTests(directory, true);
   else if (argc>2 && std::strcmp(argv[2],"sky-reflections")==0) {

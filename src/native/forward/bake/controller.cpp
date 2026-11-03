@@ -1125,7 +1125,8 @@ namespace remix::forward::bake {
           return;
         }
         if ((config.aggregateDiffuse || config.fullyBakedLights || config.bakedGeometryLights) &&
-            !resources.bakeLightsCurrent()) {
+            !resources.bakeLightsCurrent(config.irradianceContents == IrradianceContents::ReceiverDirect
+                ? scene::BakeLightScope::ReceiverDirect : scene::BakeLightScope::Combined)) {
           if (m_job || m_volume) {
             std::fprintf(stderr, "Forward+ bake invalidated: captured light dependencies changed, published %u\n",
                          unsigned(bool(m_volume)));
