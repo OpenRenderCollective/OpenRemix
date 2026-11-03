@@ -124,6 +124,13 @@ are implementation details. The aggregate argument describes receiver ownership,
 not a global limit on static lights. Query once per receiver, then iterate its
 count; no temporary light array is allocated.
 
+`local-light-storage.glsl` owns default light records, cluster buffers and their
+layout/lookup helpers. The default local source and cluster-building pass import
+it explicitly; common material bindings no longer declare those resources. The
+membership/overflow fixture uses the same storage module. Replacement local and
+full lighting-set compilation removes the module, so custom queries do not
+inherit clustered enumeration or default light-record types.
+
 `sampleSunLight` supplies direction, linear HDR radiance, unit diffuse irradiance
 and static visibility without material parameters. Its radiance includes the
 moving-caster shadow factor. `shadeStandardSunLight` applies the standard BRDF.

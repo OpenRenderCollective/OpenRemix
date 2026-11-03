@@ -246,6 +246,11 @@ Still required for the complete modularity/performance objective:
   common pass bindings. The production binding stays unchanged; the numerical
   fixture uses an explicit override. Replacement sun compilation removes the
   implementation/storage files together. No host descriptor change is required.
+- Default local-light records, cluster buffers and enumeration helpers now
+  belong to a guarded storage module shared explicitly by the default local
+  source, cluster builder and GPU membership fixture. Common material bindings
+  no longer import them. Replacement-source tests remove that module. Host
+  record/descriptor layouts and clustered fallback policy are unchanged.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Composed optical sunlight has fixture coverage; broader optical/probe edge
