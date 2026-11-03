@@ -1,5 +1,9 @@
 ## Next performance isolation
 
+- Split indexed directional-field record lookup from filtering. Bicubic taps
+  currently repeat ownership search, record decode and SH basis preparation.
+  Preserve missing/known-black semantics, interpolation and mixed-light output;
+  qualify correctness and cost before accepting the change.
 - Isolate opaque color shading: baked-field filtering/reconstruction, material
   response and selected baked-highlight queries. Keep normal quality and output
   parity as acceptance gates; diagnostic variants must not become silent defaults.
