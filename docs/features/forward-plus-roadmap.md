@@ -135,7 +135,8 @@ Still required for the complete modularity/performance objective:
   from incoming paths using shared prepared inputs. GPU surface/probe tests
   reconstruct combined SH from the two fields, including serial/parallel and
   empty ownership; seven existing bake kernels remain byte-identical. This is
-  not a wired hybrid preset. Typed cache identities and payload tags now separate
+  a low-level producer rather than a new default preset. Typed cache identities
+  and payload tags now separate
   combined from receiver-direct data, including index recovery and independent
   decoder checks. The legacy combined key/payload are byte-identical to a captured
   pre-change fixture. Receiver-direct containers remain diffuse-only until
@@ -160,8 +161,10 @@ Still required for the complete modularity/performance objective:
   Composed optical sunlight now shares probe visibility and moving shadows,
   with complete fallback outside probe coverage. Tests cover 1x/2x/4x and both
   water pipeline variants; default water shader variants remain unchanged.
-  Qualify reflection-reference provenance, component-specific source identities
-  and real-map quality/performance. PR #37 now uses the shared incoming query
+  Component-specific receiver-direct source identities and compatible in-memory
+  reuse now exclude incoming sky power and capture hints; conservative material
+  dependencies remain. Qualify reflection-reference provenance and real-map
+  quality/performance. PR #37 now uses the shared incoming query
   on its unmerged branch (`295d7a95`), with build, policy, replacement-source and
   five focused GPU checks passing. Baked-direct/cascade composition, optical
   cascade lookups and matched runtime performance remain open.
@@ -170,6 +173,13 @@ Still required for the complete modularity/performance objective:
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Composed optical sunlight has fixture coverage; broader optical/probe edge
   quality and general replacement-provider sunlight policies still need work.
+- Latest 1080p Crossfire A/B/B/A through `9e96d558` matches settings, bake
+  content, draws and upper-world pixels. Unarmed current GPU medians overlap
+  baseline; weapon current GPU medians are 3.845-3.871 ms versus 3.683-3.835 ms.
+  CPU recording and host FPS broadly overlap, with baseline drift. This does
+  not pass no-overhead acceptance: isolate opaque/depth/viewmodel differences
+  using a nearer baseline and common frame cap before attributing the residual.
+  Installed binaries/configuration were restored; no playable promotion.
 - Complete no-overhead acceptance with controlled CPU/GPU comparisons. Earlier
   host-FPS rankings reversed between runs despite matching lighting/draws. The
   completed A/B/B/A 1080p Crossfire study shows overlapping CPU/GPU ranges and
