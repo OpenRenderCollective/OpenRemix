@@ -1,6 +1,6 @@
 // Deliberately simple alternate response: consumes evaluated material values.
 // This fixture tests source composition, not physical parity with Source 2.
-ShadingResult shadeExampleDiffuse(Surface surface, ShadingReceiver receiver) {
+ShadingResult shadeSurface(Surface surface, ShadingReceiver receiver) {
   ReceiverLightContext context = prepareReceiverLighting(receiver, surface.normal);
   ReceiverLighting light = sampleDiffuseLighting(receiver, surface.normal, context, true);
   vec3 color = composeDiffuseLight(light, surface.color.rgb);

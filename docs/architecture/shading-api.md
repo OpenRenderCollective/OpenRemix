@@ -23,23 +23,26 @@ ShadingResult shadePaint(ShadingReceiver receiver, vec3 baseColor) {
   Surface surface = initSurface(normalize(receiver.geometric));
   surface.color.rgb = baseColor;
   surface.roughness = .65;
-  return shadeStandardSurface(surface, receiver);
+  return shadeSurface(surface, receiver);
 }
 ```
 
 This follows the reference's material initialization and shading model call. The
 material function does not choose lightmap/probe/reflection storage. The standard
 model supplies its reflection guides; pass adapters still own alpha/depth/MSAA
-coverage and output writes. Custom models can use the lighting queries below.
+coverage and output writes. `shading-model.glsl` selects the model entry at compile
+time. Its default aliases `shadeSurface` to `shadeStandardSurface`, without adding
+a function wrapper. A custom model implements the same `shadeSurface` signature;
+material pass includes and call sites do not change. Custom models can use the lighting queries below.
 This is a shader-source contract, not a runtime custom-program loader or a
 `.shader` parser. Do not add unused material properties until their semantics are
 implemented through the selected shading model.
 
 The tracked `tests/forward/shaders/custom-model.glsl` fixture demonstrates a
 minimal alternate diffuse response using the shared diffuse/local-light queries.
-`custom_shading.py` substitutes it into the real pass with the standard shading
-model and its direct-light composition removed, then compiles and validates world,
-reflection-guide, viewmodel and live-diffuse variants. The pass still decodes its
+`custom_shading.py` replaces only `shading-model.glsl`, leaves the actual material
+pass unchanged and removes the default model/direct-composition/response-adapter
+files before compiling world, reflection-guide, viewmodel and live-diffuse variants. The pass still decodes its
 usual material and owns coverage/output writes. This verifies the composition
 boundary, not visual parity, sun/reflection completeness or runtime shader loading.
 
@@ -68,7 +71,7 @@ on OpenRemix's scalable indexed fields.
 | Material | Evaluate color, roughness, metalness, emission and normals | `Surface`, `evaluateStandardSurface` |
 | Receiver | Supply world/screen geometry and baked bindings | `ShadingReceiver`, separate from material values |
 | Lighting sources | Fetch source lighting and visibility independently of BRDF | local/sun samples, receiver-local enumeration and diffuse query and environment reflection radiance; full reflection-provider integration pending |
-| Shading model | Apply material response and compose contributions | `shadeStandardSurface`, `shadeStandardLocalLight` |
+| Shading model | Apply material response and compose contributions | `shadeSurface` selects the model; default uses `shadeStandardSurface` and `shadeStandardLocalLight` |
 | Renderer | Select providers, allocate/update resources and choose pipelines | typed selections and CPU `ResourcePlan`; lifecycle migration ongoing |
 
 Keep receiver geometry separate even though the reference Material also carries

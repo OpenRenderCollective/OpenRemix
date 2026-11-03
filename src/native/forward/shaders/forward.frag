@@ -59,13 +59,11 @@ layout(location = 2) out vec4 outReflectance;
 #include "local-light-response.glsl"
 #include "receiver-lighting.glsl"
 #include "local-lighting.glsl"
-#include "standard-local-lighting.glsl"
 #include "sun-lighting.glsl"
 // Specialization removes diagnostic branches from ordinary world shading.
 layout(constant_id = 1) const uint LightingView = 0u;
 #ifndef WATER_SURFACE
-#include "direct-lighting.glsl"
-#include "standard-shading.glsl"
+#include "shading-model.glsl"
 #endif
 #endif
 #ifdef WATER_SURFACE
@@ -119,7 +117,7 @@ void main() {
   receiver.directChannels = (m.maps.x & 16u) == 0u;
   receiver.reflectionLayer = (m.maps.x >> 8u) & 127u;
   receiver.opacity = m.pbr.w > .5 ? evaluated.color.a : 1;
-  ShadingResult shaded = shadeStandardSurface(evaluated, receiver);
+  ShadingResult shaded = shadeSurface(evaluated, receiver);
   result = shaded.color;
 #ifdef REFLECTION_GUIDES
   outNormalRoughness = packReflectionGuide(shaded.normal, shaded.roughness, shaded.reflectionReference);

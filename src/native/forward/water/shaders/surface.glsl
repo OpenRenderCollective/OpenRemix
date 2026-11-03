@@ -1,3 +1,4 @@
+#include "../../shaders/standard-local-lighting.glsl"
 #include "../parameters.glsl"
 #include "../optics.glsl"
 layout(set = 2, binding = 0) uniform sampler2D savedHdr;
