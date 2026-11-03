@@ -317,16 +317,16 @@ namespace remix::usd {
             for (const char *name :
                  {"intensity", "exposure", "radius", "width", "height", "length", "angle", "colorTemperature",
                   "shaping:cone:angle", "shaping:cone:softness", "shaping:focus"}) {
-              auto attr = prim.GetAttribute(TfToken(std::string("inputs:") + name));
+              auto attr = light_attribute(prim, name);
               float value;
               if (attr && attr.HasAuthoredValueOpinion() && attr.Get(&value))
                 overrides[name] = value;
             }
-            auto color = prim.GetAttribute(TfToken("inputs:color"));
+            auto color = light_attribute(prim, "color");
             GfVec3f rgb;
             if (color && color.HasAuthoredValueOpinion() && color.Get(&rgb))
               overrides["color"] = {rgb[0], rgb[1], rgb[2]};
-            auto temperature = prim.GetAttribute(TfToken("inputs:enableColorTemperature"));
+            auto temperature = light_attribute(prim, "enableColorTemperature");
             bool enabled;
             if (temperature && temperature.HasAuthoredValueOpinion() && temperature.Get(&enabled))
               overrides["enableColorTemperature"] = enabled;

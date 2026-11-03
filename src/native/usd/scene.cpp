@@ -309,26 +309,30 @@ namespace remix::usd {
     }
     Json light_json(const UsdPrim &prim, const GfMatrix4d &world, Json &warnings) {
       const auto path = prim.GetPath().GetString();
-      auto color = attribute(prim, "inputs:color", GfVec3f(1));
+      const auto lightValue = [&](const char *name, auto fallback) {
+        const auto attr = light_attribute(prim, name);
+        if (attr)
+          attr.Get(&fallback);
+        return fallback;
+      };
+      auto color = lightValue("color", GfVec3f(1));
       const auto cookie_up = attribute(prim, "inputs:remix:cookie:up", GfVec3f(0, 0, 1));
-      if (attribute(prim, "inputs:enableColorTemperature", false))
-        color = GfCompMult(
-            color, UsdLuxBlackbodyTemperatureAsRgb(attribute(prim, "inputs:colorTemperature", 6500.f)));
+      if (lightValue("enableColorTemperature", false))
+        color = GfCompMult(color, UsdLuxBlackbodyTemperatureAsRgb(lightValue("colorTemperature", 6500.f)));
       return {{"id", path},
               {"source_path", source_path(prim)},
               {"type", prim.GetTypeName().GetString()},
               {"transform", matrix_json(world)},
               {"color", {color[0], color[1], color[2]}},
-              {"intensity", attribute(prim, "inputs:intensity", 1.f) *
-                                std::pow(2.f, attribute(prim, "inputs:exposure", 0.f))},
-              {"radius", attribute(prim, "inputs:radius", 0.5f)},
-              {"width", attribute(prim, "inputs:width", 1.f)},
-              {"height", attribute(prim, "inputs:height", 1.f)},
-              {"length", attribute(prim, "inputs:length", 1.f)},
-              {"angle", attribute(prim, "inputs:angle", 0.53f)},
-              {"cone_angle", attribute(prim, "inputs:shaping:cone:angle", 180.f)},
-              {"cone_softness", attribute(prim, "inputs:shaping:cone:softness", 0.f)},
-              {"focus", attribute(prim, "inputs:shaping:focus", 0.f)},
+              {"intensity", lightValue("intensity", 1.f) * std::pow(2.f, lightValue("exposure", 0.f))},
+              {"radius", lightValue("radius", 0.5f)},
+              {"width", lightValue("width", 1.f)},
+              {"height", lightValue("height", 1.f)},
+              {"length", lightValue("length", 1.f)},
+              {"angle", lightValue("angle", 0.53f)},
+              {"cone_angle", lightValue("shaping:cone:angle", 180.f)},
+              {"cone_softness", lightValue("shaping:cone:softness", 0.f)},
+              {"focus", lightValue("shaping:focus", 0.f)},
               {"texture", texture(prim, "inputs:texture:file", warnings)},
               // UsdLuxShapingAPI's IES profile, and OpenRemix's light cookie
               // (usd/capture_writer.cpp; remixapi_LightInfoCookieEXT).
@@ -340,6 +344,10 @@ namespace remix::usd {
 
   } // namespace
 
+  UsdAttribute light_attribute(const UsdPrim &prim, const char *name) {
+    const auto current = prim.GetAttribute(TfToken(std::string("inputs:") + name));
+    return current.IsAuthored() ? current : prim.GetAttribute(TfToken(name));
+  }
   std::string resolved_texture_path(const UsdPrim &prim, const char *name) {
     Json warnings = Json::array();
     return texture(prim, name, warnings);

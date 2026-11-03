@@ -20,4 +20,7 @@ namespace remix::usd {
   Json compose_lights(const pxr::UsdStageRefPtr &, uint64_t);
   Json compose_material(const pxr::UsdPrim &);
   std::string resolved_texture_path(const pxr::UsdPrim &, const char *);
+  // A light's attribute `name` (without "inputs:"): as "inputs:<name>", else
+  // the name USD lights had before it, when only that is authored.
+  pxr::UsdAttribute light_attribute(const pxr::UsdPrim &, const char *name);
 } // namespace remix::usd

@@ -111,6 +111,9 @@ frame: at its position, with their -Z along its direction (spot and distant
 lights). They are placed as authored when the replacement has a transform of
 its own.
 
+As in RTX Remix, a light attribute with no `inputs:` opinion reads the name USD
+lights had before it (`intensity`, `color`, ...), which older mods author.
+
 A mod's light scale multiplies the intensity of the lights it authors: lights
 under its replacements, and the intensities its light overrides set. Lights
 made for RTX Remix read brighter here, mostly from exposure: the light math is

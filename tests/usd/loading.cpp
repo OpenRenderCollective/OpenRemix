@@ -269,6 +269,20 @@ int main(int argc, char **argv) {
       const std::string text{std::istreambuf_iterator<char>(saved), std::istreambuf_iterator<char>()};
       require(text.find("\"openremix:lightScale\" = 4") != std::string::npos, "light scale written to mod.usda");
     }
+    // The names USD lights had before "inputs:", which Remix mods still use.
+    write("#usda 1.0\n(\nmetersPerUnit = 1\nupAxis = \"Y\"\n)\ndef Xform \"RootNode\" { def Scope \"lights\" { "
+          "over \"light_0000000000000456\" {\n def SphereLight \"child\" {\n float intensity = 40\n float radius = 1\n"
+          " double3 xformOp:translate = (0, 0, -2)\n uniform token[] xformOpOrder = [\"xformOp:translate\"]\n"
+          " }\n }\n }\n }\n");
+    bool legacy = false;
+    for (int i = 0; i < 300 && !legacy; ++i) {
+      usd::modBoundary(resources);
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      usd::modLight(resources, game);
+      legacy = childPlaced() && std::fabs(childRadiance - 40) < 1e-3f;
+      resources.finishFrame();
+    }
+    require(legacy, "legacy light attributes");
     usd::stopMods(resources);
     std::filesystem::remove_all(dir);
     std::cout << "USD tests passed\n";
