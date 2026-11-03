@@ -17,6 +17,9 @@ Implemented and checked:
   Source 2 shaders remain byte-identical. A resource-free shading-result initializer gives
   custom models safe defaults. Material results carry unpacked normal/roughness
   and RGB reflectance; the pass adapter owns guide and cubemap-layer byte encoding.
+  Default local-light transport is now imported only by its selected source;
+  the standard local material response compiles independently. Alternate source
+  checks remove the default raw sampler file to verify that separation.
   Sun transport and material BRDF response now live in separate modules; the
   response can compile without pass resources or the default transport.
   Alternate shading, diffuse, environment, local and sun

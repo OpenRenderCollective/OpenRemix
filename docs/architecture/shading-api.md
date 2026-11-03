@@ -92,8 +92,10 @@ wrap/transmission model can retain back-light samples. Aggregate diffuse data
 requires the existing mixed-shadow residual; adding it again would double-count
 baked direct lighting. This ownership still needs a friendlier high-level facade.
 
-`direct-light.glsl` applies the standard PBR response to the sampled data. Its
-standard entry and raw query share `local-light-query.glsl`, a function-body
+`local-light-response.glsl` applies the standard PBR response to sampled values
+without importing transport resources. The default source privately imports
+`direct-light.glsl`; its optimized standard entry and raw query share
+`local-light-query.glsl`, a function-body
 template with one caller-specific miss exit. This preserves the standard early
 returns without a runtime shader callback or duplicated transport implementation.
 The body template is backend implementation detail; material authors call functions.
@@ -826,3 +828,14 @@ Source domain declarations specialize away in the default shaders. The current
 guide cannot transport arbitrary domains; a future provider requiring another
 domain across that pass must add a compatible guide adapter. Scene/generation
 and component provenance remain separate requirements.
+
+### Local source isolation
+
+The pass imports the resource-free local material response independently of the
+selected local-light source. Only the default `local-lighting.glsl` imports
+`direct-light.glsl` and its Source 2 raw sampler. Replacement sources implement
+the receiver/context queries and may reuse `shadeStandardLocalLight` without
+bringing in chart visibility, directional fields or default sampling functions.
+The default optimized caller-specific miss exits are unchanged. The alternate
+source compile fixture removes the default sampler file before compiling world,
+viewmodel, live and water materials, so an incidental import fails immediately.

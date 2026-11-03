@@ -95,6 +95,9 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
         subprocess.run([validator, "--target-env", "vulkan1.1", str(binary)], env=env, check=True)
     shutil.copyfile(root / "src/native/forward/shaders/receiver-lighting.glsl",
                     tree / "shaders/receiver-lighting.glsl")
+    # The alternate local source must not rely on default Source 2 transport
+    # declarations being incidentally imported by the pass/material response.
+    (tree / "shaders/light-sample.glsl").unlink()
     shutil.copyfile(root / "tests/forward/shaders/custom-local-source.glsl",
                     tree / "shaders/local-lighting.glsl")
     for name, defines in {
@@ -108,6 +111,8 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
                         *["-D" + define for define in defines], str(source),
                         "-o", str(binary)], env=env, check=True)
         subprocess.run([validator, "--target-env", "vulkan1.1", str(binary)], env=env, check=True)
+    shutil.copyfile(root / "src/native/forward/shaders/light-sample.glsl",
+                    tree / "shaders/light-sample.glsl")
     shutil.copyfile(root / "src/native/forward/shaders/local-lighting.glsl",
                     tree / "shaders/local-lighting.glsl")
     shutil.copyfile(root / "tests/forward/shaders/custom-sun-source.glsl",

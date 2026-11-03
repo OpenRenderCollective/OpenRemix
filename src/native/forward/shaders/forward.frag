@@ -62,7 +62,7 @@ layout(location = 1) out vec4 outNormalRoughness;
 layout(location = 2) out vec4 outReflectance;
 #endif
 #include "receiver.glsl"
-#include "direct-light.glsl"
+#include "local-light-response.glsl"
 #include "receiver-lighting.glsl"
 #include "local-lighting.glsl"
 #include "sun-lighting.glsl"

@@ -1,3 +1,4 @@
+#include "direct-light.glsl"
 #include "light-list.glsl"
 
 // Prepared once for a local-light loop. Baked-channel and cluster layouts are
