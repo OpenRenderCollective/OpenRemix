@@ -72,7 +72,7 @@ on OpenRemix's scalable indexed fields.
 | Receiver | Supply world/screen geometry and baked bindings | `ShadingReceiver`, separate from material values |
 | Lighting sources | Fetch source lighting and visibility independently of BRDF | local/sun samples, receiver-local enumeration, diffuse queries and replaceable environment/screen-ray reflection sources |
 | Shading model | Apply material response and compose contributions | `shadeSurface` selects the model; default uses `shadeStandardSurface` and `shadeStandardLocalLight` |
-| Renderer | Select providers, allocate/update resources and choose pipelines | typed selections and CPU `ResourcePlan`; lifecycle migration ongoing |
+| Renderer | Select providers, allocate/update resources and choose pipelines | resolved `ResourcePlan`, concrete provider owners and recipe scheduling |
 
 Keep receiver geometry separate even though the reference Material also carries
 it. Shared exposure/output transforms remain outside material lighting. Source
@@ -214,8 +214,9 @@ fractional point/sun visibility, baked static exclusion and viewmodel shadow
 queries. It does not validate the transport of a future GI implementation.
 
 This separates lobe ownership, per-light residuals and reflection normalization.
-It does not yet describe full transport provenance or compatible normalization
-for arbitrary unified GI implementations; a new provider must supply those.
+Reflection compatibility is not inferred from energy ownership: providers declare
+a frozen reference domain/input identity or mark their reference unavailable.
+Transport and normalization of an unimplemented GI provider remain unqualified.
 
 Reflection-normalization luminance remains in standard composition. When a
 metal-only variant skips diffuse evaluation, the compiled provider's pure
@@ -414,8 +415,8 @@ The preset still determines admission and the order around diffuse finishing.
 The same callbacks, queue order, transport budget and early publication boundary
 are retained; this split creates no additional jobs, scene allocations or waits.
 Standalone reflection capture supplies its own scheduler when diffuse baking is
-disabled. Full provider dependency and finishing orchestration remain separate
-integration work.
+disabled. The renderer connects each recipe's source/readiness and ordering;
+these contracts do not automatically instantiate an arbitrary provider.
 
 `probes::CaptureProviders` owns the authored and standalone provider handles,
 frame-slot admission state and automatic fallback selection. Frame rendering
@@ -429,8 +430,9 @@ Replacement activation refreshes shared-provider usage after queue idle, and
 slot selection follows the existing completed frame fence. Teardown releases
 authored workers before diffuse ownership and retains standalone frame owners
 through normal teardown. The owner adds no virtual dispatch, jobs, ray lists or
-per-frame heap allocation. This is the captured-lighting adapter boundary;
-arbitrary provider dependency/finishing orchestration remains unfinished.
+per-frame heap allocation. This is the captured-lighting recipe adapter boundary. Another capture owner
+must connect its source/readiness and resource requirements here; it does not
+require material code or the capture module to inspect a diffuse controller.
 
 `ResourcePlan::capturePolicy.transport` explicitly selects the automatic capture and
 shared-admission owner: the baked scene scheduler or the standalone scene
@@ -457,8 +459,10 @@ pipelines. Live diffuse also omits the baked receiver-mask gather cache, which i
 never consumes. Non-live modes retain that capability because bake-enable edits
 do not require target recreation.
 
-It does not yet separate baked direct ownership from an independently selected
-indirect-only GI field.
+Explicit incoming-only composition separates baked direct ownership from live
+incoming light through ReceiverDirect production and `Diffuse::RayIncoming`.
+Whole-field replacement remains a different supported selection; see
+[component composition](#component-composition-and-remaining-qualification).
 
 Reflection publication is optional when the completed capture payload is empty.
 `AutomaticCapture::sealPublication` seals either an image or a retained empty
@@ -731,31 +735,33 @@ raw radiance or bilateral storage access while retaining the actual resolve and
 environment source. CPU producer/resource selection for a new implementation is
 still required; implementing this function alone does not register a provider.
 
-## Remaining API work
+## Extension and qualification work
 
-1. Extend transport provenance beyond the lobe ownership/per-light attribution contract for
-   future unified GI providers. Keep source-index and receiver-ordinal query
-   semantics distinct; existing mixed/range/highlight composition is shared.
-2. Connect reflection radiance to interchangeable screen/ray and environment
-   providers; qualify water baked/mixed-sun ownership.
-3. Qualify direct ownership and indirect transport for complete provider replacements.
-   Analytic-lobe, direct-attribution and reflection-reference policies are distinct, but the
-   underlying per-light baked policy does not describe arbitrary GI provenance.
-   Define contribution ownership and compatible normalization before LightingTerms.
-4. Provide standard/custom composition with depth, shadow, MSAA and reflection
-   guide compatibility. A material shader should not need pass-specific storage
-   knowledge to remain correctly lit.
-5. Complete independent provider scheduling/publication and dependency/pipeline
-   selection. Reflection lookup/publication and content-addressed persistence are separated;
-   default orchestration still borrows admitted diffuse seeds and one transport budget. Radiance cascades should implement the diffuse source interface;
-   material shaders should not learn cascade storage or update details.
-6. Add opt-in host material/shader programs and HLSL/`.shader` authoring above
-   these contracts. No game-specific shader dispatch belongs in the native core.
+The implemented source/model boundary covers the current baked, ray-query and
+adapted cascade recipes. The following work is distinct from those contracts:
 
-The public custom-material program loader and full provider framework are not
-implemented by the local-light prototype. Performance acceptance includes
-compiled shader work, visual regressions, memory and matched CPU/GPU timings;
-source organization alone does not prove zero overhead.
+1. Qualify contribution ownership and frozen-reference domains for new unified GI
+   providers. Source-index and receiver-ordinal queries stay distinct; sharing
+   units does not establish compatible normalization or transported components.
+2. Qualify new screen/ray/environment implementations through the existing
+   radiance/confidence interfaces. Water shares those queries but retains its
+   explicit optical sunlight policy and needs separate visual qualification.
+3. Connect each new provider's resources, source/readiness and pass dependencies
+   to the central plan/recipe adapter. Source 2 intentionally reuses admitted
+   seeds and one transport budget. Separate publication ownership does not require
+   parallel jobs or duplicated scenes. The unmerged Radiance Cascades PR is a
+   concrete extension, not evidence about every possible provider.
+4. Add the deferred opt-in host material-program loader and HLSL/`.shader`
+   authoring above Surface/source/model contracts. Its depth, shadow, MSAA and
+   reflection-guide requirements must be validated before accepting programs.
+   No game-specific shader dispatch belongs in the native core.
+5. Finish matched runtime and visual qualification of the accumulated split.
+   Standard/custom composition and replacement-source compilation are implemented;
+   they do not establish whole-renderer CPU/GPU or memory equivalence by themselves.
+
+There is no runtime provider registry or public shader-program ABI in this split.
+Performance acceptance includes compiled shader work, visual regressions, memory
+and matched CPU/GPU timings; source organization alone does not prove zero overhead.
 
 ### Diffuse publication during reflection refresh
 
@@ -894,9 +900,9 @@ is pending. Standalone retirement still records after switching back to baked
 captures. Capture source ownership and frame-fence retention are unchanged.
 Metadata lookup now exposes borrowed capture publications and accepts fallback
 descriptors explicitly. The renderer supplies the Source 2 fallback; the capture
-module has no diffuse-controller dependency. Complete alternative-provider
-orchestration remains separate work. This split changes CPU call organization, so shader checks alone cannot
-prove whole-renderer performance equivalence.
+module has no diffuse-controller dependency. The renderer remains the recipe
+adapter for source/readiness handoff. This changes CPU call organization, so
+shader checks alone cannot prove whole-renderer performance equivalence.
 
 ### Capture publication lookup
 
@@ -976,10 +982,11 @@ Specialized composed world/viewmodel/water shaders are chosen at pipeline
 creation. Switching direct ownership while live GI is active recreates those
 pipelines; no per-draw source switch is added.
 
-This does not complete component modularity. Renderer fixtures now qualify
-seven-owner static corrections on surfaces/dynamic probes and baked sunlight
-with moving-caster corrections. Real-map hybrid/optical edge quality, reflection-reference provenance and matched runtime
-performance remain open.
+Renderer fixtures qualify seven-owner static corrections on surfaces/dynamic
+probes and baked sunlight with moving-caster corrections for this composition.
+Real-map hybrid/optical edge quality, reference compatibility of additional
+component recipes, and matched runtime performance remain open. This does not
+qualify every future provider combination.
 PR #37 now adapts its whole-field cascade source to the incoming query at
 `eeb98b7f` on its own branch. It remains unmerged and undeployed. Its build,
 replacement-source compilation, policy and five focused GPU checks pass.
@@ -1051,13 +1058,13 @@ and empty ownership, including signed coefficients. It verifies shared prepared
 inputs and rejects incoming-field requests on a direct-only consumer before
 recording. Mutable-lighting slots cannot produce this immutable direct field.
 
-The producer is not yet exposed through a preset or user-persisted setting.
-Internal bake configuration now selects its contents and carries that selection
-through cold tracing, cache recovery, snapshots and the published volume.
-Hybrid work still requires controlled direct fields and sun ownership, renderer
-masks and source composition.
-Do not label the current aggregate as direct-only or reuse it under a hybrid cache
-key. Preserve the combined Source 2 fast path while adding that explicit mode.
+The explicit live-incoming plus baked-direct selection exposes this producer
+through the technique UI and saved `bakedDirectWithLiveGI` request, with baking,
+direct fields and aggregate receivers enabled. The resolved plan carries its
+contents through tracing, cache recovery, snapshots and publication. Controlled
+direct fields, sun ownership and mixed masks remain active; incoming light comes
+from the independently selected live query. Combined Source 2 remains the default
+and cannot be relabeled or reused under a receiver-direct cache identity.
 
 ### Irradiance cache content identity
 

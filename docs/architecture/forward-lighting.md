@@ -155,7 +155,8 @@ Reflection images, placement admission, cache providers and shader sampling have
 separate owners and contracts. Live or disabled diffuse uses the standalone
 capture lifecycle instead. Capture enable follows the cubemap budget independently
 of diffuse enable, so disabling surface/probe baking does not disable cubemaps.
-The shared recipe's remaining finishing and provenance work is tracked separately.
+The shared recipe keeps ordered finishing and conservative reference admission
+explicit. New component recipes must declare their own compatible reference domain.
 
 Preset application preserves model lightmap chart eligibility as a receiver-coverage
 preference. The default profile enables it, but manual-density configurations may
@@ -203,16 +204,17 @@ Construct lightmap artifacts, outdoor cubemap coverage, and bake/runtime cost.
 Architecture work does not mark those fixed. Detailed tasks remain in the
 [Forward+ roadmap](../features/forward-plus-roadmap.md).
 
-## Initial settings audit
+## Settings inventory and compatibility
 
-`lighting_plan.h` now resolves the ownership policy behind several legacy switches:
-`bakedLighting`, `selectedBakedLights`, `aggregateDiffuse`, `fullyBakedLights`,
-`bakedGeometryLights` and `groupedStyledDirect`. Some still carry experimental
-labels even though runtime baked mode selects related paths automatically. These
-still need a behavior/caller inventory and migration to independently selected
-providers. Live GI ownership is resolved centrally; callers must not create a
-second policy through independent booleans. None of these legacy paths is declared
-unused merely because it has an experimental label.
+`lighting_plan.h` resolves ownership behind the saved `bakedLighting`,
+`selectedBakedLights`, `aggregateDiffuse`, `fullyBakedLights`,
+`bakedGeometryLights` and `groupedStyledDirect` requests. Some retain historical
+experimental names even though runtime baked mode derives related policy. The
+[control catalog](../features/forward-plus-controls.md) records the reviewed
+Forward+ keys, aliases, developer overrides and private candidates. Shared native
+and adapter controls remain outside that inventory. Live GI ownership is
+resolved centrally; callers must not create a second policy through independent
+booleans. A historical name does not establish that a supported fallback is unused.
 
 The rough-metal fixture exposed fallback cubemap coverage holes: subdivision
 created more cells than valid capture sites, then discarded empty cells. Fallback
@@ -264,21 +266,22 @@ work without necessarily reducing the visible material shading bottleneck.
 Occlusion/Hi-Z is a further candidate, not an implemented equivalent of PVS.
 
 
-### Technique separation in progress
+### Standard direct-light composition
 
 The standard material entry point delegates direct illumination to
 `shaders/direct-lighting.glsl`. That module accumulates sun and clustered local
 responses in the existing order, including attributed visibility, mixed shadows,
 and specular. World and viewmodel materials share this entry point; exposure,
-emission, and reflection composition stay outside the direct provider.
+emission, and reflection composition stay outside this standard-model accumulator.
 
-This is a shader boundary, not a completed provider framework. Remaining work
-includes independently owned diffuse and reflection resources and update passes,
-compile-time provider selection, capability resolution, and removal of the
-bake/cubemap lifecycle coupling. A future radiance-cascade provider should supply
-diffuse transport through the shared receiver contract rather than teach each
-material about cascade storage. Keep direct illumination ownership explicit so
-replacing indirect transport cannot double-count baked direct light.
+Source queries, standard material response and compile-selected shading models
+have separate contracts. Resource selection follows the device-resolved plan;
+reflection publications/caches and standalone scheduling have their own owners.
+The adapted Radiance Cascades PR exercises the receiver contract without teaching
+materials its storage. It remains unmerged. Direct ownership is explicit in both
+whole-field replacement and baked-direct plus incoming composition, preventing
+combined baked energy from being added twice. This is an internal source API,
+not a runtime provider registry or material-program loader.
 
 Performance acceptance requires comparison against the unchanged Source 2
 profile, including shader work, CPU recording, GPU timings, and memory. Shader
@@ -299,10 +302,11 @@ preparation. Resource access and disabled-path checks are inline.
 `diffuse-baked.glsl` or `diffuse-ray.glsl` at compilation, retaining the existing
 `LIVE_GI` pipeline selection. Both return irradiance divided by pi before material
 response. The aggregate flag describes baked direct ownership; a new indirect
-provider must not set it merely because it supplies diffuse GI. Baked chart
-visibility and incident irradiance used for reflection normalization still need
-separation from the standard material orchestration. Automatic cubemap capture
-also still depends on the bake controller; the full provider split is unfinished.
+provider must not set it merely because it supplies diffuse GI. Receiver queries
+own chart visibility and incident reference lookup; standard material code does
+not decode that storage. The Source 2 recipe intentionally shares transport and
+admitted seeds with automatic captures. Separate publications and standalone
+capture scheduling allow live or disabled diffuse without starting a diffuse bake.
 
 
 ### Reflection capture input boundary
@@ -387,7 +391,8 @@ lighting ownership, and viewmodel reflection guides consume that same plan.
 Diffuse ownership is represented by one enum; the ray predicate is an inline
 query rather than a second mutable selector. No provider dispatch is added to
 material shaders. Unsupported live GI retains the existing baked/disabled
-fallback, while live GI cannot also claim aggregate baked receiver lighting.
+fallback. Whole-field live GI replaces combined baked irradiance; incoming-only
+composition instead requests a distinct ReceiverDirect publication.
 
 Reflection attachments follow supported sources: SSR, enabled cubemaps or supported
 ray reflections. Unsupported ray-only requests allocate no guides or resolve.
@@ -397,10 +402,12 @@ Changing a nonzero capture count or toggling cubemaps while SSR is enabled still
 preserves target compatibility. For ray-only requests on capable devices, toggling
 cubemap fallback conservatively prepares replacement targets as well; this is an
 options-edit cost, not work added to rendered frames.
-Default automatic capture planning and cache-container scheduling remain coupled
-to the bake, although image publication is independent. Direct versus indirect
-diffuse storage/pipeline composition is not yet a fully generic provider API.
-These remain required work before claiming the split complete.
+Default automatic capture planning and combined-container persistence follow the
+Source 2 recipe, while publication ownership is separate. Direct-only production
+and incoming composition are implemented. New providers must connect their
+resource requirements and ownership to the central plan; selection does not
+automatically load arbitrary shader programs. Performance acceptance remains
+separate from this architectural boundary.
 
 
 ### Reflection persistence codec
@@ -486,12 +493,15 @@ and representative map qualification remain part of performance acceptance.
 ### Source 2 / s&box shader-facing API direction
 
 The [shading API design](shading-api.md) records the audited reference and current
-contracts. Provider resource ownership alone does not finish the requested API.
+contracts and the pinned s&box reference. Resource ownership and material authoring
+are distinct boundaries.
 Materials evaluate Surface values, shading models apply BRDF/composition, and
 lighting-source queries supply lighting/visibility independently of material response.
 Local/sun samples, receiver-local enumeration/context, diffuse queries and shared
-environment reflection radiance are in place. Full composition, reflection pass
-dependencies, water integration and host shader programs remain work.
+environment reflection radiance are in place, including standard composition and
+water query integration. Water retains its explicit optical policy. Host-supplied
+shader programs and single-file compilation remain deferred; visual/performance
+qualification is not implied by the shared API.
 
 ### Automatic reflection completion ownership
 
@@ -526,9 +536,10 @@ original transport may retire after consumer initialization, provided its own
 submissions have completed. Consumers may submit different work using the same
 slot index without overwriting one another's constants or readback storage.
 
-The normal Source 2 path still uses its existing single transport. Separate
-technique controllers have not yet adopted independent consumers or independent
-publication. `memoryBytes` retains its legacy single-consumer total; renderer
+The normal Source 2 recipe deliberately uses one transport and work budget.
+Capture publications and standalone scheduling have separate owners; a future
+coexisting transport consumer must satisfy the frozen-policy/fence contract
+before sharing scene storage. `memoryBytes` retains its legacy single-consumer total; renderer
 statistics use the split shared-scene/private-consumer accounting described below.
 Shared ownership is acquired on preparation, not copied for every dispatch.
 No shader, descriptor binding layout or GPU dispatch algorithm changes here;
@@ -580,9 +591,9 @@ capture work. This alternate path currently builds one transport for its frozen
 source and releases it after publication; it does not yet borrow a scene from a
 concurrent compatible provider. Disk persistence is independent, as described
 below. Receiver-guided repair and dedicated UI progress/status wiring remain
-unfinished. Shared prepared scene adoption in the default scheduler, real-map
-coverage and full CPU/frame performance qualification remain necessary before
-the backend split is complete.
+unfinished. Additional concurrent scene sharing requires compatible frozen
+transport policy; it is not a prerequisite to parallelize the default recipe.
+Real-map coverage and CPU/frame performance qualification remain open.
 
 ### Independent reflection persistence
 
@@ -709,9 +720,11 @@ separate lifetimes.
 
 The default bake job no longer owns reflection-ready/published flags. It can bind
 an early reflection image while diffuse finishing continues, then reuse that image
-at volume activation. This does not yet separate default placement seed creation,
-receiver diagnostics, worker tickets, or transport scheduling from the diffuse job.
-Those still preserve the admitted-seed reuse and existing single GPU budget.
+at volume activation. The default job retains initial transport/diffuse preparation
+and final whole-recipe finishing. AutomaticCapture owns intermediate placement
+preparation; standalone filtering also uses that owner. The recipe joins both
+owners before handoff and keeps diagnostics/admitted-seed reuse under its
+existing single GPU budget.
 
 ### Automatic reflection CPU preparation
 
@@ -727,8 +740,10 @@ preparation tickets. The default host supplies moved admitted diffuse seeds only
 at the first transition; the standalone host omits them and uses geometry seed
 admission. Selection preserves the existing candidate reporter. No diffuse grid,
 atlas, worker queue, or transport is owned by this CPU preparation API. The default
-host still constructs borrowed seeds, schedules diagnostics/cache lookups and owns
-the combined preparation ticket/transport budget; those remain migration work.
+recipe still supplies borrowed seeds and diagnostics/cache inputs. Its initial
+preparation ticket and transport budget stay recipe-owned. Placement/fitting/
+selection preparation belongs to AutomaticCapture; final Source 2 finishing stays
+on the recipe ticket because it also finishes diffuse assets.
 
 ### Planned reflection cache policy
 
@@ -777,8 +792,9 @@ transport and schedules reflection placement/capture/filtering directly, bypassi
 diffuse queries, denoising and atlas encoding. The existing persistence thread
 then publishes a repaired combined reference, allowing the following complete
 warm load to skip capture. Complete warm loads allocate no reconstructed Point
-array. Cached diffuse lighting can publish before recovered reflections; fully
-independent default scheduling and shared-scene adoption remain future work.
+array. Cached diffuse lighting can publish before recovered reflections. Recovery
+uses the ordered Source 2 recipe; live/disabled diffuse uses the standalone
+capture lifecycle. Additional scene sharing must preserve frozen transport policy.
 
 ### Diffuse volume publication boundary
 
@@ -864,9 +880,9 @@ concrete jobs.
 The Source 2 recipe intentionally sequences its techniques through one consumer
 and budget, retaining admitted-seed and GPU-work reuse. Separately scheduled
 providers can use the existing fenced `Transport::initializeShared` contract for
-immutable scene sharing, but current default tickets have not yet migrated to
-independent provider scheduling. Runtime adoption by additional coexisting
-consumers and complete CPU/frame performance acceptance remain required.
+immutable scene sharing. The default recipe retains a single consumer rather than
+allocating parallel execution state without a need. Additional coexisting
+consumers need their own qualification; complete CPU/frame acceptance remains open.
 
 ### Shared transport memory accounting
 
@@ -914,7 +930,8 @@ A refresh job takes its own immutable seed owner before preparation is queued.
 Workers never read the controller's retained owner, and obsolete/submitted jobs
 retain their inputs through normal cancellation and fence retirement. This moves
 an existing shared ownership reference; it adds no scene traversal, allocation,
-GPU resource or pass. Independent producer scheduling remains separate work.
+GPU resource or pass. Default ordering remains an explicit recipe decision,
+independent of the capture publication lifetime.
 
 The retained image, optional local source, placement admission, source identity
 and content diagnostics are grouped in `probes::CapturePublication`. It owns no
@@ -931,7 +948,9 @@ submits it on the existing recipe preparation ticket. It preserves the shared
 transport budget, reflection-first finishing order, cancellation ownership and
 early image publication; it does not create another job or frame-time dispatch.
 Individual reflection and diffuse encoders remain responsible for their assets.
-This boundary does not yet make default technique scheduling independent.
+Default ordering and the shared budget remain explicit recipe policy. Alternative
+recipes connect their own admission/source handoff rather than changing material
+queries or duplicating the Source 2 consumer.
 
 ### Reflection reference provenance storage
 
