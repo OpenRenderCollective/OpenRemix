@@ -165,6 +165,18 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
                             *["-D" + define for define in defines], str(source),
                             "-o", str(binary)], env=env, check=True)
             subprocess.run([validator, "--target-env", "vulkan1.2", str(binary)], env=env, check=True)
+    # An independent hardware reflection source can still use shared ray transport
+    # with the default incoming GI implementation absent.
+    shutil.copyfile(root / "src/native/forward/shaders/ray-transport.glsl",
+                    tree / "shaders/ray-transport.glsl")
+    for ray_incoming in (False, True):
+        binary = tree / ("custom-incoming-hardware-water-" + str(ray_incoming) + ".spv")
+        subprocess.run([compiler, "-V", "--target-env", "vulkan1.2",
+                        "-DWATER_SURFACE", "-DWATER_RAY", "-DRAY_SCENE_SET=3",
+                        "-DOPENREMIX_BAKED_DIRECT_LIVE_INDIRECT",
+                        *(["-DLIVE_GI"] if ray_incoming else []), str(source),
+                        "-o", str(binary)], env=env, check=True)
+        subprocess.run([validator, "--target-env", "vulkan1.2", str(binary)], env=env, check=True)
     source.write_text((root / "src/native/forward/shaders/forward.frag").read_text(), encoding="utf-8")
     for name in ("gi.glsl", "ray-transport.glsl", "incoming-lighting.glsl"):
         shutil.copyfile(root / "src/native/forward/shaders" / name, tree / "shaders" / name)
