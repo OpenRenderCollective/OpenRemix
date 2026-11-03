@@ -223,6 +223,10 @@ Still required for the complete modularity/performance objective:
 - Diffuse asset finishing no longer retains capture-placement admission or
   advances Source 2 scheduler flags. The recipe caller performs those transitions
   on the same worker after encoding, preserving transition order and ticket gates.
+- The combined final preparation worker now uses the Source 2 recipe ticket,
+  rather than the reflection provider's ticket. It remains one queued task in
+  the same order, with existing readiness/error/cancellation gates and independent
+  sealed-image publication. Standalone capture preparation remains provider-owned.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Composed optical sunlight has fixture coverage; broader optical/probe edge

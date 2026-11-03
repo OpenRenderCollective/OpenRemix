@@ -120,8 +120,11 @@ namespace remix::forward::bake {
       const auto owner = m_job;
       const auto physical = m_physical;
       const auto device = m_device;
-      job.reflections.prepare(
-          *m_pipelines, "forward-probe-filter-" + std::to_string(++generation), [owner, physical, device, config] {
+      // record() joined both preparation owners before entering this stage.
+      // This worker finishes the whole Source 2 recipe, not just reflections;
+      // retain it through the recipe ticket and its normal cancellation gate.
+      job.ticket = m_pipelines->prepare(
+          "forward-probe-filter-" + std::to_string(++generation), [owner, physical, device, config] {
             // Preserve exact input provenance on the worker, then release ray
             // scratch before filtered cubemaps, denoising and atlas encoding.
             // Publication must not scan this potentially large buffer again.
