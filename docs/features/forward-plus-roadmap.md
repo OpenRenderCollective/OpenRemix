@@ -13,13 +13,24 @@
 - Still open: narrow conservative material dependencies, qualify real-map reuse
   and measure matched runtime performance.
 
-## Current modular renderer status — 2026-11-03
+## Current modular renderer status — 2026-11-04
 
 The technique split is in progress; performance acceptance is not complete.
 The playable install remains separate from the branch build. Architecture and
 interfaces: [shading API](../architecture/shading-api.md).
 
 Implemented and checked:
+
+- Material passes now use the compile-selected `shadeSurface` entry from
+  `shading-model.glsl`. Custom models replace that module without rewriting pass
+  includes/calls. The default binds directly to the standard implementation;
+  standard direct composition and response-adapter imports belong to that model.
+  Water retains its specialized model and imports its own local-response adapter.
+- Frozen reflection-reference provenance and binding-time neutral metadata are
+  implemented for default producers. A prepared frame snapshot shares one
+  reflection binding across SSR, water and viewmodels. Mixed provenance still
+  neutralizes the whole image; finer per-layer reference admission remains open.
+
 
 - The Source 2 preset selects techniques while retaining quality/display/cache
   preferences. Legacy setting names remain compatibility aliases.
