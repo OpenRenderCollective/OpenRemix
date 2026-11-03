@@ -4,6 +4,9 @@
   currently repeat ownership search, record decode and SH basis preparation.
   Preserve missing/known-black semantics, interpolation and mixed-light output;
   qualify correctness and cost before accepting the change.
+  The first shared-record/shared-SH trial was reverted after a positive GPU
+  timing residual. Retained linear-filter decoder coverage. Next isolate record
+  ownership from SH lifetime and context size; do not assume hoisting is free.
 - Isolate opaque color shading: baked-field filtering/reconstruction, material
   response and selected baked-highlight queries. Keep normal quality and output
   parity as acceptance gates; diagnostic variants must not become silent defaults.
