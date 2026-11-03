@@ -132,6 +132,12 @@ world and viewmodel callers share transport without changing their passes.
 `sampleUnbakedSunLight` exposes analytic/CSM visibility for passes without baked
 sun coverage. It is a source policy, not a BRDF or game-specific shader choice.
 
+The sun shadow sampler is declared by `sun-shadows.glsl`, not common pass
+bindings. Its default binding remains 4; the numerical lookup fixture selects
+binding 3 through `SUN_SHADOW_BINDING`. Replacement-source compilation removes
+the default sun implementation and shadow-storage file together. Custom sun
+queries therefore do not inherit an unused default shadow texture declaration.
+
 ## Local receiver context
 
 `prepareLocalLighting(receiver, normal, diffuseRequired, aggregate)` prepares the

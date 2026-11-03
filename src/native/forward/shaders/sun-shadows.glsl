@@ -1,4 +1,8 @@
 #include "shadow-filter.glsl"
+#ifndef SUN_SHADOW_BINDING
+#define SUN_SHADOW_BINDING 4
+#endif
+layout(set = 0, binding = SUN_SHADOW_BINDING) uniform sampler2DArrayShadow sunShadow;
 // Cascades 0..3 contain complete frozen geometry; 4..7 contain current casters
 // outside that snapshot. Matching lightmaps/probes replace the frozen term.
 float sunShadowVisibilityLayers(vec3 p, float depth, bool includeStatic, bool viewModel, vec3 receiverNormal) {

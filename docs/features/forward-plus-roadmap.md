@@ -242,6 +242,10 @@ Still required for the complete modularity/performance objective:
   Native build, replacement compilation and six GPU checks pass. Twelve checked
   variants preserve normalized globals/instructions, sizes and opcode counts;
   declaration order changes raw bytes. No new runtime FPS claim.
+- Sun shadow texture storage is now private to the default sun lookup, not
+  common pass bindings. The production binding stays unchanged; the numerical
+  fixture uses an explicit override. Replacement sun compilation removes the
+  implementation/storage files together. No host descriptor change is required.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Composed optical sunlight has fixture coverage; broader optical/probe edge

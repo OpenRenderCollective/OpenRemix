@@ -41,7 +41,6 @@ layout(set = 0, binding = 2, std430) readonly buffer Clusters {
 layout(set = 0, binding = 3, std430) readonly buffer Materials {
   Material materials[];
 };
-layout(set = 0, binding = 4) uniform sampler2DArrayShadow sunShadow;
 #define ClusterCapacity frame.clusterInfo.x
 #define ClusterHeaderWords 2u
 #define ClusterStride (ClusterCapacity + ClusterHeaderWords)
