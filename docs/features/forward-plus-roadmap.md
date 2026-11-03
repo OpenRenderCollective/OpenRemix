@@ -1,3 +1,16 @@
+### Standard material response ownership (2026-11-04)
+
+- Custom models no longer inherit standard GGX or standard sun/local response
+  implementations from the pass/default local source. Shared response values
+  and composition remain available; standard/water models opt into their BRDF.
+- Source-owned compile-selected local response preserves specialized miss exits.
+  Default instruction counts/sizes and normalized function bodies/annotations
+  match across 17 main and 23 PR variants; declaration order can differ.
+- Custom model compilation physically removes the standard implementation files.
+  Native builds and ordinary/viewmodel/water/composed-mixed-shadow GPU checks
+  pass on both branches, plus the shared fractional shadow-filter query check.
+  Real-map performance qualification remains open.
+
 ### Incoming source dependency ownership (2026-11-04)
 
 - The material pass no longer imports the default ray-GI implementation. The
