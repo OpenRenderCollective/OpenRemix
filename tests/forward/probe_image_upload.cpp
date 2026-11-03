@@ -20,7 +20,13 @@ void uploadCase(uint32_t count, uint32_t size, bool composition = false, bool se
   source.texels.resize(size_t(count) * stride);
   for (size_t i = 0; i < source.texels.size(); ++i)
     source.texels[i] = {float(i % 1000) / 16, float(i % 31), .001f, 1000000};
-  probes::ImageAsset asset(fixture.physical, fixture.device, source);
+  const probes::ReferenceProvenance authoredReference{1, 101}, automaticReference{1, 202};
+  require(authoredReference.compatible(authoredReference) &&
+              !authoredReference.compatible(automaticReference) &&
+              !authoredReference.compatible({2, 101}) &&
+              !probes::ReferenceProvenance{}.compatible({}),
+          "Reference identity rejects other inputs, domains and unknown producers");
+  probes::ImageAsset asset(fixture.physical, fixture.device, source, {}, authoredReference);
   std::unique_ptr<probes::ImageAsset> second, combined;
   if (composition) {
     require(count > 0 && count <= 32, "Composition fixture fits both sources within 64 layers");
@@ -28,7 +34,8 @@ void uploadCase(uint32_t count, uint32_t size, bool composition = false, bool se
     if (selection) other.header.probes[0].position[0] = 42;
     for (size_t i = 0; i < other.texels.size(); ++i)
       other.texels[i] = {32 + float(i % 1000) / 32, 8, .5f, 1};
-    second = std::make_unique<probes::ImageAsset>(fixture.physical, fixture.device, other);
+    second = std::make_unique<probes::ImageAsset>(fixture.physical, fixture.device, other,
+        std::stop_token{}, automaticReference);
     probes::Data expected;
     expected.header = source.header;
     expected.header.parameters[0] = 2 * count;
@@ -129,6 +136,10 @@ void uploadCase(uint32_t count, uint32_t size, bool composition = false, bool se
   metadataReadback.read(&actualMetadata, sizeof(actualMetadata));
   require(actualMetadata.normalization.coefficients == packed.normalization.coefficients,
           "Capture normalization follows GPU upload, authored composition and local selection layers");
+  require(output.references().size() == count, "Empty images expose no reference layers");
+  for (uint32_t layer = 0; layer < count; ++layer)
+    require(output.references()[layer] == (composition && (layer & 1u) ? automaticReference : authoredReference),
+            "Reference provenance follows authored composition and local selection without relabeling");
   require(actual == packed.pixels, "Every reflection layer, face and mip survives GPU image upload/readback");
   require(validationErrors == 0, "Reflection image upload is Vulkan validation clean");
   std::printf("Reflection image: %u layers, %u-square faces, %u mips, %zu bytes passed\n",

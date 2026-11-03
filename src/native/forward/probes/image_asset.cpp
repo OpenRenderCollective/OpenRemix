@@ -8,7 +8,7 @@
 
 namespace remix::forward::probes {
   ImageAsset::ImageAsset(VkPhysicalDevice physical, VkDevice device, const Data &data,
-                          std::stop_token cancelled) : m_device(device) {
+                          std::stop_token cancelled, ReferenceProvenance reference) : m_device(device) {
     auto packed = prepareImage(data, cancelled);
     const uint32_t count = packed.header.parameters[0];
     m_levels = std::max(packed.header.parameters[2], 1u);
@@ -28,6 +28,7 @@ namespace remix::forward::probes {
     m_staging->create(physical, device, packed.pixels.size()*sizeof(uint16_t), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
     m_staging->write(packed.pixels.data(), packed.pixels.size()*sizeof(uint16_t));
     initialize(physical, packed.header, packed.normalization);
+    std::fill_n(m_references.begin(), count, reference);
   }
   ImageAsset::ImageAsset(VkPhysicalDevice physical, VkDevice device, const Composition &composition)
       : m_device(device), m_layerCopies(composition.layers) {
@@ -132,6 +133,7 @@ namespace remix::forward::probes {
           asset.m_header.parameters[1] != m_header.parameters[1] || asset.m_levels != m_levels)
         throw std::invalid_argument("Reflection composition source dimensions or layer mismatch");
       m_normalization.coefficients[layer] = asset.m_normalization.coefficients[source.layer];
+      m_references[layer] = asset.m_references[source.layer];
       for (uint32_t level = 0; level < m_levels; ++level) {
         const auto size = std::max(m_header.parameters[1] >> level, 1u);
         copies[source.automatic].push_back({

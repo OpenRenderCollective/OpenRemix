@@ -911,3 +911,23 @@ transport budget, reflection-first finishing order, cancellation ownership and
 early image publication; it does not create another job or frame-time dispatch.
 Individual reflection and diffuse encoders remain responsible for their assets.
 This boundary does not yet make default technique scheduling independent.
+
+### Reflection reference provenance storage
+
+`probes::ReferenceProvenance` is a resource-free producer contract: a domain
+identifies the lighting components/convention, and `inputs` identifies the frozen
+lighting inputs and recipe within that domain. Either zero means unavailable.
+It is distinct from image-output fingerprints and projection/coverage identity.
+
+An `ImageAsset` retains this provenance per layer on the CPU. Source construction
+accepts a uniform producer identity; composition and local selection copy the
+identity from the same source layer as normalization SH. Empty images expose no
+reference layers. GPU metadata, descriptor layouts and shader inputs are unchanged.
+This costs a fixed 1 KiB per CPU image owner without another allocation.
+
+Producer assignment and receiver compatibility admission remain unfinished.
+Existing producers default to unavailable; the new metadata does not yet change
+normalization eligibility. A later host integration must derive identities from
+validated frozen inputs, preserve them across warm cache reconstruction, and
+resolve compatibility outside pixel shading. Do not treat this storage boundary
+alone as proof of scene/component compatibility.
