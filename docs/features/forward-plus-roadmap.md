@@ -16,10 +16,10 @@
   early CPU residual; its cause is not established.
 - Preserve the existing depth prepass and independent caster visibility while
   profiling. Technique modularity alone does not establish the frame-rate target.
-- Sun visibility scheduling: disabled sunlight still clears moving cascades
-  every frame. Qualify initialization, disable/re-enable and scene replacement
-  before skipping redundant clears. The resource ownership split preserves
-  that existing schedule; it does not claim this optimization is implemented.
+- Isolate baked-sun query work with no moving world casters. The current source
+  still calls filtered moving visibility for covered receivers. Prove conservative
+  caster absence and keep viewmodel self shadows and missing-coverage static
+  fallback independent before attempting to skip that query.
 
 ### Standard material response ownership (2026-11-04)
 
@@ -90,6 +90,13 @@ The playable install remains separate from the branch build. Architecture and
 interfaces: [shading API](../architecture/shading-api.md).
 
 Implemented and checked:
+
+- Disabled sunlight now initializes/neutralizes all layers on startup and
+  transitions, then skips repeated moving-layer clear passes while unchanged.
+  GPU startup/toggle checks at 1/2/4x MSAA verify four moving updates on
+  transitions and zero across steady disabled frame slots; enabled scheduling
+  is unchanged. The internal `movingSunUpdates` diagnostic counts actual layer
+  passes. This removes submitted work, not a measured FPS claim.
 
 - World sun images, layer views/framebuffers and frozen-projection cache now
   have a private `shadows::SunMaps` owner. The renderer borrows handles for the
