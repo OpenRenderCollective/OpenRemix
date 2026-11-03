@@ -12,9 +12,13 @@ namespace remix::forward::techniques {
   // outside draw loops; providers consume this rather than reinterpreting keys.
   struct ResourcePlan {
     Diffuse diffuse = Diffuse::Disabled;
+    // Freeze producer and receiver ownership together with device fallback.
+    // Refreshed on option updates, not reconstructed during frame recording.
+    lighting::Plan receiverLighting;
     // Select the automatic source and admission owner independently of image
     // availability. Disabled captures still visit their owner to retire old work.
     probes::CapturePolicy capturePolicy;
+    probes::CaptureConfig captureConfig;
     bool bakedDirect = false; // composed with a live incoming source
     bool rayReflections = false, rayWater = false;
     bool rayScene = false, reflectionResolve = false;
@@ -36,9 +40,11 @@ namespace remix::forward::techniques {
         (!options.water || capabilities.waterRayQueries);
     plan.diffuse = liveDiffuse ? Diffuse::RayQueries
         : options.baking.enabled ? Diffuse::SurfaceAndProbes : Diffuse::Disabled;
-    plan.bakedDirect = liveDiffuse && options.lightingPlan(true).bakedReceivers;
+    plan.receiverLighting = options.lightingPlan(plan.liveDiffuse());
+    plan.bakedDirect = plan.liveDiffuse() && plan.receiverLighting.bakedReceivers;
     plan.capturePolicy = options.capturePolicy(plan.bakedDiffuse() ? probes::CaptureTransport::SharedScene
                                                                  : probes::CaptureTransport::StandaloneScene);
+    plan.captureConfig = options.captureConfiguration();
     plan.screenReflections = options.ssr;
     plan.rayReflections = options.rtReflections && capabilities.rayQueries;
     plan.rayWater = options.water && plan.rayReflections && capabilities.waterRayQueries;

@@ -329,8 +329,12 @@ source is inactive. Material shaders do not inspect these plan IDs.
 
 Saved requests and resolved capabilities remain distinct, so unsupported effects
 retain their configured fallback without allocating the requested ray provider.
-This plan is derived once during target preparation and is not another persisted
-selector. Existing source modules consume it without a dynamic registry, virtual
+This plan is derived during target preparation and refreshed on lighting-option
+updates; it is not another persisted selector. Its `receiverLighting` snapshot
+holds bake inputs and mixed-receiver ownership, while `captureConfig` holds the
+independent reflection producer inputs. Frame recording borrows these snapshots
+instead of resolving saved options again. Process-level bake overrides are frozen
+by their existing storage helpers. Existing source modules consume the plan without a dynamic registry, virtual
 per-draw dispatch or additional shader branch.
 
 ## Provider scheduling and transport sharing
