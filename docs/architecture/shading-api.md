@@ -935,7 +935,8 @@ viewmodel or water materials.
 
 The default Source 2 source declares the private compile-time
 `OPENREMIX_SPECIALIZED_LOCAL_RESPONSE` hook and supplies its existing optimized
-entry. This preserves caller-specific miss exits and avoids the code-generation
+entry through `local-response-source.glsl`, imported only when the standard
+model requests it. This preserves caller-specific miss exits and avoids the code-generation
 cost previously observed when forcing that source through a boolean sample
 wrapper. Other sources use the shared adapter automatically. There is no runtime
 callback, setting, extra pass or duplicate material equation. The query-only
@@ -1285,3 +1286,18 @@ resolve do not assign the Source 2 domain themselves. The default adapter reject
 foreign references and keeps the existing RGBA16F layout; no extra guide image
 or domain channel is allocated. This is a compile-selected convention, not
 per-pixel support for mixed domains or proof of scene/component compatibility.
+
+### Material response ownership
+
+The pass imports `brdf-values.glsl` (Pi and BrdfLobes), `sun-composition.glsl`
+and `local-light-composition.glsl`. These express response values and visibility
+composition without choosing a BRDF. Standard GGX lives in `brdf.glsl`; the
+standard model and water opt into it through their response adapters. Custom
+models can use the same light samples with another response while all standard
+BRDF, sun-response and local-response implementation files are absent.
+
+The default local source advertises an optional specialized standard-response
+module, preserving its early miss exits. Generic material code requests that
+module at compilation; the query-only source itself no longer declares or
+imports the standard response. Replacement sources without the hook receive
+the generic standard adapter. No runtime callback or dispatch is introduced.
