@@ -108,6 +108,25 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
                         *["-D" + define for define in defines], str(source),
                         "-o", str(binary)], env=env, check=True)
         subprocess.run([validator, "--target-env", "vulkan1.1", str(binary)], env=env, check=True)
+    # A non-Source-2 source can replace the scalar guide convention without
+    # changing the material pass or reflection resolve. Replace the default
+    # adapter entirely, not an extra declaration after it.
+    shutil.copyfile(root / "tests/forward/shaders/custom-guide-reference.glsl",
+                    tree / "shaders/reflection-guide-reference.glsl")
+    shutil.copyfile(root / "tests/forward/shaders/custom-environment.glsl",
+                    tree / "shaders/reflection-environment.glsl")
+    for name, (stage, defines) in {
+        "guide-domain-world": (source, ["REFLECTION_GUIDES"]),
+        "guide-domain-viewmodel": (source, ["VIEWMODEL_PASS", "REFLECTION_GUIDES"]),
+        "guide-domain-resolve": (tree / "shaders/reflections.comp", ["SSR_FILTER"]),
+    }.items():
+        binary = tree / (name + ".spv")
+        subprocess.run([compiler, "-V", "--target-env", "vulkan1.1",
+                        *["-D" + define for define in defines], str(stage),
+                        "-o", str(binary)], env=env, check=True)
+        subprocess.run([validator, "--target-env", "vulkan1.1", str(binary)], env=env, check=True)
+    for name in ("reflection-guide-reference.glsl", "reflection-environment.glsl"):
+        shutil.copyfile(root / "src/native/forward/shaders" / name, tree / "shaders" / name)
     shutil.copyfile(root / "src/native/forward/shaders/receiver-lighting.glsl",
                     tree / "shaders/receiver-lighting.glsl")
     # Compile the real composed source through standard material passes. This

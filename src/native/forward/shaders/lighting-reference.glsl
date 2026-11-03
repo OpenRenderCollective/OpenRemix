@@ -18,8 +18,8 @@ bool compatibleLightingReferenceDomains(uint receiver, uint capture) {
 bool compatibleLightingReferences(LightingReference receiver, LightingReference capture) {
   return compatibleLightingReferenceDomains(receiver.domain, capture.domain);
 }
-// Packed guides currently carry only the Source 2 domain. Reject incompatible
-// references at that boundary rather than relabeling another provider's energy.
+// Storage adapters reject incompatible references rather than relabeling
+// another provider's energy with their own domain.
 float lightingReferenceLuminance(LightingReference reference, uint domain) {
   return compatibleLightingReferenceDomains(reference.domain, domain) ? reference.luminance : -1;
 }

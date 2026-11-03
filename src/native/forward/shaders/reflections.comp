@@ -134,6 +134,7 @@ void main() {
 #include "reflection-lighting.glsl"
 #include "reflection-transport.glsl"
 #include "standard-reflection-response.glsl"
+#include "reflection-guide-reference.glsl"
 void main() {
   ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
   bool inBounds = all(lessThan(pixel, ivec2(frame.target.xy)));
@@ -158,9 +159,8 @@ void main() {
   vec3 fresnel = standardReflectionFresnel(f0, guide.z, nv);
   vec3 reflected = reflectionDirection(-v, normal);
   uint layer = uint(round(clamp(1 - receiverReflectance.a, 0, 1) * 255));
-  float localLuma = guide.w;
   ReflectionReceiver receiver = ReflectionReceiver(position, fma(normal, vec3(frame.trace.z), position),
-      normal, reflected, guide.z, LightingReference(localLuma, Source2StaticLightingReference), layer, probeMask);
+      normal, reflected, guide.z, reflectionGuideReference(guide), layer, probeMask);
   vec3 fallback = sampleEnvironmentReflection(receiver);
   vec3 radiance = resolveReflection(ReflectionSample(transport.radiance, clamp(transport.confidence, 0, 1)), fallback);
   imageStore(outRadiance, pixel, vec4(min(radiance * fresnel, vec3(65000)), transport.confidence));

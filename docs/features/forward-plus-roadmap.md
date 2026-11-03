@@ -199,6 +199,12 @@ Still required for the complete modularity/performance objective:
   window is elevated (0.917 ms versus baseline 0.866-0.881 ms); the remaining
   current windows are 0.869-0.885 ms. CPU no-overhead acceptance remains open.
   Both installed binaries and all four user configuration files were restored.
+- Reflection guide reference encoding/decoding now belongs to one replaceable
+  adapter. World and reflection resolve passes no longer assign the Source 2
+  domain themselves. An alternate domain compiles through real world/viewmodel
+  and resolve passes; 22 default optimized shader/coverage comparisons remain
+  byte-identical. The scalar layout is unchanged. Mixed per-pixel domains and
+  scene/component reference provenance remain open.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Composed optical sunlight has fixture coverage; broader optical/probe edge

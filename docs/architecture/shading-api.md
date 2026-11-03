@@ -1290,3 +1290,12 @@ PR build. Normal-lit comparison against main is byte-identical in 22 shader/
 coverage cases after the renderer's lighting specialization; unspecialized PR
 code retains its separate debug-view-8 branch. The earlier matched FPS studies
 predate this packet refactor; it does not claim a new measured speedup.
+
+The scalar reflection-guide convention belongs to
+`reflection-guide-reference.glsl`. Its typed `packReflectionGuide` overload and
+`reflectionGuideReference` decoder form one adapter: replace them together when
+a provider uses another normalization domain. Material passes and the reflection
+resolve do not assign the Source 2 domain themselves. The default adapter rejects
+foreign references and keeps the existing RGBA16F layout; no extra guide image
+or domain channel is allocated. This is a compile-selected convention, not
+per-pixel support for mixed domains or proof of scene/component compatibility.
