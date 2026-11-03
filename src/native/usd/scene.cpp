@@ -218,14 +218,29 @@ namespace remix::usd {
             {"flow_scale", attribute(shader, "openremix:iridescence:flowScale", 1.0f)},
             {"flow_speed", attribute(shader, "openremix:iridescence:flowSpeed", 0.1f)},
             {"structural", attribute(shader, "openremix:iridescence:structural", 0.0f)}};
-      // OpenRemix's subsurface scattering (openremix:subsurface:*; no MDL
-      // input has it). Radius times scale in metres, as Blender's Principled.
-      if (!translucent && attribute(shader, "openremix:subsurface:weight", 0.0f) > 0) {
-        const auto radius = attribute(shader, "openremix:subsurface:radius", GfVec3f(1, .2f, .1f));
-        result["subsurface"] = {{"weight", attribute(shader, "openremix:subsurface:weight", 0.0f)},
-                                {"radius", {radius[0], radius[1], radius[2]}},
-                                {"scale", attribute(shader, "openremix:subsurface:scale", 0.05f)},
-                                {"anisotropy", attribute(shader, "openremix:subsurface:anisotropy", 0.0f)}};
+      // RTX Remix's subsurface inputs, with OpenRemix's weight outside them
+      // (openremix:subsurface:weight). Under a profile the unauthored colour
+      // leaves the albedo as it is, where RTX Remix's grey would replace it.
+      const bool profile = attribute(shader, "inputs:subsurface_diffusion_profile", false);
+      const float measurement = attribute(shader, "inputs:subsurface_measurement_distance", 0.0f),
+                  weight = attribute(shader, "openremix:subsurface:weight", 1.0f);
+      if (!translucent && (profile || measurement > 0) && weight > 0) {
+        const auto vector = [](const GfVec3f &v) { return Json::array({v[0], v[1], v[2]}); };
+        const float neutral = profile ? 1.f : .5f;
+        result["subsurface"] = {
+            {"diffusion_profile", profile},
+            {"weight", weight},
+            {"radius", vector(attribute(shader, "inputs:subsurface_radius", GfVec3f(.5f)))},
+            {"radius_scale", attribute(shader, "inputs:subsurface_radius_scale", 1.0f)},
+            {"max_sample_radius", attribute(shader, "inputs:subsurface_max_sample_radius", 16.0f)},
+            {"anisotropy", attribute(shader, "inputs:subsurface_volumetric_anisotropy", 0.0f)},
+            {"transmittance", vector(attribute(shader, "inputs:subsurface_transmittance_color", GfVec3f(neutral)))},
+            {"measurement_distance", measurement},
+            {"single_scattering_albedo", vector(attribute(shader, "inputs:subsurface_single_scattering_albedo", GfVec3f(.5f)))},
+            {"transmittance_texture", texture(shader, "inputs:subsurface_transmittance_texture", warnings)},
+            {"thickness_texture", texture(shader, "inputs:subsurface_thickness_texture", warnings)},
+            {"single_scattering_texture", texture(shader, "inputs:subsurface_single_scattering_texture", warnings)},
+            {"radius_texture", texture(shader, "inputs:subsurface_radius_texture", warnings)}};
       }
       return result;
     }

@@ -297,6 +297,47 @@ void queryScene(accelerationStructureEXT scene, vec3 origin, vec3 direction, ino
   x.bary=rayQueryGetIntersectionBarycentricsEXT(query,true);
   x.model=rayQueryGetIntersectionObjectToWorldEXT(query,true);
 }
+// How much shorter than its radius a channel's Burley profile is, by its
+// colour and anisotropy (RTXCR's material coefficients, which RTX Remix uses).
+vec3 burleyScaling(vec3 color,float g) {
+  vec3 t=4.09712+4.20863*color-sqrt(9.59217+41.6808*color+17.7126*color*color);
+  vec3 s=sqrt(max(1-(1-t*t)/max(1-g*t*t,vec3(1e-7)),vec3(0)));
+  vec3 a=.88*(1-s)/(1+1.5535*s),e=abs(a-.8);
+  return 1.85-a+7*e*e*e;
+}
+// A subsurface material at this point (RTX Remix's controls; hit.n and hit.wo
+// set). A profile's transmittance is the surface's colour, and hit.sss each
+// channel's profile length in scene units and the weight. A thin surface's
+// hit.sss is what it passes of light from behind, relative to a white diffuse
+// lobe (negated where it is too thin to be a volume), and minus the weight.
+void surfaceSubsurface(Surface s,vec2 uv,inout Hit hit) {
+  hit.sss=vec4(0);
+  if(!subsurfaced(s))return;
+  uvec3 maps=(frame.pathConfig.w&0x2000u)==0u?s.subsurfaceMaps.xyz:uvec3(0);
+  vec3 color=maps.x!=0u?materialTexel(s,maps.x-1,uv).rgb:s.subsurfaceColor.rgb;
+  if(s.subsurfaceMaps.w==1u) {
+    hit.color.rgb=maps.x!=0u?color:hit.color.rgb*color;
+    vec3 radius=maps.z!=0u?s.subsurface.rgb*materialTexel(s,maps.z-1,uv).rgb:s.subsurface.rgb;
+    hit.sss=vec4(radius/burleyScaling(color,s.subsurfaceColor.w)*frame.subsurfaceUnits,s.subsurface.w);
+    return;
+  }
+  // Fresnel on the way in and out, the view's cosine standing in for the
+  // light's (one tint for all the pixel's light).
+  float depth=(maps.y!=0u?materialTexel(s,maps.y-1,uv).r:s.subsurfaceThin.w)*frame.subsurfaceThickness;
+  float cosine=clamp(dot(hit.n,hit.wo),.05,1.);
+  float f0=dot(hitF0(hit),vec3(.2126,.7152,.0722)),enters=1-(f0+(1-f0)*pow(1-cosine,5));
+  // Too thin to be a volume: Lambert through it, half the diffuse each way.
+  if(depth<=.05) {
+    hit.sss=vec4(-.5*enters*hit.color.rgb,-s.subsurface.w);
+    return;
+  }
+  // First-order scattering (Hanrahan 1993): the optical depth is the
+  // transmittance over the thickness, times the thickness.
+  vec3 single=maps.z!=0u?materialTexel(s,maps.z-1,uv).rgb:s.subsurfaceThin.rgb;
+  vec3 tau=-log(max(color,vec3(1e-4)))*depth;
+  float g=s.subsurfaceColor.w,phase=(1-g*g)/(4*3.14159265*pow(max(1+g*g-2*g*cosine,1e-4),1.5));
+  hit.sss=vec4(max(3.14159265*single*enters*enters*tau/(cosine*cosine)*phase*exp(-tau/cosine),vec3(1e-6)),-s.subsurface.w);
+}
 void surfaceHit(Intersection x,vec3 direction,inout Hit hit,bool motion) {
   profileRay(5);
   hit.t=x.t;
@@ -341,8 +382,7 @@ void surfaceHit(Intersection x,vec3 direction,inout Hit hit,bool motion) {
     hit.n=materialNormal(s,uv,materialBasis(normal,model*vec4(b-a,0),model*vec4(c-a,0),ub-ua,uc-ua),hit.wo);
     // A thin film, its structural colour in the albedo (iridescence.glsl).
     hit.film=surfaceFilm(s,uv,a+bary.x*(b-a)+bary.y*(c-a),hit.color.a);
-    // Subsurface scattering: each channel's mean free path in scene units.
-    hit.sss=subsurfaced(s)?vec4(s.subsurface.xyz*frame.unitsPerMetre,s.subsurface.w):vec4(0);
+    surfaceSubsurface(s,uv,hit);
     if(hit.film.x>0&&(s.state.w&32)==0)hit.color.rgb*=filmTint(hit.film,hitF0(hit),dot(hit.n,hit.wo));
   }
   hit.decal=enableDecals&&decalSurface(s);hit.decalMode=(s.state.w>>7)&3u;hit.blendedDraw=(s.state.w&2)!=0;hit.blended=blendedAtAlpha(s,hit.color.a);hit.cacheable=(s.state.w&16)!=0;
@@ -1459,8 +1499,8 @@ IndirectResult traceIndirect(Hit primary,ivec2 pixel,vec3 diffuseFactor,vec3 spe
     // Subsurface scattering (subsurface.glsl): the sky and the light bounced
     // from the scene enter where the profile carries them from too, as the
     // primary's direct light does. One probe for the pixel's samples.
-    Hit lit=primary;vec3 sssTint=vec3(1);bool sssThrough=false,sssMoved=false;
-    if(primary.sss.w>0&&random()<primary.sss.w)sssMoved=subsurfaceMove(lit,sssTint,sssThrough);
+    Hit lit=primary;vec3 sssTint=vec3(1);float sssSpecular=1;bool sssMoved=false;
+    if(primary.sss.w!=0&&random()<abs(primary.sss.w))sssMoved=subsurfaceMove(lit,sssTint,sssSpecular);
     for(uint i=0;i<frame.config.x;++i) {
       vec3 firstDir,sampleSpecular;float pathDistance;
 #ifdef TEMPORAL
@@ -1472,7 +1512,7 @@ IndirectResult traceIndirect(Hit primary,ivec2 pixel,vec3 diffuseFactor,vec3 spe
 #endif
       if(sssMoved) {
         vec3 diffuse=sssTint*max(sampleLight-sampleSpecular,vec3(0));
-        if(sssThrough)sampleSpecular=vec3(0);
+        sampleSpecular*=sssSpecular;
         sampleLight=sampleSpecular+diffuse;
       }
       // A NaN passes the firefly limit (its comparison is false) and would
@@ -1969,10 +2009,10 @@ void main() {
     // Subsurface scattering: the local lights are gathered where the profile
     // carries them from, as direct() gathers the sun and the sky; reuse and
     // confidences stay with the visible point.
-    Hit lit=hit;vec3 sssTint=vec3(1);bool sssThrough=false,sssMoved=false;
-    if(hit.sss.w>0) {
+    Hit lit=hit;vec3 sssTint=vec3(1);float sssSpecular=1;bool sssMoved=false;
+    if(hit.sss.w!=0) {
       rng=hash(state^0x73737321u);
-      if(random()<hit.sss.w)sssMoved=subsurfaceMove(lit,sssTint,sssThrough);
+      if(random()<abs(hit.sss.w))sssMoved=subsurfaceMove(lit,sssTint,sssSpecular);
     }
     // The runtime check also keeps the unspecialized fallback correct if the
     // dedicated combined pipeline cannot be created.
@@ -1988,7 +2028,7 @@ void main() {
 #endif
     if(sssMoved) {
       vec3 torchDiffuse=sssTint*max(torch-torchSpecular,vec3(0)),emissiveDiffuse=sssTint*max(emissive-emissiveSpecular,vec3(0));
-      if(sssThrough){torchSpecular=emissiveSpecular=vec3(0);}
+      torchSpecular*=sssSpecular;emissiveSpecular*=sssSpecular;
       torch=torchSpecular+torchDiffuse;emissive=emissiveSpecular+emissiveDiffuse;
     }
     storeReuse(pixel,hit,materialFactor(hit)*(torch+emissive));
@@ -2147,14 +2187,15 @@ void main() {
     // carries them from, their diffuse part tinted by the profile and their
     // reflection kept, unless the light came through to a thin object's far
     // side (which also takes its own sun shadow).
-    Hit lit=primary;vec3 sssTint=vec3(1);bool sssThrough=false,sssMoved=false;
-    if(primary.sss.w>0&&random()<primary.sss.w)sssMoved=subsurfaceMove(lit,sssTint,sssThrough);
+    Hit lit=primary;vec3 sssTint=vec3(1);float sssSpecular=1;bool sssMoved=false;
+    if(primary.sss.w!=0&&random()<abs(primary.sss.w))sssMoved=subsurfaceMove(lit,sssTint,sssSpecular);
     sunTransmittance=sunVisibility(primary,pixel,blockerDistance);
-    if(sssThrough)sunTransmittance=shadow(offsetRay(lit.p,lit.ng),-frame.lightDirection.xyz);
+    // Through to the far side (no reflection): that side's own sun shadow.
+    if(sssSpecular==0)sunTransmittance=shadow(offsetRay(lit.p,lit.ng),-frame.lightDirection.xyz);
     {
       vec3 diffuse,specular;materialLobes(lit,-frame.lightDirection.xyz,diffuse,specular);
       // A point the profile moved to has no terminator of its own to soften.
-      unshadowedDirect=(sssTint*diffuse*(sssMoved?1.:terminatorSoften(lit,-frame.lightDirection.xyz))+(sssThrough?vec3(0):specular))*
+      unshadowedDirect=(sssTint*diffuse*(sssMoved?1.:terminatorSoften(lit,-frame.lightDirection.xyz))+sssSpecular*specular)*
                        max(0,dot(lit.n,-frame.lightDirection.xyz))*frame.lightRadiance.rgb;
     }
     primaryDirect=unshadowedDirect*sunTransmittance;
@@ -2175,7 +2216,7 @@ void main() {
     emissiveSpecularFromPaths=false;
     if(sssMoved) {
       vec3 diffuse=sssTint*max(local-localSpecular,vec3(0));
-      if(sssThrough)localSpecular=vec3(0);
+      localSpecular*=sssSpecular;
       local=localSpecular+diffuse;
     }
     if(separateIndirect) {

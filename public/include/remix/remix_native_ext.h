@@ -1442,28 +1442,16 @@ typedef struct remixapi_MaterialIridescenceEXT {
   float structural;
 } remixapi_MaterialIridescenceEXT;
 
-// Optional pNext on opaque MaterialInfo: subsurface scattering, light that
-// enters the surface and leaves it nearby (skin, wax, marble, leaves), as
-// Burley's normalized diffusion. Direct light reaching the visible surface is
-// gathered from a point the profile picks around it, on the same surface
-// (through a thin object, its far side: back-lit glow); indirect light stays
-// plain diffuse.
-// weight: 0 (none) to 1, the share of diffuse reflection that scatters.
-// radius: per colour channel, how far light travels under the surface
-// (mean free path), times scale, in metres (scale > 0; the scene's metres come
-// from rtx.native.pathtrace.sceneScale). Blender's Principled radius and scale.
-// anisotropy: -0.9 to 0.9, the scattering's forward (positive) or backward
-// bias; forward scattering carries light further.
-// RTX Remix's MaterialInfoOpaqueSubsurfaceEXT with subsurfaceDiffusionProfile
-// is read as weight 1, its radius and its radius scale in millimetres.
-#define REMIXAPI_STRUCT_TYPE_MATERIAL_SUBSURFACE_EXT ((remixapi_StructType)0x7fff1021)
-typedef struct remixapi_MaterialSubsurfaceEXT {
+// Optional pNext on an opaque MaterialInfo with
+// remixapi_MaterialInfoOpaqueSubsurfaceEXT (RTX Remix's subsurface controls):
+// the share of diffuse light that scatters, 0 (none) to 1 (without this
+// extension: 1), which RTX Remix has no control for.
+#define REMIXAPI_STRUCT_TYPE_MATERIAL_SUBSURFACE_WEIGHT_EXT ((remixapi_StructType)0x7fff1021)
+typedef struct remixapi_MaterialSubsurfaceWeightEXT {
   remixapi_StructType sType;
   const void *pNext;
   float weight;
-  remixapi_Float3D radius;
-  float scale, anisotropy;
-} remixapi_MaterialSubsurfaceEXT;
+} remixapi_MaterialSubsurfaceWeightEXT;
 
 // Optional pNext on LightInfo (sphere, rect, disk and cylinder lights): an IES
 // photometric profile, the contents of an IESNA LM-63 file (not

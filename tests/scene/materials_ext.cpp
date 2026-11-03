@@ -728,8 +728,7 @@ namespace {
     require(r.draws().size() == 1 && !r.draws()[0].wound, "Wound cut: a wireframe overlay was cut");
   }
 
-  // Subsurface scattering (remixapi_MaterialSubsurfaceEXT), and RTX Remix's
-  // diffusion profile read into it.
+  // Subsurface scattering: RTX Remix's controls, and OpenRemix's weight.
   void subsurface() {
     remix::NativeResources r;
     remixapi_MaterialInfoOpaqueEXT opaque{};
@@ -737,54 +736,86 @@ namespace {
     opaque.albedoConstant = {1, 1, 1};
     opaque.opacityConstant = 1;
     opaque.alphaTestType = 7;
-    remixapi_MaterialSubsurfaceEXT sss{};
-    sss.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_SUBSURFACE_EXT;
+    remixapi_MaterialInfoOpaqueSubsurfaceEXT sss{};
+    sss.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_SUBSURFACE_EXT;
     sss.pNext = &opaque;
-    sss.weight = .8f;
-    sss.radius = {1, .2f, .1f};
-    sss.scale = .05f;
-    sss.anisotropy = .5f;
+    sss.subsurfaceDiffusionProfile = 1;
+    sss.subsurfaceRadius = {1, .4f, .2f};
+    sss.subsurfaceRadiusScale = 22;
+    sss.subsurfaceMaxSampleRadius = 16;
+    sss.subsurfaceVolumetricAnisotropy = .5f;
+    sss.subsurfaceTransmittanceColor = {1, 1, 1};
     remixapi_MaterialInfo info{};
     info.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO;
     info.pNext = &sss;
-    info.hash = 0xa0;
+    info.hash = 0xb0;
     remixapi_MaterialHandle handle;
     r.createMaterial(info, handle);
-    auto made = drawn(r, quad(r, 0xa1, handle));
-    require(made->subsurface.weight == .8f && made->subsurface.radius[1] == .2f && made->subsurface.scale == .05f &&
-                made->subsurface.anisotropy == .5f && made->pbr,
-            "Subsurface fields, PBR shading");
-    sss.weight = .4f;
+    auto made = drawn(r, quad(r, 0xb1, handle));
+    require(made->subsurface.weight == 1 && made->subsurface.diffusionProfile && made->subsurface.radius[1] == .4f &&
+                made->subsurface.radiusScale == 22 && made->subsurface.anisotropy == .5f && made->pbr,
+            "A diffusion profile, PBR shading");
+    require(made->subsurface.maxSampleRadius == 1, "RTX Remix's largest sample radius is at most a metre");
+    // A zero there would silently turn the profile off in RTX Remix.
+    sss.subsurfaceMaxSampleRadius = 0;
     r.createMaterial(info, handle);
-    require(drawn(r, quad(r, 0xa2, handle))->subsurface.weight == .4f, "A changed subsurface replaces the material");
-    auto reject = [&](float &field, float bad) {
-      const float good = field;
-      field = bad;
-      rejected([&] { r.createMaterial(info, handle); });
-      field = good;
-    };
-    reject(sss.weight, 1.5f);
-    reject(sss.radius.x, -1);
-    reject(sss.scale, 0);
-    reject(sss.anisotropy, .95f);
-    reject(sss.weight, std::numeric_limits<float>::quiet_NaN());
-    // RTX Remix's diffusion profile: weight 1, its scale in millimetres.
-    remixapi_MaterialInfoOpaqueSubsurfaceEXT remix{};
-    remix.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_SUBSURFACE_EXT;
-    remix.pNext = &opaque;
-    remix.subsurfaceDiffusionProfile = 1;
-    remix.subsurfaceRadius = {.5f, .25f, .125f};
-    remix.subsurfaceRadiusScale = 20;
-    info.pNext = &remix;
-    info.hash = 0xa3;
+    require(drawn(r, quad(r, 0xb2, handle))->subsurface.weight == 1 &&
+                drawn(r, quad(r, 0xb2, handle))->subsurface.maxSampleRadius == 1,
+            "No largest sample radius is no limit");
+    // A zero-initialized colour is no colour under a profile.
+    sss.subsurfaceTransmittanceColor = {0, 0, 0};
     r.createMaterial(info, handle);
-    made = drawn(r, quad(r, 0xa4, handle));
-    require(made->subsurface.weight == 1 && made->subsurface.radius[0] == .5f &&
-                std::abs(made->subsurface.scale - .02f) < 1e-7f,
-            "RTX Remix's diffusion profile");
-    remix.subsurfaceDiffusionProfile = 0;
+    require(drawn(r, quad(r, 0xb3, handle))->subsurface.transmittance[1] == 1, "A profile's unset colour keeps the albedo");
+    sss.subsurfaceTransmittanceColor = {1, 1, 1};
+    // OpenRemix's weight.
+    remixapi_MaterialSubsurfaceWeightEXT weight{};
+    weight.sType = REMIXAPI_STRUCT_TYPE_MATERIAL_SUBSURFACE_WEIGHT_EXT;
+    weight.pNext = &sss;
+    weight.weight = .4f;
+    info.pNext = &weight;
     r.createMaterial(info, handle);
-    require(drawn(r, quad(r, 0xa5, handle))->subsurface.weight == 0, "No diffusion profile, no subsurface");
+    require(drawn(r, quad(r, 0xb4, handle))->subsurface.weight == .4f, "A changed weight replaces the material");
+    weight.weight = 1.5f;
+    rejected([&] { r.createMaterial(info, handle); });
+    weight.weight = std::numeric_limits<float>::quiet_NaN();
+    rejected([&] { r.createMaterial(info, handle); });
+    info.pNext = &sss;
+    sss.subsurfaceRadius.x = std::numeric_limits<float>::quiet_NaN();
+    rejected([&] { r.createMaterial(info, handle); });
+    // Nothing scatters: no radius, no map.
+    sss.subsurfaceRadius = {0, 0, 0};
+    r.createMaterial(info, handle);
+    require(drawn(r, quad(r, 0xb5, handle))->subsurface.weight == 0, "A profile with no radius scatters nothing");
+    // Thin opaque: no profile, a measurement distance.
+    sss.subsurfaceDiffusionProfile = 0;
+    sss.subsurfaceRadius = {1, 1, 1};
+    sss.subsurfaceMeasurementDistance = .5f;
+    sss.subsurfaceTransmittanceColor = {.6f, 1, .3f};
+    sss.subsurfaceSingleScatteringAlbedo = {.8f, .9f, .5f};
+    r.createMaterial(info, handle);
+    made = drawn(r, quad(r, 0xb6, handle));
+    require(made->subsurface.weight == 1 && !made->subsurface.diffusionProfile &&
+                made->subsurface.measurementDistance == .5f && made->subsurface.transmittance[2] == .3f &&
+                made->subsurface.singleScatteringAlbedo[1] == .9f,
+            "Thin opaque");
+    sss.subsurfaceMeasurementDistance = 0;
+    r.createMaterial(info, handle);
+    require(drawn(r, quad(r, 0xb7, handle))->subsurface.weight == 0, "Neither kind, no subsurface");
+    // A profile keeps no thin opaque distance.
+    sss.subsurfaceDiffusionProfile = 1;
+    sss.subsurfaceMeasurementDistance = 3;
+    r.createMaterial(info, handle);
+    require(drawn(r, quad(r, 0xb8, handle))->subsurface.measurementDistance == 0, "A profile has no thickness");
+    // Under a profile, a transmittance map that is the albedo map reads as the albedo.
+    rgbaTexture(r, 0xb9, REMIXAPI_FORMAT_R8G8B8A8_SRGB);
+    rgbaTexture(r, 0xba, REMIXAPI_FORMAT_R8G8B8A8_SRGB);
+    info.albedoTexture = name("0xb9");
+    sss.subsurfaceTransmittanceTexture = name("0xb9");
+    r.createMaterial(info, handle);
+    require(!drawn(r, quad(r, 0xbb, handle))->subsurface.transmittanceTexture, "The albedo map as the transmittance map");
+    sss.subsurfaceTransmittanceTexture = name("0xba");
+    r.createMaterial(info, handle);
+    require(drawn(r, quad(r, 0xbc, handle))->subsurface.transmittanceTexture != nullptr, "A transmittance map of its own");
   }
 } // namespace
 

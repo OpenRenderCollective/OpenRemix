@@ -266,38 +266,60 @@ namespace remix {
         material->metallic = 0;
       }
     }
-    if (const auto *sss = static_cast<const remixapi_MaterialSubsurfaceEXT *>(
-            extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_SUBSURFACE_EXT))) {
-      finite(&sss->weight, 6);
-      if (!opaque || sss->weight < 0 || sss->weight > 1 || sss->radius.x < 0 || sss->radius.y < 0 ||
-          sss->radius.z < 0 || !(sss->scale > 0) || sss->anisotropy < -.9f || sss->anisotropy > .9f)
-        throw invalid;
+    const auto *sssWeight = static_cast<const remixapi_MaterialSubsurfaceWeightEXT *>(
+        extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_SUBSURFACE_WEIGHT_EXT));
+    if (sssWeight && (!opaque || !std::isfinite(sssWeight->weight) || sssWeight->weight < 0 || sssWeight->weight > 1))
+      throw invalid;
+    if (const auto *sss = static_cast<const remixapi_MaterialInfoOpaqueSubsurfaceEXT *>(
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_SUBSURFACE_EXT));
+        sss && opaque) {
+      finite(&sss->subsurfaceTransmittanceColor.x, 3);
+      finite(&sss->subsurfaceSingleScatteringAlbedo.x, 3);
+      finite(&sss->subsurfaceRadius.x, 3);
+      const float scalars[] = {sss->subsurfaceMeasurementDistance, sss->subsurfaceVolumetricAnisotropy,
+                               sss->subsurfaceRadiusScale, sss->subsurfaceMaxSampleRadius};
+      finite(scalars, 4);
       auto &out = material->subsurface;
-      out.weight = sss->weight;
-      out.radius[0] = sss->radius.x;
-      out.radius[1] = sss->radius.y;
-      out.radius[2] = sss->radius.z;
-      out.scale = sss->scale;
-      out.anisotropy = sss->anisotropy;
-    } else if (const auto *remix = static_cast<const remixapi_MaterialInfoOpaqueSubsurfaceEXT *>(
-                   extension(info.pNext, REMIXAPI_STRUCT_TYPE_MATERIAL_INFO_OPAQUE_SUBSURFACE_EXT));
-               remix && opaque && remix->subsurfaceDiffusionProfile) {
-      // RTX Remix's diffusion profile: its radius scale in millimetres.
-      const float values[] = {remix->subsurfaceRadius.x, remix->subsurfaceRadius.y, remix->subsurfaceRadius.z,
-                              remix->subsurfaceRadiusScale, remix->subsurfaceVolumetricAnisotropy};
-      if (std::all_of(std::begin(values), std::end(values), [](float v) { return std::isfinite(v); }) &&
-          remix->subsurfaceRadiusScale > 0) {
-        auto &out = material->subsurface;
-        out.weight = 1;
-        for (unsigned c = 0; c < 3; ++c)
-          out.radius[c] = std::max(values[c], 0.f);
-        out.scale = remix->subsurfaceRadiusScale * 1e-3f;
-        out.anisotropy = std::clamp(remix->subsurfaceVolumetricAnisotropy, -.9f, .9f);
+      out.diffusionProfile = sss->subsurfaceDiffusionProfile != 0;
+      out.measurementDistance = out.diffusionProfile ? 0 : std::max(sss->subsurfaceMeasurementDistance, 0.f);
+      out.anisotropy = std::clamp(sss->subsurfaceVolumetricAnisotropy, -.9f, .9f);
+      const remixapi_Float3D &color = sss->subsurfaceTransmittanceColor, &single = sss->subsurfaceSingleScatteringAlbedo,
+                             &radius = sss->subsurfaceRadius;
+      out.transmittance[0] = std::clamp(color.x, 0.f, 1.f);
+      out.transmittance[1] = std::clamp(color.y, 0.f, 1.f);
+      out.transmittance[2] = std::clamp(color.z, 0.f, 1.f);
+      out.singleScatteringAlbedo[0] = std::clamp(single.x, 0.f, 1.f);
+      out.singleScatteringAlbedo[1] = std::clamp(single.y, 0.f, 1.f);
+      out.singleScatteringAlbedo[2] = std::clamp(single.z, 0.f, 1.f);
+      out.radius[0] = std::max(radius.x, 0.f);
+      out.radius[1] = std::max(radius.y, 0.f);
+      out.radius[2] = std::max(radius.z, 0.f);
+      out.radiusScale = std::max(sss->subsurfaceRadiusScale, 1e-5f);
+      // RTX Remix stores this in a unorm: at most a metre. Zero there silently
+      // turns the profile off; here, like an unauthored one, it is no limit.
+      out.maxSampleRadius = sss->subsurfaceMaxSampleRadius > 0 ? std::min(sss->subsurfaceMaxSampleRadius, 1.f) : 1;
+      out.transmittanceTexture = texturePath(sss->subsurfaceTransmittanceTexture);
+      out.thicknessTexture = dataTexturePath(sss->subsurfaceThicknessTexture);
+      out.singleScatteringAlbedoTexture = texturePath(sss->subsurfaceSingleScatteringAlbedoTexture);
+      out.radiusTexture = dataTexturePath(sss->subsurfaceRadiusTexture);
+      // Its transmittance map is the surface's colour under a profile: as the
+      // albedo map it reads no differently, tints and vertex colours included
+      // (RTX Remix's rtx.subsurface.transmittanceFollowsAlbedo).
+      if (out.transmittanceTexture == material->texture)
+        out.transmittanceTexture.reset();
+      if (out.diffusionProfile) {
+        out.thicknessTexture.reset();
+        out.singleScatteringAlbedoTexture.reset();
+        // A zero-initialized colour is no colour.
+        if (!(color.x > 0 || color.y > 0 || color.z > 0) && !out.transmittanceTexture)
+          std::fill_n(out.transmittance, 3, 1.f);
+      } else {
+        out.radiusTexture.reset();
       }
+      const bool scatters = out.radius[0] > 0 || out.radius[1] > 0 || out.radius[2] > 0 || out.radiusTexture;
+      if ((out.diffusionProfile && scatters) || out.measurementDistance > 0)
+        out.weight = sssWeight ? sssWeight->weight : 1;
     }
-    if (material->subsurface.weight > 0 &&
-        !(material->subsurface.radius[0] > 0 || material->subsurface.radius[1] > 0 || material->subsurface.radius[2] > 0))
-      material->subsurface.weight = 0; // nothing scatters
     material->pbr =
         material->transmittanceDistance > 0 ||
         (opaque && (pbr ? pbr->enabled != 0

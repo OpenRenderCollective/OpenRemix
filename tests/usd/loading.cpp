@@ -136,31 +136,35 @@ int main(int argc, char **argv) {
               "an override authors its subsurface only");
     }
     {
-      // OpenRemix's subsurface attributes, read into the material JSON and
-      // submitted as remixapi_MaterialSubsurfaceEXT.
-      std::ifstream in(fixture / "capture.usda");
-      std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+      // RTX Remix's subsurface inputs and OpenRemix's weight, read into the
+      // material JSON and submitted.
+      std::ifstream sssIn(fixture / "capture.usda");
+      std::string text((std::istreambuf_iterator<char>(sssIn)), std::istreambuf_iterator<char>());
       const std::string shader = "int inputs:alpha_test_type = 7";
       const auto at = text.find(shader);
-      require(at != std::string::npos, "capture fixture shader");
-      text.insert(at + shader.size(), "\nfloat openremix:subsurface:weight = 0.75"
-                                      "\nfloat3 openremix:subsurface:radius = (1, 0.5, 0.25)"
-                                      "\nfloat openremix:subsurface:scale = 0.02");
-      const auto path = std::filesystem::temp_directory_path() /
-                        ("openremix-usd-sss-" + std::to_string(getpid()) + ".usda");
-      std::ofstream(path) << text;
-      auto loaded = usd::load({path.string()});
-      std::filesystem::remove(path);
+      require(at != std::string::npos, "subsurface fixture shader");
+      text.insert(at + shader.size(), "\nbool inputs:subsurface_diffusion_profile = 1"
+                                      "\ncolor3f inputs:subsurface_radius = (1, 0.4, 0.2)"
+                                      "\nfloat inputs:subsurface_radius_scale = 22"
+                                      "\nfloat inputs:subsurface_max_sample_radius = 1"
+                                      "\nfloat openremix:subsurface:weight = 0.75");
+      const auto sssPath = std::filesystem::temp_directory_path() /
+                           ("openremix-usd-sss-" + std::to_string(getpid()) + ".usda");
+      std::ofstream(sssPath) << text;
+      auto loaded = usd::load({sssPath.string()});
+      std::filesystem::remove(sssPath);
       const auto &sss = loaded.scene["materials"].at(0).at("subsurface");
-      require(sss["weight"] == .75 && sss["radius"][1] == .5 && std::abs(sss["scale"].get<float>() - .02f) < 1e-7f &&
-                  sss["anisotropy"] == 0,
+      require(sss["weight"] == .75 && sss["diffusion_profile"] == true && sss["radius_scale"] == 22 &&
+                  std::abs(sss["radius"][1].get<float>() - .4f) < 1e-6f && sss["measurement_distance"] == 0 &&
+                  sss["transmittance"][0] == 1,
               "subsurface in the material JSON");
       NativeResources sssResources;
       usd::Submission submitted(sssResources, loaded, 1);
       submitted.draw(false, 1);
       require(!sssResources.draws().empty(), "subsurface submission");
       const auto &drawn = sssResources.draws()[0].material->subsurface;
-      require(drawn.weight == .75f && drawn.radius[2] == .25f && std::abs(drawn.scale - .02f) < 1e-7f,
+      require(drawn.weight == .75f && drawn.diffusionProfile && std::abs(drawn.radius[2] - .2f) < 1e-6f &&
+                  drawn.radiusScale == 22 && drawn.maxSampleRadius == 1,
               "subsurface submitted");
       sssResources.finishFrame();
     }
