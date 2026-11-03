@@ -1,3 +1,5 @@
+#ifndef OPENREMIX_LOCAL_LIGHT_SAMPLE
+#define OPENREMIX_LOCAL_LIGHT_SAMPLE
 #include "directional-fields.glsl"
 #include "probe-batch.glsl"
 bool emitterAbovePlane(Light light, vec3 p, vec3 n) {
@@ -18,3 +20,5 @@ bool sampleLocalLight(uint index, vec3 p, vec3 n, vec4 directIrradiance,
   sampled = lighting;
   return true;
 }
+
+#endif

@@ -1,8 +1,6 @@
-const float Pi = 3.14159265359;
-struct BrdfLobes {
-  vec3 diffuse;  // BRDF weight; multiply by irradiance or analytic NdotL.
-  vec3 specular; // Analytic GGX including NdotL.
-};
+#ifndef OPENREMIX_STANDARD_BRDF
+#define OPENREMIX_STANDARD_BRDF
+#include "brdf-values.glsl"
 BrdfLobes brdfLobes(vec3 base, float roughness, float metallic, vec3 n, vec3 v, vec3 l, vec3 dielectricF0) {
   float nl = max(dot(n, l), 0), nv = max(dot(n, v), 1e-4);
   vec3 halfVector = v + l;
@@ -26,3 +24,5 @@ vec3 brdf(vec3 base, float roughness, float metallic, vec3 n, vec3 v, vec3 l) {
   BrdfLobes response = brdfLobes(base, roughness, metallic, n, v, l);
   return response.diffuse * max(dot(n, l), 0) + response.specular;
 }
+
+#endif

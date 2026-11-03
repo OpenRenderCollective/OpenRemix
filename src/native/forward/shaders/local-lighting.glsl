@@ -2,7 +2,7 @@
 #include "baked-storage.glsl"
 #include "occlusion.glsl"
 #include "local-shadows.glsl"
-#include "direct-light.glsl"
+#include "light-sample.glsl"
 #include "light-list.glsl"
 
 // Prepared once for a local-light loop. Baked-channel and cluster layouts are
@@ -28,14 +28,5 @@ bool sampleReceiverLocalLight(uint ordinal, ShadingReceiver receiver, vec3 norma
 }
 
 uint receiverLocalLightCount(LocalLightingContext context) { return context.lights.count; }
-// Preserve the specialized miss exits in the default source. Other sources
-// can use the shared standard response adapter without implementing a BRDF.
+// The standard model can opt into the source-specific early-exit adapter.
 #define OPENREMIX_SPECIALIZED_LOCAL_RESPONSE
-// Standard response adapter: source indices, direct channels and shadow inputs
-// stay private to the source. Custom models use sampleReceiverLocalLight instead.
-LightContribution standardReceiverLocalLight(uint ordinal, ShadingReceiver receiver, vec3 normal, vec3 view,
-    vec3 base, float roughness, float metallic, LocalLightingContext context, vec3 dielectricF0) {
-  return localLightResponse(localLightIndex(context.lights, ordinal), receiver.position, normal, view,
-      base, roughness, metallic, context.directIrradiance, receiver.baked, dielectricF0,
-      normalize(receiver.geometric), context.aggregate);
-}
