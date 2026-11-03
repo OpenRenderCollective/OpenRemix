@@ -19,6 +19,9 @@ float directionalFieldValue(uint data, uint encoding, uint width, uvec2 pixel, f
   }
   return value;
 }
+// Deliberately fused: sharing lookup/SH contexts across cubic taps has not
+// passed frame-time qualification. The source-facing query below keeps record
+// details private without requiring a longer-lived sampling context.
 bool linearSurfaceDirectionalField(uint chart, uint capturedLight, vec4 coordinate, vec3 normal, out float value) {
   value = 0;
   uint table = frame.clusterInfo.z;
