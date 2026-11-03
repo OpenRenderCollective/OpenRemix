@@ -1,5 +1,6 @@
 #ifndef OPENREMIX_DIFFUSE_VALUES
 #define OPENREMIX_DIFFUSE_VALUES
+#include "lighting-reference.glsl"
 // Analytic lobes requested in addition to the incident field. Attribution
 // preserves Source 2 per-light residuals; it is independent of lobe ownership.
 struct DirectLightingPolicy {

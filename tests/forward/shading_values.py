@@ -52,7 +52,7 @@ stages = {
       material.color = vec4(.8,.3,.1,1);
       material.roughness = .6;
       ReflectionReceiver query = ReflectionReceiver(vec3(0), vec3(0), material.normal,
-          vec3(0,0,1), material.roughness, -1, 0u, uvec2(0));
+          vec3(0,0,1), material.roughness, unavailableLightingReference(), 0u, uvec2(0));
       SunLightSample sun = SunLightSample(vec3(0,0,1), vec3(1), 0, 1);
       LightContribution sunlight = composeSunLight(sun, BrdfLobes(material.color.rgb, vec3(0)));
       ReflectionSample reflected = ReflectionSample(query.direction * sunlight.diffuse, 1);

@@ -35,3 +35,6 @@ float diffuseReferenceLuma(vec3 position, vec3 normal) {
   return bakedIrradiance(position, normal, incident)
       ? dot(max(incident / Pi, vec3(0)), vec3(.2126, .7152, .0722)) : -1;
 }
+
+// Compatibility describes the selected source, not receiver availability.
+uint diffuseReflectionReferenceDomain() { return Source2StaticLightingReference; }

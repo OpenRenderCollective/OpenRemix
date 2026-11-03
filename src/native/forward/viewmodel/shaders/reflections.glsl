@@ -23,10 +23,10 @@ layout(set = 0, binding = 18) uniform sampler2D opaqueColor;
 #include "../../shaders/screen-reflection.glsl"
 
 // Scene-linear reflected radiance, before the material Fresnel response.
-vec3 viewModelReflectionRadiance(vec3 position, vec3 n, vec3 v, float roughness, uint layer, float localLuma) {
+vec3 viewModelReflectionRadiance(vec3 position, vec3 n, vec3 v, float roughness, uint layer, LightingReference reference) {
   vec3 reflected = reflect(-v, n);
   ReflectionReceiver receiver = ReflectionReceiver(position, position + n * sky.target.z, n,
-      reflected, roughness, localLuma, layer, viewModelScreen.probeCandidates.xy);
+      reflected, roughness, reference, layer, viewModelScreen.probeCandidates.xy);
   vec3 radiance = sampleEnvironmentReflection(receiver);
   ScreenReflectionView screen = ScreenReflectionView(frame.camera, viewModelScreen.inverseCamera,
       frame.view, viewModelScreen.trace, viewModelScreen.config, frame.target.xy);
@@ -36,7 +36,7 @@ vec3 viewModelReflectionRadiance(vec3 position, vec3 n, vec3 v, float roughness,
   return radiance;
 }
 bool viewModelReflectionsDisabled() { return (frame.clusterInfo.w & 2u) == 0u; }
-vec3 sampleViewModelReflection(vec3 position, vec3 n, vec3 v, float roughness, uint layer, float localLuma) {
+vec3 sampleViewModelReflection(vec3 position, vec3 n, vec3 v, float roughness, uint layer, LightingReference reference) {
   if (viewModelReflectionsDisabled()) return vec3(0);
-  return viewModelReflectionRadiance(position, n, v, roughness, layer, localLuma);
+  return viewModelReflectionRadiance(position, n, v, roughness, layer, reference);
 }

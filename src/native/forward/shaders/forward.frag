@@ -128,7 +128,7 @@ void main() {
   result = shaded.color;
 #ifdef REFLECTION_GUIDES
   outNormalRoughness = packReflectionGuide(shaded.normal, shaded.roughness,
-                                          shaded.irradianceLuma);
+                                          lightingReferenceLuminance(shaded.reflectionReference, Source2StaticLightingReference));
   // Pass-owned RGBA8 encoding: alpha retains ordinary selection or a
   // one-based cubemap layer from this same covered MSAA sample.
   outReflectance = shaded.hasReflectance

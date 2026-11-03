@@ -36,7 +36,11 @@ Implemented and checked:
   or unknown references are neutral, and valid black remains distinct. The Source
   2 specialization preserves optimized sizes/opcode counts across ten checked
   material/resolve variants; GPU reference-energy sweeps pass. General scene and
-  component provenance across guide transport is still open.
+  component provenance across guide transport is still open. Typed normalization
+  references now survive material, viewmodel and water composition; diffuse
+  sources declare their domain separately from receiver availability. The current
+  scalar guide rejects foreign domains instead of relabeling their energy as
+  Source 2 static lighting; arbitrary domains still need a guide adapter.
 - Resolved provider dependencies drive live diffuse/ray scene and screen/ray
   reflection resources. Live diffuse ownership is queried independently of the
   ray-query implementation for receiver masks, highlights, mixed fallback and
