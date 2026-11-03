@@ -512,6 +512,13 @@ int main() {
   dirty = sunCache.update(source, false, matrices);
   require(std::count(dirty.begin(), dirty.end(), true) == 0,
           "Camera motion cannot make cleared disabled sun layers dirty");
+  source = std::make_shared<scene::BakeScene>();
+  dirty = sunCache.update(source, false, matrices);
+  require(std::count(dirty.begin(), dirty.end(), true) == cascadeCount,
+          "Replacing a disabled sun source still initializes every layer");
+  dirty = sunCache.update(source, false, matrices);
+  require(std::count(dirty.begin(), dirty.end(), true) == 0,
+          "A replaced disabled source needs no repeated initialization");
   dirty = sunCache.update(source, true, matrices);
   require(std::count(dirty.begin(), dirty.end(), true) == cascadeCount,
           "Re-enabling sunlight initializes the current projections");

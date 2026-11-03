@@ -42,7 +42,7 @@ namespace remix::forward {
       uint32_t worldDepthLogical = 0, batchedDepthSources = 0;
     } drawCalls;
     uint32_t shadowedLights = 0, shadowOverflow = 0, staticShadowUpdates = 0;
-    uint32_t staticSunUpdates = 0, capturedCasters = 0, liveCasters = 0;
+    uint32_t staticSunUpdates = 0, movingSunUpdates = 0, capturedCasters = 0, liveCasters = 0;
     uint32_t staticCasterPreparations = 0, emptyMovingShadowMaps = 0;
     struct LocalShadowDraws {
       uint64_t lightId = 0;
