@@ -1013,3 +1013,37 @@ configuration equality, so changing it invalidates the old diffuse publication.
 Runtime technique selection still requests combined data. The hybrid preset and
 renderer composition are not wired: a direct-only volume must not be advertised
 as a complete Source 2 lighting or reflection-normalization reference.
+
+
+### Composing baked direct with live incoming diffuse
+
+`diffuse-baked-field.glsl` provides the shared chart/probe lookup without owning
+the final combination. `incoming-lighting.glsl` supplies an incoming-only query;
+its current adapter calls the existing ray transport. Incoming means sky, visible
+emission and bounced radiance, excluding receiver-direct local-light NEE. A
+replacement source implements that query without changing the material model,
+baked field lookup or per-light mixed-shadow response.
+
+`diffuse-compose.glsl` adds incoming irradiance / pi to a receiver-direct field.
+It preserves the direct diffuse/specular/attribution policy: moving occluders
+subtract from captured direct energy, while incoming energy remains present.
+Missing baked coverage retains ordinary analytic direct response. Composition
+never advertises the sum as a compatible frozen-cubemap normalization reference.
+
+`OPENREMIX_BAKED_DIRECT_LIVE_INDIRECT` selects the composed source at compilation,
+using the baked receiver context and the incoming query. It currently requires
+`LIVE_GI` for the pass's existing live-source plumbing. Standard and custom
+materials compile through this source, including viewmodel, zero-diffuse metal
+and water passes. A query-only incoming replacement compiles with the ray
+implementation physically absent from the test tree. GPU numerical checks cover
+mixed visibility, valid black and missing baked coverage alongside independent
+producer energy-conservation tests.
+
+This is a shader composition boundary, not an enabled runtime technique. Host
+pipeline/resource selection must require a ReceiverDirect publication, retain
+sun/controllable fields and masks, and resolve reflection-reference ownership
+before enabling it. In particular the optical water sunlight policy remains a
+separate qualification task. Existing default optimized variants are identical
+after stripping debug data and compacting SPIR-V identifiers; no draw-time source
+switch or extra default sampling has been introduced. Matched runtime performance
+acceptance for the complete hybrid remains open.

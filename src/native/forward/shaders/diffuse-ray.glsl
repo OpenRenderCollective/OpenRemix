@@ -1,8 +1,9 @@
+#include "incoming-lighting.glsl"
 // Ray-query diffuse implementation. Selected at shader compilation.
 ReceiverLighting evaluateReceiverLighting(vec3 position, vec3 normal, vec3 geometric,
                                          bool diffuseRequired, vec3 fallback) {
   ReceiverLighting lighting = ReceiverLighting(fallback, analyticDirectLighting(false), false);
-  lighting.diffuse = diffuseRequired ? liveDiffuse(position, normal, geometric) : vec3(0);
+  lighting.diffuse = diffuseRequired ? sampleIncomingDiffuse(position, normal, geometric) : vec3(0);
   return lighting;
 }
 

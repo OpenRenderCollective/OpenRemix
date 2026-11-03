@@ -127,8 +127,13 @@ Still required for the complete modularity/performance objective:
   selects the contents, with cold/warm publication and asynchronous storage
   retaining that kind. The restricted direct-only mode traces one bounce and
   rejects combined-reference diagnostics, indirect styles and bundled reflections.
-  Runtime selection still requests combined data. Next wire retained
-  sun/controllable direct fields and renderer composition/masks; then
+  Runtime selection still requests combined data. A compile-time composed shader
+  source now adds a replaceable incoming-only query to the baked direct field,
+  preserving direct attribution and rejecting a frozen reflection reference.
+  Standard/custom material passes compile, and GPU mixed-shadow checks preserve
+  incoming energy with and without baked coverage. Twelve normalized optimized
+  default/custom variants remain identical. Next wire host pipeline/resource
+  selection, retained sun/controllable fields and renderer masks; then
   split transport ownership/storage deliberately and prevent double-counting
   aggregate direct energy. Preserve existing presets and the default Source 2
   combined fast path.

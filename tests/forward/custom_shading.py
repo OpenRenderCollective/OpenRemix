@@ -38,6 +38,8 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
         "viewmodel": ["VIEWMODEL_PASS", "REFLECTION_GUIDES"],
         "live-diffuse": ["LIVE_GI", "REFLECTION_GUIDES"],
         "live-viewmodel": ["LIVE_GI", "VIEWMODEL_PASS"],
+        "composed-model": ["LIVE_GI", "OPENREMIX_BAKED_DIRECT_LIVE_INDIRECT"],
+        "composed-model-viewmodel": ["LIVE_GI", "OPENREMIX_BAKED_DIRECT_LIVE_INDIRECT", "VIEWMODEL_PASS"],
     }
     for name, defines in variants.items():
         binary = tree / (name + ".spv")
@@ -95,6 +97,44 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
         subprocess.run([validator, "--target-env", "vulkan1.1", str(binary)], env=env, check=True)
     shutil.copyfile(root / "src/native/forward/shaders/receiver-lighting.glsl",
                     tree / "shaders/receiver-lighting.glsl")
+    # Compile the real composed source through standard material passes. This
+    # validates the shader contract only; runtime resource selection is separate.
+    for name, defines in {
+        "composed-world": [],
+        "composed-metal": ["ZERO_DIFFUSE_MATERIAL"],
+        "composed-viewmodel": ["VIEWMODEL_PASS"],
+        "composed-water": ["WATER_SURFACE", "RAY_SCENE_SET=3"],
+        "composed-water-ray": ["WATER_SURFACE", "WATER_RAY", "RAY_SCENE_SET=3"],
+    }.items():
+        binary = tree / (name + ".spv")
+        subprocess.run([compiler, "-V", "--target-env", "vulkan1.2",
+                        "-DLIVE_GI", "-DOPENREMIX_BAKED_DIRECT_LIVE_INDIRECT", "-DREFLECTION_GUIDES",
+                        *["-D" + define for define in defines], str(source),
+                        "-o", str(binary)], env=env, check=True)
+        subprocess.run([validator, "--target-env", "vulkan1.2", str(binary)], env=env, check=True)
+    # Replace incoming transport while retaining baked direct storage, contexts,
+    # mixed-shadow attribution and the real standard material. No ray include is
+    # available, so accidental dependencies cannot pass on unused declarations.
+    source.write_text((root / "src/native/forward/shaders/forward.frag").read_text().replace(
+        '#include "gi.glsl"', ''), encoding="utf-8")
+    (tree / "shaders/gi.glsl").unlink()
+    shutil.copyfile(root / "tests/forward/shaders/custom-incoming-source.glsl",
+                    tree / "shaders/incoming-lighting.glsl")
+    for name, defines in {
+        "incoming-source-world": [],
+        "incoming-source-viewmodel": ["VIEWMODEL_PASS"],
+        "incoming-source-metal": ["ZERO_DIFFUSE_MATERIAL"],
+        "incoming-source-water": ["WATER_SURFACE"],
+    }.items():
+        binary = tree / (name + ".spv")
+        subprocess.run([compiler, "-V", "--target-env", "vulkan1.2",
+                        "-DLIVE_GI", "-DOPENREMIX_BAKED_DIRECT_LIVE_INDIRECT", "-DREFLECTION_GUIDES",
+                        *["-D" + define for define in defines], str(source),
+                        "-o", str(binary)], env=env, check=True)
+        subprocess.run([validator, "--target-env", "vulkan1.2", str(binary)], env=env, check=True)
+    source.write_text((root / "src/native/forward/shaders/forward.frag").read_text(), encoding="utf-8")
+    for name in ("gi.glsl", "incoming-lighting.glsl"):
+        shutil.copyfile(root / "src/native/forward/shaders" / name, tree / "shaders" / name)
     # The alternate local source must not rely on default Source 2 transport
     # declarations being incidentally imported by the pass/material response.
     # It supplies queries only: the real standard material must acquire its
