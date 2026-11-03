@@ -118,6 +118,9 @@ namespace remix::forward::bake {
     // compact value; no capture storage or reflection provider is required.
     void finishDiffuseAssets(VkPhysicalDevice physical, VkDevice device, const Config &config,
                                const ReflectionFingerprint &reflectionFingerprint);
+    // Default recipe coordination only; individual encoders retain their own outputs.
+    // Runs on the existing joined preparation ticket, never on a frame draw path.
+    void finishSource2Recipe(VkPhysicalDevice physical, VkDevice device, const Config &config);
     std::vector<Vec4> visibility;
     std::vector<lightmap::Direct> direct;
     std::optional<mixed::DirectWork> directWork;

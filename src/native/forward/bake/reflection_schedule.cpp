@@ -1,7 +1,5 @@
 #include "forward/bake/job.h"
 #include "forward/bake/transport.h"
-#include "forward/bake/fingerprint.h"
-#include "forward/bake/visibility_report.h"
 #include "forward/probes/capture_cache.h"
 #include "forward/probes/capture_dump.h"
 #include "forward/probes/placement.h"
@@ -15,7 +13,8 @@ namespace remix::forward::bake {
 
   // Source 2 preset adapter: reflection work owns its state machine; this
   // scheduler lends the default bake's transport and admission. The provider
-  // owns its worker ticket. Preserve budget/order without another job or scene.
+  // owns capture preparation tickets; the recipe owns combined finishing.
+  // Preserve budget/order without another job or scene.
   void Controller::recordReflections(VkCommandBuffer command, const Config &config) {
     auto &job = *m_job;
     if (recordSunDepth(command, config)) return;
@@ -125,34 +124,7 @@ namespace remix::forward::bake {
       // retain it through the recipe ticket and its normal cancellation gate.
       job.ticket = m_pipelines->prepare(
           "forward-probe-filter-" + std::to_string(++generation), [owner, physical, device, config] {
-            // Preserve exact input provenance on the worker, then release ray
-            // scratch before filtered cubemaps, denoising and atlas encoding.
-            // Publication must not scan this potentially large buffer again.
-            owner->reflections.complete(owner->cancellation.get_token());
-            const auto reflectionFingerprint = owner->reflectionRecovery ? ReflectionFingerprint{}
-                : fingerprintCaptures(owner->reflections.captureView());
-            if (!owner->reflectionRecovery) {
-              dumpPhaseFingerprint("transport", owner->source->contentHash, owner->grid, owner->surfaceLayout, owner->surfaces,
-                                   owner->sun, reflectionFingerprint);
-              dumpVisibilityReport(*owner->mixedLights, owner->surfaceLayout,
-                                    Options{}.bias / owner->source->sceneScale, owner->cancellation.get_token());
-            }
-            owner->finishStage.store(Job::FinishStage::Reflections, std::memory_order_relaxed);
-            if (owner->inMemoryDiffuse && owner->reflectionCacheKey && !owner->reflections.cachedRadiance) {
-              auto payload = owner->reflections.finishTransferredPublication(
-                  physical, device, owner->cancellation.get_token());
-              if (probes::capture_cache::retainedCharge(*payload) <= probes::capture_cache::maximumBytes)
-                owner->reflectionPersistence = std::move(payload);
-            } else
-              owner->reflections.finishRetainedPublication(physical, device, owner->cancellation.get_token());
-            if (!owner->reflectionRecovery) {
-              owner->finishDiffuseAssets(physical, device, config, reflectionFingerprint);
-              // Source 2 recipe transition: capture admission and scheduling
-              // flags are not outputs of the diffuse asset encoder.
-              owner->retainReflectionSeeds();
-              owner->baseFinished = true;
-              owner->filtering = !owner->styles;
-            }
+            owner->finishSource2Recipe(physical, device, config);
           });
       status(REMIXAPI_BAKE_PREPARING_EXT, "Finishing baked lighting assets");
       return;
