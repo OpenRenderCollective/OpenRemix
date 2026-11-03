@@ -205,6 +205,8 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
     # It supplies queries only: the real standard material must acquire its
     # response adapter from the shared material module, not this fixture.
     (tree / "shaders/light-sample.glsl").unlink()
+    (tree / "shaders/occlusion.glsl").unlink()
+    (tree / "shaders/local-shadows.glsl").unlink()
     shutil.copyfile(root / "tests/forward/shaders/custom-local-source.glsl",
                     tree / "shaders/local-lighting.glsl")
     for name, defines in {
@@ -222,6 +224,8 @@ with tempfile.TemporaryDirectory(prefix="custom-model-", dir=output) as temporar
         subprocess.run([validator, "--target-env", "vulkan1.1", str(binary)], env=env, check=True)
     shutil.copyfile(root / "src/native/forward/shaders/light-sample.glsl",
                     tree / "shaders/light-sample.glsl")
+    for name in ("occlusion.glsl", "local-shadows.glsl"):
+        shutil.copyfile(root / "src/native/forward/shaders" / name, tree / "shaders" / name)
     shutil.copyfile(root / "src/native/forward/shaders/local-lighting.glsl",
                     tree / "shaders/local-lighting.glsl")
     # A replacement sunlight source needs only values and receiver queries,

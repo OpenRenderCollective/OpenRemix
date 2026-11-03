@@ -227,6 +227,11 @@ Still required for the complete modularity/performance objective:
   rather than the reflection provider's ticket. It remains one queued task in
   the same order, with existing readiness/error/cancellation gates and independent
   sealed-image publication. Standalone capture preparation remains provider-owned.
+- Static local-light visibility and local shadow resources are now imported
+  by the default local source rather than the material pass. Replacement-source
+  compilation removes both implementations, alongside the raw local sampler.
+  Host descriptors and shader interfaces are unchanged; other baked storage
+  imports remain separate migration work.
 - Define general contribution ownership and compatible reflection normalization
   for unified GI replacements. Current attribution is Source 2/per-light specific.
   Composed optical sunlight has fixture coverage; broader optical/probe edge
