@@ -12,7 +12,7 @@ context, not proof that an old experiment is still enabled or a defect is fixed.
 | Item | Current state |
 | --- | --- |
 | Native checkout | `OpenRemix/`, `forward-plus-renderer` |
-| Native modular code checkpoint | `a78a8526` (read the branch history for subsequent changes) |
+| Native modular code checkpoint | `f8c9de1e` (read the branch history for subsequent changes) |
 | Native official remote | `https://github.com/OpenRenderCollective/OpenRemix.git` |
 | Adapter checkout | `garrys-mod-rtx-remixed-2/`, `forward-plus-renderer` |
 | Adapter checkpoint | `952a8bf` (profiling observer-cost qualification; upstream integration retained) |
@@ -116,8 +116,11 @@ That fix does not establish fitted Construct outdoor coverage.
 1. Finish the remaining recipe orchestration and general scene/component reflection
    reference provenance. Existing query sources own their shader resources;
    captures have separate publications/caches and a standalone lifecycle. The
-   default recipe still shares finishing/admission. Retain that work reuse while
-   making any further scheduling changes; do not duplicate baked/analytic energy.
+   default recipe now owns its combined finisher separately from capture scheduling,
+   while retaining shared transport/admission. Frozen reference identities and
+   binding-time neutral metadata views are implemented for default sources. Mixed
+   identities neutralize the whole image; further component recipes still need
+   qualified domain contracts. Retain work reuse and avoid duplicate energy.
 2. Later: evaluate HLSL/Slang and single-file shader authoring. Build opt-in adapter shader
    mappings and a Refract proof first. No adapter-supplied material program loader,
    .vfx/.shader compiler, or Source shader compatibility system exists yet.
@@ -127,7 +130,10 @@ That fix does not establish fitted Construct outdoor coverage.
    assume shared display code guarantees matching illumination/exposure.
 4. Qualify packed guides and normalization across scenes, profile bandwidth/ALU
    costs, exercise the configured panel shortcut interactively, and prepare a protected-settings-preserving
-   package. No new default performance gain or visual parity is claimed.
+   package. Recent matched Crossfire checks preserve the checked output but show
+   a small positive armed CPU recording residual; isolate/repeat before claiming
+   no overhead. Neutral metadata also adds one aligned header per nonempty image.
+   No new default performance gain or visual parity is claimed.
 5. Continue lightmap/probe quality, Construct room/seam defects, outdoor cubemap
    coverage, saturated probe-budget selection, bake times and runtime profiling.
    The complete queue and map list are in the roadmap.
