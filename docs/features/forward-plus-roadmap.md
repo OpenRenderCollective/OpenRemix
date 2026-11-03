@@ -1,3 +1,13 @@
+## Next performance isolation
+
+- Isolate opaque color shading: baked-field filtering/reconstruction, material
+  response and selected baked-highlight queries. Keep normal quality and output
+  parity as acceptance gates; diagnostic variants must not become silent defaults.
+- Repeat an armed CPU recording residual only with an isolation question and
+  matched foreground/content/settings. Attribute it only if it reproduces.
+- Preserve the existing depth prepass and independent caster visibility while
+  profiling. Technique modularity alone does not establish the frame-rate target.
+
 ### Standard material response ownership (2026-11-04)
 
 - Custom models no longer inherit standard GGX or standard sun/local response
