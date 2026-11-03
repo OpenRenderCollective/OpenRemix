@@ -957,10 +957,14 @@ seven-owner static corrections on surfaces/dynamic probes and baked sunlight
 with moving-caster corrections. Real-map hybrid/optical edge quality, reflection-reference provenance and matched runtime
 performance remain open.
 PR #37 now adapts its whole-field cascade source to the incoming query at
-`295d7a95` on its own branch. It remains unmerged and undeployed. Its build,
+`d4bededc` on its own branch. It remains unmerged and undeployed. Its build,
 replacement-source compilation, policy and five focused GPU checks pass.
 Normalized default/ray shader variants are unchanged; checked cascade variants
 have no opcode-count increases. Matched runtime performance is still unqualified.
+The branch also includes the private cube/sky source boundary and receiver-direct
+fingerprints/in-memory reuse. Its refreshed native build and five focused checks
+(policy, replacement sources, cascade transport/MSAA, viewmodel environment and
+composed viewmodel sunlight) pass.
 Baked-direct/cascade composition and optical cascade lookups remain outstanding.
 Preserve the combined Source 2 fast path while extending providers.
 
@@ -1045,11 +1049,14 @@ Missing baked coverage retains ordinary analytic direct response. Composition
 never advertises the sum as a compatible frozen-cubemap normalization reference.
 
 `OPENREMIX_BAKED_DIRECT_LIVE_INDIRECT` selects the composed source at compilation,
-using the baked receiver context and the incoming query. It currently requires
-`LIVE_GI` for the pass's existing live-source plumbing. Standard and custom
-materials compile through this source, including viewmodel, zero-diffuse metal
-and water passes. A query-only incoming replacement compiles with the ray
-implementation physically absent from the test tree. GPU numerical checks cover
+using the baked receiver context and the incoming query. Composition itself does
+not require `LIVE_GI`: ray capability belongs to the selected incoming source.
+Standard and custom materials compile through this source, including viewmodel,
+zero-diffuse metal and water passes. A query-only incoming replacement compiles
+with the ray implementation physically absent from the test tree, both with and
+without the ray-pass define. Sixteen existing default/custom/composed shader
+variants remain optimized-byte-identical after removing the unnecessary guard.
+This shader contract does not by itself enable composed cascade host pipelines. GPU numerical checks cover
 mixed visibility, valid black and missing baked coverage alongside independent
 producer energy-conservation tests.
 
@@ -1215,3 +1222,10 @@ checked default/ray fragment variants remain normalized-byte-identical and six
 cascade fragment variants have fewer instructions with no opcode-count increases.
 That compiler evidence is not matched runtime performance acceptance. The PR
 remains unmerged and is not deployed.
+
+The shared composer no longer requires the ray-pass define. On this branch the
+actual cascade source compiles through composed world, prepassed world, viewmodel,
+early viewmodel, metal, water and ray-water material variants. These checks use
+`CASCADE_GI` plus the composed-receiver define without `LIVE_GI`. They qualify the
+shader connection only. Host composition remains guarded until pipeline selection,
+resource/optical coverage and numerical mixed-light behavior are verified.
