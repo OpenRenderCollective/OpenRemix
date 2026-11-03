@@ -864,7 +864,27 @@ The Source 2 adapter retains its existing order and single transport budget:
 a published image alone does not release admission while diffuse/style work
 is pending. Standalone retirement still records after switching back to baked
 captures. Capture source ownership and frame-fence retention are unchanged.
-Metadata fallback queries still use the baked-controller adapter; removing that
-remaining coupling and complete alternative-provider orchestration are separate
-work. This split changes CPU call organization, so shader checks alone cannot
+Metadata lookup now exposes borrowed capture publications and accepts fallback
+descriptors explicitly. The renderer supplies the Source 2 fallback; the capture
+module has no diffuse-controller dependency. Complete alternative-provider
+orchestration remains separate work. This split changes CPU call organization, so shader checks alone cannot
 prove whole-renderer performance equivalence.
+
+### Capture publication lookup
+
+`CaptureProviders` exposes a borrowed standalone source, capture-only header
+selection and descriptor selection with an explicit fallback. The renderer
+supplies the default baked descriptor/header/source and retains the original
+precedence: authored header, available standalone image, then default source;
+descriptors retain their existing authored-overlay selection. A published
+diffuse volume still determines the reported scene scale before standalone or
+default capture metadata. An active standalone owner with no image remains
+selected for source identity and retirement; it does not manufacture a new
+image or discard the default descriptor fallback.
+
+The small selection adapters are inline and borrow existing owners. They add
+no publication snapshot, reference-count copy, resource allocation or GPU work.
+Borrowed pointers are consumed immediately on the render thread; submitted
+frames retain their existing image leases. The capture module no longer includes
+or takes `bake::Controller`; the shared prepared-scene request remains the
+lower-level transport handoff.

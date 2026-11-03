@@ -7,7 +7,8 @@
 namespace remix::forward {
   const probes::Header *Renderer::Gpu::reflectionHeader() const {
     if (const auto selected = localSelections.active()) return &selected->image->header();
-    return captureProviders.header(techniquePlan, *baking);
+    if (const auto captured = captureProviders.header(techniquePlan)) return captured;
+    return baking->reflectionHeader();
   }
   const probes::LayerIdentities *Renderer::Gpu::reflectionIdentities() const {
     if (const auto selected = localSelections.active()) return &selected->identities;

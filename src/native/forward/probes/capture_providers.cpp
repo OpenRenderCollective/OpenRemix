@@ -1,5 +1,4 @@
 #include "forward/probes/capture_providers.h"
-#include "forward/bake/controller.h"
 #include "raster/renderer.h"
 
 namespace remix::forward::probes {
@@ -38,34 +37,5 @@ namespace remix::forward::probes {
     }
     m_authored->record(command, resources, authoredConfig, captures,
                         options.authoredReflectionFallback, capturesReady);
-  }
-  CaptureSource CaptureProviders::source(const techniques::ResourcePlan &plan,
-                                         const bake::Controller &baking) const {
-    if (m_standaloneUsed && !plan.capturesWithBake()) return m_standalone->source();
-    return baking.reflectionSource();
-  }
-  Descriptors CaptureProviders::descriptor(const techniques::ResourcePlan &plan,
-                                           const bake::Controller &baking) const {
-    auto automatic = baking.reflectionDescriptor();
-    if (m_standaloneUsed && !plan.capturesWithBake()) {
-      const auto &standalone = m_standalone->source();
-      if (standalone.image) automatic = standalone.image->descriptors();
-    }
-    return m_authored->descriptor(automatic);
-  }
-  const Header *CaptureProviders::header(const techniques::ResourcePlan &plan,
-                                        const bake::Controller &baking) const {
-    if (const auto authored = m_authored->header()) return authored;
-    if (m_standaloneUsed && !plan.capturesWithBake()) {
-      const auto &standalone = m_standalone->source();
-      if (standalone.image) return &standalone.image->header();
-    }
-    return baking.reflectionHeader();
-  }
-  float CaptureProviders::sceneScale(const techniques::ResourcePlan &plan,
-                                     const bake::Controller &baking) const {
-    if (const auto &volume = baking.volume()) return volume->sceneScale;
-    return m_standaloneUsed && !plan.capturesWithBake() ? m_standalone->sceneScale()
-                                                      : baking.reflectionSceneScale();
   }
 }

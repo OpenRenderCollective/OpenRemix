@@ -27,7 +27,10 @@ namespace remix::forward {
       irradiance.coarseRecords = volume->coarseIrradianceProbes;
       irradiance.patchCounts = volume->irradiancePatchCounts;
     }
-    statistics.reflectionSceneScale = captureProviders.sceneScale(techniquePlan, *baking);
+    // A diffuse publication retains scale precedence over capture metadata.
+    statistics.reflectionSceneScale = volume ? volume->sceneScale
+        : captureProviders.standaloneSource(techniquePlan) ? captureProviders.standaloneSceneScale()
+                                                         : baking->reflectionSceneScale();
     statistics.authoredReflections = captureProviders.authored()->statistics();
     const auto header = reflectionHeader();
     statistics.reflectionProbes = header ? *header : probes::Header{};

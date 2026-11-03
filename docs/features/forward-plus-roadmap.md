@@ -55,6 +55,9 @@ Implemented and checked:
   live water can share prepared scene descriptors with its own query limits.
   Capture recording, admission and source fallback share one resolved owner;
   image disable preserves the scheduler responsible for retiring prior work.
+  Capture metadata selection now takes explicit fallback descriptors and exposes
+  borrowed capture-only publications; the renderer supplies Source 2 fallbacks.
+  The capture module no longer includes or accepts the diffuse controller.
   Reflection recording now takes scene-sharing, publication and shared-budget
   readiness explicitly; it no longer invokes diffuse baking. The renderer
   composes the existing preset order without adding a scheduler or GPU pass.

@@ -3,7 +3,6 @@
 #include "forward/probes/standalone_capture.h"
 #include "forward/provider_plan.h"
 
-namespace remix::forward::bake { class Controller; }
 namespace remix::forward::probes {
   // Captured reflection scheduling and publication selection. The Source 2
   // adapter lends its diffuse transport budget; providers retain their own jobs.
@@ -26,10 +25,22 @@ namespace remix::forward::probes {
     void record(VkCommandBuffer command, RasterRenderer &resources, const Options &options,
                 const techniques::ResourcePlan &plan, const CaptureConfig &config,
                 bake::SceneRequest *sceneRequest, CaptureSource captures, bool sharedTransportIdle);
-    CaptureSource source(const techniques::ResourcePlan &plan, const bake::Controller &baking) const;
-    Descriptors descriptor(const techniques::ResourcePlan &plan, const bake::Controller &baking) const;
-    const Header *header(const techniques::ResourcePlan &plan, const bake::Controller &baking) const;
-    float sceneScale(const techniques::ResourcePlan &plan, const bake::Controller &baking) const;
+    // Borrowed publication view; the provider/frame owners retain the image.
+    const CaptureSource *standaloneSource(const techniques::ResourcePlan &plan) const {
+      return m_standaloneUsed && !plan.capturesWithBake() ? &m_standalone->source() : nullptr;
+    }
+    Descriptors descriptor(const techniques::ResourcePlan &plan, Descriptors fallback) const {
+      if (const auto source = standaloneSource(plan); source && source->image)
+        fallback = source->image->descriptors();
+      return m_authored->descriptor(fallback);
+    }
+    const Header *header(const techniques::ResourcePlan &plan) const {
+      if (const auto authored = m_authored->header()) return authored;
+      if (const auto source = standaloneSource(plan); source && source->image)
+        return &source->image->header();
+      return nullptr;
+    }
+    float standaloneSceneScale() const { return m_standalone->sceneScale(); }
     // Preserve renderer teardown order: authored workers retire before bake
     // ownership; standalone frame owners remain retained until normal teardown.
     void releaseAuthoring() { m_authored.reset(); }
