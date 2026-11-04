@@ -89,19 +89,19 @@ TraceFrame prepareTraceFrame(const std::vector<Draw> &draws, double seconds, boo
     for (auto &surface : instance) {
       const auto &draw = surface.draw;
       const auto &material = *draw.material;
-      const auto animation =
-          uint32_t(std::fmod(seconds * material.fps, uint32_t(material.rows) * material.columns));
-      surface.animationFrame = animation;
-      surface.uv = {1.f / material.columns, 1.f / material.rows,
-                    float(animation % material.columns) / material.columns,
-                    float(animation / material.columns) / material.rows};
+      surface.uv = surfaceTexcoord(draw, seconds, surface.animationFrame);
       // A view model's emission is seen, not sampled: it lights nothing
       // from where it is placed (shrunk toward the eye).
       frame.viewModel |= draw.viewModel;
       if (draw.viewModel || material.suppressEmissionLight || (draw.alphaOverride && draw.compare == 0) ||
           (material.emission[0] <= 0 && material.emission[1] <= 0 && material.emission[2] <= 0))
         continue;
-      const auto reduction = emissionCache.reduce(draw, surface.uv);
+      // Emitters of a draw whose texcoords move are estimated at rest, once
+      // rather than a frame: along a scroll its triangles' mean emission
+      // barely changes.
+      uint32_t restingFrame = 0;
+      const auto reduction = emissionCache.reduce(
+          draw, draw.texcoordMoves() ? surfaceTexcoord(draw, seconds, restingFrame, false) : surface.uv);
       const bool animated = filterEmission && bool(material.emissionTexture);
       // An instance the host identified as dynamic: its emitters stay in the
       // light tree's dynamic part (LightBvh).

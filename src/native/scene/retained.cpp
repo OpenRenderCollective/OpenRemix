@@ -78,7 +78,7 @@ namespace remix {
       return false;
     for (const auto &draw : records)
       if (draw.classification != REMIXAPI_INSTANCE_STATIC_EXT || !draw.traced() || draw.material->fps ||
-          draw.bones || draw.mesh->updateStream || draw.wound)
+          draw.scrolling() || draw.bones || draw.mesh->updateStream || draw.wound)
         return false;
     return true;
   }

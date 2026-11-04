@@ -1,6 +1,7 @@
 #include "scene/trace_frame.h"
 #include "scene/fixtures.h"
 #include "scene/opacity.h"
+#include "scene/retained.h"
 #include <cmath>
 
 using namespace remix::scene;
@@ -160,6 +161,87 @@ int main() {
   draw.surface.reset();
   emissionCache.prune();
   require(removed.expired(), "Emission cache retained retired geometry");
+
+  // remixapi_InstanceInfoTexcoordTransformEXT: scale and offset before the
+  // sprite cell, the offset scrolled by the clock.
+  remixapi_InstanceInfoTexcoordTransformEXT texcoord{
+      REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_TEXCOORD_TRANSFORM_EXT, nullptr, {2, 1}, {.25f, 0}, {.5f, 0}};
+  remixapi_InstanceInfo info{};
+  info.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_INFO;
+  info.pNext = &texcoord;
+  info.mesh = reinterpret_cast<remixapi_MeshHandle>(uintptr_t(1));
+  info.transform.matrix[0][0] = info.transform.matrix[1][1] = info.transform.matrix[2][2] = 1;
+  InstanceDescription described;
+  describeInstance(info, described);
+  Draw scrolled;
+  scrolled.instanceId = 9;
+  scrolled.mesh = std::make_shared<Mesh>();
+  scrolled.material = std::make_shared<Material>();
+  scrolled.material->columns = 2;
+  scrolled.material->fps = 2;
+  scrolled.surface = std::make_shared<Surface>();
+  scrolled.surface->vertices = {
+      {{0, 0, 0}, {.1f, .1f}, {}}, {{1, 0, 0}, {.9f, .1f}, {}}, {{0, 1, 0}, {.1f, .9f}, {}}};
+  scrolled.surface->indices = {0, 1, 2};
+  scrolled.texcoord = described.texcoord;
+  scrolled.texcoordVelocity = described.texcoordVelocity;
+  auto sameUv = [](const std::array<float, 4> &a, std::array<float, 4> b) {
+    for (unsigned i = 0; i < 4; ++i)
+      if (std::abs(a[i] - b[i]) > 1e-4f)
+        return false;
+    return true;
+  };
+  uint32_t cell = 0;
+  // Cell 1 of 2 at .6 s: u x 2 x .5 + (.25 + .5 x .6) x .5 + .5.
+  require(sameUv(surfaceTexcoord(scrolled, .6, cell), {1, 1, .775f, 0}) && cell == 1,
+          "Texcoord transform not composed with the sprite cell");
+  require(sameUv(surfaceTexcoord(scrolled, .6, cell, false), {1, 1, .5f, 0}), "Resting texcoords moved");
+  require(sameUv(surfaceTexcoord(scrolled, 1e6 + .6, cell), {1, 1, .775f, 0}),
+          "A long-running scroll lost its precision");
+  texcoord.offset[1] = NAN;
+  rejected([&] { describeInstance(info, described); });
+
+  scrolled.classification = REMIXAPI_INSTANCE_STATIC_EXT;
+  scrolled.material->fps = 0;
+  auto resting = scrolled;
+  resting.texcoordVelocity = {};
+  auto driven = resting; // a host that gives the offset itself
+  resting.texcoord = {2, 1, 0, 0};
+  require(staticTraceEligible({resting}) && !staticTraceEligible({scrolled}),
+          "A scrolling instance entered the persistent static set");
+
+  // Alpha test of an opaque texture: proven at rest, not while it scrolls,
+  // and one cache entry for every offset.
+  for (auto *d : {&scrolled, &resting}) {
+    d->doubleSided = true;
+    d->material = scrolled.material;
+  }
+  scrolled.material->compare = 6;
+  scrolled.material->reference = .5f;
+  scrolled.material->texture = std::make_shared<Texture>();
+  scrolled.material->texture->pixels = {2, 1, true, {{255, 0, 0, 255, 0, 255, 0, 255}}};
+  OpacityCache coverage;
+  const auto still = coverage.partition(resting, surfaceTexcoord(resting, .6, cell));
+  const auto moving = coverage.partition(scrolled, surfaceTexcoord(scrolled, .6, cell));
+  require(still->opaque(0) && !moving->opaque(0) && moving->reasons[OpacityPartition::Scrolling] == 1,
+          "Scrolling coverage was proven from one offset");
+  require(coverage.partition(scrolled, surfaceTexcoord(scrolled, 1.6, cell)) == moving,
+          "Scrolling coverage was proven again for a new offset");
+  driven.doubleSided = true;
+  driven.material = scrolled.material;
+  const auto drivenFirst = coverage.partition(driven, surfaceTexcoord(driven, 0, cell));
+  driven.texcoord[2] = .4f;
+  require(!drivenFirst->opaque(0) && coverage.partition(driven, surfaceTexcoord(driven, 0, cell)) == drivenFirst,
+          "A host-driven offset was proven, or proven again for every offset");
+
+  // Its emitters: one estimate at rest, whatever the time.
+  std::fill_n(scrolled.material->emission, 3, 1.f);
+  scrolled.material->emissionTexture = scrolled.material->texture;
+  const auto early = prepareTraceFrame({scrolled}, .6, true, emissionCache);
+  const auto late = prepareTraceFrame({scrolled}, 1.3, true, emissionCache);
+  require(early.emitters.size() == 1 && early.emitters[0].reduction == late.emitters[0].reduction &&
+              !sameUv(early.instances[0][0].uv, late.instances[0][0].uv),
+          "Scrolling emitters were estimated again, or the surface did not scroll");
   std::puts("CPU tracing snapshots, identities, animation, emitters and "
             "ownership passed");
 }

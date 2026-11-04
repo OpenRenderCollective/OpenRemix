@@ -97,6 +97,9 @@ namespace remix {
           auto animationFrame = uint64_t(prepared.seconds * draw.material->fps);
           append(&animationFrame, sizeof(animationFrame));
         }
+        append(draw.texcoord.data(), sizeof(draw.texcoord));
+        if (draw.scrolling())
+          append(&prepared.seconds, sizeof(prepared.seconds));
       }
     sceneBytes = &signature.frame;
     // Dynamic textures (remixapi_UpdateTextureEXT) keep their fingerprint:
@@ -135,7 +138,8 @@ namespace remix {
                                                              digestEnabled,
                                                              PathTracer::textureLimit,
                                                              &materialTicks,
-                                                             &temporalTicks};
+                                                             &temporalTicks,
+                                                             rrActive()};
     tables.build(views, tableInputs);
     {
       const auto &s = tables.statistics();
@@ -1733,7 +1737,7 @@ namespace remix {
               count(surface);
       std::fprintf(stderr, "OPACITY mixed_surfaces=%llu", static_cast<unsigned long long>(mixed));
       const char *names[] = {"solid",   "one_sided",       "blended",          "transmission",  "alpha_test",
-                             "invalid", "missing_texture", "texture_boundary", "texture_cutout"};
+                             "invalid", "missing_texture", "texture_boundary", "texture_cutout", "scrolling"};
       for (unsigned i = 0; i < scene::OpacityPartition::Count; ++i)
         std::fprintf(stderr, " %s=%llu", names[i], static_cast<unsigned long long>(reasons[i]));
       std::fprintf(stderr, "\n");

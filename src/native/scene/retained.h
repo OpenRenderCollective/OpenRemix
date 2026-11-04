@@ -9,6 +9,9 @@ namespace remix::scene {
   struct InstanceDescription {
     uint64_t mesh = 0, materialOverride = 0;
     Matrix model = identity();
+    // remixapi_InstanceInfoTexcoordTransformEXT: scale, offset; velocity.
+    std::array<float, 4> texcoord{1, 1, 0, 0};
+    std::array<float, 2> texcoordVelocity{};
     // Hidden, ignored and first-person-shadow categories: validated, never drawn.
     bool hidden = false;
     uint32_t categoryFlags = 0;

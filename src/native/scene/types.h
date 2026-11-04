@@ -402,7 +402,24 @@ namespace remix {
       // remixapi_InstanceInfoSpriteEXT (0: none), on blended raster-only draws.
       uint32_t spriteFlags = 0;
       float spriteSoft[3] = {}; // softDistance, softFadeStart, softFadeEnd
+      // remixapi_InstanceInfoTexcoordTransformEXT: scale, offset; velocity in
+      // UV units per second (surfaceTexcoord).
+      std::array<float, 4> texcoord{1, 1, 0, 0};
+      std::array<float, 2> texcoordVelocity{};
+      bool scrolling() const { return texcoordVelocity[0] != 0 || texcoordVelocity[1] != 0; }
+      // An offset or a scroll: what the texels under a triangle are may change
+      // from frame to frame (a host may give a new offset each frame), so
+      // per-offset caches (opacity, emitters) take the draw as at rest.
+      bool texcoordMoves() const { return scrolling() || texcoord[2] != 0 || texcoord[3] != 0; }
     };
+    // The UV transform (scale, offset) a draw's maps are read through at
+    // `seconds`: the instance's texcoord transform, scrolled, and then the
+    // material's sprite sheet cell (animationFrame). The scroll is kept to
+    // less than two repeats, which neither wrapping nor mirroring shows;
+    // scroll false: at rest, without the instance's offset or scroll (the
+    // emitters of a draw whose texcoords move, SurfaceEmissionCache).
+    std::array<float, 4> surfaceTexcoord(const Draw &draw, double seconds, uint32_t &animationFrame,
+                                         bool scroll = true);
     // remixapi_InstanceInfoHaloEXT, validated and clamped. Instances whose
     // parameters compare equal share one group (one silhouette mask).
     struct Halo {

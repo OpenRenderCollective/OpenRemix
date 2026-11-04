@@ -17,6 +17,10 @@ struct OpacityPartition {
     MissingTexture,
     TextureBoundary,
     TextureCutout,
+    // remixapi_InstanceInfoTexcoordTransformEXT offset or velocity: texels may
+    // move under the triangles, so none is proven opaque (one entry, not one
+    // for every offset a host gives).
+    Scrolling,
     Count
   };
   std::array<uint32_t, Count> reasons{};

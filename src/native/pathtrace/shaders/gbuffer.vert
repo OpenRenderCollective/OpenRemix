@@ -64,7 +64,8 @@ void main() {
   }
   if(s.previousVertices!=0) {
     Vertices previous=Vertices(s.previousVertices);
-    previousPosition=(s.previousModel*vec4(previous.v[index].position.xyz,1)).xyz;
+    previousPosition=(s.previousModel*vec4(previous.v[index].position.xyz,1)).xyz+
+                     mat3(s.previousModel)*textureShift(s,b-a,c-a,ub-ua,uc-ua);
   }
   gl_Position=frame.camera*vec4(position,1);
   gl_Position.z=dot(draw.reverseDepth,vec4(position,1));
