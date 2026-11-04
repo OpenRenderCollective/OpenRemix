@@ -372,11 +372,9 @@ namespace remix {
         out.push.mvp[12] = out.push.mvp[13] = -1;
       }
       std::copy_n(mat.tint, 4, out.push.tint);
-      const uint32_t frame = uint32_t(std::fmod(seconds * mat.fps, uint32_t(mat.rows) * mat.columns));
-      out.push.uv[0] = 1.0f / mat.columns;
-      out.push.uv[1] = 1.0f / mat.rows;
-      out.push.uv[2] = float(frame % mat.columns) / mat.columns;
-      out.push.uv[3] = float(frame / mat.columns) / mat.rows;
+      uint32_t frame = 0;
+      const auto texcoord = scene::surfaceTexcoord(draw, seconds, frame);
+      std::copy_n(texcoord.data(), 4, out.push.uv);
       const auto &b = draw.blend;
       out.push.state[0] = (b.colorOp & 3u) | (b.colorOp & 4u) << 10 | (b.alphaOpTexture & 4u) << 11 |
                           b.color1 << 2 | b.color2 << 4 | (b.alphaOpTexture & 3u) << 6 | b.alpha1 << 8 |

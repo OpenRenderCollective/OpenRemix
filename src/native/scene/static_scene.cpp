@@ -106,12 +106,8 @@ namespace remix::scene {
         // As prepareTraceFrame: paint only where blending is on.
         surface.draw.decal = draw.decal && draw.blend.enabled && !draw.material->transmission;
         const auto &material = *draw.material;
-        // Eligible materials are not animated: frame 0 at any time.
-        const auto animation = uint32_t(std::fmod(0.0 * material.fps, uint32_t(material.rows) * material.columns));
-        surface.animationFrame = animation;
-        surface.uv = {1.f / material.columns, 1.f / material.rows,
-                      float(animation % material.columns) / material.columns,
-                      float(animation / material.columns) / material.rows};
+        // Eligible draws are not animated or scrolled: as at any time.
+        surface.uv = surfaceTexcoord(surface.draw, 0.0, surface.animationFrame);
         unit.pbrSurfaces += material.pbr;
         unit.surfaces.push_back(std::move(surface));
         // Emitters, as prepareTraceFrame makes them (none for a singular unit).

@@ -529,6 +529,8 @@ namespace remix {
         draw.cameraCull = d.cameraCull;
         draw.wound = wound;
         draw.rasterOrder = d.rasterOrder;
+        draw.texcoord = d.texcoord;
+        draw.texcoordVelocity = d.texcoordVelocity;
         draw.spriteFlags = d.spriteFlags;
         std::copy_n(d.spriteSoft, 3, draw.spriteSoft);
         // Frames and sequences come from the mesh's sprite vertices.
@@ -615,6 +617,20 @@ namespace remix {
 namespace remix::scene {
   using namespace detail;
 
+  std::array<float, 4> surfaceTexcoord(const Draw &draw, double seconds, uint32_t &animationFrame, bool scroll) {
+    const auto &m = *draw.material;
+    animationFrame = uint32_t(std::fmod(seconds * m.fps, uint32_t(m.rows) * m.columns));
+    const float scale[2] = {1.f / m.columns, 1.f / m.rows};
+    const float cell[2] = {float(animationFrame % m.columns) / m.columns, float(animationFrame / m.columns) / m.rows};
+    std::array<float, 4> uv;
+    for (unsigned axis = 0; axis < 2; ++axis) {
+      const float moved = scroll ? float(std::fmod(double(draw.texcoordVelocity[axis]) * seconds, 2.0)) : 0.f;
+      uv[axis] = draw.texcoord[axis] * scale[axis];
+      uv[axis + 2] = (draw.texcoord[axis + 2] + moved) * scale[axis] + cell[axis];
+    }
+    return uv;
+  }
+
   void describeInstance(const remixapi_InstanceInfo &info, InstanceDescription &d) {
     d.mesh = key(info.mesh);
     d.model = transform(info.transform);
@@ -628,6 +644,14 @@ namespace remix::scene {
     if (const auto *override = static_cast<const remixapi_InstanceInfoMaterialEXT *>(
             extension(info.pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_MATERIAL_EXT)))
       d.materialOverride = key(override->material);
+    if (const auto *texcoord = static_cast<const remixapi_InstanceInfoTexcoordTransformEXT *>(
+            extension(info.pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_TEXCOORD_TRANSFORM_EXT))) {
+      const float values[] = {texcoord->scale[0],  texcoord->scale[1],    texcoord->offset[0],
+                              texcoord->offset[1], texcoord->velocity[0], texcoord->velocity[1]};
+      finite(values, 6);
+      std::copy_n(values, 4, d.texcoord.begin());
+      std::copy_n(values + 4, 2, d.texcoordVelocity.begin());
+    }
     const auto *alpha =static_cast<const remixapi_InstanceInfoBlendEXT *>(
         extension(info.pNext, REMIXAPI_STRUCT_TYPE_INSTANCE_INFO_BLEND_EXT));
     d.blend = blend(alpha);
