@@ -5169,3 +5169,10 @@ independent default scheduling is still a separate architecture decision.
 - [x] Separate full-default frame measurements from receiver-level instrumentation. Colour-pass fragment counts indicate low overdraw in the profiled Construct view; probe-only pixels are a small fraction. Retain full offscreen shadow caster submission.
 - [x] Trial pass-local clip-plane extraction against sampled CPU evidence. Reject it after controls failed to establish a useful frame-time saving; leave no extra optimisation path behind.
 - [ ] Prioritise lightmapped pixel shading and armed viewmodel/reflection costs. Distinguish texture bandwidth, shader work and synchronisation with targeted measurements before changing field encodings or quality defaults. Continue qualification on larger maps; one Construct view does not justify removing culling.
+
+
+## 2026-11-05: Lightmapped shading follow-up
+
+- [x] Qualify and remove unsuccessful separable sampler, SH9 loop-hint and vertex-prepared chart-visibility trials. Keep no extra runtime settings, caches or shader paths from them.
+- [x] Measure an unchanged-binary local-highlight/mixed-role removal diagnostic separately from full-quality performance. Its image-changing result bounds opportunity; it is not a replacement preset or accepted performance result.
+- [ ] Investigate bounded compile-selected lighting-feature variants for already composed/no-active-style frames, with immediate live-state fallback. Compare GPU executable/register statistics and whole-frame performance before retaining variants. Offline SPIR-V reduction alone does not establish a gain; avoid repeating the rejected uniform style gate.
