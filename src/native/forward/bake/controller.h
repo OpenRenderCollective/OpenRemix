@@ -14,6 +14,7 @@
 #include "forward/probes/capture_content.h"
 #include "forward/probes/image_asset.h"
 #include "forward/resources.h"
+#include "forward/styled_lighting/composition.h"
 #include "platform/gpu_frames.h"
 #include "runtime/pipelines.h"
 #include <remix/remix_bake_ext.h>
@@ -48,6 +49,7 @@ namespace remix::forward::bake {
     uint32_t surfaceDirectOffset = 0; // sparse directional table in the R32_UINT lookup; zero keeps atlas SH
     std::unique_ptr<Buffer> data, staging;
     std::unique_ptr<Image> surfaceAtlas;
+    styled_lighting::SourceLayout compositionLayout;
     std::unique_ptr<mixed::OcclusionMap> occlusion, visibilityPages;
     std::shared_ptr<lightmap::Geometry> surfaces;
     std::shared_ptr<const mixed::Bindings> mixedLights;

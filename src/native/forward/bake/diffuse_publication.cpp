@@ -104,6 +104,9 @@ namespace remix::forward::bake {
     const auto segments = lightmap::uploadSegments(surfaceLayout, visibility.indexed, visibility.indexedDirect);
     const size_t surfaceBytes = m_job->surfacePixels.empty() ? 0 : size_t(surfaceLayout.pageSize) *
         surfaceLayout.pageSize * surfaceLayout.pages * surfaceLayers * 4 * sizeof(uint16_t);
+    if (styleBytes && !transferBytes && surfaceBytes && baseBytes % 16 == 0)
+      volume->compositionLayout = {uint32_t(baseBytes / 16), uint32_t(localOffset / 16),
+          uint32_t(localWords.size()), surfaceLayout.pageSize, surfaceLayout.pages, surfaceLayers};
     std::fprintf(stderr, "Forward indexed visibility: %u, %llu -> %llu GPU bytes, %llu primary texels, max error %.9g\n",
         unsigned(visibility.indexed), static_cast<unsigned long long>(visibility.legacyAllocation),
         static_cast<unsigned long long>(visibility.totalAllocation),

@@ -5115,8 +5115,16 @@ independent default scheduling is still a separate architecture decision.
 - [x] Reject unqualified native-reflection reconstruction, paired directional decoding and cropped viewmodel-target prototypes; preserve their private evidence while keeping production code small.
 - [x] Retire unused MSAA viewmodel color and exposure guides after resolve while retaining single-sample outputs and world color needed by late water. No repeatable frame-rate gain from an extra world-pass variant; keep that variant out of production.
 - [x] Isolate styled surface reconstruction as a substantial opaque-shader cost with a clearly marked quality-reducing diagnostic; restore the normal shader and exclude diagnostic FPS from acceptance.
-- [ ] Prioritize composing immutable base plus complete current styled SH when weights change, with bounded GPU memory, exact toggle behavior, frame-safe publication, HDR/overflow qualification and a fallback for pending or frequent updates. Keep the existing material/lighting API; do not disable named/toggleable lighting or introduce off-state residuals through naive reference-weight subtraction.
+- [x] Compose immutable base plus complete current styled SH through existing surface/probe bindings when weights settle. Bound resident GPU memory and per-frame work, publish after owning fences and range checks, and retain immediate reconstruction for changed/pending/unsupported weights. Preserve named/toggleable lights, mixed corrections and the material API; avoid reference-weight subtraction and off-state residue.
 - [ ] Investigate a bounded GPU image representation of indexed unit-directional fields while retaining compact persistent cache storage and black/constant blocks. Preserve signed half coefficients, sparse ownership, chart seams and custom lighting queries; qualify actual memory and hardware interpolation precision.
 - [ ] Continue viewmodel CPU/target/reflection profiling and wider map coverage. Scope timings can move between adjacent operations; accept changes on whole-frame evidence rather than one nested screenshot timing.
 - [x] Expose ready nonzero styled-group counts in renderer diagnostics and verify off/on transitions. Reject a new frame-uniform zero-style shader gate after active-case regression; retain the original shader path.
 - [x] Separate styled reconstruction runtime cost from shader code-generation effects with unchanged fragment bytecode and a deliberately disabled GPU payload flag. Normal lighting remains mandatory; prefer existing atlas/probe payload interfaces and validated publication over adding per-pixel mode branches.
+
+
+## 2026-11-04: Stable styled-light composition
+
+- [x] Add a typed GPU composition provider with exact source/weight reuse, complete surface/probe publication, explicit half rounding, local visibility relocation, cancelled-command retry and a resident allocation cap. Keep fragment shader bytecode and persistent bakes unchanged.
+- [x] Qualify signed/HDR fields, bicubic chart boundaries, adaptive depth probes, off/on/partial weights, overflow rejection and rendered props/surfaces with moving mixed shadows.
+- [ ] Continue whole-frame profiling beyond the current Construct and Crossfire views. Investigate Construct variance and remaining reflection/opaque/host costs; the 300-400 FPS objective remains incomplete.
+- [ ] Reduce composition startup latency and resident bytes only where profiling justifies it; preserve bounded frame work, exact live-state selection and readable code.

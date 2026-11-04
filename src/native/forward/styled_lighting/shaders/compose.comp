@@ -1,0 +1,89 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x = 64) in;
+#define IRRADIANCE_BINDING 0
+#include "../../shaders/irradiance.glsl"
+layout(set = 0, binding = 1, std430) readonly buffer Parameters {
+  uvec4 copyLayout; // base records, local first record, local words, output records
+  uvec4 surfaceLayout; // size, pages, layers, reserved
+  vec4 scales[32];
+} parameters;
+#define STYLE_SCALE(style) parameters.scales[(style) / 4u][(style) % 4u]
+#include "../../shaders/style-lighting.glsl"
+layout(set = 0, binding = 2, std430) writeonly buffer Output { uvec4 records[]; } outputData;
+layout(set = 0, binding = 3) uniform sampler2DArray sourceSurface;
+layout(set = 0, binding = 4, rgba16f) uniform writeonly image2DArray outputSurface;
+layout(set = 0, binding = 5, std430) buffer Status { uint invalid; } status;
+layout(push_constant) uniform Chunk { uint phase, first, count; } chunk;
+
+vec3 contribution(uint index, uint coefficient, bool surface, uint page, uvec2 pixel) {
+  vec3 result = vec3(0);
+  for (uint group = 0u; group < styleWord(3u); ++group) {
+    uint entry = 12u + group * 8u;
+    float scale = STYLE_SCALE(styleWord(entry));
+    if (scale == 0) continue;
+    uint record = surface ? styledSurfaceRecord(styleWord(entry + 1u), page, pixel,
+        (parameters.surfaceLayout.x + 15u) / 16u) : styleWord(styleWord(entry + 2u) + index);
+    result += scale * styledCoefficient(styleWord(entry + 3u), record, coefficient);
+  }
+  return result;
+}
+void checkValue(vec4 value, bool halfValue) {
+  if (any(isnan(value)) || any(isinf(value)) || (halfValue && any(greaterThan(abs(value), vec4(65504)))))
+    atomicOr(status.invalid, 1u);
+}
+uvec4 inputRecord(uint record) {
+  if (record == 0u) return floatBitsToUint(bakeOriginSpacing);
+  if (record == 1u) return bakeDimensions;
+  if (record == 2u) return floatBitsToUint(bakeSettings);
+  return bakeRecords[record - 3u];
+}
+float roundedHalf(float value) {
+  // Image-store and packHalf conversions can truncate on the device. Round
+  // explicitly to an exactly representable half before writing the image.
+  if (abs(value) < 0.00006103515625) return roundEven(value * 16777216.0) / 16777216.0;
+  uint bits = floatBitsToUint(value);
+  bits += 0xfffu + ((bits >> 13u) & 1u);
+  return uintBitsToFloat(bits & ~0x1fffu);
+}
+void main() {
+  uint thread = gl_GlobalInvocationID.x;
+  if (thread >= chunk.count) return;
+  uint index = chunk.first + thread;
+  if (chunk.phase == 0u) {
+    uvec4 value = uvec4(0);
+    if (index < parameters.copyLayout.x) {
+      value = inputRecord(index);
+      if (index == 2u) {
+        // Preserve depth/addressing. Omit style storage and relocate the local
+        // visibility tail; its internal offsets are relative to that tail.
+        value.w &= 0x80000000u;
+        if (parameters.copyLayout.z != 0u) value.w |= (parameters.copyLayout.x - 3u) << 1u;
+      } else if (index >= 3u && index - 3u < bakeDimensions.w * 16u && (index - 3u) % 16u < 9u) {
+        uint probe = (index - 3u) / 16u, coefficient = (index - 3u) % 16u;
+        vec4 combined = uintBitsToFloat(value);
+        combined.rgb += contribution(probe, coefficient, false, 0u, uvec2(0));
+        checkValue(combined, false);
+        value = floatBitsToUint(combined);
+      }
+    } else {
+      uint word = (index - parameters.copyLayout.x) * 4u;
+      for (uint component = 0u; component < 4u; ++component)
+        if (word + component < parameters.copyLayout.z)
+          value[component] = bakeRecords[parameters.copyLayout.y - 3u + word / 4u][component];
+    }
+    outputData.records[index] = value;
+  } else {
+    uint size = parameters.surfaceLayout.x;
+    uint page = index / (size * size);
+    uvec2 pixel = uvec2(index % size, (index / size) % size);
+    for (uint layer = 0u; layer < parameters.surfaceLayout.z; ++layer) {
+      ivec3 coordinate = ivec3(pixel, page * parameters.surfaceLayout.z + layer);
+      vec4 value = texelFetch(sourceSurface, coordinate, 0);
+      if (layer < 9u) value.rgb += contribution(0u, layer, true, page, pixel);
+      checkValue(value, true);
+      value = vec4(roundedHalf(value.x), roundedHalf(value.y), roundedHalf(value.z), roundedHalf(value.w));
+      imageStore(outputSurface, coordinate, value);
+    }
+  }
+}

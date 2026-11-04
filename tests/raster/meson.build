@@ -97,6 +97,9 @@ if get_option('gpu_tests')
   test('Forward+ combined controllable direct and indirect surfaces, probes and cache', raster_test,
     args : [meson.current_build_dir() / 'styled-combined-readback', 'styled-combined'],
     timeout : 180)
+  test('Forward+ stable composition toggles preserve rendered surfaces and props without rebaking', raster_test,
+    args : [meson.current_build_dir() / 'styled-composed-readback', 'styled-combined'],
+    env : ['REMIX_TEST_STYLE_COMPOSITION=1'], timeout : 180)
   test('Forward+ per-light static visibility and live specular', raster_test,
     args : [meson.current_build_dir() / 'mixed-readback', 'mixed'], timeout : 180)
   test('Forward+ compact static occlusion and mixed-light overflow', raster_test,

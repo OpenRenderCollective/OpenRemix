@@ -37,6 +37,9 @@ namespace remix {
         << ", \"debugView\": " << state.debugView
         << ", \"bicubicLightmaps\": " << (state.bicubicLightmaps ? "true" : "false")
         << ", \"activeStyledGroups\": " << state.activeStyledGroups
+        << ", \"composedStyledLighting\": " << (state.composedStyledLighting ? "true" : "false")
+        << ", \"styledCompositionChunks\": " << state.styledCompositionChunks
+        << ", \"styledCompositionBytes\": " << state.styledCompositionBytes
         << ", \"clusteredLights\": " << state.clusteredLights
         << ", \"clusterBuildLights\": " << state.clusterBuildLights
         << ", \"analyticLights\": " << state.analyticLights

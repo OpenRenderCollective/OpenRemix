@@ -1,5 +1,6 @@
 // Included beside the readback Target fixture in rendering.cpp.
 std::array<uint8_t, 3> styledIndirectTests(bool directGroups = false, bool includeIndirect = false, uint32_t emitterCount = 1, bool liveIncoming = false) {
+  const bool composition = std::getenv("REMIX_TEST_STYLE_COMPOSITION") != nullptr;
   require(emitterCount > 0 && emitterCount <= 7, "Styled fixture fits the mixed-shadow slot budget");
   std::array<uint8_t, 3> litBySample{};
   uint32_t sampleOrdinal = 0;
@@ -103,6 +104,17 @@ std::array<uint8_t, 3> styledIndirectTests(bool directGroups = false, bool inclu
       for (auto live : liveLights) r.drawLight(live);
       return target.render();
     };
+    auto settled = [&](bool charted) {
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+      std::vector<uint8_t> image;
+      do {
+        image = render(charted);
+        if (target.forward->statistics().composedStyledLighting) return image;
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+      } while (std::chrono::steady_clock::now() < deadline);
+      require(false, "Stable live lighting publishes its matching composed surface and probe field");
+      return image;
+    };
     auto until = [&](bool stylePhase = false) {
       const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
       std::vector<uint8_t> image;
@@ -141,6 +153,7 @@ std::array<uint8_t, 3> styledIndirectTests(bool directGroups = false, bool inclu
             "Initially-off attributed map publishes style storage without residual indirect glow");
     require(target.forward->statistics().activeStyledGroups == 0,
             "Off groups report no active styled contributors while retaining their bake");
+    if (composition) require(settled(true)[at] < 3, "Composed off-state has no residual surface light");
     if (directGroups)
       require(volume->groupedStyles == std::vector<uint32_t>{32},
               "Complete grouped direct publication retains its independent style identity");
@@ -154,13 +167,26 @@ std::array<uint8_t, 3> styledIndirectTests(bool directGroups = false, bool inclu
     require(lit > 8 && r.bakeScene() == frozen, "Surface indirect follows live style without rebaking");
     require(target.forward->statistics().activeStyledGroups == 1,
             "Turning a group on immediately updates its active-contributor diagnostic");
+    if (composition) {
+      require(!target.forward->statistics().composedStyledLighting,
+              "A light toggle immediately stops sampling the previous composed state");
+      on = settled(true);
+      require(std::abs(int(on[at]) - int(lit)) <= 1 &&
+                  target.forward->bakeController()->volume() == volume && r.bakeScene() == frozen,
+              "Settled composition preserves rendered lighting without a map rebake");
+    }
     set(.5f);
     const auto partial = render(true);
     require(partial[at] > 3 && partial[at] < lit, "Surface indirect supports partial style values");
+    if (composition) require(std::abs(int(settled(true)[at]) - int(partial[at])) <= 1,
+                             "Composed partial light preserves rendered energy");
     set(0);
     require(render(true)[at] < 3, "Surface indirect switches fully off");
+    if (composition) require(settled(true)[at] < 3, "An on-to-off composition has no cancellation residue");
     set(1);
     const auto probeOn = render(false);
+    if (composition) require(std::abs(int(settled(false)[at]) - int(probeOn[at])) <= 1,
+                             "Dynamic props use the same completed probe composition as surfaces");
     set(0);
     const auto probeOff = render(false);
     if (directGroups) {
@@ -176,7 +202,8 @@ std::array<uint8_t, 3> styledIndirectTests(bool directGroups = false, bool inclu
     r.setBakeScene(nullptr);
     for (uint32_t i = 0; i < remix::gpuFrameCount + 2; ++i) render(true);
     publish();
-    const auto cached = until();
+    auto cached = until();
+    if (composition) cached = settled(true);
     require(std::strstr(target.forward->statistics().baking.status, "Cached") &&
             cached == on && target.forward->bakeController()->volume()->styledLighting,
             "Attributed cache reload preserves exact surface pixels and runtime style ownership");
@@ -203,6 +230,7 @@ std::array<uint8_t, 3> styledIndirectTests(bool directGroups = false, bool inclu
         require(target.forward->statistics().baking.state == REMIXAPI_BAKE_READY_EXT &&
                     bool(target.forward->bakeController()->reflectionSource().image) == bool(captures),
                 "Styled automatic reflection refresh completes with the requested capture source");
+        if (composition) image = settled(true);
         require(image == on && target.forward->bakeController()->content().styledIndirect == content.styledIndirect &&
                     render(false) == dynamicBefore,
                 "Reflection-only transport preserves exact styled surface and dynamic-probe pixels");
@@ -220,7 +248,8 @@ std::array<uint8_t, 3> styledIndirectTests(bool directGroups = false, bool inclu
       options.localShadowLights = emitterCount;
       options.localShadowFade = 0;
       target.enableForward(options, true);
-      const auto clear = render(true);
+      auto clear = render(true);
+      if (composition) clear = settled(true);
       remixapi_InstanceIdentityEXT movingId{};
       movingId.sType = REMIXAPI_STRUCT_TYPE_INSTANCE_IDENTITY_EXT;
       movingId.instanceId = 18007;
@@ -231,6 +260,8 @@ std::array<uint8_t, 3> styledIndirectTests(bool directGroups = false, bool inclu
       blocker.transform.matrix[0][0] = blocker.transform.matrix[1][1] = .4f;
       const auto moving = r.createRetained(blocker);
       const auto shadow = render(true);
+      if (composition) require(target.forward->statistics().composedStyledLighting,
+                               "Dynamic shadow changes retain the matching diffuse composition");
       require(clear[at] > 8 && (includeIndirect ? shadow[at] > 3 && shadow[at] + 3 < clear[at]
                                                : shadow[at] < clear[at] / 3) &&
                   target.forward->statistics().staticShadowUpdates == 0,

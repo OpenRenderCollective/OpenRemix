@@ -489,7 +489,10 @@ namespace remix::forward {
         .dstSet = frame.composite, .dstBinding = 6, .descriptorCount = 1,
         .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .pImageInfo = &viewModelImage};
     vkUpdateDescriptorSets(device, 1, &viewModelWrite, 0, nullptr);
-    const auto irradiance = baking->descriptor();
+    const auto compositionSource = techniquePlan.bakedDiffuse() || techniquePlan.bakedDirect ? publishedBake : nullptr;
+    frame.styledLighting = styledLighting ? styledLighting->record(command, compositionSource, data.styleScales,
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - epoch).count()) : nullptr;
+    const auto irradiance = frame.styledLighting ? frame.styledLighting->probes() : baking->descriptor();
     writes[8] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                  .dstSet = frame.scene,
                  .dstBinding = 5,
@@ -497,7 +500,7 @@ namespace remix::forward {
                  .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                  .pBufferInfo = &irradiance};
     vkUpdateDescriptorSets(device, 1, &writes[8], 0, nullptr);
-    auto surfaceAtlas = baking->surfaceDescriptor();
+    auto surfaceAtlas = frame.styledLighting ? frame.styledLighting->surfaces() : baking->surfaceDescriptor();
     surfaceAtlas.sampler = surfaceSampler;
     writes[9] = {.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                  .dstSet = frame.scene,

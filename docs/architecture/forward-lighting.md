@@ -1048,21 +1048,37 @@ provider has no diffuse-controller dependency and never eagerly evaluates the
 shared fallback for an authored or standalone replacement. The frame descriptor
 snapshot still serves world reflections, viewmodels and water.
 
-### Planned stable styled-light composition
+### Stable styled-light composition
 
-Styled light weights currently reconstruct their signed SH9 contributions during
-shading. A planned provider-owned cache will compose complete current weights
-into the existing surface atlas and probe buffer when those weights settle.
+Styled light weights can reconstruct their signed SH9 contributions during
+shading. `forward/styled_lighting` provides a derived cache that composes complete
+current weights into the existing surface atlas and probe buffer when they settle.
 This is derived runtime data, independent of persistent bake identity; toggling a
 light must not trigger a map rebake. The material and lighting query API stays
 unchanged.
 
-Publication must match both the immutable source and exact weights. Until a
-matching composition completes and passes finite/range checks, retain the original
-descriptors and reconstruction path. Bound GPU memory and work per frame, retain
-resources through fences, and fall back for frequent changes or unsupported data.
+Publication matches both the immutable source and exact weights. Until a
+matching composition completes and passes finite/range checks, the original
+descriptors and reconstruction path remain active. The cache waits 100 ms for
+stable weights and records at most 131,072 elements per chunk. A chunk advances
+only after its owning frame fence and completion event; cancelled recordings
+retry. Output allocations, including retired frame owners, are capped at 512 MiB
+or one eighth of the largest device-local heap, whichever is smaller. Frequent
+changes, unsupported layouts and overflowing outputs retain the original path.
 Only a complete surface-and-probe publication can clear the existing styled
 payload flag. Preserve signed coefficients, sunlight metadata, visibility tables
 and chart boundaries. Compose full current contributions rather than subtracting
 a rounded reference contribution, which can leave light when a group is off.
-This cache remains an implementation and quality-qualification task.
+The compact probe output omits style storage and relocates the unchanged local
+visibility tail. Surface output retains the uploaded layer layout, alpha and
+unit-light fields. Explicit half rounding avoids device conversion truncation;
+composed fields also inherit hardware filtering's subtexel weight precision.
+This is a bounded precision change, not a claim of bit-identical samples.
+Experimental coarse-transfer sampling currently declines composition.
+
+The cache is the normal baked-lighting path, with the original representation
+retained as its correctness fallback. `REMIX_DEBUG_DISABLE_STYLE_COMPOSITION`
+provides a diagnostic control. It adds no material API, fragment shader branch
+or persistent bake format. Whole-frame performance and image comparisons must
+continue across additional maps; frequent styled animation still uses the
+original per-sample reconstruction.

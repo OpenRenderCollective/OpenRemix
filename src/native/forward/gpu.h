@@ -79,6 +79,7 @@ namespace remix::forward {
                giTerrainPipeline = VK_NULL_HANDLE, giTerrainLightmapPipeline = VK_NULL_HANDLE;
     std::shared_ptr<bake::Controller> baking;
     std::unique_ptr<probe_batch::Cache> probeVisibility;
+    std::unique_ptr<styled_lighting::Cache> styledLighting;
     probes::CaptureProviders captureProviders;
     probes::CaptureSource reflectionSource() const {
       if (const auto source = captureProviders.standaloneSource(techniquePlan.capturePolicy.transport)) return *source;
@@ -138,6 +139,7 @@ namespace remix::forward {
       probes::Descriptors reflectionProbes;
       std::unique_ptr<Buffer> constants, lights, draws, clusters, skyConstants;
       std::shared_ptr<const probe_batch::Field> probeVisibility;
+      std::shared_ptr<const styled_lighting::Publication> styledLighting;
       std::unique_ptr<depth_batch::Batch> depthBatch;
       std::unique_ptr<Buffer> viewModelConstants, viewModelReflectionConstants;
       Matrix viewModelProjection = scene::identity();

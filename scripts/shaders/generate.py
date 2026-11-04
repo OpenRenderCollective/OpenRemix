@@ -34,6 +34,7 @@ INLINED = {'bake'}
 # auxiliary pass. Keep their readable GLSL and the existing word-array ABI.
 INLINED_STAGES = {('forward', 'prepassedFrag'), ('forward', 'prepassedSsrFrag')}
 BACKENDS = {
+    'styled_lighting': ('forward::styled_lighting', 'vulkan1.1', ('compose',)),
     'probe_batch_test': ('forward::test::probe_batch_input', 'vulkan1.1', ('query',)),
     'probe_batch': ('forward::probe_batch', 'vulkan1.1', ('gather',)),
     'sun_depth_test': ('forward::test::sun_depth_input', 'vulkan1.1', ('query',)),
@@ -63,6 +64,8 @@ STAGE_ENVIRONMENTS = {('particles', 'light'): 'vulkan1.2', ('particles', 'spawnT
 
 
 def shader_directory(backend):
+    if backend == 'styled_lighting':
+        return ROOT / 'src/native/forward/styled_lighting/shaders'
     if backend == 'probe_batch_test':
         return ROOT / 'tests/forward/probe_batch_shaders'
     if backend == 'probe_batch':
@@ -160,6 +163,8 @@ def defines_for(backend, stage, stages):
     if stage == 'sharcUpdate': defines += ['-DSHARC_UPDATE_PASS=1']
     source_stage = 'comp' if defines else stage
     source = directory / (backend + '.' + source_stage)
+    if backend == 'styled_lighting':
+        source = directory / 'compose.comp'
     if backend == 'style_test':
         source = directory / 'query.comp'
     if backend == 'mask_test':

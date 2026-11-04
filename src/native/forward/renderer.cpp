@@ -12,6 +12,9 @@ namespace remix::forward {
   void Renderer::Gpu::publishStatistics() {
     statistics.debugView = options.debugView;
     statistics.bicubicLightmaps = options.bicubicLightmaps;
+    statistics.composedStyledLighting = bool(frames[slot].styledLighting);
+    statistics.styledCompositionChunks = styledLighting ? styledLighting->recordedChunks() : 0;
+    statistics.styledCompositionBytes = styledLighting ? styledLighting->bufferBytes() + styledLighting->imageBytes() : 0;
     statistics.baking = baking->statistics();
     const auto &volume = baking->volume();
     statistics.bakeContent = baking->content();
@@ -74,6 +77,10 @@ namespace remix::forward {
                              (viewModelSun ? viewModelSun->bytes() : 0) +
                              (viewModelLocalMaps ? viewModelLocalMaps->memoryBytes() : 0);
     statistics.accelerationBytes = memory.acceleration + authoredMemory.acceleration + standaloneMemory.acceleration;
+    if (styledLighting) {
+      statistics.bufferBytes += styledLighting->bufferBytes();
+      statistics.targetBytes += styledLighting->imageBytes();
+    }
     statistics.rayGI = rayLighting.diffuseStatistics();
     statistics.rayReflections = rayLighting.reflectionStatistics();
     const auto rayMemory = rayLighting.memory();
@@ -185,6 +192,12 @@ namespace remix::forward {
       next->probeVisibility->prepare();
     }
     next->createPipelines(output);
+    // Completed derived data reuses the ordinary lighting bindings. Changing
+    // styles retain their original reconstruction until a matching output is ready.
+    if (!std::getenv("REMIX_DEBUG_DISABLE_STYLE_COMPOSITION")) {
+      next->styledLighting = std::make_unique<styled_lighting::Cache>(physical, device);
+      next->styledLighting->prepare();
+    }
     if (options.water) {
       next->waterPass = std::make_unique<water::Pass>();
       next->waterPass->initialize(physical, device, extent, next->samples, next->sceneLayout,
@@ -236,8 +249,10 @@ namespace remix::forward {
     if (g.reflections)
       g.reflections->selectFrame(slot);
     g.rayLighting.selectFrame(slot);
+    if (g.styledLighting) g.styledLighting->selectFrame(slot);
     auto &frame = g.frames.at(slot);
     frame.probeVisibility.reset();
+    frame.styledLighting.reset();
     frame.commands.clear();
     frame.staticCommands.clear();
     frame.terrainCommands.clear();
