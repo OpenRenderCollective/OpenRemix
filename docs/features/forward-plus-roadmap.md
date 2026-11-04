@@ -5191,3 +5191,5 @@ independent default scheduling is still a separate architecture decision.
 - Continue measured opaque-lighting and viewmodel optimisation toward native 1080p 300-400 FPS; current results do not establish that target across maps.
 - Shadow helper parameter narrowing and explicit scalar surface SH access were qualified for correctness but rejected: no useful register reduction, mixed shader code size increased in the latter trial. No extra paths retained.
 - Reflection quality: investigate distance-aware cubemap filtering against reference implementations; SSR already uses roughness and projected hit distance. Preserve current quality while measuring performance.
+
+- Profiling follow-up: ordinary GPU pass timers did not materially change Construct throughput in reversed armed/unarmed comparisons. Shared water-depth halo reads passed existing water checks but failed to reproduce a normal-throughput gain; trial removed. Keep whole-frame, timer-disabled confirmation before accepting small pass-level wins.
